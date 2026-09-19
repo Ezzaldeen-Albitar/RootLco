@@ -1,7 +1,15 @@
 import { notFound } from 'next/navigation';
 import { PageBody, PageHeader } from '@/components/shell/PageHeader';
 import { requireSession } from '@/features/authentication/api/session';
-import { readTenant } from '@/features/administration/organization/api';
+import {
+  listBranches,
+  listCompanies,
+  readCapacity,
+  readCurrencyChoices,
+  readTenant,
+} from '@/features/administration/organization/api';
+import { CapacityPanel } from '@/features/administration/organization/components/CapacityPanel';
+import { OrganizationStructure } from '@/features/administration/organization/components/OrganizationStructure';
 import { SettingsEditor } from '@/features/administration/organization/components/SettingsEditor';
 import { TenantForm } from '@/features/administration/organization/components/TenantForm';
 import {
@@ -37,8 +45,29 @@ export default async function OrganizationPage({
   const messages = getMessages(locale);
   const t = (key: string) => translate(messages, key as keyof typeof messages);
 
-  const tenant = await readTenant();
+  // Every read below is decided by the permission its operation declares BEFORE
+  // it is made, so a session that may not see a section never requests it.
+  const canReadTenant = holds(session.permissions, PERMISSIONS.tenantRead);
+  const canReadCompanies = holds(session.permissions, PERMISSIONS.companyRead);
+  const canReadBranches = holds(session.permissions, PERMISSIONS.branchRead);
   const canWriteSettings = holds(session.permissions, PERMISSIONS.settingsManage);
+  const canManageCompanies = holds(session.permissions, PERMISSIONS.companyManage);
+  const canManageBranches = holds(session.permissions, PERMISSIONS.branchManage);
+
+  const tenant = await readTenant();
+  const capacity = canReadTenant ? await readCapacity() : null;
+  const companies = canReadCompanies ? await listCompanies() : null;
+  const branches = canReadBranches ? await listBranches() : null;
+  const currencyChoices =
+    canManageCompanies && companies?.status === 'ok'
+      ? await readCurrencyChoices(companies.data.map((company) => company.id))
+      : [];
+  const timezoneChoices = [
+    ...new Set([
+      ...(tenant.status === 'ok' && tenant.data ? [tenant.data.defaultTimezone] : []),
+      ...(branches?.status === 'ok' ? branches.data.map((branch) => branch.timezoneName) : []),
+    ]),
+  ].sort();
 
   return (
     <>
@@ -54,8 +83,6 @@ export default async function OrganizationPage({
       />
       <PageBody>
         <div className="flex flex-col gap-6">
-          <ContractNotice messages={messages} bodyKeys={['admin.contractGap.noDirectory']} />
-
           <Panel title={t('organization.tenant')}>
             <ReadBoundary state={toReadState(tenant)} messages={messages}>
               {(view) => (
@@ -64,7 +91,36 @@ export default async function OrganizationPage({
             </ReadBoundary>
           </Panel>
 
-          {holds(session.permissions, PERMISSIONS.companyRead) ? (
+          {capacity ? (
+            <Panel
+              title={t('organization.capacity.title')}
+              description={t('organization.capacity.description')}
+            >
+              <ReadBoundary state={capacity} messages={messages}>
+                {(view) => <CapacityPanel capacity={view} messages={messages} locale={locale} />}
+              </ReadBoundary>
+            </Panel>
+          ) : null}
+
+          {companies || branches ? (
+            <Panel title={t('organization.structure.title')}>
+              <OrganizationStructure
+                messages={messages}
+                capacity={capacity?.status === 'ok' ? capacity.data : null}
+                companies={companies}
+                branches={branches}
+                currencyChoices={currencyChoices}
+                timezoneChoices={timezoneChoices}
+                canManageCompanies={canManageCompanies}
+                canManageBranches={canManageBranches}
+                canChangeBranchStatus={canWriteSettings}
+              />
+            </Panel>
+          ) : null}
+
+          <ContractNotice messages={messages} bodyKeys={['admin.contractGap.noDirectory']} />
+
+          {canReadCompanies ? (
             <Panel title={t('organization.settings.company')}>
               <SettingsEditor
                 messages={messages}
@@ -76,7 +132,7 @@ export default async function OrganizationPage({
             </Panel>
           ) : null}
 
-          {holds(session.permissions, PERMISSIONS.branchRead) ? (
+          {canReadBranches ? (
             <Panel title={t('organization.settings.branch')}>
               <SettingsEditor
                 messages={messages}

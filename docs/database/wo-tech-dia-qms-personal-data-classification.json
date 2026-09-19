@@ -3251,7 +3251,7 @@
     },
     "wo.work_orders.display_number": {
       "classification": "internal",
-      "searchable": false,
+      "searchable": true,
       "dataType": "text"
     },
     "wo.work_orders.opened_at": {

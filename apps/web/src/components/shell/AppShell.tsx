@@ -5,7 +5,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { BrandMark } from '@/components/brand';
 import { brandIsProvisional } from '@/components/brand/theme';
 import { Icon } from '@/components/primitives/Icon';
-import { NAVIGATION } from '@/config/navigation';
+import { NAVIGATION, type NavigationGroup } from '@/config/navigation';
 import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
 import { translate } from '@/i18n/get-messages';
@@ -71,6 +71,14 @@ export interface AppShellProps {
    * this architecture exists to avoid.
    */
   readonly account?: ReactNode;
+  /**
+   * The navigation model. Defaults to the workspace model; the Platform Owner
+   * Console passes its own, so the two audiences never share a sidebar
+   * (P1-32-PRE-062).
+   */
+  readonly navigation?: readonly NavigationGroup[];
+  /** A short label naming the surface, shown in the header beside the menu. */
+  readonly contextLabel?: string | undefined;
 }
 
 export function AppShell({
@@ -80,6 +88,8 @@ export function AppShell({
   children,
   secondaryPanel,
   account,
+  navigation = NAVIGATION,
+  contextLabel,
 }: AppShellProps) {
   const pathname = usePathname() ?? `/${locale}`;
   const [collapsed, setCollapsed] = usePersistedFlag(COLLAPSE_KEY, false);
@@ -159,7 +169,7 @@ export function AppShell({
   // never.
   useScrollRestoration('main');
 
-  const groups = visibleNavigation(NAVIGATION, capabilities);
+  const groups = visibleNavigation(navigation, capabilities);
 
   return (
     /*
@@ -258,6 +268,7 @@ export function AppShell({
           onOpenDrawer={() => setDrawerOpen(true)}
           drawerTriggerRef={drawerTriggerRef}
           account={account}
+          contextLabel={contextLabel}
         />
         <div className="flex min-h-0 flex-1">
           {/*
@@ -333,6 +344,7 @@ function AppHeader({
   onOpenDrawer,
   drawerTriggerRef,
   account,
+  contextLabel,
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
@@ -341,6 +353,7 @@ function AppHeader({
   readonly onOpenDrawer: () => void;
   readonly drawerTriggerRef: React.RefObject<HTMLButtonElement | null>;
   readonly account?: ReactNode;
+  readonly contextLabel?: string | undefined;
 }) {
   return (
     // NOT `sticky`. It used to be, from when the document scrolled — and since
@@ -382,6 +395,15 @@ function AppHeader({
       >
         <Icon name="overview" size={18} />
       </button>
+
+      {contextLabel ? (
+        <span
+          data-testid="shell-context-label"
+          className="truncate text-supporting font-semibold text-text-primary"
+        >
+          {contextLabel}
+        </span>
+      ) : null}
 
       <div className="ms-auto flex items-center gap-2">
         {/*

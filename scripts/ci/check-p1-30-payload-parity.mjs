@@ -66,6 +66,7 @@ export const MIRROR_FILES = Object.freeze([
   join('lib', 'contracts', 'inventory-contract.ts'),
   join('lib', 'contracts', 'billing-contract.ts'),
   join('lib', 'contracts', 'payments-contract.ts'),
+  join('lib', 'contracts', 'delivery-contract.ts'),
 ]);
 
 /**
@@ -78,6 +79,12 @@ export const BODYLESS = Object.freeze({
   // approver is the caller. Entered scope with `inv` in W4; no P1-30 screen sends it.
   'inv.opening-batch-approve':
     'the approval carries nothing but the batch in the path and the caller as approver',
+  // Retiring a reorder level names the level in the path and its version in
+  // If-Match. There is nothing else to send: retirement is a state, not a
+  // decision with parameters, and a reason field nobody is required to fill is a
+  // field that records nothing.
+  'inv.reorder-level-retire':
+    'retirement carries nothing but the level in the path and its version as If-Match',
   // Issuance has no parameters: the invoice is the path parameter and the
   // version travels as If-Match. Sent by the W6 screen with no body.
   'sal.invoice-issue':
@@ -85,6 +92,36 @@ export const BODYLESS = Object.freeze({
   // The amount was fixed at request time; the approval names the note in the path.
   'sal.credit-note-approve':
     'the approval carries nothing but the credit note in the path and the caller as approver',
+  // The withdrawal names the template and the item in the path and the caller as the
+  // actor; there is no field a body could carry. It entered this scope because it is a
+  // `sal` DELETE (P1-31 P-9), not because a P1-30 screen sends it.
+  'sal.delivery-checklist-template-item-remove':
+    'the withdrawal carries nothing but the template and item in the path and the caller as actor',
+  // P1-32 preparatory inventory slice. Posting names the receipt in the path and its
+  // version as If-Match; reconciling names the count in the path. Neither has a field
+  // a body could carry.
+  'inv.goods-receipt-post':
+    'posting carries nothing but the receipt in the path and its version as If-Match',
+  'inv.stock-count-reconcile':
+    'reconciliation carries nothing but the count in the path and the caller as actor',
+  // P1-32 preparatory slice 2. Retirement names the item and the identifier in the
+  // path; allocation names the item. The internal code is allocated, never sent.
+  'inv.item-identifier-retire':
+    'retirement carries nothing but the item and the identifier in the path and the caller as actor',
+  'inv.item-barcode-assign':
+    'allocation carries nothing but the item in the path; the code comes from the tenant counter',
+  // P1-32 preparatory slice 3b. Retiring a conversion, and confirming or retiring a
+  // specification, name the row in the path and the caller as actor.
+  'inv.unit-conversion-retire':
+    'retirement carries nothing but the conversion in the path and the caller as actor',
+  'inv.vehicle-specification-confirm':
+    'confirmation carries nothing but the specification in the path and the caller as confirmer',
+  'inv.vehicle-specification-retire':
+    'retirement carries nothing but the specification in the path and the caller as actor',
+  // P1-32 preparatory slice 3c. A re-check reads the requirement named in the path
+  // again; there is nothing for a caller to state.
+  'inv.material-requirement-recheck':
+    're-check carries nothing but the requirement in the path and the caller as actor',
 });
 
 /** Field-level omissions the web side has decided, with reasons. Empty today. */
@@ -119,21 +156,69 @@ export const PENDING_MIRRORS = Object.freeze({
     'PENDING: no P1-30 screen sends this (outside FE-008…FE-013); a later phase owes the mirror',
   'inv.external-purchase-part-create':
     'PENDING: no P1-30 screen sends this (outside FE-008…FE-013); a later phase owes the mirror',
+  // The P1-32 preparatory inventory writes entered this scope the moment they were
+  // registered. The stock-operation screens (transfers, goods receipts, adjustments
+  // and counts) declared ten mirrors and deleted their entries in that same change.
+  // P1-32 preparatory slice 2 stood here for the same reason and no longer does: the
+  // barcode, pricing, counter-sale and customer-return screens send all four writes,
+  // so `lib/contracts/inventory-contract.ts` and `lib/contracts/billing-contract.ts`
+  // declare their bodies and the entries were deleted in that same change.
+  // P1-32 preparatory slices 3b and 3c stood here for the same reason and no longer
+  // do: the material requirements panel on the parts screen, and the unit-conversion
+  // and vehicle-specification screens, send every one of those writes, so
+  // `lib/contracts/inventory-contract.ts` declares their bodies and eight entries were
+  // deleted in that same change.
+  //
+  // ONE remains, and its reason is not "no screen sends it" — the panel does. Its zod
+  // schema is a `z.discriminatedUnion` on `basis`: an ENTERED allowance with its source
+  // unit and source reference, or a derivation from the confirmed vehicle
+  // specification. `z.toJSONSchema` renders that as a top-level `oneOf` with no
+  // `properties` of its own, and `compareOperation` comprehends one object shape: it
+  // would report every field of any single-interface mirror as unknown to the API. A
+  // mirror flattening the two branches into one interface would be worse than none —
+  // it would state a shape the route refuses, which is the drift this gate exists to
+  // catch. The shape the screen sends is declared beside it, in
+  // `features/inventory/inventory-contract.ts`, and this entry is owed to whichever
+  // change teaches the shared comparison to walk a discriminated union.
+  'inv.material-requirement-create':
+    'PENDING: the body is a discriminated union (`basis`) and the shared comparison reads one object shape only; the screen sends it and the shape is declared in features/inventory/inventory-contract.ts',
+  // The Owner directive operational stock alerts are a BACKEND slice: the reorder
+  // level is set through the API and no screen sends it yet. Declaring a mirror
+  // now would be a shape with no consumer, which is the "declared but never wired"
+  // defect this repository keeps refusing; leaving it undeclared would be a red
+  // that says nothing. The P1-29 comparison enforces the lifecycle — the moment a
+  // mirror declares `ReorderLevelSetBody`, this entry is STALE and fails, so the
+  // change that builds the screen must delete it in the same commit.
+  'inv.reorder-level-set':
+    'PENDING: the alerts slice is backend-only and no screen sends this yet; the change that builds the reorder-level screen owes the mirror and must delete this entry',
   // The `sal` writes entered this scope with W6, which mirrors the invoice
   // create and cancel bodies. Payments belong to W7 (canonical plan §4); credit
-  // notes and deliveries are sent by no P1-30 screen.
+  // notes are sent by no P1-30 screen.
+  //
+  // The FIVE delivery writes stood here for the same reason and no longer do:
+  // P1-31's delivery-execution screen sends every one of them, so
+  // `lib/contracts/delivery-contract.ts` declares their bodies and the entries
+  // were deleted in that same change — which is the lifecycle this map exists
+  // to force. An entry cannot outlive its reason.
   'sal.credit-note-create':
     'PENDING: no P1-30 screen sends this (credit notes are in no FE row); a later phase owes the mirror',
-  'sal.delivery-checklist-record':
-    'PENDING: no P1-30 screen sends this (FE-008…FE-021 do not render deliveries); a later phase owes the mirror',
-  'sal.delivery-complete':
-    'PENDING: no P1-30 screen sends this (FE-008…FE-021 do not render deliveries); a later phase owes the mirror',
-  'sal.delivery-create':
-    'PENDING: no P1-30 screen sends this (FE-008…FE-021 do not render deliveries); a later phase owes the mirror',
-  'sal.delivery-receiver-verify':
-    'PENDING: no P1-30 screen sends this (FE-008…FE-021 do not render deliveries); a later phase owes the mirror',
-  'sal.delivery-signature-attach':
-    'PENDING: no P1-30 screen sends this (FE-008…FE-021 do not render deliveries); a later phase owes the mirror',
+  // The P1-31 checklist TEMPLATE writes (prerequisite P-9). They are `sal` writes, so
+  // they entered this gate's scope the moment they were registered, and no P1-30
+  // screen sends any of them — FE-008…FE-021 render no delivery configuration. The
+  // screen that will is P1-31 FE-004, whose lane is `p1-31-frontend`; a Backend lane
+  // may not write a web contract, and mirroring them here would be a shape with no
+  // consumer. The lifecycle still binds: the moment that screen's mirror declares the
+  // interface, the entry is STALE and this gate fails until it is deleted.
+  'sal.delivery-checklist-template-create':
+    'PENDING: no P1-30 screen sends this (P1-31 FE-004 owes the mirror, on the frontend lane)',
+  'sal.delivery-checklist-template-rename':
+    'PENDING: no P1-30 screen sends this (P1-31 FE-004 owes the mirror, on the frontend lane)',
+  'sal.delivery-checklist-template-status-set':
+    'PENDING: no P1-30 screen sends this (P1-31 FE-004 owes the mirror, on the frontend lane)',
+  'sal.delivery-checklist-template-item-create':
+    'PENDING: no P1-30 screen sends this (P1-31 FE-004 owes the mirror, on the frontend lane)',
+  'sal.delivery-checklist-template-item-update':
+    'PENDING: no P1-30 screen sends this (P1-31 FE-004 owes the mirror, on the frontend lane)',
 });
 
 const problems = [];

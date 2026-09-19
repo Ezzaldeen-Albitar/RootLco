@@ -1975,9 +1975,10 @@ export const MANIFEST = {
       'tests/backend/p1-14-idempotency-replay.test.ts',
       'tests/backend/p1-24-iam-route-depth.test.ts',
       'tests/backend/p1-29-w9-owner-bootstrap.test.ts',
+      'tests/backend/od-organization-administration.test.ts',
     ],
     required: ['success', 'denial', 'cross-tenant', 'audit', 'outbox'],
-    note: 'invited account + audit + event; duplicate conflict; unprivileged refused; tenant-bound',
+    note: 'invited account + audit + event; duplicate conflict; unprivileged refused; tenant-bound; answers ERR-CAP-001 with the seat numbers once the plan seats are spent',
   },
   'iam.invitation-cancel': {
     files: [
@@ -2005,6 +2006,20 @@ export const MANIFEST = {
     ],
     required: ['success', 'denial', 'audit'],
     note: 'token + session + success audit; every failure generic; failure audited',
+  },
+  'iam.account-password-change': {
+    files: ['tests/backend/p1-32-platform-console.test.ts'],
+    required: [
+      'route',
+      'service',
+      'authorization',
+      'unauthenticated',
+      'success',
+      'denial',
+      'audit',
+      'provider',
+    ],
+    note: 'Owner directive, console account and security. The only change-password path a PLATFORM-ONLY identity can reach: every tenant operation resolves through iam.has_permission, which returns false without an active role in the current tenant, so the profile surface answers 403 to the console operator. Declares platform.organization.read, the base entitlement every platform grant set is refused without, which is why a tenant user with no platform grant is refused ERR-IAM-001 and a new code would have locked out every operator already provisioned. The identity acted on is read from the caller own bearer token and never from the request document. Two refusals, told apart by code: ERR-IAM-003 for a current password the provider would not verify, ERR-IAM-004 for a new one its own policy rejects, with the provider sentence in the operator log and never in the response. The audit record carries who and when and one detail naming how the change was authorised, and is asserted to hold no password, no hash and no token',
   },
   'iam.auth-logout': {
     files: [
@@ -2129,14 +2144,78 @@ export const MANIFEST = {
   // why the namespace joined DERIVED_PREFIXES in this phase and not earlier: a
   // prefix with nothing behind it reports a vacuous 0/0 block.
   'rpt.report-catalogue': {
-    files: ['tests/backend/p1-23-reporting.test.ts'],
+    files: [
+      'tests/backend/p1-23-reporting.test.ts',
+      'tests/backend/p1-31-report-engine-work-orders.test.ts',
+    ],
     required: ['cross-tenant'],
-    note: "published definitions only; a draft and an archived report are proven invisible, and another tenant's catalogue is proven unreachable",
+    note: "published definitions only; a draft and an archived report are proven invisible, and another tenant's catalogue is proven unreachable. P1-31 P-11 added the second file and the MERGE it proves: the page carries the code-registered baselines first, marked source platform, then the tenant's own published rows by code, marked source tenant; a tenant row whose code is registered suppresses its baseline and keeps its own scope, export permission and parameter schema, because a configuration row is customization of a report the platform implements and not a precondition for it existing. executable is no longer the literal false but REPORT_DATASETS membership, and the suite asserts both limbs on real rows - true for work_orders_by_status, false for a published tenant row whose code the engine does not implement",
   },
   'rpt.report-read': {
-    files: ['tests/backend/p1-23-reporting.test.ts'],
+    files: [
+      'tests/backend/p1-23-reporting.test.ts',
+      'tests/backend/p1-31-report-engine-work-orders.test.ts',
+    ],
     required: ['denial', 'cross-tenant'],
-    note: "a draft, an archived report, a foreign tenant's report and a code that never existed all answer ERR-RPT-001 identically, so the catalogue cannot be used to enumerate configured report codes; the per-report export permission is projected rather than reinvented",
+    note: "a draft, an archived report, a foreign tenant's report and a code that never existed all answer ERR-RPT-001 identically, so the catalogue cannot be used to enumerate configured report codes; the per-report export permission is projected rather than reinvented. P1-31 P-11: a REGISTERED code with no configuration row now answers the baseline definition rather than ERR-RES-001 - the same customization rule the list applies - and the four indistinguishable refusals above are unchanged because none of those codes is registered; the baseline projects a null exportPermissionCode rather than naming rpt.export, which P-12 has not built",
+  },
+  'rpt.report-run': {
+    files: ['tests/backend/p1-31-report-engine-work-orders.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'isolation', 'pagination'],
+    note: "P1-31 prerequisite P-11, engine slice 1 of 4. The first operation in the platform that RUNS a report: P1-23 published executable: false because the frozen rpt schema binds no data source to a report code, and the binding comes from OWR-2026-09-06-A-12 - a report code binds to a CODE-REGISTERED dataset - rather than from a column. TWO permission checks and they are different questions: the route declares rpt.report.read at scope branch, and the service then evaluates the dataset's own read code, wo.work_order.read, against the SAME company and branch through callerHoldsPermission, answering the uniform ERR-IAM-001. The suite proves both sides with two principals that are each other's counterfactual - one holds rpt.report.read alone and is refused, one holds wo.work_order.read alone and is refused - so collapsing the two codes into one turns both cases red in opposite directions. scope branch is not a preference: requiresScopedEvaluation returns false for a tenant-scoped operation whatever target it is given, so a tenant-scoped run would be decided scope-blind and app.branch_ids is the permission-blind union of every grant (P1-18-A-01); the isolation case is a caller granted only in a second branch whose RLS reach still covers the first. The period is HALF-OPEN [from, to) resolved in the BRANCH timezone rather than the server's - listWorkOrders' own openedTo is CLOSED and was deliberately not reused - and the suite proves it on two rows a single second apart in local time, one at 23:30 on the last included day and one at 00:00 on the excluded day. The counts are computed in SQL over the WHOLE selection and never over the page, on the P1-28 round-two rule that a paged read must not answer for a set; states with no rows appear at zero, from the tenant's own state catalogue. The cursor is the work-order list contract, so a foreign cursor is ERR-PAG-001 and not a page of something else. auditClass none, so no audit evidence is declared; it is a GET, so neither idempotency nor stale-version is",
+  },
+  'rpt.report-export': {
+    files: ['tests/backend/p1-31-report-engine-work-orders.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'isolation', 'audit'],
+    note: 'P1-31 P-12. Explicit published configuration and scoped export/read/dataset permissions; the real route produces bounded CSV and a committed disclosure audit. Read-only, missing dataset, sibling-grant and foreign-tenant principals are refused. Unit witnesses independently cover formula safety, paging, size bounds and audit failure.',
+  },
+  // ---- P1-31 prerequisite P-11 - the report CONFIGURATION surface -----------
+  //
+  // Both rpt tables landed in P1-11 with INSERT and UPDATE grants and policies and
+  // NOTHING in apps/api/src had ever written either one, while rpt.report.configure
+  // sat in the permission catalogue declared by no operation and named by no policy
+  // predicate. The two P1-23 reads above filter on published status, so the only
+  // rows they could ever return were rows nothing could create: every tenant's
+  // report catalogue was empty and permanently so. Every row this suite reads was
+  // authored through the published routes, because that is the claim under test.
+  //
+  // The ENGINE is deliberately absent and is NOT claimed by any of these entries:
+  // executable stays the literal false, because the frozen schema binds no data
+  // source to a report code and choosing report definitions is an Owner decision.
+  'rpt.report-configuration-list': {
+    files: ['tests/backend/p1-31-report-configuration-seam.test.ts'],
+    required: ['denial', 'cross-tenant'],
+    note: 'P1-31 prerequisite P-11. Paged keyset on rpt.report_configurations:created_at_desc with the cursor minted by cursorTimestamp at MICROSECOND precision (P1-27-INT-006), sorting on a column the response does not carry; the two pages are asserted disjoint, which matters here because a tenant initial report set is authored in one sitting. Ordered on created_at and NOT on report_code, which is what the P1-23 catalogue orders on: that read is a lookup where the code is the only order a caller can predict, and this one is an authoring list a person scrolls. ONE filter is offered, status, and it is OPTIONAL - the unfiltered list shows drafts AND archived rows, or the restore command would be unreachable, which is the trap apt.catalogue-source-channel-status-set records. THE PERMISSION IS THE CONFIGURE CODE ON A READ, which is the substantive access decision of this seam and is the opposite shape from P-9 and P-10: the rows carry drafts and withdrawn definitions that a rpt.report.read holder must not see, and that holder reads published definitions through rpt.report-catalogue. Denial is declared because a caller holding ONLY rpt.report.read is refused with ERR-IAM-001 naming rpt.report.configure, and a caller holding the configure code through a BRANCH-scoped grant is refused too - the table has no company and no branch, so the pre-handler check is scope-blind without the explicit tenant-wide re-check (P1-18-A-01)',
+  },
+  'rpt.report-configuration-read': {
+    files: ['tests/backend/p1-31-report-configuration-seam.test.ts'],
+    required: ['denial', 'cross-tenant'],
+    note: 'P1-31 prerequisite P-11. Returns the configuration WITH its whole version history, deliberately UNPAGED on the dia.template-version-item-list precedent: a version exists because a person wrote one, so the set is bounded by authoring rather than by growth, and the history of a definition is read as one thing. Ordered by version_number ASCENDING, which uq_report_configuration_versions_number makes a total order on its own so no tie-break is offered; ascending because a history is read forwards, where the catalogue lateral orders descending because it is picking one row. Absent and out-of-scope answer ONE ERR-RES-001 decided before any authorization decision, so a foreign tenant learns nothing about existence. recordVersion is published in the body AND as the ETag, and the ETag is the CONFIGURATION version while each version row carries its own - the publish command wants the version one, and the suite proves the two are not interchangeable',
+  },
+  'rpt.report-configuration-create': {
+    files: ['tests/backend/p1-31-report-configuration-seam.test.ts'],
+    required: ['denial', 'cross-tenant', 'idempotency'],
+    note: 'P1-31 prerequisite P-11. Creates a DRAFT and deliberately does not create a version with it, which is where this seam departs from the P-9 and P-10 create-the-whole-thing-in-one-transaction shape: there the child rows are terms the parent is useless without, here an unversioned draft is the normal first step and ReportDefinitionView already publishes versionNumber null for it. The body refuses id, status and ownerUserId - the owner is the SESSION user, because a caller that could set it could author on someone else behalf. exportPermissionCode is REQUIRED because the column is NOT NULL with no default, and a code outside the platform permission catalogue is refused by fk_report_configurations_permission as ERR-VAL-001 naming the field rather than as a bare 23503. A duplicate report code is ERR-CON-001 with rule duplicate_code on the tenant-wide partial unique index. THE AUTHORITY IS TENANT-WIDE and it is measured, not chosen: the table has a tenant_id and NO company_id and NO branch_id, sel_report_configurations_scope is the tenant alone, so there is no scope target and requiresScopedEvaluation returns false whatever the declaration says - the suite proves a BRANCH-scoped holder of rpt.report.configure is refused every operation of the seam while RLS still shows it nothing it should not see. NOTHING WAS MINTED: rpt.report.configure has been a catalogue row since P1-08 and this seam is the first in the repository to declare it',
+  },
+  'rpt.report-configuration-update': {
+    files: ['tests/backend/p1-31-report-configuration-seam.test.ts'],
+    required: ['denial', 'stale-version'],
+    note: 'P1-31 prerequisite P-11. The name and the scope level, and nothing else. reportCode is absent because tg_report_configurations_immutable freezes it - the database rule, not this surface preference - and exportPermissionCode is absent for a sharper reason: it decides who may EXPORT the report contents, so re-pointing it is a privilege change wearing the clothes of an edit. status is absent because publishing a definition is its own command. Both fields are optional and at least one is required, because a body that changed nothing would still consume a record_version and write an audit record claiming an edit that did not happen; the field the caller omits is written back as it was read, which the suite proves by patching one and asserting the other unmoved. If-Match is REQUIRED and absent is ERR-CON-002; a stale version is ERR-CON-001 with the row asserted unchanged, and the new version is the DATABASE row rather than expectedVersion + 1',
+  },
+  'rpt.report-configuration-status-set': {
+    files: ['tests/backend/p1-31-report-configuration-seam.test.ts'],
+    required: ['denial', 'idempotency', 'stale-version'],
+    note: 'P1-31 prerequisite P-11. THIS IS THE COMMAND THAT MAKES A DEFINITION VISIBLE AT ALL: rpt.report-catalogue and rpt.report-read both filter on published status and nothing could set it before this seam existed, so every tenant report catalogue was empty whatever had been configured. Bidirectional across all three values of ck_report_configurations_status, on the apt.catalogue-source-channel-status-set precedent: uq_report_configurations_code names deleted_at and says nothing about status, so an archived configuration still holds its report code and an archive-only command would burn that code for the tenant permanently. IT ADDS NO RULE THE SCHEMA DOES NOT CARRY - in particular it does NOT require a published version before a configuration may be published, because nothing in the frozen schema says so and ReportDefinitionView already answers versionNumber null for exactly that state. The catalogue interplay is proved end to end on real rows: a configuration published with a published version appears in GET /reports carrying executable false, a draft one does not, and archiving removes it again',
+  },
+  'rpt.report-configuration-version-create': {
+    files: ['tests/backend/p1-31-report-configuration-seam.test.ts'],
+    required: ['denial', 'idempotency'],
+    note: 'P1-31 prerequisite P-11. Deliberately NOT version-guarded, on the svc.service-version-create and dia.template-version-create precedent: creating a draft does not mutate the configuration and there is no prior version of the thing being created to guard, so an If-Match would be a token about a row the request does not change. The write still takes FOR UPDATE on the configuration because version_number is unique per configuration and two concurrent creates must not compute the same next number - a lock for the correctness of the insert, not an optimistic guard. The suite proves the numbers are 1 then 2 on real rows. parameterSchema is bounded in SHAPE and undecided in VOCABULARY: a JSON object, at most 64 top-level keys, at most 16 KiB in the UTF-8 encoding of the serialized document, and NOTHING validated about what a key means - what a filter key means is part of the report definition the Owner has not approved, and validating a vocabulary here would be inventing the report. An omitted schema is the empty object the column already defaults to',
+  },
+  'rpt.report-configuration-version-publish': {
+    files: ['tests/backend/p1-31-report-configuration-seam.test.ts'],
+    required: ['denial', 'stale-version'],
+    note: 'P1-31 prerequisite P-11. The act the catalogue reads: its lateral picks the newest version whose OWN status is published. If-Match is the VERSION counter and not the configuration one - the opposite choice from svc.service-version-publish, whose guard is the parent because the protected function it calls locks the parent first, and there is no protected function here. TWO REFUSALS COME FROM THE DATABASE AND BOTH ARE MAPPED RATHER THAN LEFT AS A BARE SQLSTATE: a SECOND version published while one is live violates uq_report_configuration_versions_published and is reported as version_already_published, and REPUBLISHING the same version is an update of a published row, which rpt.guard_report_version_freeze raises as a check_violation and which is reported as version_immutable. The repository writes published_at = now() explicitly for exactly that reason - letting the trigger stamp the column would make a repeat publication a silent no-op that advanced record_version and told the caller nothing - and the suite proves the refusal on real rows with a CURRENT If-Match, so the freeze guard and not the version guard is what refuses it. Publishing a version does NOT publish its configuration and does NOT make the report runnable: executable stays the literal false',
   },
   // ---- P1-23 document surface ----------------------------------------------
   'shared.document-read': {
@@ -2482,7 +2561,7 @@ export const MANIFEST = {
   'inv.stock-reservation-create': {
     files: ['tests/backend/p1-21-inventory-stock.test.ts'],
     required: ['success', 'denial', 'audit', 'outbox', 'idempotency', 'isolation'],
-    note: 'the last-unit race is resolved in the DATABASE and not here: inv.reserve_stock takes the balance-row FOR UPDATE lock, expires stale rows for the cell, and re-reads on_hand and the active-reservation sum INSIDE the lock, so two concurrent requests for the same final unit leave exactly one winner and one 23514 — checking availability in application code first would add a read-then-write race and change nothing; the replay is detected BEFORE the call by looking the idempotency key up, because inv.reserve_stock resolves it inside the lock and returns the existing id, which from outside is indistinguishable from a fresh booking, so a retrying client could not otherwise tell whether it reserved twice (idempotency); a key reused for a DIFFERENT quantity, item or location is a conflict and not a silent success under someone else booking; the location is the scope anchor and its company/branch are the authorizationTarget (isolation)',
+    note: 'the last-unit race is resolved in the DATABASE and not here: inv.reserve_stock takes the balance-row FOR UPDATE lock, expires stale rows for the cell, and re-reads on_hand and the active-reservation sum INSIDE the lock, so two concurrent requests for the same final unit leave exactly one winner and one 23514 — checking availability in application code first would add a read-then-write race and change nothing; the replay is detected BEFORE the call by looking the idempotency key up, because inv.reserve_stock resolves it inside the lock and returns the existing id, which from outside is indistinguishable from a fresh booking, so a retrying client could not otherwise tell whether it reserved twice (idempotency); a key reused for a DIFFERENT quantity, item or location is a conflict and not a silent success under someone else booking; the location is the scope anchor and its company/branch are the authorizationTarget (isolation); a reservation FOR A WORK ORDER is a draw on an approved material requirement through inv.reserve_material_request (P1-32-PRE-132), and one with no requirement is refused',
   },
   'inv.stock-reservation-release': {
     files: ['tests/backend/p1-21-inventory-stock.test.ts'],
@@ -2492,7 +2571,7 @@ export const MANIFEST = {
   'inv.stock-issue-create': {
     files: ['tests/backend/p1-21-inventory-stock.test.ts'],
     required: ['success', 'denial', 'audit', 'outbox', 'idempotency', 'isolation'],
-    note: 'closes three defects in inv.issue_part, each reproduced against a live database: D-01 the function posts the out movement BEFORE consuming the reservation, so on_hand falls while reserved is still held and ck_stock_balances_available rejects the write whenever the reservation covers the stock being issued — the natural reserve-exactly-then-issue flow FAILS inside the protected function, and the fix is ordering rather than privilege, inserting part_issues then consuming then posting; D-02 the function selects wo.work_orders.state and never reads the variable, so a draft work order accepts an issue, and the service instead locks the work order and reads the data-driven wo.work_order_states flags so a concurrent transition cannot race the check; D-03 the function consumes whatever reservation id it is handed including one belonging to a different ITEM, releasing reserved quantity on an unrelated cell, and the service refuses a reservation that does not match this item, location and work order and refuses an issue larger than the reservation holds, since inv.consume_reservation releases it in full whatever the issued quantity',
+    note: 'closes three defects in inv.issue_part, each reproduced against a live database: D-01 the function posted the out movement BEFORE consuming the reservation, so on_hand fell while reserved was still held and ck_stock_balances_available rejected the write whenever the reservation covered the stock being issued — the natural reserve-exactly-then-issue flow FAILED inside the protected function, and 20260917099000 fixed the function itself to insert part_issues, consume, then post, so there is no hand-ordered second path; every issue is a draw on an approved material requirement through inv.issue_material_request (P1-32-PRE-132), and one with no requirement is refused; D-02 the function selects wo.work_orders.state and never reads the variable, so a draft work order accepts an issue, and the service instead locks the work order and reads the data-driven wo.work_order_states flags so a concurrent transition cannot race the check; D-03 the function consumes whatever reservation id it is handed including one belonging to a different ITEM, releasing reserved quantity on an unrelated cell, and the service refuses a reservation that does not match this item, location and work order and refuses an issue larger than the reservation holds, since inv.consume_reservation releases it in full whatever the issued quantity',
   },
   'inv.stock-return-create': {
     files: ['tests/backend/p1-21-inventory-stock.test.ts'],
@@ -2624,6 +2703,88 @@ export const MANIFEST = {
     required: [],
     note: 'exists because sal.record_receipt takes a payment_method_id and without a way to discover one payment recording is unreachable — the difference between a usable API and a decorative one; scope is tenant and that is FORCED by the table, which has no company_id and no branch_id column at all, so declaring branch would be a claim the schema cannot support and authorizeScope would have nothing coherent to check; the projection reports `recordable` per row, because the three seeded PLATFORM methods are visible to every tenant via sel_payment_methods_scope and citable by NO receipt — fk_receipts_method resolves (tenant_id, payment_method_id) and a platform row’s tenant_id is NULL — so leaving a caller to discover that FK by receiving a 23503 about a method it can see in the list would be the trap this list exists to remove. THE `required` LIST IS EMPTY, AND THAT IS DELIBERATE: this is the only P1-22 operation that parses NO input at all — no path parameter, no query schema, no body — so it has nothing to validate and no state to refuse, and neither `denial` nor `cross-tenant` can be backed by an assertion that is not a fiction. `denial` was in this entry and was REMOVED after the suite author refused to declare an unbacked flag and said so; the same argument this note already made for `cross-tenant` applies to it verbatim, and the obligation had been copy-pasted across the P1-22 block. The derived floor still requires route, service, success and authorization, so this is not an unguarded row — it is a row whose extra obligations were imaginary',
   },
+  'sal.work-order-delivery-read': {
+    files: ['tests/backend/p1-31-delivery-read-seam.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'isolation'],
+    note: 'P1-31 prerequisite P-2, THE RECOVERY SEAM. DeliveryRepository.findLiveDeliveryForWorkOrder existed since P1-22 with no route: its only caller was the duplicate-create refusal in DeliveryService, which answers ERR-RES-002 naming the WORK ORDER and never the delivery, so the delivery id was unrecoverable once the create response was gone and with it the record, the eligibility, the receiver, the checklist and the signatures — six of P1-31 sixteen scope items failed on that one absence (P1-27-INT-084). This publishes the existing read and adds no query and no second mapper, on the sal.work-order-invoice-read precedent from P1-30 A2. Singleton by uq_delivery_records_work_order_active (status <> exception AND deleted_at IS NULL), so no pagination and no ordering contract; a delivery marked exception reports null because the index permits a new one. Absence is 200 with delivery null and NOT 404 — collapsing them would tell a caller no delivery for a work order in a branch they cannot see. Permission is sal.delivery.view, the code the eligibility read already declares and the only delivery READ code the catalogue seeds — NOT sal.delivery.read, which navigation.ts names and the catalogue does not define (RES-05). The proof is a recovery: the delivery is arranged through the real write routes, the authenticator is RESET, and the id is then recovered from the work order alone. Isolation in TWO layers: SAL_SCOPED_A2 gets 404 because RLS hides the parent work order, and SAL_PERMISSION_ELSEWHERE, whose permission-blind app.branch_ids union makes it visible, gets 403 from authorizeScope on the scope read FROM the work-order row (P1-18-A-01)',
+  },
+  'sal.delivery-read': {
+    files: ['tests/backend/p1-31-delivery-read-seam.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'isolation'],
+    note: 'P1-31 prerequisite P-3. Before it the only GET anywhere under /deliveries was eligibility, which answers with BLOCKERS and returns no field of the record — so the work order, vehicle, reception visit, delivering employee, delivered-at and final odometer reading reference were written and never readable (P1-27-INT-084, three of four limbs). Publishes DeliveryRepository.findDelivery through the existing requireDelivery: no new query, no second mapper. NOT-FOUND IS DECIDED FIRST — findDelivery returns null for absent and out-of-scope alike and requireDelivery turns both into one ERR-RES-001 before authorizeScope runs against the row own company and branch, so a foreign tenant learns nothing about existence. recordVersion is published in the body AND as the ETag, because sal.delivery-complete is versionGuarded and parseIfMatch accepts only an exact positive integer with no wildcard while every status advance bumps the counter; this read is now the cheapest current version, where the eligibility read composes eight facts across four modules to publish the same integer. No money crosses: a delivery record has no amount column and finalOdometerReadingId is a veh.odometer_readings REFERENCE rather than a value, asserted by walking the whole document for a number under any money-shaped key',
+  },
+  'sal.delivery-receiver-read': {
+    files: ['tests/backend/p1-31-delivery-read-seam.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'isolation'],
+    note: 'P1-31 prerequisite P-4. findReceiver existed and its only caller was the eligibility composition, which COLLAPSES the row into the boolean receiver_not_verified blocker — so a screen could learn whether a receiver was verified and never who, while the P1-11 frontend data contract asserts a delivery-gated view of receiver identity evidence that no published operation provided. Publishes the existing read unchanged. Absence is 200 with receiver null, the normal state of a fresh delivery; a 404 would make it indistinguishable from a scope refusal, and the DELIVERY visibility is already the not-found decision. deleted_at is deliberately NOT filtered, transcribed from sal.complete_delivery own receiver gate which has none either and from uq_authorized_receivers_delivery being a non-partial UNIQUE — filtering would report no receiver for a delivery the primitive would happily complete. identityEvidenceDocumentVersionId is a REFERENCE and no identity document content is read, stored, logged or returned; the whole row is gated by sal.delivery.view in sel_authorized_receivers_gated, which is the code this operation declares, so the application gate and the row gate are the same code',
+  },
+  'sal.delivery-checklist-result-list': {
+    files: ['tests/backend/p1-31-delivery-read-seam.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'isolation', 'pagination'],
+    note: 'P1-31 prerequisite P-4. NOT a pure publication and the route docblock says so: findChecklistResult is addressed by (delivery, templateItemId) and exists to answer was this ONE item already recorded for the write path, so publishing it as it stands would hand a screen a read it cannot address — the checklist TEMPLATE has no HTTP surface at all (PPD-12, prerequisite P-9) so no caller can discover a template_item_id. The set read is the smallest read that makes recorded results reachable and it reuses toChecklistResult, widened by two joined template columns rather than given a second mapper. itemCode is already on the POST response so publishing it is contract PARITY, and label is already published on the eligibility gap rows; without them a result is an opaque pair of uuids. The join is INNER and total by fk_delivery_checklist_results_item ON DELETE RESTRICT, and carries no ti.deleted_at predicate because a result recorded against a later soft-deleted item is still a recorded fact. deleted_at IS filtered on the RESULT, unlike findChecklistResult which must see a soft-deleted row because the unique index is non-partial. THIS DOES NOT CLOSE P1-27-INT-088: the gap side stays mandatory-only, capped at 20, with missingCount dropped, and the gap scan stays company-scoped. Keyset on sal.delivery_checklist_results:created_at_desc with the cursor minted by cursorTimestamp at MICROSECOND precision (P1-27-INT-006), sorting on a column the response does not carry',
+  },
+  'sal.delivery-signature-list': {
+    files: ['tests/backend/p1-31-delivery-read-seam.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'isolation', 'pagination'],
+    note: 'P1-31 prerequisite P-4. NOT a pure publication and the route docblock says so: findSignature is a REPLAY PROBE addressed by the exact (delivery, signerRole, signatureDocumentVersionId) triple, so a caller must already hold the document-version id to use it — the unrecoverable-identifier problem restated, not a read of the signatures — and hasSignature is a boolean the eligibility read publishes only as signature_missing. The set read is new and reuses toDeliverySignature, so there is no second mapper. PAGED because the set has no ceiling: there is deliberately no unique constraint on (delivery_record_id, signer_role) and the table comment records that corrections are made by APPENDING, so an unbounded SELECT is not available. The cursor is minted by cursorTimestamp on signed_at at microsecond precision because signed_at defaults to now() and signatures attached in one transaction share it exactly (P1-27-INT-006) — the test proves two pages are disjoint on exactly such a pair. References and never bytes, and NO download is offered by this module — a scope boundary and not an impossibility: the shared attachment path refuses a version with ERR-DOC-001 while it is not accepted, which is a state check, and the rest of the P1-22 rule (no application path can produce acceptance, P1-22-L-04) stopped being true when 20260815090000_shared_reception_evidence_foundation.sql granted INSERT on shared.file_scan_results and UPDATE(status) on shared.document_versions, so registerVersionAndScan can produce a verdict (corrected by P1-31 prerequisite P-14); the test asserts the serialised response carries no storageKey, contentType, sha256 or data URI',
+  },
+  'sal.delivery-status-history': {
+    files: ['tests/backend/p1-31-delivery-read-seam.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'isolation', 'pagination'],
+    note: 'P1-31 prerequisite P-5, finding P1-27-INT-089. sal.delivery_status_history is written on EVERY transition and, before this route, was read by nothing anywhere in apps/api/src — appendStatusHistory was the only method that had ever touched the table. So unlike the other four delivery reads there was no existing query to publish and this query and its row mapper are BOTH new, which is recorded rather than glossed. The ledger is the record and not a reconstruction: SELECT and INSERT grants only, no UPDATE and no DELETE for any application role, and shared.stamp_status_history sets actor_id and occurred_at from the session context so a transition cannot be back-dated or re-attributed. NO synthesised origin block, unlike the work-order and job ledgers whose AFTER UPDATE emitters miss the creating insert: sal.delivery_records has no history trigger, every advance appends its own row carrying from_status, and the create writes the genesis row with a null from_status — so the oldest entry is already the origin and the test asserts the response contains no origin key. Keyset newest-first on sal.delivery_status_history:occurred_at_desc, which ix_delivery_status_history_delivery leads on exactly; the tie-break is id rather than the seq identity column because keysetFragment compares (sort, id) and Cursor.i is validated as an identifier. sel_delivery_status_history_scope carries no permission term of its own, so the declared sal.delivery.view is the only application gate and it is the code that gates the receiver and signature rows these transitions are caused by',
+  },
+  'sal.delivery-list': {
+    files: ['tests/backend/p1-31-delivery-list-seam.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'isolation', 'pagination'],
+    note: 'P1-31 prerequisite P-2b, the last limb of the delivery read seam and the chapter first declared API. P-2 through P-5 made a delivery RECOVERABLE from something the caller already held - its own id or its work order id - and left the SET unreadable: nothing anywhere answered which deliveries a branch has, so the screen the Owner decision D-3 describes as a delivery-records reading had no read behind it. The query is NEW and the mapper is not: every finder in DeliveryRepository is addressed by an identifier, so there was no branch-wide read to publish, but rows come back through toDeliveryView and a listed delivery spells every field exactly as sal.delivery-read spells it. companyId and branchId are REQUIRED and are the authorizationTarget, authorized BEFORE any row is read - the exact reverse of the five id-addressed reads on this seam, and for the reason a list has no row to take a scope from: sel_delivery_records_scope narrows on the permission-blind allowed-branch union so an optional pair would read every branch the caller holds any grant in (P1-18-A-01), and authorizing first stops an empty page from reporting whether a branch has deliveries. THREE filters, each a column of the record: status validated against the ck_delivery_records_status vocabulary at the boundary so an unknown value is refused rather than answered with an empty page that reads as none, plus workOrderId and vehicleId. Keyset on sal.delivery_records:created_at_desc with the cursor minted by cursorTimestamp at MICROSECOND precision (P1-27-INT-006), sorting on a column the response does not carry; created_at and NOT delivered_at, which is NULL until the handover completes and cannot order a set most of whose rows have not delivered. NO INDEX AND NO MIGRATION: nothing leads on (tenant, company, branch, created_at) and the sort runs over the already-narrowed branch set, which is the decision wty.warranty-list took on the same evidence. Soft-deleted rows are excluded, as findDelivery excludes them. Permission is sal.delivery.view, the code every read on this seam declares - NOT sal.delivery.read, which navigation.ts names and the catalogue does not define (RES-05). No money crosses: the record has no amount column and finalOdometerReadingId is a veh.odometer_readings REFERENCE rather than a value',
+  },
+  // ---- P1-31 prerequisite P-9 - the checklist TEMPLATE surface (PPD-12) ----
+  //
+  // The two tables landed in P1-11 with INSERT and UPDATE grants and policies and
+  // NOTHING in apps/api/src had ever written either one, so a tenant provisioned
+  // through the product had an empty handover checklist and no way to fill it. Every
+  // suite before this one seeded them by admin SQL; this suite authors every row it
+  // reads through the published routes, because that is the claim under test.
+  'sal.delivery-checklist-template-list': {
+    files: ['tests/backend/p1-31-delivery-checklist-template-seam.test.ts'],
+    required: ['denial'],
+    note: 'P1-31 prerequisite P-9, PPD-12. Paged keyset on sal.delivery_checklist_templates:created_at_desc with the cursor minted by cursorTimestamp at MICROSECOND precision (P1-27-INT-006), sorting on a column the response does not carry; the two pages are asserted disjoint. NO company filter is offered and that is a decision: every row carries its own companyId, sel_delivery_checklist_templates_scope already narrows to iam.allowed_company_ids(), and a filter that can only narrow further is a branch and a denial case for no capability - the svc.service-category-list rule. Scope is TENANT and that is the substantive read decision: the table has a company and NO branch, so a company target would be satisfiable only by a company-wide or unrestricted grant and would deny the checklist to the branch-scoped delivery officer who performs the handover; the suite proves a branch-scoped caller reads it and is refused every write. Inactive templates are NOT hidden, because the restore command would otherwise be unreachable. denial is declared because a caller lacking sal.delivery.view is refused with ERR-IAM-001 while holding sal.delivery.manage, so the refusal is the missing code and nothing else',
+  },
+  'sal.delivery-checklist-template-read': {
+    files: ['tests/backend/p1-31-delivery-checklist-template-seam.test.ts'],
+    required: ['denial'],
+    note: 'P1-31 prerequisite P-9. Returns the template WITH its live items, and the items are deliberately UNPAGED on the dia.template-version-item-list precedent - the order IS the checklist, so a page boundary would cut one in half; ordering is (sort_order, item_code) because sort_order is not unique and two reads must answer in the same order. Withdrawn items are excluded here while a result recorded against a withdrawn item stays readable through sal.delivery-checklist-result-list, whose join carries no ti.deleted_at predicate - the two are consistent on purpose. Absent and out-of-scope answer ONE ERR-RES-001 decided before anything else, so a foreign tenant learns nothing about existence; recordVersion is published in the body AND as the ETag because the rename and the status command are version-guarded and parseIfMatch accepts only an exact positive integer',
+  },
+  'sal.delivery-checklist-template-create': {
+    files: ['tests/backend/p1-31-delivery-checklist-template-seam.test.ts'],
+    required: ['denial'],
+    note: 'P1-31 prerequisite P-9. The header and its items land in ONE transaction, so a half-authored checklist is not a state this surface can produce; a body repeating an item code is refused at the boundary rather than by uq_delivery_checklist_template_items_code, because the constraint would abort the transaction and tell the caller only that a code is in use. THE AUTHORITY IS COMPANY-WIDE and that is measured, not chosen: sal.complete_delivery counts mandatory items by (tenant, company) across ALL templates - a delivery record carries no template reference - so one mandatory item authored here blocks every handover in that company, and a branch-scoped holder of sal.delivery.manage must not be able to do it. The suite proves all three sides: a branch-scoped caller refused, a company-scoped caller admitted in its own company, and the SAME company-scoped caller refused in another. companyId is a CLAIM checked by authorizeScope before the write; a company outside the tenant is refused by fk_delivery_checklist_templates_company, whose tenant half comes from the session context. The body refuses id and status, so a template cannot be born inactive - one offered nowhere while its items still gate. No permission was minted: sal.delivery.manage is reused on the svc.service-category-create rule',
+  },
+  'sal.delivery-checklist-template-rename': {
+    files: ['tests/backend/p1-31-delivery-checklist-template-seam.test.ts'],
+    required: ['denial'],
+    note: 'P1-31 prerequisite P-9. The label and nothing else: templateCode is absent because a re-coded template is a different configuration wearing the old identity and an operator reading a historical audit record could not know the code moved, and status is absent because retiring a checklist is its own command - the authority to fix a typo is not the authority to withdraw a checklist from every branch of a company. If-Match carries the TEMPLATE version, which both the detail read and the create response publish as their ETag; the ITEM routes carry a different counter and the suite exercises that trap directly. A stale version is ERR-CON-001 and the row is asserted unchanged; the new version is the DATABASE row rather than expectedVersion + 1, so the caller next If-Match is not an assumption about shared.touch_row_metadata',
+  },
+  'sal.delivery-checklist-template-status-set': {
+    files: ['tests/backend/p1-31-delivery-checklist-template-seam.test.ts'],
+    required: ['denial'],
+    note: 'P1-31 prerequisite P-9. Bidirectional on the apt.catalogue-source-channel-status-set precedent: uq_delivery_checklist_templates_code names deleted_at and says nothing about status, so an inactive template still holds its code and a retire-only command would burn it for the company permanently. WHAT DEACTIVATION DOES NOT DO is the finding this slice records: sal.complete_delivery counts mandatory items by (tenant, company) filtered on the ITEM deleted_at and never joins the parent template, so an inactive template with a mandatory item still blocks every handover in that company. The suite proves it on real rows in COMPANY_A9 - eligibility reports checklist_incomplete naming the item - and then proves that WITHDRAWING the item clears it. The mirror in the eligibility read is NOT corrected to match what a reader expects, because a mirror that improved on the primitive would report a delivery eligible that the primitive then refuses; correcting the gate is a migration and is recorded as change-control CC-14',
+  },
+  'sal.delivery-checklist-template-item-create': {
+    files: ['tests/backend/p1-31-delivery-checklist-template-seam.test.ts'],
+    required: ['denial'],
+    note: 'P1-31 prerequisite P-9. The later addition - a checklist grows when a workshop decides one more thing must be checked - where the create route authors the first set. isMandatory defaults to false and the route docblock states what true means: a company-wide gate, not a template-scoped one. A duplicate item code inside one template is 23505 on uq_delivery_checklist_template_items_code surfaced as ERR-CON-001 with rule duplicate_code. The ETag is the ITEM version, deliberately not the template one, because that is the value this item own PATCH expects in If-Match. There is no GET on this path: the items come back WITH their template, in checklist order',
+  },
+  'sal.delivery-checklist-template-item-update': {
+    files: ['tests/backend/p1-31-delivery-checklist-template-seam.test.ts'],
+    required: ['denial'],
+    note: 'P1-31 prerequisite P-9. label, isMandatory and sortOrder, each optional, applied with COALESCE so a patch carrying only label cannot silently turn a mandatory item optional - the suite asserts the two untouched fields after a one-field patch. An EMPTY body is refused rather than treated as a no-op that still burns a record version. itemCode is not editable because sal.delivery_checklist_results.template_item_id points at the row BY ID, so re-coding would re-label every outcome ever recorded against it. If-Match is the ITEM version. The parent is checked as well as the item: findTemplateItem resolves within the COMPANY, so without that check this path would edit a sibling template item and report success - the suite addresses an item through the wrong parent and asserts ERR-RES-001',
+  },
+  'sal.delivery-checklist-template-item-remove': {
+    files: ['tests/backend/p1-31-delivery-checklist-template-seam.test.ts'],
+    required: ['denial'],
+    note: 'P1-31 prerequisite P-9. A SOFT delete performed by UPDATE on the tech.technician-skill-withdraw precedent, because neither checklist table carries a DELETE grant or a DELETE policy for any application role and fk_delivery_checklist_results_item is ON DELETE RESTRICT - a hard removal is refused by the database however it is asked for. This is the ONLY affordance that removes an item from the completion gate, since sal.complete_delivery filters mandatory items on exactly the column this sets, and deactivating the parent template does not have that effect. Deliberately NOT version-guarded, following the same precedent: the withdrawal has one possible outcome whatever the label or order happen to be, and a second attempt answers the uniform ERR-RES-001. uq_delivery_checklist_template_items_code is partial on deleted_at IS NULL so the code returns to the template, which the suite proves by adding it again',
+  },
   'sal.delivery-create': {
     files: ['tests/backend/p1-22-delivery.test.ts', 'tests/backend/p1-22-isolation.test.ts'],
     required: ['denial', 'cross-tenant'],
@@ -2633,6 +2794,11 @@ export const MANIFEST = {
     files: ['tests/backend/p1-22-delivery.test.ts', 'tests/backend/p1-22-isolation.test.ts'],
     required: ['denial'],
     note: 'THE FINANCIAL BLOCKER HAS NO DATABASE ENFORCEMENT ANYWHERE: sal.complete_delivery checks a receiver row, mandatory checklist results and one signature, and checks no work-order state, no quality control and no balance — deleting this composition would not fail a single constraint; requires sal.finance.view in ADDITION to the delivery authority, and that is not belt-and-braces: the blocker composes from sal.invoice_open_receivable whose inputs sit behind that permission, so a caller without it would be waved through by an RLS-INVISIBLE ZERO reading as "nothing outstanding", the worst available failure mode for a handover gate; there is no `eligible` input anywhere on this path, the answer is a closed BLOCKER_CODES vocabulary rather than a boolean, and the service FAILS CLOSED on any fact it cannot establish — including treating billing’s null as blocking, which deliberately disagrees with the billing port’s own doc comment because null conflates "nothing invoiced" with "no work order found"',
+  },
+  'sal.delivery-readiness-list': {
+    files: ['tests/backend/p1-31-delivery-readiness-seam.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'isolation', 'pagination'],
+    note: 'P1-31, the Owner D-3 decision of 2026-09-09. The OPERATIONAL ready-for-delivery queue, and it is a different set from GET /api/v1/deliveries: that route lists delivery RECORDS, so a finished work order that owes nothing is invisible to it precisely because nobody has started a handover yet — which is when it is most worth showing. FOUR of the eight BLOCKER_CODES are carried and the other four are ABSENT rather than reported as satisfied: delivery_state_invalid, checklist_incomplete, receiver_not_verified and signature_missing are counted against a delivery row id and are unaskable for a work order that has none, so reporting them would raise receiver_not_verified for every eligible work order in the branch. The four that ARE carried come from composeWorkOrderFacts, which calls the SAME private readers the eligibility composition uses and restates none of them — a second definition of the financial fact is the one gate with no database backstop. NO NEW WORK-ORDER STATUS: ready is not a state anybody sets, it is composed on every read, so a row stops being ready the moment a part is reserved. The candidate predicate is CLOSED AND NOT A CANCELLATION and that conjunction is the trap: the platform graph sets is_closed true for cancelled as well as closed, so is_closed alone would offer every abandoned job, and the suite asserts both catalogue flags on the real row before asserting the exclusion. Three permissions, all NECESSARY and together SUFFICIENT, proved by four principals: SAL_READER holds exactly the three and is admitted, and one principal short of each code is refused ERR-IAM-001. sal.finance.view is the decisive one and it is NOT belt-and-braces — the eligibility route requires it because an RLS-invisible zero would read as "nothing outstanding" — so the caller is refused at the operation and there is no softened fact to test. A DELIVERED work order raises NO blocker here and is still not ready, which the suite asserts directly, because a client inferring readiness from an empty blocker list would offer a vehicle that has already left. Page default 20 and maximum 50, below the platform 50/100 and refused at the boundary rather than clamped, because no batch variant of the four fact sources exists so a page of N costs about 5N round trips — batch fact ports in quality, billing and inventory are the named prerequisite of any larger page. No money crosses: the financial fact is a blocker CODE and a provenance string, never an amount in any spelling',
   },
   'sal.delivery-receiver-verify': {
     files: ['tests/backend/p1-22-delivery.test.ts'],
@@ -2647,22 +2813,81 @@ export const MANIFEST = {
   'sal.delivery-signature-attach': {
     files: ['tests/backend/p1-22-delivery.test.ts'],
     required: ['denial'],
-    note: 'a REFERENCE, never the image: the body carries a shared.document_versions id and nothing else, .strict() makes a body carrying signatureData a refusal rather than an ignored field, and no signature bytes reach an audit detail, an event payload or a log line — the test asserts the audit details and the outbox payload contain no base64-shaped value; NO biometric and NO legal-validation claim is made, because this platform records that a document was bound to a handover and does not assert whose mark it is; bound but never retrievable (P1-22-L-04): the table accepts any document_versions row regardless of status while DOWNLOADABLE_STATES is [accepted] and no application path can produce acceptance — shared.file_scan_results is granted to no role, the transition guard requires a clean scan, and the only runtime UPDATE policy pins pending → rejected — so this phase ships NO retrieval endpoint, because one that fails on every call reads as a capability',
+    note: 'a REFERENCE, never the image: the body carries a shared.document_versions id and nothing else, .strict() makes a body carrying signatureData a refusal rather than an ignored field, and no signature bytes reach an audit detail, an event payload or a log line — the test asserts the audit details and the outbox payload contain no base64-shaped value; NO biometric and NO legal-validation claim is made, because this platform records that a document was bound to a handover and does not assert whose mark it is; bound, and downloadable only once accepted (P1-22-L-04, corrected by P1-31 prerequisite P-14): the table accepts any document_versions row regardless of status while DOWNLOADABLE_STATES is [accepted], so a bound version is refused with ERR-DOC-001 while it is not accepted — a state check and not an impossibility, since 20260815090000_shared_reception_evidence_foundation.sql grants INSERT on shared.file_scan_results and UPDATE(status) on shared.document_versions and registerVersionAndScan can produce a verdict — and this module still ships NO retrieval endpoint of its own, which is a scope statement: retrieval of a shared.document_versions row is the contract of the shared attachment path',
   },
   'sal.delivery-complete': {
     files: ['tests/backend/p1-22-delivery.test.ts', 'tests/backend/p1-22-concurrency.test.ts'],
     required: ['outbox', 'denial'],
     note: 'the point at which the shop’s custody ends, and the three checks the primitive does NOT make are composed here: work-order state, quality control and the financial balance; eligibility is recomputed INSIDE the transaction after locking the row, from the SAME read service that answers the GET, so what a caller was shown and what is enforced are the same code over the same tables — two implementations would be two chances for the financial blocker to be dropped from the one that matters; EXACTLY ONE blocker is overridable (financial_balance_outstanding), it requires a reason, its authority is sal.delivery.complete rather than sal.delivery.manage, and the reason lands in the audit details — the others are not overridable because two of them are enforced INSIDE the primitive, so an override would be accepted here and then fail at the database, and advertising an override that cannot work is worse than not offering one; the test proves financial BLOCKING and authorized override behaviour as separate cases',
   },
+  // ---- P1-31 prerequisite P-10 - the warranty POLICY and COVERAGE surface (PPD-04) ----
+  //
+  // Both tables landed in P1-11 with INSERT and UPDATE grants and policies and NOTHING
+  // in apps/api/src had ever written either one, while wty.policy.manage sat in the
+  // permission catalogue declared by no operation and named by no policy predicate. So
+  // warranty generation refused every company that had no active policy and nothing
+  // could create one: a tenant provisioned through the product could never issue a
+  // warranty at all. Every suite before this one seeded the two tables by admin SQL;
+  // this suite authors every row it reads through the published routes, because that is
+  // the claim under test.
+  'wty.warranty-policy-list': {
+    files: ['tests/backend/p1-31-warranty-policy-seam.test.ts'],
+    required: ['denial'],
+    note: 'P1-31 prerequisite P-10, PPD-04. Paged keyset on wty.warranty_policies:created_at_desc with the cursor minted by cursorTimestamp at MICROSECOND precision (P1-27-INT-006), sorting on a column the response does not carry; the two pages are asserted disjoint, which matters here because a policy and its sibling are frequently authored inside one transaction. Ordered on created_at and NOT on policy_code, which is what listActivePolicies orders on: that read is a disambiguation over a bounded set and this one is a configuration list a person scrolls. ONE filter is offered, status, because the generation form needs the policies a warranty can actually be issued under and resolvePolicy counts exactly the active ones; it is optional and the unfiltered list shows archived rows, or the restore command would be unreachable. NO company filter, on the svc.service-category-list rule: every row carries its own companyId, sel_warranty_policies_scope already narrows to iam.allowed_company_ids(), and a filter that can only narrow further is a branch and a denial case for no capability. Scope is TENANT and that is the substantive read decision: both tables have a company and NO branch, so a company target would deny the policy list to the branch-scoped warranty clerk that wty.warranty-generate is built for. The permission is the READ code wty.warranty.read and not the administration code, and denial is declared because a caller holding only wty.policy.manage is refused with ERR-IAM-001 naming wty.warranty.read',
+  },
+  'wty.warranty-policy-read': {
+    files: ['tests/backend/p1-31-warranty-policy-seam.test.ts'],
+    required: ['denial'],
+    note: 'P1-31 prerequisite P-10. Returns the policy WITH its coverage rows, deliberately UNPAGED on the dia.template-version-item-list precedent: the terms of a policy are read as one thing and the set is bounded by ex_warranty_coverage_no_overlap, which admits at most one ACTIVE row per policy and scope on any day, so only archived history accumulates. Ordered (covered_scope, effective_from, id) - the exclusion constraint excludes only ACTIVE rows so an archived row may repeat the first two and the id is what makes the order total. ARCHIVED coverage IS included, because it is the history explaining a warranty issued under terms since replaced and hiding it would make the reactivation command unreachable. Absent and out-of-scope answer ONE ERR-RES-001 decided before any scope decision, so a foreign tenant learns nothing about existence; recordVersion is published in the body AND as the ETag because the rename and the status command are version-guarded and parseIfMatch accepts only an exact positive integer',
+  },
+  'wty.warranty-policy-create': {
+    files: ['tests/backend/p1-31-warranty-policy-seam.test.ts'],
+    required: ['denial'],
+    note: 'P1-31 prerequisite P-10. The header and its coverage land in ONE transaction, because a policy with no coverage is exactly the configuration the issue primitive refuses with a bare check_violation - POLICY_NO_COVERAGE is a P1-22 fixture precisely because that state is reachable - so a create-then-add-each-only surface would make the half-configured policy the normal outcome of a dropped connection. A body whose own two windows overlap for one scope is refused at the BOUNDARY rather than by the exclusion constraint, which would abort the transaction and tell the caller only that two windows overlap. THE AUTHORITY IS COMPANY-WIDE and that is measured, not chosen: neither table has a branch column, both RLS policies narrow by iam.allowed_company_ids() with no branch clause, and resolvePolicy picks a company only active policy for every branch of it - so one coverage row sets the terms of every warranty issued anywhere in that company. The suite proves all three sides: a BRANCH-scoped holder of wty.policy.manage refused while still reading, a COMPANY-scoped holder admitted in its own company, and the SAME caller refused in another. companyId is a CLAIM checked by authorizeScope before the write; a company outside the tenant is refused by fk_warranty_policies_company, whose tenant half comes from the session context. The body refuses id and status, so a policy cannot be born archived. NOTHING WAS MINTED: wty.policy.manage has been a catalogue row since P1-08 and this is the first operation in the repository to declare it',
+  },
+  'wty.warranty-policy-rename': {
+    files: ['tests/backend/p1-31-warranty-policy-seam.test.ts'],
+    required: ['denial'],
+    note: 'P1-31 prerequisite P-10. The name and nothing else: policyCode is absent because every warranty record cites its policy by id for the life of the warranty and an operator reading one issued last year could not know the code moved, and status is absent because archiving a policy is its own command - the authority to fix a typo is not the authority to stop a company issuing warranties. If-Match carries the POLICY version, which both the detail read and the create response publish as their ETag; a COVERAGE row carries a different counter and the suite exercises that trap directly by moving the policy counter first and then offering it on the coverage path. A stale version is ERR-CON-001 and the row is asserted unchanged; the new version is the DATABASE row rather than expectedVersion + 1, so the caller next If-Match is not an assumption about shared.touch_row_metadata',
+  },
+  'wty.warranty-policy-status-set': {
+    files: ['tests/backend/p1-31-warranty-policy-seam.test.ts'],
+    required: ['denial'],
+    note: 'P1-31 prerequisite P-10. Bidirectional on the apt.catalogue-source-channel-status-set precedent: uq_warranty_policies_code names deleted_at and says nothing about status, so an archived policy still holds its code and an archive-only command would burn it for the company permanently. ARCHIVING DOES NOT CASCADE TO THE COVERAGE ROWS, and the suite asserts that on real rows: wty.issue_warranty filters coverage on the COVERAGE own status and never reads the policy status, so a cascade would change what the primitive resolves for reasons the operator did not choose, and restoring the policy could not tell which rows the cascade archived from which an operator did. What archiving DOES do is remove the policy from listActivePolicies, which is what resolvePolicy counts - the end-to-end case proves a company going from unconfigured, to issuing a warranty carrying the very terms just authored, to unconfigured again after this command, and proves that NAMING the archived policy is a different refusal (ERR-TRN-001 from assertPolicyActive) than omitting it (ERR-RES-001), which is why findPolicy does not filter on status',
+  },
+  'wty.warranty-coverage-create': {
+    files: ['tests/backend/p1-31-warranty-policy-seam.test.ts'],
+    required: ['denial'],
+    note: 'P1-31 prerequisite P-10. The later addition - a policy terms change when next year warranty runs for a different number of months, and the way that is expressed is a NEW window beside the old one rather than an edit of it, because tg_warranty_coverage_immutable freezes policy_id and effective_from and re-closing effective_to in place would restate the terms a customer was already bound to. ex_warranty_coverage_no_overlap is the enforcement point and is reported as ERR-CON-001 with rule overlapping_coverage; the range is HALF-OPEN so a window ending on the day the next begins is legal, which the suite proves, and a different covered_scope over the same days is accepted, which it also proves. odometerAllowance is a STRING and never a JSON number: it is a distance, and veh.odometer_readings.value is numeric and crosses the wire as an exact decimal string everywhere in this codebase - one spelling for the reading and another for the allowance is how a float gets onto the path. It is deliberately NOT called odometerLimit, which is the record ABSOLUTE ceiling rather than this RELATIVE allowance. The ETag is the COVERAGE version, deliberately not the policy one',
+  },
+  'wty.warranty-coverage-status-set': {
+    files: ['tests/backend/p1-31-warranty-policy-seam.test.ts'],
+    required: ['denial'],
+    note: 'P1-31 prerequisite P-10. The command that actually changes a company warranty terms: the issue primitive selects coverage on status = active, so archiving the row effective today stops those terms being granted to the next vehicle while every warranty already issued under it stays readable and intact. A REACTIVATION CAN BE REFUSED and that is not a fault - ex_warranty_coverage_no_overlap is PARTIAL on status = active, so an archived row window may have been re-covered while it was archived, and putting it back would make the terms a customer receives depend on which row the planner returned first. The suite proves the whole sequence on real rows: archive, write a replacement over the freed days, then fail the reactivation with the SAME overlapping_coverage rule an insert produces, with the archived row asserted unchanged so a refused reactivation burns no version. Version-guarded and deliberately NOT idempotent, unlike the policy status command beside it: a stored replay would hide a conflict raised by rows written since, and the version guard already makes a duplicate submission safe. The If-Match is the COVERAGE version. There is no PATCH and no delete: no DELETE grant or policy exists for any application role and fk_warranty_records_coverage is ON DELETE RESTRICT',
+  },
   'wty.warranty-generate': {
     files: ['tests/backend/p1-22-warranty.test.ts', 'tests/backend/p1-22-isolation.test.ts'],
     required: ['outbox', 'denial'],
     note: 'a subresource of the delivery rather than a top-level POST, and the shape carries meaning: wty.guard_warranty_record_coherence refuses an INSERT whose delivery is not delivered and every term is dated from delivered_at, so making the delivery the parent segment means "issue a warranty for nothing" cannot be expressed; the caller may name a policy AND NOTHING ELSE — duration, odometer limit, covered scope and the effective window all come from the coverage row effective at the delivery date, a missing one is a controlled configuration error and never a defaulted twelve months, and an ambiguous or absent policy is a configuration error too because guessing which of two policies a customer’s warranty falls under would be inventing a legal term (denial); the record’s odometer_limit is ABSOLUTE where the coverage’s is RELATIVE and the test asserts that arithmetic; an ARCHIVED policy is refused by the application because wty.issue_warranty checks the coverage status and NEVER the policy’s — a gap closed in code because closing it in the database needs a migration (CC-6)',
   },
+  'wty.warranty-list': {
+    files: ['tests/backend/p1-31-warranty-read-seam.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'isolation', 'pagination'],
+    note: 'P1-31 prerequisite P-6, the chapter second declared API and the second half of VHM-06/WF-26. NOT a pure publication on the sal.work-order-invoice-read rule, and the route docblock says which half fails: every finder in WarrantyRepository is addressed by an identifier the caller must ALREADY hold — a record id, an idempotency key, a delivery id — so there was no branch-wide read to publish and this query is new; the MAPPER is not, rows come back through toRecord and the published row spells every field exactly as wty.warranty-detail spells it, so a screen sees one shape. companyId and branchId are REQUIRED and are the authorizationTarget, authorized BEFORE any row is read: sel_warranty_records_scope narrows on the permission-blind iam.allowed_branch_ids() union, so an optional pair would read every branch the caller holds any grant in (P1-18-A-01), and authorizing first stops an empty page from reporting whether a branch issues warranties. vehicleId is the ONLY filter — A0 records under P-6 that the table carries a NOT NULL vehicle reference so it needs no new column, ix_warranty_records_vehicle already covers it, and the chapter names no other filter, so none is invented. The policy block is carried and not a bare policyId: no operation lists warranty policies (PPD-04, P-10), so an unresolvable identifier would be the very defect this phase keeps finding; the page distinct policies are read in ONE statement on the listReceipts payment-method pattern, never one per row. Keyset on wty.warranty_records:start_date_desc, the ordering listWarrantiesForDelivery already uses on this table, with the id tie-break making it total — start_date is a date so ties are ordinary and P1-27-INT-006 does not apply, because a YYYY-MM-DD rendering truncates nothing and no cursorTimestamp is used. NO MONEY anywhere: wty has 80 columns and not one is an amount, a currency or a cap, and odometerAtIssue/odometerLimit are exact decimal STRINGS for a distance reading',
+  },
   'wty.warranty-detail': {
-    files: ['tests/backend/p1-22-warranty.test.ts', 'tests/backend/p1-22-isolation.test.ts'],
+    files: [
+      'tests/backend/p1-22-warranty.test.ts',
+      'tests/backend/p1-22-isolation.test.ts',
+      'tests/backend/p1-31-warranty-read-seam.test.ts',
+    ],
     required: ['denial'],
-    note: 'reuses wty.warranty.issue because the permission catalogue contains no wty.warranty.read — inventing one needs a seed change outside this phase’s authority, and borrowing wty.policy.manage would be worse, handing coverage administration to a caller who only needs to read a record; carries NO monetary field, and that is not an omission to fill in later: wty has 80 columns and not one is an amount, a currency or a cap in any unit of account, so a covered value here would be a fabricated business fact and the test asserts the response has no key matching /amount|currency|price|cost|value/i; carries no claim history because there is none to carry — status may legally READ claimed_against since it is in ck_warranty_records_status, and nothing in this phase can ever WRITE it (P1-22-L-01), which the test pins structurally so a future edit cannot quietly add a claim route',
+    note: 'RE-POINTED on 2026-09-08 by P1-31 prerequisite P-7 from the WRITE code wty.warranty.issue to the newly minted wty.warranty.read. Until then the permission catalogue held only wty.policy.manage and wty.warranty.issue, so a read was gated on the authority to CREATE a warranty — over-granting by omission — and borrowing wty.policy.manage instead would have been worse, handing coverage administration to a caller who only needs to read a record; both readings are now moot and the least-privilege read code exists, seeded in 04_iam_permission_catalog.sql and carried by the tenant administrator bundle so the re-point removes no capability from a freshly provisioned organisation. The re-point is proved behaviourally rather than asserted: a principal holding ONLY wty.warranty.read reads a warranty issued through the real generation route, and a principal holding ONLY wty.warranty.issue is REFUSED it with ERR-IAM-001 naming wty.warranty.read — so collapsing the two codes turns both cases red. Carries NO monetary field, and that is not an omission to fill in later: wty has 80 columns and not one is an amount, a currency or a cap in any unit of account, so a covered value here would be a fabricated business fact and the test asserts the response has no key matching /amount|currency|price|cost|value/i; carries no claim history because there is none to carry — status may legally READ claimed_against since it is in ck_warranty_records_status, and nothing in this phase can ever WRITE it (P1-22-L-01), which the test pins structurally so a future edit cannot quietly add a claim route',
+  },
+  'wty.warranty-status-history': {
+    files: ['tests/backend/p1-31-warranty-read-seam.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'isolation', 'pagination'],
+    note: 'P1-31 prerequisite P-18, change control CC-10 and the ledger limb of VHM-06/WF-26/PPD-13, which P-6 closed in its list limb and left open here. wty.warranty_status_history is written in exactly ONE place — inside wty.issue_warranty, in the same statement that creates the record — and before this route was read by nothing anywhere in apps/api/src, so exactly as with sal.delivery-status-history under P-5 there was no existing query to publish and this query and its row mapper are BOTH new. NO DDL and NO new permission code: the table, RLS ENABLE and FORCE, sel_warranty_status_history_scope, the SELECT grant to app_runtime and app_readonly and the newest-first index all shipped in 20260724095000_wty_warranty.sql, and wty.warranty.read was minted by P-7. What the ledger holds TODAY is one row per record, the genesis NULL to issued, because nothing in this phase advances wty.warranty_records.status and assertWritableStatus refuses structurally — the honest negative in the suite asserts exactly that row and nothing beside it, and the read is published as a PAGE rather than as that single row because the table is an append-only ledger with no ceiling in the DDL whose later writers are the subject of later work. The ledger is the record and not a reconstruction: SELECT and INSERT grants only, no UPDATE and no DELETE for any application role, and shared.stamp_status_history is a BEFORE INSERT trigger setting actor_id and occurred_at from the session context, so a transition cannot be back-dated or re-attributed and actor_id NOT NULL fails loudly rather than recording an unattributed row. NO synthesised origin block, unlike the work-order and job ledgers whose AFTER UPDATE emitters miss the creating insert: the primitive writes the genesis row itself with a null from_status, so the oldest entry is already the origin and the test asserts the response carries no origin key. Keyset newest-first on wty.warranty_status_history:occurred_at_desc, which ix_warranty_status_history_record leads on exactly, with the cursor minted by cursorTimestamp at MICROSECOND precision because occurred_at defaults to now() and rows written in one transaction share it (P1-27-INT-006); the tie-break is id rather than the seq identity column because keysetFragment compares (sort, id) and Cursor.i is validated as an identifier. The record is read FIRST and authorizeScope runs against the record OWN company and branch, so ERR-RES-001 is decided before any scope decision and the branch target is never caller input; sel_warranty_status_history_scope carries no permission term of its own, so the declared wty.warranty.read is the only application gate and it is the code that already gates the record these transitions belong to. NO MONEY anywhere: wty has 80 columns and not one is an amount, a currency or a cap',
   },
   // ========================================================================
   // PRE-P1-29 Wave B (platform.) — the control plane. The only operations in
@@ -2713,6 +2938,21 @@ export const MANIFEST = {
     required: ['denial', 'audit'],
     note: 'G-4: org.branch.manage guarded nothing; company and branch code are frozen by tg_branches_immutable and status belongs to shared.branch-status-change, so the body carries none of the three',
   },
+  'org.company-create': {
+    files: ['tests/backend/od-organization-administration.test.ts'],
+    required: ['success', 'denial', 'audit', 'idempotency'],
+    note: 'Owner directive: the first writer of org.legal_companies outside org.provision_organization; the ceiling is enforced by tg_legal_companies_capacity and the suite proves the refusal reaches the caller as ERR-CAP-001 with kind, limit and used rather than as ERR-SYS-001',
+  },
+  'org.branch-create': {
+    files: ['tests/backend/od-organization-administration.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'audit', 'idempotency'],
+    note: 'Owner directive: the first writer of org.branches outside provisioning; a new branch is given its three per-branch numbering runs in the same transaction, and a cross-tenant company is a denial rather than a composite-foreign-key fault',
+  },
+  'org.capacity-read': {
+    files: ['tests/backend/od-organization-administration.test.ts'],
+    required: ['success', 'denial', 'cross-tenant'],
+    note: 'Owner directive: the allowances and the subscription behind them, read from org.capacity_usage — the same function the refusal is computed from — so the screen cannot explain a refusal with numbers assembled a second way',
+  },
   'org.department-create': {
     files: ['tests/backend/pre-p1-29-wave-c-company-rbac.test.ts'],
     required: ['denial', 'audit', 'idempotency'],
@@ -2727,6 +2967,36 @@ export const MANIFEST = {
     files: ['tests/backend/pre-p1-29-wave-c-company-rbac.test.ts'],
     required: ['denial', 'audit'],
     note: 'G-6: rename, retire and reinstate; no archive verb, because archiving frees the code via uq_departments_branch_code_live and no shipped operation has precedent for the un-archive collision',
+  },
+  // ---- P1-31 prerequisite P-17 - the employee register (Owner decision 2026-09-10) ----
+  //
+  // The platform had no employee. It had LOGIN ACCOUNTS, and every attempt to name a
+  // person resolved to one: tech.technician_profiles.user_id and
+  // iam.user_employee_links.user_id are both NOT NULL foreign keys into
+  // iam.user_accounts, so neither can hold someone with no reason to sign in. That was
+  // measured before a new table was proposed and it is the whole justification for one.
+  // The same slice gives sal.delivery_records.delivering_employee_id the foreign key it
+  // never had, so these four operations are a PREREQUISITE of the delivery surface
+  // rather than an addition beside it.
+  'org.employee-list': {
+    files: ['tests/backend/p1-31-delivering-employee-seam.test.ts'],
+    required: ['denial'],
+    note: 'P1-31 prerequisite P-17. Keyset-paged on org.employees:created_at_desc, branch-scoped, and the company/branch pair is REQUIRED in the query rather than optional: scope branch is inert without a target because requiresScopedEvaluation returns false on an empty one whatever the declaration says, and app.branch_ids is the permission-blind union of every active grant, so RLS cannot compensate. ONE filter is offered, status, and it is optional because the unfiltered list must show retired employees or the reinstate command would be unreachable from the register it acts on. The permission is the READ code org.employee.read and not the administration code, and denial is declared because a caller holding only org.employee.manage is refused with ERR-IAM-001 naming org.employee.read - the same split org.department carries, proved rather than asserted so that collapsing the two codes goes red',
+  },
+  'org.employee-detail': {
+    files: ['tests/backend/p1-31-delivering-employee-seam.test.ts'],
+    required: ['denial'],
+    note: 'P1-31 prerequisite P-17. Resolves the row FIRST and re-authorizes against the row own company and branch, so a caller cannot reach another branch by naming an id from it. Absent, soft-deleted, out of reach and in another tenant are ONE ERR-RES-001 decided before any scope decision, which is what stops the register becoming a way to enumerate another organisation people. recordVersion is published in the body AND as the ETag because the status command is version-guarded and parseIfMatch accepts only an exact positive integer',
+  },
+  'org.employee-create': {
+    files: ['tests/backend/p1-31-delivering-employee-seam.test.ts'],
+    required: ['denial', 'audit', 'idempotency'],
+    note: 'P1-31 prerequisite P-17, and the FIRST insert into org.employees in the product. userAccountId is OPTIONAL and that single fact is why the table exists: an employee with no login cannot be represented by tech.technician_profiles or iam.user_employee_links, both of which require an account. status is absent from the body so an employee cannot be born retired. The company/branch pair is a CLAIM authorized before the insert and re-checked against what the session can SEE, because an actor holding org.employee.manage unrestricted satisfies the permission for any pair they name and a cross-tenant pair would otherwise reach the INSERT and be refused there as a 500. Both codes are MINTED by this slice and both are carried in the provisioning bundle, because a delivery cannot be created without an employee to name',
+  },
+  'org.employee-status-set': {
+    files: ['tests/backend/p1-31-delivering-employee-seam.test.ts'],
+    required: ['denial', 'audit'],
+    note: 'P1-31 prerequisite P-17. Bidirectional because status is the ONLY retirement this register has - org.employees grants DELETE to no application role and fk_delivery_records_delivering_employee is ON DELETE RESTRICT - so a one-way command would make a mistaken retirement permanent. Retiring stops the employee being named on a NEW handover immediately, at the database, because sal.stamp_delivering_employee_identity refuses a non-active employee on INSERT; it changes nothing about handovers already recorded, each of which carries its own stamped display-name snapshot. Version-guarded and deliberately NOT idempotent, on the wty.warranty-coverage-status-set precedent: a stored replay would hide a conflict raised by a change written since, and the version guard already makes a duplicate submission safe. A missing If-Match is ERR-CON-002 and a stale one ERR-CON-001, asserted as different failures',
   },
   'platform.organization-read': {
     files: ['tests/backend/pre-p1-29-platform-control-plane.test.ts'],
@@ -2743,9 +3013,105 @@ export const MANIFEST = {
     note: 'the sanctioned path to org.provision_organization; tenant.activate is never forwarded, because that branch would close the §6.3 bootstrap window inside the transaction that depends on it',
   },
   'platform.organization-lifecycle': {
-    files: ['tests/backend/pre-p1-29-platform-control-plane.test.ts'],
+    files: [
+      'tests/backend/pre-p1-29-platform-control-plane.test.ts',
+      'tests/backend/p1-32-platform-console.test.ts',
+    ],
     required: ['denial', 'audit'],
-    note: 'the operation that makes the bootstrap window self-closing rather than permanent; the graph is M4s and the history row is M3s, so the route duplicates neither',
+    note: 'the operation that makes the bootstrap window self-closing rather than permanent; the graph is M4s and the history row is M3s, so the route duplicates neither. P1-32-PRE-023 adds a suspended/reactivated subscription event beside the live assignment and a home-tenant audit record carrying target_tenant_id',
+  },
+
+  // ========================================================================
+  // P1-32-PRE-021..026 — the Platform Owner Console backend. Every operation
+  // declares a `platform.` permission, so it runs on the platform connection
+  // and authorizes through iam.has_platform_authority. The derived floor for
+  // `platform.` is route · service · success · authorization plus the
+  // registration-derived cross-tenant / idempotency / stale-version / audit;
+  // `denial` is additive and proves the platform branch is load-bearing by
+  // asserting a 403 for a caller that lacks the specific code.
+  // ========================================================================
+  'platform.session-read': {
+    files: ['tests/backend/p1-32-platform-console.test.ts'],
+    required: ['denial'],
+    note: 'P1-32-PRE-021. GET /auth/session declares the tenant permission iam.user.read and answers 403 to the genesis operator, who holds no tenant role by construction; this is the console session. platformPermissions is read under sel_platform_grants_own, so it lists the caller own codes and cannot enumerate another operator. email and displayName are deliberately absent: app_platform SELECT on iam.user_accounts is column-scoped and widening it would expose every tenant address through the census policy',
+  },
+  'platform.organization-detail': {
+    files: ['tests/backend/p1-32-platform-console.test.ts'],
+    required: ['denial'],
+    note: 'P1-32-PRE-022. Companies, branches, account COUNTS by status, subscriptions, subscription events, status history and capacity used-vs-limit from the active plan. Unknown tenant is 404, never an empty document. Readable for a tenant in ANY state through the *_platform_console policies, where Wave B could only read children of a provisioning tenant',
+  },
+  'platform.plan-list': {
+    files: ['tests/backend/p1-32-platform-console.test.ts'],
+    required: ['denial'],
+    note: 'P1-32-PRE-023. The platform plan catalogue; list_price stays a decimal string from driver to wire',
+  },
+  'platform.plan-create': {
+    files: ['tests/backend/p1-32-platform-console.test.ts'],
+    required: ['denial'],
+    note: 'P1-32-PRE-023. Prices are configured here and never seeded. The entitlement document is validated by org.validate_plan_documents(), the only place that knows which feature flags exist; a price without a currency is refused before the write',
+  },
+  'platform.plan-update': {
+    files: ['tests/backend/p1-32-platform-console.test.ts'],
+    required: ['denial'],
+    note: 'P1-32-PRE-023. If-Match on the table own record_version; plan_code is absent from the body AND from the UPDATE column grant',
+  },
+  'platform.subscription-assign': {
+    files: [
+      'tests/backend/p1-32-platform-console.test.ts',
+      'tests/backend/p1-32-platform-organization-growth.test.ts',
+    ],
+    required: ['denial'],
+    note: 'P1-32-PRE-023. assigned/renewed/upgraded/downgraded are the same two rows and four acts; an upgrade or downgrade onto the plan in force and a renewal onto a different plan are refused 409. The live assignment is closed the day before the new one starts and ex_tenant_subscriptions_no_active_overlap is the final authority on overlap, mapped to 409 rather than a 500',
+  },
+  'platform.subscription-cancel': {
+    files: ['tests/backend/p1-32-platform-console.test.ts'],
+    required: ['denial'],
+    note: 'P1-32-PRE-023. Only an active assignment can be cancelled; the row keeps its period so what the tenant held stays readable',
+  },
+  'platform.charge-list': {
+    files: ['tests/backend/p1-32-platform-console.test.ts'],
+    required: ['denial'],
+    note: 'P1-32-PRE-024. PLATFORM revenue, never tenant revenue: app_runtime holds no grant on org.subscription_charges or org.subscription_receipts. outstanding is computed in SQL numeric and floored at zero',
+  },
+  'platform.charge-record': {
+    files: ['tests/backend/p1-32-platform-console.test.ts'],
+    required: ['denial'],
+    note: 'P1-32-PRE-024. A charge is only ever created open (ins_subscription_charges_platform). A subscriptionId belonging to another organisation is refused, because the foreign key proves existence and not ownership',
+  },
+  'platform.charge-void': {
+    files: ['tests/backend/p1-32-platform-console.test.ts'],
+    required: ['denial'],
+    note: 'P1-32-PRE-024. open -> void only, with a mandatory reason; a settled charge cannot be voided (org.guard_subscription_charge_status)',
+  },
+  'platform.receipt-record': {
+    files: ['tests/backend/p1-32-platform-console.test.ts'],
+    required: ['denial'],
+    note: 'P1-32-PRE-024. Append-only. The receipt currency is the charge currency and a mismatching request is refused; tg_subscription_receipts_settle settles the charge exactly once when the receipts reach its amount',
+  },
+  'platform.organization-company-create': {
+    files: ['tests/backend/p1-32-platform-organization-growth.test.ts'],
+    required: ['denial'],
+    note: 'P1-32-PRE-151. The console adds a legal company to a LIVE organisation through the same iam port org.company-create uses, inside a platform-on-target window for the named tenant. tg_legal_companies_capacity governs it exactly as it governs the tenant operation - the control plane holds EXECUTE on the counting functions since 20260916096000 - so a spent ceiling is ERR-CAP-001 with the kind, limit and usage attached. Audited in the operator home tenant carrying target_tenant_id',
+  },
+  'platform.organization-branch-create': {
+    files: ['tests/backend/p1-32-platform-organization-growth.test.ts'],
+    required: ['denial'],
+    note: 'P1-32-PRE-151. The branch half, and it carries the numbering runs a branch owes: three of the registered runs are per branch and shared.next_display_number refuses rather than degrading, so a copied INSERT would have committed a branch that could never issue an invoice. A company of another organisation is refused by the shared iam port as 403 ERR-IAM-001, never reaching the composite foreign key as a fault',
+  },
+  'platform.organization-administrator-invite': {
+    files: ['tests/backend/p1-32-platform-organization-growth.test.ts'],
+    required: ['denial'],
+    note: 'P1-32-PRE-151. Closes the hole the control plane shipped with: an organisation whose first owner never accepted had nobody who could sign in and no operation could give it one. Reuses the first-owner bootstrap inside the target window - the address lock, the identity rules, the seat ceiling and the refusal recovery - and refuses a second administrator unless one is asked for explicitly with a reason. mode resend writes nothing and reissues the link',
+  },
+  'platform.statistics-read': {
+    files: ['tests/backend/p1-32-platform-console.test.ts'],
+    required: ['denial'],
+    note: 'P1-32-PRE-025. Every figure one SQL aggregate inside the request transaction; revenue per currency as decimal strings, projectedRenewalValue labelled as a planning figure and not a receivable; health reuses foundationReadiness and queueHealth and degrades to nulls rather than zeros when the worker connection is absent',
+  },
+  'platform.audit-search': {
+    files: ['tests/backend/p1-32-platform-console.test.ts'],
+    required: ['denial'],
+    note: 'P1-32-PRE-026. The operator OWN trail: sel_audit_records_platform is tenant_id = current_tenant_id(), so only home-tenant records are reachable; targetTenantId filters by the target_tenant_id detail every platform write stamps. from/to mandatory and capped at 92 days',
   },
 
   // ========================================================================
@@ -2820,6 +3186,351 @@ export const MANIFEST = {
     files: ['tests/backend/p1-30-a2-inventory-reads.test.ts'],
     required: ['success', 'denial', 'cross-tenant', 'isolation', 'pagination'],
     note: 'P1-30 A2 seam S-16, class B, and the read every other stock operation depended on. The location is the SCOPE ANCHOR: inv.post_stock_movement derives company_id and branch_id from it rather than from anything the caller sends, and reserving, issuing, returning, adjusting and recording damage all take a locationId — so before this route every one of those commands required an id the product could not produce, while readLocation existed as an internal scope resolver with no list in front of it. companyId and branchId are REQUIRED and are the authorizationTarget: a branch-blind location list would be a directory of which branches exist and how they are laid out. INACTIVE locations are listed rather than hidden, because stock already sitting in a location that was later deactivated still has to be findable and a picker that omitted it would strand that stock; status is on every row and offered as a filter instead. Ordered by location_code ascending, which uq_stock_locations_code makes total within a branch and which is the string an operator actually reads; name and parentLocationId are carried because two bins in different warehouses can be indistinguishable otherwise. No amount and no quantity crosses — a location is reference data. Falsifiability measured: neutralising the company/branch predicate is RED on three cases with no change to the suite, because the location fixtures already span both branches',
+  },
+  // P1-32 preparatory inventory slice: transfers, goods receipts, cost history,
+  // adjustments and counts. The assertions rest on balances, movement rows, cost
+  // layers and adjustment states rather than on HTTP statuses.
+  'inv.stock-transfer-create': {
+    files: ['tests/backend/p1-32-inventory-operations.test.ts'],
+    required: ['success', 'denial', 'audit', 'outbox', 'idempotency', 'isolation'],
+    note: 'dispatch moves the quantity out of the source and into the branch transit location under the balance lock; the source loses it, the destination does not yet have it, availability never lists the transit cell and reports inTransitQty instead; availability is CHECKED, not freed, so reserved stock refuses the dispatch; a replayed body key returns the same transfer with replayed true and a different request under that key is a conflict',
+  },
+  'inv.stock-transfer-list': {
+    files: ['tests/backend/p1-32-inventory-operations.test.ts'],
+    required: ['success', 'isolation'],
+    note: 'companyId and branchId are the authorizationTarget; direction=inbound matches the destination branch, which reads the row through sel_stock_transfers_destination',
+  },
+  'inv.stock-transfer-receive': {
+    files: ['tests/backend/p1-32-inventory-operations.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'audit', 'outbox', 'idempotency', 'isolation'],
+    note: 'a receipt records what arrived, up to what is still in transit (20260917098000 replaced ck_stock_transfers_received_quantity), and the remainder stays in transit until received, returned to the origin or written off; the row is locked before its status is re-read so a second receipt is refused; a cross-branch receipt settles the source transit AND the destination, so it is authorized at both ends and a destination-only caller who can list the transfer is refused',
+  },
+  'inv.stock-transfer-cancel': {
+    files: ['tests/backend/p1-32-inventory-operations.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'audit', 'outbox', 'idempotency', 'isolation'],
+    note: 'returns the quantity from transit to the origin through the settlement pair; four movements remain with zero net effect; only a dispatched transfer can be cancelled',
+  },
+  'inv.goods-receipt-create': {
+    files: ['tests/backend/p1-32-inventory-operations.test.ts'],
+    required: ['success', 'denial', 'audit', 'idempotency', 'isolation'],
+    note: 'a draft moves nothing; a unit cost is accepted only from a caller holding inv.cost.view in the branch and is otherwise refused on the field rather than silently dropped',
+  },
+  'inv.goods-receipt-list': {
+    files: ['tests/backend/p1-32-inventory-operations.test.ts'],
+    required: ['success', 'isolation'],
+    note: 'branch-scoped by the required companyId/branchId authorizationTarget',
+  },
+  'inv.goods-receipt-read': {
+    files: ['tests/backend/p1-32-inventory-operations.test.ts'],
+    required: ['success', 'cross-tenant', 'isolation'],
+    note: 'lines carry hasUnitCost and never the figure, so an inv.stock.read caller cannot use this read to see cost',
+  },
+  'inv.goods-receipt-post': {
+    files: ['tests/backend/p1-32-inventory-operations.test.ts'],
+    required: [
+      'success',
+      'denial',
+      'cross-tenant',
+      'stale-version',
+      'audit',
+      'outbox',
+      'idempotency',
+      'isolation',
+    ],
+    note: 'one receipt movement per line and one APPENDED cost layer per priced line; an earlier layer keeps its row and figure after a later receipt at a different price, and inv.item_cost_details is never written; a priced posting without inv.cost.view is refused before the gated insert',
+  },
+  'inv.item-cost-history-read': {
+    files: ['tests/backend/p1-32-inventory-operations.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'isolation'],
+    note: 'latest and quantity-weighted average cost are derived in SQL numeric from the layers on every read and stored nowhere; the operation declares inv.cost.view and RLS on the layers requires it again',
+  },
+  'inv.stock-adjustment-create': {
+    files: ['tests/backend/p1-32-inventory-operations.test.ts'],
+    required: ['success', 'denial', 'audit', 'idempotency', 'isolation'],
+    note: 'pending and moves nothing; the restricted value impact needs inv.cost.view; the table has no idempotency column, so replay is the Idempotency-Key header and no second adjustment is written',
+  },
+  'inv.stock-adjustment-list': {
+    files: ['tests/backend/p1-32-inventory-operations.test.ts'],
+    required: ['success', 'isolation'],
+    note: 'branch-scoped list with status, item and location filters',
+  },
+  'inv.stock-adjustment-approve': {
+    files: ['tests/backend/p1-32-inventory-operations.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'audit', 'outbox', 'idempotency', 'isolation'],
+    note: 'inv.adjustment.approve; the requester may not decide their own request (trigger for approvals, inv.reject_adjustment for rejections); only an approval posts a movement and a rejection moves nothing',
+  },
+  'inv.stock-count-open': {
+    files: ['tests/backend/p1-32-inventory-operations.test.ts'],
+    required: ['success', 'denial', 'audit', 'idempotency', 'isolation'],
+    note: 'snapshots on-hand for every item at the location without freezing the ledger; one open count per location (uq_stock_counts_open_location)',
+  },
+  'inv.stock-count-list': {
+    files: ['tests/backend/p1-32-inventory-operations.test.ts'],
+    required: ['success', 'isolation'],
+    note: 'every row carries varianceLineCount and absoluteVarianceQty so a discrepancy is visible without opening the count',
+  },
+  'inv.stock-count-read': {
+    files: ['tests/backend/p1-32-inventory-operations.test.ts'],
+    required: ['success', 'cross-tenant', 'isolation'],
+    note: 'lines carry snapshot, movements during the count, counted quantity, the GENERATED variance and the raised adjustment status',
+  },
+  'inv.stock-count-line-record': {
+    files: ['tests/backend/p1-32-inventory-operations.test.ts'],
+    required: [
+      'success',
+      'denial',
+      'cross-tenant',
+      'stale-version',
+      'audit',
+      'idempotency',
+      'isolation',
+    ],
+    note: 'If-Match on the COUNT version, the aggregate two counters race on; zero is a legal count',
+  },
+  'inv.stock-count-reconcile': {
+    files: ['tests/backend/p1-32-inventory-operations.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'audit', 'idempotency', 'isolation'],
+    note: 'movements posted after the snapshot are folded into the expected quantity, so a transfer mid-count is not reported as a loss; each non-zero variance raises a PENDING adjustment and nothing is posted until a second person approves it',
+  },
+  'inv.stock-count-cancel': {
+    files: ['tests/backend/p1-32-inventory-operations.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'audit', 'idempotency', 'isolation'],
+    note: 'only an open or counting count; raises no adjustment and moves no stock',
+  },
+  // P1-32 preparatory slice 2: item barcodes and packaging identifiers. Tenant-wide
+  // catalogue reference data; the assertions rest on identifier rows and audit rows.
+  'inv.item-identifier-list': {
+    files: ['tests/backend/p1-32-item-identifiers.test.ts'],
+    required: ['success', 'cross-tenant', 'isolation'],
+    note: 'live identifiers first; retired ones only with includeRetired=true; another tenant item answers 404',
+  },
+  'inv.item-identifier-add': {
+    files: ['tests/backend/p1-32-item-identifiers.test.ts'],
+    required: ['success', 'denial', 'audit', 'idempotency', 'isolation'],
+    note: 'requires inv.item.manage granted tenant-wide, so a branch-scoped holder is refused; a retail code with a wrong check digit is refused on body.value; a live duplicate is a conflict; marking a code primary demotes the previous primary; the Idempotency-Key header replays a doubled scan instead of refusing it as a duplicate code',
+  },
+  'inv.item-identifier-retire': {
+    files: ['tests/backend/p1-32-item-identifiers.test.ts'],
+    required: ['success', 'denial', 'audit', 'idempotency', 'isolation'],
+    note: 'the row is kept and its value freed for a new live identifier; retiring twice changes nothing and writes no second audit record',
+  },
+  'inv.item-barcode-assign': {
+    files: ['tests/backend/p1-32-item-identifiers.test.ts'],
+    required: ['success', 'denial', 'audit', 'idempotency', 'isolation'],
+    note: 'RL + nine-digit per-tenant counter + mod-10 check digit, once per item; a second call returns the same code with replayed true and consumes no number; a retired number is never reallocated',
+  },
+  'inv.barcode-resolve': {
+    files: ['tests/backend/p1-32-item-identifiers.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'isolation'],
+    note: 'the scanned value is normalised by the same SQL function that generates the stored column; an unknown code answers 404; availability at a branch needs inv.stock.read there; a code of another tenant does not resolve',
+  },
+  'inv.item-label-data': {
+    files: ['tests/backend/p1-32-item-identifiers.test.ts'],
+    required: ['success', 'cross-tenant', 'isolation'],
+    note: 'primary code else internal code else first live code, with a symbology hint by kind and length; carries no price, because the label is tenant-wide and a selling price is narrowed to a company and a branch, so nothing here could say which one applies',
+  },
+  // P1-32 preparatory slice 2: the selling price of an item, and the counter sale
+  // that resolves it. The assertions rest on invoice rows, invoice line amounts and
+  // the stock movements the issuance posts.
+  'inv.item-sale-price-list': {
+    files: ['tests/backend/p1-32-counter-sales.test.ts'],
+    required: ['success', 'cross-tenant', 'isolation'],
+    note: 'most specific first — branch rows, then company rows, then the tenant-wide row; another tenant item answers 404',
+  },
+  'inv.item-sale-price-set': {
+    files: ['tests/backend/p1-32-counter-sales.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'audit', 'isolation'],
+    note: 'one live row per (item, company, branch), so a second call revises rather than duplicating; a branch narrowing without its company is refused on body.companyId; a tenant-wide price requires inv.item.manage held tenant-wide; the audit record carries the figure as restricted',
+  },
+  'sal.counter-sale-create': {
+    files: ['tests/backend/p1-32-counter-sales.test.ts'],
+    required: ['success', 'denial', 'audit', 'idempotency', 'isolation'],
+    note: 'priced from inv.item_sale_prices and taxed from org.tax_rates inside the database; an item with no price refuses the whole sale; no body field can carry an amount; the draft moves no stock; the Idempotency-Key header replays the first sale',
+  },
+  'sal.counter-sale-list': {
+    files: ['tests/backend/p1-32-counter-sales.test.ts'],
+    required: ['success', 'isolation'],
+    note: 'counter sales only — a work-order invoice in the same branch is never listed',
+  },
+  'inv.sales-return-create': {
+    files: ['tests/backend/p1-32-sales-returns.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'audit', 'idempotency', 'isolation'],
+    note: 'the movement lands in the received location when restockable and in the quarantine location when damaged; the ceiling counts inv.part_returns too; an invoice-line source raises exactly one pending credit note for the returned share of the line gross; a replayed key receives nothing twice',
+  },
+  'inv.sales-return-list': {
+    files: ['tests/backend/p1-32-sales-returns.test.ts'],
+    required: ['success', 'isolation'],
+    note: 'one branch, newest first, narrowable to one source',
+  },
+  'inv.returnable-quantity-read': {
+    files: ['tests/backend/p1-32-sales-returns.test.ts'],
+    required: ['success', 'cross-tenant', 'isolation'],
+    note: 'what left, what has come back through BOTH return tables, and the remainder; a source in another tenant answers 404',
+  },
+  // P1-32 preparatory slice 3b: material demand control, the reference data it is
+  // measured against, and the transfer discrepancy acts. The assertions rest on the
+  // requirement's usage figures, balances, settlement rows and audit rows.
+  'inv.material-requirement-create': {
+    files: ['tests/backend/p1-32-material-demand.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'audit', 'idempotency', 'isolation'],
+    note: 'an entered allowance is pending approval; a derivation with no confirmed specification is stored as approval_required / missing_specification with no allowance, and with one it carries the specification capacity and unit; a second active requirement for the same need on the line is refused; a replayed key returns the first',
+  },
+  'inv.material-requirement-list': {
+    files: ['tests/backend/p1-32-material-demand.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'isolation'],
+    note: 'one branch, narrowable to a work order; a grant in another branch is refused',
+  },
+  'inv.material-requirement-read': {
+    files: ['tests/backend/p1-32-material-demand.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'isolation'],
+    note: 'allowance, approved exceptions, requested, reserved, issued, committed and remaining in the requirement unit, moved by every governed draw and release; another tenant answers 404',
+  },
+  'inv.material-requirement-approve': {
+    files: ['tests/backend/p1-32-material-demand.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'audit', 'idempotency', 'isolation'],
+    note: 'the requester is refused, a caller without inv.material.approve is refused, an approval_required requirement cannot be decided, a rejection needs a reason; approval and rejection are audited',
+  },
+  'inv.material-exception-create': {
+    files: ['tests/backend/p1-32-material-demand.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'audit', 'idempotency', 'isolation'],
+    note: 'finite quantity with a reason on an approved requirement only; pending adds nothing to the allowance',
+  },
+  'inv.material-exception-decide': {
+    files: ['tests/backend/p1-32-material-demand.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'audit', 'isolation'],
+    note: 'the requester, a caller without inv.material.exception.approve, another branch and another tenant are all refused; an approval records the resulting allowance and lets the next draw through',
+  },
+  'inv.unit-conversion-list': {
+    files: ['tests/backend/p1-32-material-demand.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'isolation'],
+    note: 'live rows by default, retired rows on request, narrowed to what applies to one item',
+  },
+  'inv.unit-conversion-set': {
+    files: ['tests/backend/p1-32-material-demand.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'audit', 'idempotency', 'isolation'],
+    note: 'exact factor with its source; a changed factor retires the old row; a branch-scoped grant and a tenant-wide cross-dimension row are refused and write nothing',
+  },
+  'inv.unit-conversion-retire': {
+    files: ['tests/backend/p1-32-material-demand.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'audit', 'idempotency', 'isolation'],
+    note: 'a second retirement changes nothing and is audited once; another tenant answers 404',
+  },
+  'inv.vehicle-specification-list': {
+    files: ['tests/backend/p1-32-material-demand.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'isolation'],
+    note: 'narrowable by make, model, service condition and status',
+  },
+  'inv.vehicle-specification-create': {
+    files: ['tests/backend/p1-32-material-demand.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'audit', 'isolation'],
+    note: 'born recorded with capacity, unit and source; a caller without the code or with a branch-scoped grant writes nothing',
+  },
+  'inv.vehicle-specification-confirm': {
+    files: ['tests/backend/p1-32-material-demand.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'audit', 'idempotency', 'isolation'],
+    note: 'attributable confirmation, once; a confirmed rival with overlapping model years is refused as a conflict; another tenant answers 404',
+  },
+  'inv.vehicle-specification-retire': {
+    files: ['tests/backend/p1-32-material-demand.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'audit', 'idempotency', 'isolation'],
+    note: 'a second retirement changes nothing; another tenant answers 404',
+  },
+  // ---- Owner directive: operational stock alerts ----
+  //
+  // The four stock reads are branch-scoped, so `isolation` is derived; each is
+  // additionally required to prove a `denial`, because an alert a caller should not
+  // see is the same disclosure as the underlying balance they may not read.
+  'inv.reorder-level-set': {
+    files: ['tests/backend/od-inventory-alerts.test.ts'],
+    required: ['success', 'denial', 'audit', 'idempotency', 'isolation'],
+    note: 'one live row per (item, company, branch, location), so a second call revises rather than duplicating and an unchanged call writes nothing at all; a branch narrowing without its company and a location without its branch are refused on the field; an organisation-wide level requires inv.item.manage held across the organisation',
+  },
+  'inv.reorder-level-list': {
+    files: ['tests/backend/od-inventory-alerts.test.ts'],
+    required: ['success', 'denial', 'isolation'],
+    note: 'the configuration list shows every narrowing rather than the winner, so an operator can see the wider row a branch row is overriding; another tenant holding the same authority sees none of it',
+  },
+  'inv.reorder-level-retire': {
+    files: ['tests/backend/od-inventory-alerts.test.ts'],
+    required: [
+      'success',
+      'denial',
+      'cross-tenant',
+      'stale-version',
+      'audit',
+      'idempotency',
+      'isolation',
+    ],
+    note: 'If-Match is required and a stale version is refused; the row is kept and the signature freed, so a replacement can be set at once; a second retirement changes nothing and is audited once; another tenant answers 404',
+  },
+  'inv.low-stock-alert-read': {
+    files: ['tests/backend/od-inventory-alerts.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'isolation'],
+    note: 'an item with no configured level never appears however empty its shelf; the boundary is at, one below and one above the level; a level naming a location is compared against that location alone; quarantine and transit are excluded from a branch total and the response names them; a caller holding every inventory permission in another tenant is refused this branch',
+  },
+  'inv.count-discrepancy-alert-read': {
+    files: ['tests/backend/od-inventory-alerts.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'isolation'],
+    note: 'a reconciled line carries the generated variance the adjustment was raised from and that adjustment approval state; a line counted exactly right is not a discrepancy; a caller holding every inventory permission in another tenant is refused this branch',
+  },
+  'inv.unusual-consumption-alert-read': {
+    files: ['tests/backend/od-inventory-alerts.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'isolation'],
+    note: 'fires at the stated multiple of the median and not one step above it; the absolute floor can refuse on its own; every compared window and the baseline travel with the finding; a period outside the published bounds is refused on query.periodDays; a caller holding every inventory permission in another tenant is refused this branch',
+  },
+  'inv.aged-in-transit-alert-read': {
+    files: ['tests/backend/od-inventory-alerts.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'isolation'],
+    note: 'reported past the age asked about and silent inside it; the remaining quantity is the schema generated outstanding figure and both branches travel with the finding; a caller holding every inventory permission in another tenant is refused this branch',
+  },
+  'org.capacity-alert-read': {
+    files: ['tests/backend/od-organization-administration.test.ts'],
+    required: ['success', 'denial', 'cross-tenant'],
+    note: 'every alert restates a kind org.capacity_usage already reports, with the same figures and a severity from the shared classifier the platform console uses; a tenant exactly on all three ceilings is at-limit on all three with no headroom, a tenant on no plan is flagged for nothing because an unlimited kind cannot run out, and a caller without org.tenant.read is refused',
+  },
+  'inv.stock-transfer-discrepancy-resolve': {
+    files: ['tests/backend/p1-32-material-demand.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'audit', 'idempotency', 'isolation'],
+    note: 'a return to origin posts at once and puts the unit back in the origin; a write-off is born pending and claims its units against a further receipt; a replayed key returns the first settlement; a reader and another tenant are refused',
+  },
+  'inv.stock-transfer-write-off-decide': {
+    files: ['tests/backend/p1-32-material-demand.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'audit', 'isolation'],
+    note: 'the requester, a reader and another tenant are refused; approval takes the units out of transit and settles the transfer; rejection leaves them in transit',
+  },
+  // P1-32-PRE-141: the reads that publish a settlement id to the person who decides it.
+  'inv.stock-transfer-settlement-list': {
+    files: ['tests/backend/p1-32-material-demand.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'isolation'],
+    note: 'lists returns to origin and write-offs, never a receipt, for the sending branch and for the destination branch; narrowed by decision, kind and transfer; a caller without inv.stock.read, a branch that is neither end and another tenant see nothing',
+  },
+  'inv.stock-transfer-settlement-read': {
+    files: ['tests/backend/p1-32-material-demand.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'isolation'],
+    note: 'readable by a reader of the source branch and by a reader of the destination branch only, with who decided it and when; a caller without the code is refused and another tenant answers 404',
+  },
+  // P1-32 preparatory slice 3c: re-check and cancel a requirement; close and cancel
+  // a material request. Asserted on the requirement's status and usage, the released
+  // reservations, and audit and outbox rows.
+  'inv.material-requirement-recheck': {
+    files: ['tests/backend/p1-32-material-demand.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'audit', 'idempotency', 'isolation'],
+    note: 'before the fact exists the requirement stays approval_required and nothing is audited; once the specification is confirmed it takes the capacity and unit and awaits a decision, audited once; a repeated call changes nothing; a caller without inv.material.request, another branch and another tenant are refused',
+  },
+  'inv.material-requirement-cancel': {
+    files: ['tests/backend/p1-32-material-demand.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'audit', 'idempotency', 'isolation'],
+    note: 'refused while quantity is reserved or issued and not returned against it; cancelled with a reason once nothing is committed, audited once; a cancelled requirement allows no draw',
+  },
+  'inv.material-request-close': {
+    files: ['tests/backend/p1-32-material-demand.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'audit', 'idempotency', 'isolation'],
+    note: 'releases the reservations the request still holds by the same act, each audited as a release; what it issued stays counted; a cancelled request is not closed',
+  },
+  'inv.material-request-cancel': {
+    files: ['tests/backend/p1-32-material-demand.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'audit', 'outbox', 'idempotency', 'isolation'],
+    note: 'a reason is required; the held reservation is released once, with its audit row and stock.reservation.released event, and the whole quantity goes back to the allowance; a repeated call says replayed and records nothing more',
   },
 };
 

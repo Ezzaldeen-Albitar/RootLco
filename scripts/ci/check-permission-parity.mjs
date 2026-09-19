@@ -118,8 +118,9 @@ export const FLOORS = Object.freeze({
  * somewhere a route declaration cannot show".
  */
 export const DATABASE_ENFORCED = Object.freeze({
-  'inv.cost.view':
-    'checked twelve times across nine RLS policies on the three restricted cost tables',
+  // `inv.cost.view` left this list with the P1-32 preparatory inventory slice:
+  // `inv.item-cost-history-read` declares it, so it is no longer unreferenced by
+  // executable code and the annotation would describe a state that has ended.
   'iam.login.view_all':
     'one RLS policy — supabase/migrations/20260718098000_iam_rls_grants_hardening.sql:73',
   'rec.reception.receiving_employee.assign_any':
@@ -153,15 +154,11 @@ export const KNOWN_UNCATALOGUED = Object.freeze([
   // `sal.invoice.read` on the billing navigation entry was the first entry here;
   // P1-30 W6 re-gated the entry on `sal.invoice.manage` (the code every invoice
   // read declares) in the change that built the page, and the entry left.
-  {
-    file: 'apps/web/src/config/navigation.ts',
-    code: 'sal.delivery.read',
-    why:
-      'the same defect one entry below, and this one has an obvious intended target: the ' +
-      'catalogue carries sal.delivery.view, sal.delivery.complete and sal.delivery.manage. ' +
-      '`read` is not among them. Recorded rather than corrected here for the same reason.',
-    owner: 'the delivery Frontend phase (P1-30/P1-31), or a Frontend-profile correction before it',
-  },
+  //
+  // `sal.delivery.read` on the delivery navigation entry was the second and last;
+  // P1-31 P-8 re-pointed that gate at `sal.delivery.view` (the code every shipped
+  // delivery read declares) on a Frontend profile, and the entry left. The
+  // register is empty, and a new uncatalogued reference still fails hard.
 ]);
 
 /**

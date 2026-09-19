@@ -20,6 +20,23 @@ INSERT INTO iam.permissions (permission_code, domain, description, risk_level, c
   ('org.branch.manage',        'org', 'Create and update branches',       'medium', '00000000-0000-4000-8000-000000000001'),
   ('org.department.read',      'org', 'Read the department list',         'low',    '00000000-0000-4000-8000-000000000001'),
   ('org.department.manage',    'org', 'Manage departments/structure',     'medium', '00000000-0000-4000-8000-000000000001'),
+  -- P1-31 prerequisite P-17. The employee register is a NEW surface, so both
+  -- codes are minted here rather than borrowed. The split follows the
+  -- org.department pair immediately above and was decided on the same ground:
+  -- anyone who must CHOOSE a delivering employee needs to read the list, and
+  -- reusing the manage code for that would force every handover clerk to hold
+  -- the authority to alter the organisation's roster — "over-granting by
+  -- omission rather than by decision", which this catalogue names as the failure
+  -- it exists to prevent.
+  --
+  -- Risk 'low' for the read: org.employees carries a display name, an opaque
+  -- employment reference, a scope and a status. No contact detail, no contract,
+  -- no national identifier and no monetary column, so it exposes no restricted
+  -- data. Risk 'medium' for the write, beside org.department.manage: it changes
+  -- who the organisation says its people are, and a retired employee can no
+  -- longer be named on a handover.
+  ('org.employee.read',        'org', 'Read the employee register',       'low',    '00000000-0000-4000-8000-000000000001'),
+  ('org.employee.manage',      'org', 'Create employees and set their status', 'medium', '00000000-0000-4000-8000-000000000001'),
   ('org.settings.manage',      'org', 'Manage company/branch settings',   'high',   '00000000-0000-4000-8000-000000000001'),
   ('org.tax.manage',           'org', 'Manage tax classes and rates',     'high',   '00000000-0000-4000-8000-000000000001'),
   ('org.subscription.manage',  'org', 'Manage tenant subscriptions',      'high',   '00000000-0000-4000-8000-000000000001'),
@@ -57,6 +74,30 @@ INSERT INTO iam.permissions (permission_code, domain, description, risk_level, c
   ('inv.custody.manage',       'inv', 'Record custody of customer-supplied parts','medium', '00000000-0000-4000-8000-000000000001'),
   ('inv.external_purchase.record','inv','Record ad-hoc external purchase references','medium','00000000-0000-4000-8000-000000000001'),
   ('inv.audit.read',           'inv', 'Read inventory reconciliation evidence',  'high',   '00000000-0000-4000-8000-000000000001'),
+  -- P1-32 preparatory slice 3a — material demand control. Five codes, because five
+  -- different authorities are involved and collapsing any two would let one person
+  -- do another's job:
+  --   * requesting material for a job is not approving how much the job may take,
+  --     and the database refuses an approval by the requester in any case
+  --     (ck_material_requirements_separation) — so the requester and the approver
+  --     hold two codes, and a storekeeper who issues stock needs neither;
+  --   * approving an EXCEPTION beyond an approved allowance is a stronger authority
+  --     than approving the allowance. It is a dedicated code rather than an
+  --     iam.approval_limits limit type because that table is monetary only
+  --     (amount with a NOT NULL currency_code), and a quantity of litres has no
+  --     currency — see 20260917097000_inv_material_requirements.sql;
+  --   * stating how many litres a pack holds, and recording a vehicle's service
+  --     capacity with its source, are reference-data authorities that change what
+  --     every later requirement is measured against, so neither rides on
+  --     inv.item.manage.
+  -- The transfer write-off added in the same slice reuses inv.adjustment.approve
+  -- (a second person approving a stock loss), and a partial receipt or a return to
+  -- origin reuses inv.stock.operate; neither mints a code.
+  ('inv.material.request',     'inv', 'Request material for a work order service line', 'medium', '00000000-0000-4000-8000-000000000001'),
+  ('inv.material.approve',     'inv', 'Approve how much material a work order may use',  'high',   '00000000-0000-4000-8000-000000000001'),
+  ('inv.material.exception.approve', 'inv', 'Approve extra material beyond an approved amount', 'high', '00000000-0000-4000-8000-000000000001'),
+  ('inv.unit_conversion.manage', 'inv', 'Manage exact unit conversions for items',       'medium', '00000000-0000-4000-8000-000000000001'),
+  ('inv.specification.manage', 'inv', 'Record and confirm vehicle service capacities',   'medium', '00000000-0000-4000-8000-000000000001'),
   -- Phase 1-11 — Billing & Payment (sal)
   ('sal.invoice.manage',       'sal', 'Create and manage draft invoices',         'medium', '00000000-0000-4000-8000-000000000001'),
   ('sal.invoice.issue',        'sal', 'Issue invoices (allocate numbers)',         'high',   '00000000-0000-4000-8000-000000000001'),
@@ -72,6 +113,27 @@ INSERT INTO iam.permissions (permission_code, domain, description, risk_level, c
   -- Phase 1-11 — Warranty (wty)
   ('wty.policy.manage',        'wty', 'Manage warranty policies and coverage',      'medium', '00000000-0000-4000-8000-000000000001'),
   ('wty.warranty.issue',       'wty', 'Issue warranty records',                     'medium', '00000000-0000-4000-8000-000000000001'),
+  -- P1-31 prerequisite P-7. The wty domain shipped with two WRITE codes and no
+  -- read code at all, so the warranty detail read was gated on wty.warranty.issue
+  -- — the authority to CREATE a warranty — and its own docblock recorded the
+  -- reason: the catalogue defined no wty.warranty.read, and borrowing
+  -- wty.policy.manage instead "would be worse: it grants coverage administration
+  -- to a caller who only needs to look at a record". Reading a warranty and
+  -- issuing one are different authorities, exactly as they are at
+  -- wo.work_order.read, rec.reception.read, apt.appointment.read and
+  -- quo.quotation.read, each of which was minted for this same reason.
+  --
+  -- Deliberately LEAST PRIVILEGE: it authorizes reading warranty records, the
+  -- coverage terms they cite and the jobs and parts they cover, and nothing else.
+  -- It implies no issue, no policy or coverage administration and no status
+  -- change; wty.warranty.issue and wty.policy.manage keep every write they gate.
+  --
+  -- Risk 'low', beside the other domain read codes. wty has 80 columns, all
+  -- classified 'internal' and none 'restricted', and NOT ONE of them is monetary
+  -- — no amount, no currency and no cap in any unit of account — so this code
+  -- exposes no money and no restricted identifier. That is why it is not
+  -- 'medium' like svc.price.read, whose subject is commercially sensitive.
+  ('wty.warranty.read',        'wty', 'Read warranty records, coverage terms and covered items', 'low', '00000000-0000-4000-8000-000000000001'),
   -- Phase 1-11 — Reporting configuration (rpt)
   ('rpt.report.configure',     'rpt', 'Manage report configurations',              'medium', '00000000-0000-4000-8000-000000000001'),
   ('rpt.export',               'rpt', 'Export report data (audited downstream)',    'high',   '00000000-0000-4000-8000-000000000001'),
@@ -364,7 +426,25 @@ INSERT INTO iam.permissions (permission_code, domain, description, risk_level, c
   -- ------------------------------------------------------------------------
   ('platform.organization.read',      'platform', 'Read any organization from the control plane', 'medium', '00000000-0000-4000-8000-000000000001'),
   ('platform.organization.provision', 'platform', 'Create a tenant and its first Owner',          'high',   '00000000-0000-4000-8000-000000000001'),
-  ('platform.organization.lifecycle', 'platform', 'Transition a tenant lifecycle status',         'high',   '00000000-0000-4000-8000-000000000001')
+  ('platform.organization.lifecycle', 'platform', 'Transition a tenant lifecycle status',         'high',   '00000000-0000-4000-8000-000000000001'),
+
+  -- ------------------------------------------------------------------------
+  -- P1-32-PRE-020 — the Platform Owner Console. Six further codes in the same
+  -- domain, resolved by the same predicate, mapped to NO role for the same
+  -- reason: a platform grant is an out-of-band operator act.
+  --
+  -- The split is by ACT rather than by screen, so revoking one authority
+  -- removes one capability and nothing else. `platform.organization.manage`
+  -- ships with the code and without a route: the operations that add a company
+  -- or a branch to an EXISTING organisation arrive in a later slice, and a code
+  -- seeded ahead of its route is held by nobody and reachable by nothing.
+  -- ------------------------------------------------------------------------
+  ('platform.organization.manage',    'platform', 'Administer an existing organization structure and its administrators', 'high',   '00000000-0000-4000-8000-000000000001'),
+  ('platform.subscription.manage',    'platform', 'Administer subscription plans and tenant assignments',                 'high',   '00000000-0000-4000-8000-000000000001'),
+  ('platform.billing.read',           'platform', 'Read platform subscription charges and receipts',                      'medium', '00000000-0000-4000-8000-000000000001'),
+  ('platform.billing.manage',         'platform', 'Record and void platform subscription charges and receipts',           'high',   '00000000-0000-4000-8000-000000000001'),
+  ('platform.statistics.read',        'platform', 'Read platform-wide statistics and operational health',                 'medium', '00000000-0000-4000-8000-000000000001'),
+  ('platform.audit.read',             'platform', 'Read the platform operator audit trail',                               'medium', '00000000-0000-4000-8000-000000000001')
 ON CONFLICT (permission_code) DO NOTHING;
 
 DO $$

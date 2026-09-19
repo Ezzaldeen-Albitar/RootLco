@@ -95,6 +95,36 @@ export interface OperationDeclaration {
    * the two disagree, so this field is checked rather than trusted.
    */
   readonly successStatus?: 200 | 201 | 202 | 204;
+  /**
+   * The status an idempotent create answers with when it REPLAYS what it already
+   * created — the handler's `status: x.replayed ? 200 : 201`. Published beside
+   * `successStatus` (and named in `x-replay-status`) so a client is told both
+   * answers the operation gives.
+   *
+   * Until it existed the gate could not read that ternary as a literal, resolved it
+   * to 200, and the contract advertised ONLY the replay status for the create —
+   * `inv.stock-transfer-discrepancy-resolve`, `inv.counter-sale-create` and the other
+   * replayable inventory creates published a 200 they return only on a retry, and
+   * no 201 at all. `check-openapi-success-status.mjs` now reads the ternary and
+   * holds this field to it.
+   */
+  readonly replayStatus?: 200;
+  /**
+   * Whether the operation answers `404 ERR-RES-001` for a resource it addresses
+   * that is absent or not visible to the caller, so the published contract lists
+   * that response. Defaults to false.
+   *
+   * It exists because the contract derived every failure status from the other
+   * declarations and none of them implies a not-found, so reads that do answer
+   * one published no 404 at all (P1-31 CC-54 (b)). Declared per operation rather
+   * than inferred from a path parameter, because a parameterised operation may
+   * legitimately refuse instead — a uniform 403, or a 200 with an empty body.
+   */
+  readonly answersNotFound?: boolean;
+  /** Optional JSON Schemas supplied by the operation's runtime validators. */
+  readonly requestBodySchema?: Readonly<Record<string, unknown>>;
+  readonly successBodySchema?: Readonly<Record<string, unknown>>;
+  readonly pathParameterSchemas?: Readonly<Record<string, Readonly<Record<string, unknown>>>>;
 }
 
 export interface RegisteredOperation extends OperationDeclaration {
@@ -115,13 +145,14 @@ export class OperationRegistrationError extends Error {
 
 const ID_PATTERN = /^[a-z][a-z0-9-]*(\.[a-z][a-z0-9-]*)+$/;
 /**
- * Each segment is either a lower-case literal or a `{camelCase}` parameter.
+ * Each segment is either a lower-case literal or a `{camelCase}` parameter,
+ * optionally followed by a lower-case custom action, e.g. `{reportCode}:export`.
  *
  * P1-13's pattern was a character class, which accepted `/a{b}c}` and rejected
  * `{userId}` (no upper case) — fine while no route had a parameter, wrong as
  * soon as one did. This form states the grammar instead of the alphabet.
  */
-const PATH_PATTERN = /^(?:\/(?:[a-z0-9-]+|\{[a-z][a-zA-Z0-9]*\}))+$/;
+const PATH_PATTERN = /^(?:\/(?:[a-z0-9-]+|\{[a-z][a-zA-Z0-9]*\}(?::[a-z][a-z0-9-]*)?))+$/;
 
 /**
  * Registers an operation. Throws — loudly, at import time — when the declaration

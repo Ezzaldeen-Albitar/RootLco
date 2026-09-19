@@ -40,16 +40,28 @@ const CATALOGUE_OK: CatalogueResult = {
  * the one that helps: create the record that was not found, gated on the
  * permission to create it. In both locales, because a mistranslated empty state
  * is still a wrong empty state.
+ *
+ * ## The work-order board's search inputs (P1-32)
+ *
+ * The board gained a number box and a free-text box. They are exercised here,
+ * beside the other two search screens, because the claims are the same kind:
+ * nothing is read while typing, Enter submits exactly what was typed beside the
+ * required branch target, a one-character search is refused before a request,
+ * an empty result is a statement about the search, and a denial is a denial.
  */
 
 const searchCustomers = vi.fn();
 const searchVehicles = vi.fn();
+const listWorkOrders = vi.fn();
 
 vi.mock('@/features/crm/customers/api', () => ({
   searchCustomers: (...a: unknown[]) => searchCustomers(...a),
 }));
 vi.mock('@/features/vehicles/api', () => ({
   searchVehicles: (...a: unknown[]) => searchVehicles(...a),
+}));
+vi.mock('@/features/work-orders/api', () => ({
+  listWorkOrders: (...a: unknown[]) => listWorkOrders(...a),
 }));
 
 const push = vi.fn();
@@ -58,6 +70,8 @@ vi.mock('next/navigation', () => ({ useRouter: () => ({ push }) }));
 const { CustomerSearchScreen } =
   await import('@/features/crm/customers/components/CustomerSearchScreen');
 const { VehicleSearchScreen } = await import('@/features/vehicles/components/VehicleSearchScreen');
+const { WorkOrderQueueScreen } =
+  await import('@/features/work-orders/components/WorkOrderQueueScreen');
 
 const EMPTY_PAGE = {
   status: 'ok',
@@ -90,7 +104,7 @@ describe('the customer search distinguishes "not searched" from "no match"', () 
   it('does NOT claim the tenant has no customers after a search that matched none', async () => {
     const user = userEvent.setup();
     const { container } = render();
-    await user.type(screen.getByLabelText(en['crm.customers.search.name']), 'Zzz{Enter}');
+    await user.type(screen.getByLabelText(en['crm.customers.search.q']), 'Zzz{Enter}');
     await waitFor(() => expect(searchCustomers).toHaveBeenCalled());
 
     expect(await screen.findByText(en['crm.customers.search.noMatch'])).toBeInTheDocument();
@@ -104,7 +118,7 @@ describe('the customer search distinguishes "not searched" from "no match"', () 
   it('offers to create the customer that was not found', async () => {
     const user = userEvent.setup();
     render(true);
-    await user.type(screen.getByLabelText(en['crm.customers.search.name']), 'Zzz{Enter}');
+    await user.type(screen.getByLabelText(en['crm.customers.search.q']), 'Zzz{Enter}');
     await screen.findByText(en['crm.customers.search.noMatch']);
     expect(screen.getByTestId('add-individual-customer')).toBeInTheDocument();
     expect(screen.getByTestId('add-company-customer')).toBeInTheDocument();
@@ -113,7 +127,7 @@ describe('the customer search distinguishes "not searched" from "no match"', () 
   it('offers nothing to an operator who may not create one', async () => {
     const user = userEvent.setup();
     render(false);
-    await user.type(screen.getByLabelText(en['crm.customers.search.name']), 'Zzz{Enter}');
+    await user.type(screen.getByLabelText(en['crm.customers.search.q']), 'Zzz{Enter}');
     await screen.findByText(en['crm.customers.search.noMatch']);
     // A control whose only outcome is a 403 is worse than no control.
     expect(screen.queryByTestId('add-individual-customer')).not.toBeInTheDocument();
@@ -122,7 +136,7 @@ describe('the customer search distinguishes "not searched" from "no match"', () 
   it('says it in Arabic too', async () => {
     const user = userEvent.setup();
     const { container } = renderRtl(<CustomerSearchScreen locale="ar" messages={ar} canCreate />);
-    await user.type(screen.getByLabelText(ar['crm.customers.search.name']), 'Zzz{Enter}');
+    await user.type(screen.getByLabelText(ar['crm.customers.search.q']), 'Zzz{Enter}');
     expect(await screen.findByText(ar['crm.customers.search.noMatch'])).toBeInTheDocument();
     expect(container.textContent ?? '').not.toContain(ar['state.empty.title']);
   });
@@ -176,6 +190,95 @@ describe('the vehicle search distinguishes them as well', () => {
     await user.type(screen.getByLabelText(ar['vehicles.search.plate']), 'ZZ-9999{Enter}');
     expect(await screen.findByText(ar['vehicles.search.noMatch'])).toBeInTheDocument();
     expect(container.textContent ?? '').not.toContain(ar['state.empty.title']);
+  });
+});
+
+describe('the work-order board searches by number and free text (P1-32)', () => {
+  const COMPANY = '11111111-1111-4111-8111-111111111111';
+  const BRANCH = '22222222-2222-4222-8222-222222222222';
+  const ROW = {
+    id: '33333333-3333-4333-8333-333333333333',
+    companyId: COMPANY,
+    branchId: BRANCH,
+    receptionVisitId: '44444444-4444-4444-8444-444444444444',
+    vehicleId: '55555555-5555-4555-8555-555555555555',
+    kind: 'ordinary',
+    state: 'open',
+    partsForwardState: 'none',
+    displayNumber: 'WO-000123',
+    openedAt: '2026-09-01T09:30:00.000Z',
+    recordVersion: 1,
+    customer: null,
+    vehicle: { registrationPlate: 'ABC-1234', makeModel: null },
+  };
+
+  beforeEach(() => {
+    listWorkOrders.mockReset();
+    listWorkOrders.mockResolvedValue({ ...EMPTY_PAGE, rows: [ROW] });
+  });
+
+  const render = () =>
+    renderLtr(
+      <WorkOrderQueueScreen locale="en" messages={en} companyIds={[COMPANY]} branchIds={[BRANCH]} />
+    );
+
+  it('issues no request while typing', async () => {
+    const user = userEvent.setup();
+    render();
+    await user.type(screen.getByLabelText(en['workOrders.queue.searchFilter']), 'Nadia');
+    expect(listWorkOrders).not.toHaveBeenCalled();
+  });
+
+  it('submits number and search on Enter, as typed, beside the branch target', async () => {
+    const user = userEvent.setup();
+    render();
+    await user.type(screen.getByLabelText(en['workOrders.queue.numberFilter']), 'WO-000123');
+    await user.type(screen.getByLabelText(en['workOrders.queue.searchFilter']), 'ABC{Enter}');
+
+    await waitFor(() => expect(listWorkOrders).toHaveBeenCalledTimes(1));
+    const [target, criteria] = listWorkOrders.mock.calls[0] as [unknown, unknown];
+    expect(target).toEqual({ companyId: COMPANY, branchId: BRANCH });
+    expect(criteria).toEqual({ number: 'WO-000123', q: 'ABC' });
+    expect(await screen.findByText('WO-000123')).toBeInTheDocument();
+  });
+
+  it('refuses a one-character search and says why, without a request', async () => {
+    const user = userEvent.setup();
+    render();
+    await user.type(screen.getByLabelText(en['workOrders.queue.searchFilter']), 'A{Enter}');
+    expect(await screen.findByText(en['workOrders.queue.searchTooShort'])).toBeInTheDocument();
+    expect(listWorkOrders).not.toHaveBeenCalled();
+  });
+
+  it('echoes Arabic-Indic digits for reading and sends the number as typed', async () => {
+    const user = userEvent.setup();
+    renderRtl(
+      <WorkOrderQueueScreen locale="ar" messages={ar} companyIds={[COMPANY]} branchIds={[BRANCH]} />
+    );
+    const box = screen.getByLabelText(ar['workOrders.queue.numberFilter']);
+    await user.type(box, '١٢٣');
+    expect(screen.getByTestId('digits-echo')).toHaveTextContent('123');
+    await user.type(box, '{Enter}');
+    await waitFor(() => expect(listWorkOrders).toHaveBeenCalledTimes(1));
+    const [, criteria] = listWorkOrders.mock.calls[0] as [unknown, { number?: string }];
+    expect(criteria.number).toBe('١٢٣');
+  });
+
+  it('states an empty result as a statement about the search', async () => {
+    listWorkOrders.mockResolvedValue(EMPTY_PAGE);
+    const user = userEvent.setup();
+    const { container } = render();
+    await user.type(screen.getByLabelText(en['workOrders.queue.searchFilter']), 'zz{Enter}');
+    expect(await screen.findByText(en['workOrders.queue.noneMatching'])).toBeInTheDocument();
+    expect(container.textContent ?? '').not.toContain(en['state.empty.title']);
+  });
+
+  it('renders a denial as a denial, not as an empty board', async () => {
+    listWorkOrders.mockResolvedValue({ ...EMPTY_PAGE, status: 'denied' });
+    const user = userEvent.setup();
+    render();
+    await user.type(screen.getByLabelText(en['workOrders.queue.searchFilter']), 'zz{Enter}');
+    expect(await screen.findByText(en['state.denied.title'])).toBeInTheDocument();
   });
 });
 

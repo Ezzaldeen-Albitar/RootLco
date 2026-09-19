@@ -839,7 +839,7 @@ describe('P1-27-QA-004 — conflict copy follows the catalog code', () => {
     expect(others.length).toBeGreaterThanOrEqual(9);
     for (const code of others) {
       const state = await conflictState({ status: 409, code, correlationId: `corr-${code}` });
-      expect(state.messageKey, `${code} must not claim a concurrent edit`).toBe(BLOCKED);
+      expect(state.messageKey, `${code} must not claim a concurrent edit`).toBe(own(code));
     }
   });
 
@@ -1740,3 +1740,20 @@ describe('a violation on a route parameter is read whatever the status was', () 
     expect(fromFailure(revoked, 1).messageKey).toBe('state.conflict.blocked.title');
   });
 });
+
+/**
+ * The sentence a 409 reaches a form with. Only the two capacity refusals have one
+ * of their own — they name the ceiling, so the action result can state it
+ * (`capacity-refusal.test.ts`) — and neither claims a concurrent edit; every
+ * other code keeps the sentence that claims nothing. Declared at the end of the
+ * file so no line above moves under the P1-27 citation anchors.
+ */
+function own(code: string): string {
+  if (code === 'ERR-CAP-001') return 'capacity.reached.unknown';
+  if (code === 'ERR-CAP-002') return 'capacity.organisationInactive';
+  // The plan-below-usage refusal is not final: it names what would be over the
+  // ceiling and can be accepted deliberately, so it gets its own sentence rather
+  // than the blocked one.
+  if (code === 'ERR-CAP-003') return 'capacity.planBelowUsage';
+  return 'state.conflict.blocked.title';
+}

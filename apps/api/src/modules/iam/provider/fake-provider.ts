@@ -70,6 +70,20 @@ export interface FakeDelivery {
 export class FakeIdentityProvider implements IdentityProvider {
   readonly name = 'supabase';
   readonly supportsDisable = true;
+  readonly supportsDelete = true;
+  /** Set to make the next `deleteIdentity` fail, so the compensation gap is testable. */
+  refuseDelete = false;
+  /**
+   * The double's own credential policy, modelled rather than injected.
+   *
+   * GoTrue refuses a password below a configured minimum with a 422 and a
+   * sentence of its own. A double that accepted everything would leave the
+   * refusal path untested and would let a test believe RootLco has no strength
+   * rule *because nothing ever refused*, rather than because the provider owns
+   * the rule. The number is the double's, not a RootLco policy: no application
+   * code reads it.
+   */
+  passwordMinLength = 8;
 
   private readonly identities = new Map<string, FakeIdentityRecord>();
   private readonly revokedSessions = new Set<string>();
@@ -257,14 +271,40 @@ export class FakeIdentityProvider implements IdentityProvider {
     return this.toIdentity(record);
   }
 
+  /**
+   * Invites, or re-sends to an identity that never finished accepting.
+   *
+   * The re-send arm is not a convenience: it is what the real provider does.
+   * GoTrue's invite endpoint looks the address up first and refuses only an
+   * identity that is already **confirmed**; an unconfirmed one is re-issued a
+   * fresh link under its existing subject. A double that refused every known
+   * address would have made the orphan-recovery path look impossible when the
+   * deployed adapter handles it, which is the shape of double that turns a test
+   * suite into evidence for the wrong system. A disabled identity is refused
+   * here as well — a cancelled invitation disables its identity, and reviving one
+   * by re-invitation would undo an administrator's decision.
+   */
   async invite(request: InviteRequest): Promise<ProviderIdentity> {
     this.assertUp();
     const existing = this.byEmail(request.email);
     if (existing) {
-      throw new ProviderFailure(
-        'identity-conflict',
-        'An identity already exists for that address.'
-      );
+      if (existing.confirmed || existing.disabled) {
+        throw new ProviderFailure(
+          'identity-conflict',
+          'An identity already exists for that address.'
+        );
+      }
+      // Same subject, fresh link, and the binding rewritten exactly as the
+      // adapter's own `invite` rewrites it through `bindTenant`.
+      existing.tenantId = request.tenantId;
+      existing.recoveryToken = randomUUID();
+      this.deliveries.push({
+        kind: 'invite',
+        email: existing.email,
+        redirectTo: request.redirectTo,
+        token: existing.recoveryToken,
+      });
+      return this.toIdentity(existing);
     }
     const record = this.seed({
       email: request.email,
@@ -323,6 +363,67 @@ export class FakeIdentityProvider implements IdentityProvider {
     return this.toIdentity(record);
   }
 
+  /**
+   * Removes one identity, addressed by subject. Removing an unknown subject is a
+   * no-op, matching the adapter's treatment of a 404 as the end state already
+   * reached, so a retried compensation is idempotent in both implementations.
+   */
+  async deleteIdentity(subject: string): Promise<void> {
+    this.assertUp();
+    if (this.refuseDelete) {
+      throw new ProviderFailure('identity-unavailable', 'The identity could not be removed.');
+    }
+    this.identities.delete(subject);
+    await this.revokeAllSessions(subject);
+  }
+
+  /**
+   * Capability 14 — write a new credential for `subject`.
+   *
+   * Refuses by its own policy exactly as the adapter reports GoTrue's: a
+   * `credential-policy-rejected` carrying the provider's sentence, which the
+   * one caller writes to the operator log and never to a response. Sessions are
+   * NOT ended here, matching the adapter — ending them is capability 15, called
+   * explicitly, so a reader can see that it happens.
+   */
+  async setPassword(subject: string, newPassword: string): Promise<ProviderIdentity> {
+    this.assertUp();
+    const record = this.identities.get(subject);
+    if (!record) throw new ProviderFailure('identity-unavailable', 'Identity does not exist.');
+    if (newPassword.length < this.passwordMinLength) {
+      throw new ProviderFailure(
+        'credential-policy-rejected',
+        'The identity provider refused the new password.',
+        false,
+        `Password should be at least ${this.passwordMinLength} characters.`
+      );
+    }
+    record.password = newPassword;
+    return this.toIdentity(record);
+  }
+
+  /**
+   * Capability 15 — end every session of the identity behind `accessToken`.
+   *
+   * The subject is read out of the token's payload without re-verifying it, the
+   * same thing the adapter's HTTP sign-out lets the provider do. An
+   * unreadable or unknown token ends nothing and is not an error: the desired
+   * end state is already reached for any session it could have named.
+   */
+  async signOutEverywhere(accessToken: string): Promise<void> {
+    this.assertUp();
+    const payload = accessToken.split('.')[1];
+    if (!payload) return;
+    let subject: string | undefined;
+    try {
+      subject = (JSON.parse(Buffer.from(payload, 'base64url').toString('utf8')) as { sub?: string })
+        .sub;
+    } catch {
+      return;
+    }
+    if (subject) await this.revokeAllSessions(subject);
+  }
+
   /** Test helper: simulates the invitee following their link and setting a password. */
   async acceptInvitation(email: string, password: string): Promise<ProviderIdentity> {
     const record = this.byEmail(email);
@@ -339,5 +440,7 @@ export class FakeIdentityProvider implements IdentityProvider {
     this.refreshTokens.clear();
     this.deliveries.length = 0;
     this.outage = false;
+    this.refuseDelete = false;
+    this.passwordMinLength = 8;
   }
 }

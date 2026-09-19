@@ -18,6 +18,41 @@ export interface FieldViolation {
   readonly rule: string;
 }
 
+/**
+ * Which subscription ceiling a write ran into.
+ *
+ * Safe to publish: the caller is inside the organisation the numbers describe,
+ * and the whole point of the code is that an administrator can be told what to
+ * do about it. A refusal that says only "capacity" leaves them guessing which
+ * of three ceilings they hit and by how much.
+ */
+export interface CapacityDetail {
+  /** `companies`, `branches` or `users`. */
+  readonly kind: string;
+  /** The ceiling the active plan declares for that kind. */
+  readonly limit: number;
+  /** What the organisation is consuming against it right now. */
+  readonly used: number;
+}
+
+/**
+ * One capacity kind a plan change would place BELOW what the organisation is
+ * already using.
+ *
+ * `newLimit`, not `limit`: the number is what the plan being assigned would
+ * impose, and an operator reading the refusal has to be able to tell it from the
+ * ceiling in force. Safe to publish for the same reason the ceiling itself is —
+ * the caller is administering the organisation the numbers describe.
+ */
+export interface CapacityShortfall {
+  /** `companies`, `branches` or `users`. */
+  readonly kind: string;
+  /** What the organisation is consuming right now. */
+  readonly used: number;
+  /** The ceiling the plan being assigned would impose. */
+  readonly newLimit: number;
+}
+
 /** Caller-safe extras. Only primitives and the shapes declared here. */
 export interface SafeDetails {
   readonly violations?: readonly FieldViolation[];
@@ -27,6 +62,29 @@ export interface SafeDetails {
   readonly contract?: string;
   /** Permission codes the operation requires. Safe: they are public API metadata. */
   readonly requiredPermissions?: readonly string[];
+  /** Which subscription ceiling was reached. Capacity refusals only. */
+  readonly capacity?: CapacityDetail;
+  /** Every kind a plan change would leave over its ceiling. Plan refusals only. */
+  readonly overCapacity?: readonly CapacityShortfall[];
+  /**
+   * Why a work-order draw was refused by its material requirement (`ERR-INV-001`).
+   * Quantities are exact decimal strings in the REQUIREMENT unit; `allowance` and
+   * `requested` are null when no allowance or no exact conversion exists to state
+   * them in. Safe: the caller already sees the requirement these figures describe.
+   */
+  readonly materialDraw?: MaterialDrawDetails;
+}
+
+export interface MaterialDrawDetails {
+  readonly allowance: string | null;
+  readonly alreadyCommitted: string;
+  readonly requested: string | null;
+  readonly reason:
+    | 'exceeds_requirement'
+    | 'approval_required'
+    | 'missing_conversion'
+    | 'missing_specification'
+    | 'no_requirement';
 }
 
 export interface AppFailureOptions {

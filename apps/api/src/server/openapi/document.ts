@@ -59,6 +59,51 @@ function problemSchema(): JsonObject {
       retryAfterSeconds: { type: 'integer', minimum: 0 },
       contract: { type: 'string' },
       requiredPermissions: { type: 'array', items: { type: 'string' } },
+      overCapacity: {
+        type: 'array',
+        description:
+          'Every capacity kind a plan change would leave below current usage. Present on ERR-CAP-003 only.',
+        items: {
+          type: 'object',
+          required: ['kind', 'used', 'newLimit'],
+          properties: {
+            kind: { type: 'string', enum: ['companies', 'branches', 'users'] },
+            used: { type: 'integer', minimum: 0 },
+            newLimit: { type: 'integer', minimum: 0 },
+          },
+        },
+      },
+      capacity: {
+        type: 'object',
+        description: 'Which subscription ceiling a write ran into. Present on ERR-CAP-001 only.',
+        required: ['kind', 'limit', 'used'],
+        properties: {
+          kind: { type: 'string', enum: ['companies', 'branches', 'users'] },
+          limit: { type: 'integer', minimum: 0 },
+          used: { type: 'integer', minimum: 0 },
+        },
+      },
+      materialDraw: {
+        type: 'object',
+        description:
+          'ERR-INV-001 only. Quantities are exact decimal strings in the requirement unit.',
+        required: ['allowance', 'alreadyCommitted', 'requested', 'reason'],
+        properties: {
+          allowance: { type: ['string', 'null'] },
+          alreadyCommitted: { type: 'string' },
+          requested: { type: ['string', 'null'] },
+          reason: {
+            type: 'string',
+            enum: [
+              'exceeds_requirement',
+              'approval_required',
+              'missing_conversion',
+              'missing_specification',
+              'no_requirement',
+            ],
+          },
+        },
+      },
     },
   };
 }
@@ -193,6 +238,7 @@ function standardFailureResponses(operation: RegisteredOperation): JsonObject {
     responses['401'] = { $ref: '#/components/responses/Problem' };
     responses['403'] = { $ref: '#/components/responses/Problem' };
   }
+  if (operation.answersNotFound) responses['404'] = { $ref: '#/components/responses/Problem' };
   if (operation.idempotent) responses['409'] = { $ref: '#/components/responses/Problem' };
   if (operation.versionGuarded) {
     responses['409'] = { $ref: '#/components/responses/Problem' };
@@ -204,6 +250,9 @@ function standardFailureResponses(operation: RegisteredOperation): JsonObject {
 
 function operationObject(operation: RegisteredOperation): JsonObject {
   const parameters: JsonObject[] = [{ $ref: '#/components/parameters/CorrelationId' }];
+  for (const [name, schema] of Object.entries(operation.pathParameterSchemas ?? {})) {
+    parameters.push({ name, in: 'path', required: true, schema });
+  }
   if (operation.idempotent) parameters.push({ $ref: '#/components/parameters/IdempotencyKey' });
   if (operation.versionGuarded) parameters.push({ $ref: '#/components/parameters/IfMatch' });
 
@@ -212,6 +261,14 @@ function operationObject(operation: RegisteredOperation): JsonObject {
     summary: operation.summary,
     tags: [operation.module],
     parameters,
+    ...(operation.requestBodySchema
+      ? {
+          requestBody: {
+            required: true,
+            content: { 'application/json': { schema: operation.requestBodySchema } },
+          },
+        }
+      : {}),
     security: operation.public ? [] : [{ bearerAuth: [] }],
     responses: {
       // The status the operation ACTUALLY returns, not a fixed 200. Publishing a
@@ -221,10 +278,27 @@ function operationObject(operation: RegisteredOperation): JsonObject {
       [String(operation.successStatus ?? 200)]: {
         description: 'Success.',
         headers: { [CORRELATION_HEADER]: { $ref: '#/components/headers/CorrelationId' } },
-        content: { 'application/json': { schema: { type: 'object' } } },
+        content: {
+          'application/json': { schema: operation.successBodySchema ?? { type: 'object' } },
+        },
       },
+      // An idempotent create that replays answers with what it already created, under
+      // a different status. Both are published, so the create's own status is not
+      // hidden behind its retry status.
+      ...(operation.replayStatus !== undefined
+        ? {
+            [String(operation.replayStatus)]: {
+              description: 'Replayed: the resource this request already created, unchanged.',
+              headers: { [CORRELATION_HEADER]: { $ref: '#/components/headers/CorrelationId' } },
+              content: {
+                'application/json': { schema: operation.successBodySchema ?? { type: 'object' } },
+              },
+            },
+          }
+        : {}),
       ...standardFailureResponses(operation),
     },
+    ...(operation.replayStatus !== undefined ? { 'x-replay-status': operation.replayStatus } : {}),
     // Machine-readable authorization metadata: the same declaration the runtime
     // enforces, so a reviewer can diff intent against behaviour.
     'x-required-permissions': operation.permissions,

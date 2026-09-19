@@ -278,6 +278,80 @@ export async function withPlatformTarget<T>(
 }
 
 /**
+ * Runs `fn` with the transaction's tenant context moved to a LIVE tenant the
+ * operator is administering — the platform-on-target window for an
+ * organisation that already exists (P1-32-PRE-151).
+ *
+ * `withPlatformTarget` above cannot serve this: it admits only a tenant the
+ * same transaction created and which is still `provisioning`, which is exactly
+ * what an organisation being GROWN is not. The two windows are deliberately
+ * separate rather than one with a relaxed predicate, because the predicate is
+ * the whole of the safety argument in each case.
+ *
+ * The refusals here:
+ *
+ *  - only a control-plane transaction may retarget. The primary connection runs
+ *    as `app_runtime`, whose policies are written against the session's own
+ *    tenant, so retargeting it would be a cross-tenant write path;
+ *  - the target must be a tenant this session can READ. Visibility is decided by
+ *    `sel_tenants_platform_manage`, which is predicated on
+ *    `platform.organization.manage` — so a caller without the authority sees
+ *    nothing and gets the same answer as for a tenant that does not exist. A
+ *    tenant still `provisioning` is refused too: it belongs to the provisioning
+ *    window, which writes its own companion rows, and letting a second path
+ *    into that state would mean two writers of the same bootstrap;
+ *  - the context handed to `fn` is a copy whose principal names the target, so
+ *    repositories that stamp `tenant_id` from the context write the target. The
+ *    actor is unchanged, so attribution still names the operator — and the audit
+ *    record of the act is appended OUTSIDE this window, in the operator's own
+ *    tenant, carrying the target as a detail.
+ *
+ * The GUC is restored in `finally`, and a restore that fails on an already
+ * aborted transaction is swallowed so the ORIGINAL error propagates.
+ */
+export async function withPlatformTenantScope<T>(
+  db: DbHandle,
+  targetTenantId: string,
+  fn: (target: PlatformTargetHandle) => Promise<T>
+): Promise<T> {
+  const handle = db as TransactionHandle;
+  if (handle.connection !== 'platform') {
+    throw new AppFailure('ERR-CTX-001', {
+      message: 'A platform-on-target context is only available on the control-plane connection',
+    });
+  }
+  if (!UUID_SHAPE.test(targetTenantId)) {
+    throw new AppFailure('ERR-VAL-001', { message: 'The target tenant is not a well-formed id' });
+  }
+  const visible = await db.query<{ id: string }>(
+    `SELECT id
+       FROM org.tenants
+      WHERE id = $1
+        AND status <> 'provisioning'`,
+    [targetTenantId]
+  );
+  if (visible.rows.length !== 1) {
+    throw new AppFailure('ERR-RES-001', { message: 'No such organization' });
+  }
+  const homeTenantId = db.context.principal.tenantId;
+  const retargeted = handle.retargeted({
+    ...db.context,
+    principal: { ...db.context.principal, tenantId: targetTenantId },
+  });
+  const target: PlatformTargetHandle = Object.assign(retargeted, { targetTenantId });
+  await db.query('SELECT set_config($1, $2, true)', ['app.tenant_id', targetTenantId]);
+  try {
+    return await fn(target);
+  } finally {
+    try {
+      await db.query('SELECT set_config($1, $2, true)', ['app.tenant_id', homeTenantId]);
+    } catch {
+      // The transaction is already aborted; the rollback discards the window.
+    }
+  }
+}
+
+/**
  * Runs `fn` inside a SAVEPOINT on an existing transaction.
  *
  * Use where a sub-step may fail without discarding the whole command. The outer

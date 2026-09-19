@@ -37,16 +37,28 @@ import { appendAudit } from '@/server/audit/audit';
 import { SQLSTATE, isSqlState } from '@/server/db/repository';
 import type { DbHandle } from '@/server/db/transaction';
 import type { AuthorizationTarget } from '@/server/auth/authorization';
+import { sharedServicesModule } from '@/modules/shared-services';
+import {
+  CAPACITY_ALERT_NEAR_LIMIT_RATIO,
+  capacityAlertSeverity,
+  type CapacityAlertSeverity,
+} from '@/shared/capacity/capacity-alert';
+import { throwCapacityFailure } from './capacity-failure';
 import type {
   BranchChanges,
+  BranchCreateInput,
   BranchReachRow,
   BranchRecordRow,
+  CapacityAllowanceRow,
+  CapacityUsageRow,
   CompanyChanges,
+  CompanyCreateInput,
   CompanyReachRow,
   CompanyRecordRow,
   DepartmentChanges,
   DepartmentRow,
   OrganizationAdministrationRepository,
+  SubscriptionSummaryRow,
 } from '../data/organization-administration-repository';
 
 /**
@@ -62,6 +74,9 @@ export type BranchReachView = BranchReachRow;
 export type CompanyRecordView = CompanyRecordRow;
 export type BranchRecordView = BranchRecordRow;
 export type DepartmentView = DepartmentRow;
+export type CapacityAllowanceView = CapacityAllowanceRow;
+export type CapacityUsageView = CapacityUsageRow;
+export type SubscriptionSummaryView = SubscriptionSummaryRow;
 
 /**
  * The response ENVELOPES, each named and exported.
@@ -90,6 +105,66 @@ export interface DepartmentResult {
   readonly department: DepartmentView;
 }
 
+/**
+ * What an administrator is told about their organisation's allowances.
+ *
+ * The subscription travels with the numbers deliberately. A ceiling with no
+ * plan beside it is a number nobody can act on: the administrator needs to know
+ * WHICH plan imposed it and until when, because the remedy is a plan change and
+ * not a retry.
+ */
+export interface CapacityResult {
+  readonly capacity: CapacityUsageView;
+  readonly subscription: SubscriptionSummaryView | null;
+}
+
+/** One capacity kind that is worth telling an administrator about. */
+export interface CapacityAlertView {
+  /** `companies`, `branches` or `users`. */
+  readonly kind: string;
+  readonly used: number;
+  readonly limit: number;
+  /**
+   * `near-limit` from 90%, `at-limit` exactly on it, `over-limit` past it.
+   *
+   * The union, never `string`: a reader that handles two of the three states
+   * must fail to compile rather than quietly call the third something else.
+   */
+  readonly severity: CapacityAlertSeverity;
+  /** `limit - used`. Negative when the organisation is already over its limit. */
+  readonly headroom: number;
+}
+
+/** The rule the alerts were selected by, in words and in numbers. */
+export interface CapacityAlertRuleView {
+  readonly statement: string;
+  /** The fraction of a limit at which a kind starts being reported. */
+  readonly nearLimitRatio: number;
+}
+
+/**
+ * What an organisation's own administrators are told about their ceilings.
+ *
+ * The same three figures the platform console publishes, classified by the same
+ * function, so an organisation is never warned about something its operator
+ * cannot see — or, worse, left unwarned while the operator's console shows it at
+ * its limit. The subscription travels with the alerts because the remedy is a plan
+ * change and not a retry, and because its end date is the other thing an
+ * administrator has to be watching.
+ *
+ * Every kind is returned in `capacity`, alerting or not, so a reader can check
+ * which ones did not qualify and why.
+ */
+export interface CapacityAlertResult {
+  /** The database's own `now()` for this request's transaction (ISO-8601). */
+  readonly asOf: string;
+  readonly rule: CapacityAlertRuleView;
+  /** Only the kinds that qualify. An empty list means nothing is close. */
+  readonly alerts: readonly CapacityAlertView[];
+  readonly capacity: CapacityUsageView;
+  readonly subscription: SubscriptionSummaryView | null;
+}
+
 type ScopeAuthorizer = (target: AuthorizationTarget) => Promise<void>;
 
 export class OrganizationAdministrationService {
@@ -115,6 +190,78 @@ export class OrganizationAdministrationService {
   }
 
   // --- companies ------------------------------------------------------------
+
+  /**
+   * Adds a legal company to the organisation.
+   *
+   * ## The capacity rule is NOT checked here, and that is the design
+   *
+   * `tg_legal_companies_capacity` takes a per-tenant advisory lock, counts, and
+   * refuses inside the same transaction as the INSERT. A "is there room?" read
+   * in this method would be a second copy of the rule and a wrong one: two
+   * concurrent creations would both see room and both proceed. So the write is
+   * attempted and the refusal is MAPPED — which is also why the same mapper
+   * serves the invitation path, where the seat ceiling is enforced by the same
+   * trigger on a table this service never touches.
+   *
+   * ## There is no scope to authorize against
+   *
+   * Every other company operation resolves the row first and re-decides against
+   * that company. A company being created has no scope yet, so the authority is
+   * `org.company.manage` at tenant scope plus
+   * `ins_legal_companies_capacity_authority`, which additionally refuses a
+   * session narrowed to particular companies — a session scoped to one company
+   * has no standing over one that does not exist.
+   */
+  async createCompany(db: DbHandle, input: CompanyCreateInput): Promise<CompanyResult> {
+    const created = await this.writeCompany(db, input);
+
+    await appendAudit(db, {
+      action: 'org.company.created',
+      entityType: 'org.legal_company',
+      entityId: created.id,
+      details: [
+        { field: 'company_code', classification: 'public', value: created.companyCode },
+        { field: 'legal_name', classification: 'public', value: created.legalName },
+        {
+          field: 'base_currency_code',
+          classification: 'public',
+          value: created.baseCurrencyCode,
+        },
+      ],
+    });
+
+    return { company: created };
+  }
+
+  /**
+   * The WRITE half of a company creation, without the audit record.
+   *
+   * Exported as a port because the Platform Owner Console adds a company to an
+   * organisation through exactly this statement and exactly these refusals —
+   * the same INSERT, the same duplicate mapping, the same capacity mapping — and
+   * a second implementation would be a second set of rules that agreed until it
+   * did not. What the console does NOT share is where the act is recorded: a
+   * platform act is audited in the OPERATOR's tenant carrying the target, while
+   * the tenant operation records it in its own. So the audit stays with the
+   * caller and only the write is shared.
+   */
+  async writeCompany(db: DbHandle, input: CompanyCreateInput): Promise<CompanyRecordView> {
+    try {
+      return await this.repository.createCompany(db, input);
+    } catch (error) {
+      // uq_legal_companies_tenant_code_active. A duplicate code is a caller
+      // conflict, not a server fault, and route-handler sends every 5xx to the
+      // exception monitor — so letting the 23505 through would be silent in the
+      // response and noisy in the wrong place.
+      if (isSqlState(error, SQLSTATE.uniqueViolation)) {
+        throw new AppFailure('ERR-RES-002', {
+          message: 'A company with that code already exists in this organisation',
+        });
+      }
+      throwCapacityFailure(error);
+    }
+  }
 
   async updateCompany(
     db: DbHandle,
@@ -194,6 +341,84 @@ export class OrganizationAdministrationService {
   }
 
   // --- branches -------------------------------------------------------------
+
+  /**
+   * Adds a branch to a legal company.
+   *
+   * ## Three things happen and all three must hold
+   *
+   *  1. the company is re-checked against what this session can SEE, so a
+   *     cross-tenant identifier is refused as a denial rather than arriving at
+   *     the composite foreign key as a 500 — the same measured defect the
+   *     department create fixed;
+   *  2. the branch is inserted, and `tg_branches_capacity` owns the ceiling;
+   *  3. the branch is given its own numbering runs.
+   *
+   * Step 3 is not decoration. Three of the registered runs — invoice, quotation
+   * and receipt — are configured per branch, and `shared.next_display_number`
+   * REFUSES rather than degrading when a row is missing. A branch committed
+   * without them is a branch that cannot issue an invoice, quote a job or
+   * receipt a payment, and the failure would surface later as an error the
+   * operator reads as a bug. The bootstrap throws if any run is still missing,
+   * so the whole create unwinds rather than committing a half-configured branch.
+   */
+  async createBranch(
+    db: DbHandle,
+    input: BranchCreateInput,
+    authorizeScope: ScopeAuthorizer
+  ): Promise<BranchResult> {
+    await authorizeScope({ companyId: input.companyId });
+    const created = await this.writeBranch(db, input);
+
+    await appendAudit(db, {
+      action: 'org.branch.created',
+      entityType: 'org.branch',
+      entityId: created.id,
+      details: [
+        { field: 'branch_code', classification: 'public', value: created.branchCode },
+        { field: 'name', classification: 'public', value: created.name },
+        { field: 'timezone_name', classification: 'public', value: created.timezoneName },
+      ],
+    });
+
+    return { branch: created };
+  }
+
+  /**
+   * The WRITE half of a branch creation, without the audit record: the company
+   * reach check, the insert, and the numbering runs the branch owes.
+   *
+   * The console adds a branch to an organisation through this method for the
+   * reason the company port states — one statement, one set of refusals, one
+   * place where a branch without its invoice, quotation and receipt runs is
+   * refused rather than committed. The scope authorization stays with the tenant
+   * operation: a platform operator holds no company-scoped grant and is
+   * authorized by `platform.organization.manage` plus the target window instead.
+   */
+  async writeBranch(db: DbHandle, input: BranchCreateInput): Promise<BranchRecordView> {
+    if (!(await this.repository.companyIsReachable(db, input.companyId))) {
+      throw notFound();
+    }
+
+    let created: BranchRecordView;
+    try {
+      created = await this.repository.createBranch(db, input);
+    } catch (error) {
+      // uq_branches_company_code_active.
+      if (isSqlState(error, SQLSTATE.uniqueViolation)) {
+        throw new AppFailure('ERR-RES-002', {
+          message: 'A branch with that code already exists in this company',
+        });
+      }
+      throwCapacityFailure(error);
+    }
+
+    await sharedServicesModule().sequenceBootstrap.provisionBranchSequences(db, {
+      companyId: created.companyId,
+      branchId: created.id,
+    });
+    return created;
+  }
 
   async updateBranch(
     db: DbHandle,
@@ -296,6 +521,69 @@ export class OrganizationAdministrationService {
     scope: { readonly companyId: string; readonly branchId: string }
   ): Promise<DepartmentListResult> {
     return { items: await this.repository.listDepartments(db, scope) };
+  }
+
+  // --- capacity -------------------------------------------------------------
+
+  /**
+   * What the organisation may hold, what it holds, and under which plan.
+   *
+   * Both halves come from the database in the same request, and the usage half
+   * comes from `org.capacity_usage` — the very function the refusal is computed
+   * from. A screen that explained a refusal with numbers assembled a second way
+   * would eventually explain it wrongly.
+   */
+  async readCapacity(db: DbHandle): Promise<CapacityResult> {
+    return {
+      capacity: await this.repository.readCapacityUsage(db),
+      subscription: await this.repository.readActiveSubscription(db),
+    };
+  }
+
+  /**
+   * The subset of the allowance that is worth acting on today.
+   *
+   * `readCapacity` answers "what am I entitled to"; this answers "what is about to
+   * stop working". The difference matters because the first is a screen somebody
+   * opens deliberately and the second is a thing that should find them.
+   *
+   * The classification is `capacityAlertSeverity` in `@/shared`, the same function
+   * the platform console calls, so the two surfaces cannot select different rows
+   * or name the same row differently. An unlimited kind (`limit === null`) is
+   * never an alert: there is nothing to run out of.
+   */
+  async readCapacityAlerts(db: DbHandle): Promise<CapacityAlertResult> {
+    const asOf = await this.repository.readDatabaseNow(db);
+    const capacity = await this.repository.readCapacityUsage(db);
+    const alerts: CapacityAlertView[] = [];
+    for (const kind of ['companies', 'branches', 'users'] as const) {
+      const allowance = capacity[kind];
+      const severity = capacityAlertSeverity(allowance.used, allowance.limit);
+      if (severity === null || allowance.limit === null) continue;
+      alerts.push({
+        kind,
+        used: allowance.used,
+        limit: allowance.limit,
+        severity,
+        headroom: allowance.limit - allowance.used,
+      });
+    }
+    return {
+      asOf,
+      rule: {
+        statement:
+          'A capacity kind is reported when the organisation is over its limit, exactly on it, ' +
+          'or has reached ninety per cent of it. A kind the plan places no ceiling on is never ' +
+          'reported. A ceiling of zero is reported only when something is actually held against ' +
+          'it, because ninety per cent of nothing would otherwise report every organisation on ' +
+          'such a plan. The numbers are org.capacity_usage, the function a refusal is computed ' +
+          'from, so this warning and that refusal can never disagree.',
+        nearLimitRatio: CAPACITY_ALERT_NEAR_LIMIT_RATIO,
+      },
+      alerts,
+      capacity,
+      subscription: await this.repository.readActiveSubscription(db),
+    };
   }
 
   async updateDepartment(

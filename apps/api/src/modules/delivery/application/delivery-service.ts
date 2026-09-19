@@ -15,6 +15,13 @@
  *  - **delivery/work-order coherence** — `sal.guard_delivery_coherence` (M-dlv-1)
  *    re-reads the work order and refuses any vehicle or visit that differs, which is
  *    why both are derived from the work-order port and never accepted from a caller;
+ *  - **the delivering employee is a real, live identity of this tenant** —
+ *    `fk_delivery_records_delivering_employee` and
+ *    `sal.stamp_delivering_employee_identity` (P1-31 P-17), which also stamps the
+ *    immutable display-name snapshot the handover history is read from. Their
+ *    home branch is deliberately NOT part of the rule: it is informational and
+ *    transferable, and a colleague may hand a vehicle over at another branch of
+ *    their own organisation (Owner clarification of 2026-09-10);
  *  - **exactly one receiver per delivery** — `uq_authorized_receivers_delivery`;
  *  - **the receiver's authority at verification time** —
  *    `sal.guard_authorized_receiver` (M-dlv-2) requires a live
@@ -38,9 +45,14 @@
  * Signatures and identity evidence are `shared.document_versions` REFERENCES. No
  * method fetches bytes, no audit detail carries them, no event payload mentions them
  * in the clear, and no log line names a document, a receiver or a delivery id. There
- * is deliberately no retrieval path: `DOWNLOADABLE_STATES` is `['accepted']`, no
- * application path can accept a version because no scanner is provisioned, so a
- * download method would be a contract that always fails (P1-22-L-04). **No claim is
+ * is deliberately no retrieval path in this module, and that is a scope boundary
+ * rather than an impossibility: the shared attachment path's `requestDownload` refuses
+ * a version with `ERR-DOC-001` while it is not `accepted`, which is a state check.
+ * P1-22 recorded the rest as "no application path can produce acceptance"
+ * (P1-22-L-04); that is no longer the rule, because
+ * `20260815090000_shared_reception_evidence_foundation.sql` adds `GRANT INSERT ON
+ * shared.file_scan_results` and `GRANT UPDATE(status) ON shared.document_versions`
+ * (corrected by P1-31 prerequisite P-14). **No claim is
  * made anywhere in this module that a stored signature is biometric, verified, or
  * legally binding.** It records that a document was bound to a handover, and nothing
  * more.
@@ -53,10 +65,13 @@ import type { DbHandle } from '@/server/db/transaction';
 import { callerHoldsPermission, type ScopeAuthorizer } from '@/server/auth/authorization';
 import { EVIDENCE_REFUSED_STATES, sharedServicesModule } from '@/modules/shared-services';
 import { workOrderModule } from '@/modules/work-order';
+import { iamRegistryModule } from '@/modules/iam';
 import {
   DeliveryRuleError,
   MAX_REASON,
   assertChecklistResultShape,
+  isApprovedIdentityEvidenceCategory,
+  type EvidenceCategoryFacts,
   assertEligible,
   assertSignerRole,
   overridePermission,
@@ -83,6 +98,17 @@ export interface DeliveryView {
   readonly receptionVisitId: string;
   readonly vehicleId: string;
   readonly deliveringEmployeeId: string;
+  /**
+   * The `org.employees` display name as it stood when this delivery was created.
+   *
+   * Stamped by `sal.stamp_delivering_employee_identity` and never by this
+   * service: caller input is not authoritative for historical identity text.
+   *
+   * `null` only on a delivery recorded before P1-31 prerequisite P-17 whose
+   * delivering employee id resolved to nobody. Every delivery this service
+   * creates carries a name, because the trigger stamps one or refuses the row.
+   */
+  readonly deliveringEmployeeDisplayName: string | null;
   readonly status: string;
   readonly deliveredAt: string | null;
   readonly finalOdometerReadingId: string | null;
@@ -141,7 +167,15 @@ export interface CompletionView {
 
 export interface CreateDeliveryInput {
   readonly workOrderId: string;
-  /** `delivering_employee_id` — NOT NULL, and the DDL gives it no foreign key. */
+  /**
+   * `delivering_employee_id` — an `org.employees` id.
+   *
+   * Bound by `fk_delivery_records_delivering_employee` on `(tenant_id, id)` and
+   * re-checked by `sal.stamp_delivering_employee_identity` since P1-31
+   * prerequisite P-17. Before that the DDL gave it no foreign key at all, so any
+   * uuid was a legal handover officer. The key names the tenant and nothing
+   * narrower: the employee's home branch is not a restriction.
+   */
   readonly deliveringEmployeeId: string;
   readonly idempotencyKey?: string | undefined;
 }
@@ -223,7 +257,24 @@ function toDomainFailure(error: unknown, what: string): never {
   }
   if (isSqlState(error, SQLSTATE.foreignKeyViolation)) {
     throw new AppFailure('ERR-RES-001', {
-      message: `${what} names a work order, visit, partner or document version that does not exist in scope`,
+      message: `${what} names a work order, visit, employee, partner or document version that does not exist in scope`,
+    });
+  }
+  /**
+   * `22023`, raised by `sal.stamp_delivering_employee_identity` and by nothing
+   * else on this path (P1-31 prerequisite P-17).
+   *
+   * A 422 rather than the 409 `23514` produces, because it is the REQUEST that is
+   * wrong: the caller named an employee who is not live in this tenant or is not
+   * active, and the fix is to name a different one. The service pre-checks both
+   * and reports them per rule, so reaching here means a concurrent retirement
+   * landed between the check and the insert — the trigger is the authority and
+   * this is its translation, not a second rule.
+   */
+  if (isSqlState(error, SQLSTATE.invalidParameterValue)) {
+    throw new AppFailure('ERR-VAL-001', {
+      message: `${what} names an employee who cannot be the delivering employee`,
+      safeDetails: { violations: [{ path: 'body.deliveringEmployeeId', rule: 'custom' }] },
     });
   }
   if (isSqlState(error, SQLSTATE.uniqueViolation)) {
@@ -263,6 +314,26 @@ function validate<T>(path: string, run: () => T): T {
   }
 }
 
+/**
+ * One shape for the two ways a delivering employee can be refused.
+ *
+ * The rule name is what a client branches on, so the two are DISTINCT values
+ * rather than one `custom`: "not found" and "retired" need different
+ * corrections from an operator — name somebody else, or reinstate this person.
+ * `custom` is reserved for the first, because naming a more specific rule there
+ * would confirm that the id exists somewhere the caller cannot see.
+ *
+ * There is deliberately no third rule for a branch. The Owner clarification of
+ * 2026-09-10 removed it: an employee's home branch is informational, and
+ * refusing a colleague sent to another site would be refusing authorized work.
+ */
+function employeeViolation(rule: string, message: string): AppFailure {
+  return new AppFailure('ERR-VAL-001', {
+    message,
+    safeDetails: { violations: [{ path: 'body.deliveringEmployeeId', rule }] },
+  });
+}
+
 const toDeliveryView = (row: DeliveryRecordRow, replayed: boolean): DeliveryView => ({
   id: row.id,
   companyId: row.companyId,
@@ -271,6 +342,7 @@ const toDeliveryView = (row: DeliveryRecordRow, replayed: boolean): DeliveryView
   receptionVisitId: row.receptionVisitId,
   vehicleId: row.vehicleId,
   deliveringEmployeeId: row.deliveringEmployeeId,
+  deliveringEmployeeDisplayName: row.deliveringEmployeeDisplayName,
   status: row.status,
   deliveredAt: row.deliveredAt === null ? null : row.deliveredAt.toISOString(),
   finalOdometerReadingId: row.finalOdometerReadingId,
@@ -376,6 +448,38 @@ export class DeliveryService {
       });
     }
 
+    /**
+     * The delivering employee is resolved BEFORE the insert (P1-31 P-17).
+     *
+     * `sal.stamp_delivering_employee_identity` enforces both rules for every
+     * writer and is the authority; this is here so the caller is told WHICH rule
+     * they broke, in the field-level shape a form can render, instead of
+     * receiving one opaque refusal for two different mistakes.
+     *
+     * The lookup runs under the caller's own RLS, whose scope for this register
+     * is the TENANT, so an employee of another tenant is simply not found —
+     * there is deliberately no separate answer for it, because a distinct
+     * refusal would confirm that the id exists somewhere. An employee whose home
+     * branch is a different one is NOT a refusal at all: nothing here reads that
+     * branch, and the port no longer publishes it.
+     */
+    const employee = await iamRegistryModule().employees.findAssignable(
+      db,
+      input.deliveringEmployeeId
+    );
+    if (employee === null) {
+      throw employeeViolation(
+        'custom',
+        'The delivering employee is not a live employee in this organisation'
+      );
+    }
+    if (employee.status !== 'active') {
+      throw employeeViolation(
+        'inactive_employee',
+        'The delivering employee has been retired and cannot be named on a new handover'
+      );
+    }
+
     let deliveryId: string;
     try {
       deliveryId = await this.repository.insertDelivery(db, {
@@ -434,6 +538,11 @@ export class DeliveryService {
           field: 'deliveringEmployeeId',
           classification: 'internal',
           value: delivery.deliveringEmployeeId,
+        },
+        {
+          field: 'deliveringEmployeeDisplayName',
+          classification: 'internal',
+          value: delivery.deliveringEmployeeDisplayName,
         },
         { field: 'status', classification: 'internal', value: delivery.status },
       ],
@@ -511,11 +620,16 @@ export class DeliveryService {
     }
 
     if (input.identityEvidenceDocumentVersionId !== undefined) {
+      // D-18: identity evidence must be filed under the approved identity-evidence
+      // category — the platform row, active and not deleted. Every other rule — tenant
+      // visibility, company and branch, refused states, provenance — is the same one a
+      // signature is held to.
       await this.requireUsableDocumentVersion(
         db,
         delivery,
         input.identityEvidenceDocumentVersionId,
-        'body.identityEvidenceDocumentVersionId'
+        'body.identityEvidenceDocumentVersionId',
+        isApprovedIdentityEvidenceCategory
       );
     }
 
@@ -1160,12 +1274,18 @@ export class DeliveryService {
    *     code for a version that exists and is visible but whose state does not permit
    *     the action.
    *
-   * `accepted` is deliberately NOT required, and the reason is structural rather than
-   * lax: `shared.guard_document_version_transition` needs a clean scan record to reach
-   * `accepted`, no scanner is provisioned anywhere in the platform, and no application
-   * path can therefore accept a version (P1-22-L-04). Requiring it would make every
-   * signature and every identity attachment impossible while appearing to be the
-   * stricter choice. `sal.delivery_signatures`' own foreign key accepts any status, so
+   * `accepted` is deliberately NOT required, and the reason is a timing one rather than
+   * laxity. P1-22 recorded it as "no application path can accept a version"
+   * (P1-22-L-04); that is no longer the rule, because
+   * `20260815090000_shared_reception_evidence_foundation.sql` adds `GRANT INSERT ON
+   * shared.file_scan_results` and `GRANT UPDATE(status) ON shared.document_versions`, so
+   * `registerVersionAndScan` can produce a verdict. What remains true is that
+   * `shared.document_versions.status` starts at `pending` and
+   * `shared.guard_document_version_transition` needs a clean scan record to reach
+   * `accepted`, so requiring `accepted` at BIND time would refuse a version whose
+   * verdict has not landed yet, while appearing to be the stricter choice. The
+   * `accepted` requirement belongs to the download path, not to binding. Corrected by
+   * P1-31 prerequisite P-14; nothing on this path changed behaviour. `sal.delivery_signatures`' own foreign key accepts any status, so
    * this rule — registered, in scope, not refused — is the whole of the application's
    * contribution, and it is stated rather than implied.
    *
@@ -1197,7 +1317,15 @@ export class DeliveryService {
     db: DbHandle,
     delivery: DeliveryRecordRow,
     versionId: string,
-    path: string
+    path: string,
+    /**
+     * The rule the document's category must satisfy, when the evidence has a governed
+     * one. It receives the category's facts, or null when the category is not visible,
+     * and must fail closed on null. Checked with the other facts about the document
+     * itself, before provenance, and refused with the same `ERR-VAL-001` a mis-scoped or
+     * unlinked document gets.
+     */
+    categoryRule?: (category: EvidenceCategoryFacts | null) => boolean
   ): Promise<void> {
     const version = await sharedServicesModule().attachments.verifyEvidenceVersion(
       db,
@@ -1219,6 +1347,12 @@ export class DeliveryService {
     if (EVIDENCE_REFUSED_STATES.includes(version.status)) {
       throw new AppFailure('ERR-DOC-001', {
         message: 'The document version was refused by review or quarantine and cannot be bound.',
+      });
+    }
+    if (categoryRule !== undefined && !categoryRule(version.category)) {
+      throw new AppFailure('ERR-VAL-001', {
+        message: 'The document is not filed under the category this evidence requires.',
+        safeDetails: { violations: [{ path, rule: 'custom' }] },
       });
     }
 

@@ -131,6 +131,26 @@ describe('the gate is clean on the tree it ships with — and really looked', ()
     // Restated here so a silent collapse fails by name rather than by a clean
     // report over nothing.
     /*
+     * THIRTEEN since `P1-32-PRE-077`, and the two new ones are both under
+     * `crm`. The Owner's entry point mounts a vehicle step at
+     * `crm/customers/[customerId]/work-order/new` which loads
+     * `features/receptions` — it IS the reception intake's vehicle half, reused
+     * rather than copied — and the customer profile that offers the entry point
+     * reads `RECEPTION_PERMISSIONS` to decide whether to show it. Both therefore
+     * consult a `rec.*` code, and the derivation adopts them exactly as it
+     * adopted the four below. The `crm` segment joins the list with them: a
+     * P1-28 screen is one that LOADS a P1-28 feature tree, not one that lives
+     * under a particular directory, and this is the first time those two answers
+     * differ. Both are held to every rule here.
+     *
+     * ELEVEN since P1-31: the delivery detail screen binds a handover signature
+     * through the same capture surface, so its import closure reaches a P1-28
+     * feature tree and the derivation adopts it exactly as it adopted the two
+     * below. It is held to every rule here, and satisfying rule 4 is what forced
+     * `features/delivery/api.ts` to build its paths with a shape this gate can
+     * READ — an unresolvable helper makes an operation invisible, and every
+     * permission the screen consults for it then reads as surplus privilege.
+     *
      * TEN since P1-29 W7: the job diagnostics workbench under `work-orders` renders
      * the same capture surface for report evidence and is adopted the same way.
      *
@@ -143,12 +163,14 @@ describe('the gate is clean on the tree it ships with — and really looked', ()
      * it gates before it reads, consults only published codes, requires no
      * more than its operations require, and asserts no scope in a URL.
      */
-    expect(REAL.routes.length).toBe(10);
+    expect(REAL.routes.length).toBe(13);
     expect(REAL.treeFiles).toBeGreaterThanOrEqual(40);
     expect(REAL.constants).toBeGreaterThanOrEqual(40);
     expect(REAL.scanned).toBeGreaterThanOrEqual(200);
     expect(REAL.segments).toEqual([
       'appointments',
+      'crm',
+      'delivery',
       'reception',
       'receptions',
       'technicians',
@@ -159,14 +181,26 @@ describe('the gate is clean on the tree it ships with — and really looked', ()
     expect(REAL.closureFiles).toBeGreaterThanOrEqual(100);
   });
 
-  it('recognised an awaited read on the five routes that perform one', () => {
+  it('recognised an awaited read on the eight routes that perform one', () => {
     // Rule 1's read half, stated as a census. If this collapsed to zero the rule
     // would still report clean on every route — a gate ordering nothing against
     // nothing — which is why the run itself refuses below four.
+    //
+    // The sixth is the P1-31 handover screen, which reads its delivery record
+    // AFTER it has decided the operator may see one. That ordering is the whole
+    // subject of rule 1, and the screen is in this gate's scope because it binds
+    // a signature through P1-28's one approved capture surface.
+    //
+    // The seventh and eighth are `P1-32-PRE-077`: the customer's work-order
+    // entry step reads the customer it preselects, and the profile that offers
+    // the entry point reads the customer it is about. Both read after the gate.
     const reading = REAL.routes.filter((route: { reads: boolean }) => route.reads);
     expect(reading.map((route: { route: string }) => route.route).sort()).toEqual([
       'apps/web/src/app/[locale]/(dashboard)/appointments/[appointmentId]/page.tsx',
       'apps/web/src/app/[locale]/(dashboard)/appointments/new/page.tsx',
+      'apps/web/src/app/[locale]/(dashboard)/crm/customers/[customerId]/page.tsx',
+      'apps/web/src/app/[locale]/(dashboard)/crm/customers/[customerId]/work-order/new/page.tsx',
+      'apps/web/src/app/[locale]/(dashboard)/delivery/[deliveryId]/page.tsx',
       'apps/web/src/app/[locale]/(dashboard)/receptions/check-in/[receptionId]/acknowledgement/page.tsx',
       'apps/web/src/app/[locale]/(dashboard)/receptions/check-in/[receptionId]/page.tsx',
       'apps/web/src/app/[locale]/(dashboard)/receptions/check-in/page.tsx',
@@ -690,17 +724,23 @@ describe('the route set is DERIVED, not a hand-written list of segments', () => 
     expect(PLAN).not.toContain('(dashboard)/receptions');
   });
 
-  it('finds the ten pages by what they LOAD, including the singular walk-in', () => {
+  it('finds the thirteen pages by what they LOAD, including the singular walk-in', () => {
     const routes = webRoutes().map((file: string) => posix(file));
-    // Eight P1-28 screens, plus the P1-29 technician workspace, which loads the
-    // shared capture field out of `features/receptions` — see the census above.
-    expect(routes).toHaveLength(10);
+    // Eight P1-28 screens, plus the P1-29 technician workspace and diagnostics
+    // workbench, the P1-31 handover screen and the P1-32 customer work-order
+    // step, each of which loads a `features/receptions` module — see the census
+    // above.
+    expect(routes).toHaveLength(13);
     expect(routes.some((route: string) => route.includes('/reception/walk-in/'))).toBe(true);
     expect(routes.some((route: string) => route.endsWith('/appointments/new/page.tsx'))).toBe(true);
     expect(routes.some((route: string) => route.includes('/acknowledgement/'))).toBe(true);
     expect(routes.some((route: string) => route.endsWith('/technicians/me/page.tsx'))).toBe(true);
+    expect(routes.some((route: string) => route.includes('/delivery/'))).toBe(true);
+    expect(routes.some((route: string) => route.endsWith('/work-order/new/page.tsx'))).toBe(true);
     expect(segmentsOnce()).toEqual([
       'appointments',
+      'crm',
+      'delivery',
       'reception',
       'receptions',
       'technicians',
@@ -709,17 +749,37 @@ describe('the route set is DERIVED, not a hand-written list of segments', () => 
   });
 
   it('is a strict subset of the dashboard tree, so the derivation discriminates', () => {
-    // Thirty-odd pages exist under `(dashboard)`; nine load a P1-28 feature tree.
-    // Without this the derivation could be "every page" and still look right.
+    // Thirty-odd pages exist under `(dashboard)`; twelve load a P1-28 feature
+    // tree. Without this the derivation could be "every page" and still look
+    // right.
     const everyPage = [...webSources().keys()].filter(
       (file: string) =>
         posix(file).includes('/app/[locale]/(dashboard)/') && posix(file).endsWith('/page.tsx')
     );
     expect(everyPage.length).toBeGreaterThan(20);
     expect(webRoutes().length).toBeLessThan(everyPage.length);
-    // The CRM customer list is a dashboard page and is NOT P1-28's.
+    /*
+     * The discrimination is by what a page LOADS, never by where it sits.
+     *
+     * This asserted that no `/crm/` page is P1-28's, which was true while the
+     * two answers agreed and stopped being true at `P1-32-PRE-077`: the
+     * customer's work-order step lives under `crm/customers/[customerId]` and
+     * loads the reception intake's vehicle half. So the claim is made against
+     * the CRM pages that genuinely load nothing of P1-28 — the customer list,
+     * the profile itself and the duplicate review — rather than against a path
+     * prefix that never was the rule.
+     */
     const derived = webRoutes().map((file: string) => posix(file));
-    expect(derived.some((route: string) => route.includes('/crm/'))).toBe(false);
+    for (const outside of [
+      '/crm/customers/page.tsx',
+      '/crm/customer-duplicates/page.tsx',
+      '/crm/customers/new/[kind]/page.tsx',
+    ]) {
+      expect(
+        derived.some((route: string) => route.endsWith(outside)),
+        `${outside} loads no P1-28 feature tree and must not be adopted`
+      ).toBe(false);
+    }
   });
 });
 
@@ -796,6 +856,84 @@ describe('the derivations the rules stand on', () => {
     // Outside the phase's segments, so it is not a P1-28 route and contributes
     // nothing to any requirement set.
     expect(targets.some((path: string) => path.includes('administration'))).toBe(false);
+  });
+
+  it('follows a link that carries a query string, and one whose path is a named constant', () => {
+    /*
+     * Both halves of `checkInWizardHref`, and the derivation could read neither.
+     * Its character class held no `?`, so a link with a parameter stopped
+     * matching ENTIRELY rather than matching its path; and collapsing every
+     * interpolation to `:p` erased `${CHECK_IN_WIZARD_PATH}`, which is the
+     * segment the link is FOR. The handoff into the check-in wizard is written
+     * with both, so the one link in these trees that names its destination
+     * through the shared seam was the one link nothing could follow.
+     *
+     * The consequence pointed the wrong way, which is why this is a case and
+     * not a note: the route that OFFERS the link is then reported as consulting
+     * surplus privilege for demanding exactly the permission its destination
+     * denies on, and the cheap way to a green gate is to drop the gate.
+     */
+    const bothHalves = linkedRoutes(
+      "const CHECK_IN_WIZARD_PATH = '/receptions/check-in';\n" +
+        'const href = `/${locale}${CHECK_IN_WIZARD_PATH}?${params.toString()}`;'
+    ).map((path: string) => posix(path));
+    expect(bothHalves.some((path: string) => path.endsWith('receptions/check-in/page.tsx'))).toBe(
+      true
+    );
+
+    // The query half alone, over a spelled-out path: the parse keeps what
+    // precedes the first `?` and discards the rest, exactly as a URL is read.
+    const queryOnly = linkedRoutes(
+      'const href = `/${locale}/receptions/check-in?customerId=${id}&vehicleId=${other}`;'
+    ).map((path: string) => posix(path));
+    expect(queryOnly.some((path: string) => path.endsWith('receptions/check-in/page.tsx'))).toBe(
+      true
+    );
+
+    // And a fragment, the other tail a URL can carry.
+    const fragment = linkedRoutes('const href = `/${locale}/receptions/check-in#vehicle`;').map(
+      (path: string) => posix(path)
+    );
+    expect(fragment.some((path: string) => path.endsWith('receptions/check-in/page.tsx'))).toBe(
+      true
+    );
+  });
+
+  it('does not let a query string smuggle in a route outside the phase', () => {
+    // The narrowing is to the TAIL, not to the rule: a query-carrying link to a
+    // segment this phase does not own is still nothing, and a constant that
+    // does not resolve to a literal still collapses rather than being guessed.
+    expect(linkedRoutes('const href = `/${locale}/administration/users?tab=roles`;')).toEqual([]);
+    expect(
+      linkedRoutes('const href = `/${locale}${somewhere(config)}?${params.toString()}`;')
+    ).toEqual([]);
+  });
+
+  it('puts the check-in wizard one link from the customer-first entry point', () => {
+    /*
+     * The shipped fact the two cases above exist for. The vehicle step reached
+     * from a customer profile ends in `checkInWizardHref`, so the check-in page
+     * IS one link away from it and from the profile that offers the action —
+     * which is what makes `rec.reception.read`, the code that page denies on,
+     * a requirement of both rather than surplus privilege on either.
+     */
+    const entryPoints = REAL.routes.filter(
+      (route: { route: string }) =>
+        route.route.endsWith('work-order/new/page.tsx') ||
+        route.route.endsWith('crm/customers/[customerId]/page.tsx')
+    );
+    expect(entryPoints).toHaveLength(2);
+    for (const route of entryPoints as {
+      consulted: string[];
+      required: string[];
+      linkedRoutes: string[];
+    }[]) {
+      expect(route.consulted).toContain('rec.reception.read');
+      expect(route.required).toContain('rec.reception.read');
+      expect(route.linkedRoutes).toContain(
+        'apps/web/src/app/[locale]/(dashboard)/receptions/check-in/page.tsx'
+      );
+    }
   });
 });
 

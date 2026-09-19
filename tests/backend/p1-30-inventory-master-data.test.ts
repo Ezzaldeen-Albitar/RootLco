@@ -408,7 +408,21 @@ describe('declarations', () => {
   it('MD-B1 the administrator bundle now holds inv.adjustment.approve', () => {
     expect(TENANT_ADMINISTRATOR_ROLE.permissionCodes).toContain(APPROVE);
     expect(TENANT_ADMINISTRATOR_ROLE.permissionCodes).toContain(MANAGE);
-    expect(TENANT_ADMINISTRATOR_ROLE.permissionCodes).toHaveLength(67);
+    // 73 since the P1-31 P-1 widening added six delivery, warranty and
+    // reporting codes (`rpt.export` withheld by Owner decision, P1-31 CC-04),
+    // and 74 since P1-31 P-7 minted and carried `wty.warranty.read` (CC-07);
+    // 75 since P1-31 P-10 published the warranty policy write surface and carried
+    // `wty.policy.manage` with it (CC-01, now closed); and 76 since P1-31 P-11
+    // published the report configuration write surface and carried
+    // `rpt.report.configure` with it (CC-02, now closed); the two inventory codes
+    // and 78 since P1-31 P-17 minted the two employee-register codes and carried
+    // both, because a delivery cannot be created without an employee to name;
+    // the two inventory codes this case owns are unaffected by all five; and 83
+    // since P1-32-PRE-134 carried the five material codes, without which no part
+    // could be issued to a job once every work-order draw needs approved demand.
+    // 85 since the Owner directive of 2026-09-16 carried org.company.manage and
+    // org.branch.manage for the two organisation creation operations.
+    expect(TENANT_ADMINISTRATOR_ROLE.permissionCodes).toHaveLength(85);
   });
 });
 

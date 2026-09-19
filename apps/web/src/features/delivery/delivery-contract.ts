@@ -1,0 +1,538 @@
+/**
+ * The vehicle-delivery contract this phase consumes (P1-31, FE-002 eligibility,
+ * FE-003 authorized receiver, FE-004 checklist results, FE-006 signatures,
+ * FE-007 delivery history).
+ *
+ * | operation                            | method | path                                          | permissions (ALL required)              |
+ * | ------------------------------------ | ------ | --------------------------------------------- | --------------------------------------- |
+ * | `sal.delivery-read`                  | GET    | `/deliveries/{deliveryId}`                    | `sal.delivery.view`                     |
+ * | `sal.delivery-eligibility-read`      | GET    | `/deliveries/{deliveryId}/eligibility`        | `sal.delivery.view`, `sal.finance.view` |
+ * | `sal.delivery-receiver-read`         | GET    | `/deliveries/{deliveryId}/authorized-receiver`| `sal.delivery.view`                     |
+ * | `sal.delivery-signature-list`        | GET    | `/deliveries/{deliveryId}/signatures`         | `sal.delivery.view`                     |
+ * | `sal.delivery-checklist-result-list` | GET    | `/deliveries/{deliveryId}/checklist-results`  | `sal.delivery.view`                     |
+ * | `sal.delivery-status-history`        | GET    | `/deliveries/{deliveryId}/status-history`     | `sal.delivery.view`                     |
+ * | `sal.work-order-delivery-read`       | GET    | `/work-orders/{workOrderId}/delivery`         | `sal.delivery.view`                     |
+ *
+ * The five WRITES the execution slice sends are registered here too, and their
+ * request bodies are mirrored in `@/lib/contracts/delivery-contract` because the
+ * payload-parity gate reads its mirrors from one frozen list of files:
+ *
+ * | operation                            | method | path                                          | permissions (ALL required)                                   |
+ * | ------------------------------------ | ------ | --------------------------------------------- | ------------------------------------------------------------ |
+ * | `sal.delivery-create`                | POST   | `/deliveries`                                 | `sal.delivery.manage`                                        |
+ * | `sal.delivery-receiver-verify`       | POST   | `/deliveries/{deliveryId}/authorized-receiver`| `sal.delivery.manage`, `sal.delivery.view`                   |
+ * | `sal.delivery-checklist-record`      | POST   | `/deliveries/{deliveryId}/checklist-results`  | `sal.delivery.manage`                                        |
+ * | `sal.delivery-signature-attach`      | POST   | `/deliveries/{deliveryId}/signatures`         | `sal.delivery.manage`, `sal.delivery.view`                   |
+ * | `sal.delivery-complete`              | POST   | `/deliveries/{deliveryId}/completion`         | `sal.delivery.complete`, `sal.delivery.view`, `sal.finance.view` |
+ *
+ * The checklist a handover is worked through comes from the delivery checklist
+ * TEMPLATE reads (`sal.delivery-checklist-template-list` and
+ * `sal.delivery-checklist-template-read`), both `sal.delivery.view`. Neither is
+ * a delivery read: they publish the company's configuration, and the screen
+ * intersects the ACTIVE templates' items with what this delivery has recorded.
+ *
+ * Typed from the routes that own the shapes and the views in
+ * `apps/api/src/modules/delivery/application/delivery-read-service.ts` and
+ * `checklist-template-service.ts`.
+ *
+ * ## Eligibility is the server's, and the screen never recomputes it
+ *
+ * Nothing in this file derives `eligible` from a blocker list, and no screen
+ * built on it may. The completion recomposes the whole decision inside its own
+ * transaction, so a browser-side opinion could only ever disagree with the
+ * authority — and would disagree most usefully at the exact moment it mattered.
+ *
+ * ## The eligibility read needs a SECOND permission, and the page must respect it
+ *
+ * `sal.delivery-eligibility-read` declares `sal.delivery.view` AND
+ * `sal.finance.view`, because one of the eight blockers it composes is the
+ * customer's open balance. A caller holding only the delivery code is refused at
+ * the route with a 403 — so the screen does not issue the read at all for such a
+ * caller, and says why in its own words instead. Asking and being refused would
+ * put a denial in the backend's log for a decision this screen could make.
+ *
+ * ## Not every blocker means the same thing
+ *
+ * Five of the eight blockers exist only because the application composes them;
+ * the database primitive enforces three. Each composed fact therefore reports
+ * whether it could be ESTABLISHED. A blocker whose fact is unestablished means
+ * "this could not be read", which is an operator's cue to raise a platform
+ * problem — not to chase the customer. The two are rendered differently on
+ * purpose; collapsing them turns a fail-closed default into a silent outage.
+ *
+ * ## Identifiers are identifiers, with ONE exception the server publishes
+ *
+ * The receiver is a partner identifier; the vehicle is an identifier. The screen
+ * renders them as labelled references and invents no lookup the backend does not
+ * publish.
+ *
+ * `deliveringEmployeeId` is no longer one of them. **This section used to say it
+ * had no foreign key anywhere in the platform, and that stopped being true with
+ * P1-31 prerequisite P-17**: the column is bound to `org.employees` by
+ * `fk_delivery_records_delivering_employee` on the organisation and its
+ * identifier, and `sal.stamp_delivering_employee_identity` stamps an immutable
+ * display-name snapshot beside it at insert time. So every delivery read
+ * publishes `deliveringEmployeeDisplayName`, and the screens show the name.
+ *
+ * The name is still not RESOLVED here. It is the snapshot the server stamped
+ * when the handover was opened, which is what keeps a completed handover
+ * readable after a later rename or transfer — the historical attribution the
+ * Owner's decision of 2026-09-10 required. It is absent only on a handover
+ * recorded before that slice whose reference resolved to nobody, and the screens
+ * show the bare reference in that one case rather than inventing a person.
+ *
+ * ## Two references are sensitive, and stay references
+ *
+ * `identityEvidenceDocumentVersionId` and `signatureDocumentVersionId` point at
+ * stored documents. No identity-document content and no signature image is read,
+ * requested or rendered here: the screen states that the evidence is on file and
+ * offers no way to fetch the bytes.
+ *
+ * ## No figure crosses this boundary
+ *
+ * Not one delivery read carries an amount. `financial_balance_outstanding` is a
+ * blocker CODE, not a number, and `finalOdometerReadingId` is a reference to a
+ * reading rather than a reading. Nothing in this feature formats or computes
+ * money, which is why the phase carries no arithmetic-gate area yet.
+ */
+
+/** The permissions the delivery screens consult, as the backend registers them. */
+export const DELIVERY_PERMISSIONS = {
+  /** Every delivery read, and the page's own gate. */
+  view: 'sal.delivery.view',
+  /** Demanded by the eligibility read ALONGSIDE `view`, because one blocker is financial. */
+  financeView: 'sal.finance.view',
+  /** The authority that may override the one overridable blocker. */
+  complete: 'sal.delivery.complete',
+  /**
+   * The write code every handover act declares.
+   *
+   * Creating a delivery, verifying its receiver, recording a checklist outcome
+   * and attaching a signature all require it. Completion does NOT: that one
+   * declares `sal.delivery.complete` instead, so the authority to prepare a
+   * handover is not the authority to release the vehicle.
+   */
+  manage: 'sal.delivery.manage',
+} as const;
+
+/** `ck_delivery_records_status`, mirrored. */
+export const DELIVERY_STATUSES = [
+  'ready',
+  'receiver_verified',
+  'signed',
+  'delivered',
+  'exception',
+] as const;
+export type DeliveryStatus = (typeof DELIVERY_STATUSES)[number];
+
+/** The eight blocker codes the eligibility composition can raise, mirrored verbatim. */
+export const BLOCKER_CODES = [
+  'work_order_not_complete',
+  'quality_control_not_passed',
+  'financial_balance_outstanding',
+  'part_obligation_outstanding',
+  'checklist_incomplete',
+  'receiver_not_verified',
+  'signature_missing',
+  'delivery_state_invalid',
+] as const;
+export type BlockerCode = (typeof BLOCKER_CODES)[number];
+
+/** `ck_delivery_signatures_signer_role`, mirrored. */
+export const SIGNER_ROLES = ['receiver', 'delivering_employee', 'witness'] as const;
+export type SignerRole = (typeof SIGNER_ROLES)[number];
+
+/** `ck_delivery_checklist_results_outcome`, mirrored. */
+export const CHECKLIST_OUTCOMES = ['passed', 'failed', 'waived'] as const;
+export type ChecklistOutcome = (typeof CHECKLIST_OUTCOMES)[number];
+
+/**
+ * The page each list asks for.
+ *
+ * A choice, not the route's bound: the three paged reads default to 50 and
+ * refuse anything above 100, so this sits well inside what they accept.
+ */
+export const PAGE_SIZE = 25;
+
+/**
+ * The message key that names a code in the operator's language.
+ *
+ * A lookup rather than a string built from the code, so a value the backend
+ * adds without a translation renders as a visible gap rather than as a key that
+ * happens to look plausible — and so the catalogue holds no snake-case word.
+ */
+export const BLOCKER_LABEL_KEYS: Readonly<Record<string, string>> = {
+  work_order_not_complete: 'delivery.blocker.workOrderNotComplete',
+  quality_control_not_passed: 'delivery.blocker.qualityControlNotPassed',
+  financial_balance_outstanding: 'delivery.blocker.financialBalanceOutstanding',
+  part_obligation_outstanding: 'delivery.blocker.partObligationOutstanding',
+  checklist_incomplete: 'delivery.blocker.checklistIncomplete',
+  receiver_not_verified: 'delivery.blocker.receiverNotVerified',
+  signature_missing: 'delivery.blocker.signatureMissing',
+  delivery_state_invalid: 'delivery.blocker.deliveryStateInvalid',
+} satisfies Readonly<Record<BlockerCode, string>>;
+
+/** The message key for a delivery status. */
+export const STATUS_LABEL_KEYS: Readonly<Record<string, string>> = {
+  ready: 'delivery.status.ready',
+  receiver_verified: 'delivery.status.receiverVerified',
+  signed: 'delivery.status.signed',
+  delivered: 'delivery.status.delivered',
+  exception: 'delivery.status.exception',
+} satisfies Readonly<Record<DeliveryStatus, string>>;
+
+/** The message key for a signer role. */
+export const SIGNER_ROLE_LABEL_KEYS: Readonly<Record<string, string>> = {
+  receiver: 'delivery.signerRole.receiver',
+  delivering_employee: 'delivery.signerRole.deliveringEmployee',
+  witness: 'delivery.signerRole.witness',
+} satisfies Readonly<Record<SignerRole, string>>;
+
+/** The message key for a checklist outcome. */
+export const OUTCOME_LABEL_KEYS: Readonly<Record<string, string>> = {
+  passed: 'delivery.outcome.passed',
+  failed: 'delivery.outcome.failed',
+  waived: 'delivery.outcome.waived',
+} satisfies Readonly<Record<ChecklistOutcome, string>>;
+
+/**
+ * Resolve a value the backend sent to the key that names it.
+ *
+ * Returns `null` for a value this build does not know, and every caller renders
+ * the raw code in that case. Guessing a key would print the key itself as if it
+ * were a label; printing the code at least names the thing the backend said.
+ */
+export function labelKeyFor<K extends string>(
+  table: Readonly<Record<K, string>>,
+  value: string
+): string | null {
+  const known = table as Readonly<Record<string, string | undefined>>;
+  return known[value] ?? null;
+}
+
+/** A cursor page exactly as the backend publishes one — no total, and none invented. */
+export interface DeliveryPage<T> {
+  readonly items: readonly T[];
+  readonly nextCursor: string | null;
+  readonly hasMore: boolean;
+}
+
+/**
+ * The delivery record — `DeliveryRecordView`.
+ *
+ * `status` is typed as the wire's `string` rather than as `DeliveryStatus`: the
+ * check constraint is the database's and a value added there must reach the
+ * screen as itself, not be narrowed away by a type this side invented.
+ */
+export interface DeliveryRecord {
+  readonly id: string;
+  readonly companyId: string;
+  readonly branchId: string;
+  readonly workOrderId: string;
+  readonly receptionVisitId: string;
+  readonly vehicleId: string;
+  /** An `org.employees` identifier, bound to that register by a foreign key since P-17. */
+  readonly deliveringEmployeeId: string;
+  /**
+   * The employee's display name as it stood when the handover was opened.
+   *
+   * Stamped by the database, never by a caller: input is not authoritative for
+   * historical identity text. Absent only on a handover recorded before P1-31
+   * prerequisite P-17 whose reference resolved to nobody — every handover opened
+   * since carries a name, because the trigger stamps one or refuses the row.
+   */
+  readonly deliveringEmployeeDisplayName: string | null;
+  readonly status: string;
+  readonly deliveredAt: string | null;
+  /** A vehicle odometer-reading identifier. NOT a reading value. */
+  readonly finalOdometerReadingId: string | null;
+  /** The value a completion's mandatory version guard takes. */
+  readonly recordVersion: number;
+}
+
+/** `sal.work-order-delivery-read` — `WorkOrderDeliveryView`. Absence is a delivery of `null`. */
+export interface WorkOrderDelivery {
+  readonly workOrderId: string;
+  readonly delivery: DeliveryRecord | null;
+}
+
+/** One composed fact and its provenance — `EligibilityFact`. */
+export interface EligibilityFact {
+  readonly blocker: string;
+  /** False means the fact was not read and the blocker is ASSUMED, not observed. */
+  readonly established: boolean;
+  /** The protected table or module port the fact came from. */
+  readonly source: string;
+}
+
+/** A mandatory checklist item the delivery has not satisfied — `ChecklistGapRow`. */
+export interface ChecklistGap {
+  readonly templateItemId: string;
+  readonly templateId: string;
+  readonly itemCode: string;
+  readonly label: string;
+}
+
+/** Which blockers may be overridden at all, and the authority each needs. */
+export interface OverridableBlocker {
+  readonly code: string;
+  readonly permission: string;
+}
+
+/** `sal.delivery-eligibility-read` — `EligibilityView`. */
+export interface DeliveryEligibility {
+  readonly deliveryId: string;
+  readonly workOrderId: string;
+  readonly status: string;
+  /** Server-derived, always. No client input reaches this decision. */
+  readonly eligible: boolean;
+  readonly blockers: readonly string[];
+  /** Empty on a read: only a completion applies an override. */
+  readonly overridden: readonly string[];
+  readonly facts: readonly EligibilityFact[];
+  /** A bounded sample of unsatisfied mandatory items, capped by the read at 20. */
+  readonly checklistGaps: readonly ChecklistGap[];
+  readonly overridable: readonly OverridableBlocker[];
+  /** The version a completion would have to name. Republished on every read. */
+  readonly recordVersion: number;
+}
+
+/** `AuthorizedReceiverRecordView`. The identity reference is sensitive and stays a reference. */
+export interface AuthorizedReceiver {
+  readonly id: string;
+  readonly deliveryRecordId: string;
+  readonly receiverPartnerId: string;
+  /** A stored-document reference. No content is ever requested for it. */
+  readonly identityEvidenceDocumentVersionId: string | null;
+  readonly verifiedBy: string;
+  readonly verifiedAt: string;
+  readonly recordVersion: number;
+}
+
+/** `sal.delivery-receiver-read` — `DeliveryReceiverEnvelope`. `null` before verification. */
+export interface DeliveryReceiverEnvelope {
+  readonly deliveryId: string;
+  readonly receiver: AuthorizedReceiver | null;
+}
+
+/** `DeliverySignatureRecordView`. The document reference is never dereferenced here. */
+export interface DeliverySignature {
+  readonly id: string;
+  readonly deliveryRecordId: string;
+  readonly signerRole: string;
+  readonly signatureDocumentVersionId: string;
+  readonly signedAt: string;
+}
+
+/** `sal.delivery-signature-list` — `DeliverySignaturesEnvelope`. */
+export interface DeliverySignaturesEnvelope {
+  readonly deliveryId: string;
+  readonly signatures: DeliveryPage<DeliverySignature>;
+}
+
+/** `ChecklistResultRecordView` — a recorded result, with the item's own code and label. */
+export interface ChecklistResult {
+  readonly id: string;
+  readonly deliveryRecordId: string;
+  readonly templateItemId: string;
+  readonly itemCode: string;
+  readonly label: string;
+  readonly outcome: string;
+  readonly waiverReason: string | null;
+  readonly recordedBy: string;
+  readonly recordVersion: number;
+}
+
+/** `sal.delivery-checklist-result-list` — `DeliveryChecklistResultsEnvelope`. */
+export interface DeliveryChecklistResultsEnvelope {
+  readonly deliveryId: string;
+  readonly results: DeliveryPage<ChecklistResult>;
+}
+
+/** One transition of the append-only delivery ledger — `DeliveryStatusHistoryEntryView`. */
+export interface DeliveryStatusTransition {
+  readonly id: string;
+  readonly fromStatus: string | null;
+  readonly toStatus: string;
+  readonly reason: string | null;
+  readonly actorId: string;
+  readonly occurredAt: string;
+}
+
+/** `sal.delivery-status-history` — `DeliveryStatusHistoryEnvelope`. */
+export interface DeliveryStatusHistoryEnvelope {
+  readonly deliveryId: string;
+  readonly transitions: DeliveryPage<DeliveryStatusTransition>;
+}
+
+/* ------------------------------------------------------------------------- *
+ * The execution half: the checklist configuration, and the rules a control
+ * must hold to before it sends anything.
+ * ------------------------------------------------------------------------- */
+
+/** `ck_delivery_checklist_templates_status`, mirrored. */
+export const CHECKLIST_TEMPLATE_STATUSES = ['active', 'inactive'] as const;
+export type ChecklistTemplateStatus = (typeof CHECKLIST_TEMPLATE_STATUSES)[number];
+
+/** The status a template must hold for its items to bind a handover. */
+export const ACTIVE_TEMPLATE_STATUS: ChecklistTemplateStatus = 'active';
+
+/** `ChecklistTemplateView` — one checklist configuration of one company. */
+export interface ChecklistTemplate {
+  readonly id: string;
+  readonly companyId: string;
+  readonly templateCode: string;
+  readonly name: string;
+  /** The wire's `string`; the check constraint is the database's to widen. */
+  readonly status: string;
+  readonly recordVersion: number;
+}
+
+/**
+ * `ChecklistTemplateItemView` — one line of a checklist.
+ *
+ * `itemCode` and `label` are spelled exactly as a recorded result spells them,
+ * which is what lets one row render whether or not it has an outcome yet.
+ */
+export interface ChecklistTemplateItem {
+  readonly id: string;
+  readonly templateId: string;
+  readonly itemCode: string;
+  readonly label: string;
+  readonly isMandatory: boolean;
+  readonly sortOrder: number;
+  readonly recordVersion: number;
+}
+
+/** `sal.delivery-checklist-template-list` — a cursor page of templates. */
+export interface ChecklistTemplateListEnvelope {
+  readonly templates: DeliveryPage<ChecklistTemplate>;
+}
+
+/**
+ * `sal.delivery-checklist-template-read` — a template WITH its live items.
+ *
+ * The items are not paged and the order is the checklist. Withdrawn items are
+ * excluded by the read, so an item that disappears from here while a result for
+ * it is still listed is a withdrawal rather than a fault.
+ */
+export interface ChecklistTemplateDetail {
+  readonly template: ChecklistTemplate;
+  readonly items: readonly ChecklistTemplateItem[];
+}
+
+/**
+ * Every item of every ACTIVE template of the companies the caller can reach.
+ *
+ * Assembled from the two template reads rather than published by one operation,
+ * because no operation publishes it. The assembly is stated rather than hidden:
+ * a screen showing "the checklist" is showing the union of the active templates
+ * it could read, and `templateCount` is what lets it say so.
+ */
+export interface ActiveChecklist {
+  readonly templates: readonly ChecklistTemplateDetail[];
+  /** How many templates were read in total, active or not. */
+  readonly templateCount: number;
+}
+
+/**
+ * What a delivery signature may be captured as.
+ *
+ * The list is not written here. It is the ACCEPTED CONTENT TYPES of the document
+ * category the SERVER published, read at capture time — a literal in this tier
+ * would be a media policy the interface invented and presented as though
+ * somebody had decided it.
+ */
+export const SIGNATURE_CATEGORY_CODE = 'reception_signature';
+
+/**
+ * The document category a receiver's identity evidence is filed under (FE-003,
+ * the Owner's decision D-18).
+ *
+ * Named by CODE and by nothing else. The category's business-link purpose,
+ * accepted content types and size ceiling are the server's and are read from
+ * the published row at capture time. No other category is ever substituted:
+ * `reception_vin` also carries an identity-document purpose, and filing a
+ * person's proof of identity under vehicle evidence is the classification
+ * defect D-18 forbids, so a missing or inactive row is reported as an error.
+ */
+export const RECEIVER_IDENTITY_CATEGORY_CODE = 'delivery_receiver_identity';
+
+/**
+ * The two codes attaching identity evidence needs, beyond the delivery write.
+ *
+ * Reading the category needs `shared.document.read`; authorizing the upload,
+ * registering the version and linking the document need
+ * `shared.document.manage`. A caller holding the delivery write code without
+ * these may still verify a receiver without evidence, so the file control is
+ * withheld rather than offered as a control whose only outcome is a refusal.
+ */
+export const RECEIVER_EVIDENCE_PERMISSIONS = {
+  categoryRead: 'shared.document.read',
+  documentManage: 'shared.document.manage',
+} as const;
+
+/**
+ * The longest reason either the waiver or the override may carry.
+ *
+ * `MAX_REASON` in the delivery domain, and the same bound on both: a waiver
+ * reason and an override reason are each `text` with a length check the route
+ * enforces at 2000. Checked here so an operator is told by the control, not by a
+ * refused submission that has already spent an idempotency key.
+ */
+export const MAX_REASON = 2000;
+
+/**
+ * The final odometer reading, as the COLUMN accepts it.
+ *
+ * `veh.odometer_readings.value` is `numeric(12,1)` — twelve digits and ONE
+ * decimal — while the completion route's own schema admits two. A two-decimal
+ * value therefore passes the route's validation and is refused by the delivery
+ * domain with `ERR-VAL-001`, naming a field the operator has already left. This
+ * is the narrower of the two rules on purpose, so the refusal happens in the
+ * form where it can be corrected.
+ */
+const ODOMETER_ONE_DECIMAL = /^\d{1,12}(\.\d)?$/;
+
+/** True when the value is one the odometer column can hold without rounding. */
+export function isAcceptableOdometerValue(value: string): boolean {
+  return ODOMETER_ONE_DECIMAL.test(value);
+}
+
+/** `veh.odometer_readings.unit`. `sal.complete_delivery` defaults to kilometres. */
+export const ODOMETER_UNITS = ['km', 'mi'] as const;
+export type OdometerUnit = (typeof ODOMETER_UNITS)[number];
+
+/** The message key for an odometer unit. */
+export const ODOMETER_UNIT_LABEL_KEYS: Readonly<Record<string, string>> = {
+  km: 'delivery.odometerUnit.km',
+  mi: 'delivery.odometerUnit.mi',
+} satisfies Readonly<Record<OdometerUnit, string>>;
+
+/**
+ * The catalogue codes a delivery write answers with that mean something more
+ * specific than their HTTP kind.
+ *
+ * A code is branched on only where the backend genuinely distinguishes a cause
+ * and the distinction changes what the operator should do. Everything else keeps
+ * the shared banner: inventing a sentence per code would claim knowledge the
+ * problem document does not carry.
+ *
+ * `message` never crosses the wire — `problemFor` assembles the document from
+ * the catalogue entry and the failure's safe details and reads the service's own
+ * sentence nowhere — so the blockers and item codes behind `ERR-TRN-001` are NOT
+ * readable from the refusal. They are read back from the eligibility operation,
+ * which publishes both as data.
+ */
+export const DELIVERY_ERROR_CODES = {
+  /** A recorded outcome is final; a second, different one is refused. */
+  alreadyRecorded: 'ERR-INT-001',
+  /** The view was stale. Re-read eligibility and quote the version it republishes. */
+  staleVersion: 'ERR-CON-001',
+  /** No `If-Match` reached a version-guarded operation. */
+  versionRequired: 'ERR-CON-002',
+  /** The override was refused; `requiredPermissions` names the authority. */
+  overrideDenied: 'ERR-IAM-001',
+  /** The handover is blocked. The reasons come from the eligibility read. */
+  blocked: 'ERR-TRN-001',
+} as const;

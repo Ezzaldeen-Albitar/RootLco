@@ -429,8 +429,43 @@ describe('W9 — the bootstrap the provisioning operation now carries', () => {
     // 48 before the P1-30 corrective slices; 65 with the seventeen commercial
     // codes F-01 proved no tenant could otherwise ever hold; 67 with
     // inv.item.manage and inv.adjustment.approve, without which no item
-    // could be catalogued and no stock could ever appear.
-    expect(expected).toHaveLength(67);
+    // could be catalogued and no stock could ever appear; 73 with the SIX
+    // P1-31 delivery, warranty and reporting codes of prerequisite P-1 — six
+    // of the nine A0 named. Three were deliberately excluded at that point:
+    // `wty.policy.manage` and `rpt.report.configure` because no operation declared
+    // them (CC-01, CC-02), and `rpt.export` — which two shipped operations do
+    // declare — withheld on least-privilege grounds by Owner decision (CC-04).
+    // `rpt.export` is the only one of the three still withheld.
+    // 74 with `wty.warranty.read`, minted by P1-31 prerequisite P-7 and carried
+    // because withholding it while the warranty detail read was re-pointed off
+    // `wty.warranty.issue` would REMOVE a capability this bundle already confers
+    // (CC-07). It is the only code any P1-31 slice mints.
+    // 75 with `wty.policy.manage`, which P1-31 prerequisite P-10 moved OUT of the
+    // exclusions: CC-01 withheld it because no operation declared it and said the
+    // slice that published one would own the widening, and P-10 published five.
+    // Withholding it now would leave a fresh administrator unable to issue any
+    // warranty at all, because generation refuses a company with no active policy.
+    // It was already a catalogue row; nothing is minted by that widening.
+    // 76 with `rpt.report.configure`, which P1-31 prerequisite P-11 moved OUT of
+    // the exclusions on the same rule: CC-02 withheld it because no operation
+    // declared it, and P-11 published seven. Withholding it now would leave a
+    // fresh administrator with an empty report catalogue it could never fill,
+    // because both published report reads filter on `status = 'published'` and no
+    // other code can set that value. It too was already a catalogue row.
+    // 78 with the two codes P1-31 prerequisite P-17 MINTS for the employee
+    // register. Both are carried on the same P-1 rule the eight above are: four
+    // shipped operations declare them, and withholding either would leave a
+    // fresh administrator unable to record ANY handover, because
+    // `sal.delivery-create` refuses an employee that does not exist and nothing
+    // else in the product can create one.
+    // 83 with the five P1-32 material codes (P1-32-PRE-134): since every reservation
+    // and issue for a work order draws on an approved material requirement, a fresh
+    // administrator that could not ask for, approve or delegate one could never issue
+    // a part to a job. All five are catalogue rows minted by slice 3a.
+    // 85 with the two codes the Owner directive of 2026-09-16 carries for
+    // `org.company-create` and `org.branch-create`: without them no one in a
+    // freshly provisioned organisation could add a company or a branch.
+    expect(expected).toHaveLength(85);
     expect(expected.some((c) => c.includes('*'))).toBe(false);
     expect(expected.some((c) => c.startsWith('platform.'))).toBe(false);
     expect(new Set(expected).size).toBe(expected.length);
@@ -577,7 +612,9 @@ describe('W9 — the bootstrap the provisioning operation now carries', () => {
         [result.body.ownerAccountId, 'active']
       )
     ).toBe(2);
-    expect(await codesOfRole(result.body.tenantAdministratorRoleId)).toHaveLength(67);
+    expect(await codesOfRole(result.body.tenantAdministratorRoleId)).toHaveLength(
+      TENANT_ADMINISTRATOR_ROLE.permissionCodes.length
+    );
   });
 
   it('W9-B9 an active tenant cannot reopen the bootstrap write window', async () => {
@@ -627,7 +664,19 @@ describe('W9 — the bootstrap the provisioning operation now carries', () => {
       ])) ?? -1,
     ];
     const before = await counts();
-    expect(before).toEqual([1, 1, 2, 70, 2]);
+    // The mapping count is the two bootstrap roles' sets summed, DERIVED rather
+    // than transcribed: it was the literal 70 and had to be corrected when the
+    // P1-31 P-1 widening moved the administrator set from 67 to 73. A literal
+    // here says nothing about which role changed, and it drifts silently in the
+    // direction of whoever edits it last — as it would have again when the
+    // Owner's CC-04 decision took `rpt.export` back out.
+    expect(before).toEqual([
+      1,
+      1,
+      2,
+      FIRST_OWNER_ROLE.permissionCodes.length + TENANT_ADMINISTRATOR_ROLE.permissionCodes.length,
+      2,
+    ]);
 
     asHolder();
     const replay = await provision('b10', {}, key);

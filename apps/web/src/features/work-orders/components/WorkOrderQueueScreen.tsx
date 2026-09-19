@@ -4,6 +4,7 @@ import { useCallback, useMemo, useState } from 'react';
 import { DataTable, type Column } from '@/components/data-table/DataTable';
 import { INITIAL_REQUEST, type TableRequest } from '@/components/data-table/table-state';
 import { useServerTable } from '@/components/data-table/use-server-table';
+import { DigitsEcho } from '@/components/forms/DigitsEcho';
 import { SelectField, TextField } from '@/components/forms/Field';
 import { EmptyState } from '@/components/states/States';
 import type { BranchTarget } from '@/lib/api/read-operation';
@@ -13,6 +14,8 @@ import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic } from '@/i18n/get-messages';
 import { listWorkOrders } from '../api';
 import {
+  MAX_WORK_ORDER_SEARCH,
+  MIN_WORK_ORDER_SEARCH,
   WORK_ORDER_KINDS,
   type WorkOrderKind,
   type WorkOrderListCriteria,
@@ -32,6 +35,14 @@ import {
  * separately MOUNTED component — before a target is submitted, the component
  * that would issue the read does not exist. "No request before intent" is
  * structural here rather than a flag somebody can forget.
+ *
+ * ## Number and free text narrow the board, never widen it (P1-32)
+ *
+ * `number` is an exact work-order number and `q` one box over the number, the
+ * party names, any plate and the VIN. Company and branch stay required beside
+ * them. The terms live in screen state, never in the address bar
+ * (`P1-27-SEC-002`), and Arabic-Indic digits are echoed for reading only — the
+ * value is sent as typed and the backend folds it.
  *
  * ## No total, and truncation says so
  *
@@ -70,6 +81,8 @@ interface Draft {
   readonly branchId: string;
   readonly kind: '' | WorkOrderKind;
   readonly state: string;
+  readonly number: string;
+  readonly q: string;
 }
 
 export function WorkOrderQueueScreen({
@@ -89,6 +102,8 @@ export function WorkOrderQueueScreen({
     branchId: branchIds.length === 1 ? (branchIds[0] ?? '') : '',
     kind: '',
     state: '',
+    number: '',
+    q: '',
   });
   const [submitted, setSubmitted] = useState<Submitted | null>(null);
   const [errors, setErrors] = useState<Readonly<Record<string, string>>>({});
@@ -112,12 +127,21 @@ export function WorkOrderQueueScreen({
     if (draft.state.trim().length > 0 && !/^[a-z][a-z0-9_]{1,62}$/.test(draft.state.trim())) {
       found['state'] = 'workOrders.queue.stateFormat';
     }
+    const q = draft.q.trim();
+    // The backend refuses a one-character free-text value.
+    if (q.length > 0 && q.length < MIN_WORK_ORDER_SEARCH) {
+      found['q'] = 'workOrders.queue.searchTooShort';
+    }
     setErrors(found);
     if (Object.keys(found).length > 0) return;
 
+    const number = draft.number.trim();
     const criteria: WorkOrderListCriteria = {
       ...(draft.kind ? { kind: draft.kind } : {}),
       ...(draft.state.trim() ? { state: draft.state.trim() } : {}),
+      // Sent as typed (trimmed). The backend folds Arabic-Indic digits.
+      ...(number ? { number } : {}),
+      ...(q ? { q } : {}),
     };
     setSubmitted({
       target: { companyId: draft.companyId.trim(), branchId: draft.branchId.trim() },
@@ -176,6 +200,31 @@ export function WorkOrderQueueScreen({
             onChange={(event) => setDraft((d) => ({ ...d, state: event.target.value }))}
             error={errorFor('state')}
           />
+          <div className="flex flex-col gap-1">
+            <TextField
+              label={translate(messages, 'workOrders.queue.numberFilter')}
+              description={translate(messages, 'workOrders.queue.numberFilterHelp')}
+              spellCheck={false}
+              dir="ltr"
+              maxLength={MAX_WORK_ORDER_SEARCH}
+              value={draft.number}
+              onChange={(event) => setDraft((d) => ({ ...d, number: event.target.value }))}
+            />
+            <DigitsEcho messages={messages} value={draft.number} />
+          </div>
+          <div className="flex flex-col gap-1 sm:col-span-2 lg:col-span-3">
+            <TextField
+              label={translate(messages, 'workOrders.queue.searchFilter')}
+              description={translate(messages, 'workOrders.queue.searchFilterHelp')}
+              spellCheck={false}
+              dir="auto"
+              maxLength={MAX_WORK_ORDER_SEARCH}
+              value={draft.q}
+              onChange={(event) => setDraft((d) => ({ ...d, q: event.target.value }))}
+              error={errorFor('q')}
+            />
+            <DigitsEcho messages={messages} value={draft.q} />
+          </div>
         </div>
 
         <div className="mt-4 flex flex-wrap items-center gap-3">

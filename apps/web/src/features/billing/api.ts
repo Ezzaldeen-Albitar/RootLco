@@ -1,13 +1,25 @@
 'use server';
 
 import { authorizedClient } from '@/lib/api/server-client';
-import { readOperation, type ReadState } from '@/lib/api/read-operation';
-import type { InvoiceCancelBody, InvoiceCreateBody } from '@/lib/contracts/billing-contract';
+import {
+  branchTargetQuery,
+  readOperation,
+  type BranchTarget,
+  type CursorPage,
+  type ReadState,
+} from '@/lib/api/read-operation';
+import type {
+  CounterSaleCreateBody,
+  InvoiceCancelBody,
+  InvoiceCreateBody,
+} from '@/lib/contracts/billing-contract';
 import { fromFailure, success, type ActionState } from '@/lib/forms/action-result';
 import type {
   CreatedInvoice,
+  Invoice,
   InvoiceDetail,
   InvoicePreview,
+  InvoiceStatus,
   IssuedInvoice,
   Outstanding,
   VoidedInvoice,
@@ -166,6 +178,73 @@ export async function cancelInvoice(
   if (!result.ok) return { state: fromFailure(result, attempt), created: null };
   return {
     state: { ...success('invoices.cancel.success', attempt), correlationId: result.correlationId },
+    created: result.data,
+  };
+}
+
+/* ------------------------------------------------------------------ *
+ * P1-32 — counter sales.
+ *
+ * A counter sale is an INVOICE with no work order, so it is listed, issued,
+ * settled and credited through the surface above rather than a second one. Only
+ * the two acts that are peculiar to it live here: listing a branch's counter
+ * sales, and creating the draft. The screen that calls them is the inventory
+ * feature's `CounterSalesScreen`, because what an operator is doing is selling
+ * STOCK; `issueInvoice` and `cancelInvoice` above are the same functions the
+ * work-order screen uses, and there is no second copy of either.
+ * ------------------------------------------------------------------ */
+
+/**
+ * A branch's counter sales (`sal.counter-sale-list`), newest first.
+ *
+ * Branch-targeted: `companyId` and `branchId` are the read's TARGET, demanded by
+ * the route and re-authorized server-side, so they travel through
+ * `branchTargetQuery` rather than among the filters. One page of the route's own
+ * maximum; the caller reads `hasMore` rather than assuming the branch fitted.
+ */
+export async function listCounterSales(
+  target: BranchTarget,
+  filter: { readonly status?: InvoiceStatus | undefined } = {}
+): Promise<ReadState<CursorPage<Invoice>>> {
+  return readOperation<CursorPage<Invoice>>(
+    '/api/v1/counter-sales' +
+      branchTargetQuery(target, { status: filter.status ?? null, limit: 50 })
+  );
+}
+
+/**
+ * Draft a counter sale (`sal.counter-sale-create`).
+ *
+ * The body names the buyer and the lines and NOTHING else — no price, no total,
+ * no tax, no discount — because the route refuses a body carrying one rather
+ * than dropping it, and every figure is computed inside the database from the
+ * item's configured selling price. An item with no configured price refuses the
+ * whole sale rather than selling at zero, which the screen states as that.
+ *
+ * `idempotencyKey` is the transport key for THIS confirmation: a counter runs on
+ * scans, and a doubled frame or a lost answer must replay the first draft rather
+ * than open a second one. A fresh draft answers 201, a replay 200 with
+ * `replayed: true`; both are `ok` to the transport, and the screen tells them
+ * apart from the body.
+ *
+ * Nothing moves yet. The stock leaves the shelf at ISSUANCE.
+ */
+export async function createCounterSale(
+  body: CounterSaleCreateBody,
+  idempotencyKey: string,
+  attempt = 1
+): Promise<CreateOutcome<CreatedInvoice>> {
+  const client = await authorizedClient();
+  if (!client) return { state: expired(attempt), created: null };
+  const result = await client.send<CreatedInvoice>('POST', '/api/v1/counter-sales', body, {
+    idempotencyKey,
+  });
+  if (!result.ok) return { state: fromFailure(result, attempt), created: null };
+  return {
+    state: {
+      ...success('invoices.counterSale.create.success', attempt),
+      correlationId: result.correlationId,
+    },
     created: result.data,
   };
 }

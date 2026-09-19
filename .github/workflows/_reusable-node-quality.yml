@@ -683,6 +683,18 @@ jobs:
           # command response, never from arithmetic or a cached guess
           # (P1-28-QA-004).
           npm run validate:p1-28-version-sourcing
+          # The P1-31 sibling of the line above (P1-31-QA-004), named here for
+          # the same reason and on the same evidence. It reaches hosted CI
+          # through `verify:policies` inside the clean-room aggregate, which is
+          # the slowest job in the pull request — so a version-sourcing defect in
+          # the delivery, warranty or reporting screens would be reported forty
+          # minutes after its apt/rec twin, on the same tree, by a different job.
+          # A gate a developer meets after the next commit is a gate they meet
+          # too late. Its two P1-31 siblings, `validate:p1-31-access` and
+          # `validate:p1-31-write-shape`, are still aggregate-only and are
+          # deliberately left so by this change rather than moved without their
+          # own reason.
+          npm run validate:p1-31-version-sourcing
 
       - name: Web component tier
         if: inputs.task == 'web-quality'
@@ -861,6 +873,23 @@ jobs:
           name: evidence-${{ inputs.task }}
           retention-days: ${{ inputs.artifact-retention-days }}
           if-no-files-found: ignore
+          # No comment lines inside the block scalar below: `path:` is a literal
+          # block, so a `#` line is a search path and not a comment.
+          #
+          # The web tier's machine-readable coverage output is in the list for
+          # the reason the unit tier's equivalent pair is — `coverage-gate.json`
+          # and `coverage/unit/coverage-summary.json`. The web half uploaded only
+          # the RENDERED `coverage-web.md` under `*.md`, so the per-file
+          # measurement lived for the length of one job and was then destroyed,
+          # and no reviewer could count instrumented files per tree or read the
+          # dashboard-route figures from a run. `coverage-baseline.web.json`
+          # cites `apps/web/coverage/web/coverage-summary.json` inside artifact
+          # `evidence-web-quality` as the source of its 131-file figure — a file
+          # that artifact did not carry, so the citation could not be opened.
+          #
+          # Nothing here changes WHAT is measured. The "Web coverage ratchet"
+          # step already writes both files at exactly these paths; this decides
+          # only whether the run keeps them.
           path: |
             workflow-security.json
             phase-ownership-context.json
@@ -880,6 +909,8 @@ jobs:
             apps/web/vitest-web.json
             apps/web/playwright-report.json
             test-totals-web.json
+            apps/web/coverage/web/coverage-summary.json
+            coverage-gate-web.json
             unrun-tiers.md
             web-build-scan.json
             web-build.log

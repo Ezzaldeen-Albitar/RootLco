@@ -90,6 +90,42 @@ interface Unrun {
   readonly reviewBy: string;
 }
 
+/**
+ * The SECOND register, and why a second one rather than a wider first.
+ *
+ * `unrun` is a browser register in every respect that matters: its
+ * `executedBy` must name the authenticated-browser job, its `remainingDebt` must
+ * speak of a gate's `needs`, the job summary renders it as a table of specs, and
+ * the inversion guard below refuses any entry whose path is outside
+ * `/authenticated/` — because a declaration that could name a spec the gate DOES
+ * run would be a way to mark any inconvenient tier as expected-not-to-run and
+ * have a gate agree.
+ *
+ * `tests/db/p1-31-export-fixture.test.ts` is unrun and is none of those things.
+ * It is executed by no hosted job and by no local aggregate, by design: it
+ * installs privileged expiring grants and refuses the shared acceptance
+ * database, so it needs a disposable one that no runner has. Declaring it in
+ * `unrun` would have required relaxing the inversion guard, which is the one
+ * check in this file that stops the register becoming a dispensation. So it is
+ * declared beside it instead, and held to obligations of the same weight in the
+ * shape its own facts have: a COMMAND rather than a job, and two negative claims
+ * — no hosted job, no local aggregate — that are measured here rather than
+ * accepted as prose.
+ */
+interface UnrunNonBrowser {
+  readonly id: string;
+  readonly path: string;
+  readonly whatItProves: string;
+  readonly whatIsUnprovenWithoutIt: string;
+  readonly whyNoHostedJobRunsIt: string;
+  readonly executedByCommand: string;
+  readonly whyNoLocalAggregateRunsIt: string;
+  readonly remainingDebt: string;
+  readonly compensatingControl: string;
+  readonly owner: string;
+  readonly reviewBy: string;
+}
+
 interface Governed {
   readonly since: string;
   readonly executedBy: string;
@@ -100,9 +136,12 @@ interface Governed {
 
 const declaration = JSON.parse(readFileSync(DECLARATION, 'utf8')) as {
   unrun: Unrun[];
+  unrunNonBrowser?: UnrunNonBrowser[];
   governed?: Governed;
   hostedObservation?: string;
   howToClose?: string;
+  description?: string;
+  policy?: string;
 };
 
 /** Every `*.spec.ts` under the e2e tree, repository-relative with `/` separators. */
@@ -737,5 +776,182 @@ describe('the gap is LOUD, not merely recorded', () => {
       const isolation = declaration.unrun.find((r) => r.path.endsWith('isolation.spec.ts'));
       expect(isolation?.whatIsUnprovenWithoutIt).toMatch(/tenant isolation/i);
     }
+  });
+});
+
+describe('the unrun register is not only about the browser tier', () => {
+  /**
+   * `unrun` being empty was written down as though it were a statement about the
+   * whole repository. It was a statement about ONE tier, and while it stood, a
+   * database-bound file that no hosted job and no local aggregate executes was
+   * undeclared — an omission that read exactly like an absence, in the file whose
+   * entire purpose is to make such omissions readable.
+   *
+   * These cases hold the second register to the same standard as the first, in
+   * the shape its own facts have. Two of them are the interesting ones, because
+   * they are what turns the entry's two negative claims into measurements: no
+   * workflow may name the command or the path, and no other package script may
+   * name the command. The day either stops being true the entry is a stale excuse
+   * and must be deleted, which is the forward direction the browser register
+   * already carries.
+   *
+   * Nothing here relaxes anything above it. The inversion guard that refuses a
+   * declaration outside the gated browser directory is untouched, and this
+   * register is required NOT to hold a browser spec — so the two cannot be used
+   * to launder one another.
+   */
+  const REGISTER = declaration.unrunNonBrowser ?? [];
+  const FIXTURE_CONFIG = join(ROOT, 'vitest.config.db-fixture.ts');
+  const pkg = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8')) as {
+    scripts: Record<string, string>;
+  };
+
+  /** The one script name an entry declares, parsed out of its own sentence. */
+  function commandOf(row: UnrunNonBrowser): string {
+    const match = /npm run ([a-z0-9:-]+)/.exec(row.executedByCommand);
+    expect(match, `${row.id} does not name an \`npm run\` command`).not.toBeNull();
+    return (match as RegExpExecArray)[1] as string;
+  }
+
+  it('declares every file the second database configuration exists to run', () => {
+    /*
+     * DERIVED, in both directions, rather than a list somebody remembers to
+     * update. `vitest.config.db-fixture.ts` is a whole vitest configuration that
+     * exists because its files cannot ride the shared database tier; anything it
+     * includes is by definition executed by no aggregate, so anything it includes
+     * owes an entry here.
+     */
+    const config = readFileSync(FIXTURE_CONFIG, 'utf8');
+    const include = /include:\s*\[([^\]]*)\]/.exec(config);
+    expect(include, 'the fixture configuration no longer declares an include list').not.toBeNull();
+    const included = [...((include as RegExpExecArray)[1] as string).matchAll(/'([^']+)'/g)].map(
+      (m) => m[1] as string
+    );
+    expect(included.length, 'the fixture configuration includes nothing').toBeGreaterThan(0);
+    expect(
+      REGISTER.map((row) => row.path).sort(),
+      'the second database configuration runs a file this register does not declare, or declares ' +
+        'one it no longer runs'
+    ).toEqual([...included].sort());
+  });
+
+  it('gives every entry all of its required statements and an owner', () => {
+    const gaps: string[] = [];
+    for (const row of REGISTER) {
+      for (const field of [
+        'id',
+        'path',
+        'whatItProves',
+        'whatIsUnprovenWithoutIt',
+        'whyNoHostedJobRunsIt',
+        'executedByCommand',
+        'whyNoLocalAggregateRunsIt',
+        'remainingDebt',
+        'compensatingControl',
+        'owner',
+        'reviewBy',
+      ] as const) {
+        const value = row[field];
+        if (typeof value !== 'string' || value.trim().length < 3) {
+          gaps.push(`${row.id ?? row.path}.${field} is blank or trivial`);
+        }
+      }
+      if (
+        typeof row.whatIsUnprovenWithoutIt === 'string' &&
+        row.whatIsUnprovenWithoutIt.length < 40
+      ) {
+        gaps.push(`${row.id} does not say what is unproven in enough words to be checkable`);
+      }
+    }
+    expect(gaps).toEqual([]);
+  });
+
+  it('names a file that exists, is no browser spec, and is declared in one register only', () => {
+    const declaredAbove = new Set(declaration.unrun.map((row) => row.path));
+    for (const row of REGISTER) {
+      expect(existsSync(join(ROOT, row.path)), `${row.id}: ${row.path} is absent`).toBe(true);
+      expect(
+        allSpecs.includes(row.path),
+        `${row.id} declares a browser spec here; that belongs in \`unrun\` under its own rules`
+      ).toBe(false);
+      expect(declaredAbove.has(row.path), `${row.id} is declared in both registers`).toBe(false);
+    }
+    const ids = REGISTER.map((row) => row.id);
+    expect(ids.filter((id, i) => ids.indexOf(id) !== i)).toEqual([]);
+  });
+
+  it('names a command this repository really declares', () => {
+    // The field that turns the entry from an excuse into a pointer at a proof
+    // somebody can take. A command nobody wired would read as a repayment route
+    // while there was none.
+    for (const row of REGISTER) {
+      const command = commandOf(row);
+      expect(
+        pkg.scripts[command],
+        `${row.id} names \`${command}\`, which is not a script`
+      ).toBeDefined();
+    }
+  });
+
+  it('measures "no hosted job runs it" instead of asserting it', () => {
+    const workflows = readdirSync(WORKFLOWS)
+      .filter((name) => name.endsWith('.yml') || name.endsWith('.yaml'))
+      .map((name) => ({ name, source: readFileSync(join(WORKFLOWS, name), 'utf8') }));
+    expect(workflows.length, 'no workflow was read, so this case proves nothing').toBeGreaterThan(
+      3
+    );
+    for (const row of REGISTER) {
+      const command = commandOf(row);
+      for (const workflow of workflows) {
+        expect(
+          workflow.source.includes(command),
+          `${workflow.name} runs \`${command}\`, so ${row.id} is no longer unrun on a hosted ` +
+            'runner and the entry must be deleted'
+        ).toBe(false);
+        expect(
+          workflow.source.includes(row.path),
+          `${workflow.name} names ${row.path}, so ${row.id} may be hosted after all`
+        ).toBe(false);
+      }
+    }
+  });
+
+  it('measures "no local aggregate runs it" instead of asserting it', () => {
+    for (const row of REGISTER) {
+      const command = commandOf(row);
+      const carriers = Object.entries(pkg.scripts)
+        .filter(([name]) => name !== command)
+        .filter(([, body]) => body.includes(command))
+        .map(([name]) => name);
+      expect(
+        carriers,
+        `${row.id} claims no aggregate runs \`${command}\`, and these scripts do`
+      ).toEqual([]);
+    }
+  });
+
+  it('has not passed its own review date', () => {
+    const now = Date.now();
+    for (const row of REGISTER) {
+      const when = new Date(row.reviewBy);
+      expect(Number.isNaN(when.getTime()), `${row.id} reviewBy is not a date`).toBe(false);
+      expect(
+        when.getTime(),
+        `${row.id} passed its review date (${row.reviewBy}); take the proof again or re-argue it`
+      ).toBeGreaterThan(now);
+    }
+  });
+
+  it('is described and governed by the document itself, not only by these cases', () => {
+    // The register must be findable by a reader who opens the JSON rather than
+    // this test. A block nothing in the document mentions is a hidden exemption.
+    expect(
+      String(declaration.description),
+      'the description does not mention the second register'
+    ).toContain('unrunNonBrowser');
+    expect(
+      String(declaration.policy),
+      'the policy states no rules for the second register'
+    ).toContain('unrunNonBrowser');
   });
 });

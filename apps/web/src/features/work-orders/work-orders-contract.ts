@@ -116,7 +116,19 @@ export interface WorkOrderListCriteria {
   readonly openedFrom?: string;
   readonly openedTo?: string;
   readonly customerId?: string;
+  /** P1-32. Exact work-order number; the backend folds Arabic-Indic digits. */
+  readonly number?: string;
+  /**
+   * P1-32. One box: part of the number, of a party name, of any plate the
+   * vehicle carried, or of its VIN. Two characters at least.
+   */
+  readonly q?: string;
 }
+
+/** `MAX_WORK_ORDER_SEARCH_FRAGMENT` in the domain. */
+export const MAX_WORK_ORDER_SEARCH = 80;
+/** `MIN_WORK_ORDER_SEARCH_FRAGMENT` in the domain: the free-text box only. */
+export const MIN_WORK_ORDER_SEARCH = 2;
 
 /* ------------------------------------------------------------------ *
  * W3 — the work-order detail

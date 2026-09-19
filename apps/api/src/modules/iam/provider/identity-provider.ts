@@ -4,8 +4,8 @@
  * ADR-019 selects Supabase Auth as the authentication and session provider and
  * requires that no application service, domain service, repository, or Route
  * Handler depend on a provider SDK type. This interface is that boundary: it
- * declares the twelve capabilities the phase needs, in RootLco's own vocabulary,
- * with RootLco's own error model.
+ * declares the thirteen capabilities the product needs, in RootLco's own
+ * vocabulary, with RootLco's own error model.
  *
  * Three rules the port exists to make structural rather than advisory:
  *
@@ -41,7 +41,16 @@ export type ProviderFailureReason =
   /** The provider was unreachable, timed out, or returned a fault. */
   | 'provider-unavailable'
   /** The provider rejected the request as malformed. Always an application defect. */
-  | 'provider-rejected';
+  | 'provider-rejected'
+  /**
+   * The provider's own credential policy refused a new password.
+   *
+   * Distinct from `provider-rejected` because it is not an application defect
+   * and the caller CAN fix it: they chose a password the provider will not
+   * accept. RootLco deliberately holds no second strength policy (ADR-019), so
+   * this reason is the only place a strength verdict exists.
+   */
+  | 'credential-policy-rejected';
 
 /**
  * A provider failure, carrying a reason and never a provider message.
@@ -49,13 +58,22 @@ export type ProviderFailureReason =
  * The message is written by us, for operators. Forwarding the provider's own
  * text is how "user not found" ends up in a login response and turns the
  * endpoint into an account-enumeration oracle.
+ *
+ * `policyMessage` is the single, narrow exception, and it does not weaken that
+ * rule: it is set only for `credential-policy-rejected`, it is the provider's
+ * statement about a password the ALREADY-AUTHENTICATED caller just chose for
+ * their OWN identity, and it is written to the operator log rather than to the
+ * response — `toAppFailureFromProvider` never places it in `safeDetails`. It
+ * exists so that the provider's strength policy stays the only strength policy
+ * and an operator can read what the provider actually said.
  */
 export class ProviderFailure extends Error {
   public override readonly name = 'ProviderFailure';
   constructor(
     public readonly reason: ProviderFailureReason,
     message: string,
-    public readonly retryable = false
+    public readonly retryable = false,
+    public readonly policyMessage: string | null = null
   ) {
     super(message);
   }
@@ -119,18 +137,22 @@ export interface PasswordResetRequest {
 }
 
 /**
- * The twelve capabilities Phase 1-14 needs from an authentication provider.
+ * The fifteen capabilities RootLco needs from an authentication provider.
  *
  * Adapters implement all of them or fail closed on the ones the concrete
  * provider does not support — never silently succeed. `supportsDisable` exists
  * so a caller can tell "not supported" from "did nothing", which matters when
  * the alternative is believing an account was disabled and it was not.
+ * `supportsDelete` exists for the same reason and is read before the one
+ * compensating call in the product — see `deleteIdentity`.
  */
 export interface IdentityProvider {
   /** Stable name, written to `iam.user_accounts.identity_provider`. */
   readonly name: string;
   /** False when this provider cannot disable an identity; callers must not pretend. */
   readonly supportsDisable: boolean;
+  /** False when this provider cannot remove an identity; the caller must not pretend. */
+  readonly supportsDelete: boolean;
 
   /** 1. Verify credentials and issue a session. */
   authenticate(email: string, password: string): Promise<ProviderSession>;
@@ -181,13 +203,66 @@ export interface IdentityProvider {
    * `SECURITY DEFINER` routines by CI-asserted invariant — so a lookup that does
    * not yet know its tenant has nowhere in the database it is allowed to run.
    *
-   * Called on the **failure** path of login only, so an attempt the provider
-   * refused can still be attributed to an account and audited. It is never called
-   * on a successful login (the session already carries the binding), and its
-   * result is never revealed to the caller in any form — see ADR-019 rule 3 and
-   * the enumeration note on `AuthenticationService.login`.
+   * Two call sites, and only two. On the **failure** path of login, so an attempt
+   * the provider refused can still be attributed to an account and audited — it is
+   * never called on a successful login (the session already carries the binding),
+   * and its result is never revealed to the caller in any form there. See ADR-019
+   * rule 3 and the enumeration note on `AuthenticationService.login`. And ahead of
+   * an invitation, where the answer decides whether an address the provider
+   * already knows is an orphan of the caller's own organisation that may be
+   * reused, or somebody else's identity that must be refused; that path reveals
+   * no more than the invitation already did, because a provider conflict has
+   * answered ERR-RES-002 to the inviter since P1-14.
    */
   findByEmail(email: string): Promise<ProviderIdentity | null>;
+
+  /**
+   * 13. Remove an identity by subject. Compensation only.
+   *
+   * The one caller is `InvitationService.invite`, and it passes the subject the
+   * provider returned **to that same request** when the account INSERT the
+   * invitation exists to make was refused — a capacity ceiling, a duplicate — so
+   * the identity this request created does not outlive the transaction that
+   * rolled back. It is never called with an address, never with an identity this
+   * request did not create, never for a set, and there is no operation, route or
+   * service method that exposes it to a caller.
+   *
+   * Adapters that cannot remove an identity report `supportsDelete: false` and
+   * throw; the compensating caller checks the flag first and records the gap
+   * rather than believing a removal that did not happen.
+   */
+  deleteIdentity(subject: string): Promise<void>;
+
+  /**
+   * 14. Write a new credential for an identity, addressed by subject.
+   *
+   * The provider owns the credential (ADR-019), so a change of password is a
+   * provider user-update and nothing else: RootLco stores no password, no hash
+   * and no reset token, and there is no local state for this call to keep in
+   * step. Proof that the caller may set it is NOT this call's business — the
+   * one caller re-authenticates through `authenticate` first, which is the only
+   * check that the current password is right.
+   *
+   * Strength is refused by the PROVIDER and only by the provider. A refusal
+   * arrives as `credential-policy-rejected`, carrying the provider's own
+   * statement in `policyMessage` for the operator log, so RootLco never has to
+   * hold a second opinion about what a strong password is.
+   */
+  setPassword(subject: string, newPassword: string): Promise<ProviderIdentity>;
+
+  /**
+   * 15. End every session of the identity behind `accessToken`.
+   *
+   * Takes a TOKEN rather than a subject, which is the whole reason it is a
+   * separate capability from `revokeAllSessions`: GoTrue 2.x has no
+   * revoke-by-subject endpoint, so a caller holding one of the identity's own
+   * tokens is the only way the sessions can actually be ended — see the note on
+   * `revokeAllSessions`, which documents that it can do nothing.
+   *
+   * Reaching the desired end state some other way is success, not failure: an
+   * already-invalid token means the sessions are already gone.
+   */
+  signOutEverywhere(accessToken: string): Promise<void>;
 }
 
 /**
@@ -200,6 +275,7 @@ export interface IdentityProvider {
 export class UnconfiguredIdentityProvider implements IdentityProvider {
   readonly name = 'unconfigured';
   readonly supportsDisable = false;
+  readonly supportsDelete = false;
 
   private fail(): never {
     throw new ProviderFailure(
@@ -245,6 +321,15 @@ export class UnconfiguredIdentityProvider implements IdentityProvider {
     this.fail();
   }
   async findByEmail(): Promise<ProviderIdentity | null> {
+    this.fail();
+  }
+  async deleteIdentity(): Promise<void> {
+    this.fail();
+  }
+  async setPassword(): Promise<ProviderIdentity> {
+    this.fail();
+  }
+  async signOutEverywhere(): Promise<void> {
     this.fail();
   }
 }

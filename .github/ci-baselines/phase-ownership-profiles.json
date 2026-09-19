@@ -125,6 +125,21 @@
       "why": "the P1-27 citation-anchor gate and its suite, plus the phase records whose counts it moves — a repository-wide gate owned by no phase, carrying no Frontend source"
     },
     {
+      "branchPrefix": "chore/repository-governance-",
+      "profile": "repository-tooling",
+      "why": "Repository governance and instruction documents that belong to no phase: the tracked portable CLAUDE.md, CONTRIBUTING policy paragraphs, and factual corrections to product workshop documents authorised by the Owner (2026-09-09). Docs, tooling, tests and rootConfig only, like every other repository-tooling rule. Listed among the repository-tooling rules so first-match ordering is unchanged for the phase prefixes."
+    },
+    {
+      "branchPrefix": "chore/dependency-security-",
+      "profile": "dependency-security",
+      "why": "an upstream advisory remediation — the npm manifests in every workspace that declares an affected package, the single root lockfile, and the maintenance record"
+    },
+    {
+      "branchPrefix": "chore/acceptance-harness-",
+      "profile": "acceptance-harness",
+      "why": "The LOCAL acceptance harness belongs to no phase, because every phase is accepted on it: supabase/config.toml and the mail and auth templates it names decide how a local credential link is built and where it may land, and every phase profile forbids the supabase bucket by name precisely so that question gets its own review. This is that review. Listed among the other chore/ rules, all of which belong to no phase; no existing prefix is a prefix of this one and this one is a prefix of none, so first-match ordering is unchanged for every existing branch."
+    },
+    {
       "branchPrefix": "feature/pre-p1-29-backend-",
       "profile": "pre-p1-29-backend",
       "why": "The Backend lane of PRE-P1-29. Listed BEFORE the initiative branch so a lane branch is judged by its lane rather than by the wider integration profile — first match wins, and the narrower rule must be reachable."
@@ -168,6 +183,21 @@
       "branchPrefix": "feature/p1-30-",
       "profile": "p1-30-frontend",
       "why": "The Frontend lane of P1-30 (services, quotations, inventory, billing and payments screens). Not a prefix of feature/p1-29- in either direction, so the two phases cannot reach one another. The A0 preflight itself travels on this lane: it adds these profiles (tooling, tests) and the read-surface matrix (docs), and no screen."
+    },
+    {
+      "branchPrefix": "remediation/p1-31-backend-",
+      "profile": "p1-31-backend",
+      "why": "The Backend prerequisite lane of P1-31 — one branch per read seam or contract the A0 preflight proved missing (docs/phase-1/phase-1-31/a0-preflight.md, prerequisites P-2…P-7 and P-9…P-12). Listed BEFORE the Frontend lane and before any broader remediation/p1-31- rule that may later be added: first match wins. There is deliberately NO broad remediation/p1-31- rule, so a branch nobody mapped is refused rather than absorbed."
+    },
+    {
+      "branchPrefix": "feature/p1-31-",
+      "profile": "p1-31-frontend",
+      "why": "The Frontend lane of P1-31 (delivery, warranty, dashboard and reporting screens). Not a prefix of feature/p1-30- in either direction — the two diverge at the tenth character — so the two phases cannot reach one another. The A0 preflight itself travels on this lane: it adds these profiles (tooling) and the canonical plan and preflight records (docs), and no screen."
+    },
+    {
+      "branchPrefix": "feature/owner-directive-",
+      "profile": "owner-directive-saas-operation",
+      "why": "The Owner directive of 2026-09-16 (SaaS operation before daily use). No other rule in this file starts with feature/owner-directive-, and this prefix is a prefix of no other rule, so first-match ordering is unaffected: every branch that resolved to some profile before this rule was added still resolves to the same one. The profile is deliberately the initiative's WHOLE surface rather than a lane, because every branch of this directive spans the product — a console screen needs its operation, its migration and its permission seed, and the environment-configuration branch needs the API env template that no committed profile permitted alongside migrations. Each branch declares its own slice in its pull request, which is where the narrowing lives."
     },
     {
       "branchPrefix": "planning/",

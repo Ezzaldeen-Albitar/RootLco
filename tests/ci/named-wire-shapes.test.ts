@@ -85,9 +85,109 @@ describe('every route body serialises a named type', () => {
     // 375 with the P1-30 opening-batch reads (S-17): the list serialises
     // `Page<OpeningBatchListView>` and the detail `OpeningBatchDetailView`, both
     // NAMED interfaces, so `named` moves by two and `composed` does not.
-    expect(summary.bodies).toBe(375);
-    expect(summary.named).toBe(322);
-    expect(summary.composed).toBe(53);
+    // 381 with the P1-31 delivery read seam (P-2 … P-5): six GETs, every one of
+    // them NAMED, so `named` moves by six and `composed` does not. Four of the
+    // six needed a named envelope minted for them — `DeliveryReceiverEnvelope`,
+    // `DeliveryChecklistResultsEnvelope`, `DeliverySignaturesEnvelope` and
+    // `DeliveryStatusHistoryEnvelope` exist because THIS gate refused the inline
+    // return types the slice first wrote, which is the gate doing its job.
+    // 382 with the P1-31 warranty list (P-6): one GET serialising
+    // `Page<WarrantyRecordListView>`, a NAMED interface, so `named` moves by one
+    // and `composed` does not.
+    // 389 with the P1-31 warranty POLICY and COVERAGE seam (P-10): seven
+    // operations, two GETs and five writes, every one of them NAMED, so `named`
+    // moves by seven and `composed` does not. `WarrantyPolicyListView` and
+    // `WarrantyPolicyDetailView` exist because this gate refuses an inline return
+    // type; the five commands serialise `WarrantyPolicySummaryView` and
+    // `WarrantyCoverageTermsView`, which is the same pair the reads publish.
+    // 397 with the P1-31 checklist TEMPLATE seam (P-9) merged alongside it: eight
+    // further operations, two GETs and six writes, every one of them NAMED, so
+    // `named` moves by eight again and `composed` still does not.
+    // `ChecklistTemplateListView` and `ChecklistTemplateDetailView` exist because
+    // this gate refuses an inline return type; the six commands serialise
+    // `ChecklistTemplateView` and `ChecklistTemplateItemView`, which is the same
+    // pair the reads publish.
+    // 404 with the P1-31 report CONFIGURATION seam (P-11): seven operations, two
+    // GETs and five writes, every one of them NAMED, so `named` moves by seven and
+    // `composed` does not. `ReportConfigurationListView` and
+    // `ReportConfigurationDetailView` exist because this gate refuses an inline
+    // return type; the five commands serialise `ReportConfigurationSummaryView` and
+    // `ReportConfigurationVersionView`, which is the same pair the reads publish.
+    // 405 with the P1-31 delivery-readiness queue (Owner decision D-3): ONE
+    // further operation, a GET returning `Page<DeliveryReadinessRowView>` — a
+    // NAMED interface, because this gate refuses an inline return type — so
+    // `named` moves by one again and `composed` still does not.
+    // The delivery list adds one named 200 body on an existing route module.
+    // 406 with the P1-31 delivery-readiness queue merged on develop: the
+    // delivery-record list (#358) and the readiness queue are separate
+    // operations on separate route modules, so both count, `named` moves by one
+    // for each and `composed` still does not.
+    // 407 with the P1-31 report ENGINE (P-11) merged alongside it: one GET
+    // serialising `ReportRunView`, a NAMED interface, so `named` moves by one
+    // and `composed` does not. The envelope exists BECAUSE this gate refuses an
+    // inline return type, and naming it is what let the cell, column and period
+    // shapes be named as well.
+    // 411 with the P1-31 employee register (P-17): four operations, two GETs and
+    // two writes, every one of them serialising `EmployeeView` or
+    // `Page<EmployeeView>` — a NAMED interface either way — so `named` moves by
+    // four and `composed` does not.
+    // 412 with the P1-31 warranty status-history read (P-18): ONE GET serialising
+    // `WarrantyStatusHistoryEnvelope`, a NAMED interface — it exists because this
+    // gate refuses an inline return type, and naming it is what let the row shape
+    // be named `WarrantyStatusHistoryEntryView` as well — so `named` moves by one
+    // and `composed` does not.
+    // P1-31 P-12 adds the named ReportExportView response.
+    // 426 with the P1-32 Platform Owner Console backend: thirteen new bodies,
+    // every one a NAMED service return type, so `named` moves by thirteen — and
+    // by one more, because `platform.organization-read` now serialises the named
+    // `Page<OrganizationView>` from its service where it used to compose
+    // `{ items }` in the route, which is also why `composed` falls by one.
+    // 429 with the Owner directive organisation administration: the company
+    // create serialises `CompanyResult`, the branch create `BranchResult` and the
+    // capacity read `CapacityResult` — all NAMED — so `named` moves by three and
+    // `composed` does not.
+    // 432 with the P1-32-PRE-151 organisation growth: the company add serialises
+    // `CompanyAddedView`, the branch add `BranchAddedView` and the administrator
+    // setup `AdministratorSetupResultView` — all NAMED, all carrying the target
+    // organisation beside the row, so `named` moves by three and `composed` does
+    // not.
+    // 431 with the P1-32 preparatory inventory slice: eighteen operations —
+    // transfers, goods receipts, the cost history, adjustments and counts — and
+    // every one serialises a NAMED view or `Page<…>` of one, so `named` moves by
+    // eighteen and `composed` does not.
+    // 437 with P1-32 preparatory slice 2: six identifier operations, each a NAMED
+    // view, so `named` moves by six and `composed` does not.
+    // 444 with the rest of that slice: the two item-price operations, the two
+    // counter-sale operations and the three return operations — again every one a
+    // named view or a `Page<…>` of one, so `named` moves by seven and `composed`
+    // does not.
+    // 459 with P1-32 preparatory slice 3b: fifteen operations, every one serialising
+    // a NAMED view or a `Page<…>` of one, so `named` moves by fifteen and `composed`
+    // does not.
+    // 463 with P1-32 preparatory slice 3c: the re-check and cancellation of a
+    // requirement answer its NAMED view, and the closure and cancellation of a
+    // request a NAMED request view, so `named` moves by four and `composed` does not.
+    // 465 with P1-32-PRE-141: the settlement list answers a `Page<…>` of a NAMED
+    // settlement view and the settlement read that view, so `named` moves by two.
+    // 468 with the Owner directive organisation administration merged in: the
+    // company create serialises `CompanyResult`, the branch create `BranchResult`
+    // and the capacity read `CapacityResult` — all NAMED — so `named` moves by
+    // three and `composed` does not.
+    // 484 with the Owner directive inventory operations merged into the Platform
+    // Owner Console line: the two branches move different route modules, so the
+    // console's sixteen bodies and this branch's fifty-two add without overlap;
+    // `named` moves by seventeen and by fifty-two, and `composed` falls by one
+    // for the console's `platform.organization-read` alone.
+    // 492 with the Owner directive operational stock alerts: eight operations —
+    // the three reorder-level ones, the four stock alerts and the tenant capacity
+    // alert — each serialising a NAMED view, so `named` moves by eight and
+    // `composed` does not move at all.
+    // 493 with the Owner directive console account and security: one operation,
+    // the caller's own password change, serialising the NAMED `PasswordChangeResult`
+    // — so `named` moves by one and `composed` does not move.
+    expect(summary.bodies).toBe(493);
+    expect(summary.named).toBe(441);
+    expect(summary.composed).toBe(52);
     expect(summary.anonymous).toBe(0);
     expect(summary.unresolved).toBe(0);
   });

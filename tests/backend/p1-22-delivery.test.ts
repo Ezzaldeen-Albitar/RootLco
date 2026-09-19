@@ -112,6 +112,7 @@ import {
   seedWorkOrderChain,
   type IssuedInvoice,
   type WorkOrderChain,
+  deliveringEmployeeForWorkOrder,
 } from './p1-22-helpers';
 import { __resetAuthenticatorForTests } from '@/server/context/principal';
 import { POST as CREATE_DELIVERY } from '@/app/api/v1/deliveries/route';
@@ -142,6 +143,8 @@ interface DeliveryBody {
   readonly receptionVisitId: string;
   readonly vehicleId: string;
   readonly deliveringEmployeeId: string;
+  /** The snapshot `sal.stamp_delivering_employee_identity` writes (P1-31 P-17). */
+  readonly deliveringEmployeeDisplayName: string | null;
   readonly status: string;
   readonly deliveredAt: string | null;
   readonly finalOdometerReadingId: string | null;
@@ -749,7 +752,10 @@ async function openDelivery(workOrderId: string): Promise<DeliveryBody> {
   // different work orders, visits, vehicles and customers, successfully.
   await linkSignatureDocumentToWorkOrder(workOrderId);
   authAs(SAL_FULL);
-  const response = await createDelivery({ workOrderId, deliveringEmployeeId: USER_A });
+  const response = await createDelivery({
+    workOrderId,
+    deliveringEmployeeId: await deliveringEmployeeForWorkOrder(workOrderId),
+  });
   if (response.status !== 201) {
     throw new Error(
       `fixture delivery for work order ${workOrderId} failed with ${response.status}: ` +
@@ -962,7 +968,7 @@ describe('sal.delivery-create', () => {
     authAs(SAL_FULL);
     const response = await createDelivery({
       workOrderId: chain.workOrderId,
-      deliveringEmployeeId: USER_A,
+      deliveringEmployeeId: await deliveringEmployeeForWorkOrder(chain.workOrderId),
     });
     expect(response.status).toBe(201);
     const delivery = await bodyOf<DeliveryBody>(response);
@@ -976,7 +982,14 @@ describe('sal.delivery-create', () => {
     expect(delivery.replayed).toBe(false);
     expect(delivery.companyId).toBe(chain.companyId);
     expect(delivery.branchId).toBe(chain.branchId);
-    expect(delivery.deliveringEmployeeId).toBe(USER_A);
+    // The employee identity P1-31 P-17 made mandatory, and the snapshot the database
+    // stamped from it. `deliveringEmployeeId` used to be a LOGIN ACCOUNT id with no
+    // foreign key behind it; it is now an `org.employees` row in this branch, and the
+    // name beside it was written by the trigger rather than by the caller.
+    expect(delivery.deliveringEmployeeId).toBe(
+      await deliveringEmployeeForWorkOrder(chain.workOrderId)
+    );
+    expect(delivery.deliveringEmployeeDisplayName).toBe('Fixture handover officer');
 
     // The decisive assertion: both are read off the WORK ORDER, compared against the
     // work-order row itself rather than against the reception fixture that produced it.
@@ -1019,7 +1032,7 @@ describe('sal.delivery-create', () => {
       authAs(SAL_FULL);
       const response = await createDelivery({
         workOrderId: chain.workOrderId,
-        deliveringEmployeeId: USER_A,
+        deliveringEmployeeId: await deliveringEmployeeForWorkOrder(chain.workOrderId),
         ...extra,
       });
       expect(response.status, JSON.stringify(extra)).toBe(422);
@@ -1040,7 +1053,7 @@ describe('sal.delivery-create', () => {
     authAs(SAL_FULL);
     const second = await createDelivery({
       workOrderId: chain.workOrderId,
-      deliveringEmployeeId: USER_A,
+      deliveringEmployeeId: await deliveringEmployeeForWorkOrder(chain.workOrderId),
     });
     // `uq_delivery_records_work_order_active` would raise `23505` and abort the
     // transaction — including the audit append — so the service checks first and the
@@ -1062,7 +1075,10 @@ describe('sal.delivery-create', () => {
   it('replays an idempotency key without opening a second delivery (idempotency)', async () => {
     const chain = await seedWorkOrderChain('dlv_create_replay');
     const key = randomUUID();
-    const payload = { workOrderId: chain.workOrderId, deliveringEmployeeId: USER_A };
+    const payload = {
+      workOrderId: chain.workOrderId,
+      deliveringEmployeeId: await deliveringEmployeeForWorkOrder(chain.workOrderId),
+    };
     const auditBefore = await auditTotalFor('sal.delivery.created');
 
     authAs(SAL_FULL);
@@ -1089,6 +1105,48 @@ describe('sal.delivery-create', () => {
     expect(await auditCountFor('sal.delivery.created', original.id)).toBe(1);
   });
 
+  it('refuses the same key offered for a DIFFERENT work order (idempotency)', async () => {
+    /*
+     * The half of the replay contract a replay case cannot assert. The fingerprint
+     * binds the principal, the method, the path template, the resolved parameters and
+     * the canonicalised body; a route that stored the KEY alone would answer this
+     * second request with the FIRST delivery's document, telling the caller a handover
+     * had been opened on a work order that never had one.
+     */
+    const first = await seedWorkOrderChain('dlv_create_fp_a');
+    const second = await seedWorkOrderChain('dlv_create_fp_b');
+    const key = randomUUID();
+
+    authAs(SAL_FULL);
+    const opened = await createDelivery(
+      {
+        workOrderId: first.workOrderId,
+        deliveringEmployeeId: await deliveringEmployeeForWorkOrder(first.workOrderId),
+      },
+      key
+    );
+    expect(opened.status).toBe(201);
+
+    authAs(SAL_FULL);
+    const conflicting = await createDelivery(
+      {
+        workOrderId: second.workOrderId,
+        deliveringEmployeeId: await deliveringEmployeeForWorkOrder(second.workOrderId),
+      },
+      key
+    );
+    expect(conflicting.status).toBe(409);
+    expect((await bodyOf<ProblemBody>(conflicting)).code).toBe('ERR-INT-001');
+
+    // The second work order has no delivery: the refusal wrote nothing.
+    expect(
+      await countRowsOf(
+        `SELECT count(*)::text AS n FROM sal.delivery_records WHERE work_order_id = $1`,
+        [second.workOrderId]
+      )
+    ).toBe(0);
+  });
+
   it('refuses a caller lacking sal.delivery.manage (authorization)', async () => {
     const chain = await seedWorkOrderChain('dlv_create_authz');
     // `SAL_READER` holds `sal.delivery.view` and `sal.finance.view`, so it can see the
@@ -1096,7 +1154,7 @@ describe('sal.delivery-create', () => {
     authAs(SAL_READER);
     const response = await createDelivery({
       workOrderId: chain.workOrderId,
-      deliveringEmployeeId: USER_A,
+      deliveringEmployeeId: await deliveringEmployeeForWorkOrder(chain.workOrderId),
     });
     expect(response.status).toBe(403);
     expect((await bodyOf<ProblemBody>(response)).code).toBe('ERR-IAM-001');
@@ -1118,7 +1176,7 @@ describe('sal.delivery-create', () => {
     authAs(SAL_PERMISSION_ELSEWHERE);
     const response = await createDelivery({
       workOrderId: chain.workOrderId,
-      deliveringEmployeeId: USER_A,
+      deliveringEmployeeId: await deliveringEmployeeForWorkOrder(chain.workOrderId),
     });
     expect(response.status).toBe(403);
     expect((await bodyOf<ProblemBody>(response)).code).toBe('ERR-IAM-001');
@@ -1137,7 +1195,7 @@ describe('sal.delivery-create', () => {
     authAs(SAL_TENANT_B);
     const response = await createDelivery({
       workOrderId: chain.workOrderId,
-      deliveringEmployeeId: USER_A,
+      deliveringEmployeeId: await deliveringEmployeeForWorkOrder(chain.workOrderId),
     });
     expect(response.status).toBe(404);
     expect((await bodyOf<ProblemBody>(response)).code).toBe('ERR-RES-001');
@@ -1514,6 +1572,62 @@ describe('sal.delivery-receiver-verify', () => {
     ).toBe(1);
   });
 
+  it('refuses a malformed body and an unknown field before writing anything (denial)', async () => {
+    // The boundary schema is `.strict()`, so an unexpected field is a refusal rather
+    // than a silently dropped one. Both shapes are asserted because a schema relaxed
+    // to `.passthrough()` would still refuse the malformed identifier.
+    const { delivery } = await bareDelivery('dlv_recv_body');
+
+    for (const body of [
+      { receiverPartnerId: 'not-a-uuid' },
+      { receiverPartnerId: PARTNER_A, verifiedBy: USER_A },
+      {},
+    ]) {
+      authAs(SAL_FULL);
+      const refused = await verifyReceiver(delivery.id, body);
+      expect({ body, status: refused.status }).toEqual({ body, status: 422 });
+      expect((await bodyOf<ProblemBody>(refused)).code).toBe('ERR-VAL-001');
+    }
+
+    expect(
+      await countRowsOf(
+        `SELECT count(*)::text AS n FROM sal.authorized_receivers WHERE delivery_record_id = $1`,
+        [delivery.id]
+      )
+    ).toBe(0);
+  });
+
+  it('refuses the same key offered for a DIFFERENT receiver (idempotency)', async () => {
+    // Without the body in the fingerprint the second call would be answered with the
+    // first receiver's document — telling the caller the outsider had been verified
+    // as the person entitled to take the vehicle, while `PARTNER_A` was.
+    const { delivery } = await bareDelivery('dlv_recv_fingerprint');
+    const key = randomUUID();
+
+    authAs(SAL_FULL);
+    const first = await verifyReceiver(delivery.id, { receiverPartnerId: PARTNER_A }, key);
+    expect(first.status).toBe(201);
+    const verified = await bodyOf<ReceiverBody>(first);
+
+    authAs(SAL_FULL);
+    const conflicting = await verifyReceiver(
+      delivery.id,
+      { receiverPartnerId: OUTSIDER_PARTNER },
+      key
+    );
+    expect(conflicting.status).toBe(409);
+    expect((await bodyOf<ProblemBody>(conflicting)).code).toBe('ERR-INT-001');
+
+    // One receiver, still the one that was actually verified.
+    const rows = await admin.query<{ receiver_partner_id: string }>(
+      `SELECT receiver_partner_id FROM sal.authorized_receivers WHERE delivery_record_id = $1`,
+      [delivery.id]
+    );
+    expect(rows.rowCount).toBe(1);
+    expect(rows.rows[0]?.receiver_partner_id).toBe(PARTNER_A);
+    expect(await auditCountFor('sal.delivery.receiver_verified', verified.id)).toBe(1);
+  });
+
   it('refuses a caller lacking sal.delivery.manage (authorization)', async () => {
     const { delivery } = await bareDelivery('dlv_recv_authz');
     authAs(SAL_READER);
@@ -1729,6 +1843,43 @@ describe('sal.delivery-checklist-record', () => {
       )
     ).toBe(1);
     expect((await auditTotalFor('sal.delivery.checklist_recorded')) - auditBefore).toBe(1);
+  });
+
+  it('refuses the same key offered for a DIFFERENT item (idempotency)', async () => {
+    /*
+     * Distinct from the re-record refusal below, which uses two DIFFERENT keys and is
+     * answered by the row's own uniqueness. This one reuses ONE key across two
+     * different bodies: without the body in the fingerprint the second call would be
+     * answered with the first result's document, reporting item B recorded when only
+     * item A ever was — and the completion gate reads those rows.
+     */
+    const { delivery } = await bareDelivery('dlv_chk_fingerprint');
+    const key = randomUUID();
+
+    authAs(SAL_FULL);
+    const first = await recordChecklist(
+      delivery.id,
+      { templateItemId: itemId(OPTIONAL_A), outcome: 'passed' },
+      key
+    );
+    expect(first.status).toBe(201);
+
+    authAs(SAL_FULL);
+    const conflicting = await recordChecklist(
+      delivery.id,
+      { templateItemId: itemId(OPTIONAL_B), outcome: 'passed' },
+      key
+    );
+    expect(conflicting.status).toBe(409);
+    expect((await bodyOf<ProblemBody>(conflicting)).code).toBe('ERR-INT-001');
+
+    // One result for this delivery, and it is item A's.
+    const rows = await admin.query<{ template_item_id: string }>(
+      `SELECT template_item_id FROM sal.delivery_checklist_results WHERE delivery_record_id = $1`,
+      [delivery.id]
+    );
+    expect(rows.rowCount).toBe(1);
+    expect(rows.rows[0]?.template_item_id).toBe(itemId(OPTIONAL_A));
   });
 
   it('refuses a caller lacking sal.delivery.manage (authorization)', async () => {
@@ -1959,6 +2110,39 @@ describe('sal.delivery-signature-attach', () => {
     expect((await auditTotalFor('sal.delivery.signature_recorded')) - auditBefore).toBe(1);
   });
 
+  it('refuses the same key offered for a DIFFERENT signer role (idempotency)', async () => {
+    // A handover may legitimately carry more than one signature, so the second body
+    // here is a request that would otherwise succeed. Without the body in the
+    // fingerprint it would be answered with the RECEIVER's signature document while
+    // no witness ever signed.
+    const { delivery } = await bareDelivery('dlv_sig_fingerprint');
+    const key = randomUUID();
+
+    authAs(SAL_FULL);
+    const first = await attachSignature(
+      delivery.id,
+      { signerRole: 'receiver', signatureDocumentVersionId: SIGNATURE_DOCUMENT_VERSION },
+      key
+    );
+    expect(first.status).toBe(201);
+
+    authAs(SAL_FULL);
+    const conflicting = await attachSignature(
+      delivery.id,
+      { signerRole: 'witness', signatureDocumentVersionId: SIGNATURE_DOCUMENT_VERSION },
+      key
+    );
+    expect(conflicting.status).toBe(409);
+    expect((await bodyOf<ProblemBody>(conflicting)).code).toBe('ERR-INT-001');
+
+    const rows = await admin.query<{ signer_role: string }>(
+      `SELECT signer_role FROM sal.delivery_signatures WHERE delivery_record_id = $1`,
+      [delivery.id]
+    );
+    expect(rows.rowCount).toBe(1);
+    expect(rows.rows[0]?.signer_role).toBe('receiver');
+  });
+
   it('refuses a caller lacking sal.delivery.manage (authorization)', async () => {
     const { delivery } = await bareDelivery('dlv_sig_authz');
     authAs(SAL_READER);
@@ -2133,6 +2317,48 @@ describe('sal.delivery-complete', () => {
         [delivery.vehicleId]
       )
     ).toBe(1);
+  });
+
+  it('refuses the same key offered with a DIFFERENT odometer value (idempotency)', async () => {
+    /*
+     * The half of the replay contract the case above cannot assert, and the one with
+     * the most expensive consequence: the odometer reading a completion captures is
+     * written into the vehicle's history and becomes the absolute limit of every
+     * warranty issued from the handover. Without the body in the fingerprint the
+     * second call would be answered with the first completion's document, reporting a
+     * reading that was never taken.
+     */
+    const { delivery } = await handoverReady('dlv_done_fingerprint', { settled: true });
+    const version = await currentVersion(delivery.id);
+    const key = randomUUID();
+
+    authAs(SAL_FULL);
+    const first = await completeDelivery(
+      delivery.id,
+      { finalOdometerValue: '96000', odometerUnit: 'km' },
+      { version, key }
+    );
+    expect(first.status).toBe(200);
+
+    authAs(SAL_FULL);
+    const conflicting = await completeDelivery(
+      delivery.id,
+      { finalOdometerValue: '99999', odometerUnit: 'km' },
+      { version, key }
+    );
+    expect(conflicting.status).toBe(409);
+    expect((await bodyOf<ProblemBody>(conflicting)).code).toBe('ERR-INT-001');
+
+    // One reading, and it is the one the first request actually captured. Read as an
+    // exact decimal STRING: the column is `numeric` and no double is materialised.
+    const readings = await admin.query<{ value: string }>(
+      `SELECT value::text AS value FROM veh.odometer_readings
+        WHERE vehicle_id = $1 AND capture_method = 'delivery'`,
+      [delivery.vehicleId]
+    );
+    expect(readings.rowCount).toBe(1);
+    expect(readings.rows[0]?.value).toBe('96000.0');
+    expect(await auditCountFor('sal.delivery.completed', delivery.id)).toBe(1);
   });
 
   it('TC-P1-22-006 REFUSES completion while an issued invoice is unpaid, and accepts the SAME request once it is settled (denial, THE FINANCIAL BLOCKER)', async () => {

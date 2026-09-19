@@ -31,6 +31,11 @@ const listLocations = vi.fn();
 const listBranches = vi.fn();
 const createIssue = vi.fn();
 const createReturn = vi.fn();
+const createReservation = vi.fn();
+const listMaterialRequirements = vi.fn();
+const readMaterialRequirement = vi.fn();
+const closeMaterialRequest = vi.fn();
+const cancelMaterialRequest = vi.fn();
 vi.mock('@/features/inventory/api', () => ({
   listPartIssues: (...args: unknown[]) => listPartIssues(...args),
   listRequiredParts: (...args: unknown[]) => listRequiredParts(...args),
@@ -44,8 +49,22 @@ vi.mock('@/features/inventory/api', () => ({
   listItems: vi.fn(),
   listAvailability: vi.fn(),
   listMovements: vi.fn(),
-  createReservation: vi.fn(),
+  createReservation: (...args: unknown[]) => createReservation(...args),
   releaseReservation: vi.fn(),
+  // P1-32: the material requirements panel this screen now mounts. The list is
+  // answered with an empty page by default so the panel settles; the tests that
+  // are about requirements give it rows of their own.
+  listMaterialRequirements: (...args: unknown[]) => listMaterialRequirements(...args),
+  readMaterialRequirement: (...args: unknown[]) => readMaterialRequirement(...args),
+  createMaterialRequirement: vi.fn(),
+  decideMaterialRequirement: vi.fn(),
+  recheckMaterialRequirement: vi.fn(),
+  cancelMaterialRequirement: vi.fn(),
+  requestMaterialException: vi.fn(),
+  decideMaterialException: vi.fn(),
+  closeMaterialRequest: (...args: unknown[]) => closeMaterialRequest(...args),
+  cancelMaterialRequest: (...args: unknown[]) => cancelMaterialRequest(...args),
+  listUnitsOfMeasure: vi.fn(),
 }));
 
 const readWorkOrderDetail = vi.fn();
@@ -63,7 +82,11 @@ vi.mock('next/navigation', () => ({
 
 let PERMISSIONS: readonly string[] = [];
 vi.mock('@/features/authentication/api/session', () => ({
-  requireSession: async () => ({ permissions: PERMISSIONS, email: 'operator@test.local' }),
+  requireSession: async () => ({
+    permissions: PERMISSIONS,
+    email: 'operator@test.local',
+    userId: USER_ID,
+  }),
 }));
 
 const notifyActionResult = vi.fn((..._args: unknown[]): boolean => true);
@@ -87,6 +110,14 @@ const RESERVATION_ID = '55555555-5555-4555-8555-555555555555';
 const ISSUE_ID = '66666666-6666-4666-8666-666666666666';
 const WORK_ORDER_ID = '77777777-7777-4777-8777-777777777777';
 const REQUIRED_PART_ID = '88888888-8888-4888-8888-888888888888';
+const USER_ID = '99999999-9999-4999-8999-999999999999';
+const OTHER_USER_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+const REQUIREMENT_ID = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+const SERVICE_LINE_ID = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
+const SPECIFICATION_ID = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
+const UOM_ID = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee';
+const MATERIAL_REQUEST_ID = '12121212-1212-4212-8212-121212121212';
+const CATEGORY_ID = '13131313-1313-4313-8313-131313131313';
 
 const workOrder = {
   id: WORK_ORDER_ID,
@@ -167,6 +198,50 @@ function page(rows: readonly unknown[]) {
 }
 const okRead = (data: unknown) => ({ status: 'ok' as const, data, correlationId: 'corr' });
 
+/**
+ * One approved requirement, with every figure as the exact decimal string the
+ * server publishes. `remainingQuantity` is the SERVER's figure and is
+ * deliberately not the difference of the two beside it in every case: the screen
+ * must render what it was sent.
+ */
+function materialRequirement(over: Record<string, unknown> = {}) {
+  return {
+    id: REQUIREMENT_ID,
+    companyId: COMPANY_ID,
+    branchId: BRANCH_ID,
+    workOrderId: WORK_ORDER_ID,
+    serviceLineId: SERVICE_LINE_ID,
+    itemId: ITEM_ID,
+    itemCategoryId: null,
+    basis: 'specification',
+    specificationId: SPECIFICATION_ID,
+    serviceCondition: 'oil_change',
+    engineVariant: null,
+    uomId: UOM_ID,
+    sourceReference: null,
+    status: 'approved',
+    approvalRequiredReason: null,
+    requestedBy: OTHER_USER_ID,
+    approvedBy: USER_ID,
+    approvedAt: '2026-09-01T09:00:00Z',
+    rejectedBy: null,
+    rejectedAt: null,
+    rejectionReason: null,
+    allowanceQuantity: '4.250',
+    approvedExceptionQuantity: '0.500',
+    effectiveAllowance: '4.750',
+    requestedQuantity: '0.000',
+    reservedQuantity: '1.000',
+    issuedQuantity: '0.250',
+    returnedQuantity: '0.000',
+    committedQuantity: '1.250',
+    remainingQuantity: '3.500',
+    recordVersion: 1,
+    createdAt: '2026-09-01T08:30:00Z',
+    ...over,
+  };
+}
+
 function renderScreen(over: Record<string, unknown> = {}) {
   return renderLtr(
     <PartsScreen
@@ -178,6 +253,10 @@ function renderScreen(over: Record<string, unknown> = {}) {
       canOperate={false}
       canReadWorkOrder={true}
       canReadBranches={false}
+      currentUserId={USER_ID}
+      canRequestMaterial={false}
+      canApproveMaterial={false}
+      canDecideMaterialException={false}
       {...over}
     />
   );
@@ -198,6 +277,14 @@ const requiredRegion = () =>
 const issueForm = () =>
   screen.findByRole('form', { name: EN['inventory.issue.heading'] as string });
 
+/**
+ * Choose what this job is allowed to use. Every work-order draw is measured
+ * against a requirement and neither draw form can be submitted before one is
+ * chosen, so the issuing tests below do this first — exactly as an operator does.
+ */
+const chooseRequirement = async (user: ReturnType<typeof userEvent.setup>) =>
+  user.click(await screen.findByRole('button', { name: EN['inventory.material.use'] as string }));
+
 beforeEach(() => {
   vi.clearAllMocks();
   PERMISSIONS = [];
@@ -212,6 +299,20 @@ beforeEach(() => {
   listBranches.mockImplementation(async () => okRead({ items: [] }));
   readWorkOrderDetail.mockImplementation(async () =>
     okRead({ workOrder, jobs: [], nextStates: [], reachableStates: [] })
+  );
+  // A work order with material control on has a requirement per service line, so
+  // the default listing carries one. It covers a GROUP rather than a named part,
+  // which is what keeps the issue form unprefilled for the tests below that type
+  // the part themselves.
+  listMaterialRequirements.mockImplementation(async () =>
+    okRead({
+      items: [materialRequirement({ itemId: null, itemCategoryId: CATEGORY_ID })],
+      nextCursor: null,
+      hasMore: false,
+    })
+  );
+  readMaterialRequirement.mockImplementation(async () =>
+    okRead({ ...materialRequirement(), exceptions: [] })
   );
 });
 
@@ -316,6 +417,9 @@ describe('FE-011 — issuing', () => {
       created: { id: 'new-issue', quantity: '7.000', reservationId: null },
     });
     renderScreen({ canOperate: true });
+    // The requirement is chosen FIRST: choosing one clears any prefill, so an
+    // operator who picks the allowance after the line would lose the line.
+    await chooseRequirement(user);
     await user.click(
       await within(requiredRegion()).findByRole('button', {
         name: EN['inventory.parts.required.issueThis'] as string,
@@ -354,6 +458,7 @@ describe('FE-011 — issuing', () => {
       itemId: ITEM_ID,
       locationId: LOCATION_ID,
       quantity: '2.000',
+      materialRequirementId: REQUIREMENT_ID,
       requiredPartRef: REQUIRED_PART_ID,
     });
     const note = await screen.findByRole('status');
@@ -375,6 +480,7 @@ describe('FE-011 — issuing', () => {
       correlationId: 'ref-res',
     }));
     renderScreen({ canOperate: true });
+    await chooseRequirement(user);
     await user.click(screen.getByRole('button', { name: EN['inventory.issue.open'] as string }));
     const form = await issueForm();
     expect(
@@ -393,6 +499,7 @@ describe('FE-011 — issuing', () => {
       created: { id: 'new-issue', quantity: '1.5', reservationId: RESERVATION_ID },
     });
     renderScreen({ canOperate: true });
+    await chooseRequirement(user);
     await user.click(screen.getByRole('button', { name: EN['inventory.issue.open'] as string }));
     const form = await issueForm();
     await within(form).findByRole('option', { name: 'BRK-001 — WH-1 — 2.000' });
@@ -415,6 +522,7 @@ describe('FE-011 — issuing', () => {
       itemId: ITEM_ID,
       locationId: LOCATION_ID,
       quantity: '1.5',
+      materialRequirementId: REQUIREMENT_ID,
       reservationId: RESERVATION_ID,
     });
     expect(typeof (createIssue.mock.calls[0]?.[0] as { quantity: unknown }).quantity).toBe(
@@ -425,6 +533,7 @@ describe('FE-011 — issuing', () => {
   it('refuses a zero quantity before sending anything', async () => {
     const user = userEvent.setup();
     renderScreen({ canOperate: true });
+    await chooseRequirement(user);
     await user.click(screen.getByRole('button', { name: EN['inventory.issue.open'] as string }));
     const form = await issueForm();
     await user.type(within(form).getByLabelText(labelled('inventory.issue.itemId')), ITEM_ID);
@@ -455,6 +564,7 @@ describe('FE-011 — issuing', () => {
       created: null,
     });
     renderScreen({ canOperate: true });
+    await chooseRequirement(user);
     await user.click(screen.getByRole('button', { name: EN['inventory.issue.open'] as string }));
     const form = await issueForm();
     await user.type(within(form).getByLabelText(labelled('inventory.issue.itemId')), ITEM_ID);
@@ -644,11 +754,246 @@ describe('Arabic, right to left', () => {
         canOperate={false}
         canReadWorkOrder={false}
         canReadBranches={false}
+        currentUserId={USER_ID}
+        canRequestMaterial={false}
+        canApproveMaterial={false}
+        canDecideMaterialException={false}
       />
     );
     await waitFor(() => expect(listPartIssues).toHaveBeenCalled());
     const table = await screen.findByRole('table');
     expect(within(table).getByText('2.500')).toBeVisible();
     expect(screen.getByText(AR['inventory.parts.issues.heading'] as string)).toBeVisible();
+  });
+});
+
+/**
+ * P1-32 — a work-order draw is measured against a material requirement.
+ *
+ * The properties under test: neither draw form can be submitted before a
+ * requirement is chosen and both say so with the act to perform first; choosing
+ * one sends its identifier with the draw; a refusal the server published as a
+ * material-draw reason is rendered as a plain sentence naming the next step; and
+ * the material request a governed draw opened can be settled or withdrawn.
+ */
+describe('a work-order draw needs a requirement', () => {
+  const reserveForm = () =>
+    screen.findByRole('form', { name: EN['inventory.parts.reserve.heading'] as string });
+
+  it('offers no submit until a requirement is chosen, and names the act to do first', async () => {
+    const user = userEvent.setup();
+    renderScreen({ canOperate: true, canReadWorkOrder: false });
+    await user.click(
+      screen.getByRole('button', { name: EN['inventory.parts.reserve.open'] as string })
+    );
+    const form = await reserveForm();
+    expect(
+      within(form).getByRole('button', { name: EN['inventory.parts.reserve.submit'] as string })
+    ).toBeDisabled();
+    expect(
+      within(form).getByText(EN['inventory.parts.draw.needRequirement'] as string)
+    ).toBeVisible();
+
+    await user.click(screen.getByRole('button', { name: EN['inventory.issue.open'] as string }));
+    const issue = await issueForm();
+    expect(
+      within(issue).getByRole('button', { name: EN['inventory.issue.submit'] as string })
+    ).toBeDisabled();
+    expect(createReservation).not.toHaveBeenCalled();
+    expect(createIssue).not.toHaveBeenCalled();
+  });
+
+  it('sends the chosen requirement with the reservation', async () => {
+    const user = userEvent.setup();
+    listMaterialRequirements.mockImplementation(async () =>
+      okRead({ items: [materialRequirement()], nextCursor: null, hasMore: false })
+    );
+    createReservation.mockImplementation(async () => ({
+      state: { status: 'success', messageKey: 'inventory.reserve.success' },
+      created: {
+        id: RESERVATION_ID,
+        itemId: ITEM_ID,
+        locationId: LOCATION_ID,
+        companyId: COMPANY_ID,
+        branchId: BRANCH_ID,
+        workOrderId: WORK_ORDER_ID,
+        quantity: '1.000',
+        status: 'active',
+        expiresAt: null,
+        recordVersion: 1,
+        materialRequestId: MATERIAL_REQUEST_ID,
+        replayed: false,
+      },
+    }));
+    renderScreen({ canOperate: true, canReadWorkOrder: false });
+
+    await user.click(
+      await screen.findByRole('button', { name: EN['inventory.material.use'] as string })
+    );
+    await user.click(
+      screen.getByRole('button', { name: EN['inventory.parts.reserve.open'] as string })
+    );
+    const form = await reserveForm();
+    await user.selectOptions(
+      within(form).getByLabelText(labelled('inventory.reserve.location')),
+      LOCATION_ID
+    );
+    await user.type(within(form).getByLabelText(labelled('inventory.reserve.quantity')), '1.000');
+    await user.click(
+      within(form).getByRole('button', { name: EN['inventory.parts.reserve.submit'] as string })
+    );
+
+    await waitFor(() => expect(createReservation).toHaveBeenCalled());
+    expect(createReservation.mock.calls[0]?.[0]).toMatchObject({
+      itemId: ITEM_ID,
+      locationId: LOCATION_ID,
+      quantity: '1.000',
+      workOrderId: WORK_ORDER_ID,
+      materialRequirementId: REQUIREMENT_ID,
+    });
+  });
+
+  it('renders a refused draw as the reason the server published, with its next step', async () => {
+    const user = userEvent.setup();
+    listMaterialRequirements.mockImplementation(async () =>
+      okRead({ items: [materialRequirement()], nextCursor: null, hasMore: false })
+    );
+    createReservation.mockImplementation(async () => ({
+      state: {
+        status: 'error',
+        messageKey: 'inventory.refusal.materialDraw.exceeds_requirement',
+        correlationId: 'corr',
+      },
+      created: null,
+    }));
+    renderScreen({ canOperate: true, canReadWorkOrder: false });
+
+    await user.click(
+      await screen.findByRole('button', { name: EN['inventory.material.use'] as string })
+    );
+    await user.click(
+      screen.getByRole('button', { name: EN['inventory.parts.reserve.open'] as string })
+    );
+    const form = await reserveForm();
+    await user.selectOptions(
+      within(form).getByLabelText(labelled('inventory.reserve.location')),
+      LOCATION_ID
+    );
+    await user.type(within(form).getByLabelText(labelled('inventory.reserve.quantity')), '9.000');
+    await user.click(
+      within(form).getByRole('button', { name: EN['inventory.parts.reserve.submit'] as string })
+    );
+
+    const refusal = await screen.findByRole('alert');
+    expect(refusal).toHaveTextContent(
+      EN['inventory.refusal.materialDraw.exceeds_requirement'] as string
+    );
+    // The sentence names the remedy, not a code.
+    expect(EN['inventory.refusal.materialDraw.exceeds_requirement']).toContain('exception');
+  });
+
+  it('settles the material the draw opened, naming that request', async () => {
+    const user = userEvent.setup();
+    listMaterialRequirements.mockImplementation(async () =>
+      okRead({ items: [materialRequirement()], nextCursor: null, hasMore: false })
+    );
+    createReservation.mockImplementation(async () => ({
+      state: { status: 'success', messageKey: 'inventory.reserve.success' },
+      created: {
+        id: RESERVATION_ID,
+        itemId: ITEM_ID,
+        locationId: LOCATION_ID,
+        companyId: COMPANY_ID,
+        branchId: BRANCH_ID,
+        workOrderId: WORK_ORDER_ID,
+        quantity: '1.000',
+        status: 'active',
+        expiresAt: null,
+        recordVersion: 1,
+        materialRequestId: MATERIAL_REQUEST_ID,
+        replayed: false,
+      },
+    }));
+    closeMaterialRequest.mockImplementation(async () => ({
+      state: { status: 'success', messageKey: 'inventory.material.request.close.success' },
+      created: null,
+    }));
+    renderScreen({ canOperate: true, canReadWorkOrder: false });
+
+    await user.click(
+      await screen.findByRole('button', { name: EN['inventory.material.use'] as string })
+    );
+    await user.click(
+      screen.getByRole('button', { name: EN['inventory.parts.reserve.open'] as string })
+    );
+    const form = await reserveForm();
+    await user.selectOptions(
+      within(form).getByLabelText(labelled('inventory.reserve.location')),
+      LOCATION_ID
+    );
+    await user.type(within(form).getByLabelText(labelled('inventory.reserve.quantity')), '1.000');
+    await user.click(
+      within(form).getByRole('button', { name: EN['inventory.parts.reserve.submit'] as string })
+    );
+
+    const region = await screen.findByRole('region', {
+      name: EN['inventory.parts.request.heading'] as string,
+    });
+    expect(within(region).getByText(MATERIAL_REQUEST_ID)).toBeVisible();
+    await user.click(
+      within(region).getByRole('button', { name: EN['inventory.parts.request.close'] as string })
+    );
+    await waitFor(() => expect(closeMaterialRequest).toHaveBeenCalledWith(MATERIAL_REQUEST_ID, {}));
+    expect(cancelMaterialRequest).not.toHaveBeenCalled();
+  });
+
+  it('refuses to withdraw the material without a reason', async () => {
+    const user = userEvent.setup();
+    listMaterialRequirements.mockImplementation(async () =>
+      okRead({ items: [materialRequirement()], nextCursor: null, hasMore: false })
+    );
+    createReservation.mockImplementation(async () => ({
+      state: { status: 'success', messageKey: 'inventory.reserve.success' },
+      created: {
+        id: RESERVATION_ID,
+        itemId: ITEM_ID,
+        locationId: LOCATION_ID,
+        companyId: COMPANY_ID,
+        branchId: BRANCH_ID,
+        workOrderId: WORK_ORDER_ID,
+        quantity: '1.000',
+        status: 'active',
+        expiresAt: null,
+        recordVersion: 1,
+        materialRequestId: MATERIAL_REQUEST_ID,
+        replayed: false,
+      },
+    }));
+    renderScreen({ canOperate: true, canReadWorkOrder: false });
+
+    await user.click(
+      await screen.findByRole('button', { name: EN['inventory.material.use'] as string })
+    );
+    await user.click(
+      screen.getByRole('button', { name: EN['inventory.parts.reserve.open'] as string })
+    );
+    const form = await reserveForm();
+    await user.selectOptions(
+      within(form).getByLabelText(labelled('inventory.reserve.location')),
+      LOCATION_ID
+    );
+    await user.type(within(form).getByLabelText(labelled('inventory.reserve.quantity')), '1.000');
+    await user.click(
+      within(form).getByRole('button', { name: EN['inventory.parts.reserve.submit'] as string })
+    );
+
+    const region = await screen.findByRole('region', {
+      name: EN['inventory.parts.request.heading'] as string,
+    });
+    await user.click(
+      within(region).getByRole('button', { name: EN['inventory.parts.request.cancel'] as string })
+    );
+    expect(cancelMaterialRequest).not.toHaveBeenCalled();
+    expect(within(region).getByText(EN['field.required'] as string)).toBeVisible();
   });
 });

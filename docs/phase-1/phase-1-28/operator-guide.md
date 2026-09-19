@@ -81,10 +81,11 @@ itself, with what is on record in front of you.
 The walk-in desk finds or creates the customer, then finds or creates the
 vehicle, then links them, then hands you to check-in.
 
-**You cannot search for a customer by telephone number.** The customer directory
-publishes no telephone search, and a box that quietly ignored what you typed
-would be worse than no box. Search by name or by customer number. This is a
-named backend gap, not a setting.
+**You can search for a customer by telephone number** (since P1-32). Type the
+whole number, or at least its last seven digits, in the phone box, or use the
+free-text box for part of a name, a customer number or a phone number. A matched
+customer's phone is shown partly hidden unless you may see it whole. Email
+addresses still cannot be searched.
 
 ### Opening a visit — check-in
 

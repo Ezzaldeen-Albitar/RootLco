@@ -425,15 +425,48 @@ export async function seedReversal(
 // Delivery (granular so failure paths can be crafted)
 // ---------------------------------------------------------------------------
 
+/**
+ * The `org.employees` row a delivery names (P1-31 P-17).
+ *
+ * `delivering_employee_id` carried no foreign key until that slice, which is why
+ * every fixture here used to pass `USER_A` — a LOGIN ACCOUNT id. It now points at
+ * `org.employees` on `(tenant_id, id)` and
+ * `sal.stamp_delivering_employee_identity` additionally requires the employee to
+ * be live and active. The employee's home branch is informational and is not
+ * compared with the delivery's (Owner clarification of 2026-09-10).
+ *
+ * Created INSIDE the caller's transaction, so it leaves with the rollback, and
+ * with NO `user_account_id`: `uq_employees_user_account_live` admits one employee
+ * per account per tenant, and an accountless employee is the case the table
+ * exists for.
+ */
+export async function deliveringEmployee(c: Q, tag = 'p111'): Promise<string> {
+  return (
+    await c.query(
+      `INSERT INTO org.employees
+         (tenant_id, company_id, branch_id, display_name, employment_ref, created_by)
+       VALUES ($1,$2,$3,'Fixture handover officer',$4,$5) RETURNING id`,
+      [
+        T,
+        CO,
+        BR,
+        `fx_p111_emp_${tag}_${String(Date.now())}_${String(Math.random()).slice(2, 8)}`,
+        U,
+      ]
+    )
+  ).rows[0].id;
+}
+
 export async function insertDeliveryRecord(
   c: Q,
-  opts: { wo: string; vehicle: string; visit: string }
+  opts: { wo: string; vehicle: string; visit: string; deliveringEmployee?: string }
 ): Promise<string> {
+  const employee = opts.deliveringEmployee ?? (await deliveringEmployee(c, 'dlv'));
   return (
     await c.query(
       `INSERT INTO sal.delivery_records (tenant_id, company_id, branch_id, work_order_id, reception_visit_id, vehicle_id, delivering_employee_id, created_by)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$7) RETURNING id`,
-      [T, CO, BR, opts.wo, opts.visit, opts.vehicle, U]
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id`,
+      [T, CO, BR, opts.wo, opts.visit, opts.vehicle, employee, U]
     )
   ).rows[0].id;
 }
@@ -464,13 +497,21 @@ export async function insertMandatoryChecklist(
  * Records a 'passed' result on this delivery for EVERY mandatory template item in the
  * company that lacks one. complete_delivery evaluates all company-mandatory items, so a
  * committed leftover from an earlier test must be satisfied too.
+ *
+ * The predicate tracks `sal.complete_delivery` exactly, including the template join
+ * added by migration 20260909090000 (P1-31 P-9b): an item whose template is inactive or
+ * soft-deleted is no longer part of the gate, so satisfying it here would insert a
+ * result the gate never asks for and would hide a regression in the join.
  */
 export async function passAllMandatory(c: Q, delivery: string): Promise<void> {
   await c.query(
     `INSERT INTO sal.delivery_checklist_results (tenant_id, company_id, branch_id, delivery_record_id, template_item_id, outcome, recorded_by, created_by)
      SELECT $1,$2,$3,$4, ti.id, 'passed', $5, $5
        FROM sal.delivery_checklist_template_items ti
+       JOIN sal.delivery_checklist_templates t
+         ON t.tenant_id=ti.tenant_id AND t.company_id=ti.company_id AND t.id=ti.template_id
       WHERE ti.tenant_id=$1 AND ti.company_id=$2 AND ti.is_mandatory AND ti.deleted_at IS NULL
+        AND t.status='active' AND t.deleted_at IS NULL
         AND NOT EXISTS (SELECT 1 FROM sal.delivery_checklist_results r
                          WHERE r.tenant_id=$1 AND r.company_id=$2 AND r.branch_id=$3
                            AND r.delivery_record_id=$4 AND r.template_item_id=ti.id)`,
@@ -527,17 +568,21 @@ export async function buildReadyDelivery(
   wo: string;
   vehicle: string;
   visit: string;
+  template: string;
   item: string;
   receiver: string;
 }> {
   const { wo, vehicle, visit } = await makeWorkOrder(c, tag);
   const delivery = await insertDeliveryRecord(c, { wo, vehicle, visit });
-  const { item } = await insertMandatoryChecklist(c, tag);
+  // The template is returned as well as the item because the completion gate now reads
+  // the template's own status and deleted_at (migration 20260909090000), so a test that
+  // exercises the gate has to be able to reach the parent row.
+  const { template, item } = await insertMandatoryChecklist(c, tag);
   if (opts.addChecklistResults ?? true) await passAllMandatory(c, delivery);
   const receiver = opts.receiver ?? P9.AP; // approving party holds an active reception role
   if (opts.addReceiver ?? true) await insertAuthorizedReceiver(c, delivery, receiver);
   if (opts.addSignature ?? true) await insertSignature(c, delivery);
-  return { delivery, wo, vehicle, visit, item, receiver };
+  return { delivery, wo, vehicle, visit, template, item, receiver };
 }
 
 /** A COMPLETED (delivered) delivery — custody released, odometer captured. */

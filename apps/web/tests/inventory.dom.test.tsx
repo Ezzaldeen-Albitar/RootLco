@@ -44,6 +44,29 @@ vi.mock('@/features/inventory/api', () => ({
   listItemCategories: (...args: unknown[]) => listItemCategories(...args),
   createReservation: (...args: unknown[]) => createReservation(...args),
   releaseReservation: (...args: unknown[]) => releaseReservation(...args),
+  /*
+   * The stock-signal indicator this screen mounts reads both alert lists. Its
+   * own behaviour is proved in `attention.dom.test.tsx`; here it answers with
+   * nothing to report so it cannot change what these cases are about.
+   */
+  readLowStockAlerts: async () => ({
+    status: 'ok',
+    data: {
+      asOf: '2026-09-18T09:00:00.000Z',
+      rule: { statement: 'rule', excludedLocationTypes: [] },
+      findings: { items: [], nextCursor: null, hasMore: false },
+    },
+    correlationId: null,
+  }),
+  readCountDiscrepancyAlerts: async () => ({
+    status: 'ok',
+    data: {
+      asOf: '2026-09-18T09:00:00.000Z',
+      rule: { statement: 'rule' },
+      findings: { items: [], nextCursor: null, hasMore: false },
+    },
+    correlationId: null,
+  }),
 }));
 
 vi.mock('next/navigation', () => ({
@@ -102,6 +125,7 @@ const cell = {
   onHand: '12.500',
   reserved: '2.000',
   available: '10.500',
+  inTransitQty: '1.250',
 };
 function reservation(over: Record<string, unknown> = {}) {
   return {
@@ -415,6 +439,26 @@ describe('FE-009 — stock is read only for a named branch', () => {
     await waitFor(() => expect(listLocations).toHaveBeenCalledWith(target));
   });
 
+  it('carries the branch stock signals beside the stock it is about, and only reads', async () => {
+    /*
+     * The Attention area is where somebody goes to look; this is what finds
+     * them while they are already on the inventory screen. It appears only
+     * once a branch is named — there is no claim to make about a branch nobody
+     * has chosen — and it offers one link and no control.
+     */
+    const user = userEvent.setup();
+    renderScreen({ canReadStock: true, canReadBranches: true });
+    expect(screen.queryByTestId('stock-alert-indicator')).toBeNull();
+    await chooseBranch(user);
+
+    const indicator = await screen.findByTestId('stock-alert-indicator');
+    expect(indicator).toHaveTextContent(EN['inventory.signals.quiet'] as string);
+    expect(
+      within(indicator).getByRole('link', { name: EN['inventory.signals.open'] as string })
+    ).toHaveAttribute('href', '/en/attention');
+    expect(within(indicator).queryAllByRole('button')).toHaveLength(0);
+  });
+
   it('without org.branch.read, takes the branch as two identifiers and requests no list', async () => {
     const user = userEvent.setup();
     renderScreen({ canReadStock: true, canReadBranches: false });
@@ -484,6 +528,51 @@ describe('FE-009 — stock is read only for a named branch', () => {
     await waitFor(() =>
       expect(listAvailability.mock.calls.at(-1)?.[1]).toEqual({ includeQuarantine: 'true' })
     );
+  });
+
+  it('shows the in-transit figure beside availability, and says what quarantine rows are', async () => {
+    const user = userEvent.setup();
+    listAvailability.mockResolvedValue(
+      page([
+        cell,
+        {
+          ...cell,
+          locationId: 'quarantine-1',
+          locationCode: 'QA-1',
+          locationType: 'quarantine',
+          onHand: '3.000',
+          reserved: '0.000',
+          available: '3.000',
+        },
+      ])
+    );
+    renderScreen({ canReadStock: true, canReadBranches: true });
+    await chooseBranch(user);
+    const availability = region('inventory.availability.heading');
+    const table = await within(availability).findByRole('table');
+    expect(
+      within(table).getByRole('columnheader', {
+        name: EN['inventory.availability.column.inTransit'] as string,
+      })
+    ).toBeVisible();
+    // The server repeats the item's in-transit figure on every cell; it is shown, never summed.
+    expect(within(table).getAllByText('1.250')).toHaveLength(2);
+    expect(
+      within(table).getByText(EN['inventory.locationType.quarantine'] as string)
+    ).toBeVisible();
+    expect(screen.getByText(EN['inventory.availability.inTransitNote'] as string)).toBeVisible();
+    expect(screen.queryByText(EN['inventory.availability.quarantineNote'] as string)).toBeNull();
+    await user.click(
+      within(availability).getByLabelText(labelled('inventory.availability.includeQuarantine'))
+    );
+    await user.click(
+      within(availability).getByRole('button', {
+        name: EN['inventory.availability.show'] as string,
+      })
+    );
+    expect(
+      await screen.findByText(EN['inventory.availability.quarantineNote'] as string)
+    ).toBeVisible();
   });
 
   it('a refused stock read is a refusal, and says so where the read lives', async () => {

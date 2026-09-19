@@ -47,10 +47,13 @@ import { AppFailure } from '@/server/errors/app-failure';
 import type { PlatformTargetHandle } from '@/server/db/transaction';
 import { SQLSTATE, isSqlState } from '@/server/db/repository';
 import { backendConfig } from '@/server/config/backend-config';
+import type { IdentityRepository } from '../data/identity-repository';
 import type { TenantBootstrapRepository } from '../data/tenant-bootstrap-repository';
 import type { CredentialPolicy } from '../domain/credential-policy';
 import type { IdentityProvider } from '../provider/identity-provider';
 import { toAppFailureFromProvider } from '../provider/provider-errors';
+import { removeIdentityCreatedHere } from './identity-compensation';
+import { throwCapacityFailure } from './capacity-failure';
 import {
   type BootstrapRoleDefinition,
   FIRST_OWNER_ROLE,
@@ -72,9 +75,45 @@ export interface FirstOwnerBootstrap {
   readonly tenantAdministratorRoleId: string;
 }
 
+/**
+ * What the console asks for when an organisation needs an administrator.
+ *
+ * `additionalAdministrator` is the explicit acknowledgement that the
+ * organisation already has one: the operation refuses by default, because
+ * silently adding a second administrator to a live organisation is how an
+ * account nobody asked for comes to exist. `reason` travels with it into the
+ * audit record; it is required when the flag is set and refused otherwise.
+ */
+export interface AdministratorSetupInput {
+  readonly email: string;
+  readonly displayName: string;
+  readonly additionalAdministrator: boolean;
+  readonly reason?: string | undefined;
+  readonly redirectTo?: string | undefined;
+}
+
+/** What an administrator setup or a re-invitation established. */
+export interface AdministratorSetupResult {
+  /**
+   * `established` — an administrator account was written and granted the
+   * tenant_administrator role. `reinvited` — nothing was written and the
+   * provider issued a fresh link for an invitation already outstanding.
+   */
+  readonly outcome: 'established' | 'reinvited';
+  /** The account established, or null for a re-invitation. */
+  readonly accountId: string | null;
+  /** The role granted, or null for a re-invitation. */
+  readonly tenantAdministratorRoleId: string | null;
+  /** Whether the role had to be created because the organisation held none. */
+  readonly roleEstablished: boolean;
+  /** Active administrators the organisation held BEFORE this act. */
+  readonly administratorsBefore: number;
+}
+
 export class TenantBootstrapService {
   constructor(
     private readonly bootstrap: TenantBootstrapRepository,
+    private readonly identities: IdentityRepository,
     private readonly provider: IdentityProvider,
     private readonly credentialPolicy: CredentialPolicy
   ) {}
@@ -83,6 +122,16 @@ export class TenantBootstrapService {
     db: PlatformTargetHandle,
     input: FirstOwnerInput
   ): Promise<FirstOwnerBootstrap> {
+    // The provider is one directory for the whole platform, and this service
+    // reads, binds and invites identities in it exactly as an invitation does.
+    // Taking the same lower-cased address lock before the first identity read
+    // serializes a first-owner setup with every invitation of that address, in
+    // any tenant, so neither can act on a read the other is about to overturn —
+    // above all, a refused invitation cannot remove an identity this bootstrap
+    // has just bound. As in `iam.invitation-create`, it is taken before the
+    // per-tenant user capacity lock the account INSERT below takes.
+    await this.identities.lockInvitationAddress(db, input.email);
+
     const identity = await this.establishIdentity(db, db.targetTenantId, input);
 
     let ownerAccountId: string;
@@ -125,6 +174,239 @@ export class TenantBootstrapService {
     }
 
     return { ownerAccountId, firstOwnerRoleId, tenantAdministratorRoleId };
+  }
+
+  /**
+   * Gives a LIVE organisation an administrator, from the Platform Owner Console.
+   *
+   * The provisioning bootstrap above cannot serve this. It runs inside the
+   * window of a tenant the same transaction created, and the case this method
+   * exists for is the opposite one: an organisation that is already running and
+   * has no administrator who can sign in — because the first owner never
+   * accepted their link, because the account was archived, or because the
+   * organisation predates the bootstrap entirely. Until now the only way out was
+   * a manual database write.
+   *
+   * What it REUSES rather than restates:
+   *
+   *  - the invitation address lock, taken before the first identity read, so a
+   *    console setup and a tenant-side invitation of the same address cannot act
+   *    on a reading the other is about to overturn;
+   *  - the identity rules of the first-owner bootstrap — an address bound to a
+   *    LIVE organisation elsewhere is a conflict, a binding to an organisation
+   *    that no longer exists is re-bound;
+   *  - the refusal recovery of `iam.invitation-create`: an identity this request
+   *    created is removed again when the account INSERT is refused, so a spent
+   *    seat ceiling does not leave an orphan behind that blocks the retry;
+   *  - the seat ceiling itself, which is `tg_user_accounts_capacity` on the
+   *    table and is mapped, never pre-checked.
+   *
+   * What it adds is the ADMINISTRATOR question, which the provisioning path
+   * never has to ask because a tenant being born has nobody: an organisation
+   * that already has an active administrator is refused unless the operator says
+   * explicitly that a second one is wanted, and says why.
+   */
+  async establishAdministrator(
+    db: PlatformTargetHandle,
+    input: AdministratorSetupInput
+  ): Promise<AdministratorSetupResult> {
+    const administratorsBefore = await this.bootstrap.activeAdministratorCount(
+      db,
+      TENANT_ADMINISTRATOR_ROLE.code
+    );
+    if (administratorsBefore > 0 && !input.additionalAdministrator) {
+      throw new AppFailure('ERR-TRN-001', {
+        message:
+          'This organisation already has an active administrator; ask for an additional one explicitly, with a reason',
+      });
+    }
+
+    await this.identities.lockInvitationAddress(db, input.email);
+
+    const identity = await this.establishAdministratorIdentity(db, input);
+
+    let accountId: string;
+    try {
+      accountId = await this.bootstrap.insertActiveAccount(db, {
+        identityProvider: this.provider.name,
+        providerSubject: identity.subject,
+        email: input.email,
+        displayName: input.displayName,
+      });
+    } catch (error) {
+      // Never on a unique violation: that refusal is itself the proof that a
+      // live account already references the address or the subject, so the
+      // identity is bound to somebody and is not this request's to remove.
+      const referenced = isSqlState(error, SQLSTATE.uniqueViolation);
+      if (identity.createdHere && !referenced) {
+        await removeIdentityCreatedHere(
+          this.provider,
+          db,
+          identity.subject,
+          'platform.organization-administrator-invite'
+        );
+      }
+      if (referenced) {
+        throw new AppFailure('ERR-RES-002', {
+          message: 'An account already exists for that address in this organisation',
+        });
+      }
+      // The seat ceiling. tg_user_accounts_capacity counts and refuses under one
+      // per-tenant advisory lock, so the refusal is the authority and this is the
+      // mapping that gives it a name the console can render.
+      throwCapacityFailure(error);
+    }
+
+    await this.bootstrap.insertActivationHistory(db, {
+      userId: accountId,
+      reason: 'administrator established from the platform console',
+    });
+
+    const existingRoleId = await this.bootstrap.findRoleIdByCode(
+      db,
+      TENANT_ADMINISTRATOR_ROLE.code
+    );
+    const roleEstablished = existingRoleId === null;
+    const tenantAdministratorRoleId =
+      existingRoleId ?? (await this.establishRole(db, accountId, TENANT_ADMINISTRATOR_ROLE));
+    if (existingRoleId !== null) {
+      await this.bootstrap.insertUnrestrictedGrant(db, {
+        userId: accountId,
+        roleId: existingRoleId,
+      });
+    }
+
+    // Read back through the policy set rather than assumed from the write:
+    // exactly one unrestricted grant, no more and no fewer. Any other count
+    // means a write was admitted that this service did not make, or one it made
+    // was not.
+    const granted = await this.bootstrap.grantedRoleCount(db, accountId);
+    if (granted !== 1) {
+      throw new AppFailure('ERR-SYS-001', {
+        message: `Administrator setup left ${granted} active grant(s); expected exactly 1`,
+      });
+    }
+
+    return {
+      outcome: 'established',
+      accountId,
+      tenantAdministratorRoleId,
+      roleEstablished,
+      administratorsBefore,
+    };
+  }
+
+  /**
+   * Issues a fresh invitation link for an address this organisation has already
+   * invited and which has not been accepted.
+   *
+   * Nothing is written: the account, if there is one, is exactly as it was, and
+   * the provider re-issues the link against the SAME subject. The three
+   * refusals are the readings that make the act meaningful — an address the
+   * provider does not know, one bound to another organisation, and one whose
+   * invitation was already accepted or whose identity was disabled. The first
+   * two answer identically, because telling an operator that an address belongs
+   * to a different organisation would be answering a question about somebody
+   * else's tenant.
+   */
+  async reinviteAdministrator(
+    db: PlatformTargetHandle,
+    input: { readonly email: string; readonly redirectTo?: string | undefined }
+  ): Promise<AdministratorSetupResult> {
+    const administratorsBefore = await this.bootstrap.activeAdministratorCount(
+      db,
+      TENANT_ADMINISTRATOR_ROLE.code
+    );
+    await this.identities.lockInvitationAddress(db, input.email);
+
+    const redirectTo = this.credentialPolicy.resolveRedirect(
+      input.redirectTo,
+      backendConfig().AUTH_REDIRECT_ALLOWLIST
+    );
+    try {
+      const known = await this.provider.findByEmail(input.email);
+      if (known === null || known.tenantId !== db.targetTenantId) {
+        throw new AppFailure('ERR-RES-001', {
+          message: 'No outstanding invitation for that address in this organisation',
+        });
+      }
+      if (known.disabled) {
+        throw new AppFailure('ERR-TRN-001', {
+          message: 'The identity for that address is disabled and cannot be invited again',
+        });
+      }
+      if (known.confirmed) {
+        throw new AppFailure('ERR-TRN-001', {
+          message: 'That invitation has already been accepted; there is nothing to send again',
+        });
+      }
+      await this.provider.invite({
+        email: input.email,
+        tenantId: db.targetTenantId,
+        redirectTo,
+      });
+    } catch (error) {
+      if (error instanceof AppFailure) throw error;
+      toAppFailureFromProvider(error);
+    }
+
+    return {
+      outcome: 'reinvited',
+      accountId: null,
+      tenantAdministratorRoleId: null,
+      roleEstablished: false,
+      administratorsBefore,
+    };
+  }
+
+  /**
+   * The identity half of an administrator setup on a LIVE organisation.
+   *
+   * The same three readings the first-owner bootstrap makes, plus a disabled
+   * identity — which provisioning never meets, because a tenant being born has
+   * no cancelled invitations behind it — and the `createdHere` flag the refusal
+   * recovery needs. A confirmed identity already bound here is left alone: it
+   * has a credential, and re-inviting it would throw at the provider.
+   */
+  private async establishAdministratorIdentity(
+    db: PlatformTargetHandle,
+    input: AdministratorSetupInput
+  ): Promise<{ readonly subject: string; readonly createdHere: boolean }> {
+    const redirectTo = this.credentialPolicy.resolveRedirect(
+      input.redirectTo,
+      backendConfig().AUTH_REDIRECT_ALLOWLIST
+    );
+    const tenantId = db.targetTenantId;
+    try {
+      const existing = await this.provider.findByEmail(input.email);
+      if (existing) {
+        if (existing.disabled) {
+          throw new AppFailure('ERR-RES-002', {
+            message: 'The identity for that address is disabled and may not be reused',
+          });
+        }
+        if (existing.tenantId !== null && existing.tenantId !== tenantId) {
+          if (await this.bootstrap.tenantExists(db, existing.tenantId)) {
+            throw new AppFailure('ERR-RES-002', {
+              message:
+                'An identity already exists for that address and belongs to another organization',
+            });
+          }
+        }
+        if (existing.tenantId !== tenantId) {
+          await this.provider.bindTenant(existing.subject, tenantId);
+        }
+        if (!existing.confirmed) {
+          await this.provider.invite({ email: input.email, tenantId, redirectTo });
+        }
+        return { subject: existing.subject, createdHere: false };
+      }
+      const invited = await this.provider.invite({ email: input.email, tenantId, redirectTo });
+      return { subject: invited.subject, createdHere: true };
+    } catch (error) {
+      if (error instanceof AppFailure) throw error;
+      toAppFailureFromProvider(error);
+    }
   }
 
   private async establishIdentity(

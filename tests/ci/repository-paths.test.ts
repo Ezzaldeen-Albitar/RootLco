@@ -212,7 +212,94 @@ describe('the API application lives in the workspace', () => {
     // `payments`, and the price-rule collection), so a slice that published a read
     // by creating a redundant second module for a path would move this count and
     // not the other.
-    expect(routeFiles.length).toBe(296);
+    //
+    // 299 with the P1-31 delivery read seam (P-2 … P-5): six operations over
+    // THREE new files. `/deliveries/{deliveryId}`,
+    // `/deliveries/{deliveryId}/status-history` and
+    // `/work-orders/{workOrderId}/delivery` are new modules; the receiver,
+    // checklist-result and signature reads were added as GETs beside the POSTs
+    // that already owned their paths, so they move the operation count and not
+    // this one — six and three, the same asymmetry again.
+    //
+    // 300 with the P1-31 warranty read seam (P-6, P-7): ONE new module,
+    // `/warranties`, beside the `/warranties/{warrantyId}` module that already
+    // existed — one operation over one new file, so both counts move by one and
+    // the asymmetry above is absent this time rather than merely unstated.
+    //
+    // 305 with the P1-31 warranty policy and coverage seam (P-10): seven
+    // operations over FIVE new modules. The collection module co-locates the list
+    // and the create and the id-addressed module the detail and the rename, so two
+    // paths carry two verbs each — seven and five, the same asymmetry.
+    //
+    // 310 with the P1-31 checklist template seam (P-9) merged alongside it: eight
+    // operations over FIVE more new modules. The collection module co-locates the
+    // list and the create, the id-addressed module the detail and the rename, and
+    // the item module the edit and the withdrawal — eight and five, the same
+    // asymmetry, because three paths carry two verbs each.
+    //
+    // 315 with the P1-31 report configuration seam (P-11): seven operations over
+    // FIVE more new modules. The collection module co-locates the list and the
+    // create and the id-addressed module the read and the edit, so two paths carry
+    // two verbs each — seven and five, the same asymmetry.
+    //
+    // 316 with the P1-31 delivery-readiness queue (Owner decision D-3): ONE
+    // operation over ONE new module, `/delivery-readiness`. It is a top-level
+    // resource rather than a segment under `/deliveries`, on the `/damaged-stock`
+    // precedent, so it adds a module rather than a verb on an existing one — both
+    // counts move by one and the asymmetry is absent this time.
+    //
+    // 317 with the P1-31 report ENGINE (P-11) merged alongside it: ONE operation
+    // over ONE new module, and the symmetry is the point — the run is a separate
+    // path from the definition read rather than a query parameter on it, so a
+    // slice that had overloaded an existing route would move neither count and
+    // this case would not have noticed.
+    // 320 with the P1-31 employee register (P-17): four operations over THREE new
+    // modules. The collection module co-locates the list and the create, so one
+    // path carries two verbs — four and three, the same asymmetry.
+    // 321 with the P1-31 warranty status-history read (P-18): ONE operation over
+    // ONE new route module, a segment under an existing `/warranties/{warrantyId}`
+    // path. Both counts move by exactly one, so there is no asymmetry to explain
+    // this time — and a slice that had added a second verb to the new module, or
+    // hung the read off an existing module as a query parameter, would break that
+    // symmetry here and nowhere else.
+    // 332 with the P1-32 Platform Owner Console backend: THIRTEEN operations over
+    // ELEVEN new route modules — the plan and charge collections each carry a
+    // list and a create on one path, so the counts move by 13 and 11.
+    // 333 with the Owner directive organisation administration: three operations
+    // over ONE new route module. The company and branch creates are POSTs
+    // co-located on the existing collection modules; only `/org/capacity` is new.
+    // 336 with the P1-32-PRE-151 organisation growth: three operations over THREE
+    // new route modules — companies, branches and administrators, each hung off
+    // the organisation path the console already addresses.
+    // 335 with the P1-32 preparatory inventory slice: eighteen operations over
+    // FOURTEEN new modules, because the transfer, goods-receipt, adjustment and
+    // count collections each co-locate a GET and a POST on one path.
+    // 340 with P1-32 preparatory slice 2: six identifier operations over five new
+    // modules, because the identifier collection co-locates a GET and a POST.
+    // 344 with the rest of that slice: seven operations over FOUR new modules,
+    // because the item-price, counter-sale and sales-return collections each
+    // co-locate a GET and a POST on one path, and the returnable-quantity read is
+    // the only module with a single verb.
+    // 356 with P1-32 preparatory slice 3b: fifteen operations over TWELVE new
+    // modules, because the requirement, conversion and specification collections
+    // each co-locate a GET and a POST.
+    // 360 with P1-32 preparatory slice 3c: four operations over four new modules —
+    // the requirement re-check and cancellation, the request closure and cancellation.
+    // 362 with P1-32-PRE-141: the transfer settlement list and read, one module each.
+    // 363 with the Owner directive organisation administration merged in: three
+    // operations over ONE new route module. The company and branch creates are
+    // POSTs co-located on the existing collection modules; only `/org/capacity`
+    // is new.
+    // 377 with the Owner directive inventory operations and the Platform Owner
+    // Console line integrated: 322 in the shared base, 41 more route modules from
+    // this branch and 14 from the console, landing on disjoint paths.
+    // 384 with the Owner directive operational stock alerts: seven new route
+    // modules — four alert reads, the reorder-level collection and its retirement,
+    // and the tenant capacity alert — carrying eight operations, because the
+    // collection module co-locates the list and the set on one path.
+    // 385 with the Owner directive console account and security: one new route
+    // module, `platform/account/password`, carrying one operation.
+    expect(routeFiles.length).toBe(385);
 
     // Non-vacuity. A discovery assertion that only checks a count would pass
     // against a set with one route swapped for another, so the comparison that
@@ -233,7 +320,7 @@ describe('the API application lives in the workspace', () => {
     }
   });
 
-  it('discovers the same 375 operations from the root, apps/api and apps/web', () => {
+  it('discovers the same 493 operations from the root, apps/api and apps/web', () => {
     // The decisive cwd proof, run against a REAL validator rather than the
     // helper alone: `check-authorization-coverage.mjs` derived the repository
     // from `process.cwd()` until this migration, so its answer used to depend on
@@ -272,7 +359,52 @@ describe('the API application lives in the workspace', () => {
     // and NOT the module count, while the id-addressed detail is a new module and
     // moves both — two operations over one new module, and the two numbers move by
     // different amounts again.
-    expect(report.operations).toHaveLength(375);
+    // 381 with the P1-31 delivery read seam (P-2 … P-5): six operations over three
+    // new modules, because three of the six co-locate a GET on a path a POST
+    // already owned.
+    // 382 with the P1-31 warranty read seam (P-6, P-7): one new operation,
+    // `wty.warranty-list`. The re-point of `wty.warranty-detail` onto the minted
+    // `wty.warranty.read` changes a declaration and not a count, which is why the
+    // permission gates and not this one are what prove it.
+    // 389 with the P1-31 warranty policy and coverage seam (P-10): seven
+    // operations over five new modules, and 397 with the P1-31 checklist template
+    // seam (P-9) merged alongside it: eight operations over five more new modules,
+    // for the reason stated above the route-module count.
+    // 404 with the P1-31 report configuration seam (P-11): seven operations over
+    // five more new modules, for the same reason.
+    // 405 with the P1-31 delivery-readiness queue (Owner decision D-3): one
+    // operation over one new module, so both counts move by one.
+    // The delivery list adds one operation on the existing collection module.
+    // 406 at the integration of the two: the readiness queue is one operation over
+    // one NEW module, so both counts move by one there.
+    // 407 with the report engine (P-11): one operation over one new module.
+    // 411 with the P1-31 employee register (P-17): four operations over three new
+    // modules, for the reason stated above the route-module count.
+    // 412 with the P1-31 warranty status-history read (P-18): one operation over
+    // one new module, so both counts move by one.
+    // P1-31 P-12 adds the report export action to the existing report-code route.
+    // 426 with the P1-32 Platform Owner Console backend (thirteen operations).
+    // 429 with the Owner directive organisation administration: three operations
+    // over one new module, for the reason stated above the route-module count.
+    // 431 with the P1-32 preparatory inventory slice: eighteen operations over
+    // fourteen new modules, for the reason stated above the route-module count.
+    // 437 with P1-32 preparatory slice 2, for the reason stated above.
+    // 444 with the rest of that slice: seven operations over four new modules, for
+    // the reason stated above the route-module count.
+    // 459 with P1-32 preparatory slice 3b: fifteen operations over twelve new
+    // modules, for the reason stated above the route-module count.
+    // 463 with P1-32 preparatory slice 3c: four operations over four new modules.
+    // 465 with P1-32-PRE-141: two operations over two new modules.
+    // 468 with the Owner directive organisation administration merged in: three
+    // operations over one new module, for the reason stated above the
+    // route-module count.
+    // 484 at the integration of the two lines: 416 in the shared base, 52 more
+    // operations from this branch and 16 from the console.
+    // 492 with the Owner directive operational stock alerts: eight operations over
+    // seven new route modules, for the reason stated above the route-module count.
+    // 493 with the Owner directive console account and security: one operation
+    // over one new route module.
+    expect(report.operations).toHaveLength(493);
 
     // Three node processes, each loading the whole route surface, so the cost
     // grows with the surface. The budget was 30 s and began timing out inside the

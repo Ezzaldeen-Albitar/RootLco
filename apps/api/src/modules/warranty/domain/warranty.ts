@@ -69,6 +69,37 @@ export type WarrantyLifecycleStatus = (typeof WARRANTY_LIFECYCLE_STATUSES)[numbe
 /** `ck_warranty_policies_code`. */
 export const POLICY_CODE_FORMAT = /^[a-z][a-z0-9_]{1,62}$/;
 
+/**
+ * The policy-administration bounds (P1-31 prerequisite P-10, **PPD-04**).
+ *
+ * `wty.warranty_policies.name` is unbounded `text` in the DDL, so `MAX_POLICY_NAME`
+ * is a policy of the write surface rather than a transcription, and it is stated as
+ * one. 200 is the width the platform already uses for an operator-authored label.
+ *
+ * The three numeric bounds ARE transcriptions, of `ck_warranty_coverage_duration`
+ * (`duration_months > 0`) and `ck_warranty_coverage_odometer` (`odometer_limit IS
+ * NULL OR odometer_limit > 0`), with the upper end taken from the `integer` column
+ * itself — so an out-of-range value is a 422 naming the field rather than a numeric
+ * overflow surfacing as a server fault. The database stays the authority in every
+ * case; mirroring the CHECK here only buys a better message.
+ */
+export const MAX_POLICY_NAME = 200;
+export const MIN_DURATION_MONTHS = 1;
+export const MAX_DURATION_MONTHS = 2147483647;
+export const MIN_ODOMETER_ALLOWANCE = 1;
+export const MAX_ODOMETER_ALLOWANCE = 2147483647;
+
+/**
+ * `effective_from` and `effective_to` are `date`, and the wire carries `YYYY-MM-DD`.
+ *
+ * Never an ISO timestamp and never a JS `Date`: `pg` decodes OID 1082 at LOCAL
+ * midnight, which shifts a coverage window by a day for any process not running in
+ * the database's time zone — the same reason the repository reads every `date`
+ * column `::text`. A coverage window decides which warranty terms a customer is
+ * bound to, so a one-day drift in it is a wrong document.
+ */
+export const COVERAGE_DATE_FORMAT = /^\d{4}-\d{2}-\d{2}$/;
+
 export class WarrantyRuleError extends Error {
   public override readonly name = 'WarrantyRuleError';
 }

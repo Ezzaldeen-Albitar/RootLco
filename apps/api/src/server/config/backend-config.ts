@@ -11,10 +11,19 @@
  *     unbounded worker batch, or an unbounded page size is how a single bad
  *     request takes down an instance.
  *
- * Read-replica routing is *configurable but inert*: `DATABASE_REPLICA_URL` is
- * accepted so deployment topology can be expressed, and the repository layer
- * refuses to route a strongly-consistent operation to it (see `pool.ts`). No
- * replica is provisioned (ADR-012) and none is claimed.
+ *  3. **A setting is not operational because this file accepts it.** Validation
+ *     proves a value is well-formed, never that anything reads it. The names in
+ *     `RESERVED_SETTINGS` below are accepted and read by NOTHING: setting one
+ *     has no effect. They stay in the schema so a deployment that already sets
+ *     them still starts, they are absent from `REQUIRED_WHEN_DEPLOYED` because
+ *     refusing readiness over an inert value would be a false gate, and
+ *     `tests/foundation/reserved-settings.test.ts` derives the accepted names
+ *     from this schema and fails if one of them is neither consumed nor listed.
+ *
+ * Read-replica routing is the oldest example: `DATABASE_REPLICA_URL` is accepted
+ * so deployment topology can be expressed, while `poolFor('replica')` returns
+ * the primary pool and records why. No replica is provisioned (ADR-012) and none
+ * is claimed.
  */
 import { z } from 'zod';
 
@@ -28,7 +37,11 @@ const schema = z.object({
    * `app_runtime` (never an owner, never BYPASSRLS) — asserted at preflight.
    */
   DATABASE_URL: z.string().min(1).optional(),
-  /** Optional read-replica DSN. Accepted, validated, and deliberately unused. */
+  /**
+   * RESERVED — accepted, validated, and read by nothing. Setting it has no
+   * effect: no replica is provisioned (ADR-012) and no routing code exists.
+   * Listed in `RESERVED_SETTINGS` below.
+   */
   DATABASE_REPLICA_URL: z.string().min(1).optional(),
   /**
    * Worker connection. The worker archetype (`app_worker`) is the only role the
@@ -85,8 +98,15 @@ const schema = z.object({
    */
   TRUSTED_PROXY_IPS: z.string().default(''),
 
-  /** Cache defaults. A TTL is always finite; "no TTL" is not expressible. */
+  /**
+   * RESERVED — accepted, validated, and read by nothing. Setting it has no
+   * effect. `Cache.set()` requires an explicit `ttlSeconds` from its caller and
+   * there is no code path that falls back to a default, so there is nothing for
+   * a value here to govern. Listed in `RESERVED_SETTINGS` below, which a test
+   * checks against the real consumers.
+   */
   CACHE_DEFAULT_TTL_SECONDS: bounded(1, 86_400, 60),
+  /** In-process cache ceiling. Read by `server/cache/cache.ts`. */
   CACHE_MAX_ENTRIES: bounded(16, 100_000, 5_000),
 
   /** Rate-limit defaults. Proposed validation baselines, not approved targets. */
@@ -151,8 +171,16 @@ const schema = z.object({
   AUTH_REDIRECT_ALLOWLIST: z.string().default(''),
 
   /**
-   * Exact origins permitted by CORS, comma-separated. Empty means same-origin
-   * only, which is the deployed shape today: no separate frontend origin exists.
+   * RESERVED — accepted, validated, and read by nothing. Setting it has no
+   * effect and no `Access-Control-Allow-Origin` header is emitted for it.
+   *
+   * There is no CORS layer, and no response-header layer of any kind, on this
+   * tier: `server/http/route-handler.ts` is the only edge and it writes no
+   * cross-origin header. A value here would have nothing to obey. It stays in
+   * the schema so an existing deployment that sets it still starts, and it is
+   * listed in `RESERVED_SETTINGS` below so the omission cannot be mistaken for
+   * an oversight. It is deliberately NOT in `REQUIRED_WHEN_DEPLOYED`: refusing
+   * to become ready over a value that changes nothing would be a false gate.
    */
   CORS_ALLOWED_ORIGINS: z.string().default(''),
 
@@ -240,6 +268,50 @@ const schema = z.object({
   EXPORT_MAX_ROWS: bounded(1, 1_000_000, 50_000),
 });
 
+/**
+ * Every name this schema accepts, derived from the schema and not from a list
+ * maintained beside it.
+ *
+ * `Object.keys(schema.shape)` is the schema's own answer, so a name added above
+ * appears here in the same commit and cannot be forgotten. The guard test reads
+ * this rather than re-parsing the file, which is what makes it a check on the
+ * contract instead of a check on a regex.
+ */
+export const ACCEPTED_SETTING_NAMES: readonly string[] = Object.freeze(
+  Object.keys(schema.shape).sort()
+);
+
+/**
+ * Accepted, validated, and read by NOTHING outside this module.
+ *
+ * Each entry is a name whose value has no effect at runtime, with the reason it
+ * has none. This list exists because "the validator accepts it" had been reading
+ * as "the deployment can rely on it", and a settings surface that quietly does
+ * nothing is worse than one that is honestly smaller.
+ *
+ * The three rules that make an entry here honest, all enforced by
+ * `tests/foundation/reserved-settings.test.ts`:
+ *
+ *  1. the name is still ACCEPTED — an existing deployment that sets it starts
+ *     exactly as before, and removing it from the schema would be the breaking
+ *     change this deliberately is not;
+ *  2. the name is NOT in `REQUIRED_WHEN_DEPLOYED` and cannot fail readiness,
+ *     because a missing value that governs nothing must not stop a deployment;
+ *  3. the name has NO consumer — an entry that gains one has to leave this list
+ *     in the same change, and the test fails while it has not.
+ */
+export const RESERVED_SETTINGS: Readonly<Record<string, string>> = Object.freeze({
+  CACHE_DEFAULT_TTL_SECONDS:
+    'Cache.set() requires an explicit ttlSeconds from its caller and no path ' +
+    'falls back to a default, so there is nothing for this value to govern.',
+  CORS_ALLOWED_ORIGINS:
+    'No CORS layer and no response-header layer exists on this tier, so no ' +
+    'Access-Control-Allow-Origin header is emitted for any value set here.',
+  DATABASE_REPLICA_URL:
+    'Read-replica routing is not implemented — poolFor("replica") returns the ' +
+    'primary pool — and no replica is provisioned (ADR-012).',
+});
+
 /** Splits a comma-separated setting into trimmed, non-empty entries. */
 function commaList(value: string): readonly string[] {
   return value
@@ -307,4 +379,120 @@ export function backendConfig(): BackendConfig {
 /** Test seam: clears the memoised configuration. */
 export function __resetBackendConfigForTests(): void {
   cached = undefined;
+}
+
+/**
+ * The raw environment, as this module inspects it before zod coerces anything.
+ *
+ * Deliberately a plain record rather than `BackendConfig`: the production
+ * requirements below are about ABSENCE, and the parsed shape has already
+ * substituted defaults for several of the names in question. `''` and
+ * `undefined` become indistinguishable once `CORS_ALLOWED_ORIGINS` is `[]`.
+ */
+export type RawEnvironment = Readonly<Record<string, string | undefined>>;
+
+/**
+ * Environments in which the values below stop being optional.
+ *
+ * `local` and `development` are excluded on purpose: the whole test tier, the
+ * launcher and a fresh clone run without a database, without an identity
+ * provider and without an object store, and that has to keep working.
+ */
+const PRODUCTION_LIKE = new Set(['staging', 'production']);
+
+/**
+ * Names that must carry a non-empty value once the deployment is not local.
+ *
+ * **Membership here is a claim that something reads the value.** Every name
+ * below has a consumer cited beside it; a name whose only relationship to the
+ * code is that the schema parses it belongs in `RESERVED_SETTINGS` instead, and
+ * the guard test refuses any overlap between the two.
+ */
+export const REQUIRED_WHEN_DEPLOYED: readonly string[] = [
+  /** The request-path pool. `pool.ts` throws `DatabaseNotConfiguredError` without it. */
+  'DATABASE_URL',
+  /** The control plane. It has NO fallback to `DATABASE_URL` and fails closed. */
+  'PLATFORM_DATABASE_URL',
+  /** Read through `serverEnv()`; the iam adapter refuses to compose without it. */
+  'SUPABASE_SERVICE_ROLE_KEY',
+  /** Token verification. Absent means no request can ever authenticate. */
+  'AUTH_JWT_SECRET',
+  'AUTH_JWT_ISSUER',
+  /**
+   * Empty is the safe default locally — it rejects every caller-supplied
+   * redirect — but a deployment that serves password-reset and invitation links
+   * and names no destination cannot complete either flow.
+   */
+  'AUTH_REDIRECT_ALLOWLIST',
+  // `CORS_ALLOWED_ORIGINS` was required here and is deliberately not any more:
+  // nothing reads it, so a deployment that omitted it was refused readiness over
+  // a value that would have changed nothing. It is in `RESERVED_SETTINGS`.
+];
+
+/** Storage selections that cannot serve a deployed request. */
+const NON_SERVING_STORAGE = new Set(['', 'unconfigured', 'local_fake']);
+
+/** Credentials the adapter itself demands once `s3_compatible` is selected. */
+const S3_REQUIRED = [
+  'STORAGE_S3_ENDPOINT',
+  'STORAGE_S3_ACCESS_KEY_ID',
+  'STORAGE_S3_SECRET_ACCESS_KEY',
+] as const;
+
+function isBlank(value: string | undefined): boolean {
+  return value === undefined || value.trim().length === 0;
+}
+
+/**
+ * The names a staging or production deployment is missing. **Names only.**
+ *
+ * Pure: it reads the record it is handed and nothing else, so readiness, a test
+ * and any future preflight can ask the same question of different inputs. It
+ * returns an empty list for every environment that is not `staging` or
+ * `production`, which is why wiring it into readiness cannot change local or
+ * test behaviour.
+ *
+ * No value is inspected beyond "is it present" and, for the storage selection,
+ * "is it one of the explicitly non-serving choices" — so nothing that reaches
+ * the returned list can be a credential.
+ *
+ * **What this does NOT catch, stated here rather than left to be discovered.**
+ * The whole check is opt-in on `NEXT_PUBLIC_APP_ENV`, and that name DEFAULTS to
+ * `local` in this schema. A deployment that simply never sets it is therefore
+ * treated as local: nothing below runs, readiness reports
+ * `configuration.production-required: ok`, and every required value may be
+ * absent. It catches a deployment that declares itself staging or production and
+ * is missing something; it cannot catch one that declares nothing. Making the
+ * absence itself refuse would change what a fresh clone and the entire test tier
+ * do — the whole suite runs with no such variable set — so it is recorded as a
+ * known gap in `docs/platform/environment-configuration.md` section 16 rather
+ * than fixed here by widening a default.
+ */
+export function productionConfigurationProblems(env: RawEnvironment): string[] {
+  if (!PRODUCTION_LIKE.has(env['NEXT_PUBLIC_APP_ENV'] ?? '')) return [];
+
+  const problems: string[] = [];
+  for (const name of REQUIRED_WHEN_DEPLOYED) {
+    if (isBlank(env[name])) problems.push(name);
+  }
+
+  // Attachments are not feature-gated: `UnconfiguredStorageProvider` refuses at
+  // the first signed-URL request, and `local_fake` signs against a `.invalid`
+  // host. Either one, deployed, is an outage of the whole attachment surface.
+  const storage = (env['STORAGE_PROVIDER'] ?? '').trim();
+  if (NON_SERVING_STORAGE.has(storage)) {
+    problems.push('STORAGE_PROVIDER');
+  } else if (storage === 's3_compatible') {
+    for (const name of S3_REQUIRED) {
+      if (isBlank(env[name])) problems.push(name);
+    }
+  }
+
+  // Disabling the limiter is expressible, and locally it is sometimes useful.
+  // Deployed it removes the only protection the public routes have.
+  if ((env['RATE_LIMIT_ENABLED'] ?? 'true').trim() === 'false') {
+    problems.push('RATE_LIMIT_ENABLED');
+  }
+
+  return problems;
 }

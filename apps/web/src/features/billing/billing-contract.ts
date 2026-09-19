@@ -98,12 +98,22 @@ export interface InvoiceTotals {
   readonly gross: MoneyView;
 }
 
+/** `ck_invoices_sale_kind`, mirrored. A counter sale has no work order (P1-32). */
+export const SALE_KINDS = ['work_order', 'counter_sale'] as const;
+export type SaleKind = (typeof SALE_KINDS)[number];
+
 /** The invoice header — `InvoiceView`. */
 export interface Invoice {
   readonly id: string;
   readonly companyId: string;
   readonly branchId: string;
-  readonly workOrderId: string;
+  /**
+   * Null exactly when `saleKind` is `counter_sale`: a part sold over the counter
+   * opens no job, and `ck_invoices_sale_kind_source` makes the work order present
+   * for exactly one of the two kinds.
+   */
+  readonly workOrderId: string | null;
+  readonly saleKind: SaleKind;
   readonly quotationRevisionId: string | null;
   readonly payerPartnerId: string;
   readonly currency: string;

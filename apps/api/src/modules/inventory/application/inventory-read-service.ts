@@ -74,6 +74,14 @@ export interface AvailabilityView {
   readonly onHand: string;
   readonly reserved: string;
   readonly available: string;
+  /**
+   * What this item has in transit in the branch, on every cell of the item.
+   *
+   * NOT part of `available` and NOT part of `onHand`: a dispatched transfer has
+   * left its source and not reached its destination, so counting it at either end
+   * would promise the same unit twice.
+   */
+  readonly inTransitQty: string;
 }
 
 export interface MovementView {
@@ -140,6 +148,7 @@ const toAvailabilityView = (row: StockBalanceRow): AvailabilityView => ({
   onHand: row.onHandQty,
   reserved: row.reservedQty,
   available: row.availableQty,
+  inTransitQty: row.inTransitQty,
 });
 
 const toMovementView = (row: MovementRow): MovementView => ({

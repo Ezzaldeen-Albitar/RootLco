@@ -55,19 +55,24 @@
 import { createHash } from 'node:crypto';
 import { ApplicationService } from '@/server/layering';
 import { AppFailure } from '@/server/errors/app-failure';
-import { buildRequestContext, type RequestContext } from '@/server/context/request-context';
+import {
+  buildRequestContext,
+  contextLogFields,
+  type RequestContext,
+} from '@/server/context/request-context';
 import { withTransaction, type DbHandle } from '@/server/db/transaction';
 import { backendConfig } from '@/server/config/backend-config';
 import { log } from '@/server/observability/logger';
 import { metrics, METRICS } from '@/server/observability/metrics';
 import { recordSecurityEvent } from '@/server/audit/security-events';
+import { appendAudit } from '@/server/audit/audit';
 import { IdentityRepository, type AccountRow } from '../data/identity-repository';
 import { AuthorizationRepository } from '../data/authorization-repository';
 import { IdentityPolicy } from '../domain/identity-policy';
 import { CredentialPolicy } from '../domain/credential-policy';
 import type { IdentityProvider, ProviderSession } from '../provider/identity-provider';
 import { ProviderFailure } from '../provider/identity-provider';
-import { toAppFailureFromProvider } from '../provider/provider-errors';
+import { providerReasonOf, toAppFailureFromProvider } from '../provider/provider-errors';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -130,6 +135,37 @@ export interface LoginResult {
     readonly displayName: string;
     readonly tenantId: string;
   };
+}
+
+/** What a caller sends to change their own password. Never logged, never echoed. */
+export interface PasswordChangeRequest {
+  /** The bearer token this request presented. Proves which identity is asking. */
+  readonly accessToken: string;
+  readonly currentPassword: string;
+  readonly newPassword: string;
+}
+
+/**
+ * What `POST /platform/account/password` publishes.
+ *
+ * `otherSessions` is the session policy, stated rather than assumed, and it is
+ * deliberately not the word "revoked":
+ *
+ *  - `ended-at-provider` — the identity provider was asked to end every session
+ *    of this identity and did. That is what the product can actually do here:
+ *    RootLco's own `iam.user_sessions` rows are NOT revoked by this operation,
+ *    because the control-plane connection holds no grant on that table
+ *    (`20260831093000_iam_platform_privilege_graph.sql` grants `app_platform`
+ *    nothing on it). An access token already issued to another session
+ *    therefore stays acceptable to this API until it expires — the same
+ *    residual the reset path carries, recorded rather than hidden.
+ *  - `not-ended` — the sign-out did not complete. The password HAS changed; the
+ *    sessions have not. Reported, because claiming a revocation that did not
+ *    happen is worse than admitting one that did not.
+ */
+export interface PasswordChangeResult {
+  readonly status: 'password-changed';
+  readonly otherSessions: 'ended-at-provider' | 'not-ended';
 }
 
 export interface SessionSummary {
@@ -602,5 +638,186 @@ export class AuthenticationService extends ApplicationService {
     } catch (error) {
       toAppFailureFromProvider(error);
     }
+  }
+
+  /**
+   * Changes the caller's OWN password (P1-32-PRE-OD-CONSOLE).
+   *
+   * Reachable by a platform-only identity — a holder of `iam.platform_grants`
+   * with no tenant role — which is the reason it exists: the tenant profile
+   * surface needs a tenant session, and that principal has none.
+   *
+   * ## Who is asking is never taken from the request document
+   *
+   * The address is read from the bearer token this request already
+   * authenticated with, and from nowhere else. A body-supplied address would
+   * let an authenticated caller re-authenticate as somebody else and then set
+   * THAT identity's password, which is the whole vulnerability. The database
+   * cannot supply it either: the control-plane connection's SELECT on
+   * `iam.user_accounts` is column-scoped and carries neither `email` nor
+   * `provider_subject`, and widening it would expose every organisation's
+   * addresses — so the token, which the caller already holds, is the only
+   * source that discloses nothing new.
+   *
+   * ## Verification is a real re-authentication
+   *
+   * The provider owns the credential (ADR-019), so "is this the current
+   * password" is a question only the provider can answer, and it is asked by
+   * signing in with it. A wrong answer is `ERR-IAM-003` — never `ERR-IAM-002`,
+   * which would sign the caller out for a typing mistake.
+   *
+   * ## Strength stays the provider's decision
+   *
+   * Only the ceiling is applied here, and only because an unbounded password is
+   * an unbounded input to a hashing routine. Everything else about the new
+   * password is refused, or not, by the provider; its own sentence goes to the
+   * operator log and never to the caller.
+   *
+   * ## Two seams, stated rather than smoothed over
+   *
+   * The credential lives at the provider, so no transaction here can cover it.
+   * The audit record is written immediately after the provider accepted the
+   * change and before anything else, so a failure to write it is REPORTED to
+   * the caller rather than leaving a silent gap — the password has changed by
+   * then, and saying so loudly is the safe direction. The sign-out runs last
+   * for the same reason: it must not be able to prevent the record.
+   */
+  async changeOwnPassword(
+    db: DbHandle,
+    input: PasswordChangeRequest
+  ): Promise<PasswordChangeResult> {
+    const context = this.contextOf(db);
+    this.credentialPolicy.assertPasswordCeiling(input.newPassword);
+
+    const identity = await this.identityOfBearer(input.accessToken, context);
+
+    let session: ProviderSession;
+    try {
+      session = await this.provider.authenticate(identity.email, input.currentPassword);
+    } catch (error) {
+      if (error instanceof ProviderFailure && error.reason === 'provider-unavailable') {
+        toAppFailureFromProvider(error);
+      }
+      log.warn('Password change refused: the current password did not verify', {
+        ...contextLogFields(context),
+        result: 'denied',
+        errorCode: 'ERR-IAM-003',
+        context: { reason: providerReasonOf(error) },
+      });
+      throw new AppFailure('ERR-IAM-003', {
+        message: 'The current password did not verify',
+        safeDetails: {
+          violations: [{ path: 'body.currentPassword', rule: 'did_not_verify' }],
+        },
+      });
+    }
+
+    if (session.subject !== identity.subject) {
+      // The address the token carries resolved to a different provider identity
+      // than the token's own subject — an address reused across identities.
+      // Refused with the same answer as a wrong password: nothing about the
+      // other identity is disclosed, and nothing is written.
+      log.warn('Password change refused: the verified subject is not the caller', {
+        ...contextLogFields(context),
+        result: 'denied',
+        errorCode: 'ERR-IAM-003',
+        context: { reason: 'subject-mismatch' },
+      });
+      throw new AppFailure('ERR-IAM-003', {
+        message: 'The current password did not verify',
+        safeDetails: {
+          violations: [{ path: 'body.currentPassword', rule: 'did_not_verify' }],
+        },
+      });
+    }
+
+    try {
+      await this.provider.setPassword(identity.subject, input.newPassword);
+    } catch (error) {
+      if (error instanceof ProviderFailure && error.reason === 'credential-policy-rejected') {
+        // The one place the provider's own sentence is read, and it goes to the
+        // operator log. It is not returned: see `toAppFailureFromProvider`.
+        log.warn('Password change refused by the identity provider', {
+          ...contextLogFields(context),
+          result: 'denied',
+          errorCode: 'ERR-IAM-004',
+          context: { providerStatement: error.policyMessage ?? 'none' },
+        });
+      }
+      toAppFailureFromProvider(error);
+    }
+
+    await appendAudit(db, {
+      action: 'iam.password.changed',
+      entityType: 'iam.user_account',
+      entityId: context.principal.userId,
+      actorKind: 'user',
+      details: [
+        // WHO and WHEN are the record's own columns, written by
+        // `iam.audit_append` from the request context. What is added here is the
+        // one fact the columns do not carry: how the change was authorised. No
+        // password, no hash, no token, and no length or shape of either.
+        { field: 'verification', classification: 'internal', value: 'current-password' },
+      ],
+    });
+
+    let otherSessions: PasswordChangeResult['otherSessions'] = 'ended-at-provider';
+    try {
+      await this.provider.signOutEverywhere(session.accessToken);
+    } catch (error) {
+      // The password HAS changed. Reporting a failure here would invite a retry
+      // with a current password that is no longer current, so the change is
+      // reported as done and the session outcome is reported as what it is.
+      otherSessions = 'not-ended';
+      log.warn('Password changed, but other sessions were not ended', {
+        ...contextLogFields(context),
+        result: 'failure',
+        context: { reason: providerReasonOf(error) },
+      });
+    }
+
+    log.info('Password changed', {
+      ...contextLogFields(context),
+      result: 'success',
+      context: { otherSessions },
+    });
+
+    return { status: 'password-changed', otherSessions };
+  }
+
+  /**
+   * The identity behind the bearer token this request presented.
+   *
+   * Re-verifies the token the pipeline already authenticated with, so the
+   * subject is the same one the request context was resolved from. An
+   * unverifiable token cannot occur on this path — the request would not have
+   * reached a handler — and a token carrying no address means the deployment's
+   * provider issues none, which makes re-authentication impossible rather than
+   * denied. Both fail closed and neither is described to the caller.
+   */
+  private async identityOfBearer(
+    accessToken: string,
+    context: RequestContext
+  ): Promise<{ subject: string; email: string }> {
+    let verified;
+    try {
+      verified = await this.provider.verifyToken(accessToken);
+    } catch (error) {
+      if (error instanceof ProviderFailure && error.reason === 'provider-unavailable') {
+        toAppFailureFromProvider(error);
+      }
+      throw new AppFailure('ERR-IAM-002', { message: 'The presented token is not usable' });
+    }
+    if (!verified.email) {
+      log.warn('Password change is not available: the token carries no address', {
+        ...contextLogFields(context),
+        result: 'failure',
+        errorCode: 'ERR-SYS-001',
+      });
+      throw new AppFailure('ERR-SYS-001', {
+        message: 'The presented token carries no address to re-authenticate with',
+      });
+    }
+    return { subject: verified.subject, email: verified.email };
   }
 }

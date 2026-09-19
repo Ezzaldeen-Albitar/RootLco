@@ -439,6 +439,64 @@ export const REGISTER = Object.freeze([
     why: 'every in-scope P1-30 write has a mirror that matches its zod schema, or a declared reason not to',
   },
   {
+    name: 'validate:p1-31-access',
+    owner: ROOT,
+    tier: 'required',
+    // `gate-before-read` for P1-31 route pages, and a sibling rather than a
+    // widening: P1-29's and P1-30's derivations are what those phases' closures
+    // rest on. Its scope is an explicit ALLOW-LIST of the operation ids P1-31
+    // published, because P1-30 already owns the whole `sal.`/`wty.` namespaces
+    // and a namespace regular expression here would claim P1-30's work or
+    // nothing. Its dashboard areas are named as well as derived, because the
+    // committed href is the SINGULAR `/delivery` while every delivery operation
+    // is addressed under `deliveries` — the exact reason the first P1-31 screen
+    // escaped the P1-30 gate. Unlike its siblings it ships BESIDE a screen, so a
+    // run over the application root that examines zero pages is a red rather
+    // than a notice. Mutation-proved by tests/ci/p1-31-access-gate.test.ts.
+    why: 'every P1-31 route page denies and returns on a permission before its first awaited read',
+  },
+  {
+    name: 'validate:p1-31-write-shape',
+    owner: ROOT,
+    tier: 'required',
+    // `P1-31-SEC-004`. The hand-transcribed request payloads the warranty and
+    // reporting screens send, compared against the routes' real zod schemas.
+    // Scoped to `wty` and `rpt` — the two namespaces `validate:p1-30-payload-parity`
+    // does not cover — and a SIBLING rather than a widening of that gate, whose
+    // scope another phase's closure rests on and whose domain list is pinned by
+    // name in its own suite (CC-37(a)). It borrows the P1-29 gate's comparison,
+    // locator, naming rule and interface reader rather than copying them, and
+    // adds one thing neither sibling has: the two mirrors spell a closed
+    // vocabulary as an exported type ALIAS, which the borrowed interface reader
+    // ignores, so the alias is resolved before comparing and an alias that
+    // cannot be resolved still fails. Anti-vacuity is a relationship, not a
+    // count, and it has a clause the siblings lack — a scope that had drifted
+    // entirely into `PENDING_MIRRORS` compares nothing and is a red.
+    // Mutation-proved by tests/ci/p1-31-write-shape.test.ts.
+    why: 'every in-scope P1-31 warranty or reporting write has a mirror that matches its zod schema, or a declared reason not to',
+  },
+  {
+    name: 'validate:p1-31-version-sourcing',
+    owner: ROOT,
+    tier: 'required',
+    // `P1-31-QA-004`. The mechanical half of P1-31's version discipline, and a
+    // SIBLING of `validate:p1-28-version-sourcing` rather than a widening of it:
+    // that gate hard-filters `apt|rec` and P1-28's closure rests on its adapter
+    // equality. Scope is the ELEVEN version-guarded P1-31 operations, frozen
+    // because no namespace expresses them — P1-30 owns all of `sal.` and `wty.` —
+    // and then asserted against the published contract, so a scope entry that
+    // stops being guarded is a violation rather than a quiet shrink. It borrows
+    // the P1-28 classifier, scope reader and renewal rule, and adds three things
+    // that gate cannot do: it binds a send to its operation by RESOLVING the path
+    // expression through the module's own helpers, it sees a version carried as
+    // an interface FIELD (the delivery completion, invisible to a parameter-list
+    // walk), and it refuses a retry that quotes the version the first attempt was
+    // refused for. Seven of the eleven have no consumer and are declared PENDING
+    // with a reason that goes stale the moment one appears. Mutation-proved by
+    // tests/ci/p1-31-version-sourcing.test.ts.
+    why: 'every version-guarded P1-31 write sources its recordVersion from a read or a command response, renews it after a conflict, and never invents one',
+  },
+  {
     name: 'validate:p1-28-access',
     owner: ROOT,
     tier: 'required',
@@ -514,6 +572,12 @@ export const REGISTER = Object.freeze([
     why: 'no technical vocabulary in a message a workshop employee reads',
   },
   { name: 'dev:all', owner: ROOT, tier: 'interactive', why: 'owner-visible local stack launcher' },
+  {
+    name: 'monitor:p1-31',
+    owner: ROOT,
+    tier: 'interactive',
+    why: 'routes an explicitly selected local/test log file to a new local reviewer queue; parser and CLI refusals run in the required unit tier',
+  },
   { name: 'dev:status', owner: ROOT, tier: 'interactive', why: 'reports the live local stack' },
   { name: 'dev:stop', owner: ROOT, tier: 'interactive', why: 'stops only launcher-owned PIDs' },
   {
@@ -544,6 +608,18 @@ export const REGISTER = Object.freeze([
     owner: ROOT,
     tier: 'interactive',
     why: 'creates the local-only Owner acceptance account and all three synthetic tenants',
+  },
+  {
+    name: 'acceptance:export-fixture',
+    owner: ROOT,
+    tier: 'interactive',
+    // `interactive` for the same reason the rest of this group is, and one reason
+    // more: it refuses every target but a loopback database on 54322 with
+    // `ROOTLCO_ENV=local-acceptance` and `ROOTLCO_ACCEPTANCE_CONFIRM=p1-31`, and
+    // it only accepts identifiers an acceptance run created minutes earlier. A
+    // hosted runner holds none of those, so requiring it in CI would mean
+    // requiring CI to hold an acceptance run.
+    why: 'installs the one scoped, expiring local export role the P1-31 export companion needs',
   },
   {
     name: 'acceptance:provision-fixtures',
@@ -894,6 +970,27 @@ export const REGISTER = Object.freeze([
   },
   { name: 'test:backend', owner: ROOT, tier: 'environment', why: 'needs PostgreSQL' },
   { name: 'test:db', owner: ROOT, tier: 'environment', why: 'needs PostgreSQL' },
+  {
+    name: 'test:db-fixture',
+    owner: ROOT,
+    tier: 'environment',
+    // The one database file that must NOT run against the database the rest of
+    // the tier runs against. It installs privileged role grants on a real
+    // principal and refuses to start when `current_database()` is `postgres` —
+    // which is what `tests/db/helpers.ts` defaults to and what every hosted
+    // database job supplies. So it is excluded from `vitest.config.db.ts` by name
+    // and carries its own runner, `vitest.config.db-fixture.ts`.
+    //
+    // `environment` with the cost stated plainly, in the spirit of the
+    // `verify:database` entry above: NO hosted job invokes this command, because
+    // no hosted job has a disposable database to give it. It is an explicit
+    // operator step against a database named at the run, and the acceptance
+    // procedure names the command and the database so it is taken deliberately
+    // rather than assumed. Registering it `required` or `ci-only` would be a
+    // declaration this repository cannot honour; leaving it unregistered would be
+    // exactly the unclassified command this gate exists to refuse.
+    why: 'the privileged export-fixture writer, executed against a DISPOSABLE PostgreSQL database named by DB_NAME — it refuses the shared one by design, so no hosted job runs it',
+  },
   { name: 'test:integration', owner: ROOT, tier: 'environment', why: 'needs PostgreSQL' },
   {
     name: 'test:coverage',

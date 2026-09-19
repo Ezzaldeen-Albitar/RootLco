@@ -649,15 +649,28 @@ describe('control-plane audit trail', () => {
   it('A1 writes org.tenant.provisioned, attributed to the operator', async () => {
     const before = await auditCount('org.tenant.provisioned');
     const tenantId = await provisionedTenant('wb_a1');
-    expect(await auditCount('org.tenant.provisioned')).toBe(before + 1);
+    // TWO records since P1-32-PRE-026: the target tenant's genesis (asserted
+    // below) and the operator's own home-tenant record carrying
+    // target_tenant_id, without which the act was invisible to the operator's
+    // audit search.
+    expect(await auditCount('org.tenant.provisioned')).toBe(before + 2);
+    const home = await admin.query(
+      `SELECT a.actor_id,
+              (SELECT d.new_value_masked FROM iam.audit_record_details d
+                WHERE d.audit_record_id = a.id AND d.field_name = 'target_tenant_id') AS target
+         FROM iam.audit_records a
+        WHERE a.action = 'org.tenant.provisioned' AND a.entity_id = $1 AND a.tenant_id = $2`,
+      [tenantId, TENANT_A]
+    );
+    expect(home.rows).toEqual([{ actor_id: USER_PLATFORM_HOLDER, target: tenantId }]);
 
     const { rows } = await admin.query(
       `SELECT actor_id, actor_kind, tenant_id
          FROM iam.audit_records
-        WHERE action = 'org.tenant.provisioned' AND entity_id = $1
-        ORDER BY seq DESC LIMIT 1`,
+        WHERE action = 'org.tenant.provisioned' AND entity_id = $1 AND tenant_id = $1`,
       [tenantId]
     );
+    expect(rows).toHaveLength(1);
     const row = rows[0] as { actor_id: string; actor_kind: string; tenant_id: string };
     // Server-derived, from the resolved principal — never from the request. The
     // provisioning schema refuses an actor_id key outright (P5), and this is the

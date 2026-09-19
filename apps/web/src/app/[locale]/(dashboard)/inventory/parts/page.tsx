@@ -92,6 +92,13 @@ export default async function InventoryPartsPage({
           canOperate={holds(session.permissions, INVENTORY_PERMISSIONS.operate)}
           canReadWorkOrder={canReadWorkOrder}
           canReadBranches={holds(session.permissions, INVENTORY_PERMISSIONS.branchRead)}
+          currentUserId={session.userId}
+          canRequestMaterial={holds(session.permissions, INVENTORY_PERMISSIONS.materialRequest)}
+          canApproveMaterial={holds(session.permissions, INVENTORY_PERMISSIONS.materialApprove)}
+          canDecideMaterialException={holds(
+            session.permissions,
+            INVENTORY_PERMISSIONS.materialExceptionApprove
+          )}
         />
       </PageBody>
     </>

@@ -10,6 +10,37 @@ import {
   type Page,
 } from '@playwright/test';
 import { E2E_API_ORIGIN, REPO_ROOT } from '../origin';
+import { readSignedInAccount } from './account-manifest';
+
+/**
+ * This file assumes the ACCEPTANCE OWNER, so it runs only when that is who signed in.
+ *
+ * Every case below was written against the world `npm run acceptance:create-owner`
+ * builds — its two tenants, its roles, its branch scoping and its permission set — and
+ * several of them name a row of it outright. They are correct about that world and say
+ * nothing about any other.
+ *
+ * `auth.setup.ts` will sign in as a different person when one is offered: a local P1-31
+ * acceptance run points `ROOTLCO_P131_HANDOFF` at the journey's own organisation
+ * administrator, who is a member of an organisation none of these rows exist in. Run
+ * unguarded against that session, this file reports failures about a fixture that was
+ * never provisioned rather than about the product — measured, in the 2026-09-13 re-run,
+ * as 125 such failures across the seven legacy specs while all forty P1-31 cases passed.
+ *
+ * So the account is READ and the file skips with the account named. Nothing changes in
+ * the governed job, which signs in as the acceptance owner and executes every case here;
+ * what changes is that a handoff-driven local run says "this file wants a different
+ * account" instead of asserting on a world it can see is absent. No assertion below is
+ * altered, relaxed or removed.
+ */
+test.beforeEach(() => {
+  const account = readSignedInAccount();
+  // test-honesty-allow: TH-002 -- this file's fixture belongs to the owner-acceptance account; the reason names the account actually signed in
+  test.skip(
+    account.kind !== 'owner-acceptance',
+    `requires the owner-acceptance account; signed in as ${account.kind}`
+  );
+});
 
 /**
  * The P1-28 Appointment and Reception screens, against the **running
@@ -1643,11 +1674,13 @@ test.describe('the walk-in intake confirms a customer before a vehicle', () => {
         say(locale, 'receptions.intake.customer.createOffer')
       );
 
-      // The stated phone degradation (`G-CRM-PHONE`), rendered where a
-      // receptionist would type a caller's number rather than in a help page.
-      const phone = page.getByTestId('phone-search-notice');
-      await expect(phone, 'the phone-search degradation is not stated at the intake').toBeVisible();
-      await expect(phone).toContainText(say(locale, 'receptions.intake.phone.title'));
+      // P1-32 closed `G-CRM-PHONE`: the intake offers a phone box where a
+      // receptionist types a caller's number, and the retired notice is gone.
+      await expect(
+        page.getByLabel(say(locale, 'customerSelector.phone'), { exact: true }),
+        'the intake offers no phone search box'
+      ).toBeVisible();
+      await expect(page.getByTestId('phone-search-notice')).toHaveCount(0);
 
       // No handoff has happened, so the handoff panel must not be printed.
       await expect(
@@ -2279,7 +2312,32 @@ test.describe('the configured workspace: the four catalogue-blocked capabilities
 
   let manifest: FixtureManifest;
 
+  /*
+   * The account gate is repeated HERE, and the repetition is the point.
+   *
+   * The file-level `test.beforeEach` above skips every case in this file for an
+   * account other than the acceptance owner — but a `beforeAll` runs BEFORE the
+   * first case's `beforeEach`, so on a handoff-driven run this hook provisioned a
+   * second workspace for a session that was about to skip every case it was for.
+   * It cannot: `configureSecondWorkspace` shells out to the owner-acceptance
+   * provisioning command, which fails against the journey's organisation, and the
+   * hook's failure was reported as three failed cases and nine that did not run
+   * rather than twelve skips.
+   *
+   * So the same condition, with the same reason, is asked first. Playwright turns
+   * a `test.skip` raised in a `beforeAll` into a skip of the case that triggered
+   * the hook and stops the remaining hooks in the group, and the file-level
+   * `beforeEach` skips the eleven after it. Nothing changes for the owner
+   * acceptance account: the condition is false, the hook provisions as before, and
+   * every case below runs unaltered.
+   */
   test.beforeAll(() => {
+    const account = readSignedInAccount();
+    // test-honesty-allow: TH-002 -- this file's fixture belongs to the owner-acceptance account; the reason names the account actually signed in
+    test.skip(
+      account.kind !== 'owner-acceptance',
+      `requires the owner-acceptance account; signed in as ${account.kind}`
+    );
     manifest = configureSecondWorkspace();
   });
 
@@ -2339,7 +2397,9 @@ test.describe('the configured workspace: the four catalogue-blocked capabilities
 
     // The customer, by NAME — the whole reason `CustomerSelector` exists.
     const selector = page.getByTestId('customer-selector');
-    await selector.getByLabel(say('en', 'crm.customers.column.name')).fill('Acceptance');
+    await selector
+      .getByLabel(say('en', 'crm.customers.column.name'), { exact: true })
+      .fill('Acceptance');
     await selector.getByRole('button', { name: say('en', 'customerSelector.search') }).click();
     await selector.getByRole('button').filter({ hasText: manifest.customerDisplayName }).click();
     await expect(
@@ -2510,7 +2570,9 @@ test.describe('the configured workspace: the four catalogue-blocked capabilities
     await nameScope(page.getByLabel(say('en', 'receptions.checkIn.branch')), manifest.branchId);
 
     const selector = page.getByTestId('customer-selector');
-    await selector.getByLabel(say('en', 'crm.customers.column.name')).fill('Acceptance');
+    await selector
+      .getByLabel(say('en', 'crm.customers.column.name'), { exact: true })
+      .fill('Acceptance');
     await selector.getByRole('button', { name: say('en', 'customerSelector.search') }).click();
     await selector.getByRole('button').filter({ hasText: manifest.customerDisplayName }).click();
 

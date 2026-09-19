@@ -146,6 +146,14 @@ const ROOTS = [
   // `<form action={…}>` — a category select, two text boxes and the file input —
   // so its tree joins the inventory the round-six check demands.
   join(SRC, 'features', 'technicians'),
+  // P1-31: the handover signature capture is a `<form action={…}>` with a role
+  // select and the shared file input, so the delivery tree joins the inventory
+  // in the change that gives it a form rather than after the next round six.
+  join(SRC, 'features', 'delivery'),
+  // P1-32-PRE-065: the Platform Owner Console provisioning screen is a
+  // `<form action={…}>` owner with a language select, a plan select and the
+  // activate checkbox, so its tree joins the inventory with the form.
+  join(SRC, 'features', 'platform'),
   join(SRC, 'components', 'forms'),
   join(SRC, 'components', 'party'),
   join(SRC, 'components', 'duplicates'),

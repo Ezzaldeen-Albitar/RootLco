@@ -1,0 +1,556 @@
+/**
+ * The report contract (P1-31, FE-011 … FE-014; Owner decisions **D-4** of
+ * 2026-09-09, **D-17** of 2026-09-10 and **D-20** of 2026-09-12).
+ *
+ * | operation             | method | path                            | permissions            |
+ * | --------------------- | ------ | ------------------------------- | ---------------------- |
+ * | `rpt.report-catalogue` | GET   | `/reports`                      | `rpt.report.read`      |
+ * | `rpt.report-read`      | GET   | `/reports/{reportCode}`         | `rpt.report.read`      |
+ * | `rpt.report-run`       | GET   | `/reports/{reportCode}/rows`    | `rpt.report.read` plus the dataset's own codes, evaluated server-side |
+ * | `rpt.report-export`    | POST  | `/reports/{reportCode}:export`  | `rpt.export`, report read, dataset and configured export permissions at the selected branch |
+ *
+ * Typed from the three routes that own the shapes —
+ * `apps/api/src/app/api/v1/reports/route.ts`,
+ * `reports/[reportCode]/route.ts` and `reports/[reportCode]/rows/route.ts` —
+ * and from `ReportDefinitionView` in
+ * `apps/api/src/modules/reporting/application/report-catalogue-service.ts` and
+ * `ReportRunView` in `.../report-run-service.ts` and `ReportExportView` in
+ * `.../report-export-service.ts`. The export body is a consumed request mirror.
+ *
+ * ## One screen for every report code, because the catalogue decides the set
+ *
+ * There are four approved report definitions (**D-4**) and the engine registers
+ * them one slice at a time. A screen per code would mean four screens whose only
+ * difference is a string, and three of them would have to be written against a
+ * registry entry that does not exist yet — which is guessing at a contract. So
+ * the catalogue is the authority for WHICH reports exist and the run envelope is
+ * the authority for WHAT each one renders: the columns, their kinds, the
+ * grouping and the drill-through all arrive in the response. Nothing in this
+ * feature branches on a report code.
+ *
+ * ## Two envelope shapes, and both must be tolerated
+ *
+ * The older envelope published `countsByState` and no `groups`. The dataset slice
+ * added the other three reports and publishes `groups`, `filters` and `branch` as
+ * well, and deprecates `countsByState`. A client that required either shape
+ * would break against the other, so `groups`, `filters` and `branch` are
+ * OPTIONAL here and the screen reads whichever it was given. `countsByState` is
+ * read only when `groups` is absent, which is the direction the deprecation
+ * points.
+ *
+ * ## Every value is the server's string
+ *
+ * A duration is whole seconds, a quantity is a decimal in the column's own unit
+ * and an amount is an exact decimal — all of them strings, because `pg` returns
+ * `numeric` as a string and a JSON number cannot carry all three without losing
+ * something. Nothing in this feature adds, divides, rounds, re-scales or
+ * reformats one. `apps/web/src/lib/money.ts` is the only sanctioned money
+ * helper in this application and it is deliberately NOT used: `formatMoney`
+ * requires a currency alongside the amount and a canonical four-place scale,
+ * and a report cell carries neither — the currency is a separate column on the
+ * one dataset that has it. So a measure is rendered as the characters the server
+ * sent. That is recorded in `docs/phase-1/phase-1-31/report-screens.md`.
+ */
+import type { CursorPage } from '@/lib/api/read-operation';
+import type { ActionState } from '@/lib/forms/action-result';
+
+/**
+ * The one code every report operation declares.
+ *
+ * The rows a given report returns need the DATASET's own codes as well, and
+ * those are evaluated in the run service at the operation's branch scope and
+ * answer the same uniform refusal the route's own check does. They are not
+ * declared here because they are per-report and this side cannot know them: a
+ * client that listed them would be maintaining a second copy of a registry it
+ * cannot see.
+ */
+export const REPORT_PERMISSIONS = {
+  read: 'rpt.report.read',
+  export: 'rpt.export',
+} as const;
+
+/**
+ * How a column's cells are rendered, mirrored from `ReportColumnKind`.
+ *
+ * Four kinds exist on `develop` and three more arrive with the dataset slice.
+ * All seven are listed because a screen that met an unlisted kind would have to
+ * guess at a format, and the point of the field is that it never has to.
+ */
+export const REPORT_COLUMN_KINDS = [
+  'text',
+  'date',
+  'count',
+  'reference',
+  'duration',
+  'quantity',
+  'money',
+] as const;
+export type ReportColumnKind = (typeof REPORT_COLUMN_KINDS)[number];
+
+/** Whether a kind the server sent is one this build knows how to render. */
+export function isReportColumnKind(kind: string): kind is ReportColumnKind {
+  return (REPORT_COLUMN_KINDS as readonly string[]).includes(kind);
+}
+
+/**
+ * A drill-through that depends on what the ROW is (**D-20**).
+ *
+ * One column may carry more than one kind of record — the invoice and payment
+ * report has a single document column holding invoices, receipts and credit
+ * notes — so it publishes a template per kind instead of one template.
+ * `discriminator` names the column whose cell value selects the template, and a
+ * kind with no target route is published carrying an explicit absence rather
+ * than omitted, because "there is no screen for this" and "this kind is unknown"
+ * are different answers.
+ */
+export interface ReportDrillThroughByKind {
+  readonly discriminator: string;
+  readonly templates: Readonly<Record<string, string | null>>;
+}
+
+/**
+ * One column as published.
+ *
+ * `kind` is typed as `string` rather than as the union above, for the reason
+ * `readiness-contract.ts` gives about work-order states: a value the backend
+ * adds must arrive as itself and be visible, not be dropped by a type written
+ * on this side first. `isReportColumnKind` is what narrows it at the point of
+ * rendering.
+ */
+export interface ReportColumn {
+  readonly key: string;
+  readonly kind: string;
+  readonly drillThrough: string | null;
+  /** Absent on the `develop` envelope; present once the dataset slice lands. */
+  readonly drillThroughByKind?: ReportDrillThroughByKind | null;
+}
+
+/**
+ * One cell: what a human reads, and the machine-readable half.
+ *
+ * Either may be absent, and an absence is a real answer rather than a fault — a
+ * work order has no display number until one is issued, and a visit may name no
+ * service requester.
+ */
+export interface ReportCell {
+  readonly key: string;
+  readonly label: string | null;
+  readonly value: string | null;
+}
+
+export interface ReportRow {
+  readonly cells: readonly ReportCell[];
+}
+
+/**
+ * One group and its measures, computed over the WHOLE selection.
+ *
+ * Every measure value is a string — a count, a duration in seconds, a quantity
+ * and an amount are all exact, and the column whose key matches the measure name
+ * says how to render it. A group key value may be absent: "no party was named"
+ * is a group, and folding it into one called "other" would hide it.
+ */
+export interface ReportGroup {
+  readonly key: Readonly<Record<string, string | null>>;
+  readonly label: string | null;
+  readonly measures: Readonly<Record<string, string>>;
+}
+
+/** The half-open period the rows were selected over, and the zone it was resolved in. */
+export interface ReportPeriod {
+  /** First day included. */
+  readonly from: string;
+  /** First day EXCLUDED — the day after the last one reported. */
+  readonly to: string;
+  /** The zone the two days were resolved in: the reported branch's own. */
+  readonly timezone: string;
+}
+
+/** The company and branch the rows were selected under — **D-17**'s filter context. */
+export interface ReportFilterContext {
+  readonly companyId: string;
+  readonly branchId: string;
+}
+
+/** The reported branch, named as well as identified. */
+export interface ReportBranch {
+  readonly id: string;
+  readonly name: string;
+}
+
+/** One work-order state and its count over the whole selection — the deprecated field. */
+export interface ReportStateCount {
+  readonly stateCode: string;
+  readonly stateName: string;
+  readonly count: number;
+}
+
+/**
+ * The run result — `ReportRunView`.
+ *
+ * `freshness` is typed as `string` and rendered from the value: it is `live`
+ * today, which is a claim about provenance (the rows were read from the
+ * operational tables inside the request's own transaction, with no snapshot and
+ * no cache behind them). A client must not present that as something else, and
+ * must not present a future value as `live`.
+ */
+export interface ReportRun {
+  readonly reportCode: string;
+  readonly titleKey: string;
+  readonly scope: string;
+  readonly period: ReportPeriod;
+  readonly generatedAt: string;
+  readonly freshness: string;
+  readonly columns: readonly ReportColumn[];
+  readonly rows: CursorPage<ReportRow>;
+  /** Deprecated on the newer envelope. Read only when `groups` is absent. */
+  readonly countsByState?: readonly ReportStateCount[];
+  /** Present once the dataset slice lands; the generalisation of the field above. */
+  readonly groups?: readonly ReportGroup[];
+  /** Present once the dataset slice lands — **D-17**'s echoed filter context. */
+  readonly filters?: ReportFilterContext;
+  /** Present once the dataset slice lands. */
+  readonly branch?: ReportBranch;
+}
+
+/**
+ * One definition — `ReportDefinitionView`.
+ *
+ * `executable` is the platform's own answer to "can this be run", and the
+ * catalogue screen renders it rather than deciding it: a published configuration
+ * whose code the engine does not implement is a definition a reader may see and
+ * must not be offered to run. `titleKey` is a translation key for a platform
+ * baseline and absent for a tenant row, which carries `name` — that operator's
+ * own words — instead.
+ */
+export interface ReportDefinition {
+  readonly reportCode: string;
+  readonly name: string;
+  readonly scopeLevel: string;
+  readonly exportPermissionCode: string | null;
+  readonly versionNumber: number | null;
+  readonly parameterSchema: unknown;
+  readonly publishedAt: string | null;
+  readonly recordVersion: number;
+  readonly executable: boolean;
+  readonly source: string;
+  readonly titleKey: string | null;
+}
+
+/**
+ * The four values a run is addressed by: the branch pair and the half-open period.
+ *
+ * One type for the form's draft, for what it submits and for what a screen sends,
+ * because they are one thing. It is not a filter: the pair is the operation's
+ * authorization TARGET, and the period is the selection every figure is computed
+ * over.
+ */
+export interface ReportScopeSelection {
+  readonly companyId: string;
+  readonly branchId: string;
+  readonly from: string;
+  readonly to: string;
+}
+
+/**
+ * The selection an ADDRESS names, read out of a route's query parameters.
+ *
+ * One rule, in one place, for both report routes: the overview reads the branch
+ * the FE-016 link fixes, and the report screen reads the whole selection an
+ * overview section drilled through with. Nothing is validated or resolved here —
+ * `initialReportScope` does that against the caller's own authorized directory and
+ * drops whatever is not in it. A parameter that appears twice yields its FIRST
+ * value: an address that names two branches has named neither, and taking the
+ * last would be a guess dressed as a rule.
+ *
+ * It lives beside the contract rather than in the route files because the scope
+ * vocabulary is this feature's own. A route page that named a company or a branch
+ * in its own source would be a page holding scope words, which is the shape
+ * `no-client-asserted-scope` refuses — and correctly: the pair is a resource
+ * target the operation authorizes, and only the adapter and the contract may
+ * speak it.
+ */
+export function namedReportSelection(
+  query: Readonly<Record<string, string | readonly string[] | undefined>>
+): Partial<ReportScopeSelection> {
+  const one = (name: string): string | undefined => {
+    const raw = query[name];
+    const value = Array.isArray(raw) ? raw[0] : (raw as string | undefined);
+    return value !== undefined && value.length > 0 ? value : undefined;
+  };
+  const named: Record<string, string> = {};
+  for (const name of ['companyId', 'branchId', 'from', 'to']) {
+    const value = one(name);
+    if (value !== undefined) named[name] = value;
+  }
+  return named;
+}
+
+/**
+ * What a scope form starts with, given the caller's directory and an address.
+ *
+ * Three sources, in this order, and each is refused unless it is answerable:
+ *
+ *  1. **A company or branch named in the address** — a drill-through from the
+ *     overview, or the FE-016 link that fixes a branch. It is used only when the
+ *     caller's own directory holds it. A named branch outside that directory is
+ *     DROPPED rather than shown, because a selector holding a branch nobody may
+ *     report on is a control whose only outcome is a refusal, and guessing a
+ *     different branch would answer a question the operator did not ask.
+ *  2. **A company derived from a named branch**, when the address named a branch
+ *     and no company. The pair travels together or not at all.
+ *  3. **The only choice there is** — one company, or one branch of the chosen
+ *     company. This is the behaviour the report screen already had.
+ *
+ * There is NO default period: `from` and `to` are taken from the address only
+ * when they are calendar days, and are otherwise empty. "The last thirty days" is
+ * a business rule nobody has decided, and a period this side invented would be a
+ * selection every figure was computed over that the operator never chose.
+ */
+export function initialReportScope(
+  options: ReportScopeOptions,
+  named: Partial<ReportScopeSelection> = {}
+): ReportScopeSelection {
+  const namedBranch =
+    options.branches.find(
+      (branch) => named.branchId !== undefined && branch.id === named.branchId
+    ) ?? null;
+  const inDirectory = (companyId: string): boolean =>
+    options.companies.some((company) => company.id === companyId);
+
+  const fromAddress =
+    named.companyId !== undefined && inDirectory(named.companyId) ? named.companyId : '';
+  const fromBranch =
+    namedBranch !== null && inDirectory(namedBranch.companyId) ? namedBranch.companyId : '';
+  const onlyCompany = options.companies.length === 1 ? (options.companies[0]?.id ?? '') : '';
+  const companyId = fromAddress !== '' ? fromAddress : fromBranch !== '' ? fromBranch : onlyCompany;
+
+  const ofCompany = options.branches.filter((branch) => branch.companyId === companyId);
+  const onlyBranch = ofCompany.length === 1 ? (ofCompany[0]?.id ?? '') : '';
+  const branchId =
+    namedBranch !== null && namedBranch.companyId === companyId ? namedBranch.id : onlyBranch;
+
+  return {
+    companyId,
+    branchId,
+    from: named.from !== undefined && isReportDay(named.from) ? named.from : '',
+    to: named.to !== undefined && isReportDay(named.to) ? named.to : '',
+  };
+}
+
+/** The named company and branch choices a run is addressed to. */
+export interface ReportScopeOptions {
+  readonly companies: readonly { readonly id: string; readonly legalName: string }[];
+  readonly branches: readonly {
+    readonly id: string;
+    readonly companyId: string;
+    readonly name: string;
+  }[];
+}
+
+/**
+ * The page size a request may carry, mirrored from the route's own schema.
+ *
+ * `schemas.limit` on all three operations refuses anything above 100 with a
+ * validation failure rather than clamping, so a client that sent more would be
+ * told its whole request was invalid. The shared table offers 10, 25, 50 and
+ * 100, so the ceiling is never reached from the interface — it is mirrored
+ * because a ceiling only this side knows is a ceiling that stops being
+ * respected when the table's options change.
+ */
+export const MAX_REPORT_PAGE_SIZE = 100;
+
+/**
+ * The size every request asks for.
+ *
+ * 50 is the platform's own `DEFAULT_PAGE_SIZE`, which is what all three routes
+ * apply to a request that sends no `limit`. So the screens ask for exactly what
+ * the operation would have chosen for them, and the number is written down on
+ * this side rather than left implicit — a page size nobody states is a page size
+ * that changes meaning when the server's default moves.
+ */
+export const REPORT_PAGE_SIZE = 50;
+
+/**
+ * The size a request actually carries. Never above the route's ceiling.
+ *
+ * A request that is not a whole number of rows — 0, a negative, a fraction —
+ * falls back to `REPORT_PAGE_SIZE`, the platform's own default, and NOT to the
+ * ceiling. Answering an unusable input with the largest page the route allows
+ * turns a caller's mistake into the heaviest read available; answering it with
+ * the same size the operation would have chosen for a request that sent no
+ * `limit` at all leaves the caller exactly where they would have been. The
+ * ceiling still applies to a request that is whole and merely too large.
+ */
+export function reportPageSize(requested: number): number {
+  if (!Number.isInteger(requested) || requested < 1) return REPORT_PAGE_SIZE;
+  return requested > MAX_REPORT_PAGE_SIZE ? MAX_REPORT_PAGE_SIZE : requested;
+}
+
+/** A calendar day as both routes demand it, with no zone and no instant. */
+const DAY = /^\d{4}-\d{2}-\d{2}$/;
+
+export function isReportDay(value: string): boolean {
+  return DAY.test(value);
+}
+
+/**
+ * Whether a period is the half-open range **D-17** approved.
+ *
+ * `from` must be the first day included and `to` the first day EXCLUDED, so an
+ * equal pair is an EMPTY period rather than a single day and is refused — the
+ * route refuses it too, and refusing it here means the operator is told which
+ * box to correct instead of being handed a validation failure about a request
+ * they never saw.
+ *
+ * The comparison is lexicographic, which IS chronological for this format. No
+ * date is constructed, so no zone is applied to a value that does not carry one
+ * yet, and nothing here is arithmetic on the operator's input.
+ */
+export function isReportPeriod(from: string, to: string): boolean {
+  return isReportDay(from) && isReportDay(to) && from < to;
+}
+
+/**
+ * The route templates THIS application can serve.
+ *
+ * The API publishes a route TEMPLATE rather than a built URL, precisely because
+ * it does not own the client's route table — and the client's route table is
+ * what decides whether a template resolves. Three templates are published
+ * across the four approved datasets and only the work-order one has a page
+ * today: there is no per-technician screen, no invoice detail screen and no
+ * receipt detail screen in this application, and a credit note has no read
+ * operation at all, so the server publishes an explicit absence for it.
+ *
+ * A reference cell whose template is not in this set renders as the reference it
+ * is, with no link. Rendering a link to a route that 404s is the defect the
+ * navigation model refuses for exactly the same reason.
+ */
+export const SERVED_DRILL_THROUGH_TEMPLATES: readonly string[] = Object.freeze([
+  '/work-orders/{id}',
+]);
+
+/**
+ * The template a cell drills through to, or nothing.
+ *
+ * Three answers, and the difference between the last two is the one **D-20**
+ * asked to be preserved: a column with a single target, a column whose target
+ * depends on the row's kind, and a kind whose target is published as absent.
+ * An unknown discriminator value also yields nothing, rather than the first
+ * template in the map.
+ */
+export function drillThroughTemplate(column: ReportColumn, row: ReportRow): string | null {
+  const byKind = column.drillThroughByKind;
+  if (byKind) {
+    const discriminating = row.cells.find((cell) => cell.key === byKind.discriminator);
+    const kind = discriminating?.value ?? null;
+    if (kind === null) return null;
+    return Object.prototype.hasOwnProperty.call(byKind.templates, kind)
+      ? (byKind.templates[kind] ?? null)
+      : null;
+  }
+  return column.drillThrough;
+}
+
+/**
+ * The locale-prefixed link for a reference cell, or nothing at all.
+ *
+ * `{id}` is the only placeholder any published template uses, and a template
+ * carrying a placeholder this function cannot fill yields nothing rather than a
+ * URL with a brace in it. The value is encoded, never interpolated raw.
+ */
+export function drillThroughHref(
+  column: ReportColumn,
+  row: ReportRow,
+  cell: ReportCell,
+  locale: string
+): string | null {
+  const template = drillThroughTemplate(column, row);
+  if (template === null) return null;
+  if (!SERVED_DRILL_THROUGH_TEMPLATES.includes(template)) return null;
+  if (cell.value === null || cell.value.length === 0) return null;
+  const filled = template.replace('{id}', encodeURIComponent(cell.value));
+  return filled.includes('{') ? null : `/${locale}${filled}`;
+}
+
+/**
+ * The groups to render, with the deprecation resolved in one place.
+ *
+ * `groups` is the field an overview reads. `countsByState` is its predecessor,
+ * correct for one dataset and empty for the rest, and it is read ONLY when
+ * `groups` is absent — which is the case on the envelope `develop` publishes
+ * today. Reading both would double-count the one dataset that has both, since
+ * the newer envelope DERIVES the old field from the new one.
+ */
+export function reportGroups(run: ReportRun): readonly ReportGroup[] {
+  if (run.groups !== undefined) return run.groups;
+  return (run.countsByState ?? []).map((entry) => ({
+    key: { state: entry.stateCode },
+    label: entry.stateName,
+    // The count reaches the screen as the characters the server sent. It is
+    // never added to anything, and `String` here is a rendering of an integer
+    // the envelope typed as a number, not arithmetic on it.
+    measures: { count: String(entry.count) },
+  }));
+}
+
+export interface ReportExportBody {
+  readonly companyId: string;
+  readonly branchId: string;
+  readonly from: string;
+  readonly to: string;
+  readonly reason: string;
+}
+
+export interface ReportExportResult {
+  readonly reportCode: string;
+  readonly generated: true;
+  readonly freshness: 'live';
+  readonly generatedAt: string;
+  readonly filters: { readonly companyId: string; readonly branchId: string };
+  readonly period: { readonly from: string; readonly to: string; readonly timezone: string };
+  readonly rowCount: number;
+  readonly summaryCount: number;
+  readonly file: {
+    readonly filename: string;
+    readonly mediaType: 'text/csv';
+    readonly encoding: 'utf-8';
+    readonly content: string;
+  };
+}
+
+export interface ReportExportState extends ActionState {
+  readonly exported?: ReportExportResult;
+}
+
+/** Checks the selected context and the downloadable wire shape before creating a Blob. */
+export function isSelectedReportExport(
+  value: unknown,
+  code: string,
+  body: ReportExportBody
+): value is ReportExportResult {
+  if (!value || typeof value !== 'object') return false;
+  const result = value as Partial<ReportExportResult>;
+  return (
+    result.reportCode === code &&
+    result.generated === true &&
+    result.freshness === 'live' &&
+    typeof result.generatedAt === 'string' &&
+    Number.isFinite(Date.parse(result.generatedAt)) &&
+    result.filters?.companyId === body.companyId &&
+    result.filters?.branchId === body.branchId &&
+    result.period?.from === body.from &&
+    result.period?.to === body.to &&
+    typeof result.period?.timezone === 'string' &&
+    result.period.timezone.length > 0 &&
+    Number.isSafeInteger(result.rowCount) &&
+    (result.rowCount ?? -1) >= 0 &&
+    Number.isSafeInteger(result.summaryCount) &&
+    (result.summaryCount ?? -1) >= 0 &&
+    result.file?.mediaType === 'text/csv' &&
+    result.file.encoding === 'utf-8' &&
+    typeof result.file.content === 'string' &&
+    typeof result.file.filename === 'string' &&
+    result.file.filename === `${code}-${body.from}-${body.to}.csv`
+  );
+}

@@ -32,9 +32,17 @@ Deliberately **absent**, each for a recorded reason:
   `'claimed_against'` in two CHECK vocabularies. No route is named or shaped as if
   a claim were persistable.
 - **No signature retrieval.** `P1-22-L-04`. `shared.document_versions` can only be
-  downloaded in `'accepted'` state and no application path can produce acceptance,
-  so a retrieval endpoint would fail with `ERR-DOC-001` on every call. Shipping an
-  endpoint that always fails is worse than not shipping it.
+  downloaded in `'accepted'` state, and when this phase shipped no application path
+  could produce acceptance, so a retrieval endpoint would have failed with
+  `ERR-DOC-001` on every call. Shipping an endpoint that always fails is worse than
+  not shipping it. **That second reason has since lapsed and is corrected here (P1-31
+  prerequisite P-14):** `AttachmentService.registerVersionAndScan` can now produce a
+  verdict, and the service's own `requestDownload` docblock states what the state
+  check rests on today — "an accepted version passed `scanning` with an exclusively
+  clean verdict, enforced by `shared.guard_document_version_transition` rather than by
+  this method; and a rejected or quarantined version is terminal, so it can never
+  become downloadable later". The absence of a retrieval endpoint remains a fact of
+  this phase's scope; the impossibility that justified it does not.
 - **No receipt reversal.** `P1-22-L-05`. `sal.receipt_reversals` is
   full-receipt-only and terminal; partial reversal and refund are structurally
   absent and out of scope. `sal.approve_receipt_reversal` is left unexposed.
@@ -87,14 +95,14 @@ redacted one. There is no honest "receipt without amounts" projection to build.
 
 ### delivery — `sal.` (6)
 
-| #   | operationId                     | method | path                                           | permission                                  | scope  | idem | vg  | auditClass / auditAction                       | event               |
-| --- | ------------------------------- | ------ | ---------------------------------------------- | ------------------------------------------- | ------ | ---- | --- | ---------------------------------------------- | ------------------- |
-| 13  | `sal.delivery-create`           | POST   | `/deliveries`                                  | `sal.delivery.manage`                       | branch | ✔    |     | privileged / `sal.delivery.created`            |                     |
-| 14  | `sal.delivery-eligibility-read` | GET    | `/deliveries/{deliveryId}/eligibility`         | `sal.delivery.manage`, `sal.finance.view`   | branch |      |     | none                                           |                     |
-| 15  | `sal.delivery-receiver-verify`  | POST   | `/deliveries/{deliveryId}/authorized-receiver` | `sal.delivery.manage`                       | branch | ✔    |     | privileged / `sal.delivery.receiver_verified`  |                     |
-| 16  | `sal.delivery-checklist-record` | POST   | `/deliveries/{deliveryId}/checklist-results`   | `sal.delivery.manage`                       | branch | ✔    |     | privileged / `sal.delivery.checklist_recorded` |                     |
-| 17  | `sal.delivery-signature-attach` | POST   | `/deliveries/{deliveryId}/signatures`          | `sal.delivery.manage`                       | branch | ✔    |     | privileged / `sal.delivery.signature_recorded` |                     |
-| 18  | `sal.delivery-complete`         | POST   | `/deliveries/{deliveryId}/completion`          | `sal.delivery.complete`, `sal.finance.view` | branch | ✔    | ✔   | privileged / `sal.delivery.completed`          | `vehicle.delivered` |
+| #   | operationId                     | method | path                                           | permission                                                       | scope  | idem | vg  | auditClass / auditAction                       | event               |
+| --- | ------------------------------- | ------ | ---------------------------------------------- | ---------------------------------------------------------------- | ------ | ---- | --- | ---------------------------------------------- | ------------------- |
+| 13  | `sal.delivery-create`           | POST   | `/deliveries`                                  | `sal.delivery.manage`                                            | branch | ✔    |     | privileged / `sal.delivery.created`            |                     |
+| 14  | `sal.delivery-eligibility-read` | GET    | `/deliveries/{deliveryId}/eligibility`         | `sal.delivery.view`, `sal.finance.view`                          | branch |      |     | none                                           |                     |
+| 15  | `sal.delivery-receiver-verify`  | POST   | `/deliveries/{deliveryId}/authorized-receiver` | `sal.delivery.manage`, `sal.delivery.view`                       | branch | ✔    |     | privileged / `sal.delivery.receiver_verified`  |                     |
+| 16  | `sal.delivery-checklist-record` | POST   | `/deliveries/{deliveryId}/checklist-results`   | `sal.delivery.manage`                                            | branch | ✔    |     | privileged / `sal.delivery.checklist_recorded` |                     |
+| 17  | `sal.delivery-signature-attach` | POST   | `/deliveries/{deliveryId}/signatures`          | `sal.delivery.manage`, `sal.delivery.view`                       | branch | ✔    |     | privileged / `sal.delivery.signature_recorded` |                     |
+| 18  | `sal.delivery-complete`         | POST   | `/deliveries/{deliveryId}/completion`          | `sal.delivery.complete`, `sal.delivery.view`, `sal.finance.view` | branch | ✔    | ✔   | privileged / `sal.delivery.completed`          | `vehicle.delivered` |
 
 `sal.delivery-eligibility-read` and `sal.delivery-complete` both require
 `sal.finance.view` **in addition** to their delivery authority, and that is not

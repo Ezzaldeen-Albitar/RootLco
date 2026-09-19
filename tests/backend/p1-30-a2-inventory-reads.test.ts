@@ -102,6 +102,7 @@ import {
   authAs,
   cleanP1_21Fixtures,
   establishP1_21Fixtures,
+  seedApprovedMaterialRequirement,
   seedStock,
 } from './p1-21-helpers';
 import { __setPrimaryPoolForTests } from '@/server/db/pool';
@@ -143,6 +144,25 @@ const partIssueList = (workOrderId: string, query = ''): Promise<Response> =>
   );
 
 /**
+ * The approved material requirement a draw for this work order names (P1-32-PRE-132).
+ *
+ * Every reservation and issue for a work order draws on one since that task, and a
+ * draw with none is refused. These reads are not about material demand, so each
+ * (work order, item) pair is given one approved requirement — asked for and approved
+ * by two different people through `seedApprovedMaterialRequirement` — with a generous
+ * allowance, and every draw for it names that requirement.
+ */
+const demand = new Map<string, string>();
+async function approvedDemand(workOrderId: string, itemId: string): Promise<string> {
+  const key = `${workOrderId}:${itemId}`;
+  const known = demand.get(key);
+  if (known !== undefined) return known;
+  const requirementId = await seedApprovedMaterialRequirement({ workOrderId, itemId });
+  demand.set(key, requirementId);
+  return requirementId;
+}
+
+/**
  * Reserves stock through the SHIPPED route, never by inserting a row.
  *
  * The work order must be OPEN, not draft: `assertWorkOrderAcceptsParts` refuses a
@@ -162,7 +182,12 @@ async function reserve(input: {
       itemId: input.itemId,
       locationId: input.locationId,
       quantity: input.quantity,
-      ...(input.workOrderId === undefined ? {} : { workOrderId: input.workOrderId }),
+      ...(input.workOrderId === undefined
+        ? {}
+        : {
+            workOrderId: input.workOrderId,
+            materialRequirementId: await approvedDemand(input.workOrderId, input.itemId),
+          }),
     })
   );
   expect(response.status).toBe(201);
@@ -176,8 +201,11 @@ async function issuePart(input: {
   readonly locationId: string;
   readonly quantity: string;
 }): Promise<string> {
+  const materialRequirementId = await approvedDemand(input.workOrderId, input.itemId);
   authAs(INV_FULL);
-  const response = await ISSUE_PART(jsonPost('http://localhost/api/v1/stock-issues', input));
+  const response = await ISSUE_PART(
+    jsonPost('http://localhost/api/v1/stock-issues', { ...input, materialRequirementId })
+  );
   expect(response.status).toBe(201);
   return ((await response.json()) as { id: string }).id;
 }

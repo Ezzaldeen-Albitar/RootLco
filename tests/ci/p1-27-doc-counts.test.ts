@@ -603,17 +603,404 @@ describe('P1-27-QA-005 — a stated figure is compared as a number, not as a sub
     ).toBe(liveWebTestFiles().length);
     expect(
       /*
-       * `local` OR `HOSTED`. This pinned the WORD rather than the number, so it
-       * could not survive QA-005 replacing the local figure with the hosted
-       * measurement of the closing candidate — the exact transition the sentence
-       * exists to describe. What this case is about is that the page does not
-       * state two different executed totals; the provenance adjective is not the
-       * subject.
+       * The FIGURE, and only the figure. This case is about the page not
+       * stating two different executed totals.
+       *
+       * The provenance ADJECTIVE beside it used to be pinned here as
+       * `(?:local|HOSTED)`, on the reasoning that the word is not this case's
+       * subject and the alternation lets it survive the local-to-hosted
+       * transition. Both halves are true and the result was still a gate that
+       * read nothing: an alternation accepts either word whatever the ledger
+       * records, so a page could call a local measurement HOSTED — the one
+       * claim in the sentence that cannot be checked by reading the sentence —
+       * and every case here would stay green.
+       *
+       * The word is now judged by `judgeRestatedProvenance` below, against the
+       * provenance block `evidence/local-run-ledger.json` actually carries.
        */
-      figure(CLEAN_ROOM, /\*\*The (\d+) is (?:local|HOSTED)/, 'the restated executed total'),
+      figure(CLEAN_ROOM, /\*\*The (\d+) is [A-Za-z]+/, 'the restated executed total'),
       'the page states two different executed totals'
     ).toBe(executed);
     expect(executed).toBeGreaterThanOrEqual((web as { minTests: number }).minTests);
+  });
+});
+
+/* ==========================================================================
+ * P1-31-QA-005-038 — the provenance ADJECTIVE, read from the ledger.
+ *
+ * A record that calls its own figure `local` or `HOSTED` is making the one
+ * claim on the page that cannot be settled by reading the page. The check that
+ * stood here accepted either word and compared only the number, so the two
+ * states were interchangeable to every gate in the repository: a local
+ * measurement relabelled HOSTED would have passed, and that is precisely the
+ * relabelling a phase under closure pressure is tempted into.
+ *
+ * The authority is `evidence/local-run-ledger.json`, which is written only by
+ * `check-p1-27-closing-values.mjs`. A tier is HOSTED when its record carries a
+ * complete `provenance` block; it is LOCAL when it carries none. Anything
+ * between the two — a block that names a run it cannot account for — is neither
+ * and is refused, because "hosted" is exactly the claim the block substantiates.
+ *
+ * WHICH tier a sentence describes is not guessed either: the closing-value
+ * ledger already binds the sentence's locator to a tier and a field, so the
+ * sentence resolves to a run record by parsing two committed ledgers rather
+ * than by matching a word.
+ * ========================================================================== */
+
+/** A tier's record in `evidence/local-run-ledger.json`. */
+interface RunRecord {
+  tests?: number;
+  files?: number;
+  measuredAtCommit?: string;
+  provenance?: unknown;
+}
+
+interface RunLedger {
+  tiers?: Record<string, RunRecord | undefined>;
+}
+
+interface ClosingValue {
+  id?: string;
+  document?: string;
+  locator?: string;
+  binding?: { kind?: string; tier?: string; field?: string };
+}
+
+interface ClosingLedger {
+  values?: ClosingValue[];
+}
+
+/**
+ * What a provenance block must carry before a page may call its tier HOSTED.
+ *
+ * The first six are `HOSTED_PROVENANCE_FIELDS` in
+ * `check-p1-27-closing-values.mjs`, restated here rather than imported because
+ * that module is `.mjs` and this file is the one that reads the WORDING; the
+ * live-file case below is what keeps the two honest about the same record.
+ *
+ * `artifactDigest` is the seventh and is required here on purpose. The writer
+ * emits it, and it is the only field that ties the numbers to bytes GitHub
+ * published rather than to a run id somebody typed — so a block missing it is
+ * a hosted claim with the checkable part removed, which is the shape this whole
+ * case exists to refuse.
+ */
+const HOSTED_PROVENANCE_FIELDS = [
+  'source',
+  'runId',
+  'job',
+  'headSha',
+  'artifact',
+  'artifactDigest',
+  'field',
+] as const;
+
+type Provenance = { state: 'local' | 'hosted' } | { state: 'malformed'; why: string };
+
+/**
+ * LOCAL, HOSTED, or neither — decided by reading the record, not the prose.
+ */
+function tierProvenance(ledger: RunLedger, tier: string): Provenance {
+  const record = ledger.tiers?.[tier];
+  if (record === undefined || record === null || typeof record !== 'object') {
+    return { state: 'malformed', why: `the run ledger holds no record for the \`${tier}\` tier` };
+  }
+  const block = record.provenance;
+  // An absent block is the repository's own marker for a local measurement —
+  // `clean-room-evidence.md` says so in the sentence under test, and the writer
+  // adds the block only when it took the figures from a hosted run.
+  if (block === undefined) return { state: 'local' };
+  if (block === null || typeof block !== 'object' || Array.isArray(block)) {
+    return { state: 'malformed', why: `the \`${tier}\` provenance is not an object` };
+  }
+  const fields = block as Record<string, unknown>;
+  const missing: string[] = HOSTED_PROVENANCE_FIELDS.filter(
+    (field) => typeof fields[field] !== 'string' || (fields[field] as string).trim() === ''
+  );
+  if (fields.source !== undefined && fields.source !== 'hosted') {
+    missing.push(`source \`${String(fields.source)}\` is not \`hosted\``);
+  }
+  if (typeof fields.runId === 'string' && !/^\d+$/.test(fields.runId)) {
+    missing.push('runId is not a run id');
+  }
+  if (typeof fields.job === 'string' && !/^\d+$/.test(fields.job)) {
+    missing.push('job is not a job id');
+  }
+  if (typeof fields.headSha === 'string' && !/^[0-9a-f]{40}$/.test(fields.headSha)) {
+    missing.push('headSha is not a 40-character commit');
+  }
+  if (missing.length > 0) {
+    return {
+      state: 'malformed',
+      why:
+        `the \`${tier}\` record claims a hosted run it cannot account for — ` +
+        `${missing.join(', ')}. A hosted fact that names no run is an assertion`,
+    };
+  }
+  return { state: 'hosted' };
+}
+
+/** Every `**The <n> is <word>…**` restatement on a page. */
+const RESTATED_PROVENANCE = /\*\*The (\d+) is ([A-Za-z]+)([\s\S]*?)\*\*/g;
+
+/**
+ * The sentence each state obliges the page to carry.
+ *
+ * Two states, two sentences, and no third spelling: the point of the rule is
+ * that a reader can tell from the words which of the two the figure is, so a
+ * form that says neither is as bad as the wrong one.
+ */
+const PROVENANCE_WORDING = {
+  local: {
+    pattern: /^local, and it is pending attestation by this pull request's hosted run\.$/,
+    shape: "local, and it is pending attestation by this pull request's hosted run.",
+  },
+  hosted: {
+    pattern: /^HOSTED, and it is the binding measurement\b/,
+    shape: 'HOSTED, and it is the binding measurement…',
+  },
+} as const;
+
+/**
+ * @returns one string per problem; an empty array is a pass.
+ */
+function judgeRestatedProvenance(
+  path: string,
+  page: string,
+  closing: ClosingLedger,
+  runs: RunLedger
+): string[] {
+  const problems: string[] = [];
+  const restatements = [...page.matchAll(RESTATED_PROVENANCE)];
+  if (restatements.length === 0) {
+    // Anti-vacuity, the same rule the ownership gate applies to an empty diff:
+    // a page that restates nothing would satisfy every clause below having
+    // judged nothing at all.
+    return [`${path} restates no provenance sentence, so this rule would judge nothing`];
+  }
+  for (const match of restatements) {
+    const whole = group(match, 0);
+    const stated = Number(group(match, 1));
+    const collapsed = whole.slice(2, -2).replace(/\s+/g, ' ').trim();
+    const body = collapsed.replace(/^The \d+ is /, '');
+    const entry = (closing.values ?? []).find(
+      (value) =>
+        value.document === path &&
+        typeof value.locator === 'string' &&
+        value.locator !== '' &&
+        whole.startsWith(value.locator) &&
+        value.binding?.kind === 'run'
+    );
+    if (entry === undefined) {
+      problems.push(
+        `"${collapsed}" is bound by the closing-value ledger to no tier run, so nothing decides ` +
+          'which measurement it describes'
+      );
+      continue;
+    }
+    const id = entry.id ?? 'an unnamed closing value';
+    const tier = String(entry.binding?.tier ?? '');
+    const provenance = tierProvenance(runs, tier);
+    if (provenance.state === 'malformed') {
+      problems.push(`${id}: ${provenance.why}`);
+      continue;
+    }
+    const expected = PROVENANCE_WORDING[provenance.state];
+    if (!expected.pattern.test(body)) {
+      problems.push(
+        `${id}: the \`${tier}\` run record is ${provenance.state}, so the page must read ` +
+          `"${expected.shape}" — it reads "${body}"`
+      );
+    }
+    const field = String(entry.binding?.field ?? 'tests');
+    const recorded = (runs.tiers?.[tier] as Record<string, unknown> | undefined)?.[field];
+    if (recorded !== stated) {
+      problems.push(
+        `${id}: the page restates ${stated} but the \`${tier}\` record holds ` +
+          `${String(recorded)} for \`${field}\``
+      );
+    }
+  }
+  return problems;
+}
+
+describe('P1-31-QA-005-038 — a restated provenance is judged against the run ledger', () => {
+  const CLEAN_ROOM_PATH = `${PHASE}/clean-room-evidence.md`;
+  const FIXTURE_PATH = 'fixture-clean-room.md';
+  const LOCAL_SENTENCE =
+    "**The 4020 is local, and it is pending attestation by this pull request's hosted run.**";
+  const HOSTED_SENTENCE = '**The 4020 is HOSTED, and it is the binding measurement.**';
+
+  /** A complete provenance block, minus whatever a case removes. */
+  const hostedBlock = (drop?: string): Record<string, unknown> => {
+    const block: Record<string, unknown> = {
+      source: 'hosted',
+      runId: '34321869051',
+      runUrl: 'https://github.com/example/example/actions/runs/34321869051',
+      workflow: 'Web quality',
+      job: '93836261711',
+      jobName: 'web-quality',
+      step: 'Run the web suite once, for both purposes',
+      headSha: 'a'.repeat(40),
+      artifact: 'evidence-web-quality',
+      artifactDigest: `sha256:${'0'.repeat(64)}`,
+      field: 'numTotalTests',
+    };
+    if (drop !== undefined) delete block[drop];
+    return block;
+  };
+
+  const localLedger = (): RunLedger => ({
+    tiers: { web: { measuredAtCommit: 'a'.repeat(40) } },
+  });
+
+  const hostedLedger = (drop?: string): RunLedger => ({
+    tiers: { web: { measuredAtCommit: 'a'.repeat(40), provenance: hostedBlock(drop) } },
+  });
+
+  /** A one-sentence page and the ledger row that binds it to the web tier. */
+  const fixture = (sentence: string): { page: string; closing: ClosingLedger } => ({
+    page: `## Current tree\n\n${sentence}\n\nProse beneath it.\n`,
+    closing: {
+      values: [
+        {
+          id: 'FIXTURE-RESTATED',
+          document: FIXTURE_PATH,
+          locator: sentence,
+          binding: { kind: 'run', tier: 'web', field: 'tests' },
+        },
+      ],
+    },
+  });
+
+  /** The figure is held constant across the cases so only the WORD is on trial. */
+  const judge = (sentence: string, runs: RunLedger): string[] => {
+    const { page, closing } = fixture(sentence);
+    const withCount: RunLedger = { tiers: { web: { ...runs.tiers?.web, tests: 4020 } } };
+    return judgeRestatedProvenance(FIXTURE_PATH, page, closing, withCount);
+  };
+
+  /** The first problem, as a string, so a case can say WHICH refusal it wanted. */
+  const first = (problems: string[]): string => String(problems[0]);
+
+  it('reads the live record and the live page, and finds them in agreement', () => {
+    const closing = JSON.parse(
+      readRepo(`${PHASE}/evidence/closing-value-ledger.json`)
+    ) as ClosingLedger;
+    const runs = JSON.parse(readRepo(`${PHASE}/evidence/local-run-ledger.json`)) as RunLedger;
+    /*
+     * DERIVED, not pinned. This case used to fix the web tier at `local`, with a
+     * comment saying it must change when a hosted record lands — which made a
+     * hosted record impossible to commit: the pin lives in an executable file,
+     * so correcting it staled the very record that required the correction.
+     *
+     * The expectation now comes from the ledger. Each recorded tier must be a
+     * well-formed `local` or `hosted`, and the page's restated sentence must
+     * carry the wording THAT state obliges. The case still fails the moment the
+     * page and the ledger disagree — see the mutation case directly below.
+     */
+    for (const tier of ['web', 'unit']) {
+      const provenance = tierProvenance(runs, tier);
+      const why = provenance.state === 'malformed' ? provenance.why : '';
+      expect(['local', 'hosted'], `the ${tier} tier is neither local nor hosted: ${why}`).toContain(
+        provenance.state
+      );
+    }
+    expect(judgeRestatedProvenance(CLEAN_ROOM_PATH, CLEAN_ROOM, closing, runs)).toEqual([]);
+  });
+
+  it('MUTATION: the live page carrying the OTHER provenance wording is refused', () => {
+    const closing = JSON.parse(
+      readRepo(`${PHASE}/evidence/closing-value-ledger.json`)
+    ) as ClosingLedger;
+    const runs = JSON.parse(readRepo(`${PHASE}/evidence/local-run-ledger.json`)) as RunLedger;
+    const state = tierProvenance(runs, 'web').state;
+    const restated = /\*\*The (\d+) is ([A-Za-z]+)([\s\S]*?)\*\*/.exec(CLEAN_ROOM);
+    expect(restated, 'the live page restates no provenance sentence').not.toBeNull();
+    const sentence = String(restated?.[0]);
+    const wrong =
+      state === 'hosted'
+        ? `**The ${String(restated?.[1])} is local, and it is pending attestation by this pull request's hosted run.**`
+        : `**The ${String(restated?.[1])} is HOSTED, and it is the binding measurement.**`;
+    // The locator moves with the sentence, so the refusal is about the WORD
+    // rather than about a restatement nothing binds.
+    const mutatedClosing: ClosingLedger = {
+      ...closing,
+      values: (closing.values ?? []).map((value) =>
+        value.document === CLEAN_ROOM_PATH &&
+        typeof value.locator === 'string' &&
+        value.locator !== '' &&
+        sentence.startsWith(value.locator) &&
+        value.binding?.kind === 'run'
+          ? { ...value, locator: wrong.slice(0, 40) }
+          : value
+      ),
+    };
+    const problems = judgeRestatedProvenance(
+      CLEAN_ROOM_PATH,
+      CLEAN_ROOM.replace(sentence, wrong),
+      mutatedClosing,
+      runs
+    );
+    expect(problems.length, 'a page contradicting the ledger provenance passed').toBeGreaterThan(0);
+    expect(first(problems)).toContain(`record is ${state}`);
+  });
+
+  it('accepts a local record described as local', () => {
+    expect(judge(LOCAL_SENTENCE, localLedger())).toEqual([]);
+  });
+
+  it('accepts a hosted record described as the binding measurement', () => {
+    expect(judge(HOSTED_SENTENCE, hostedLedger())).toEqual([]);
+  });
+
+  it('REFUSES a hosted record still described as local and pending attestation', () => {
+    const problems = judge(LOCAL_SENTENCE, hostedLedger());
+    expect(problems.length, 'a stale local sentence passed over a hosted record').toBe(1);
+    expect(first(problems)).toContain('the binding measurement');
+  });
+
+  it('REFUSES a local record described as HOSTED — the relabelling that matters', () => {
+    const problems = judge(HOSTED_SENTENCE, localLedger());
+    expect(problems.length, 'a local measurement passed while calling itself hosted').toBe(1);
+    expect(first(problems)).toContain('pending attestation');
+  });
+
+  it('REFUSES a provenance block with no artifactDigest rather than reading it as hosted', () => {
+    /*
+     * The digest is what ties the counts to bytes GitHub published. Without it
+     * the block is a run id and a job id, both typeable by hand, and treating it
+     * as hosted would make the strongest word on the page the cheapest to write.
+     * Neither wording can pass, because the record is in neither state.
+     */
+    for (const sentence of [LOCAL_SENTENCE, HOSTED_SENTENCE]) {
+      const problems = judge(sentence, hostedLedger('artifactDigest'));
+      expect(problems.length, `an incomplete hosted block passed for ${sentence}`).toBe(1);
+      expect(first(problems)).toContain('artifactDigest');
+    }
+  });
+
+  it('REFUSES a restatement no ledger row binds to a tier', () => {
+    const orphan = '**The 4020 is HOSTED, and it is the binding measurement.**';
+    const problems = judgeRestatedProvenance(
+      FIXTURE_PATH,
+      `## Current tree\n\n${orphan}\n`,
+      { values: [] },
+      hostedLedger()
+    );
+    expect(problems.length).toBe(1);
+    expect(first(problems)).toContain('bound by the closing-value ledger to no tier run');
+  });
+
+  it('REFUSES a page that restates nothing, rather than passing over an empty set', () => {
+    const problems = judgeRestatedProvenance(
+      FIXTURE_PATH,
+      '## Current tree\n\nNo figure is restated here.\n',
+      { values: [] },
+      localLedger()
+    );
+    expect(problems).toEqual([
+      `${FIXTURE_PATH} restates no provenance sentence, so this rule would judge nothing`,
+    ]);
   });
 });
 

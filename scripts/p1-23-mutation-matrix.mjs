@@ -60,6 +60,7 @@ const DOC_SERVICE = `${API_SRC_PATH}/modules/shared-services/application/documen
 const DOC_REPO = `${API_SRC_PATH}/modules/shared-services/data/document-read-repository.ts`;
 const RPT_SERVICE = `${API_SRC_PATH}/modules/reporting/application/report-catalogue-service.ts`;
 const RPT_REPO = `${API_SRC_PATH}/modules/reporting/data/report-catalogue-repository.ts`;
+const RPT_POLICY = `${API_SRC_PATH}/modules/reporting/application/report-configuration-policy.ts`;
 
 const NOTIF_TESTS = 'tests/backend/p1-23-notification-reads.test.ts';
 const DOC_TESTS = 'tests/backend/p1-23-document-retention.test.ts';
@@ -170,18 +171,43 @@ const MUTATIONS = [
   },
   {
     id: 'M7b',
-    property: 'Only published report definitions are readable BY CODE',
-    file: RPT_REPO,
-    from: "AND c.status = 'published'\n          AND c.deleted_at IS NULL`",
-    to: "AND c.status IN ('published', 'draft', 'archived')\n          AND c.deleted_at IS NULL`",
+    /**
+     * RE-TARGETED by P1-31 P-11, which moved this property rather than dropping
+     * it. The by-code read used to carry `status = 'published'` in its SQL; it
+     * deliberately no longer does, because the engine must SEE an unpublished
+     * configuration to refuse it — a read that hid one would leave the code
+     * looking unconfigured, let the code-registered baseline answer for it, and
+     * make an unpublished decision runnable. The refusal is now the first check
+     * in `assertReportConfiguration`, so the mutation belongs there.
+     *
+     * Dropping the status test leaves WORKING code: `version_number` is still
+     * guarded, so a draft carrying a published version is applied instead of
+     * refused, and no SQL changes shape — the mutant cannot die in parse
+     * analysis. The fixture behind it is a draft configuration WITH a published
+     * version, which is the only shape that separates "nothing is published yet"
+     * from "this configuration is not published".
+     */
+    property: 'A non-published configuration is never applied to a run',
+    file: RPT_POLICY,
+    from: "  if (row.status !== 'published' || row.version_number === null) {",
+    to: '  if (row.version_number === null) {',
     suite: RPT_TESTS,
   },
   {
     id: 'M8',
-    property: 'The catalogue does not claim reports are executable',
+    /**
+     * RE-TARGETED by P1-31 P-11 for the same reason. `executable` was the
+     * literal `false` while the frozen schema bound no data source to a report
+     * code; it is now membership of the code-registered dataset registry. The
+     * property that survives is the one worth attacking: a definition may be
+     * called executable ONLY when the engine implements its code, or a client is
+     * offered a run that cannot happen. `true` is the same type, so the mutant
+     * compiles and simply claims every tenant definition can be run.
+     */
+    property: 'The catalogue marks a report executable only when its code is registered',
     file: RPT_SERVICE,
-    from: 'executable: false,',
-    to: 'executable: true as unknown as false,',
+    from: 'executable: isReportDatasetCode(row.report_code),',
+    to: 'executable: true,',
     suite: RPT_TESTS,
   },
 ];

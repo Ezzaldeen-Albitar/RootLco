@@ -16,6 +16,7 @@ import type {
   WorkOrderJob,
   WorkOrderReachableState,
 } from '../work-orders-contract';
+import { WorkOrderDeliveryPanel } from '@/features/delivery/components/WorkOrderDeliveryPanel';
 import { JobBlockersPanel } from '@/features/quality/components/JobBlockersPanel';
 import { WorkOrderHistorySection } from '@/features/quality/components/WorkOrderHistorySection';
 import { JobPanel } from './JobPanel';
@@ -62,6 +63,10 @@ export function WorkOrderDetailScreen({
   canReadQuotations = false,
   canReadStock = false,
   canReadInvoice = false,
+  canReadDelivery = false,
+  canManageDelivery = false,
+  canReadEmployees = false,
+  canReadBranches = false,
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
@@ -82,6 +87,44 @@ export function WorkOrderDetailScreen({
   readonly canReadStock?: boolean;
   /** P1-30 W6: the link into this work order's invoice. Optional so earlier callers stand. */
   readonly canReadInvoice?: boolean;
+  /**
+   * P1-31: whether this work order's handover section is rendered AND read.
+   *
+   * Optional so earlier callers stand, and false by default so the read is
+   * never issued by a caller that has not resolved the authority for it.
+   */
+  readonly canReadDelivery?: boolean;
+  /**
+   * Whether the caller may OPEN a handover.
+   *
+   * A separate code from the one that lets the section be read at all:
+   * `sal.delivery-create` declares `sal.delivery.manage`. Somebody who may see
+   * handovers and may not start one gets the section and no form.
+   */
+  readonly canManageDelivery?: boolean;
+  /**
+   * Whether the employee register may be OFFERED when starting a handover.
+   *
+   * A third code again — `org.employee.read`, which the two delivery codes do
+   * not imply. The backend split reading the register from administering it so
+   * that choosing who handed a vehicle over never requires the authority to
+   * alter the organisation's roster; this prop is the screen's side of that
+   * split. Without it the handover section says the selection cannot be offered
+   * and issues no register read.
+   */
+  readonly canReadEmployees?: boolean;
+  /**
+   * Whether the branch DIRECTORY may be offered when starting a handover.
+   *
+   * A fourth code — `org.branch.read` — and the one that makes a cross-branch
+   * handover reachable at all. The register read needs a branch, the create
+   * operation applies no branch rule, and the standing tenancy requirement
+   * forbids an operator typing an identifier for one; so the branches are chosen
+   * from the published directory or not chosen at all. Without this the handover
+   * section says the directory is not available and reads the register for the
+   * work order's own branch.
+   */
+  readonly canReadBranches?: boolean;
 }) {
   const [detail, setDetail] = useState<WorkOrderDetail>(initial);
   const [reloadError, setReloadError] = useState<string | null>(null);
@@ -173,6 +216,19 @@ export function WorkOrderDetailScreen({
             {translate(messages, 'workOrders.detail.invoiceLink')}
           </Link>
         </p>
+      ) : null}
+
+      {canReadDelivery ? (
+        <WorkOrderDeliveryPanel
+          locale={locale}
+          messages={messages}
+          workOrderId={workOrder.id}
+          companyId={workOrder.companyId}
+          branchId={workOrder.branchId}
+          canManage={canManageDelivery}
+          canReadEmployees={canReadEmployees}
+          canReadBranches={canReadBranches}
+        />
       ) : null}
 
       <LifecyclePanel

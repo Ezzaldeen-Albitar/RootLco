@@ -37,6 +37,14 @@
  * in this file. `P1-22-L-01`.
  */
 import { Repository } from '@/server/db/repository';
+import {
+  buildPageWithCursors,
+  cursorTimestamp,
+  keysetFragment,
+  type OrderingContract,
+  type Page,
+  type PageRequest,
+} from '@/server/db/pagination';
 import type { DbHandle } from '@/server/db/transaction';
 
 /**
@@ -68,6 +76,77 @@ export const MAX_COVERED_ITEMS = 500;
  * a caller-safe conflict rather than as a second live warranty.
  */
 export const MAX_WARRANTIES_PER_DELIVERY = 200;
+
+/**
+ * A branch's warranty records, newest first (P1-31 prerequisite P-6).
+ *
+ * `start_date` and not `created_at`: it is the business day the coverage began,
+ * `wty.issue_warranty` binds it to the delivery's `delivered_at::date` (M-wty-2),
+ * the freeze guard makes it immutable, and it is the column
+ * `listWarrantiesForDelivery` already orders this same table on — so a screen
+ * that reads a delivery's warranties and then the branch's sees ONE ordering
+ * rather than two.
+ *
+ * It is a `date`, so many rows legitimately share a sort value; the `id`
+ * tie-break in `keysetFragment` is what makes the order total. That is a
+ * different problem from `P1-27-INT-006`, which is about a timestamp cursor
+ * TRUNCATED below the stored precision: a `YYYY-MM-DD` text rendering of a
+ * `date` loses nothing, so no `cursorTimestamp()` is needed or used here.
+ *
+ * The key is qualified so a cursor minted here cannot be replayed against
+ * another list.
+ */
+export const WARRANTY_ORDER: OrderingContract = Object.freeze({
+  key: 'wty.warranty_records:start_date_desc',
+  direction: 'desc',
+});
+
+/**
+ * A company's warranty policies, newest first (P1-31 prerequisite P-10, **PPD-04**).
+ *
+ * `created_at` and not `policy_code`: the code is what `listActivePolicies` orders
+ * on, because that read is a DISAMBIGUATION — it needs a total order over a bounded
+ * set and nothing else — while this one is a configuration list a person scrolls,
+ * where the row authored last is the row being looked for.
+ *
+ * The sort column is a `timestamptz` and the cursor value is minted by
+ * `cursorTimestamp()` in SQL at MICROSECOND precision. A JS `Date` truncates to
+ * milliseconds and then silently SKIPS every row sharing the boundary row's
+ * millisecond (`P1-27-INT-006`), which bites exactly here: a policy and its sibling
+ * are frequently authored inside one transaction.
+ *
+ * The key is qualified so a cursor minted here cannot be replayed against another
+ * list.
+ */
+export const WARRANTY_POLICY_ORDER: OrderingContract = Object.freeze({
+  key: 'wty.warranty_policies:created_at_desc',
+  direction: 'desc',
+});
+
+/**
+ * One warranty record's transition ledger, newest first (P1-31 prerequisite P-18).
+ *
+ * The same shape and the same direction as `sal.delivery_status_history:occurred_at_desc`,
+ * because it is the same kind of set read for the same reason: an append-only ledger a
+ * person reads latest-first, whose newest row is the one a screen needs on the first page.
+ *
+ * The sort column is a `timestamptz` and the cursor value is minted by `cursorTimestamp()`
+ * in SQL at MICROSECOND precision. A JS `Date` truncates to milliseconds and then silently
+ * SKIPS every row sharing the boundary row's millisecond (`P1-27-INT-006`) — which is not
+ * hypothetical here, because `occurred_at` defaults to `now()` and every row written inside
+ * one transaction shares it exactly.
+ *
+ * `ix_warranty_status_history_record` is
+ * `(tenant_id, company_id, branch_id, warranty_record_id, occurred_at DESC, seq DESC)`,
+ * which the predicate and this ordering lead on exactly.
+ *
+ * The key is qualified so a cursor minted here cannot be replayed against another list —
+ * including the delivery ledger, whose rows this one's transitions are often caused by.
+ */
+export const WARRANTY_STATUS_HISTORY_ORDER: OrderingContract = Object.freeze({
+  key: 'wty.warranty_status_history:occurred_at_desc',
+  direction: 'desc',
+});
 
 export interface WarrantyPolicyRow {
   readonly id: string;
@@ -153,6 +232,34 @@ export interface CoverageResolution {
   /** `delivered_at::date`, as `YYYY-MM-DD`, computed by the database. */
   readonly effectiveOn: string;
   readonly coverage: WarrantyCoverageRow | null;
+}
+
+/**
+ * One row of the append-only warranty transition ledger (P1-31 prerequisite P-18).
+ *
+ * `wty.warranty_status_history` holds SELECT and INSERT grants only — no UPDATE and no
+ * DELETE, for any application role — and `shared.stamp_status_history` is a BEFORE INSERT
+ * trigger that sets `actor_id` and `occurred_at` from the session context. So a row here
+ * is the record of a transition rather than a reconstruction of one: it cannot be
+ * back-dated or re-attributed after the fact, and `actor_id NOT NULL` fails loudly rather
+ * than recording an unattributed row. `actorId` is typed accordingly.
+ *
+ * `fromStatus` is null on exactly one row per record — the genesis row `wty.issue_warranty`
+ * writes in the same statement as the record itself, `NULL -> 'issued'`. That row is the
+ * origin, so no synthetic origin is ever published beside this ledger.
+ *
+ * There is no `correlationId` on the wire. The column exists and is written, but a
+ * correlation id is platform diagnostics rather than a business fact about the warranty,
+ * and the delivery ledger publishes none either.
+ */
+export interface WarrantyStatusHistoryRow {
+  readonly id: string;
+  readonly warrantyRecordId: string;
+  readonly fromStatus: string | null;
+  readonly toStatus: string;
+  readonly reason: string | null;
+  readonly actorId: string;
+  readonly occurredAt: Date;
 }
 
 const POLICY_COLUMNS = `id, company_id, policy_code, name, status, record_version`;
@@ -291,6 +398,29 @@ const toItem = (r: ItemSql): WarrantyRecordItemRow => ({
   recordVersion: r.record_version,
 });
 
+const STATUS_HISTORY_COLUMNS = `id, warranty_record_id, from_status, to_status, reason,
+  actor_id, occurred_at`;
+
+interface StatusHistorySql {
+  id: string;
+  warranty_record_id: string;
+  from_status: string | null;
+  to_status: string;
+  reason: string | null;
+  actor_id: string;
+  occurred_at: Date;
+}
+
+const toStatusHistory = (r: StatusHistorySql): WarrantyStatusHistoryRow => ({
+  id: r.id,
+  warrantyRecordId: r.warranty_record_id,
+  fromStatus: r.from_status,
+  toStatus: r.to_status,
+  reason: r.reason,
+  actorId: r.actor_id,
+  occurredAt: r.occurred_at,
+});
+
 export class WarrantyRepository extends Repository {
   protected readonly module = 'warranty';
 
@@ -327,6 +457,40 @@ export class WarrantyRepository extends Repository {
       [context.principal.tenantId, companyId, policyId]
     );
     return row ? toPolicy(row) : null;
+  }
+
+  /**
+   * The SET form of `findPolicy` — several policies by id, in one statement.
+   *
+   * Exists for `listWarranties`: every record cites a policy, and a list that
+   * published a bare `policyId` would publish an identifier no caller can
+   * resolve, because no operation lists warranty policies (**PPD-04** / P-10).
+   * Resolving them one row at a time would be a statement per row, so the page's
+   * distinct policies are read ONCE and the rows are labelled from the result —
+   * the pattern `PaymentReadService.listReceipts` already uses for payment
+   * methods.
+   *
+   * The predicate is `findPolicy`'s, generalised from `= $3` to `= ANY($3)`, and
+   * it filters neither `status` nor `deleted_at` for exactly `findPolicy`'s
+   * reasons: an archived or soft-deleted policy still explains a warranty record
+   * that already cites it, and dropping it here would leave a row on the page
+   * with no policy at all.
+   */
+  public async findPolicies(
+    db: DbHandle,
+    companyId: string,
+    policyIds: readonly string[]
+  ): Promise<readonly WarrantyPolicyRow[]> {
+    if (policyIds.length === 0) return [];
+    const context = this.assertContext(db);
+    const result = await this.run<PolicySql>(
+      db,
+      `SELECT ${POLICY_COLUMNS}
+         FROM wty.warranty_policies
+        WHERE tenant_id = $1 AND company_id = $2 AND id = ANY($3::uuid[])`,
+      [context.principal.tenantId, companyId, [...policyIds]]
+    );
+    return result.rows.map(toPolicy);
   }
 
   /**
@@ -379,6 +543,331 @@ export class WarrantyRepository extends Repository {
       [context.principal.tenantId, companyId, limit]
     );
     return result.rows.map(toPolicy);
+  }
+
+  // -------------------------------------------------------------------------
+  // Policy administration (P1-31 prerequisite P-10, PPD-04)
+  //
+  // `wty.warranty_policies` and `wty.warranty_coverage` landed in P1-11 carrying
+  // SELECT, INSERT and UPDATE grants for `app_runtime` and an INSERT and an UPDATE
+  // policy each, and until this slice nothing in `apps/api/src` had ever written
+  // either one: every method above only READS them, to explain a warranty or to
+  // resolve the terms `wty.issue_warranty` will apply. So the statements below use
+  // grants that already exist, and this slice adds no migration.
+  //
+  // NEITHER TABLE HAS A DELETE GRANT OR A DELETE POLICY, for either application
+  // role, and `fk_warranty_records_policy` / `fk_warranty_records_coverage` are
+  // `ON DELETE RESTRICT`. Retirement is therefore `status = 'archived'`, which is
+  // the column both tables already carry for it.
+  // -------------------------------------------------------------------------
+
+  /**
+   * The policies visible to the caller, newest first.
+   *
+   * Predicated on `tenant_id` only, with no company term, and that is deliberate:
+   * a caller may configure more than one company, the path names none, and
+   * `sel_warranty_policies_scope` narrows to `iam.allowed_company_ids()` — so the
+   * set is exactly the policies of the companies the caller's grants reach. Every
+   * row carries its own `companyId`, so a reader can tell which company a policy
+   * belongs to rather than inferring it.
+   *
+   * Soft-deleted rows are excluded. ARCHIVED ones are not, unless the caller asks:
+   * a configuration list that hid retired rows would make the restore command
+   * unreachable, which is the trap `apt.catalogue-source-channel-status-set`
+   * records for its own catalogue. The optional `status` filter is what a screen
+   * uses to show only the policies a warranty can currently be issued under.
+   */
+  public async listPolicies(
+    db: DbHandle,
+    request: PageRequest,
+    filter: { readonly status?: string | undefined } = {}
+  ): Promise<Page<WarrantyPolicyRow>> {
+    const context = this.assertContext(db);
+    const values: unknown[] = [context.principal.tenantId];
+    let statusPredicate = '';
+    if (filter.status !== undefined) {
+      values.push(filter.status);
+      statusPredicate = `AND p.status = $${String(values.length)}`;
+    }
+    const keyset = keysetFragment(
+      request,
+      { sort: 'p.created_at', id: 'p.id' },
+      WARRANTY_POLICY_ORDER,
+      values.length + 1
+    );
+    const result = await this.run<PolicySql & { sort_value: string }>(
+      db,
+      `SELECT p.id, p.company_id, p.policy_code, p.name, p.status, p.record_version,
+              ${cursorTimestamp('p.created_at')} AS sort_value
+         FROM wty.warranty_policies p
+        WHERE p.tenant_id = $1 AND p.deleted_at IS NULL
+          ${statusPredicate}
+          ${keyset.predicate}
+        ${keyset.order}
+        ${keyset.limitClause}`,
+      [...values, ...keyset.values]
+    );
+    return buildPageWithCursors(
+      result.rows.map((row) => ({
+        // `created_at` is not published on the row, so the cursor value cannot be
+        // re-derived from the response — which is what `buildPageWithCursors` is for.
+        item: toPolicy(row),
+        sortValue: row.sort_value,
+        id: row.id,
+      })),
+      request,
+      WARRANTY_POLICY_ORDER
+    );
+  }
+
+  /**
+   * One live policy by id ALONE, or null for absent-and-out-of-scope alike.
+   *
+   * The company is absent from the predicate for the reason `findWarrantyRecord`
+   * states: a lookup addressed solely by id has no company to narrow by yet — the
+   * row is where the company comes from, and every command over it re-authorizes
+   * against that company the moment it is read. `findPolicy` above keeps its
+   * company argument because its callers already hold an authorized scope.
+   *
+   * `deleted_at IS NULL` is present here and absent from `findPolicy`, and the
+   * difference is the direction: `findPolicy` explains a warranty that already
+   * cites a policy, while this resolves a policy about to be READ OR EDITED, and a
+   * soft-deleted row is neither.
+   */
+  public async findPolicyById(db: DbHandle, policyId: string): Promise<WarrantyPolicyRow | null> {
+    const context = this.assertContext(db);
+    const row = await this.runOne<PolicySql>(
+      db,
+      `SELECT ${POLICY_COLUMNS}
+         FROM wty.warranty_policies
+        WHERE tenant_id = $1 AND id = $2 AND deleted_at IS NULL`,
+      [context.principal.tenantId, policyId]
+    );
+    return row ? toPolicy(row) : null;
+  }
+
+  /**
+   * Every live coverage row of one policy, in a stable published order.
+   *
+   * **Deliberately unpaged**, on the `dia.template-version-item-list` precedent:
+   * the set is bounded by `ex_warranty_coverage_no_overlap`, which admits at most
+   * one ACTIVE row per `(policy, covered_scope)` per instant, and the terms of a
+   * policy are read as one thing. `(covered_scope, effective_from, id)` is a total
+   * order — the exclusion constraint does not make `(scope, from)` unique, because
+   * it excludes only ACTIVE rows, so archived history can repeat a pair and the id
+   * breaks the tie.
+   *
+   * ARCHIVED rows are included: they are the history that explains a warranty
+   * issued under terms that have since been replaced, and hiding them would make
+   * the reactivation command unreachable.
+   */
+  public async listCoverageOfPolicy(
+    db: DbHandle,
+    companyId: string,
+    policyId: string
+  ): Promise<readonly WarrantyCoverageRow[]> {
+    const context = this.assertContext(db);
+    const result = await this.run<CoverageSql>(
+      db,
+      `SELECT ${COVERAGE_COLUMNS}
+         FROM wty.warranty_coverage
+        WHERE tenant_id = $1 AND company_id = $2 AND policy_id = $3
+          AND deleted_at IS NULL
+        ORDER BY covered_scope, effective_from, id`,
+      [context.principal.tenantId, companyId, policyId]
+    );
+    return result.rows.map(toCoverage);
+  }
+
+  /**
+   * Creates a policy header. The caller supplies the company; nothing defaults it.
+   *
+   * `status` is not accepted: the column defaults to `active`, and a policy born
+   * `archived` is one `assertPolicyActive` refuses while it still holds its code.
+   * A duplicate `policy_code` raises `23505` on `uq_warranty_policies_code`, and a
+   * company outside the caller's own tenant raises `23503` on
+   * `fk_warranty_policies_company`, whose tenant half comes from the session
+   * context rather than from the request.
+   *
+   * That foreign key is DEFENCE IN DEPTH and is no longer the tenant boundary this
+   * write relies on (CC-56). `WarrantyPolicyService.createPolicy` resolves the
+   * claimed company against `org.legal_companies` under the caller's own row-level
+   * security before calling this, and refuses an invisible one with 403
+   * `ERR-IAM-001`, so a `23503` here means the company went away between the probe
+   * and the insert rather than that the caller named a foreign one.
+   */
+  public async insertPolicy(
+    db: DbHandle,
+    input: { readonly companyId: string; readonly policyCode: string; readonly name: string }
+  ): Promise<WarrantyPolicyRow> {
+    const context = this.assertContext(db);
+    const row = await this.runOne<PolicySql>(
+      db,
+      `INSERT INTO wty.warranty_policies (tenant_id, company_id, policy_code, name, created_by)
+       VALUES ($1, $2, $3, $4, $5)
+       RETURNING ${POLICY_COLUMNS}`,
+      [
+        context.principal.tenantId,
+        input.companyId,
+        input.policyCode,
+        input.name,
+        context.principal.userId,
+      ]
+    );
+    if (!row) {
+      throw new Error('warranty: INSERT INTO wty.warranty_policies returned no row');
+    }
+    return toPolicy(row);
+  }
+
+  /**
+   * Renames a policy under its expected version, or returns null.
+   *
+   * Null means the `record_version` predicate did not match. Every other reason for
+   * zero rows — absent, another tenant's, soft-deleted, a company the caller may
+   * not write — is excluded by the service reading the row first, so the caller may
+   * report the concurrency loss and nothing else. `record_version` is not computed
+   * as `expectedVersion + 1`: the row `shared.touch_row_metadata` produced is
+   * returned, so the next `If-Match` is the database's answer rather than this
+   * module's assumption.
+   */
+  public async renamePolicy(
+    db: DbHandle,
+    companyId: string,
+    policyId: string,
+    expectedVersion: number,
+    name: string
+  ): Promise<WarrantyPolicyRow | null> {
+    const context = this.assertContext(db);
+    const row = await this.runOne<PolicySql>(
+      db,
+      `UPDATE wty.warranty_policies
+          SET name = $5
+        WHERE tenant_id = $1 AND company_id = $2 AND id = $3 AND deleted_at IS NULL
+          AND record_version = $4
+       RETURNING ${POLICY_COLUMNS}`,
+      [context.principal.tenantId, companyId, policyId, expectedVersion, name]
+    );
+    return row ? toPolicy(row) : null;
+  }
+
+  /**
+   * Archives or restores a policy under its expected version, or returns null.
+   *
+   * It touches `wty.warranty_policies` and nothing else. The coverage rows are
+   * deliberately NOT cascaded: `wty.issue_warranty` selects coverage on the
+   * coverage's own `status` and never reads the policy's, so cascading would change
+   * which terms the primitive resolves for every OTHER policy sharing a scope, and
+   * un-archiving could not put back what it took. The application's
+   * `assertPolicyActive` is what refuses an archived policy at issue time.
+   */
+  public async setPolicyStatus(
+    db: DbHandle,
+    companyId: string,
+    policyId: string,
+    expectedVersion: number,
+    status: string
+  ): Promise<WarrantyPolicyRow | null> {
+    const context = this.assertContext(db);
+    const row = await this.runOne<PolicySql>(
+      db,
+      `UPDATE wty.warranty_policies
+          SET status = $5
+        WHERE tenant_id = $1 AND company_id = $2 AND id = $3 AND deleted_at IS NULL
+          AND record_version = $4
+       RETURNING ${POLICY_COLUMNS}`,
+      [context.principal.tenantId, companyId, policyId, expectedVersion, status]
+    );
+    return row ? toPolicy(row) : null;
+  }
+
+  /**
+   * Creates one coverage row on a policy.
+   *
+   * `status` is not accepted: the column defaults to `active`, and a coverage born
+   * `archived` would sit outside `ex_warranty_coverage_no_overlap` — which is
+   * partial on `status = 'active'` — so it could be written into a window that is
+   * already covered and then reactivated into a violation later.
+   *
+   * The three failures a caller can cause are all constraint failures and all
+   * carry a `constraint` field the service maps by NAME: `23P01` on
+   * `ex_warranty_coverage_no_overlap`, `23514` on one of the three CHECKs, and
+   * `23503` on `fk_warranty_coverage_policy`, whose tenant and company halves both
+   * come from values this statement supplies.
+   *
+   * `effective_from` and `effective_to` are bound as TEXT and cast in SQL, never as
+   * a JS `Date`: `date` is a calendar day and a `Date` carries a time zone, so
+   * binding one would let the day shift under the driver.
+   */
+  public async insertCoverage(
+    db: DbHandle,
+    input: {
+      readonly companyId: string;
+      readonly policyId: string;
+      readonly coveredScope: string;
+      readonly durationMonths: number;
+      readonly odometerAllowance: string | null;
+      readonly effectiveFrom: string;
+      readonly effectiveTo: string | null;
+    }
+  ): Promise<WarrantyCoverageRow> {
+    const context = this.assertContext(db);
+    const row = await this.runOne<CoverageSql>(
+      db,
+      `INSERT INTO wty.warranty_coverage
+         (tenant_id, company_id, policy_id, covered_scope, duration_months, odometer_limit,
+          effective_from, effective_to, created_by)
+       VALUES ($1, $2, $3, $4, $5, $6::integer, $7::date, $8::date, $9)
+       RETURNING ${COVERAGE_COLUMNS}`,
+      [
+        context.principal.tenantId,
+        input.companyId,
+        input.policyId,
+        input.coveredScope,
+        input.durationMonths,
+        input.odometerAllowance,
+        input.effectiveFrom,
+        input.effectiveTo,
+        context.principal.userId,
+      ]
+    );
+    if (!row) {
+      throw new Error('warranty: INSERT INTO wty.warranty_coverage returned no row');
+    }
+    return toCoverage(row);
+  }
+
+  /**
+   * Archives or reactivates one coverage row under its expected version.
+   *
+   * Null means the `record_version` predicate did not match; the service excludes
+   * every other reason for zero rows before calling.
+   *
+   * A REACTIVATION can still be refused by `ex_warranty_coverage_no_overlap`, which
+   * is partial on `status = 'active'`: an archived row's window may have been
+   * re-covered while it was archived, and putting it back would put two active
+   * coverages over one day for one `(policy, covered_scope)`. That surfaces as
+   * `23P01` from this statement and is mapped by the service, exactly as it is on
+   * an insert — the constraint is the enforcement point in both directions.
+   */
+  public async setCoverageStatus(
+    db: DbHandle,
+    companyId: string,
+    coverageId: string,
+    expectedVersion: number,
+    status: string
+  ): Promise<WarrantyCoverageRow | null> {
+    const context = this.assertContext(db);
+    const row = await this.runOne<CoverageSql>(
+      db,
+      `UPDATE wty.warranty_coverage
+          SET status = $5
+        WHERE tenant_id = $1 AND company_id = $2 AND id = $3 AND deleted_at IS NULL
+          AND record_version = $4
+       RETURNING ${COVERAGE_COLUMNS}`,
+      [context.principal.tenantId, companyId, coverageId, expectedVersion, status]
+    );
+    return row ? toCoverage(row) : null;
   }
 
   // -------------------------------------------------------------------------
@@ -560,6 +1049,189 @@ export class WarrantyRepository extends Repository {
       ]
     );
     return { record, items: items.rows.map(toItem) };
+  }
+
+  /**
+   * A branch's warranty records, newest first (P1-31 prerequisite P-6).
+   *
+   * ## Why this did not already exist
+   *
+   * Every warranty read in this file is addressed by something the caller must
+   * already hold — a record id, an idempotency key, a delivery id. There was no
+   * way to reach a warranty from a branch, so `GET /api/v1/warranties`, which the
+   * chapter declares, had nothing to publish (**VHM-06 / WF-26**). This query and
+   * its filters are new; the row mapper is `toRecord`, unchanged.
+   *
+   * ## Scope
+   *
+   * `company_id` and `branch_id` are bound predicates and the caller has already
+   * authorized them. `sel_warranty_records_scope` narrows on
+   * `iam.allowed_branch_ids()` — the permission-blind union of every active grant
+   * — so without the explicit pair a caller holding `wty.warranty.read` in one
+   * branch would read every branch it holds any grant in (P1-18-A-01). RLS
+   * remains the guarantee; the predicate is the intent, and it keeps the plan on
+   * the tenant-leading composite indexes.
+   *
+   * ## The vehicle filter costs no column
+   *
+   * `wty.warranty_records.vehicle_id` is NOT NULL and `ix_warranty_records_vehicle
+   * (tenant_id, vehicle_id)` already covers it, which is the fact A0 records under
+   * P-6. It is the ONLY filter offered: the chapter names no other, and a
+   * parameter nobody asked for is a contract to keep for ever.
+   *
+   * ## Ordering and `deleted_at`
+   *
+   * `WARRANTY_ORDER` — `(start_date DESC, id DESC)`, the ordering
+   * `listWarrantiesForDelivery` already uses. The branch predicate is served by
+   * `uq_warranty_records_scope_id (tenant_id, company_id, branch_id, id)` and the
+   * vehicle filter by `ix_warranty_records_vehicle`; no index leads on
+   * `(tenant, company, branch, start_date)`, so the ordering is a sort over the
+   * narrowed set. Adding one would be a migration, and P-6 demonstrates no need
+   * for a schema change — a branch's warranty records are bounded by its
+   * deliveries.
+   *
+   * `deleted_at IS NULL` is filtered, as it is in `findWarrantyRecord` and
+   * `listWarrantiesForDelivery`: a list feeds no primitive, so publishing rows
+   * the tenant has deleted and leaving the caller to guess would be the only
+   * dishonest option.
+   */
+  public async listWarranties(
+    db: DbHandle,
+    filter: {
+      readonly companyId: string;
+      readonly branchId: string;
+      readonly vehicleId?: string | undefined;
+    },
+    request: PageRequest
+  ): Promise<Page<WarrantyRecordRow>> {
+    const context = this.assertContext(db);
+    const values: unknown[] = [
+      context.principal.tenantId,
+      filter.companyId,
+      filter.branchId,
+      filter.vehicleId ?? null,
+    ];
+    const keyset = keysetFragment(
+      request,
+      { sort: 'start_date', id: 'id' },
+      WARRANTY_ORDER,
+      values.length + 1
+    );
+    const result = await this.run<RecordSql>(
+      db,
+      `SELECT ${RECORD_COLUMNS}
+         FROM wty.warranty_records
+        WHERE tenant_id = $1 AND company_id = $2 AND branch_id = $3
+          AND deleted_at IS NULL
+          AND ($4::uuid IS NULL OR vehicle_id = $4)
+          ${keyset.predicate}
+        ${keyset.order}
+        ${keyset.limitClause}`,
+      [...values, ...keyset.values]
+    );
+    return buildPageWithCursors(
+      result.rows.map((row) => {
+        const item = toRecord(row);
+        // `start_date` is already rendered `YYYY-MM-DD` by `RECORD_COLUMNS`, and
+        // a `date` has no sub-second component to lose — so unlike every
+        // timestamp cursor in this repository it needs no `cursorTimestamp()`.
+        return { item, sortValue: item.startDate, id: item.id };
+      }),
+      request,
+      WARRANTY_ORDER
+    );
+  }
+
+  /**
+   * A warranty record's transition ledger, newest first (P1-31 prerequisite P-18).
+   *
+   * ## This one had nothing to publish either
+   *
+   * `wty.warranty_status_history` is written in exactly one place — inside
+   * `wty.issue_warranty`, in the same statement that creates the record — and before
+   * this method nothing anywhere in `apps/api/src` read it (**CC-10**). So, exactly as
+   * with `sal.delivery_status_history` under P-5, there was no existing query to put a
+   * route in front of: this query and `toStatusHistory` are both new. That is recorded
+   * rather than glossed.
+   *
+   * ## What the ledger currently contains, stated plainly
+   *
+   * One row per record: the genesis `NULL -> 'issued'`. Nothing in this repository, and
+   * nothing in this phase, advances `wty.warranty_records.status`, so no second row can
+   * exist yet on a record this application created (see `assertWritableStatus` and the
+   * "no status advance" note in `@/modules/warranty`). This read is nonetheless a list
+   * and not a single row, because the table is an append-only ledger whose row count is
+   * unbounded by the DDL and whose writers are the subject of later work — publishing it
+   * as "the one genesis row" would be a contract that has to break the day a second
+   * transition is written.
+   *
+   * ## The oldest row is already the origin
+   *
+   * `wo.job_status_history` and `wo.work_order_status_history` are written by AFTER
+   * UPDATE triggers, so their oldest row is the first TRANSITION and their readers must
+   * publish a separate `origin` block for the initial state. `wty.warranty_records` has
+   * no such trigger: the genesis row is written explicitly by the primitive, carrying
+   * `from_status = NULL`. So no `origin` block is synthesised here, and inventing one
+   * would publish a second, unsourced claim about the same fact.
+   *
+   * ## Scope and index
+   *
+   * `company_id` and `branch_id` are bound predicates taken from the record this
+   * repository just read — never from caller input — and the caller has already
+   * authorized them. `sel_warranty_status_history_scope` narrows on the
+   * permission-blind `iam.allowed_branch_ids()` union, so the explicit pair is what
+   * keeps a caller holding a grant in another branch from reading across (P1-18-A-01).
+   * `ix_warranty_status_history_record` leads on exactly this predicate and ordering.
+   *
+   * The keyset tie-breaks on `id` rather than the `seq` identity column, because
+   * `keysetFragment` compares `(sort, id)` and `Cursor.i` is validated as an identifier.
+   * `seq` orders identically within one `occurred_at`, so the only cost is that two rows
+   * sharing a microsecond are ordered by uuid instead of by insertion — and
+   * `cursorTimestamp` keeps that pair on the same page rather than skipping one.
+   */
+  public async listStatusHistory(
+    db: DbHandle,
+    scope: { readonly companyId: string; readonly branchId: string },
+    warrantyRecordId: string,
+    request: PageRequest
+  ): Promise<Page<WarrantyStatusHistoryRow>> {
+    const context = this.assertContext(db);
+    const values: unknown[] = [
+      context.principal.tenantId,
+      scope.companyId,
+      scope.branchId,
+      warrantyRecordId,
+    ];
+    const keyset = keysetFragment(
+      request,
+      { sort: 'occurred_at', id: 'id' },
+      WARRANTY_STATUS_HISTORY_ORDER,
+      values.length + 1
+    );
+    const result = await this.run<StatusHistorySql & { sort_value: string }>(
+      db,
+      `SELECT ${STATUS_HISTORY_COLUMNS},
+              ${cursorTimestamp('occurred_at')} AS sort_value
+         FROM wty.warranty_status_history
+        WHERE tenant_id = $1 AND company_id = $2 AND branch_id = $3
+          AND warranty_record_id = $4
+          ${keyset.predicate}
+        ${keyset.order}
+        ${keyset.limitClause}`,
+      [...values, ...keyset.values]
+    );
+    return buildPageWithCursors(
+      result.rows.map((row) => ({
+        item: toStatusHistory(row),
+        // `occurred_at` defaults to `now()`, which is transaction-stable: rows written
+        // by one statement share it to the microsecond, and a millisecond-truncated
+        // cursor would silently SKIP them (`P1-27-INT-006`).
+        sortValue: row.sort_value,
+        id: row.id,
+      })),
+      request,
+      WARRANTY_STATUS_HISTORY_ORDER
+    );
   }
 
   /**

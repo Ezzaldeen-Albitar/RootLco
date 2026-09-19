@@ -25,7 +25,7 @@ this document following it. A seed change and a regeneration of this file are on
 
 That gate exists because nothing was watching. This document was reconciled by hand on 2026-07-22
 (Phase 1-14, finding PC-2) against a seed holding 43 codes, and then stood still through six phases
-while the seed grew to 118. It listed no `tech.` code at all — not even `tech.technician.read`,
+while the seed grew to 132. It listed no `tech.` code at all — not even `tech.technician.read`,
 which Phase 1-19 seeded. `tests/db/iam-seeds.test.ts` is the assertion usually credited with
 covering this, and it does not: it asserts a FLOOR — at least 19 codes across `org` and `iam`, valid
 risk levels, no wildcard — which every one of those six phases satisfied while the drift
@@ -41,11 +41,11 @@ each such case in a comment beside the row.
 
 | Measure                               | Value |
 | ------------------------------------- | ----- |
-| Permission codes seeded               | 118   |
+| Permission codes seeded               | 132   |
 | Domains                               | 18    |
-| Risk `low`                            | 22    |
-| Risk `medium`                         | 50    |
-| Risk `high`                           | 46    |
+| Risk `low`                            | 24    |
+| Risk `medium`                         | 57    |
+| Risk `high`                           | 51    |
 | Risk `critical`                       | 0     |
 | Baseline roles (fixture-proven)       | 6     |
 | Baseline role grants (fixture-proven) | 23    |
@@ -58,9 +58,9 @@ each such case in a comment beside the row.
 | `crm`      | 10    | 1     | 6        | 3      | 0          |
 | `dia`      | 5     | 1     | 2        | 2      | 0          |
 | `iam`      | 10    | 2     | 3        | 5      | 0          |
-| `inv`      | 9     | 2     | 4        | 3      | 0          |
-| `org`      | 10    | 4     | 3        | 3      | 0          |
-| `platform` | 3     | 0     | 1        | 2      | 0          |
+| `inv`      | 14    | 2     | 7        | 5      | 0          |
+| `org`      | 12    | 5     | 4        | 3      | 0          |
+| `platform` | 9     | 0     | 4        | 5      | 0          |
 | `qms`      | 5     | 1     | 1        | 3      | 0          |
 | `quo`      | 3     | 1     | 1        | 1      | 0          |
 | `rec`      | 12    | 1     | 3        | 8      | 0          |
@@ -71,7 +71,7 @@ each such case in a comment beside the row.
 | `tech`     | 5     | 2     | 2        | 1      | 0          |
 | `veh`      | 7     | 1     | 5        | 1      | 0          |
 | `wo`       | 9     | 1     | 5        | 3      | 0          |
-| `wty`      | 2     | 0     | 2        | 0      | 0          |
+| `wty`      | 3     | 1     | 2        | 0      | 0          |
 
 ## Catalog
 
@@ -119,21 +119,34 @@ by" column would be a guess dressed as a derivation. Read the seed for it.
 | `inv.external_purchase.record`                | inv      | medium | Record ad-hoc external purchase references                                             |
 | `inv.item.manage`                             | inv      | medium | Manage item master, categories, UoM                                                    |
 | `inv.item.read`                               | inv      | low    | Search and read the item catalog                                                       |
+| `inv.material.approve`                        | inv      | high   | Approve how much material a work order may use                                         |
+| `inv.material.exception.approve`              | inv      | high   | Approve extra material beyond an approved amount                                       |
+| `inv.material.request`                        | inv      | medium | Request material for a work order service line                                         |
+| `inv.specification.manage`                    | inv      | medium | Record and confirm vehicle service capacities                                          |
 | `inv.stock.operate`                           | inv      | medium | Post movements, reserve, issue, return                                                 |
 | `inv.stock.read`                              | inv      | low    | Read stock balances and movements                                                      |
+| `inv.unit_conversion.manage`                  | inv      | medium | Manage exact unit conversions for items                                                |
 | `org.branch.manage`                           | org      | medium | Create and update branches                                                             |
 | `org.branch.read`                             | org      | low    | Read branches                                                                          |
 | `org.company.manage`                          | org      | medium | Create and update companies                                                            |
 | `org.company.read`                            | org      | low    | Read legal companies                                                                   |
 | `org.department.manage`                       | org      | medium | Manage departments/structure                                                           |
 | `org.department.read`                         | org      | low    | Read the department list                                                               |
+| `org.employee.manage`                         | org      | medium | Create employees and set their status                                                  |
+| `org.employee.read`                           | org      | low    | Read the employee register                                                             |
 | `org.settings.manage`                         | org      | high   | Manage company/branch settings                                                         |
 | `org.subscription.manage`                     | org      | high   | Manage tenant subscriptions                                                            |
 | `org.tax.manage`                              | org      | high   | Manage tax classes and rates                                                           |
 | `org.tenant.read`                             | org      | low    | Read tenant profile                                                                    |
+| `platform.audit.read`                         | platform | medium | Read the platform operator audit trail                                                 |
+| `platform.billing.manage`                     | platform | high   | Record and void platform subscription charges and receipts                             |
+| `platform.billing.read`                       | platform | medium | Read platform subscription charges and receipts                                        |
 | `platform.organization.lifecycle`             | platform | high   | Transition a tenant lifecycle status                                                   |
+| `platform.organization.manage`                | platform | high   | Administer an existing organization structure and its administrators                   |
 | `platform.organization.provision`             | platform | high   | Create a tenant and its first Owner                                                    |
 | `platform.organization.read`                  | platform | medium | Read any organization from the control plane                                           |
+| `platform.statistics.read`                    | platform | medium | Read platform-wide statistics and operational health                                   |
+| `platform.subscription.manage`                | platform | high   | Administer subscription plans and tenant assignments                                   |
 | `qms.quality_control.finalize`                | qms      | high   | Finalize a quality-control record as passed or failed                                  |
 | `qms.quality_control.read`                    | qms      | low    | Read quality-control records and rework links                                          |
 | `qms.quality_control.record`                  | qms      | medium | Record individual quality-control check results                                        |
@@ -201,6 +214,7 @@ by" column would be a guess dressed as a derivation. Read the seed for it.
 | `wo.work_order.transition`                    | wo       | medium | Move a work order through its configured states                                        |
 | `wty.policy.manage`                           | wty      | medium | Manage warranty policies and coverage                                                  |
 | `wty.warranty.issue`                          | wty      | medium | Issue warranty records                                                                 |
+| `wty.warranty.read`                           | wty      | low    | Read warranty records, coverage terms and covered items                                |
 
 ## Baseline roles (provisioning-time, configuration-led)
 

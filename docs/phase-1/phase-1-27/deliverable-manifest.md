@@ -162,10 +162,10 @@ fact in words did not, which is the gap this revision closes.
 | Source files under the P1-27 ownership gate                            | **145** (43 feature source + 53 route + 49 adopted reception)      | derived from the gate's own scan roots                                     |
 | Router pages (CRM and Vehicle)                                         | **8**                                                              | command 1                                                                  |
 | Shared-foundation source files changed by the phase or its remediation | **13** named in §5.5                                               | command 1, cross-read against the task register and the remediation record |
-| Web unit and component test files                                      | **130**                                                            | derived                                                                    |
+| Web unit and component test files                                      | **168**                                                            | derived                                                                    |
 | Playwright specification files                                         | **9** (2 anonymous, 7 authenticated)                               | commands 11 and 12 — **not re-measured**, §1.1.1                           |
 | Root CI-contract test files                                            | **46**                                                             | derived                                                                    |
-| CI gate scripts under `scripts/ci`                                     | **63** in the directory, **8** introduced or changed by this phase | derived; the eight are the `scripts/ci` rows of §7.1                       |
+| CI gate scripts under `scripts/ci`                                     | **66** in the directory, **8** introduced or changed by this phase | derived; the eight are the `scripts/ci` rows of §7.1                       |
 | Web gate scripts under `apps/web/scripts`                              | **4** in the directory, **1** introduced by this phase             | derived                                                                    |
 | Phase documentation under `docs/phase-1/phase-1-27`                    | **38** tracked, of which **30** are `.md`                          | derived from `git ls-files` — see §9.1                                     |
 | Product planning documentation under `docs/product`                    | **13** tracked                                                     | derived from `git ls-files` — see §9.2                                     |
@@ -226,7 +226,7 @@ every advance of local `develop` in the sequence above was a fast-forward from
 
 ### 5.1 The five trees the P1-27 ownership gate owns — 145 files
 
-`validate:p1-27-frontend` reports **147 files across 5 trees, 0 failures**. Of
+`validate:p1-27-frontend` reports **172 files across 5 trees, 0 failures**. Of
 those, **43** are §5.2 and §5.3 together — the two feature trees — and both
 halves are derived from the trees the gate itself names, so the count follows the
 gate rather than a reader's memory of it. The next **34** are the third
@@ -407,7 +407,7 @@ records.
 
 ## 6. Test files
 
-### 6.1 Web unit and component — `apps/web/tests` (130 files, and no case total — `E-03`)
+### 6.1 Web unit and component — `apps/web/tests` (168 files, and no case total — `E-03`)
 
 **`E-03` is closed by DELETING the number, not by correcting it.** The heading
 used to read `(70 files, 1493 cases, 0 failed)`, and before that `(66 files, 1231
@@ -417,7 +417,7 @@ and borrowing its credibility. It drifted exactly as the finding predicted: the
 paragraphs below this heading still said `66` and `1231` while the heading beside
 them said `70` and `1493` — `E-02` returning, in the section written to close it.
 
-`91` is recomputed from the tree on every run, here and in §3, and
+`154` is recomputed from the tree on every run, here and in §3, and
 `p1-27-doc-reconciliation.test.ts` fails if either statement of it disagrees with
 `apps/web/tests`.
 
@@ -687,7 +687,7 @@ under-report itself by seven files.
 | `clean-room-evidence.md`                          | 379   | The clean-room record, and the six classes every closing value is sorted into      |
 | `contract-archaeology.md`                         | 416   | What the Backend actually publishes, read before anything was built                |
 | `deliverable-manifest.md`                         | 1062  | This file                                                                          |
-| `developer-guide.md`                              | 228   | `DOC-002` — the developer half                                                     |
+| `developer-guide.md`                              | 238   | `DOC-002` — the developer half                                                     |
 | `evidence/change-log.md`                          | 1135  | `DOC-002` — the change-log half; its rows are scraped by a test                    |
 | `evidence/evidence-manifest.json`                 | 175   | `QA-005` — a SHA-256 digest of every document in this directory                    |
 | `evidence/closing-value-ledger.json`              | 907   | Every closing value on the two evidence pages, classified, with its authority      |
@@ -746,7 +746,7 @@ document says so in its own header.**
 | `workshop/inspection-and-diagnostics.md`              | 901   |
 | `workshop/parts-and-procurement-flow.md`              | 798   |
 | `workshop/department-task-assignment.md`              | 751   |
-| `workshop/reception-media-checklist.md`               | 563   |
+| `workshop/reception-media-checklist.md`               | 678   |
 | `vehicle-catalogue/catalogue-architecture.md`         | 1029  |
 | `vehicle-catalogue/manual-entry-policy.md`            | 656   |
 | `vehicle-catalogue/provider-evaluation.md`            | 648   |
@@ -982,27 +982,27 @@ returns an explicit `OWNER ACCEPTANCE: PASS`. Silence is not Pass.**
      an earlier revision put them in the label column and broke two other gates
      whose regexes read the label and the number as adjacent cells. -->
 
-<!-- derived: files apps/web/tests = 130 -->
-<!-- derived: files tests/ci = 67 -->
-<!-- derived: files scripts/ci = 63 -->
+<!-- derived: files apps/web/tests = 168 -->
+<!-- derived: files tests/ci = 77 -->
+<!-- derived: files scripts/ci = 66 -->
 <!-- derived: files apps/web/scripts = 4 -->
-<!-- derived: files supabase/migrations = 138 -->
-<!-- derived: files tests/db = 144 -->
-<!-- derived: files tests/db:all = 148 -->
-<!-- derived: files tests/backend = 126 -->
-<!-- derived: files tests/backend:all = 135 -->
+<!-- derived: files supabase/migrations = 159 -->
+<!-- derived: files tests/db = 155 -->
+<!-- derived: files tests/db:all = 159 -->
+<!-- derived: files tests/backend = 157 -->
+<!-- derived: files tests/backend:all = 166 -->
 <!-- derived: files apps/web/src/features/crm = 20 -->
 <!-- derived: files apps/web/src/features/vehicles = 23 -->
-<!-- derived: files p1-27-frontend-gate = 147 -->
+<!-- derived: files p1-27-frontend-gate = 172 -->
 <!-- derived: files p1-27-frontend-gate:trees = 5 -->
 <!-- derived: tracked docs/phase-1/phase-1-27 = 42 -->
 <!-- derived: tracked docs/phase-1/phase-1-27:md = 32 -->
-<!-- derived: tracked docs/product = 14 -->
-<!-- derived: commands registered = 175 -->
-<!-- derived: commands required = 94 -->
-<!-- derived: commands reachable = 94 -->
-<!-- derived: commands hosted-ci = 94 -->
-<!-- derived: cases vehicle-screens.dom.test.tsx = 43 -->
+<!-- derived: tracked docs/product = 17 -->
+<!-- derived: commands registered = 181 -->
+<!-- derived: commands required = 97 -->
+<!-- derived: commands reachable = 97 -->
+<!-- derived: commands hosted-ci = 97 -->
+<!-- derived: cases vehicle-screens.dom.test.tsx = 51 -->
 <!-- derived: cases tailwind-theme-gate.test.ts = 8 -->
 <!-- derived: cases navigation.test.ts = 22 -->
 <!-- LINE-COUNT MARKERS. Regenerated, never typed. -->
@@ -1017,7 +1017,7 @@ returns an explicit `OWNER ACCEPTANCE: PASS`. Silence is not Pass.**
 <!-- derived: lines docs/phase-1/phase-1-27/closure-record.md = 114 -->
 <!-- derived: lines docs/phase-1/phase-1-27/contract-archaeology.md = 416 -->
 <!-- derived: lines docs/phase-1/phase-1-27/deliverable-manifest.md = 1062 -->
-<!-- derived: lines docs/phase-1/phase-1-27/developer-guide.md = 228 -->
+<!-- derived: lines docs/phase-1/phase-1-27/developer-guide.md = 238 -->
 <!-- derived: lines docs/phase-1/phase-1-27/evidence/change-log.md = 1135 -->
 <!-- derived: lines docs/phase-1/phase-1-27/evidence/evidence-manifest.json = 175 -->
 <!-- derived: lines docs/phase-1/phase-1-27/evidence/closing-value-ledger.json = 907 -->
@@ -1058,5 +1058,5 @@ returns an explicit `OWNER ACCEPTANCE: PASS`. Silence is not Pass.**
 <!-- derived: lines docs/product/workshop/inspection-and-diagnostics.md = 901 -->
 <!-- derived: lines docs/product/workshop/parts-and-procurement-flow.md = 798 -->
 <!-- derived: lines docs/product/workshop/pricing-payment-and-delivery.md = 1137 -->
-<!-- derived: lines docs/product/workshop/reception-media-checklist.md = 563 -->
+<!-- derived: lines docs/product/workshop/reception-media-checklist.md = 678 -->
 <!-- derived: lines docs/product/workshop/vehicle-history-model.md = 1039 -->

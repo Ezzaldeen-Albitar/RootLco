@@ -4,6 +4,7 @@ import { PermissionDeniedState } from '@/components/states/States';
 import { requireSession } from '@/features/authentication/api/session';
 import { DEFAULT_WINDOW_DAYS } from '@/features/administration/audit/types';
 import { AuditLogScreen } from '@/features/administration/audit/components/AuditLogScreen';
+import { readAuditScopeOptions } from '@/features/administration/audit/api';
 import { PERMISSIONS, holds } from '@/features/administration/shared/permissions';
 import { isLocale } from '@/i18n/config';
 import { getMessages } from '@/i18n/get-messages';
@@ -44,6 +45,7 @@ export default async function AuditLogPage({
   }
 
   const now = new Date();
+  const scopeOptions = await readAuditScopeOptions();
   const from = new Date(now.getTime() - DEFAULT_WINDOW_DAYS * 24 * 60 * 60 * 1000);
 
   return (
@@ -61,6 +63,7 @@ export default async function AuditLogPage({
           messages={messages}
           initialFrom={isoDate(from)}
           initialTo={isoDate(now)}
+          scopeOptions={scopeOptions}
         />
       </PageBody>
     </>

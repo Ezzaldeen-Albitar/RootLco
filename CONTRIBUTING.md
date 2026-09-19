@@ -194,6 +194,8 @@ Rules:
 
 No local aggregate runs the Database tier. `npm run verify:workspaces` deliberately does not, because it is the command run before **every** commit — including a documentation-only one — and the hosted clean room mirrors it to claim that a fresh clone passes exactly what a developer runs. Requiring a live PostgreSQL would make that claim false for anyone without the stack up.
 
+**Standing verification policy, recorded 2026-09-09 (Owner).** The sentence above describes what `verify:workspaces` is _for_; it is not a per-commit prerequisite. A contributor runs the targeted local checks relevant to the change — the typecheck, lint and format commands for the workspaces touched, the affected test tiers, and the validators the change activates — and relies on the required hosted checks, which run the production builds and the browser smoke, for the aggregate. The full local aggregate remains available and is recommended before a promotion, or whenever a change is wide enough that no targeted set covers it. This qualifies the convention; it removes no check. A check that was not run is reported as not run, and nothing in this policy permits stating that a gate passed when it was not executed.
+
 So any change touching `supabase/seeds/**` or `supabase/migrations/**` runs this before pushing, with the local stack up:
 
 ```bash

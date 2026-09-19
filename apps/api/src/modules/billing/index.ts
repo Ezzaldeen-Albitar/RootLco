@@ -50,6 +50,15 @@
  * - **It does not correct an issued invoice.** `sal.guard_invoice_freeze` allows
  *   `issued -> credited` and nothing else, so the instruments after issue are a
  *   credit note and a new invoice. There is no un-issue and no post-issue void.
+ * - **It does not move stock, and it does not price a part.** Since P1-32 an
+ *   invoice may be a COUNTER SALE — `sale_kind = 'counter_sale'`, no work order —
+ *   and issuing one takes the sold quantity off the shelf. Both halves belong to
+ *   `@/modules/inventory`: the price comes from `inv.resolve_item_sale_price`
+ *   inside `sal.create_counter_sale_invoice`, and the movements are posted by
+ *   `inventoryModule().stock.postCounterSaleLines`, which this module CALLS and
+ *   never reimplements. No `inv` table is read or written here. Cancelling an
+ *   issued counter sale returns nothing, because there is no post-issue void at
+ *   all: stock comes back only as a sales return, which that module owns.
  * - **It does not post a general ledger.** `sal.financial_events` is the
  *   source-fact boundary this platform stops at (P1-11): no accounts, no journals,
  *   no double entry. A `financial_events` row is a fact that happened, not a
@@ -68,6 +77,7 @@
 import { composeModule } from '@/server/layering';
 import { BillingRepository } from './data/billing-repository';
 import { BillingReadService } from './application/billing-read-service';
+import { BillingReportPort } from './application/billing-report-port';
 import { InvoiceService } from './application/invoice-service';
 
 // ---- Row-shape types --------------------------------------------------------
@@ -80,12 +90,15 @@ export type {
   CommercialSourceLineRow,
   CommercialSourceRow,
   CreditNoteRow,
+  CreditNoteTotalRow,
   InvoiceAmountsRow,
+  InvoiceDocumentFilter,
   InvoiceLineAmountsRow,
   InvoiceLineRow,
   InvoiceRow,
   NumberingConfigRow,
   OpenReceivableRow,
+  ReportDocumentPage,
   WorkOrderScopeRow,
 } from './data/billing-repository';
 
@@ -112,6 +125,14 @@ export type {
 } from './application/billing-read-service';
 
 export type {
+  CreditNoteTotal,
+  InvoiceDocumentEntry,
+  InvoiceDocumentSummary,
+  InvoiceDocumentTotal,
+} from './application/billing-report-port';
+
+export type {
+  CreateCounterSaleInput,
   CreatedInvoice,
   CreateInvoiceInput,
   CreditNoteResult,
@@ -180,6 +201,10 @@ export const billingModule = composeModule({
     return {
       reads: new BillingReadService(repository),
       invoices: new InvoiceService(repository),
+      // P1-31 P-11 slice 4. The REPORTING port. Separate from `reads` because
+      // that service answers for ONE invoice and its shapes are the invoice
+      // screen's; a period report over many documents shares none of them.
+      reportPort: new BillingReportPort(repository),
     };
   },
 });

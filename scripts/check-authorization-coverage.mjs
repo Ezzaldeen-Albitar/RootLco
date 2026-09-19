@@ -275,7 +275,8 @@ for (const routeFile of routeFiles) {
  * to be reconciled and a parameterised route would have been reported as missing.
  */
 function toRouteDirectory(declaredPath) {
-  return `${API_ROUTES_V1_PATH}${declaredPath.replace(/\{([a-zA-Z0-9_]+)\}/g, '[$1]')}`;
+  // A custom action is matched inside the dynamic segment, not a colon-named directory.
+  return `${API_ROUTES_V1_PATH}${declaredPath.replace(/\{([a-zA-Z0-9_]+)\}(?::[a-z][a-z0-9-]*)?/g, '[$1]')}`;
 }
 
 // Every declaration that names an HTTP route must have a route file to serve it.

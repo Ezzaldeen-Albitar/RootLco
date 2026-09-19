@@ -473,7 +473,7 @@ const INSTRUMENTED = globSync([...COVERAGE_INCLUDE], { cwd: join(__dirname, '..'
   .sort();
 
 const coverageOptions = webConfig.test?.coverage as
-  { provider?: string; all?: boolean; reporter?: string[] } | undefined;
+  { provider?: string; include?: string[]; reporter?: string[] } | undefined;
 
 describe('the web tier declares a coverage measurement', () => {
   it('declares it at the ROOT of the config, with the API tier’s provider', () => {
@@ -485,7 +485,17 @@ describe('the web tier declares a coverage measurement', () => {
   });
 
   it('measures files no test imports, so an unloaded screen cannot leave the denominator', () => {
-    expect(coverageOptions?.all).toBe(true);
+    // Vitest 3 spelled this guarantee `coverage.all: true`. Vitest 4 removed
+    // that option and gave the job to `coverage.include`: on a full-tier run the
+    // provider adds every file matching `include` that no test loaded, at 0%,
+    // before writing the report. So the thing to pin is no longer a boolean —
+    // it is that `include` is DECLARED and still lists the four instrumented
+    // roots. An empty or absent `include` would silently return the tier to
+    // "only what a test happened to import", which is the flattering
+    // measurement this assertion exists to refuse.
+    expect(coverageOptions?.include).toBeDefined();
+    expect(coverageOptions?.include).toEqual([...COVERAGE_INCLUDE]);
+    expect(coverageOptions?.include?.length).toBeGreaterThan(0);
   });
 
   it('declares coverage on NO project, because a project-level block is ignored in silence', () => {
@@ -541,6 +551,48 @@ describe('the instrumented surface is what it claims to be', () => {
     ]) {
       expect(INSTRUMENTED, `${file} is outside the measurement`).toContain(file);
     }
+  });
+
+  it('covers the three P1-31 feature trees (P1-31-QA-001, coverage hole H-2)', () => {
+    // Until 2026-09-15 none of these could be instrumented at all, because the
+    // include list named no P1-31 tree. One real file per tree, so a root that
+    // silently fell off the list fails here rather than in a coverage report
+    // nobody reads.
+    for (const file of [
+      'apps/web/src/features/delivery/components/ReceiverPanel.tsx',
+      'apps/web/src/features/delivery/receiver-capture.ts',
+      'apps/web/src/features/warranty/warranty-contract.ts',
+      'apps/web/src/features/reports/reports-contract.ts',
+    ]) {
+      expect(INSTRUMENTED, `${file} is outside the measurement`).toContain(file);
+    }
+  });
+
+  it('covers the Platform Owner Console, feature tree AND route group', () => {
+    // Same hole as H-2, one surface later: a tree missing from the include list
+    // is not measured badly, it is measured NOWHERE — so the baseline's
+    // touched-file floor skips every file in it, because coverage-gate.mjs
+    // iterates the report rather than the tree.
+    //
+    // The route group is asserted beside the feature tree because it carries the
+    // console's server-side gate, and because `(platform)` is subject to exactly
+    // the escaping trap the case above records for `(dashboard)`.
+    for (const file of [
+      'apps/web/src/features/platform/actions.ts',
+      'apps/web/src/features/platform/api.ts',
+      'apps/web/src/features/platform/api/session.ts',
+      'apps/web/src/features/platform/components/OrganizationDetailScreen.tsx',
+      'apps/web/src/app/[locale]/(platform)/layout.tsx',
+      'apps/web/src/app/[locale]/(platform)/platform/organizations/page.tsx',
+    ]) {
+      expect(INSTRUMENTED, `${file} is outside the measurement`).toContain(file);
+    }
+    const consolePattern = COVERAGE_INCLUDE.find(
+      (p) => p.startsWith('src/app/') && p.includes('platform')
+    );
+    expect(consolePattern).toBeDefined();
+    const unescaped = (consolePattern as string).split('\\').join('');
+    expect(globSync([unescaped], { cwd: join(__dirname, '..') })).toEqual([]);
   });
 
   it('refuses an exclusion pattern that matches nothing', () => {

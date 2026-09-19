@@ -29,18 +29,46 @@
  *    `$2::numeric` in SQL. Nothing in this module converts an odometer value or any
  *    amount to `number`.
  *
- * ## There is no pagination in this file, and that is deliberate
+ * ## Pagination arrived with the P1-31 read seam, and only where a set is unbounded
  *
- * The delivery module registers six operations and not one of them is a list
- * (`docs/phase-1/phase-1-22/operation-inventory.md` §delivery). So no
- * `OrderingContract` is declared: an ordering contract exists to make a cursor
- * verifiable, and a cursor nothing issues is a contract nothing can honour. Where a
- * set could grow without bound — `sal.delivery_signatures` has no unique constraint
- * on `(delivery_record_id, signer_role)`, so one delivery may carry any number of
- * rows — the read is an EXISTS probe or a `LIMIT`-bounded sample, never an unbounded
- * SELECT.
+ * Until P1-31 this file carried no `OrderingContract` at all, because the module
+ * registered six operations and not one of them was a list. That paragraph is now
+ * superseded rather than deleted, because the reasoning it gave still governs which
+ * of the new reads is paged: an ordering contract exists to make a cursor
+ * verifiable, so one is declared exactly where a caller can issue a cursor.
+ *
+ * Three sets are now readable and each is treated by its own bound:
+ *
+ *  - `sal.delivery_signatures` has **no** unique constraint on
+ *    `(delivery_record_id, signer_role)` — the table's own comment says corrections
+ *    are made by appending — so one delivery may carry any number of rows. It is
+ *    keyset-paged under `SIGNATURE_ORDER`, never selected whole.
+ *  - `sal.delivery_status_history` is append-only and grows by one row per
+ *    transition, with no ceiling in the DDL. Keyset-paged under
+ *    `STATUS_HISTORY_ORDER`.
+ *  - `sal.delivery_checklist_results` is bounded per delivery by
+ *    `uq_delivery_checklist_results_item` — at most one row per template item — but
+ *    the template itself is unbounded, so the set is bounded only by a number this
+ *    module does not control. Keyset-paged under `CHECKLIST_RESULT_ORDER` for that
+ *    reason, not for symmetry.
+ *
+ * Every cursor sort value is minted by `cursorTimestamp()` in SQL at MICROSECOND
+ * precision. A JS `Date` truncates to milliseconds and silently SKIPS rows sharing
+ * the boundary row's millisecond (`P1-27-INT-006`) — and these three tables are
+ * exactly where that bites, because a delivery's rows are frequently written inside
+ * one transaction and therefore share `transaction_timestamp()` to the microsecond.
+ *
+ * The `LIMIT`-bounded mandatory-gap sample below is unchanged and is still NOT a
+ * page: it answers a refusal message, issues no cursor, and its bound is a constant.
  */
 import { Repository } from '@/server/db/repository';
+import {
+  buildPageWithCursors,
+  cursorTimestamp,
+  keysetFragment,
+  type Page,
+  type PageRequest,
+} from '@/server/db/pagination';
 import type { DbHandle } from '@/server/db/transaction';
 
 /**
@@ -73,8 +101,27 @@ export interface DeliveryRecordRow {
   readonly receptionVisitId: string;
   /** Same provenance and the same guard. */
   readonly vehicleId: string;
-  /** `delivering_employee_id` — NOT NULL with **no** foreign key in the DDL. */
+  /**
+   * `delivering_employee_id` — an `org.employees` id, bound by
+   * `fk_delivery_records_delivering_employee` on `(tenant_id, id)` since P1-31
+   * prerequisite P-17. Before that it carried no foreign key at all. The key
+   * names the tenant and nothing narrower: the employee home branch does not
+   * restrict which branch may name them.
+   */
   readonly deliveringEmployeeId: string;
+  /**
+   * The employee's display name as it stood when the handover was recorded.
+   *
+   * Server-stamped by `sal.stamp_delivering_employee_identity` and frozen by
+   * `tg_delivery_records_immutable`, so a later rename or retirement cannot
+   * rewrite what a customer already signed.
+   *
+   * `null` only on a pre-P-17 delivery whose delivering employee id resolved to
+   * nobody; those rows are listed in `sal.delivery_legacy_identity_review`. The
+   * column is nullable so that history could be preserved untouched instead of
+   * being completed with a person nobody confirmed.
+   */
+  readonly deliveringEmployeeDisplayName: string | null;
   readonly status: string;
   readonly deliveredAt: Date | null;
   /** `veh.odometer_readings.id`, written only by `sal.complete_delivery`. */
@@ -99,6 +146,29 @@ export interface ChecklistTemplateItemRow {
   readonly label: string;
   readonly isMandatory: boolean;
   readonly sortOrder: number;
+  readonly recordVersion: number;
+}
+
+/**
+ * One checklist template header (P1-31 prerequisite P-9, **PPD-12**).
+ *
+ * COMPANY-scoped like its items and for the same reason: the table has a
+ * `company_id`, no `branch_id`, and an RLS policy with no branch clause. So one
+ * template is shared by every branch of a company, which is why the write surface
+ * over it requires authority for the COMPANY rather than for a branch.
+ *
+ * `status` is `active` or `inactive` (`ck_delivery_checklist_templates_status`) and
+ * `templateCode` matches `^[a-z][a-z0-9_]{1,62}$`. Neither the code nor the company
+ * can be edited afterwards — `tg_delivery_checklist_templates_immutable` freezes
+ * `tenant_id`, `company_id`, `created_at` and `created_by`, and the code is held by
+ * `uq_delivery_checklist_templates_code` while the row is not soft-deleted.
+ */
+export interface ChecklistTemplateRow {
+  readonly id: string;
+  readonly companyId: string;
+  readonly templateCode: string;
+  readonly name: string;
+  readonly status: string;
   readonly recordVersion: number;
 }
 
@@ -139,11 +209,14 @@ export interface AuthorizedReceiverRow {
  *
  * `signatureDocumentVersionId` is a reference to a `shared.document_versions` row.
  * **Raw signature bytes never appear here, or anywhere in this module.** There is
- * also no retrieval method: `shared.guard_document_version_transition` requires a
- * clean scan record to reach `accepted`, no scanner is provisioned, and
- * `DOWNLOADABLE_STATES` is `['accepted']` — so a download path would be a contract
- * that always fails (`P1-22-L-04`). The reference is returned; fetching it is not
- * offered.
+ * also no retrieval method here, and that is a scope boundary rather than an
+ * impossibility: fetching belongs to the shared attachment path, whose
+ * `requestDownload` refuses a version with `ERR-DOC-001` while it is not `accepted` —
+ * a state check. P1-22 recorded the rest as "no application path can produce
+ * acceptance" (`P1-22-L-04`); `20260815090000_shared_reception_evidence_foundation.sql`
+ * adds `GRANT INSERT ON shared.file_scan_results` and `GRANT UPDATE(status) ON
+ * shared.document_versions`, so that is no longer the rule. The reference is returned;
+ * fetching it is not offered by this repository. Corrected by P1-31 prerequisite P-14.
  *
  * The table is append-only by grant (SELECT + INSERT, no UPDATE, no DELETE), which
  * is why there is no `recordVersion` and no `deleted_at` on it.
@@ -156,6 +229,46 @@ export interface DeliverySignatureRow {
   readonly signerRole: string;
   readonly signatureDocumentVersionId: string;
   readonly signedAt: Date;
+}
+
+/**
+ * A recorded checklist result WITH the template item's code and label.
+ *
+ * A widening of `ChecklistResultRow`, not a parallel shape: it extends it and its
+ * mapper is `toChecklistResult` plus the two joined columns.
+ *
+ * The two extra fields are here because the checklist TEMPLATE has no HTTP surface
+ * at all (**PPD-12** / prerequisite P-9), so a caller cannot resolve a
+ * `template_item_id` to anything a person can read. The write path already returns
+ * `itemCode` on a recorded result, so publishing it on the read is contract PARITY
+ * rather than a new field.
+ */
+export interface ChecklistResultDetailRow extends ChecklistResultRow {
+  readonly itemCode: string;
+  readonly label: string;
+}
+
+/**
+ * One row of the append-only delivery status ledger.
+ *
+ * `sal.delivery_status_history` is written on every transition and, until P1-31,
+ * was read by nothing anywhere in `apps/api/src` (**P1-27-INT-089**). This is the
+ * only row shape in this file that is NEW rather than published, because there was
+ * no existing read to publish.
+ *
+ * `actorId` and `occurredAt` are both server-stamped by
+ * `shared.stamp_status_history` and the table holds SELECT and INSERT grants only,
+ * so a row here is the record of a transition rather than a reconstruction of one.
+ * `actor_id` is NOT NULL in the DDL and is typed accordingly.
+ */
+export interface DeliveryStatusHistoryRow {
+  readonly id: string;
+  readonly deliveryRecordId: string;
+  readonly fromStatus: string | null;
+  readonly toStatus: string;
+  readonly reason: string | null;
+  readonly actorId: string;
+  readonly occurredAt: Date;
 }
 
 /** A mandatory item with no satisfying result — one entry of the `checklist_incomplete` reason. */
@@ -178,12 +291,71 @@ export interface ChecklistGapReport {
 const GAP_SAMPLE_LIMIT = 20;
 
 // ---------------------------------------------------------------------------
+// Ordering contracts (P1-31 read seam).
+//
+// Each key names the table and the direction, so a cursor minted for one list can
+// never be spent on another: `decodeCursor` compares the key against the contract
+// and refuses a mismatch with ERR-PAG-001.
+//
+// All three are newest-first. That is the operator's reading order for an
+// append-only ledger, and it puts the row a screen needs — the latest signature,
+// the current status — on the first page rather than behind a cursor walk.
+// ---------------------------------------------------------------------------
+
+/** A delivery's checklist results, newest first. */
+export const CHECKLIST_RESULT_ORDER = Object.freeze({
+  key: 'sal.delivery_checklist_results:created_at_desc',
+  direction: 'desc' as const,
+});
+
+/** A delivery's signatures, newest first. */
+export const SIGNATURE_ORDER = Object.freeze({
+  key: 'sal.delivery_signatures:signed_at_desc',
+  direction: 'desc' as const,
+});
+
+/** A delivery's status ledger, newest transition first. */
+export const STATUS_HISTORY_ORDER = Object.freeze({
+  key: 'sal.delivery_status_history:occurred_at_desc',
+  direction: 'desc' as const,
+});
+
+/**
+ * The company's checklist templates, newest first (P1-31 prerequisite P-9).
+ *
+ * Paged for the reason the three ledgers above are: the set has no ceiling in the
+ * DDL, and it is the operator who decides how many templates a company keeps. The
+ * ITEMS of one template are deliberately NOT paged — see `listTemplateItems`.
+ */
+export const CHECKLIST_TEMPLATE_ORDER = Object.freeze({
+  key: 'sal.delivery_checklist_templates:created_at_desc',
+  direction: 'desc' as const,
+});
+
+/**
+ * A branch's delivery records, newest first (P1-31 prerequisite P-2b).
+ *
+ * `created_at` and not `delivered_at`: the column is NOT NULL on every row, where
+ * `delivered_at` is NULL until the handover completes, and a sort key that is null
+ * for most of the set cannot order it. `sal.delivery_records` carries no scheduled
+ * date of any kind, so `created_at` is the only total temporal order the table has.
+ *
+ * The cursor is minted by `cursorTimestamp()` at MICROSECOND precision, because
+ * `created_at` defaults to `now()` and two deliveries opened in one transaction
+ * share it exactly (`P1-27-INT-006`).
+ */
+export const DELIVERY_RECORD_ORDER = Object.freeze({
+  key: 'sal.delivery_records:created_at_desc',
+  direction: 'desc' as const,
+});
+
+// ---------------------------------------------------------------------------
 // SQL shapes and mappers. snake_case in, camelCase out, one mapper per shape.
 // ---------------------------------------------------------------------------
 
 const DELIVERY_COLUMNS = `id, company_id, branch_id, work_order_id, reception_visit_id,
-  vehicle_id, delivering_employee_id, status, delivered_at, final_odometer_reading_id,
-  idempotency_key, record_version`;
+  vehicle_id, delivering_employee_id, delivering_employee_display_name, status,
+  delivered_at, final_odometer_reading_id, idempotency_key, record_version`;
 
 interface DeliveryRecordSql {
   id: string;
@@ -193,6 +365,7 @@ interface DeliveryRecordSql {
   reception_visit_id: string;
   vehicle_id: string;
   delivering_employee_id: string;
+  delivering_employee_display_name: string | null;
   status: string;
   delivered_at: Date | null;
   final_odometer_reading_id: string | null;
@@ -208,6 +381,7 @@ const toDeliveryRecord = (r: DeliveryRecordSql): DeliveryRecordRow => ({
   receptionVisitId: r.reception_visit_id,
   vehicleId: r.vehicle_id,
   deliveringEmployeeId: r.delivering_employee_id,
+  deliveringEmployeeDisplayName: r.delivering_employee_display_name,
   status: r.status,
   deliveredAt: r.delivered_at,
   finalOdometerReadingId: r.final_odometer_reading_id,
@@ -225,6 +399,24 @@ interface ChecklistTemplateItemSql {
   sort_order: number;
   record_version: number;
 }
+
+interface ChecklistTemplateSql {
+  id: string;
+  company_id: string;
+  template_code: string;
+  name: string;
+  status: string;
+  record_version: number;
+}
+
+const toChecklistTemplate = (r: ChecklistTemplateSql): ChecklistTemplateRow => ({
+  id: r.id,
+  companyId: r.company_id,
+  templateCode: r.template_code,
+  name: r.name,
+  status: r.status,
+  recordVersion: r.record_version,
+});
 
 const toChecklistTemplateItem = (r: ChecklistTemplateItemSql): ChecklistTemplateItemRow => ({
   id: r.id,
@@ -319,6 +511,26 @@ const toChecklistGap = (r: ChecklistGapSql): ChecklistGapRow => ({
   label: r.label,
 });
 
+interface DeliveryStatusHistorySql {
+  id: string;
+  delivery_record_id: string;
+  from_status: string | null;
+  to_status: string;
+  reason: string | null;
+  actor_id: string;
+  occurred_at: Date;
+}
+
+const toDeliveryStatusHistory = (r: DeliveryStatusHistorySql): DeliveryStatusHistoryRow => ({
+  id: r.id,
+  deliveryRecordId: r.delivery_record_id,
+  fromStatus: r.from_status,
+  toStatus: r.to_status,
+  reason: r.reason,
+  actorId: r.actor_id,
+  occurredAt: r.occurred_at,
+});
+
 export class DeliveryRepository extends Repository {
   protected readonly module = 'delivery';
 
@@ -396,6 +608,95 @@ export class DeliveryRepository extends Repository {
       [context.principal.tenantId, scope.companyId, scope.branchId, workOrderId]
     );
     return row ? toDeliveryRecord(row) : null;
+  }
+
+  /**
+   * A branch's delivery records, newest first (P1-31 prerequisite P-2b).
+   *
+   * ## Scope
+   *
+   * `company_id` and `branch_id` are bound predicates and the service has already
+   * authorized the pair. `sel_delivery_records_scope` narrows on the
+   * permission-blind union of the caller's allowed companies and branches, so
+   * without the explicit pair a caller holding `sal.delivery.view` in one branch
+   * would read every branch it holds any grant in (P1-18-A-01). RLS remains the
+   * guarantee; the predicate is the intent.
+   *
+   * ## Three optional filters and no more
+   *
+   * `status`, `work_order_id` and `vehicle_id`, each expressed as
+   * `($n IS NULL OR col = $n)` so one statement serves every combination. All three
+   * are columns of this table — `status` is bounded by `ck_delivery_records_status`
+   * and validated against the same vocabulary at the boundary, and the other two are
+   * NOT NULL references — so no filter needs a new column and none is invented
+   * beyond what the record names.
+   *
+   * ## Ordering, and the index that was NOT added
+   *
+   * `DELIVERY_RECORD_ORDER` — `(created_at DESC, id DESC)`, with the `id` tie-break
+   * making the order total. The branch predicate is served by the table's
+   * tenant/company/branch-leading indexes and no index leads on
+   * `(tenant, company, branch, created_at)`, so the ordering is a sort over the
+   * already-narrowed set. `wty.warranty-list` declined a migration on exactly this
+   * reasoning and this list follows it: a branch's deliveries are bounded by its
+   * work orders, and a schema change would be a cost this read has not demonstrated.
+   *
+   * `deleted_at IS NULL` is filtered, as it is in `findDelivery`: a list feeds no
+   * primitive, so publishing rows the tenant has deleted would be the dishonest
+   * option.
+   */
+  public async listDeliveries(
+    db: DbHandle,
+    filter: {
+      readonly companyId: string;
+      readonly branchId: string;
+      readonly status?: string | undefined;
+      readonly workOrderId?: string | undefined;
+      readonly vehicleId?: string | undefined;
+    },
+    request: PageRequest
+  ): Promise<Page<DeliveryRecordRow>> {
+    const context = this.assertContext(db);
+    const values: unknown[] = [
+      context.principal.tenantId,
+      filter.companyId,
+      filter.branchId,
+      filter.status ?? null,
+      filter.workOrderId ?? null,
+      filter.vehicleId ?? null,
+    ];
+    const keyset = keysetFragment(
+      request,
+      { sort: 'created_at', id: 'id' },
+      DELIVERY_RECORD_ORDER,
+      values.length + 1
+    );
+    const result = await this.run<DeliveryRecordSql & { sort_value: string }>(
+      db,
+      `SELECT ${DELIVERY_COLUMNS},
+              ${cursorTimestamp('created_at')} AS sort_value
+         FROM sal.delivery_records
+        WHERE tenant_id = $1 AND company_id = $2 AND branch_id = $3
+          AND deleted_at IS NULL
+          AND ($4::text IS NULL OR status = $4)
+          AND ($5::uuid IS NULL OR work_order_id = $5)
+          AND ($6::uuid IS NULL OR vehicle_id = $6)
+          ${keyset.predicate}
+        ${keyset.order}
+        ${keyset.limitClause}`,
+      [...values, ...keyset.values]
+    );
+    return buildPageWithCursors(
+      result.rows.map((row) => ({
+        // `created_at` is not published on the row, so the cursor value cannot be
+        // re-derived from the response — which is what `buildPageWithCursors` is for.
+        item: toDeliveryRecord(row),
+        sortValue: row.sort_value,
+        id: row.id,
+      })),
+      request,
+      DELIVERY_RECORD_ORDER
+    );
   }
 
   /**
@@ -570,6 +871,91 @@ export class DeliveryRepository extends Repository {
     return row.id;
   }
 
+  /**
+   * The delivery's status ledger, newest transition first (P1-31 P-5,
+   * **P1-27-INT-089**).
+   *
+   * ## This one had nothing to publish
+   *
+   * `appendStatusHistory` above is the only method that has ever touched
+   * `sal.delivery_status_history`: the table is written on every transition and,
+   * before this, was read by nothing anywhere in `apps/api/src`. So unlike the other
+   * P1-31 reads there was no existing query to put a route in front of, and this
+   * query and `toDeliveryStatusHistory` are both new. That is recorded rather than
+   * glossed.
+   *
+   * ## The ledger is the record, not a reconstruction
+   *
+   * The table holds SELECT and INSERT grants only — no UPDATE, no DELETE, for any
+   * application role — and `shared.stamp_status_history` sets `actor_id` and
+   * `occurred_at` from the session context. So a row cannot be back-dated or
+   * re-attributed after the fact.
+   *
+   * ## The origin row is here, unlike the work-order ledger
+   *
+   * `wo.job_status_history` and `wo.work_order_status_history` are written by AFTER
+   * UPDATE triggers, so their oldest row is the first TRANSITION and their readers
+   * must publish a separate `origin` block for the initial state. This table has no
+   * trigger: `sal.delivery_records` has no AFTER UPDATE history emitter and every
+   * advance appends its own row, `from_status` included. The oldest row is
+   * therefore already the origin and no `origin` block is synthesised.
+   *
+   * `ix_delivery_status_history_delivery` is
+   * `(tenant_id, company_id, branch_id, delivery_record_id, occurred_at DESC, seq DESC)`,
+   * which the predicate and the ordering below lead on exactly.
+   *
+   * The keyset tie-breaks on `id` rather than the `seq` identity column, because
+   * `keysetFragment` compares `(sort, id)` and `Cursor.i` is validated as an
+   * identifier. `seq` orders identically within one `occurred_at`, so the only cost
+   * is that two rows sharing a microsecond are ordered by uuid instead of by
+   * insertion — and `cursorTimestamp` keeps that pair on the same page rather than
+   * skipping one.
+   */
+  public async listStatusHistory(
+    db: DbHandle,
+    scope: DeliveryScope,
+    deliveryRecordId: string,
+    request: PageRequest
+  ): Promise<Page<DeliveryStatusHistoryRow>> {
+    const context = this.assertContext(db);
+    const values: unknown[] = [
+      context.principal.tenantId,
+      scope.companyId,
+      scope.branchId,
+      deliveryRecordId,
+    ];
+    const keyset = keysetFragment(
+      request,
+      { sort: 'occurred_at', id: 'id' },
+      STATUS_HISTORY_ORDER,
+      values.length + 1
+    );
+    const result = await this.run<DeliveryStatusHistorySql & { sort_value: string }>(
+      db,
+      `SELECT id, delivery_record_id, from_status, to_status, reason, actor_id, occurred_at,
+              ${cursorTimestamp('occurred_at')} AS sort_value
+         FROM sal.delivery_status_history
+        WHERE tenant_id = $1 AND company_id = $2 AND branch_id = $3
+          AND delivery_record_id = $4
+          ${keyset.predicate}
+        ${keyset.order}
+        ${keyset.limitClause}`,
+      [...values, ...keyset.values]
+    );
+    return buildPageWithCursors(
+      result.rows.map((row) => ({
+        item: toDeliveryStatusHistory(row),
+        // `occurred_at` defaults to `now()`, so the receiver-verify and
+        // signature-attach transitions of one request share it to the microsecond
+        // (`P1-27-INT-006`).
+        sortValue: row.sort_value,
+        id: row.id,
+      })),
+      request,
+      STATUS_HISTORY_ORDER
+    );
+  }
+
   // -------------------------------------------------------------------------
   // Authorized receiver
   // -------------------------------------------------------------------------
@@ -650,6 +1036,331 @@ export class DeliveryRepository extends Repository {
   }
 
   // -------------------------------------------------------------------------
+  // Checklist templates (P1-31 prerequisite P-9, PPD-12)
+  //
+  // Both tables held SELECT, INSERT and UPDATE grants and an INSERT and an UPDATE
+  // policy from the day they landed in P1-11, and no code anywhere in `apps/api`
+  // had ever written either one: the only method that touched them was
+  // `findTemplateItem`, a per-item existence probe for the write path. So the
+  // statements below use grants that already exist, and this slice adds no
+  // migration.
+  //
+  // NEITHER TABLE HAS A DELETE GRANT OR A DELETE POLICY, for either application
+  // role. Removal is therefore a soft delete performed by UPDATE — the shape
+  // `tech.technician_skills` already uses — and a hard delete is refused by the
+  // database however it is asked for.
+  // -------------------------------------------------------------------------
+
+  /**
+   * The checklist templates visible to the caller, newest first.
+   *
+   * Predicated on `tenant_id` only, with no company term, and that is deliberate:
+   * a caller may configure more than one company, the path names none, and
+   * `sel_delivery_checklist_templates_scope` narrows to
+   * `iam.allowed_company_ids()` — so the set is exactly the templates of the
+   * companies the caller's grants reach. Every row carries its own `companyId`, so
+   * a reader can tell which company a template belongs to rather than inferring it.
+   *
+   * Soft-deleted rows are excluded. Inactive ones are NOT: a configuration list
+   * that hid retired templates would make the restore command unreachable, which
+   * is the trap `apt.catalogue-source-channel-status-set` records for its own
+   * catalogue.
+   */
+  public async listTemplates(
+    db: DbHandle,
+    request: PageRequest
+  ): Promise<Page<ChecklistTemplateRow>> {
+    const context = this.assertContext(db);
+    const values: unknown[] = [context.principal.tenantId];
+    const keyset = keysetFragment(
+      request,
+      { sort: 't.created_at', id: 't.id' },
+      CHECKLIST_TEMPLATE_ORDER,
+      values.length + 1
+    );
+    const result = await this.run<ChecklistTemplateSql & { sort_value: string }>(
+      db,
+      `SELECT t.id, t.company_id, t.template_code, t.name, t.status, t.record_version,
+              ${cursorTimestamp('t.created_at')} AS sort_value
+         FROM sal.delivery_checklist_templates t
+        WHERE t.tenant_id = $1 AND t.deleted_at IS NULL
+          ${keyset.predicate}
+        ${keyset.order}
+        ${keyset.limitClause}`,
+      [...values, ...keyset.values]
+    );
+    return buildPageWithCursors(
+      result.rows.map((row) => ({
+        // `created_at` is not published on the row, so the cursor value cannot be
+        // re-derived from the response — which is what `buildPageWithCursors` is for.
+        item: toChecklistTemplate(row),
+        sortValue: row.sort_value,
+        id: row.id,
+      })),
+      request,
+      CHECKLIST_TEMPLATE_ORDER
+    );
+  }
+
+  /**
+   * One template, or null for absent-and-out-of-scope alike.
+   *
+   * Predicated on `tenant_id` and `id` only, for the reason `findDelivery` states:
+   * a lookup addressed solely by id has no company to narrow by yet — the row is
+   * where the company comes from, and every command over it re-authorizes against
+   * that company the moment it is read.
+   */
+  public async findTemplate(
+    db: DbHandle,
+    templateId: string
+  ): Promise<ChecklistTemplateRow | null> {
+    const context = this.assertContext(db);
+    const row = await this.runOne<ChecklistTemplateSql>(
+      db,
+      `SELECT id, company_id, template_code, name, status, record_version
+         FROM sal.delivery_checklist_templates
+        WHERE tenant_id = $1 AND id = $2 AND deleted_at IS NULL`,
+      [context.principal.tenantId, templateId]
+    );
+    return row ? toChecklistTemplate(row) : null;
+  }
+
+  /**
+   * Every live item of one template, in checklist order.
+   *
+   * **Deliberately unpaged**, on the `dia.template-version-item-list` precedent:
+   * the order IS the checklist, so a page boundary would cut a checklist in half.
+   * The set is bounded by authoring rather than by a constraint, and the ordering
+   * is `(sort_order, item_code)` — `sort_order` alone is not unique, so the code
+   * breaks the tie and the answer is stable between two reads.
+   */
+  public async listTemplateItems(
+    db: DbHandle,
+    companyId: string,
+    templateId: string
+  ): Promise<readonly ChecklistTemplateItemRow[]> {
+    const context = this.assertContext(db);
+    const result = await this.run<ChecklistTemplateItemSql>(
+      db,
+      `SELECT id, company_id, template_id, item_code, label, is_mandatory, sort_order,
+              record_version
+         FROM sal.delivery_checklist_template_items
+        WHERE tenant_id = $1 AND company_id = $2 AND template_id = $3 AND deleted_at IS NULL
+        ORDER BY sort_order, item_code`,
+      [context.principal.tenantId, companyId, templateId]
+    );
+    return result.rows.map(toChecklistTemplateItem);
+  }
+
+  /**
+   * Creates a template header. The caller supplies the company; nothing defaults it.
+   *
+   * `status` is not accepted: the column defaults to `active` and a template born
+   * `inactive` is one whose items gate nothing while it cannot be offered either.
+   * A duplicate `template_code` raises `23505` on
+   * `uq_delivery_checklist_templates_code`, and a company outside the caller's own
+   * tenant raises `23503` on `fk_delivery_checklist_templates_company`, whose
+   * tenant half comes from the session context rather than from the request.
+   *
+   * That foreign key is DEFENCE IN DEPTH and is no longer the tenant boundary this
+   * write relies on (CC-56). `ChecklistTemplateService.createTemplate` resolves the
+   * claimed company against `org.legal_companies` under the caller's own row-level
+   * security before calling this, and refuses an invisible one with 403
+   * `ERR-IAM-001`, so a `23503` here means the company went away between the probe
+   * and the insert rather than that the caller named a foreign one.
+   */
+  public async insertTemplate(
+    db: DbHandle,
+    input: { readonly companyId: string; readonly templateCode: string; readonly name: string }
+  ): Promise<ChecklistTemplateRow> {
+    const context = this.assertContext(db);
+    const row = await this.runOne<ChecklistTemplateSql>(
+      db,
+      `INSERT INTO sal.delivery_checklist_templates
+         (tenant_id, company_id, template_code, name, created_by)
+       VALUES ($1, $2, $3, $4, $5)
+       RETURNING id, company_id, template_code, name, status, record_version`,
+      [
+        context.principal.tenantId,
+        input.companyId,
+        input.templateCode,
+        input.name,
+        context.principal.userId,
+      ]
+    );
+    if (!row) {
+      throw new Error('delivery: INSERT INTO sal.delivery_checklist_templates returned no row');
+    }
+    return toChecklistTemplate(row);
+  }
+
+  /** Creates one item on a template. `23505` is a duplicate `item_code` in it. */
+  public async insertTemplateItem(
+    db: DbHandle,
+    input: {
+      readonly companyId: string;
+      readonly templateId: string;
+      readonly itemCode: string;
+      readonly label: string;
+      readonly isMandatory: boolean;
+      readonly sortOrder: number;
+    }
+  ): Promise<ChecklistTemplateItemRow> {
+    const context = this.assertContext(db);
+    const row = await this.runOne<ChecklistTemplateItemSql>(
+      db,
+      `INSERT INTO sal.delivery_checklist_template_items
+         (tenant_id, company_id, template_id, item_code, label, is_mandatory, sort_order,
+          created_by)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+       RETURNING id, company_id, template_id, item_code, label, is_mandatory, sort_order,
+                 record_version`,
+      [
+        context.principal.tenantId,
+        input.companyId,
+        input.templateId,
+        input.itemCode,
+        input.label,
+        input.isMandatory,
+        input.sortOrder,
+        context.principal.userId,
+      ]
+    );
+    if (!row) {
+      throw new Error(
+        'delivery: INSERT INTO sal.delivery_checklist_template_items returned no row'
+      );
+    }
+    return toChecklistTemplateItem(row);
+  }
+
+  /**
+   * Renames a template under its expected version, or returns null.
+   *
+   * Null means the `record_version` predicate did not match. Every other reason for
+   * zero rows — absent, another tenant's, soft-deleted — is excluded by the service
+   * reading the row first, so the caller may report the concurrency loss and
+   * nothing else. `record_version` is not computed as `expectedVersion + 1`: the
+   * row the trigger produced is returned, so the next `If-Match` is the database's
+   * answer rather than this module's assumption.
+   */
+  public async renameTemplate(
+    db: DbHandle,
+    companyId: string,
+    templateId: string,
+    expectedVersion: number,
+    name: string
+  ): Promise<ChecklistTemplateRow | null> {
+    const context = this.assertContext(db);
+    const row = await this.runOne<ChecklistTemplateSql>(
+      db,
+      `UPDATE sal.delivery_checklist_templates
+          SET name = $5
+        WHERE tenant_id = $1 AND company_id = $2 AND id = $3 AND deleted_at IS NULL
+          AND record_version = $4
+       RETURNING id, company_id, template_code, name, status, record_version`,
+      [context.principal.tenantId, companyId, templateId, expectedVersion, name]
+    );
+    return row ? toChecklistTemplate(row) : null;
+  }
+
+  /** Activates or deactivates a template under its expected version, or returns null. */
+  public async setTemplateStatus(
+    db: DbHandle,
+    companyId: string,
+    templateId: string,
+    expectedVersion: number,
+    status: string
+  ): Promise<ChecklistTemplateRow | null> {
+    const context = this.assertContext(db);
+    const row = await this.runOne<ChecklistTemplateSql>(
+      db,
+      `UPDATE sal.delivery_checklist_templates
+          SET status = $5
+        WHERE tenant_id = $1 AND company_id = $2 AND id = $3 AND deleted_at IS NULL
+          AND record_version = $4
+       RETURNING id, company_id, template_code, name, status, record_version`,
+      [context.principal.tenantId, companyId, templateId, expectedVersion, status]
+    );
+    return row ? toChecklistTemplate(row) : null;
+  }
+
+  /**
+   * Edits one item under its expected version, or returns null.
+   *
+   * The version compared is the ITEM's own `record_version`, never the template's.
+   * A `null` in a patch field means "not supplied" and is applied by `COALESCE`, so
+   * a request carrying only `label` cannot silently reset `is_mandatory` to its
+   * default. `item_code` and `template_id` are absent from the statement:
+   * `tg_delivery_checklist_template_items_immutable` freezes the template binding,
+   * and a re-coded item would be a different item wearing the old one's identity —
+   * every recorded result points at the row by id.
+   */
+  public async updateTemplateItem(
+    db: DbHandle,
+    companyId: string,
+    itemId: string,
+    expectedVersion: number,
+    patch: {
+      readonly label: string | null;
+      readonly isMandatory: boolean | null;
+      readonly sortOrder: number | null;
+    }
+  ): Promise<ChecklistTemplateItemRow | null> {
+    const context = this.assertContext(db);
+    const row = await this.runOne<ChecklistTemplateItemSql>(
+      db,
+      `UPDATE sal.delivery_checklist_template_items
+          SET label = COALESCE($5, label),
+              is_mandatory = COALESCE($6, is_mandatory),
+              sort_order = COALESCE($7, sort_order)
+        WHERE tenant_id = $1 AND company_id = $2 AND id = $3 AND deleted_at IS NULL
+          AND record_version = $4
+       RETURNING id, company_id, template_id, item_code, label, is_mandatory, sort_order,
+                 record_version`,
+      [
+        context.principal.tenantId,
+        companyId,
+        itemId,
+        expectedVersion,
+        patch.label,
+        patch.isMandatory,
+        patch.sortOrder,
+      ]
+    );
+    return row ? toChecklistTemplateItem(row) : null;
+  }
+
+  /**
+   * Withdraws one item. Soft delete: recorded results stay readable.
+   *
+   * An UPDATE and not a DELETE, because there is no DELETE grant and no DELETE
+   * policy on this table for any application role — and because
+   * `fk_delivery_checklist_results_item` is `ON DELETE RESTRICT`, so a hard removal
+   * would be refused by any item a handover has ever recorded an outcome for. The
+   * checklist-result list read deliberately carries no `ti.deleted_at` predicate,
+   * so a result recorded against a withdrawn item is still readable afterwards.
+   *
+   * `uq_delivery_checklist_template_items_code` is partial on `deleted_at IS NULL`,
+   * so the code returns to the template and may be added again.
+   */
+  public async softDeleteTemplateItem(
+    db: DbHandle,
+    companyId: string,
+    itemId: string
+  ): Promise<boolean> {
+    const context = this.assertContext(db);
+    const result = await this.run(
+      db,
+      `UPDATE sal.delivery_checklist_template_items
+          SET deleted_at = now(), deleted_by = $4
+        WHERE tenant_id = $1 AND company_id = $2 AND id = $3 AND deleted_at IS NULL`,
+      [context.principal.tenantId, companyId, itemId, context.principal.userId]
+    );
+    return (result.rowCount ?? 0) === 1;
+  }
+
+  // -------------------------------------------------------------------------
   // Checklist
   // -------------------------------------------------------------------------
 
@@ -717,6 +1428,92 @@ export class DeliveryRepository extends Repository {
   }
 
   /**
+   * Every checklist result recorded against one delivery, newest first (P1-31 P-4).
+   *
+   * ## Why this is a new query rather than a published one
+   *
+   * `findChecklistResult` above is addressed by `(delivery, templateItemId)` and
+   * answers "was this ONE item already recorded" for the write path. Publishing it
+   * as it stands would hand a screen a read it cannot address: the checklist
+   * TEMPLATE has no HTTP surface at all (**PPD-12** / prerequisite P-9), so no
+   * caller can discover a `template_item_id` to put in the path. The set read is
+   * therefore the smallest read that makes recorded results reachable, and it
+   * reuses `toChecklistResult` — one wire contract for this row, not two.
+   *
+   * ## The predicates
+   *
+   * `company_id` AND `branch_id` are bound because the caller has already read the
+   * delivery row they came from. `ix_delivery_checklist_results_delivery` is
+   * `(tenant_id, company_id, branch_id, delivery_record_id)` and leads on exactly
+   * those four.
+   *
+   * **`deleted_at IS NULL` IS filtered here**, unlike `findChecklistResult`. The two
+   * reads answer different questions and the difference is deliberate: the write
+   * path must see a soft-deleted row because `uq_delivery_checklist_results_item` is
+   * non-partial and that row still occupies the slot, whereas this read answers
+   * "what has been recorded", and a withdrawn result is not a recorded one. The
+   * mandatory-gap mirror filters it for the same reason `sal.complete_delivery`
+   * does.
+   */
+  public async listChecklistResults(
+    db: DbHandle,
+    scope: DeliveryScope,
+    deliveryRecordId: string,
+    request: PageRequest
+  ): Promise<Page<ChecklistResultDetailRow>> {
+    const context = this.assertContext(db);
+    const values: unknown[] = [
+      context.principal.tenantId,
+      scope.companyId,
+      scope.branchId,
+      deliveryRecordId,
+    ];
+    const keyset = keysetFragment(
+      request,
+      { sort: 'r.created_at', id: 'r.id' },
+      CHECKLIST_RESULT_ORDER,
+      values.length + 1
+    );
+    // An INNER join, and it is TOTAL: `fk_delivery_checklist_results_item` is
+    // `(tenant_id, company_id, template_item_id) ON DELETE RESTRICT`, so the item
+    // row cannot be missing. It deliberately carries NO `ti.deleted_at` predicate —
+    // the gap mirror filters that because `sal.complete_delivery` does, but a result
+    // recorded against an item that was later soft-deleted is still a recorded fact
+    // and dropping it here would hide it.
+    const result = await this.run<
+      ChecklistResultSql & { item_code: string; label: string; sort_value: string }
+    >(
+      db,
+      `SELECT r.id, r.company_id, r.branch_id, r.delivery_record_id, r.template_item_id,
+              r.outcome, r.waiver_reason, r.recorded_by, r.record_version,
+              ti.item_code, ti.label,
+              ${cursorTimestamp('r.created_at')} AS sort_value
+         FROM sal.delivery_checklist_results r
+         JOIN sal.delivery_checklist_template_items ti
+           ON ti.tenant_id = r.tenant_id AND ti.company_id = r.company_id
+          AND ti.id = r.template_item_id
+        WHERE r.tenant_id = $1 AND r.company_id = $2 AND r.branch_id = $3
+          AND r.delivery_record_id = $4 AND r.deleted_at IS NULL
+          ${keyset.predicate}
+        ${keyset.order}
+        ${keyset.limitClause}`,
+      [...values, ...keyset.values]
+    );
+    return buildPageWithCursors(
+      result.rows.map((row) => ({
+        item: { ...toChecklistResult(row), itemCode: row.item_code, label: row.label },
+        // `created_at` is not published on the row, so the cursor value cannot be
+        // re-derived from the response — which is precisely what
+        // `buildPageWithCursors` exists for.
+        sortValue: row.sort_value,
+        id: row.id,
+      })),
+      request,
+      CHECKLIST_RESULT_ORDER
+    );
+  }
+
+  /**
    * Records one checklist result and returns its id.
    *
    * `recorded_by` and `created_by` are both the session actor. They are separate
@@ -767,7 +1564,7 @@ export class DeliveryRepository extends Repository {
   /**
    * The mandatory-checklist shortfall, transcribed from `sal.complete_delivery`.
    *
-   * Two details of the primitive's predicate are counter-intuitive and are reproduced
+   * Three details of the primitive's predicate are counter-intuitive and are reproduced
    * rather than corrected:
    *
    *  1. **The item scan is COMPANY-scoped, not template-scoped.** The function counts
@@ -779,6 +1576,21 @@ export class DeliveryRepository extends Repository {
    *     template-scoped mirror would report eligible and then be refused at the call.
    *  2. **Items filter `deleted_at IS NULL` and so do results.** A soft-deleted item
    *     stops being mandatory; a soft-deleted result stops satisfying its item.
+   *  3. **Only an ACTIVE, non-deleted TEMPLATE is in force.** The join onto
+   *     `sal.delivery_checklist_templates` is new in P1-31 P-9b (migration
+   *     20260909090000, closing CC-14) and lands in the same commit as the
+   *     primitive's. Before it, deactivating or soft-deleting a template withdrew
+   *     nothing from the gate and the operator's only remedy was withdrawing each
+   *     item. The join is on `(tenant_id, company_id, id)` — the scoped unique key
+   *     `uq_delivery_checklist_templates_scope_id` — so it cannot cross a tenant or a
+   *     company, and it is INNER because the item's foreign key makes the template
+   *     reference mandatory.
+   *
+   * The company-wide scan therefore stays exactly as wide as it was; what narrowed is
+   * which templates count as in force. The standing rule is unchanged and is the reason
+   * this file moves in lockstep with the migration rather than ahead of it: the mirror
+   * must never be BETTER than the primitive, or the eligibility read reports a delivery
+   * eligible that `sal.complete_delivery` then refuses with 23514.
    *
    * The count is the gate. The sample is `LIMIT`-bounded so a company with a large
    * mandatory template cannot turn a refusal message into an unbounded response.
@@ -790,8 +1602,13 @@ export class DeliveryRepository extends Repository {
   ): Promise<ChecklistGapReport> {
     const context = this.assertContext(db);
     const values = [context.principal.tenantId, scope.companyId, scope.branchId, deliveryRecordId];
+    const source = `sal.delivery_checklist_template_items ti
+              JOIN sal.delivery_checklist_templates t
+                ON t.tenant_id = ti.tenant_id AND t.company_id = ti.company_id
+               AND t.id = ti.template_id`;
     const predicate = `ti.tenant_id = $1 AND ti.company_id = $2 AND ti.is_mandatory
           AND ti.deleted_at IS NULL
+          AND t.status = 'active' AND t.deleted_at IS NULL
           AND NOT EXISTS (
             SELECT 1
               FROM sal.delivery_checklist_results r
@@ -802,7 +1619,7 @@ export class DeliveryRepository extends Repository {
     const counted = await this.runOne<{ missing: number }>(
       db,
       `SELECT count(*)::int AS missing
-         FROM sal.delivery_checklist_template_items ti
+         FROM ${source}
         WHERE ${predicate}`,
       values
     );
@@ -812,7 +1629,7 @@ export class DeliveryRepository extends Repository {
     const sample = await this.run<ChecklistGapSql>(
       db,
       `SELECT ti.id AS template_item_id, ti.template_id, ti.item_code, ti.label
-         FROM sal.delivery_checklist_template_items ti
+         FROM ${source}
         WHERE ${predicate}
         ORDER BY ti.template_id, ti.sort_order, ti.item_code
         LIMIT $5`,
@@ -895,6 +1712,81 @@ export class DeliveryRepository extends Repository {
       ]
     );
     return row ? toDeliverySignature(row) : null;
+  }
+
+  /**
+   * Every signature bound to one delivery, newest first (P1-31 P-4).
+   *
+   * ## Why this is a new query rather than a published one
+   *
+   * `findSignature` above is a REPLAY PROBE addressed by the exact
+   * `(delivery, signerRole, signatureDocumentVersionId)` triple, so a caller must
+   * already hold the document-version id to use it — which is the unrecoverable
+   * identifier problem restated, not a read of the signatures. `hasSignature` is a
+   * boolean. Neither answers "which signatures does this delivery carry", which is
+   * what **P-4** requires and what the delivery document (FE-007) is composed from.
+   * This reuses `toDeliverySignature`: no second mapper, no second wire contract.
+   *
+   * ## Paged, because the set has no ceiling
+   *
+   * There is no unique constraint on `(delivery_record_id, signer_role)` — the
+   * table's comment records that corrections are made by appending — so a delivery
+   * may carry any number of rows and an unbounded SELECT is not available. Keyset,
+   * so the page boundary is stable while rows are appended underneath it.
+   *
+   * **No `deleted_at` predicate, and none is possible**: the table has SELECT and
+   * INSERT grants only and carries no `deleted_at` column at all. A signature can
+   * never be edited or withdrawn, which is the property that makes the document
+   * reference worth binding.
+   *
+   * The row carries `signatureDocumentVersionId` and **never bytes**. Fetching that
+   * document is not offered here and is not offered anywhere in this module.
+   */
+  public async listSignatures(
+    db: DbHandle,
+    scope: DeliveryScope,
+    deliveryRecordId: string,
+    request: PageRequest
+  ): Promise<Page<DeliverySignatureRow>> {
+    const context = this.assertContext(db);
+    const values: unknown[] = [
+      context.principal.tenantId,
+      scope.companyId,
+      scope.branchId,
+      deliveryRecordId,
+    ];
+    const keyset = keysetFragment(
+      request,
+      { sort: 'signed_at', id: 'id' },
+      SIGNATURE_ORDER,
+      values.length + 1
+    );
+    const result = await this.run<DeliverySignatureSql & { sort_value: string }>(
+      db,
+      `SELECT id, company_id, branch_id, delivery_record_id, signer_role,
+              signature_document_version_id, signed_at,
+              ${cursorTimestamp('signed_at')} AS sort_value
+         FROM sal.delivery_signatures
+        WHERE tenant_id = $1 AND company_id = $2 AND branch_id = $3
+          AND delivery_record_id = $4
+          ${keyset.predicate}
+        ${keyset.order}
+        ${keyset.limitClause}`,
+      [...values, ...keyset.values]
+    );
+    return buildPageWithCursors(
+      result.rows.map((row) => ({
+        item: toDeliverySignature(row),
+        // NOT `row.signed_at.toISOString()`: `signed_at` defaults to `now()`, so
+        // several signatures attached in one transaction share the value to the
+        // microsecond and a millisecond-truncated cursor would skip them
+        // (`P1-27-INT-006`).
+        sortValue: row.sort_value,
+        id: row.id,
+      })),
+      request,
+      SIGNATURE_ORDER
+    );
   }
 
   /**

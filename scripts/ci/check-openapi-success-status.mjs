@@ -97,13 +97,25 @@ export function declaredOperations(source) {
 }
 
 /**
- * For each `handleOperation(CONST, …)` call, the literal success status inside it.
+ * The replay form an idempotent create returns: `status: x.replayed ? 200 : 201`.
+ * The first branch is what a replay answers with, the second what the create does.
+ * It is recognised by that exact shape — the `replayed` flag — and nothing looser:
+ * any other computed status is still not publishable as a literal.
+ */
+const REPLAY_TERNARY =
+  /\bstatus:\s*[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*\.replayed\s*\?\s*(\d{3})\s*:\s*(\d{3})\b/g;
+
+/**
+ * For each `handleOperation(CONST, …)` call, the literal success status inside it,
+ * and — for a replayable create — the status its replay answers with.
  *
- * Returns `{ resolved: Map<operationId, status>, unresolved: string[] }`.
+ * Returns `{ resolved: Map<operationId, status>, replays: Map<operationId, status>,
+ * unresolved: string[] }`.
  */
 export function successStatuses(source, file) {
   const declared = declaredOperations(source);
   const resolved = new Map();
+  const replays = new Map();
   const unresolved = [];
   const re = /handleOperation(?:WithoutBody)?\s*\(\s*([A-Za-z0-9_]+)\s*,/g;
   let m;
@@ -122,51 +134,93 @@ export function successStatuses(source, file) {
       continue;
     }
     // Only literal statuses count. A computed status is not publishable and is
-    // reported rather than assumed.
+    // reported rather than assumed — except the replay form above, whose two
+    // literals are read as the create's status and its replay's.
+    const ternaries = [...call.matchAll(REPLAY_TERNARY)].map((t) => ({
+      replay: Number(t[1]),
+      created: Number(t[2]),
+    }));
     const statuses = [...call.matchAll(/\bstatus:\s*(\d{3})\b/g)].map((s) => Number(s[1]));
-    const distinct = [...new Set(statuses)];
+    const distinct = [...new Set([...statuses, ...ternaries.map((t) => t.created)])];
+    const replayed = [...new Set(ternaries.map((t) => t.replay))];
+    if (replayed.length > 1) {
+      unresolved.push(`${file}: ${id} replays with more than one status (${replayed.join(', ')})`);
+      continue;
+    }
     if (distinct.length === 0) resolved.set(id, 200);
     else if (distinct.length === 1) resolved.set(id, distinct[0]);
-    else
+    else {
       unresolved.push(
         `${file}: ${id} returns more than one literal status (${distinct.join(', ')})`
       );
+      continue;
+    }
+    if (replayed.length === 1) replays.set(id, replayed[0]);
   }
-  return { resolved, unresolved };
+  return { resolved, replays, unresolved };
 }
 
 /** The success status every route actually returns, keyed by operation id. */
 export function actualSuccessStatuses(root = ROUTE_ROOT) {
   const actual = new Map();
+  const replays = new Map();
   const unresolved = [];
   for (const file of routeFiles(root)) {
     const source = stripComments(readFileSync(file, 'utf8'));
     const found = successStatuses(source, file);
     for (const [id, status] of found.resolved) actual.set(id, status);
+    for (const [id, status] of found.replays) replays.set(id, status);
     unresolved.push(...found.unresolved);
   }
-  return { actual, unresolved };
+  return { actual, replays, unresolved };
 }
 
-async function main() {
-  const { actual, unresolved } = actualSuccessStatuses();
-  const failures = [...unresolved];
-
-  const spec = JSON.parse(readFileSync('docs/api/openapi.v1.json', 'utf8'));
+/**
+ * What the committed contract publishes for each operation: its success status and,
+ * for a replayable create, the replay status named in `x-replay-status`.
+ */
+export function publishedSuccessStatuses(spec) {
   const published = new Map();
   for (const [, methods] of Object.entries(spec.paths ?? {})) {
     for (const [, op] of Object.entries(methods)) {
       if (!op || typeof op !== 'object' || !op.responses || !op.operationId) continue;
-      const success = Object.keys(op.responses).find((code) => code.startsWith('2'));
-      published.set(op.operationId, Number(success));
+      const replay = typeof op['x-replay-status'] === 'number' ? op['x-replay-status'] : null;
+      const codes = Object.keys(op.responses)
+        .filter((code) => code.startsWith('2'))
+        .map(Number);
+      const success = codes.filter((code) => code !== replay);
+      published.set(op.operationId, {
+        success: success.length === 1 ? success[0] : NaN,
+        replay,
+        codes: [...codes].sort(),
+      });
     }
   }
+  return published;
+}
+
+async function main() {
+  const { actual, replays, unresolved } = actualSuccessStatuses();
+  const failures = [...unresolved];
+
+  const spec = JSON.parse(readFileSync('docs/api/openapi.v1.json', 'utf8'));
+  const published = publishedSuccessStatuses(spec);
 
   for (const [id, status] of actual) {
     const advertised = published.get(id);
     if (advertised === undefined) continue; // reachability is a different gate's job
-    if (advertised !== status) {
-      failures.push(`${id}: returns ${status}, the published contract advertises ${advertised}`);
+    const replay = replays.get(id) ?? null;
+    const expected = (replay === null ? [status] : [status, replay]).sort();
+    if (
+      advertised.success !== status ||
+      advertised.replay !== replay ||
+      advertised.codes.join(',') !== expected.join(',')
+    ) {
+      failures.push(
+        `${id}: returns ${status}${replay === null ? '' : ` (replays with ${replay})`}, the ` +
+          `published contract advertises ${advertised.codes.join(', ')}` +
+          `${advertised.replay === null ? '' : ` (replay ${advertised.replay})`}`
+      );
     }
   }
 
@@ -175,7 +229,8 @@ async function main() {
     `OpenAPI success status: ${actual.size} operation(s) scanned — ` +
       Object.entries(counts)
         .map(([s, n]) => `${n} return ${s}`)
-        .join(', ')
+        .join(', ') +
+      `; ${replays.size} replay with a second status`
   );
 
   if (failures.length > 0) {

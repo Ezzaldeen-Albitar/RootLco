@@ -87,6 +87,11 @@ import '@/app/api/v1/attachments/links/[linkId]/route';
 import '@/app/api/v1/qc-checks/route';
 import '@/app/api/v1/reports/route';
 import '@/app/api/v1/reports/[reportCode]/route';
+
+// P1-31 prerequisite P-11 — the report RUN operation. Imported for the reason every
+// line here is: the registry is populated by import side effect, so an unimported
+// route is simply ABSENT from the generated document rather than reported missing.
+import '@/app/api/v1/reports/[reportCode]/rows/route';
 import '@/app/api/v1/notifications/route';
 import '@/app/api/v1/notifications/[notificationId]/route';
 import '@/app/api/v1/notifications/[notificationId]/deliveries/route';
@@ -326,6 +331,12 @@ import '@/app/api/v1/items/route';
 import '@/app/api/v1/item-categories/route';
 import '@/app/api/v1/units-of-measure/route';
 import '@/app/api/v1/stock-availability/route';
+import '@/app/api/v1/inventory-alerts/low-stock/route';
+import '@/app/api/v1/inventory-alerts/count-discrepancies/route';
+import '@/app/api/v1/inventory-alerts/unusual-consumption/route';
+import '@/app/api/v1/inventory-alerts/aged-in-transit/route';
+import '@/app/api/v1/reorder-levels/route';
+import '@/app/api/v1/reorder-levels/[reorderLevelId]/retirement/route';
 import '@/app/api/v1/stock-movements/route';
 import '@/app/api/v1/inventory-reconciliations/route';
 import '@/app/api/v1/opening-inventory-batches/route';
@@ -339,6 +350,54 @@ import '@/app/api/v1/stock-returns/route';
 import '@/app/api/v1/damaged-stock/route';
 import '@/app/api/v1/customer-supplied-parts/route';
 import '@/app/api/v1/external-purchase-parts/route';
+// P1-32 preparatory slice — transfers, goods receipts, adjustments and counts.
+import '@/app/api/v1/stock-transfers/route';
+import '@/app/api/v1/stock-transfers/[transferId]/receipt/route';
+import '@/app/api/v1/stock-transfers/[transferId]/cancellation/route';
+import '@/app/api/v1/goods-receipts/route';
+import '@/app/api/v1/goods-receipts/[receiptId]/route';
+import '@/app/api/v1/goods-receipts/[receiptId]/posting/route';
+import '@/app/api/v1/items/[itemId]/cost-history/route';
+import '@/app/api/v1/stock-adjustments/route';
+import '@/app/api/v1/stock-adjustments/[adjustmentId]/approval/route';
+import '@/app/api/v1/stock-counts/route';
+import '@/app/api/v1/stock-counts/[countId]/route';
+import '@/app/api/v1/stock-counts/[countId]/lines/[itemId]/route';
+import '@/app/api/v1/stock-counts/[countId]/reconciliation/route';
+import '@/app/api/v1/stock-counts/[countId]/cancellation/route';
+// P1-32 preparatory slice 2 — item barcodes and packaging identifiers.
+import '@/app/api/v1/items/[itemId]/identifiers/route';
+import '@/app/api/v1/items/[itemId]/identifiers/[identifierId]/retirement/route';
+import '@/app/api/v1/items/[itemId]/internal-barcode/route';
+import '@/app/api/v1/items/[itemId]/label/route';
+import '@/app/api/v1/barcodes/[value]/route';
+// P1-32 preparatory slice 2 — item selling prices, the counter sale, and returns.
+import '@/app/api/v1/items/[itemId]/sale-prices/route';
+import '@/app/api/v1/counter-sales/route';
+import '@/app/api/v1/sales-returns/route';
+import '@/app/api/v1/returnable-quantities/route';
+// P1-32 preparatory slice 3b — material demand control, reference data and transfer
+// settlements.
+import '@/app/api/v1/material-requirements/route';
+import '@/app/api/v1/material-requirements/[requirementId]/route';
+import '@/app/api/v1/material-requirements/[requirementId]/approval/route';
+import '@/app/api/v1/material-requirements/[requirementId]/exceptions/route';
+import '@/app/api/v1/material-exceptions/[exceptionId]/decision/route';
+// P1-32 preparatory slice 3c: re-check and cancel a requirement; close and cancel a request.
+import '@/app/api/v1/material-requirements/[requirementId]/recheck/route';
+import '@/app/api/v1/material-requirements/[requirementId]/cancellation/route';
+import '@/app/api/v1/material-requests/[requestId]/closure/route';
+import '@/app/api/v1/material-requests/[requestId]/cancellation/route';
+import '@/app/api/v1/unit-conversions/route';
+import '@/app/api/v1/unit-conversions/[conversionId]/retirement/route';
+import '@/app/api/v1/vehicle-fluid-specifications/route';
+import '@/app/api/v1/vehicle-fluid-specifications/[specificationId]/confirmation/route';
+import '@/app/api/v1/vehicle-fluid-specifications/[specificationId]/retirement/route';
+import '@/app/api/v1/stock-transfers/[transferId]/discrepancy-resolution/route';
+import '@/app/api/v1/stock-transfer-settlements/[settlementId]/decision/route';
+// The two reads that let the second person reach a pending write-off.
+import '@/app/api/v1/stock-transfer-settlements/route';
+import '@/app/api/v1/stock-transfer-settlements/[settlementId]/route';
 
 // Phase 1-22 — billing, payment, delivery and warranty.
 //
@@ -348,6 +407,11 @@ import '@/app/api/v1/external-purchase-parts/route';
 // documents that agree with each other and disagree with the code.
 // `scripts/ci/check-route-registry-parity.mjs` is what catches that, and it named all
 // twenty of these before they were added.
+// P1-31 P-2: the live delivery a work order has, on the invoice read's own
+// shape one directory over. Without this import the operation is registered by
+// the route and ABSENT from the generated document — the false-green class
+// CSA-14 closed, which the P1-24 register reconciliation now catches.
+import '@/app/api/v1/work-orders/[workOrderId]/delivery/route';
 import '@/app/api/v1/work-orders/[workOrderId]/invoice/route';
 import '@/app/api/v1/work-orders/[workOrderId]/invoice-preview/route';
 import '@/app/api/v1/invoices/route';
@@ -362,13 +426,59 @@ import '@/app/api/v1/payments/[paymentId]/route';
 import '@/app/api/v1/payments/[paymentId]/allocations/route';
 import '@/app/api/v1/payment-methods/route';
 import '@/app/api/v1/deliveries/route';
+import '@/app/api/v1/deliveries/[deliveryId]/route';
 import '@/app/api/v1/deliveries/[deliveryId]/eligibility/route';
+import '@/app/api/v1/deliveries/[deliveryId]/status-history/route';
 import '@/app/api/v1/deliveries/[deliveryId]/authorized-receiver/route';
 import '@/app/api/v1/deliveries/[deliveryId]/checklist-results/route';
 import '@/app/api/v1/deliveries/[deliveryId]/signatures/route';
 import '@/app/api/v1/deliveries/[deliveryId]/completion/route';
 import '@/app/api/v1/deliveries/[deliveryId]/warranties/route';
+
+// P1-31 prerequisite P-9 — the delivery checklist TEMPLATE surface (PPD-12). Imported
+// for the reason every line above is: the registry is populated by import side effect,
+// so an unimported route is simply ABSENT from the generated document rather than
+// reported as missing.
+import '@/app/api/v1/delivery-checklist-templates/route';
+import '@/app/api/v1/delivery-checklist-templates/[templateId]/route';
+import '@/app/api/v1/delivery-checklist-templates/[templateId]/status/route';
+import '@/app/api/v1/delivery-checklist-templates/[templateId]/items/route';
+import '@/app/api/v1/delivery-checklist-templates/[templateId]/items/[itemId]/route';
+// P1-31 D-3 — the delivery-readiness queue. Imported for the same reason: the
+// registry is populated by import side effect, so an unimported route is simply
+// ABSENT from the generated document rather than reported as missing.
+import '@/app/api/v1/delivery-readiness/route';
+// P1-31 prerequisite P-6, the warranty read seam. Imported for the reason every
+// line here is: the registry is populated by import side effect, so an unimported
+// route is simply ABSENT from the generated document rather than reported missing.
+import '@/app/api/v1/warranties/route';
 import '@/app/api/v1/warranties/[warrantyId]/route';
+import '@/app/api/v1/warranties/[warrantyId]/status-history/route';
+
+// P1-31 prerequisite P-11, the report CONFIGURATION seam. Imported for the same
+// reason: an unimported route is simply ABSENT from the generated document rather
+// than reported as missing.
+import '@/app/api/v1/report-configurations/route';
+import '@/app/api/v1/report-configurations/[configurationId]/route';
+import '@/app/api/v1/report-configurations/[configurationId]/status/route';
+import '@/app/api/v1/report-configurations/[configurationId]/versions/route';
+import '@/app/api/v1/report-configurations/[configurationId]/versions/[versionId]/publish/route';
+
+// P1-31 prerequisite P-10, the warranty POLICY and COVERAGE seam (PPD-04). Imported
+// for the same reason: an unimported route is simply ABSENT from the generated
+// document rather than reported as missing.
+// P1-31 prerequisite P-17, the employee register. Imported for the same reason:
+// an unimported route is simply ABSENT from the generated document rather than
+// reported as missing.
+import '@/app/api/v1/org/employees/route';
+import '@/app/api/v1/org/employees/[employeeId]/route';
+import '@/app/api/v1/org/employees/[employeeId]/status/route';
+
+import '@/app/api/v1/warranty-policies/route';
+import '@/app/api/v1/warranty-policies/[policyId]/route';
+import '@/app/api/v1/warranty-policies/[policyId]/status/route';
+import '@/app/api/v1/warranty-policies/[policyId]/coverage-windows/route';
+import '@/app/api/v1/warranty-policies/[policyId]/coverage-windows/[coverageId]/status/route';
 
 // --- PRE-P1-29-BR-04 inspection-template authoring -------------------------
 // The authoring surface for `dia.inspection_templates`, `dia.template_versions`
@@ -401,11 +511,30 @@ import '@/app/api/v1/org/companies/[companyId]/route';
 import '@/app/api/v1/org/companies/[companyId]/status/route';
 import '@/app/api/v1/org/branches/route';
 import '@/app/api/v1/org/branches/[branchId]/route';
+import '@/app/api/v1/org/capacity/route';
+import '@/app/api/v1/org/capacity-alerts/route';
 import '@/app/api/v1/org/departments/route';
 import '@/app/api/v1/org/departments/[departmentId]/route';
 
+// Owner directive — the console's own account and security operation.
+import '@/app/api/v1/platform/account/password/route';
 import '@/app/api/v1/platform/organizations/route';
 import '@/app/api/v1/platform/organizations/[tenantId]/status/route';
+// P1-32-PRE-021..026 — the Platform Owner Console backend.
+import '@/app/api/v1/platform/session/route';
+import '@/app/api/v1/platform/organizations/[tenantId]/route';
+import '@/app/api/v1/platform/plans/route';
+import '@/app/api/v1/platform/plans/[planId]/route';
+import '@/app/api/v1/platform/organizations/[tenantId]/administrators/route';
+import '@/app/api/v1/platform/organizations/[tenantId]/branches/route';
+import '@/app/api/v1/platform/organizations/[tenantId]/companies/route';
+import '@/app/api/v1/platform/organizations/[tenantId]/subscriptions/route';
+import '@/app/api/v1/platform/organizations/[tenantId]/subscriptions/[subscriptionId]/cancellation/route';
+import '@/app/api/v1/platform/organizations/[tenantId]/charges/route';
+import '@/app/api/v1/platform/organizations/[tenantId]/charges/[chargeId]/void/route';
+import '@/app/api/v1/platform/organizations/[tenantId]/receipts/route';
+import '@/app/api/v1/platform/statistics/route';
+import '@/app/api/v1/platform/audit-events/route';
 
 const DOCUMENT_PATH = join(process.cwd(), 'docs', 'api', 'openapi.v1.json');
 

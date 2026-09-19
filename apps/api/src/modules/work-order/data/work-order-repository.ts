@@ -28,6 +28,8 @@
 import { Repository } from '@/server/db/repository';
 import type { DbHandle } from '@/server/db/transaction';
 import { buildPage, keysetFragment, type Page, type PageRequest } from '@/server/db/pagination';
+import { halfOpenLocalDayRange } from '@/server/db/period';
+import { toWorkOrderSearchTerms } from '../domain/work-order';
 
 export interface WorkOrderRow {
   readonly id: string;
@@ -96,6 +98,79 @@ export interface WorkOrderListFilter {
    * an oracle for another tenant's customer list.
    */
   readonly customerId?: string | undefined;
+  /**
+   * Narrows to a SET of catalog state codes (P1-31 D-3).
+   *
+   * Beside `state` rather than replacing it: `state` is the board's single-value
+   * filter and is a caller-supplied code, while this one is resolved by the
+   * service from `wo.work_order_states` and is never read from a request. The two
+   * AND together, which is well defined — a caller naming `state=closed` while the
+   * service resolved `['closed']` gets the same page either way.
+   *
+   * An EMPTY array matches nothing, deliberately. The readiness queue resolves the
+   * closed-and-not-cancellation codes from the live catalog, and a tenant whose
+   * catalog resolves none of them has no work order that can be handed over — so
+   * an empty page is the honest answer and `undefined` (meaning "no predicate")
+   * would silently widen it to every state.
+   */
+  readonly states?: readonly string[] | undefined;
+  /**
+   * Exact work-order number (P1-32). Digits are folded, so a number typed on an
+   * Arabic keyboard finds the same work order. Served by
+   * `uq_work_orders_active_display_number`.
+   */
+  readonly number?: string | undefined;
+  /**
+   * One free-text box (P1-32): part of the work-order number, part of the name of
+   * any party on its reception visit, part of any plate the vehicle has carried,
+   * or part of its VIN.
+   *
+   * A SELECTOR, like `customerId` — it narrows a result set the caller is already
+   * entitled to, and it is applied IN THE QUERY before the keyset window for the
+   * same reason: post-filtering a fetched page produces short pages and a
+   * `hasMore` that lies.
+   */
+  readonly q?: string | undefined;
+}
+
+/**
+ * What the report engine's status summary selects (P1-31 P-11).
+ *
+ * A separate type from `WorkOrderListFilter` rather than an extension of it: the
+ * board's bounds are optional INSTANTS compared closed on both ends, and these
+ * are required calendar DATES compared half-open in a named zone. Sharing one
+ * type would invite a caller to pass one where the other is meant, and the two
+ * disagree about the last microsecond of the last day.
+ */
+export interface WorkOrderStatusSummaryFilter {
+  readonly companyId: string;
+  readonly branchId: string;
+  /** Inclusive first day, `YYYY-MM-DD`, in `timezoneName`. */
+  readonly from: string;
+  /** EXCLUSIVE day, `YYYY-MM-DD` — the day after the last one reported. */
+  readonly toExclusive: string;
+  /** An `org.branches.timezone_name` value. Bound as a parameter, never inlined. */
+  readonly timezoneName: string;
+}
+
+/** One state's count over the whole scoped selection, not over a page. */
+export interface WorkOrderStateCountRow {
+  readonly state: string;
+  readonly total: number;
+}
+
+/** The aggregate and the page it accompanies, from one call. */
+export interface WorkOrderStatusSummaryRows {
+  readonly counts: readonly WorkOrderStateCountRow[];
+  readonly page: Page<WorkOrderRow>;
+}
+
+/** One job's parent work order, for a consumer that may not read `wo.jobs`. */
+export interface JobWorkOrderRow {
+  readonly jobId: string;
+  readonly workOrderId: string;
+  /** Null until the order is issued a document and the sequence allocates one. */
+  readonly displayNumber: string | null;
 }
 
 export interface JobRow {
@@ -511,6 +586,7 @@ export class WorkOrderRepository extends Repository {
     page: PageRequest
   ): Promise<Page<WorkOrderRow>> {
     const context = this.assertContext(db);
+    const terms = toWorkOrderSearchTerms({ number: filter.number, q: filter.q });
     const values: unknown[] = [
       context.principal.tenantId,
       filter.companyId,
@@ -520,6 +596,12 @@ export class WorkOrderRepository extends Repository {
       filter.openedFrom ?? null,
       filter.openedTo ?? null,
       filter.customerId ?? null,
+      filter.states === undefined ? null : [...filter.states],
+      terms.number,
+      terms.hasFreeText ? terms.numberFragment : null,
+      terms.nameFragment,
+      terms.plateFragment,
+      terms.vinFragment,
     ];
     const keyset = keysetFragment(
       page,
@@ -564,6 +646,44 @@ export class WorkOrderRepository extends Repository {
                    AND r.reception_visit_id = wo.work_orders.reception_visit_id
                    AND r.partner_id = $8
                    AND r.deleted_at IS NULL))
+          -- P1-31 D-3. The resolved state SET, applied in the query for the same
+          -- reason the customer predicate is: post-filtering a fetched page produces
+          -- short pages and a hasMore flag that lies. An EMPTY array matches nothing,
+          -- which is what a catalogue resolving no closed state must answer.
+          AND ($9::text[] IS NULL OR state = ANY($9::text[]))
+          -- P1-32. The exact number, digit-folded in the domain.
+          AND ($10::text IS NULL OR display_number = $10::text)
+          -- P1-32. The free-text box. $11 is NULL exactly when no box was sent.
+          -- Every arm is a correlated EXISTS rather than a join, for the reason the
+          -- BR-05 predicate above gives: a join would return the work order once per
+          -- party role or once per plate interval. An arm whose fragment reduced to
+          -- nothing is disabled by its own <> '' guard instead of being left to
+          -- match every row through LIKE '%%'.
+          AND ($11::text IS NULL OR (
+                display_number ILIKE '%' || $11::text || '%' ESCAPE '\\'
+             OR ($12::text <> '' AND EXISTS (
+                  SELECT 1
+                    FROM rec.reception_party_roles r
+                    JOIN crm.business_partners bp
+                      ON bp.tenant_id = r.tenant_id AND bp.id = r.partner_id
+                     AND bp.deleted_at IS NULL
+                   WHERE r.tenant_id = wo.work_orders.tenant_id
+                     AND r.reception_visit_id = wo.work_orders.reception_visit_id
+                     AND r.deleted_at IS NULL
+                     AND crm.normalize_name(bp.display_name)
+                         LIKE '%' || $12::text || '%' ESCAPE '\\'))
+             OR ($13::text <> '' AND EXISTS (
+                  SELECT 1
+                    FROM veh.plate_history ph
+                   WHERE ph.tenant_id = wo.work_orders.tenant_id
+                     AND ph.vehicle_id = wo.work_orders.vehicle_id
+                     AND ph.plate_normalized LIKE '%' || $13::text || '%'))
+             OR ($14::text <> '' AND EXISTS (
+                  SELECT 1
+                    FROM veh.vehicles v
+                   WHERE v.tenant_id = wo.work_orders.tenant_id
+                     AND v.id = wo.work_orders.vehicle_id
+                     AND v.vin_normalized LIKE '%' || $14::text || '%'))))
           ${keyset.predicate}
         ${keyset.order}
         ${keyset.limitClause}`,
@@ -586,6 +706,184 @@ export class WorkOrderRepository extends Repository {
     return buildPage(rows, page, WORK_ORDER_LIST_ORDER, (row) => ({
       sortValue: row.openedAt.toISOString(),
       id: row.id,
+    }));
+  }
+
+  /**
+   * The work orders OPENED in a calendar period in one branch, plus the count of
+   * each state over the whole selection (P1-31 P-11, the report engine).
+   *
+   * ## Two statements, and why the counts are not derived from the page
+   *
+   * A report shows a page of rows AND a total per state. Counting the page would
+   * answer for at most `limit` rows and call it the branch's position, which is
+   * the P1-28 round-two defect — a paged read answering for the whole set. The
+   * aggregate therefore runs over the SAME predicate without the keyset window,
+   * in SQL, so it is the count of the selection and not of a page.
+   *
+   * States with no rows are absent from the aggregate — `GROUP BY` cannot emit a
+   * group with no members. Filling them in at zero needs the tenant's state
+   * catalogue, which is the service's job and not this query's.
+   *
+   * ## The period is HALF-OPEN, and the existing filter could not be reused
+   *
+   * `listWorkOrders` compares `opened_at <= openedTo`, a CLOSED upper bound, and
+   * that is correct for the board's instant-valued filter. A calendar report
+   * needs `[from, to)`: a closed bound over a DAY either includes an instant that
+   * belongs to the next day or excludes the last microsecond of the last one,
+   * and both are wrong in a way that only shows up as a count that does not add
+   * up. `to` is therefore the EXCLUSIVE day — the day after the last one
+   * reported — and the run service and the route both say so to the caller.
+   *
+   * ## The bounds are resolved in the BRANCH's timezone
+   *
+   * `opened_at` is `timestamptz`; a calendar day is not. `$4::date AT TIME ZONE
+   * $6` is local midnight in the named zone expressed as an instant, so "orders
+   * opened on the 3rd" means the 3rd where the workshop is, not where the server
+   * is. The zone name is a bind PARAMETER, never interpolated, and it reaches
+   * this method from `org.branches.timezone_name`, which
+   * `fk_branches_timezone_name` constrains to a `shared.timezones` row.
+   *
+   * That predicate now comes from `halfOpenLocalDayRange` (`server/db/period.ts`)
+   * rather than being written here. It is the SAME expression, moved: the Owner's
+   * D-17 requires every report period to be converted CONSISTENTLY, and a second
+   * dataset writing the comparison from memory is how two reports over one period
+   * come to disagree. The values and their positions are unchanged, so this
+   * method's behaviour is unchanged and engine slice 1's suite is what says so.
+   */
+  async statusSummary(
+    db: DbHandle,
+    filter: WorkOrderStatusSummaryFilter,
+    page: PageRequest
+  ): Promise<WorkOrderStatusSummaryRows> {
+    const context = this.assertContext(db);
+    const values: unknown[] = [
+      context.principal.tenantId,
+      filter.companyId,
+      filter.branchId,
+      filter.from,
+      filter.toExclusive,
+      filter.timezoneName,
+    ];
+    // One predicate, written once and used by both statements. A second copy is
+    // how an aggregate and its rows come to answer for different selections.
+    const scope = `tenant_id = $1 AND company_id = $2 AND branch_id = $3
+          AND deleted_at IS NULL
+          AND ${halfOpenLocalDayRange('opened_at', 4, 5, 6)}`;
+
+    const counts = await this.run<{ state: string; total: number }>(
+      db,
+      `SELECT state, count(*)::int AS total
+         FROM wo.work_orders
+        WHERE ${scope}
+        GROUP BY state
+        ORDER BY state`,
+      values
+    );
+
+    const keyset = keysetFragment(
+      page,
+      { sort: 'opened_at', id: 'id' },
+      WORK_ORDER_LIST_ORDER,
+      values.length + 1
+    );
+    const result = await this.run<{
+      id: string;
+      company_id: string;
+      branch_id: string;
+      reception_visit_id: string;
+      vehicle_id: string;
+      kind: string;
+      state: string;
+      parts_forward_state: string;
+      display_number: string | null;
+      opened_at: Date;
+      created_by: string | null;
+      record_version: number;
+    }>(
+      db,
+      `SELECT id, company_id, branch_id, reception_visit_id, vehicle_id, kind, state,
+              parts_forward_state, display_number, opened_at, created_by, record_version
+         FROM wo.work_orders
+        WHERE ${scope}
+          ${keyset.predicate}
+        ${keyset.order}
+        ${keyset.limitClause}`,
+      [...values, ...keyset.values]
+    );
+    const rows: WorkOrderRow[] = result.rows.map((row) => ({
+      id: row.id,
+      companyId: row.company_id,
+      branchId: row.branch_id,
+      receptionVisitId: row.reception_visit_id,
+      vehicleId: row.vehicle_id,
+      kind: row.kind,
+      state: row.state,
+      partsForwardState: row.parts_forward_state,
+      displayNumber: row.display_number,
+      openedAt: row.opened_at,
+      createdBy: row.created_by,
+      recordVersion: row.record_version,
+    }));
+    return {
+      counts: counts.rows.map((row) => ({ state: row.state, total: row.total })),
+      page: buildPage(rows, page, WORK_ORDER_LIST_ORDER, (row) => ({
+        sortValue: row.openedAt.toISOString(),
+        id: row.id,
+      })),
+    };
+  }
+
+  /**
+   * Which work order each of these jobs belongs to (P1-31 P-11, engine slice 2).
+   *
+   * BATCHED — one statement for a whole page. A per-row lookup would make any
+   * consumer that lists jobs an N+1, which is the reason `jobsWithOpenSession` on
+   * the technician side is batched too.
+   *
+   * Scoped to ONE company and branch rather than to the tenant alone. The caller
+   * is reporting on a branch; a job id from a sibling branch must resolve to
+   * nothing here rather than quietly widening the answer, and the composite
+   * `ix_jobs_work_order` is on exactly this key. RLS narrows the statement again
+   * underneath, and the two are not the same control: RLS answers "may this
+   * connection see the row", this predicate answers "is the row in the reported
+   * branch".
+   *
+   * `display_number` is nullable — the number is allocated by the sequence when
+   * the order is issued a document, not when it is opened — so a caller receives
+   * the id always and the label sometimes.
+   *
+   * Neither side is filtered on `deleted_at`, deliberately. This resolves an
+   * ATTRIBUTION for a row the caller already holds: hiding the work order of a
+   * soft-deleted job would leave recorded labour attached to nothing, which reads
+   * as missing data rather than as a retired job.
+   */
+  async workOrdersForJobs(
+    db: DbHandle,
+    jobIds: readonly string[],
+    scope: { readonly companyId: string; readonly branchId: string }
+  ): Promise<readonly JobWorkOrderRow[]> {
+    if (jobIds.length === 0) return [];
+    const context = this.assertContext(db);
+    const result = await this.run<{
+      job_id: string;
+      work_order_id: string;
+      display_number: string | null;
+    }>(
+      db,
+      `SELECT j.id AS job_id, j.work_order_id, w.display_number
+         FROM wo.jobs j
+         JOIN wo.work_orders w
+           ON w.tenant_id = j.tenant_id AND w.company_id = j.company_id
+          AND w.branch_id = j.branch_id AND w.id = j.work_order_id
+        WHERE j.tenant_id = $1 AND j.company_id = $2 AND j.branch_id = $3
+          AND j.id = ANY($4::uuid[])`,
+      [context.principal.tenantId, scope.companyId, scope.branchId, [...new Set(jobIds)]]
+    );
+    return result.rows.map((row) => ({
+      jobId: row.job_id,
+      workOrderId: row.work_order_id,
+      displayNumber: row.display_number,
     }));
   }
 

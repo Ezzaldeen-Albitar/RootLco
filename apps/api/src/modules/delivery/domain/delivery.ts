@@ -48,6 +48,48 @@ export const CHECKLIST_SATISFYING_OUTCOMES = Object.freeze(['passed', 'waived'] 
 
 /** `ck_delivery_signatures_signer_role`. */
 export const SIGNER_ROLES = Object.freeze(['receiver', 'delivering_employee', 'witness'] as const);
+
+/**
+ * The document category a receiver's identity evidence must be filed under
+ * (P1-31 Owner decision D-18).
+ *
+ * A platform row seeded by `supabase/seeds/05_shared_reference.sql` with the
+ * `identity_document` purpose. Evidence filed under any other category — a
+ * signature, or a reception category that accepts the same media — is refused,
+ * because the decision forbids using an unrelated category in its place.
+ */
+export const RECEIVER_IDENTITY_EVIDENCE_CATEGORY = 'delivery_receiver_identity';
+
+/** The facts about a document's category that the identity-evidence rule reads. */
+export interface EvidenceCategoryFacts {
+  readonly code: string;
+  readonly scope: string;
+  readonly status: string;
+  readonly deleted: boolean;
+}
+
+/**
+ * Whether a document's category is the approved identity-evidence category.
+ *
+ * All four facts are required, and a missing category fails closed:
+ *
+ * - the code is {@link RECEIVER_IDENTITY_EVIDENCE_CATEGORY};
+ * - the scope is `platform`, because a tenant override that reuses the code is a
+ *   category the tenant defined, not the one the Owner approved;
+ * - the status is `active`, because a disabled category accepts no new evidence;
+ * - it is not soft-deleted.
+ */
+export function isApprovedIdentityEvidenceCategory(
+  category: EvidenceCategoryFacts | null
+): boolean {
+  return (
+    category !== null &&
+    category.code === RECEIVER_IDENTITY_EVIDENCE_CATEGORY &&
+    category.scope === 'platform' &&
+    category.status === 'active' &&
+    !category.deleted
+  );
+}
 export type SignerRole = (typeof SIGNER_ROLES)[number];
 
 /**
@@ -96,6 +138,37 @@ export const OVERRIDABLE_BLOCKERS: readonly {
 
 /** Column widths, so a caller gets a 422 rather than a driver truncation error. */
 export const MAX_REASON = 2000;
+
+/**
+ * The checklist template vocabulary (P1-31 prerequisite P-9, **PPD-12**).
+ *
+ * `CHECKLIST_TEMPLATE_STATUSES` transcribes
+ * `ck_delivery_checklist_templates_status`, and `CHECKLIST_CODE` transcribes both
+ * `ck_delivery_checklist_templates_code` and
+ * `ck_delivery_checklist_template_items_code`, which are the same expression. They
+ * are mirrored here so a bad value is a 422 naming the field rather than a `23514`
+ * naming a constraint; the database remains the authority in every case.
+ *
+ * `name` and `label` are unbounded `text` in the DDL, so the two ceilings below are
+ * a policy of this surface rather than a transcription, and they are stated as such.
+ * 200 is the width `MAX_CATALOGUE_NAME` uses for the same kind of operator-authored
+ * label elsewhere in the platform.
+ */
+export const CHECKLIST_TEMPLATE_STATUSES = Object.freeze(['active', 'inactive'] as const);
+export type ChecklistTemplateStatus = (typeof CHECKLIST_TEMPLATE_STATUSES)[number];
+export const CHECKLIST_CODE = /^[a-z][a-z0-9_]{1,62}$/;
+export const MAX_TEMPLATE_NAME = 200;
+export const MAX_ITEM_LABEL = 200;
+/**
+ * `sort_order` is `integer` and is rendered as a JSON number.
+ *
+ * The decimal-string rule this codebase applies to money exists because `numeric`
+ * cannot survive IEEE-754; an `integer` can, and this column is a display order and
+ * not an amount. The bounds are `integer`'s own, so an out-of-range value is a 422
+ * naming the field rather than a numeric overflow surfacing as a server fault.
+ */
+export const MIN_SORT_ORDER = -2147483648;
+export const MAX_SORT_ORDER = 2147483647;
 /** `veh.odometer_readings.unit` — `sal.complete_delivery` defaults to `'km'`. */
 export const ODOMETER_UNITS = Object.freeze(['km', 'mi'] as const);
 export type OdometerUnit = (typeof ODOMETER_UNITS)[number];
