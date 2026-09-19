@@ -279,8 +279,8 @@ expires.** <!-- auth.forgot.submittedDetail -->
   confirmation that a message was sent to you.
 - In this local environment the message is not delivered to any real inbox. It appears in the local
   mailbox at `http://127.0.0.1:54324`.
-- The local mail service is configured to send at most two messages an hour, so repeated requests in
-  quick succession will not all produce a message.
+- The local mail service is configured to send at most thirty messages an hour, so a long run of
+  repeated requests will eventually stop producing a message.
 - There is no administrator button that sets a password for you and no code an administrator can
   read out. The reset link is the only route.
 
@@ -564,7 +564,7 @@ records. Do not expect an automatic response to a fault.
 - An invited person sets a password, then an administrator activates the account; until then sign-in
   is refused. (1.5)
 - A reset or invitation link works once, expires, and in this environment arrives only in the local
-  mailbox at `http://127.0.0.1:54324`; at most two messages an hour are sent. (1.5, 1.6)
+  mailbox at `http://127.0.0.1:54324`; at most thirty messages an hour are sent. (1.5, 1.6)
 - Sessions are not renewed silently; when a session ends, unsaved work on the screen is lost. (1.8)
 - The profile screen is read-only for most accounts, and shows companies and branches as references
   rather than names. (1.10)
@@ -638,8 +638,12 @@ Sources for Part 1 (read at develop commit beebc6c28c873f498fe0503161eb53caa107a
 - docs/phase-1/phase-1-26/ci-evidence.md:189 (a session that ends unexpectedly: sign in again is the
   whole remedy).
 - docs/phase-1/phase-1-1/environment-matrix.md:11, :17-20 and ADR-012 (Local is the only environment).
-- supabase/config.toml [local_smtp] :114-117 (mailbox on 54324), [auth] jwt_expiry :174 (3600),
-  [auth.rate_limit] email_sent :208 (2 per hour).
+- supabase/config.toml [local_smtp] :114-117 (mailbox on 54324), [auth] jwt_expiry :207 (3600),
+  [auth.rate_limit] email_sent :250 (30 per hour). Re-anchored 2026-09-19: the two hourly-limit
+  sentences above said "two an hour", which was the committed value until the local harness raised
+  it to 30 with the reason written beside the setting; the jwt_expiry and email_sent line numbers
+  moved with that same change. The claims were re-read at the committed lines, not re-based by
+  offset.
 - docs/phase-1/phase-1-31/acceptance-plan.md §1.4-1.5 (mailbox, ports 3100/3000/54324) and
   docs/phase-1/phase-1-31/acceptance-record.md lines 101, 139-144 (invitation link read from the local
   mailbox; a login before activation is refused) — cited for behaviour only, no verification claimed.
