@@ -111,6 +111,12 @@ openai_api_key = "env(OPENAI_API_KEY)"
 
 # Email testing server. Emails sent with the local dev setup are not actually sent - rather, they
 # are monitored, and you can view the emails that would have been sent from the web interface.
+#
+# LEFT ENABLED DELIBERATELY, and it is where mail still goes. See
+# `[auth.email.smtp]` below, whose `enabled` flag decides whether auth mail is
+# captured here or handed to an outside relay; that flag is `false`, so this
+# mailbox is the destination today. Nothing here is changed by that choice, so
+# turning the flag back off restores local-only mail with no other edit.
 [local_smtp]
 enabled = true
 # Port to use for the email testing server web interface.
@@ -285,14 +291,54 @@ otp_length = 6
 otp_expiry = 3600
 
 # Use a production-ready SMTP server
-# [auth.email.smtp]
-# enabled = true
-# host = "smtp.sendgrid.net"
-# port = 587
-# user = "apikey"
-# pass = "env(SENDGRID_API_KEY)"
-# admin_email = "admin@email.com"
-# sender_name = "Admin"
+#
+# PREPARED, NOT IN FORCE. `enabled = false` below, so nothing about today's
+# behaviour changes: the auth service keeps handing every message to the local
+# mailbox on 54324 and nothing leaves the machine. Setting that one flag to
+# `true` and restarting is the whole activation step, and it is deliberately a
+# separate act with a separate decision behind it — because once it is true,
+# confirmation, recovery and invitation mail LEAVES THIS MACHINE and arrives in
+# real inboxes, including inboxes belonging to people who did not ask to be
+# part of a test. The local mailbox above (`[local_smtp]`) is left enabled and
+# untouched either way, so the flag is also the whole way back.
+#
+# No account and no password is written here. The five string values are
+# `env(...)` references that the Supabase CLI expands from an untracked `.env`,
+# which keeps the credential out of the repository entirely. Two things about
+# that are worth knowing before the flag is flipped:
+#
+#   - The env file is resolved from the directory the CLI is RUN IN, not from
+#     `--workdir`. Start the stack from the repository root or the references
+#     will not expand.
+#   - An absent variable is NOT caught. The unexpanded text is a non-empty
+#     string, so the config still parses and the relay simply becomes a
+#     hostname that does not resolve; the failure appears as auth mail that
+#     never sends rather than as a refusal to start. `port` is the one
+#     exception and it is why that field is a literal below: a string there
+#     fails the number field and refuses the whole file, which would break
+#     every machine and every CI job that has no `.env` — including the ones
+#     that never send mail at all.
+#
+# The key names are the ones this pinned CLI defines for the block (enabled,
+# host, port, user, pass, admin_email, sender_name).
+[auth.email.smtp]
+# The switch, and the only line activation changes.
+enabled = false
+# Relay hostname.
+host = "env(SMTP_HOST)"
+# Relay port, a literal for the reason given above. 465 is implicit TLS, which
+# is what `scripts/dev/check-smtp.mjs` speaks.
+port = 465
+# The account authenticating to the relay.
+user = "env(SMTP_USER)"
+# The account's password, held only in the untracked root `.env`.
+pass = "env(SMTP_PASS)"
+# The From address. A relay that only accepts mail from its own authenticated
+# account will rewrite the sender to that account regardless of what is set
+# here, so keep this equal to the authenticating account to avoid a mismatch.
+admin_email = "env(SMTP_ADMIN_EMAIL)"
+# The display name shown beside the From address.
+sender_name = "env(SMTP_SENDER_NAME)"
 
 # Uncomment to customize email template
 # [auth.email.template.invite]

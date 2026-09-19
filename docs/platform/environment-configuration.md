@@ -319,13 +319,13 @@ inputs to a command you run by hand or that CI runs for you.
 
 ## 13. Inventory — values that are not the application's
 
-| Name                                                                                             | Where                              | Status                                                                                                         |
-| ------------------------------------------------------------------------------------------------ | ---------------------------------- | -------------------------------------------------------------------------------------------------------------- |
-| `SUPABASE_INTERNAL_URL`                                                                          | `docker-compose.yml:53`            | **Dead.** Substituted into the container's environment; **no source file reads it**. Compose-level only.       |
-| `OPENAI_API_KEY`                                                                                 | `supabase/config.toml:110`         | Supabase Studio's assistant feature. Not the application's, and the feature is not used.                       |
-| `SENDGRID_API_KEY`, `SUPABASE_AUTH_SMS_TWILIO_AUTH_TOKEN`, `SUPABASE_AUTH_EXTERNAL_APPLE_SECRET` | `supabase/config.toml:251,303,335` | Supabase features that are **not enabled**. No code path reaches any of them.                                  |
-| `S3_HOST`, `S3_REGION`, `S3_ACCESS_KEY`, `S3_SECRET_KEY`                                         | `supabase/config.toml:413-419`     | The Supabase CLI's own storage settings, not the application's. The app's names are the `STORAGE_S3_*` family. |
-| `SECRET_VALUE`                                                                                   | `supabase/config.toml:57,395`      | An illustrative `env()` reference in the CLI's own documentation comments.                                     |
+| Name                                                                         | Where                          | Status                                                                                                         |
+| ---------------------------------------------------------------------------- | ------------------------------ | -------------------------------------------------------------------------------------------------------------- |
+| `SUPABASE_INTERNAL_URL`                                                      | `docker-compose.yml:53`        | **Dead.** Substituted into the container's environment; **no source file reads it**. Compose-level only.       |
+| `OPENAI_API_KEY`                                                             | `supabase/config.toml:110`     | Supabase Studio's assistant feature. Not the application's, and the feature is not used.                       |
+| `SUPABASE_AUTH_SMS_TWILIO_AUTH_TOKEN`, `SUPABASE_AUTH_EXTERNAL_APPLE_SECRET` | `supabase/config.toml:427,459` | Supabase features that are **not enabled**. No code path reaches either of them.                               |
+| `S3_HOST`, `S3_REGION`, `S3_ACCESS_KEY`, `S3_SECRET_KEY`                     | `supabase/config.toml:413-419` | The Supabase CLI's own storage settings, not the application's. The app's names are the `STORAGE_S3_*` family. |
+| `SECRET_VALUE`                                                               | `supabase/config.toml:57,395`  | An illustrative `env()` reference in the CLI's own documentation comments.                                     |
 
 ---
 
@@ -470,3 +470,80 @@ which is why the three names in section 3 do not appear here.
   names of `apps/api/src/config/env.ts` and `apps/web/src/lib/env.ts` to the reserved-settings
   guard, where a shape it cannot see would shrink the set instead of failing; a floor on the number
   of names extracted from each is what refuses that silently.
+
+---
+
+## 17. Outbound mail for the local acceptance environment
+
+**Mail is local-only, and this section does not change that.** Every message the auth service
+produces — confirmation, recovery, invitation — is captured by the local mailbox on 54324
+(`supabase/config.toml:120`, `[local_smtp]`) and nothing leaves the machine. That is the default, it
+is what every acceptance run so far has measured, and it is still true after this section.
+
+What is new is that the alternative is now written down rather than absent.
+`supabase/config.toml:324` carries an `[auth.email.smtp]` block with `enabled = false`
+(`supabase/config.toml:326`). Setting that one flag to `true` and restarting the stack is the entire
+activation step: from that moment the auth service hands its messages to an outside relay and they
+arrive in real inboxes. Setting it back to `false` and restarting is the entire way back.
+
+The five string values are `env(...)` references, so the account and its password are not in this
+repository and cannot be. The Supabase CLI expands them from an **untracked `.env`**, matched by the
+`.env` rule in `.gitignore`. There is no template for this file and no example value: whoever
+configures a machine writes it there and nowhere else. Two properties of that expansion are worth
+knowing before the flag is flipped.
+
+- **The env file is resolved from the directory the CLI is run in**, not from `--workdir`. Starting
+  the stack from anywhere other than the repository root leaves the references unexpanded.
+- **An absent variable is not caught.** The unexpanded text is a non-empty string, so the file still
+  parses and the relay simply becomes a hostname that does not resolve — the failure shows up as
+  auth mail that never sends, not as a refusal to start. `port` is the exception, and it is why that
+  one field is a literal rather than a reference: a string there fails the number field and the CLI
+  refuses the whole file with `ProjectConfigParseError`, which would stop every machine and every CI
+  job that has no `.env`, including the ones that send no mail at all.
+
+| Name               | Config key                        | Purpose                                                                             |
+| ------------------ | --------------------------------- | ----------------------------------------------------------------------------------- |
+| `SMTP_HOST`        | `auth.email.smtp.host:328`        | Hostname of the relay the auth service hands mail to.                               |
+| `SMTP_PORT`        | not referenced by the config      | Relay port for `scripts/dev/check-smtp.mjs` only; the config carries a literal 465. |
+| `SMTP_USER`        | `auth.email.smtp.user:333`        | The account that authenticates to the relay.                                        |
+| `SMTP_PASS`        | `auth.email.smtp.pass:335`        | That account's password. Secret. The only one of the six that is.                   |
+| `SMTP_ADMIN_EMAIL` | `auth.email.smtp.admin_email:339` | The From address on every message the auth service sends.                           |
+| `SMTP_SENDER_NAME` | `auth.email.smtp.sender_name:341` | The display name shown beside that From address.                                    |
+
+Six names, not five: `SMTP_PASS` is the secret and the other five are ordinary settings. Four of the
+six are read by the configuration; `SMTP_PORT` is read only by the relay check, and the port the
+auth service uses is the literal on `supabase/config.toml:331`. Keep the two equal, because nothing
+compares them.
+
+`scripts/dev/check-smtp.mjs` reads five of them — everything except `SMTP_ADMIN_EMAIL`, because it
+builds its own envelope — and speaks SMTP to the relay directly. It needs no container and no
+running stack, which is what makes it usable for proving a relay while an acceptance campaign is in
+progress. It sends one real message each time it is run.
+
+### Gmail specifics, if the relay is a Gmail account
+
+- **The sender is rewritten.** Gmail delivers as the authenticated account regardless of what
+  `admin_email` says. Setting that name to anything other than the account is not an error the CLI
+  will catch; it simply has no effect on what recipients see. Keep the two equal so the
+  configuration and the delivered mail agree.
+- **An ordinary account password will not work.** Gmail requires an application-specific password
+  generated for the account, and the account must have two-step verification enabled before one can
+  be created. A rejected password is reported by the server at the AUTH step and nowhere else.
+- **Sending is rate-limited by the provider, not by this repository.** A free Gmail account carries a
+  daily recipient ceiling, and a burst of recovery mail from a test run counts against it. The
+  per-hour allowance in `[auth.rate_limit] email_sent` limits what the auth service will attempt; it
+  does not raise what the provider will accept.
+
+### The open question this does not settle
+
+The Platform Owner account keeps the address it already has — that is decided, and nothing in this
+change alters it. What is **not** established is whether that address can receive mail.
+
+Half of that question has an answer. The `rootlco.com` domain publishes mail-exchanger records
+(`mx1.hostinger.com` priority 5, `mx2.hostinger.com` priority 10, resolved 2026-09-19) and an SPF
+record naming the same provider, so mail addressed to the domain has somewhere to be delivered.
+That is a fact about the domain, not about the mailbox: whether the specific Owner address exists on
+that server is answered only by sending to it and watching for a delivery-failure notice. Until a
+message is seen to arrive, recovery for that account should be treated as unverified — a relay
+accepting a message is not a mailbox receiving one, and an account whose recovery mail silently
+disappears is recoverable only by a database-level intervention.
