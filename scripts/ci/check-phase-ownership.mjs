@@ -352,6 +352,60 @@ export const PROFILES = {
       supabase: 'nor any other database change',
     },
   },
+  /*
+   * The LOCAL acceptance harness, which is the one thing in this repository
+   * that belongs to no phase because every phase is accepted ON it.
+   *
+   * `supabase/config.toml` and the mail/auth templates it names are the local
+   * identity stack: the site URL a recovery link is built from, the redirect
+   * allow-list that link must land inside, and the local mail limits a human
+   * testing the flow runs into. Every phase profile in this file forbids the
+   * `supabase` bucket BY NAME and says so in the same words — config.toml and
+   * the local bootstrap are their own review — so when the harness itself is
+   * broken, no lane may repair it. That is correct, and it leaves a gap: the
+   * review those profiles defer to has to exist. This is it.
+   *
+   * The precedent for a lane adding the profile it travels under is P1-30 A0,
+   * which added `p1-30-frontend` and `p1-30-backend` on the branch they judge.
+   * A gate whose first run is against its own diff is a gate that has run.
+   */
+  'acceptance-harness': {
+    why:
+      'the LOCAL acceptance harness ONLY — the Supabase local configuration and the mail and ' +
+      'auth templates it names, plus the tooling, tests and documentation that prove them. It ' +
+      'belongs to no phase, and exists because every phase profile forbids the `supabase` ' +
+      'bucket by name: the review they defer to had nowhere to happen',
+    allowed: ['supabase', 'tooling', 'tests', 'docs', 'rootConfig'],
+    forbidden: {
+      // Written as one refusal in seven clauses on purpose. A harness repair is
+      // the most tempting carrier in the repository — it is urgent, it is
+      // reviewed by whoever is unblocking themselves, and it touches the file
+      // that decides how a credential link is built. A profile that opened even
+      // one product bucket here would be a lane with no reviewer.
+      apiSource:
+        'a harness repair must not smuggle product: the local identity configuration is not a ' +
+        'place to change how the application behaves. API source belongs to the phase that owns it',
+      apiConfig:
+        'nor API workspace configuration — a dependency or compiler move is its own review, and a ' +
+        'broken local link is not an argument for one',
+      web:
+        'nor the web tree. If the harness repair reveals that a page mishandles the link it is ' +
+        'now delivered correctly, that is a second change on its own branch, reviewed as Frontend',
+      webGenerated:
+        'the harness publishes no operation, so the generated Frontend contract manifest cannot ' +
+        'move; a regenerated manifest here would mean something else changed',
+      webContract:
+        'nor a contract mirror, for the same reason: no operation, no exhaustiveness assertion to ' +
+        'satisfy',
+      migrations:
+        'a harness repair must not change a migration. Configuring how the local stack starts and ' +
+        'changing what the schema IS are different questions with different reviewers',
+      dbSeeds:
+        'nor a seed. A seed is shipping data with its own gate and its own lane ' +
+        '(`p1-09-database-seed`); declaring one under [db.seed] is a harness change, writing one ' +
+        'is not',
+    },
+  },
   'api-boundary': {
     why: 'the pre-P1-26 API file-boundary remediation',
     allowed: [

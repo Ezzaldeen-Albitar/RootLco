@@ -135,6 +135,11 @@
       "why": "an upstream advisory remediation — the npm manifests in every workspace that declares an affected package, the single root lockfile, and the maintenance record"
     },
     {
+      "branchPrefix": "chore/acceptance-harness-",
+      "profile": "acceptance-harness",
+      "why": "The LOCAL acceptance harness belongs to no phase, because every phase is accepted on it: supabase/config.toml and the mail and auth templates it names decide how a local credential link is built and where it may land, and every phase profile forbids the supabase bucket by name precisely so that question gets its own review. This is that review. Listed among the other chore/ rules, all of which belong to no phase; no existing prefix is a prefix of this one and this one is a prefix of none, so first-match ordering is unchanged for every existing branch."
+    },
+    {
       "branchPrefix": "feature/pre-p1-29-backend-",
       "profile": "pre-p1-29-backend",
       "why": "The Backend lane of PRE-P1-29. Listed BEFORE the initiative branch so a lane branch is judged by its lane rather than by the wider integration profile — first match wins, and the narrower rule must be reachable."
