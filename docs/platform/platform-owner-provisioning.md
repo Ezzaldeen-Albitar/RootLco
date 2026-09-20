@@ -13,13 +13,16 @@ is the supported procedure, not a record of one.
 **No credential appears in this document.** No password, key, token or example value of any of them
 is written here, and none may be added.
 
-**One dated exception, recorded because it is true.** On the local acceptance environment the first
+**One dated exception, recorded because it is true.** On the local acceptance environment a
 platform-authority account was created by a direct insert on a privileged database connection,
-before `add-platform-operator.mjs` existed — at that time genesis was one-time and the grant script
-refused an account holding nothing, so there was no supported path for a second holder and the gap
-was bridged by hand. That act is not repeatable through this document and is not a procedure: it is
-history, stated so nobody reads section 1 and concludes it never happened. No address and no
-credential from it is written here.
+outside all three scripts, before `add-platform-operator.mjs` existed. At that time the only
+supported paths were genesis, which refuses the moment an unrevoked grant belongs to another
+account, and the grant script, which refuses an account holding no grant at all — so an account
+that neither script would admit was seated by hand. That act is not repeatable through this
+document and is not a procedure: it is history, stated so nobody reads section 1 and concludes it
+never happened. Which holder it was, and whether genesis had run before it, is not recorded here
+because this document states only what it can cite. No address and no credential from it is
+written here.
 
 ---
 
@@ -135,17 +138,22 @@ proved and the run is refused.
    the single command and unset it immediately. It is never a command-line argument, never logged
    and never written to the evidence file. With no terminal attached and no value supplied, the run
    is refused.
-2. **The proved identity is resolved in the database**, inside the transaction, to an account that
+2. **The transaction opens and takes the address lock** — the same advisory lock the product's own
+   invitation path takes, before the first read of the address, so a concurrent invitation of that
+   address cannot be handed the same identity.
+3. **The proved identity is resolved in the database**, inside that transaction, to an account that
    is `active`, lives in the operators' home tenant, and holds at least one unrevoked platform
-   grant. Anything else is refused.
-3. **The new owner's identity is found or invited** at the provider, and the address is serialized
-   with the same advisory lock the product's own invitation path takes, so a concurrent invitation
-   of that address cannot be handed the same identity.
-4. **One transaction writes** the new account in the home tenant (`active`, with its status-history
-   row and **no tenant role of any kind**), one grant per requested code with `granted_by` set to the
-   grantor's account, and `platform.operator.authority_granted` in the home tenant naming the
-   grantor, the new account and the codes — identifiers only.
-5. **The same rules are asserted again by SQL inside that transaction**, over the rows just written
+   grant. The requested set and the new owner's address are checked next. Anything else is refused,
+   and every one of these refusals happens **before the provider is written to**, so a refused run
+   sends no invitation.
+4. **The new owner's identity is found or invited** at the provider — reused when it exists and
+   belongs to no account, invited otherwise — while the lock is held, which is the order the
+   product's invitation path uses.
+5. **The same transaction writes** the new account in the home tenant (`active`, with its
+   status-history row and **no tenant role of any kind**), one grant per requested code with
+   `granted_by` set to the grantor's account, and `platform.operator.authority_granted` in the home
+   tenant naming the grantor, the new account and the codes — identifiers only.
+6. **The same rules are asserted again by SQL inside that transaction**, over the rows just written
    rather than over the variables that wrote them. A disagreement rolls everything back.
 
 **Which codes the new owner gets.** `--codes a,b,…` names them; omitting the flag requests the
@@ -171,8 +179,10 @@ a subset of what the grantor holds.
 - **An address belonging to an account in any other tenant** — an organisation's own user does not
   become a platform owner through this path.
 
-**Partial failure, and the remedy.** The provider identity is established before the transaction
-opens, because the account row needs its subject. If the transaction then fails, the script deletes
+**Partial failure, and the remedy.** The provider identity is established inside the transaction —
+after every refusal above, because the account row needs its subject and nothing before that point
+should reach the provider — but the provider is not part of that transaction, so a rollback does not
+undo it. If the transaction then fails, the script deletes
 **exactly the identity this run created**, by the id this run was handed — never by address, so a
 pre-existing identity that happens to share one is never touched. An identity that already existed
 is never deleted. If the deletion itself fails, the script prints the identity id and says plainly
@@ -188,9 +198,10 @@ folded in as a flag, and there is no supported revocation procedure in this repo
 **Always dry-run first.** All three scripts accept `--dry-run`, and in that mode they read, print
 what a real run would do, and write nothing to the database: no row is inserted, no audit record is
 appended and no evidence file is written. One caveat specific to the addition script: a dry run
-still proves the grantor at the identity provider, and if the new owner's identity did not exist it
-is invited and kept — the provider is not a transaction, and a dry run that deleted it again would
-send a second invitation on the real run.
+still proves the grantor at the identity provider, and — if it passed every refusal and the new
+owner's identity did not already exist — that identity is invited and kept. The provider is not a
+transaction, and a dry run that deleted it again would send a second invitation on the real run.
+The run says so on its last line.
 
 The inputs each script reads are listed in its own header comment, and they are named there rather
 than repeated here so there is one list to keep correct:
@@ -290,8 +301,9 @@ No password is ever set, sent or seen by the platform owner, for anybody.
   `granted_by`, and the no-op exit.
 - `tests/ci/platform-grant-base-entitlement.test.ts` — the enumeration of the three writers of
   `iam.platform_grants`, and every refusal above driven as a pure function.
-- `tests/backend/p1-32-pre-od-add-platform-operator.test.ts` — the addition proved on a database
-  replayed from the committed migrations and seeds.
+- `tests/backend/p1-29-w9-platform-genesis.test.ts` — cases A1–A7, the addition proved on a database
+  replayed from the committed migrations and seeds. They sit in that file rather than one of their
+  own because a new file under `tests/backend` moves a count a sealed P1-27 record states.
 - `apps/api/src/modules/iam/data/identity-repository.ts` — `lockInvitationAddress`, the address lock
   the addition script replicates.
 - `apps/api/src/app/api/v1/platform/session/route.ts` — `platform.session-read`, declaring

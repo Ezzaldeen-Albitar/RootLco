@@ -473,6 +473,73 @@ describe('adding a second platform operator refuses everything it must', () => {
     expect(script, 'INVITATION_ADDRESS_LOCK_SQL in add-platform-operator.mjs').not.toBeNull();
     expect(script, 'the script and the application would take different locks').toBe(application);
   });
+
+  /**
+   * Holding the same lock is worth nothing if the decision it protects happens
+   * outside it. The application path is ordered lock → read → invite
+   * (`invitation-service.ts`), and the script must be too: establishing the
+   * grantee's identity BEFORE the lock would let two runs read "no identity" and
+   * be handed the same subject, which is the very thing the lock exists to
+   * prevent — and it would also mail an invitation to an address the run is
+   * about to refuse.
+   *
+   * Asserted as source order, because the alternative is to drive a provider.
+   * The extractor fails closed, so a rename cannot leave these comparisons
+   * passing over nothing.
+   */
+  it('reaches the identity provider only after the lock and every refusal', () => {
+    const SCRIPT = join(
+      REPOSITORY_ROOT,
+      'scripts/platform/add-platform-operator.mjs'.split('/').join(sep)
+    );
+    const source = readFileSync(SCRIPT, 'utf8');
+    /** The text of `async function <name>(` up to the first line that closes it. */
+    const body = (name: string): string | null => {
+      const start = source.indexOf(`async function ${name}(`);
+      if (start < 0) return null;
+      const end = source.indexOf('\n}\n', start);
+      return end < 0 ? null : source.slice(start, end);
+    };
+    expect(body('noSuchFunctionAnywhere'), 'the extractor must fail closed').toBeNull();
+
+    const run = body('runAddOperator');
+    expect(run, 'runAddOperator in add-platform-operator.mjs').not.toBeNull();
+    const transaction = run ?? '';
+    const at = (needle: string): number => {
+      const index = transaction.indexOf(needle);
+      expect(index, `${needle} in runAddOperator`).toBeGreaterThan(-1);
+      return index;
+    };
+    const establish = at('await establishIdentity()');
+    expect(
+      at('INVITATION_ADDRESS_LOCK_SQL'),
+      'the lock is taken after the invitation'
+    ).toBeLessThan(establish);
+    expect(at('grantorRefusal('), 'the grantor is proved after the invitation').toBeLessThan(
+      establish
+    );
+    expect(at('overGrantRefusal('), 'the set is checked after the invitation').toBeLessThan(
+      establish
+    );
+    expect(
+      at('granteeAddressRefusal('),
+      'the address is checked after the invitation'
+    ).toBeLessThan(establish);
+    expect(establish, 'the account is written before its subject is known').toBeLessThan(
+      at('INSERT INTO iam.user_accounts')
+    );
+
+    const main = body('main');
+    expect(main, 'main in add-platform-operator.mjs').not.toBeNull();
+    const entry = main ?? '';
+    const connects = entry.indexOf('client.connect()');
+    const invites = entry.indexOf('establishGranteeIdentity(');
+    expect(connects, 'main opens no connection').toBeGreaterThan(-1);
+    expect(invites, 'main never establishes the grantee identity').toBeGreaterThan(-1);
+    expect(connects, 'main reaches the provider before the transaction exists').toBeLessThan(
+      invites
+    );
+  });
 });
 
 /**

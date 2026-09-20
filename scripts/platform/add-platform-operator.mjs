@@ -63,23 +63,37 @@
  *   3. `platform.operator.authority_granted` in the home tenant, naming the
  *      grantor, the grantee and the codes — identifiers only.
  *
- * `--dry-run` prints the plan and writes nothing.
+ * `--dry-run` writes NOTHING to the database — the transaction is rolled back,
+ * so no account, no grant, no audit record and no evidence file survives it. It
+ * is not, however, free of provider effects: a dry run signs the grantor in,
+ * and if the new operator's identity did not already exist it is invited and
+ * deliberately KEPT, because the provider is not a transaction and deleting it
+ * again would make the real run send a second invitation. That is the one thing
+ * a dry run leaves behind, and the run says so on its last line.
  *
- * ## Identity handling
+ * ## Identity handling, and the order it happens in
  *
- *   - the lower-cased address is serialized with the SAME advisory lock the
- *     application's invitation path takes
- *     (`apps/api/src/modules/iam/data/identity-repository.ts`,
- *     `lockInvitationAddress`), so this script and a concurrent invitation of
- *     the same address cannot both read "no identity" and be handed the same
- *     subject;
- *   - an account with that address already in the home tenant is refused, with
- *     a message pointing at `grant-platform-authority.mjs`;
- *   - an account with that address in ANY other tenant is refused: a tenant
- *     user does not become an operator through this path;
- *   - a provider identity that exists with no account anywhere is REUSED;
- *   - otherwise the identity is invited the way genesis invites one, and bound
- *     to the home tenant through `app_metadata`.
+ * Every refusal is evaluated BEFORE the identity provider is written to, so a
+ * refused run does not mail an invitation to an address it then rejects:
+ *
+ *   1. the transaction opens and takes the SAME advisory lock the application's
+ *      invitation path takes
+ *      (`apps/api/src/modules/iam/data/identity-repository.ts`,
+ *      `lockInvitationAddress`), before the first read of the address — the
+ *      order the application path uses (lock, read, invite), so this script and
+ *      a concurrent invitation of the same address cannot both read "no
+ *      identity" and be handed the same subject;
+ *   2. the grantor, the requested set and the address are checked while that
+ *      lock is held: an account with that address already in the home tenant is
+ *      refused with a message pointing at `grant-platform-authority.mjs`, and
+ *      an account with that address in ANY other tenant is refused because a
+ *      tenant user does not become an operator through this path;
+ *   3. only then is the identity established: one that exists with no account
+ *      anywhere is REUSED, and otherwise it is invited the way genesis invites
+ *      one. Like the application's invitation path, this reaches the provider
+ *      while the transaction is open — that is what the lock is for;
+ *   4. after the commit the identity is bound to the home tenant through
+ *      `app_metadata`.
  *
  * ## Partial failure
  *
@@ -446,9 +460,10 @@ export async function establishGranteeIdentity(input) {
   const listed = await lookup.json();
   const users = Array.isArray(listed?.users) ? listed.users : [];
   const existing = users.find((u) => String(u.email ?? '').toLowerCase() === input.operator.email);
-  // An identity with no account anywhere is REUSED: the transaction below
-  // refuses the address if any account already claims it, so reaching this
-  // point with an existing identity means exactly that case.
+  // An identity with no account anywhere is REUSED: this runs inside the
+  // transaction, after the address refusal has already rejected every account
+  // that claims the address, so reaching this point with an existing identity
+  // means exactly that case.
   if (existing) return { subject: String(existing.id), created: false };
   const invite = await fetch(`${input.supabase.url}/auth/v1/invite`, {
     method: 'POST',
@@ -498,8 +513,15 @@ export async function compensateCreatedIdentity(input, subject) {
  * `provenSubject` is the provider subject the GRANTOR's sign-in returned; the
  * grantor is resolved from it inside the transaction, so the authority check
  * reads the database rather than trusting an argument.
+ *
+ * `establishIdentity` is called — once, and only after every refusal has passed
+ * — to obtain the GRANTEE's `{ subject, created }`. It is a callback rather than
+ * a value so that the provider is reached inside this transaction, while the
+ * address lock is held and after the address checks: the order the application's
+ * invitation path uses. A caller that already knows the subject (the proof
+ * suite) hands back a resolved one and never touches a provider.
  */
-export async function runAddOperator(client, input, identity, provenSubject) {
+export async function runAddOperator(client, input, establishIdentity, provenSubject) {
   const homeTenantCode = input.homeTenantCode ?? 'platform_operators';
   await client.query('BEGIN');
   try {
@@ -561,11 +583,20 @@ export async function runAddOperator(client, input, identity, provenSubject) {
     );
     if (addressProblem) fail(addressProblem, 4);
 
+    // 5. The grantee's provider identity — reached only now, so a run refused
+    //    above never mails an invitation to an address it then rejects, and the
+    //    lookup that decides "no identity" happens under the lock taken at the
+    //    top rather than before it.
+    const identity = await establishIdentity();
+    if (!identity?.subject) {
+      fail('Refused: no provider subject was established for the new operator', 3);
+    }
+
     const operatorAccountId = randomUUID();
     await client.query("SELECT set_config('app.user_id', $1, true)", [grantor.accountId]);
     await client.query("SELECT set_config('app.tenant_id', $1, true)", [grantor.tenantId]);
 
-    // 5. The account, in the home tenant, active, with NO role grant.
+    // 6. The account, in the home tenant, active, with NO role grant.
     await client.query(
       `INSERT INTO iam.user_accounts
          (id, tenant_id, identity_provider, provider_subject, email, display_name, status, created_by)
@@ -586,7 +617,7 @@ export async function runAddOperator(client, input, identity, provenSubject) {
       [grantor.tenantId, operatorAccountId, grantor.accountId]
     );
 
-    // 6. The grants, attributed to the grantor rather than to the catalogue
+    // 7. The grants, attributed to the grantor rather than to the catalogue
     //    actor: this act has a person behind it and the trail says so.
     for (const code of requested) {
       await client.query(
@@ -596,7 +627,7 @@ export async function runAddOperator(client, input, identity, provenSubject) {
       );
     }
 
-    // 7. The same rules, asserted by SQL over the rows just written rather than
+    // 8. The same rules, asserted by SQL over the rows just written rather than
     //    over the variables that wrote them. A refusal here rolls everything
     //    back, so a drift between the checks above and the rows below can never
     //    commit.
@@ -652,7 +683,7 @@ export async function runAddOperator(client, input, identity, provenSubject) {
       fail('Refused in-transaction: the new operator account is not active in the home tenant', 4);
     }
 
-    // 8. The audit record, in the home tenant, identifiers only.
+    // 9. The audit record, in the home tenant, identifiers only.
     const audit = await client.query(
       `SELECT iam.audit_append(
           p_tenant => $1, p_actor => $2, p_actor_kind => 'system',
@@ -736,13 +767,27 @@ async function main() {
       ? input.grantor.password
       : await promptGrantorPassword(input.grantor.email);
   const provenSubject = await proveGrantorIdentity(input, password);
-  const identity = await establishGranteeIdentity(input);
 
   const client = new pg.Client(input.db);
   await client.connect();
+  /**
+   * Filled the moment the run establishes the grantee's identity — which
+   * happens inside the transaction, after the address lock and after every
+   * refusal. It stays `created: false` while nothing was created, so a run
+   * refused before that point has nothing to compensate.
+   */
+  let identity = { subject: '', created: false };
   let result;
   try {
-    result = await runAddOperator(client, input, identity, provenSubject);
+    result = await runAddOperator(
+      client,
+      input,
+      async () => {
+        identity = await establishGranteeIdentity(input);
+        return identity;
+      },
+      provenSubject
+    );
   } catch (error) {
     // Compensation: exactly the identity THIS run created, by its id.
     if (identity.created) {

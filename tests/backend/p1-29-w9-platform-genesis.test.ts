@@ -44,9 +44,14 @@
  * they run against the operator G1 established. The refusals themselves are
  * pure functions driven exhaustively in
  * `tests/ci/platform-grant-base-entitlement.test.ts`; what is proved HERE is the
- * transaction. The identity provider is never reached: `runAddOperator` takes
- * the grantee's subject and the subject the grantor's sign-in proved as
- * arguments, so both are supplied directly.
+ * transaction. No identity provider is reached: `runAddOperator` takes the
+ * subject the grantor's sign-in proved as an argument, and asks for the
+ * grantee's identity through a callback this suite answers itself.
+ *
+ * That callback counts its calls, which is how A2, A5 and A6 assert the order
+ * the real script depends on: a refused run must not have asked for the
+ * grantee's identity at all, because asking means inviting an address the run
+ * is about to reject.
  *
  * ## Where it runs, and why that changed
  *
@@ -154,6 +159,13 @@ function addInput(email: string, grantorEmail: string, codes?: readonly string[]
   );
 }
 
+/**
+ * How many times a run has asked for the grantee's provider identity. In the
+ * real script that call is the invitation, so the count is the observable form
+ * of "the provider is reached only after every refusal has passed".
+ */
+let identityRequests = 0;
+
 /** Runs one addition on its own connection, so a rollback cannot leak. */
 async function add(
   request: ReturnType<typeof addInput>,
@@ -165,7 +177,10 @@ async function add(
     return await runAddOperator(
       client,
       request,
-      { subject: granteeSubject, created: false },
+      async () => {
+        identityRequests += 1;
+        return { subject: granteeSubject, created: false };
+      },
       provenSubject
     );
   } finally {
@@ -563,6 +578,7 @@ describe('W9 — platform operator genesis', () => {
   });
 
   it('A2 an operator cannot grant a code they do not themselves hold', async () => {
+    const asked = identityRequests;
     await expect(
       add(
         addInput(THIRD, SECOND, [PLATFORM_BASE_AUTHORITY_CODE, 'platform.audit.read']),
@@ -577,6 +593,9 @@ describe('W9 — platform operator genesis', () => {
     expect(
       await admin.query('SELECT 1 FROM iam.user_accounts WHERE lower(email) = $1', [THIRD])
     ).toMatchObject({ rowCount: 0 });
+    // And the refused run never asked for the grantee's identity — in the real
+    // script that request is an invitation to the address just rejected.
+    expect(identityRequests).toBe(asked);
 
     // The same grantor, requesting only what they hold, is admitted — so the
     // refusal above is about the code, not about the grantor.
@@ -591,6 +610,9 @@ describe('W9 — platform operator genesis', () => {
       grantorAccountId: secondAccountId,
       homeTenantId: established.homeTenantId,
     });
+    // Exactly one request, from the run that was admitted: the counter is not
+    // stuck, so the case above is a real difference and not a dead assertion.
+    expect(identityRequests).toBe(asked + 1);
   });
 
   it('A3 a grantor cannot add themselves, and A4 an address already at home is refused', async () => {
@@ -629,6 +651,7 @@ describe('W9 — platform operator genesis', () => {
     // without one — and `set_config(..., true)` is transaction-local, so this
     // runs on one client inside one transaction.
     const administratorAddress = `administrator_${RUN}@fixture.test`;
+    const asked = identityRequests;
     const fixture = await admin.connect();
     let administratorId: string;
     try {
@@ -700,6 +723,9 @@ describe('W9 — platform operator genesis', () => {
       exitCode: 4,
       message: expect.stringContaining('genesis-platform-operator.mjs'),
     });
+    // Neither refusal reached for the grantee's identity: a run with no
+    // provable grantor invites nobody.
+    expect(identityRequests).toBe(asked);
   });
 
   it('A7 genesis is still one-time once a second operator exists', async () => {
