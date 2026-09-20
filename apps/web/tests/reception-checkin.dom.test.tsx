@@ -1001,6 +1001,7 @@ function stepProps(over: Partial<CheckInStepProps> = {}): CheckInStepProps {
     session: SESSION,
     writesLocked: false,
     refresh: vi.fn().mockResolvedValue(undefined),
+    goToStep: vi.fn(),
     ...over,
   };
 }

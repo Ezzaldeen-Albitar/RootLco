@@ -180,6 +180,7 @@ function stepProps(over: Partial<CheckInStepProps> = {}): CheckInStepProps {
     session: { userId: 'user-1', displayName: 'Front Desk' },
     writesLocked: false,
     refresh: vi.fn().mockResolvedValue(undefined),
+    goToStep: vi.fn(),
     ...over,
   };
 }

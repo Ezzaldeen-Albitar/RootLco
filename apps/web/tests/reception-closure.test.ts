@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  APPROVAL_REFUSAL_KEYS,
   CUSTOMER_REPORTED_KINDS,
   closureReasonProblem,
   conflictKindOf,
@@ -9,8 +10,11 @@ import {
   nextVersionAfter,
   receptionAffordances,
   reaches,
+  refusalFixStepId,
+  refusalReasonKey,
   unknownStatuses,
 } from '@/features/receptions/check-in/closure';
+import { PARTIES_STEP_ID } from '@/features/receptions/check-in/wizard';
 import {
   ACCEPTED_VERSION_STATUS,
   DOCUMENT_VERSION_STATUSES,
@@ -153,6 +157,51 @@ describe('the two 409s a guarded command can meet', () => {
     // prevent.
     for (const key of ['', 'something.else', 'state.conflict', 'action.failed']) {
       expect(conflictKindOf(key), key).toBe('blocked');
+    }
+  });
+});
+
+/**
+ * DEF-T-10 — a blocked 409 names WHICH precondition is unmet.
+ *
+ * `ERR-TRN-001` is one code for five refusals, and the screen used to print one
+ * sentence for all of them. The API now publishes a rule token, which
+ * `violationKeysOf` turns into a `form.violation.*` key; these cases hold the
+ * two decisions this module makes about that key and, above all, hold both
+ * catalogues to carrying every sentence — an uncatalogued key renders as itself
+ * on screen, which is how a "fix" of this shape fails in front of an operator.
+ */
+describe('which precondition a blocked approval named', () => {
+  it('recognises exactly the reasons the approval path can publish', () => {
+    for (const key of APPROVAL_REFUSAL_KEYS) {
+      expect(refusalReasonKey(key), key).toBe(key);
+    }
+    // Everything else is unrecognised, so the generic sentence stands. The
+    // second of these is a real API rule token the catalogue does not carry,
+    // which must NOT be mistaken for an approval precondition.
+    for (const key of [undefined, 'state.conflict.blocked.title', 'form.violation.invalid']) {
+      expect(refusalReasonKey(key), String(key)).toBeNull();
+    }
+  });
+
+  it('offers the authorization step for the reasons a form cures, and none for the rest', () => {
+    expect(refusalFixStepId('form.violation.authorization_missing')).toBe(PARTIES_STEP_ID);
+    expect(refusalFixStepId('form.violation.authorization_withdrawn')).toBe(PARTIES_STEP_ID);
+    expect(refusalFixStepId('form.violation.requester_or_authorization_missing')).toBe(
+      PARTIES_STEP_ID
+    );
+    // The visit has moved on. Offering a form would invite work that changes
+    // nothing, so these two name no step.
+    expect(refusalFixStepId('form.violation.already_authorized')).toBeNull();
+    expect(refusalFixStepId('form.violation.state_not_approvable')).toBeNull();
+    expect(refusalFixStepId(undefined)).toBeNull();
+  });
+
+  it('is fully translated in both catalogues, sentence by sentence', () => {
+    for (const key of [...APPROVAL_REFUSAL_KEYS, 'receptions.command.goToAuthorization']) {
+      expect(typeof (en as Record<string, unknown>)[key], key).toBe('string');
+      expect(typeof (ar as Record<string, unknown>)[key], key).toBe('string');
+      expect((en as Record<string, string>)[key]).not.toBe((ar as Record<string, string>)[key]);
     }
   });
 });

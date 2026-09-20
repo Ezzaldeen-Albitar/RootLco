@@ -181,16 +181,32 @@ export function toReceptionCreatePlan(
  * `opened` to `authorized` runs through `inspecting`, and the service walks that
  * path inside one transaction. Both edges are in the frozen graph; no state is
  * invented and no guard is bypassed.
+ *
+ * ## Why each refusal carries a rule token (DEF-T-10)
+ *
+ * Every approval refusal on this path is `ERR-TRN-001`, and a screen holding
+ * only the code can say nothing but "the state does not allow this". A
+ * receptionist met that sentence when the actual unmet precondition was a
+ * missing authorization, two steps away, and had no way to learn it.
+ *
+ * So each refusal publishes a violation on the ROUTE parameter — the command
+ * sends no body, so there is no control to file it under and `violationKeysOf`
+ * routes it to the banner. The token names the PRECONDITION and nothing else:
+ * no party, no decision, no role, no count. That is the same anti-probing line
+ * the messages already hold, and it is what makes these tokens safe to publish
+ * to a caller who is already reading the visit they name.
  */
 export function assertApprovable(current: string): void {
   if (current === 'authorized') {
     throw new AppFailure('ERR-TRN-001', {
       message: 'This reception is already authorized',
+      safeDetails: { violations: [{ path: 'path.receptionId', rule: 'already_authorized' }] },
     });
   }
   if (current !== 'opened' && current !== 'inspecting') {
     throw new AppFailure('ERR-TRN-001', {
       message: `A reception in state "${current}" cannot be approved`,
+      safeDetails: { violations: [{ path: 'path.receptionId', rule: 'state_not_approvable' }] },
     });
   }
 }
@@ -260,11 +276,17 @@ export function assertStandingAuthorization(decisions: readonly StandingDecision
       message:
         'An authorizing party has withdrawn or refused authorization for this reception; ' +
         'record a new approval before proceeding',
+      safeDetails: {
+        violations: [{ path: 'path.receptionId', rule: 'authorization_withdrawn' }],
+      },
     });
   }
   if (!decisions.some((entry) => entry.decision === 'approved')) {
     throw new AppFailure('ERR-TRN-001', {
       message: 'This reception has no standing approved authorization',
+      safeDetails: {
+        violations: [{ path: 'path.receptionId', rule: 'authorization_missing' }],
+      },
     });
   }
 }

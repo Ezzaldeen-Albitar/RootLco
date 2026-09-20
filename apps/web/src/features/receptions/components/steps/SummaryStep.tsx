@@ -40,6 +40,8 @@ import {
   isCustomerReported,
   nextVersionAfter,
   receptionAffordances,
+  refusalFixStepId,
+  refusalReasonKey,
 } from '../../check-in/closure';
 
 /**
@@ -106,6 +108,7 @@ export function SummaryStep({
   capabilities,
   writesLocked,
   refresh,
+  goToStep,
 }: CheckInStepProps) {
   const readKey = `${visitId}:${recordVersion}`;
   const affordances = receptionAffordances(detail.receptionStatus);
@@ -215,6 +218,7 @@ export function SummaryStep({
                   visitId={visitId}
                   recordVersion={recordVersion}
                   settle={settle}
+                  goToStep={goToStep}
                 />
               ) : (
                 <p className="text-caption text-text-muted" lang={locale}>
@@ -532,12 +536,14 @@ function ApprovalPanel({
   visitId,
   recordVersion,
   settle,
+  goToStep,
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
   readonly visitId: string;
   readonly recordVersion: number;
   readonly settle: (state: ActionState) => Promise<void>;
+  readonly goToStep: (stepId: string) => void;
 }) {
   const [state, setState] = useState<ActionState>(IDLE);
   const [approvedVersion, setApprovedVersion] = useState<number | null>(null);
@@ -595,7 +601,7 @@ function ApprovalPanel({
         </div>
       ) : null}
 
-      <CommandOutcome locale={locale} messages={messages} state={state} />
+      <CommandOutcome locale={locale} messages={messages} state={state} goToStep={goToStep} />
     </div>
   );
 }
@@ -716,30 +722,63 @@ function ClosurePanel({
  * cured by the re-read that has just happened, and the operator is invited to
  * try again; a blocked state is not cured by anything the operator can do here,
  * and inviting a retry would invite the same refusal.
+ *
+ * ## A blocked refusal names its precondition, and offers the step (DEF-T-10)
+ *
+ * "The visit's current state does not allow this command" was printed for
+ * every blocked 409, including the one an operator CAN cure: approval refused
+ * because no verified authorization had been recorded, which is a form two
+ * steps back. The sentence was true, said nothing about what was missing, and
+ * pointed nowhere.
+ *
+ * So when the API published a reason token — `refusalReasonKey` recognises the
+ * ones the approval path can produce — that sentence is shown instead of the
+ * generic one, and when the reason is one a step satisfies
+ * (`refusalFixStepId`), a button opens that step. Nothing is invented here: a
+ * reason this module has not been told about still gets the generic sentence
+ * rather than a guess dressed up as an explanation.
  */
 export function CommandOutcome({
   locale,
   messages,
   state,
+  goToStep,
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
   readonly state: ActionState;
+  /** The wizard's navigation. Omitted where an outcome has no step to offer. */
+  readonly goToStep?: (stepId: string) => void;
 }) {
   if (state.status === 'idle' || state.status === 'success') return null;
 
   if (state.status === 'conflict') {
     const kind = conflictKindOf(state.messageKey);
+    const reasonKey = kind === 'blocked' ? refusalReasonKey(state.messageKey) : null;
+    const fixStepId = reasonKey === null ? null : refusalFixStepId(reasonKey);
     return (
       <div role="alert" className="rounded-md border border-border bg-surface-subtle p-3">
         <p className="text-body text-text-primary" lang={locale}>
-          {translate(
-            messages,
-            kind === 'stale'
-              ? 'receptions.command.conflictStale'
-              : 'receptions.command.conflictBlocked'
-          )}
+          {reasonKey !== null
+            ? translateDynamic(messages, reasonKey)
+            : translate(
+                messages,
+                kind === 'stale'
+                  ? 'receptions.command.conflictStale'
+                  : 'receptions.command.conflictBlocked'
+              )}
         </p>
+        {fixStepId !== null && goToStep !== undefined ? (
+          <p className="mt-2">
+            <button
+              type="button"
+              onClick={() => goToStep(fixStepId)}
+              className="rounded-md border border-border-strong px-3 py-1.5 text-body font-medium text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+            >
+              {translate(messages, 'receptions.command.goToAuthorization')}
+            </button>
+          </p>
+        ) : null}
         {state.correlationId ? (
           <p className="mt-1 text-caption text-text-muted">
             {translate(messages, 'state.correlationId')}{' '}
