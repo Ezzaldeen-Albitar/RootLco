@@ -146,8 +146,8 @@ export function conflictKindOf(messageKey: string | undefined): ConflictKind {
  * ------------------------------------------------------------------ */
 
 /**
- * The refusal reasons the approval path publishes, and the step that satisfies
- * each one.
+ * The refusal reasons a reception command publishes, and the step that
+ * satisfies each one.
  *
  * `ERR-TRN-001` is one code for five different unmet preconditions, and a
  * screen holding only the code can say nothing but "the state does not allow
@@ -158,16 +158,22 @@ export function conflictKindOf(messageKey: string | undefined): ConflictKind {
  * The API now publishes a rule token beside each refusal —
  * `{ path: 'path.receptionId', rule: … }` — which `violationKeysOf` turns into
  * a `form.violation.*` key and `fromFailure` puts in `messageKey`. This table
- * says which of those keys the approval path can produce and, for the ones an
+ * says which of those keys this module has been told about and, for the ones an
  * operator can act on, which step to open. A key absent from the table gets the
  * generic sentence, which is what should happen: a reason this module has never
  * been told about must not be dressed up as one it understands.
+ *
+ * Not approval's alone: `assertStandingAuthorization` guards the CONVERSION
+ * command as well, so the two authorization tokens reach that screen too. The
+ * sentences therefore name the precondition and the step that cures it, and
+ * never the command the operator happened to press — one catalogue entry has to
+ * read correctly under both buttons.
  *
  * `already_authorized` and `state_not_approvable` name no step on purpose.
  * Neither is cured by filling something in — the visit has moved on — so
  * offering a step would invite work that changes nothing.
  */
-export const APPROVAL_REFUSAL_KEYS: readonly string[] = Object.freeze([
+export const COMMAND_REFUSAL_KEYS: readonly string[] = Object.freeze([
   'form.violation.already_authorized',
   'form.violation.state_not_approvable',
   'form.violation.authorization_missing',
@@ -187,7 +193,7 @@ const REFUSAL_STEPS: Readonly<Record<string, string>> = Object.freeze({
  */
 export function refusalReasonKey(messageKey: string | undefined): string | null {
   if (messageKey === undefined) return null;
-  return APPROVAL_REFUSAL_KEYS.includes(messageKey) ? messageKey : null;
+  return COMMAND_REFUSAL_KEYS.includes(messageKey) ? messageKey : null;
 }
 
 /** The step that satisfies the named precondition, or `null` when none does. */

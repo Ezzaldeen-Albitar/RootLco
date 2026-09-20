@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  APPROVAL_REFUSAL_KEYS,
+  COMMAND_REFUSAL_KEYS,
   CUSTOMER_REPORTED_KINDS,
   closureReasonProblem,
   conflictKindOf,
@@ -172,8 +172,8 @@ describe('the two 409s a guarded command can meet', () => {
  * on screen, which is how a "fix" of this shape fails in front of an operator.
  */
 describe('which precondition a blocked approval named', () => {
-  it('recognises exactly the reasons the approval path can publish', () => {
-    for (const key of APPROVAL_REFUSAL_KEYS) {
+  it('recognises exactly the reasons a reception command can publish', () => {
+    for (const key of COMMAND_REFUSAL_KEYS) {
       expect(refusalReasonKey(key), key).toBe(key);
     }
     // Everything else is unrecognised, so the generic sentence stands. The
@@ -198,7 +198,7 @@ describe('which precondition a blocked approval named', () => {
   });
 
   it('is fully translated in both catalogues, sentence by sentence', () => {
-    for (const key of [...APPROVAL_REFUSAL_KEYS, 'receptions.command.goToAuthorization']) {
+    for (const key of [...COMMAND_REFUSAL_KEYS, 'receptions.command.goToAuthorization']) {
       expect(typeof (en as Record<string, unknown>)[key], key).toBe('string');
       expect(typeof (ar as Record<string, unknown>)[key], key).toBe('string');
       expect((en as Record<string, string>)[key]).not.toBe((ar as Record<string, string>)[key]);

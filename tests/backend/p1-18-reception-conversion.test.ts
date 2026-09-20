@@ -82,6 +82,13 @@ interface ConvertBody {
   readonly state?: string;
   readonly alreadyConverted?: boolean;
   readonly code?: string;
+  /**
+   * The published refusal reason (DEF-T-10). `assertStandingAuthorization`
+   * guards this command as well as approval, so the same tokens arrive here and
+   * the conversion screen renders them; asserting them on this path is what
+   * keeps that screen's sentence tied to what the API actually sends.
+   */
+  readonly violations?: readonly { readonly path: string; readonly rule: string }[];
 }
 
 interface SeededReception {
@@ -782,7 +789,15 @@ describe('rec.reception-convert-to-work-order: standing authorization', () => {
 
     const response = await convert(seeded.visitId, { version: seeded.recordVersion });
     expect(response.status).toBe(409);
-    expect(((await response.json()) as { code: string }).code).toBe('ERR-TRN-001');
+    const body = (await response.json()) as ConvertBody;
+    expect(body.code).toBe('ERR-TRN-001');
+    // DEF-T-10 on the conversion path. The shared rule refuses both commands,
+    // so this refusal carries the same token the approval refusal carries, and
+    // the screen can name the precondition instead of printing the generic
+    // sentence. The token names no party and no decision.
+    expect(body.violations).toEqual([
+      { path: 'path.receptionId', rule: 'authorization_withdrawn' },
+    ]);
 
     // The refusal performs no work: no work order, and the visit is still
     // authorized rather than converted.

@@ -269,6 +269,16 @@ export interface StandingDecision {
  * is built to prevent. Where a business rule should let one authority outrank
  * another, that rule has to be stated and approved before it is coded — refusing
  * is the boundary that cannot silently do the wrong thing.
+ *
+ * ## The rule token, and the two commands that share it (DEF-T-10)
+ *
+ * Both refusals publish a violation on the route parameter so a screen can name
+ * the precondition instead of printing "the state does not allow this". This
+ * function guards TWO commands — approval and conversion to a work order — so
+ * the token names the missing authorization and nothing about which command
+ * asked for it; the catalogue sentence and the step it points at have to read
+ * correctly under both buttons. The token says no more than the message beside
+ * it already does: no party, no decision, no role, no count.
  */
 export function assertStandingAuthorization(decisions: readonly StandingDecision[]): void {
   if (decisions.some((entry) => entry.decision === 'declined')) {

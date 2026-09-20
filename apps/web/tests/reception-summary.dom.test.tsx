@@ -799,6 +799,37 @@ describe('conversion to a work order', () => {
     await waitFor(() => expect(refresh).toHaveBeenCalled());
   });
 
+  /**
+   * DEF-T-10 reaches this step too, because the API guards conversion with the
+   * SAME standing-authorization rule as approval: a withdrawn authorization
+   * refuses both commands with the same token. So the sentence has to read
+   * correctly under this button — it names the precondition and the step, never
+   * the command — and the step has to be reachable from here, which it was not
+   * until this screen was handed the wizard's navigation.
+   */
+  it('names a missing authorization on the conversion refusal too, and offers the same step', async () => {
+    convertReceptionToWorkOrder.mockResolvedValue({
+      status: 'conflict',
+      messageKey: 'form.violation.authorization_withdrawn',
+      correlationId: 'corr-conv-auth',
+      attempt: 1,
+    });
+    const user = userEvent.setup();
+    renderLtr(<ConversionStep {...withStatus('authorized')} />);
+    await user.click(
+      await screen.findByRole('button', { name: EN['receptions.convert.submit'] as string })
+    );
+    expect(
+      await screen.findByText(EN['form.violation.authorization_withdrawn'] as string)
+    ).toBeVisible();
+    expect(screen.queryByText(EN['receptions.command.conflictBlocked'] as string)).toBeNull();
+
+    await user.click(
+      screen.getByRole('button', { name: EN['receptions.command.goToAuthorization'] as string })
+    );
+    expect(goToStep).toHaveBeenCalledWith('parties-and-authorization');
+  });
+
   it('reads the work order on intent, and shows its jobs', async () => {
     convertReceptionToWorkOrder.mockResolvedValue({
       status: 'success',
