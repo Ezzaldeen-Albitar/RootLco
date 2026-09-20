@@ -22,10 +22,15 @@
  * `platformGrantSetRefusal` is a pure function, so this file hands it sets that
  * no run would produce — the full list with the base code removed, each other
  * code alone, an empty set — and proves each is REFUSED rather than assuming it.
- * It then reads the two scripts that write `iam.platform_grants` and the session
- * route itself, so that widening the route, adding a third grant path, or
- * dropping the call from one of the two cannot leave this rule true only in
+ * It then reads the three scripts that write `iam.platform_grants` and the
+ * session route itself, so that widening the route, adding a fourth grant path,
+ * or dropping the call from one of the three cannot leave this rule true only in
  * prose.
+ *
+ * The third writer, `add-platform-operator.mjs`, arrived with
+ * P1-32-PRE-OD-OPERATOR and is the only one that can MINT an operator, so its
+ * own refusals — grantor proof, home tenant, over-grant, self-grant, address —
+ * are driven here too, at the bottom of the file.
  */
 import { spawnSync } from 'node:child_process';
 import { readFileSync, readdirSync, statSync } from 'node:fs';
@@ -43,6 +48,14 @@ import {
   requestedGrantSetRefusal,
   runGrant,
 } from '../../scripts/platform/grant-platform-authority.mjs';
+import {
+  INVITATION_ADDRESS_LOCK_SQL,
+  granteeAddressRefusal,
+  grantorRefusal,
+  overGrantRefusal,
+  readAddOperatorInput,
+  selfGrantRefusal,
+} from '../../scripts/platform/add-platform-operator.mjs';
 
 const SESSION_ROUTE = join(
   REPOSITORY_ROOT,
@@ -108,8 +121,14 @@ describe('the rule binds every code path that issues a platform grant', () => {
     )
   );
 
-  it('finds exactly the two known writers of iam.platform_grants', () => {
+  it('finds exactly the three known writers of iam.platform_grants', () => {
+    // Three since P1-32-PRE-OD-OPERATOR added `add-platform-operator.mjs`, the
+    // supported way a SECOND operator comes to exist. The enumeration is exact
+    // on purpose: a fourth writer, wherever it appeared under `scripts/`, fails
+    // this case rather than quietly inheriting the rule's name without its
+    // refusals.
     expect(writers).toEqual([
+      'scripts/platform/add-platform-operator.mjs',
       'scripts/platform/genesis-platform-operator.mjs',
       'scripts/platform/grant-platform-authority.mjs',
     ]);
@@ -285,6 +304,174 @@ describe('the genesis refuses a grant set without the base code before it writes
     // its own reasons; what matters here is that the base-code check admitted it.
     await runGenesis(client, INPUT, IDENTITY).catch(() => undefined);
     expect(client.statements[0]).toBe('BEGIN');
+  });
+});
+
+/**
+ * Adding a SECOND platform operator: every refusal, at the pure-function level
+ * (P1-32-PRE-OD-OPERATOR).
+ *
+ * ## Why this is the shape of the proof
+ *
+ * `scripts/platform/add-platform-operator.mjs` is the third — and, by the
+ * enumeration above, last — writer of `iam.platform_grants`. Unlike its two
+ * siblings it can MINT an operator, so the whole question is what it refuses.
+ * Each decision it makes is therefore an exported pure function of what the
+ * database answered, and each is driven here with inputs no run would produce:
+ * a grantor who does not exist, a grantor who is an organisation's own user, a
+ * requested set without the console base entitlement, a set wider than the
+ * grantor's own, a grantor granting to themselves, an address already seated in
+ * the operators' home tenant, and an address belonging to some organisation.
+ *
+ * The admitting cases are asserted beside the refusals, so a function that
+ * refused EVERYTHING — which would pass every refusal case — fails here.
+ *
+ * These cases join this file rather than a new one for the reason
+ * P1-32-PRE-OD-CONSOLE-003 recorded: a new file under `tests/ci` moves a count a
+ * sealed phase record states, and the cases are the evidence, not the file
+ * boundary.
+ */
+describe('adding a second platform operator refuses everything it must', () => {
+  const HOME = 'platform_operators';
+  const FULL = [...PLATFORM_AUTHORITY_CODES];
+  const WITHOUT_BASE = PLATFORM_AUTHORITY_CODES.filter(
+    (code: string) => code !== PLATFORM_BASE_AUTHORITY_CODE
+  );
+  /** A grantor the database would answer with: seated at home, active, holding everything. */
+  const GRANTOR = {
+    accountId: 'account-grantor',
+    email: 'first.operator@example.test',
+    status: 'active',
+    tenantCode: HOME,
+    held: FULL,
+  };
+
+  it('admits the grantor the database is supposed to answer with', () => {
+    expect(grantorRefusal(GRANTOR, HOME)).toBeNull();
+  });
+
+  it('refuses a run that proved no grantor at all', () => {
+    for (const absent of [null, undefined]) {
+      const refusal = grantorRefusal(absent, HOME);
+      expect(refusal).toBeTypeOf('string');
+      expect(refusal).toContain('genesis-platform-operator.mjs');
+    }
+  });
+
+  it("refuses an organisation's own account as grantor, however much it holds", () => {
+    const refusal = grantorRefusal({ ...GRANTOR, tenantCode: 'some_organisation' }, HOME);
+    expect(refusal).toBeTypeOf('string');
+    expect(refusal).toContain('some_organisation');
+    // And an account seated at home that holds nothing is refused too, so the
+    // two halves of the check are independent.
+    expect(grantorRefusal({ ...GRANTOR, held: [] }, HOME)).toBeTypeOf('string');
+    expect(grantorRefusal({ ...GRANTOR, status: 'suspended' }, HOME)).toBeTypeOf('string');
+  });
+
+  it('refuses a requested set without the console base entitlement', () => {
+    const refusal = overGrantRefusal(WITHOUT_BASE, FULL);
+    expect(refusal).toBeTypeOf('string');
+    expect(refusal).toContain(PLATFORM_BASE_AUTHORITY_CODE);
+    expect(overGrantRefusal([], FULL)).toBeTypeOf('string');
+  });
+
+  it('refuses a set wider than the grantor holds, naming the codes they lack', () => {
+    const narrow = [PLATFORM_BASE_AUTHORITY_CODE];
+    const refusal = overGrantRefusal([PLATFORM_BASE_AUTHORITY_CODE, 'platform.audit.read'], narrow);
+    expect(refusal).toBeTypeOf('string');
+    expect(refusal).toContain('platform.audit.read');
+    // A subset of the grantor's own codes is admitted, and so is the whole set.
+    expect(overGrantRefusal(narrow, FULL)).toBeNull();
+    expect(overGrantRefusal(FULL, FULL)).toBeNull();
+  });
+
+  it('refuses a code outside the catalogue, through the same shared function', () => {
+    expect(
+      overGrantRefusal(
+        [PLATFORM_BASE_AUTHORITY_CODE, 'org.company.read'],
+        [...FULL, 'org.company.read']
+      )
+    ).toContain('org.company.read');
+  });
+
+  it('refuses a grantor granting to themselves, whatever the spelling', () => {
+    expect(selfGrantRefusal(GRANTOR.email, GRANTOR.email)).toBeTypeOf('string');
+    expect(selfGrantRefusal(GRANTOR.email, ` ${GRANTOR.email.toUpperCase()} `)).toContain(
+      'grant-platform-authority.mjs'
+    );
+    expect(selfGrantRefusal(GRANTOR.email, 'second.operator@example.test')).toBeNull();
+  });
+
+  it('refuses an address already seated in the home tenant, and points at the right script', () => {
+    const refusal = granteeAddressRefusal(
+      [{ accountId: 'account-existing', tenantCode: HOME }],
+      HOME
+    );
+    expect(refusal).toBeTypeOf('string');
+    expect(refusal).toContain('grant-platform-authority.mjs');
+    expect(refusal).toContain('account-existing');
+  });
+
+  it("refuses an address that belongs to an organisation's account", () => {
+    const refusal = granteeAddressRefusal(
+      [{ accountId: 'account-tenant', tenantCode: 'some_organisation' }],
+      HOME
+    );
+    expect(refusal).toBeTypeOf('string');
+    expect(refusal).toContain('some_organisation');
+    // An address nobody holds is the only admitted case.
+    expect(granteeAddressRefusal([], HOME)).toBeNull();
+  });
+
+  it('refuses the grantor and the new operator being one address before a connection opens', () => {
+    const env = {
+      ROOTLCO_ENV: 'local-acceptance',
+      ADD_OPERATOR_EMAIL: GRANTOR.email,
+      ADD_OPERATOR_DISPLAY_NAME: 'Second operator',
+      ADD_OPERATOR_GRANTOR_EMAIL: GRANTOR.email,
+    };
+    try {
+      readAddOperatorInput(env, ['--confirm', GRANTOR.email]);
+      expect.unreachable('the request was admitted');
+    } catch (error) {
+      expect((error as { exitCode?: number }).exitCode).toBe(4);
+      expect((error as Error).message).toContain('same address');
+    }
+    // A different address is admitted, and leaves the requested set unnamed so
+    // it defaults to the grantor's own codes once they are proved.
+    const input = readAddOperatorInput(
+      { ...env, ADD_OPERATOR_EMAIL: 'second.operator@example.test' },
+      ['--confirm', 'second.operator@example.test']
+    );
+    expect(input.codes).toBeUndefined();
+    expect(input.homeTenantCode).toBe(HOME);
+  });
+
+  /**
+   * The advisory lock is COPIED, because `apps/api` is TypeScript behind module
+   * boundaries a script may not import. A copy drifts, and a drifted key is not
+   * a weaker lock — it is a DIFFERENT lock, so the script and a concurrent
+   * invitation of the same address would serialize nothing while both appear to
+   * hold one. Both sides are read as text and the extractor fails closed.
+   */
+  it('takes the same address lock the invitation path takes', () => {
+    const REPOSITORY_IDENTITY = join(
+      REPOSITORY_ROOT,
+      'apps/api/src/modules/iam/data/identity-repository.ts'.split('/').join(sep)
+    );
+    const key = (source: string): string | null => {
+      const match =
+        /pg_catalog\.pg_advisory_xact_lock\(\s*pg_catalog\.hashtextextended\(([\s\S]*?),\s*0\)\)/.exec(
+          source
+        );
+      return match?.[1] ? match[1].replace(/\s+/g, ' ').trim() : null;
+    };
+    expect(key('nothing at all'), 'the extractor must fail closed').toBeNull();
+    const application = key(readFileSync(REPOSITORY_IDENTITY, 'utf8'));
+    const script = key(INVITATION_ADDRESS_LOCK_SQL);
+    expect(application, 'lockInvitationAddress in the identity repository').not.toBeNull();
+    expect(script, 'INVITATION_ADDRESS_LOCK_SQL in add-platform-operator.mjs').not.toBeNull();
+    expect(script, 'the script and the application would take different locks').toBe(application);
   });
 });
 
