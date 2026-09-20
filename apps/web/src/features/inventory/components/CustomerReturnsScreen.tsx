@@ -37,16 +37,19 @@
  * `inv.stock.operate` with `sal.finance.view` offers the write.
  */
 
-import { useCallback, useState } from 'react';
+import Link from 'next/link';
+import { useCallback, useEffect, useState, type ReactNode } from 'react';
 
 import { SelectField, TextAreaField, TextField } from '@/components/forms/Field';
 import { notifyActionResult } from '@/components/notifications/action-notifications';
+import { listCounterSales, readInvoice } from '@/features/billing/api';
+import type { Invoice, InvoiceLine } from '@/features/billing/billing-contract';
 import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
-import { translate, translateDynamic } from '@/i18n/get-messages';
+import { translate, translateDynamic, translateWithValues } from '@/i18n/get-messages';
 import type { ActionState } from '@/lib/forms/action-result';
 import { formatDateTime } from '@/lib/format';
-import { compareMoney } from '@/lib/money';
+import { compareMoney, formatMoney } from '@/lib/money';
 
 import { createSalesReturn, listSalesReturns, readReturnable } from '../api';
 import {
@@ -71,6 +74,7 @@ import {
 import {
   BranchListView,
   BranchTargetForm,
+  LINK,
   PANEL,
   StockOperationLinks,
   isQuantity,
@@ -150,7 +154,9 @@ function BranchReturns({
 
       {canOperate ? (
         <ReceiveForm
+          locale={locale}
           messages={messages}
+          target={target}
           locations={locations}
           onReceived={(noticeKey) => {
             setNotice(noticeKey);
@@ -220,9 +226,22 @@ function BranchReturns({
                     <td>
                       {translateDynamic(messages, `inventory.returnStatus.${row.status}`)}
                       {row.creditNoteId !== null ? (
-                        <span className="block text-caption text-text-muted">
-                          {translate(messages, 'inventory.returns.creditPending')}
-                        </span>
+                        <>
+                          <span className="block text-caption text-text-muted">
+                            {translate(messages, 'inventory.returns.creditPending')}
+                          </span>
+                          {/*
+                           * DEF-T-07. The credit a return raises used to be
+                           * named here and reachable nowhere. The credit-note
+                           * screen opens straight onto this note.
+                           */}
+                          <Link
+                            href={`/${locale}/credit-notes?creditNoteId=${row.creditNoteId}`}
+                            className={LINK}
+                          >
+                            {translate(messages, 'inventory.returns.openCredit')}
+                          </Link>
+                        </>
                       ) : null}
                     </td>
                   </tr>
@@ -241,11 +260,15 @@ function BranchReturns({
  * ------------------------------------------------------------------ */
 
 function ReceiveForm({
+  locale,
   messages,
+  target,
   locations,
   onReceived,
 }: {
+  readonly locale: Locale;
   readonly messages: Messages;
+  readonly target: StockTarget;
   readonly locations: ReturnType<typeof useLocations>;
   readonly onReceived: (noticeKey: string) => void;
 }) {
@@ -276,15 +299,21 @@ function ReceiveForm({
   const errorFor = (name: string) =>
     errors[name] ? translateDynamic(messages, errors[name]) : outcomeField(messages, outcome, name);
 
-  const look = async () => {
-    const id = sourceId.trim();
+  /**
+   * Asks the server how much of one source may still come back.
+   *
+   * Takes the source explicitly rather than reading it out of state, because the
+   * line picker calls it in the same turn as it chooses a line — a version that
+   * read `sourceId` would ask about the previous line.
+   */
+  const lookAt = useCallback(async (kind: SalesReturnSourceKind, id: string) => {
     if (!UUID.test(id)) {
       setSourceNote('inventory.common.idFormat');
       setReturnable(null);
       return;
     }
     setSourceNote('inventory.returns.source.looking');
-    const state = await readReturnable(sourceKind, id);
+    const state = await readReturnable(kind, id);
     if (state.status === 'ok') {
       setReturnable(state.data);
       setSourceNote(null);
@@ -298,7 +327,9 @@ function ReceiveForm({
           ? 'inventory.returns.source.refused'
           : 'inventory.returns.source.unavailable'
     );
-  };
+  }, []);
+
+  const look = () => lookAt(sourceKind, sourceId.trim());
 
   const submit = async () => {
     const found: Record<string, string> = {};
@@ -379,44 +410,103 @@ function ReceiveForm({
         {translate(messages, 'inventory.returns.create.explain')}
       </p>
 
-      <div className="grid gap-3 sm:grid-cols-3">
-        <SelectField
-          label={translate(messages, 'inventory.returns.source.kind')}
-          required
-          value={sourceKind}
-          onChange={(event) => {
-            setSourceKind(event.target.value as SalesReturnSourceKind);
-            setReturnable(null);
+      <SelectField
+        label={translate(messages, 'inventory.returns.source.kind')}
+        required
+        value={sourceKind}
+        onChange={(event) => {
+          setSourceKind(event.target.value as SalesReturnSourceKind);
+          setSourceId('');
+          setSourceNote(null);
+          setReturnable(null);
+        }}
+        options={SALES_RETURN_SOURCE_KINDS.map((kind) => ({
+          value: kind,
+          label: translateDynamic(messages, `inventory.returnSource.${kind}`),
+        }))}
+      />
+
+      {/*
+       * DEF-T-06. This asked the operator to type "the reference of the sale
+       * line" as free text, and no sale screen, invoice screen or list in the
+       * product prints one — the acceptance campaign copied a 36-character
+       * identifier out of the raw column of the movement table by hand to get
+       * through the journey at all. The branch's issued counter sales are now
+       * OFFERED, and choosing a line of one is what names the source.
+       *
+       * The box survives for the two cases the picker cannot cover: a part
+       * handed to a job, which is listed per work order and not per branch, and
+       * a caller whose sale reads were refused or failed. In both the screen
+       * says which it is rather than leaving a naked identifier field.
+       */}
+      {sourceKind === 'invoice_line' ? (
+        <SalePicker
+          locale={locale}
+          messages={messages}
+          target={target}
+          onChosen={(lineId) => {
+            setSourceId(lineId);
+            void lookAt('invoice_line', lineId);
           }}
-          options={SALES_RETURN_SOURCE_KINDS.map((kind) => ({
-            value: kind,
-            label: translateDynamic(messages, `inventory.returnSource.${kind}`),
-          }))}
+          fallback={
+            <div className="grid gap-3 sm:grid-cols-3">
+              <div className="sm:col-span-2">
+                <TextField
+                  label={translate(messages, 'inventory.returns.source.id')}
+                  description={translate(messages, 'inventory.returns.source.idHelp')}
+                  required
+                  dir="ltr"
+                  value={sourceId}
+                  onChange={(event) => {
+                    setSourceId(event.target.value);
+                    setReturnable(null);
+                  }}
+                  error={errorFor('sourceId')}
+                />
+              </div>
+              <div className="flex items-end">
+                <button
+                  type="button"
+                  className={SECONDARY_BUTTON}
+                  onClick={() => {
+                    void look();
+                  }}
+                >
+                  {translate(messages, 'inventory.returns.source.look')}
+                </button>
+              </div>
+            </div>
+          }
         />
-        <TextField
-          label={translate(messages, 'inventory.returns.source.id')}
-          description={translate(messages, 'inventory.returns.source.idHelp')}
-          required
-          dir="ltr"
-          value={sourceId}
-          onChange={(event) => {
-            setSourceId(event.target.value);
-            setReturnable(null);
-          }}
-          error={errorFor('sourceId')}
-        />
-        <div className="flex items-end">
-          <button
-            type="button"
-            className={SECONDARY_BUTTON}
-            onClick={() => {
-              void look();
-            }}
-          >
-            {translate(messages, 'inventory.returns.source.look')}
-          </button>
+      ) : (
+        <div className="grid gap-3 sm:grid-cols-3">
+          <div className="sm:col-span-2">
+            <TextField
+              label={translate(messages, 'inventory.returns.source.id')}
+              description={translate(messages, 'inventory.returns.source.issueHelp')}
+              required
+              dir="ltr"
+              value={sourceId}
+              onChange={(event) => {
+                setSourceId(event.target.value);
+                setReturnable(null);
+              }}
+              error={errorFor('sourceId')}
+            />
+          </div>
+          <div className="flex items-end">
+            <button
+              type="button"
+              className={SECONDARY_BUTTON}
+              onClick={() => {
+                void look();
+              }}
+            >
+              {translate(messages, 'inventory.returns.source.look')}
+            </button>
+          </div>
         </div>
-      </div>
+      )}
 
       {sourceNote !== null ? (
         <p role="status" className="text-caption text-text-muted">
@@ -525,5 +615,199 @@ function ReceiveForm({
         </button>
       </div>
     </form>
+  );
+}
+
+/* ------------------------------------------------------------------ *
+ * Choosing the sale, then the line (DEF-T-06)
+ * ------------------------------------------------------------------ */
+
+type SalesState =
+  | { readonly phase: 'loading' }
+  | { readonly phase: 'listed'; readonly sales: readonly Invoice[] }
+  | { readonly phase: 'refused' }
+  | { readonly phase: 'unavailable' };
+
+type LinesState =
+  | { readonly phase: 'idle' }
+  | { readonly phase: 'loading' }
+  | { readonly phase: 'listed'; readonly lines: readonly InvoiceLine[] }
+  | { readonly phase: 'failed'; readonly messageKey: string };
+
+/**
+ * Pick the sale, then pick the line that is coming back.
+ *
+ * Two reads, both already published and both the ones the counter itself uses:
+ * `sal.counter-sale-list` narrowed to ISSUED sales — nothing left the shelf on a
+ * draft, so a draft has nothing to take back — and `sal.invoice-detail` for the
+ * lines of the chosen one.
+ *
+ * Quantities and amounts are the server's strings, rendered and never computed.
+ * How much of the chosen line may still come back is a separate read,
+ * `inv.returnable-quantity-read`, issued by the form above the moment a line is
+ * chosen — so the ceiling an operator sees is always the server's figure.
+ *
+ * When the sale reads are refused or unavailable the caller's fallback is
+ * rendered instead — the typed reference — beside a sentence saying which of the
+ * two happened. A picker that silently disappeared would leave an operator
+ * hunting for a control that is not there.
+ */
+function SalePicker({
+  locale,
+  messages,
+  target,
+  onChosen,
+  fallback,
+}: {
+  readonly locale: Locale;
+  readonly messages: Messages;
+  readonly target: StockTarget;
+  readonly onChosen: (lineId: string) => void;
+  readonly fallback: ReactNode;
+}) {
+  const [sales, setSales] = useState<SalesState>({ phase: 'loading' });
+  const [saleId, setSaleId] = useState('');
+  const [lines, setLines] = useState<LinesState>({ phase: 'idle' });
+  const [lineId, setLineId] = useState('');
+
+  const companyId = target.companyId;
+  const branchId = target.branchId;
+
+  useEffect(() => {
+    let live = true;
+    void listCounterSales({ companyId, branchId }, { status: 'issued' }).then((answer) => {
+      if (!live) return;
+      if (answer.status === 'ok') {
+        setSales({ phase: 'listed', sales: answer.data.items });
+        return;
+      }
+      setSales({ phase: answer.status === 'denied' ? 'refused' : 'unavailable' });
+    });
+    return () => {
+      live = false;
+    };
+    // Keyed on the two branch VALUES, never on the target object: a parent that
+    // rebuilds the pair on every render would otherwise re-read the branch on
+    // every render.
+  }, [companyId, branchId]);
+
+  const chooseSale = (id: string) => {
+    setSaleId(id);
+    setLineId('');
+    if (id === '') {
+      setLines({ phase: 'idle' });
+      return;
+    }
+    setLines({ phase: 'loading' });
+    void readInvoice(id).then((answer) => {
+      if (answer.status === 'ok') {
+        setLines({ phase: 'listed', lines: answer.data.lines });
+        return;
+      }
+      setLines({
+        phase: 'failed',
+        messageKey:
+          answer.status === 'denied'
+            ? 'inventory.returns.sale.linesRefused'
+            : answer.status === 'not-found'
+              ? 'inventory.returns.sale.linesMissing'
+              : 'inventory.returns.sale.linesUnavailable',
+      });
+    });
+  };
+
+  if (sales.phase === 'loading') {
+    return (
+      <p className="text-caption text-text-muted">
+        {translate(messages, 'inventory.returns.sale.loading')}
+      </p>
+    );
+  }
+
+  if (sales.phase !== 'listed') {
+    return (
+      <>
+        <p role="status" className="text-caption text-text-muted">
+          {translate(
+            messages,
+            sales.phase === 'refused'
+              ? 'inventory.returns.sale.refused'
+              : 'inventory.returns.sale.unavailable'
+          )}
+        </p>
+        {fallback}
+      </>
+    );
+  }
+
+  if (sales.sales.length === 0) {
+    return (
+      <p className="text-caption text-text-muted">
+        {translate(messages, 'inventory.returns.sale.none')}
+      </p>
+    );
+  }
+
+  return (
+    <div className="grid gap-3 sm:grid-cols-2">
+      <SelectField
+        label={translate(messages, 'inventory.returns.sale.label')}
+        description={translate(messages, 'inventory.returns.sale.help')}
+        required
+        value={saleId}
+        onChange={(event) => chooseSale(event.target.value)}
+        options={sales.sales.map((sale) => ({
+          value: sale.id,
+          label: [
+            sale.invoiceNumber ?? translate(messages, 'inventory.returns.sale.noNumber'),
+            sale.issuedAt === null ? null : formatDateTime(sale.issuedAt, locale),
+            sale.totals === null ? null : formatMoney(sale.totals.gross, locale),
+          ]
+            .filter((part) => part !== null)
+            .join(' — '),
+        }))}
+        placeholder={translate(messages, 'inventory.returns.sale.choose')}
+      />
+
+      {lines.phase === 'idle' ? null : lines.phase === 'loading' ? (
+        <p className="text-caption text-text-muted">
+          {translate(messages, 'inventory.returns.sale.linesLoading')}
+        </p>
+      ) : lines.phase === 'failed' ? (
+        <p role="alert" className="text-body text-error">
+          {translateDynamic(messages, lines.messageKey)}
+        </p>
+      ) : lines.lines.length === 0 ? (
+        <p className="text-caption text-text-muted">
+          {translate(messages, 'inventory.returns.sale.linesNone')}
+        </p>
+      ) : (
+        <SelectField
+          label={translate(messages, 'inventory.returns.sale.lineLabel')}
+          description={translate(messages, 'inventory.returns.sale.lineHelp')}
+          required
+          value={lineId}
+          onChange={(event) => {
+            setLineId(event.target.value);
+            if (event.target.value !== '') onChosen(event.target.value);
+          }}
+          options={lines.lines.map((line) => ({
+            value: line.id,
+            // The quantity is the server's decimal string and the amount the
+            // server's money, both rendered as sent. Nothing here is summed.
+            label: [
+              translateWithValues(messages, 'inventory.returns.sale.lineNumber', {
+                number: String(line.lineNumber),
+              }),
+              line.quantity,
+              line.money === null ? null : formatMoney(line.money.gross, locale),
+            ]
+              .filter((part) => part !== null)
+              .join(' — '),
+          }))}
+          placeholder={translate(messages, 'inventory.returns.sale.chooseLine')}
+        />
+      )}
+    </div>
   );
 }

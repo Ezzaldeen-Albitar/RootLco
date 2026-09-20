@@ -72,6 +72,8 @@ export const BILLING_PERMISSIONS = {
   issue: 'sal.invoice.issue',
   /** The work-order header, for the screen's context. */
   workOrderRead: 'wo.work_order.read',
+  /** Credit notes — both reads and the approval declare it (DEF-T-07). */
+  creditManage: 'sal.credit.manage',
 } as const;
 
 /** `ck_invoices_status`, mirrored. `credited` is admitted by the guard and unreachable today. */
@@ -218,5 +220,45 @@ export interface IssuedInvoice {
 export interface VoidedInvoice {
   readonly invoice: Invoice;
   readonly replayed: boolean;
+  readonly recordVersion: number;
+}
+
+/* ------------------------------------------------------------------ *
+ * Credit notes (DEF-T-07).
+ *
+ * | operation                | method | path                             | permissions (ALL required)               |
+ * | ------------------------ | ------ | -------------------------------- | ---------------------------------------- |
+ * | `sal.credit-note-list`   | GET    | `/credit-notes`                  | `sal.credit.manage`, `sal.finance.view`  |
+ * | `sal.credit-note-detail` | GET    | `/credit-notes/{creditNoteId}`   | `sal.credit.manage`, `sal.finance.view`  |
+ *
+ * Both DECLARE `sal.finance.view` rather than nulling amounts the way the
+ * invoice reads do, and that asymmetry is the database's: the invoice header is
+ * scope-gated with its money in separate gated tables, so a header without money
+ * is an honest answer; `sel_credit_notes_gated` gates a credit note's WHOLE row,
+ * so a caller without the permission is refused rather than shown an empty list
+ * that would read as "nothing has been credited here". `amount` is therefore
+ * never null on this surface.
+ * ------------------------------------------------------------------ */
+
+/** `ck_credit_notes_approval_state`, mirrored. */
+export const CREDIT_NOTE_STATES = ['pending', 'approved', 'rejected'] as const;
+export type CreditNoteState = (typeof CREDIT_NOTE_STATES)[number];
+
+/** `sal.credit-note-list` and `sal.credit-note-detail` — `CreditNoteView`. */
+export interface CreditNote {
+  readonly id: string;
+  readonly invoiceId: string;
+  readonly companyId: string;
+  readonly branchId: string;
+  /** `numeric(18,4)` beside its currency; the note's currency is the invoice's. */
+  readonly amount: MoneyView;
+  /** Free text the requester wrote. Rendered as given, never parsed. */
+  readonly reason: string;
+  readonly approvalState: CreditNoteState;
+  readonly requestedBy: string;
+  /** Present only once approved — `ck_credit_notes_approved_shape`. */
+  readonly approvedBy: string | null;
+  readonly approvedAt: string | null;
+  readonly issuedAt: string | null;
   readonly recordVersion: number;
 }

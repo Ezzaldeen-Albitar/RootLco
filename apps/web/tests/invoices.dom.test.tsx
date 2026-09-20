@@ -36,6 +36,9 @@ const readOutstanding = vi.fn();
 const createInvoice = vi.fn();
 const issueInvoice = vi.fn();
 const cancelInvoice = vi.fn();
+// DEF-T-07: the two credit-note reads, on the same module surface.
+const listCreditNotes = vi.fn();
+const readCreditNote = vi.fn();
 vi.mock('@/features/billing/api', () => ({
   readWorkOrderInvoice: (...args: unknown[]) => readWorkOrderInvoice(...args),
   readInvoicePreview: (...args: unknown[]) => readInvoicePreview(...args),
@@ -44,6 +47,20 @@ vi.mock('@/features/billing/api', () => ({
   createInvoice: (...args: unknown[]) => createInvoice(...args),
   issueInvoice: (...args: unknown[]) => issueInvoice(...args),
   cancelInvoice: (...args: unknown[]) => cancelInvoice(...args),
+  listCreditNotes: (...args: unknown[]) => listCreditNotes(...args),
+  readCreditNote: (...args: unknown[]) => readCreditNote(...args),
+}));
+
+/*
+ * The credit-note screen names its branch through the SAME picker the stock
+ * screens use, so the branch list it reads belongs to the inventory adapter.
+ */
+const listBranches = vi.fn();
+vi.mock('@/features/inventory/api', () => ({
+  listBranches: (...args: unknown[]) => listBranches(...args),
+  listLocations: vi.fn(),
+  listItems: vi.fn(),
+  listItemCategories: vi.fn(),
 }));
 
 const readWorkOrderDetail = vi.fn();
@@ -71,6 +88,9 @@ vi.mock('@/components/notifications/action-notifications', () => ({
 }));
 
 const { InvoiceScreen } = await import('@/features/billing/components/InvoiceScreen');
+const { CreditNotesScreen } = await import('@/features/billing/components/CreditNotesScreen');
+const CreditNotesPage = (await import('@/app/[locale]/(dashboard)/credit-notes/page'))
+  .default as unknown as RoutePage;
 type RoutePage = (args: {
   params: Promise<Record<string, string>>;
   searchParams: Promise<Record<string, string | undefined>>;
@@ -78,6 +98,8 @@ type RoutePage = (args: {
 const InvoicesPage = (await import('@/app/[locale]/(dashboard)/invoices/page'))
   .default as unknown as RoutePage;
 
+const COMPANY_ID_FIXTURE = '11111111-1111-4111-8111-111111111111';
+const BRANCH_ID_FIXTURE = '22222222-2222-4222-8222-222222222222';
 const WORK_ORDER_ID = '77777777-7777-4777-8777-777777777777';
 const INVOICE_ID = '99999999-9999-4999-8999-999999999999';
 const REVISION_ID = '44444444-4444-4444-8444-444444444444';
@@ -750,6 +772,160 @@ describe('the /invoices route page decides before it reads', () => {
   it('a locale it does not serve is not found', async () => {
     PERMISSIONS = ['sal.invoice.manage'];
     await expect(renderPage({ locale: 'xx' })).rejects.toThrow('notFound');
+  });
+});
+
+/**
+ * DEF-T-07 — credit notes, reachable at last.
+ *
+ * A customer return raised a credit note, the screen said a second person had
+ * to approve it, and nothing in the tenant navigation opened one: the approval
+ * operation took an id no screen published. These cases are folded into this
+ * suite because a credit note belongs to an invoice and to the same module.
+ */
+describe('credit notes are reachable', () => {
+  const CREDIT_NOTE_ID = '33333333-3333-4333-8333-333333333333';
+
+  const note = (over: Record<string, unknown> = {}) => ({
+    id: CREDIT_NOTE_ID,
+    invoiceId: INVOICE_ID,
+    companyId: COMPANY_ID_FIXTURE,
+    branchId: BRANCH_ID_FIXTURE,
+    amount: { amount: '40.0000', currency: 'USD' },
+    reason: 'A part was billed twice on the same job',
+    approvalState: 'pending',
+    requestedBy: 'u1',
+    approvedBy: null,
+    approvedAt: null,
+    issuedAt: null,
+    recordVersion: 1,
+    ...over,
+  });
+
+  beforeEach(() => {
+    listCreditNotes.mockResolvedValue({
+      status: 'ok',
+      data: { items: [note()], nextCursor: null, hasMore: false },
+      correlationId: 'corr',
+    });
+    readCreditNote.mockResolvedValue({ status: 'ok', data: note(), correlationId: 'corr' });
+    listBranches.mockResolvedValue({
+      status: 'ok',
+      data: {
+        items: [
+          {
+            id: BRANCH_ID_FIXTURE,
+            companyId: COMPANY_ID_FIXTURE,
+            branchCode: 'AMM-1',
+            name: 'Amman',
+          },
+        ],
+      },
+      correlationId: 'corr',
+    });
+  });
+
+  const creditNotesScreen = (initial: string | null = null) => (
+    <CreditNotesScreen locale="en" messages={en} canReadBranches initialCreditNoteId={initial} />
+  );
+
+  it('lists the chosen branch notes with the server amount and the state in words', async () => {
+    const user = userEvent.setup();
+    renderLtr(creditNotesScreen());
+    const form = await screen.findByRole('form', {
+      name: EN['creditNotes.targetLabel'] as string,
+    });
+    await user.selectOptions(await within(form).findByRole('combobox'), BRANCH_ID_FIXTURE);
+    await user.click(
+      within(form).getByRole('button', { name: EN['creditNotes.chooseBranch'] as string })
+    );
+
+    expect(await screen.findByText('A part was billed twice on the same job')).toBeTruthy();
+    expect(screen.getByText(money('40.0000'))).toBeTruthy();
+    expect(screen.getByText(EN['creditNotes.state.pending'] as string)).toBeTruthy();
+  });
+
+  it('opens a note named in the address without a branch ever being chosen', async () => {
+    renderLtr(creditNotesScreen(CREDIT_NOTE_ID));
+    await waitFor(() => expect(readCreditNote).toHaveBeenCalledWith(CREDIT_NOTE_ID));
+    expect(await screen.findByText(EN['creditNotes.detail.notApproved'] as string)).toBeTruthy();
+    // The list read is what needs a branch; the detail does not, which is what
+    // makes the link from a return's result work at all.
+    expect(listCreditNotes).not.toHaveBeenCalled();
+  });
+
+  it('states who approved it and when, once it has been approved', async () => {
+    readCreditNote.mockResolvedValue({
+      status: 'ok',
+      data: note({
+        approvalState: 'approved',
+        approvedBy: 'u2',
+        approvedAt: '2026-09-02T10:00:00Z',
+        issuedAt: '2026-09-02T10:00:00Z',
+      }),
+      correlationId: 'corr',
+    });
+    renderLtr(creditNotesScreen(CREDIT_NOTE_ID));
+    expect(await screen.findByText(EN['creditNotes.state.approved'] as string)).toBeTruthy();
+    expect(screen.queryByText(EN['creditNotes.detail.notApproved'] as string)).toBeNull();
+  });
+
+  it('claims no approval control, because approving is a second person act', async () => {
+    renderLtr(creditNotesScreen(CREDIT_NOTE_ID));
+    expect(await screen.findByText(EN['creditNotes.detail.approvalNote'] as string)).toBeTruthy();
+  });
+
+  it('shows a refusal as a refusal rather than as a branch that credited nothing', async () => {
+    listCreditNotes.mockResolvedValue({ status: 'denied', correlationId: 'corr' });
+    const user = userEvent.setup();
+    renderLtr(creditNotesScreen());
+    const form = await screen.findByRole('form', {
+      name: EN['creditNotes.targetLabel'] as string,
+    });
+    await user.selectOptions(await within(form).findByRole('combobox'), BRANCH_ID_FIXTURE);
+    await user.click(
+      within(form).getByRole('button', { name: EN['creditNotes.chooseBranch'] as string })
+    );
+    expect(await screen.findByText(EN['creditNotes.list.refused'] as string)).toBeTruthy();
+    expect(screen.queryByText(EN['creditNotes.list.none'] as string)).toBeNull();
+  });
+
+  it('refuses the page and issues no read without BOTH declared permissions', async () => {
+    for (const held of [[], ['sal.credit.manage'], ['sal.finance.view']]) {
+      PERMISSIONS = held;
+      renderLtr(
+        (await CreditNotesPage({
+          params: Promise.resolve({ locale: 'en' }),
+          searchParams: Promise.resolve({}),
+        })) as React.ReactElement
+      );
+      expect(listCreditNotes, held.join()).not.toHaveBeenCalled();
+      expect(readCreditNote, held.join()).not.toHaveBeenCalled();
+      expect(listBranches, held.join()).not.toHaveBeenCalled();
+    }
+  });
+
+  it('opens the page for a caller holding both, and carries the named note through', async () => {
+    PERMISSIONS = ['sal.credit.manage', 'sal.finance.view', 'org.branch.read'];
+    renderLtr(
+      (await CreditNotesPage({
+        params: Promise.resolve({ locale: 'en' }),
+        searchParams: Promise.resolve({ creditNoteId: CREDIT_NOTE_ID }),
+      })) as React.ReactElement
+    );
+    await waitFor(() => expect(readCreditNote).toHaveBeenCalledWith(CREDIT_NOTE_ID));
+  });
+
+  it('ignores an address that names something that is not a reference', async () => {
+    PERMISSIONS = ['sal.credit.manage', 'sal.finance.view', 'org.branch.read'];
+    renderLtr(
+      (await CreditNotesPage({
+        params: Promise.resolve({ locale: 'en' }),
+        searchParams: Promise.resolve({ creditNoteId: 'not-a-reference' }),
+      })) as React.ReactElement
+    );
+    await screen.findByText(EN['creditNotes.explain'] as string);
+    expect(readCreditNote).not.toHaveBeenCalled();
   });
 });
 

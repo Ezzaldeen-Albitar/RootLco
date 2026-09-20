@@ -40,6 +40,7 @@ const decideMaterialException = vi.fn();
 const listUnitsOfMeasure = vi.fn();
 const listVehicleSpecifications = vi.fn();
 const listServiceLines = vi.fn();
+const listItems = vi.fn();
 vi.mock('@/features/work-orders/api', () => ({
   listServiceLines: (...args: unknown[]) => listServiceLines(...args),
 }));
@@ -54,6 +55,9 @@ vi.mock('@/features/inventory/api', () => ({
   decideMaterialException: (...args: unknown[]) => decideMaterialException(...args),
   listUnitsOfMeasure: (...args: unknown[]) => listUnitsOfMeasure(...args),
   listVehicleSpecifications: (...args: unknown[]) => listVehicleSpecifications(...args),
+  // DEF-M-05, second half: the item is CHOSEN from the catalogue now, so the
+  // search the finder issues belongs to this panel's surface.
+  listItems: (...args: unknown[]) => listItems(...args),
 }));
 
 const notifyActionResult = vi.fn((..._args: unknown[]): boolean => true);
@@ -218,6 +222,13 @@ beforeEach(() => {
   );
   listVehicleSpecifications.mockImplementation(async () => listing([specification()]));
   listServiceLines.mockImplementation(async () => okRead({ items: [serviceLine] }));
+  listItems.mockImplementation(async () => ({
+    status: 'ok' as const,
+    rows: [{ id: ITEM_ID, sku: 'OIL-5W30', name: 'Engine oil', lifecycleStatus: 'active' }],
+    nextCursor: null,
+    hasMore: false,
+    correlationId: 'corr',
+  }));
 });
 
 describe('the allowance is the server figure', () => {
@@ -531,8 +542,14 @@ describe('asking for a requirement', () => {
       await within(form).findByLabelText(labelled('inventory.material.create.serviceLine')),
       SERVICE_LINE_ID
     );
-    await user.type(
-      within(form).getByLabelText(labelled('inventory.material.create.itemId')),
+    // DEF-M-05, second half: the part is CHOSEN from the catalogue search every
+    // other stock screen uses. The free-text reference it replaced was a
+    // 36-character identifier no screen in the product prints.
+    await user.click(
+      within(form).getByRole('button', { name: EN['inventory.stockOps.item.search'] as string })
+    );
+    await user.selectOptions(
+      await within(form).findByLabelText(labelled('inventory.stockOps.item.label')),
       ITEM_ID
     );
     await user.type(
