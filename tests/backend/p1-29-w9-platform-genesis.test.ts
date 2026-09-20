@@ -16,6 +16,43 @@
  *   G7  the SHARED database is untouched: an unrelated operator's grant survives
  *       the whole lifecycle, including this suite's own cleanup
  *
+ * ## The additions (P1-32-PRE-OD-OPERATOR), in this file rather than a new one
+ *
+ * `scripts/platform/add-platform-operator.mjs` closes the gap between genesis,
+ * which is one-time, and `grant-platform-authority.mjs`, which refuses an
+ * account holding no grant: before it there was no supported way to add a
+ * SECOND operator at all. It is the only one of the three writers of
+ * `iam.platform_grants` that can MINT an operator, so what matters is what it
+ * refuses, and its refusals need exactly the precondition this suite already
+ * builds — a first operator, established by genesis, in a database of this
+ * suite's own.
+ *
+ *   A1  the first operator adds a second, and the trail names the GRANTOR
+ *       rather than the catalogue actor
+ *   A2  an operator cannot pass on a code they do not hold
+ *   A3  a grantor cannot add themselves
+ *   A4  an address already seated in the home tenant is refused, pointing at
+ *       grant-platform-authority.mjs
+ *   A5  an account in some ORGANISATION cannot act as grantor, however it
+ *       signs in
+ *   A6  an identity resolving to no account cannot act as grantor
+ *   A7  genesis is STILL one-time once a second operator exists
+ *
+ * They are `it`s in this suite rather than a file of their own because a new
+ * file under `tests/backend` moves a count a sealed P1-27 record states
+ * (`scripts/ci/check-p1-27-doc-counts.mjs` counts that directory), and because
+ * they run against the operator G1 established. The refusals themselves are
+ * pure functions driven exhaustively in
+ * `tests/ci/platform-grant-base-entitlement.test.ts`; what is proved HERE is the
+ * transaction. No identity provider is reached: `runAddOperator` takes the
+ * subject the grantor's sign-in proved as an argument, and asks for the
+ * grantee's identity through a callback this suite answers itself.
+ *
+ * That callback counts its calls, which is how A2, A5 and A6 assert the order
+ * the real script depends on: a refused run must not have asked for the
+ * grantee's identity at all, because asking means inviting an address the run
+ * is about to reject.
+ *
  * ## Where it runs, and why that changed
  *
  * G1's precondition is "a platform with no operator". This suite once obtained
@@ -46,9 +83,14 @@ import {
 } from './isolated-database';
 import {
   PLATFORM_AUTHORITY_CODES,
+  PLATFORM_BASE_AUTHORITY_CODE,
   readGenesisInput,
   runGenesis,
 } from '../../scripts/platform/genesis-platform-operator.mjs';
+import {
+  readAddOperatorInput,
+  runAddOperator,
+} from '../../scripts/platform/add-platform-operator.mjs';
 
 const RUN = Math.random().toString(36).slice(2, 8);
 const EMAIL = `operator_${RUN}@fixture.test`;
@@ -93,6 +135,57 @@ function input(overrides: Record<string, string> = {}) {
     },
     ['--confirm', overrides.GENESIS_OPERATOR_EMAIL ?? EMAIL]
   );
+}
+
+/** The addresses and identities the A-cases use, all derived from this run. */
+const SECOND = `second_op_${RUN}@fixture.test`;
+const THIRD = `third_op_${RUN}@fixture.test`;
+const ORGANISATION = `addoporg_${RUN}`;
+/** The second operator, established by A1 and used as a grantor by A2. */
+let secondAccountId: string;
+
+function addInput(email: string, grantorEmail: string, codes?: readonly string[]) {
+  return readAddOperatorInput(
+    {
+      ROOTLCO_ENV: 'local-acceptance',
+      ADD_OPERATOR_EMAIL: email,
+      ADD_OPERATOR_DISPLAY_NAME: 'Another operator',
+      ADD_OPERATOR_GRANTOR_EMAIL: grantorEmail,
+      ADD_OPERATOR_IDENTITY_PROVIDER: 'test_harness',
+      ADD_OPERATOR_HOME_TENANT_CODE: HOME,
+      NODE_ENV: 'test',
+    },
+    codes === undefined ? ['--confirm', email] : ['--confirm', email, '--codes', codes.join(',')]
+  );
+}
+
+/**
+ * How many times a run has asked for the grantee's provider identity. In the
+ * real script that call is the invitation, so the count is the observable form
+ * of "the provider is reached only after every refusal has passed".
+ */
+let identityRequests = 0;
+
+/** Runs one addition on its own connection, so a rollback cannot leak. */
+async function add(
+  request: ReturnType<typeof addInput>,
+  granteeSubject: string,
+  provenSubject: string
+): Promise<Awaited<ReturnType<typeof runAddOperator>>> {
+  const client = await admin.connect();
+  try {
+    return await runAddOperator(
+      client,
+      request,
+      async () => {
+        identityRequests += 1;
+        return { subject: granteeSubject, created: false };
+      },
+      provenSubject
+    );
+  } finally {
+    client.release();
+  }
 }
 
 async function privilegeGraph(): Promise<string> {
@@ -421,6 +514,247 @@ describe('W9 — platform operator genesis', () => {
 
   it('G5 the privilege graph is exactly what it was: rows were written, privileges were not', async () => {
     expect(await privilegeGraph()).toBe(graphBefore);
+  });
+
+  it('A1 the first operator adds a second, and the trail names the grantor', async () => {
+    // The base code ALONE, deliberately, so A2 can then prove that an operator
+    // cannot pass on what they do not hold.
+    const added = await add(
+      addInput(SECOND, EMAIL, [PLATFORM_BASE_AUTHORITY_CODE]),
+      `sub_second_${RUN}`,
+      `sub_${RUN}`
+    );
+    expect(added).toMatchObject({
+      outcome: 'added',
+      homeTenantId: established.homeTenantId,
+      grantorAccountId: established.operatorAccountId,
+    });
+    secondAccountId = added.operatorAccountId;
+    expect(secondAccountId).not.toBe(established.operatorAccountId);
+
+    const grants = await admin.query<{ permission_code: string; granted_by: string }>(
+      `SELECT permission_code, granted_by FROM iam.platform_grants
+        WHERE account_id = $1 AND revoked_at IS NULL ORDER BY 1`,
+      [secondAccountId]
+    );
+    expect(grants.rows.map((row) => row.permission_code)).toEqual([PLATFORM_BASE_AUTHORITY_CODE]);
+    // Attributed to the GRANTOR, not to the catalogue actor genesis uses.
+    expect(grants.rows.map((row) => row.granted_by)).toEqual([established.operatorAccountId]);
+    expect(grants.rows[0]?.granted_by).not.toBe(SYSTEM_ACTOR);
+
+    const account = await admin.query<{ status: string; tenant_id: string; email: string }>(
+      'SELECT status, tenant_id, email FROM iam.user_accounts WHERE id = $1',
+      [secondAccountId]
+    );
+    expect(account.rows[0]).toMatchObject({
+      status: 'active',
+      tenant_id: established.homeTenantId,
+      email: SECOND,
+    });
+    // Zero tenant roles: an operator holds authority, never a seat in a business.
+    expect(
+      await admin.query('SELECT 1 FROM iam.role_grants WHERE user_id = $1', [secondAccountId])
+    ).toMatchObject({ rowCount: 0 });
+
+    const audit = await admin.query<{ actor_id: string; entity_id: string; fields: string[] }>(
+      `SELECT r.actor_id, r.entity_id, array_agg(d.field_name ORDER BY d.field_name) AS fields
+         FROM iam.audit_records r
+         JOIN iam.audit_record_details d ON d.audit_record_id = r.id
+        WHERE r.id = $1 AND r.action = 'platform.operator.authority_granted'
+        GROUP BY r.actor_id, r.entity_id`,
+      [added.auditRecordId]
+    );
+    expect(audit.rows[0]).toEqual({
+      actor_id: established.operatorAccountId,
+      entity_id: secondAccountId,
+      fields: [
+        'environment',
+        'granted_by',
+        'home_tenant_id',
+        'identity_provider',
+        'platform_grants',
+      ],
+    });
+  });
+
+  it('A2 an operator cannot grant a code they do not themselves hold', async () => {
+    const asked = identityRequests;
+    await expect(
+      add(
+        addInput(THIRD, SECOND, [PLATFORM_BASE_AUTHORITY_CODE, 'platform.audit.read']),
+        `sub_third_${RUN}`,
+        `sub_second_${RUN}`
+      )
+    ).rejects.toMatchObject({
+      exitCode: 4,
+      message: expect.stringContaining('platform.audit.read'),
+    });
+    // The transaction rolled back: no account carries that address.
+    expect(
+      await admin.query('SELECT 1 FROM iam.user_accounts WHERE lower(email) = $1', [THIRD])
+    ).toMatchObject({ rowCount: 0 });
+    // And the refused run never asked for the grantee's identity — in the real
+    // script that request is an invitation to the address just rejected.
+    expect(identityRequests).toBe(asked);
+
+    // The same grantor, requesting only what they hold, is admitted — so the
+    // refusal above is about the code, not about the grantor.
+    expect(
+      await add(
+        addInput(THIRD, SECOND, [PLATFORM_BASE_AUTHORITY_CODE]),
+        `sub_third_${RUN}`,
+        `sub_second_${RUN}`
+      )
+    ).toMatchObject({
+      outcome: 'added',
+      grantorAccountId: secondAccountId,
+      homeTenantId: established.homeTenantId,
+    });
+    // Exactly one request, from the run that was admitted: the counter is not
+    // stuck, so the case above is a real difference and not a dead assertion.
+    expect(identityRequests).toBe(asked + 1);
+  });
+
+  it('A3 a grantor cannot add themselves, and A4 an address already at home is refused', async () => {
+    // Refused while the input is read, before a connection is opened at all.
+    expect(() => addInput(EMAIL, EMAIL)).toThrowError(/same address/);
+    // And refused again inside the transaction, for a caller that built the
+    // input some other way: the rule does not live only in the argument parser.
+    const bypass = addInput(THIRD, EMAIL);
+    bypass.operator.email = EMAIL;
+    await expect(add(bypass, `sub_${RUN}`, `sub_${RUN}`)).rejects.toMatchObject({
+      exitCode: 4,
+      message: expect.stringContaining('same address'),
+    });
+    await expect(
+      add(addInput(SECOND, EMAIL), `sub_second_${RUN}_again`, `sub_${RUN}`)
+    ).rejects.toMatchObject({
+      exitCode: 4,
+      message: expect.stringContaining('grant-platform-authority.mjs'),
+    });
+    // Exactly one account with that address, holding exactly what A1 gave it.
+    expect(
+      await admin.query('SELECT 1 FROM iam.user_accounts WHERE lower(email) = $1', [SECOND])
+    ).toMatchObject({ rowCount: 1 });
+    expect(
+      await admin.query(
+        'SELECT 1 FROM iam.platform_grants WHERE account_id = $1 AND revoked_at IS NULL',
+        [secondAccountId]
+      )
+    ).toMatchObject({ rowCount: 1 });
+  });
+
+  it("A5 an organisation's own account cannot act as grantor, and A6 nor can an unknown identity", async () => {
+    // A real organisation, provisioned through the sanctioned function, with an
+    // account in it that signs in exactly the way an operator would. Both writes
+    // need an actor in the session context — the status-history trigger refuses
+    // without one — and `set_config(..., true)` is transaction-local, so this
+    // runs on one client inside one transaction.
+    const administratorAddress = `administrator_${RUN}@fixture.test`;
+    const asked = identityRequests;
+    const fixture = await admin.connect();
+    let administratorId: string;
+    try {
+      await fixture.query('BEGIN');
+      await fixture.query("SELECT set_config('app.user_id', $1, true)", [SYSTEM_ACTOR]);
+      const provisioned = await fixture.query<{ result: { tenant_id: string } }>(
+        'SELECT org.provision_organization($1::jsonb, $2) AS result',
+        [
+          JSON.stringify({
+            actor_id: SYSTEM_ACTOR,
+            tenant: {
+              code: ORGANISATION,
+              display_name: 'An organisation',
+              locale: 'en',
+              timezone: 'UTC',
+            },
+            company: { code: ORGANISATION, legal_name: 'An organisation', base_currency: 'USD' },
+            branch: { code: 'main', name: 'Main', timezone: 'UTC' },
+          }),
+          `addop-fixture:${ORGANISATION}`,
+        ]
+      );
+      const organisationTenantId = provisioned.rows[0]?.result.tenant_id as string;
+      await fixture.query("SELECT set_config('app.tenant_id', $1, true)", [organisationTenantId]);
+      const inserted = await fixture.query<{ id: string }>(
+        `INSERT INTO iam.user_accounts
+           (tenant_id, identity_provider, provider_subject, email, display_name, status, created_by)
+         VALUES ($1, 'test_harness', $2, $3, 'An administrator', 'active', $4)
+         RETURNING id`,
+        [organisationTenantId, `sub_admin_${RUN}`, administratorAddress, SYSTEM_ACTOR]
+      );
+      administratorId = inserted.rows[0]?.id as string;
+      await fixture.query('COMMIT');
+    } catch (error) {
+      await fixture.query('ROLLBACK');
+      throw error;
+    } finally {
+      fixture.release();
+    }
+
+    await expect(
+      add(
+        addInput(`escalated_${RUN}@fixture.test`, administratorAddress),
+        `sub_escalated_${RUN}`,
+        `sub_admin_${RUN}`
+      )
+    ).rejects.toMatchObject({ exitCode: 4, message: expect.stringContaining(ORGANISATION) });
+    // The account exists and is active — what refused it is where it lives and
+    // what it holds, not whether it was found.
+    expect(
+      await admin.query("SELECT 1 FROM iam.user_accounts WHERE id = $1 AND status = 'active'", [
+        administratorId,
+      ])
+    ).toMatchObject({ rowCount: 1 });
+    expect(
+      await admin.query('SELECT 1 FROM iam.user_accounts WHERE lower(email) = $1', [
+        `escalated_${RUN}@fixture.test`,
+      ])
+    ).toMatchObject({ rowCount: 0 });
+
+    // A6 — an identity that resolves to no account at all.
+    await expect(
+      add(
+        addInput(`nobody_${RUN}@fixture.test`, `ghost_${RUN}@fixture.test`),
+        `sub_nobody_${RUN}`,
+        `sub_ghost_${RUN}`
+      )
+    ).rejects.toMatchObject({
+      exitCode: 4,
+      message: expect.stringContaining('genesis-platform-operator.mjs'),
+    });
+    // Neither refusal reached for the grantee's identity: a run with no
+    // provable grantor invites nobody.
+    expect(identityRequests).toBe(asked);
+  });
+
+  it('A7 genesis is still one-time once a second operator exists', async () => {
+    const client = await admin.connect();
+    try {
+      await expect(
+        runGenesis(
+          client,
+          input({
+            GENESIS_OPERATOR_EMAIL: `fourth_${RUN}@fixture.test`,
+            GENESIS_HOME_TENANT_CODE: `${HOME}e`,
+          }),
+          { subject: `sub_fourth_${RUN}`, created: false }
+        )
+      ).rejects.toMatchObject({ exitCode: 4, message: expect.stringContaining('one-time') });
+    } finally {
+      client.release();
+    }
+    // Three holders now, and the first still holds the whole catalogue list.
+    const holders = await admin.query<{ n: number }>(
+      'SELECT count(DISTINCT account_id)::int AS n FROM iam.platform_grants WHERE revoked_at IS NULL'
+    );
+    expect(holders.rows[0]?.n).toBe(3);
+    expect(
+      await admin.query(
+        'SELECT 1 FROM iam.platform_grants WHERE account_id = $1 AND revoked_at IS NULL',
+        [established.operatorAccountId]
+      )
+    ).toMatchObject({ rowCount: PLATFORM_AUTHORITY_CODES.length });
   });
 
   it('G7 the shared database is untouched: an unrelated operator grant survives the whole lifecycle', async () => {
