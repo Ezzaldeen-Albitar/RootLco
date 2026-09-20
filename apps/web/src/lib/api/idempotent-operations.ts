@@ -24,7 +24,7 @@
  * thirteen of them stating which class a write declares, none of them checkable
  * — because the Web tier held no data from which one could be derived.
  *
- * Currently approval 17, export 2, financial 15, none 212, privileged 233, security 14.
+ * Currently approval 17, export 2, financial 15, none 214, privileged 233, security 14.
  *
  * `(absent)` above would mean an operation the document publishes with NO audit
  * class. It is emitted as the empty string rather than defaulted to `none`,
@@ -49,7 +49,7 @@ export interface PublishedOperation {
   readonly auditClass: string;
 }
 
-/** Every operation the contract publishes. 493 of them. */
+/** Every operation the contract publishes. 495 of them. */
 export const PUBLISHED_OPERATIONS: readonly PublishedOperation[] = Object.freeze([
   {
     template: '/additional-work/{requestId}/approval',
@@ -393,6 +393,20 @@ export const PUBLISHED_OPERATIONS: readonly PublishedOperation[] = Object.freeze
     operationId: 'sal.counter-sale-create',
     idempotent: true,
     auditClass: 'financial',
+  },
+  {
+    template: '/credit-notes',
+    method: 'GET',
+    operationId: 'sal.credit-note-list',
+    idempotent: false,
+    auditClass: 'none',
+  },
+  {
+    template: '/credit-notes/{creditNoteId}',
+    method: 'GET',
+    operationId: 'sal.credit-note-detail',
+    idempotent: false,
+    auditClass: 'none',
   },
   {
     template: '/credit-notes/{creditNoteId}/approval',
