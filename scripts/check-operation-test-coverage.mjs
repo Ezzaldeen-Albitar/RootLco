@@ -2676,6 +2676,20 @@ export const MANIFEST = {
     required: ['outbox', 'denial'],
     note: 'a SECOND operation rather than a flag, because sal.guard_dual_control_approval raises check_violation when approved_by = requested_by and BOTH are stamped from iam.current_user_id() — the maker on INSERT, the approver on UPDATE — so the two acts must come from two sessions belonging to two different users and no single endpoint could satisfy that however it were shaped; audit class is approval rather than financial because the fact recorded is a second person’s decision; the test drives it with a distinct approver principal and asserts the same-user attempt is refused with a caller-safe message rather than a constraint name (denial); idempotent because the primitive returns silently on an already-approved note, and uq_financial_events_source would refuse a second event with 23505 in any case — a free backstop',
   },
+  // DEF-T-07. The two reads that give sal.credit-note-approve a reachable caller.
+  // Folded into the P1-22 credit-note suite rather than opening a new file,
+  // because the notes they read are the ones that suite already creates and
+  // approves, and a second suite would build a second fixture of the same rows.
+  'sal.credit-note-list': {
+    files: ['tests/backend/p1-22-credit-note.test.ts'],
+    required: ['denial'],
+    note: 'the branch is the target and is re-authorized before a row is fetched, so a grant in another branch is refused (denial) and a note in another branch is never listed (isolation); sal.finance.view is DECLARED rather than nulled because sel_credit_notes_gated removes the whole row — a caller without it would otherwise read an empty page indistinguishable from a branch that has credited nothing, which the suite proves by driving the same branch with SAL_NO_FINANCE and asserting 403 rather than an empty page; the page is newest-first on created_at and narrowable to one approval state and one invoice',
+  },
+  'sal.credit-note-detail': {
+    files: ['tests/backend/p1-22-credit-note.test.ts'],
+    required: ['denial'],
+    note: 'what the second person is asked to approve — amount, reason, requester, approval state — read back by the id the list publishes; an absent note and one the caller may not see are the SAME 404 because sel_credit_notes_gated gates the whole row and telling the two apart would confirm a financial document exists (cross-tenant); the record version is published and echoed as the ETag because the row carries one, not as a claim that the approval is version-guarded',
+  },
   'sal.payment-record': {
     files: [
       'tests/backend/p1-22-payments.test.ts',

@@ -185,8 +185,12 @@ describe('every route body serialises a named type', () => {
     // 493 with the Owner directive console account and security: one operation,
     // the caller's own password change, serialising the NAMED `PasswordChangeResult`
     // — so `named` moves by one and `composed` does not move.
-    expect(summary.bodies).toBe(493);
-    expect(summary.named).toBe(441);
+    // 495 with the Owner directive credit-note reads (DEF-T-07): the detail
+    // serialises the NAMED `CreditNoteView` and the list a `Page<CreditNoteView>`,
+    // which the checker resolves through the same generic the other paged reads
+    // use — so `named` moves by two and `composed` does not move.
+    expect(summary.bodies).toBe(495);
+    expect(summary.named).toBe(443);
     expect(summary.composed).toBe(52);
     expect(summary.anonymous).toBe(0);
     expect(summary.unresolved).toBe(0);

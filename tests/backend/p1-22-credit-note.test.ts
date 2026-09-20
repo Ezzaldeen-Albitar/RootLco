@@ -40,9 +40,27 @@
  * event row is read back and counted", so declaring it here would claim an event was
  * verified to be published. It is asserted and not declared.
  *
+ * ## The two reads were added because the approval had no reachable caller (DEF-T-07)
+ *
+ * The acceptance campaign took a part back, was told a second person had to approve the
+ * credit, and found nothing anywhere that could open one: the approval takes a note id
+ * and no operation published one. `sal.credit-note-list` and `sal.credit-note-detail`
+ * are folded into THIS file rather than a new suite, because the notes they read are
+ * the ones the cases above create and approve, and a second suite would rebuild the
+ * same fixture to look at it.
+ *
+ * Both DECLARE `sal.finance.view` instead of nulling amounts the way the invoice reads
+ * do, and the difference is in the DDL rather than in taste: `sel_credit_notes_gated`
+ * gates the WHOLE row, so a caller without the permission would read an empty page —
+ * indistinguishable from a branch that has credited nothing. The list case drives
+ * exactly that caller and asserts 403 rather than an empty page, which is the assertion
+ * that would fail if the permission were dropped from the declaration.
+ *
  * COVERAGE-EVIDENCE (P1-22 credit notes):
  *   sal.credit-note-create: route service authorization success denial audit idempotency isolation cross-tenant
  *   sal.credit-note-approve: route service authorization success denial audit outbox idempotency isolation cross-tenant
+ *   sal.credit-note-list: route service authorization success denial isolation
+ *   sal.credit-note-detail: route service authorization success denial isolation cross-tenant
  */
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import type { Pool } from 'pg';
@@ -88,6 +106,8 @@ import {
   CREDIT_NOTE_APPROVE_OPERATION,
   POST as APPROVE_CREDIT_NOTE,
 } from '@/app/api/v1/credit-notes/[creditNoteId]/approval/route';
+import { GET as LIST_CREDIT_NOTES } from '@/app/api/v1/credit-notes/route';
+import { GET as READ_CREDIT_NOTE } from '@/app/api/v1/credit-notes/[creditNoteId]/route';
 
 let admin: Pool;
 
@@ -157,6 +177,31 @@ const approveCreditNote = (creditNoteId: string, key: string = randomUUID()): Pr
     }),
     { params: Promise.resolve({ creditNoteId }) }
   );
+
+/**
+ * Lists a branch's credit notes (DEF-T-07).
+ *
+ * The branch travels in the QUERY because a credit note has no parent screen a
+ * caller already holds — it is raised against an invoice by a customer return that
+ * never names one — so the branch is the read's target rather than something
+ * inferred from a path parameter.
+ */
+const listCreditNotes = (query: Readonly<Record<string, string>>): Promise<Response> =>
+  LIST_CREDIT_NOTES(
+    new Request(`http://localhost/api/v1/credit-notes?${new URLSearchParams(query).toString()}`)
+  );
+
+/** Reads one credit note back by the id the list publishes (DEF-T-07). */
+const readCreditNote = (creditNoteId: string): Promise<Response> =>
+  READ_CREDIT_NOTE(new Request(`http://localhost/api/v1/credit-notes/${creditNoteId}`), {
+    params: Promise.resolve({ creditNoteId }),
+  });
+
+interface CreditNotePageBody {
+  readonly items: readonly CreditNoteBody[];
+  readonly nextCursor: string | null;
+  readonly hasMore: boolean;
+}
 
 /** Audit rows for ONE action across the database, for a before/after delta. */
 const auditTotalFor = (action: string): Promise<number> =>
@@ -870,5 +915,227 @@ describe('sal.credit-note-approve', () => {
       )
     ).toBe(1);
     expect(await invoiceOpenReceivable(invoice.invoiceId)).toBe('100.0000');
+  });
+});
+
+/* ------------------------------------------------------------------------- *
+ * DEF-T-07 — the two reads that give the approval a reachable caller.
+ * ------------------------------------------------------------------------- */
+
+describe('sal.credit-note-list', () => {
+  it('lists the branch newest first and narrows to a state and an invoice (success)', async () => {
+    const invoice = await seedIssuedInvoice('cn_list_success');
+    const other = await seedIssuedInvoice('cn_list_other');
+
+    // Two notes on one invoice and one on another, created in a known order. The
+    // second is approved so the state filter has something to separate.
+    const first = await pendingNote(invoice.invoiceId, '10.0000');
+    const second = await pendingNote(invoice.invoiceId, '20.0000');
+    const elsewhere = await pendingNote(other.invoiceId, '30.0000');
+    authAs(SAL_APPROVER);
+    expect((await approveCreditNote(second.id)).status).toBe(200);
+
+    authAs(SAL_FULL);
+    const response = await listCreditNotes({ companyId: COMPANY_A1, branchId: BRANCH_A1 });
+    expect(response.status).toBe(200);
+    const page = await bodyOf<CreditNotePageBody>(response);
+
+    const listed = page.items.map((note) => note.id);
+    expect(listed).toContain(first.id);
+    expect(listed).toContain(second.id);
+    expect(listed).toContain(elsewhere.id);
+    // Newest first on `created_at`: the third note was created last and the first
+    // was created first, so their positions are in that order.
+    expect(listed.indexOf(elsewhere.id)).toBeLessThan(listed.indexOf(second.id));
+    expect(listed.indexOf(second.id)).toBeLessThan(listed.indexOf(first.id));
+
+    // The amount is the exact `numeric(18,4)` string beside its currency, never a
+    // number and never re-rendered.
+    const listedFirst = page.items.find((note) => note.id === first.id);
+    expect(listedFirst?.amount.amount).toBe('10.0000');
+    expect(listedFirst?.amount.currency).toBe('USD');
+    expect(listedFirst?.approvalState).toBe('pending');
+    expect(listedFirst?.requestedBy).toBe(SAL_FULL.userId);
+
+    // One approval state.
+    authAs(SAL_FULL);
+    const approvedOnly = await bodyOf<CreditNotePageBody>(
+      await listCreditNotes({
+        companyId: COMPANY_A1,
+        branchId: BRANCH_A1,
+        approvalState: 'approved',
+      })
+    );
+    const approvedIds = approvedOnly.items.map((note) => note.id);
+    expect(approvedIds).toContain(second.id);
+    expect(approvedIds).not.toContain(first.id);
+    expect(approvedIds).not.toContain(elsewhere.id);
+
+    // One invoice.
+    authAs(SAL_FULL);
+    const forInvoice = await bodyOf<CreditNotePageBody>(
+      await listCreditNotes({
+        companyId: COMPANY_A1,
+        branchId: BRANCH_A1,
+        invoiceId: invoice.invoiceId,
+      })
+    );
+    expect(forInvoice.items.map((note) => note.id).sort()).toEqual([first.id, second.id].sort());
+
+    // One row per page, so the cursor is exercised rather than assumed: a screen
+    // reading `items` alone would silently show one note and call it the branch.
+    authAs(SAL_FULL);
+    const firstPage = await bodyOf<CreditNotePageBody>(
+      await listCreditNotes({
+        companyId: COMPANY_A1,
+        branchId: BRANCH_A1,
+        invoiceId: invoice.invoiceId,
+        limit: '1',
+      })
+    );
+    expect(firstPage.items).toHaveLength(1);
+    expect(firstPage.hasMore).toBe(true);
+    expect(firstPage.nextCursor).not.toBeNull();
+    expect(firstPage.items[0]?.id).toBe(second.id);
+
+    authAs(SAL_FULL);
+    const nextPage = await bodyOf<CreditNotePageBody>(
+      await listCreditNotes({
+        companyId: COMPANY_A1,
+        branchId: BRANCH_A1,
+        invoiceId: invoice.invoiceId,
+        limit: '1',
+        cursor: firstPage.nextCursor ?? '',
+      })
+    );
+    expect(nextPage.items).toHaveLength(1);
+    expect(nextPage.items[0]?.id).toBe(first.id);
+    expect(nextPage.hasMore).toBe(false);
+  });
+
+  it('refuses a caller without sal.finance.view rather than answering an empty page (denial)', async () => {
+    const invoice = await seedIssuedInvoice('cn_list_denial');
+    const note = await pendingNote(invoice.invoiceId, '10.0000');
+
+    // The decisive assertion about this operation's declaration.
+    // `sel_credit_notes_gated` would remove every row for this caller, so an
+    // operation declaring only `sal.credit.manage` would answer 200 with an empty
+    // list — a sentence meaning "this branch has credited nothing", which is false
+    // and which no client could tell from the truth.
+    authAs(SAL_NO_FINANCE);
+    const refused = await listCreditNotes({ companyId: COMPANY_A1, branchId: BRANCH_A1 });
+    expect(refused.status).toBe(403);
+    expect((await bodyOf<ProblemBody>(refused)).code).toBe('ERR-IAM-001');
+
+    // A caller holding the finance code and no credit authority is refused for the
+    // other half of the pair.
+    authAs(SAL_READER);
+    const reader = await listCreditNotes({ companyId: COMPANY_A1, branchId: BRANCH_A1 });
+    expect(reader.status).toBe(403);
+    expect((await bodyOf<ProblemBody>(reader)).code).toBe('ERR-IAM-001');
+
+    // Neither refusal touched the note.
+    expect(
+      await countRowsOf(
+        `SELECT count(*)::text AS n FROM sal.credit_notes
+          WHERE id = $1 AND approval_state = 'pending'`,
+        [note.id]
+      )
+    ).toBe(1);
+  });
+
+  it('refuses a branch the caller holds no credit permission in (isolation)', async () => {
+    const invoice = await seedIssuedInvoice('cn_list_isolation');
+    await pendingNote(invoice.invoiceId, '10.0000');
+
+    // BRANCH_A1 is inside this caller's permission-blind RLS union, so the rows ARE
+    // visible to the database. The refusal can only be the scoped permission check
+    // against the branch the query names (P1-18-A-01).
+    authAs(SAL_PERMISSION_ELSEWHERE);
+    const response = await listCreditNotes({ companyId: COMPANY_A1, branchId: BRANCH_A1 });
+    expect(response.status).toBe(403);
+    expect((await bodyOf<ProblemBody>(response)).code).toBe('ERR-IAM-001');
+  });
+});
+
+describe('sal.credit-note-detail', () => {
+  it('reads back what the second person is asked to approve (success)', async () => {
+    const invoice = await seedIssuedInvoice('cn_detail_success');
+    const note = await pendingNote(invoice.invoiceId, '25.0000');
+
+    authAs(SAL_FULL);
+    const pending = await readCreditNote(note.id);
+    expect(pending.status).toBe(200);
+    // The version the row carries, echoed as the ETag by the shared pipeline.
+    expect(pending.headers.get('etag')).toBe('"1"');
+    const before = await bodyOf<CreditNoteBody>(pending);
+    expect(before.id).toBe(note.id);
+    expect(before.invoiceId).toBe(invoice.invoiceId);
+    expect(before.companyId).toBe(COMPANY_A1);
+    expect(before.branchId).toBe(BRANCH_A1);
+    expect(before.amount.amount).toBe('25.0000');
+    expect(before.amount.currency).toBe('USD');
+    expect(before.reason).toBe('P1-22 fixture credit of 25.0000');
+    expect(before.approvalState).toBe('pending');
+    expect(before.requestedBy).toBe(SAL_FULL.userId);
+    expect(before.approvedBy).toBeNull();
+    expect(before.approvedAt).toBeNull();
+    expect(before.issuedAt).toBeNull();
+
+    authAs(SAL_APPROVER);
+    expect((await approveCreditNote(note.id)).status).toBe(200);
+
+    // After approval the same read states who decided and when — the fact the
+    // returns screen had no way to show at all.
+    authAs(SAL_FULL);
+    const after = await bodyOf<CreditNoteBody>(await readCreditNote(note.id));
+    expect(after.approvalState).toBe('approved');
+    expect(after.approvedBy).toBe(SAL_APPROVER.userId);
+    expect(after.approvedAt).not.toBeNull();
+    expect(after.issuedAt).not.toBeNull();
+    expect(after.amount.amount).toBe('25.0000');
+  });
+
+  it('refuses a caller lacking either declared permission (denial)', async () => {
+    const invoice = await seedIssuedInvoice('cn_detail_denial');
+    const note = await pendingNote(invoice.invoiceId, '10.0000');
+
+    authAs(SAL_NO_FINANCE);
+    const noFinance = await readCreditNote(note.id);
+    expect(noFinance.status).toBe(403);
+    expect((await bodyOf<ProblemBody>(noFinance)).code).toBe('ERR-IAM-001');
+
+    authAs(SAL_READER);
+    const reader = await readCreditNote(note.id);
+    expect(reader.status).toBe(403);
+    expect((await bodyOf<ProblemBody>(reader)).code).toBe('ERR-IAM-001');
+  });
+
+  it('answers one 404 for another tenant and for an unknown id (cross-tenant)', async () => {
+    const invoice = await seedIssuedInvoice('cn_detail_cross_tenant');
+    const note = await pendingNote(invoice.invoiceId, '10.0000');
+
+    authAs(SAL_TENANT_B);
+    const foreign = await readCreditNote(note.id);
+    expect(foreign.status).toBe(404);
+    expect((await bodyOf<ProblemBody>(foreign)).code).toBe('ERR-RES-001');
+
+    authAs(SAL_TENANT_B);
+    const unknown = await readCreditNote(randomUUID());
+    expect(unknown.status).toBe(404);
+    expect((await bodyOf<ProblemBody>(unknown)).code).toBe('ERR-RES-001');
+  });
+
+  it('refuses a caller holding no credit permission in the note branch (isolation)', async () => {
+    const invoice = await seedIssuedInvoice('cn_detail_isolation');
+    const note = await pendingNote(invoice.invoiceId, '10.0000');
+
+    // The path names a note, not a branch, and the note IS visible to this caller's
+    // RLS union — so the 403 is the deferred scope check reading the note's own
+    // company and branch, and cannot be RLS invisibility wearing a 403.
+    authAs(SAL_PERMISSION_ELSEWHERE);
+    const response = await readCreditNote(note.id);
+    expect(response.status).toBe(403);
+    expect((await bodyOf<ProblemBody>(response)).code).toBe('ERR-IAM-001');
   });
 });
