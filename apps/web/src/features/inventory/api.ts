@@ -1271,15 +1271,22 @@ export async function assignInternalBarcode(
  * exact decimal string the operator typed; nothing on this side rounds, scales
  * or reformats it.
  *
- * DEF-T-14: the 404 this write can answer is NOT about the item in the path.
- * `inv.item_sale_prices` has a foreign key on each of the company, the branch,
- * the tax class and the currency, and the service maps every one of them to
- * `ERR-RES-001` with one message. The generic not-found title said none of
- * that, so a price refused for a currency the organisation does not carry read
- * as "Not found" and a correlation reference. The sentence below names all four
- * candidates — the server does not say which, so neither does this — and the
- * currency box carries it as a field message, because that box is free text and
- * no operation publishes the currencies the organisation uses.
+ * DEF-T-14: the 404 this write can answer is usually NOT about the item in the
+ * path. `inv.item_sale_prices` has a foreign key on each of the company, the
+ * branch, the tax class and the currency, and the service maps every one of
+ * them to `ERR-RES-001` with one message. The generic not-found title said none
+ * of that, so a price refused for a currency the organisation does not carry
+ * read as "Not found" and a correlation reference.
+ *
+ * The item is the fifth candidate and is named as one: `setSalePrice` calls
+ * `requireItem` FIRST (`inventory-catalog-service.ts`), which raises the same
+ * `ERR-RES-001` when the item in the path is gone — a screen left open across a
+ * retirement reaches it. The server distinguishes none of the five in anything
+ * this client may read, so the sentence below names all five rather than
+ * asserting a cause. The currency box still carries a field message, because
+ * that box is free text and no operation publishes the currencies the
+ * organisation uses; that message says what is true only once the reader has
+ * ruled the other candidates out, and claims nothing before then.
  */
 export async function setSalePrice(
   itemId: string,

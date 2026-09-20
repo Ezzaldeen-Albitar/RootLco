@@ -246,7 +246,7 @@ describe('what a count shows', () => {
       within(pending).getAllByText(EN['inventory.counts.line.notCounted'] as string)
     ).toHaveLength(2);
     expect(
-      within(panel).getByText(EN['inventory.counts.detail.varianceExplain'] as string)
+      within(panel).getByText(EN['inventory.counts.detail.varianceExplainOpen'] as string)
     ).toBeVisible();
   });
 
@@ -272,6 +272,14 @@ describe('what a count shows', () => {
     expect(
       within(panel).getByText(EN['inventory.counts.detail.movementsPending'] as string)
     ).toBeVisible();
+    // The difference is generated from the same unwritten zero, so the screen
+    // must not carry the sentence that says it already accounts for movements.
+    expect(
+      within(panel).queryByText(EN['inventory.counts.detail.varianceExplain'] as string)
+    ).toBeNull();
+    expect(
+      within(panel).getByText(EN['inventory.counts.detail.varianceExplainOpen'] as string)
+    ).toBeVisible();
   });
 
   it('shows the movement figure once the count is reconciled, and drops the caveat', async () => {
@@ -288,6 +296,12 @@ describe('what a count shows', () => {
     expect(
       within(panel).queryByText(EN['inventory.counts.detail.movementsPending'] as string)
     ).toBeNull();
+    expect(
+      within(panel).queryByText(EN['inventory.counts.detail.varianceExplainOpen'] as string)
+    ).toBeNull();
+    expect(
+      within(panel).getByText(EN['inventory.counts.detail.varianceExplain'] as string)
+    ).toBeVisible();
   });
 });
 

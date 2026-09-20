@@ -1244,6 +1244,16 @@ function ReorderLevelForm({
   // than were served.
   const findItems = async () => {
     const text = search.trim();
+    // The same ceiling the opening-stock picker applies: a search longer than a
+    // name can be is refused here, where the box can be named, rather than
+    // coming back from the server as a refusal of the whole request.
+    if (text.length > MAX_NAME) {
+      setErrors((current) => ({ ...current, search: 'inventory.items.searchTooLong' }));
+      return;
+    }
+    setErrors((current) =>
+      Object.fromEntries(Object.entries(current).filter(([name]) => name !== 'search'))
+    );
     const page = await listItems(
       // Only stock-tracked items: a level on an item nothing holds a balance
       // for could never be compared against anything.
@@ -1338,6 +1348,7 @@ function ReorderLevelForm({
         description={translate(messages, 'inventory.reorderLevels.items.searchHelp')}
         value={search}
         onChange={(event) => setSearch(event.target.value)}
+        error={errorFor('search')}
       />
       <div>
         <button
