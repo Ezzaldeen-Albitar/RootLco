@@ -42,6 +42,10 @@
  *         UPDATE, and a dry run leaves the database exactly as it found it
  *   BF-9  a route could not do this — the platform INSERT policy refuses an
  *         active tenant, which is why no migration is added
+ *   BF-10 the claim that a widening needs no edit to the script, measured for the
+ *         Owner directive of 2026-09-17: an organisation on the 85-code bundle is
+ *         offered EXACTLY the three codes that directive added, by a dry run that
+ *         writes nothing, and then by the applied run
  *
  * ## Where it runs
  *
@@ -49,7 +53,7 @@
  * tenants THIS SUITE provisions through the shipped provisioning route and drops
  * afterwards. Nothing here reads or writes an organisation it did not create.
  * The stale state is constructed by removing, from the suite's own fresh
- * tenants, exactly the eight codes the three P1-31 widenings added — which
+ * tenants, exactly the twenty-two codes widened onto the bundle since — which
  * reproduces the 67-code bundle those organisations really hold.
  *
  * Operations exercised: platform.organization-provision, iam.role-create,
@@ -163,8 +167,30 @@ const P1_32_ADDED = Object.freeze([
   'inv.specification.manage',
 ]);
 
+/**
+ * Three of the four codes the QA campaign measured as permanently closed in every
+ * platform-provisioned organisation (Owner directive 2026-09-17). They are the
+ * reason this backfill owes a SIXTH operator run — ONE run covering all three, not
+ * one each. An organisation provisioned on the 85-code bundle can create a work
+ * order and never say what work is on it, can register a customer and never record
+ * a telephone number for it, and can run a reception from check-in to conversion
+ * without anyone being able to record the pre-service condition. The script reads
+ * the bundle from source, so it carries these without an edit; the run is an
+ * operator act and is not performed by this slice.
+ *
+ * The fourth code the campaign measured, `inv.cost.view`, is NOT in the bundle and
+ * so is not in any backfill offer: its exclusion is a recorded decision (P1-30
+ * change control CC-12, open; register gap E-14) that only the Owner may reverse.
+ * BF-10 asserts its absence from the offer for that reason.
+ */
+const OD_QA_ADDED = Object.freeze([
+  'wo.work_order.line.manage',
+  'crm.customer.profile.write',
+  'rec.reception.evidence.manage',
+]);
+
 /** Every code widened onto the 67-code bundle since: what a stale organisation lacks. */
-const WIDENED = Object.freeze([...BACKFILLED, ...P1_32_ADDED]);
+const WIDENED = Object.freeze([...BACKFILLED, ...P1_32_ADDED, ...OD_QA_ADDED]);
 
 /** A real catalogue code the bundle deliberately does NOT carry (P1-31 CC-04). */
 const CUSTOMISATION_CODE = 'rpt.export';
@@ -341,7 +367,7 @@ async function backfillAuditCount(tenantId: string): Promise<number> {
   return rows[0]?.n ?? 0;
 }
 
-/** Removes the eighteen widened codes, reproducing the 67-code bundle on a fresh role. */
+/** Removes the twenty-two widened codes, reproducing the 67-code bundle on a fresh role. */
 async function makeStale(tenant: Provisioned): Promise<void> {
   await admin.query(
     `DELETE FROM iam.role_permissions
@@ -795,5 +821,53 @@ describe('P1-31 D-2 — the five obligations, on real rows', () => {
       [TENANT_A, TARGET_ROLE_CODE]
     );
     expect(rows[0]?.n).toBe(0);
+  });
+
+  it('BF-10 an organisation on the 85-code bundle is offered exactly the three codes of the 2026-09-17 directive, and a dry run offers them without writing', async () => {
+    // The script parses `bootstrap-roles.ts` at run time rather than carrying a
+    // copy of the list, so a widening needs no edit to it — which is a claim, and
+    // this is the measurement of it for THIS widening. The organisation is put on
+    // the 85-code bundle the shipped operation wrote the day before, not on the
+    // 67-code one BF-1 uses, so the difference the script computes can only be
+    // the three codes the directive added.
+    const organisation = await provision('odqa');
+    await admin.query(
+      `DELETE FROM iam.role_permissions
+        WHERE role_id = $1
+          AND permission_id IN (SELECT id FROM iam.permissions WHERE permission_code = ANY($2::text[]))`,
+      [organisation.tenantAdministratorRoleId, [...OD_QA_ADDED]]
+    );
+    const before = await codesOfRole(organisation.tenantAdministratorRoleId);
+    expect(before).toHaveLength(parsedBundle.length - OD_QA_ADDED.length);
+    expect(before).toHaveLength(85);
+    for (const code of OD_QA_ADDED) expect(before).not.toContain(code);
+
+    const beforeRows = await mappingRows(organisation.tenantAdministratorRoleId);
+    const auditBefore = await backfillAuditCount(organisation.tenantId);
+
+    const dryRun = await backfill({ tenants: [organisation.tenantId], dryRun: true });
+    expect(dryRun.outcome).toBe('dry-run');
+    expect(only(dryRun)).toMatchObject({
+      tenantId: organisation.tenantId,
+      outcome: 'widened',
+      heldBefore: 85,
+      heldAfter: parsedBundle.length,
+      blockedByDeny: [],
+    });
+    // EXACTLY the three, and no other code: the whole point of the case. In
+    // particular `inv.cost.view` is not offered, because CC-12 keeps it out of the
+    // bundle the script reads.
+    expect(only(dryRun).added).toEqual([...OD_QA_ADDED].sort());
+    expect(only(dryRun).added).not.toContain('inv.cost.view');
+    // A dry run writes nothing, so the offer above is an offer and not a report
+    // of something that has already happened.
+    expect(await mappingRows(organisation.tenantAdministratorRoleId)).toEqual(beforeRows);
+    expect(await backfillAuditCount(organisation.tenantId)).toBe(auditBefore);
+
+    const applied = await backfill({ tenants: [organisation.tenantId] });
+    expect(only(applied).added).toEqual([...OD_QA_ADDED].sort());
+    expect(await codesOfRole(organisation.tenantAdministratorRoleId)).toEqual(
+      [...TENANT_ADMINISTRATOR_ROLE.permissionCodes].sort()
+    );
   });
 });

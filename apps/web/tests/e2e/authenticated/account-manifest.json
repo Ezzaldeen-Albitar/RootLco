@@ -63,6 +63,7 @@
   ],
   "org-administrator": [
     "crm.customer.create",
+    "crm.customer.profile.write",
     "crm.customer.read",
     "crm.customer.vehicle.manage",
     "dia.catalogue.manage",
@@ -109,6 +110,7 @@
     "rec.reception.approve",
     "rec.reception.authorization.verify",
     "rec.reception.convert",
+    "rec.reception.evidence.manage",
     "rec.reception.manage",
     "rec.reception.party.manage",
     "rec.reception.read",
@@ -142,6 +144,7 @@
     "wo.job.manage",
     "wo.job.transition",
     "wo.work_order.close",
+    "wo.work_order.line.manage",
     "wo.work_order.read",
     "wo.work_order.transition",
     "wty.policy.manage",
