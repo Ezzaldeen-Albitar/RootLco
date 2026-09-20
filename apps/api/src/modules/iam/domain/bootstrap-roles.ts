@@ -312,11 +312,11 @@
  * transfer write-off slice 3a added needs no new code: it is approved under
  * `inv.adjustment.approve`.
  *
- * ## The four codes the QA campaign found closed (Owner directive, 2026-09-17)
+ * ## The three codes the QA campaign found closed (Owner directive, 2026-09-17)
  *
- * A fifth instance of the same closure, in four namespaces at once, and this one
+ * A fifth instance of the same closure, in three namespaces at once, and this one
  * was found by exercising the product rather than by walking a phase's routes.
- * Each of the four codes below is declared by at least one SHIPPED operation and
+ * Each of the three codes below is declared by at least one SHIPPED operation and
  * already exists in the permission catalogue seed — this widening mints nothing
  * and adds no migration — and none of them was in the bundle, so under
  * `ins_role_permissions_delegable` no principal in any platform-provisioned
@@ -339,32 +339,45 @@
  *    a freshly provisioned organisation could register a customer and then never
  *    record a telephone number, an address or a preference for it — including
  *    for the customer whose vehicle it had just received.
- *  - `inv.cost.view` — `inv.item-cost-history-read`, and, as a SECOND permission
- *    read by the services and by RLS on `inv.item_cost_layers`, the unit cost on
- *    a goods receipt line, on a stock adjustment detail and on an external
- *    purchase part. **Owner-visible decision:** this is the one of the four that
- *    is not obviously least privilege — the code is classified `high` and it
- *    discloses purchase cost. It is carried anyway, and the ground is the
- *    `inv.item.manage` and `wty.policy.manage` ground rather than the `rpt.export`
- *    ground: withholding it is not a delay but a closure. Nobody in the
- *    organisation could record a unit cost on anything received, so no cost layer
- *    could ever exist, so no valuation and no margin could ever be computed, and
- *    no cost-holding role could be delegated either. `rpt.export` stays excluded
- *    because the bundle already holds everything it pairs with and the capability
- *    it adds is reach; `inv.cost.view` adds a capability the organisation
- *    otherwise has no path to at all. If the Owner prefers a workshop where cost
- *    is a separately granted authority, the answer is to narrow it in the
- *    organisation after provisioning, which is possible only if somebody holds it
- *    first.
  *  - `rec.reception.evidence.manage` — `rec.reception-condition-evidence`,
  *    `rec.reception-evidence-binding` and `rec.reception-evidence-binding-finalize`.
  *    The bundle already carries the whole reception path from check-in to
  *    conversion, and this is the one step in the middle of it that nobody could
  *    perform: the pre-service condition record a workshop is answerable for.
  *
+ * ### `inv.cost.view` STAYS EXCLUDED, and the consequence is owed to the Owner
+ *
+ * The same campaign measured a FOURTH code the same way, and this file does not
+ * carry it. The measurement stands and is recorded here rather than acted on.
+ *
+ * `inv.cost.view` is declared by `inv.item-cost-history-read`, and it is read as a
+ * SECOND permission by the receipt, adjustment and external-purchase services —
+ * and by RLS on `inv.item_cost_layers` — before a unit cost will be accepted or
+ * returned. So QA's DEF-T-03 is true as measured: in an organisation the shipped
+ * provisioning operation created, NOBODY can record a unit cost on anything
+ * received. An unheld code cannot be delegated, so the first administrator cannot
+ * hand the authority to anyone either; no cost layer can be written, and no
+ * valuation and no margin can be derived from one.
+ *
+ * It is not carried here because its exclusion is an EXISTING RECORDED DECISION,
+ * and reversing a recorded decision is the Owner's act and not this slice's.
+ * `docs/phase-1/phase-1-30/change-control-2026-09-06.md` CC-12, still open, files
+ * the `inv.cost.view` exclusion from this bundle as DELIBERATE, cites the P1-30 A0
+ * matrix for it, and carries it as register gap E-14. The ground that decision
+ * rests on is the code's own classification — `high`, disclosing purchase cost.
+ * The three codes carried above have no such record against them, which is the
+ * whole difference between them and this one.
+ *
+ * The disposition is therefore: measured, unresolved, and awaiting an Owner
+ * decision. If the Owner decides the cost authority belongs in the first
+ * administrator's bundle, the change is one entry in the list below plus the
+ * backfill run named next. If the Owner decides it stays a separately granted
+ * authority, DEF-T-03 still needs an answer — an operator grant made after
+ * provisioning — and that answer is not this constant.
+ *
  * Organisations provisioned before this widening keep the set they were given;
  * `scripts/platform/backfill-tenant-administrator-bundle.mjs` reads this list at
- * run time and needs no edit, so they owe ONE operator run covering all four
+ * run time and needs no edit, so they owe ONE operator run covering all three
  * codes — one run, not one each. That run is an operator act and is not performed
  * by this slice, and this slice does not claim it was run anywhere.
  */
@@ -493,13 +506,11 @@ export const TENANT_ADMINISTRATOR_ROLE: BootstrapRoleDefinition = Object.freeze(
     'inv.item.manage',
     'inv.stock.read',
     'inv.stock.operate',
-    // Owner directive 2026-09-17: the QA campaign's DEF-T-03, and the one of the
-    // four that is an explicit Owner decision rather than an obvious correction —
-    // see the section above. `inv.item-cost-history-read` declares it, and the
-    // receipt, adjustment and external-part services read it as a second
-    // permission before they will accept a unit cost. Without it no cost layer
-    // could ever be written in a provisioned organisation, by anyone.
-    'inv.cost.view',
+    // `inv.cost.view` is deliberately NOT here. The QA campaign measured its
+    // absence as DEF-T-03 — nobody in a provisioned organisation can record a unit
+    // cost, and an unheld code cannot be delegated — but the exclusion is a
+    // recorded decision (change-control CC-12, open; register gap E-14), so
+    // carrying it is the Owner's call. See the section above.
     // Held so the Owner can DELEGATE it: an opening batch is maker–checker
     // (`ck_opening_inventory_batches_maker`), so the administrator who counts
     // cannot also approve, and an approver role can only be built out of a

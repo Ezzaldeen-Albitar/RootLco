@@ -66,17 +66,26 @@
  * file was written for: each is declared by shipped operations, none was ever in
  * the bundle, and `ins_role_permissions_delegable` therefore made the capability
  * unreachable for EVERYONE in every platform-provisioned organisation, not merely
- * for the first administrator. The four cases below measure the fix on the
- * shipped routes, in the organisation the shipped provisioning operation created:
+ * for the first administrator.
  *
- *   P31-B10 the four are in the bundle, none was in the 85-code bundle that
+ * THREE of them are carried. `inv.cost.view` is not: its exclusion from this
+ * bundle is an existing recorded decision (P1-30 change control CC-12, open —
+ * "the `inv.cost.view` exclusion is deliberate"; register gap E-14), and reversing
+ * a recorded decision is the Owner's act. So DEF-T-03 stays measured and open, and
+ * B14 below measures the REFUSAL it names rather than a capability the bundle does
+ * not confer. The cases below run in the organisation the shipped provisioning
+ * operation created:
+ *
+ *   P31-B10 the three are in the bundle, none was in the 85-code bundle that
  *           preceded them, each is declared by a REGISTERED operation and each
- *           already existed in the catalogue seed — so nothing is minted
- *   P31-B11 the provisioned administrator effectively holds all four and can
+ *           already existed in the catalogue seed — so nothing is minted; and
+ *           `inv.cost.view` is declared too and is still absent, by CC-12
+ *   P31-B11 the provisioned administrator effectively holds all three and can
  *           delegate each onto a role it creates
  *   P31-B12 it records a telephone contact on a customer it created
  *   P31-B13 it records a service line on a work order its own reception produced
- *   P31-B14 it creates a goods receipt line carrying a unit cost
+ *   P31-B14 its goods receipt is REFUSED for a priced line and accepted without
+ *           one — DEF-T-03 as it currently stands
  *   P31-B15 it binds an exact document version to a capture requirement
  *
  * Operations exercised: platform.organization-provision, iam.role-create,
@@ -305,23 +314,37 @@ const ADDED_BY_P1_32_MATERIAL = Object.freeze([
 ]);
 
 /**
- * The second widening after P1-31: the four codes the QA campaign measured as
- * permanently closed in every platform-provisioned organisation (Owner directive
- * 2026-09-17; DEF-M-01, DEF-T-01, DEF-T-03, DEF-T-12/M-06).
+ * The second widening after P1-31: three of the four codes the QA campaign
+ * measured as permanently closed in every platform-provisioned organisation
+ * (Owner directive 2026-09-17; DEF-M-01, DEF-T-01, DEF-T-12/M-06).
  *
- * Kept apart again because the question is a third one: these were not withheld
- * on a stated rule and later released — they were never considered, and the
- * closure was found by exercising the product. All four already exist in the
- * permission catalogue seed, so nothing is minted; B1 measures their declarers in
- * the register exactly as it does for every other widening, and B10–B14 below
- * measure the four capabilities on the shipped routes. 85 + 4 = 89.
+ * Kept apart again because the question is a third one: the closure was found by
+ * exercising the product rather than by walking a phase's routes. All three
+ * already exist in the permission catalogue seed, so nothing is minted; B1
+ * measures their declarers in the register exactly as it does for every other
+ * widening, and B10–B13 and B15 below measure the three capabilities on the
+ * shipped routes. 85 + 3 = 88.
  */
 const ADDED_BY_OD_QA_CAMPAIGN = Object.freeze([
   'wo.work_order.line.manage',
   'crm.customer.profile.write',
-  'inv.cost.view',
   'rec.reception.evidence.manage',
 ]);
+
+/**
+ * The FOURTH code that campaign measured, and the one this widening does not
+ * carry. `inv.cost.view` is declared (`inv.item-cost-history-read`) and is read as
+ * a second permission by the receipt, adjustment and external-purchase services,
+ * so DEF-T-03 is real: nobody in a platform-provisioned organisation can record a
+ * unit cost, and an unheld code cannot be delegated to anyone either.
+ *
+ * It stays out because its exclusion is an EXISTING RECORDED DECISION —
+ * `docs/phase-1/phase-1-30/change-control-2026-09-06.md` CC-12, still open, files
+ * it as deliberate and carries it as register gap E-14 — and reversing a recorded
+ * decision is the Owner's act, not this branch's. B10 measures the absence and B14
+ * measures the refusal that follows from it.
+ */
+const WITHHELD_BY_CC12 = Object.freeze(['inv.cost.view']);
 
 /** Every code carried after P1-31 closed. */
 const ADDED_AFTER_P1_31 = Object.freeze([...ADDED_BY_P1_32_MATERIAL, ...ADDED_BY_OD_QA_CAMPAIGN]);
@@ -947,8 +970,8 @@ describe('P1-31 P-1 — an organisation created by the shipped provisioning oper
   });
 });
 
-describe('Owner directive 2026-09-17 — the four codes the QA campaign found closed', () => {
-  it('P31-B10 all four are added, none was in the 85-code bundle, each is declared by a registered operation and each already existed in the catalogue seed', () => {
+describe('Owner directive 2026-09-17 — the codes the QA campaign found closed', () => {
+  it('P31-B10 three are added, none was in the 85-code bundle, each is declared by a registered operation and each already existed in the catalogue seed; inv.cost.view is declared and still withheld by CC-12', () => {
     const bundle = [...TENANT_ADMINISTRATOR_ROLE.permissionCodes];
 
     // The arithmetic, restated for THIS widening so it cannot drift alone:
@@ -957,11 +980,12 @@ describe('Owner directive 2026-09-17 — the four codes the QA campaign found cl
     const before = BUNDLE_BEFORE + ADDED_ALL.length + ADDED_BY_P1_32_MATERIAL.length;
     expect(before).toBe(85);
     expect(bundle).toHaveLength(before + ADDED_BY_OD_QA_CAMPAIGN.length);
-    expect(ADDED_BY_OD_QA_CAMPAIGN).toHaveLength(4);
+    expect(bundle).toHaveLength(88);
+    expect(ADDED_BY_OD_QA_CAMPAIGN).toHaveLength(3);
 
-    // NOT WITHHELD AND RELEASED — never considered. None of the four appears in
-    // any earlier widening, so "it was absent before" is measured against the
-    // lists this file already holds rather than against a reverted constant.
+    // None of the three appears in any earlier widening, so "it was absent
+    // before" is measured against the lists this file already holds rather than
+    // against a reverted constant.
     for (const code of ADDED_BY_OD_QA_CAMPAIGN) {
       expect(ADDED_ALL).not.toContain(code);
       expect(ADDED_BY_P1_32_MATERIAL).not.toContain(code);
@@ -976,6 +1000,7 @@ describe('Owner directive 2026-09-17 — the four codes the QA campaign found cl
       'utf8'
     );
     for (const code of ADDED_BY_OD_QA_CAMPAIGN) expect(seed).toContain(`('${code}'`);
+    for (const code of WITHHELD_BY_CC12) expect(seed).toContain(`('${code}'`);
 
     // DECLARED by shipped operations — the necessary condition P-1 states, read
     // from the generated operation register exactly as B1 reads it.
@@ -996,17 +1021,26 @@ describe('Owner directive 2026-09-17 — the four codes the QA campaign found cl
       'crm.contact-add',
       'crm.preference-set',
     ]);
-    expect(declarersOf('inv.cost.view').sort()).toEqual(['inv.item-cost-history-read']);
     expect(declarersOf('rec.reception.evidence.manage').sort()).toEqual([
       'rec.reception-condition-evidence',
       'rec.reception-evidence-binding',
       'rec.reception-evidence-binding-finalize',
     ]);
+
+    // DECLARATION IS NECESSARY, NOT SUFFICIENT — the rule CC-04 added and CC-12
+    // applies here. `inv.cost.view` clears the declaration test and is withheld
+    // anyway, on a decision recorded before this directive. Asserting the
+    // declarer by NAME means the day that set changes, this case makes the Owner
+    // look at the exclusion again.
+    expect(declarersOf('inv.cost.view').sort()).toEqual(['inv.item-cost-history-read']);
+    for (const code of WITHHELD_BY_CC12) expect(bundle).not.toContain(code);
   });
 
-  it('P31-B11 the provisioned administrator effectively holds all four, and can delegate each onto a role it creates', async () => {
+  it('P31-B11 the provisioned administrator effectively holds all three, and can delegate each onto a role it creates', async () => {
     const held = await codesHeldBy(probe.ownerAccountId);
     for (const code of ADDED_BY_OD_QA_CAMPAIGN) expect(held).toContain(code);
+    // The withheld one, measured on the organisation rather than on the constant.
+    for (const code of WITHHELD_BY_CC12) expect(held).not.toContain(code);
 
     const roleId = await newRole(probe, 'workshop_controller');
     for (const permissionCode of ADDED_BY_OD_QA_CAMPAIGN) {
@@ -1087,10 +1121,12 @@ describe('Owner directive 2026-09-17 — the four codes the QA campaign found cl
     expect(rows[0]?.n).toBe(1);
   });
 
-  it('P31-B14 it creates a goods receipt line carrying a unit cost (DEF-T-03)', async () => {
-    // The operation declares the stock code; `inv.cost.view` is the SECOND
-    // permission the service reads before it will accept a priced line, and it is
-    // the one the bundle lacked.
+  it('P31-B14 its priced goods receipt is refused for want of inv.cost.view, and the same receipt without a cost is accepted (DEF-T-03, open under CC-12)', async () => {
+    // The operation declares the stock code, which the bundle carries; the SECOND
+    // permission the service reads before it will accept a priced line is
+    // `inv.cost.view`, which CC-12 keeps out of the bundle. This case measures the
+    // consequence as it CURRENTLY stands rather than a capability the first
+    // administrator does not have.
     expect(GOODS_RECEIPT_CREATE_OPERATION.permissions).toEqual(['inv.stock.operate']);
     const scope = await scopeOf(probe);
 
@@ -1143,8 +1179,15 @@ describe('Owner directive 2026-09-17 — the four codes the QA campaign found cl
     expect(location.status).toBe(201);
     const locationId = location.body.id;
 
+    // THE REFUSAL. The first administrator of the organisation the shipped
+    // provisioning operation created cannot record a unit cost, and cannot
+    // delegate the authority to anyone, because nobody in the organisation holds
+    // the code. 422, the validation code, and the violation names the priced line.
     asOwnerOf(probe);
-    const receipt = await call<{ id: string }>(goodsReceiptCreateRoute, {
+    const priced = await call<{
+      code?: string;
+      violations?: Array<{ path: string; rule: string }>;
+    }>(goodsReceiptCreateRoute, {
       path: '/goods-receipts',
       body: {
         companyId: scope.companyId,
@@ -1156,17 +1199,43 @@ describe('Owner directive 2026-09-17 — the four codes the QA campaign found cl
       },
       idempotencyKey: randomUUID(),
     });
-    expect(receipt.status).toBe(201);
+    expect(priced.status).toBe(422);
+    expect(priced.body.code).toBe('ERR-VAL-001');
+    expect(priced.body.violations?.map((violation) => violation.path)).toEqual([
+      'body.lines.0.unitCost',
+    ]);
 
-    // The cost is on the row, as a STRING: the refusal this closes was a 422
-    // naming the priced line, not a receipt accepted with the cost dropped.
-    const { rows } = await admin.query<{ unit_cost: string }>(
+    // Nothing was written: the refusal is a refusal and not a receipt accepted
+    // with the cost silently dropped.
+    const { rows: refused } = await admin.query<{ n: number }>(
+      'SELECT count(*)::int AS n FROM inv.goods_receipt_lines WHERE tenant_id = $1 AND item_id = $2',
+      [probe.tenantId, itemId]
+    );
+    expect(refused[0]?.n).toBe(0);
+
+    // THE COST IS THE WHOLE REASON. The identical receipt without a unit cost is
+    // accepted, so the 422 above is attributable to `inv.cost.view` and not to
+    // anything else about the request or the organisation.
+    asOwnerOf(probe);
+    const unpriced = await call<{ id: string }>(goodsReceiptCreateRoute, {
+      path: '/goods-receipts',
+      body: {
+        companyId: scope.companyId,
+        branchId: scope.branchId,
+        receivedOn: '2026-09-17',
+        lines: [{ itemId, locationId, quantity: '4.000' }],
+      },
+      idempotencyKey: randomUUID(),
+    });
+    expect(unpriced.status).toBe(201);
+
+    const { rows } = await admin.query<{ unit_cost: string | null }>(
       `SELECT unit_cost::text AS unit_cost FROM inv.goods_receipt_lines
         WHERE tenant_id = $1 AND receipt_id = $2`,
-      [probe.tenantId, receipt.body.id]
+      [probe.tenantId, unpriced.body.id]
     );
     expect(rows).toHaveLength(1);
-    expect(rows[0]?.unit_cost).toBe('12.5000');
+    expect(rows[0]?.unit_cost).toBeNull();
   });
 
   it('P31-B15 it binds an exact document version to a capture requirement of a reception visit (DEF-T-12 / DEF-M-06)', async () => {

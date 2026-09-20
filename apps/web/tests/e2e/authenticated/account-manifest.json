@@ -81,7 +81,6 @@
     "iam.user.manage",
     "iam.user.read",
     "inv.adjustment.approve",
-    "inv.cost.view",
     "inv.item.manage",
     "inv.item.read",
     "inv.material.approve",

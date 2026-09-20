@@ -465,16 +465,20 @@ describe('W9 — the bootstrap the provisioning operation now carries', () => {
     // 85 with the two codes the Owner directive of 2026-09-16 carries for
     // `org.company-create` and `org.branch-create`: without them no one in a
     // freshly provisioned organisation could add a company or a branch.
-    // 89 with the four the Owner directive of 2026-09-17 carries, each declared
+    // 88 with the three the Owner directive of 2026-09-17 carries, each declared
     // by shipped operations and each measured by a QA campaign as permanently
     // closed for EVERYONE in a provisioned organisation rather than merely
     // withheld from its first administrator: `wo.work_order.line.manage` (a work
     // order could never say what work is on it), `crm.customer.profile.write` (a
-    // customer could never be given a telephone number), `inv.cost.view` (no unit
-    // cost could ever be recorded, so no cost layer could ever exist) and
+    // customer could never be given a telephone number) and
     // `rec.reception.evidence.manage` (no pre-service condition could be
-    // recorded). All four were already catalogue rows; nothing is minted.
-    expect(expected).toHaveLength(89);
+    // recorded). All three were already catalogue rows; nothing is minted.
+    // The campaign measured a fourth, `inv.cost.view`, the same way (DEF-T-03: no
+    // unit cost can be recorded by anyone in a provisioned organisation), and it
+    // stays OUT: its exclusion is a recorded decision (P1-30 change control CC-12,
+    // open; register gap E-14) that only the Owner may reverse.
+    expect(expected).toHaveLength(88);
+    expect(expected).not.toContain('inv.cost.view');
     expect(expected.some((c) => c.includes('*'))).toBe(false);
     expect(expected.some((c) => c.startsWith('platform.'))).toBe(false);
     expect(new Set(expected).size).toBe(expected.length);

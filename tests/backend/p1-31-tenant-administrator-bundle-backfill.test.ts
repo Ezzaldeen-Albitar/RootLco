@@ -44,7 +44,7 @@
  *         active tenant, which is why no migration is added
  *   BF-10 the claim that a widening needs no edit to the script, measured for the
  *         Owner directive of 2026-09-17: an organisation on the 85-code bundle is
- *         offered EXACTLY the four codes that directive added, by a dry run that
+ *         offered EXACTLY the three codes that directive added, by a dry run that
  *         writes nothing, and then by the applied run
  *
  * ## Where it runs
@@ -168,21 +168,24 @@ const P1_32_ADDED = Object.freeze([
 ]);
 
 /**
- * The four codes the QA campaign measured as permanently closed in every
+ * Three of the four codes the QA campaign measured as permanently closed in every
  * platform-provisioned organisation (Owner directive 2026-09-17). They are the
- * reason this backfill owes a SIXTH operator run — ONE run covering all four, not
+ * reason this backfill owes a SIXTH operator run — ONE run covering all three, not
  * one each. An organisation provisioned on the 85-code bundle can create a work
  * order and never say what work is on it, can register a customer and never record
- * a telephone number for it, can receive goods and never record what they cost,
- * and can run a reception from check-in to conversion without anyone being able to
- * record the pre-service condition. The script reads the bundle from source, so it
- * carries these without an edit; the run is an operator act and is not performed
- * by this slice.
+ * a telephone number for it, and can run a reception from check-in to conversion
+ * without anyone being able to record the pre-service condition. The script reads
+ * the bundle from source, so it carries these without an edit; the run is an
+ * operator act and is not performed by this slice.
+ *
+ * The fourth code the campaign measured, `inv.cost.view`, is NOT in the bundle and
+ * so is not in any backfill offer: its exclusion is a recorded decision (P1-30
+ * change control CC-12, open; register gap E-14) that only the Owner may reverse.
+ * BF-10 asserts its absence from the offer for that reason.
  */
 const OD_QA_ADDED = Object.freeze([
   'wo.work_order.line.manage',
   'crm.customer.profile.write',
-  'inv.cost.view',
   'rec.reception.evidence.manage',
 ]);
 
@@ -820,13 +823,13 @@ describe('P1-31 D-2 — the five obligations, on real rows', () => {
     expect(rows[0]?.n).toBe(0);
   });
 
-  it('BF-10 an organisation on the 85-code bundle is offered exactly the four codes of the 2026-09-17 directive, and a dry run offers them without writing', async () => {
+  it('BF-10 an organisation on the 85-code bundle is offered exactly the three codes of the 2026-09-17 directive, and a dry run offers them without writing', async () => {
     // The script parses `bootstrap-roles.ts` at run time rather than carrying a
     // copy of the list, so a widening needs no edit to it — which is a claim, and
     // this is the measurement of it for THIS widening. The organisation is put on
     // the 85-code bundle the shipped operation wrote the day before, not on the
     // 67-code one BF-1 uses, so the difference the script computes can only be
-    // the four codes the directive added.
+    // the three codes the directive added.
     const organisation = await provision('odqa');
     await admin.query(
       `DELETE FROM iam.role_permissions
@@ -851,8 +854,11 @@ describe('P1-31 D-2 — the five obligations, on real rows', () => {
       heldAfter: parsedBundle.length,
       blockedByDeny: [],
     });
-    // EXACTLY the four, and no other code: the whole point of the case.
+    // EXACTLY the three, and no other code: the whole point of the case. In
+    // particular `inv.cost.view` is not offered, because CC-12 keeps it out of the
+    // bundle the script reads.
     expect(only(dryRun).added).toEqual([...OD_QA_ADDED].sort());
+    expect(only(dryRun).added).not.toContain('inv.cost.view');
     // A dry run writes nothing, so the offer above is an offer and not a report
     // of something that has already happened.
     expect(await mappingRows(organisation.tenantAdministratorRoleId)).toEqual(beforeRows);
