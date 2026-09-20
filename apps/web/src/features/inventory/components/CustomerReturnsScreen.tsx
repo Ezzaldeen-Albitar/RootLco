@@ -624,7 +624,14 @@ function ReceiveForm({
 
 type SalesState =
   | { readonly phase: 'loading' }
-  | { readonly phase: 'listed'; readonly sales: readonly Invoice[] }
+  | {
+      readonly phase: 'listed';
+      readonly sales: readonly Invoice[];
+      // The server's own end-of-set signal, kept rather than dropped: one page
+      // of fifty is all the read returns, and a branch busier than that would
+      // otherwise offer a list the sale is not in with no way to say so.
+      readonly truncated: boolean;
+    }
   | { readonly phase: 'refused' }
   | { readonly phase: 'unavailable' };
 
@@ -651,6 +658,12 @@ type LinesState =
  * rendered instead — the typed reference — beside a sentence saying which of the
  * two happened. A picker that silently disappeared would leave an operator
  * hunting for a control that is not there.
+ *
+ * The counter-sale read answers ONE page, so `hasMore` is read rather than
+ * assumed away. A branch whose issued sales do not fit that page gets the
+ * picker AND the fallback together, under a sentence saying the list is partial:
+ * offering fifty sales with no way to name the fifty-first is the same dead end
+ * this picker was built to remove, only quieter.
  */
 function SalePicker({
   locale,
@@ -678,7 +691,11 @@ function SalePicker({
     void listCounterSales({ companyId, branchId }, { status: 'issued' }).then((answer) => {
       if (!live) return;
       if (answer.status === 'ok') {
-        setSales({ phase: 'listed', sales: answer.data.items });
+        setSales({
+          phase: 'listed',
+          sales: answer.data.items,
+          truncated: answer.data.hasMore,
+        });
         return;
       }
       setSales({ phase: answer.status === 'denied' ? 'refused' : 'unavailable' });
@@ -749,65 +766,80 @@ function SalePicker({
   }
 
   return (
-    <div className="grid gap-3 sm:grid-cols-2">
-      <SelectField
-        label={translate(messages, 'inventory.returns.sale.label')}
-        description={translate(messages, 'inventory.returns.sale.help')}
-        required
-        value={saleId}
-        onChange={(event) => chooseSale(event.target.value)}
-        options={sales.sales.map((sale) => ({
-          value: sale.id,
-          label: [
-            sale.invoiceNumber ?? translate(messages, 'inventory.returns.sale.noNumber'),
-            sale.issuedAt === null ? null : formatDateTime(sale.issuedAt, locale),
-            sale.totals === null ? null : formatMoney(sale.totals.gross, locale),
-          ]
-            .filter((part) => part !== null)
-            .join(' — '),
-        }))}
-        placeholder={translate(messages, 'inventory.returns.sale.choose')}
-      />
-
-      {lines.phase === 'idle' ? null : lines.phase === 'loading' ? (
-        <p className="text-caption text-text-muted">
-          {translate(messages, 'inventory.returns.sale.linesLoading')}
+    <>
+      {sales.truncated ? (
+        <p role="status" className="text-caption text-text-muted">
+          {translate(messages, 'inventory.returns.sale.truncated')}
         </p>
-      ) : lines.phase === 'failed' ? (
-        <p role="alert" className="text-body text-error">
-          {translateDynamic(messages, lines.messageKey)}
-        </p>
-      ) : lines.lines.length === 0 ? (
-        <p className="text-caption text-text-muted">
-          {translate(messages, 'inventory.returns.sale.linesNone')}
-        </p>
-      ) : (
+      ) : null}
+      <div className="grid gap-3 sm:grid-cols-2">
         <SelectField
-          label={translate(messages, 'inventory.returns.sale.lineLabel')}
-          description={translate(messages, 'inventory.returns.sale.lineHelp')}
+          label={translate(messages, 'inventory.returns.sale.label')}
+          description={translate(messages, 'inventory.returns.sale.help')}
           required
-          value={lineId}
-          onChange={(event) => {
-            setLineId(event.target.value);
-            if (event.target.value !== '') onChosen(event.target.value);
-          }}
-          options={lines.lines.map((line) => ({
-            value: line.id,
-            // The quantity is the server's decimal string and the amount the
-            // server's money, both rendered as sent. Nothing here is summed.
+          value={saleId}
+          onChange={(event) => chooseSale(event.target.value)}
+          options={sales.sales.map((sale) => ({
+            value: sale.id,
             label: [
-              translateWithValues(messages, 'inventory.returns.sale.lineNumber', {
-                number: String(line.lineNumber),
-              }),
-              line.quantity,
-              line.money === null ? null : formatMoney(line.money.gross, locale),
+              sale.invoiceNumber ?? translate(messages, 'inventory.returns.sale.noNumber'),
+              sale.issuedAt === null ? null : formatDateTime(sale.issuedAt, locale),
+              sale.totals === null ? null : formatMoney(sale.totals.gross, locale),
             ]
               .filter((part) => part !== null)
               .join(' — '),
           }))}
-          placeholder={translate(messages, 'inventory.returns.sale.chooseLine')}
+          placeholder={translate(messages, 'inventory.returns.sale.choose')}
         />
-      )}
-    </div>
+
+        {lines.phase === 'idle' ? null : lines.phase === 'loading' ? (
+          <p className="text-caption text-text-muted">
+            {translate(messages, 'inventory.returns.sale.linesLoading')}
+          </p>
+        ) : lines.phase === 'failed' ? (
+          <p role="alert" className="text-body text-error">
+            {translateDynamic(messages, lines.messageKey)}
+          </p>
+        ) : lines.lines.length === 0 ? (
+          <p className="text-caption text-text-muted">
+            {translate(messages, 'inventory.returns.sale.linesNone')}
+          </p>
+        ) : (
+          <SelectField
+            label={translate(messages, 'inventory.returns.sale.lineLabel')}
+            description={translate(messages, 'inventory.returns.sale.lineHelp')}
+            required
+            value={lineId}
+            onChange={(event) => {
+              setLineId(event.target.value);
+              if (event.target.value !== '') onChosen(event.target.value);
+            }}
+            options={lines.lines.map((line) => ({
+              value: line.id,
+              // The quantity is the server's decimal string and the amount the
+              // server's money, both rendered as sent. Nothing here is summed.
+              label: [
+                translateWithValues(messages, 'inventory.returns.sale.lineNumber', {
+                  number: String(line.lineNumber),
+                }),
+                line.quantity,
+                line.money === null ? null : formatMoney(line.money.gross, locale),
+              ]
+                .filter((part) => part !== null)
+                .join(' — '),
+            }))}
+            placeholder={translate(messages, 'inventory.returns.sale.chooseLine')}
+          />
+        )}
+      </div>
+
+      {/*
+       * The typed reference, the same box the refused and unavailable cases get.
+       * It is rendered HERE too because a partial list is a third way for the
+       * sale not to be offerable, and the two controls stand together: choose it
+       * if it is listed, name it if it is not.
+       */}
+      {sales.truncated ? fallback : null}
+    </>
   );
 }

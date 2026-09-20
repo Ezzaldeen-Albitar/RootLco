@@ -5528,6 +5528,7 @@
   "inventory.returns.sale.refused": "You do not have permission to see the sales made at this branch, so the sale cannot be offered. Type the reference of the line instead.",
   "inventory.returns.sale.unavailable": "The sales made here could not be read just now, so the sale cannot be offered. Type the reference of the line instead, or try again.",
   "inventory.returns.sale.none": "No finished sale has been made at this branch yet.",
+  "inventory.returns.sale.truncated": "Only the most recent sales are listed. If the one you want is not here, type the reference of the line instead.",
   "inventory.returns.sale.label": "The sale it was bought on",
   "inventory.returns.sale.help": "Finished sales at this branch, most recent first.",
   "inventory.returns.sale.choose": "Choose the sale",

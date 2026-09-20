@@ -538,6 +538,32 @@ describe('naming the sale instead of typing its reference', () => {
     expect(screen.getByLabelText(labelled('inventory.returns.source.id'))).toBeTruthy();
   });
 
+  /**
+   * The read answers ONE page. A branch with more issued sales than fit it used
+   * to get a silently short list and no identifier field — neither offered the
+   * sale nor able to name it, which is the dead end the picker removed for
+   * everybody else.
+   */
+  it('says the list is partial and keeps the typed reference when the page is truncated', async () => {
+    listCounterSales.mockResolvedValue(okPage([sale], true));
+    const user = userEvent.setup();
+    renderLtr(operable());
+    await openBranch(user);
+    expect(await screen.findByText(EN['inventory.returns.sale.truncated'] as string)).toBeTruthy();
+    // Both controls, together: choose it if it is listed, name it if it is not.
+    expect(screen.getByLabelText(labelled('inventory.returns.sale.label'))).toBeTruthy();
+    expect(screen.getByLabelText(labelled('inventory.returns.source.id'))).toBeTruthy();
+  });
+
+  it('says nothing about truncation, and offers no identifier field, on a whole page', async () => {
+    const user = userEvent.setup();
+    renderLtr(operable());
+    await openBranch(user);
+    expect(await screen.findByLabelText(labelled('inventory.returns.sale.label'))).toBeTruthy();
+    expect(screen.queryByText(EN['inventory.returns.sale.truncated'] as string)).toBeNull();
+    expect(screen.queryByLabelText(labelled('inventory.returns.source.id'))).toBeNull();
+  });
+
   it('keeps the typed reference for parts handed to a job, which no branch list covers', async () => {
     const user = userEvent.setup();
     renderLtr(operable());
