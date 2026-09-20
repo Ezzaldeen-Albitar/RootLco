@@ -4773,6 +4773,8 @@
   "inventory.counts.line.format": "أدخل كمية بثلاث منازل عشرية كحد أقصى. الصفر مقبول إذا كان الرف فارغًا.",
   "inventory.counts.line.item": "الصنف",
   "inventory.counts.line.movements": "تحرك أثناء الجرد",
+  "inventory.counts.line.movementsAtReconcile": "يُحتسب عند التسوية",
+  "inventory.counts.detail.movementsPending": "ما تحرّك أثناء الجرد يُحتسب عند تسوية الجرد، فلا رقم في ذلك العمود بعد. وحتى ذلك الحين لا شيء هنا يقول شيئًا عمّا تحرّك.",
   "inventory.counts.line.noAdjustment": "لا يوجد",
   "inventory.counts.line.notCounted": "لم يُعد بعد",
   "inventory.counts.line.save": "حفظ العد",

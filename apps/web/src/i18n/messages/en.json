@@ -4773,6 +4773,8 @@
   "inventory.counts.line.format": "Enter a quantity with up to three decimal places. Zero is allowed for an empty shelf.",
   "inventory.counts.line.item": "Item",
   "inventory.counts.line.movements": "Moved during count",
+  "inventory.counts.line.movementsAtReconcile": "Worked out at reconciliation",
+  "inventory.counts.detail.movementsPending": "What moved during the count is worked out when the count is reconciled, so that column shows no figure yet. Until then, nothing here says anything about what has moved.",
   "inventory.counts.line.noAdjustment": "None",
   "inventory.counts.line.notCounted": "Not counted yet",
   "inventory.counts.line.save": "Save count",
