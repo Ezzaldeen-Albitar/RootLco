@@ -266,6 +266,7 @@ export function PartsScreen({
         canRequest={canRequestMaterial}
         canApprove={canApproveMaterial}
         canDecideException={canDecideMaterialException}
+        canReadWorkOrder={canReadWorkOrder}
         chosenId={requirement?.id ?? null}
         onChoose={(chosen) => {
           setRequirement(chosen);

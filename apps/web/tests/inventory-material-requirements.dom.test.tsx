@@ -39,6 +39,10 @@ const requestMaterialException = vi.fn();
 const decideMaterialException = vi.fn();
 const listUnitsOfMeasure = vi.fn();
 const listVehicleSpecifications = vi.fn();
+const listServiceLines = vi.fn();
+vi.mock('@/features/work-orders/api', () => ({
+  listServiceLines: (...args: unknown[]) => listServiceLines(...args),
+}));
 vi.mock('@/features/inventory/api', () => ({
   listMaterialRequirements: (...args: unknown[]) => listMaterialRequirements(...args),
   readMaterialRequirement: (...args: unknown[]) => readMaterialRequirement(...args),
@@ -68,6 +72,17 @@ const USER_ID = '99999999-9999-4999-8999-999999999999';
 const OTHER_USER_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const REQUIREMENT_ID = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
 const SERVICE_LINE_ID = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
+/** One service line of the work order, as `wo.service-line-list` publishes it. */
+const serviceLine = {
+  id: SERVICE_LINE_ID,
+  workOrderId: WORK_ORDER_ID,
+  jobId: null,
+  description: 'Engine oil change',
+  quantity: '1.000',
+  unit: 'EA',
+  reference: null,
+  recordVersion: 1,
+};
 const SPECIFICATION_ID = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
 const UOM_ID = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee';
 const EXCEPTION_ID = 'ffffffff-ffff-4fff-8fff-ffffffffffff';
@@ -179,6 +194,7 @@ function renderPanel(over: Record<string, unknown> = {}) {
       canRequest={false}
       canApprove={false}
       canDecideException={false}
+      canReadWorkOrder={true}
       chosenId={null}
       onChoose={vi.fn()}
       onChanged={vi.fn()}
@@ -201,6 +217,7 @@ beforeEach(() => {
     })
   );
   listVehicleSpecifications.mockImplementation(async () => listing([specification()]));
+  listServiceLines.mockImplementation(async () => okRead({ items: [serviceLine] }));
 });
 
 describe('the allowance is the server figure', () => {
@@ -510,8 +527,8 @@ describe('asking for a requirement', () => {
     expect(
       within(form).queryByLabelText(labelled('inventory.material.create.allowanceQuantity'))
     ).toBeNull();
-    await user.type(
-      within(form).getByLabelText(labelled('inventory.material.create.serviceLineId')),
+    await user.selectOptions(
+      await within(form).findByLabelText(labelled('inventory.material.create.serviceLine')),
       SERVICE_LINE_ID
     );
     await user.type(
@@ -617,8 +634,8 @@ describe('asking for a requirement', () => {
     );
     // The field an operator could mistake for a suggestion starts EMPTY.
     expect(quantity).toHaveValue('');
-    await user.type(
-      within(form).getByLabelText(labelled('inventory.material.create.serviceLineId')),
+    await user.selectOptions(
+      await within(form).findByLabelText(labelled('inventory.material.create.serviceLine')),
       SERVICE_LINE_ID
     );
     await user.type(quantity, '4.250');
@@ -662,6 +679,7 @@ describe('Arabic, right to left', () => {
         canRequest={false}
         canApprove={false}
         canDecideException={false}
+        canReadWorkOrder={true}
         chosenId={null}
         onChoose={vi.fn()}
         onChanged={vi.fn()}
@@ -670,5 +688,90 @@ describe('Arabic, right to left', () => {
     await waitFor(() => expect(listMaterialRequirements).toHaveBeenCalled());
     expect(screen.getByText(AR['inventory.material.heading'] as string)).toBeVisible();
     expect(within(allowance()).getByText('3.500')).toBeVisible();
+  });
+});
+
+/**
+ * DEF-M-05 — the service line is CHOSEN, not typed.
+ *
+ * The form asked for "the reference of the line this material is for" as free
+ * text, and no screen in the product publishes a service line's identifier, so
+ * an operator had to already know a 36-character identifier to use the screen
+ * at all. `wo.service-line-list` publishes the lines under the same code that
+ * renders the work-order header, so they are offered. The box survives only for
+ * the cases the picker cannot cover, and then the screen says which case it is.
+ */
+describe('the service line is offered rather than demanded', () => {
+  const openForm = async (user: ReturnType<typeof userEvent.setup>) => {
+    await user.click(
+      screen.getByRole('button', { name: EN['inventory.material.create.open'] as string })
+    );
+    return screen.findByRole('form', {
+      name: EN['inventory.material.create.heading'] as string,
+    });
+  };
+
+  it('reads the lines only when the form is opened, and only for this work order', async () => {
+    const user = userEvent.setup();
+    renderPanel({ canRequest: true });
+    await waitFor(() => expect(listMaterialRequirements).toHaveBeenCalled());
+    expect(listServiceLines).not.toHaveBeenCalled();
+    await openForm(user);
+    await waitFor(() => expect(listServiceLines).toHaveBeenCalledTimes(1));
+    expect(listServiceLines.mock.calls[0]?.[0]).toBe(WORK_ORDER_ID);
+  });
+
+  it('offers each line by what it is, and no identifier box at all', async () => {
+    const user = userEvent.setup();
+    renderPanel({ canRequest: true });
+    const form = await openForm(user);
+    const picker = await within(form).findByLabelText(
+      labelled('inventory.material.create.serviceLine')
+    );
+    expect(
+      within(picker).getByRole('option', { name: 'Engine oil change — 1.000 EA' })
+    ).toBeInTheDocument();
+    expect(
+      within(form).queryByLabelText(labelled('inventory.material.create.serviceLineId'))
+    ).toBeNull();
+  });
+
+  it('keeps the box, and says why, when the operator may not read the work order', async () => {
+    const user = userEvent.setup();
+    renderPanel({ canRequest: true, canReadWorkOrder: false });
+    const form = await openForm(user);
+    expect(listServiceLines).not.toHaveBeenCalled();
+    expect(
+      within(form).getByLabelText(labelled('inventory.material.create.serviceLineId'))
+    ).toBeVisible();
+    expect(
+      within(form).getByText(EN['inventory.material.create.serviceLineNoRead'] as string)
+    ).toBeVisible();
+  });
+
+  it('says the work order has no line yet rather than offering an empty picker', async () => {
+    const user = userEvent.setup();
+    listServiceLines.mockImplementation(async () => okRead({ items: [] }));
+    renderPanel({ canRequest: true });
+    const form = await openForm(user);
+    expect(
+      await within(form).findByText(EN['inventory.material.create.serviceLineNone'] as string)
+    ).toBeVisible();
+  });
+
+  it('says a refused read was refused, and keeps the box so the work can continue', async () => {
+    const user = userEvent.setup();
+    listServiceLines.mockImplementation(async () => ({
+      status: 'denied' as const,
+      correlationId: 'corr',
+    }));
+    renderPanel({ canRequest: true });
+    const form = await openForm(user);
+    expect(
+      await within(form).findByText(EN['inventory.material.create.serviceLineRefused'] as string)
+    ).toBeVisible();
+    expect(
+      within(form).getByLabelText(labelled('inventory.material.create.serviceLineId'))
+    ).toBeVisible();
   });
 });

@@ -59,6 +59,8 @@ import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic } from '@/i18n/get-messages';
 import type { ActionState } from '@/lib/forms/action-result';
+import { listServiceLines } from '@/features/work-orders/api';
+import type { WorkOrderServiceLine } from '@/features/work-orders/work-orders-contract';
 
 import {
   cancelMaterialRequirement,
@@ -125,6 +127,7 @@ export function MaterialRequirementsPanel({
   canRequest,
   canApprove,
   canDecideException,
+  canReadWorkOrder,
   chosenId,
   onChoose,
   onChanged,
@@ -134,6 +137,8 @@ export function MaterialRequirementsPanel({
   readonly workOrderId: string;
   /** The work order branch. The list is branch-targeted and is not requested without it. */
   readonly target: StockTarget | null;
+  /** `wo.work_order.read` — whether the service lines are offered as a picker. */
+  readonly canReadWorkOrder: boolean;
   /** The signed-in person, so the panel can say why they cannot decide their own request. */
   readonly currentUserId: string;
   /** `inv.material.request` — asking, re-checking, withdrawing, asking for an exception. */
@@ -211,7 +216,12 @@ export function MaterialRequirementsPanel({
           ) : null}
 
           {canRequest && adding ? (
-            <CreateRequirementForm messages={messages} onCreated={afterWrite} />
+            <CreateRequirementForm
+              messages={messages}
+              workOrderId={workOrderId}
+              canReadWorkOrder={canReadWorkOrder}
+              onCreated={afterWrite}
+            />
           ) : null}
 
           {listing.phase === 'loading' ? (
@@ -944,13 +954,64 @@ function ReasonForm({
  * Asking for a requirement
  * ------------------------------------------------------------------ */
 
+/**
+ * What the service-line read left the form with (DEF-M-05).
+ *
+ * `not-offered` is not a failure: the operator does not hold
+ * `wo.work_order.read`, so no read was made and none should have been. The
+ * three other phases each have their own sentence, because "the picker is not
+ * here" and "the picker could not be filled" are different facts and the
+ * operator can act on only one of them.
+ */
+type ServiceLines =
+  | { readonly phase: 'not-offered' }
+  | { readonly phase: 'loading' }
+  | { readonly phase: 'listed'; readonly rows: readonly WorkOrderServiceLine[] }
+  | { readonly phase: 'failed'; readonly messageKey: string };
+
+/** What the identifier box says when the picker could not be offered. */
+function serviceLineNoteKey(lines: ServiceLines): string {
+  if (lines.phase === 'failed') return lines.messageKey;
+  if (lines.phase === 'not-offered') return 'inventory.material.create.serviceLineNoRead';
+  if (lines.phase === 'listed') return 'inventory.material.create.serviceLineNone';
+  return 'inventory.material.create.serviceLineHelp';
+}
+
 function CreateRequirementForm({
   messages,
+  workOrderId,
+  canReadWorkOrder,
   onCreated,
 }: {
   readonly messages: Messages;
+  readonly workOrderId: string;
+  /** `wo.work_order.read` — whether the service lines are requested for the picker. */
+  readonly canReadWorkOrder: boolean;
   readonly onCreated: () => void;
 }) {
+  const [lines, setLines] = useState<ServiceLines>(
+    canReadWorkOrder ? { phase: 'loading' } : { phase: 'not-offered' }
+  );
+  useEffect(() => {
+    if (!canReadWorkOrder) return;
+    let live = true;
+    void listServiceLines(workOrderId).then((state) => {
+      if (!live) return;
+      if (state.status === 'ok') setLines({ phase: 'listed', rows: state.data.items });
+      else
+        setLines({
+          phase: 'failed',
+          messageKey:
+            state.status === 'denied'
+              ? 'inventory.material.create.serviceLineRefused'
+              : 'inventory.material.create.serviceLineUnavailable',
+        });
+    });
+    return () => {
+      live = false;
+    };
+  }, [canReadWorkOrder, workOrderId]);
+
   const [units, setUnits] = useState<readonly UnitOfMeasureOption[]>([]);
   useEffect(() => {
     let live = true;
@@ -1124,16 +1185,43 @@ function CreateRequirementForm({
       <p className="text-caption text-text-muted sm:col-span-2">
         {translate(messages, 'inventory.material.create.explain')}
       </p>
-      <TextField
-        label={translate(messages, 'inventory.material.create.serviceLineId')}
-        description={translate(messages, 'inventory.material.create.serviceLineHelp')}
-        required
-        spellCheck={false}
-        dir="ltr"
-        value={form.serviceLineId}
-        onChange={(event) => setForm((f) => ({ ...f, serviceLineId: event.target.value }))}
-        error={errorFor('serviceLineId')}
-      />
+      {/*
+       * DEF-M-05. This asked an operator to type "the reference of the line
+       * this material is for" as free text, and no screen in the product
+       * publishes a service line's identifier, so the form could not be used
+       * without one already being known. `wo.service-line-list` publishes the
+       * lines of this work order under the same code that renders its header,
+       * so the lines are OFFERED. The box survives for the one case the picker
+       * cannot cover — the operator does not hold `wo.work_order.read`, or the
+       * read failed — and then the screen says which of those it is rather than
+       * leaving a naked identifier field.
+       */}
+      {lines.phase === 'listed' && lines.rows.length > 0 ? (
+        <SelectField
+          label={translate(messages, 'inventory.material.create.serviceLine')}
+          description={translate(messages, 'inventory.material.create.serviceLineChooseHelp')}
+          required
+          value={form.serviceLineId}
+          onChange={(event) => setForm((f) => ({ ...f, serviceLineId: event.target.value }))}
+          options={lines.rows.map((line) => ({
+            value: line.id,
+            label: `${line.description} — ${line.quantity} ${line.unit}`,
+          }))}
+          placeholder={translate(messages, 'inventory.material.create.chooseServiceLine')}
+          error={errorFor('serviceLineId')}
+        />
+      ) : (
+        <TextField
+          label={translate(messages, 'inventory.material.create.serviceLineId')}
+          description={translateDynamic(messages, serviceLineNoteKey(lines))}
+          required
+          spellCheck={false}
+          dir="ltr"
+          value={form.serviceLineId}
+          onChange={(event) => setForm((f) => ({ ...f, serviceLineId: event.target.value }))}
+          error={errorFor('serviceLineId')}
+        />
+      )}
       <TextField
         label={translate(messages, 'inventory.material.create.itemId')}
         description={translate(messages, 'inventory.material.create.itemHelp')}

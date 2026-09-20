@@ -220,6 +220,28 @@ export interface WorkOrderJob {
 }
 
 /**
+ * One service line of a work order — the published `LineRow` of
+ * `wo.service-line-list`, which is `GET /work-orders/{workOrderId}/service-lines`
+ * and takes `wo.work_order.read`.
+ *
+ * Typed here so a picker can offer the lines instead of asking an operator to
+ * type a 36-character identifier the product publishes nowhere (DEF-M-05). The
+ * line's own `id` is what a material requirement binds to; `description`,
+ * `quantity` and `unit` are what makes it recognisable to the person choosing.
+ * `quantity` is an exact decimal string, as every quantity on the wire is.
+ */
+export interface WorkOrderServiceLine {
+  readonly id: string;
+  readonly workOrderId: string;
+  readonly jobId: string | null;
+  readonly description: string;
+  readonly quantity: string;
+  readonly unit: string;
+  readonly reference: string | null;
+  readonly recordVersion: number;
+}
+
+/**
  * A state the work order may move to next, as the tenant's own graph allows.
  *
  * The graph is DATA, not a TypeScript union: the screen offers exactly what the
