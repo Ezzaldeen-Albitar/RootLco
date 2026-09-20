@@ -57,10 +57,14 @@ vi.mock('@/features/inventory/api', () => ({
 const createCounterSale = vi.fn();
 const issueInvoice = vi.fn();
 const cancelInvoice = vi.fn();
+const listCounterSales = vi.fn();
+const readInvoice = vi.fn();
 vi.mock('@/features/billing/api', () => ({
   createCounterSale: (...args: unknown[]) => createCounterSale(...args),
   issueInvoice: (...args: unknown[]) => issueInvoice(...args),
   cancelInvoice: (...args: unknown[]) => cancelInvoice(...args),
+  listCounterSales: (...args: unknown[]) => listCounterSales(...args),
+  readInvoice: (...args: unknown[]) => readInvoice(...args),
 }));
 
 const searchCustomerDirectory = vi.fn();
@@ -205,6 +209,10 @@ beforeEach(() => {
       recordVersion: 2,
     })
   );
+  // DEF-T-13: the branch's drafted sales. Empty by default, so the cases that
+  // are not about the list see exactly what they saw before it existed.
+  listCounterSales.mockResolvedValue(okRead({ items: [], nextCursor: null, hasMore: false }));
+  readInvoice.mockResolvedValue(okRead(drafted()));
 });
 
 const screenAt = () => (
@@ -382,27 +390,25 @@ describe('issuing and voiding', () => {
   });
 
   /**
-   * DEF-T-13 (the web half). The draft is held in component state and the
-   * product publishes no list of drafted sales, so a reload strands it. Until
-   * that list exists the screen has to say so; a panel that is silent about it
-   * lets the operator find out afterwards, which is how one draft of the
-   * acceptance campaign became permanently unreachable.
+   * DEF-T-13 (the web half). The draft used to live only in component state, so
+   * a reload stranded it and one draft of the acceptance campaign became
+   * permanently unreachable. The branch's drafted sales are now listed, and the
+   * panel says where the draft will be instead of what leaving costs.
    */
-  it('tells the operator a drafted sale is lost on leaving, and asks the browser to confirm', async () => {
+  it('tells the operator where a drafted sale will be, and no longer blocks leaving', async () => {
     const user = userEvent.setup();
     const addEventListener = vi.spyOn(window, 'addEventListener');
     renderLtr(screenAt());
     await toDraft(user);
-    expect(
-      screen.getByText(EN['inventory.counterSales.sale.draftStranded'] as string)
-    ).toBeTruthy();
-    expect(addEventListener.mock.calls.some(([name]) => name === 'beforeunload')).toBe(true);
+    expect(screen.getByText(EN['inventory.counterSales.sale.draftListed'] as string)).toBeTruthy();
+    // The sentence is now true because the list exists, so the browser is no
+    // longer asked to confirm a navigation that costs nothing.
+    expect(addEventListener.mock.calls.some(([name]) => name === 'beforeunload')).toBe(false);
     addEventListener.mockRestore();
   });
 
-  it('drops the warning once the sale is issued, because it is reachable then', async () => {
+  it('drops the sentence once the sale is issued, because it is no longer a draft', async () => {
     const user = userEvent.setup();
-    const removeEventListener = vi.spyOn(window, 'removeEventListener');
     renderLtr(screenAt());
     await toDraft(user);
     await user.click(
@@ -411,11 +417,7 @@ describe('issuing and voiding', () => {
     await waitFor(() =>
       expect(screen.getByText(EN['inventory.counterSales.sale.issuedNote'] as string)).toBeTruthy()
     );
-    expect(
-      screen.queryByText(EN['inventory.counterSales.sale.draftStranded'] as string)
-    ).toBeNull();
-    expect(removeEventListener.mock.calls.some(([name]) => name === 'beforeunload')).toBe(true);
-    removeEventListener.mockRestore();
+    expect(screen.queryByText(EN['inventory.counterSales.sale.draftListed'] as string)).toBeNull();
   });
 
   it('says an issued sale cannot be undone and points at the returns desk', async () => {
@@ -630,6 +632,100 @@ describe('the buyer search', () => {
       await screen.findByText(EN['inventory.counterSales.buyer.needsRead'] as string)
     ).toBeTruthy();
     expect(searchCustomerDirectory).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * DEF-T-13. A drafted counter sale could not be found again after a reload:
+ * the control that issues it lived on the panel the draft rendered, and the
+ * screen published no list of drafted sales. One draft of the acceptance
+ * campaign was left stranded and is still named in the defect record.
+ */
+describe('the sales started here and not finished', () => {
+  const stranded = invoice({
+    id: '77777777-7777-4777-8777-777777777777',
+    status: 'draft',
+    invoiceNumber: null,
+  });
+
+  it('asks only for the drafts of the chosen branch', async () => {
+    const user = userEvent.setup();
+    renderLtr(screenAt());
+    await chooseBranch(
+      user,
+      'inventory.counterSales.targetLabel',
+      'inventory.counterSales.chooseBranch'
+    );
+    await waitFor(() => expect(listCounterSales).toHaveBeenCalled());
+    expect(listCounterSales.mock.calls[0]).toEqual([
+      { companyId: COMPANY_ID, branchId: BRANCH_ID },
+      { status: 'draft' },
+    ]);
+  });
+
+  it('says so plainly when every sale started here was finished', async () => {
+    const user = userEvent.setup();
+    renderLtr(screenAt());
+    await chooseBranch(
+      user,
+      'inventory.counterSales.targetLabel',
+      'inventory.counterSales.chooseBranch'
+    );
+    expect(
+      await screen.findByText(EN['inventory.counterSales.drafts.none'] as string)
+    ).toBeTruthy();
+  });
+
+  it('reopens a stranded draft onto the panel that can issue or void it', async () => {
+    listCounterSales.mockResolvedValue(
+      okRead({ items: [stranded], nextCursor: null, hasMore: false })
+    );
+    readInvoice.mockResolvedValue(okRead({ invoice: stranded, lines: [], recordVersion: 1 }));
+    const user = userEvent.setup();
+    renderLtr(screenAt());
+    await chooseBranch(
+      user,
+      'inventory.counterSales.targetLabel',
+      'inventory.counterSales.chooseBranch'
+    );
+    await user.click(
+      await screen.findByRole('button', {
+        name: EN['inventory.counterSales.drafts.reopen'] as string,
+      })
+    );
+
+    // The detail read is what reopens it: the panel needs the lines and the
+    // INVOICE's own version, and the list publishes a header only.
+    await waitFor(() => expect(readInvoice).toHaveBeenCalledWith(stranded.id));
+    expect(
+      await screen.findByText(EN['inventory.counterSales.drafts.reopened'] as string)
+    ).toBeTruthy();
+    // Reopened as a draft, so both acts are offered — which is exactly what the
+    // stranded draft could not be given.
+    expect(
+      screen.getByRole('button', { name: EN['inventory.counterSales.issue.action'] as string })
+    ).toBeTruthy();
+    expect(
+      screen.getByRole('button', { name: EN['inventory.counterSales.void.action'] as string })
+    ).toBeTruthy();
+    // Nothing was written to reach it.
+    expect(createCounterSale).not.toHaveBeenCalled();
+    expect(issueInvoice).not.toHaveBeenCalled();
+  });
+
+  it('says a refusal is a refusal rather than showing an empty list', async () => {
+    listCounterSales.mockResolvedValue({ status: 'denied' as const, correlationId: 'corr' });
+    const user = userEvent.setup();
+    renderLtr(screenAt());
+    await chooseBranch(
+      user,
+      'inventory.counterSales.targetLabel',
+      'inventory.counterSales.chooseBranch'
+    );
+    expect(
+      await screen.findByText(EN['inventory.counterSales.drafts.refused'] as string)
+    ).toBeTruthy();
+    expect(screen.queryByText(EN['inventory.counterSales.drafts.none'] as string)).toBeNull();
   });
 });
 

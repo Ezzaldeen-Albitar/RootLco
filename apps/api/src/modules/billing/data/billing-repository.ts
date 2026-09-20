@@ -94,6 +94,19 @@ export const COUNTER_SALE_ORDER: OrderingContract = Object.freeze({
   direction: 'desc',
 });
 
+/**
+ * Credit notes are listed newest-first by `created_at` (DEF-T-07).
+ *
+ * `created_at` rather than `issued_at`: a note is created `pending` and only an
+ * APPROVED one has an `issued_at` at all (`ck_credit_notes_approved_shape`), so
+ * ordering on the issue moment would leave every note awaiting approval — the
+ * ones the list exists to surface — with no position at all.
+ */
+export const CREDIT_NOTE_ORDER: OrderingContract = Object.freeze({
+  key: 'sal.credit_notes:created_at_desc',
+  direction: 'desc',
+});
+
 export const BILLING_SQLSTATE = {
   /**
    * `RAISE … USING ERRCODE = 'no_data_found'`.
@@ -2037,6 +2050,65 @@ export class BillingRepository extends Repository {
       result.rows.map((row) => ({ item: toInvoice(row), sortValue: row.sort_value, id: row.id })),
       request,
       COUNTER_SALE_ORDER
+    );
+  }
+
+  /**
+   * One branch's credit notes, newest first (DEF-T-07).
+   *
+   * No `deleted_at` predicate, for the reason `findCreditNote` gives: the table
+   * has no such column. No amount join either — the amount is a column of the row
+   * itself, and the whole row is gated by `sal.finance.view`
+   * (`sel_credit_notes_gated`), so a caller without that permission reads an
+   * EMPTY page rather than a page of nulled figures. That is why the operation
+   * declares the permission instead of nulling amounts the way the invoice reads
+   * do: there is no honest partial projection of a row RLS removes entirely.
+   */
+  public async listCreditNotes(
+    db: DbHandle,
+    filter: {
+      readonly companyId: string;
+      readonly branchId: string;
+      readonly approvalState?: string | undefined;
+      readonly invoiceId?: string | undefined;
+    },
+    request: PageRequest
+  ): Promise<Page<CreditNoteRow>> {
+    const context = this.assertContext(db);
+    const values: unknown[] = [
+      context.principal.tenantId,
+      filter.companyId,
+      filter.branchId,
+      filter.approvalState ?? null,
+      filter.invoiceId ?? null,
+    ];
+    const keyset = keysetFragment(
+      request,
+      { sort: 'c.created_at', id: 'c.id' },
+      CREDIT_NOTE_ORDER,
+      values.length + 1
+    );
+    const result = await this.run<CreditNoteSql & { sort_value: string }>(
+      db,
+      `SELECT ${CREDIT_NOTE_COLUMNS},
+              ${cursorTimestamp('c.created_at')} AS sort_value
+         FROM sal.credit_notes c
+        WHERE c.tenant_id = $1 AND c.company_id = $2 AND c.branch_id = $3
+          AND ($4::text IS NULL OR c.approval_state = $4)
+          AND ($5::uuid IS NULL OR c.invoice_id = $5)
+          ${keyset.predicate}
+        ${keyset.order}
+        ${keyset.limitClause}`,
+      [...values, ...keyset.values]
+    );
+    return buildPageWithCursors(
+      result.rows.map((row) => ({
+        item: toCreditNote(row),
+        sortValue: row.sort_value,
+        id: row.id,
+      })),
+      request,
+      CREDIT_NOTE_ORDER
     );
   }
 }

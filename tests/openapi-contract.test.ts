@@ -420,6 +420,8 @@ import '@/app/api/v1/invoices/[invoiceId]/issuance/route';
 import '@/app/api/v1/invoices/[invoiceId]/outstanding/route';
 import '@/app/api/v1/invoices/[invoiceId]/cancellation/route';
 import '@/app/api/v1/invoices/[invoiceId]/credit-notes/route';
+import '@/app/api/v1/credit-notes/route';
+import '@/app/api/v1/credit-notes/[creditNoteId]/route';
 import '@/app/api/v1/credit-notes/[creditNoteId]/approval/route';
 import '@/app/api/v1/payments/route';
 import '@/app/api/v1/payments/[paymentId]/route';

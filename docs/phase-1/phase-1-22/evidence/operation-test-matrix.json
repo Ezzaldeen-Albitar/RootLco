@@ -1,9 +1,9 @@
 {
   "generatedFrom": "scripts/check-operation-test-coverage.mjs",
   "counts": {
-    "registered": 49,
-    "publicApi": 49,
-    "operationDepth": 49,
+    "registered": 51,
+    "publicApi": 51,
+    "operationDepth": 51,
     "invocationOnly": 0,
     "pending": 0,
     "unitOnly": 0,
@@ -161,6 +161,54 @@
         "service",
         "success"
       ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "sal.credit-note-detail",
+      "surface": "public-api",
+      "method": "GET",
+      "path": "/credit-notes/{creditNoteId}",
+      "public": false,
+      "files": ["tests/backend/p1-22-credit-note.test.ts"],
+      "referenced": true,
+      "derived": ["route", "service", "success", "authorization", "cross-tenant", "isolation"],
+      "declared": ["denial"],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "isolation",
+        "denial"
+      ],
+      "provided": [
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "isolation",
+        "route",
+        "service",
+        "success"
+      ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "sal.credit-note-list",
+      "surface": "public-api",
+      "method": "GET",
+      "path": "/credit-notes",
+      "public": false,
+      "files": ["tests/backend/p1-22-credit-note.test.ts"],
+      "referenced": true,
+      "derived": ["route", "service", "success", "authorization", "isolation"],
+      "declared": ["denial"],
+      "required": ["route", "service", "success", "authorization", "isolation", "denial"],
+      "provided": ["authorization", "denial", "isolation", "route", "service", "success"],
       "missing": [],
       "metadataOnly": false,
       "unitOnly": false

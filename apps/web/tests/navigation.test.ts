@@ -78,6 +78,14 @@ describe('the navigation model', () => {
       // P1-30 W1: the service catalogue at `/services`, gated on
       // `svc.service.read` — the permission its list operation requires.
       'catalog',
+      /*
+       * DEF-T-07: the credit notes of a branch at `/credit-notes`, gated on
+       * `sal.credit.manage`. A return raised a credit note, told the operator a
+       * second person had to approve it, and nothing in the navigation could
+       * open one. The reads also require `sal.finance.view`, which the PAGE
+       * checks — a navigation gate names one code, as every other row here does.
+       */
+      'creditNotes',
       // Both duplicate queues are in the sidebar, each behind its OWN
       // `*.duplicate.review` code. They had screens and no route into them —
       // a page nobody can reach is not delivered.

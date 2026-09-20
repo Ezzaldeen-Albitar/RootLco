@@ -81,13 +81,14 @@ import {
   SERVICE_CONDITION,
   type MaterialException,
   type MaterialRequirement,
+  type InventoryItem,
   type MaterialRequirementCreateBody,
   type StockTarget,
   type UnitOfMeasureOption,
   type VehicleSpecification,
 } from '../inventory-contract';
 import { OutcomeNote, PRIMARY_BUTTON, Qty, SECONDARY_BUTTON, UUID } from './shared';
-import { DANGER_BUTTON, PANEL, isQuantity } from './stock-operations';
+import { DANGER_BUTTON, ItemFinder, PANEL, isQuantity } from './stock-operations';
 
 /** The requirement list as one of four outcomes; an empty branch and a refusal differ. */
 type Listing =
@@ -1035,6 +1036,12 @@ function CreateRequirementForm({
     uomId: '',
     sourceReference: '',
   });
+  /*
+   * The chosen item, held beside the form because `ItemFinder` renders the row
+   * it was given rather than an identifier. `form.itemId` stays the single
+   * source of what is SENT — the finder writes into it and never around it.
+   */
+  const [item, setItem] = useState<InventoryItem | null>(null);
   const [errors, setErrors] = useState<Readonly<Record<string, string>>>({});
   const [busy, setBusy] = useState(false);
   const [outcome, setOutcome] = useState<ActionState | null>(null);
@@ -1222,15 +1229,30 @@ function CreateRequirementForm({
           error={errorFor('serviceLineId')}
         />
       )}
-      <TextField
-        label={translate(messages, 'inventory.material.create.itemId')}
-        description={translate(messages, 'inventory.material.create.itemHelp')}
-        spellCheck={false}
-        dir="ltr"
-        value={form.itemId}
-        onChange={(event) => setForm((f) => ({ ...f, itemId: event.target.value }))}
-        error={errorFor('itemId')}
-      />
+      {/*
+       * DEF-M-05, second half. This was the other free-text identifier on this
+       * form: "the item this material is", typed as a 36-character reference no
+       * screen prints. The catalogue search every other stock screen uses is
+       * offered instead, and the typed box is gone — `inv.item-search` is
+       * declared under `inv.item.read`, which a caller reaching this panel
+       * already holds, so there is no refusal case left for a box to survive.
+       *
+       * The material may be named by its item, by its category, or by neither,
+       * so the finder stays optional: clearing the choice clears the field.
+       */}
+      <div className="sm:col-span-2">
+        <ItemFinder
+          messages={messages}
+          idPrefix="material"
+          required={false}
+          value={item}
+          onChange={(chosen) => {
+            setItem(chosen);
+            setForm((f) => ({ ...f, itemId: chosen?.id ?? '' }));
+          }}
+          error={errorFor('itemId')}
+        />
+      </div>
       <TextField
         label={translate(messages, 'inventory.material.create.itemCategoryId')}
         description={translate(messages, 'inventory.material.create.itemCategoryHelp')}

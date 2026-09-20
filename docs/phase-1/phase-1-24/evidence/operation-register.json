@@ -1,9 +1,9 @@
 {
   "generatedBy": "scripts/p1-24-operation-register.mjs",
   "totals": {
-    "operations": 493,
-    "openapiPaths": 385,
-    "openapiOperations": 493,
+    "operations": 495,
+    "openapiPaths": 387,
+    "openapiOperations": 495,
     "openapiSchemas": 3,
     "events": 50,
     "eventsProduced": 47,
@@ -14,7 +14,7 @@
     "auditActions": 284
   },
   "counts": {
-    "Covered": 493
+    "Covered": 495
   },
   "operations": [
     {
@@ -12706,6 +12706,66 @@
       ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/invoices/[invoiceId]/credit-notes/route.ts"
+    },
+    {
+      "id": "sal.credit-note-detail",
+      "domain": "billing",
+      "method": "GET",
+      "route": "/api/v1/credit-notes/{creditNoteId}",
+      "permissions": ["sal.credit.manage", "sal.finance.view"],
+      "public": false,
+      "scope": "branch",
+      "transaction": "read (no business mutation)",
+      "auditClass": "none",
+      "auditAction": null,
+      "idempotent": false,
+      "versionGuarded": false,
+      "openapi": "GET /api/v1/credit-notes/{creditNoteId}",
+      "documentedResponses": ["200", "401", "403", "404", "422", "429", "500"],
+      "requiredEvidence": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "isolation",
+        "denial"
+      ],
+      "providedEvidence": [
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "isolation",
+        "route",
+        "service",
+        "success"
+      ],
+      "missingEvidence": [],
+      "tests": ["tests/backend/p1-22-credit-note.test.ts"],
+      "classification": "Covered",
+      "file": "apps/api/src/app/api/v1/credit-notes/[creditNoteId]/route.ts"
+    },
+    {
+      "id": "sal.credit-note-list",
+      "domain": "billing",
+      "method": "GET",
+      "route": "/api/v1/credit-notes",
+      "permissions": ["sal.credit.manage", "sal.finance.view"],
+      "public": false,
+      "scope": "branch",
+      "transaction": "read (no business mutation)",
+      "auditClass": "none",
+      "auditAction": null,
+      "idempotent": false,
+      "versionGuarded": false,
+      "openapi": "GET /api/v1/credit-notes",
+      "documentedResponses": ["200", "401", "403", "422", "429", "500"],
+      "requiredEvidence": ["route", "service", "success", "authorization", "isolation", "denial"],
+      "providedEvidence": ["authorization", "denial", "isolation", "route", "service", "success"],
+      "missingEvidence": [],
+      "tests": ["tests/backend/p1-22-credit-note.test.ts"],
+      "classification": "Covered",
+      "file": "apps/api/src/app/api/v1/credit-notes/route.ts"
     },
     {
       "id": "sal.delivery-checklist-record",

@@ -47,15 +47,22 @@
  */
 
 import Link from 'next/link';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useState } from 'react';
 
 import { INITIAL_REQUEST } from '@/components/data-table/table-state';
 import { SelectField, TextField } from '@/components/forms/Field';
 import { notifyActionResult } from '@/components/notifications/action-notifications';
-import { cancelInvoice, createCounterSale, issueInvoice } from '@/features/billing/api';
+import {
+  cancelInvoice,
+  createCounterSale,
+  issueInvoice,
+  listCounterSales,
+  readInvoice,
+} from '@/features/billing/api';
 import {
   MAX_REASON as MAX_INVOICE_REASON,
   type CreatedInvoice,
+  type Invoice,
 } from '@/features/billing/billing-contract';
 import { searchCustomerDirectory } from '@/lib/customers/directory';
 import type { CustomerSearchHit } from '@/lib/customers/directory-contract';
@@ -83,6 +90,7 @@ import {
 } from './shared';
 import { ScanBox } from './ScanBox';
 import {
+  BranchListView,
   BranchTargetForm,
   DANGER_BUTTON,
   ItemFinder,
@@ -90,6 +98,7 @@ import {
   PANEL,
   StockOperationLinks,
   isQuantity,
+  useBranchList,
 } from './stock-operations';
 
 export function CounterSalesScreen({
@@ -162,6 +171,17 @@ function BranchCounter({
   const [lines, setLines] = useState<readonly CounterSaleLine[]>([]);
   const [sale, setSale] = useState<CreatedInvoice | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  /*
+   * DEF-T-13. The branch's drafted sales, so one is reachable again after a
+   * reload. Re-read after every draft, issue and void, because each of those
+   * changes what belongs on it.
+   */
+  const drafts = useBranchList<Invoice>(
+    target,
+    DRAFT_SALES,
+    'inventory.counterSales.drafts.refused',
+    'inventory.counterSales.drafts.unavailable'
+  );
 
   return (
     <>
@@ -173,6 +193,16 @@ function BranchCounter({
 
       {sale === null ? (
         <>
+          <OpenDrafts
+            locale={locale}
+            messages={messages}
+            drafts={drafts.list}
+            onReopened={(reopened) => {
+              setSale(reopened);
+              setNotice('inventory.counterSales.drafts.reopened');
+            }}
+            onProblem={setNotice}
+          />
           <BuyerPicker
             messages={messages}
             canReadCustomers={canReadCustomers}
@@ -197,6 +227,7 @@ function BranchCounter({
             lines={lines}
             onDrafted={(created) => {
               setSale(created);
+              drafts.reload();
               setNotice(
                 created.replayed
                   ? 'inventory.counterSales.create.replayed'
@@ -213,6 +244,7 @@ function BranchCounter({
           canIssue={canIssue}
           onChanged={(next, noticeKey) => {
             setSale(next);
+            drafts.reload();
             setNotice(noticeKey);
           }}
           onNewSale={() => {
@@ -220,10 +252,130 @@ function BranchCounter({
             setLines([]);
             setBuyer(null);
             setNotice(null);
+            drafts.reload();
           }}
         />
       )}
     </>
+  );
+}
+
+/* ------------------------------------------------------------------ *
+ * The drafted sales of this branch (DEF-T-13)
+ * ------------------------------------------------------------------ */
+
+/**
+ * Module-level, not a closure: `useBranchList` keys its request on the branch
+ * and re-issues whenever the reader identity changes, so a function rebuilt on
+ * every render would read the branch again on every render.
+ */
+const DRAFT_SALES = (where: StockTarget) => listCounterSales(where, { status: 'draft' });
+
+/**
+ * The branch's drafted counter sales, each reopenable.
+ *
+ * DEF-T-13: a draft used to live only in this screen's memory, so a reload — or
+ * a closed tab, or an interrupted session — stranded it with no way back, and
+ * one such draft was left stranded by the acceptance campaign. `sal.counter-sale-list`
+ * answers for the branch, and reopening is the invoice detail read: the sale
+ * panel needs the lines and the invoice's own version to issue or void it, and
+ * the list publishes a header only.
+ */
+function OpenDrafts({
+  locale,
+  messages,
+  drafts,
+  onReopened,
+  onProblem,
+}: {
+  readonly locale: Locale;
+  readonly messages: Messages;
+  readonly drafts: ReturnType<typeof useBranchList<Invoice>>['list'];
+  readonly onReopened: (sale: CreatedInvoice) => void;
+  readonly onProblem: (messageKey: string) => void;
+}) {
+  const [busy, setBusy] = useState<string | null>(null);
+
+  const reopen = async (invoiceId: string) => {
+    setBusy(invoiceId);
+    const answer = await readInvoice(invoiceId);
+    setBusy(null);
+    if (answer.status === 'ok') {
+      // `replayed: false`: nothing was written to reach this sale, and the panel
+      // uses the flag only to choose which sentence it shows after a write.
+      onReopened({ ...answer.data, replayed: false });
+      return;
+    }
+    onProblem(
+      answer.status === 'denied'
+        ? 'inventory.counterSales.drafts.reopenRefused'
+        : answer.status === 'not-found'
+          ? 'inventory.counterSales.drafts.reopenMissing'
+          : 'inventory.counterSales.drafts.reopenUnavailable'
+    );
+  };
+
+  return (
+    <section aria-labelledby="counter-drafts-heading" className={PANEL}>
+      <h2 id="counter-drafts-heading" className="text-body font-medium text-text-primary">
+        {translate(messages, 'inventory.counterSales.drafts.heading')}
+      </h2>
+      <p className="text-caption text-text-muted">
+        {translate(messages, 'inventory.counterSales.drafts.explain')}
+      </p>
+      <BranchListView
+        messages={messages}
+        list={drafts}
+        loadingKey="inventory.counterSales.drafts.loading"
+        noneKey="inventory.counterSales.drafts.none"
+        truncatedKey="inventory.counterSales.drafts.truncated"
+      >
+        {(items) => (
+          <table className="w-full text-body">
+            <caption className="sr-only">
+              {translate(messages, 'inventory.counterSales.drafts.caption')}
+            </caption>
+            <thead>
+              <tr className="text-caption text-text-muted">
+                <th scope="col" className="text-start font-medium">
+                  {translate(messages, 'inventory.counterSales.column.sale')}
+                </th>
+                <th scope="col" className="text-end font-medium">
+                  {translate(messages, 'inventory.counterSales.column.total')}
+                </th>
+                <th scope="col" className="text-end font-medium">
+                  {translate(messages, 'inventory.counterSales.column.action')}
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {items.map((draft) => (
+                <tr key={draft.id} className="border-t border-border align-top">
+                  <td>{translate(messages, 'inventory.counterSales.drafts.notIssued')}</td>
+                  <td className="text-end" dir="ltr">
+                    {draft.totals === null
+                      ? translate(messages, 'inventory.counterSales.sale.noAmounts')
+                      : formatMoney(draft.totals.gross, locale)}
+                  </td>
+                  <td className="text-end">
+                    <button
+                      type="button"
+                      className={SECONDARY_BUTTON}
+                      disabled={busy !== null}
+                      onClick={() => {
+                        void reopen(draft.id);
+                      }}
+                    >
+                      {translate(messages, 'inventory.counterSales.drafts.reopen')}
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </BranchListView>
+    </section>
   );
 }
 
@@ -702,22 +854,12 @@ function SalePanel({
   const invoice = sale.invoice;
 
   /*
-   * DEF-T-13. While the sale is a draft it exists only here: the control that
-   * issues it is on this panel and no operation lists drafted sales, so a
-   * reload leaves it unreachable. The browser is asked to confirm before the
-   * document goes away — the only thing a page can do about a closed tab — and
-   * the panel says the same in words for every other way of leaving.
-   *
-   * Registered only while the sale IS a draft: an issued or voided sale is
-   * reachable through the invoice it produced, and a confirmation prompt with
-   * nothing behind it teaches an operator to dismiss the next one.
+   * DEF-T-13 used to be guarded here by a `beforeunload` confirmation, because a
+   * draft lived only in this component's memory and leaving the page stranded
+   * it. `sal.counter-sale-list` now answers for the branch and the panel above
+   * offers every draft back, so leaving costs nothing — and a confirmation
+   * prompt with nothing behind it teaches an operator to dismiss the next one.
    */
-  useEffect(() => {
-    if (invoice.status !== 'draft') return;
-    const confirmLeaving = (event: BeforeUnloadEvent) => event.preventDefault();
-    window.addEventListener('beforeunload', confirmLeaving);
-    return () => window.removeEventListener('beforeunload', confirmLeaving);
-  }, [invoice.status]);
 
   const issue = async () => {
     setBusy(true);
@@ -807,17 +949,12 @@ function SalePanel({
       {invoice.status === 'draft' ? (
         <>
           {/*
-           * DEF-T-13. The draft lives in this component's state and the product
-           * publishes no list of drafted sales, so a reload or an interrupted
-           * session strands it with no way back — one such draft was left
-           * stranded by the acceptance campaign and is still unreachable. The
-           * list operation is owed by a later change; until it exists the screen
-           * says plainly what leaving costs, rather than letting an operator
-           * discover it afterwards, and `beforeunload` above asks the browser to
-           * confirm a navigation away.
+           * DEF-T-13. The sentence that used to warn an operator that leaving
+           * would strand this draft now tells them where it will be instead: the
+           * open-drafts panel lists it until it is issued or voided.
            */}
           <p role="status" className="text-body text-text-primary">
-            {translate(messages, 'inventory.counterSales.sale.draftStranded')}
+            {translate(messages, 'inventory.counterSales.sale.draftListed')}
           </p>
           {canIssue ? (
             <div>

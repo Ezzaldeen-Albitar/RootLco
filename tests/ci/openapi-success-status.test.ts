@@ -89,7 +89,9 @@ describe('every operation publishes the success status it returns', () => {
     // seven new route modules, the reorder-level collection carrying both verbs.
     // 493 with the Owner directive console account and security: one operation
     // over one new route module.
-    expect(actual.size).toBe(493);
+    // 495 with the Owner directive credit-note reads (DEF-T-07): the credit-note
+    // list and the credit-note detail, two reads that both answer 200.
+    expect(actual.size).toBe(495);
   });
 
   it('agrees with the committed contract for every operation', () => {
@@ -220,7 +222,9 @@ describe('every operation publishes the success status it returns', () => {
     // publish 200: six are reads, and the two writes change or create a row whose
     // identity the caller already named by its signature, so neither handler sets
     // 201 and neither declares it.
-    expect(counts[200]).toBe(354);
+    // 354 -> 356 with the Owner directive credit-note reads (DEF-T-07). Both are
+    // GETs, so both publish 200 and neither moves the 201 count.
+    expect(counts[200]).toBe(356);
   });
 
   it('reads the handler, not the declaration', () => {
