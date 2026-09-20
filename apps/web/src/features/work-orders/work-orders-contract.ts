@@ -49,6 +49,46 @@ export const WORK_ORDER_KINDS = ['ordinary', 'rework'] as const;
 export type WorkOrderKind = (typeof WORK_ORDER_KINDS)[number];
 
 /**
+ * The state codes seeded at PLATFORM scope, transcribed from
+ * `supabase/seeds/06_wo_job_state_graph.sql`.
+ *
+ * This is NOT a contradiction of the opacity rule stated above, and it is not a
+ * copy of any tenant's configuration. `wo.work_order_states` is dual-scope: the
+ * nine codes below are inserted at `scope = 'platform'` for every organisation
+ * the platform provisions, and a tenant may then define more of its own. So
+ * these nine are a fact about the PLATFORM, not about a tenant, and a screen may
+ * name them in the operator's language.
+ *
+ * What stays true is that an unrecognised code is never invented a sentence for.
+ * `workOrderStateMessageKey` answers `null` for anything not in this list, and
+ * the caller renders the code itself — which is what the screen did for every
+ * code before, including these.
+ */
+export const PLATFORM_WORK_ORDER_STATES = [
+  'draft',
+  'open',
+  'in_progress',
+  'awaiting_parts',
+  'awaiting_customer',
+  'qc_pending',
+  'ready_to_close',
+  'closed',
+  'cancelled',
+] as const;
+export type PlatformWorkOrderState = (typeof PLATFORM_WORK_ORDER_STATES)[number];
+
+/**
+ * The catalogue key for a state code, or `null` when the platform does not
+ * define it — in which case the caller renders the code as the opaque token it
+ * is, rather than a guess.
+ */
+export function workOrderStateMessageKey(code: string): string | null {
+  return (PLATFORM_WORK_ORDER_STATES as readonly string[]).includes(code)
+    ? `workOrders.state.${code}`
+    : null;
+}
+
+/**
  * The party who brought the car for THIS work order, as at its `opened_at`.
  *
  * **Nullable, and the null case is real** — a reception visit can legitimately

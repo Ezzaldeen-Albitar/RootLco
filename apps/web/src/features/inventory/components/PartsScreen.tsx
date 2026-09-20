@@ -9,7 +9,10 @@ import { INITIAL_REQUEST, type TableRequest } from '@/components/data-table/tabl
 import { useServerTable } from '@/components/data-table/use-server-table';
 import { SelectField, TextField } from '@/components/forms/Field';
 import { notifyActionResult } from '@/components/notifications/action-notifications';
-import type { WorkOrderListEntry } from '@/features/work-orders/work-orders-contract';
+import {
+  workOrderStateMessageKey,
+  type WorkOrderListEntry,
+} from '@/features/work-orders/work-orders-contract';
 import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic } from '@/i18n/get-messages';
@@ -204,7 +207,7 @@ export function PartsScreen({
           {workOrder ? (
             <>
               <Figure label={translate(messages, 'inventory.parts.workOrderState')}>
-                <bdi>{workOrder.state}</bdi>
+                <WorkOrderState messages={messages} state={workOrder.state} />
               </Figure>
               <Figure label={translate(messages, 'inventory.parts.customer')}>
                 {workOrder.customer ? (
@@ -405,6 +408,28 @@ function Figure({
       <dd className="text-body text-text-primary">{children}</dd>
     </div>
   );
+}
+
+/**
+ * The work order's state, in the operator's language (DEF-M-04).
+ *
+ * The header used to print `workOrder.state` raw, so an English screen read
+ * "State in_progress" and an Arabic one carried the same Latin token inside a
+ * right-to-left sentence. The nine codes the platform seeds have catalogue
+ * entries; a state a tenant defined for itself has none, and rather than guess
+ * at a sentence the code is rendered as the token it is, marked `ltr` inside a
+ * `bdi` so it cannot reorder the Arabic line around it.
+ */
+function WorkOrderState({ messages, state }: { readonly messages: Messages; readonly state: string }) {
+  const key = workOrderStateMessageKey(state);
+  if (key === null) {
+    return (
+      <bdi dir="ltr" className="font-mono text-caption">
+        {state}
+      </bdi>
+    );
+  }
+  return <bdi>{translateDynamic(messages, key)}</bdi>;
 }
 
 /* ------------------------------------------------------------------ *
