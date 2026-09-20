@@ -808,9 +808,17 @@ export class ReceptionService extends ApplicationService {
       // requester AND an approved authorization. Both raise the same SQLSTATE, so
       // the message names the two prerequisite categories and nothing about which
       // parties or decisions exist on the visit.
+      //
+      // The rule token says the same thing in one word so the screen can name
+      // the step that fixes it (DEF-T-10). It names the two CATEGORIES, exactly
+      // as the message does, because the database gives no way to tell them
+      // apart here and guessing would be worse than being general.
       return new AppFailure('ERR-TRN-001', {
         message:
           'The reception is incomplete: approval needs an active service requester and an approved authorization',
+        safeDetails: {
+          violations: [{ path: 'path.receptionId', rule: 'requester_or_authorization_missing' }],
+        },
       });
     }
     return error;

@@ -181,16 +181,32 @@ export function toReceptionCreatePlan(
  * `opened` to `authorized` runs through `inspecting`, and the service walks that
  * path inside one transaction. Both edges are in the frozen graph; no state is
  * invented and no guard is bypassed.
+ *
+ * ## Why each refusal carries a rule token (DEF-T-10)
+ *
+ * Every approval refusal on this path is `ERR-TRN-001`, and a screen holding
+ * only the code can say nothing but "the state does not allow this". A
+ * receptionist met that sentence when the actual unmet precondition was a
+ * missing authorization, two steps away, and had no way to learn it.
+ *
+ * So each refusal publishes a violation on the ROUTE parameter — the command
+ * sends no body, so there is no control to file it under and `violationKeysOf`
+ * routes it to the banner. The token names the PRECONDITION and nothing else:
+ * no party, no decision, no role, no count. That is the same anti-probing line
+ * the messages already hold, and it is what makes these tokens safe to publish
+ * to a caller who is already reading the visit they name.
  */
 export function assertApprovable(current: string): void {
   if (current === 'authorized') {
     throw new AppFailure('ERR-TRN-001', {
       message: 'This reception is already authorized',
+      safeDetails: { violations: [{ path: 'path.receptionId', rule: 'already_authorized' }] },
     });
   }
   if (current !== 'opened' && current !== 'inspecting') {
     throw new AppFailure('ERR-TRN-001', {
       message: `A reception in state "${current}" cannot be approved`,
+      safeDetails: { violations: [{ path: 'path.receptionId', rule: 'state_not_approvable' }] },
     });
   }
 }
@@ -253,6 +269,16 @@ export interface StandingDecision {
  * is built to prevent. Where a business rule should let one authority outrank
  * another, that rule has to be stated and approved before it is coded — refusing
  * is the boundary that cannot silently do the wrong thing.
+ *
+ * ## The rule token, and the two commands that share it (DEF-T-10)
+ *
+ * Both refusals publish a violation on the route parameter so a screen can name
+ * the precondition instead of printing "the state does not allow this". This
+ * function guards TWO commands — approval and conversion to a work order — so
+ * the token names the missing authorization and nothing about which command
+ * asked for it; the catalogue sentence and the step it points at have to read
+ * correctly under both buttons. The token says no more than the message beside
+ * it already does: no party, no decision, no role, no count.
  */
 export function assertStandingAuthorization(decisions: readonly StandingDecision[]): void {
   if (decisions.some((entry) => entry.decision === 'declined')) {
@@ -260,11 +286,17 @@ export function assertStandingAuthorization(decisions: readonly StandingDecision
       message:
         'An authorizing party has withdrawn or refused authorization for this reception; ' +
         'record a new approval before proceeding',
+      safeDetails: {
+        violations: [{ path: 'path.receptionId', rule: 'authorization_withdrawn' }],
+      },
     });
   }
   if (!decisions.some((entry) => entry.decision === 'approved')) {
     throw new AppFailure('ERR-TRN-001', {
       message: 'This reception has no standing approved authorization',
+      safeDetails: {
+        violations: [{ path: 'path.receptionId', rule: 'authorization_missing' }],
+      },
     });
   }
 }

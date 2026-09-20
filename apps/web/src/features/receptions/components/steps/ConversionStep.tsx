@@ -62,6 +62,7 @@ export function ConversionStep({
   capabilities,
   writesLocked,
   refresh,
+  goToStep,
 }: CheckInStepProps) {
   const affordances = receptionAffordances(detail.receptionStatus);
   const [state, setState] = useState<ActionState>(IDLE);
@@ -133,7 +134,12 @@ export function ConversionStep({
           )
         ) : null}
 
-        <CommandOutcome locale={locale} messages={messages} state={state} />
+        {/* Conversion refuses through the SAME authorization rule the approval
+            does (`assertStandingAuthorization`), so it can be refused for a
+            missing or withdrawn authorization too. It is handed the wizard's
+            navigation for the same reason the approval is: naming a step and
+            then leaving the operator to find it is half an answer. */}
+        <CommandOutcome locale={locale} messages={messages} state={state} goToStep={goToStep} />
 
         {converted !== null ? (
           <ConversionResult

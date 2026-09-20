@@ -117,6 +117,8 @@ const CAPABILITIES = {
 };
 
 const refresh = vi.fn(async () => {});
+/** The shell's step navigation, which a refusal may use (DEF-T-10). */
+const goToStep = vi.fn();
 
 /**
  * The step props, with `visitId` and `recordVersion` DERIVED from the detail.
@@ -134,6 +136,7 @@ function stepProps(over: Partial<CheckInStepProps> = {}): CheckInStepProps {
     capabilities: CAPABILITIES,
     writesLocked: false,
     refresh,
+    goToStep,
     ...rest,
     detail,
     visitId: detail.id,
@@ -449,6 +452,104 @@ describe('the two conflicts a guarded command meets are told apart', () => {
     expect(screen.getByText('corr-409', { exact: false })).toBeVisible();
   });
 
+  /**
+   * DEF-T-10. Approving a visit whose authorization had never been verified
+   * printed the generic blocked sentence, which named nothing and pointed
+   * nowhere. The API now publishes a rule token for that precondition, so the
+   * banner says what is missing and offers the step that records it.
+   */
+  it('names the missing authorization instead of the generic refusal, and offers the step', async () => {
+    approveReception.mockResolvedValue({
+      status: 'conflict',
+      messageKey: 'form.violation.authorization_missing',
+      correlationId: 'corr-auth',
+      attempt: 1,
+    });
+    const user = userEvent.setup();
+    renderLtr(<SummaryStep {...stepProps()} />);
+    await user.click(
+      await screen.findByRole('button', { name: EN['receptions.summary.approve'] as string })
+    );
+
+    expect(
+      await screen.findByText(EN['form.violation.authorization_missing'] as string)
+    ).toBeVisible();
+    expect(screen.queryByText(EN['receptions.command.conflictBlocked'] as string)).toBeNull();
+
+    await user.click(
+      screen.getByRole('button', {
+        name: EN['receptions.command.goToAuthorization'] as string,
+      })
+    );
+    expect(goToStep).toHaveBeenCalledWith('parties-and-authorization');
+  });
+
+  it('names a withdrawn authorization, and keeps the generic sentence for a reason it was never told', async () => {
+    approveReception.mockResolvedValue({
+      status: 'conflict',
+      messageKey: 'form.violation.authorization_withdrawn',
+      correlationId: 'corr-withdrawn',
+      attempt: 1,
+    });
+    const user = userEvent.setup();
+    const { unmount } = renderLtr(<SummaryStep {...stepProps()} />);
+    await user.click(
+      await screen.findByRole('button', { name: EN['receptions.summary.approve'] as string })
+    );
+    expect(
+      await screen.findByText(EN['form.violation.authorization_withdrawn'] as string)
+    ).toBeVisible();
+    unmount();
+
+    // A rule this screen has never been told about is NOT dressed up as one it
+    // understands: the generic sentence stands, and no step is offered.
+    approveReception.mockResolvedValue({
+      status: 'conflict',
+      messageKey: 'form.violation.unregistered_aggregate',
+      correlationId: 'corr-unknown',
+      attempt: 1,
+    });
+    renderLtr(<SummaryStep {...stepProps()} />);
+    await user.click(
+      await screen.findByRole('button', { name: EN['receptions.summary.approve'] as string })
+    );
+    expect(
+      await screen.findByText(EN['receptions.command.conflictBlocked'] as string)
+    ).toBeVisible();
+    expect(
+      screen.queryByRole('button', {
+        name: EN['receptions.command.goToAuthorization'] as string,
+      })
+    ).toBeNull();
+  });
+
+  /**
+   * The two refusals that are not cured by filling anything in offer no step:
+   * the visit has moved on, and sending the operator to a form would invite
+   * work that changes nothing.
+   */
+  it('names an already-approved visit without offering a step', async () => {
+    approveReception.mockResolvedValue({
+      status: 'conflict',
+      messageKey: 'form.violation.already_authorized',
+      correlationId: 'corr-already',
+      attempt: 1,
+    });
+    const user = userEvent.setup();
+    renderLtr(<SummaryStep {...stepProps()} />);
+    await user.click(
+      await screen.findByRole('button', { name: EN['receptions.summary.approve'] as string })
+    );
+    expect(
+      await screen.findByText(EN['form.violation.already_authorized'] as string)
+    ).toBeVisible();
+    expect(
+      screen.queryByRole('button', {
+        name: EN['receptions.command.goToAuthorization'] as string,
+      })
+    ).toBeNull();
+  });
+
   it('says a version conflict is cured by the re-read it has just done', async () => {
     approveReception.mockResolvedValue({
       status: 'conflict',
@@ -696,6 +797,37 @@ describe('conversion to a work order', () => {
       await screen.findByText(EN['receptions.command.conflictBlocked'] as string)
     ).toBeVisible();
     await waitFor(() => expect(refresh).toHaveBeenCalled());
+  });
+
+  /**
+   * DEF-T-10 reaches this step too, because the API guards conversion with the
+   * SAME standing-authorization rule as approval: a withdrawn authorization
+   * refuses both commands with the same token. So the sentence has to read
+   * correctly under this button — it names the precondition and the step, never
+   * the command — and the step has to be reachable from here, which it was not
+   * until this screen was handed the wizard's navigation.
+   */
+  it('names a missing authorization on the conversion refusal too, and offers the same step', async () => {
+    convertReceptionToWorkOrder.mockResolvedValue({
+      status: 'conflict',
+      messageKey: 'form.violation.authorization_withdrawn',
+      correlationId: 'corr-conv-auth',
+      attempt: 1,
+    });
+    const user = userEvent.setup();
+    renderLtr(<ConversionStep {...withStatus('authorized')} />);
+    await user.click(
+      await screen.findByRole('button', { name: EN['receptions.convert.submit'] as string })
+    );
+    expect(
+      await screen.findByText(EN['form.violation.authorization_withdrawn'] as string)
+    ).toBeVisible();
+    expect(screen.queryByText(EN['receptions.command.conflictBlocked'] as string)).toBeNull();
+
+    await user.click(
+      screen.getByRole('button', { name: EN['receptions.command.goToAuthorization'] as string })
+    );
+    expect(goToStep).toHaveBeenCalledWith('parties-and-authorization');
   });
 
   it('reads the work order on intent, and shows its jobs', async () => {

@@ -88,6 +88,18 @@ interface Body {
   readonly authorizationId?: string;
   readonly origin?: string;
   readonly code?: string;
+  /**
+   * The published refusal reason (DEF-T-10). `ERR-TRN-001` is one code for five
+   * unmet preconditions, so the code alone told a screen nothing it could act
+   * on; the rule token names the precondition and nothing about the parties or
+   * decisions on the visit.
+   */
+  readonly violations?: readonly { readonly path: string; readonly rule: string }[];
+}
+
+/** The rule tokens a refusal published, in order. */
+function rulesOf(body: Body): readonly string[] {
+  return (body.violations ?? []).map((violation) => violation.rule);
 }
 
 let admin: Pool;
@@ -581,7 +593,13 @@ describe('rec.reception-approve: the frozen activation contract', () => {
 
     const refused = await approve(reception, 1);
     expect(refused.status).toBe(409);
-    expect(((await refused.json()) as Body).code).toBe('ERR-TRN-001');
+    const body = (await refused.json()) as Body;
+    expect(body.code).toBe('ERR-TRN-001');
+    // DEF-T-10: the code alone is one sentence for five preconditions. The rule
+    // token says WHICH, on the route parameter, because the command sends no
+    // body and there is no control to file it under.
+    expect(rulesOf(body)).toEqual(['authorization_missing']);
+    expect(body.violations?.[0]?.path).toBe('path.receptionId');
     await expectUntouched(reception);
   });
 
@@ -597,7 +615,12 @@ describe('rec.reception-approve: the frozen activation contract', () => {
 
     const refused = await approve(reception, 1);
     expect(refused.status).toBe(409);
-    expect(((await refused.json()) as Body).code).toBe('ERR-TRN-001');
+    const body = (await refused.json()) as Body;
+    expect(body.code).toBe('ERR-TRN-001');
+    // A withdrawal is a different act from a missing approval, and the screen
+    // has to be able to say so: recording a new approval is the cure for one
+    // and not for the other.
+    expect(rulesOf(body)).toEqual(['authorization_withdrawn']);
     await expectUntouched(reception);
   });
 
@@ -626,7 +649,13 @@ describe('rec.reception-approve: the frozen activation contract', () => {
 
     const refused = await approve(reception, 1);
     expect(refused.status).toBe(409);
-    expect(((await refused.json()) as Body).code).toBe('ERR-TRN-001');
+    const body = (await refused.json()) as Body;
+    expect(body.code).toBe('ERR-TRN-001');
+    // This refusal comes from the frozen database guard, which raises the same
+    // SQLSTATE for both halves of the activation contract. The token names the
+    // two categories rather than guessing which one is missing — the same line
+    // the message already holds.
+    expect(rulesOf(body)).toEqual(['requester_or_authorization_missing']);
     await expectUntouched(reception);
   });
 
@@ -784,7 +813,11 @@ describe('lifecycle refusals', () => {
 
     const again = await approve(reception, 3);
     expect(again.status).toBe(409);
-    expect(((await again.json()) as Body).code).toBe('ERR-TRN-001');
+    const body = (await again.json()) as Body;
+    expect(body.code).toBe('ERR-TRN-001');
+    // Distinct from the terminal-state token below: nothing is missing here,
+    // the decision has already been taken, and no step cures it.
+    expect(rulesOf(body)).toEqual(['already_authorized']);
 
     expect(await statusOf(reception)).toBe('authorized');
     expect(await versionOf(reception)).toBe(3);
@@ -801,7 +834,9 @@ describe('lifecycle refusals', () => {
       await forceStatus(reception, terminal);
       const refused = await approve(reception, 2);
       expect(refused.status).toBe(409);
-      expect(((await refused.json()) as Body).code).toBe('ERR-TRN-001');
+      const body = (await refused.json()) as Body;
+      expect(body.code).toBe('ERR-TRN-001');
+      expect(rulesOf(body)).toEqual(['state_not_approvable']);
       expect(await statusOf(reception)).toBe(terminal);
       expect(await auditCount(reception)).toBe(0);
       expect(await outboxCount(reception)).toBe(0);
