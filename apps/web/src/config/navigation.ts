@@ -544,6 +544,13 @@ export const NAVIGATION: readonly NavigationGroup[] = Object.freeze([
        * cannot express: the page checks BOTH before it issues a read, so a
        * caller holding only this one meets a refusal on the page rather than an
        * empty list that would read as "nothing has been credited".
+       *
+       * In a freshly provisioned organisation this entry is HIDDEN, because
+       * `sal.credit.manage` is not among the codes the tenant administrator
+       * bundle writes and an unheld code cannot be delegated either. The gap
+       * predates these reads — the credit-note writes declare the same code —
+       * and the list route's docblock on the API side states where the decision
+       * to carry it belongs.
        */
       {
         key: 'creditNotes',

@@ -24,6 +24,20 @@
  * only `sal.credit.manage` would advertise an operation that answers an empty page
  * — indistinguishable from "this branch has credited nothing", which is the one
  * thing a credit-note list must never say by accident.
+ *
+ * ## Who can call this today — stated rather than left silent
+ *
+ * `sal.credit.manage` is seeded in the permission catalogue
+ * (`supabase/seeds/04_iam_permission_catalog.sql`) but is NOT one of the codes
+ * `TENANT_ADMINISTRATOR_ROLE.permissionCodes` writes at provisioning
+ * (`@/modules/iam` → `domain/bootstrap-roles.ts`), and `ins_role_permissions_delegable`
+ * admits a mapping only when the acting administrator already holds the code. So in
+ * a freshly provisioned organisation this read and the detail beside it answer 403,
+ * and the tenant navigation entry that points at them stays hidden. The gap is not
+ * introduced here: the two credit-note WRITES that shipped earlier declare the same
+ * code and have carried the same gap since P1-22. Whether the bundle carries it is a
+ * change-control decision of the kind already recorded beside `inv.cost.view`
+ * (CC-12) and `rpt.export` (P1-31 CC-04), and this read does not settle it.
  */
 import { z } from 'zod';
 import { defineOperation } from '@/server/auth/operation-registry';
