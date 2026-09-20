@@ -350,6 +350,43 @@ describe('the prices panel', () => {
     expect(setSalePrice).not.toHaveBeenCalled();
   });
 
+  /**
+   * DEF-T-14. All three scopes were refused with the bare words "Not found" and
+   * a correlation reference, with no field message, when the currency was one
+   * the organisation does not carry. The adapter now carries the server's own
+   * distinction (`inventory-api.test.ts`); what this asserts is that the form
+   * puts it where the operator is looking, and that the box says the constraint
+   * up front rather than leaving it to be discovered from a refusal.
+   */
+  it('says which currencies are allowed before the refusal, and where the refusal belongs', async () => {
+    const user = userEvent.setup();
+    setSalePrice.mockResolvedValue({
+      state: {
+        status: 'error' as const,
+        messageKey: 'inventory.prices.set.notInOrganisation',
+        fieldErrors: { currencyCode: 'inventory.prices.set.currencyNotCarried' },
+        attempt: 1,
+        correlationId: 'corr',
+      },
+      created: null,
+    });
+    renderLtr(manage());
+    expect(
+      await screen.findByText(EN['inventory.prices.set.currencyHelp'] as string)
+    ).toBeTruthy();
+    await user.type(screen.getByLabelText(labelled('inventory.prices.set.currency')), 'SAR');
+    await user.type(screen.getByLabelText(labelled('inventory.prices.set.price')), '12.5000');
+    await user.click(
+      screen.getByRole('button', { name: EN['inventory.prices.set.submit'] as string })
+    );
+    await waitFor(() => expect(setSalePrice).toHaveBeenCalledTimes(1));
+    expect(
+      await screen.findByText(EN['inventory.prices.set.currencyNotCarried'] as string)
+    ).toBeTruthy();
+    expect(screen.getByText(EN['inventory.prices.set.notInOrganisation'] as string)).toBeTruthy();
+    expect(screen.queryByText(EN['state.notFound.title'] as string)).toBeNull();
+  });
+
   it('offers no price form without the catalogue write permission', async () => {
     renderLtr(<ItemCodesScreen locale="en" messages={en} itemId={ITEM_ID} canManage={false} />);
     await waitFor(() =>

@@ -635,6 +635,29 @@ export async function approveOpeningBatch(
 const STATE_REFUSED = 'ERR-TRN-001';
 /** The server's catalogue code for a work-order draw its material requirement does not allow. */
 const DRAW_REFUSED = 'ERR-INV-001';
+/** The server's catalogue code for a resource this organisation does not have. */
+const RESOURCE_MISSING = 'ERR-RES-001';
+
+/**
+ * What a `404 ERR-RES-001` means for one particular write (DEF-T-14).
+ *
+ * A generic not-found title is the right sentence when the thing addressed in
+ * the PATH is absent. It is the wrong sentence when the path resolved and
+ * something the BODY named did not: setting a price in a currency the
+ * organisation does not carry answered "Not found" with a correlation
+ * reference and nothing else, on a form whose currency box is free text and
+ * whose screen publishes no list of the currencies that exist.
+ *
+ * This carries the caller's own sentence for that case and the field it belongs
+ * beside. The rule of `client.ts` holds: where the server cannot distinguish a
+ * cause, the cause is not guessed at — the sentence names every candidate the
+ * server named and claims to know which only when the server does.
+ */
+interface MissingResourceNote {
+  readonly messageKey: string;
+  readonly field: string;
+  readonly fieldKey: string;
+}
 
 /**
  * A failure as the operator should read it.
@@ -653,7 +676,12 @@ const DRAW_REFUSED = 'ERR-INV-001';
  * A banner that already names a specific violation keeps it: that is the more
  * precise reason, and replacing it would downgrade the message.
  */
-function refusalOf(failure: ApiFailure, attempt: number, stateRefusedKey?: string): ActionState {
+function refusalOf(
+  failure: ApiFailure,
+  attempt: number,
+  stateRefusedKey?: string,
+  missing?: MissingResourceNote
+): ActionState {
   const state = fromFailure(failure, attempt);
   if (state.messageKey?.startsWith(VIOLATION_KEY_PREFIX) === true) return state;
   const code = failure.problem?.code;
@@ -667,6 +695,13 @@ function refusalOf(failure: ApiFailure, attempt: number, stateRefusedKey?: strin
   }
   if (code === STATE_REFUSED && stateRefusedKey !== undefined) {
     return { ...state, messageKey: stateRefusedKey };
+  }
+  if (code === RESOURCE_MISSING && missing !== undefined) {
+    return {
+      ...state,
+      messageKey: missing.messageKey,
+      fieldErrors: { ...(state.fieldErrors ?? {}), [missing.field]: missing.fieldKey },
+    };
   }
   return state;
 }
@@ -683,7 +718,11 @@ async function write<T>(
   body: unknown,
   successKey: string,
   attempt: number,
-  options: { readonly stateRefusedKey?: string; readonly idempotencyKey?: string } = {}
+  options: {
+    readonly stateRefusedKey?: string;
+    readonly idempotencyKey?: string;
+    readonly missing?: MissingResourceNote;
+  } = {}
 ): Promise<CreateOutcome<T>> {
   const client = await authorizedClient();
   if (!client) return { state: expired(attempt), created: null };
@@ -694,7 +733,10 @@ async function write<T>(
     options.idempotencyKey === undefined ? {} : { idempotencyKey: options.idempotencyKey }
   );
   if (!result.ok) {
-    return { state: refusalOf(result, attempt, options.stateRefusedKey), created: null };
+    return {
+      state: refusalOf(result, attempt, options.stateRefusedKey, options.missing),
+      created: null,
+    };
   }
   return {
     state: { ...success(successKey, attempt), correlationId: result.correlationId },
@@ -1228,6 +1270,16 @@ export async function assignInternalBarcode(
  * SETS rather than appends and a repeated call changes nothing. The price is the
  * exact decimal string the operator typed; nothing on this side rounds, scales
  * or reformats it.
+ *
+ * DEF-T-14: the 404 this write can answer is NOT about the item in the path.
+ * `inv.item_sale_prices` has a foreign key on each of the company, the branch,
+ * the tax class and the currency, and the service maps every one of them to
+ * `ERR-RES-001` with one message. The generic not-found title said none of
+ * that, so a price refused for a currency the organisation does not carry read
+ * as "Not found" and a correlation reference. The sentence below names all four
+ * candidates — the server does not say which, so neither does this — and the
+ * currency box carries it as a field message, because that box is free text and
+ * no operation publishes the currencies the organisation uses.
  */
 export async function setSalePrice(
   itemId: string,
@@ -1240,7 +1292,14 @@ export async function setSalePrice(
     body,
     'inventory.prices.set.success',
     attempt,
-    { stateRefusedKey: 'inventory.prices.set.refused' }
+    {
+      stateRefusedKey: 'inventory.prices.set.refused',
+      missing: {
+        messageKey: 'inventory.prices.set.notInOrganisation',
+        field: 'currencyCode',
+        fieldKey: 'inventory.prices.set.currencyNotCarried',
+      },
+    }
   );
 }
 

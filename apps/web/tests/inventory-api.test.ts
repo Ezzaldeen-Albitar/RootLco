@@ -51,6 +51,7 @@ const {
   listUnitsOfMeasure,
   readOpeningBatch,
   releaseReservation,
+  setSalePrice,
 } = await import('@/features/inventory/api');
 const { requiresIdempotencyKey, resolveOperation } = await import('@/lib/api/operation-contract');
 
@@ -818,5 +819,54 @@ describe('W10 — the batch reads are what make a batch reachable again', () => 
     expect((await listOpeningBatches(TARGET)).status).toBe('expired');
     expect((await readOpeningBatch(BATCH_ID)).status).toBe('expired');
     expect(get).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * DEF-T-14 — a 404 about the BODY is not the generic not-found sentence.
+ *
+ * `inv.item_sale_prices` has a foreign key on each of the company, the branch,
+ * the tax class and the currency, and the service maps all four to one
+ * `ERR-RES-001`. The client's kind map turns every 404 into "Not found", so a
+ * price refused because the organisation does not carry the currency reached
+ * the operator as that title and a correlation reference, on a form whose
+ * currency box is free text and whose screen publishes no list of currencies.
+ */
+describe('a refused sale price says what the server actually refused', () => {
+  const refusal = (code: string) => ({
+    ok: false as const,
+    kind: 'not-found',
+    correlationId: 'corr-1',
+    problem: { code },
+  });
+
+  it('names the four candidates and puts the sentence on the currency box', async () => {
+    send.mockResolvedValue(refusal('ERR-RES-001'));
+    const outcome = await setSalePrice(ITEM_ID, {
+      currencyCode: 'SAR',
+      unitPrice: '12.5000',
+    });
+    expect(outcome.created).toBeNull();
+    expect(outcome.state.messageKey).toBe('inventory.prices.set.notInOrganisation');
+    expect(outcome.state.fieldErrors?.['currencyCode']).toBe(
+      'inventory.prices.set.currencyNotCarried'
+    );
+  });
+
+  it('leaves a 404 that is not ERR-RES-001 as the generic sentence', async () => {
+    send.mockResolvedValue(refusal('ERR-RES-009'));
+    const outcome = await setSalePrice(ITEM_ID, {
+      currencyCode: 'JOD',
+      unitPrice: '12.5000',
+    });
+    expect(outcome.state.messageKey).toBe('state.notFound.title');
+    expect(outcome.state.fieldErrors?.['currencyCode']).toBeUndefined();
+  });
+
+  it('does not reach for that sentence on a write that has no such note', async () => {
+    send.mockResolvedValue(refusal('ERR-RES-001'));
+    const outcome = await createItemCategory({ code: 'brakes', name: 'Brakes' });
+    expect(outcome.state.messageKey).toBe('state.notFound.title');
+    expect(outcome.state.fieldErrors).toBeUndefined();
   });
 });
