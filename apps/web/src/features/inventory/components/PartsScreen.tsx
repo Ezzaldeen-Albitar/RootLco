@@ -421,7 +421,13 @@ function Figure({
  * at a sentence the code is rendered as the token it is, marked `ltr` inside a
  * `bdi` so it cannot reorder the Arabic line around it.
  */
-function WorkOrderState({ messages, state }: { readonly messages: Messages; readonly state: string }) {
+function WorkOrderState({
+  messages,
+  state,
+}: {
+  readonly messages: Messages;
+  readonly state: string;
+}) {
   const key = workOrderStateMessageKey(state);
   if (key === null) {
     return (

@@ -371,9 +371,7 @@ describe('the prices panel', () => {
       created: null,
     });
     renderLtr(manage());
-    expect(
-      await screen.findByText(EN['inventory.prices.set.currencyHelp'] as string)
-    ).toBeTruthy();
+    expect(await screen.findByText(EN['inventory.prices.set.currencyHelp'] as string)).toBeTruthy();
     await user.type(screen.getByLabelText(labelled('inventory.prices.set.currency')), 'SAR');
     await user.type(screen.getByLabelText(labelled('inventory.prices.set.price')), '12.5000');
     await user.click(

@@ -197,7 +197,10 @@ beforeEach(() => {
     correlationId: 'corr',
   });
   listReorderLevels.mockResolvedValue(
-    okRead({ asOf: '2026-09-20T08:00:00Z', levels: { items: [], nextCursor: null, hasMore: false } })
+    okRead({
+      asOf: '2026-09-20T08:00:00Z',
+      levels: { items: [], nextCursor: null, hasMore: false },
+    })
   );
 });
 
@@ -785,9 +788,7 @@ describe('reorder levels', () => {
     renderScreen({ canReadStock: false });
     await screen.findByText('brakes');
     expect(listReorderLevels).not.toHaveBeenCalled();
-    expect(
-      screen.getByText(EN['inventory.reorderLevels.noPermission'] as string)
-    ).toBeVisible();
+    expect(screen.getByText(EN['inventory.reorderLevels.noPermission'] as string)).toBeVisible();
   });
 
   it('says none is recorded, which is why nothing can be reported as running low', async () => {
@@ -862,7 +863,9 @@ describe('reorder levels', () => {
     await waitFor(() => expect(listReorderLevels).toHaveBeenCalled());
     const panel = setForm();
     await user.click(
-      within(panel).getByRole('button', { name: EN['inventory.reorderLevels.items.find'] as string })
+      within(panel).getByRole('button', {
+        name: EN['inventory.reorderLevels.items.find'] as string,
+      })
     );
     await within(panel).findByRole('option', { name: 'BRK-001 — Front brake pads' });
     await user.selectOptions(
@@ -874,7 +877,9 @@ describe('reorder levels', () => {
       '4.000'
     );
     await user.click(
-      within(panel).getByRole('button', { name: EN['inventory.reorderLevels.set.submit'] as string })
+      within(panel).getByRole('button', {
+        name: EN['inventory.reorderLevels.set.submit'] as string,
+      })
     );
     await waitFor(() => expect(setReorderLevel).toHaveBeenCalledTimes(1));
     expect(setReorderLevel.mock.calls[0]?.[0]).toEqual({
@@ -897,7 +902,9 @@ describe('reorder levels', () => {
     await waitFor(() => expect(listReorderLevels).toHaveBeenCalled());
     const panel = setForm();
     await user.click(
-      within(panel).getByRole('button', { name: EN['inventory.reorderLevels.items.find'] as string })
+      within(panel).getByRole('button', {
+        name: EN['inventory.reorderLevels.items.find'] as string,
+      })
     );
     await within(panel).findByRole('option', { name: 'BRK-001 — Front brake pads' });
     await user.selectOptions(
@@ -909,7 +916,9 @@ describe('reorder levels', () => {
       '0'
     );
     await user.click(
-      within(panel).getByRole('button', { name: EN['inventory.reorderLevels.set.submit'] as string })
+      within(panel).getByRole('button', {
+        name: EN['inventory.reorderLevels.set.submit'] as string,
+      })
     );
     await waitFor(() => expect(setReorderLevel).toHaveBeenCalledTimes(1));
     expect(setReorderLevel.mock.calls[0]?.[0]).toMatchObject({ reorderLevelQty: '0' });
@@ -925,7 +934,9 @@ describe('reorder levels', () => {
       '1.2345'
     );
     await user.click(
-      within(panel).getByRole('button', { name: EN['inventory.reorderLevels.set.submit'] as string })
+      within(panel).getByRole('button', {
+        name: EN['inventory.reorderLevels.set.submit'] as string,
+      })
     );
     expect(
       await within(panel).findByText(EN['inventory.reorderLevels.qtyFormat'] as string)

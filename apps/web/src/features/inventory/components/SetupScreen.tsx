@@ -1230,8 +1230,7 @@ function ReorderLevelForm({
 
   const companyId = pair.companyId.trim();
   const branchId = pair.branchId.trim();
-  const target =
-    UUID.test(companyId) && UUID.test(branchId) ? { companyId, branchId } : null;
+  const target = UUID.test(companyId) && UUID.test(branchId) ? { companyId, branchId } : null;
   const locations = useLocations(target);
 
   const errorFor = (name: string): string | undefined => {
