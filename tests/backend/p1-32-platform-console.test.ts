@@ -1754,7 +1754,7 @@ describe('a platform-only identity changes its own password', () => {
 
     expect(result.status).toBe(200);
     expect(result.body.status).toBe('password-changed');
-    expect(result.body.otherSessions).toBe('ended-at-provider');
+    expect(result.body.otherSessions).toBe('sessions-kept-until-expiry');
 
     await expect(identityDouble.authenticate(EMAIL_READER, NEXT_PASSWORD)).resolves.toMatchObject({
       subject: SUBJECT_READER,
@@ -1777,7 +1777,22 @@ describe('a platform-only identity changes its own password', () => {
     expect(result.raw).not.toContain(NEXT_PASSWORD);
   });
 
-  it('ends every other session of the identity at the provider', async () => {
+  /**
+   * DEF-T-11, measured with TWO sessions.
+   *
+   * This case used to be called "ends every other session of the identity at
+   * the provider" and asserted that the other device's ACCESS token stopped
+   * verifying. It passed only because the double revoked issued access tokens,
+   * which the real provider does not do: `POST /auth/v1/logout?scope=global`
+   * revokes refresh tokens. Against the real provider the other session
+   * answered 200 after the change, while the screen said it had been signed
+   * out.
+   *
+   * So the two halves are now separated and both are asserted: the refresh
+   * token IS gone, and the access token is NOT, which is exactly what
+   * `sessions-kept-until-expiry` publishes and what the console now says.
+   */
+  it('revokes the other session refresh token and leaves its access token valid until expiry', async () => {
     // A session opened BEFORE the change, on another device.
     const otherDevice = await identityDouble.authenticate(EMAIL_READER, FIRST_PASSWORD);
     const bearer = await accountTokenFor(EMAIL_READER, FIRST_PASSWORD);
@@ -1787,10 +1802,20 @@ describe('a platform-only identity changes its own password', () => {
       body: { currentPassword: FIRST_PASSWORD, newPassword: NEXT_PASSWORD },
     });
     expect(result.status).toBe(200);
-    expect(result.body.otherSessions).toBe('ended-at-provider');
+    expect(result.body.otherSessions).toBe('sessions-kept-until-expiry');
 
-    await expect(identityDouble.verifyToken(otherDevice.accessToken)).rejects.toMatchObject({
-      reason: 'invalid-token',
+    // The other device cannot extend itself: its refresh token is gone. This
+    // product publishes no refresh route either, so the residual is bounded by
+    // the token's own expiry and by nothing else.
+    expect(otherDevice.refreshToken).not.toBeNull();
+    await expect(
+      identityDouble.refreshSession(otherDevice.refreshToken as string)
+    ).rejects.toMatchObject({ reason: 'invalid-token' });
+
+    // And the residual itself, stated rather than assumed: the access token it
+    // already holds still verifies. Nothing in the product refuses it.
+    await expect(identityDouble.verifyToken(otherDevice.accessToken)).resolves.toMatchObject({
+      subject: SUBJECT_READER,
     });
   });
 

@@ -713,6 +713,13 @@ export type PasswordChangeInput = z.input<typeof passwordChangeSchema>;
  * The success sentence depends on what the backend says happened to the
  * operator's other sessions, and says only that. Claiming a revocation the
  * server did not report would be the one thing worse than not performing it.
+ *
+ * Both sentences now say the other devices stay signed in, because both
+ * outcomes mean that. `sessions-kept-until-expiry` is the ordinary one: the
+ * provider revoked the identity's refresh tokens, and an access token already
+ * on another device keeps working until it expires. `not-ended` is the one
+ * where even that did not happen. The difference is real and the screen keeps
+ * it; what it must never do again is print a sign-out.
  */
 export async function changeOwnPasswordAction(input: PasswordChangeInput): Promise<ActionState> {
   const parsed = passwordChangeSchema.safeParse(input);
@@ -751,7 +758,7 @@ export async function changeOwnPasswordAction(input: PasswordChangeInput): Promi
   }
 
   return success(
-    result.data.otherSessions === 'ended-at-provider'
+    result.data.otherSessions === 'sessions-kept-until-expiry'
       ? 'platform.account.done'
       : 'platform.account.doneSessionsKept',
     1

@@ -1966,7 +1966,7 @@ describe('every password field can be revealed on its own', () => {
 });
 
 describe('a success states what happened, and clears the fields', () => {
-  it('announces the change, says the other devices were signed out, and empties the form', async () => {
+  it('announces the change, says the other devices stay signed in, and empties the form', async () => {
     renderAccount();
     const user = await fillAccount([ACCOUNT_CURRENT, ACCOUNT_NEXT, ACCOUNT_NEXT]);
     await user.click(screen.getByRole('button', { name: L('platform.account.submit') }));
@@ -1975,6 +1975,28 @@ describe('a success states what happened, and clears the fields', () => {
     expect(done).toHaveTextContent(L('platform.account.doneTitle'));
     expect(done).toHaveTextContent(L('platform.account.done'));
     expect(accountFields().map((field) => field.value)).toEqual(['', '', '']);
+  });
+
+  /**
+   * DEF-T-11. The sentence used to read "Other devices were signed out", and a
+   * session signed in elsewhere answered 200 for the whole measured window
+   * afterwards. Both success sentences, and the hint shown before the change,
+   * are asserted here against the words rather than the key: a key can be
+   * renamed while the claim survives, and the claim is what was wrong.
+   */
+  it('claims no sign-out in either success sentence, or in the hint beside the form', () => {
+    for (const key of [
+      'platform.account.done',
+      'platform.account.doneSessionsKept',
+      'platform.account.passwordHint',
+    ] as const) {
+      expect(L(key)).not.toMatch(/were signed out|are signed out|have been signed out/i);
+    }
+    // And both languages say what does happen instead.
+    expect(L('platform.account.done')).toMatch(/stays signed in/i);
+    expect(L('platform.account.passwordHint')).toMatch(/does not sign out/i);
+    expect(AR['platform.account.done'] as string).toContain('يبقى');
+    expect(AR['platform.account.passwordHint'] as string).toContain('يبقى');
   });
 
   it('says the other devices were NOT signed out when that is what the server reported', async () => {

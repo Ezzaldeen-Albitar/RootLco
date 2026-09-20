@@ -370,9 +370,10 @@ export class SupabaseIdentityProvider implements IdentityProvider {
       );
     }
 
-    // Every other session of this identity is revoked, so a stolen session that
-    // predates the reset does not survive it.
-    // Every other session of this identity ends with the credential change.
+    // The identity's REFRESH tokens are revoked here. An access token already
+    // issued to another device is a self-contained signed document the provider
+    // keeps no register for, so it keeps verifying until its own expiry — see
+    // `signOutEverywhere` below, and `PasswordChangeResult` in the service.
     // The admin sign-out takes a JWT, not a subject (GoTrue 2.x has no
     // revoke-by-subject), and the recovery exchange above is the one place this
     // adapter holds one of the user's own tokens. Measured on the local stack
@@ -384,8 +385,18 @@ export class SupabaseIdentityProvider implements IdentityProvider {
   }
 
   /**
-   * Global sign-out of the identity behind `accessToken` — all of its sessions,
-   * not just this one. Sent to the provider directly: the client library's
+   * Global sign-out of the identity behind `accessToken`.
+   *
+   * WHAT IT ENDS, precisely: the identity's REFRESH tokens. An access token
+   * already issued to another device is a signed document the provider holds no
+   * register for, so it keeps verifying until its own expiry (`jwt_expiry`) and
+   * this API keeps accepting it. Measured after a password change: a session
+   * signed in elsewhere answered 200 at +0, +15 and +30 seconds. The name of
+   * the endpoint is "logout"; the guarantee is narrower than the word, and
+   * every sentence this product shows about it has to match the guarantee, not
+   * the name.
+   *
+   * Sent to the provider directly: the client library's
    * `admin.signOut(jwt)` in the installed version answers "Auth session
    * missing" from inside the client without ever reaching the provider
    * (measured on the local stack with a client-library probe, P1-29 W9

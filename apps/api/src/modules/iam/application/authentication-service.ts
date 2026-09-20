@@ -149,23 +149,38 @@ export interface PasswordChangeRequest {
  * What `POST /platform/account/password` publishes.
  *
  * `otherSessions` is the session policy, stated rather than assumed, and it is
- * deliberately not the word "revoked":
+ * deliberately not the word "revoked". It was `ended-at-provider`, and that
+ * value was measured to be a claim the product does not keep: a session signed
+ * in on another device answered 200 to this API at +0, +15 and +30 seconds
+ * after the change. The two values now published are what actually happens.
  *
- *  - `ended-at-provider` — the identity provider was asked to end every session
- *    of this identity and did. That is what the product can actually do here:
- *    RootLco's own `iam.user_sessions` rows are NOT revoked by this operation,
- *    because the control-plane connection holds no grant on that table
- *    (`20260831093000_iam_platform_privilege_graph.sql` grants `app_platform`
- *    nothing on it). An access token already issued to another session
- *    therefore stays acceptable to this API until it expires — the same
- *    residual the reset path carries, recorded rather than hidden.
- *  - `not-ended` — the sign-out did not complete. The password HAS changed; the
- *    sessions have not. Reported, because claiming a revocation that did not
- *    happen is worse than admitting one that did not.
+ *  - `sessions-kept-until-expiry` — the provider was asked to end every session
+ *    of this identity and accepted. What that call does is revoke the
+ *    identity's REFRESH tokens (`POST /auth/v1/logout?scope=global`); an access
+ *    token already issued to another device is a self-contained signed document
+ *    and keeps verifying until its own expiry. This product publishes no
+ *    refresh route, so the other device cannot extend itself past that point —
+ *    but until then it is a live session, and the screen says so.
+ *
+ *    Two things would change this, and neither belongs to a wording fix. The
+ *    server-side revocation point does exist — `iam.user_sessions.revoked_at`,
+ *    which `resolveRequestContext` refuses on — but this operation runs on the
+ *    control-plane connection (its permission is a `platform.` code), and
+ *    `20260831093000_iam_platform_privilege_graph.sql` grants `app_platform`
+ *    nothing at all on that table. Reaching it needs either new grants and a
+ *    policy, or a second connection crossing the control-plane/request-path
+ *    separation: a schema and architecture decision, recorded here rather than
+ *    taken quietly. The access-token lifetime is the provider's own setting
+ *    (`jwt_expiry` in the local stack's `supabase/config.toml`), not a value
+ *    this service reads, so no duration is stated to the caller.
+ *  - `not-ended` — the sign-out did not complete, so not even the refresh
+ *    tokens were revoked. The password HAS changed; the sessions have not.
+ *    Reported, because claiming a revocation that did not happen is worse than
+ *    admitting one that did not.
  */
 export interface PasswordChangeResult {
   readonly status: 'password-changed';
-  readonly otherSessions: 'ended-at-provider' | 'not-ended';
+  readonly otherSessions: 'sessions-kept-until-expiry' | 'not-ended';
 }
 
 export interface SessionSummary {
@@ -627,9 +642,11 @@ export class AuthenticationService extends ApplicationService {
    * Completes a reset using the provider's recovery token.
    *
    * The token is verified, consumed, and time-bounded by the provider, and the
-   * adapter revokes every other session of the identity afterwards — so a
-   * session stolen before the reset does not survive it. RootLco writes nothing:
-   * no credential state exists here to write.
+   * adapter asks the provider to sign the identity out everywhere afterwards.
+   * That revokes the identity's REFRESH tokens; an access token already issued
+   * to another device keeps verifying until its own expiry, exactly as on the
+   * change-password path above. RootLco writes nothing: no credential state
+   * exists here to write.
    */
   async completePasswordReset(input: { token: string; password: string }): Promise<void> {
     this.credentialPolicy.assertPasswordBounds(input.password);
@@ -761,7 +778,7 @@ export class AuthenticationService extends ApplicationService {
       ],
     });
 
-    let otherSessions: PasswordChangeResult['otherSessions'] = 'ended-at-provider';
+    let otherSessions: PasswordChangeResult['otherSessions'] = 'sessions-kept-until-expiry';
     try {
       await this.provider.signOutEverywhere(session.accessToken);
     } catch (error) {

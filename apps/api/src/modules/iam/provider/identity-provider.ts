@@ -251,13 +251,21 @@ export interface IdentityProvider {
   setPassword(subject: string, newPassword: string): Promise<ProviderIdentity>;
 
   /**
-   * 15. End every session of the identity behind `accessToken`.
+   * 15. Sign the identity behind `accessToken` out everywhere — which revokes
+   * its REFRESH tokens, and reaches no access token already issued.
+   *
+   * The narrower guarantee is the provider's, not an implementation gap: an
+   * access token is a self-contained signed document and the provider keeps no
+   * per-token register to consult, so another device's token keeps verifying
+   * until its own expiry. Every sentence the product shows about this call has
+   * to describe that, and an implementation of this port that ended issued
+   * access tokens would be a double telling a story the deployment cannot keep.
    *
    * Takes a TOKEN rather than a subject, which is the whole reason it is a
    * separate capability from `revokeAllSessions`: GoTrue 2.x has no
    * revoke-by-subject endpoint, so a caller holding one of the identity's own
-   * tokens is the only way the sessions can actually be ended — see the note on
-   * `revokeAllSessions`, which documents that it can do nothing.
+   * tokens is the only way the refresh tokens can be revoked at all — see the
+   * note on `revokeAllSessions`, which documents that it can do nothing.
    *
    * Reaching the desired end state some other way is success, not failure: an
    * already-invalid token means the sessions are already gone.
