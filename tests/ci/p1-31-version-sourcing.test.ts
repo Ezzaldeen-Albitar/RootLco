@@ -168,8 +168,9 @@ describe('the tree as it stands passes, and the run is not vacuous', () => {
         '5 with a consumer, 6 pending one, 6 in-scope send(s), 5 adapter call site(s), ' +
         // 23 -> 25 with the P1-32 stock-operation adapters: posting a goods receipt and
         // recording a count line each send a version for an inv operation; 26 with the
-        // employee register's own screen.
-        '26 versioned send(s) outside the subject.'
+        // employee register's own screen; 27 with the Owner directive's reorder-level
+        // retirement adapter, which sends the level's own version for an inv operation.
+        '27 versioned send(s) outside the subject.'
     );
     expect(out).toContain(
       'OK: every version-guarded P1-31 command sources its If-Match from a read or a command ' +

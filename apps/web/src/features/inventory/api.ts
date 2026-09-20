@@ -28,6 +28,7 @@ import type {
   MaterialRequirementCancelBody,
   OpeningBatchCreateBody,
   OpeningBatchLineCreateBody,
+  ReorderLevelSetBody,
   SalesReturnCreateBody,
   StockAdjustmentApproveBody,
   StockAdjustmentCreateBody,
@@ -83,6 +84,8 @@ import {
   type OpeningBatchLine,
   type OpeningBatchSummary,
   type PartIssue,
+  type ReorderLevelEcho,
+  type ReorderLevelList,
   type RequiredPart,
   type ReservationCriteria,
   type ReservationEcho,
@@ -632,6 +635,29 @@ export async function approveOpeningBatch(
 const STATE_REFUSED = 'ERR-TRN-001';
 /** The server's catalogue code for a work-order draw its material requirement does not allow. */
 const DRAW_REFUSED = 'ERR-INV-001';
+/** The server's catalogue code for a resource this organisation does not have. */
+const RESOURCE_MISSING = 'ERR-RES-001';
+
+/**
+ * What a `404 ERR-RES-001` means for one particular write (DEF-T-14).
+ *
+ * A generic not-found title is the right sentence when the thing addressed in
+ * the PATH is absent. It is the wrong sentence when the path resolved and
+ * something the BODY named did not: setting a price in a currency the
+ * organisation does not carry answered "Not found" with a correlation
+ * reference and nothing else, on a form whose currency box is free text and
+ * whose screen publishes no list of the currencies that exist.
+ *
+ * This carries the caller's own sentence for that case and the field it belongs
+ * beside. The rule of `client.ts` holds: where the server cannot distinguish a
+ * cause, the cause is not guessed at — the sentence names every candidate the
+ * server named and claims to know which only when the server does.
+ */
+interface MissingResourceNote {
+  readonly messageKey: string;
+  readonly field: string;
+  readonly fieldKey: string;
+}
 
 /**
  * A failure as the operator should read it.
@@ -650,7 +676,12 @@ const DRAW_REFUSED = 'ERR-INV-001';
  * A banner that already names a specific violation keeps it: that is the more
  * precise reason, and replacing it would downgrade the message.
  */
-function refusalOf(failure: ApiFailure, attempt: number, stateRefusedKey?: string): ActionState {
+function refusalOf(
+  failure: ApiFailure,
+  attempt: number,
+  stateRefusedKey?: string,
+  missing?: MissingResourceNote
+): ActionState {
   const state = fromFailure(failure, attempt);
   if (state.messageKey?.startsWith(VIOLATION_KEY_PREFIX) === true) return state;
   const code = failure.problem?.code;
@@ -664,6 +695,13 @@ function refusalOf(failure: ApiFailure, attempt: number, stateRefusedKey?: strin
   }
   if (code === STATE_REFUSED && stateRefusedKey !== undefined) {
     return { ...state, messageKey: stateRefusedKey };
+  }
+  if (code === RESOURCE_MISSING && missing !== undefined) {
+    return {
+      ...state,
+      messageKey: missing.messageKey,
+      fieldErrors: { ...(state.fieldErrors ?? {}), [missing.field]: missing.fieldKey },
+    };
   }
   return state;
 }
@@ -680,7 +718,11 @@ async function write<T>(
   body: unknown,
   successKey: string,
   attempt: number,
-  options: { readonly stateRefusedKey?: string; readonly idempotencyKey?: string } = {}
+  options: {
+    readonly stateRefusedKey?: string;
+    readonly idempotencyKey?: string;
+    readonly missing?: MissingResourceNote;
+  } = {}
 ): Promise<CreateOutcome<T>> {
   const client = await authorizedClient();
   if (!client) return { state: expired(attempt), created: null };
@@ -691,7 +733,10 @@ async function write<T>(
     options.idempotencyKey === undefined ? {} : { idempotencyKey: options.idempotencyKey }
   );
   if (!result.ok) {
-    return { state: refusalOf(result, attempt, options.stateRefusedKey), created: null };
+    return {
+      state: refusalOf(result, attempt, options.stateRefusedKey, options.missing),
+      created: null,
+    };
   }
   return {
     state: { ...success(successKey, attempt), correlationId: result.correlationId },
@@ -1225,6 +1270,23 @@ export async function assignInternalBarcode(
  * SETS rather than appends and a repeated call changes nothing. The price is the
  * exact decimal string the operator typed; nothing on this side rounds, scales
  * or reformats it.
+ *
+ * DEF-T-14: the 404 this write can answer is usually NOT about the item in the
+ * path. `inv.item_sale_prices` has a foreign key on each of the company, the
+ * branch, the tax class and the currency, and the service maps every one of
+ * them to `ERR-RES-001` with one message. The generic not-found title said none
+ * of that, so a price refused for a currency the organisation does not carry
+ * read as "Not found" and a correlation reference.
+ *
+ * The item is the fifth candidate and is named as one: `setSalePrice` calls
+ * `requireItem` FIRST (`inventory-catalog-service.ts`), which raises the same
+ * `ERR-RES-001` when the item in the path is gone — a screen left open across a
+ * retirement reaches it. The server distinguishes none of the five in anything
+ * this client may read, so the sentence below names all five rather than
+ * asserting a cause. The currency box still carries a field message, because
+ * that box is free text and no operation publishes the currencies the
+ * organisation uses; that message says what is true only once the reader has
+ * ruled the other candidates out, and claims nothing before then.
  */
 export async function setSalePrice(
   itemId: string,
@@ -1237,7 +1299,14 @@ export async function setSalePrice(
     body,
     'inventory.prices.set.success',
     attempt,
-    { stateRefusedKey: 'inventory.prices.set.refused' }
+    {
+      stateRefusedKey: 'inventory.prices.set.refused',
+      missing: {
+        messageKey: 'inventory.prices.set.notInOrganisation',
+        field: 'currencyCode',
+        fieldKey: 'inventory.prices.set.currencyNotCarried',
+      },
+    }
   );
 }
 
@@ -1689,4 +1758,98 @@ export async function readAgedInTransitAlerts(
   return readOperation<AgedInTransitAlerts>(
     '/api/v1/inventory-alerts/aged-in-transit' + branchTargetQuery(target, { limit })
   );
+}
+
+/* ------------------------------------------------------------------ *
+ * Reorder levels — what the low-stock rule reads (DEF-T-08)
+ * ------------------------------------------------------------------ */
+
+/**
+ * `inv.reorder-level-list` — every configured level, `inv.stock.read`.
+ *
+ * NOT branch-targeted: a level may name no company at all, so the list is a
+ * tenant read that the caller may NARROW by company and branch. That is why the
+ * pair travels through `query()` as a filter rather than through
+ * `branchTargetQuery` as an authorization target.
+ *
+ * Retired rows are left out unless asked for. A retired level is history — it
+ * explains why an alert used to fire — and mixing it into the live list would
+ * invite a reader to think it still governs something.
+ */
+export async function listReorderLevels(
+  filter: {
+    readonly itemId?: string | undefined;
+    readonly companyId?: string | undefined;
+    readonly branchId?: string | undefined;
+    readonly includeRetired?: boolean | undefined;
+  } = {}
+): Promise<ReadState<ReorderLevelList>> {
+  return readOperation<ReorderLevelList>(
+    '/api/v1/reorder-levels' +
+      query({
+        itemId: filter.itemId ?? null,
+        companyId: filter.companyId ?? null,
+        branchId: filter.branchId ?? null,
+        includeRetired: filter.includeRetired === true ? 'true' : null,
+        limit: 100,
+      })
+  );
+}
+
+/**
+ * `inv.reorder-level-set` — the quantity at or below which an item counts as low.
+ *
+ * Exactly one live row exists per signature, so this SETS rather than appends
+ * and a repeated call answers `replayed: true` having changed nothing. Both
+ * quantities are the exact decimal strings the operator typed; nothing here
+ * rounds, scales or reformats them.
+ */
+export async function setReorderLevel(
+  body: ReorderLevelSetBody,
+  attempt = 1
+): Promise<CreateOutcome<ReorderLevelEcho>> {
+  return write<ReorderLevelEcho>(
+    'POST',
+    '/api/v1/reorder-levels',
+    body,
+    'inventory.reorderLevels.set.success',
+    attempt,
+    { stateRefusedKey: 'inventory.reorderLevels.set.refused' }
+  );
+}
+
+/**
+ * `inv.reorder-level-retire` — stop a level governing, keep it as history.
+ *
+ * Version-guarded, so it is written out with its literal path rather than going
+ * through `write`: `ifMatch` is the LEVEL's own `recordVersion` exactly as the
+ * last read or write answered it, never a list's and never defaulted. Retiring
+ * an already-retired level changes nothing and answers `replayed: true`.
+ */
+export async function retireReorderLevel(
+  reorderLevelId: string,
+  ifMatch: number,
+  attempt = 1
+): Promise<CreateOutcome<ReorderLevelEcho>> {
+  const client = await authorizedClient();
+  if (!client) return { state: expired(attempt), created: null };
+  const result = await client.send<ReorderLevelEcho>(
+    'POST',
+    `/api/v1/reorder-levels/${encodeURIComponent(reorderLevelId)}/retirement`,
+    undefined,
+    { ifMatch }
+  );
+  if (!result.ok) {
+    return {
+      state: refusalOf(result, attempt, 'inventory.reorderLevels.retire.refused'),
+      created: null,
+    };
+  }
+  return {
+    state: {
+      ...success('inventory.reorderLevels.retire.success', attempt),
+      correlationId: result.correlationId,
+    },
+    created: result.data,
+  };
 }

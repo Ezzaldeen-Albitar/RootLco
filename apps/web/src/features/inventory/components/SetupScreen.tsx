@@ -5,7 +5,7 @@
  * fresh organisation gives its inventory a catalogue and places, so that stock
  * can exist at all.
  *
- * Four sections, each answering one question the acceptance tenant could not:
+ * Five sections, each answering one question the acceptance tenant could not:
  *
  *   - **Categories** — `inv.item-category-list` and, for `inv.item.manage`
  *     holders, `inv.item-category-create`. The code is lower-case snake case
@@ -22,6 +22,14 @@
  *     quarantine take a warehouse of the same branch as parent. The form
  *     repeats the two rules it can know before sending; the server states the
  *     rest by the field.
+ *   - **Reorder levels** — `inv.reorder-level-list`, `inv.reorder-level-set`
+ *     and `inv.reorder-level-retire` (DEF-T-08). The "Running low" rule on the
+ *     attention screen states its own input — "Listed when the quantity
+ *     available is at or below the reorder level recorded for the item. An item
+ *     with no recorded level is never listed" — and until this section existed
+ *     no screen recorded one, so the rule could never fire for anybody. The
+ *     level is a property of the ITEM, which is why it sits here rather than on
+ *     a stock screen, and why `inv.item.manage` writes it.
  *
  * Nothing here is money and nothing is computed: every list is the server's
  * page, every created row is the server's echo (P1-30 RENDERS SERVER
@@ -35,13 +43,23 @@
 
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
+import { INITIAL_REQUEST } from '@/components/data-table/table-state';
 import { CheckboxField, SelectField, TextAreaField, TextField } from '@/components/forms/Field';
 import { notifyActionResult } from '@/components/notifications/action-notifications';
 import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic } from '@/i18n/get-messages';
 import type { ActionState } from '@/lib/forms/action-result';
-import { createItem, createItemCategory, createStockLocation, listUnitsOfMeasure } from '../api';
+import {
+  createItem,
+  createItemCategory,
+  createStockLocation,
+  listItems,
+  listReorderLevels,
+  listUnitsOfMeasure,
+  retireReorderLevel,
+  setReorderLevel,
+} from '../api';
 import {
   CATEGORY_CODE,
   ITEM_TYPES,
@@ -49,11 +67,13 @@ import {
   OPERATOR_LOCATION_TYPES,
   MAX_DESCRIPTION,
   MAX_NAME,
+  QUANTITY,
   SKU_CODE,
   type CreatedStockLocation,
   type InventoryItem,
   type ItemType,
   type OperatorLocationType,
+  type ReorderLevel,
   type StockLocation,
   type StockTarget,
   type UnitOfMeasureOption,
@@ -61,15 +81,18 @@ import {
 import {
   BranchPairPicker,
   EMPTY_PAIR,
+  LocationPicker,
   LocationTypeLabel,
   OutcomeNote,
   PRIMARY_BUTTON,
+  SECONDARY_BUTTON,
   UUID,
   canNameBranch,
   useBranches,
   useItemCategories,
   useLocations,
   type BranchPair,
+  type Branches,
   type Categories,
 } from './shared';
 
@@ -129,6 +152,12 @@ export function SetupScreen({
 }) {
   const categories = useItemCategories();
   const units = useUnits();
+  // ONE branch read for the whole screen. Two sections take a branch — the
+  // locations table and the reorder levels — and a `useBranches` in each would
+  // issue `org.branch-list` twice for one paint, mount two pickers in two
+  // independent phases, and give the operator two retry buttons for one
+  // failure. The phase machine (CC-15) is shared, so the answer is shared.
+  const branches = useBranches(canReadBranches);
 
   return (
     <div className="flex min-h-0 flex-col gap-4">
@@ -156,9 +185,16 @@ export function SetupScreen({
       />
       <LocationsSection
         messages={messages}
+        branches={branches}
         canManage={canManage}
         canReadStock={canReadStock}
-        canReadBranches={canReadBranches}
+      />
+      <ReorderLevelsSection
+        locale={locale}
+        messages={messages}
+        branches={branches}
+        canManage={canManage}
+        canReadStock={canReadStock}
       />
     </div>
   );
@@ -674,16 +710,15 @@ function ItemForm({
 
 function LocationsSection({
   messages,
+  branches,
   canManage,
   canReadStock,
-  canReadBranches,
 }: {
   readonly messages: Messages;
+  readonly branches: Branches;
   readonly canManage: boolean;
   readonly canReadStock: boolean;
-  readonly canReadBranches: boolean;
 }) {
-  const branches = useBranches(canReadBranches);
   const [pair, setPair] = useState<BranchPair>(EMPTY_PAIR);
   const [errors, setErrors] = useState<Readonly<Record<string, string>>>({});
   const [target, setTarget] = useState<StockTarget | null>(null);
@@ -942,6 +977,444 @@ function LocationForm({
       <div>
         <button type="submit" className={PRIMARY_BUTTON} disabled={busy}>
           {translate(messages, 'inventory.setup.location.submit')}
+        </button>
+      </div>
+    </form>
+  );
+}
+
+/* ------------------------------------------------------------------ *
+ * Reorder levels (DEF-T-08)
+ * ------------------------------------------------------------------ */
+
+/**
+ * The quantity at or below which an item counts as low.
+ *
+ * The attention screen's "Running low" rule names this as its one input and
+ * says an item with no recorded level is never listed. No screen recorded one,
+ * so the rule was inert for every organisation the platform provisions. This
+ * section records it, lists what is recorded, and retires a level that no
+ * longer applies.
+ *
+ * ## What a level is ABOUT is its narrowing, and it is never blank
+ *
+ * A row may name nothing, a company, a company and a branch, or a company, a
+ * branch and a location, and each omission WIDENS it. A blank cell would read
+ * as missing data rather than as every branch, so the table states which of the
+ * four each row is, in words.
+ *
+ * ## Quantities stay the operator's strings
+ *
+ * `numeric(12,3)` on the server, an exact decimal string here, and nothing on
+ * this side parses, rounds or reformats it. The level itself may be zero — tell
+ * me the moment this runs out — while the preferred order quantity may not,
+ * because an order of nothing is not an order.
+ */
+function ReorderLevelsSection({
+  locale,
+  messages,
+  branches,
+  canManage,
+  canReadStock,
+}: {
+  readonly locale: Locale;
+  readonly messages: Messages;
+  readonly branches: Branches;
+  readonly canManage: boolean;
+  readonly canReadStock: boolean;
+}) {
+  const [levels, setLevels] = useState<readonly ReorderLevel[] | null>(null);
+  const [refused, setRefused] = useState<string | null>(null);
+  const [truncated, setTruncated] = useState(false);
+  const [epoch, setEpoch] = useState(0);
+
+  useEffect(() => {
+    if (!canReadStock) return;
+    let live = true;
+    void listReorderLevels().then((state) => {
+      if (!live) return;
+      if (state.status === 'ok') {
+        setLevels(state.data.levels.items);
+        setTruncated(state.data.levels.hasMore);
+        setRefused(null);
+      } else {
+        setLevels(null);
+        setRefused(
+          state.status === 'denied'
+            ? 'inventory.reorderLevels.refused'
+            : 'inventory.reorderLevels.unavailable'
+        );
+      }
+    });
+    return () => {
+      live = false;
+    };
+  }, [canReadStock, epoch]);
+
+  return (
+    <section aria-labelledby="setup-reorder-levels-heading" className="flex flex-col gap-3">
+      <h2 id="setup-reorder-levels-heading" className="text-body font-medium text-text-primary">
+        {translate(messages, 'inventory.reorderLevels.heading')}
+      </h2>
+      <p className="text-caption text-text-muted">
+        {translate(messages, 'inventory.reorderLevels.explain')}
+      </p>
+      {!canReadStock ? (
+        <p className="text-caption text-text-muted">
+          {translate(messages, 'inventory.reorderLevels.noPermission')}
+        </p>
+      ) : refused ? (
+        <p className="text-caption text-text-muted">{translateDynamic(messages, refused)}</p>
+      ) : levels === null ? null : levels.length === 0 ? (
+        <p className="text-caption text-text-muted">
+          {translate(messages, 'inventory.reorderLevels.none')}
+        </p>
+      ) : (
+        <table className="w-full text-body">
+          <caption className="sr-only">
+            {translate(messages, 'inventory.reorderLevels.caption')}
+          </caption>
+          <thead>
+            <tr className="text-caption text-text-muted">
+              <th scope="col" className="text-start font-medium">
+                {translate(messages, 'inventory.reorderLevels.column.item')}
+              </th>
+              <th scope="col" className="text-start font-medium">
+                {translate(messages, 'inventory.reorderLevels.column.appliesTo')}
+              </th>
+              <th scope="col" className="text-end font-medium">
+                {translate(messages, 'inventory.reorderLevels.column.level')}
+              </th>
+              <th scope="col" className="text-end font-medium">
+                {translate(messages, 'inventory.reorderLevels.column.order')}
+              </th>
+              <th scope="col" className="text-start font-medium">
+                {translate(messages, 'inventory.reorderLevels.column.action')}
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {levels.map((level) => (
+              <ReorderLevelRow
+                key={level.id}
+                messages={messages}
+                level={level}
+                canManage={canManage}
+                onRetired={() => setEpoch((n) => n + 1)}
+              />
+            ))}
+          </tbody>
+        </table>
+      )}
+      {truncated ? (
+        <p className="text-caption text-text-muted">
+          {translate(messages, 'inventory.reorderLevels.truncated')}
+        </p>
+      ) : null}
+      {canManage ? (
+        <ReorderLevelForm
+          locale={locale}
+          messages={messages}
+          branches={branches}
+          onSet={() => setEpoch((n) => n + 1)}
+        />
+      ) : (
+        <p className="text-caption text-text-muted">
+          {translate(messages, 'inventory.reorderLevels.needsManage')}
+        </p>
+      )}
+    </section>
+  );
+}
+
+/** Which of the four narrowings a row is, said in words rather than left blank. */
+function appliesToKey(level: ReorderLevel): string {
+  if (level.companyId === null) return 'inventory.reorderLevels.appliesTo.organisation';
+  if (level.branchId === null) return 'inventory.reorderLevels.appliesTo.company';
+  if (level.locationId === null) return 'inventory.reorderLevels.appliesTo.branch';
+  return 'inventory.reorderLevels.appliesTo.location';
+}
+
+function ReorderLevelRow({
+  messages,
+  level,
+  canManage,
+  onRetired,
+}: {
+  readonly messages: Messages;
+  readonly level: ReorderLevel;
+  readonly canManage: boolean;
+  readonly onRetired: () => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [outcome, setOutcome] = useState<ActionState | null>(null);
+
+  const retire = async () => {
+    setBusy(true);
+    // The LEVEL's own `recordVersion` as the list answered it — never a list
+    // version, never defaulted, never carried across a write.
+    const result = await retireReorderLevel(level.id, level.recordVersion);
+    setBusy(false);
+    setOutcome(result.state);
+    notifyActionResult(result.state, messages);
+    if (result.state.status === 'success') onRetired();
+  };
+
+  return (
+    <tr className="border-t border-border align-top">
+      <td>
+        <code className="font-mono text-caption" dir="ltr">
+          {level.sku}
+        </code>{' '}
+        <bdi>{level.itemName}</bdi>
+      </td>
+      <td>
+        {translateDynamic(messages, appliesToKey(level))}
+        {level.locationCode === null ? null : (
+          <>
+            {' '}
+            <code className="font-mono text-caption" dir="ltr">
+              {level.locationCode}
+            </code>
+          </>
+        )}
+      </td>
+      <td className="text-end" dir="ltr">
+        {level.reorderLevelQty}
+      </td>
+      <td className="text-end" dir="ltr">
+        {level.preferredOrderQty ?? translate(messages, 'inventory.reorderLevels.noOrderQty')}
+      </td>
+      <td>
+        {canManage ? (
+          <div className="flex flex-col gap-1">
+            <button
+              type="button"
+              className={SECONDARY_BUTTON}
+              disabled={busy}
+              onClick={() => {
+                void retire();
+              }}
+            >
+              {translate(messages, 'inventory.reorderLevels.retire.action')}
+              <span className="sr-only"> {level.sku}</span>
+            </button>
+            <OutcomeNote messages={messages} outcome={outcome} />
+          </div>
+        ) : null}
+      </td>
+    </tr>
+  );
+}
+
+function ReorderLevelForm({
+  locale,
+  messages,
+  branches,
+  onSet,
+}: {
+  readonly locale: Locale;
+  readonly messages: Messages;
+  readonly branches: Branches;
+  readonly onSet: () => void;
+}) {
+  const [search, setSearch] = useState('');
+  const [items, setItems] = useState<readonly InventoryItem[] | null>(null);
+  const [itemNote, setItemNote] = useState<string | null>(null);
+  const [form, setForm] = useState({ itemId: '', reorderLevelQty: '', preferredOrderQty: '' });
+  const [pair, setPair] = useState<BranchPair>(EMPTY_PAIR);
+  const [locationId, setLocationId] = useState('');
+  const [errors, setErrors] = useState<Readonly<Record<string, string>>>({});
+  const [busy, setBusy] = useState(false);
+  const [outcome, setOutcome] = useState<ActionState | null>(null);
+
+  const companyId = pair.companyId.trim();
+  const branchId = pair.branchId.trim();
+  const target = UUID.test(companyId) && UUID.test(branchId) ? { companyId, branchId } : null;
+  const locations = useLocations(target);
+
+  const errorFor = (name: string): string | undefined => {
+    const key = errors[name] ?? outcome?.fieldErrors?.[name];
+    return key ? translateDynamic(messages, key) : undefined;
+  };
+
+  // The item list is ASKED for, never taken on first paint: a catalogue can be
+  // long, and a picker showing the first page silently omits the rest. The box
+  // is the server's own `search` parameter, and the note says when more matched
+  // than were served.
+  const findItems = async () => {
+    const text = search.trim();
+    // The same ceiling the opening-stock picker applies: a search longer than a
+    // name can be is refused here, where the box can be named, rather than
+    // coming back from the server as a refusal of the whole request.
+    if (text.length > MAX_NAME) {
+      setErrors((current) => ({ ...current, search: 'inventory.items.searchTooLong' }));
+      return;
+    }
+    setErrors((current) =>
+      Object.fromEntries(Object.entries(current).filter(([name]) => name !== 'search'))
+    );
+    const page = await listItems(
+      // Only stock-tracked items: a level on an item nothing holds a balance
+      // for could never be compared against anything.
+      { ...(text.length > 0 ? { search: text } : {}), stockTrackedOnly: 'true' },
+      { ...INITIAL_REQUEST, pageSize: 50 },
+      null
+    );
+    if (page.status !== 'ok') {
+      setItems(null);
+      setItemNote(
+        page.status === 'denied'
+          ? 'inventory.reorderLevels.items.refused'
+          : 'inventory.reorderLevels.items.unavailable'
+      );
+      return;
+    }
+    setItems(page.rows);
+    setItemNote(
+      page.rows.length === 0
+        ? 'inventory.reorderLevels.items.none'
+        : page.hasMore
+          ? 'inventory.reorderLevels.items.more'
+          : null
+    );
+  };
+
+  const submit = async () => {
+    const found: Record<string, string> = {};
+    if (!UUID.test(form.itemId)) found['itemId'] = 'field.required';
+    const level = form.reorderLevelQty.trim();
+    // Zero is a legitimate level — tell me the moment this runs out — so only
+    // the shape is checked here.
+    if (!QUANTITY.test(level)) found['reorderLevelQty'] = 'inventory.reorderLevels.qtyFormat';
+    const order = form.preferredOrderQty.trim();
+    if (order.length > 0 && !QUANTITY.test(order)) {
+      found['preferredOrderQty'] = 'inventory.reorderLevels.qtyFormat';
+    }
+    if (companyId.length > 0 && !UUID.test(companyId)) {
+      found['companyId'] = 'inventory.common.idFormat';
+    }
+    if (branchId.length > 0 && !UUID.test(branchId)) {
+      found['branchId'] = 'inventory.common.idFormat';
+    }
+    // The signature narrows left to right: a branch with no company, or a shelf
+    // with no branch, is a row the server cannot store.
+    if (branchId.length > 0 && companyId.length === 0) {
+      found['companyId'] = 'inventory.reorderLevels.branchNeedsCompany';
+    }
+    if (locationId.length > 0 && branchId.length === 0) {
+      found['locationId'] = 'inventory.reorderLevels.locationNeedsBranch';
+    }
+    setErrors(found);
+    if (Object.keys(found).length > 0) return;
+
+    setBusy(true);
+    const result = await setReorderLevel({
+      itemId: form.itemId,
+      ...(companyId.length > 0 ? { companyId } : {}),
+      ...(branchId.length > 0 ? { branchId } : {}),
+      ...(locationId.length > 0 ? { locationId } : {}),
+      reorderLevelQty: level,
+      ...(order.length > 0 ? { preferredOrderQty: order } : {}),
+    });
+    setBusy(false);
+    setOutcome(result.state);
+    notifyActionResult(result.state, messages);
+    if (result.state.status === 'success') {
+      setForm((f) => ({ ...f, reorderLevelQty: '', preferredOrderQty: '' }));
+      onSet();
+    }
+  };
+
+  return (
+    <form
+      onSubmit={(event) => {
+        event.preventDefault();
+        void submit();
+      }}
+      noValidate
+      aria-labelledby="setup-reorder-level-set-heading"
+      className={PANEL}
+      lang={locale}
+    >
+      <h3 id="setup-reorder-level-set-heading" className="text-body font-medium text-text-primary">
+        {translate(messages, 'inventory.reorderLevels.set.heading')}
+      </h3>
+      <p className="text-caption text-text-muted">
+        {translate(messages, 'inventory.reorderLevels.set.explain')}
+      </p>
+      <TextField
+        label={translate(messages, 'inventory.reorderLevels.items.search')}
+        description={translate(messages, 'inventory.reorderLevels.items.searchHelp')}
+        value={search}
+        onChange={(event) => setSearch(event.target.value)}
+        error={errorFor('search')}
+      />
+      <div>
+        <button
+          type="button"
+          className={SECONDARY_BUTTON}
+          onClick={() => {
+            void findItems();
+          }}
+        >
+          {translate(messages, 'inventory.reorderLevels.items.find')}
+        </button>
+      </div>
+      <SelectField
+        label={translate(messages, 'inventory.reorderLevels.set.item')}
+        required
+        {...(itemNote ? { description: translateDynamic(messages, itemNote) } : {})}
+        value={form.itemId}
+        onChange={(event) => setForm((f) => ({ ...f, itemId: event.target.value }))}
+        options={(items ?? []).map((item) => ({
+          value: item.id,
+          label: `${item.sku} — ${item.name}`,
+        }))}
+        placeholder={translate(messages, 'inventory.reorderLevels.set.chooseItem')}
+        error={errorFor('itemId')}
+      />
+      <BranchPairPicker
+        messages={messages}
+        branches={branches}
+        label={translate(messages, 'inventory.reorderLevels.set.branch')}
+        placeholder={translate(messages, 'inventory.reorderLevels.set.everyBranch')}
+        value={pair}
+        onChange={setPair}
+        errors={{ companyId: errorFor('companyId'), branchId: errorFor('branchId') }}
+      />
+      <LocationPicker
+        messages={messages}
+        locations={locations}
+        label={translate(messages, 'inventory.reorderLevels.set.location')}
+        placeholder={translate(messages, 'inventory.reorderLevels.set.wholeBranch')}
+        value={locationId}
+        onChange={setLocationId}
+        error={errorFor('locationId')}
+      />
+      <TextField
+        label={translate(messages, 'inventory.reorderLevels.set.level')}
+        description={translate(messages, 'inventory.reorderLevels.set.levelHelp')}
+        required
+        inputMode="decimal"
+        dir="ltr"
+        value={form.reorderLevelQty}
+        onChange={(event) => setForm((f) => ({ ...f, reorderLevelQty: event.target.value }))}
+        error={errorFor('reorderLevelQty')}
+      />
+      <TextField
+        label={translate(messages, 'inventory.reorderLevels.set.order')}
+        description={translate(messages, 'inventory.reorderLevels.set.orderHelp')}
+        inputMode="decimal"
+        dir="ltr"
+        value={form.preferredOrderQty}
+        onChange={(event) => setForm((f) => ({ ...f, preferredOrderQty: event.target.value }))}
+        error={errorFor('preferredOrderQty')}
+      />
+      <OutcomeNote messages={messages} outcome={outcome} />
+      <div>
+        <button type="submit" className={PRIMARY_BUTTON} disabled={busy}>
+          {translate(messages, 'inventory.reorderLevels.set.submit')}
         </button>
       </div>
     </form>

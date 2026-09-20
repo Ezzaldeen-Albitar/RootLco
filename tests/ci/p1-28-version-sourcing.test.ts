@@ -1041,7 +1041,7 @@ function withExtra(adapter: string, screen: string = SEAL_SCREEN) {
 }
 
 describe('an adapter the contract places outside apt/rec is excluded from the count, and only it', () => {
-  it('on the live tree, excludes exactly the two inventory adapters by their guarded operations', () => {
+  it('on the live tree, excludes exactly the three inventory adapters by their guarded operations', () => {
     const live = run() as Report & {
       outsideByContract: { name: string; operations: string[] }[];
     };
@@ -1050,9 +1050,12 @@ describe('an adapter the contract places outside apt/rec is excluded from the co
     // operation this suite does not exercise, and the P1-24 register does exactly
     // that. The adapter names are the claim; the namespace is what places them
     // outside an apt/rec subject.
+    // The third arrived with the Owner directive's reorder-level retirement, which
+    // is an inv operation reached from the setup screen.
     expect(live.outsideByContract.map((one) => one.name)).toEqual([
       'postGoodsReceipt',
       'recordStockCountLine',
+      'retireReorderLevel',
     ]);
     for (const entry of live.outsideByContract) {
       expect(entry.operations).toHaveLength(1);
@@ -1060,6 +1063,7 @@ describe('an adapter the contract places outside apt/rec is excluded from the co
     }
     expect(live.accountedFor).not.toContain('postGoodsReceipt');
     expect(live.accountedFor).not.toContain('recordStockCountLine');
+    expect(live.accountedFor).not.toContain('retireReorderLevel');
   });
 
   it('does not count an adapter whose every versioned send reaches a guarded wo operation', () => {

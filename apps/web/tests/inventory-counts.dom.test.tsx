@@ -231,7 +231,7 @@ describe('what a count shows', () => {
     ).toHaveAttribute('href', '/en/attention');
   });
 
-  it('shows snapshot, movements during the count, counted and variance, and says what is not counted', async () => {
+  it('shows snapshot, counted and variance, and says what is not counted', async () => {
     const user = userEvent.setup();
     renderScreen({ canOperate: false });
     await chooseBranch(user, TARGET_FORM, TARGET_SUBMIT);
@@ -239,13 +239,66 @@ describe('what a count shows', () => {
     expect(readStockCount).toHaveBeenCalledWith(COUNT_ID);
     const counted = lineRow(panel, 'BRK-001');
     expect(within(counted).getByText('10.000')).toBeVisible();
-    expect(within(counted).getByText('-2.000')).toBeVisible();
     expect(within(counted).getByText('7.000')).toBeVisible();
     expect(within(counted).getByText('-1.000')).toBeVisible();
     const pending = lineRow(panel, 'OIL-5W30');
     expect(
       within(pending).getAllByText(EN['inventory.counts.line.notCounted'] as string)
     ).toHaveLength(2);
+    expect(
+      within(panel).getByText(EN['inventory.counts.detail.varianceExplainOpen'] as string)
+    ).toBeVisible();
+  });
+
+  /**
+   * DEF-T-04. `movement_delta_during_count` defaults to zero and is written by
+   * the reconciliation and by nothing else, so an OPEN count held a zero nobody
+   * measured. Printed beside three measured quantities it read as "nothing
+   * moved", and the campaign read it that way over five units received into the
+   * same place while the count was open.
+   */
+  it('does not present the unwritten movement figure as measured while the count is open', async () => {
+    const user = userEvent.setup();
+    renderScreen({ canOperate: false });
+    await chooseBranch(user, TARGET_FORM, TARGET_SUBMIT);
+    const panel = await openCount(user);
+    const counted = lineRow(panel, 'BRK-001');
+    expect(within(counted).queryByText('-2.000')).toBeNull();
+    expect(
+      within(counted).getByText(EN['inventory.counts.line.movementsAtReconcile'] as string)
+    ).toBeVisible();
+    const pending = lineRow(panel, 'OIL-5W30');
+    expect(within(pending).queryByText('0.000')).toBeNull();
+    expect(
+      within(panel).getByText(EN['inventory.counts.detail.movementsPending'] as string)
+    ).toBeVisible();
+    // The difference is generated from the same unwritten zero, so the screen
+    // must not carry the sentence that says it already accounts for movements.
+    expect(
+      within(panel).queryByText(EN['inventory.counts.detail.varianceExplain'] as string)
+    ).toBeNull();
+    expect(
+      within(panel).getByText(EN['inventory.counts.detail.varianceExplainOpen'] as string)
+    ).toBeVisible();
+  });
+
+  it('shows the movement figure once the count is reconciled, and drops the caveat', async () => {
+    const user = userEvent.setup();
+    readStockCount.mockResolvedValue(okRead(detail({ status: 'reconciled' })));
+    renderScreen({ canOperate: false });
+    await chooseBranch(user, TARGET_FORM, TARGET_SUBMIT);
+    const panel = await openCount(user);
+    const counted = lineRow(panel, 'BRK-001');
+    expect(within(counted).getByText('-2.000')).toBeVisible();
+    expect(
+      within(counted).queryByText(EN['inventory.counts.line.movementsAtReconcile'] as string)
+    ).toBeNull();
+    expect(
+      within(panel).queryByText(EN['inventory.counts.detail.movementsPending'] as string)
+    ).toBeNull();
+    expect(
+      within(panel).queryByText(EN['inventory.counts.detail.varianceExplainOpen'] as string)
+    ).toBeNull();
     expect(
       within(panel).getByText(EN['inventory.counts.detail.varianceExplain'] as string)
     ).toBeVisible();

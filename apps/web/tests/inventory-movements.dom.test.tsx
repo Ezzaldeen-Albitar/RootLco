@@ -4,6 +4,11 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import en from '../src/i18n/messages/en.json';
 import ar from '../src/i18n/messages/ar.json';
 import { renderLtr, renderRtl } from './render';
+import {
+  DIRECTIONS,
+  MOVEMENT_TYPES,
+  REFERENCE_KINDS,
+} from '@/features/inventory/inventory-contract';
 
 /**
  * Stock movements, rendered (P1-30, `W5`, FE-013).
@@ -336,6 +341,79 @@ describe('the /inventory/movements route page decides before it reads', () => {
   it('a locale it does not serve is not found', async () => {
     PERMISSIONS = ['inv.stock.read'];
     await expect(renderPage({ locale: 'xx' })).rejects.toThrow('notFound');
+  });
+});
+
+/**
+ * DEF-T-05. The two vocabulary columns render through `translateDynamic`, which
+ * answers with the KEY when the catalogue has no entry — so a value the schema
+ * admits and the catalogue has never heard of reaches the operator as
+ * `inventory.movementType.sale`. The check below is DERIVED from the contract
+ * arrays rather than written out, so a value added to the mirror without a
+ * label fails here instead of on a screen.
+ */
+describe('every movement vocabulary value has a label in both languages', () => {
+  it('is not vacuous: the derived lists are non-empty', () => {
+    expect(MOVEMENT_TYPES.length).toBeGreaterThan(0);
+    expect(REFERENCE_KINDS.length).toBeGreaterThan(0);
+    expect(DIRECTIONS.length).toBeGreaterThan(0);
+  });
+
+  it.each([
+    ['inventory.movementType.', MOVEMENT_TYPES as readonly string[]],
+    ['inventory.referenceKind.', REFERENCE_KINDS as readonly string[]],
+    ['inventory.direction.', DIRECTIONS as readonly string[]],
+  ])('labels every %s value in en and ar', (prefix, values) => {
+    const missing = values
+      .flatMap((value) => [
+        EN[`${prefix}${value}`] === undefined ? `en:${prefix}${value}` : null,
+        AR[`${prefix}${value}`] === undefined ? `ar:${prefix}${value}` : null,
+      ])
+      .filter((entry): entry is string => entry !== null);
+    expect(missing, 'vocabulary values with no catalogue entry').toEqual([]);
+  });
+
+  it('renders a counter-sale row as words rather than as its keys', async () => {
+    const user = userEvent.setup();
+    listMovements.mockResolvedValue(
+      page([
+        movement({
+          id: 'm-sale',
+          sequence: '1043',
+          movementType: 'sale',
+          direction: 'out',
+          reference: { kind: 'invoice_line', id: 'il-1' },
+        }),
+      ])
+    );
+    renderScreen();
+    await chooseBranch(user);
+    await user.click(showButton());
+    const table = await within(ledger()).findByRole('table');
+    expect(within(table).getByText(EN['inventory.movementType.sale'] as string)).toBeVisible();
+    expect(
+      within(table).getByText(EN['inventory.referenceKind.invoice_line'] as string)
+    ).toBeVisible();
+    expect(within(table).queryByText('inventory.movementType.sale')).toBeNull();
+    expect(within(table).queryByText('inventory.referenceKind.invoice_line')).toBeNull();
+  });
+
+  it('offers every vocabulary value as a filter choice', async () => {
+    const user = userEvent.setup();
+    renderScreen();
+    await chooseBranch(user);
+    const panel = ledger();
+    const types = within(panel).getByRole('combobox', {
+      name: labelled('inventory.movements.type'),
+    });
+    const kinds = within(panel).getByLabelText(labelled('inventory.movements.referenceKind'));
+    const optionValues = (element: HTMLElement) =>
+      within(element)
+        .getAllByRole('option')
+        .map((option) => (option as HTMLOptionElement).value)
+        .filter((value) => value.length > 0);
+    expect(optionValues(types)).toEqual([...MOVEMENT_TYPES]);
+    expect(optionValues(kinds)).toEqual([...REFERENCE_KINDS]);
   });
 });
 

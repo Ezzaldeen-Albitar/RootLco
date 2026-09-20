@@ -348,9 +348,38 @@ function CountDetail({
       {count.cancelReason ? (
         <p className="text-caption text-text-muted">{count.cancelReason}</p>
       ) : null}
-      <p className="text-caption text-text-muted">
-        {translate(messages, 'inventory.counts.detail.varianceExplain')}
-      </p>
+      {/*
+       * DEF-T-04. `movement_delta_during_count` DEFAULTS to zero and is written
+       * by `inv.reconcile_stock_count` and by nothing else, so while a count is
+       * open every line holds a zero that was never measured. Printed as a
+       * quantity beside three that WERE measured, it reads as "nothing moved",
+       * and the campaign read it that way over five units received into the
+       * same place while the count was open. So the figure is shown only once
+       * the count is reconciled, and until then the screen says when it will be
+       * worked out rather than presenting a default as an observation.
+       *
+       * The difference carries the same zero. `variance_qty` is GENERATED as
+       * `counted_qty - (snapshot_qty + movement_delta_during_count)`, so while
+       * the count is open every difference on the screen — each line's and the
+       * total above — is counted against the opening quantity alone. Stating
+       * the reconciled definition there would be a false claim about what the
+       * figures beside it mean, so the sentence is the open one until the count
+       * is reconciled, and both are recomputed by the server at reconciliation.
+       */}
+      {count.status === 'reconciled' ? (
+        <p className="text-caption text-text-muted">
+          {translate(messages, 'inventory.counts.detail.varianceExplain')}
+        </p>
+      ) : (
+        <>
+          <p className="text-caption text-text-muted">
+            {translate(messages, 'inventory.counts.detail.varianceExplainOpen')}
+          </p>
+          <p className="text-caption text-text-muted">
+            {translate(messages, 'inventory.counts.detail.movementsPending')}
+          </p>
+        </>
+      )}
       <div className="overflow-x-auto">
         <table className="w-full text-body">
           <caption className="sr-only">
@@ -506,7 +535,13 @@ function CountLineRow({
         <Qty value={line.snapshotQty} />
       </td>
       <td className="text-end">
-        <Qty value={line.movementDeltaDuringCount} />
+        {count.status === 'reconciled' ? (
+          <Qty value={line.movementDeltaDuringCount} />
+        ) : (
+          <span className="text-caption text-text-muted">
+            {translate(messages, 'inventory.counts.line.movementsAtReconcile')}
+          </span>
+        )}
       </td>
       <td className="text-end">
         {canRecord ? (

@@ -381,6 +381,43 @@ describe('issuing and voiding', () => {
     );
   });
 
+  /**
+   * DEF-T-13 (the web half). The draft is held in component state and the
+   * product publishes no list of drafted sales, so a reload strands it. Until
+   * that list exists the screen has to say so; a panel that is silent about it
+   * lets the operator find out afterwards, which is how one draft of the
+   * acceptance campaign became permanently unreachable.
+   */
+  it('tells the operator a drafted sale is lost on leaving, and asks the browser to confirm', async () => {
+    const user = userEvent.setup();
+    const addEventListener = vi.spyOn(window, 'addEventListener');
+    renderLtr(screenAt());
+    await toDraft(user);
+    expect(
+      screen.getByText(EN['inventory.counterSales.sale.draftStranded'] as string)
+    ).toBeTruthy();
+    expect(addEventListener.mock.calls.some(([name]) => name === 'beforeunload')).toBe(true);
+    addEventListener.mockRestore();
+  });
+
+  it('drops the warning once the sale is issued, because it is reachable then', async () => {
+    const user = userEvent.setup();
+    const removeEventListener = vi.spyOn(window, 'removeEventListener');
+    renderLtr(screenAt());
+    await toDraft(user);
+    await user.click(
+      screen.getByRole('button', { name: EN['inventory.counterSales.issue.action'] as string })
+    );
+    await waitFor(() =>
+      expect(screen.getByText(EN['inventory.counterSales.sale.issuedNote'] as string)).toBeTruthy()
+    );
+    expect(
+      screen.queryByText(EN['inventory.counterSales.sale.draftStranded'] as string)
+    ).toBeNull();
+    expect(removeEventListener.mock.calls.some(([name]) => name === 'beforeunload')).toBe(true);
+    removeEventListener.mockRestore();
+  });
+
   it('says an issued sale cannot be undone and points at the returns desk', async () => {
     const user = userEvent.setup();
     renderLtr(screenAt());

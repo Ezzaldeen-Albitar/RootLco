@@ -47,7 +47,7 @@
  */
 
 import Link from 'next/link';
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 
 import { INITIAL_REQUEST } from '@/components/data-table/table-state';
 import { SelectField, TextField } from '@/components/forms/Field';
@@ -701,6 +701,24 @@ function SalePanel({
   const [outcome, setOutcome] = useState<ActionState | null>(null);
   const invoice = sale.invoice;
 
+  /*
+   * DEF-T-13. While the sale is a draft it exists only here: the control that
+   * issues it is on this panel and no operation lists drafted sales, so a
+   * reload leaves it unreachable. The browser is asked to confirm before the
+   * document goes away — the only thing a page can do about a closed tab — and
+   * the panel says the same in words for every other way of leaving.
+   *
+   * Registered only while the sale IS a draft: an issued or voided sale is
+   * reachable through the invoice it produced, and a confirmation prompt with
+   * nothing behind it teaches an operator to dismiss the next one.
+   */
+  useEffect(() => {
+    if (invoice.status !== 'draft') return;
+    const confirmLeaving = (event: BeforeUnloadEvent) => event.preventDefault();
+    window.addEventListener('beforeunload', confirmLeaving);
+    return () => window.removeEventListener('beforeunload', confirmLeaving);
+  }, [invoice.status]);
+
   const issue = async () => {
     setBusy(true);
     // `If-Match` is the INVOICE's own `recordVersion`, as this answer published
@@ -788,6 +806,19 @@ function SalePanel({
 
       {invoice.status === 'draft' ? (
         <>
+          {/*
+           * DEF-T-13. The draft lives in this component's state and the product
+           * publishes no list of drafted sales, so a reload or an interrupted
+           * session strands it with no way back — one such draft was left
+           * stranded by the acceptance campaign and is still unreachable. The
+           * list operation is owed by a later change; until it exists the screen
+           * says plainly what leaving costs, rather than letting an operator
+           * discover it afterwards, and `beforeunload` above asks the browser to
+           * confirm a navigation away.
+           */}
+          <p role="status" className="text-body text-text-primary">
+            {translate(messages, 'inventory.counterSales.sale.draftStranded')}
+          </p>
           {canIssue ? (
             <div>
               <button

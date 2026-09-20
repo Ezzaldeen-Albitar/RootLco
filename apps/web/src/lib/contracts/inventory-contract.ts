@@ -475,3 +475,27 @@ export interface VehicleSpecificationCreateBody {
   readonly uomId: string;
   readonly sourceReference: string;
 }
+
+/**
+ * `inv.reorder-level-set` — `POST /reorder-levels`.
+ *
+ * The quantity at or below which an item counts as low, for one signature. The
+ * three narrowing fields are each OPTIONAL and each omission widens the row:
+ * no company is every company of the organisation, no branch is every branch of
+ * the named company, no location makes the level about the branch as a whole.
+ * Exactly one live row exists per signature, so this SETS rather than appends.
+ *
+ * Both quantities are exact decimal strings at scale 3, never JSON numbers:
+ * `numeric(12,3)` cannot be carried by IEEE-754 without changing the value, and
+ * a threshold that changes in transit is a threshold nobody set. The level
+ * itself may be zero — "tell me the moment this runs out" — while the preferred
+ * order quantity may not, because an order of nothing is not an order.
+ */
+export interface ReorderLevelSetBody {
+  readonly itemId: string;
+  readonly companyId?: string;
+  readonly branchId?: string;
+  readonly locationId?: string;
+  readonly reorderLevelQty: string;
+  readonly preferredOrderQty?: string;
+}

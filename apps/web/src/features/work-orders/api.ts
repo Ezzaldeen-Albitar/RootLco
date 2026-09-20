@@ -24,6 +24,7 @@ import type {
   WorkOrderDetail,
   WorkOrderListCriteria,
   WorkOrderListEntry,
+  WorkOrderServiceLine,
 } from './work-orders-contract';
 
 /**
@@ -120,6 +121,25 @@ export async function readWorkOrderDetail(
   workOrderId: string
 ): Promise<ReadState<WorkOrderDetail>> {
   return readOperation<WorkOrderDetail>(workOrderPath(workOrderId));
+}
+
+/**
+ * The service lines of one work order (`wo.service-line-list`).
+ *
+ * `wo.work_order.read` — the same code the detail takes, and the same code the
+ * parts screen already holds when it renders the work-order header. It is the
+ * read that lets a material requirement be bound to a line by CHOOSING it
+ * rather than by typing an identifier the product publishes nowhere else
+ * (DEF-M-05).
+ *
+ * Not paginated: the operation publishes a bare `{ items }`.
+ */
+export async function listServiceLines(
+  workOrderId: string
+): Promise<ReadState<ItemsOnly<WorkOrderServiceLine>>> {
+  return readOperation<ItemsOnly<WorkOrderServiceLine>>(
+    workOrderPath(workOrderId, '/service-lines')
+  );
 }
 
 /**
