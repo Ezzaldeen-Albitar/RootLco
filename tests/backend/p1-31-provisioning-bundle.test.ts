@@ -58,9 +58,34 @@
  *           `org.branch-create` (Owner directive 2026-09-16), and the branch
  *           receives its per-branch numbering runs
  *
+ * ## The Owner directive of 2026-09-17: four capabilities that were shut
+ *
+ * A QA campaign exercising the product found four more codes the bundle never
+ * carried — `wo.work_order.line.manage`, `crm.customer.profile.write`,
+ * `inv.cost.view` and `rec.reception.evidence.manage`. The shape is the one this
+ * file was written for: each is declared by shipped operations, none was ever in
+ * the bundle, and `ins_role_permissions_delegable` therefore made the capability
+ * unreachable for EVERYONE in every platform-provisioned organisation, not merely
+ * for the first administrator. The four cases below measure the fix on the
+ * shipped routes, in the organisation the shipped provisioning operation created:
+ *
+ *   P31-B10 the four are in the bundle, none was in the 85-code bundle that
+ *           preceded them, each is declared by a REGISTERED operation and each
+ *           already existed in the catalogue seed — so nothing is minted
+ *   P31-B11 the provisioned administrator effectively holds all four and can
+ *           delegate each onto a role it creates
+ *   P31-B12 it records a telephone contact on a customer it created
+ *   P31-B13 it records a service line on a work order its own reception produced
+ *   P31-B14 it creates a goods receipt line carrying a unit cost
+ *   P31-B15 it binds an exact document version to a capture requirement
+ *
  * Operations exercised: platform.organization-provision, iam.role-create,
  * iam.role-permission-add, iam.audit-event-list, rpt.report-catalogue,
- * shared.export-catalogue, org.branch-create.
+ * shared.export-catalogue, org.branch-create, crm.individual-create,
+ * crm.contact-add, inv.item-category-create, inv.uom-list, inv.item-create,
+ * inv.stock-location-create, inv.goods-receipt-create,
+ * rec.reception-convert-to-work-order, wo.service-line-record,
+ * rec.reception-evidence-binding.
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { Pool } from 'pg';
@@ -113,6 +138,28 @@ import {
   EXPORT_CATALOGUE_OPERATION,
   GET as exportCatalogueRoute,
 } from '@/app/api/v1/exports/resources/route';
+import { POST as individualCreateRoute } from '@/app/api/v1/customers/individuals/route';
+import {
+  CONTACT_ADD_OPERATION,
+  POST as contactAddRoute,
+} from '@/app/api/v1/customers/[customerId]/contacts/route';
+import { POST as itemCategoryCreateRoute } from '@/app/api/v1/item-categories/route';
+import { GET as unitOfMeasureListRoute } from '@/app/api/v1/units-of-measure/route';
+import { POST as itemCreateRoute } from '@/app/api/v1/items/route';
+import { POST as stockLocationCreateRoute } from '@/app/api/v1/stock-locations/route';
+import {
+  GOODS_RECEIPT_CREATE_OPERATION,
+  POST as goodsReceiptCreateRoute,
+} from '@/app/api/v1/goods-receipts/route';
+import { POST as receptionConvertRoute } from '@/app/api/v1/receptions/[receptionId]/convert-to-work-order/route';
+import {
+  SERVICE_LINE_RECORD_OPERATION,
+  POST as serviceLineRecordRoute,
+} from '@/app/api/v1/work-orders/[workOrderId]/service-lines/route';
+import {
+  RECEPTION_EVIDENCE_BINDING_OPERATION,
+  POST as evidenceBindingRoute,
+} from '@/app/api/v1/receptions/[receptionId]/evidence-bindings/route';
 
 /**
  * The six codes prerequisite P-1 adds. Written out rather than derived from
@@ -243,20 +290,41 @@ const EXCLUDED = Object.freeze([...EXCLUDED_UNDECLARED, ...EXCLUDED_BY_DECISION]
 const BUNDLE_BEFORE = 67;
 
 /**
- * The widening AFTER P1-31: the five P1-32 material codes (P1-32-PRE-134), carried
- * once every reservation and issue for a work order had to draw on an approved
- * material requirement, so that an administrator can ask for, approve and delegate
- * one. Kept apart from `ADDED_ALL` because it answers a later question than the
- * five P1-31 widenings; B1 holds the arithmetic for both and the register
- * measurement for each. 78 + 5 = 83.
+ * The first widening AFTER P1-31: the five P1-32 material codes (P1-32-PRE-134),
+ * carried once every reservation and issue for a work order had to draw on an
+ * approved material requirement, so that an administrator can ask for, approve and
+ * delegate one. Kept apart from `ADDED_ALL` because it answers a later question
+ * than the five P1-31 widenings. 80 + 5 = 85.
  */
-const ADDED_AFTER_P1_31 = Object.freeze([
+const ADDED_BY_P1_32_MATERIAL = Object.freeze([
   'inv.material.request',
   'inv.material.approve',
   'inv.material.exception.approve',
   'inv.unit_conversion.manage',
   'inv.specification.manage',
 ]);
+
+/**
+ * The second widening after P1-31: the four codes the QA campaign measured as
+ * permanently closed in every platform-provisioned organisation (Owner directive
+ * 2026-09-17; DEF-M-01, DEF-T-01, DEF-T-03, DEF-T-12/M-06).
+ *
+ * Kept apart again because the question is a third one: these were not withheld
+ * on a stated rule and later released — they were never considered, and the
+ * closure was found by exercising the product. All four already exist in the
+ * permission catalogue seed, so nothing is minted; B1 measures their declarers in
+ * the register exactly as it does for every other widening, and B10–B14 below
+ * measure the four capabilities on the shipped routes. 85 + 4 = 89.
+ */
+const ADDED_BY_OD_QA_CAMPAIGN = Object.freeze([
+  'wo.work_order.line.manage',
+  'crm.customer.profile.write',
+  'inv.cost.view',
+  'rec.reception.evidence.manage',
+]);
+
+/** Every code carried after P1-31 closed. */
+const ADDED_AFTER_P1_31 = Object.freeze([...ADDED_BY_P1_32_MATERIAL, ...ADDED_BY_OD_QA_CAMPAIGN]);
 
 const IDENTITY_PROVIDER = 'test_harness';
 const SUBJECT_HOLDER = 'fx_p131_platform_holder';
@@ -287,10 +355,12 @@ async function call<T>(
     readonly body?: unknown;
     readonly params?: Record<string, string>;
     readonly idempotencyKey?: string;
+    readonly ifMatch?: number;
   }
 ): Promise<CallResult<T>> {
   const headers: Record<string, string> = { 'content-type': 'application/json' };
   if (input.idempotencyKey !== undefined) headers['idempotency-key'] = input.idempotencyKey;
+  if (input.ifMatch !== undefined) headers['if-match'] = String(input.ifMatch);
   const init: RequestInit = { method: input.method ?? 'POST', headers };
   if (input.body !== undefined) init.body = JSON.stringify(input.body);
   const request = new Request(`http://localhost/api/v1${input.path}`, init);
@@ -426,6 +496,172 @@ async function mapCode(
     body: { permissionCode, effect: 'allow' },
     idempotencyKey: randomUUID(),
   });
+}
+
+/**
+ * The company and the branch the provisioning operation created, in creation
+ * order, so B9's second branch cannot be picked up by accident.
+ */
+async function scopeOf(tenant: Provisioned): Promise<{ companyId: string; branchId: string }> {
+  const { rows } = await admin.query<{ company_id: string; branch_id: string }>(
+    `SELECT c.id AS company_id, b.id AS branch_id
+       FROM org.legal_companies c
+       JOIN org.branches b ON b.tenant_id = c.tenant_id AND b.company_id = c.id
+      WHERE c.tenant_id = $1
+      ORDER BY b.created_at, b.branch_code
+      LIMIT 1`,
+    [tenant.tenantId]
+  );
+  const row = rows[0];
+  if (row === undefined) throw new Error('provisioned organisation has no company and branch');
+  return { companyId: row.company_id, branchId: row.branch_id };
+}
+
+/** 32 bytes of hex — `ck_document_versions_sha256_len`. */
+const SHA_HEX = 'a'.repeat(64);
+
+let vinSeq = 0;
+
+interface SeededVisit {
+  readonly visitId: string;
+  readonly vehicleId: string;
+  readonly recordVersion: number;
+}
+
+/**
+ * A reception visit in the PROVISIONED organisation, built as admin.
+ *
+ * The frozen `rec.accept_check_in()` primitive performs the check-in, exactly as
+ * `p1-19-helpers.ts` does for the seeded fixture tenant: hand-rolling the visit,
+ * its service-requester role, the custody event and the first status row would
+ * produce a shell the reception contract never admits. Everything this file is
+ * MEASURING — the four capabilities below — still runs through the shipped
+ * routes as the provisioned Owner.
+ */
+async function seedVisit(
+  tenant: Provisioned,
+  scope: { companyId: string; branchId: string },
+  partnerId: string,
+  options: { readonly authorize?: boolean } = {}
+): Promise<SeededVisit> {
+  const client = await admin.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query(
+      `SELECT set_config('app.user_id',$1,true), set_config('app.tenant_id',$2,true)`,
+      [tenant.ownerAccountId, tenant.tenantId]
+    );
+    const vin = `P31B${String(++vinSeq).padStart(13, '0')}`;
+    const vehicle = await client.query<{ id: string }>(
+      `INSERT INTO veh.vehicles (tenant_id, vin_raw, powertrain_category, lifecycle_status, created_by)
+       VALUES ($1,$2,'ice','active',$3) RETURNING id`,
+      [tenant.tenantId, vin, tenant.ownerAccountId]
+    );
+    const vehicleId = vehicle.rows[0]?.id ?? '';
+    const walkIn = await client.query<{ id: string }>(
+      `INSERT INTO rec.walk_in_references
+         (tenant_id, company_id, branch_id, vehicle_id, requester_partner_id, created_by)
+       VALUES ($1,$2,$3,$4,$5,$6) RETURNING id`,
+      [
+        tenant.tenantId,
+        scope.companyId,
+        scope.branchId,
+        vehicleId,
+        partnerId,
+        tenant.ownerAccountId,
+      ]
+    );
+    const visit = await client.query<{ id: string }>(
+      `SELECT rec.accept_check_in($1::uuid,$2::uuid,$3::uuid,NULL::uuid,$4::uuid,$5::uuid,$6::uuid) AS id`,
+      [
+        scope.companyId,
+        scope.branchId,
+        vehicleId,
+        walkIn.rows[0]?.id ?? '',
+        tenant.ownerAccountId,
+        partnerId,
+      ]
+    );
+    const visitId = visit.rows[0]?.id ?? '';
+    if (options.authorize === true) {
+      await client.query(
+        `INSERT INTO rec.authorizations
+           (tenant_id, company_id, branch_id, reception_visit_id, authorizing_role,
+            partner_id, decision, channel, created_by)
+         VALUES ($1,$2,$3,$4,'service_requester',$5,'approved','in_person',$6)`,
+        [
+          tenant.tenantId,
+          scope.companyId,
+          scope.branchId,
+          visitId,
+          partnerId,
+          tenant.ownerAccountId,
+        ]
+      );
+      await client.query(
+        `UPDATE rec.reception_visits SET reception_status = 'inspecting' WHERE id = $1`,
+        [visitId]
+      );
+      await client.query(
+        `UPDATE rec.reception_visits SET reception_status = 'authorized' WHERE id = $1`,
+        [visitId]
+      );
+    }
+    const current = await client.query<{ record_version: number }>(
+      `SELECT record_version FROM rec.reception_visits WHERE id = $1`,
+      [visitId]
+    );
+    await client.query('COMMIT');
+    return { visitId, vehicleId, recordVersion: current.rows[0]?.record_version ?? 0 };
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+/**
+ * A document, one version and the link that makes it reachable, in the
+ * provisioned organisation. Admin-built because the product's writer for the
+ * BYTES is the presigned-storage path, which has no place in a backend suite;
+ * the binding itself is the shipped route.
+ */
+async function seedEvidenceDocument(
+  tenant: Provisioned,
+  visitId: string
+): Promise<{ documentId: string; versionId: string }> {
+  const { rows } = await admin.query<{ id: string; purpose: string }>(
+    `SELECT id, business_link_purpose AS purpose FROM shared.document_categories
+      WHERE category_code = 'reception_exterior' AND deleted_at IS NULL
+      ORDER BY (tenant_id IS NOT NULL) DESC LIMIT 1`
+  );
+  const category = rows[0];
+  if (category === undefined) {
+    throw new Error('the reception_exterior document category is absent from the platform seed');
+  }
+  const documentId = randomUUID();
+  const versionId = randomUUID();
+  await admin.query(
+    `INSERT INTO shared.documents
+       (id, tenant_id, category_id, title, classification, retention_class, status, created_by)
+     VALUES ($1,$2,$3,'Reception exterior capture','internal','evidence-audit','pending',$4)`,
+    [documentId, tenant.tenantId, category.id, tenant.ownerAccountId]
+  );
+  await admin.query(
+    `INSERT INTO shared.document_versions
+       (id, tenant_id, document_id, version_number, storage_key, content_type,
+        size_bytes, sha256, uploaded_by, created_by)
+     VALUES ($1,$2,$3,1,$4,'image/jpeg',2048, decode($5,'hex'), $6, $6)`,
+    [versionId, tenant.tenantId, documentId, `p31b/${documentId}`, SHA_HEX, tenant.ownerAccountId]
+  );
+  await admin.query(
+    `INSERT INTO shared.document_links
+       (tenant_id, document_id, entity_type, entity_id, link_purpose, linked_by, created_by)
+     VALUES ($1,$2,'rec.reception_visits',$3,$4,$5,$5)`,
+    [tenant.tenantId, documentId, visitId, category.purpose, tenant.ownerAccountId]
+  );
+  return { documentId, versionId };
 }
 
 let probe: Provisioned;
@@ -708,5 +944,266 @@ describe('P1-31 P-1 — an organisation created by the shipped provisioning oper
       'quotation',
       'receipt',
     ]);
+  });
+});
+
+describe('Owner directive 2026-09-17 — the four codes the QA campaign found closed', () => {
+  it('P31-B10 all four are added, none was in the 85-code bundle, each is declared by a registered operation and each already existed in the catalogue seed', () => {
+    const bundle = [...TENANT_ADMINISTRATOR_ROLE.permissionCodes];
+
+    // The arithmetic, restated for THIS widening so it cannot drift alone:
+    // 67 + 13 (P1-31 and the 2026-09-16 directive) + 5 (P1-32 material) = 85,
+    // the bundle every organisation provisioned before 2026-09-17 was given.
+    const before = BUNDLE_BEFORE + ADDED_ALL.length + ADDED_BY_P1_32_MATERIAL.length;
+    expect(before).toBe(85);
+    expect(bundle).toHaveLength(before + ADDED_BY_OD_QA_CAMPAIGN.length);
+    expect(ADDED_BY_OD_QA_CAMPAIGN).toHaveLength(4);
+
+    // NOT WITHHELD AND RELEASED — never considered. None of the four appears in
+    // any earlier widening, so "it was absent before" is measured against the
+    // lists this file already holds rather than against a reverted constant.
+    for (const code of ADDED_BY_OD_QA_CAMPAIGN) {
+      expect(ADDED_ALL).not.toContain(code);
+      expect(ADDED_BY_P1_32_MATERIAL).not.toContain(code);
+      expect(EXCLUDED).not.toContain(code);
+      expect(bundle.filter((c) => c === code)).toHaveLength(1);
+    }
+
+    // NOTHING IS MINTED: every one is already a row in the catalogue seed, so
+    // this widening adds no migration and no permission.
+    const seed = readFileSync(
+      join(REPOSITORY_ROOT, 'supabase/seeds/04_iam_permission_catalog.sql'),
+      'utf8'
+    );
+    for (const code of ADDED_BY_OD_QA_CAMPAIGN) expect(seed).toContain(`('${code}'`);
+
+    // DECLARED by shipped operations — the necessary condition P-1 states, read
+    // from the generated operation register exactly as B1 reads it.
+    const register = JSON.parse(
+      readFileSync(
+        join(REPOSITORY_ROOT, 'docs/phase-1/phase-1-24/evidence/operation-register.json'),
+        'utf8'
+      )
+    ) as { operations: Array<{ id: string; permissions: string[] }> };
+    const declarersOf = (code: string): string[] =>
+      register.operations.filter((op) => op.permissions.includes(code)).map((op) => op.id);
+    expect(declarersOf('wo.work_order.line.manage').sort()).toEqual([
+      'wo.required-part-record',
+      'wo.service-line-record',
+    ]);
+    expect(declarersOf('crm.customer.profile.write').sort()).toEqual([
+      'crm.address-add',
+      'crm.contact-add',
+      'crm.preference-set',
+    ]);
+    expect(declarersOf('inv.cost.view').sort()).toEqual(['inv.item-cost-history-read']);
+    expect(declarersOf('rec.reception.evidence.manage').sort()).toEqual([
+      'rec.reception-condition-evidence',
+      'rec.reception-evidence-binding',
+      'rec.reception-evidence-binding-finalize',
+    ]);
+  });
+
+  it('P31-B11 the provisioned administrator effectively holds all four, and can delegate each onto a role it creates', async () => {
+    const held = await codesHeldBy(probe.ownerAccountId);
+    for (const code of ADDED_BY_OD_QA_CAMPAIGN) expect(held).toContain(code);
+
+    const roleId = await newRole(probe, 'workshop_controller');
+    for (const permissionCode of ADDED_BY_OD_QA_CAMPAIGN) {
+      const mapped = await mapCode(probe, roleId, permissionCode);
+      expect({ permissionCode, status: mapped.status }).toEqual({ permissionCode, status: 201 });
+    }
+  });
+
+  it('P31-B12 it records a telephone contact on a customer it created (DEF-T-01)', async () => {
+    expect(CONTACT_ADD_OPERATION.permissions).toEqual(['crm.customer.profile.write']);
+
+    asOwnerOf(probe);
+    const customer = await call<{ customerId: string }>(individualCreateRoute, {
+      path: '/customers/individuals',
+      body: { givenName: 'Contact', familyName: 'Probe' },
+      idempotencyKey: randomUUID(),
+    });
+    expect(customer.status).toBe(201);
+    const customerId = customer.body.customerId;
+
+    asOwnerOf(probe);
+    const contact = await call<{ contactId?: string }>(contactAddRoute, {
+      path: `/customers/${customerId}/contacts`,
+      params: { customerId },
+      body: { channel: 'phone', value: '+962700000000', isPrimary: true },
+      idempotencyKey: randomUUID(),
+    });
+    expect(contact.status).toBe(201);
+
+    const { rows } = await admin.query<{ n: number }>(
+      `SELECT count(*)::int AS n FROM crm.contact_points
+        WHERE tenant_id = $1 AND partner_id = $2 AND channel = 'phone' AND deleted_at IS NULL`,
+      [probe.tenantId, customerId]
+    );
+    expect(rows[0]?.n).toBe(1);
+  });
+
+  it('P31-B13 it records a service line on a work order its own reception produced (DEF-M-01)', async () => {
+    expect(SERVICE_LINE_RECORD_OPERATION.permissions).toEqual(['wo.work_order.line.manage']);
+    const scope = await scopeOf(probe);
+
+    asOwnerOf(probe);
+    const customer = await call<{ customerId: string }>(individualCreateRoute, {
+      path: '/customers/individuals',
+      body: { givenName: 'Service', familyName: 'Requester' },
+      idempotencyKey: randomUUID(),
+    });
+    expect(customer.status).toBe(201);
+
+    const visit = await seedVisit(probe, scope, customer.body.customerId, { authorize: true });
+
+    asOwnerOf(probe);
+    const converted = await call<{ workOrderId?: string }>(receptionConvertRoute, {
+      path: `/receptions/${visit.visitId}/convert-to-work-order`,
+      params: { receptionId: visit.visitId },
+      body: {},
+      idempotencyKey: randomUUID(),
+      ifMatch: visit.recordVersion,
+    });
+    expect(converted.status).toBe(200);
+    const workOrderId = converted.body.workOrderId ?? '';
+    expect(workOrderId).not.toBe('');
+
+    asOwnerOf(probe);
+    const line = await call<{ lineId?: string }>(serviceLineRecordRoute, {
+      path: `/work-orders/${workOrderId}/service-lines`,
+      params: { workOrderId },
+      body: { description: 'Brake fluid replacement', quantity: '1.000', unit: 'job' },
+      idempotencyKey: randomUUID(),
+    });
+    expect(line.status).toBe(201);
+
+    const { rows } = await admin.query<{ n: number }>(
+      `SELECT count(*)::int AS n FROM wo.work_order_service_lines
+        WHERE tenant_id = $1 AND work_order_id = $2`,
+      [probe.tenantId, workOrderId]
+    );
+    expect(rows[0]?.n).toBe(1);
+  });
+
+  it('P31-B14 it creates a goods receipt line carrying a unit cost (DEF-T-03)', async () => {
+    // The operation declares the stock code; `inv.cost.view` is the SECOND
+    // permission the service reads before it will accept a priced line, and it is
+    // the one the bundle lacked.
+    expect(GOODS_RECEIPT_CREATE_OPERATION.permissions).toEqual(['inv.stock.operate']);
+    const scope = await scopeOf(probe);
+
+    asOwnerOf(probe);
+    const category = await call<{ id: string }>(itemCategoryCreateRoute, {
+      path: '/item-categories',
+      body: { code: 'brake_parts', name: 'Brake parts' },
+      idempotencyKey: randomUUID(),
+    });
+    expect(category.status).toBe(201);
+    const itemCategoryId = category.body.id;
+
+    asOwnerOf(probe);
+    const uoms = await call<{ items: Array<{ id: string; code?: string }> }>(
+      unitOfMeasureListRoute,
+      { path: '/units-of-measure', method: 'GET' }
+    );
+    expect(uoms.status).toBe(200);
+    const uomId = uoms.body.items[0]?.id ?? '';
+    expect(uomId).not.toBe('');
+
+    asOwnerOf(probe);
+    const item = await call<{ id: string }>(itemCreateRoute, {
+      path: '/items',
+      body: {
+        itemCategoryId,
+        sku: 'P31B-BRAKE-PAD',
+        name: 'Brake pad set',
+        uomId,
+        itemType: 'part',
+        isStockTracked: true,
+      },
+      idempotencyKey: randomUUID(),
+    });
+    expect(item.status).toBe(201);
+    const itemId = item.body.id;
+
+    asOwnerOf(probe);
+    const location = await call<{ id: string }>(stockLocationCreateRoute, {
+      path: '/stock-locations',
+      body: {
+        companyId: scope.companyId,
+        branchId: scope.branchId,
+        locationCode: 'MAIN-STORE',
+        name: 'Main store',
+        locationType: 'warehouse',
+      },
+      idempotencyKey: randomUUID(),
+    });
+    expect(location.status).toBe(201);
+    const locationId = location.body.id;
+
+    asOwnerOf(probe);
+    const receipt = await call<{ id: string }>(goodsReceiptCreateRoute, {
+      path: '/goods-receipts',
+      body: {
+        companyId: scope.companyId,
+        branchId: scope.branchId,
+        receivedOn: '2026-09-17',
+        lines: [
+          { itemId, locationId, quantity: '4.000', unitCost: '12.5000', currencyCode: 'JOD' },
+        ],
+      },
+      idempotencyKey: randomUUID(),
+    });
+    expect(receipt.status).toBe(201);
+
+    // The cost is on the row, as a STRING: the refusal this closes was a 422
+    // naming the priced line, not a receipt accepted with the cost dropped.
+    const { rows } = await admin.query<{ unit_cost: string }>(
+      `SELECT unit_cost::text AS unit_cost FROM inv.goods_receipt_lines
+        WHERE tenant_id = $1 AND receipt_id = $2`,
+      [probe.tenantId, receipt.body.id]
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.unit_cost).toBe('12.5000');
+  });
+
+  it('P31-B15 it binds an exact document version to a capture requirement of a reception visit (DEF-T-12 / DEF-M-06)', async () => {
+    expect(RECEPTION_EVIDENCE_BINDING_OPERATION.permissions).toEqual([
+      'rec.reception.evidence.manage',
+    ]);
+    const scope = await scopeOf(probe);
+
+    asOwnerOf(probe);
+    const customer = await call<{ customerId: string }>(individualCreateRoute, {
+      path: '/customers/individuals',
+      body: { givenName: 'Evidence', familyName: 'Requester' },
+      idempotencyKey: randomUUID(),
+    });
+    expect(customer.status).toBe(201);
+
+    const visit = await seedVisit(probe, scope, customer.body.customerId);
+    const document = await seedEvidenceDocument(probe, visit.visitId);
+
+    asOwnerOf(probe);
+    const bound = await call<{ bindingId?: string }>(evidenceBindingRoute, {
+      path: `/receptions/${visit.visitId}/evidence-bindings`,
+      params: { receptionId: visit.visitId },
+      body: {
+        requirementCode: 'exterior',
+        documentId: document.documentId,
+        documentVersionId: document.versionId,
+      },
+      idempotencyKey: randomUUID(),
+    });
+    expect(bound.status).toBe(201);
+
+    const { rows } = await admin.query<{ n: number }>(
+      `SELECT count(*)::int AS n FROM rec.reception_evidence_bindings
+        WHERE tenant_id = $1 AND reception_visit_id = $2 AND requirement_code = 'exterior'`,
+      [probe.tenantId, visit.visitId]
+    );
+    expect(rows[0]?.n).toBe(1);
   });
 });
