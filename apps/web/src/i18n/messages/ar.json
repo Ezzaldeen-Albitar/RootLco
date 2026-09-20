@@ -5204,6 +5204,7 @@
   "inventory.counterSales.sale.gross": "المبلغ المستحق",
   "inventory.counterSales.sale.noAmounts": "ليس لديك إذن لرؤية المبالغ.",
   "inventory.counterSales.sale.explain": "الإصدار يُخرج القطع من الرف ويمنح البيع رقمه. وحتى ذلك الحين لم يتحرّك شيء.",
+  "inventory.counterSales.sale.draftStranded": "هذه البيعة المسوّدة محفوظة في هذه الشاشة وحدها. ولا توجد بعد قائمة بالبيعات المسوّدة، فمغادرة الصفحة أو إعادة تحميلها تُفقدك الطريق إليها. أصدرها أو ألغها قبل أن تغادر.",
   "inventory.counterSales.sale.issuedNote": "صدر هذا البيع. غادرت القطع الرف ولا يمكن التراجع — أعد القطعة عبر مرتجعات العملاء.",
   "inventory.counterSales.sale.paymentNote": "استلم المبلغ في شاشة المدفوعات مقابل هذا البيع.",
   "inventory.counterSales.sale.takePayment": "انتقل إلى المدفوعات لهذا البيع",
