@@ -234,9 +234,7 @@ export class FakeIdentityProvider implements IdentityProvider {
       };
       if (payload.sub === subject) this.revokedSessions.add(sessionRef);
     }
-    for (const [refresh, owner] of this.refreshTokens) {
-      if (owner === subject) this.refreshTokens.delete(refresh);
-    }
+    this.forgetRefreshTokensOf(subject);
   }
 
   async requestPasswordReset(request: PasswordResetRequest): Promise<void> {
@@ -254,6 +252,23 @@ export class FakeIdentityProvider implements IdentityProvider {
     });
   }
 
+  /**
+   * Completes a reset, ending exactly what the adapter ends.
+   *
+   * The adapter verifies the recovery token, writes the credential, and then
+   * calls `signOutEverywhere` with the session it just verified
+   * (`supabase-provider.ts`). That ends the identity's REFRESH tokens and
+   * nothing else, so an access token already issued to another device keeps
+   * verifying until its own expiry — the same residual the change-password path
+   * carries, reached by a different route.
+   *
+   * This double used to call `revokeAllSessions` here, which in the double also
+   * refuses issued access tokens. A test written against it proved that a reset
+   * had signed every other device out, which the deployed adapter does not do;
+   * the screen that trusted the test said so to the operator. Revoking only the
+   * refresh tokens is what lets a case measure the residual instead of hiding
+   * it.
+   */
   async completePasswordReset(
     recoveryToken: string,
     newPassword: string
@@ -267,7 +282,7 @@ export class FakeIdentityProvider implements IdentityProvider {
     record.confirmed = true;
     // Single use. A replayed link finds no matching token and is refused.
     record.recoveryToken = null;
-    await this.revokeAllSessions(record.subject);
+    this.forgetRefreshTokensOf(record.subject);
     return this.toIdentity(record);
   }
 
@@ -441,6 +456,15 @@ export class FakeIdentityProvider implements IdentityProvider {
     // Refresh tokens only. Nothing is added to `revokedSessions`: an access
     // token already in a caller's hands outlives this call, by the design of
     // the provider rather than by an omission here.
+    this.forgetRefreshTokensOf(subject);
+  }
+
+  /**
+   * What the provider's global sign-out actually ends: the subject's refresh
+   * tokens. Written once, so the sign-out path and the reset path cannot drift
+   * into modelling two different guarantees.
+   */
+  private forgetRefreshTokensOf(subject: string): void {
     for (const [refresh, owner] of this.refreshTokens) {
       if (owner === subject) this.refreshTokens.delete(refresh);
     }

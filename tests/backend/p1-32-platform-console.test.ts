@@ -1817,6 +1817,20 @@ describe('a platform-only identity changes its own password', () => {
     await expect(identityDouble.verifyToken(otherDevice.accessToken)).resolves.toMatchObject({
       subject: SUBJECT_READER,
     });
+
+    // The same residual measured where QA met it — through the route, with the
+    // other device's bearer, after the change. The request is deliberately one
+    // that cannot succeed (the current password it offers is no longer the
+    // current one), so nothing is mutated and the ANSWER is the measurement:
+    // 422 for the credential it got wrong, and NOT the 401 ERR-IAM-002 this
+    // route answers when the presented token is not usable. A token issued
+    // before the change is still accepted as an identity afterwards.
+    const stale = await callAccount<AccountProblem>({
+      bearer: otherDevice.accessToken,
+      body: { currentPassword: FIRST_PASSWORD, newPassword: 'a-third-password-that-is-long' },
+    });
+    expect(stale.status).toBe(422);
+    expect(stale.body.code).toBe('ERR-IAM-003');
   });
 
   it('acts on the caller of the token and never on another identity', async () => {
