@@ -1480,8 +1480,10 @@ describe('P-10 the provisioning bundle', () => {
     // name — which is why the assertion below is now a POSITIVE one; 83 once
     // P1-32-PRE-134 carried the five material codes every work-order draw now needs.
     // 85 since the Owner directive of 2026-09-16 carried org.company.manage and
-    // org.branch.manage for the two organisation creation operations.
-    expect(TENANT_ADMINISTRATOR_ROLE.permissionCodes).toHaveLength(85);
+    // org.branch.manage for the two organisation creation operations; 89 since the
+    // Owner directive of 2026-09-17 carried the four codes a QA campaign measured
+    // as permanently closed in every provisioned organisation.
+    expect(TENANT_ADMINISTRATOR_ROLE.permissionCodes).toHaveLength(89);
     expect(new Set(TENANT_ADMINISTRATOR_ROLE.permissionCodes).size).toBe(
       TENANT_ADMINISTRATOR_ROLE.permissionCodes.length
     );

@@ -311,6 +311,62 @@
  * run covering the five codes, and that run is not performed by this slice. The
  * transfer write-off slice 3a added needs no new code: it is approved under
  * `inv.adjustment.approve`.
+ *
+ * ## The four codes the QA campaign found closed (Owner directive, 2026-09-17)
+ *
+ * A fifth instance of the same closure, in four namespaces at once, and this one
+ * was found by exercising the product rather than by walking a phase's routes.
+ * Each of the four codes below is declared by at least one SHIPPED operation and
+ * already exists in the permission catalogue seed — this widening mints nothing
+ * and adds no migration — and none of them was in the bundle, so under
+ * `ins_role_permissions_delegable` no principal in any platform-provisioned
+ * organisation could hold one or ever be granted one. The capability was not
+ * merely withheld from the first administrator: it was shut for the whole
+ * organisation, permanently. Each one, with the operations that declare it and
+ * the consequence measured:
+ *
+ *  - `wo.work_order.line.manage` — `wo.service-line-record` and
+ *    `wo.required-part-record`. Without it a work order can be created,
+ *    transitioned and closed but can never say WHAT work is on it, and no part
+ *    can ever be required against it. Since every reservation and issue now
+ *    draws on an approved material requirement, and a requirement is asked for
+ *    against a line, this one absence closed the whole material-demand surface
+ *    the P1-32 material codes above were carried to open. The bundle already
+ *    holds `wo.job.manage` and `wo.work_order.transition`, so this is the
+ *    narrower of the two authorities, not a wider one.
+ *  - `crm.customer.profile.write` — `crm.contact-add`, `crm.address-add` and
+ *    `crm.preference-set`. The bundle already carries `crm.customer.create`, so
+ *    a freshly provisioned organisation could register a customer and then never
+ *    record a telephone number, an address or a preference for it — including
+ *    for the customer whose vehicle it had just received.
+ *  - `inv.cost.view` — `inv.item-cost-history-read`, and, as a SECOND permission
+ *    read by the services and by RLS on `inv.item_cost_layers`, the unit cost on
+ *    a goods receipt line, on a stock adjustment detail and on an external
+ *    purchase part. **Owner-visible decision:** this is the one of the four that
+ *    is not obviously least privilege — the code is classified `high` and it
+ *    discloses purchase cost. It is carried anyway, and the ground is the
+ *    `inv.item.manage` and `wty.policy.manage` ground rather than the `rpt.export`
+ *    ground: withholding it is not a delay but a closure. Nobody in the
+ *    organisation could record a unit cost on anything received, so no cost layer
+ *    could ever exist, so no valuation and no margin could ever be computed, and
+ *    no cost-holding role could be delegated either. `rpt.export` stays excluded
+ *    because the bundle already holds everything it pairs with and the capability
+ *    it adds is reach; `inv.cost.view` adds a capability the organisation
+ *    otherwise has no path to at all. If the Owner prefers a workshop where cost
+ *    is a separately granted authority, the answer is to narrow it in the
+ *    organisation after provisioning, which is possible only if somebody holds it
+ *    first.
+ *  - `rec.reception.evidence.manage` — `rec.reception-condition-evidence`,
+ *    `rec.reception-evidence-binding` and `rec.reception-evidence-binding-finalize`.
+ *    The bundle already carries the whole reception path from check-in to
+ *    conversion, and this is the one step in the middle of it that nobody could
+ *    perform: the pre-service condition record a workshop is answerable for.
+ *
+ * Organisations provisioned before this widening keep the set they were given;
+ * `scripts/platform/backfill-tenant-administrator-bundle.mjs` reads this list at
+ * run time and needs no edit, so they owe ONE operator run covering all four
+ * codes — one run, not one each. That run is an operator act and is not performed
+ * by this slice, and this slice does not claim it was run anywhere.
  */
 
 export interface BootstrapRoleDefinition {
@@ -367,6 +423,10 @@ export const TENANT_ADMINISTRATOR_ROLE: BootstrapRoleDefinition = Object.freeze(
     'wo.work_order.read',
     'wo.work_order.transition',
     'wo.work_order.close',
+    // Owner directive 2026-09-17: the QA campaign's DEF-M-01. `wo.service-line-record`
+    // and `wo.required-part-record` declare it, and without it no work order in any
+    // provisioned organisation could ever state what work is on it or require a part.
+    'wo.work_order.line.manage',
     'wo.job.manage',
     'wo.job.transition',
     'wo.additional_work.request',
@@ -392,12 +452,22 @@ export const TENANT_ADMINISTRATOR_ROLE: BootstrapRoleDefinition = Object.freeze(
     // creation path, held so the receptionist persona can be established.
     'crm.customer.read',
     'crm.customer.create',
+    // Owner directive 2026-09-17: the QA campaign's DEF-T-01. `crm.contact-add`,
+    // `crm.address-add` and `crm.preference-set` declare it; without it a customer
+    // could be registered and then never given a telephone number or an address.
+    'crm.customer.profile.write',
     'crm.customer.vehicle.manage',
     'veh.vehicle.read',
     'veh.vehicle.manage',
     'rec.reception.read',
     'rec.reception.manage',
     'rec.reception.party.manage',
+    // Owner directive 2026-09-17: the QA campaign's DEF-T-12 and DEF-M-06.
+    // `rec.reception-condition-evidence`, `rec.reception-evidence-binding` and
+    // `rec.reception-evidence-binding-finalize` declare it. The bundle already
+    // carries check-in through conversion; this was the one step in the middle
+    // of that path nobody in a provisioned organisation could perform.
+    'rec.reception.evidence.manage',
     'rec.reception.authorization.verify',
     'rec.reception.signature.manage',
     'rec.reception.approve',
@@ -423,6 +493,13 @@ export const TENANT_ADMINISTRATOR_ROLE: BootstrapRoleDefinition = Object.freeze(
     'inv.item.manage',
     'inv.stock.read',
     'inv.stock.operate',
+    // Owner directive 2026-09-17: the QA campaign's DEF-T-03, and the one of the
+    // four that is an explicit Owner decision rather than an obvious correction —
+    // see the section above. `inv.item-cost-history-read` declares it, and the
+    // receipt, adjustment and external-part services read it as a second
+    // permission before they will accept a unit cost. Without it no cost layer
+    // could ever be written in a provisioned organisation, by anyone.
+    'inv.cost.view',
     // Held so the Owner can DELEGATE it: an opening batch is maker–checker
     // (`ck_opening_inventory_batches_maker`), so the administrator who counts
     // cannot also approve, and an approver role can only be built out of a
