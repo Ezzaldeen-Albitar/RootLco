@@ -594,7 +594,13 @@ describe('W9 — platform operator genesis', () => {
   });
 
   it('A3 a grantor cannot add themselves, and A4 an address already at home is refused', async () => {
-    await expect(add(addInput(EMAIL, EMAIL), `sub_${RUN}`, `sub_${RUN}`)).rejects.toMatchObject({
+    // Refused while the input is read, before a connection is opened at all.
+    expect(() => addInput(EMAIL, EMAIL)).toThrowError(/same address/);
+    // And refused again inside the transaction, for a caller that built the
+    // input some other way: the rule does not live only in the argument parser.
+    const bypass = addInput(THIRD, EMAIL);
+    bypass.operator.email = EMAIL;
+    await expect(add(bypass, `sub_${RUN}`, `sub_${RUN}`)).rejects.toMatchObject({
       exitCode: 4,
       message: expect.stringContaining('same address'),
     });
@@ -618,34 +624,50 @@ describe('W9 — platform operator genesis', () => {
 
   it("A5 an organisation's own account cannot act as grantor, and A6 nor can an unknown identity", async () => {
     // A real organisation, provisioned through the sanctioned function, with an
-    // account in it that signs in exactly the way an operator would.
-    const provisioned = await admin.query<{ result: { tenant_id: string } }>(
-      'SELECT org.provision_organization($1::jsonb, $2) AS result',
-      [
-        JSON.stringify({
-          actor_id: SYSTEM_ACTOR,
-          tenant: {
-            code: ORGANISATION,
-            display_name: 'An organisation',
-            locale: 'en',
-            timezone: 'UTC',
-          },
-          company: { code: ORGANISATION, legal_name: 'An organisation', base_currency: 'USD' },
-          branch: { code: 'main', name: 'Main', timezone: 'UTC' },
-        }),
-        `addop-fixture:${ORGANISATION}`,
-      ]
-    );
-    const organisationTenantId = provisioned.rows[0]?.result.tenant_id as string;
+    // account in it that signs in exactly the way an operator would. Both writes
+    // need an actor in the session context — the status-history trigger refuses
+    // without one — and `set_config(..., true)` is transaction-local, so this
+    // runs on one client inside one transaction.
     const administratorAddress = `administrator_${RUN}@fixture.test`;
-    const inserted = await admin.query<{ id: string }>(
-      `INSERT INTO iam.user_accounts
-         (tenant_id, identity_provider, provider_subject, email, display_name, status, created_by)
-       VALUES ($1, 'test_harness', $2, $3, 'An administrator', 'active', $4)
-       RETURNING id`,
-      [organisationTenantId, `sub_admin_${RUN}`, administratorAddress, SYSTEM_ACTOR]
-    );
-    const administratorId = inserted.rows[0]?.id as string;
+    const fixture = await admin.connect();
+    let administratorId: string;
+    try {
+      await fixture.query('BEGIN');
+      await fixture.query("SELECT set_config('app.user_id', $1, true)", [SYSTEM_ACTOR]);
+      const provisioned = await fixture.query<{ result: { tenant_id: string } }>(
+        'SELECT org.provision_organization($1::jsonb, $2) AS result',
+        [
+          JSON.stringify({
+            actor_id: SYSTEM_ACTOR,
+            tenant: {
+              code: ORGANISATION,
+              display_name: 'An organisation',
+              locale: 'en',
+              timezone: 'UTC',
+            },
+            company: { code: ORGANISATION, legal_name: 'An organisation', base_currency: 'USD' },
+            branch: { code: 'main', name: 'Main', timezone: 'UTC' },
+          }),
+          `addop-fixture:${ORGANISATION}`,
+        ]
+      );
+      const organisationTenantId = provisioned.rows[0]?.result.tenant_id as string;
+      await fixture.query("SELECT set_config('app.tenant_id', $1, true)", [organisationTenantId]);
+      const inserted = await fixture.query<{ id: string }>(
+        `INSERT INTO iam.user_accounts
+           (tenant_id, identity_provider, provider_subject, email, display_name, status, created_by)
+         VALUES ($1, 'test_harness', $2, $3, 'An administrator', 'active', $4)
+         RETURNING id`,
+        [organisationTenantId, `sub_admin_${RUN}`, administratorAddress, SYSTEM_ACTOR]
+      );
+      administratorId = inserted.rows[0]?.id as string;
+      await fixture.query('COMMIT');
+    } catch (error) {
+      await fixture.query('ROLLBACK');
+      throw error;
+    } finally {
+      fixture.release();
+    }
 
     await expect(
       add(
