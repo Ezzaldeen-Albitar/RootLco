@@ -151,7 +151,17 @@ export type OperatorLocationType = (typeof OPERATOR_LOCATION_TYPES)[number];
 export const ACTIVATION_STATES = ['active', 'inactive'] as const;
 export type ActivationState = (typeof ACTIVATION_STATES)[number];
 
-/** `MOVEMENT_TYPES` of the inventory domain, mirrored (W5). */
+/**
+ * `MOVEMENT_TYPES` of the inventory domain, mirrored (W5).
+ *
+ * The mirror is held against `ck_stock_movements_type` as the migrations leave
+ * it, not against the constraint as it was first written. `sale` was added by
+ * the counter-sale slice and was missing here, so the ledger filter offered no
+ * way to ask for a counter sale and the table printed the message key of a row
+ * it had no label for. `tests/inventory-movements.dom.test.tsx` derives the
+ * label check from these two arrays, so a value added on the server without a
+ * label fails a test rather than reaching an operator as a key.
+ */
 export const MOVEMENT_TYPES = [
   'opening',
   'issue',
@@ -160,6 +170,7 @@ export const MOVEMENT_TYPES = [
   'adjustment',
   'transfer',
   'receipt',
+  'sale',
 ] as const;
 export type MovementType = (typeof MOVEMENT_TYPES)[number];
 
@@ -173,6 +184,8 @@ export const REFERENCE_KINDS = [
   'transfer_dispatch',
   'transfer_receipt',
   'goods_receipt_line',
+  'invoice_line',
+  'sales_return',
 ] as const;
 export type ReferenceKind = (typeof REFERENCE_KINDS)[number];
 
