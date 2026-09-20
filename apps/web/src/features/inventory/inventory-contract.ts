@@ -1463,6 +1463,44 @@ interface AlertList {
   readonly asOf: string;
 }
 
+/**
+ * One configured reorder level — `ReorderLevelView` of `inv.reorder-level-list`.
+ *
+ * The three nullable narrowing fields are the row's own signature and each null
+ * MEANS something: no company is every company of the organisation, no branch is
+ * every branch of the named company, no location makes the level about the
+ * branch as a whole rather than one shelf. The screen says which of the four it
+ * is rather than showing a blank.
+ *
+ * Both quantities are exact decimal strings — `numeric(12,3)` — and nothing on
+ * this side parses, scales or reformats them.
+ */
+export interface ReorderLevel {
+  readonly id: string;
+  readonly itemId: string;
+  readonly sku: string;
+  readonly itemName: string;
+  readonly companyId: string | null;
+  readonly branchId: string | null;
+  readonly locationId: string | null;
+  readonly locationCode: string | null;
+  readonly reorderLevelQty: string;
+  readonly preferredOrderQty: string | null;
+  readonly status: string;
+  readonly retiredAt: string | null;
+  readonly recordVersion: number;
+}
+
+/** The echo of a reorder-level write; `replayed` when the call changed nothing. */
+export interface ReorderLevelEcho extends ReorderLevel {
+  readonly replayed: boolean;
+}
+
+/** `inv.reorder-level-list` — one page of levels, stamped with the read instant. */
+export interface ReorderLevelList extends AlertList {
+  readonly levels: CursorPage<ReorderLevel>;
+}
+
 /** One item whose available quantity has reached its configured reorder level. */
 export interface LowStockFinding {
   readonly reorderLevelId: string;

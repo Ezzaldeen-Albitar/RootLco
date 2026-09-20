@@ -28,6 +28,7 @@ import type {
   MaterialRequirementCancelBody,
   OpeningBatchCreateBody,
   OpeningBatchLineCreateBody,
+  ReorderLevelSetBody,
   SalesReturnCreateBody,
   StockAdjustmentApproveBody,
   StockAdjustmentCreateBody,
@@ -83,6 +84,8 @@ import {
   type OpeningBatchLine,
   type OpeningBatchSummary,
   type PartIssue,
+  type ReorderLevelEcho,
+  type ReorderLevelList,
   type RequiredPart,
   type ReservationCriteria,
   type ReservationEcho,
@@ -1689,4 +1692,98 @@ export async function readAgedInTransitAlerts(
   return readOperation<AgedInTransitAlerts>(
     '/api/v1/inventory-alerts/aged-in-transit' + branchTargetQuery(target, { limit })
   );
+}
+
+/* ------------------------------------------------------------------ *
+ * Reorder levels — what the low-stock rule reads (DEF-T-08)
+ * ------------------------------------------------------------------ */
+
+/**
+ * `inv.reorder-level-list` — every configured level, `inv.stock.read`.
+ *
+ * NOT branch-targeted: a level may name no company at all, so the list is a
+ * tenant read that the caller may NARROW by company and branch. That is why the
+ * pair travels through `query()` as a filter rather than through
+ * `branchTargetQuery` as an authorization target.
+ *
+ * Retired rows are left out unless asked for. A retired level is history — it
+ * explains why an alert used to fire — and mixing it into the live list would
+ * invite a reader to think it still governs something.
+ */
+export async function listReorderLevels(
+  filter: {
+    readonly itemId?: string | undefined;
+    readonly companyId?: string | undefined;
+    readonly branchId?: string | undefined;
+    readonly includeRetired?: boolean | undefined;
+  } = {}
+): Promise<ReadState<ReorderLevelList>> {
+  return readOperation<ReorderLevelList>(
+    '/api/v1/reorder-levels' +
+      query({
+        itemId: filter.itemId ?? null,
+        companyId: filter.companyId ?? null,
+        branchId: filter.branchId ?? null,
+        includeRetired: filter.includeRetired === true ? 'true' : null,
+        limit: 100,
+      })
+  );
+}
+
+/**
+ * `inv.reorder-level-set` — the quantity at or below which an item counts as low.
+ *
+ * Exactly one live row exists per signature, so this SETS rather than appends
+ * and a repeated call answers `replayed: true` having changed nothing. Both
+ * quantities are the exact decimal strings the operator typed; nothing here
+ * rounds, scales or reformats them.
+ */
+export async function setReorderLevel(
+  body: ReorderLevelSetBody,
+  attempt = 1
+): Promise<CreateOutcome<ReorderLevelEcho>> {
+  return write<ReorderLevelEcho>(
+    'POST',
+    '/api/v1/reorder-levels',
+    body,
+    'inventory.reorderLevels.set.success',
+    attempt,
+    { stateRefusedKey: 'inventory.reorderLevels.set.refused' }
+  );
+}
+
+/**
+ * `inv.reorder-level-retire` — stop a level governing, keep it as history.
+ *
+ * Version-guarded, so it is written out with its literal path rather than going
+ * through `write`: `ifMatch` is the LEVEL's own `recordVersion` exactly as the
+ * last read or write answered it, never a list's and never defaulted. Retiring
+ * an already-retired level changes nothing and answers `replayed: true`.
+ */
+export async function retireReorderLevel(
+  reorderLevelId: string,
+  ifMatch: number,
+  attempt = 1
+): Promise<CreateOutcome<ReorderLevelEcho>> {
+  const client = await authorizedClient();
+  if (!client) return { state: expired(attempt), created: null };
+  const result = await client.send<ReorderLevelEcho>(
+    'POST',
+    `/api/v1/reorder-levels/${encodeURIComponent(reorderLevelId)}/retirement`,
+    undefined,
+    { ifMatch }
+  );
+  if (!result.ok) {
+    return {
+      state: refusalOf(result, attempt, 'inventory.reorderLevels.retire.refused'),
+      created: null,
+    };
+  }
+  return {
+    state: {
+      ...success('inventory.reorderLevels.retire.success', attempt),
+      correlationId: result.correlationId,
+    },
+    created: result.data,
+  };
 }
