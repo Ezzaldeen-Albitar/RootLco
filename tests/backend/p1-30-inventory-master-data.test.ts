@@ -421,8 +421,16 @@ describe('declarations', () => {
     // since P1-32-PRE-134 carried the five material codes, without which no part
     // could be issued to a job once every work-order draw needs approved demand.
     // 85 since the Owner directive of 2026-09-16 carried org.company.manage and
-    // org.branch.manage for the two organisation creation operations.
-    expect(TENANT_ADMINISTRATOR_ROLE.permissionCodes).toHaveLength(85);
+    // org.branch.manage for the two organisation creation operations; and 88
+    // since the Owner directive of 2026-09-17 carried three of the four codes a
+    // QA campaign measured as permanently closed in every provisioned
+    // organisation (wo.work_order.line.manage, crm.customer.profile.write,
+    // rec.reception.evidence.manage). The fourth, inv.cost.view, stays excluded:
+    // that exclusion is a recorded decision (change control CC-12, open; register
+    // gap E-14) and reversing it is the Owner's call, so DEF-T-03 — nobody in a
+    // provisioned organisation can record a unit cost — stands measured and open.
+    expect(TENANT_ADMINISTRATOR_ROLE.permissionCodes).toHaveLength(88);
+    expect(TENANT_ADMINISTRATOR_ROLE.permissionCodes).not.toContain('inv.cost.view');
   });
 });
 

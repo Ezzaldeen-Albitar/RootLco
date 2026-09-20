@@ -872,7 +872,10 @@
         "success"
       ],
       "missingEvidence": [],
-      "tests": ["tests/backend/p1-16-customer-profile.test.ts"],
+      "tests": [
+        "tests/backend/p1-16-customer-profile.test.ts",
+        "tests/backend/p1-31-provisioning-bundle.test.ts"
+      ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/customers/[customerId]/addresses/route.ts"
     },
@@ -1146,7 +1149,10 @@
         "success"
       ],
       "missingEvidence": [],
-      "tests": ["tests/backend/p1-16-customer-profile.test.ts"],
+      "tests": [
+        "tests/backend/p1-16-customer-profile.test.ts",
+        "tests/backend/p1-31-provisioning-bundle.test.ts"
+      ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/customers/[customerId]/contacts/route.ts"
     },
@@ -1620,7 +1626,8 @@
       "missingEvidence": [],
       "tests": [
         "tests/backend/p1-16-customer-creation.test.ts",
-        "tests/backend/p1-30-tenant-bootstrap-reachability.test.ts"
+        "tests/backend/p1-30-tenant-bootstrap-reachability.test.ts",
+        "tests/backend/p1-31-provisioning-bundle.test.ts"
       ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/customers/individuals/route.ts"
@@ -1773,7 +1780,10 @@
         "success"
       ],
       "missingEvidence": [],
-      "tests": ["tests/backend/p1-16-customer-profile.test.ts"],
+      "tests": [
+        "tests/backend/p1-16-customer-profile.test.ts",
+        "tests/backend/p1-31-provisioning-bundle.test.ts"
+      ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/customers/[customerId]/preferences/route.ts"
     },
@@ -4676,6 +4686,7 @@
       ],
       "missingEvidence": [],
       "tests": [
+        "tests/backend/p1-31-provisioning-bundle.test.ts",
         "tests/backend/p1-32-inventory-operations.test.ts",
         "tests/ci/openapi-success-status.test.ts"
       ],
@@ -4907,7 +4918,10 @@
         "success"
       ],
       "missingEvidence": [],
-      "tests": ["tests/backend/p1-30-inventory-master-data.test.ts"],
+      "tests": [
+        "tests/backend/p1-30-inventory-master-data.test.ts",
+        "tests/backend/p1-31-provisioning-bundle.test.ts"
+      ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/item-categories/route.ts"
     },
@@ -4967,7 +4981,10 @@
         "success"
       ],
       "missingEvidence": [],
-      "tests": ["tests/backend/p1-32-inventory-operations.test.ts"],
+      "tests": [
+        "tests/backend/p1-31-provisioning-bundle.test.ts",
+        "tests/backend/p1-32-inventory-operations.test.ts"
+      ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/items/[itemId]/cost-history/route.ts"
     },
@@ -5007,7 +5024,10 @@
         "success"
       ],
       "missingEvidence": [],
-      "tests": ["tests/backend/p1-30-inventory-master-data.test.ts"],
+      "tests": [
+        "tests/backend/p1-30-inventory-master-data.test.ts",
+        "tests/backend/p1-31-provisioning-bundle.test.ts"
+      ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/items/route.ts"
     },
@@ -6612,7 +6632,10 @@
         "success"
       ],
       "missingEvidence": [],
-      "tests": ["tests/backend/p1-30-inventory-master-data.test.ts"],
+      "tests": [
+        "tests/backend/p1-30-inventory-master-data.test.ts",
+        "tests/backend/p1-31-provisioning-bundle.test.ts"
+      ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/stock-locations/route.ts"
     },
@@ -7381,7 +7404,10 @@
       "requiredEvidence": ["route", "service", "success", "authorization"],
       "providedEvidence": ["authorization", "route", "service", "success"],
       "missingEvidence": [],
-      "tests": ["tests/backend/p1-30-inventory-master-data.test.ts"],
+      "tests": [
+        "tests/backend/p1-30-inventory-master-data.test.ts",
+        "tests/backend/p1-31-provisioning-bundle.test.ts"
+      ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/units-of-measure/route.ts"
     },
@@ -11322,6 +11348,7 @@
         "tests/backend/p1-18-reception-evidence.test.ts",
         "tests/backend/p1-18-scope-containment.test.ts",
         "tests/backend/p1-27-reception-reads.test.ts",
+        "tests/backend/p1-31-provisioning-bundle.test.ts",
         "tests/ci/p1-28-access-gate.test.ts",
         "tests/foundation/p1-18-scoped-authorization.test.ts"
       ],
@@ -11416,6 +11443,7 @@
       "tests": [
         "tests/backend/p1-18-reception-conversion.test.ts",
         "tests/backend/p1-18-scope-containment.test.ts",
+        "tests/backend/p1-31-provisioning-bundle.test.ts",
         "tests/foundation/p1-18-scoped-authorization.test.ts"
       ],
       "classification": "Covered",
@@ -11555,6 +11583,7 @@
       "missingEvidence": [],
       "tests": [
         "tests/backend/p1-18-reception-evidence-contracts.test.ts",
+        "tests/backend/p1-31-provisioning-bundle.test.ts",
         "tests/foundation/p1-18-scoped-authorization.test.ts"
       ],
       "classification": "Covered",
@@ -11600,6 +11629,7 @@
       "missingEvidence": [],
       "tests": [
         "tests/backend/p1-18-reception-evidence-contracts.test.ts",
+        "tests/backend/p1-31-provisioning-bundle.test.ts",
         "tests/foundation/p1-18-scoped-authorization.test.ts"
       ],
       "classification": "Covered",
@@ -18942,7 +18972,10 @@
         "success"
       ],
       "missingEvidence": [],
-      "tests": ["tests/backend/p1-19-work-order-lines.test.ts"],
+      "tests": [
+        "tests/backend/p1-19-work-order-lines.test.ts",
+        "tests/backend/p1-31-provisioning-bundle.test.ts"
+      ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/work-orders/[workOrderId]/required-parts/route.ts"
     },
@@ -19022,7 +19055,10 @@
         "success"
       ],
       "missingEvidence": [],
-      "tests": ["tests/backend/p1-19-work-order-lines.test.ts"],
+      "tests": [
+        "tests/backend/p1-19-work-order-lines.test.ts",
+        "tests/backend/p1-31-provisioning-bundle.test.ts"
+      ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/work-orders/[workOrderId]/service-lines/route.ts"
     },
