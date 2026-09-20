@@ -1768,9 +1768,24 @@ export async function readAgedInTransitAlerts(
  * `inv.reorder-level-list` — every configured level, `inv.stock.read`.
  *
  * NOT branch-targeted: a level may name no company at all, so the list is a
- * tenant read that the caller may NARROW by company and branch. That is why the
- * pair travels through `query()` as a filter rather than through
- * `branchTargetQuery` as an authorization target.
+ * tenant read and the whole organisation's levels come back on one page.
+ *
+ * ## No company or branch is sent from here (DEF-T-15)
+ *
+ * The route also accepts `companyId` and `branchId` as narrowing filters, and
+ * this adapter used to name both in the object it handed to `query()`. It could
+ * never work: `query()` refuses those names OUTRIGHT — the scope-key guard runs
+ * before the null-and-undefined skip, so naming the key threw whatever the value
+ * was. The throw escaped this `'use server'` module, the screen's own action
+ * answered HTTP 500, and the setup screen rendered its reorder-level section
+ * around a value that never arrived — no table, no empty-case sentence and no
+ * message. Every other reader of a level was unaffected, which is why the write
+ * and the attention screen looked right while this one list stayed blank.
+ *
+ * The guard is correct and stays: scope is resolved server-side from the
+ * session. So the narrowing is simply not asked for. No screen narrows by
+ * company or branch today, and one that needs to has to go through a named
+ * resource-selector helper rather than through `query()`.
  *
  * Retired rows are left out unless asked for. A retired level is history — it
  * explains why an alert used to fire — and mixing it into the live list would
@@ -1779,8 +1794,6 @@ export async function readAgedInTransitAlerts(
 export async function listReorderLevels(
   filter: {
     readonly itemId?: string | undefined;
-    readonly companyId?: string | undefined;
-    readonly branchId?: string | undefined;
     readonly includeRetired?: boolean | undefined;
   } = {}
 ): Promise<ReadState<ReorderLevelList>> {
@@ -1788,8 +1801,6 @@ export async function listReorderLevels(
     '/api/v1/reorder-levels' +
       query({
         itemId: filter.itemId ?? null,
-        companyId: filter.companyId ?? null,
-        branchId: filter.branchId ?? null,
         includeRetired: filter.includeRetired === true ? 'true' : null,
         limit: 100,
       })

@@ -47,6 +47,7 @@ const {
   listOpeningBatches,
   listPartIssues,
   listRequiredParts,
+  listReorderLevels,
   listReservations,
   listUnitsOfMeasure,
   readOpeningBatch,
@@ -868,5 +869,59 @@ describe('a refused sale price says what the server actually refused', () => {
     const outcome = await createItemCategory({ code: 'brakes', name: 'Brakes' });
     expect(outcome.state.messageKey).toBe('state.notFound.title');
     expect(outcome.state.fieldErrors).toBeUndefined();
+  });
+});
+
+/**
+ * DEF-T-15 — the reorder-level list, which never left this process.
+ *
+ * The setup screen records a level and then re-reads the list, and the list
+ * stayed blank: no table, no empty-case sentence, no message. The cause was
+ * here rather than on the screen or in the service. This adapter named
+ * `companyId` and `branchId` among the parameters it handed to `query()`, and
+ * `query()` refuses those names OUTRIGHT — its scope-key guard runs before the
+ * null-and-undefined skip, so naming the key threw whatever the value was. The
+ * throw escaped the `'use server'` module as an HTTP 500 and the section
+ * rendered around a value that never arrived.
+ *
+ * The DOM suite mocks this module wholesale, so only a test that calls the real
+ * adapter can see it. These cases are that test: the first one alone fails on
+ * the old code, with the guard's own error rather than an assertion.
+ */
+describe('the reorder-level list is read as a tenant read, asserting no scope', () => {
+  const LEVEL_ID = '99999999-9999-4999-8999-999999999999';
+
+  it('answers the levels instead of throwing on a scope name the builder refuses', async () => {
+    get.mockResolvedValue(
+      ok({
+        asOf: '2026-09-20T08:00:00Z',
+        levels: { items: [{ id: LEVEL_ID }], nextCursor: null, hasMore: false },
+      })
+    );
+    const state = await listReorderLevels();
+    expect(state.status).toBe('ok');
+    const path = String(get.mock.calls[0]?.[0]);
+    expect(path.startsWith('/api/v1/reorder-levels')).toBe(true);
+    expect(params(path).get('companyId')).toBeNull();
+    expect(params(path).get('branchId')).toBeNull();
+    expect(params(path).get('limit')).toBe('100');
+  });
+
+  it('leaves retired levels out unless they are asked for, and narrows by item', async () => {
+    get.mockResolvedValue(
+      ok({ asOf: 'now', levels: { items: [], nextCursor: null, hasMore: false } })
+    );
+    await listReorderLevels();
+    expect(params(String(get.mock.calls[0]?.[0])).get('includeRetired')).toBeNull();
+
+    await listReorderLevels({ itemId: ITEM_ID, includeRetired: true });
+    const second = params(String(get.mock.calls[1]?.[0]));
+    expect(second.get('includeRetired')).toBe('true');
+    expect(second.get('itemId')).toBe(ITEM_ID);
+  });
+
+  it('maps a refusal to a state the screen can say something about', async () => {
+    get.mockResolvedValue(failure('forbidden'));
+    expect((await listReorderLevels()).status).toBe('denied');
   });
 });

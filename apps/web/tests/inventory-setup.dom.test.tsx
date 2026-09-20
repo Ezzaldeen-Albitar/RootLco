@@ -945,6 +945,76 @@ describe('reorder levels', () => {
     expect(setReorderLevel).not.toHaveBeenCalled();
   });
 
+  /**
+   * DEF-T-15 — the recorded level was not listed back on the screen that
+   * recorded it. The cause was the adapter (`inventory-api.test.ts` holds the
+   * case that fails on the old code); what this case pins is the screen's half
+   * of the promise: the row the operator just recorded is on the screen when
+   * the re-read answers, with no reload and nothing else pressed.
+   */
+  it('shows the level it just recorded, on the same screen and without a reload', async () => {
+    const user = userEvent.setup();
+    listReorderLevels.mockResolvedValue(
+      okRead({
+        asOf: '2026-09-20T08:00:00Z',
+        levels: { items: [], nextCursor: null, hasMore: false },
+      })
+    );
+    setReorderLevel.mockImplementation(async () => {
+      // The re-read the screen makes after a successful set is the one that
+      // answers with the new row, exactly as the service would.
+      listReorderLevels.mockResolvedValue(
+        okRead({
+          asOf: '2026-09-20T08:05:00Z',
+          levels: { items: [reorderLevel], nextCursor: null, hasMore: false },
+        })
+      );
+      return success({ ...reorderLevel, replayed: false }, 'inventory.reorderLevels.set.success');
+    });
+    renderScreen({ canManage: true, canReadStock: true });
+    expect(await screen.findByText(EN['inventory.reorderLevels.none'] as string)).toBeVisible();
+    expect(screen.queryByText('Front brake pads')).toBeNull();
+
+    const panel = setForm();
+    await user.click(
+      within(panel).getByRole('button', {
+        name: EN['inventory.reorderLevels.items.find'] as string,
+      })
+    );
+    await within(panel).findByRole('option', { name: 'BRK-001 — Front brake pads' });
+    await user.selectOptions(
+      within(panel).getByLabelText(labelled('inventory.reorderLevels.set.item')),
+      ITEM_ID
+    );
+    await user.type(
+      within(panel).getByLabelText(labelled('inventory.reorderLevels.set.level')),
+      '4.000'
+    );
+    await user.click(
+      within(panel).getByRole('button', {
+        name: EN['inventory.reorderLevels.set.submit'] as string,
+      })
+    );
+
+    expect(await screen.findByText('Front brake pads')).toBeVisible();
+    expect(screen.getByText('4.000')).toBeVisible();
+    expect(screen.queryByText(EN['inventory.reorderLevels.none'] as string)).toBeNull();
+  });
+
+  /**
+   * DEF-T-15, the other half: the read failing outright left the section
+   * rendering NOTHING — no table, no empty-case sentence, no word about why —
+   * and silence reads to an operator as "no level is recorded".
+   */
+  it('says the levels could not be read when the read never answers at all', async () => {
+    listReorderLevels.mockRejectedValue(new Error('the action did not answer'));
+    renderScreen({ canManage: true, canReadStock: true });
+    expect(
+      await screen.findByText(EN['inventory.reorderLevels.unavailable'] as string)
+    ).toBeVisible();
+    expect(screen.queryByText(EN['inventory.reorderLevels.none'] as string)).toBeNull();
+  });
+
   it('retires a level with the LEVEL own version, then reads the list again', async () => {
     const user = userEvent.setup();
     listReorderLevels.mockResolvedValue(

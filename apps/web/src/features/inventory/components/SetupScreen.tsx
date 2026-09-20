@@ -1031,21 +1031,34 @@ function ReorderLevelsSection({
   useEffect(() => {
     if (!canReadStock) return;
     let live = true;
-    void listReorderLevels().then((state) => {
-      if (!live) return;
-      if (state.status === 'ok') {
-        setLevels(state.data.levels.items);
-        setTruncated(state.data.levels.hasMore);
-        setRefused(null);
-      } else {
+    void listReorderLevels()
+      .then((state) => {
+        if (!live) return;
+        if (state.status === 'ok') {
+          setLevels(state.data.levels.items);
+          setTruncated(state.data.levels.hasMore);
+          setRefused(null);
+        } else {
+          setLevels(null);
+          setRefused(
+            state.status === 'denied'
+              ? 'inventory.reorderLevels.refused'
+              : 'inventory.reorderLevels.unavailable'
+          );
+        }
+      })
+      // A read that never answers at all — the action itself failing rather
+      // than the operation refusing — used to leave this section rendering
+      // nothing whatsoever (DEF-T-15): no table, no empty-case sentence and no
+      // word about why. Silence reads to an operator as "no level is recorded",
+      // which is the one thing it does not mean, so the same "could not be read
+      // just now" sentence a transport failure earns is said here too.
+      .catch(() => {
+        if (!live) return;
         setLevels(null);
-        setRefused(
-          state.status === 'denied'
-            ? 'inventory.reorderLevels.refused'
-            : 'inventory.reorderLevels.unavailable'
-        );
-      }
-    });
+        setTruncated(false);
+        setRefused('inventory.reorderLevels.unavailable');
+      });
     return () => {
       live = false;
     };
