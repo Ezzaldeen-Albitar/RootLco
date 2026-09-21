@@ -421,6 +421,40 @@ describe('Arabic, right to left', () => {
       screen.getByRole('button', { name: AR['pricing.lookup.submit'] as string })
     ).toBeVisible();
   });
+
+  it('states an unsupported currency in Arabic, beside the same box', async () => {
+    createPriceList.mockResolvedValue({
+      state: {
+        status: 'invalid',
+        messageKey: 'form.formError',
+        fieldErrors: { currency: 'form.violation.unsupported_currency' },
+        attempt: 1,
+      },
+      created: null,
+    });
+    const user = userEvent.setup();
+    renderRtl(
+      <PricingScreen
+        locale="ar"
+        messages={ar}
+        canManage={true}
+        canReadBranches={false}
+        canReadServices={false}
+      />
+    );
+    await user.click(screen.getByRole('button', { name: AR['pricing.list.create'] as string }));
+    const form = await screen.findByRole('form', { name: AR['pricing.create.title'] as string });
+    const arLabelled = (key: string) => new RegExp(`^${escape(AR[key] as string)}`);
+    await user.type(within(form).getByLabelText(arLabelled('pricing.create.code')), 'RETAIL-2');
+    await user.type(within(form).getByLabelText(arLabelled('pricing.create.name')), 'Retail two');
+    await user.type(within(form).getByLabelText(arLabelled('pricing.create.currency')), 'JOD');
+    await user.click(
+      within(form).getByRole('button', { name: AR['pricing.create.submit'] as string })
+    );
+    expect(
+      await within(form).findByText(AR['form.violation.unsupported_currency'] as string)
+    ).toBeVisible();
+  });
 });
 
 /* -------------------------------------------------------------------- *
