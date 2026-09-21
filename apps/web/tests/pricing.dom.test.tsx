@@ -214,6 +214,32 @@ describe('creating, offered only to those who may', () => {
     await waitFor(() => expect(push).toHaveBeenCalledWith('/en/pricing/new-id'));
   });
 
+  it('shows an unsupported currency beside the currency box, with the code still typed', async () => {
+    createPriceList.mockResolvedValue({
+      state: {
+        status: 'invalid',
+        messageKey: 'form.formError',
+        fieldErrors: { currency: 'form.violation.unsupported_currency' },
+        attempt: 1,
+      },
+      created: null,
+    });
+    const user = userEvent.setup();
+    renderScreen({ canManage: true });
+    await user.click(screen.getByRole('button', { name: EN['pricing.list.create'] as string }));
+    const form = await screen.findByRole('form', { name: EN['pricing.create.title'] as string });
+    await user.type(within(form).getByLabelText(labelled('pricing.create.code')), 'RETAIL-2');
+    await user.type(within(form).getByLabelText(labelled('pricing.create.name')), 'Retail two');
+    await user.type(within(form).getByLabelText(labelled('pricing.create.currency')), 'JOD');
+    await user.click(
+      within(form).getByRole('button', { name: EN['pricing.create.submit'] as string })
+    );
+    expect(
+      await within(form).findByText(EN['form.violation.unsupported_currency'] as string)
+    ).toBeVisible();
+    expect(within(form).getByLabelText(labelled('pricing.create.name'))).toHaveValue('Retail two');
+  });
+
   it('refuses a malformed currency before any request', async () => {
     const user = userEvent.setup();
     renderScreen({ canManage: true });

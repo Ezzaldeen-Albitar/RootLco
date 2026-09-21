@@ -408,6 +408,30 @@ describe('the chain, in order', () => {
     expect(within(lines).getByText('12.000')).toBeVisible();
   });
 
+  it('says a cell already counted is already counted, beside the location, keeping the quantity', async () => {
+    createOpeningBatchLine.mockResolvedValue({
+      state: {
+        status: 'conflict',
+        messageKey: 'form.formError',
+        fieldErrors: { locationId: 'form.violation.duplicate_cell' },
+        attempt: 1,
+      },
+      created: null,
+    });
+    const user = userEvent.setup();
+    renderScreen();
+    await chooseBranch(user);
+    await openBatch(user);
+    await addLine(user);
+    const panel = form('inventory.opening.line.heading');
+    expect(
+      await within(panel).findByText(EN['form.violation.duplicate_cell'] as string)
+    ).toBeVisible();
+    expect(within(panel).getByLabelText(labelled('inventory.opening.line.quantity'))).toHaveValue(
+      '12.000'
+    );
+  });
+
   it('refuses a zero or malformed quantity before sending anything', async () => {
     const user = userEvent.setup();
     renderScreen();

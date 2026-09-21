@@ -331,6 +331,83 @@ describe('the start screen — origin XOR', () => {
     });
   });
 
+  it('states a refused receiving employee in the panel that names one, keeping the choice', async () => {
+    // `rec.reception-create` publishes `body.receivingEmployeeId`. Nothing on
+    // this form read the field errors, so the sentence reached nobody and the
+    // operator was left with the shared banner and four panels to guess between.
+    createReception.mockResolvedValue({
+      status: 'invalid',
+      messageKey: 'form.formError',
+      fieldErrors: { receivingEmployeeId: 'form.violation.ineligible_reference' },
+      correlationId: 'corr-422',
+      attempt: 1,
+    });
+    const user = userEvent.setup();
+    renderLtr(<CheckInStartScreen {...startProps()} />);
+
+    await user.click(screen.getByRole('radio', { name: /Appointment/ }));
+    await user.click(screen.getByText(EN['receptions.checkIn.loadAppointments']!));
+    await user.click(await screen.findByText(/Layla Haddad/));
+    await user.click(screen.getByRole('button', { name: EN['receptions.checkIn.submit']! }));
+
+    const sentence = await screen.findByText(EN['form.violation.ineligible_reference']!);
+    expect(sentence).toBeInTheDocument();
+    // Beside the employee panel, not at the foot of the form.
+    expect(
+      sentence.closest('fieldset')?.textContent?.includes(EN['receptions.checkIn.employeeLegend']!)
+    ).toBe(true);
+    // The appointment the operator chose is still chosen.
+    expect(screen.getByText(/Layla Haddad/)).toBeInTheDocument();
+  });
+
+  it('states a refused branch in the panel the branch is chosen in', async () => {
+    createReception.mockResolvedValue({
+      status: 'invalid',
+      messageKey: 'form.formError',
+      fieldErrors: { branchId: 'form.violation.incoherent_reference' },
+      correlationId: 'corr-422',
+      attempt: 1,
+    });
+    const user = userEvent.setup();
+    renderLtr(<CheckInStartScreen {...startProps()} />);
+
+    await user.click(screen.getByRole('radio', { name: /Appointment/ }));
+    await user.click(screen.getByText(EN['receptions.checkIn.loadAppointments']!));
+    await user.click(await screen.findByText(/Layla Haddad/));
+    await user.click(screen.getByRole('button', { name: EN['receptions.checkIn.submit']! }));
+
+    const sentence = await screen.findByText(EN['form.violation.incoherent_reference']!);
+    expect(
+      sentence.closest('fieldset')?.textContent?.includes(EN['receptions.checkIn.targetLegend']!)
+    ).toBe(true);
+  });
+
+  it('states the refused receiving employee in Arabic, in the same panel', async () => {
+    createReception.mockResolvedValue({
+      status: 'invalid',
+      messageKey: 'form.formError',
+      fieldErrors: { receivingEmployeeId: 'form.violation.ineligible_reference' },
+      correlationId: 'corr-422',
+      attempt: 1,
+    });
+    const user = userEvent.setup();
+    renderRtl(<CheckInStartScreen {...startProps({ messages: ar as typeof en })} />);
+
+    // The accessible name carries the option's description too, so the label is
+    // matched as a prefix rather than whole.
+    await user.click(
+      screen.getByRole('radio', { name: new RegExp(`^${AR['receptions.origin.appointment']!}`) })
+    );
+    await user.click(screen.getByText(AR['receptions.checkIn.loadAppointments']!));
+    await user.click(await screen.findByText(/Layla Haddad/));
+    await user.click(screen.getByRole('button', { name: AR['receptions.checkIn.submit']! }));
+
+    const sentence = await screen.findByText(AR['form.violation.ineligible_reference']!);
+    expect(
+      sentence.closest('fieldset')?.textContent?.includes(AR['receptions.checkIn.employeeLegend']!)
+    ).toBe(true);
+  });
+
   it('defaults the receiving employee to the operator, and states what the picker reads', () => {
     renderLtr(<CheckInStartScreen {...startProps()} />);
     expect(

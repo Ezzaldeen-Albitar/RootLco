@@ -386,6 +386,42 @@ describe('a rule on a draft carries the canonical amount string', () => {
     await waitFor(() => expect(listPriceRules).toHaveBeenCalledWith(LIST_ID, DRAFT_ID));
   });
 
+  it('shows a duplicate rule refusal beside the priority, with the amount still typed', async () => {
+    recordPriceRule.mockResolvedValue({
+      state: {
+        status: 'conflict',
+        messageKey: 'form.formError',
+        fieldErrors: { priority: 'form.violation.duplicate_signature' },
+        attempt: 1,
+      },
+      created: null,
+    });
+    const user = userEvent.setup();
+    renderDetail();
+    const region = rulesRegion();
+    const form = await within(region).findByRole('form', {
+      name: EN['pricing.rule.heading'] as string,
+    });
+    await user.type(
+      within(form).getByLabelText(labelled('pricing.picker.serviceIdField')),
+      SERVICE_ID
+    );
+    await user.type(within(form).getByLabelText(labelled('pricing.rule.amount')), '12.5');
+    await user.type(within(form).getByLabelText(labelled('pricing.rule.priority')), '5');
+    await user.click(
+      within(form).getByRole('button', { name: EN['pricing.rule.submit'] as string })
+    );
+    expect(
+      await within(form).findByText(EN['form.violation.duplicate_signature'] as string)
+    ).toBeVisible();
+    // The money control canonicalises what was typed; it is still the operator's
+    // figure, and it was not cleared by the refusal.
+    expect(
+      (within(form).getByLabelText(labelled('pricing.rule.amount')) as HTMLInputElement).value
+    ).toMatch(/^12\.5(000)?$/);
+    expect(within(form).getByLabelText(labelled('pricing.rule.priority'))).toHaveValue('5');
+  });
+
   it('refuses a branch without its company before any request', async () => {
     const user = userEvent.setup();
     renderDetail();

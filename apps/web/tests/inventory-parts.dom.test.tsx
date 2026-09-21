@@ -879,6 +879,48 @@ describe('a work-order draw needs a requirement', () => {
     });
   });
 
+  it('states a reservation drawn on another service line beside the requirement, keeping the entry', async () => {
+    // The refusal is published against `body.materialRequirementId`, and the
+    // requirement note is the only place on this form that names one.
+    const user = userEvent.setup();
+    listMaterialRequirements.mockImplementation(async () =>
+      okRead({ items: [materialRequirement()], nextCursor: null, hasMore: false })
+    );
+    createReservation.mockImplementation(async () => ({
+      state: {
+        status: 'invalid',
+        messageKey: 'form.formError',
+        fieldErrors: { materialRequirementId: 'form.violation.other_requirement' },
+        attempt: 1,
+      },
+      created: null,
+    }));
+    renderScreen({ canOperate: true, canReadWorkOrder: false });
+
+    await user.click(
+      await screen.findByRole('button', { name: EN['inventory.material.use'] as string })
+    );
+    await user.click(
+      screen.getByRole('button', { name: EN['inventory.parts.reserve.open'] as string })
+    );
+    const form = await reserveForm();
+    await user.selectOptions(
+      within(form).getByLabelText(labelled('inventory.reserve.location')),
+      LOCATION_ID
+    );
+    await user.type(within(form).getByLabelText(labelled('inventory.reserve.quantity')), '1.000');
+    await user.click(
+      within(form).getByRole('button', { name: EN['inventory.parts.reserve.submit'] as string })
+    );
+
+    expect(
+      await within(form).findByText(EN['form.violation.other_requirement'] as string)
+    ).toBeVisible();
+    expect(within(form).getByLabelText(labelled('inventory.reserve.quantity'))).toHaveValue(
+      '1.000'
+    );
+  });
+
   it('renders a refused draw as the reason the server published, with its next step', async () => {
     const user = userEvent.setup();
     listMaterialRequirements.mockImplementation(async () =>

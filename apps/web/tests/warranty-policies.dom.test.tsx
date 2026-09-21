@@ -367,6 +367,41 @@ describe('creating a plan is drawn on the administration code and on nothing els
     expect(createWarrantyPolicy).not.toHaveBeenCalled();
   });
 
+  it('shows a refused company beside the company box, with the reference still typed', async () => {
+    PERMISSIONS = [READ, MANAGE];
+    createWarrantyPolicy.mockResolvedValue({
+      status: 'invalid',
+      code: 'ERR-VAL-001',
+      rule: 'unknown_company',
+      messageKey: 'form.formError',
+      fieldErrors: { companyId: 'form.violation.unknown_company' },
+      attempt: 1,
+    });
+    const user = userEvent.setup();
+    await renderListPage();
+    await user.type(
+      screen.getByRole('textbox', { name: labelled('warranty.common.companyIdField') }),
+      COMPANY_ID
+    );
+    await user.type(
+      screen.getByRole('textbox', { name: labelled('warranty.policies.codeField') }),
+      'standard_12'
+    );
+    await user.type(
+      screen.getByRole('textbox', { name: labelled('warranty.policies.nameField') }),
+      'Standard cover'
+    );
+    await user.click(
+      screen.getByRole('button', { name: EN['warranty.policies.createSubmit'] as string })
+    );
+    expect(
+      await screen.findByText(EN['form.violation.unknown_company'] as string)
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('textbox', { name: labelled('warranty.policies.codeField') })
+    ).toHaveValue('standard_12');
+  });
+
   it('reads the list again after a plan is created, and links to what came back', async () => {
     // Nothing is inserted into the rows on screen from the request that was sent.
     PERMISSIONS = [READ, MANAGE];
