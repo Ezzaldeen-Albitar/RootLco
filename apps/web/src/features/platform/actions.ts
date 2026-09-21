@@ -596,12 +596,33 @@ export async function recordReceiptAction(
   if (!UUID.test(tenantId)) return invalid({}, 1, 'state.notFound.message');
   const parsed = receiptSchema.safeParse(input);
   if (!parsed.success) return invalid(keysOf(parsed.error), 1);
-  return send(
+  const state = await send(
     'POST',
     `${organizationPath(tenantId)}/receipts`,
     parsed.data,
     'platform.billing.receiptDone'
   );
+  /*
+   * The receipt dialog offers no currency control — the currency is the
+   * charge's, carried through — so a refusal filed against it reached a field
+   * error keyed to nothing on screen and the operator saw only the general
+   * banner. It is the whole request as far as this screen is concerned, so it
+   * goes to the banner, which the dialog already renders.
+   */
+  return statedInTheBanner(state, 'currencyCode');
+}
+
+/**
+ * Raises a refusal about a value the operator cannot edit here into the banner.
+ *
+ * `form.violation.invalid` is excluded for the reason `action-result.ts` gives:
+ * it is the honest generic, it says less than the banner already does, and
+ * promoting it would DOWNGRADE the sentence rather than sharpen it.
+ */
+function statedInTheBanner(state: ActionState, control: string): ActionState {
+  const key = state.fieldErrors?.[control];
+  if (key === undefined || key === 'form.violation.invalid') return state;
+  return { ...state, messageKey: key };
 }
 
 /** `platform.charge-void` — POST …/charges/{chargeId}/void. */

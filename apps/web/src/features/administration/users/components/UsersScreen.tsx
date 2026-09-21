@@ -271,7 +271,7 @@ export function UsersScreen({
           reasonLabel={t('admin.reason')}
           error={
             actionState.status !== 'idle' && actionState.status !== 'success'
-              ? t(actionState.messageKey ?? 'admin.actionFailed')
+              ? t(dialogErrorKey(actionState))
               : undefined
           }
           onCancel={() => setPending(null)}
@@ -288,6 +288,31 @@ export function UsersScreen({
         />
       ) : null}
     </div>
+  );
+}
+
+/**
+ * The one sentence the confirmation can show, chosen so the specific one wins.
+ *
+ * The dialog carries a single error slot and exactly one control — the written
+ * reason — so there is nowhere else for a per-control sentence to go. Two of the
+ * three refusals this dialog can meet name a control rather than the request:
+ * the reason itself (empty, over five hundred characters, or carrying characters
+ * that cannot be stored) and the chosen state (already held, or not reachable
+ * from the one the account is in). Those arrive as field errors, which nothing
+ * on this dialog rendered, so the operator was shown the general "that change
+ * was not saved" and told nothing they could act on.
+ *
+ * `reason` is preferred over `status` because it is the control they can edit
+ * here; `messageKey` remains the answer for a refusal about the whole request,
+ * which is how an account that has been switched off still explains itself.
+ */
+function dialogErrorKey(state: ActionState): string {
+  return (
+    state.fieldErrors?.reason ??
+    state.fieldErrors?.status ??
+    state.messageKey ??
+    'admin.actionFailed'
   );
 }
 

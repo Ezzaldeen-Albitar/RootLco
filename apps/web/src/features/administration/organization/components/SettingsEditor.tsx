@@ -248,6 +248,17 @@ export function SettingsEditor({
             ]}
           />
 
+          {/*
+            The refusal about this box belongs beside this box.
+
+            Both refusals it can earn name `settingValue`: the local one, when
+            the text does not read as the kind of value chosen above, and the
+            server's, when the stored setting refuses the value against its own
+            declared kind. Neither was rendered anywhere — the banner shows the
+            whole-request sentence only — so an operator was refused with nothing
+            beside the control they had to change, and what they had typed stayed
+            in the box with no mark on it.
+          */}
           <TextAreaField
             label={t('organization.setting.value')}
             description={t('organization.setting.valueHint')}
@@ -257,6 +268,7 @@ export function SettingsEditor({
             onChange={(event) =>
               setForm((current) => ({ ...current, settingValue: event.target.value }))
             }
+            error={state.fieldErrors?.settingValue ? t(state.fieldErrors.settingValue) : undefined}
           />
 
           <CheckboxField

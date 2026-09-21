@@ -1634,6 +1634,39 @@ describe('the plan catalogue', () => {
     expect(typeof input.termMonths).toBe('number');
   });
 
+  /*
+   * `plan_document` — `platform/application/subscription-service.ts:566`,
+   * against `body`. It names no control because it cannot: the refusal is the
+   * plan document as a whole, an entitlement naming a feature that is not one
+   * the platform has or a limit outside the range its column admits. A
+   * whole-request violation travels to the banner, which this dialog draws.
+   */
+  it('shows the whole-plan refusal in the dialog banner, with what was typed still there', async () => {
+    createPlanAction.mockResolvedValue({
+      status: 'invalid',
+      messageKey: 'form.violation.plan_document',
+      correlationId: 'c-plan',
+      attempt: 1,
+    });
+    renderLtr(<PlansScreen locale="en" messages={messages} plans={[plan]} />);
+    await userEvent.click(screen.getByRole('button', { name: L('platform.plans.new') }));
+    const dialog = await screen.findByRole('dialog');
+
+    const code = within(dialog).getByLabelText(new RegExp(`^${L('platform.plans.code')}`));
+    await userEvent.type(code, 'test_plan_three');
+    await userEvent.type(
+      within(dialog).getByLabelText(new RegExp(`^${L('platform.plans.name')}`)),
+      'Test Plan Three'
+    );
+    fireEvent.change(within(dialog).getByLabelText(new RegExp(`^${L('platform.plans.from')}`)), {
+      target: { value: '2027-01-01' },
+    });
+    await userEvent.click(within(dialog).getByRole('button', { name: L('platform.save') }));
+
+    expect(await within(dialog).findByText(L('form.violation.plan_document'))).toBeVisible();
+    expect(code).toHaveValue('test_plan_three');
+  });
+
   it('edits under the version the operator was looking at, and freezes the code', async () => {
     updatePlanAction.mockResolvedValue({
       status: 'success',
@@ -2130,6 +2163,57 @@ describe('the two refusals are distinct, and mark different fields', () => {
     expect(next).toHaveAttribute('aria-invalid', 'true');
     expect(current).not.toHaveAttribute('aria-invalid');
     expect(screen.queryByTestId('account-password-done')).toBeNull();
+  });
+});
+
+describe('a ceiling the identity provider never sees', () => {
+  /*
+   * `too_long` — `iam/domain/credential-policy.ts:85`, against
+   * `body.newPassword`. The API bounds a new password from ABOVE only, because
+   * an unbounded secret is an unbounded input to the provider's hashing routine;
+   * strength stays the provider's decision. The sentence says only that what was
+   * entered is longer than allowed, which is true at every place the token is
+   * published and tells nobody anything about the rule's limit.
+   */
+  it('marks the new password, says it is too long, and leaves the other fields alone', async () => {
+    changeOwnPasswordAction.mockResolvedValue({
+      status: 'invalid',
+      messageKey: 'form.formError',
+      fieldErrors: { newPassword: 'form.violation.too_long' },
+      correlationId: 'c-3',
+      attempt: 1,
+    });
+    renderAccount();
+    const user = await fillAccount([ACCOUNT_CURRENT, ACCOUNT_NEXT, ACCOUNT_NEXT]);
+    await user.click(screen.getByRole('button', { name: L('platform.account.submit') }));
+
+    await waitFor(() =>
+      expect(screen.getAllByText(L('form.violation.too_long')).length).toBeGreaterThan(0)
+    );
+    const [current, next] = accountFields();
+    expect(next).toHaveAttribute('aria-invalid', 'true');
+    expect(current).not.toHaveAttribute('aria-invalid');
+    // Nothing the operator typed is thrown away by a refusal they can correct.
+    expect(current?.value).toBe(ACCOUNT_CURRENT);
+    expect(next?.value).toBe(ACCOUNT_NEXT);
+  });
+
+  it('says it in Arabic on an Arabic screen', async () => {
+    changeOwnPasswordAction.mockResolvedValue({
+      status: 'invalid',
+      messageKey: 'form.formError',
+      fieldErrors: { newPassword: 'form.violation.too_long' },
+      correlationId: 'c-4',
+      attempt: 1,
+    });
+    renderAccount('ar');
+    const user = await fillAccount([ACCOUNT_CURRENT, ACCOUNT_NEXT, ACCOUNT_NEXT]);
+    await user.click(screen.getByRole('button', { name: AR['platform.account.submit'] as string }));
+
+    const arabic = AR['form.violation.too_long'] as string;
+    await waitFor(() => expect(screen.getAllByText(arabic).length).toBeGreaterThan(0));
+    expect(arabic).toMatch(/[؀-ۿ]/);
+    expect(arabic).not.toBe(L('form.violation.too_long'));
   });
 });
 

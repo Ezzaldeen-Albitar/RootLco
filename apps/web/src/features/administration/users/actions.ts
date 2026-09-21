@@ -210,7 +210,22 @@ async function mutate(
   });
 
   if (!result.ok) {
-    if (result.kind === 'validation' && options.messageForValidation) {
+    const state = fromFailure(
+      result,
+      1,
+      result.kind === 'forbidden' ? 'state.denied.title' : undefined
+    );
+    // The screen's own sentence is a FALLBACK, not an override. Activation is
+    // refused for more than one reason, and only one of them is "the invitation
+    // has not been accepted": the service also refuses when the account has been
+    // switched off, and that refusal states itself. Replacing every validation
+    // failure with the fixed sentence told the operator the wrong reason and
+    // sent them to chase an acceptance that had already happened.
+    if (
+      result.kind === 'validation' &&
+      options.messageForValidation &&
+      !statesItsOwnReason(state)
+    ) {
       return {
         status: 'invalid',
         messageKey: options.messageForValidation,
@@ -218,9 +233,23 @@ async function mutate(
         attempt: 1,
       };
     }
-    return fromFailure(result, 1, result.kind === 'forbidden' ? 'state.denied.title' : undefined);
+    return state;
   }
   return success('admin.saved', 1);
+}
+
+/**
+ * Whether the refusal arrived carrying a sentence of its own.
+ *
+ * `fromFailure` promotes the first whole-request violation the catalogue has a
+ * sentence for into `messageKey`, and deliberately skips
+ * `form.violation.invalid` — the honest generic — so an uncatalogued token
+ * cannot downgrade a banner. That is exactly the distinction wanted here, so it
+ * is read off the key rather than re-derived from the violations.
+ */
+function statesItsOwnReason(state: ActionState): boolean {
+  const key = state.messageKey;
+  return key !== undefined && key.startsWith('form.violation.') && key !== 'form.violation.invalid';
 }
 
 // --- role grants and where they apply ----------------------------------------

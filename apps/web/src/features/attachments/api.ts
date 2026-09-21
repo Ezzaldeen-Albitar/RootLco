@@ -181,6 +181,33 @@ export interface CaptureState extends ActionState {
 }
 
 /**
+ * Controls the API names when what it is really refusing is the chosen FILE.
+ *
+ * The capture surfaces offer one control — the file picker — and this module's
+ * own refusals are already filed under `file` (`attachments.capture.empty`,
+ * `attachments.capture.tooLarge`). The service names the part of the request
+ * instead: the declared kind, the declared size, or the authorization the second
+ * call carries. None of those three is a control anybody can see, so the
+ * sentence landed in a field error keyed to nothing and the operator was left
+ * with the general "something went wrong" over a file the workshop simply
+ * cannot accept.
+ *
+ * Re-filed under `file`, and raised to the banner as well, because the capture
+ * panels render the banner and have no per-control slot of their own.
+ */
+const FILE_CONTROLS: readonly string[] = ['contentType', 'byteSize', 'uploadToken'];
+
+function aboutTheChosenFile(state: CaptureState): CaptureState {
+  const errors = state.fieldErrors;
+  if (errors === undefined) return state;
+  const stated = FILE_CONTROLS.map((control) => errors[control]).find(
+    (key) => key !== undefined && key !== 'form.violation.invalid'
+  );
+  if (stated === undefined) return state;
+  return { ...state, messageKey: stated, fieldErrors: { ...errors, file: stated } };
+}
+
+/**
  * Authorize, upload and register one piece of evidence.
  *
  * THREE steps in one Server Action, because they are one act and a half-finished
@@ -217,7 +244,7 @@ export async function captureDocument(input: CaptureInput, attempt = 1): Promise
     '/api/v1/attachments/upload-authorizations',
     { ...parsed.data, capturedAt: undefined, byteSize }
   );
-  if (!authorized.ok) return fromFailure(authorized, attempt);
+  if (!authorized.ok) return aboutTheChosenFile(fromFailure(authorized, attempt));
 
   // The ceiling the server just published for this category. Checked here so a
   // file that cannot be accepted is refused before its bytes cross a network,
@@ -247,7 +274,7 @@ export async function captureDocument(input: CaptureInput, attempt = 1): Promise
     byteSize,
     capturedAt: parsed.data.capturedAt ?? null,
   });
-  if (!registered.ok) return fromFailure(registered, attempt);
+  if (!registered.ok) return aboutTheChosenFile(fromFailure(registered, attempt));
 
   return {
     status: 'success',

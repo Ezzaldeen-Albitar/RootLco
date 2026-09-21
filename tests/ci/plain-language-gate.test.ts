@@ -327,6 +327,10 @@ const INTENTIONALLY_GENERIC: Readonly<Record<string, string>> = Object.freeze({
     'the provider strength policy refused a new secret and ADR-019 forbids repeating its own ' +
     'sentence; the screens that raise it show their own wording, so a field sentence here ' +
     'would be a second, weaker authority',
+  empty_selection:
+    'the refusal is computed from the caller’s OWN permissions — every field they asked for ' +
+    'was withheld — so a specific sentence would tell a reader which fields exist but are ' +
+    'being kept from them, which is a permission-internal fact and not theirs to learn',
 });
 
 /**
@@ -344,7 +348,6 @@ const OWED: readonly string[] = Object.freeze([
   'already_assigned',
   'assignment_precondition',
   'awaiting_customer_decision',
-  'before_from',
   'before_job_created',
   'blank',
   'branch_needs_company',
@@ -353,41 +356,28 @@ const OWED: readonly string[] = Object.freeze([
   'closure_blocked',
   'closure_requires_closure_operation',
   'completion_requires_completion_operation',
-  'content_type_not_allowed',
   'context_already_assigned',
-  'control_characters',
-  'did_not_verify',
   'digest_format',
   'duplicate-active-profile',
   'duplicate-certification',
   'duplicate_cell',
   'duplicate_identifier',
   'duplicate_signature',
-  'empty_selection',
-  'empty_update',
-  'expired',
   'foreign_template',
   'future_instant',
-  'identity_disabled',
   'incoherent_reference',
   'incoherent_scope',
   'ineligible_reference',
   'inexact_line_base',
-  'invalid_length',
   'invalid_sha256',
   'invalid_state',
   'invalid_string',
-  'invalid_transition',
   'invalid_value',
   'mandatory_item_unresolved',
-  'mismatch',
-  'must_be_after_from',
   'no_items',
-  'no_state_change',
   'not-own-profile',
   'not_a_closing_state',
   'not_a_numeric_item',
-  'not_after_start',
   'not_allow_listed',
   'not_allowed',
   'not_forward_only',
@@ -402,23 +392,18 @@ const OWED: readonly string[] = Object.freeze([
   'out_of_range',
   'overlapping-window',
   'overlapping_coverage',
-  'plan_document',
   'powertrain_mismatch',
   'primary_already_assigned',
   'profile-inactive',
   'quantity',
   'refused',
   'required_for_numeric',
-  'role_archived',
   'self_review',
   'session-already-open',
-  'size_out_of_range',
   'tax_needs_company',
   'template_mismatch',
   'terminal_state',
   'token_mismatch',
-  'too_long',
-  'type_mismatch',
   'unknown_company',
   'unknown_entity_type',
   'unknown_field',
@@ -435,7 +420,6 @@ const OWED: readonly string[] = Object.freeze([
   'version_already_published',
   'version_immutable',
   'window-overlaps',
-  'window_too_wide',
 ]);
 
 /**
@@ -445,7 +429,7 @@ const OWED: readonly string[] = Object.freeze([
  * compares the list against itself, so the only way to raise the ceiling is to
  * edit this number in a diff a reviewer sees beside the tokens it admits.
  */
-const OWED_CEILING = 96;
+const OWED_CEILING = 76;
 
 describe('every rule token the API publishes has a sentence, or is on a named list', () => {
   const files = typeScriptFilesUnder(API_MODULES);
