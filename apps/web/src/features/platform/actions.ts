@@ -3,6 +3,7 @@
 import { z } from 'zod';
 import { authorizedClient } from '@/lib/api/server-client';
 import {
+  PLATFORM_DENIED_MESSAGE_KEY,
   VIOLATION_FALLBACK_KEY,
   failureMessageKey,
   overCapacityOf,
@@ -55,6 +56,21 @@ function keysOf(error: z.ZodError): Record<string, string> {
   return out;
 }
 
+/**
+ * `fromFailure`, with the console's own word for a refusal.
+ *
+ * The shared sentence for a 403 tells the reader to contact their company
+ * administrator. A platform operator has none — the authority over a console
+ * grant is the platform owner — so every write in this module names that
+ * authority instead. Nothing else changes: the key is an override, so the
+ * refusal still carries no permission code and no record identifier.
+ */
+function platformFailure(failure: ApiFailure, attempt: number): ActionState {
+  return failure.kind === 'forbidden'
+    ? fromFailure(failure, attempt, PLATFORM_DENIED_MESSAGE_KEY)
+    : fromFailure(failure, attempt);
+}
+
 async function send(
   method: 'POST' | 'PATCH',
   path: string,
@@ -63,11 +79,11 @@ async function send(
   options: { readonly ifMatch?: number } = {}
 ): Promise<ActionState> {
   const client = await authorizedClient();
-  if (!client) return { status: 'expired', messageKey: 'state.expired.title', attempt: 1 };
+  if (!client) return { status: 'expired', messageKey: 'state.expired.message', attempt: 1 };
   const result = await client.send(method, path, body, {
     ...(options.ifMatch !== undefined ? { ifMatch: options.ifMatch } : {}),
   });
-  if (!result.ok) return fromFailure(result, 1);
+  if (!result.ok) return platformFailure(result, 1);
   return success(doneKey, 1);
 }
 
@@ -160,29 +176,59 @@ const PROVISION_CONTROL_BY_PATH: Readonly<Record<string, string>> = {
   'body.branch.timezone': 'branchTimezone',
   'body.owner.email': 'ownerEmail',
   'body.owner.displayName': 'ownerDisplayName',
+  // The same control under the path the bootstrap service uses when it refuses
+  // the owner's address on its own account rather than while reading the
+  // document. Without this row the refusal had no control to sit beside and was
+  // filed nowhere the operator could see.
+  'body.email': 'ownerEmail',
   'body.subscription.plan_code': 'planCode',
   'body.subscription.effective_from': 'subscriptionStart',
 };
 
+/**
+ * A refused provisioning attempt, said as specifically as the refusal allows.
+ *
+ * Two keys are tracked, and the difference between them is the whole point.
+ * `formKey` is a stated reason that named NO control, so the banner is the only
+ * place it can appear. `statedKey` is the first stated reason wherever it
+ * landed, control or not.
+ *
+ * The conflict branch used to answer `platform.provision.conflict` for every
+ * 409, unconditionally. That sentence is the honest one when the service says
+ * only "this conflicts" — but the service also refuses for reasons it names, and
+ * a named reason was being replaced by the generic one on its way to the screen.
+ * So a stated reason now wins, and a conflict the service did not explain still
+ * gets the fixed sentence. `violationMessageKey` decides what "stated" means: a
+ * token the catalogue carries a sentence for. A token it does not becomes
+ * `VIOLATION_FALLBACK_KEY`, which is excluded here, so an unrecognised token
+ * cannot quietly downgrade the banner to the generic violation wording.
+ *
+ * The non-conflict branch is unchanged, deliberately. There a stated reason that
+ * DID name a control already sits beside that control, and repeating it in the
+ * banner would say the same thing twice about a field the operator is looking
+ * at.
+ */
 function provisionFailure(failure: ApiFailure, attempt: number): ProvisionState {
   const fieldErrors: Record<string, string> = {};
   let formKey: string | null = null;
+  let statedKey: string | null = null;
   for (const violation of failure.problem?.violations ?? []) {
     if (typeof violation?.path !== 'string' || typeof violation?.rule !== 'string') continue;
     const key = violationMessageKey(violation.rule);
     const control = PROVISION_CONTROL_BY_PATH[violation.path];
+    if (statedKey === null && key !== VIOLATION_FALLBACK_KEY) statedKey = key;
     if (control) {
       if (!(control in fieldErrors)) fieldErrors[control] = key;
     } else if (formKey === null && key !== VIOLATION_FALLBACK_KEY) {
       formKey = key;
     }
   }
-  const base = fromFailure(failure, attempt);
+  const base = platformFailure(failure, attempt);
   return {
     ...base,
     messageKey:
       failure.kind === 'conflict'
-        ? 'platform.provision.conflict'
+        ? (statedKey ?? 'platform.provision.conflict')
         : (formKey ?? base.messageKey ?? failureMessageKey(failure)),
     ...(Object.keys(fieldErrors).length > 0 ? { fieldErrors } : {}),
   };
@@ -257,7 +303,7 @@ export async function provisionOrganizationAction(
   };
 
   const client = await authorizedClient();
-  if (!client) return { status: 'expired', messageKey: 'state.expired.title', attempt };
+  if (!client) return { status: 'expired', messageKey: 'state.expired.message', attempt };
   const result = await client.send<{ readonly tenantId: string }>(
     'POST',
     '/api/v1/platform/organizations',
@@ -280,7 +326,7 @@ export async function changeOrganizationStatusAction(
   to: 'active' | 'suspended' | 'closed',
   reason: string
 ): Promise<ActionState> {
-  if (!UUID.test(tenantId)) return invalid({}, 1, 'state.notFound.title');
+  if (!UUID.test(tenantId)) return invalid({}, 1, 'state.notFound.message');
   if (!['active', 'suspended', 'closed'].includes(to)) return invalid({}, 1);
   const checked = reasonSchema.safeParse(reason);
   if (!checked.success)
@@ -326,7 +372,7 @@ export async function assignSubscriptionAction(
   tenantId: string,
   input: AssignSubscriptionInput
 ): Promise<SubscriptionAssignState> {
-  if (!UUID.test(tenantId)) return invalid({}, 1, 'state.notFound.title');
+  if (!UUID.test(tenantId)) return invalid({}, 1, 'state.notFound.message');
   const parsed = assignSchema.safeParse(input);
   if (!parsed.success) return invalid(keysOf(parsed.error), 1);
   if (
@@ -336,7 +382,7 @@ export async function assignSubscriptionAction(
     return invalid({ overCapacityReason: 'overlay.reasonRequired' }, 1);
   }
   const client = await authorizedClient();
-  if (!client) return { status: 'expired', messageKey: 'state.expired.title', attempt: 1 };
+  if (!client) return { status: 'expired', messageKey: 'state.expired.message', attempt: 1 };
   const result = await client.send(
     'POST',
     `${organizationPath(tenantId)}/subscriptions`,
@@ -345,7 +391,7 @@ export async function assignSubscriptionAction(
   if (result.ok) return success('platform.subscription.done', 1);
   const overCapacity = overCapacityOf(result);
   return {
-    ...fromFailure(result, 1),
+    ...platformFailure(result, 1),
     ...(overCapacity.length > 0 ? { overCapacity } : {}),
   };
 }
@@ -365,7 +411,7 @@ export async function addCompanyAction(
   tenantId: string,
   input: z.input<typeof companySchema>
 ): Promise<ActionState> {
-  if (!UUID.test(tenantId)) return invalid({}, 1, 'state.notFound.title');
+  if (!UUID.test(tenantId)) return invalid({}, 1, 'state.notFound.message');
   const parsed = companySchema.safeParse(input);
   if (!parsed.success) return invalid(keysOf(parsed.error), 1);
   const { registrationNumber, taxRegistrationNumber, ...rest } = parsed.data;
@@ -399,7 +445,7 @@ export async function addBranchAction(
   tenantId: string,
   input: z.input<typeof branchSchema>
 ): Promise<ActionState> {
-  if (!UUID.test(tenantId)) return invalid({}, 1, 'state.notFound.title');
+  if (!UUID.test(tenantId)) return invalid({}, 1, 'state.notFound.message');
   const parsed = branchSchema.safeParse(input);
   if (!parsed.success) return invalid(keysOf(parsed.error), 1);
   const { city, countryCode, ...rest } = parsed.data;
@@ -437,7 +483,7 @@ export async function inviteAdministratorAction(
   tenantId: string,
   input: z.input<typeof administratorSchema>
 ): Promise<ActionState> {
-  if (!UUID.test(tenantId)) return invalid({}, 1, 'state.notFound.title');
+  if (!UUID.test(tenantId)) return invalid({}, 1, 'state.notFound.message');
   const parsed = administratorSchema.safeParse(input);
   if (!parsed.success) return invalid(keysOf(parsed.error), 1);
   if ((parsed.data.additionalAdministrator === true) !== (parsed.data.reason !== undefined)) {
@@ -462,7 +508,7 @@ export async function resendAdministratorInvitationAction(
   tenantId: string,
   email: string
 ): Promise<ActionState> {
-  if (!UUID.test(tenantId)) return invalid({}, 1, 'state.notFound.title');
+  if (!UUID.test(tenantId)) return invalid({}, 1, 'state.notFound.message');
   const parsed = z
     .string()
     .trim()
@@ -490,7 +536,7 @@ export async function cancelSubscriptionAction(
   input: z.input<typeof cancelSchema>
 ): Promise<ActionState> {
   if (!UUID.test(tenantId) || !UUID.test(subscriptionId)) {
-    return invalid({}, 1, 'state.notFound.title');
+    return invalid({}, 1, 'state.notFound.message');
   }
   const parsed = cancelSchema.safeParse(input);
   if (!parsed.success) return invalid(keysOf(parsed.error), 1);
@@ -521,7 +567,7 @@ export async function recordChargeAction(
   tenantId: string,
   input: z.input<typeof chargeSchema>
 ): Promise<ActionState> {
-  if (!UUID.test(tenantId)) return invalid({}, 1, 'state.notFound.title');
+  if (!UUID.test(tenantId)) return invalid({}, 1, 'state.notFound.message');
   const parsed = chargeSchema.safeParse(input);
   if (!parsed.success) return invalid(keysOf(parsed.error), 1);
   return send(
@@ -547,7 +593,7 @@ export async function recordReceiptAction(
   tenantId: string,
   input: z.input<typeof receiptSchema>
 ): Promise<ActionState> {
-  if (!UUID.test(tenantId)) return invalid({}, 1, 'state.notFound.title');
+  if (!UUID.test(tenantId)) return invalid({}, 1, 'state.notFound.message');
   const parsed = receiptSchema.safeParse(input);
   if (!parsed.success) return invalid(keysOf(parsed.error), 1);
   return send(
@@ -564,7 +610,7 @@ export async function voidChargeAction(
   chargeId: string,
   reason: string
 ): Promise<ActionState> {
-  if (!UUID.test(tenantId) || !UUID.test(chargeId)) return invalid({}, 1, 'state.notFound.title');
+  if (!UUID.test(tenantId) || !UUID.test(chargeId)) return invalid({}, 1, 'state.notFound.message');
   const checked = reasonSchema.safeParse(reason);
   if (!checked.success)
     return invalid({ reason: 'overlay.reasonRequired' }, 1, 'overlay.reasonRequired');
@@ -639,7 +685,7 @@ export async function updatePlanAction(
   input: PlanInput
 ): Promise<ActionState> {
   if (!UUID.test(planId) || !Number.isInteger(recordVersion) || recordVersion < 1) {
-    return invalid({}, 1, 'state.notFound.title');
+    return invalid({}, 1, 'state.notFound.message');
   }
   const parsed = planSchema.safeParse(input);
   if (!parsed.success) return invalid(keysOf(parsed.error), 1);
@@ -726,7 +772,7 @@ export async function changeOwnPasswordAction(input: PasswordChangeInput): Promi
   if (!parsed.success) return invalid(keysOf(parsed.error), 1);
 
   const client = await authorizedClient();
-  if (!client) return { status: 'expired', messageKey: 'state.expired.title', attempt: 1 };
+  if (!client) return { status: 'expired', messageKey: 'state.expired.message', attempt: 1 };
 
   const result = await client.send<{ status: string; otherSessions: string }>(
     'POST',
@@ -754,7 +800,7 @@ export async function changeOwnPasswordAction(input: PasswordChangeInput): Promi
         attempt: 1,
       };
     }
-    return fromFailure(result, 1);
+    return platformFailure(result, 1);
   }
 
   return success(

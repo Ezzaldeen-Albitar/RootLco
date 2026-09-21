@@ -3,14 +3,15 @@ import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import en from '../src/i18n/messages/en.json';
 import ar from '../src/i18n/messages/ar.json';
-import { renderLtr } from './render';
+import { BOTH_DIRECTIONS, messagesFor, renderLtr } from './render';
 import { RecordForm } from '@/components/forms/RecordForm';
 import {
   composeInstant,
   instantFieldError,
   toLocalDateTimeValue,
 } from '@/components/forms/instant';
-import type { ActionState } from '@/lib/forms/action-result';
+import { fromFailure, type ActionState } from '@/lib/forms/action-result';
+import { ApiClient } from '@/lib/api/client';
 
 /**
  * `RecordForm`, rendered directly (`P1-27-QA-001`).
@@ -113,6 +114,251 @@ describe('RecordForm keeps what the operator typed when the write fails', () => 
 
     await waitFor(() => expect(action).toHaveBeenCalled());
     expect(screen.getByLabelText(en['crm.customers.alerts.severity'])).toHaveValue('critical');
+  });
+
+  it('keeps every entry, and says so, when the connection is what failed', async () => {
+    /*
+     * The transport half, driven end to end rather than from a hand-written
+     * state: a real client whose `fetch` rejects, the real kind it derives, the
+     * real mapping, and the sentence the operator is actually shown.
+     *
+     * Before this, a lost connection rendered "Service unavailable" — a label,
+     * with no statement about what had happened to the two minutes of typing on
+     * the screen. The catalogue now says the entries are still there, and this
+     * case is what makes that sentence true rather than reassuring: it asserts
+     * the promise and the text in the same run, so neither can drift from the
+     * other.
+     */
+    const client = new ApiClient({
+      baseUrl: 'https://api.invalid',
+      fetchImpl: () => Promise.reject(new TypeError('Failed to fetch')),
+      newCorrelationId: () => 'corr-network',
+    });
+    const result = await client.send('POST', '/api/v1/health/ready', { any: 'body' });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.kind).toBe('network');
+
+    const action = vi.fn(async (): Promise<ActionState> => fromFailure(result, 1));
+    const user = userEvent.setup();
+    renderForm(action);
+
+    const field = screen.getByLabelText(en['crm.customers.notes.body']);
+    await user.type(field, 'Two minutes of typing nobody should have to repeat');
+    await user.selectOptions(
+      screen.getByLabelText(en['crm.customers.alerts.severity']),
+      'critical'
+    );
+    await user.click(screen.getByRole('button', { name: en['form.submit'] }));
+
+    await waitFor(() => expect(action).toHaveBeenCalled());
+    const banner = await screen.findByRole('alert');
+    expect(banner).toHaveTextContent(en['state.unavailable.message']);
+    // The promise the sentence makes, asserted against the form itself.
+    expect(screen.getByLabelText(en['crm.customers.notes.body'])).toHaveValue(
+      'Two minutes of typing nobody should have to repeat'
+    );
+    expect(screen.getByLabelText(en['crm.customers.alerts.severity'])).toHaveValue('critical');
+  });
+
+  it('says nothing at all when the operator was the one who stopped it', async () => {
+    /*
+     * A cancellation is not a fault and must not be dressed as one. It used to
+     * render "Something went wrong"; the state now carries no message key, so
+     * there is no banner to find — and the entries are still on the page,
+     * because the operator may well be about to press the button again.
+     */
+    const controller = new AbortController();
+    const client = new ApiClient({
+      baseUrl: 'https://api.invalid',
+      fetchImpl: (_input, init) =>
+        new Promise((_resolve, reject) => {
+          init?.signal?.addEventListener('abort', () =>
+            reject(new DOMException('aborted', 'AbortError'))
+          );
+        }),
+      newCorrelationId: () => 'corr-cancelled',
+    });
+    const pending = client.send(
+      'POST',
+      '/api/v1/health/ready',
+      { any: 'body' },
+      {
+        signal: controller.signal,
+      }
+    );
+    controller.abort(new DOMException('aborted', 'AbortError'));
+    const result = await pending;
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.kind).toBe('cancelled');
+
+    const state = fromFailure(result, 1);
+    expect(state.status).toBe('cancelled');
+    expect(state.messageKey).toBeUndefined();
+
+    const action = vi.fn(async (): Promise<ActionState> => state);
+    const user = userEvent.setup();
+    renderForm(action);
+
+    const field = screen.getByLabelText(en['crm.customers.notes.body']);
+    await user.type(field, 'Half an entry the operator abandoned');
+    await user.click(screen.getByRole('button', { name: en['form.submit'] }));
+
+    await waitFor(() => expect(action).toHaveBeenCalled());
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(screen.queryByText(en['state.error.title'])).toBeNull();
+    expect(screen.getByLabelText(en['crm.customers.notes.body'])).toHaveValue(
+      'Half an entry the operator abandoned'
+    );
+  });
+
+  it('fills the number a refusal sentence names, instead of printing the placeholder', async () => {
+    /*
+     * The banner renders `messageKey`, and two families of refusal sentence
+     * carry a `{name}` placeholder the server's own figures fill: the throttle
+     * wait, and the capacity ceiling. This component translated the key and
+     * dropped `messageValues`, so an operator who sent one request too many was
+     * told to "Wait {seconds} seconds" — the catalogue's source text, on screen,
+     * in front of a customer.
+     *
+     * Driven through `fromFailure` rather than from a hand-written state, so the
+     * key and the values are paired by the code that pairs them in production.
+     * Both assertions are needed: the first would pass against a form that
+     * rendered nothing at all, and the second is the one that fails when the
+     * values are dropped again.
+     */
+    const state = fromFailure(
+      {
+        ok: false,
+        kind: 'rate-limited',
+        status: 429,
+        problem: { retryAfterSeconds: 30 },
+        correlationId: 'corr-throttled',
+      },
+      1
+    );
+    const action = vi.fn(async (): Promise<ActionState> => state);
+    const user = userEvent.setup();
+    renderForm(action);
+
+    await user.type(
+      screen.getByLabelText(en['crm.customers.notes.body']),
+      'An entry worth keeping'
+    );
+    await user.click(screen.getByRole('button', { name: en['form.submit'] }));
+
+    await waitFor(() => expect(action).toHaveBeenCalled());
+    const banner = await screen.findByRole('alert');
+    expect(banner).toHaveTextContent(
+      'Too many requests were sent in a short time. Wait 30 seconds, then try again.'
+    );
+    expect(banner.textContent).not.toContain('{seconds}');
+  });
+
+  it.each(BOTH_DIRECTIONS)(
+    'adds the next step under a refused permission (%s)',
+    async (locale, renderIn) => {
+      /*
+       * `state.denied.title` is a LABEL — "You do not have access" — and for a
+       * 403 it is the whole of what this banner said. True, and the reader is no
+       * further forward: nothing on screen named who can undo it. The heading is
+       * left exactly as it was, because sealed records and the user manual quote
+       * it by that key; the sentence is a second element beneath it.
+       *
+       * Both languages, in the same case, because the sentence is only worth
+       * anything to the operator who reads the one they were given. The last
+       * assertion is the direction that actually fails when the pairing is
+       * dropped: the heading alone would still satisfy the first.
+       */
+      const catalogue = messagesFor(locale);
+      const action = vi.fn(async (): Promise<ActionState> => ({
+        status: 'denied',
+        messageKey: 'state.denied.title',
+        correlationId: 'corr-denied',
+        attempt: 1,
+      }));
+      const user = userEvent.setup();
+      renderIn(
+        <RecordForm
+          messages={catalogue}
+          fields={FIELDS}
+          action={action}
+          submitKey="form.submit"
+          titleKey="crm.customers.notes.add"
+        />
+      );
+
+      await user.click(screen.getByRole('button', { name: catalogue['form.submit'] }));
+
+      await waitFor(() => expect(action).toHaveBeenCalled());
+      const banner = await screen.findByRole('alert');
+      // The heading still reads exactly as it did, as its own node.
+      expect(screen.getByText(catalogue['state.denied.title'])).toBeInTheDocument();
+      expect(banner).toHaveTextContent(catalogue['state.denied.message']);
+      // And the Arabic really is Arabic: a catalogue that copied the English
+      // would satisfy every assertion above in both runs.
+      expect(en['state.denied.message']).not.toBe(ar['state.denied.message']);
+    }
+  );
+
+  it.each(BOTH_DIRECTIONS)(
+    'adds the next step under a refused save (%s)',
+    async (locale, renderIn) => {
+      /*
+       * The same defect as the case above, on the kind an operator meets most
+       * often. "Someone else changed this" is a verdict; the reader was not told
+       * that reloading is what makes the save possible, nor that the record may
+       * simply be in a state that refuses the change. The heading is untouched —
+       * the sealed P1-27 records quote the client line that chooses it — and the
+       * sentence arrives as the second element the same pairing already builds.
+       */
+      const catalogue = messagesFor(locale);
+      const action = vi.fn(async (): Promise<ActionState> => ({
+        status: 'conflict',
+        messageKey: 'state.conflict.title',
+        correlationId: 'corr-conflict',
+        attempt: 1,
+      }));
+      const user = userEvent.setup();
+      renderIn(
+        <RecordForm
+          messages={catalogue}
+          fields={FIELDS}
+          action={action}
+          submitKey="form.submit"
+          titleKey="crm.customers.notes.add"
+        />
+      );
+
+      await user.click(screen.getByRole('button', { name: catalogue['form.submit'] }));
+
+      await waitFor(() => expect(action).toHaveBeenCalled());
+      const banner = await screen.findByRole('alert');
+      expect(screen.getByText(catalogue['state.conflict.title'])).toBeInTheDocument();
+      expect(banner).toHaveTextContent(catalogue['state.conflict.message']);
+      expect(en['state.conflict.message']).not.toBe(ar['state.conflict.message']);
+    }
+  );
+
+  it('leaves a key that is already a sentence with no second line', async () => {
+    // The control on the case above. A pairing that fired for every key would
+    // append the wrong sentence to `state.expired.message`, which explains
+    // itself, and both cases would still be green.
+    const action = vi.fn(async (): Promise<ActionState> => ({
+      status: 'expired',
+      messageKey: 'state.expired.message',
+      attempt: 1,
+    }));
+    const user = userEvent.setup();
+    renderForm(action);
+
+    await user.click(screen.getByRole('button', { name: en['form.submit'] }));
+
+    await waitFor(() => expect(action).toHaveBeenCalled());
+    const banner = await screen.findByRole('alert');
+    expect(banner).toHaveTextContent(en['state.expired.message']);
+    expect(banner.textContent?.trim()).toBe(en['state.expired.message']);
   });
 
   it('DOES clear on success, so the next entry starts empty', async () => {

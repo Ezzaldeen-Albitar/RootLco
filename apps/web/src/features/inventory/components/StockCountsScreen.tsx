@@ -85,7 +85,7 @@ interface ShownCount {
 function detailFailureKey(status: string): string {
   if (status === 'denied') return 'inventory.counts.detail.refused';
   if (status === 'not-found') return 'inventory.counts.detail.gone';
-  if (status === 'expired') return 'state.expired.title';
+  if (status === 'expired') return 'state.expired.message';
   return 'inventory.counts.detail.unavailable';
 }
 

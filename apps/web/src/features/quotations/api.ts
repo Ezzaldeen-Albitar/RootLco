@@ -78,7 +78,7 @@ const revisionPath = (revisionId: string, suffix = ''): string =>
 
 const expired = (attempt: number): ActionState => ({
   status: 'expired',
-  messageKey: 'state.expired.title',
+  messageKey: 'state.expired.message',
   attempt,
 });
 

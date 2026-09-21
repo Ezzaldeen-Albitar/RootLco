@@ -102,7 +102,7 @@ function usePanel<T>(
             : got.status === 'denied'
               ? { phase: 'failed', messageKey: refusedKey, retry: null }
               : got.status === 'expired'
-                ? { phase: 'failed', messageKey: 'state.expired.title', retry: null }
+                ? { phase: 'failed', messageKey: 'state.expired.message', retry: null }
                 : { phase: 'failed', messageKey: unavailableKey, retry: reload },
       });
     });

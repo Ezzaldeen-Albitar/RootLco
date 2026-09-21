@@ -232,6 +232,74 @@ describe('provisioning builds the document the operation publishes', () => {
     expect(state.messageKey).toBe('platform.provision.conflict');
   });
 
+  /*
+   * A conflict the service DID explain.
+   *
+   * The fixed sentence above is right only when the refusal says nothing but
+   * "this conflicts". The bootstrap service also refuses for reasons it names,
+   * and every one of them was being replaced by that sentence on the way to the
+   * screen — the operator was told an organisation like this already exists when
+   * the real objection was about one field.
+   *
+   * `duplicate_code` stands in for the family of refusals about a code the
+   * organisation document carries; it is used because the catalogue carries a
+   * sentence for it TODAY, which is exactly what makes a token "known" here.
+   * The refusal about the owner's address below is no longer a stand-in: the
+   * bootstrap service publishes that token, and its sentence is in both
+   * catalogues, so the case drives the real pair. Nothing here or in the
+   * alignment gate is widened in advance to receive a token that has neither.
+   */
+  it('lets a reason the refusal named beat the fixed sentence', async () => {
+    send.mockResolvedValue({
+      ok: false,
+      kind: 'conflict',
+      status: 409,
+      problem: { violations: [{ path: 'body.tenant.code', rule: 'duplicate_code' }] },
+      correlationId: 'corr-3',
+    });
+    const state = await actions.provisionOrganizationAction(IDLE as never, provisionForm());
+    expect(state.status).toBe('conflict');
+    expect(state.messageKey).toBe('form.violation.duplicate_code');
+    expect(state.fieldErrors?.tenantCode).toBe('form.violation.duplicate_code');
+  });
+
+  it('puts a refusal about the owner address beside the owner address', async () => {
+    // The real pair the bootstrap service publishes: `body.email` rather than
+    // `body.owner.email`, because the service names the address on its own when
+    // it is the address it objects to, and that path had no control — so the
+    // sentence was filed where no control could render it. The token is
+    // deliberately one word for four readings of an address, which is why the
+    // sentence it resolves to only tells the operator to use a different one.
+    send.mockResolvedValue({
+      ok: false,
+      kind: 'conflict',
+      status: 409,
+      problem: {
+        violations: [{ path: 'body.email', rule: 'platform_address_not_available' }],
+      },
+      correlationId: 'corr-3',
+    });
+    const state = await actions.provisionOrganizationAction(IDLE as never, provisionForm());
+    expect(state.fieldErrors?.ownerEmail).toBe('form.violation.platform_address_not_available');
+    expect(state.messageKey).toBe('form.violation.platform_address_not_available');
+  });
+
+  it('keeps the fixed sentence for a reason the catalogue cannot say', async () => {
+    // A token with no sentence must NOT downgrade the banner to the generic
+    // violation wording: "this value was not accepted" says less than the
+    // sentence about an organisation that already exists.
+    send.mockResolvedValue({
+      ok: false,
+      kind: 'conflict',
+      status: 409,
+      problem: { violations: [{ path: 'body.tenant.code', rule: 'a_token_with_no_sentence' }] },
+      correlationId: 'corr-3',
+    });
+    const state = await actions.provisionOrganizationAction(IDLE as never, provisionForm());
+    expect(state.messageKey).toBe('platform.provision.conflict');
+    expect(state.fieldErrors?.tenantCode).toBe('form.violation.invalid');
+  });
+
   it('carries the new organisation back so the screen can open it', async () => {
     send.mockResolvedValue(okResult({ tenantId: TENANT }));
     const state = await actions.provisionOrganizationAction(IDLE as never, provisionForm());
@@ -261,7 +329,7 @@ describe('lifecycle and subscription writes name their subject and their act', (
 
     const unknown = await actions.changeOrganizationStatusAction(NOT_AN_ID, 'closed', 'Closed');
     expect(unknown.status).toBe('invalid');
-    expect(unknown.messageKey).toBe('state.notFound.title');
+    expect(unknown.messageKey).toBe('state.notFound.message');
     expect(send).not.toHaveBeenCalled();
   });
 
@@ -328,7 +396,7 @@ describe('lifecycle and subscription writes name their subject and their act', (
       effectiveTo: '2026-12-31',
       reason: 'The organisation is not renewing',
     });
-    expect(unknown.messageKey).toBe('state.notFound.title');
+    expect(unknown.messageKey).toBe('state.notFound.message');
     expect(send).not.toHaveBeenCalled();
   });
 });
@@ -389,7 +457,7 @@ describe('growing a live organisation addresses the organisation it names', () =
       legalName: 'Northern Workshops Second Company',
       baseCurrency: 'JOD',
     });
-    expect(unknown.messageKey).toBe('state.notFound.title');
+    expect(unknown.messageKey).toBe('state.notFound.message');
     expect(send).not.toHaveBeenCalled();
   });
 
@@ -429,7 +497,7 @@ describe('growing a live organisation addresses the organisation it names', () =
       name: 'Northern branch',
       timezone: 'Asia/Amman',
     });
-    expect(unknown.messageKey).toBe('state.notFound.title');
+    expect(unknown.messageKey).toBe('state.notFound.message');
     expect(send).not.toHaveBeenCalled();
   });
 
@@ -493,7 +561,7 @@ describe('growing a live organisation addresses the organisation it names', () =
       email: 'operations@northern-workshops.example',
       displayName: 'Northern Workshops operations',
     });
-    expect(unknown.messageKey).toBe('state.notFound.title');
+    expect(unknown.messageKey).toBe('state.notFound.message');
     expect(send).not.toHaveBeenCalled();
   });
 
@@ -520,7 +588,7 @@ describe('growing a live organisation addresses the organisation it names', () =
       NOT_AN_ID,
       'operations@northern-workshops.example'
     );
-    expect(unknown.messageKey).toBe('state.notFound.title');
+    expect(unknown.messageKey).toBe('state.notFound.message');
     expect(send).not.toHaveBeenCalled();
   });
 });
@@ -673,13 +741,13 @@ describe('a plan carries its price and its currency together, and an edit carrie
 
   it('refuses an edit that names no plan or no version', async () => {
     expect((await actions.updatePlanAction(NOT_AN_ID, 4, plan)).messageKey).toBe(
-      'state.notFound.title'
+      'state.notFound.message'
     );
     expect((await actions.updatePlanAction(PLAN_ID, 0, plan)).messageKey).toBe(
-      'state.notFound.title'
+      'state.notFound.message'
     );
     expect((await actions.updatePlanAction(PLAN_ID, 1.5, plan)).messageKey).toBe(
-      'state.notFound.title'
+      'state.notFound.message'
     );
     expect(send).not.toHaveBeenCalled();
   });

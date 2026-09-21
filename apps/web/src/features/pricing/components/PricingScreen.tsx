@@ -459,7 +459,7 @@ function ResolvedPriceView({
       answer.status === 'denied'
         ? 'pricing.lookup.refused'
         : answer.status === 'expired'
-          ? 'state.expired.title'
+          ? 'state.expired.message'
           : 'pricing.lookup.failed';
     return (
       <p role="alert" className="text-body text-error">

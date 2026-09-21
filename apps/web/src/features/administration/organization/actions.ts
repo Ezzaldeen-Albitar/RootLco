@@ -57,7 +57,7 @@ export async function updateTenantAction(
   }
 
   const client = await authorizedClient();
-  if (!client) return { status: 'expired', messageKey: 'state.expired.title', attempt };
+  if (!client) return { status: 'expired', messageKey: 'state.expired.message', attempt };
 
   const result = await client.send('PATCH', '/api/v1/org/tenant', changes, {
     ifMatch: recordVersion,
@@ -116,7 +116,7 @@ export async function writeSettingAction(
   }
 
   const client = await authorizedClient();
-  if (!client) return { status: 'expired', messageKey: 'state.expired.title', attempt: 1 };
+  if (!client) return { status: 'expired', messageKey: 'state.expired.message', attempt: 1 };
 
   const result = await client.send('POST', settingsPath(scope, scopeId), {
     settingKey: parsed.data.settingKey,
@@ -139,7 +139,7 @@ export async function changeBranchStatusAction(
     return invalid({ reason: 'overlay.reasonRequired' }, 1, 'overlay.reasonRequired');
   }
   const client = await authorizedClient();
-  if (!client) return { status: 'expired', messageKey: 'state.expired.title', attempt: 1 };
+  if (!client) return { status: 'expired', messageKey: 'state.expired.message', attempt: 1 };
 
   const result = await client.send(
     'POST',
@@ -195,7 +195,7 @@ export async function createCompanyAction(
   if (!parsed.success) return invalid(issueKeysByField(parsed.error), attempt);
 
   const client = await authorizedClient();
-  if (!client) return { status: 'expired', messageKey: 'state.expired.title', attempt };
+  if (!client) return { status: 'expired', messageKey: 'state.expired.message', attempt };
 
   const result = await client.send('POST', '/api/v1/org/companies', {
     code: parsed.data.code,
@@ -245,9 +245,9 @@ export async function setCompanyStatusAction(
   if (reason.length === 0) {
     return invalid({ reason: 'overlay.reasonRequired' }, 1, 'overlay.reasonRequired');
   }
-  if (!UUID.test(companyId)) return invalid({}, 1, 'state.notFound.title');
+  if (!UUID.test(companyId)) return invalid({}, 1, 'state.notFound.message');
   const client = await authorizedClient();
-  if (!client) return { status: 'expired', messageKey: 'state.expired.title', attempt: 1 };
+  if (!client) return { status: 'expired', messageKey: 'state.expired.message', attempt: 1 };
 
   const result = await client.send(
     'POST',
@@ -288,7 +288,7 @@ export async function createBranchAction(
   if (!parsed.success) return invalid(issueKeysByField(parsed.error), attempt);
 
   const client = await authorizedClient();
-  if (!client) return { status: 'expired', messageKey: 'state.expired.title', attempt };
+  if (!client) return { status: 'expired', messageKey: 'state.expired.message', attempt };
 
   const result = await client.send('POST', '/api/v1/org/branches', {
     companyId: parsed.data.companyId,

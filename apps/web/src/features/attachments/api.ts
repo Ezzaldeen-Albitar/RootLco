@@ -210,7 +210,7 @@ export async function captureDocument(input: CaptureInput, attempt = 1): Promise
   }
 
   const client = await authorizedClient();
-  if (!client) return { status: 'expired', messageKey: 'state.expired.title', attempt };
+  if (!client) return { status: 'expired', messageKey: 'state.expired.message', attempt };
 
   const authorized = await client.send<UploadAuthorization>(
     'POST',
@@ -321,7 +321,7 @@ export async function createDocumentLink(
   if (!parsed.success) return invalid(fieldErrorsFrom(parsed.error), attempt);
 
   const client = await authorizedClient();
-  if (!client) return { status: 'expired', messageKey: 'state.expired.title', attempt };
+  if (!client) return { status: 'expired', messageKey: 'state.expired.message', attempt };
 
   const result = await client.send<{ readonly linkId: string }>(
     'POST',

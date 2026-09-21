@@ -246,6 +246,133 @@ describe('DuplicateDecisionPanel mounted directly', () => {
   });
 });
 
+describe('a decision that does not go through', () => {
+  /*
+   * The panel's `Outcome` was rendered by nothing.
+   *
+   * Every case above stops short of pressing Dismiss, so the whole outcome
+   * branch — the banner, its explanation and the correlation reference — was
+   * never executed at any tier. That is how this screen came to translate a
+   * refusal heading on its own: "You do not have access", four words, no next
+   * step, and no test to notice.
+   *
+   * These cases submit for real, so the banner is asserted against what the
+   * reviewer is actually shown.
+   */
+  const noop = () => {};
+
+  function panel(onDecided: () => void = noop) {
+    return renderLtr(
+      <DuplicateDecisionPanel
+        locale="en"
+        messages={en}
+        candidate={candidate()}
+        onClose={noop}
+        onDecided={onDecided}
+      />
+    );
+  }
+
+  async function dismiss(user: ReturnType<typeof userEvent.setup>) {
+    // The textarea is `required` with a minimum length. An unfilled form never
+    // reaches the action at all, and the case would pass for the wrong reason.
+    await user.type(
+      screen.getByLabelText(en['crm.customers.restrictions.reason'], { exact: false }),
+      'Same person, one record already on file'
+    );
+    await user.click(screen.getByRole('button', { name: en['crm.duplicates.dismiss'] }));
+  }
+
+  it('sends the one decision the endpoint accepts, with the reviewer reason', async () => {
+    const user = userEvent.setup();
+    panel();
+    await dismiss(user);
+
+    await waitFor(() => expect(reviewDuplicateAction).toHaveBeenCalledTimes(1));
+    const form = reviewDuplicateAction.mock.calls[0]?.[2] as FormData;
+    // `crm.duplicate-review` accepts `dismissed` and nothing else; the hidden
+    // field is the only thing carrying it.
+    expect(form.get('decision')).toBe('dismissed');
+    expect(form.get('reason')).toBe('Same person, one record already on file');
+  });
+
+  it('tells a refused reviewer what to do next, not just that it was refused', async () => {
+    reviewDuplicateAction.mockResolvedValue({
+      status: 'denied',
+      messageKey: 'state.denied.title',
+      correlationId: 'corr-duplicate-1',
+      attempt: 1,
+    });
+    const user = userEvent.setup();
+    panel();
+    await dismiss(user);
+
+    const alert = await screen.findByRole('alert');
+    // The heading states the verdict; the sentence under it names the remedy.
+    // Showing the heading alone is the defect this asserts against.
+    expect(alert).toHaveTextContent(en['state.denied.title']);
+    expect(alert).toHaveTextContent(en['state.denied.message']);
+    // The one diagnostic that may be shown.
+    expect(alert).toHaveTextContent('corr-duplicate-1');
+  });
+
+  it('counts out the wait instead of printing the placeholder', async () => {
+    reviewDuplicateAction.mockResolvedValue({
+      status: 'throttled',
+      messageKey: 'state.throttled.messageWithSeconds',
+      messageValues: { seconds: '30' },
+      attempt: 1,
+    });
+    const user = userEvent.setup();
+    panel();
+    await dismiss(user);
+
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent('Wait 30 seconds');
+    // Translating the key while dropping the values shows `{seconds}` to the
+    // operator exactly as the catalogue spells it.
+    expect(alert.textContent ?? '').not.toContain('{seconds}');
+  });
+
+  it('confirms a dismissal to the reviewer and clears the reason behind it', async () => {
+    reviewDuplicateAction.mockResolvedValue({
+      status: 'success',
+      messageKey: 'crm.duplicates.dismissed',
+      attempt: 1,
+    });
+    const onDecided = vi.fn();
+    const user = userEvent.setup();
+    panel(onDecided);
+    await dismiss(user);
+
+    await waitFor(() => expect(onDecided).toHaveBeenCalledTimes(1));
+    // Announced, not alerted: nothing went wrong.
+    expect(await screen.findByRole('status')).toHaveTextContent(en['crm.duplicates.dismissed']);
+    expect(
+      screen.getByLabelText(en['crm.customers.restrictions.reason'], { exact: false })
+    ).toHaveValue('');
+  });
+
+  it('keeps the reason on screen when the write fails, so it need not be written twice', async () => {
+    reviewDuplicateAction.mockResolvedValue({
+      status: 'unavailable',
+      messageKey: 'state.error.title',
+      correlationId: 'corr-duplicate-2',
+      attempt: 1,
+    });
+    const user = userEvent.setup();
+    panel();
+    await dismiss(user);
+
+    await screen.findByRole('alert');
+    // The textarea is controlled for exactly this: React resets an uncontrolled
+    // field when the action settles, and the reviewer's reasoning goes with it.
+    expect(
+      screen.getByLabelText(en['crm.customers.restrictions.reason'], { exact: false })
+    ).toHaveValue('Same person, one record already on file');
+  });
+});
+
 describe('Arabic', () => {
   it('renders the queue right-to-left with Arabic copy', async () => {
     render('ar');

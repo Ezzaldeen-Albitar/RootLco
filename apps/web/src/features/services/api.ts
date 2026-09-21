@@ -173,7 +173,7 @@ export async function createService(
   const client = await authorizedClient();
   if (!client) {
     return {
-      state: { status: 'expired', messageKey: 'state.expired.title', attempt },
+      state: { status: 'expired', messageKey: 'state.expired.message', attempt },
       created: null,
     };
   }
@@ -200,7 +200,7 @@ export async function updateService(
   attempt = 1
 ): Promise<ActionState> {
   const client = await authorizedClient();
-  if (!client) return { status: 'expired', messageKey: 'state.expired.title', attempt };
+  if (!client) return { status: 'expired', messageKey: 'state.expired.message', attempt };
 
   const result = await client.send<ServiceDetail>('PATCH', servicePath(serviceId), body, {
     ifMatch,
@@ -223,7 +223,7 @@ export async function setBranchAvailability(
   attempt = 1
 ): Promise<ActionState> {
   const client = await authorizedClient();
-  if (!client) return { status: 'expired', messageKey: 'state.expired.title', attempt };
+  if (!client) return { status: 'expired', messageKey: 'state.expired.message', attempt };
 
   const result = await client.send<BranchAvailability>(
     'POST',
@@ -253,7 +253,7 @@ export async function createServiceVersion(
   const client = await authorizedClient();
   if (!client) {
     return {
-      state: { status: 'expired', messageKey: 'state.expired.title', attempt },
+      state: { status: 'expired', messageKey: 'state.expired.message', attempt },
       created: null,
     };
   }
@@ -282,7 +282,7 @@ export async function publishServiceVersion(
   attempt = 1
 ): Promise<ActionState> {
   const client = await authorizedClient();
-  if (!client) return { status: 'expired', messageKey: 'state.expired.title', attempt };
+  if (!client) return { status: 'expired', messageKey: 'state.expired.message', attempt };
 
   const result = await client.send<ServiceVersion>(
     'POST',
@@ -306,7 +306,7 @@ export async function createServiceCategory(
   const client = await authorizedClient();
   if (!client) {
     return {
-      state: { status: 'expired', messageKey: 'state.expired.title', attempt },
+      state: { status: 'expired', messageKey: 'state.expired.message', attempt },
       created: null,
     };
   }

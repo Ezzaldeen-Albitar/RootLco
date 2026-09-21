@@ -1071,7 +1071,9 @@ describe('P1-28-QA-002 — every adapter through every transport kind', () => {
       server: 'error',
       unavailable: 'unavailable',
       timeout: 'unavailable',
-      cancelled: 'error',
+      // A caller abort is its own status and carries no sentence: the operator
+      // asked for it, so there is nothing to report and nothing went wrong.
+      cancelled: 'cancelled',
       network: 'unavailable',
     };
     for (const drive of WRITE_DRIVES) {

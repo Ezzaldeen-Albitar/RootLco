@@ -147,7 +147,7 @@ export async function createVehicleAction(
   }
 
   const client = await authorizedClient();
-  if (!client) return { status: 'expired', messageKey: 'state.expired.title', attempt };
+  if (!client) return { status: 'expired', messageKey: 'state.expired.message', attempt };
 
   const result = await client.send<CreatedVehicle>('POST', '/api/v1/vehicles', parsed.data);
   if (!result.ok) {

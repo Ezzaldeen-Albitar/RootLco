@@ -431,7 +431,7 @@ describe('CC-15 — the services branch picker says which state it is in', () =>
 
     listBranches.mockResolvedValue({ status: 'expired', correlationId: 'corr' });
     renderCatalogue({ canReadBranches: true });
-    expect(await screen.findByText(EN['state.expired.title'] as string)).toBeVisible();
+    expect(await screen.findByText(EN['state.expired.message'] as string)).toBeVisible();
     expect(screen.queryByRole('button', { name: EN['state.retry'] as string })).toBeNull();
   });
 

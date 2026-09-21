@@ -867,14 +867,14 @@ describe('a refused sale price says what the server actually refused', () => {
       currencyCode: 'JOD',
       unitPrice: '12.5000',
     });
-    expect(outcome.state.messageKey).toBe('state.notFound.title');
+    expect(outcome.state.messageKey).toBe('state.notFound.message');
     expect(outcome.state.fieldErrors?.['currencyCode']).toBeUndefined();
   });
 
   it('does not reach for that sentence on a write that has no such note', async () => {
     send.mockResolvedValue(refusal('ERR-RES-001'));
     const outcome = await createItemCategory({ code: 'brakes', name: 'Brakes' });
-    expect(outcome.state.messageKey).toBe('state.notFound.title');
+    expect(outcome.state.messageKey).toBe('state.notFound.message');
     expect(outcome.state.fieldErrors).toBeUndefined();
   });
 });

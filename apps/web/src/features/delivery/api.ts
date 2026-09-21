@@ -244,8 +244,6 @@ export interface DeliveryWriteState extends ActionState {
    * of which. The service's own sentence never crosses the wire.
    */
   readonly rule?: string;
-  /** The authority a refused override named, when it named one. */
-  readonly requiredPermissions?: readonly string[];
   /**
    * The handover the server returned, on a start that succeeded.
    *
@@ -291,7 +289,7 @@ export async function createDelivery(
   attempt = 1
 ): Promise<DeliveryWriteState> {
   const client = await authorizedClient();
-  if (!client) return { status: 'expired', messageKey: 'state.expired.title', attempt };
+  if (!client) return { status: 'expired', messageKey: 'state.expired.message', attempt };
 
   const result = await client.send<DeliveryRecord>('POST', '/api/v1/deliveries', body);
   if (!result.ok) return withCode(fromFailure(result, attempt), result);
@@ -314,7 +312,7 @@ export async function verifyReceiver(
   attempt = 1
 ): Promise<DeliveryWriteState> {
   const client = await authorizedClient();
-  if (!client) return { status: 'expired', messageKey: 'state.expired.title', attempt };
+  if (!client) return { status: 'expired', messageKey: 'state.expired.message', attempt };
 
   const result = await client.send<unknown>(
     'POST',
@@ -342,7 +340,7 @@ export async function recordChecklistResult(
   attempt = 1
 ): Promise<DeliveryWriteState> {
   const client = await authorizedClient();
-  if (!client) return { status: 'expired', messageKey: 'state.expired.title', attempt };
+  if (!client) return { status: 'expired', messageKey: 'state.expired.message', attempt };
 
   const result = await client.send<unknown>(
     'POST',
@@ -367,7 +365,7 @@ export async function attachSignature(
   attempt = 1
 ): Promise<DeliveryWriteState> {
   const client = await authorizedClient();
-  if (!client) return { status: 'expired', messageKey: 'state.expired.title', attempt };
+  if (!client) return { status: 'expired', messageKey: 'state.expired.message', attempt };
 
   const result = await client.send<unknown>('POST', deliveryPath(deliveryId, '/signatures'), body);
   if (!result.ok) return withCode(fromFailure(result, attempt), result);
@@ -422,7 +420,7 @@ export async function completeDelivery(
   attempt = 1
 ): Promise<DeliveryWriteState> {
   const client = await authorizedClient();
-  if (!client) return { status: 'expired', messageKey: 'state.expired.title', attempt };
+  if (!client) return { status: 'expired', messageKey: 'state.expired.message', attempt };
 
   const body: DeliveryCompleteBody = {
     finalOdometerValue: input.finalOdometerValue,
@@ -464,7 +462,7 @@ export async function completeDelivery(
 }
 
 /**
- * Carries the catalogue code and any named authority onto the action state.
+ * Carries the catalogue code onto the action state.
  *
  * Separate from `fromFailure` because that helper is shared by every form in the
  * product and its contract is deliberately narrow: translation keys and a
@@ -472,6 +470,14 @@ export async function completeDelivery(
  * this feature branches on — so it is added here, beside the operations that
  * distinguish causes, rather than widened into the shape twenty other screens
  * render.
+ *
+ * `problem.requiredPermissions` used to be copied here as well. Nothing renders
+ * a permission code any longer, and a field with no reader still crossed the
+ * wire: a Server Action's return value is serialised into the page, so every
+ * refused override shipped a dotted internal code to a browser that had no use
+ * for it. It is not copied, so it does not travel.
+ * `apps/web/tests/delivery-api.test.ts` holds this boundary from the transport
+ * side, where the value genuinely exists to be dropped.
  */
 function withCode(state: ActionState, failure: ApiFailure): DeliveryWriteState {
   const problem = failure.problem;
@@ -480,8 +486,5 @@ function withCode(state: ActionState, failure: ApiFailure): DeliveryWriteState {
     ...state,
     ...(problem?.code === undefined ? {} : { code: problem.code }),
     ...(rule === undefined ? {} : { rule }),
-    ...(problem?.requiredPermissions === undefined
-      ? {}
-      : { requiredPermissions: problem.requiredPermissions }),
   };
 }

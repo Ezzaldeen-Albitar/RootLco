@@ -630,7 +630,7 @@ describe('CC-15 — the branch picker says which of six states it is in', () => 
     listBranches.mockResolvedValue({ status: 'expired', correlationId: 'corr' });
     renderScreen(permitted);
     const target = targetForm();
-    expect(await within(target).findByText(EN['state.expired.title'] as string)).toBeVisible();
+    expect(await within(target).findByText(EN['state.expired.message'] as string)).toBeVisible();
     expect(
       within(target).getByLabelText(labelled('inventory.common.companyIdField'))
     ).toBeVisible();

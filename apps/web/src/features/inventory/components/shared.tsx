@@ -113,7 +113,7 @@ export function useBranches(canRead: boolean): Branches {
       if (state.status === 'denied') {
         setFailure({ key: 'inventory.common.branchesRefused', retryable: false });
       } else if (state.status === 'expired') {
-        setFailure({ key: 'state.expired.title', retryable: false });
+        setFailure({ key: 'state.expired.message', retryable: false });
       } else {
         setFailure({ key: 'inventory.common.branchesUnavailable', retryable: true });
       }

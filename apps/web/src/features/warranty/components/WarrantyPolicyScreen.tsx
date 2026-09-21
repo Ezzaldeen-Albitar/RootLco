@@ -3,8 +3,9 @@
 import { useState } from 'react';
 
 import { SelectField, TextField } from '@/components/forms/Field';
+import { FailureExplanation } from '@/components/states/States';
 import type { Messages } from '@/i18n/get-messages';
-import { translate, translateDynamic } from '@/i18n/get-messages';
+import { translate, translateDynamic, translateWithValues } from '@/i18n/get-messages';
 
 import {
   createCoverageWindow,
@@ -427,7 +428,8 @@ function WriteOutcome({
   return (
     <div className="mt-3 flex flex-col items-start gap-2">
       <p role="alert" className="text-body text-error">
-        {translateDynamic(messages, refusalKeyFor(state))}
+        {translateWithValues(messages, refusalKeyFor(state), state.messageValues)}
+        <FailureExplanation messages={messages} messageKey={refusalKeyFor(state)} />
         {state.correlationId ? (
           <>
             {' '}

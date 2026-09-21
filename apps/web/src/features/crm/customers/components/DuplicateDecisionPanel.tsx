@@ -4,8 +4,9 @@ import { useActionState, useState } from 'react';
 import { MatchExplanation } from '@/components/duplicates/MatchExplanation';
 import type { ActionState } from '@/lib/forms/action-result';
 import { customerMatchReasons } from '@/lib/duplicates/explanations';
+import { FailureExplanation } from '@/components/states/States';
 import type { Messages } from '@/i18n/get-messages';
-import { translate, translateDynamic } from '@/i18n/get-messages';
+import { translate, translateDynamic, translateWithValues } from '@/i18n/get-messages';
 import type { Locale } from '@/i18n/config';
 import { reviewDuplicateAction } from '../identity-api';
 import {
@@ -237,7 +238,8 @@ function Outcome({
       role={failed ? 'alert' : 'status'}
       className={`mt-2 text-body ${failed ? 'text-error' : 'text-success'}`}
     >
-      {translateDynamic(messages, state.messageKey)}
+      {translateWithValues(messages, state.messageKey, state.messageValues)}
+      <FailureExplanation messages={messages} messageKey={state.messageKey} />
       {state.correlationId ? (
         <code className="ms-2 font-mono text-caption">{state.correlationId}</code>
       ) : null}

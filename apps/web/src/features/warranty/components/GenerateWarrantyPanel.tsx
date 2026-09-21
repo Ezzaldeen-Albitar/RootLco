@@ -5,8 +5,9 @@ import { useEffect, useState } from 'react';
 
 import { SelectField } from '@/components/forms/Field';
 import type { Locale } from '@/i18n/config';
+import { FailureExplanation } from '@/components/states/States';
 import type { Messages } from '@/i18n/get-messages';
-import { translate, translateDynamic } from '@/i18n/get-messages';
+import { translate, translateWithValues } from '@/i18n/get-messages';
 
 import { generateWarranty, listWarrantyPolicies, type WarrantyWriteState } from '../warranty-api';
 import {
@@ -203,7 +204,8 @@ export function GenerateWarrantyPanel({
 
       {state && state.status !== 'success' ? (
         <p role="alert" className="mt-3 text-body text-error">
-          {translateDynamic(messages, refusalKeyFor(state))}
+          {translateWithValues(messages, refusalKeyFor(state), state.messageValues)}
+          <FailureExplanation messages={messages} messageKey={refusalKeyFor(state)} />
           {state.correlationId ? (
             <>
               {' '}

@@ -3,8 +3,9 @@
 import { useActionState, useId, useState } from 'react';
 import Link from 'next/link';
 import { Icon } from '@/components/primitives/Icon';
+import { FailureExplanation } from '@/components/states/States';
 import type { Messages } from '@/i18n/get-messages';
-import { translate, translateDynamic } from '@/i18n/get-messages';
+import { translate, translateDynamic, translateWithValues } from '@/i18n/get-messages';
 import type { Locale } from '@/i18n/config';
 import {
   createCompanyAction,
@@ -182,7 +183,11 @@ export function IntakeCustomerCreate({ locale, messages, kind, onChosen, onBack 
           role="alert"
           className="rounded-md border border-error bg-surface px-3 py-2 text-body text-error"
         >
-          {translateDynamic(messages, state.messageKey ?? 'form.formError')}
+          {translateWithValues(messages, state.messageKey ?? 'form.formError', state.messageValues)}
+          <FailureExplanation
+            messages={messages}
+            messageKey={state.messageKey ?? 'form.formError'}
+          />
           {state.correlationId ? (
             <span className="ms-2 text-caption text-text-muted">
               {translate(messages, 'state.correlationId')}{' '}

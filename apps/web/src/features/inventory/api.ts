@@ -181,7 +181,7 @@ const EMPTY = { rows: [], nextCursor: null, hasMore: false } as const;
 
 const expired = (attempt: number): ActionState => ({
   status: 'expired',
-  messageKey: 'state.expired.title',
+  messageKey: 'state.expired.message',
   attempt,
 });
 

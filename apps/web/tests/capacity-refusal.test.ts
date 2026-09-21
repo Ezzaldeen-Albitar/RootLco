@@ -3,6 +3,7 @@ import en from '../src/i18n/messages/en.json';
 import ar from '../src/i18n/messages/ar.json';
 import {
   CAPACITY_KINDS,
+  MAX_ADVISED_WAIT_SECONDS,
   capacityDetailOf,
   failureMessageKey,
   failureMessageValues,
@@ -101,6 +102,8 @@ describe('the capacity refusal message', () => {
         problem: { code: 'ERR-CAP-001' },
         correlationId: null,
       })
+      // A 403 is a 403 whatever code it carries: the capacity sentences are
+      // reached from a CONFLICT and from nowhere else.
     ).toBe('state.denied.title');
     // Capacity detail on a code that is not the capacity code is ignored.
     expect(
@@ -129,6 +132,72 @@ describe('fromFailure carries the values only with the message they belong to', 
     const state = fromFailure(failure, 1, 'state.denied.title');
     expect(state.messageKey).toBe('state.denied.title');
     expect(state.messageValues).toBeUndefined();
+  });
+});
+
+/**
+ * A throttled answer, whose sentence names a number the same way.
+ *
+ * Folded in here because it is the same mechanism and the same hazard: a key
+ * with a `{name}` placeholder is only ever correct when the values travel with
+ * it. `retryAfterSeconds` had been declared on the problem document with no
+ * reader at all, so every 429 read "Something went wrong" — untrue, since
+ * nothing did, and actionless, since it named no wait.
+ */
+describe('a throttled answer advises the wait it published', () => {
+  function throttled(problem: Record<string, unknown> = {}): ApiFailure {
+    return {
+      ok: false,
+      kind: 'rate-limited',
+      status: 429,
+      problem,
+      correlationId: 'corr-throttle',
+    };
+  }
+
+  it('names the seconds it was given, in both languages', () => {
+    const failure = throttled({ retryAfterSeconds: 30 });
+    const key = refusalMessageKey(failure);
+    expect(key).toBe('state.throttled.messageWithSeconds');
+    expect(EN[key]).toContain('{seconds}');
+    expect(AR[key]).toContain('{seconds}');
+    expect(failureMessageValues(failure)).toEqual({ seconds: '30' });
+    expect(translateWithValues(getMessages('en'), key, failureMessageValues(failure))).toBe(
+      'Too many requests were sent in a short time. Wait 30 seconds, then try again.'
+    );
+  });
+
+  it('drops to the sentence with no figure when none was published', () => {
+    const failure = throttled();
+    expect(refusalMessageKey(failure)).toBe('state.throttled.message');
+    expect(failureMessageValues(failure)).toBeUndefined();
+    expect(EN['state.throttled.message']).not.toContain('{');
+    expect(AR['state.throttled.message']).not.toContain('{');
+  });
+
+  it('refuses a figure it cannot honestly advise, rather than printing it', () => {
+    // Untrusted numbers from a response body. "Wait 0 seconds" and "wait a day
+    // and a half" are both worse than the sentence that names no figure, and
+    // both are reachable from a misconfigured or hostile upstream.
+    for (const seconds of [0, -1, 1.5, MAX_ADVISED_WAIT_SECONDS + 1, '30', null, NaN]) {
+      const failure = throttled({ retryAfterSeconds: seconds });
+      expect(refusalMessageKey(failure), String(seconds)).toBe('state.throttled.message');
+      expect(failureMessageValues(failure), String(seconds)).toBeUndefined();
+    }
+    // The boundary itself is advised, so the rule is a ceiling and not a gap.
+    expect(refusalMessageKey(throttled({ retryAfterSeconds: MAX_ADVISED_WAIT_SECONDS }))).toBe(
+      'state.throttled.messageWithSeconds'
+    );
+  });
+
+  it('hands the key and its values to a form together', () => {
+    const state = fromFailure(throttled({ retryAfterSeconds: 45 }), 2);
+    expect(state).toMatchObject({
+      status: 'throttled',
+      messageKey: 'state.throttled.messageWithSeconds',
+      messageValues: { seconds: '45' },
+      attempt: 2,
+    });
   });
 });
 

@@ -5,8 +5,9 @@ import { useCallback, useEffect, useState } from 'react';
 
 import { SelectField } from '@/components/forms/Field';
 import type { Locale } from '@/i18n/config';
+import { FailureExplanation } from '@/components/states/States';
 import type { Messages } from '@/i18n/get-messages';
-import { translate, translateDynamic } from '@/i18n/get-messages';
+import { translate, translateDynamic, translateWithValues } from '@/i18n/get-messages';
 import type { ReadState } from '@/lib/api/read-operation';
 
 import { createDelivery, readWorkOrderDelivery, type DeliveryWriteState } from '../api';
@@ -303,7 +304,7 @@ function useBranchDirectory(canRead: boolean, companyId: string): BranchDirector
         result.status === 'denied'
           ? { messageKey: 'delivery.start.branchesRefused', retryable: false }
           : result.status === 'expired'
-            ? { messageKey: 'state.expired.title', retryable: false }
+            ? { messageKey: 'state.expired.message', retryable: false }
             : { messageKey: 'delivery.start.branchesUnavailable', retryable: true };
       setHeld({ key, items: null, failure });
     });
@@ -380,7 +381,7 @@ function useEmployees(canRead: boolean, companyId: string, branchId: string): Ca
           result.status === 'denied'
             ? { messageKey: 'delivery.start.employeesRefused', retryable: false }
             : result.status === 'expired'
-              ? { messageKey: 'state.expired.title', retryable: false }
+              ? { messageKey: 'state.expired.message', retryable: false }
               : { messageKey: 'delivery.start.employeesUnavailable', retryable: true };
         setHeld({ key, items: null, failure });
       }
@@ -606,7 +607,8 @@ function StartHandoverForm({
 
       {state !== null && state.status !== 'success' ? (
         <p role="alert" className="text-body text-error">
-          {translateDynamic(messages, refusalKeyFor(state))}
+          {translateWithValues(messages, refusalKeyFor(state), state.messageValues)}
+          <FailureExplanation messages={messages} messageKey={refusalKeyFor(state)} />
           {state.correlationId ? (
             <>
               {' '}

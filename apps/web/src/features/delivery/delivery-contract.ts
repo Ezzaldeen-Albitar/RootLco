@@ -531,7 +531,14 @@ export const DELIVERY_ERROR_CODES = {
   staleVersion: 'ERR-CON-001',
   /** No `If-Match` reached a version-guarded operation. */
   versionRequired: 'ERR-CON-002',
-  /** The override was refused; `requiredPermissions` names the authority. */
+  /**
+   * The override was refused because the authority for it was not held.
+   *
+   * The problem document names that authority as a permission code. The screen
+   * does not read it and the action does not carry it, because a dotted code is
+   * not something the person at the counter can act on: the sentence names the
+   * company administrator instead.
+   */
   overrideDenied: 'ERR-IAM-001',
   /** The handover is blocked. The reasons come from the eligibility read. */
   blocked: 'ERR-TRN-001',
