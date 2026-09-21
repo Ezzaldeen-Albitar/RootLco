@@ -241,11 +241,13 @@ describe('provisioning builds the document the operation publishes', () => {
    * screen — the operator was told an organisation like this already exists when
    * the real objection was about one field.
    *
-   * `required` and `duplicate_code` stand in for those reasons. They are used
-   * because the catalogue carries a sentence for each TODAY, which is exactly
-   * what makes a token "known" here; the specific tokens the service will
-   * publish arrive with the branch that writes their sentences, and nothing in
-   * this file or in the alignment gate is widened in advance to receive them.
+   * `duplicate_code` stands in for the family of refusals about a code the
+   * organisation document carries; it is used because the catalogue carries a
+   * sentence for it TODAY, which is exactly what makes a token "known" here.
+   * The refusal about the owner's address below is no longer a stand-in: the
+   * bootstrap service publishes that token, and its sentence is in both
+   * catalogues, so the case drives the real pair. Nothing here or in the
+   * alignment gate is widened in advance to receive a token that has neither.
    */
   it('lets a reason the refusal named beat the fixed sentence', async () => {
     send.mockResolvedValue({
@@ -262,19 +264,24 @@ describe('provisioning builds the document the operation publishes', () => {
   });
 
   it('puts a refusal about the owner address beside the owner address', async () => {
-    // `body.email` rather than `body.owner.email`: the service names the address
-    // on its own when it is the address it objects to, and that path had no
-    // control, so the sentence was filed where no control could render it.
+    // The real pair the bootstrap service publishes: `body.email` rather than
+    // `body.owner.email`, because the service names the address on its own when
+    // it is the address it objects to, and that path had no control — so the
+    // sentence was filed where no control could render it. The token is
+    // deliberately one word for four readings of an address, which is why the
+    // sentence it resolves to only tells the operator to use a different one.
     send.mockResolvedValue({
       ok: false,
       kind: 'conflict',
       status: 409,
-      problem: { violations: [{ path: 'body.email', rule: 'required' }] },
+      problem: {
+        violations: [{ path: 'body.email', rule: 'platform_address_not_available' }],
+      },
       correlationId: 'corr-3',
     });
     const state = await actions.provisionOrganizationAction(IDLE as never, provisionForm());
-    expect(state.fieldErrors?.ownerEmail).toBe('form.violation.required');
-    expect(state.messageKey).toBe('form.violation.required');
+    expect(state.fieldErrors?.ownerEmail).toBe('form.violation.platform_address_not_available');
+    expect(state.messageKey).toBe('form.violation.platform_address_not_available');
   });
 
   it('keeps the fixed sentence for a reason the catalogue cannot say', async () => {
