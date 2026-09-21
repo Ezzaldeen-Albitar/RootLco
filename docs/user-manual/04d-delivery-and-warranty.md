@@ -1,10 +1,10 @@
 ---
 manual: 'CRM User Manual'
 title: 'Part 4D — The workshop journey: handover and warranty'
-application_version: '5b2c7840da1821f973438d5429665ef4448132f2'
-application_version_short: '5b2c7840'
+application_version: 'fe09f1a9a8671930f032a18dda497c64e3107d29'
+application_version_short: 'fe09f1a9'
 environment: 'LOCAL — a private single-machine environment at http://localhost:3100. Not public, not hosted.'
-date: '2026-09-18'
+date: '2026-09-21'
 scope_statement: 'This manual describes behaviour implemented at the commit named above, and nothing else.'
 ---
 
@@ -1076,6 +1076,14 @@ rather than assuming a conflict.
     help.
 11. **Both languages are complete for this part.** English and Arabic carry the same wording, and
     the Arabic screens lay out right to left.
+12. **A warranty cannot be issued before somebody sets up the terms.** A warranty plan with no
+    window of cover terms covering the day the vehicle went back refuses the issue, in these words:
+    **"No warranty terms are set up for the day this vehicle was handed over, so nothing can be
+    issued. Ask an administrator to set them up."** <!-- warranty.generate.refusedNotConfigured -->
+    That is not a fault; it is the product declining to invent a cover period. The fix is 4D.15 —
+    open the plan and add a window of cover terms whose "apply from" date is on or before the
+    handover date — and then issue. A new organisation starts with no cover terms at all, so this
+    refusal is what the **first** warranty you ever try to issue will meet.
 
 ---
 
@@ -1096,8 +1104,27 @@ rather than assuming a conflict.
 - **No claim is made here that any of these workflows has been certified, audited or verified in a
   hosted environment.** The only environment that exists for this product is a local one, and the
   browser checks that were run for the handover and warranty screens were run locally.
+- **What was and was not driven end to end on the local environment.** On 2026-09-20 one whole
+  handover was taken through from a closed work order to an issued warranty: the readiness queue
+  listed the work order, a handover was opened naming the delivering employee, the receiver was
+  confirmed, every required checklist item was given a result and one of them was waived with a
+  reason, a signature was captured on the screen, the release was refused while a required item had
+  no result and accepted once it did — with the money-still-owed override ticked and the final
+  odometer entered — the printable sheet then carried the handover date and the final odometer, the
+  first attempt at a warranty met the refusal quoted at item 12 above, an administrator added the
+  cover terms, and the warranty was issued and read back on the register and on its own record. The
+  claims surface (4D.13) was **not** exercised, because there is none, and the proof-of-identity
+  document (4D.6) was not exercised either. Nothing about that run is a certification.
 
 <!--
+REVISION 2026-09-21 — items 12 of section 4D.16 and the closing bullet of 4D.17 were added at
+develop f30ce918405164712cc9cdcadb458c4e91a2b5b9. No product wording in this part changed between
+5b2c7840 and this head; warranty.generate.refusedNotConfigured is quoted from
+apps/web/src/i18n/messages/en.json at this head and was already present. What is new is the record
+of what was driven in a browser: the whole handover and warranty chain summarised in 4D.17 was
+exercised against the local environment on 2026-09-20, including the refusal at item 12 and the
+recovery from it. Everything else in this part is carried unchanged from the reading below.
+
 Sources
 - Commit pinned for every read: beebc6c28c873f498fe0503161eb53caa107a9e3 (origin/develop), checkout C:/Users/Ezzaldeen/wt-p9
 - Message catalogue: apps/web/src/i18n/messages/en.json — all keys under delivery.*, warranty.*, attachments.capture.*, nav.delivery, nav.warranty, nav.workOrders, state.*, form.required, action.reference

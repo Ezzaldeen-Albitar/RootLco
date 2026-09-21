@@ -1,10 +1,10 @@
 ---
 manual: 'CRM User Manual'
 title: 'Part 2A — The Platform Owner Console'
-application_version: '5b2c7840da1821f973438d5429665ef4448132f2'
-application_version_short: '5b2c7840'
+application_version: 'fe09f1a9a8671930f032a18dda497c64e3107d29'
+application_version_short: 'fe09f1a9'
 environment: 'LOCAL — a private single-machine environment at http://localhost:3100. Not public, not hosted.'
-date: '2026-09-18'
+date: '2026-09-21'
 scope_statement: 'This manual describes behaviour implemented at the commit named above, and nothing else.'
 ---
 
@@ -50,10 +50,54 @@ There is no screen, in the console or anywhere else, that creates a platform own
 of platform authority is established by an operator command run against the database, and the
 product deliberately has no write path to the table that records it.
 
-The supported procedure — the two scripts, what they create, and what they refuse — is written down
-once, outside this manual, in
+The supported procedure — the three scripts, what each creates, and what each refuses — is written
+down once, outside this manual, in
 [`../platform/platform-owner-provisioning.md`](../platform/platform-owner-provisioning.md). Read it
 there rather than here, so there is one description to keep correct.
+
+### 2A.2.1 Adding a second platform operator — OPERATOR PROCEDURE
+
+**There is still no screen for this, and adding one is not planned.** A screen that could hand out
+platform authority would be a screen that could hand out the authority to use itself. What exists
+instead is a third operator command, described in §4a of the provisioning document above, and this
+is what it does, in outline, so you know what to ask for.
+
+**How it works.** The operator who runs it is acting **on behalf of an owner who already holds
+authority**. That owner proves who they are first, by signing in with their own password at the
+prompt the command shows — there is no unattended mode that skips the proof, and with nobody
+holding platform authority at all there is no grantor to prove, so the command refuses. Once the
+proof succeeds, everything else happens in a single transaction: the new owner's account is created
+in the operators' own organisation with no role in any customer organisation, one authority code is
+written for each code asked for, and a record of the grant is written naming who granted what to
+whom. Anything that fails rolls the whole thing back.
+
+**Which authority the new owner gets.** Either the codes the command was asked for, or — if it was
+asked for none — the same set the granting owner holds. Either way the set must include the
+console's base entitlement, and it can never be wider than the granting owner's own set.
+
+**What it refuses.** Stated plainly, because these are the messages the operator will read back
+to you:
+
+- the granting owner could not be proved — a wrong password, or the identity service unreachable;
+- the granting owner is an organisation's own administrator, is suspended, is deleted, or holds no
+  platform authority;
+- the set asked for leaves out the console's base entitlement, or names a code that is not a
+  platform authority code at all;
+- the set asked for is wider than the granting owner's own — the message names the codes they lack;
+- the granting owner and the new owner are the same address — adding codes to your own account is a
+  different command;
+- the address already belongs to an account in the operators' organisation, or to an account in any
+  customer organisation.
+
+**Always ask for the rehearsal first.** All three commands accept a rehearsal mode that reads,
+prints what a real run would do, and writes nothing.
+
+**Taking authority away is a manual act today.** There is no command that revokes platform
+authority and no screen that does it, at this version. Removing an owner means someone changing the
+record by hand on the database, outside the product, and there is no supported procedure for it
+written down. That is a reason to be careful about how many owners you create, and a reason to keep
+more than one: if every account holding platform authority is lost, none of the three commands can
+recover it.
 
 ## 2A.3 Signing in and landing on the console — IMPLEMENTED (UI)
 
@@ -70,16 +114,22 @@ there rather than here, so there is one description to keep correct.
    the console at `/<language>/platform`.
 
 **Result.** The console opens with **"Platform Owner Console"** shown as the area you are in, so it
-is never mistaken for an organisation's workspace. The navigation offers four entries: **Overview**,
-**Organisations**, **Subscription plans** and **Activity record**, under the group **Platform**.
+is never mistaken for an organisation's workspace. The navigation offers five entries: **Overview**,
+**Organisations**, **Subscription plans**, **Account and security** and **Activity record**, under
+the group **Platform**.
+
+Signing in lands you **in the console**, on its overview page. There is no intermediate screen to
+dismiss, no organisation to choose, and no workspace to be bounced out of first.
 
 **Restrictions**
 
 - Each navigation entry appears only if you hold the platform authority it needs. An owner who holds
-  only some of the codes sees only the corresponding entries.
+  only some of the codes sees only the corresponding entries. **Account and security** is gated on
+  the console's base entitlement, which every owner holds, so it is always there.
 - The account menu in the console shows the label **"Platform owner"** and offers signing out. It
-  shows no name and no email address, and there is no profile page: the console's session read does
-  not return those two facts at all.
+  shows no name and no email address. Your own identifier, your home organisation and what you are
+  allowed to do are on the **Account and security** page (2A.14) rather than in that menu: the
+  console's session read does not carry a name or an address at all.
 - If you are already signed in and go to a console address without platform authority, you are not
   shown an empty console — you are refused before any console page is built.
 
@@ -430,7 +480,82 @@ own audit log — that is a separate, tenant-scoped record inside the workspace,
 
 **Screenshot.** No screenshot available at this version.
 
-## 2A.14 What the console does not do — REFERENCE
+## 2A.14 Your own account, and changing your password — IMPLEMENTED (UI)
+
+**Label:** "Account and security" — _"Your sign-in details, and your password."_
+**Who:** any platform owner. The page is gated on the console's base entitlement, which every owner
+holds, so nobody is shown a form the server would refuse.
+**Where:** **Account and security** in the console navigation, at `/<language>/platform/account`.
+
+**What the page shows about you.** Under **"Signed in as"** — _"Who you are signed in as, as the
+platform records it."_ — it shows **"Your reference"** (your own identifier), **"Home
+organisation"** (the organisation platform operators live in, which holds no business data) and
+**"What you are allowed to do here"** (your authority codes). **Your email address is not shown,
+deliberately.** The console is not permitted to read addresses out of the platform records, because
+the same permission would expose every organisation's addresses; changing your password does not
+need it either, since the service takes it from your own signed-in session.
+
+The page performs no read of its own. Everything on it is what the console already knew when it let
+you in.
+
+### Workflow — change your own password
+
+**Steps**
+
+1. Open **Account and security** and read **"Change your password"** and its note: _"You will need
+   your current password. Changing it does not sign out the devices you are already signed in on —
+   each of those stays signed in until its sign-in runs out."_
+2. Type your **Current password**.
+3. Type your **New password** — _"Choose something long that you have not used anywhere else."_ —
+   and **Repeat the new password**. Each of the three boxes has its own **Show password** /
+   **Hide password** control, because confirming a password you cannot see is how a typing mistake
+   becomes an account nobody can open.
+4. Choose **Change password**. While it is working the button reads **Changing…**.
+
+**Result.** **"Password changed"**, with: **"Your password has been changed. A device you are
+already signed in on stays signed in there until that sign-in runs out, so sign out of it yourself
+if you can."**
+
+### What a password change actually does to your other sessions — REFERENCE
+
+**Read this once and remember it, because the word "sign out everywhere" does not mean what it
+sounds like.** When your password changes, the identity service is asked to end your sessions
+everywhere. What that ends, exactly, is the part of a session that lets it **renew itself**. A
+sign-in that has already been handed out to another browser keeps working on that browser **until
+it runs out on its own** — it cannot renew afterwards, but it is not cut off at the moment you
+change the password.
+
+So, plainly:
+
+- **The old password is dead immediately.** Nobody can sign in with it again, anywhere.
+- **A browser already signed in stays signed in** until that sign-in expires by itself. On this
+  installation a sign-in lasts one hour (Part 1, §1.8).
+- **Therefore: if you are changing your password because somebody else may have had it, changing it
+  is not enough on its own.** Go to the other device and sign out of it, or wait out the hour.
+
+The product says the same thing in its own words before and after the change, and this manual states
+it here so that nobody has to infer it from a screen. If the identity service could not be reached
+to end the renewals at all, the message reads instead: **"Your password has been changed. Other
+devices were not signed out, so sign out of them yourself if you can."** — the password did change;
+only the tidying up did not.
+
+**If it goes wrong**
+
+| Message                                                                                    | What it means                                                                                                  |
+| ------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------- |
+| **"That is not your current password. Try again."**                                        | The first box is wrong. You are not signed out for a typing error.                                             |
+| **"The two new passwords are not the same."**                                              | The second and third boxes disagree.                                                                           |
+| **"The new password is the same as the current one. Choose a different one."**             | Nothing would change.                                                                                          |
+| **"This password was not accepted. Choose a longer one, or one that is harder to guess."** | The identity service refused it. The product states no rule of its own, so there is no length to quote at you. |
+
+**Restrictions.** This page changes **your own** password and nobody else's. There is no screen
+anywhere that sets another person's password — not an organisation's administrator's, and not
+another platform owner's. A person who has forgotten theirs asks for a reset link and sets it
+themselves (Part 1, §1.6).
+
+**Screenshot.** No screenshot available at this version.
+
+## 2A.15 What the console does not do — REFERENCE
 
 Stated plainly, so nobody looks for a screen that is not there:
 
@@ -441,23 +566,63 @@ Stated plainly, so nobody looks for a screen that is not there:
   producing a document from them is not built at this version. **NOT AVAILABLE.**
 - **It does not take a payment.** A payment is recorded after it happened elsewhere. There is no
   payment provider and no card handling anywhere in this product. **NOT AVAILABLE.**
-- **It does not raise a platform owner.** See 2A.2. **OPERATOR PROCEDURE.**
+- **It does not raise a platform owner, and it does not remove one.** Creating another owner is the
+  operator command described in 2A.2.1; taking authority away has no command and no screen at all.
+  **OPERATOR PROCEDURE**, and for removal, **NOT AVAILABLE**.
 - **It shows no email address or name for the signed-in owner**, by decision: the console's session
-  read does not return them.
+  read does not return them. What it does show about you is on **Account and security** (2A.14).
+- **It sends nothing outside this machine.** The invitation a new organisation's administrator
+  receives is delivered to the local mail catcher described in Part 1, §1.5, and its link points at
+  `localhost`.
 
-## 2A.15 Not established — REFERENCE
+## 2A.16 Not established — REFERENCE
 
 Questions this part could not answer from the code and records available at this commit:
 
-- **Whether the console has been walked end to end in a browser by a signed-in platform owner.** The
-  screens, their labels and their refusals are read from the code; an authenticated browser walk of
-  the console is recorded as still owed in
+- **Whether the whole console has been walked end to end in a browser by a signed-in platform
+  owner.** Part of it has: signing in as a platform owner, landing on the console, and the whole of
+  the password change in 2A.14 — including what happened to a second browser afterwards — were
+  exercised on the local environment, in a real browser, on 2026-09-20 and 2026-09-21, and the
+  sentences quoted for those are what the screens actually said. The organisation, plan, billing
+  and activity screens were **not** walked that way; what this part says about them is read from
+  the code, and a complete console walk is recorded as still owed in
   [`../product/owner-directive-2026-09-16/capability-status.md`](../product/owner-directive-2026-09-16/capability-status.md).
-  This part does not claim one happened.
 - **What a platform owner should do when an organisation is deliberately left over its limits.**
   The software permits it and records the reason; no policy about reviewing such organisations
   exists to describe.
+- **What to do if every account holding platform authority is lost.** All three operator commands
+  refuse in that situation, by design, and no recovery procedure exists to describe.
 
+<!--
+REVISION 2026-09-21 — sections 2A.2, 2A.2.1, 2A.3, 2A.14, 2A.15 and 2A.16 were re-read and written
+at develop f30ce918405164712cc9cdcadb458c4e91a2b5b9. Every other section of this part is carried
+unchanged from the reading recorded below and was not re-read.
+
+Read for this revision:
+- apps/web/src/config/platform-navigation.ts — the five console entries and the permission each is
+  gated on; platform-account is gated on platform.organization.read, the console base entitlement.
+- apps/web/src/app/[locale]/(platform)/platform/account/page.tsx and
+  apps/web/src/features/platform/components/AccountSecurityScreen.tsx — the identity block, the
+  deliberate absence of the address, the three local checks, the two distinct server refusals, and
+  the success sentence chosen by what the server reported about the other devices.
+- apps/api/src/app/api/v1/platform/account/password/route.ts — operation iam.account-password-change,
+  permission platform.organization.read, auditClass security, not idempotent by decision.
+- apps/api/src/modules/iam/application/authentication-service.ts changeOwnPassword — the
+  re-authentication, the audit record written before the sign-out, and the two outcomes
+  'sessions-kept-until-expiry' and 'not-ended'.
+- apps/api/src/modules/iam/provider/supabase-provider.ts signOutEverywhere — what a global sign-out
+  ends (the identity's refresh tokens) and what it does not (an access token already issued, which
+  keeps verifying until its own expiry).
+- scripts/platform/add-platform-operator.mjs and docs/platform/platform-owner-provisioning.md §2,
+  §4a, §5 and §8 — the grantor proof, the refusals listed in 2A.2.1, the rehearsal mode, and the
+  absence of any revocation path.
+- Wording: platform.account.*, platform.nav.account in apps/web/src/i18n/messages/en.json.
+
+What was exercised rather than read: the sign-in landing on the console, the password change, and
+the state of a second browser afterwards were driven in a real Chromium against the local
+environment on 2026-09-20 and 2026-09-21. No screenshot of any console screen was captured, so
+every Screenshot field still says so.
+-->
 <!--
 SOURCES for Part 2A (all read at develop 5b2c7840da1821f973438d5429665ef4448132f2):
 

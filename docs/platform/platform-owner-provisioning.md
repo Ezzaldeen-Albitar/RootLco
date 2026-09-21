@@ -13,6 +13,13 @@ is the supported procedure, not a record of one.
 **No credential appears in this document.** No password, key, token or example value of any of them
 is written here, and none may be added.
 
+**The Platform Owner's login address on the local environment is `owner@rootlco.com`.** That is an
+address, not a credential, and it is written here because an operator running any of the three
+scripts below has to name it. **Its password is not in this repository and may never be put in
+one.** It is kept in `orchestration/handover/platform-owner-credentials.md` **on the Owner's own
+machine**, outside this repository and outside any checkout of it. If that file is lost, the section
+8 note about a lost owner applies.
+
 **One dated exception, recorded because it is true.** On the local acceptance environment a
 platform-authority account was created by a direct insert on a privileged database connection,
 outside all three scripts, before `add-platform-operator.mjs` existed. At that time the only
@@ -189,9 +196,16 @@ is never deleted. If the deletion itself fails, the script prints the identity i
 that it must be removed by hand at the identity provider; no account row was written, so nothing
 else is left orphaned.
 
-**Revocation is not in this script.** Taking authority away has its own refusals — the last holder
-of the base entitlement, the last owner on the platform — and its own database proof. It is not
-folded in as a flag, and there is no supported revocation procedure in this repository yet.
+**Revocation is not in this script, and there is no other way to do it either.** Taking authority
+away has its own refusals — the last holder of the base entitlement, the last owner on the platform
+— and its own database proof. It is not folded in as a flag, no second script performs it, and no
+screen performs it. **Today, removing an owner means changing the record by hand on a privileged
+connection, outside every procedure in this document.** That is recorded as `CC-OD-29` in
+`../product/owner-directive-2026-09-16/change-control.md` and stated in the user manual's Part 2A,
+§2A.2.1; it is an open decision, not an oversight.
+
+**Nothing in section 4a has been run.** The procedure above is read out of the script it cites. No
+measurement so far has executed it, in any mode, and this document claims no run of it.
 
 ## 5. Running them
 

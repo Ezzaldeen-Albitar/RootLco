@@ -1,10 +1,10 @@
 ---
 manual: 'CRM User Manual'
 title: 'Part 4B — The workshop journey, the floor: work orders, diagnostics, technicians, quality'
-application_version: '5b2c7840da1821f973438d5429665ef4448132f2'
-application_version_short: '5b2c7840'
+application_version: 'fe09f1a9a8671930f032a18dda497c64e3107d29'
+application_version_short: 'fe09f1a9'
 environment: 'LOCAL — a private single-machine environment at http://localhost:3100. Not public, not hosted.'
-date: '2026-09-18'
+date: '2026-09-21'
 scope_statement: 'This manual describes behaviour implemented at the commit named above, and nothing else.'
 ---
 
@@ -274,8 +274,16 @@ order holds no job." <!-- workOrders.detail.noJobsBody -->
 
 **NOT AVAILABLE — adding a job from this screen.** There is no "add job" action on the work-order
 detail screen. The jobs a work order holds arrive with it; the panel routes, staffs and unblocks
-them. The permission `wo.work_order.line.manage` exists in the catalogue, is not held by the default
-administrator role, and no screen calls it.
+them.
+
+**The service lines a work order carries are a separate matter, and at this version they are half
+solved.** `wo.work_order.line.manage` — the permission that records what work is on a work order —
+**is** now in the set a new organisation's first administrator is given (Part 3, §3.15), so the act
+is reachable inside a newly provisioned organisation. What is still missing is a **screen**: no page
+anywhere in the application records a service line, so the lines have to be recorded through the
+service itself by whoever operates the installation. **OPERATOR PROCEDURE.** The lines that do exist
+are read back and offered by name on the parts screen, when material is asked for against one (Part
+5, §5.26.2).
 
 If your department name is missing, the row still shows the routing: an operator without
 `org.department.read` sees the department reference instead of the name, because showing nothing
@@ -1198,6 +1206,16 @@ Inventory and brief (read, not quoted):
   screenshots_available (29 entries — none for this part), not_found items 1, 2, 5, 7
 - scratchpad/handover-map-A.json — environment.urls (web http://localhost:3100), environment.kind
   (LOCAL only)
+
+REVISION 2026-09-21 — section 4B.6.3 was re-read and corrected at develop
+f30ce918405164712cc9cdcadb458c4e91a2b5b9 against
+apps/api/src/modules/iam/domain/bootstrap-roles.ts (wo.work_order.line.manage is now in the
+first-administrator set) and apps/api/src/app/api/v1/work-orders/[workOrderId]/service-lines/route.ts
+(wo.service-line-record, which no screen under apps/web/src calls). The same head added
+workOrders.state.* to apps/web/src/i18n/messages/en.json and ar.json, so the work-order state shown
+beside a work order's parts is now a name in both languages rather than an internal code; that
+screen is in Part 5, §5.26. Everything else in this part is carried unchanged from the readings
+below.
 
 REVISION 2026-09-18 — the work-order board filters were re-read at develop
 5b2c7840da1821f973438d5429665ef4448132f2 (apps/web/src/features/work-orders/components/
