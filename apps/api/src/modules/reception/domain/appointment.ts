@@ -54,9 +54,35 @@ export const TERMINAL_APPOINTMENT_STATUSES: readonly AppointmentStatus[] = [
 
 export const MAX_DISPLAY_NUMBER = 64;
 
+/**
+ * Why a window this layer decided was refused, as a rule token on the wire.
+ *
+ * Every member of this list used to be published as `invalid_value`, whose
+ * sentence tells a receptionist to check the choices, the length and the range
+ * of what they typed. None of the three is a length or a range problem, and the
+ * middle one is not even visible in what they typed: an appointment time with no
+ * time zone looks exactly like one with a time zone on a form. A sentence that
+ * sends somebody to re-read a correct entry is worse than a vague one, so each
+ * cause now names itself.
+ */
+export const APPOINTMENT_WINDOW_RULES = Object.freeze([
+  'appointment_time_unreadable',
+  'appointment_time_zone_missing',
+  'appointment_window_backwards',
+] as const);
+export type AppointmentWindowRule = (typeof APPOINTMENT_WINDOW_RULES)[number];
+
 /** Raised for a rule this layer can decide without the database. */
 export class AppointmentRuleError extends Error {
   public override readonly name = 'AppointmentRuleError';
+
+  public constructor(
+    message: string,
+    /** The token the publishing service puts on the wire for this cause. */
+    public readonly rule: AppointmentWindowRule
+  ) {
+    super(message);
+  }
 }
 
 export interface AppointmentCreateInput {
@@ -96,7 +122,10 @@ export interface CancelInput {
 function instant(value: string, field: string): number {
   const ms = Date.parse(value);
   if (Number.isNaN(ms)) {
-    throw new AppointmentRuleError(`${field} is not a valid timestamp`);
+    throw new AppointmentRuleError(
+      `${field} is not a valid timestamp`,
+      'appointment_time_unreadable'
+    );
   }
   return ms;
 }
@@ -123,7 +152,8 @@ function requireOffset(value: string, field: string): void {
     throw new AppointmentRuleError(
       `${field} must carry an explicit UTC offset (…Z or …±HH:MM, no wider than ` +
         '±15:59); a timezone-less timestamp would be resolved against the server ' +
-        'zone rather than the branch zone'
+        'zone rather than the branch zone',
+      'appointment_time_zone_missing'
     );
   }
 }
@@ -135,7 +165,10 @@ function window(from: string, to: string, label: string): void {
   const end = instant(to, `${label}To`);
   // Mirrors ck_appointments_requested_window / ck_appointments_confirmed_window.
   if (end <= start) {
-    throw new AppointmentRuleError(`${label}To must be strictly after ${label}From`);
+    throw new AppointmentRuleError(
+      `${label}To must be strictly after ${label}From`,
+      'appointment_window_backwards'
+    );
   }
 }
 

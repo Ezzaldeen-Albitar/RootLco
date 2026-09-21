@@ -594,4 +594,11 @@ export const APPOINTMENT_REFUSAL_KEYS: readonly string[] = Object.freeze([
   'form.violation.appointment_not_cancellable',
   'form.violation.appointment_not_confirmed_for_no_show',
   'form.violation.appointment_not_confirmed_for_check_in',
+  // The three window rules. They used to arrive as the general "something here
+  // was not accepted", which for a missing time zone points a clerk at an entry
+  // that looks perfectly correct on the form, because the zone is not part of
+  // what the form shows them.
+  'form.violation.appointment_time_unreadable',
+  'form.violation.appointment_time_zone_missing',
+  'form.violation.appointment_window_backwards',
 ]);

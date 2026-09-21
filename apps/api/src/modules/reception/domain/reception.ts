@@ -90,8 +90,27 @@ export const MAX_CLOSURE_REASON = 500;
 export const CLOSE_OUTCOMES = ['closed_without_work', 'refused'] as const;
 export type CloseOutcome = (typeof CLOSE_OUTCOMES)[number];
 
+/**
+ * Why a reception plan was refused, as a rule token on the wire.
+ *
+ * Both were published as `invalid_value`, which is only half true: a state of
+ * charge outside the permitted band is a range problem, and a walk-in note that
+ * was typed but holds nothing but spaces is not. The generic sentence stays for
+ * the refusals that really are "something on this form was not accepted".
+ */
+export const RECEPTION_PLAN_RULES = Object.freeze(['out_of_range', 'blank'] as const);
+export type ReceptionPlanRule = (typeof RECEPTION_PLAN_RULES)[number];
+
 export class ReceptionRuleError extends Error {
   public override readonly name = 'ReceptionRuleError';
+
+  public constructor(
+    message: string,
+    /** The token the publishing service puts on the wire for this cause. */
+    public readonly rule: ReceptionPlanRule
+  ) {
+    super(message);
+  }
 }
 
 /** Exactly one of these two origins, mirroring the XOR CHECK. */
@@ -152,14 +171,15 @@ export function toReceptionCreatePlan(
     // Mirrors ck_reception_visits_soc.
     if (!Number.isFinite(soc) || soc < MIN_SOC_PERCENT || soc > MAX_SOC_PERCENT) {
       throw new ReceptionRuleError(
-        `evSocPercent must be between ${MIN_SOC_PERCENT} and ${MAX_SOC_PERCENT}`
+        `evSocPercent must be between ${MIN_SOC_PERCENT} and ${MAX_SOC_PERCENT}`,
+        'out_of_range'
       );
     }
   }
   if (input.origin.kind === 'walk_in') {
     const note = input.origin.note;
     if (note !== undefined && note !== null && note.trim().length === 0) {
-      throw new ReceptionRuleError('A walk-in note, when supplied, must not be blank');
+      throw new ReceptionRuleError('A walk-in note, when supplied, must not be blank', 'blank');
     }
   }
   return {

@@ -5746,11 +5746,16 @@
   "form.violation.not_published": "This version is not published yet, so an inspection cannot be started from it. Choose a published version, or publish this one first.",
   "form.violation.self_review": "An inspection cannot be reviewed by the person who carried it out. Ask a colleague to review it.",
   "form.violation.required_for_numeric": "An item that is measured needs a unit of measure. Enter the unit, then save again.",
-  "form.violation.invalid_value": "What was entered here is not accepted. Check it against what this form asks for: the choices it offers, and the length and the range it allows. Correct it, then save again.",
+  "form.violation.invalid_value": "Something entered here was not accepted. Check the entries on this form, then try again.",
   "form.violation.after_start": "A work session has to finish after it starts. Choose a finishing time later than the starting time.",
   "form.violation.not-own-profile": "You can only record time on your own work. Ask a supervisor to record time for someone else.",
   "form.violation.profile-inactive": "This technician is not active at the moment, so work cannot be given to them and their time cannot be recorded. Choose an active technician, or ask an administrator to make this one active again.",
   "form.violation.session-already-open": "A work session is already running. Stop the session that is running before starting another.",
   "form.violation.window-overlaps": "The corrected times overlap a session that is already recorded. Choose times that do not overlap.",
-  "form.violation.not_independent": "Rework cannot be signed off by the technician who carried it out. Ask a colleague to sign it off."
+  "form.violation.not_independent": "Rework cannot be signed off by the technician who carried it out. Ask a colleague to sign it off.",
+  "form.violation.appointment_time_unreadable": "The date and time entered here could not be read. Enter the date and the time again.",
+  "form.violation.appointment_time_zone_missing": "The date and time entered here does not say which time zone it belongs to, and we will not guess: booking an hour in the wrong zone means the customer arrives on the wrong hour. Pick the time from the calendar so the branch time zone comes with it.",
+  "form.violation.appointment_window_backwards": "The appointment ends before it starts. Choose an end time that is later than the start time.",
+  "form.violation.companion_field_required": "One more entry is needed before this can be saved. Nothing entered is wrong; the entry shown beside this message has been left empty and is required here.",
+  "form.violation.no_opening_stage": "No opening stage for jobs is set up in this workshop yet. Ask an administrator to set one up."
 }
