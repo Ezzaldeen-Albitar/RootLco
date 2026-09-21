@@ -2,7 +2,11 @@
 
 import { z } from 'zod';
 import { authorizedClient } from '@/lib/api/server-client';
-import { CAPACITY_LIMIT_CODE, ORGANISATION_INACTIVE_CODE } from '@/lib/api/client';
+import {
+  CAPACITY_LIMIT_CODE,
+  ORGANISATION_INACTIVE_CODE,
+  UPSTREAM_DEPENDENCY_CODE,
+} from '@/lib/api/client';
 import { fromFailure, invalid, success, type ActionState } from '@/lib/forms/action-result';
 import { issueKeysByField } from '@/features/authentication/schemas/credentials';
 
@@ -61,7 +65,7 @@ export async function inviteUserAction(
   if (!parsed.success) return invalid(issueKeysByField(parsed.error), attempt);
 
   const client = await authorizedClient();
-  if (!client) return { status: 'expired', messageKey: 'state.expired.title', attempt };
+  if (!client) return { status: 'expired', messageKey: 'state.expired.message', attempt };
 
   const result = await client.send('POST', '/api/v1/iam/invitations', {
     email: parsed.data.email,
@@ -88,6 +92,31 @@ export async function inviteUserAction(
       return {
         status: 'conflict',
         messageKey: 'users.invite.duplicate',
+        correlationId: result.correlationId,
+        attempt,
+      };
+    }
+    /*
+     * The identity provider could not be reached, so the invitation MAIL was
+     * never sent — and neither was anything else.
+     *
+     * Stated that way because that is what the service does. The provider write
+     * is the FIRST thing `invite()` attempts after its delegation and duplicate
+     * checks, and a `provider-unavailable` failure becomes `ERR-DEP-001` before
+     * the account row is inserted: the catalogue entry says in so many words
+     * that the request performed no work and may be retried. So the honest
+     * sentence is "nothing was saved, send it again" — NOT "the invitation was
+     * saved but the email could not be sent", which would leave the
+     * administrator looking for an outstanding invitation that does not exist.
+     *
+     * It says nothing about the address beyond asking the reader to check it.
+     * Whether that address already belongs to somebody in another organisation
+     * is not disclosed here and is not knowable from this answer.
+     */
+    if (result.problem?.code === UPSTREAM_DEPENDENCY_CODE) {
+      return {
+        status: 'unavailable',
+        messageKey: 'users.invite.notSent',
         correlationId: result.correlationId,
         attempt,
       };
@@ -174,7 +203,7 @@ async function mutate(
   }
 
   const client = await authorizedClient();
-  if (!client) return { status: 'expired', messageKey: 'state.expired.title', attempt: 1 };
+  if (!client) return { status: 'expired', messageKey: 'state.expired.message', attempt: 1 };
 
   const result = await client.send(method, path, body, {
     ...(options.ifMatch !== undefined ? { ifMatch: options.ifMatch } : {}),
@@ -247,7 +276,7 @@ export async function issueGrantAction(input: {
   }
 
   const client = await authorizedClient();
-  if (!client) return { status: 'expired', messageKey: 'state.expired.title', attempt: 1 };
+  if (!client) return { status: 'expired', messageKey: 'state.expired.message', attempt: 1 };
 
   const result = await client.send('POST', '/api/v1/iam/grants', {
     userId: parsed.data.userId,
@@ -285,7 +314,7 @@ export async function addGrantScopesAction(
   if (!UUID.test(grantId) || !parsed.success) return invalid({}, 1, 'form.formError');
 
   const client = await authorizedClient();
-  if (!client) return { status: 'expired', messageKey: 'state.expired.title', attempt: 1 };
+  if (!client) return { status: 'expired', messageKey: 'state.expired.message', attempt: 1 };
 
   for (const scope of parsed.data) {
     const result = await client.send(
