@@ -1664,6 +1664,47 @@ describe('optional identity evidence when confirming a receiver', () => {
     }
   );
 
+  /*
+   * The banner this panel draws is its own, not the shared one, so the two
+   * things the shared banner learned had to reach it as well: the second line
+   * that says what to do, and the numbers a refusal published about itself.
+   * Both are asserted on the panel rather than on the renderer, because a panel
+   * composing its own banner is exactly where they went missing.
+   */
+  it('tells a refused confirmation what to do next, beside the verdict', async () => {
+    verifyReceiver.mockResolvedValue({
+      status: 'denied',
+      messageKey: 'state.denied.title',
+      correlationId: 'corr-receiver-denied',
+      attempt: 1,
+    });
+    const { region, submit } = await prepare();
+    await submit();
+
+    // The heading still reads exactly as it did, as its own node.
+    expect(await within(region).findByText(EN['state.denied.title'] as string)).toBeVisible();
+    expect(within(region).getByText(EN['state.denied.message'] as string)).toBeVisible();
+  });
+
+  it('states the wait a throttled confirmation advised, never the placeholder', async () => {
+    verifyReceiver.mockResolvedValue({
+      status: 'throttled',
+      messageKey: 'state.throttled.messageWithSeconds',
+      messageValues: { seconds: '30' },
+      correlationId: 'corr-receiver-throttled',
+      attempt: 1,
+    });
+    const { region, submit } = await prepare();
+    await submit();
+
+    expect(
+      await within(region).findByText(
+        (EN['state.throttled.messageWithSeconds'] as string).replace('{seconds}', '30')
+      )
+    ).toBeVisible();
+    expect(region.textContent).not.toContain('{seconds}');
+  });
+
   it('keeps the chosen document after a failed upload, and the next Confirm captures that same document again', async () => {
     captureDocument.mockResolvedValueOnce({
       status: 'unavailable',
@@ -3146,6 +3187,45 @@ describe('a refused signature capture is stated where it happened', () => {
     // signature had been added.
     expect(listSignatures).toHaveBeenCalledTimes(1);
     expect(within(region).getByText(EN['delivery.signatures.noneTitle'] as string)).toBeVisible();
+  });
+
+  it.each(['en', 'ar'] as const)(
+    'tells a refused signer what to do next, beside the verdict, in %s',
+    async (locale) => {
+      captureDeliverySignature.mockResolvedValue({
+        status: 'denied',
+        messageKey: 'state.denied.title',
+        correlationId: REFUSAL_REFERENCE,
+        attempt: 1,
+      });
+      const region = await captureIn(locale);
+      const text = locale === 'en' ? EN : AR;
+
+      // The heading still reads exactly as it did, as its own node.
+      expect(await within(region).findByText(text['state.denied.title'] as string)).toBeVisible();
+      expect(within(region).getByText(text['state.denied.message'] as string)).toBeVisible();
+      if (locale === 'ar') {
+        expect(en['state.denied.message']).not.toBe(ar['state.denied.message']);
+      }
+    }
+  );
+
+  it('states the wait a throttled capture advised, never the placeholder', async () => {
+    captureDeliverySignature.mockResolvedValue({
+      status: 'throttled',
+      messageKey: 'state.throttled.messageWithSeconds',
+      messageValues: { seconds: '45' },
+      correlationId: REFUSAL_REFERENCE,
+      attempt: 1,
+    });
+    const region = await captureIn('en');
+
+    expect(
+      await within(region).findByText(
+        (EN['state.throttled.messageWithSeconds'] as string).replace('{seconds}', '45')
+      )
+    ).toBeVisible();
+    expect(region.textContent).not.toContain('{seconds}');
   });
 });
 

@@ -3,14 +3,14 @@
 import { useEffect, useId, useRef, useState, useTransition } from 'react';
 import { notifyActionResult } from '@/components/notifications/action-notifications';
 import { CustomerSelector, type SelectedCustomer } from '@/components/party/CustomerSelector';
-import { EmptyState } from '@/components/states/States';
+import { EmptyState, FailureExplanation } from '@/components/states/States';
 import { listDocumentCategories } from '@/features/attachments/api';
 import type { DocumentCategory } from '@/features/attachments/attachments-contract';
 import { CaptureFileField } from '@/features/receptions/components/CaptureFileField';
 import { formatDateTime, intlLocale } from '@/lib/format';
 import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
-import { translate, translateDynamic } from '@/i18n/get-messages';
+import { translate, translateDynamic, translateWithValues } from '@/i18n/get-messages';
 import type { ReadState } from '@/lib/api/read-operation';
 import { readReceiver } from '../api';
 import {
@@ -224,6 +224,14 @@ export function ReceiverPanel({
 interface Refusal {
   /** The sentence for the step that stopped the act. Always a KEY. */
   readonly messageKey: string;
+  /**
+   * The numbers the refusal published about itself, for the `{name}` places in
+   * that sentence. A throttled verification advises a wait in here, and a
+   * sentence rendered without it prints the placeholder rather than the wait.
+   * `formatMessage` substitutes only the places a sentence actually has, so a
+   * step that answers with its own wording is unaffected by carrying them.
+   */
+  readonly messageValues: Readonly<Record<string, string>> | undefined;
   /** The reason a named control carried, when one did. */
   readonly fieldKey: string | null;
   /** The reference the backend logged. */
@@ -435,6 +443,7 @@ function VerifyForm({
       }
       setRefusal({
         messageKey: refusalKey(result),
+        messageValues: result.messageValues,
         fieldKey: firstFieldError(result.fieldErrors),
         correlationId: result.correlationId ?? null,
         withEvidence: result.withEvidence,
@@ -544,7 +553,8 @@ function VerifyForm({
             {translate(messages, 'delivery.receiver.refused')}
           </p>
           <p className="text-caption text-text-secondary">
-            {translateDynamic(messages, refusal.messageKey)}
+            {translateWithValues(messages, refusal.messageKey, refusal.messageValues)}
+            <FailureExplanation messages={messages} messageKey={refusal.messageKey} />
           </p>
           {refusal.withEvidence && chosen ? (
             <p className="text-caption text-text-secondary">

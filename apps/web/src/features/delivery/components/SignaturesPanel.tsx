@@ -3,12 +3,12 @@
 import { useState, useTransition } from 'react';
 import { SelectField } from '@/components/forms/Field';
 import { notifyActionResult } from '@/components/notifications/action-notifications';
-import { EmptyState } from '@/components/states/States';
+import { EmptyState, FailureExplanation } from '@/components/states/States';
 import { CaptureFileField } from '@/features/receptions/components/CaptureFileField';
 import { formatDateTime } from '@/lib/format';
 import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
-import { translate, translateDynamic } from '@/i18n/get-messages';
+import { translate, translateDynamic, translateWithValues } from '@/i18n/get-messages';
 import { listSignatures } from '../api';
 import { captureDeliverySignature } from '../signature-capture';
 import {
@@ -185,6 +185,13 @@ export function SignaturesPanel({
 interface Refusal {
   /** The banner key the failure carried, or the shared one. Always a KEY. */
   readonly messageKey: string;
+  /**
+   * The numbers the refusal published about itself, for the `{name}` places in
+   * that key's sentence. Carried rather than dropped: the advised wait on a
+   * throttled capture is in here, and a sentence rendered without it shows the
+   * placeholder to the operator instead of the seconds.
+   */
+  readonly messageValues: Readonly<Record<string, string>> | undefined;
   /** The key for the control the failure named, when it named one. */
   readonly fieldKey: string | null;
   /** The reference the backend logged. The only diagnostic an operator sees. */
@@ -263,6 +270,7 @@ function CaptureForm({
         }
         setRefusal({
           messageKey: result.messageKey ?? 'form.formError',
+          messageValues: result.messageValues,
           fieldKey: firstFieldError(result.fieldErrors),
           correlationId: result.correlationId ?? null,
         });
@@ -318,7 +326,8 @@ function CaptureForm({
             {translate(messages, 'delivery.signatures.refused')}
           </p>
           <p className="text-caption text-text-secondary">
-            {translateDynamic(messages, refusal.messageKey)}
+            {translateWithValues(messages, refusal.messageKey, refusal.messageValues)}
+            <FailureExplanation messages={messages} messageKey={refusal.messageKey} />
           </p>
           {refusal.correlationId === null ? null : (
             <p className="text-caption text-text-muted">
