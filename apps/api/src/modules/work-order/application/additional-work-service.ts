@@ -1038,21 +1038,32 @@ export class AdditionalWorkService extends ApplicationService {
         message: `Quotation revision ${revisionId} has been superseded`,
       });
     }
-    // The three refusals below name the CONTROL the caller filled in, so the
-    // sentence lands beside the quotation field rather than in the banner. None
-    // of them publishes the revision's status or outcome: the caller has already
-    // been authorized for this scope and can read the quotation itself, and a
-    // token carrying the status would have to be re-catalogued every time the
-    // quotation vocabulary grew.
+    /*
+     * The three refusals below are filed under the REQUEST, not under the body
+     * field the caller sent.
+     *
+     * They used to name `body.quotationRevisionRef`, which reads better but
+     * does not arrive: the interface files a body violation under the control
+     * whose name is the path's last segment, and no form in the application has
+     * a control called `quotationRevisionRef` — the decision form sends no
+     * quotation reference at all today. A sentence filed under a control that
+     * does not exist is written into a map nothing reads, which on screen is
+     * the same as having dropped it. Under the route parameter it travels to
+     * the banner every screen already renders, exactly as the other refusals on
+     * this service do.
+     *
+     * None of them publishes the revision's status or outcome: the caller has
+     * already been authorized for this scope and can read the quotation itself,
+     * and a token carrying the status would have to be re-catalogued every time
+     * the quotation vocabulary grew.
+     */
     if (standing.revisionStatus !== 'issued') {
       throw new AppFailure('ERR-TRN-001', {
         message:
           `Quotation revision ${revisionId} is ${standing.revisionStatus}; only an issued ` +
           'revision may be linked',
         safeDetails: {
-          violations: [
-            { path: 'body.quotationRevisionRef', rule: 'work_order_quotation_not_issued' },
-          ],
+          violations: [{ path: 'path.requestId', rule: 'work_order_quotation_not_issued' }],
         },
       });
     }
@@ -1060,7 +1071,7 @@ export class AdditionalWorkService extends ApplicationService {
       throw new AppFailure('ERR-TRN-001', {
         message: `Quotation revision ${revisionId} has expired`,
         safeDetails: {
-          violations: [{ path: 'body.quotationRevisionRef', rule: 'work_order_quotation_expired' }],
+          violations: [{ path: 'path.requestId', rule: 'work_order_quotation_expired' }],
         },
       });
     }
@@ -1070,9 +1081,7 @@ export class AdditionalWorkService extends ApplicationService {
           `Quotation revision ${revisionId} is not accepted (` +
           `${standing.outcome ?? 'awaiting decisions'}), so it cannot release additional work`,
         safeDetails: {
-          violations: [
-            { path: 'body.quotationRevisionRef', rule: 'work_order_quotation_not_accepted' },
-          ],
+          violations: [{ path: 'path.requestId', rule: 'work_order_quotation_not_accepted' }],
         },
       });
     }

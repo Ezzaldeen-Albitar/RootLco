@@ -331,6 +331,13 @@ export function assertStandingAuthorization(decisions: readonly StandingDecision
  * one token gives it one without telling the caller which of the two rules
  * refused — two tokens would be exactly the probing channel the uniform wording
  * was chosen to close.
+ *
+ * Filed under the RECEPTION, like every other refusal in this module, and not
+ * under the body field each caller happened to send. The interface files a body
+ * violation under the control named by the path's last segment; neither the
+ * refusal form nor the authorization form has a control by those names, so a
+ * sentence filed there would be written into a map no screen reads. Under the
+ * route parameter it reaches the one place both forms already show a refusal.
  */
 export const PARTY_NOT_AUTHORISED_RULE = 'reception_party_not_authorised';
 
@@ -339,7 +346,7 @@ export function assertMayAuthorize(activeRoles: readonly string[]): void {
     throw new AppFailure('ERR-TRN-001', {
       message: 'That party may not authorize work on this reception',
       safeDetails: {
-        violations: [{ path: 'body.refusingPartnerId', rule: PARTY_NOT_AUTHORISED_RULE }],
+        violations: [{ path: 'path.receptionId', rule: PARTY_NOT_AUTHORISED_RULE }],
       },
     });
   }
@@ -371,7 +378,7 @@ export function assertAuthorizingRoleHeld(claimed: string, activeRoles: readonly
     throw new AppFailure('ERR-TRN-001', {
       message: 'That party may not authorize work on this reception in the role claimed',
       safeDetails: {
-        violations: [{ path: 'body.authorizingRole', rule: PARTY_NOT_AUTHORISED_RULE }],
+        violations: [{ path: 'path.receptionId', rule: PARTY_NOT_AUTHORISED_RULE }],
       },
     });
   }
