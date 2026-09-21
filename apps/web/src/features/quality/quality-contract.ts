@@ -67,15 +67,20 @@
  * - `closure.<blocker>` — the closure refusal files one violation per
  *   outstanding blocker, keyed by the blocker's own code. No form has a control
  *   called `B3`, so the sentence was written into a map nothing reads.
- * - `body.originatingJobId` — the request form offers no origin control, so the
- *   sentence naming the missing origin had nowhere to appear either.
  *
- * Both belong in the form's own alert, where every other whole-request refusal
+ * It belongs in the form's own alert, where every other whole-request refusal
  * on this screen already goes.
+ *
+ * `body.originatingJobId` used to be the second entry here, for the same reason:
+ * the request form offered no origin control at all. That was not a rendering
+ * problem but a product defect — the form sent neither origin, and the service
+ * refuses exactly that, so every extra-work request raised from this screen was
+ * refused. The form now carries a required job picker under that very name, so
+ * `origin_required` and `origin_conflict` reach the control they are about and
+ * this list is no longer where they go.
  */
 export const CLOSURE_UNATTACHED_REFUSAL_KEYS: readonly string[] = Object.freeze([
   'form.violation.closure_blocked',
-  'form.violation.origin_required',
 ]);
 
 /**

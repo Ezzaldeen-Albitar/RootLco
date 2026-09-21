@@ -5757,5 +5757,9 @@
   "form.violation.appointment_time_zone_missing": "The date and time entered here does not say which time zone it belongs to, and we will not guess: booking an hour in the wrong zone means the customer arrives on the wrong hour. Pick the time from the calendar so the branch time zone comes with it.",
   "form.violation.appointment_window_backwards": "The appointment ends before it starts. Choose an end time that is later than the start time.",
   "form.violation.companion_field_required": "One more entry is needed before this can be saved. Nothing entered is wrong; the entry shown beside this message has been left empty and is required here.",
-  "form.violation.no_opening_stage": "No opening stage for jobs is set up in this workshop yet. Ask an administrator to set one up."
+  "form.violation.no_opening_stage": "No opening stage for jobs is set up in this workshop yet. Ask an administrator to set one up.",
+  "quality.closure.originatingJob": "Found while working on",
+  "quality.closure.originatingJobHint": "The job this extra work was discovered on. Extra work is always recorded against the job it came out of.",
+  "quality.closure.originatingJobNone": "This work order has no jobs yet, so there is nothing for extra work to be recorded against. Add a job to the work order first.",
+  "quality.closure.originatingJobPlaceholder": "Choose a job"
 }

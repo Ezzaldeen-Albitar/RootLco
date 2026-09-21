@@ -193,19 +193,32 @@ function Panel({
 /**
  * The shared settle-and-report of every command form: pending, problem, epoch.
  *
- * A refusal that names a control no form here renders — the additional-work
- * request refused for naming no origin is the one that reaches this — is
- * preferred over the generic banner, because it is the only thing in the
- * response that says what was wrong. `unattachedRefusalKey` recognises a short
- * list, so anything else leaves the banner exactly as it was.
+ * A refusal that names a control no form here renders — the closure refused
+ * blocker by blocker is the one that reaches this — is preferred over the
+ * generic banner, because it is the only thing in the response that says what
+ * was wrong. `unattachedRefusalKey` recognises a short list, so anything else
+ * leaves the banner exactly as it was.
+ *
+ * `rendered` names the controls the calling form really does show, so a sentence
+ * that already sits beside a control is never repeated in the banner; a form
+ * that shows one takes the field errors through `onFieldErrors` and renders them
+ * itself.
  */
-function useCommand(messages: Messages, onDone: () => void) {
+function useCommand(
+  messages: Messages,
+  onDone: () => void,
+  options?: {
+    readonly rendered?: readonly string[];
+    readonly onFieldErrors?: (fieldErrors: Readonly<Record<string, string>>) => void;
+  }
+) {
   const [pending, setPending] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
   const run = async (action: () => Promise<ActionState>): Promise<boolean> => {
     setPending(true);
     setProblem(null);
+    options?.onFieldErrors?.({});
     const outcome = await action();
     setPending(false);
     setAttempt((n) => n + 1);
@@ -214,7 +227,10 @@ function useCommand(messages: Messages, onDone: () => void) {
       onDone();
       return true;
     }
-    setProblem(unattachedRefusalKey(outcome.fieldErrors, []) ?? problemKeyOf(outcome));
+    options?.onFieldErrors?.(outcome.fieldErrors ?? {});
+    setProblem(
+      unattachedRefusalKey(outcome.fieldErrors, options?.rendered ?? []) ?? problemKeyOf(outcome)
+    );
     return false;
   };
   return { pending, problem, attempt, run } as const;
@@ -283,6 +299,7 @@ export function WorkOrderClosureScreen({
         locale={locale}
         messages={messages}
         workOrderId={workOrderId}
+        detail={detail}
         capabilities={capabilities}
         onChanged={reload}
       />
@@ -1171,16 +1188,40 @@ function ReopenPanel({
 
 /* ------------------------------------------------------- additional work */
 
+/**
+ * Requesting extra work, and the origin every request must carry.
+ *
+ * `wo.additional-work-request` refuses a request that names neither the job nor
+ * the diagnostic finding the work came from (`origin_required`), and this form
+ * used to send neither — so every extra-work request raised from the closure
+ * screen was refused, whatever was typed into it. The cure is a control, not a
+ * sentence: the screen already reads the order's jobs for the gate panel, so the
+ * origin is a required picker over those jobs and the chosen id is what goes on
+ * the wire.
+ *
+ * No finding picker. The optional second origin would need the job's inspection
+ * findings, and nothing this screen reads carries them; adding a read for it is
+ * a backend operation this panel does not have, and a control that cannot be
+ * filled is worse than no control. A finding-only origin remains reachable
+ * through the diagnostics screen, which is where findings are.
+ *
+ * `origin_required` and `origin_conflict` are published against
+ * `body.originatingJobId`, so both now land beside the picker rather than in the
+ * form's alert. The typed summary survives a refusal: it is cleared on success
+ * only.
+ */
 function AdditionalWorkPanel({
   locale,
   messages,
   workOrderId,
+  detail,
   capabilities,
   onChanged,
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
   readonly workOrderId: string;
+  readonly detail: ReadState<WorkOrderDetail> | null;
   readonly capabilities: ClosureCapabilities;
   readonly onChanged: () => void;
 }) {
@@ -1190,10 +1231,20 @@ function AdditionalWorkPanel({
   const [reloadCount, reload] = useReload();
   const [summary, setSummary] = useState('');
   const [required, setRequired] = useState('');
-  const { pending, problem, attempt, run } = useCommand(messages, () => {
-    reload();
-    onChanged();
-  });
+  const [originatingJobId, setOriginatingJobId] = useState('');
+  const [originError, setOriginError] = useState<string | null>(null);
+  const jobs = detail !== null && detail.status === 'ok' ? detail.data.jobs : [];
+  const { pending, problem, attempt, run } = useCommand(
+    messages,
+    () => {
+      reload();
+      onChanged();
+    },
+    {
+      rendered: ['originatingJobId'],
+      onFieldErrors: (fieldErrors) => setOriginError(fieldErrors['originatingJobId'] ?? null),
+    }
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -1215,8 +1266,16 @@ function AdditionalWorkPanel({
         <form
           action={async () => {
             if (summary.trim().length === 0) return;
+            // The origin is refused here rather than sent empty, because the
+            // service refuses it anyway and a round trip that can only fail is
+            // a slower way of saying the same thing.
+            if (originatingJobId === '') {
+              setOriginError('form.violation.origin_required');
+              return;
+            }
             const ok = await run(() =>
               requestAdditionalWork(workOrderId, {
+                originatingJobId,
                 summary: summary.trim(),
                 ...(required === 'yes' ? { isRequired: true } : {}),
               })
@@ -1224,6 +1283,7 @@ function AdditionalWorkPanel({
             if (ok) {
               setSummary('');
               setRequired('');
+              setOriginatingJobId('');
             }
           }}
           className="mb-3 flex flex-wrap items-end gap-3"
@@ -1233,6 +1293,25 @@ function AdditionalWorkPanel({
             label={translate(messages, 'quality.closure.additionalWorkSummary')}
             value={summary}
             onChange={(event) => setSummary(event.target.value)}
+            required
+          />
+          <SelectField
+            name="originatingJobId"
+            label={translate(messages, 'quality.closure.originatingJob')}
+            description={translate(
+              messages,
+              jobs.length === 0
+                ? 'quality.closure.originatingJobNone'
+                : 'quality.closure.originatingJobHint'
+            )}
+            value={originatingJobId}
+            onChange={(event) => {
+              setOriginatingJobId(event.target.value);
+              setOriginError(null);
+            }}
+            error={originError ? translateDynamic(messages, originError) : undefined}
+            options={jobs.map((job) => ({ value: job.id, label: job.title }))}
+            placeholder={translate(messages, 'quality.closure.originatingJobPlaceholder')}
             required
           />
           <SelectField
