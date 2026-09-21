@@ -68,17 +68,33 @@ export interface SafeDetails {
   readonly overCapacity?: readonly CapacityShortfall[];
   /**
    * Why a work-order draw was refused by its material requirement (`ERR-INV-001`).
-   * Quantities are exact decimal strings in the REQUIREMENT unit; `allowance` and
-   * `requested` are null when no allowance or no exact conversion exists to state
-   * them in. Safe: the caller already sees the requirement these figures describe.
+   * Quantities are exact decimal strings in the REQUIREMENT unit, which `unit`
+   * names; `allowance` and `requested` are null when no allowance or no exact
+   * conversion exists to state them in.
+   *
+   * Safe only when the caller may READ the requirement, which is not implied by
+   * being allowed to draw on it: `inv.stock.operate` and `inv.stock.read` are
+   * independent codes and a store operator can hold the first without the
+   * second. The draw governor therefore asks before it fills these in, and sends
+   * every quantity as null when the answer is no. The reason is always sent — it
+   * is about the caller's own request, not about the requirement's contents.
    */
   readonly materialDraw?: MaterialDrawDetails;
 }
 
 export interface MaterialDrawDetails {
   readonly allowance: string | null;
-  readonly alreadyCommitted: string;
+  readonly alreadyCommitted: string | null;
   readonly requested: string | null;
+  /**
+   * The unit the three quantities are stated in, or null when there is no unit
+   * to state them in (CC-OD-32).
+   *
+   * Without it the figures cannot be written into a sentence: "approved 4.000"
+   * is an amount of nothing. The whole object is also null-figured for a caller
+   * who may not read the requirement — see the draw governor.
+   */
+  readonly unit: string | null;
   readonly reason:
     | 'exceeds_requirement'
     | 'approval_required'

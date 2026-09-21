@@ -31,7 +31,7 @@ import {
   type InventoryRepository,
 } from '../data/inventory-repository';
 import { assertLegalMovementReference, type AdjustmentDecision } from '../domain/inventory';
-import { parseQuantity, toDomainFailure } from './inventory-failures';
+import { parseQuantity, refuseInventoryState, toDomainFailure } from './inventory-failures';
 import type { InventoryStockService } from './inventory-stock-service';
 
 /** `numeric(18, 4)` value impact; may be negative, because a write-down is one. */
@@ -121,11 +121,12 @@ export class InventoryAdjustmentService {
       });
     }
     if (location.locationType === 'transit') {
-      throw new AppFailure('ERR-TRN-001', {
-        message:
-          `Stock location ${location.locationCode} holds transfers in transit; receive or ` +
+      refuseInventoryState(
+        'stock_location_transit',
+        `Stock location ${location.locationCode} holds transfers in transit; receive or ` +
           'cancel the transfer instead of adjusting it',
-      });
+        { path: 'body.locationId' }
+      );
     }
     await this.stock.requireStockTrackedItem(db, input.itemId);
 
@@ -227,16 +228,17 @@ export class InventoryAdjustmentService {
     }
     await authorizeScope({ companyId: before.companyId, branchId: before.branchId });
     if (before.status !== 'pending') {
-      throw new AppFailure('ERR-TRN-001', {
-        message: `Stock adjustment ${adjustmentId} is ${before.status} and has already been decided`,
-      });
+      refuseInventoryState(
+        'stock_adjustment_already_decided',
+        `Stock adjustment ${adjustmentId} is ${before.status} and has already been decided`
+      );
     }
     if (before.requestedBy === db.context.principal.userId) {
-      throw new AppFailure('ERR-TRN-001', {
-        message:
-          'The person who requested a stock adjustment may not decide it. Ask another ' +
-          'approver to review the request.',
-      });
+      refuseInventoryState(
+        'stock_adjustment_separation_of_duties',
+        'The person who requested a stock adjustment may not decide it. Ask another ' +
+          'approver to review the request.'
+      );
     }
 
     const reservationsBefore =

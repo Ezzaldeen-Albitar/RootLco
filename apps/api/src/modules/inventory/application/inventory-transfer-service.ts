@@ -57,7 +57,7 @@ import {
   assertLegalMovementReference,
   assertTransferEndpoints,
 } from '../domain/inventory';
-import { parseQuantity, toDomainFailure } from './inventory-failures';
+import { parseQuantity, refuseInventoryState, toDomainFailure } from './inventory-failures';
 import type { InventoryStockService } from './inventory-stock-service';
 
 export interface TransferView {
@@ -356,16 +356,18 @@ export class InventoryTransferService {
     const before = await this.lockTransferOrFail(db, transferId);
 
     if (before.status !== 'dispatched' && before.status !== 'partially_received') {
-      throw new AppFailure('ERR-TRN-001', {
-        message: `Transfer ${transferId} is ${before.status} and can no longer be received`,
-      });
+      refuseInventoryState(
+        'transfer_not_receivable',
+        `Transfer ${transferId} is ${before.status} and can no longer be received`
+      );
     }
     if (quantity.isGreaterThan(Quantity.fromDatabase(before.outstandingQuantity, 'outstanding'))) {
-      throw new AppFailure('ERR-TRN-001', {
-        message:
-          `The received quantity ${quantity.toString()} exceeds the ${before.outstandingQuantity} ` +
+      refuseInventoryState(
+        'transfer_receipt_exceeds_transit',
+        `The received quantity ${quantity.toString()} exceeds the ${before.outstandingQuantity} ` +
           'still in transit. Record only what arrived.',
-      });
+        { path: 'body.quantity' }
+      );
     }
 
     try {
@@ -461,14 +463,17 @@ export class InventoryTransferService {
 
     const before = await this.lockTransferOrFail(db, transferId);
     if (before.status !== 'dispatched' && before.status !== 'partially_received') {
-      throw new AppFailure('ERR-TRN-001', {
-        message: `Transfer ${transferId} is ${before.status} and has nothing in transit`,
-      });
+      refuseInventoryState(
+        'transfer_nothing_in_transit',
+        `Transfer ${transferId} is ${before.status} and has nothing in transit`
+      );
     }
     if (quantity.isGreaterThan(Quantity.fromDatabase(before.outstandingQuantity, 'outstanding'))) {
-      throw new AppFailure('ERR-TRN-001', {
-        message: `${quantity.toString()} exceeds the ${before.outstandingQuantity} still in transit`,
-      });
+      refuseInventoryState(
+        'transfer_settlement_exceeds_transit',
+        `${quantity.toString()} exceeds the ${before.outstandingQuantity} still in transit`,
+        { path: 'body.quantity' }
+      );
     }
 
     let settlementId: string;
@@ -542,16 +547,17 @@ export class InventoryTransferService {
     }
     await authorizeScope({ companyId: before.companyId, branchId: before.branchId });
     if (before.kind !== 'write_off' || before.status !== 'pending') {
-      throw new AppFailure('ERR-TRN-001', {
-        message: `Settlement ${settlementId} is a ${before.kind} in status ${before.status}; only a pending write-off is decided`,
-      });
+      refuseInventoryState(
+        'transfer_write_off_not_pending',
+        `Settlement ${settlementId} is a ${before.kind} in status ${before.status}; only a pending write-off is decided`
+      );
     }
     if (before.requestedBy === db.context.principal.userId) {
-      throw new AppFailure('ERR-TRN-001', {
-        message:
-          'The person who requested a write-off may not decide it. Ask another approver to ' +
-          'review the request.',
-      });
+      refuseInventoryState(
+        'transfer_separation_of_duties',
+        'The person who requested a write-off may not decide it. Ask another approver to ' +
+          'review the request.'
+      );
     }
     const transferBefore = await this.requireTransfer(db, before.transferId);
     try {
@@ -616,9 +622,10 @@ export class InventoryTransferService {
     await authorizeScope({ companyId: visible.companyId, branchId: visible.branchId });
     const before = await this.lockTransferOrFail(db, transferId);
     if (before.status !== 'dispatched') {
-      throw new AppFailure('ERR-TRN-001', {
-        message: `Transfer ${transferId} is ${before.status} and can no longer be cancelled`,
-      });
+      refuseInventoryState(
+        'transfer_not_cancellable',
+        `Transfer ${transferId} is ${before.status} and can no longer be cancelled`
+      );
     }
 
     try {

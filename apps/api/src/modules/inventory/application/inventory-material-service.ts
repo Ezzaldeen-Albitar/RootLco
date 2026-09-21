@@ -44,10 +44,11 @@ import { publishEvent } from '@/server/events/publisher';
 import { isSqlState, SQLSTATE } from '@/server/db/repository';
 import { pageRequest, type Page } from '@/server/db/pagination';
 import { withSavepoint, type DbHandle } from '@/server/db/transaction';
-import type { ScopeAuthorizer } from '@/server/auth/authorization';
+import { callerHoldsPermission, type ScopeAuthorizer } from '@/server/auth/authorization';
 import {
   MATERIAL_REQUIREMENT_ORDER,
   type InventoryRepository,
+  type MaterialDrawCheckRow,
   type MaterialExceptionRow,
   type MaterialRequestRow,
   type MaterialRequirementRow,
@@ -320,7 +321,13 @@ export class MaterialDrawGovernor {
       );
     }
     refuseDraw(
-      { allowance: null, alreadyCommitted: '0.000', requested: null, reason: 'no_requirement' },
+      {
+        allowance: null,
+        alreadyCommitted: null,
+        requested: null,
+        unit: null,
+        reason: 'no_requirement',
+      },
       'This work order has no approved material requirement for the item; ask for one and have ' +
         'it approved before drawing stock for the job'
     );
@@ -397,20 +404,55 @@ export class MaterialDrawGovernor {
           ? 'missing_specification'
           : 'missing_conversion';
     } else reason = 'approval_required';
-    const figures = {
-      allowance: check?.allowance ?? null,
-      alreadyCommitted: check?.committed ?? '0.000',
-      requested: check?.requested ?? null,
-    };
+    const figures = await this.figuresFor(db, input.requirementId, check);
     refuseDraw(
       { ...figures, reason },
       reason === 'exceeds_requirement'
-        ? `Drawing ${figures.requested ?? input.quantity} would exceed the ${figures.allowance ?? '0'} ` +
-            `allowed (${figures.alreadyCommitted} already committed); an approved exception is required`
+        ? `Drawing ${check?.requested ?? input.quantity} would exceed the ${check?.allowance ?? '0'} ` +
+            `allowed (${check?.committed ?? '0.000'} already committed); an approved exception is required`
         : reason === 'approval_required'
           ? `The material requirement is ${check?.status ?? 'not approved'}; only an approved requirement allows a draw`
           : `The material requirement cannot be drawn on until it is resolved (${reason})`
     );
+  }
+
+  /**
+   * The figures a refused draw may publish to THIS caller (CC-OD-32).
+   *
+   * Drawing stock and reading the demand that governs it are separate
+   * authorities — `inv.stock.operate` on the two draw operations,
+   * `inv.stock.read` on `inv.material-requirement-read` — and an actor can hold
+   * the first without the second. The allowance, the quantity already committed
+   * and the unit are contents of the requirement, so publishing them to a caller
+   * who cannot open it would hand out through a refusal exactly what the read
+   * permission withholds.
+   *
+   * So the question is asked in the requirement's own company and branch, and a
+   * caller who may not read it gets every quantity as null. The REASON still
+   * travels: it describes the caller's own request and names the remedy, and a
+   * refusal that says nothing at all is the defect this whole change exists to
+   * remove.
+   */
+  private async figuresFor(
+    db: DbHandle,
+    requirementId: string,
+    check: MaterialDrawCheckRow | null
+  ): Promise<Omit<MaterialDrawDetails, 'reason'>> {
+    const withheld = { allowance: null, alreadyCommitted: null, requested: null, unit: null };
+    if (!check) return withheld;
+    const requirement = await this.repository.readMaterialRequirement(db, requirementId);
+    if (!requirement) return withheld;
+    const mayRead = await callerHoldsPermission(db, 'inv.stock.read', {
+      companyId: requirement.companyId,
+      branchId: requirement.branchId,
+    });
+    if (!mayRead) return withheld;
+    return {
+      allowance: check.allowance,
+      alreadyCommitted: check.committed,
+      requested: check.requested,
+      unit: check.unit,
+    };
   }
 }
 
@@ -659,16 +701,26 @@ export class InventoryMaterialService {
       refuseField('body.reason', 'required', 'A rejection states its reason');
     }
     if (before.status === 'approval_required') {
-      throw new AppFailure('ERR-TRN-001', {
-        message:
-          `The requirement cannot be decided until it is resolved ` +
-          `(${before.approvalRequiredReason ?? 'approval required'})`,
-      });
+      // CC-OD-32: WHICH fact is missing is the whole of what the approver has to
+      // do next, so the two reasons publish two tokens rather than one
+      // "unresolved". A requirement in this state always carries a reason; a null
+      // one is read as the conversion, which is the reason a derivation that
+      // found its specification can still be waiting on.
+      refuseMaterial(
+        'ERR-TRN-001',
+        before.approvalRequiredReason === 'missing_specification'
+          ? 'material_requirement_missing_specification'
+          : 'material_requirement_missing_conversion',
+        `The requirement cannot be decided until it is resolved ` +
+          `(${before.approvalRequiredReason ?? 'approval required'})`
+      );
     }
     if (before.status !== 'pending_approval') {
-      throw new AppFailure('ERR-TRN-001', {
-        message: `Material requirement ${requirementId} is ${before.status} and is not awaiting a decision`,
-      });
+      refuseMaterial(
+        'ERR-TRN-001',
+        'material_requirement_already_decided',
+        `Material requirement ${requirementId} is ${before.status} and is not awaiting a decision`
+      );
     }
     if (before.requestedBy === db.context.principal.userId) {
       // Named, because this service catches the separation ahead of the database
@@ -735,9 +787,11 @@ export class InventoryMaterialService {
     }
     await authorizeScope({ companyId: requirement.companyId, branchId: requirement.branchId });
     if (requirement.status !== 'approved') {
-      throw new AppFailure('ERR-TRN-001', {
-        message: `An exception extends an approved requirement; this one is ${requirement.status}`,
-      });
+      refuseMaterial(
+        'ERR-TRN-001',
+        'material_exception_needs_approved_requirement',
+        `An exception extends an approved requirement; this one is ${requirement.status}`
+      );
     }
 
     let exceptionId: string;
@@ -786,14 +840,20 @@ export class InventoryMaterialService {
     }
     await authorizeScope({ companyId: before.companyId, branchId: before.branchId });
     if (before.status !== 'pending') {
-      throw new AppFailure('ERR-TRN-001', {
-        message: `Material exception ${exceptionId} is ${before.status} and has already been decided`,
-      });
+      refuseMaterial(
+        'ERR-TRN-001',
+        'material_exception_already_decided',
+        `Material exception ${exceptionId} is ${before.status} and has already been decided`
+      );
     }
     if (before.requestedBy === db.context.principal.userId) {
-      throw new AppFailure('ERR-TRN-001', {
-        message: 'The person who asked for this exception may not decide it. Ask another approver.',
-      });
+      // The same rule as the requirement decision, so the same token: one rule
+      // said two ways on screen is two rules to the person reading it.
+      refuseMaterial(
+        'ERR-TRN-001',
+        'material_separation_of_duties',
+        'The person who asked for this exception may not decide it. Ask another approver.'
+      );
     }
     try {
       await this.repository.decideMaterialException(db, {
@@ -862,9 +922,11 @@ export class InventoryMaterialService {
     }
     await authorizeScope({ companyId: before.companyId, branchId: before.branchId });
     if (before.status === 'rejected' || before.status === 'cancelled') {
-      throw new AppFailure('ERR-TRN-001', {
-        message: `Material requirement ${requirementId} is ${before.status} and has nothing to re-check`,
-      });
+      refuseMaterial(
+        'ERR-TRN-001',
+        'material_requirement_closed',
+        `Material requirement ${requirementId} is ${before.status} and has nothing to re-check`
+      );
     }
     if (before.status !== 'approval_required') return this.detail(db, before);
 
@@ -930,19 +992,22 @@ export class InventoryMaterialService {
     await authorizeScope({ companyId: before.companyId, branchId: before.branchId });
     if (before.status === 'cancelled') return this.detail(db, before);
     if (before.status === 'rejected') {
-      throw new AppFailure('ERR-TRN-001', {
-        message: `Material requirement ${requirementId} was rejected and cannot be cancelled`,
-      });
+      refuseMaterial(
+        'ERR-TRN-001',
+        'material_requirement_rejected',
+        `Material requirement ${requirementId} was rejected and cannot be cancelled`
+      );
     }
     try {
       await this.repository.cancelMaterialRequirement(db, requirementId, input.reason);
     } catch (error) {
       if (databaseMessage(error).startsWith('material_requirement_committed')) {
-        throw new AppFailure('ERR-TRN-001', {
-          message:
-            'Material is still requested, reserved, or issued and not returned against this ' +
-            'requirement. Close or cancel its requests and return what was issued first.',
-        });
+        refuseMaterial(
+          'ERR-TRN-001',
+          'material_requirement_committed',
+          'Material is still requested, reserved, or issued and not returned against this ' +
+            'requirement. Close or cancel its requests and return what was issued first.'
+        );
       }
       mapMaterialFailure(error, 'Material requirement cancellation');
     }
@@ -1011,9 +1076,11 @@ export class InventoryMaterialService {
     await authorizeScope({ companyId: before.companyId, branchId: before.branchId });
     if (before.status === outcome) return toRequestView(before, [], true);
     if (before.status !== 'open') {
-      throw new AppFailure('ERR-TRN-001', {
-        message: `Material request ${requestId} is ${before.status} and cannot be ${outcome}`,
-      });
+      refuseMaterial(
+        'ERR-TRN-001',
+        'material_request_not_open',
+        `Material request ${requestId} is ${before.status} and cannot be ${outcome}`
+      );
     }
 
     const holding = await this.repository.activeReservationsOfRequest(db, requestId);
@@ -1021,9 +1088,11 @@ export class InventoryMaterialService {
       await this.repository.finishMaterialRequest(db, { requestId, outcome, reason });
     } catch (error) {
       if (databaseMessage(error).includes('closed, not cancelled')) {
-        throw new AppFailure('ERR-TRN-001', {
-          message: 'This material request issued stock, so it is closed rather than cancelled',
-        });
+        refuseMaterial(
+          'ERR-TRN-001',
+          'material_request_issued',
+          'This material request issued stock, so it is closed rather than cancelled'
+        );
       }
       toDomainFailure(error, 'Material request');
     }

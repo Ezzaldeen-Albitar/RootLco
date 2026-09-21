@@ -29,7 +29,7 @@ import { publishEvent } from '@/server/events/publisher';
 import type { DbHandle } from '@/server/db/transaction';
 import type { ScopeAuthorizer } from '@/server/auth/authorization';
 import type { InventoryRepository, StockLocationRow } from '../data/inventory-repository';
-import { parseQuantity, toDomainFailure } from './inventory-failures';
+import { parseQuantity, refuseInventoryState, toDomainFailure } from './inventory-failures';
 import { MaterialDrawGovernor } from './inventory-material-service';
 import {
   Quantity,
@@ -429,11 +429,12 @@ export class InventoryStockService {
        * unreserved, which turns a reservation into a suggestion.
        */
       if (quantity.isGreaterThan(Quantity.fromDatabase(reservation.quantity, 'quantity'))) {
-        throw new AppFailure('ERR-TRN-001', {
-          message:
-            `Issue quantity ${quantity.toString()} exceeds the reserved ` +
+        refuseInventoryState(
+          'stock_issue_exceeds_reservation',
+          `Issue quantity ${quantity.toString()} exceeds the reserved ` +
             `${reservation.quantity}; reserve more or issue the reserved amount`,
-        });
+          { path: 'body.quantity' }
+        );
       }
     }
 
@@ -591,11 +592,12 @@ export class InventoryStockService {
     const issued = Quantity.fromDatabase(issue.quantity, 'issuedQuantity');
     const already = Quantity.fromDatabase(issue.returnedQty, 'returnedQuantity');
     if (already.plus(quantity).isGreaterThan(issued)) {
-      throw new AppFailure('ERR-TRN-001', {
-        message:
-          `Return of ${quantity.toString()} would exceed the issued ${issued.toString()} ` +
+      refuseInventoryState(
+        'stock_return_exceeds_issue',
+        `Return of ${quantity.toString()} would exceed the issued ${issued.toString()} ` +
           `(${already.toString()} already returned)`,
-      });
+        { path: 'body.quantity' }
+      );
     }
 
     let returned: { returnId: string };
@@ -684,9 +686,11 @@ export class InventoryStockService {
     // damage would move stock across a branch boundary that no transfer primitive
     // exists to represent.
     if (from.companyId !== quarantine.companyId || from.branchId !== quarantine.branchId) {
-      throw new AppFailure('ERR-TRN-001', {
-        message: 'Damage must stay inside one branch; the two locations are in different branches',
-      });
+      refuseInventoryState(
+        'stock_damage_other_branch',
+        'Damage must stay inside one branch; the two locations are in different branches',
+        { path: 'body.quarantineLocationId' }
+      );
     }
     try {
       assertQuarantineDestination(from, quarantine);
@@ -756,12 +760,12 @@ export class InventoryStockService {
         freedQuantity = freedQuantity.plus(Quantity.fromDatabase(reservation.quantity, 'quantity'));
       }
       if (freedQuantity.isGreaterThan(quantity)) {
-        throw new AppFailure('ERR-TRN-001', {
-          message:
-            `Recording ${quantity.toString()} damaged would release reservations totalling ` +
+        refuseInventoryState(
+          'stock_damage_releases_reservations',
+          `Recording ${quantity.toString()} damaged would release reservations totalling ` +
             `${freedQuantity.toString()}, because a reservation is released whole. Release the ` +
-            'affected reservations deliberately, then record the damage.',
-        });
+            'affected reservations deliberately, then record the damage.'
+        );
       }
       for (const reservation of freed) {
         await appendAudit(db, {
@@ -898,9 +902,11 @@ export class InventoryStockService {
       });
     }
     if (location.status !== 'active') {
-      throw new AppFailure('ERR-TRN-001', {
-        message: `Stock location ${location.locationCode} is ${location.status}`,
-      });
+      refuseInventoryState(
+        'stock_location_not_active',
+        `Stock location ${location.locationCode} is ${location.status}`,
+        { path: 'body.locationId' }
+      );
     }
     return location;
   }
@@ -928,21 +934,23 @@ export class InventoryStockService {
   ): Promise<StockLocationRow> {
     const location = await this.requireLocation(db, locationId);
     if (location.locationType === 'quarantine') {
-      throw new AppFailure('ERR-TRN-001', {
-        message:
-          `Stock location ${location.locationCode} is a quarantine location; damaged stock ` +
+      refuseInventoryState(
+        'stock_location_quarantine',
+        `Stock location ${location.locationCode} is a quarantine location; damaged stock ` +
           'cannot be reserved or issued. Dispose of it through an approved adjustment.',
-      });
+        { path: 'body.locationId' }
+      );
     }
     // Transit for the same reason quarantine is excluded: the quantity there belongs
     // to a transfer under way, and reserving or issuing it would take a part out of a
     // delivery that has not arrived at either end.
     if (location.locationType === 'transit') {
-      throw new AppFailure('ERR-TRN-001', {
-        message:
-          `Stock location ${location.locationCode} holds transfers in transit; that stock ` +
+      refuseInventoryState(
+        'stock_location_transit',
+        `Stock location ${location.locationCode} holds transfers in transit; that stock ` +
           'cannot be reserved or issued until the transfer is received.',
-      });
+        { path: 'body.locationId' }
+      );
     }
     return location;
   }
@@ -961,13 +969,15 @@ export class InventoryStockService {
       throw new AppFailure('ERR-RES-001', { message: `Item ${itemId} was not found` });
     }
     if (item.lifecycleStatus !== 'active') {
-      throw new AppFailure('ERR-TRN-001', {
-        message: `Item ${item.sku} is archived and cannot take stock movements`,
-      });
+      refuseInventoryState(
+        'stock_item_archived',
+        `Item ${item.sku} is archived and cannot take stock movements`,
+        { path: 'body.itemId' }
+      );
     }
     if (!item.isStockTracked) {
-      throw new AppFailure('ERR-TRN-001', {
-        message: `Item ${item.sku} is not stock-tracked`,
+      refuseInventoryState('stock_item_not_tracked', `Item ${item.sku} is not stock-tracked`, {
+        path: 'body.itemId',
       });
     }
   }
@@ -993,11 +1003,12 @@ export class InventoryStockService {
       });
     }
     if (state.companyId !== location.companyId || state.branchId !== location.branchId) {
-      throw new AppFailure('ERR-TRN-001', {
-        message:
-          `Work order ${workOrderId} is in a different branch from stock location ` +
+      refuseInventoryState(
+        'stock_work_order_other_branch',
+        `Work order ${workOrderId} is in a different branch from stock location ` +
           `${location.locationCode}`,
-      });
+        { path: 'body.workOrderId' }
+      );
     }
     try {
       assertWorkOrderAcceptsParts(state);

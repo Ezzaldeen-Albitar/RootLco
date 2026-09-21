@@ -248,6 +248,58 @@ describe('recording a receipt', () => {
     });
   });
 
+  it('says beside the cost box that recording a purchase cost is not permitted', async () => {
+    // CC-OD-32. The server refused a priced line with rule `custom`, which the
+    // catalogue renders as "This value is not accepted here" — true of nothing
+    // the operator typed, and silent about the one thing they can do: take the
+    // cost out. The named rule puts the real reason on the control.
+    const user = userEvent.setup();
+    createGoodsReceipt.mockResolvedValue({
+      state: {
+        status: 'invalid' as const,
+        messageKey: 'inventory.receipts.create.refused',
+        fieldErrors: { unitCost: 'form.violation.stock_receipt_cost_permission' },
+        attempt: 1,
+        correlationId: 'corr-refused',
+      },
+      created: null,
+    });
+    renderScreen({ canViewCost: true });
+    await chooseBranch(user, TARGET_FORM, TARGET_SUBMIT);
+    const form = createForm();
+    await chooseItem(user, form);
+    await within(form).findByRole('option', { name: 'WH-1 — Main warehouse' });
+    await user.selectOptions(
+      within(form).getByLabelText(labelled('inventory.receipts.line.location')),
+      LOCATION_ID
+    );
+    await user.type(within(form).getByLabelText(labelled('inventory.receipts.line.quantity')), '2');
+    const cost = within(form).getByLabelText(labelled('inventory.receipts.line.unitCost'));
+    await user.type(cost, '12.5000');
+    await user.type(
+      within(form).getByLabelText(labelled('inventory.receipts.line.currency')),
+      'usd'
+    );
+    await user.click(
+      within(form).getByRole('button', { name: EN['inventory.receipts.line.add'] as string })
+    );
+    await user.type(
+      within(form).getByLabelText(labelled('inventory.receipts.create.receivedOn')),
+      '2026-09-17'
+    );
+    await user.click(
+      within(form).getByRole('button', { name: EN['inventory.receipts.create.submit'] as string })
+    );
+    await waitFor(() => expect(createGoodsReceipt).toHaveBeenCalledTimes(1));
+    const sentence = EN['form.violation.stock_receipt_cost_permission'] as string;
+    expect(await within(form).findByText(sentence)).toBeVisible();
+    expect(sentence).not.toBe(EN['form.violation.invalid']);
+    // The control the sentence belongs to is the one that names it, so a screen
+    // reader reaches the reason from the box rather than from the banner.
+    const described = within(form).getByLabelText(labelled('inventory.receipts.line.unitCost'));
+    expect(described.getAttribute('aria-describedby') ?? '').not.toBe('');
+  });
+
   it('refuses to save a receipt with no line', async () => {
     const user = userEvent.setup();
     renderScreen();

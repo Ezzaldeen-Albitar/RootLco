@@ -1620,6 +1620,15 @@ export interface MaterialDrawCheckRow {
   readonly committed: string;
   readonly requested: string | null;
   readonly exceeds: boolean;
+  /**
+   * The code of the unit the three quantities are stated in (CC-OD-32).
+   *
+   * Null while the requirement has no unit yet — a derivation waiting on its
+   * specification has none — which is exactly when there are no figures to
+   * label either. A figure without its unit is not a smaller answer, it is a
+   * wrong one: "4" of a fluid means nothing until it says litres.
+   */
+  readonly unit: string | null;
 }
 
 /** The material request a reservation fulfills, when it fulfills one. */
@@ -5779,6 +5788,7 @@ export class InventoryRepository extends Repository {
       committed: string | null;
       requested: string | null;
       exceeds: boolean;
+      unit: string | null;
     }>(
       db,
       `SELECT r.status, r.approval_required_reason, r.work_order_id,
@@ -5789,9 +5799,11 @@ export class InventoryRepository extends Repository {
               ${exactQuantityText('u.committed_quantity')} AS committed,
               ${exactQuantityText('$3::numeric * f.factor')} AS requested,
               COALESCE(u.committed_quantity + $3::numeric * f.factor > u.effective_allowance, false)
-                AS exceeds
+                AS exceeds,
+              ru.code AS unit
          FROM inv.material_requirements r
          JOIN inv.item_master i ON i.tenant_id = r.tenant_id AND i.id = $4
+         LEFT JOIN inv.units_of_measure ru ON ru.id = r.uom_id
         CROSS JOIN LATERAL (
               SELECT inv.unit_conversion_factor(r.tenant_id, i.id, i.uom_id, r.uom_id) AS factor) f
          LEFT JOIN LATERAL inv.material_requirement_usage(r.tenant_id, r.id) u ON true
@@ -5809,6 +5821,7 @@ export class InventoryRepository extends Repository {
           committed: row.committed ?? '0.000',
           requested: row.requested,
           exceeds: row.exceeds,
+          unit: row.unit,
         }
       : null;
   }

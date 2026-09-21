@@ -31,8 +31,19 @@ import {
   type GoodsReceiptRow,
   type InventoryRepository,
 } from '../data/inventory-repository';
-import { assertLegalMovementReference } from '../domain/inventory';
-import { parseQuantity, toDomainFailure } from './inventory-failures';
+import { assertLegalMovementReference, type StockRefusalRule } from '../domain/inventory';
+import { parseQuantity, refuseInventoryState, toDomainFailure } from './inventory-failures';
+
+/**
+ * The rule token both purchase-cost refusals publish (CC-OD-32).
+ *
+ * One token for the two acts, because it is one rule: a unit cost may be
+ * written and posted only by someone permitted to see inventory cost. The
+ * create refusal carries it on the cost box of every priced line; the posting
+ * refusal carries it on the request, because by then the costs are already
+ * stored and there is no box to clear.
+ */
+const COST_PERMISSION_RULE: StockRefusalRule = 'stock_receipt_cost_permission';
 import type { InventoryStockService } from './inventory-stock-service';
 
 /** `numeric(18, 4)`, non-negative, as a plain decimal literal. */
@@ -201,6 +212,10 @@ export class InventoryReceiptService {
         branchId: input.branchId,
       });
       if (!mayCost) {
+        // CC-OD-32: `custom` rendered as "This value is not accepted here" beside
+        // the cost box, which is true of nothing the operator typed. The named
+        // rule carries the real reason — a permission they do not hold — to the
+        // control they must clear.
         throw new AppFailure('ERR-VAL-001', {
           message:
             'A unit cost may be recorded only by someone permitted to view inventory cost. ' +
@@ -209,7 +224,12 @@ export class InventoryReceiptService {
             violations: input.lines.flatMap((line, index) =>
               line.unitCost === undefined
                 ? []
-                : [{ path: `body.lines.${index}.unitCost`, rule: 'custom' }]
+                : [
+                    {
+                      path: `body.lines.${index}.unitCost`,
+                      rule: COST_PERMISSION_RULE,
+                    },
+                  ]
             ),
           },
         });
@@ -241,9 +261,13 @@ export class InventoryReceiptService {
         });
       }
       if (location.locationType === 'transit' || location.locationType === 'quarantine') {
-        throw new AppFailure('ERR-TRN-001', {
-          message: `Goods cannot be received into ${location.locationType} location ${location.locationCode}`,
-        });
+        refuseInventoryState(
+          location.locationType === 'transit'
+            ? 'stock_location_transit'
+            : 'stock_location_quarantine',
+          `Goods cannot be received into ${location.locationType} location ${location.locationCode}`,
+          { path: `body.lines.${index}.locationId` }
+        );
       }
       await this.stock.requireStockTrackedItem(db, line.itemId);
       parsedLines.push({ ...line, quantity: quantity.toString(), lineNo: index + 1 });
@@ -328,9 +352,10 @@ export class InventoryReceiptService {
       });
     }
     if (before.status !== 'draft') {
-      throw new AppFailure('ERR-TRN-001', {
-        message: `Goods receipt ${receiptId} is ${before.status} and cannot be posted`,
-      });
+      refuseInventoryState(
+        'stock_receipt_not_draft',
+        `Goods receipt ${receiptId} is ${before.status} and cannot be posted`
+      );
     }
 
     const lines = await this.repository.listGoodsReceiptLines(db, receiptId);
@@ -347,6 +372,7 @@ export class InventoryReceiptService {
           message:
             'This receipt carries unit costs, so posting it records cost history and needs ' +
             'permission to view inventory cost.',
+          safeDetails: { violations: [{ path: 'body', rule: COST_PERMISSION_RULE }] },
         });
       }
     }
