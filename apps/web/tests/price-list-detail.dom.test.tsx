@@ -87,6 +87,7 @@ const DRAFT_ID = '66666666-6666-4666-8666-666666666666';
 const SERVICE_ID = '55555555-5555-4555-8555-555555555555';
 const BRANCH = '22222222-2222-4222-8222-222222222222';
 const COMPANY = '11111111-1111-4111-8111-111111111111';
+const TAX_CLASS = '33333333-3333-4333-8333-333333333333';
 
 const published = {
   id: PUBLISHED_ID,
@@ -386,6 +387,85 @@ describe('a rule on a draft carries the canonical amount string', () => {
     await waitFor(() => expect(listPriceRules).toHaveBeenCalledWith(LIST_ID, DRAFT_ID));
   });
 
+  it('shows a duplicate rule refusal beside the priority, with the amount still typed', async () => {
+    recordPriceRule.mockResolvedValue({
+      state: {
+        status: 'conflict',
+        messageKey: 'form.formError',
+        fieldErrors: { priority: 'form.violation.duplicate_signature' },
+        attempt: 1,
+      },
+      created: null,
+    });
+    const user = userEvent.setup();
+    renderDetail();
+    const region = rulesRegion();
+    const form = await within(region).findByRole('form', {
+      name: EN['pricing.rule.heading'] as string,
+    });
+    await user.type(
+      within(form).getByLabelText(labelled('pricing.picker.serviceIdField')),
+      SERVICE_ID
+    );
+    await user.type(within(form).getByLabelText(labelled('pricing.rule.amount')), '12.5');
+    await user.type(within(form).getByLabelText(labelled('pricing.rule.priority')), '5');
+    await user.click(
+      within(form).getByRole('button', { name: EN['pricing.rule.submit'] as string })
+    );
+    expect(
+      await within(form).findByText(EN['form.violation.duplicate_signature'] as string)
+    ).toBeVisible();
+    // The money control canonicalises what was typed; it is still the operator's
+    // figure, and it was not cleared by the refusal.
+    expect(
+      (within(form).getByLabelText(labelled('pricing.rule.amount')) as HTMLInputElement).value
+    ).toMatch(/^12\.5(000)?$/);
+    expect(within(form).getByLabelText(labelled('pricing.rule.priority'))).toHaveValue('5');
+  });
+
+  it('states a tax class that needs a company beside the tax class box', async () => {
+    /*
+     * `svc.price-rule-record` publishes `body.taxClassId` / `tax_needs_company`
+     * from the database constraint, so the sentence lands on the tax class box.
+     * The form also refuses the same shape locally; this case covers the arm
+     * where a company WAS given and the server still refused, which the local
+     * check cannot see.
+     */
+    recordPriceRule.mockResolvedValue({
+      state: {
+        status: 'invalid',
+        messageKey: 'form.formError',
+        fieldErrors: { taxClassId: 'form.violation.tax_needs_company' },
+        attempt: 1,
+      },
+      created: null,
+    });
+    const user = userEvent.setup();
+    renderDetail();
+    const region = rulesRegion();
+    const form = await within(region).findByRole('form', {
+      name: EN['pricing.rule.heading'] as string,
+    });
+    await user.type(
+      within(form).getByLabelText(labelled('pricing.picker.serviceIdField')),
+      SERVICE_ID
+    );
+    await user.type(within(form).getByLabelText(labelled('pricing.rule.amount')), '20');
+    await user.type(
+      within(form).getByLabelText(labelled('pricing.common.companyIdField')),
+      COMPANY
+    );
+    await user.type(within(form).getByLabelText(labelled('pricing.rule.taxClass')), TAX_CLASS);
+    await user.click(
+      within(form).getByRole('button', { name: EN['pricing.rule.submit'] as string })
+    );
+    await waitFor(() => expect(recordPriceRule).toHaveBeenCalledTimes(1));
+    expect(
+      await within(form).findByText(EN['form.violation.tax_needs_company'] as string)
+    ).toBeVisible();
+    expect(within(form).getByLabelText(labelled('pricing.rule.taxClass'))).toHaveValue(TAX_CLASS);
+  });
+
   it('refuses a branch without its company before any request', async () => {
     const user = userEvent.setup();
     renderDetail();
@@ -453,6 +533,46 @@ describe('an assignment is recorded, and the absence of a read is said', () => {
       await within(form).findByText(EN['pricing.assignment.rangeOrder'] as string)
     ).toBeVisible();
     expect(createPriceListAssignment).not.toHaveBeenCalled();
+  });
+
+  it('states an already-assigned coverage beside the priority, with the dates kept', async () => {
+    /*
+     * `svc.price-list-assignment-create` publishes `body.priority` /
+     * `context_already_assigned`, so the sentence lands on the priority box —
+     * the control the operator can change to clear it, and the one the sentence
+     * names.
+     *
+     * It says a list is already assigned for this coverage at this priority. It
+     * does NOT say which list, whose it is, or which branch holds it: the
+     * assignment that collides may sit outside what this caller may read.
+     */
+    createPriceListAssignment.mockResolvedValue({
+      state: {
+        status: 'conflict',
+        messageKey: 'form.formError',
+        fieldErrors: { priority: 'form.violation.context_already_assigned' },
+        attempt: 1,
+      },
+      created: null,
+    });
+    const user = userEvent.setup();
+    renderDetail();
+    const form = screen.getByRole('form', { name: EN['pricing.assignment.heading'] as string });
+    await user.type(within(form).getByLabelText(labelled('pricing.rule.priority')), '10');
+    fireEvent.change(within(form).getByLabelText(labelled('pricing.assignment.effectiveFrom')), {
+      target: { value: '2026-10-01' },
+    });
+    await user.click(
+      within(form).getByRole('button', { name: EN['pricing.assignment.submit'] as string })
+    );
+    await waitFor(() => expect(createPriceListAssignment).toHaveBeenCalledTimes(1));
+    expect(
+      await within(form).findByText(EN['form.violation.context_already_assigned'] as string)
+    ).toBeVisible();
+    expect(within(form).getByLabelText(labelled('pricing.rule.priority'))).toHaveValue('10');
+    expect(within(form).getByLabelText(labelled('pricing.assignment.effectiveFrom'))).toHaveValue(
+      '2026-10-01'
+    );
   });
 });
 

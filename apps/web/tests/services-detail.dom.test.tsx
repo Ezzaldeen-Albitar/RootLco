@@ -456,6 +456,50 @@ describe('a draft is created, held, and published against the SERVICE version', 
     await waitFor(() => expect(refresh).toHaveBeenCalled());
   });
 
+  it('shows a forward-only refusal beside the publish date, with the date still typed', async () => {
+    const draft = {
+      id: 'v-draft',
+      serviceId: SERVICE_ID,
+      versionNo: 2,
+      effectiveFrom: '2026-10-01',
+      effectiveTo: null,
+      status: 'draft',
+      laborTimes: [],
+    };
+    createServiceVersion.mockResolvedValue({
+      state: success('services.version.created'),
+      created: draft,
+    });
+    // The service publishes the refusal against `body.effectiveFrom`; the only
+    // date on screen at this point is the publish date.
+    publishServiceVersion.mockResolvedValue({
+      status: 'invalid',
+      messageKey: 'form.formError',
+      fieldErrors: { effectiveFrom: 'form.violation.not_forward_only' },
+      attempt: 1,
+    });
+    const user = userEvent.setup();
+    renderDetail();
+
+    fireEvent.change(screen.getByLabelText(labelled('services.version.effectiveFrom')), {
+      target: { value: '2026-10-01' },
+    });
+    await user.click(
+      screen.getByRole('button', { name: EN['services.version.createDraft'] as string })
+    );
+    expect(await screen.findByText(EN['services.version.draftHeading'] as string)).toBeVisible();
+    fireEvent.change(screen.getByLabelText(labelled('services.version.publishFrom')), {
+      target: { value: '2026-10-01' },
+    });
+    await user.click(
+      screen.getByRole('button', { name: EN['services.version.publish'] as string })
+    );
+    expect(await screen.findByText(EN['form.violation.not_forward_only'] as string)).toBeVisible();
+    expect(
+      (screen.getByLabelText(labelled('services.version.publishFrom')) as HTMLInputElement).value
+    ).toBe('2026-10-01');
+  });
+
   it('refuses an end date that is not after the start date, before any request', async () => {
     const user = userEvent.setup();
     renderDetail();

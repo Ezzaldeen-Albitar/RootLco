@@ -20,6 +20,7 @@ import { INTERNAL_CODE, type QuotationSummary } from '../quotations-contract';
 import {
   Figure,
   LinesEditor,
+  lineErrors,
   OutcomeNote,
   PRIMARY_BUTTON,
   QuotationStatusBadge,
@@ -424,7 +425,7 @@ function QuotationBuilder({
         lines={lines}
         onChange={setLines}
         canReadServices={canReadServices}
-        errors={errors}
+        errors={lineErrors(errors, outcome)}
       />
       <OutcomeNote
         messages={messages}

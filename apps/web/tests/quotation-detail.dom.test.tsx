@@ -522,6 +522,45 @@ describe('guarded writes send the QUOTATION version and renew it', () => {
     );
     await waitFor(() => expect(refresh).toHaveBeenCalled());
   });
+
+  it('states an inexact line above the lines, with the revision draft still filled in', async () => {
+    /*
+     * `quo.quotation-revise` prices each line and refuses one whose quantity
+     * times the unit price cannot be held exactly, against
+     * `body.lines[0].quantity`. Only the LEAF of that path survives the client,
+     * so the line it belonged to is gone by the time a control could be found —
+     * the sentence is stated over the lines rather than guessed onto one.
+     */
+    createQuotationRevision.mockResolvedValue({
+      state: {
+        status: 'invalid',
+        messageKey: 'form.formError',
+        fieldErrors: { quantity: 'form.violation.inexact_line_base' },
+        correlationId: 'corr-inexact',
+        attempt: 1,
+      },
+      created: null,
+    });
+    const user = userEvent.setup();
+    renderDetail();
+    const form = screen.getByRole('form', { name: EN['quotations.revise.heading'] as string });
+    await user.type(
+      within(form).getByLabelText(labelled('quotations.picker.serviceIdField')),
+      SERVICE_ID
+    );
+    await user.type(within(form).getByLabelText(labelled('quotations.lines.quantity')), '0.333');
+    await user.click(
+      within(form).getByRole('button', { name: EN['quotations.revise.submit'] as string })
+    );
+    await waitFor(() => expect(createQuotationRevision).toHaveBeenCalledTimes(1));
+    expect(
+      await within(form).findByText(EN['form.violation.inexact_line_base'] as string)
+    ).toBeVisible();
+    expect(within(form).getByLabelText(labelled('quotations.lines.quantity'))).toHaveValue('0.333');
+    expect(within(form).getByLabelText(labelled('quotations.picker.serviceIdField'))).toHaveValue(
+      SERVICE_ID
+    );
+  });
 });
 
 describe('what is offered follows the row and the operator', () => {

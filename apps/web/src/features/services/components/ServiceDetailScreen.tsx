@@ -698,8 +698,24 @@ function VersionPanel({
       onPublished();
       return;
     }
+    /*
+     * The publish refusal is filed against the control this form renders.
+     *
+     * `svc.service-version-publish` takes the date as `effectiveFrom`, so a
+     * forward-only refusal arrives keyed `effectiveFrom` — but the only date on
+     * screen at this point is `publishFrom`, and the control named
+     * `effectiveFrom` belongs to the draft form this branch has already
+     * replaced. Left as it arrived, the sentence would be written to a name
+     * nothing reads, which on screen is the same as dropping it.
+     */
+    const published = result.fieldErrors;
+    const forThisForm =
+      published && published['effectiveFrom'] !== undefined
+        ? { ...published, publishFrom: published['effectiveFrom'] }
+        : published;
     setOutcome({
       ...result,
+      ...(forThisForm ? { fieldErrors: forThisForm } : {}),
       messageKey:
         result.status === 'conflict'
           ? 'services.detail.conflict'

@@ -777,7 +777,11 @@ function IssueForm({
         {translate(messages, 'inventory.issue.explain')}
       </p>
       <div className="sm:col-span-2">
-        <ChosenRequirement messages={messages} requirement={requirement} />
+        <ChosenRequirement
+          messages={messages}
+          requirement={requirement}
+          error={errorFor('materialRequirementId')}
+        />
       </div>
       {target === null ? (
         <>
@@ -899,35 +903,54 @@ function IssueForm({
  * The requirement a draw will be measured against, or the sentence that says
  * there is none and what to do about it. Rendered inside BOTH draw forms, so
  * neither can be filled in under the impression that a draw is possible.
+ *
+ * `error` is what the service published against `body.materialRequirementId` —
+ * a reservation drawn on a different service line is refused there, and this is
+ * the only place on either form that names the requirement, so it is the only
+ * place the sentence can be read beside what it is about.
  */
 function ChosenRequirement({
   messages,
   requirement,
+  error,
 }: {
   readonly messages: Messages;
   readonly requirement: MaterialRequirement | null;
+  readonly error?: string | undefined;
 }) {
+  const refusal =
+    error === undefined ? null : (
+      <p role="alert" className="text-body text-error">
+        {error}
+      </p>
+    );
   if (requirement === null) {
     return (
-      <p role="note" className="text-body text-text-secondary">
-        {translate(messages, 'inventory.parts.draw.needRequirement')}
-      </p>
+      <>
+        <p role="note" className="text-body text-text-secondary">
+          {translate(messages, 'inventory.parts.draw.needRequirement')}
+        </p>
+        {refusal}
+      </>
     );
   }
   return (
-    <p className="text-caption text-text-muted">
-      {translate(messages, 'inventory.parts.draw.usingRequirement')}{' '}
-      <code className="font-mono" dir="ltr">
-        {requirement.id}
-      </code>
-      {' · '}
-      {translate(messages, 'inventory.material.allowance.remaining')}{' '}
-      {requirement.remainingQuantity === null ? (
-        translate(messages, 'inventory.material.allowance.unset')
-      ) : (
-        <Qty value={requirement.remainingQuantity} />
-      )}
-    </p>
+    <>
+      <p className="text-caption text-text-muted">
+        {translate(messages, 'inventory.parts.draw.usingRequirement')}{' '}
+        <code className="font-mono" dir="ltr">
+          {requirement.id}
+        </code>
+        {' · '}
+        {translate(messages, 'inventory.material.allowance.remaining')}{' '}
+        {requirement.remainingQuantity === null ? (
+          translate(messages, 'inventory.material.allowance.unset')
+        ) : (
+          <Qty value={requirement.remainingQuantity} />
+        )}
+      </p>
+      {refusal}
+    </>
   );
 }
 
@@ -1036,7 +1059,11 @@ function ReserveForm({
         {translate(messages, 'inventory.parts.reserve.explain')}
       </p>
       <div className="sm:col-span-2">
-        <ChosenRequirement messages={messages} requirement={requirement} />
+        <ChosenRequirement
+          messages={messages}
+          requirement={requirement}
+          error={errorFor('materialRequirementId')}
+        />
       </div>
       {target === null ? (
         <>

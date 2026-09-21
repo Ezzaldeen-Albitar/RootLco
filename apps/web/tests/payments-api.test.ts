@@ -254,6 +254,23 @@ describe('recording', () => {
     expect(outcome.state.status).toBe('expired');
     expect(send).not.toHaveBeenCalled();
   });
+
+  it('files the currency refusal under the control the form renders', async () => {
+    // The route reads `currency`; the service publishes its violation against
+    // its own internal name. Left as it arrived, the sentence is written to a
+    // control this screen does not have and is rendered by nothing.
+    send.mockResolvedValue({
+      ok: false as const,
+      kind: 'validation',
+      correlationId: 'corr-1',
+      problem: {
+        violations: [{ path: 'body.currencyCode', rule: 'invalid_string' }],
+      },
+    });
+    const outcome = await recordPayment(body, KEY);
+    expect(outcome.state.fieldErrors?.['currency']).toBe('form.violation.invalid_string');
+    expect(outcome.state.fieldErrors?.['currencyCode']).toBeUndefined();
+  });
 });
 
 describe('allocating', () => {

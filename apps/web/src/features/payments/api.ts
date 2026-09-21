@@ -89,6 +89,26 @@ const expired = (attempt: number): ActionState => ({
 const receiptPath = (paymentId: string, suffix = '') =>
   `/api/v1/payments/${encodeURIComponent(paymentId)}${suffix}`;
 
+/**
+ * Files the currency refusal under the control the form actually renders.
+ *
+ * The route reads the body field `currency`, but `payment-service` publishes the
+ * violation against its own internal name — `body.currencyCode` — so the key the
+ * client derives is `currencyCode` and the control on `PaymentsScreen` is
+ * `currency`. Written to a name no field reads, the sentence renders nowhere,
+ * which on screen cannot be told apart from having been dropped.
+ *
+ * Renamed rather than duplicated: two entries for one control would let a later
+ * reader believe there are two problems. An existing `currency` entry wins,
+ * because it was filed against the name the form sent.
+ */
+function underFormControl(state: ActionState): ActionState {
+  const published = state.fieldErrors;
+  if (!published || published['currencyCode'] === undefined) return state;
+  const { currencyCode, ...rest } = published;
+  return { ...state, fieldErrors: { currency: currencyCode, ...rest } };
+}
+
 /** The receipts of ONE branch (`sal.receipt-list`), newest received first. */
 export async function listReceipts(
   target: BranchTarget,
@@ -185,7 +205,7 @@ export async function recordPayment(
   const result = await client.send<RecordedReceipt>('POST', '/api/v1/payments', body, {
     idempotencyKey,
   });
-  if (!result.ok) return { state: fromFailure(result, attempt), created: null };
+  if (!result.ok) return { state: underFormControl(fromFailure(result, attempt)), created: null };
   return {
     state: { ...success('payments.record.success', attempt), correlationId: result.correlationId },
     created: result.data,
@@ -213,7 +233,7 @@ export async function allocatePayment(
     body,
     { idempotencyKey }
   );
-  if (!result.ok) return { state: fromFailure(result, attempt), created: null };
+  if (!result.ok) return { state: underFormControl(fromFailure(result, attempt)), created: null };
   return {
     state: {
       ...success('payments.allocate.success', attempt),

@@ -298,6 +298,38 @@ describe('the builder sends lines as strings and prices nothing', () => {
     expect(createQuotation).not.toHaveBeenCalled();
   });
 
+  it('shows a refused line quantity above the lines, with the draft line still filled in', async () => {
+    // The API refuses `body.lines[0].quantity`; only the LEAF survives the
+    // client, so the line it belonged to is no longer in the message. It is
+    // stated over the lines rather than guessed onto one of them.
+    createQuotation.mockResolvedValue({
+      state: {
+        status: 'invalid',
+        messageKey: 'form.formError',
+        fieldErrors: { quantity: 'form.violation.quantity' },
+        attempt: 1,
+      },
+      created: null,
+    });
+    const user = userEvent.setup();
+    renderScreen({ canManage: true });
+    await user.click(screen.getByRole('button', { name: EN['quotations.list.create'] as string }));
+    const form = await builderForm();
+    await user.type(
+      within(form).getByLabelText(labelled('quotations.picker.serviceIdField')),
+      SERVICE_ID
+    );
+    await user.type(within(form).getByLabelText(labelled('quotations.lines.quantity')), '2.5');
+    await user.click(
+      within(form).getByRole('button', { name: EN['quotations.build.submit'] as string })
+    );
+    expect(await within(form).findByText(EN['form.violation.quantity'] as string)).toBeVisible();
+    expect(within(form).getByLabelText(labelled('quotations.lines.quantity'))).toHaveValue('2.5');
+    expect(within(form).getByLabelText(labelled('quotations.picker.serviceIdField'))).toHaveValue(
+      SERVICE_ID
+    );
+  });
+
   it('adds and removes lines, never below one', async () => {
     const user = userEvent.setup();
     renderScreen({ canManage: true });
