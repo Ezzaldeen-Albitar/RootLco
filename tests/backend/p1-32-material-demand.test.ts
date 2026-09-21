@@ -605,7 +605,20 @@ describe('inv.material-requirement-create, inv.material-requirement-approve, inv
     expect(replay.status).toBe(200);
     expect((await bodyOf<RequirementBody>(replay)).id).toBe(requirement.id);
     // A second active requirement for the same need on the same line is refused.
-    expect((await enteredRequirement(lineId, '2')).status).toBe(409);
+    //
+    // DEF-T-16: with the reason ON THE WIRE, not only in the status. The problem
+    // document is assembled from the catalogue entry and the safe details alone,
+    // so before this the service's sentence never left the process and the panel
+    // could say nothing but "this change cannot be saved" and a reference. The
+    // token names a rule and no record, so it is safe for any caller that got
+    // this far.
+    const duplicate = await enteredRequirement(lineId, '2');
+    expect(duplicate.status).toBe(409);
+    const duplicateProblem = await bodyOf<Problem>(duplicate);
+    expect(duplicateProblem.code).toBe('ERR-RES-002');
+    expect(duplicateProblem.violations).toEqual([
+      { path: 'body', rule: 'material_duplicate_demand' },
+    ]);
     expect(
       await countRowsOf(
         `SELECT count(*)::text AS n FROM inv.material_requirements WHERE service_line_id = $1`,
@@ -615,7 +628,13 @@ describe('inv.material-requirement-create, inv.material-requirement-approve, inv
 
     // The requester may not approve, and a caller without the code may not either.
     authAs(INV_MATERIAL);
-    expect((await decide(requirement.id, { decision: 'approved' })).status).toBe(409);
+    const ownDecision = await decide(requirement.id, { decision: 'approved' });
+    expect(ownDecision.status).toBe(409);
+    // DEF-T-16, the second rule the same mapping publishes: the refusal names
+    // the separation it enforces rather than leaving the status to speak.
+    expect((await bodyOf<Problem>(ownDecision)).violations).toEqual([
+      { path: 'body', rule: 'material_separation_of_duties' },
+    ]);
     authAs(INV_FULL);
     expect((await decide(requirement.id, { decision: 'approved' })).status).toBe(403);
     authAs(INV_TENANT_B_MATERIAL);

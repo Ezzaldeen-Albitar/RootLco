@@ -52,6 +52,7 @@ import {
   type MaterialRequestRow,
   type MaterialRequirementRow,
 } from '../data/inventory-repository';
+import type { MaterialRefusalRule } from '../domain/inventory';
 import { parseQuantity, toDomainFailure } from './inventory-failures';
 
 /**
@@ -414,41 +415,79 @@ export class MaterialDrawGovernor {
 }
 
 /**
+ * Refuses a material write with the rule that refused it on the wire.
+ *
+ * The rule token travels in `violations`, against `body` — the whole request
+ * rather than one control, because none of these rules is about a single box: a
+ * duplicate demand is about the line and the part together, and an unknown
+ * reference names four candidates. `problemFor` publishes `safeDetails` and the
+ * catalogue entry only, so this list is the ONLY machine-readable statement of
+ * the reason; the `message` below stays for the log and never reaches a caller.
+ */
+function refuseMaterial(
+  code: 'ERR-TRN-001' | 'ERR-RES-001' | 'ERR-RES-002',
+  rule: MaterialRefusalRule,
+  message: string
+): never {
+  throw new AppFailure(code, {
+    message,
+    safeDetails: { violations: [{ path: 'body', rule }] },
+  });
+}
+
+/**
  * Translates a material refusal. The rule names the slice-3a guards raise are part of
  * their message, so they are matched by prefix; anything else is the shared stock
  * mapping.
+ *
+ * Every branch publishes a token from `MATERIAL_REFUSAL_RULES` (DEF-T-16). Before
+ * that the status was the whole answer, and a caller could not tell a second
+ * request for the same part on the same line from any other 409 — which on the
+ * material panel read "This change cannot be saved" and a correlation reference.
  */
 export function mapMaterialFailure(error: unknown, what: string): never {
   const message = databaseMessage(error);
   if (isSqlState(error, SQLSTATE.checkViolation)) {
     if (message.startsWith('material_separation_of_duties')) {
-      throw new AppFailure('ERR-TRN-001', {
-        message: 'The person who asked for it may not decide it. Ask another approver.',
-      });
+      refuseMaterial(
+        'ERR-TRN-001',
+        'material_separation_of_duties',
+        'The person who asked for it may not decide it. Ask another approver.'
+      );
     }
     if (message.startsWith('material_duplicate_demand')) {
-      throw new AppFailure('ERR-RES-002', {
-        message: 'The service line already has an active requirement for this item or its family',
-      });
+      refuseMaterial(
+        'ERR-RES-002',
+        'material_duplicate_demand',
+        'The service line already has an active requirement for this item or its family'
+      );
     }
     if (message.startsWith('material_approval_required')) {
-      throw new AppFailure('ERR-TRN-001', {
-        message: `${what} needs an approved requirement with every fact it depends on`,
-      });
+      refuseMaterial(
+        'ERR-TRN-001',
+        'material_approval_required',
+        `${what} needs an approved requirement with every fact it depends on`
+      );
     }
-    throw new AppFailure('ERR-TRN-001', {
-      message: `${what} was refused because it would break a material demand rule`,
-    });
+    refuseMaterial(
+      'ERR-TRN-001',
+      'material_demand_rule',
+      `${what} was refused because it would break a material demand rule`
+    );
   }
   if (isSqlState(error, SQLSTATE.uniqueViolation)) {
-    throw new AppFailure('ERR-RES-002', {
-      message: 'The service line already has an active requirement for this item or its family',
-    });
+    refuseMaterial(
+      'ERR-RES-002',
+      'material_duplicate_demand',
+      'The service line already has an active requirement for this item or its family'
+    );
   }
   if (isSqlState(error, SQLSTATE.foreignKeyViolation)) {
-    throw new AppFailure('ERR-RES-001', {
-      message: `${what} names a service line, item, family or unit that does not exist in scope`,
-    });
+    refuseMaterial(
+      'ERR-RES-001',
+      'material_unknown_reference',
+      `${what} names a service line, item, family or unit that does not exist in scope`
+    );
   }
   throw error;
 }
