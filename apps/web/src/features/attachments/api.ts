@@ -181,6 +181,76 @@ export interface CaptureState extends ActionState {
 }
 
 /**
+ * Controls the API names when what it is really refusing is the chosen FILE.
+ *
+ * The capture surfaces offer one control — the file picker — and this module's
+ * own refusals are already filed under `file` (`attachments.capture.empty`,
+ * `attachments.capture.tooLarge`). The service names the part of the request
+ * instead: the declared kind, the declared size, or the authorization the second
+ * call carries. None of those three is a control anybody can see, so the
+ * sentence landed in a field error keyed to nothing and the operator was left
+ * with the general "something went wrong" over a file the workshop simply
+ * cannot accept.
+ *
+ * Re-filed under `file`, and raised to the banner as well, because the capture
+ * panels render the banner and have no per-control slot of their own.
+ */
+const FILE_CONTROLS: readonly string[] = ['contentType', 'byteSize'];
+
+/**
+ * The refusals on the upload authorization that are really about the FILE.
+ *
+ * `contentType` and `byteSize` are what the browser declared about the chosen
+ * file, so whatever the service says about them is a true sentence about that
+ * file. `uploadToken` is not: it is issued by the service and carried back by
+ * this module, and an operator never sees it, let alone types it. Only two of
+ * the refusals filed against it describe the file — the authorization has run
+ * out, or the kind inside it is not one this category takes — and both are
+ * answered by choosing the file again.
+ *
+ * Every other refusal on that path says the authorization itself could not be
+ * read: `invalid_length`, `malformed`, `invalid_expiry` and their neighbours in
+ * `shared-services/domain/attachment-policy.ts`. Their catalogue sentences are
+ * written for something the reader entered — "too short or too long" — and over
+ * a token nobody typed that sentence is simply untrue. Those get the one
+ * sentence that is true of all of them, and that names the only step the
+ * operator can take.
+ *
+ * The entry itself is DROPPED, not shadowed by the one filed under `file`.
+ * Surfaces that have no slot for a control the service named — the delivery
+ * panels read `Object.values(fieldErrors)[0]` — would otherwise render the
+ * untrue sentence beside the file picker, which is the display this re-filing
+ * exists to prevent.
+ */
+const TOKEN_REFUSALS_ABOUT_THE_FILE: readonly string[] = [
+  'form.violation.expired',
+  'form.violation.content_type_not_allowed',
+];
+
+const UPLOAD_NOT_CONFIRMED = 'attachments.capture.uploadNotConfirmed';
+
+const saysSomething = (key: string | undefined): key is string =>
+  key !== undefined && key !== 'form.violation.invalid';
+
+function aboutTheAuthorization(key: string | undefined): string | undefined {
+  if (!saysSomething(key)) return undefined;
+  return TOKEN_REFUSALS_ABOUT_THE_FILE.includes(key) ? key : UPLOAD_NOT_CONFIRMED;
+}
+
+function aboutTheChosenFile(state: CaptureState): CaptureState {
+  const errors = state.fieldErrors;
+  if (errors === undefined) return state;
+  const stated =
+    FILE_CONTROLS.map((control) => errors[control]).find(saysSomething) ??
+    aboutTheAuthorization(errors['uploadToken']);
+  if (stated === undefined) return state;
+  const named = Object.fromEntries(
+    Object.entries(errors).filter(([control]) => control !== 'uploadToken')
+  );
+  return { ...state, messageKey: stated, fieldErrors: { ...named, file: stated } };
+}
+
+/**
  * Authorize, upload and register one piece of evidence.
  *
  * THREE steps in one Server Action, because they are one act and a half-finished
@@ -217,7 +287,7 @@ export async function captureDocument(input: CaptureInput, attempt = 1): Promise
     '/api/v1/attachments/upload-authorizations',
     { ...parsed.data, capturedAt: undefined, byteSize }
   );
-  if (!authorized.ok) return fromFailure(authorized, attempt);
+  if (!authorized.ok) return aboutTheChosenFile(fromFailure(authorized, attempt));
 
   // The ceiling the server just published for this category. Checked here so a
   // file that cannot be accepted is refused before its bytes cross a network,
@@ -247,7 +317,7 @@ export async function captureDocument(input: CaptureInput, attempt = 1): Promise
     byteSize,
     capturedAt: parsed.data.capturedAt ?? null,
   });
-  if (!registered.ok) return fromFailure(registered, attempt);
+  if (!registered.ok) return aboutTheChosenFile(fromFailure(registered, attempt));
 
   return {
     status: 'success',

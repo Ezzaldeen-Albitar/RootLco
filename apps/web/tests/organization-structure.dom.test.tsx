@@ -56,6 +56,8 @@ const { OrganizationStructure } =
   await import('@/features/administration/organization/components/OrganizationStructure');
 const { CapacityPanel } =
   await import('@/features/administration/organization/components/CapacityPanel');
+const { SettingsEditor } =
+  await import('@/features/administration/organization/components/SettingsEditor');
 
 const COMPANY: CompanyView = {
   id: '10000000-0000-4000-8000-000000000001',
@@ -408,5 +410,108 @@ describe('the subscription and capacity panel', () => {
     renderRtl(<CapacityPanel capacity={capacity()} messages={ar} locale="ar" />);
     expect(document.documentElement.dir).toBe('rtl');
     expect(screen.getByText(AR('organization.capacity.unlimited'))).toBeVisible();
+  });
+});
+
+/**
+ * The settings editor's own refusals, which nothing on the screen rendered.
+ *
+ * `type_mismatch` — `iam/application/organization-settings-service.ts:337`,
+ * published against `body.settingValue` when `org.validate_setting_value()`
+ * refuses the text against the kind the stored setting declares. It reached a
+ * field error keyed `settingValue`, and the value box had no error slot at all,
+ * so the operator was refused with nothing beside the only control they could
+ * change — and the same was true of this screen's own "that is not a number"
+ * check, which was written and then rendered nowhere.
+ */
+describe('a setting value the platform will not store', () => {
+  const SCOPE = '10000000-0000-4000-8000-000000000001';
+
+  const refusal = (path: string, rule: string) => ({
+    ok: false as const,
+    kind: 'validation' as const,
+    status: 422,
+    problem: {
+      type: 'urn:rootlco:error:ERR-VAL-001',
+      title: 'Validation failed',
+      status: 422,
+      code: 'ERR-VAL-001',
+      correlationId: 'corr-refusal',
+      violations: [{ path, rule }],
+    },
+    correlationId: 'corr-refusal',
+  });
+
+  const renderSettings = (messages: typeof en, locale: 'en' | 'ar') => {
+    get.mockResolvedValue({ ok: true, status: 200, data: { items: [] }, correlationId: 'corr-1' });
+    const paint = locale === 'en' ? renderLtr : renderRtl;
+    return paint(
+      <SettingsEditor
+        messages={messages}
+        scope="company"
+        scopeIds={[SCOPE]}
+        canWrite
+        keyPrefix=""
+        suggestions={[
+          {
+            key: 'org.working_hours.start',
+            labelKey: 'organization.setting.key',
+            valueType: 'string',
+          },
+        ]}
+      />
+    );
+  };
+
+  it('puts the sentence beside the value box and keeps what was typed', async () => {
+    send.mockResolvedValue(refusal('body.settingValue', 'type_mismatch'));
+    const user = userEvent.setup();
+    renderSettings(en, 'en');
+
+    const value = await screen.findByLabelText(new RegExp(`^${EN('organization.setting.value')}`));
+    await user.type(value, 'half past seven');
+    await user.click(screen.getByRole('button', { name: EN('admin.save') }));
+
+    expect(await screen.findByText(EN('form.violation.type_mismatch'))).toBeVisible();
+    expect(value).toHaveAttribute('aria-invalid', 'true');
+    // The typed text survives the refusal: a cleared box would make the operator
+    // retype something they were never told was wrong in its own right.
+    expect(value).toHaveValue('half past seven');
+  });
+
+  it('says what is wrong without sending the reader to the hint under the box', async () => {
+    // The hint under the value box describes how a value is STORED — exactly as
+    // entered — not which forms this setting will take. A refusal that points at
+    // it leaves the reader nowhere to look, so the sentence has to stand on its
+    // own.
+    send.mockResolvedValue(refusal('body.settingValue', 'type_mismatch'));
+    const user = userEvent.setup();
+    renderSettings(en, 'en');
+
+    const value = await screen.findByLabelText(new RegExp(`^${EN('organization.setting.value')}`));
+    await user.type(value, 'half past seven');
+    await user.click(screen.getByRole('button', { name: EN('admin.save') }));
+
+    const sentence = EN('form.violation.type_mismatch');
+    expect(await screen.findByText(sentence)).toBeVisible();
+    expect(sentence, 'the refusal defers to a hint instead of saying what is wrong').not.toMatch(
+      /hint/i
+    );
+    expect(EN('organization.setting.valueHint')).toMatch(/stored/i);
+  });
+
+  it('says it in Arabic when the screen is Arabic', async () => {
+    send.mockResolvedValue(refusal('body.settingValue', 'type_mismatch'));
+    const user = userEvent.setup();
+    renderSettings(ar, 'ar');
+
+    const value = await screen.findByLabelText(new RegExp(`^${AR('organization.setting.value')}`));
+    await user.type(value, 'سبعة والنصف');
+    await user.click(screen.getByRole('button', { name: AR('admin.save') }));
+
+    const arabic = AR('form.violation.type_mismatch');
+    expect(await screen.findByText(arabic)).toBeVisible();
+    expect(arabic).toMatch(/[؀-ۿ]/);
+    expect(arabic).not.toBe(EN('form.violation.type_mismatch'));
   });
 });

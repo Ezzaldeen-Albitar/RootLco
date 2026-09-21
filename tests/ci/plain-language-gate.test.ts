@@ -327,6 +327,11 @@ const INTENTIONALLY_GENERIC: Readonly<Record<string, string>> = Object.freeze({
     'the provider strength policy refused a new secret and ADR-019 forbids repeating its own ' +
     'sentence; the screens that raise it show their own wording, so a field sentence here ' +
     'would be a second, weaker authority',
+  empty_selection:
+    'the refusal is computed from the caller’s OWN permissions — nothing they may see is ' +
+    'left, whether they named fields or took the default selection the route supplies when ' +
+    'none is named — so a specific sentence would tell a reader which fields exist but are ' +
+    'being kept from them, which is a permission-internal fact and not theirs to learn',
   unknown_price_list:
     '`price-list-service.ts` refuses with "is not visible", not "does not exist"; a sentence ' +
     'of its own would separate a hidden price list from an absent one and turn the field into ' +
@@ -342,45 +347,27 @@ const INTENTIONALLY_GENERIC: Readonly<Record<string, string>> = Object.freeze({
  * The measured backlog: tokens the API publishes with no sentence in either
  * catalogue.
  *
- * One hundred and one when this list was first taken, reduced by the five above
- * that are decisions rather than debt. Each remaining entry renders as the
- * catalogue's honest generic today; each is a sentence somebody owes. The list
- * is written down rather than tolerated silently, because a backlog nobody can
- * count is a backlog nobody will clear.
+ * One hundred and one when this list was first taken. Eight of those are
+ * decisions rather than debt and stand in the list above; sixty-nine have been
+ * given sentences since; the twenty-four below are what remains. Each remaining
+ * entry renders as the catalogue's honest generic today; each is a sentence
+ * somebody owes. The list is written down rather than tolerated silently,
+ * because a backlog nobody can count is a backlog nobody will clear.
  */
 const OWED: readonly string[] = Object.freeze([
-  'before_from',
   'branch_requires_company',
   'catalogue_constraint',
-  'content_type_not_allowed',
-  'control_characters',
-  'did_not_verify',
   'digest_format',
   'duplicate-active-profile',
   'duplicate-certification',
-  'empty_selection',
-  'empty_update',
-  'expired',
-  'identity_disabled',
   'incoherent_scope',
-  'invalid_length',
   'invalid_sha256',
-  'invalid_transition',
-  'mismatch',
-  'must_be_after_from',
-  'no_state_change',
-  'not_after_start',
   'not_allow_listed',
   'not_allowed',
   'one_subject_required',
   'overlapping-window',
-  'plan_document',
-  'role_archived',
-  'size_out_of_range',
   'template_mismatch',
   'token_mismatch',
-  'too_long',
-  'type_mismatch',
   'unknown_entity_type',
   'unknown_field',
   'unknown_link_purpose',
@@ -392,7 +379,6 @@ const OWED: readonly string[] = Object.freeze([
   'unsupported_channel',
   'version_already_published',
   'version_immutable',
-  'window_too_wide',
 ]);
 
 /**
@@ -402,7 +388,7 @@ const OWED: readonly string[] = Object.freeze([
  * compares the list against itself, so the only way to raise the ceiling is to
  * edit this number in a diff a reviewer sees beside the tokens it admits.
  */
-const OWED_CEILING = 44;
+const OWED_CEILING = 24;
 
 describe('every rule token the API publishes has a sentence, or is on a named list', () => {
   const files = typeScriptFilesUnder(API_MODULES);

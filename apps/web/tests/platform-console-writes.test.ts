@@ -640,6 +640,47 @@ describe('recorded money crosses the boundary as the string it was typed as', ()
     expect(body.reference).toBe('TRF-4471');
   });
 
+  /*
+   * `mismatch` — `platform/application/billing-service.ts:228`, against
+   * `body.currencyCode`.
+   *
+   * The receipt dialog offers no currency control: the currency is the charge's
+   * and travels with the request. So a field error keyed `currencyCode` named
+   * nothing on screen and rendered nowhere, and the operator got the general
+   * banner over a refusal that states an exact, correctable reason. It is the
+   * whole request as far as that dialog is concerned, so it is raised to the
+   * banner the dialog already draws.
+   */
+  it('raises a currency refusal into the banner, because that dialog has no currency control', async () => {
+    send.mockResolvedValue(violationFailure([{ path: 'body.currencyCode', rule: 'mismatch' }]));
+    const state = await actions.recordReceiptAction(TENANT, {
+      chargeId: CHARGE,
+      amount: '600.0000',
+      receivedOn: '2026-10-20',
+      method: 'Bank transfer',
+    });
+    expect(state.status).toBe('invalid');
+    expect(state.messageKey).toBe('form.violation.mismatch');
+    expect(state.fieldErrors?.currencyCode).toBe('form.violation.mismatch');
+  });
+
+  it('leaves the banner alone when the refusal carries no sentence of its own', async () => {
+    // The direction that matters: `form.violation.invalid` says LESS than the
+    // banner already does, so promoting it would replace a sentence with a
+    // vaguer one.
+    send.mockResolvedValue(
+      violationFailure([{ path: 'body.currencyCode', rule: 'a_token_with_no_sentence' }])
+    );
+    const state = await actions.recordReceiptAction(TENANT, {
+      chargeId: CHARGE,
+      amount: '600.0000',
+      receivedOn: '2026-10-20',
+      method: 'Bank transfer',
+    });
+    expect(state.fieldErrors?.currencyCode).toBe('form.violation.invalid');
+    expect(state.messageKey).not.toBe('form.violation.invalid');
+  });
+
   it('refuses a receipt that names no charge', async () => {
     const state = await actions.recordReceiptAction(TENANT, {
       chargeId: NOT_AN_ID,

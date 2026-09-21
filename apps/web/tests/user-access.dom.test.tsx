@@ -48,6 +48,32 @@ vi.mock('next/navigation', () => ({
 const { UserAccessScreen } =
   await import('@/features/administration/users/components/UserAccessScreen');
 
+/**
+ * What `client.send` gives back when the API refuses a write it can name.
+ *
+ * Built as the client builds it — `ok: false`, the failure kind, and the
+ * `{ path, rule }` pairs the service published — so the case below exercises the
+ * real translation from a rule token to a sentence rather than a hand-written
+ * field error. A fixture that supplied `fieldErrors` directly would pass with an
+ * empty catalogue, which is the failure these cases exist to catch.
+ */
+function refusal(violations: readonly { readonly path: string; readonly rule: string }[]) {
+  return {
+    ok: false as const,
+    kind: 'validation' as const,
+    status: 422,
+    problem: {
+      type: 'urn:rootlco:error:ERR-VAL-001',
+      title: 'Validation failed',
+      status: 422,
+      code: 'ERR-VAL-001',
+      correlationId: 'corr-refusal',
+      violations,
+    },
+    correlationId: 'corr-refusal',
+  };
+}
+
 const USER: UserRow = {
   id: '60000000-0000-4000-8000-000000000006',
   email: 'supervisor@example.test',
@@ -201,6 +227,66 @@ describe('granting a role', () => {
       (await within(dialog).findAllByText(EN('users.access.roleRequired'))).length
     ).toBeGreaterThan(0);
     expect(send).not.toHaveBeenCalled();
+  });
+
+  /*
+   * `role_archived` — `iam/application/access-administration-service.ts:390`,
+   * published against `body.roleId`.
+   *
+   * A retired role is still in the picker until the page is re-read, so this is
+   * an ordinary Tuesday rather than an edge: the service refuses, and what the
+   * operator was told used to be "This value is not accepted here." The sentence
+   * states the RULE — a retired role is given to nobody — and names neither the
+   * role's own history nor who retired it.
+   */
+  it('says why a retired role cannot be given, beside the role control, and keeps the choice', async () => {
+    send.mockResolvedValue(refusal([{ path: 'body.roleId', rule: 'role_archived' }]));
+    const user = userEvent.setup();
+    renderAccess({ grants: [] });
+
+    await user.click(screen.getByRole('button', { name: EN('users.access.grant') }));
+    const dialog = screen.getByRole('dialog');
+    const role = within(dialog).getByLabelText(/^Role/) as HTMLSelectElement;
+    await user.selectOptions(role, ROLE.id);
+    await user.click(within(dialog).getByRole('button', { name: EN('users.access.grant') }));
+
+    const sentence = await within(dialog).findByText(EN('form.violation.role_archived'));
+    expect(sentence).toBeVisible();
+    // Beside the control it is about, not only in the banner.
+    expect(role).toHaveAttribute('aria-invalid', 'true');
+    // And what was chosen is still chosen, so the correction is one click.
+    expect(role.value).toBe(ROLE.id);
+    expect(refresh).not.toHaveBeenCalled();
+  });
+
+  it('says the same thing in Arabic, in Arabic script', async () => {
+    send.mockResolvedValue(refusal([{ path: 'body.roleId', rule: 'role_archived' }]));
+    const user = userEvent.setup();
+    renderRtl(
+      <UserAccessScreen
+        locale="ar"
+        messages={ar}
+        user={USER}
+        grants={[]}
+        roles={[ROLE]}
+        companies={[COMPANY]}
+        branches={[NORTH, SOUTH]}
+        departmentNames={{}}
+        canManageGrants
+        canReadRoles
+        canReadDepartments={false}
+      />
+    );
+
+    await user.click(screen.getByRole('button', { name: AR('users.access.grant') }));
+    const dialog = screen.getByRole('dialog');
+    await user.selectOptions(within(dialog).getByRole('combobox'), ROLE.id);
+    await user.click(within(dialog).getByRole('button', { name: AR('users.access.grant') }));
+
+    const arabic = AR('form.violation.role_archived');
+    expect(await within(dialog).findByText(arabic)).toBeVisible();
+    expect(arabic).toMatch(/[؀-ۿ]/);
+    expect(arabic).not.toBe(EN('form.violation.role_archived'));
   });
 });
 
@@ -378,5 +464,156 @@ describe('language and direction', () => {
     expect(screen.getByText(AR('users.access.explainOneBranch'))).toBeVisible();
     expect(screen.getByText(AR('users.access.explainSeveralBranches'))).toBeVisible();
     expect(screen.getByText(AR('users.access.explainOrganisation'))).toBeVisible();
+  });
+});
+
+/**
+ * Two more administration screens whose refusals had nowhere to land.
+ *
+ * They are exercised HERE rather than in files of their own because this phase
+ * moves no sealed file count: `apps/web/tests` may gain cases and may not gain
+ * files. This suite is the administration DOM suite that already mocks the HTTP
+ * client and the router the same way, and both screens below live under
+ * `features/administration` beside the one above.
+ */
+
+const { UsersScreen } = await import('@/features/administration/users/components/UsersScreen');
+const { ApprovalLimitsScreen } =
+  await import('@/features/administration/access/components/ApprovalLimitsScreen');
+
+/** An account still waiting to be activated, which is what makes Activate offered. */
+const INVITED: UserRow = { ...USER, id: '60000000-0000-4000-8000-000000000016', status: 'invited' };
+
+const page = (rows: readonly UserRow[]) => ({
+  ok: true as const,
+  status: 200,
+  data: { items: rows, nextCursor: null },
+  correlationId: 'corr-page',
+});
+
+describe('changing an account’s state', () => {
+  /*
+   * `identity_disabled` — `iam/application/invitation-service.ts:392`, published
+   * against `path.userId`, so it names no control and belongs in the dialog's
+   * one message slot.
+   *
+   * It used to be unreachable there for a second reason: activation replaced
+   * EVERY refusal with "the invitation has not been accepted yet", which is a
+   * different and wrong reason, and sent the operator to chase an acceptance
+   * that had already happened. The sentence states only that the account is
+   * switched off — nothing about how, where or by which sign-in arrangement.
+   */
+  it('says an account is switched off, rather than blaming the invitation', async () => {
+    get.mockResolvedValue(page([INVITED]));
+    send.mockResolvedValue(refusal([{ path: 'path.userId', rule: 'identity_disabled' }]));
+    const user = userEvent.setup();
+    renderLtr(<UsersScreen locale="en" messages={en} canManage canRevokeSessions roles={[ROLE]} />);
+
+    await user.click(await screen.findByRole('button', { name: EN('users.action.activate') }));
+    const dialog = await screen.findByRole('alertdialog');
+    await user.type(within(dialog).getByRole('textbox'), 'Joining the workshop today');
+    await user.click(within(dialog).getByRole('button', { name: EN('users.action.activate') }));
+
+    const alert = await within(dialog).findByRole('alert');
+    expect(alert).toHaveTextContent(EN('form.violation.identity_disabled'));
+    expect(alert).not.toHaveTextContent(EN('users.notAccepted'));
+  });
+
+  /*
+   * `control_characters` — `iam/domain/identity-policy.ts:120`, against
+   * `body.reason`. A field refusal, and this dialog holds one control and one
+   * message slot, so the sentence goes there rather than being dropped for the
+   * general "that change was not saved".
+   */
+  it('says what is wrong with the written reason, and keeps what was typed', async () => {
+    get.mockResolvedValue(page([USER]));
+    send.mockResolvedValue(refusal([{ path: 'body.reason', rule: 'control_characters' }]));
+    const user = userEvent.setup();
+    renderLtr(<UsersScreen locale="en" messages={en} canManage canRevokeSessions roles={[ROLE]} />);
+
+    await user.click(await screen.findByRole('button', { name: EN('users.action.lock') }));
+    const dialog = await screen.findByRole('alertdialog');
+    const reason = within(dialog).getByRole('textbox');
+    await user.type(reason, 'Left the company');
+    await user.click(within(dialog).getByRole('button', { name: EN('users.action.lock') }));
+
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent(
+      EN('form.violation.control_characters')
+    );
+    expect(reason).toHaveValue('Left the company');
+  });
+});
+
+describe('an approval limit’s effective window', () => {
+  /*
+   * `not_after_start` — `iam/domain/credential-policy.ts:129`, against
+   * `body.effectiveTo`, which IS a control on this dialog, so this case proves
+   * the wiring that was already there now has a sentence to carry.
+   */
+  it('marks the end date and keeps every other entry as typed', async () => {
+    get.mockResolvedValue({
+      ok: true,
+      status: 200,
+      data: { items: [], nextCursor: null },
+      correlationId: 'corr-page',
+    });
+    send.mockResolvedValue(refusal([{ path: 'body.effectiveTo', rule: 'not_after_start' }]));
+    const user = userEvent.setup();
+    renderLtr(
+      <ApprovalLimitsScreen
+        locale="en"
+        messages={en}
+        roles={[
+          {
+            id: ROLE.id,
+            roleCode: ROLE.roleCode,
+            name: ROLE.name,
+            description: null,
+            isSystem: false,
+            recordVersion: 1,
+          },
+        ]}
+        companyIds={[COMPANY.id]}
+        canManage
+      />
+    );
+
+    await user.click(await screen.findByRole('button', { name: EN('approvalLimits.create') }));
+    const dialog = await screen.findByRole('dialog');
+    await user.type(
+      within(dialog).getByLabelText(new RegExp(`^${EN('approvalLimits.field.limitType')}`)),
+      'discount'
+    );
+    await user.type(
+      within(dialog).getByLabelText(new RegExp(`^${EN('approvalLimits.field.amount')}`)),
+      '1500.0000'
+    );
+    await user.type(
+      within(dialog).getByLabelText(new RegExp(`^${EN('approvalLimits.field.currency')}`)),
+      'JOD'
+    );
+    await user.type(
+      within(dialog).getByLabelText(new RegExp(`^${EN('approvalLimits.field.effectiveFrom')}`)),
+      '2026-10-01'
+    );
+    await user.type(
+      within(dialog).getByLabelText(new RegExp(`^${EN('approvalLimits.field.effectiveTo')}`)),
+      '2026-09-01'
+    );
+    await user.click(within(dialog).getByRole('button', { name: EN('admin.create') }));
+
+    expect(await within(dialog).findByText(EN('form.violation.not_after_start'))).toBeVisible();
+    /*
+     * Re-queried rather than reused. Every control in this dialog is keyed on
+     * the attempt number so React's post-action form reset cannot strand it, so
+     * the node held before the submit is detached and asserting on it would test
+     * the previous render.
+     */
+    expect(
+      within(dialog).getByLabelText(new RegExp(`^${EN('approvalLimits.field.effectiveTo')}`))
+    ).toHaveAttribute('aria-invalid', 'true');
+    expect(
+      within(dialog).getByLabelText(new RegExp(`^${EN('approvalLimits.field.limitType')}`))
+    ).toHaveValue('discount');
   });
 });
