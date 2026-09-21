@@ -106,7 +106,7 @@ export function useBranchList<T>(
         state.status === 'denied'
           ? { key: refusedKey, retryable: false }
           : state.status === 'expired'
-            ? { key: 'state.expired.title', retryable: false }
+            ? { key: 'state.expired.message', retryable: false }
             : { key: unavailableKey, retryable: true };
       setAnswer({ stamp, items: null, truncated: false, failure });
     });

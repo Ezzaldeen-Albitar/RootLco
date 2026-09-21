@@ -91,7 +91,7 @@ interface DraftLine {
 function detailFailureKey(status: string): string {
   if (status === 'denied') return 'inventory.receipts.detail.refused';
   if (status === 'not-found') return 'inventory.receipts.detail.gone';
-  if (status === 'expired') return 'state.expired.title';
+  if (status === 'expired') return 'state.expired.message';
   return 'inventory.receipts.detail.unavailable';
 }
 
@@ -803,7 +803,7 @@ function CostHistoryPanel({
         state.status === 'denied'
           ? 'inventory.receipts.costHistory.refused'
           : state.status === 'expired'
-            ? 'state.expired.title'
+            ? 'state.expired.message'
             : 'inventory.receipts.costHistory.unavailable'
       );
     });

@@ -177,7 +177,7 @@ function useOpeningBatches(target: StockTarget | null): {
         state.status === 'denied'
           ? { key: 'inventory.opening.batches.refused', retryable: false }
           : state.status === 'expired'
-            ? { key: 'state.expired.title', retryable: false }
+            ? { key: 'state.expired.message', retryable: false }
             : { key: 'inventory.opening.batches.unavailable', retryable: true };
       setAnswer({ request: stamp, items: null, truncated: false, failure });
     });
@@ -210,7 +210,7 @@ function useOpeningBatches(target: StockTarget | null): {
 function detailFailureKey(status: string): string {
   if (status === 'denied') return 'inventory.opening.detail.refused';
   if (status === 'not-found') return 'inventory.opening.detail.gone';
-  if (status === 'expired') return 'state.expired.title';
+  if (status === 'expired') return 'state.expired.message';
   return 'inventory.opening.detail.unavailable';
 }
 

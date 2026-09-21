@@ -351,7 +351,7 @@ function useBranches(canRead: boolean): Branches {
       if (state.status === 'denied') {
         setFailure({ key: 'services.catalogue.branchesRefused', retryable: false });
       } else if (state.status === 'expired') {
-        setFailure({ key: 'state.expired.title', retryable: false });
+        setFailure({ key: 'state.expired.message', retryable: false });
       } else {
         setFailure({ key: 'services.catalogue.branchesUnavailable', retryable: true });
       }

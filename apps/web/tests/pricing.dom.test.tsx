@@ -478,7 +478,7 @@ describe('CC-15 — the pricing branch picker says which state it is in', () => 
     listBranches.mockResolvedValue({ status: 'expired', correlationId: 'corr' });
     renderScreen(permitted);
     const form = lookupForm();
-    expect(await within(form).findByText(EN['state.expired.title'] as string)).toBeVisible();
+    expect(await within(form).findByText(EN['state.expired.message'] as string)).toBeVisible();
     expect(within(form).queryByRole('button', { name: EN['state.retry'] as string })).toBeNull();
   });
 
