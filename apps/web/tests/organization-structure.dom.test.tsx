@@ -479,6 +479,27 @@ describe('a setting value the platform will not store', () => {
     expect(value).toHaveValue('half past seven');
   });
 
+  it('says what is wrong without sending the reader to the hint under the box', async () => {
+    // The hint under the value box describes how a value is STORED — exactly as
+    // entered — not which forms this setting will take. A refusal that points at
+    // it leaves the reader nowhere to look, so the sentence has to stand on its
+    // own.
+    send.mockResolvedValue(refusal('body.settingValue', 'type_mismatch'));
+    const user = userEvent.setup();
+    renderSettings(en, 'en');
+
+    const value = await screen.findByLabelText(new RegExp(`^${EN('organization.setting.value')}`));
+    await user.type(value, 'half past seven');
+    await user.click(screen.getByRole('button', { name: EN('admin.save') }));
+
+    const sentence = EN('form.violation.type_mismatch');
+    expect(await screen.findByText(sentence)).toBeVisible();
+    expect(sentence, 'the refusal defers to a hint instead of saying what is wrong').not.toMatch(
+      /hint/i
+    );
+    expect(EN('organization.setting.valueHint')).toMatch(/stored/i);
+  });
+
   it('says it in Arabic when the screen is Arabic', async () => {
     send.mockResolvedValue(refusal('body.settingValue', 'type_mismatch'));
     const user = userEvent.setup();

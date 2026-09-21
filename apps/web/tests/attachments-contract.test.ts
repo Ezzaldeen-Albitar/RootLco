@@ -273,6 +273,10 @@ describe('the attachments contract is DERIVED from what governs it', () => {
  * translation of the token into a catalogue key, and the re-filing under the
  * control an operator can act on.
  *
+ * The fourth case is the boundary of that re-filing. `body.uploadToken` also
+ * carries refusals that are about the authorization rather than the file, and
+ * those must not borrow a sentence written for something the reader typed.
+ *
  * Folded into this file rather than given one of its own: the P1-27 evidence
  * seal digests a count of web test FILES, and this is the attachments suite.
  */
@@ -343,6 +347,41 @@ describe('a refusal about the chosen file reaches the control the operator has',
 
     expect(state.fieldErrors?.file).toBe('form.violation.expired');
     expect(state.messageKey).toBe('form.violation.expired');
+    stored.mockRestore();
+  });
+
+  it('never tells the operator an authorization they never typed is the wrong length', async () => {
+    // `invalid_length` on `body.uploadToken` comes from
+    // `shared-services/domain/attachment-policy.ts`: the authorization itself
+    // could not be read. Its catalogue sentence is written for a value the
+    // reader entered — "too short or too long" — and this is a value the
+    // operator never sees, let alone types. The sentence they get instead is
+    // true of every unreadable authorization and names the one step open to
+    // them.
+    const stored = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(new Response(null, { status: 200 }));
+    attachmentSend
+      .mockResolvedValueOnce({
+        ok: true,
+        data: {
+          documentId: '33333333-3333-4333-8333-333333333333',
+          uploadToken: 'authorization-issued-by-the-service',
+          uploadUrl: 'https://store.invalid/put',
+          method: 'PUT',
+          contentType: CAPTURE.contentType,
+          maxBytes: 1_000_000,
+          expiresAt: '2026-09-21T00:00:00.000Z',
+        },
+        correlationId: 'corr-authorized',
+      })
+      .mockResolvedValueOnce(fileRefusal('body.uploadToken', 'invalid_length'));
+
+    const state = await attachmentsApi.captureDocument(CAPTURE);
+
+    expect(state.fieldErrors?.file).toBe('attachments.capture.uploadNotConfirmed');
+    expect(state.messageKey).toBe('attachments.capture.uploadNotConfirmed');
+    expect(state.fieldErrors?.file).not.toBe('form.violation.invalid_length');
     stored.mockRestore();
   });
 

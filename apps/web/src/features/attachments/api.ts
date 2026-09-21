@@ -195,14 +195,48 @@ export interface CaptureState extends ActionState {
  * Re-filed under `file`, and raised to the banner as well, because the capture
  * panels render the banner and have no per-control slot of their own.
  */
-const FILE_CONTROLS: readonly string[] = ['contentType', 'byteSize', 'uploadToken'];
+const FILE_CONTROLS: readonly string[] = ['contentType', 'byteSize'];
+
+/**
+ * The refusals on the upload authorization that are really about the FILE.
+ *
+ * `contentType` and `byteSize` are what the browser declared about the chosen
+ * file, so whatever the service says about them is a true sentence about that
+ * file. `uploadToken` is not: it is issued by the service and carried back by
+ * this module, and an operator never sees it, let alone types it. Only two of
+ * the refusals filed against it describe the file — the authorization has run
+ * out, or the kind inside it is not one this category takes — and both are
+ * answered by choosing the file again.
+ *
+ * Every other refusal on that path says the authorization itself could not be
+ * read: `invalid_length`, `malformed`, `invalid_expiry` and their neighbours in
+ * `shared-services/domain/attachment-policy.ts`. Their catalogue sentences are
+ * written for something the reader entered — "too short or too long" — and over
+ * a token nobody typed that sentence is simply untrue. Those get the one
+ * sentence that is true of all of them, and that names the only step the
+ * operator can take.
+ */
+const TOKEN_REFUSALS_ABOUT_THE_FILE: readonly string[] = [
+  'form.violation.expired',
+  'form.violation.content_type_not_allowed',
+];
+
+const UPLOAD_NOT_CONFIRMED = 'attachments.capture.uploadNotConfirmed';
+
+const saysSomething = (key: string | undefined): key is string =>
+  key !== undefined && key !== 'form.violation.invalid';
+
+function aboutTheAuthorization(key: string | undefined): string | undefined {
+  if (!saysSomething(key)) return undefined;
+  return TOKEN_REFUSALS_ABOUT_THE_FILE.includes(key) ? key : UPLOAD_NOT_CONFIRMED;
+}
 
 function aboutTheChosenFile(state: CaptureState): CaptureState {
   const errors = state.fieldErrors;
   if (errors === undefined) return state;
-  const stated = FILE_CONTROLS.map((control) => errors[control]).find(
-    (key) => key !== undefined && key !== 'form.violation.invalid'
-  );
+  const stated =
+    FILE_CONTROLS.map((control) => errors[control]).find(saysSomething) ??
+    aboutTheAuthorization(errors['uploadToken']);
   if (stated === undefined) return state;
   return { ...state, messageKey: stated, fieldErrors: { ...errors, file: stated } };
 }
