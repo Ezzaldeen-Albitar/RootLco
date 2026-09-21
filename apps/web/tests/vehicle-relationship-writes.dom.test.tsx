@@ -32,6 +32,7 @@ const transferOwnershipAction = vi.fn();
 const authorizePartyAction = vi.fn();
 const retirePartyAction = vi.fn();
 const linkCustomerAction = vi.fn();
+const setEvProfileAction = vi.fn();
 const searchCustomerDirectory = vi.fn();
 
 vi.mock('@/features/vehicles/history-api', () => ({
@@ -44,7 +45,7 @@ vi.mock('@/features/vehicles/history-api', () => ({
 }));
 vi.mock('@/features/vehicles/relations-api', () => ({
   listRelationships: (...a: unknown[]) => listRelationships(...a),
-  setEvProfileAction: vi.fn(),
+  setEvProfileAction: (...a: unknown[]) => setEvProfileAction(...a),
   authorizePartyAction: (...a: unknown[]) => authorizePartyAction(...a),
   retirePartyAction: (...a: unknown[]) => retirePartyAction(...a),
   linkCustomerAction: (...a: unknown[]) => linkCustomerAction(...a),
@@ -54,7 +55,7 @@ vi.mock('@/lib/customers/directory', () => ({
 }));
 
 const { OwnershipSection } = await import('@/features/vehicles/components/VehicleHistorySections');
-const { RelationshipsSection } =
+const { RelationshipsSection, EvProfileSection } =
   await import('@/features/vehicles/components/VehicleRelationsSections');
 
 const CUSTOMER_UUID = '9f8e7d6c-5b4a-4392-8172-0e02b2c3d479';
@@ -577,6 +578,47 @@ describe('the same writes in Arabic', () => {
     expect(
       await screen.findByRole('button', { name: ar['vehicles.relationships.authorize'] })
     ).toBeInTheDocument();
+  });
+});
+
+describe('the electric-drive details say why a kind was refused', () => {
+  it('states the mismatch beside the type control, with the capacity still typed', async () => {
+    /*
+     * `veh.vehicle-ev-profile-set` publishes `body.evKind` /
+     * `powertrain_mismatch`, and `RecordForm` binds a field error to the control
+     * of the same name — so the sentence belongs at the type select. Nothing
+     * else on the form can be changed to clear it.
+     */
+    setEvProfileAction.mockResolvedValue({
+      status: 'invalid',
+      messageKey: 'form.formError',
+      fieldErrors: { evKind: 'form.violation.powertrain_mismatch' },
+      correlationId: 'fixed-correlation-id',
+      attempt: 1,
+    });
+    const user = userEvent.setup();
+    renderLtr(
+      <EvProfileSection
+        locale="en"
+        messages={en}
+        state={{ status: 'none' }}
+        powertrainCategory="hybrid"
+        canEdit
+        vehicleId="v1"
+      />
+    );
+    await user.selectOptions(
+      screen.getByLabelText(new RegExp(`^${en['vehicles.ev.kind']}`)),
+      'bev'
+    );
+    await user.type(screen.getByLabelText(new RegExp(`^${en['vehicles.ev.capacity']}`)), '64');
+    await user.click(screen.getByRole('button', { name: en['vehicles.ev.record'] }));
+
+    await waitFor(() => expect(setEvProfileAction).toHaveBeenCalled());
+    expect(await screen.findByText(en['form.violation.powertrain_mismatch'])).toBeVisible();
+    // The refusal names the vehicle's own recorded engine type and no other
+    // record, and what was typed survives it.
+    expect(screen.getByLabelText(new RegExp(`^${en['vehicles.ev.capacity']}`))).toHaveValue(64);
   });
 });
 
