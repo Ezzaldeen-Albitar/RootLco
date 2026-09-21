@@ -245,7 +245,7 @@ export async function setCompanyStatusAction(
   if (reason.length === 0) {
     return invalid({ reason: 'overlay.reasonRequired' }, 1, 'overlay.reasonRequired');
   }
-  if (!UUID.test(companyId)) return invalid({}, 1, 'state.notFound.title');
+  if (!UUID.test(companyId)) return invalid({}, 1, 'state.notFound.message');
   const client = await authorizedClient();
   if (!client) return { status: 'expired', messageKey: 'state.expired.message', attempt: 1 };
 

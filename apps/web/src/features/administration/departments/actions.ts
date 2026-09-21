@@ -77,7 +77,7 @@ async function update(
   recordVersion: number
 ): Promise<ActionState> {
   if (!UUID.test(departmentId) || !Number.isInteger(recordVersion) || recordVersion < 1) {
-    return invalid({}, 1, 'state.notFound.title');
+    return invalid({}, 1, 'state.notFound.message');
   }
   const client = await authorizedClient();
   if (!client) return { status: 'expired', messageKey: 'state.expired.message', attempt: 1 };
