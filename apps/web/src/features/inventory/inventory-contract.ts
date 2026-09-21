@@ -662,6 +662,34 @@ export const MATERIAL_DRAW_REASONS = [
 ] as const;
 export type MaterialDrawReason = (typeof MATERIAL_DRAW_REASONS)[number];
 
+/**
+ * `MATERIAL_REFUSAL_RULES`, mirrored: why a material REQUIREMENT write was
+ * refused (DEF-T-16).
+ *
+ * **Hand-transcribed, like every other list in this file.** `apps/web` may not
+ * import `apps/api` source, so this is a copy of
+ * `apps/api/src/modules/inventory/domain/inventory.ts` and nothing at build time
+ * compares the two. What IS guarded is the half that used to fail silently: a
+ * token with no sentence renders `form.violation.invalid` — "This value is not
+ * accepted here" — which is indistinguishable on screen from the bare conflict
+ * banner this defect was raised about. `inventory-api.test.ts` walks this list
+ * and fails when either catalogue has no sentence for a member, so adding a
+ * token here without writing its English and Arabic is a failing test rather
+ * than a vague screen.
+ *
+ * The tokens arrive in `violations` against `body`, so `fromFailure` renders
+ * them at form level; `refusalOf` keeps a violation key over any sentence a
+ * caller names, because the rule is the more precise reason.
+ */
+export const MATERIAL_REFUSAL_RULES = [
+  'material_duplicate_demand',
+  'material_separation_of_duties',
+  'material_approval_required',
+  'material_unknown_reference',
+  'material_demand_rule',
+] as const;
+export type MaterialRefusalRule = (typeof MATERIAL_REFUSAL_RULES)[number];
+
 /** A unit cost as `numeric(18,4)` accepts it: non-negative, up to four decimals. */
 export const UNIT_COST = /^\d{1,14}(\.\d{1,4})?$/;
 /** An ISO-4217 alphabetic currency code. */
