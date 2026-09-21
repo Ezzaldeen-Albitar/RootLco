@@ -90,10 +90,14 @@ export function CompletionPanel({
   const [overriding, setOverriding] = useState(false);
   const [reason, setReason] = useState('');
   const [fieldError, setFieldError] = useState<Record<string, string>>({});
-  const [refusal, setRefusal] = useState<{
-    readonly code: string;
-    readonly requiredPermissions: readonly string[];
-  } | null>(null);
+  /*
+   * The refusal, as a CODE and nothing else.
+   *
+   * `problem.requiredPermissions` used to be held here so the notice could print
+   * it. Nothing renders a permission code any more, so nothing reads it, and a
+   * value kept in state with no reader is the next screen's temptation.
+   */
+  const [refusal, setRefusal] = useState<{ readonly code: string } | null>(null);
   const [pending, startTransition] = useTransition();
 
   const view = state !== null && state.status === 'ok' ? state.data : null;
@@ -140,10 +144,7 @@ export function CompletionPanel({
           setOverriding(false);
           setReason('');
         } else if (result.code !== undefined) {
-          setRefusal({
-            code: result.code,
-            requiredPermissions: result.requiredPermissions ?? [],
-          });
+          setRefusal({ code: result.code });
         }
         // Re-read either way. A success moves the record to delivered; a refusal
         // means the screen's view of why is the thing that has to be refreshed,
@@ -230,12 +231,7 @@ export function CompletionPanel({
           ) : null}
 
           {refusal === null ? null : (
-            <RefusalNote
-              messages={messages}
-              code={refusal.code}
-              requiredPermissions={refusal.requiredPermissions}
-              view={state.data}
-            />
+            <RefusalNote messages={messages} code={refusal.code} view={state.data} />
           )}
 
           <div className="flex flex-col gap-2">
@@ -272,12 +268,10 @@ export function CompletionPanel({
 function RefusalNote({
   messages,
   code,
-  requiredPermissions,
   view,
 }: {
   readonly messages: Messages;
   readonly code: string;
-  readonly requiredPermissions: readonly string[];
   readonly view: DeliveryEligibility;
 }) {
   if (code === DELIVERY_ERROR_CODES.blocked) {
@@ -313,26 +307,23 @@ function RefusalNote({
   }
 
   if (code === DELIVERY_ERROR_CODES.overrideDenied) {
+    /*
+     * The authority is NAMED, never spelled.
+     *
+     * This used to print `problem.requiredPermissions` verbatim — a bulleted
+     * list of dotted permission codes, in a monospace font, to a receptionist
+     * who cannot act on one and would not recognise it. It told them nothing
+     * they could use and everything about how the system is wired. The sentence
+     * now names the person who can release the vehicle or grant the authority,
+     * which is the only next step an operator has either way.
+     */
     return (
-      <div
+      <p
         role="alert"
-        className="flex flex-col gap-2 rounded-md border border-error-border bg-error-subtle p-3"
+        className="rounded-md border border-error-border bg-error-subtle p-3 text-body text-text-primary"
       >
-        <p className="text-body text-text-primary">
-          {translate(messages, 'delivery.completion.refusedOverride')}
-        </p>
-        {requiredPermissions.length === 0 ? null : (
-          <ul className="flex flex-col gap-1">
-            {requiredPermissions.map((permission) => (
-              <li key={permission}>
-                <code className="font-mono text-caption text-text-secondary" dir="ltr">
-                  {permission}
-                </code>
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
+        {translate(messages, 'delivery.completion.refusedOverride')}
+      </p>
     );
   }
 
