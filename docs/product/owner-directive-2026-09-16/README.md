@@ -5,19 +5,24 @@
 Recorded 2026-09-16 at protected develop `2c573a24`. Implementation in progress; nothing in this
 directive is complete until its row in `capability-status.md` says so.
 
-**Where it stands at 2026-09-21, develop `f30ce918`.** Every section of the directive has merged
+**Where it stands at 2026-09-21, develop `fe09f1a9`.** Every section of the directive has merged
 work behind it, and most of that work has now been exercised rather than only read: sixty of the
 ninety-seven rows in `capability-status.md` carry a `measured` marker naming the day the behaviour
 was read back on the local acceptance stack, twelve still carry an owed-proof marker, and twenty-five
-carry none because there is nothing to demonstrate. The measurement also produced eight new
-change-control rows, `CC-OD-24` to `CC-OD-31`, of which six are Owner decisions rather than defects.
+carry none because there is nothing to demonstrate. Those figures were taken while the campaign ran,
+and it ended at `f30ce918`. The measurement also produced eight new change-control rows, `CC-OD-24`
+to `CC-OD-31`, of which six are Owner decisions rather than defects.
+
+**One of them has closed since.** PR #430 merged at `fe09f1a9`: a refused request for material now
+names the rule that refused it, in both languages, which closes `CC-OD-27` and opens the narrower
+`CC-OD-32` for the pre-checks that still answer without a rule token.
 
 **Two statements that must never be run together.** The work is on `develop` and has **not** been
 promoted to `main`; and promotion to `main` is a statement about reviewed source, not a deployment.
 Neither has happened, and neither would put the product anywhere but the one local machine it runs
 on (D-OD-05).
 
-**The user manual and the quick start are at `f30ce918`.** `docs/user-manual/README.md` records what
+**The user manual and the quick start are at `fe09f1a9`.** `docs/user-manual/README.md` records what
 changed, which parts were re-read at that head, and that no screenshot was re-captured and no PDF was
 rebuilt for the revision.
 

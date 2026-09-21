@@ -1,8 +1,8 @@
 ---
 manual: 'CRM User Manual'
 title: 'Part 5 — Inventory'
-application_version: 'f30ce918405164712cc9cdcadb458c4e91a2b5b9'
-application_version_short: 'f30ce918'
+application_version: 'fe09f1a9a8671930f032a18dda497c64e3107d29'
+application_version_short: 'fe09f1a9'
 environment: 'LOCAL — a private single-machine environment at http://localhost:3100. Not public, not hosted.'
 date: '2026-09-21'
 scope_statement: 'This manual describes behaviour implemented at the commit named above, and nothing else.'
@@ -1751,13 +1751,30 @@ panel below, in the state described in 5.26.3.
 request for that part, or the job no longer accepts
 one."** <!-- inventory.material.create.refused -->
 
-**A refusal you may meet that does not say enough.** If the line already has a live request for that
-part — or if the job has moved past the point where it accepts one — the request is refused and
-nothing is created, which is correct. At this version the screen may answer that refusal with only
-**"This change cannot be saved"** and a reference, without the sentence above that says which of the
-two it was. Nothing is created either way. If you meet it, check the **Material allowed for this
-job** panel for a live request on the same line and part, and check whether the job is still open;
-one of the two is the answer. This is a known shortcoming of the message, not of the rule.
+**A refused request now names the rule that refused it.** Until this version a refusal on this panel
+could arrive as only **"This change cannot be saved"** and a reference, leaving you to work out
+which rule had stopped it. At this version the service names the rule and the panel prints its
+sentence. Nothing is created by any of them, which is the point of the refusal:
+
+| What you see                                                                                                                                                                                      | What it means                                                    | What to do                                                                               |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| **"This service line already has a live request for that part, or for another part in its group, so nothing was saved. Withdraw that request first, or ask for extra on the one that is there."** | The line already has a live request for that part or its group.  | Withdraw it (5.26.8), or ask for extra against it (5.26.6).                              |
+| **"The person who asked for this may not decide it. Ask another approver to decide it."**                                                                                                         | You asked for it, so you may not decide it.                      | Ask a second person who holds the approval code (5.26.4).                                |
+| **"This still needs an approved amount with every fact that amount rests on, so nothing was saved. Supply what the request says is missing, have it approved, then try again."**                  | A fact the amount rests on is still missing.                     | Supply the missing fact, choose **Check again**, then have it approved (5.26.3, 5.26.4). |
+| **"Something this request names is not in this organisation: the service line, the part, the part group or the unit. The service does not say which of them."**                                   | One of the four things it names cannot be found.                 | Choose the line and the part again from the choosers rather than reusing a reference.    |
+| **"This breaks one of the rules about what the job is allowed to use, so nothing was saved. The service does not say which rule, so check it against what the job already has and try again."**   | A material rule refused it and the service could not name which. | Read the **Material allowed for this job** panel and compare it with what you asked for. |
+
+The last sentence is deliberate rather than vague: where the service cannot say which rule refused
+the request, it says so instead of naming one it is guessing at. The same sentences are printed
+wherever a material request is written — asking, deciding, asking for extra and deciding extra.
+
+**What still arrives as the act's own sentence.** A refusal that comes from the state the record is
+already in, rather than from a material rule, is still answered with the one sentence that belongs
+to the act — **"This request cannot be decided in its current state, or it was asked for by
+you."** <!-- inventory.material.decide.refused --> , **"Extra material cannot be asked for while the
+request is in this state."** <!-- inventory.material.exception.refused --> and the others quoted in
+5.26.4, 5.26.6 and 5.26.8. Those name more than one cause at once, and reading the panel tells you
+which applies.
 
 **Two things the panel still prints as internal references.** A request in the list is shown as
 **Service line** and **Part** followed by a stored identifier rather than the line's description and
@@ -2042,9 +2059,10 @@ decided by a different person, returns restoring the allowance, an exact convers
 draw, and a request whose specification is missing refusing to be approved.
 
 **Not exercised:** the opening-stock chain, which the earlier acceptance run covered and this work
-did not repeat; quarantine disposal, because there is none; the camera path of the scanner; and the
+did not repeat; quarantine disposal, because there is none; the camera path of the scanner; the
 Arabic rendering of these screens, apart from the parts screen, whose work-order state was read in
-Arabic and is a name there.
+Arabic and is a name there; and the five refusal sentences listed in 5.26.2, which arrived after the
+campaign ended and were read in the code rather than driven in a browser.
 
 An acceptance journey covering this part as a whole is recorded as still owed in
 [`../product/owner-directive-2026-09-16/capability-status.md`](../product/owner-directive-2026-09-16/capability-status.md),
@@ -2079,6 +2097,29 @@ security determinations do not exist.
 - **Any screenshot of an inventory screen** is NOT ESTABLISHED: none was captured in the evidence set
   for this version.
 
+<!--
+REVISION 2026-09-21, second — section 5.26.2 was re-read and written at develop
+fe09f1a9a8671930f032a18dda497c64e3107d29, and 5.31 was amended to say that what it describes was
+read rather than driven. Every other section of this part is carried unchanged from the readings
+recorded below, and the pin in the front matter moved with this reading.
+
+Read for this revision:
+- apps/api/src/modules/inventory/domain/inventory.ts — MATERIAL_REFUSAL_RULES, the five tokens a
+  refused material write now publishes, and why the last of them names no rule.
+- apps/api/src/modules/inventory/application/inventory-material-service.ts — refuseMaterial and
+  mapMaterialFailure, which carry the token in violations against body; and the decide pre-check
+  that publishes the same token as the database constraint behind it.
+- apps/web/src/features/inventory/inventory-contract.ts MATERIAL_REFUSAL_RULES and
+  apps/web/src/features/inventory/api.ts refusalOf, which keeps a violation sentence over the
+  sentence the caller names.
+- apps/web/src/i18n/messages/en.json — form.violation.material_duplicate_demand,
+  material_separation_of_duties, material_approval_required, material_unknown_reference and
+  material_demand_rule; and the act sentences inventory.material.decide.refused,
+  inventory.material.exception.refused and inventory.material.exceptionDecision.refused, which are
+  what a state refusal still reads as.
+
+Nothing in this revision was exercised in a browser, and 5.31 says so.
+-->
 <!--
 REVISION 2026-09-21 — sections 5.1, 5.3, 5.4, 5.7.1 (new), 5.16, 5.21.2, 5.23.2, 5.23.3, 5.26.2,
 5.30.1 and 5.31 were re-read and written at develop f30ce918405164712cc9cdcadb458c4e91a2b5b9.

@@ -1,8 +1,8 @@
 ---
 manual: 'CRM User Manual'
 title: 'Quick start — First login and first working day'
-application_version: 'f30ce918405164712cc9cdcadb458c4e91a2b5b9'
-application_version_short: 'f30ce918'
+application_version: 'fe09f1a9a8671930f032a18dda497c64e3107d29'
+application_version_short: 'fe09f1a9'
 environment: 'LOCAL — a private single-machine environment at http://localhost:3100. Not public, not hosted.'
 date: '2026-09-21'
 scope_statement: 'This manual describes behaviour implemented at the commit named above, and nothing else.'

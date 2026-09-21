@@ -1,8 +1,8 @@
 ---
 manual: 'CRM User Manual'
 title: 'Front page and table of contents'
-application_version: 'f30ce918405164712cc9cdcadb458c4e91a2b5b9'
-application_version_short: 'f30ce918'
+application_version: 'fe09f1a9a8671930f032a18dda497c64e3107d29'
+application_version_short: 'fe09f1a9'
 environment: 'LOCAL — a private single-machine environment at http://localhost:3100. Not public, not hosted.'
 date: '2026-09-21'
 scope_statement: 'This manual describes behaviour implemented at the commit named above, and nothing else.'
@@ -10,7 +10,7 @@ scope_statement: 'This manual describes behaviour implemented at the commit name
 
 # CRM User Manual
 
-**Application version.** `f30ce918405164712cc9cdcadb458c4e91a2b5b9` (short form `f30ce918`), the
+**Application version.** `fe09f1a9a8671930f032a18dda497c64e3107d29` (short form `fe09f1a9`), the
 head of the `develop` branch on 2026-09-21.
 
 **Environment.** LOCAL — a private single-machine environment reached at `http://localhost:3100`.
@@ -19,7 +19,7 @@ head of the `develop` branch on 2026-09-21.
 
 **Scope.** This manual describes behaviour implemented at the commit named above, and nothing else.
 
-**What changed since the previous revision (`5b2c7840`, 2026-09-18).** Eleven changes were merged
+**What changed since the previous revision (`5b2c7840`, 2026-09-18).** Twelve changes were merged
 into `develop` between the two commits. Most of them came from working the product by hand on the
 local environment and fixing what that found, so the changes are small, specific, and mostly about
 screens saying what they mean:
@@ -50,10 +50,18 @@ screens saying what they mean:
   had shown internal codes. Parts 4B and 5.
 - **an open stock count says its difference is provisional** rather than printing a figure for
   movement it cannot know yet. Part 5.
+- **a refused request for material names the rule that refused it** — a live request already on that
+  line, a decision by the person who asked for it, a fact the amount still rests on, or something
+  named that this organisation does not have — in both languages, where the screen had answered
+  only "This change cannot be saved" and a reference. Part 5, §5.26.2.
 
 Sections that were re-read against the new commit say so in their own sources comment. A section
 that is unchanged from the previous revision was not re-read, and its sources comment still names
 the commit it was read at — the manual never presents an older reading as a new one.
+
+**Which part was re-read at `fe09f1a9`.** Part 5, §5.26.2 only, for the twelfth change above.
+Everything else in the manual is carried from the readings listed next, and each part's sources
+comment still names the commit its sections were read at.
 
 **Which parts were re-read at `f30ce918`.** Part 1 (§1.5, §1.6 and §1.12, on where mail goes), Part
 2 (§2.11), Part 2A (§2A.2, §2A.3 and the new §2A.14), Part 3 (§3.14.2, §3.15), Part 4A (§4A.2.4,
@@ -64,7 +72,7 @@ written.
 
 **No screenshot was re-captured at this revision, and the printed manual was not rebuilt.** The
 figures in [`images/`](images/) are the ones captured for the earlier revision; none of the screens
-changed by the eleven merges above has a picture here, and every workflow that has none still says
+changed by the twelve merges above has a picture here, and every workflow that has none still says
 **"no screenshot available at this version"** rather than showing a picture of something else. The
 PDF described in [`tools/README.md`](tools/README.md) is a deliverable produced on demand and is not
 stored in this repository; it was not produced for this revision.
