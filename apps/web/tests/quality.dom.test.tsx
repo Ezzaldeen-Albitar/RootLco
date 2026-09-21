@@ -470,6 +470,79 @@ describe('the closure view', () => {
     await waitFor(() => expect(readClosureEligibility).toHaveBeenCalledTimes(2));
   });
 
+  /**
+   * Owner directive, user-facing errors. Closing an order that still holds
+   * parts is refused by the service, and the screen printed the same line it
+   * prints for every other conflict: 'this record was changed by someone
+   * else', which is not what happened and says nothing about what to do. The
+   * service names the rule (`path.workOrderId`, so it arrives as the banner
+   * key), and the screen shows the sentence for the rules it has been told
+   * about.
+   */
+  it('says why a close was refused when parts are still held, not the generic conflict line', async () => {
+    readClosureEligibility.mockResolvedValue(ok({ ...eligibility, eligible: true, blockers: [] }));
+    closeWorkOrder.mockResolvedValue({
+      status: 'conflict',
+      messageKey: 'form.violation.work_order_stock_still_held',
+      correlationId: 'corr-stock-held',
+      attempt: 1,
+    });
+    const user = userEvent.setup();
+    renderLtr(
+      <WorkOrderClosureScreen
+        locale="en"
+        messages={en}
+        workOrderId={WORK_ORDER}
+        capabilities={everything}
+      />
+    );
+    await user.selectOptions(
+      await screen.findByLabelText(new RegExp(`^${t('quality.closure.closeTo')}`)),
+      'closed'
+    );
+    await user.click(screen.getByRole('button', { name: t('quality.closure.close') }));
+
+    expect(
+      await screen.findByText(t('form.violation.work_order_stock_still_held'))
+    ).toBeInTheDocument();
+    expect(screen.queryByText(t('quality.closure.conflict'))).toBeNull();
+    // The rule name itself never reaches the screen; only its sentence does.
+    expect(document.body.textContent).not.toContain('work_order_stock_still_held');
+  });
+
+  /**
+   * And a rule the screen has NOT been told about still gets the fixed
+   * sentence. Without this, the membership test above could be satisfied by a
+   * screen that rendered whatever key arrived, which is how a raw rule name
+   * reaches an operator.
+   */
+  it('keeps the fixed sentence for a refusal it has not been told about', async () => {
+    readClosureEligibility.mockResolvedValue(ok({ ...eligibility, eligible: true, blockers: [] }));
+    closeWorkOrder.mockResolvedValue({
+      status: 'conflict',
+      messageKey: 'form.violation.some_rule_this_screen_never_heard_of',
+      correlationId: 'corr-unknown-rule',
+      attempt: 1,
+    });
+    const user = userEvent.setup();
+    renderLtr(
+      <WorkOrderClosureScreen
+        locale="en"
+        messages={en}
+        workOrderId={WORK_ORDER}
+        capabilities={everything}
+      />
+    );
+    await user.selectOptions(
+      await screen.findByLabelText(new RegExp(`^${t('quality.closure.closeTo')}`)),
+      'closed'
+    );
+    await user.click(screen.getByRole('button', { name: t('quality.closure.close') }));
+
+    expect(await screen.findByText(t('quality.closure.conflict'))).toBeInTheDocument();
+    expect(document.body.textContent).not.toContain('some_rule_this_screen_never_heard_of');
+  });
+
   it('shows nothing of QC to a caller without the QC read code, and no closure command without the close code', async () => {
     renderLtr(
       <WorkOrderClosureScreen

@@ -1236,9 +1236,12 @@ describe('confirming who may receive the vehicle', () => {
    * do — record the role, or choose somebody already on the visit.
    */
   it('says beside the receiver field why that person may not collect the vehicle', async () => {
+    // The shape the wire produces, and nothing more: the service files the rule
+    // under `body.receiverPartnerId`, so it arrives as a field error against the
+    // receiver control while the banner keeps the generic conflict sentence.
     verifyReceiver.mockResolvedValue({
       status: 'conflict',
-      messageKey: 'form.violation.delivery_receiver_not_entitled',
+      messageKey: 'state.conflict.title',
       fieldErrors: { receiverPartnerId: 'form.violation.delivery_receiver_not_entitled' },
       correlationId: 'corr-receiver-role',
       attempt: 1,
@@ -1260,13 +1263,13 @@ describe('confirming who may receive the vehicle', () => {
       within(region).getByRole('button', { name: EN['delivery.receiver.verifySubmit'] as string })
     );
 
-    // Twice on purpose: beside the control, and in the refusal block that
-    // carries the reference. Both are the sentence, neither is the rule name.
-    const said = await within(region).findAllByText(
+    // Beside the control, as its own alert line: the panel shows the first
+    // field error the refusal carried, and this is that line rather than the
+    // block beneath it, which keeps the generic conflict sentence.
+    const said = await within(region).findByText(
       EN['form.violation.delivery_receiver_not_entitled'] as string
     );
-    expect(said.length).toBeGreaterThanOrEqual(1);
-    for (const node of said) expect(node).toBeVisible();
+    expect(said).toBeVisible();
     // The rule name itself never reaches the screen; only its sentence does.
     expect(region.textContent).not.toContain('delivery_receiver_not_entitled');
   });

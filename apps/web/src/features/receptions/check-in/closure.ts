@@ -183,6 +183,18 @@ export function conflictKindOf(messageKey: string | undefined): ConflictKind {
  * same missing thing seen from the conversion button. The other two describe a
  * visit that has moved on and offer no step, for the reason the paragraph above
  * gives.
+ *
+ * ## The two the evidence forms raise
+ *
+ * `reception_party_not_authorised` and `reception_closed_to_evidence` are raised
+ * by the authorization and refusal forms on the parties step rather than by a
+ * command on the summary, and they were left out of this list when the rest were
+ * added. Left out, they resolved to the generic sentence on the very forms whose
+ * refusal they describe, and nothing failed when they did — which is why the
+ * catalogue test reads this list. The first is cured on the parties step, by
+ * recording the role the person actually holds, so it names that step even
+ * though it is usually raised there; the second describes a visit that has been
+ * closed and names none.
  */
 export const COMMAND_REFUSAL_KEYS: readonly string[] = Object.freeze([
   'form.violation.already_authorized',
@@ -193,6 +205,8 @@ export const COMMAND_REFUSAL_KEYS: readonly string[] = Object.freeze([
   'form.violation.reception_already_converted',
   'form.violation.reception_not_authorised',
   'form.violation.reception_already_finished',
+  'form.violation.reception_party_not_authorised',
+  'form.violation.reception_closed_to_evidence',
 ]);
 
 const REFUSAL_STEPS: Readonly<Record<string, string>> = Object.freeze({
@@ -200,6 +214,7 @@ const REFUSAL_STEPS: Readonly<Record<string, string>> = Object.freeze({
   'form.violation.authorization_withdrawn': PARTIES_STEP_ID,
   'form.violation.requester_or_authorization_missing': PARTIES_STEP_ID,
   'form.violation.reception_not_authorised': PARTIES_STEP_ID,
+  'form.violation.reception_party_not_authorised': PARTIES_STEP_ID,
 });
 
 /**

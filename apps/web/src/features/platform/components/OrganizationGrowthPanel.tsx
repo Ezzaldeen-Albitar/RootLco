@@ -398,12 +398,21 @@ function AdministratorDialog({
           onChange={(event) => setDisplayName(event.target.value)}
           error={error('displayName')}
         />
+        {/*
+          The refusal for an organisation that already has an active
+          administrator is filed by the service under this control, because
+          this is the control that cures it: tick it, give the reason, save
+          again. Without the `error` prop the sentence arrived in the form's
+          field errors and was dropped, and the operator was shown the generic
+          conflict line instead (Owner directive, user-facing errors).
+        */}
         <CheckboxField
           name="additionalAdministrator"
           label={t('platform.growth.additional')}
           description={t('platform.growth.additionalHint')}
           checked={additional}
           onChange={(event) => setAdditional(event.target.checked)}
+          error={error('additionalAdministrator')}
         />
         {additional ? (
           <TextAreaField

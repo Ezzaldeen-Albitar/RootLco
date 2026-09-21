@@ -557,13 +557,22 @@ describe('the subscription dialog', () => {
    * Owner directive, user-facing errors. A subscription change that names the
    * plan already in force is a real mistake with a real cure, and the console
    * reported it as the generic 'this record cannot take that change'. The
-   * service now names the rule and the dialog renders the sentence it selects,
-   * which says what to do instead — record a renewal.
+   * service now names the rule beside the plan control, and the dialog renders
+   * the sentence it selects, which says what to do instead — record a renewal.
+   *
+   * The mocked state is the one the wire actually produces, and nothing more.
+   * The service files the rule under `body.planCode`, so `violationKeysOf`
+   * routes it to the plan control and the banner keeps the generic conflict
+   * sentence; an earlier version of this case also set `messageKey` to the
+   * specific key and so asserted a state the pipeline cannot build. The
+   * assertion is therefore on the plan control's own error line, which is the
+   * place an operator would actually read it.
    */
   it('states why a plan change was refused, in words the operator can act on', async () => {
     assignSubscriptionAction.mockResolvedValue({
       status: 'conflict',
-      messageKey: 'form.violation.platform_change_needs_different_plan',
+      messageKey: 'state.conflict.title',
+      fieldErrors: { planCode: 'form.violation.platform_change_needs_different_plan' },
       correlationId: 'corr-same-plan',
       attempt: 1,
     });
@@ -597,9 +606,18 @@ describe('the subscription dialog', () => {
     await userEvent.click(within(dialog).getByRole('button', { name: L('platform.save') }));
 
     await waitFor(() => expect(assignSubscriptionAction).toHaveBeenCalledTimes(1));
-    expect(await within(dialog).findByRole('alert')).toHaveTextContent(
+    const select = within(dialog).getByLabelText(new RegExp(`^${L('platform.subscription.plan')}`));
+    const said = await within(dialog).findByText(
       L('form.violation.platform_change_needs_different_plan') as string
     );
+    expect(said).toBeVisible();
+    // Tied to the control, not merely present somewhere in the dialog: the
+    // error line is what the select points at, so a screen reader reaches it
+    // from the field.
+    expect(select.getAttribute('aria-describedby') ?? '').toContain(said.id);
+    expect(select).toHaveAttribute('aria-invalid', 'true');
+    // The rule name itself never reaches the screen; only its sentence does.
+    expect(dialog.textContent).not.toContain('platform_change_needs_different_plan');
     expect(refresh).not.toHaveBeenCalled();
   });
 
