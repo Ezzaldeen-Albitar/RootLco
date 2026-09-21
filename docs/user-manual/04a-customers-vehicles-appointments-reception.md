@@ -1123,9 +1123,13 @@ Other exits: **"Open the customer page"**, **"Open the vehicle page"**, **"Start
 
 **Restrictions**
 
-- **You cannot search by phone number.** "Searching by phone number is not available yet." <!-- receptions.intake.phone.title -->
-  / "The customer directory cannot find customers by phone number. Search by name or customer number
-  instead." <!-- receptions.intake.phone.body -->
+- **You can now search by phone number here**, and this manual said otherwise until this revision.
+  The customer finder on this step is the shared one: "Search by name, customer number or phone
+  number, then choose from the results. Email addresses cannot be searched." <!-- customerSelector.hint -->
+  with its own **"Phone number"** box <!-- customerSelector.phone --> . The two sentences the
+  earlier revision quoted, which said phone search was not available, are gone from the product
+  entirely. Type the whole number, or at least its last seven digits, and Arabic-Indic digits are
+  treated exactly like ASCII ones.
 - Without vehicle rights: "Your access does not include searching for or registering vehicles, so
   only this customer's recorded vehicles can be chosen here." <!-- receptions.intake.vehicle.limitedAccess -->
 - Past links stay visible: "Past relationships stay in this list with their end date. Who was
