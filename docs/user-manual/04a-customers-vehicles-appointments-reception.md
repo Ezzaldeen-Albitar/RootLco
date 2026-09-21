@@ -249,8 +249,20 @@ the side.
 **The Vehicles section is not built.** Opening it shows "This section is defined but its screen is
 not built yet." <!-- crm.customers.profile.sectionPending --> The reason is that the platform
 publishes no operation that lists one customer's vehicles. **Link a vehicle to a customer from the
-vehicle's own page instead** — see 4A.3.6. Two other screens do list a customer's vehicles for you:
-the walk-in intake (4A.6.1) and the appointment booking form (4A.5.2).
+vehicle's own page instead** — see 4A.3.6. Three other screens do list a customer's vehicles for
+you: the walk-in intake (4A.6.1), the appointment booking form (4A.5.2) and the vehicle step of the
+**"New work order"** command below.
+
+**The profile also offers a way straight into reception.** Under the customer's own details there
+is a command **"New work order"** <!-- crm.customers.profile.newWorkOrder --> . It appears only for
+somebody who could open a visit anyway, and pressing it creates nothing — it opens the vehicle step
+described in 4A.5.0, because a customer alone is never enough to open a visit.
+
+**Contacts, addresses and preferences are usable in a new organisation at this version.** The
+permission those three sections write with is now part of the set a new organisation's first
+administrator is given, so a telephone number can be recorded on the customer whose vehicle you have
+just taken in — and, once it is, that customer can be found by it (4A.2.1). Part 3, §3.15 records
+the change.
 
 **Reading the sections honestly.** Each list states what it is not showing:
 
@@ -991,6 +1003,54 @@ Navigation: **Workshop** > **"Walk-in intake"** <!-- nav.walkIn --> (استقب�
 A reception visit is the record of the workshop taking custody of a vehicle. **It is also the only
 way a work order can ever come to exist** — see 4A.5.9.
 
+### 4A.5.0 Starting from the customer you already have open
+
+**Label: IMPLEMENTED (UI)**
+
+**Who** — the same permissions as check-in itself. The command appears on the profile only for
+somebody who could open a visit anyway; it is never a button that leads to a refusal.
+
+**Where** — the customer profile (4A.2.4), where a command **"New work order"** <!-- crm.customers.profile.newWorkOrder -->
+sits under the customer's own details.
+
+**Why it exists.** You are already looking at the customer. Making you go to walk-in intake and find
+the same person again is work for nothing, so the profile offers a way straight into reception.
+
+**What pressing it does — and does not do.** It opens a screen. **Nothing is created by pressing
+it.** A customer on their own is not enough to open a visit, and the next screen is where that is
+settled.
+
+**Steps**
+
+1. On the customer profile, choose **"New work order"**. The screen **"New work order"** <!-- receptions.workOrderStart.title -->
+   opens, described as "Choose the vehicle this customer has brought in, then continue to
+   check-in." <!-- receptions.workOrderStart.description -->
+2. The customer is fixed and cannot be changed here: "The visit will be opened for this customer. To
+   receive somebody else, use walk-in intake." <!-- receptions.workOrderStart.customerFixed -->
+3. Under **"Choose the vehicle"** <!-- receptions.workOrderStart.vehicleHeading --> the customer's
+   own vehicles are offered — "Only the vehicles currently recorded for this customer are offered
+   here. Earlier ones stay on the customer page." <!-- receptions.workOrderStart.currentOnlyNote -->
+   Choose one. The chosen one is echoed back under **"Selected vehicle"** <!-- receptions.workOrderStart.selectedVehicle -->
+   with its **"Vehicle number"**.
+4. Choose **"Continue to check-in"** <!-- receptions.workOrderStart.continue --> . You arrive at the
+   check-in screen (4A.5.3) with the customer and the vehicle already chosen.
+
+**The rule this screen exists to enforce, in its own words:** "Choose one vehicle to continue. A
+visit cannot be opened without a vehicle." <!-- receptions.workOrderStart.continueHint --> There is
+no way past this step without naming one, and there is no path anywhere in the product that opens a
+visit for a customer alone.
+
+**If the customer has no vehicle on record** — "No vehicle is recorded for this customer at the
+moment. Find or add the vehicle to continue." <!-- receptions.workOrderStart.empty --> The screen
+offers **"Vehicle not listed here?"** <!-- receptions.workOrderStart.addOffer --> and **"Find or add
+a vehicle"** <!-- receptions.workOrderStart.addVehicle --> , which takes you to the vehicle side of
+walk-in intake; **"Back to this customer's vehicles"** <!-- receptions.workOrderStart.backToList -->
+returns. If the customer has more vehicles than one page holds, a page with none of them on it says
+so separately: "No vehicle on this page is recorded for this customer right now. Look on the next
+page, or find or add the vehicle." <!-- receptions.workOrderStart.emptyOnThisPage -->
+
+**Screenshot** — no screenshot available at this version.
+
 ### 4A.5.1 Walk-in intake
 
 **Label: IMPLEMENTED (UI)**
@@ -1263,6 +1323,13 @@ first-class records. A declined decision stands until the same party approves la
 
 **Who** — `rec.reception.evidence.manage`. Waiving a requirement needs
 `rec.reception.evidence.override` as well. Customer concerns additionally need `iam.sensitive.view`.
+
+**A freshly provisioned organisation can now do this.** At this version the first administrator's
+set of permissions includes evidence management, so the file controls on this step are offered. It
+does **not** include the override, so **"Waive this requirement"** is not offered, and the step says
+only that: "Waiving a required capture needs a separate permission you do not hold." If your account
+sees the requirements listed and no way to satisfy them at all, you are missing evidence management
+itself — see Part 3, §3.15.
 
 **Where** — check-in wizard > **"Photographs and media"**, section **"Evidence"** <!-- receptions.capture.heading -->
 . "What this visit is expected to evidence, and what it holds. A file counts only once it has been
@@ -1537,6 +1604,27 @@ visit"** <!-- receptions.closure.closeSubmit --> .
 release the vehicle. This is the workshop declining the visit, not a party declining a step." <!-- receptions.closure.refuseBody -->
 Give the reason and choose **"Refuse and release"** <!-- receptions.closure.refuseSubmit --> .
 
+**The one refusal that stops most people, and what it now says**
+
+A visit cannot be approved until **somebody entitled to decide has authorised the work** — that
+authorisation is recorded on the parties and authorization step, not on this one. Until it is there,
+**"Approve the visit"** is refused, and the refusal names the missing thing and the step that
+supplies it rather than talking about states:
+
+> "Nobody entitled to decide has approved this visit yet, so the work cannot go ahead. Record that
+> approval on the parties and authorization step, then try again."
+> <!-- form.violation.authorization_missing -->
+
+The screen then offers the command that takes you there: **"Open the parties and authorization
+step"** <!-- receptions.command.goToAuthorization --> . Three near neighbours of that refusal read:
+
+| What is wrong                                                          | What the screen says                                                                                                                                                                                                                |
+| ---------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Neither the person asking for the work nor their approval is on record | "This visit still needs the person who is asking for the work, and their approval, before it can be approved. Both are recorded on the parties and authorization step." <!-- form.violation.requester_or_authorization_missing -->  |
+| Somebody entitled to decide has taken their approval back              | "Someone entitled to decide has withdrawn their approval for this visit, so the work cannot go ahead. Record a new approval on the parties and authorization step, then try again." <!-- form.violation.authorization_withdrawn --> |
+| It has already been approved                                           | "This visit has already been approved, so it cannot be approved again. What is shown now is the current record." <!-- form.violation.already_authorized -->                                                                         |
+| It has moved past the point where approval means anything              | "This visit has moved past the point where it can be approved. What is shown now is the current record." <!-- form.violation.state_not_approvable -->                                                                               |
+
 **Restrictions**
 
 - Approval cannot be undone from this screen.
@@ -1545,6 +1633,7 @@ Give the reason and choose **"Refuse and release"** <!-- receptions.closure.refu
 **If it goes wrong**
 
 - "This visit cannot be approved from its current status." <!-- receptions.summary.approveUnavailable -->
+  — the general form, used where none of the five specific sentences above applies.
 - "Approving a visit needs the reception approval permission." <!-- receptions.summary.approveDenied -->
   ; "Ending a visit needs the reception closure permission." <!-- receptions.summary.closeDenied -->
 - "State the reason for ending this visit." <!-- receptions.closure.error.reasonRequired --> ; "The
@@ -1580,6 +1669,8 @@ produced — nothing was created twice." <!-- receptions.convert.replayed --> Co
 **Restrictions**
 
 - "A visit is converted once it is authorized. Approve it first." <!-- receptions.convert.unavailable -->
+  — and if approving is itself refused, the reason is the missing authorisation described in 4A.5.8,
+  not the conversion.
 - "Converting a visit needs the reception conversion permission." <!-- receptions.convert.denied -->
 - "This visit has already been converted to a work order." <!-- receptions.convert.alreadyDone -->
 - Without work-order access you see only the confirmation: "The work order exists. Your access does
@@ -1669,9 +1760,14 @@ screenshot of a page that shows customer details when the reference alone will d
 - **No screenshots exist for any screen in this part.** NOT ESTABLISHED: what these screens look
   like at this version. The captured evidence covers the delivery, warranty, report and audit-log
   screens only.
-- **No screen in this part was exercised by the closing acceptance run's browser evidence.** NOT
-  ESTABLISHED: that any customer, vehicle, appointment or reception screen was driven end to end in
-  a browser at this commit. Nothing in this part should be read as tested, certified or verified.
+- **Which screens in this part have been driven in a browser, and which have not.** Some have: on
+  the local environment on 2026-09-19, 2026-09-20 and 2026-09-21, a customer was registered, a
+  telephone number was recorded on the Contacts tab and the customer was then found by it in both
+  Latin and Arabic-Indic digits, a walk-in visit was opened, the media step was given a file and
+  the requirement counted, and the approval refusal quoted in 4A.5.8 was read from the screen. The
+  appointment screens, the duplicate reviews, the acknowledgement print and the vehicle profile
+  were **not** driven that way. NOT ESTABLISHED: that this part as a whole was exercised end to
+  end. Nothing in it is certified, audited or approved.
 - **The specifying screen documents for these modules were not found.** NOT ESTABLISHED: a
   per-screen design document for the CRM, vehicle, appointment or reception screens. The wording in
   this part comes from the application's own message catalogue and page source at the commit named
@@ -1688,6 +1784,30 @@ screenshot of a page that shows customer details when the reference alone will d
 
 <!--
 SOURCES
+REVISION 2026-09-21 — sections 4A.2.4, 4A.5.0 (new), 4A.5.5, 4A.5.8, 4A.5.9 and 4A.8 were re-read
+and written at develop f30ce918405164712cc9cdcadb458c4e91a2b5b9. Everything else in this part is
+carried unchanged from the readings recorded below and was not re-read.
+
+Read for this revision:
+- apps/web/src/features/crm/customers/components/CustomerProfileScreen.tsx — the "New work order"
+  command, gated on the destination's own permissions, and the fact that it is a link rather than a
+  form.
+- apps/web/src/features/receptions/intake/intake-handoff.ts — CUSTOMER_WORK_ORDER_START_SEGMENT and
+  customerWorkOrderStartHref; apps/web/src/app/[locale]/(dashboard)/crm/customers/[customerId]/
+  work-order/new/page.tsx — the vehicle step.
+- apps/web/src/i18n/messages/en.json — receptions.workOrderStart.*, crm.customers.profile.newWorkOrder,
+  receptions.command.goToAuthorization, and the five form.violation.* sentences added at this head
+  for the approval refusals (authorization_missing, authorization_withdrawn,
+  requester_or_authorization_missing, already_authorized, state_not_approvable).
+- apps/api/src/modules/iam/domain/bootstrap-roles.ts — crm.customer.profile.write and
+  rec.reception.evidence.manage are in the first-administrator set at this head; the evidence
+  override is not.
+
+What was exercised rather than read: the customer contact form, customer search by telephone number
+in both digit systems, the media step's capture and count, and the approval refusal were driven in
+a real Chromium against the local environment on 2026-09-19, 2026-09-20 and 2026-09-21. No
+screenshot was captured, so every Screenshot field still says so.
+
 REVISION 2026-09-18 — sections 4A.2.1 (customer search) and 4A.3.1 (vehicle search) were re-read
 and rewritten at develop 5b2c7840da1821f973438d5429665ef4448132f2, and two rows of 4A.6 were
 corrected. Everything else in this part is carried unchanged from the reading below.
