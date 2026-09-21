@@ -71,6 +71,18 @@ the standard administrator role does not hold, so a newly set-up workspace shows
 there. Nothing in this release sends an email, a message or an alert to a person about a work order,
 an invoice or a delivery. If a colleague needs to know something, tell them.
 
+**Stated once more, because it is the question everybody asks.** The application's own notification
+machinery has **no outbound email provider at all**. The shape an email provider would plug into
+exists, and nothing is plugged into it: the only adapter installed reaches no network, so a message
+this application queues goes nowhere outside the machine. Choosing a delivery provider is an
+unmade decision, not a setting somebody forgot to fill in, and there is no screen or configuration
+value that would turn mail on.
+
+The only messages this installation produces at all are the two the **identity service** sends about
+an account — an invitation and a password reset — and even those go to a mail catcher running
+beside the application at `http://127.0.0.1:54324`, carrying links that address `localhost` and work
+on no other machine. Part 1, §1.5 describes reading them.
+
 ### 7.1.3 Alerting and monitoring — OPERATOR PROCEDURE, local only
 
 Fault monitoring is not an operator feature and is not a notification. It writes a local file on the
@@ -607,8 +619,26 @@ Read these once. Each of them will otherwise look like a fault.
 18. **The delivery checklist-template screen is deferred** (backlog item P1-31-FU-001).
 19. **This is a local, private, single-machine installation.** It is not a hosted service, it is not
     public, and it is not reachable from another computer. Development, staging and production
-    environments are planned and not provisioned.
-20. **No phase certification is claimed.** The Owner recorded a conditional decision on 2026-09-16;
+    environments are planned and not provisioned. Moving reviewed source from the working branch to
+    the main branch is a step in how the software is kept, not a deployment; at this version even
+    that has not happened.
+20. **No mail leaves this machine, and the application sends none of its own.** The notification
+    machinery has no delivery provider plugged into it; the only two messages produced at all come
+    from the identity service and land in the local mail catcher (7.1.2 and Part 1, §1.5).
+21. **Nobody in a newly provisioned organisation can record a unit cost, and nobody can approve a
+    credit note.** Both permissions are outside the set the first administrator is given, and a
+    permission nobody holds cannot be granted to anybody. Both are open Owner decisions (Part 3,
+    §3.15; Part 5, §5.3; Part 6, §6.2a).
+22. **A newly provisioned organisation has no vehicle makes or models to choose from.** The make
+    chooser offers only "Not specified", the catalogue is read-only to an organisation, and no
+    screen or permission adds to it — so no vehicle can carry a make or a model, searching by one
+    can never match, and a vehicle service capacity, which needs a make, cannot be recorded at all
+    (Part 4A, §4A.3.2; Part 5, §5.25). Filling that catalogue is an open Owner decision.
+23. **A service line cannot be recorded from any screen.** The permission is now in the first
+    administrator's set, so the act is reachable through the service, but there is no page for it
+    (Part 4B, §4B.6.3). Since material is asked for against a service line, a work order with no
+    lines can be given no material.
+24. **No phase certification is claimed.** The Owner recorded a conditional decision on 2026-09-16;
     the QA and Security determinations for this phase have not been issued. Nothing in this manual
     is a statement that any check, certification or audit passed.
 

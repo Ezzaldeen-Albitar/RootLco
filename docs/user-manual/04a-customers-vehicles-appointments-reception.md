@@ -508,6 +508,24 @@ details from its profile." <!-- vehicles.create.draftFollowUp --> Then **"Open t
 field on this form is optional, so it is possible to create an empty vehicle by accident: search
 first.
 
+**A newly provisioned organisation has no makes and no models to choose from, and cannot add any.**
+The **Make** list offers nothing but "Not specified". The make, model and trim catalogue is supplied
+by the platform and is **read-only to an organisation** — no screen adds to it, and no permission
+in the set a first administrator is given would let one. Three consequences follow, and each of them
+is a limitation rather than a fault:
+
+1. No vehicle in the organisation can carry a make or a model. Every vehicle record is complete in
+   every other respect and blank in those two.
+2. Searching vehicles by make or model can therefore never match anything (4A.3.1), even though the
+   search offers both.
+3. A **vehicle capacity** — the confirmed figure an oil change draws its amount from — needs a make,
+   so none can be recorded at all (Part 5, §5.25), and a material request whose basis is a confirmed
+   capacity will always say the capacity is missing (Part 5, §5.26.3).
+
+**Filling that catalogue is an Owner decision and has not been taken.** Until it is, record what the
+vehicle is in your own reference field or as a note, and plan on searching by plate or by chassis
+number instead.
+
 **If it goes wrong**
 
 - "One of the values you entered is already used by another vehicle. Check the VIN and the reference
