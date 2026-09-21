@@ -42,6 +42,11 @@
  *                   The above, plus one real message to one real recipient. The
  *                   recipient has no default and must be named on the command
  *                   line, so mail is never sent to an address this script chose.
+ *                   The message is sent AS `SMTP_ADMIN_EMAIL`, not as
+ *                   `SMTP_USER`: those are two identities, and the one the auth
+ *                   service will present is the former. A relay that lets the
+ *                   mailbox log in but refuses that sender address is a real
+ *                   failure mode, and this mode is where it surfaces.
  *
  * ## Transport, selected by the port
  *
@@ -69,7 +74,10 @@
  * They are read from the process environment. If a variable is absent, the
  * untracked `.env` at the repository root is consulted as a fallback, which is
  * there so that running this never requires typing a password onto a command
- * line where a shell history would keep it.
+ * line where a shell history would keep it. In that file a value runs from the
+ * first `=` to the end of the line and is taken verbatim, spaces included; one
+ * pair of surrounding quotes is removed, which is how a value whose own edges
+ * are spaces is written down legibly.
  *
  * ## Usage
  *
@@ -124,10 +132,17 @@ export class LocalRefusal extends Error {}
  * from the untracked root `.env`. Values already exported win, so an explicit
  * export is always able to override the file.
  *
- * Values are taken verbatim apart from one pair of surrounding quotes, which is
- * the `.env` convention rather than an opinion about content. Nothing is
- * trimmed of inner whitespace, case-folded, length-checked or validated for
- * shape: a password is whatever the provider issued.
+ * A value is everything after the first `=` to the end of the line, taken
+ * verbatim — including leading and trailing spaces. The ONE transformation is
+ * the removal of a single pair of surrounding quotes, which is the `.env`
+ * convention for making such spaces visible in the file rather than an opinion
+ * about content. Nothing is trimmed, case-folded, length-checked or validated
+ * for shape, because a password is whatever the provider issued and a parser
+ * that tidies it is a parser that can only ever produce a wrong password.
+ *
+ * Only the line's FRAMING is read with whitespace ignored: whether the line is
+ * blank, whether it is a comment, and where the name ends. Those decisions
+ * cannot alter a value.
  */
 export function loadEnvironment({ env = process.env, envFile = ENV_FILE } = {}) {
   const resolved = {};
@@ -146,16 +161,20 @@ export function loadEnvironment({ env = process.env, envFile = ENV_FILE } = {}) 
   }
 
   for (const rawLine of contents.split(/\r?\n/)) {
-    const line = rawLine.trim();
-    if (line.length === 0 || line.startsWith('#')) continue;
-    const separator = line.indexOf('=');
+    const framing = rawLine.trim();
+    if (framing.length === 0 || framing.startsWith('#')) continue;
+    const separator = rawLine.indexOf('=');
     if (separator < 1) continue;
-    const name = line.slice(0, separator).trim();
+    const name = rawLine.slice(0, separator).trim();
     if (!NAMES.includes(name) || resolved[name] !== undefined) continue;
-    let value = line.slice(separator + 1).trim();
+    // Verbatim from the separator to the end of the line. No `.trim()` here,
+    // ever: a trailing space is a character of the password if the provider
+    // issued one.
+    let value = rawLine.slice(separator + 1);
     if (
-      (value.startsWith('"') && value.endsWith('"')) ||
-      (value.startsWith("'") && value.endsWith("'"))
+      value.length >= 2 &&
+      ((value.startsWith('"') && value.endsWith('"')) ||
+        (value.startsWith("'") && value.endsWith("'")))
     ) {
       value = value.slice(1, -1);
     }
@@ -395,7 +414,12 @@ export async function authenticate(session, { user, pass }) {
   return requireOk(await session.send(Buffer.from(pass, 'utf8').toString('base64')), 'AUTH');
 }
 
-/** One message, one recipient. The caller has already named the recipient. */
+/**
+ * One message, one recipient. The caller has already named the recipient, and
+ * `from` is the sender identity the auth service would use — its `admin_email`
+ * — rather than the login, so what this measures is the envelope the relay will
+ * actually be asked to accept.
+ */
 export async function sendMessage(session, { from, to, senderName, write }) {
   const mailFrom = requireOk(await session.send(`MAIL FROM:<${from}>`), 'MAIL FROM');
   write(`MAIL FROM: ${mailFrom.text}\n`);
@@ -430,19 +454,35 @@ export async function sendMessage(session, { from, to, senderName, write }) {
   return accepted;
 }
 
-/** Read the single mode flag and the optional recipient off the command line. */
+/**
+ * Read the single mode flag and the optional recipient off the command line.
+ *
+ * A recipient that begins with `--` is refused rather than accepted, because
+ * `--send --to --probe` would otherwise resolve to a delivery attempt addressed
+ * to a flag: the caller meant two things and got one of them silently.
+ */
 export function parseArguments(argv) {
   const modes = [];
   let recipient;
+  let recipientRefused = false;
+  const takeRecipient = (candidate) => {
+    if (typeof candidate !== 'string' || candidate.length === 0 || candidate.startsWith('--')) {
+      recipientRefused = true;
+      return;
+    }
+    recipient = candidate;
+  };
   for (let index = 0; index < argv.length; index += 1) {
     const argument = argv[index];
     if (argument === '--settings' || argument === '--probe') modes.push(argument.slice(2));
     else if (argument === '--authenticate') modes.push('authenticate');
     else if (argument === '--send') modes.push('send');
-    else if (argument === '--to') recipient = argv[index + 1];
-    else if (argument.startsWith('--to=')) recipient = argument.slice('--to='.length);
+    else if (argument === '--to') {
+      takeRecipient(argv[index + 1]);
+      index += 1;
+    } else if (argument.startsWith('--to=')) takeRecipient(argument.slice('--to='.length));
   }
-  return { modes, recipient };
+  return { modes, recipient, recipientRefused };
 }
 
 const USAGE = [
@@ -515,7 +555,11 @@ export async function run({
   const out = (text) => stdout(text);
   const err = (text) => stderr(text);
 
-  const { modes, recipient } = parseArguments(argv ?? []);
+  const { modes, recipient, recipientRefused } = parseArguments(argv ?? []);
+  if (recipientRefused) {
+    err('--to needs an address. A value that begins with "--" is a flag, not a recipient.\n');
+    return 2;
+  }
   if (modes.length !== 1) {
     err(
       modes.length === 0 ? 'No mode chosen.\n' : `More than one mode chosen: ${modes.join(', ')}\n`
@@ -550,10 +594,16 @@ export async function run({
   }
 
   const host = environment.SMTP_HOST;
-  const from = environment.SMTP_USER;
+  // Two different identities, and conflating them is how a send mode proves the
+  // wrong thing. SMTP_USER logs in; SMTP_ADMIN_EMAIL is the address the auth
+  // service will present as the sender, so it is the address whose acceptance
+  // by the relay is worth measuring.
+  const loginUser = environment.SMTP_USER;
+  const sender = environment.SMTP_ADMIN_EMAIL;
 
   out(`Relay    : ${host}:${port}\n`);
   out(`Mode     : ${mode}\n`);
+  if (mode === 'send') out(`Sender   : ${sender}\n`);
   if (mode === 'send') out(`Recipient: ${recipient}\n`);
   out('\n');
 
@@ -573,7 +623,10 @@ export async function run({
       return 0;
     }
 
-    const authenticated = await authenticate(session, { user: from, pass: environment.SMTP_PASS });
+    const authenticated = await authenticate(session, {
+      user: loginUser,
+      pass: environment.SMTP_PASS,
+    });
     out(`AUTH     : accepted (${authenticated.code})\n`);
 
     if (mode === 'authenticate') {
@@ -583,7 +636,7 @@ export async function run({
     }
 
     await sendMessage(session, {
-      from,
+      from: sender,
       to: recipient,
       senderName: environment.SMTP_SENDER_NAME,
       write: out,
