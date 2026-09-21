@@ -313,6 +313,52 @@ describe('inviting an administrator', () => {
     });
   });
 
+  /**
+   * Owner directive, user-facing errors. An organisation that already has an
+   * active administrator refuses a second one unless it is asked for
+   * explicitly, with a reason — and the console showed the generic 'this
+   * record cannot take that change' for it, which names neither the reason nor
+   * the cure. The service files the rule under the flag that cures it, and the
+   * flag now renders it: the sentence is beside the control the operator has
+   * to tick.
+   *
+   * The mocked state is the one the wire produces — the rule arrives under
+   * `body.additionalAdministrator`, so it is a field error and the banner keeps
+   * the generic sentence.
+   */
+  it('says beside the flag why a second administrator was refused', async () => {
+    inviteAdministratorAction.mockResolvedValue({
+      status: 'conflict',
+      messageKey: 'state.conflict.title',
+      fieldErrors: { additionalAdministrator: 'form.violation.platform_administrator_exists' },
+      correlationId: 'corr-second-administrator',
+      attempt: 1,
+    });
+    renderDetail({}, { canManageOrganization: true });
+    await userEvent.click(screen.getByTestId('platform-invite-administrator'));
+    const dialog = await screen.findByRole('dialog');
+    await userEvent.type(
+      within(dialog).getByLabelText(new RegExp(`^${L('platform.provision.email')}`)),
+      'test.deputy@example.test'
+    );
+    await userEvent.type(
+      within(dialog).getByLabelText(new RegExp(`^${L('platform.provision.displayName')}`)),
+      'Test Deputy'
+    );
+    await userEvent.click(within(dialog).getByRole('button', { name: L('platform.save') }));
+
+    await waitFor(() => expect(inviteAdministratorAction).toHaveBeenCalledTimes(1));
+    const flag = within(dialog).getByLabelText(new RegExp(L('platform.growth.additional')));
+    const said = await within(dialog).findByText(L('form.violation.platform_administrator_exists'));
+    expect(said).toBeVisible();
+    // Beside the flag, and reachable from it: a sentence the control does not
+    // point at is a sentence a screen reader never announces with the control.
+    expect(flag.getAttribute('aria-describedby') ?? '').toContain(said.id);
+    expect(flag).toHaveAttribute('aria-invalid', 'true');
+    // The rule name itself never reaches the screen; only its sentence does.
+    expect(dialog.textContent).not.toContain('platform_administrator_exists');
+  });
+
   it('sends the link again for an address, writing nothing else', async () => {
     resendAdministratorInvitationAction.mockResolvedValue(done('platform.growth.resendDone'));
     renderDetail({}, { canManageOrganization: true });

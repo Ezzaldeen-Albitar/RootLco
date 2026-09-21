@@ -524,11 +524,17 @@ export class WorkOrderService extends ApplicationService {
     if (state === undefined || !state.isClosed) {
       throw new AppFailure('ERR-TRN-001', {
         message: `Rework corrects a CLOSED work order; state "${original.state}" is not closed`,
+        safeDetails: {
+          violations: [{ path: 'path.workOrderId', rule: 'work_order_rework_needs_closed_order' }],
+        },
       });
     }
     if (state.isCancellation) {
       throw new AppFailure('ERR-TRN-001', {
         message: `Work order state "${original.state}" is a cancellation; there is no completed work to correct`,
+        safeDetails: {
+          violations: [{ path: 'path.workOrderId', rule: 'work_order_rework_on_cancelled' }],
+        },
       });
     }
 
@@ -549,6 +555,9 @@ export class WorkOrderService extends ApplicationService {
         throw new AppFailure('ERR-TRN-001', {
           message: 'The reception visit no longer permits opening a work order',
           cause: error,
+          safeDetails: {
+            violations: [{ path: 'path.workOrderId', rule: 'work_order_visit_not_ready' }],
+          },
         });
       }
       if (isSqlState(error, SQLSTATE.uniqueViolation)) {
@@ -765,6 +774,9 @@ export class WorkOrderService extends ApplicationService {
     if (parent === undefined || parent.isTerminal || !parent.allowsJobs) {
       throw new AppFailure('ERR-TRN-001', {
         message: `Work order state "${workOrder.state}" does not accept jobs`,
+        safeDetails: {
+          violations: [{ path: 'path.workOrderId', rule: 'work_order_closed_to_jobs' }],
+        },
       });
     }
 
@@ -812,6 +824,11 @@ export class WorkOrderService extends ApplicationService {
         throw new AppFailure('ERR-TRN-001', {
           message: `Work order ${workOrderId} no longer accepts jobs`,
           cause: error,
+          // The same token as the readable refusal above: the operator's cure is
+          // identical, and it is the race rather than the rule that differs.
+          safeDetails: {
+            violations: [{ path: 'path.workOrderId', rule: 'work_order_closed_to_jobs' }],
+          },
         });
       }
       throw error;
@@ -902,6 +919,11 @@ export class WorkOrderService extends ApplicationService {
     if (parentState === undefined || parentState.isTerminal) {
       throw new AppFailure('ERR-TRN-001', {
         message: `Work order state "${parent.state}" does not accept job changes`,
+        // `PATCH /jobs/{jobId}` is addressed by the job, so the route parameter a
+        // screen can act on is the job's own id.
+        safeDetails: {
+          violations: [{ path: 'path.jobId', rule: 'work_order_closed_to_job_changes' }],
+        },
       });
     }
 
@@ -1285,6 +1307,9 @@ export class WorkOrderService extends ApplicationService {
     if (state === undefined || state.isTerminal) {
       throw new AppFailure('ERR-TRN-001', {
         message: `Work order state "${workOrder.state}" does not accept new lines`,
+        safeDetails: {
+          violations: [{ path: 'path.workOrderId', rule: 'work_order_closed_to_lines' }],
+        },
       });
     }
     if (input.jobId !== undefined) {
@@ -1584,6 +1609,13 @@ export class WorkOrderService extends ApplicationService {
             `Work order ${workOrderId} still holds inventory: ` +
             `${commitments.activeReservations} active reservation(s) and ` +
             `${commitments.openIssues} unreturned issue(s). Release or return them before closing.`,
+          // The message already names the remedy; the token is what PUBLISHES it,
+          // because no server prose ever reaches a screen. The counts stay out of
+          // the token: they change between the refusal and the retry, and the
+          // sentence does not need them to say what to do.
+          safeDetails: {
+            violations: [{ path: 'path.workOrderId', rule: 'work_order_stock_still_held' }],
+          },
         });
       }
     }

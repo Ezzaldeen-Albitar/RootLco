@@ -888,4 +888,17 @@ describe('a refused request says which rule refused it', () => {
     expect(alert).toHaveTextContent(AR['form.violation.material_duplicate_demand'] as string);
     expect(alert).not.toHaveTextContent(AR['state.conflict.blocked.title'] as string);
   });
+
+  // CC-OD-32: the Owner requirement is "clear English AND Arabic", so the whole
+  // material family is measured in both rather than one member standing for the
+  // rest. An Arabic operator meeting the English sentence, or the bare banner,
+  // is the same defect as before in a different language.
+  for (const rule of MATERIAL_REFUSAL_RULES) {
+    it(`says in Arabic what ${rule} means`, async () => {
+      const alert = await askAndBeRefused(`form.violation.${rule}`, 'ar');
+      expect(alert).toHaveTextContent(AR[`form.violation.${rule}`] as string);
+      expect(alert).not.toHaveTextContent(EN[`form.violation.${rule}`] as string);
+      expect(alert).not.toHaveTextContent(AR['state.conflict.blocked.title'] as string);
+    });
+  }
 });

@@ -35,6 +35,7 @@ import {
   type PartyRoleEntry,
 } from '../../receptions-contract';
 import type { CheckInStepProps } from '../../check-in/wizard';
+import { refusalReasonKey } from '../../check-in/closure';
 
 /**
  * Party roles and authorization (`FE-009`).
@@ -614,7 +615,20 @@ function AuthorizationForm({
   );
 }
 
-/** The form's inline outcome line. The toast is raised by `settle`. */
+/**
+ * The form's inline outcome line. The toast is raised by `settle`.
+ *
+ * A conflict used to be printed as one fixed sentence, on the grounds that the
+ * line must not guess WHICH rule refused — role-not-held and the state guard
+ * both answer the same non-disclosing 409. That reasoning held while the API
+ * said nothing beyond the code, and it stopped holding when the API began
+ * publishing a rule token beside the refusal: there is no guessing left to do.
+ * `refusalReasonKey` recognises only the tokens this module has been told about,
+ * so an unfamiliar one still falls back to the fixed sentence, and the tokens it
+ * does recognise say no more than the API's own wording does — the party may not
+ * approve here, or the visit is closed. Nothing about which roles a party holds
+ * is added by either.
+ */
 function Outcome({
   messages,
   state,
@@ -623,12 +637,13 @@ function Outcome({
   readonly state: ActionState;
 }) {
   if (state.status === 'idle' || state.status === 'success') return null;
+  const stated = state.status === 'conflict' ? refusalReasonKey(state.messageKey) : null;
   return (
     <p role="alert" className="text-body text-error">
       {state.status === 'conflict'
-        ? // Deliberately does not guess WHICH rule refused: role-not-held and
-          // the state guard answer the same non-disclosing 409 `ERR-TRN-001`.
-          translate(messages, 'receptions.authorization.conflict')
+        ? stated !== null
+          ? translateDynamic(messages, stated)
+          : translate(messages, 'receptions.authorization.conflict')
         : state.messageKey
           ? translateWithValues(messages, state.messageKey, state.messageValues)
           : translate(messages, 'action.failed')}

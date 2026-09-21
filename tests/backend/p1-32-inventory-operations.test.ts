@@ -1334,3 +1334,61 @@ describe('inv.stock-count-cancel and inv.stock-count-list', () => {
     expect((await get(COUNT_LIST, listPath)).status).toBe(403);
   });
 });
+
+/** The violations half of a problem document, for the refusals below. */
+interface ProblemViolations {
+  readonly violations?: readonly { path: string; rule: string }[];
+}
+/**
+ * CC-OD-32 — the purchase-cost refusal names a permission, not the typed value.
+ *
+ * It travelled as rule `custom` on the cost control, which the catalogue
+ * renders as "This value is not accepted here" — true of nothing the operator
+ * typed, and silent about the one thing they can do: take the cost out.
+ */
+describe('CC-OD-32: the purchase-cost refusal names the permission', () => {
+  it('puts the rule on every priced line when the receipt is entered', async () => {
+    const location = await freshLocation();
+    const { response: refused } = await createReceipt(
+      [
+        { itemId: ITEM_A, locationId: location, quantity: '1.000' },
+        {
+          itemId: ITEM_A,
+          locationId: location,
+          quantity: '1.000',
+          unitCost: '9.5000',
+          currencyCode: 'USD',
+        },
+      ],
+      INV_NO_COST
+    );
+    expect(refused.status).toBe(422);
+    // Only the priced line is named: the operator is not asked to change a line
+    // that is already correct.
+    expect((await bodyOf<ProblemViolations>(refused)).violations).toEqual([
+      { path: 'body.lines.1.unitCost', rule: 'stock_receipt_cost_permission' },
+    ]);
+  });
+
+  it('names the same rule when a stored priced receipt is entered into stock', async () => {
+    const location = await freshLocation();
+    const { receipt: draft } = await createReceipt([
+      {
+        itemId: ITEM_A,
+        locationId: location,
+        quantity: '1.000',
+        unitCost: '9.5000',
+        currencyCode: 'USD',
+      },
+    ]);
+    authAs(INV_NO_COST);
+    const refused = await postReceipt(draft.id, draft.recordVersion);
+    expect(refused.status).toBe(403);
+    // Against the request, not a control: the costs are already stored by now
+    // and there is no box on the posting screen to clear.
+    expect((await bodyOf<ProblemViolations>(refused)).violations).toEqual([
+      { path: 'body', rule: 'stock_receipt_cost_permission' },
+    ]);
+    expect(await onHandAt(ITEM_A, location)).toBe('0.000');
+  });
+});

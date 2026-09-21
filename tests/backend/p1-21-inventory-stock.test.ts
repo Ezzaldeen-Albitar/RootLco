@@ -963,7 +963,17 @@ describe('work-order closure is blocked while inventory is outstanding', () => {
     expect(blocked.eligible).toBe(false);
 
     // And the COMMAND refuses, so eligibility and closure cannot disagree.
-    expect((await closeCall(wo.workOrderId, version)).status).toBe(409);
+    const refused = await closeCall(wo.workOrderId, version);
+    expect(refused.status).toBe(409);
+    // Owner directive, user-facing errors. The refusal message already named
+    // the remedy and no screen could ever show it, because no server prose
+    // reaches one. The token is what publishes it; the counts stay out of it,
+    // since they change between the refusal and the retry.
+    expect(
+      (await refused.json()) as { violations?: readonly { path: string; rule: string }[] }
+    ).toMatchObject({
+      violations: [{ path: 'path.workOrderId', rule: 'work_order_stock_still_held' }],
+    });
 
     authAs(INV_FULL);
     await releaseCall(reservation.id, { reason: 'not needed' });

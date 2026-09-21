@@ -52,6 +52,7 @@ import type { BranchOption } from '@/features/services/services-contract';
 import {
   ALERT_PAGE_SIZE,
   MATERIAL_DRAW_REASONS,
+  materialDrawFiguresOf,
   type AdjustmentEcho,
   type AdjustmentState,
   type AgedInTransitAlerts,
@@ -703,6 +704,27 @@ function refusalOf(
     draw !== undefined &&
     (MATERIAL_DRAW_REASONS as readonly string[]).includes(draw.reason)
   ) {
+    // CC-OD-32: "more than the work order is approved to use" left the operator
+    // to guess by how much and against what. The three figures and their unit
+    // say it, and every one of them is a string the server sent — nothing here
+    // adds, subtracts or reformats a quantity, because a quantity computed in
+    // the browser is a second answer to a question the ledger already answered.
+    const figures = materialDrawFiguresOf(draw);
+    if (figures !== null) {
+      return {
+        ...state,
+        messageKey: `inventory.refusal.materialDraw.${draw.reason}.figures`,
+        messageValues: {
+          allowance: figures.allowance,
+          // `used`, not the wire's own name: the plain-language gate refuses a
+          // camel-case identifier inside a sentence an operator reads, and it is
+          // right to — `{alreadyCommitted}` is a field name, not a word.
+          used: figures.alreadyCommitted,
+          requested: figures.requested,
+          unit: figures.unit,
+        },
+      };
+    }
     return { ...state, messageKey: `inventory.refusal.materialDraw.${draw.reason}` };
   }
   if (code === STATE_REFUSED && stateRefusedKey !== undefined) {

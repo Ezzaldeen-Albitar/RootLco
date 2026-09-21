@@ -26,6 +26,7 @@ import {
   succeeded,
   warehouse,
 } from './support/stock-operations';
+import { TRANSFER_REFUSAL_RULES } from '@/features/inventory/inventory-contract';
 
 /**
  * Stock transfers, rendered (P1-32).
@@ -302,6 +303,37 @@ describe('receiving what arrived', () => {
     expect(alert).toHaveTextContent(EN['inventory.transfers.receive.refused'] as string);
     expect(alert).toHaveTextContent('corr-refused');
   });
+
+  // CC-OD-32. Every transfer state refusal used to arrive as one sentence -
+  // "this cannot be done in its current state" - whether the delivery had
+  // already arrived, was cancelled, or the quantity was simply too large. Each
+  // now names its own rule, and this walks the mirror so a token added without
+  // a sentence fails here rather than rendering the vague one again.
+  for (const rule of TRANSFER_REFUSAL_RULES) {
+    it(`says in words what ${rule} means, and keeps the typed quantity`, async () => {
+      const user = userEvent.setup();
+      receiveTransfer.mockResolvedValue(refusedWith(`form.violation.${rule}`));
+      renderScreen();
+      await chooseBranch(user, TARGET_FORM, TARGET_SUBMIT);
+      await openAction(user, 'inventory.transfers.receive.action');
+      const form = screen.getByRole('form', { name: /Receive the transfer of/ });
+      const quantity = within(form).getByLabelText(
+        labelled('inventory.transfers.receive.quantity')
+      );
+      await user.type(quantity, '9');
+      await user.click(
+        within(form).getByRole('button', {
+          name: EN['inventory.transfers.receive.submit'] as string,
+        })
+      );
+      const alert = await within(form).findByRole('alert');
+      expect(alert).toHaveTextContent(EN[`form.violation.${rule}`] as string);
+      expect(alert).not.toHaveTextContent(EN['form.violation.invalid'] as string);
+      expect(alert).toHaveTextContent('corr-refused');
+      // Entered data is preserved: the operator corrects it rather than retypes it.
+      expect(quantity).toHaveValue('9');
+    });
+  }
 });
 
 describe('settling what did not arrive', () => {

@@ -118,8 +118,13 @@ function list(kind: Kind, workOrderId: string): Promise<Response> {
   });
 }
 
-async function problem(response: Response): Promise<{ code?: string }> {
-  return (await response.json()) as { code?: string };
+async function problem(
+  response: Response
+): Promise<{ code?: string; violations?: readonly { path: string; rule: string }[] }> {
+  return (await response.json()) as {
+    code?: string;
+    violations?: readonly { path: string; rule: string }[];
+  };
 }
 
 beforeAll(async () => {
@@ -287,7 +292,15 @@ describe.each([
       quantity: '1',
     });
     expect(response.status).toBe(409);
-    expect((await problem(response)).code).toBe('ERR-TRN-001');
+    const refused = await problem(response);
+    expect(refused.code).toBe('ERR-TRN-001');
+    // Owner directive, user-facing errors. No server prose reaches a screen,
+    // so without this token an adviser adding a line to a finished order is
+    // told only that the record cannot take the change. Pinned on the wire:
+    // dropping it would fail nothing else in this file.
+    expect(refused.violations).toEqual([
+      { path: 'path.workOrderId', rule: 'work_order_closed_to_lines' },
+    ]);
   });
 
   it('401, 403 without wo.work_order.line.manage, and a replayed key records once', async () => {

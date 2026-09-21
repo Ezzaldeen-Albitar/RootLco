@@ -35,7 +35,10 @@ import { SelectField, TextAreaField, TextField } from '@/components/forms/Field'
 import { notifyActionResult } from '@/components/notifications/action-notifications';
 import { EmptyState } from '@/components/states/States';
 import { readWorkOrderDetail } from '@/features/work-orders/api';
-import type { WorkOrderDetail } from '@/features/work-orders/work-orders-contract';
+import {
+  WORK_ORDER_REFUSAL_KEYS,
+  type WorkOrderDetail,
+} from '@/features/work-orders/work-orders-contract';
 import type { ItemsOnly, ReadState } from '@/lib/api/read-operation';
 import type { ActionState } from '@/lib/forms/action-result';
 import { formatDateTime } from '@/lib/format';
@@ -109,8 +112,27 @@ function useReload(): readonly [number, () => void] {
   return [count, reload];
 }
 
+/**
+ * The sentence a refused command shows on this screen.
+ *
+ * A conflict used to be printed as one fixed line — "this record cannot take
+ * that change" — for every refusal the work-order services raise, which covers
+ * an order closed to new work, parts still reserved, a customer who has not
+ * agreed and a dozen more, each with a different cure. The services now name
+ * the rule they refused on (Owner directive, user-facing errors), and this
+ * prefers that sentence when it is one the screen has been told about.
+ *
+ * Membership, not trust: a token missing from `WORK_ORDER_REFUSAL_KEYS` falls
+ * back to the fixed sentence rather than being rendered, so an unfamiliar rule
+ * can never put a raw name in front of a service adviser.
+ */
 function problemKeyOf(result: ActionState): string {
-  if (result.status === 'conflict') return 'quality.closure.conflict';
+  if (result.status === 'conflict') {
+    const stated = result.messageKey;
+    return stated !== undefined && WORK_ORDER_REFUSAL_KEYS.includes(stated)
+      ? stated
+      : 'quality.closure.conflict';
+  }
   return result.messageKey ?? 'action.failed';
 }
 

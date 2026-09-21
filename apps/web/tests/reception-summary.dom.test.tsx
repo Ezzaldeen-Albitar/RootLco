@@ -956,4 +956,75 @@ describe('both directions', () => {
     );
     expect(await screen.findByText(AR['receptions.convert.replayed'] as string)).toBeVisible();
   });
+
+  /**
+   * Owner directive, user-facing errors. Conversion had two refusals of its own
+   * and neither had ever been published: a visit that was never approved and a
+   * visit that had already been converted both reached the operator as the
+   * generic blocked sentence. The first is curable and points at the step that
+   * cures it; the second is not, and offers nothing.
+   */
+  it('names an unapproved visit on conversion, and offers the step that approves it', async () => {
+    convertReceptionToWorkOrder.mockResolvedValue({
+      status: 'conflict',
+      messageKey: 'form.violation.reception_not_authorised',
+      correlationId: 'corr-conv-unapproved',
+      attempt: 1,
+    });
+    const user = userEvent.setup();
+    renderLtr(<ConversionStep {...withStatus('authorized')} />);
+    await user.click(
+      await screen.findByRole('button', { name: EN['receptions.convert.submit'] as string })
+    );
+    expect(
+      await screen.findByText(EN['form.violation.reception_not_authorised'] as string)
+    ).toBeVisible();
+    expect(screen.queryByText(EN['receptions.command.conflictBlocked'] as string)).toBeNull();
+
+    await user.click(
+      screen.getByRole('button', { name: EN['receptions.command.goToAuthorization'] as string })
+    );
+    expect(goToStep).toHaveBeenCalledWith('parties-and-authorization');
+  });
+
+  it('names an unapproved visit in Arabic too, in Arabic words and not the English ones', async () => {
+    convertReceptionToWorkOrder.mockResolvedValue({
+      status: 'conflict',
+      messageKey: 'form.violation.reception_not_authorised',
+      correlationId: 'corr-conv-unapproved-ar',
+      attempt: 1,
+    });
+    const user = userEvent.setup();
+    renderRtl(<ConversionStep {...withStatus('authorized', { locale: 'ar', messages: ar })} />);
+    await user.click(
+      await screen.findByRole('button', { name: AR['receptions.convert.submit'] as string })
+    );
+    expect(
+      await screen.findByText(AR['form.violation.reception_not_authorised'] as string)
+    ).toBeVisible();
+    // The Arabic catalogue is not the English one wearing an Arabic key.
+    expect(screen.queryByText(EN['form.violation.reception_not_authorised'] as string)).toBeNull();
+  });
+
+  it('names an already-converted visit without offering a step', async () => {
+    convertReceptionToWorkOrder.mockResolvedValue({
+      status: 'conflict',
+      messageKey: 'form.violation.reception_already_converted',
+      correlationId: 'corr-conv-twice',
+      attempt: 1,
+    });
+    const user = userEvent.setup();
+    renderLtr(<ConversionStep {...withStatus('authorized')} />);
+    await user.click(
+      await screen.findByRole('button', { name: EN['receptions.convert.submit'] as string })
+    );
+    expect(
+      await screen.findByText(EN['form.violation.reception_already_converted'] as string)
+    ).toBeVisible();
+    expect(
+      screen.queryByRole('button', {
+        name: EN['receptions.command.goToAuthorization'] as string,
+      })
+    ).toBeNull();
+  });
 });

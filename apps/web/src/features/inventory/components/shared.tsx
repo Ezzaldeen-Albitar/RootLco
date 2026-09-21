@@ -5,7 +5,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { SelectField, TextField } from '@/components/forms/Field';
 import type { BranchOption } from '@/features/services/services-contract';
 import type { Messages } from '@/i18n/get-messages';
-import { translate, translateDynamic } from '@/i18n/get-messages';
+import { translate, translateDynamic, translateWithValues } from '@/i18n/get-messages';
 import type { ActionState } from '@/lib/forms/action-result';
 
 import { listBranches, listItemCategories, listLocations } from '../api';
@@ -342,7 +342,14 @@ export function OutcomeNote({
   const key = outcome.messageKey ?? 'action.failed';
   return (
     <p role="alert" className="text-body text-error">
-      {translateDynamic(messages, key)}
+      {/*
+        CC-OD-32: `translateDynamic` alone printed a refusal sentence with its
+        `{placeholders}` still in it, so the figures a refused draw publishes —
+        how much is approved, how much is already used, how much was asked for —
+        could not be said here at all. The values are server strings; nothing is
+        computed in the browser.
+      */}
+      {translateWithValues(messages, key, outcome.messageValues)}
       {outcome.correlationId ? (
         <>
           {' '}

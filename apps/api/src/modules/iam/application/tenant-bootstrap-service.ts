@@ -60,6 +60,23 @@ import {
   TENANT_ADMINISTRATOR_ROLE,
 } from '../domain/bootstrap-roles';
 
+/**
+ * ONE token for every "this address cannot be used" refusal on this service.
+ *
+ * The four refusals it covers are genuinely different readings — a live account
+ * on the address, a disabled identity, and an identity bound to an organisation
+ * that still exists — and the Platform Owner Console must not be able to tell
+ * them apart, because three of them are facts about an organisation other than
+ * the one on screen. A token per reading would hand the console an address
+ * oracle: ask about an address, read which sentence comes back, learn whether it
+ * is in use elsewhere on the platform. The refusal already answers with one
+ * status; this keeps the sentence just as uniform.
+ *
+ * The sentence therefore says what the operator can act on and nothing more: the
+ * address cannot be used here, use another one.
+ */
+export const ADDRESS_NOT_AVAILABLE_RULE = 'platform_address_not_available';
+
 /** Identity and profile inputs only. Nothing here names authority. */
 export interface FirstOwnerInput {
   readonly email: string;
@@ -146,6 +163,9 @@ export class TenantBootstrapService {
       if (isSqlState(error, SQLSTATE.uniqueViolation)) {
         throw new AppFailure('ERR-RES-002', {
           message: 'An account already exists for that identity',
+          safeDetails: {
+            violations: [{ path: 'body.email', rule: ADDRESS_NOT_AVAILABLE_RULE }],
+          },
         });
       }
       throw error;
@@ -218,6 +238,14 @@ export class TenantBootstrapService {
       throw new AppFailure('ERR-TRN-001', {
         message:
           'This organisation already has an active administrator; ask for an additional one explicitly, with a reason',
+        // Filed under the control that CURES it. The operator's next move is to
+        // say a second administrator is wanted and why, and both live on this
+        // form, so the sentence belongs beside the flag rather than in a banner.
+        safeDetails: {
+          violations: [
+            { path: 'body.additionalAdministrator', rule: 'platform_administrator_exists' },
+          ],
+        },
       });
     }
 
@@ -249,6 +277,9 @@ export class TenantBootstrapService {
       if (referenced) {
         throw new AppFailure('ERR-RES-002', {
           message: 'An account already exists for that address in this organisation',
+          safeDetails: {
+            violations: [{ path: 'body.email', rule: ADDRESS_NOT_AVAILABLE_RULE }],
+          },
         });
       }
       // The seat ceiling. tg_user_accounts_capacity counts and refuses under one
@@ -326,18 +357,32 @@ export class TenantBootstrapService {
     try {
       const known = await this.provider.findByEmail(input.email);
       if (known === null || known.tenantId !== db.targetTenantId) {
+        // Deliberately unchanged in specificity: this is the 404 half of the
+        // pair the method comment describes, and it must go on answering
+        // identically for an address this organisation never invited and one
+        // that belongs to another organisation. The token says only that there
+        // is nothing here to send again.
         throw new AppFailure('ERR-RES-001', {
           message: 'No outstanding invitation for that address in this organisation',
+          safeDetails: {
+            violations: [{ path: 'body.email', rule: 'platform_no_invitation_to_resend' }],
+          },
         });
       }
       if (known.disabled) {
         throw new AppFailure('ERR-TRN-001', {
           message: 'The identity for that address is disabled and cannot be invited again',
+          safeDetails: {
+            violations: [{ path: 'body.email', rule: ADDRESS_NOT_AVAILABLE_RULE }],
+          },
         });
       }
       if (known.confirmed) {
         throw new AppFailure('ERR-TRN-001', {
           message: 'That invitation has already been accepted; there is nothing to send again',
+          safeDetails: {
+            violations: [{ path: 'body.email', rule: 'platform_invitation_already_accepted' }],
+          },
         });
       }
       await this.provider.invite({
@@ -383,6 +428,9 @@ export class TenantBootstrapService {
         if (existing.disabled) {
           throw new AppFailure('ERR-RES-002', {
             message: 'The identity for that address is disabled and may not be reused',
+            safeDetails: {
+              violations: [{ path: 'body.email', rule: ADDRESS_NOT_AVAILABLE_RULE }],
+            },
           });
         }
         if (existing.tenantId !== null && existing.tenantId !== tenantId) {
@@ -390,6 +438,9 @@ export class TenantBootstrapService {
             throw new AppFailure('ERR-RES-002', {
               message:
                 'An identity already exists for that address and belongs to another organization',
+              safeDetails: {
+                violations: [{ path: 'body.email', rule: ADDRESS_NOT_AVAILABLE_RULE }],
+              },
             });
           }
         }
@@ -440,6 +491,9 @@ export class TenantBootstrapService {
             throw new AppFailure('ERR-RES-002', {
               message:
                 'An identity already exists for that address and belongs to another organization',
+              safeDetails: {
+                violations: [{ path: 'body.email', rule: ADDRESS_NOT_AVAILABLE_RULE }],
+              },
             });
           }
         }
