@@ -671,9 +671,15 @@ export class InventoryMaterialService {
       });
     }
     if (before.requestedBy === db.context.principal.userId) {
-      throw new AppFailure('ERR-TRN-001', {
-        message: 'The person who asked for this material may not decide it. Ask another approver.',
-      });
+      // Named, because this service catches the separation ahead of the database
+      // and the database catches it again (`ck_material_requirements_separation`).
+      // One rule read two ways would be one rule said two ways on screen, so both
+      // publish the same token.
+      refuseMaterial(
+        'ERR-TRN-001',
+        'material_separation_of_duties',
+        'The person who asked for this material may not decide it. Ask another approver.'
+      );
     }
 
     try {
