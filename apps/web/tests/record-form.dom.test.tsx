@@ -302,6 +302,45 @@ describe('RecordForm keeps what the operator typed when the write fails', () => 
     }
   );
 
+  it.each(BOTH_DIRECTIONS)(
+    'adds the next step under a refused save (%s)',
+    async (locale, renderIn) => {
+      /*
+       * The same defect as the case above, on the kind an operator meets most
+       * often. "Someone else changed this" is a verdict; the reader was not told
+       * that reloading is what makes the save possible, nor that the record may
+       * simply be in a state that refuses the change. The heading is untouched —
+       * the sealed P1-27 records quote the client line that chooses it — and the
+       * sentence arrives as the second element the same pairing already builds.
+       */
+      const catalogue = messagesFor(locale);
+      const action = vi.fn(async (): Promise<ActionState> => ({
+        status: 'conflict',
+        messageKey: 'state.conflict.title',
+        correlationId: 'corr-conflict',
+        attempt: 1,
+      }));
+      const user = userEvent.setup();
+      renderIn(
+        <RecordForm
+          messages={catalogue}
+          fields={FIELDS}
+          action={action}
+          submitKey="form.submit"
+          titleKey="crm.customers.notes.add"
+        />
+      );
+
+      await user.click(screen.getByRole('button', { name: catalogue['form.submit'] }));
+
+      await waitFor(() => expect(action).toHaveBeenCalled());
+      const banner = await screen.findByRole('alert');
+      expect(screen.getByText(catalogue['state.conflict.title'])).toBeInTheDocument();
+      expect(banner).toHaveTextContent(catalogue['state.conflict.message']);
+      expect(en['state.conflict.message']).not.toBe(ar['state.conflict.message']);
+    }
+  );
+
   it('leaves a key that is already a sentence with no second line', async () => {
     // The control on the case above. A pairing that fired for every key would
     // append the wrong sentence to `state.expired.message`, which explains

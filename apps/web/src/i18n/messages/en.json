@@ -1355,6 +1355,7 @@
   "state.conflict.blocked.description": "The record is in a state that does not allow this change, or another record already uses one of these values. Open the record again to see its current details.",
   "state.conflict.blocked.title": "This change cannot be saved",
   "state.conflict.description": "The record changed while you were editing. Reload to see the current version before saving.",
+  "state.conflict.message": "Someone else changed this record, or it is in a state that does not allow the change. Reload to see the current record, then try again.",
   "state.conflict.title": "Someone else changed this",
   "state.correlationId": "Reference:",
   "state.denied.description": "Your account does not have permission for this. An administrator can grant it.",

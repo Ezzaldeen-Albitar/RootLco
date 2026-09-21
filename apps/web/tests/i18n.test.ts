@@ -135,6 +135,12 @@ describe('the sentence that belongs under a failure heading', () => {
       expect(explanationFor(catalogue, 'state.notFound.title')).toBe(
         (catalogue as Record<string, string>)['state.notFound.message']
       );
+      // A refused save was the loudest two-word answer in the product: the
+      // banner read "Someone else changed this" and stopped, so the reader was
+      // told a verdict and never the next move.
+      expect(explanationFor(catalogue, 'state.conflict.title')).toBe(
+        (catalogue as Record<string, string>)['state.conflict.message']
+      );
     }
     // Not the same words in both, so neither run above passed on the English.
     expect(explanationFor(en, 'state.denied.title')).not.toBe(
@@ -143,11 +149,12 @@ describe('the sentence that belongs under a failure heading', () => {
   });
 
   it('says nothing for a key that is already a sentence, or has no pair', () => {
-    // `state.conflict.title` is a heading whose sentence nobody has written; a
-    // pairing that guessed one would render the KEY under the heading.
+    // `state.conflict.blocked.title` is a heading whose sentence nobody has
+    // written; a pairing that guessed one would render the KEY under the
+    // heading. It keeps its own `.description`, which is a different surface.
     expect(explanationFor(en, 'state.expired.message')).toBeNull();
     expect(explanationFor(en, 'form.formError')).toBeNull();
-    expect(explanationFor(en, 'state.conflict.title')).toBeNull();
+    expect(explanationFor(en, 'state.conflict.blocked.title')).toBeNull();
     expect(explanationFor(en, 'state.empty.title')).toBeNull();
   });
 });
