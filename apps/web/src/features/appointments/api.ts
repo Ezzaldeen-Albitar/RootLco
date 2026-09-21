@@ -171,7 +171,7 @@ export async function createAppointment(
   if (!parsed.success) return invalid(fieldErrorsFrom(parsed.error), attempt);
 
   const client = await authorizedClient();
-  if (!client) return { status: 'expired', messageKey: 'state.expired.title', attempt };
+  if (!client) return { status: 'expired', messageKey: 'state.expired.message', attempt };
 
   const result = await client.send<AppointmentCreated>('POST', '/api/v1/appointments', parsed.data);
   if (!result.ok) return fromFailure(result, attempt);
@@ -199,7 +199,7 @@ export async function rescheduleAppointment(
   if (!parsed.success) return invalid(fieldErrorsFrom(parsed.error), attempt);
 
   const client = await authorizedClient();
-  if (!client) return { status: 'expired', messageKey: 'state.expired.title', attempt };
+  if (!client) return { status: 'expired', messageKey: 'state.expired.message', attempt };
 
   const result = await client.send<AppointmentChanged>(
     'POST',
@@ -227,7 +227,7 @@ export async function cancelAppointment(
   if (!parsed.success) return invalid(fieldErrorsFrom(parsed.error), attempt);
 
   const client = await authorizedClient();
-  if (!client) return { status: 'expired', messageKey: 'state.expired.title', attempt };
+  if (!client) return { status: 'expired', messageKey: 'state.expired.message', attempt };
 
   const result = await client.send<AppointmentChanged>(
     'POST',
@@ -252,7 +252,7 @@ export async function recordAppointmentNoShow(
   attempt = 1
 ): Promise<AppointmentChangeState> {
   const client = await authorizedClient();
-  if (!client) return { status: 'expired', messageKey: 'state.expired.title', attempt };
+  if (!client) return { status: 'expired', messageKey: 'state.expired.message', attempt };
 
   const result = await client.send<AppointmentChanged>(
     'POST',

@@ -476,7 +476,7 @@ export async function setCoverageWindowStatus(
 /** An ended session, reported without asking the transport for anything. */
 const EXPIRED_WRITE = (attempt: number): PolicyWriteState => ({
   status: 'expired',
-  messageKey: 'state.expired.title',
+  messageKey: 'state.expired.message',
   attempt,
 });
 
@@ -537,7 +537,7 @@ export async function generateWarranty(
   attempt = 1
 ): Promise<WarrantyWriteState> {
   const client = await authorizedClient();
-  if (!client) return { status: 'expired', messageKey: 'state.expired.title', attempt };
+  if (!client) return { status: 'expired', messageKey: 'state.expired.message', attempt };
 
   const body = input.policyId === undefined ? {} : { policyId: input.policyId };
   const result = await client.send<WarrantyRecord>(

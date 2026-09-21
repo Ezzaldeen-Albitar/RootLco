@@ -90,7 +90,7 @@ export async function updateVehicleAction(
   if (!parsed.success) return invalid(fieldErrorsFrom(parsed.error), attempt);
 
   const client = await authorizedClient();
-  if (!client) return { status: 'expired', messageKey: 'state.expired.title', attempt };
+  if (!client) return { status: 'expired', messageKey: 'state.expired.message', attempt };
 
   const result = await client.send(
     'PATCH',
@@ -144,7 +144,7 @@ export async function changeVehicleStatusAction(
   }
 
   const client = await authorizedClient();
-  if (!client) return { status: 'expired', messageKey: 'state.expired.title', attempt };
+  if (!client) return { status: 'expired', messageKey: 'state.expired.message', attempt };
 
   const result = await client.send(
     'PATCH',

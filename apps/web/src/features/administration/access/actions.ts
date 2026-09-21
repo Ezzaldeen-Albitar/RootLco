@@ -54,7 +54,7 @@ export async function createRoleAction(
   if (!parsed.success) return invalid(issueKeysByField(parsed.error), attempt);
 
   const client = await authorizedClient();
-  if (!client) return { status: 'expired', messageKey: 'state.expired.title', attempt };
+  if (!client) return { status: 'expired', messageKey: 'state.expired.message', attempt };
 
   const result = await client.send('POST', '/api/v1/iam/roles', parsed.data);
   if (!result.ok) return fromFailure(result, attempt);
@@ -67,7 +67,7 @@ export async function updateRoleAction(
   changes: { readonly name?: string; readonly description?: string; readonly archive?: boolean }
 ): Promise<ActionState> {
   const client = await authorizedClient();
-  if (!client) return { status: 'expired', messageKey: 'state.expired.title', attempt: 1 };
+  if (!client) return { status: 'expired', messageKey: 'state.expired.message', attempt: 1 };
 
   const result = await client.send(
     'PATCH',
@@ -90,7 +90,7 @@ export async function addRolePermissionAction(
     return invalid({ permissionCode: 'field.required' }, 1);
   }
   const client = await authorizedClient();
-  if (!client) return { status: 'expired', messageKey: 'state.expired.title', attempt: 1 };
+  if (!client) return { status: 'expired', messageKey: 'state.expired.message', attempt: 1 };
 
   const result = await client.send(
     'POST',
@@ -106,7 +106,7 @@ export async function removeRolePermissionAction(
   mappingId: string
 ): Promise<ActionState> {
   const client = await authorizedClient();
-  if (!client) return { status: 'expired', messageKey: 'state.expired.title', attempt: 1 };
+  if (!client) return { status: 'expired', messageKey: 'state.expired.message', attempt: 1 };
 
   const result = await client.send(
     'DELETE',
@@ -156,7 +156,7 @@ export async function createApprovalLimitAction(
   if (!parsed.success) return invalid(issueKeysByField(parsed.error), attempt);
 
   const client = await authorizedClient();
-  if (!client) return { status: 'expired', messageKey: 'state.expired.title', attempt };
+  if (!client) return { status: 'expired', messageKey: 'state.expired.message', attempt };
 
   const value = parsed.data;
   const result = await client.send('POST', '/api/v1/iam/approval-limits', {
@@ -182,7 +182,7 @@ export async function endApprovalLimitAction(
   if (!DATE.test(effectiveTo)) return invalid({ effectiveTo: 'approvalLimits.error.date' }, 1);
 
   const client = await authorizedClient();
-  if (!client) return { status: 'expired', messageKey: 'state.expired.title', attempt: 1 };
+  if (!client) return { status: 'expired', messageKey: 'state.expired.message', attempt: 1 };
 
   const result = await client.send(
     'PATCH',

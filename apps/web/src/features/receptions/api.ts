@@ -459,7 +459,7 @@ export async function createReception(
   if (!parsed.success) return invalid(fieldErrorsFrom(parsed.error), attempt);
 
   const client = await authorizedClient();
-  if (!client) return { status: 'expired', messageKey: 'state.expired.title', attempt };
+  if (!client) return { status: 'expired', messageKey: 'state.expired.message', attempt };
 
   const result = await client.send<ReceptionCreated>('POST', '/api/v1/receptions', parsed.data);
   if (!result.ok) return fromFailure(result, attempt);
@@ -481,7 +481,7 @@ export async function assignPartyRole(
   if (!parsed.success) return invalid(fieldErrorsFrom(parsed.error), attempt);
 
   const client = await authorizedClient();
-  if (!client) return { status: 'expired', messageKey: 'state.expired.title', attempt };
+  if (!client) return { status: 'expired', messageKey: 'state.expired.message', attempt };
 
   const result = await client.send<PartyRoleAssigned>(
     'POST',
@@ -512,7 +512,7 @@ export async function recordAuthorization(
   if (!parsed.success) return invalid(fieldErrorsFrom(parsed.error), attempt);
 
   const client = await authorizedClient();
-  if (!client) return { status: 'expired', messageKey: 'state.expired.title', attempt };
+  if (!client) return { status: 'expired', messageKey: 'state.expired.message', attempt };
 
   const result = await client.send<AuthorizationRecorded>(
     'POST',
@@ -538,7 +538,7 @@ export async function recordConditionEvidence(
   if (!parsed.success) return invalid(fieldErrorsFrom(parsed.error), attempt);
 
   const client = await authorizedClient();
-  if (!client) return { status: 'expired', messageKey: 'state.expired.title', attempt };
+  if (!client) return { status: 'expired', messageKey: 'state.expired.message', attempt };
 
   const result = await client.send<ConditionEvidenceRecorded>(
     'POST',
@@ -567,7 +567,7 @@ export async function recordSignature(
   if (!parsed.success) return invalid(fieldErrorsFrom(parsed.error), attempt);
 
   const client = await authorizedClient();
-  if (!client) return { status: 'expired', messageKey: 'state.expired.title', attempt };
+  if (!client) return { status: 'expired', messageKey: 'state.expired.message', attempt };
 
   const result = await client.send<SignatureRecorded>(
     'POST',
@@ -596,7 +596,7 @@ export async function recordRefusal(
   if (!parsed.success) return invalid(fieldErrorsFrom(parsed.error), attempt);
 
   const client = await authorizedClient();
-  if (!client) return { status: 'expired', messageKey: 'state.expired.title', attempt };
+  if (!client) return { status: 'expired', messageKey: 'state.expired.message', attempt };
 
   const result = await client.send<RefusalRecorded>(
     'POST',
@@ -624,7 +624,7 @@ export async function approveReception(
   attempt = 1
 ): Promise<ReceptionApproveState> {
   const client = await authorizedClient();
-  if (!client) return { status: 'expired', messageKey: 'state.expired.title', attempt };
+  if (!client) return { status: 'expired', messageKey: 'state.expired.message', attempt };
 
   const result = await client.send<ReceptionApproved>(
     'POST',
@@ -653,7 +653,7 @@ export async function convertReceptionToWorkOrder(
   attempt = 1
 ): Promise<ReceptionConvertState> {
   const client = await authorizedClient();
-  if (!client) return { status: 'expired', messageKey: 'state.expired.title', attempt };
+  if (!client) return { status: 'expired', messageKey: 'state.expired.message', attempt };
 
   const result = await client.send<ReceptionConverted>(
     'POST',
@@ -714,7 +714,7 @@ async function closeVisit(
   if (!parsed.success) return invalid(fieldErrorsFrom(parsed.error), attempt);
 
   const client = await authorizedClient();
-  if (!client) return { status: 'expired', messageKey: 'state.expired.title', attempt };
+  if (!client) return { status: 'expired', messageKey: 'state.expired.message', attempt };
 
   const result = await client.send<ReceptionClosed>(
     'POST',
@@ -805,7 +805,7 @@ export async function bindEvidence(
   if (!parsed.success) return invalid(fieldErrorsFrom(parsed.error), attempt);
 
   const client = await authorizedClient();
-  if (!client) return { status: 'expired', messageKey: 'state.expired.title', attempt };
+  if (!client) return { status: 'expired', messageKey: 'state.expired.message', attempt };
 
   const result = await client.send<EvidenceBindingRecorded>(
     'POST',
@@ -838,7 +838,7 @@ export async function finalizeEvidenceBinding(
   }
 
   const client = await authorizedClient();
-  if (!client) return { status: 'expired', messageKey: 'state.expired.title', attempt };
+  if (!client) return { status: 'expired', messageKey: 'state.expired.message', attempt };
 
   const result = await client.send<EvidenceBindingFinalized>(
     'POST',
@@ -886,7 +886,7 @@ export async function overrideCaptureRequirement(
   if (!parsed.success) return invalid(fieldErrorsFrom(parsed.error), attempt);
 
   const client = await authorizedClient();
-  if (!client) return { status: 'expired', messageKey: 'state.expired.title', attempt };
+  if (!client) return { status: 'expired', messageKey: 'state.expired.message', attempt };
 
   const result = await client.send<CaptureOverrideRecorded>(
     'POST',
@@ -940,7 +940,7 @@ export async function recordSignatureEvent(
   }
 
   const client = await authorizedClient();
-  if (!client) return { status: 'expired', messageKey: 'state.expired.title', attempt };
+  if (!client) return { status: 'expired', messageKey: 'state.expired.message', attempt };
 
   const result = await client.send<SignatureEventRecorded>(
     'POST',

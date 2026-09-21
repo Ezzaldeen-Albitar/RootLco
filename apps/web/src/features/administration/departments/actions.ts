@@ -42,7 +42,7 @@ export async function createDepartmentAction(
   if (!parsed.success) return invalid(issueKeysByField(parsed.error), attempt);
 
   const client = await authorizedClient();
-  if (!client) return { status: 'expired', messageKey: 'state.expired.title', attempt };
+  if (!client) return { status: 'expired', messageKey: 'state.expired.message', attempt };
 
   const result = await client.send('POST', '/api/v1/org/departments', parsed.data);
   if (!result.ok) return fromFailure(result, attempt);
@@ -80,7 +80,7 @@ async function update(
     return invalid({}, 1, 'state.notFound.title');
   }
   const client = await authorizedClient();
-  if (!client) return { status: 'expired', messageKey: 'state.expired.title', attempt: 1 };
+  if (!client) return { status: 'expired', messageKey: 'state.expired.message', attempt: 1 };
 
   const result = await client.send(
     'PATCH',

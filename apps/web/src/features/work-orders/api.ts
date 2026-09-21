@@ -206,7 +206,7 @@ export async function transitionWorkOrder(
   attempt = 1
 ): Promise<ActionState> {
   const client = await authorizedClient();
-  if (!client) return { status: 'expired', messageKey: 'state.expired.title', attempt };
+  if (!client) return { status: 'expired', messageKey: 'state.expired.message', attempt };
 
   const result = await client.send<unknown>(
     'POST',
@@ -244,7 +244,7 @@ export async function updateJob(
   attempt = 1
 ): Promise<ActionState> {
   const client = await authorizedClient();
-  if (!client) return { status: 'expired', messageKey: 'state.expired.title', attempt };
+  if (!client) return { status: 'expired', messageKey: 'state.expired.message', attempt };
 
   const result = await client.send<unknown>('PATCH', jobPath(jobId), body, { ifMatch });
   if (!result.ok) return fromFailure(result, attempt);
@@ -269,7 +269,7 @@ export async function assignTechnician(
   attempt = 1
 ): Promise<ActionState> {
   const client = await authorizedClient();
-  if (!client) return { status: 'expired', messageKey: 'state.expired.title', attempt };
+  if (!client) return { status: 'expired', messageKey: 'state.expired.message', attempt };
 
   const result = await client.send<unknown>('POST', jobPath(jobId, '/assignments'), body);
   if (!result.ok) return fromFailure(result, attempt);

@@ -64,7 +64,7 @@ export type CreateOutcome<T> = {
 
 const expired = (attempt: number): ActionState => ({
   status: 'expired',
-  messageKey: 'state.expired.title',
+  messageKey: 'state.expired.message',
   attempt,
 });
 

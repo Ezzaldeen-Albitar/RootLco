@@ -199,7 +199,7 @@ export async function exportReport(
     return { status: 'denied', messageKey: 'state.denied.title' };
   }
   const client = await authorizedClient();
-  if (!client) return { status: 'expired', messageKey: 'state.expired.title' };
+  if (!client) return { status: 'expired', messageKey: 'state.expired.message' };
   const body: ReportExportBody = {
     companyId: input.companyId,
     branchId: input.branchId,

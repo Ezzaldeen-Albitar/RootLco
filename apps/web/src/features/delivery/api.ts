@@ -291,7 +291,7 @@ export async function createDelivery(
   attempt = 1
 ): Promise<DeliveryWriteState> {
   const client = await authorizedClient();
-  if (!client) return { status: 'expired', messageKey: 'state.expired.title', attempt };
+  if (!client) return { status: 'expired', messageKey: 'state.expired.message', attempt };
 
   const result = await client.send<DeliveryRecord>('POST', '/api/v1/deliveries', body);
   if (!result.ok) return withCode(fromFailure(result, attempt), result);
@@ -314,7 +314,7 @@ export async function verifyReceiver(
   attempt = 1
 ): Promise<DeliveryWriteState> {
   const client = await authorizedClient();
-  if (!client) return { status: 'expired', messageKey: 'state.expired.title', attempt };
+  if (!client) return { status: 'expired', messageKey: 'state.expired.message', attempt };
 
   const result = await client.send<unknown>(
     'POST',
@@ -342,7 +342,7 @@ export async function recordChecklistResult(
   attempt = 1
 ): Promise<DeliveryWriteState> {
   const client = await authorizedClient();
-  if (!client) return { status: 'expired', messageKey: 'state.expired.title', attempt };
+  if (!client) return { status: 'expired', messageKey: 'state.expired.message', attempt };
 
   const result = await client.send<unknown>(
     'POST',
@@ -367,7 +367,7 @@ export async function attachSignature(
   attempt = 1
 ): Promise<DeliveryWriteState> {
   const client = await authorizedClient();
-  if (!client) return { status: 'expired', messageKey: 'state.expired.title', attempt };
+  if (!client) return { status: 'expired', messageKey: 'state.expired.message', attempt };
 
   const result = await client.send<unknown>('POST', deliveryPath(deliveryId, '/signatures'), body);
   if (!result.ok) return withCode(fromFailure(result, attempt), result);
@@ -422,7 +422,7 @@ export async function completeDelivery(
   attempt = 1
 ): Promise<DeliveryWriteState> {
   const client = await authorizedClient();
-  if (!client) return { status: 'expired', messageKey: 'state.expired.title', attempt };
+  if (!client) return { status: 'expired', messageKey: 'state.expired.message', attempt };
 
   const body: DeliveryCompleteBody = {
     finalOdometerValue: input.finalOdometerValue,

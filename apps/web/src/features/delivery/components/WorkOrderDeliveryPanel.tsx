@@ -303,7 +303,7 @@ function useBranchDirectory(canRead: boolean, companyId: string): BranchDirector
         result.status === 'denied'
           ? { messageKey: 'delivery.start.branchesRefused', retryable: false }
           : result.status === 'expired'
-            ? { messageKey: 'state.expired.title', retryable: false }
+            ? { messageKey: 'state.expired.message', retryable: false }
             : { messageKey: 'delivery.start.branchesUnavailable', retryable: true };
       setHeld({ key, items: null, failure });
     });
@@ -380,7 +380,7 @@ function useEmployees(canRead: boolean, companyId: string, branchId: string): Ca
           result.status === 'denied'
             ? { messageKey: 'delivery.start.employeesRefused', retryable: false }
             : result.status === 'expired'
-              ? { messageKey: 'state.expired.title', retryable: false }
+              ? { messageKey: 'state.expired.message', retryable: false }
               : { messageKey: 'delivery.start.employeesUnavailable', retryable: true };
         setHeld({ key, items: null, failure });
       }

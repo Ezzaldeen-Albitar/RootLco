@@ -158,7 +158,7 @@ export async function setEvProfileAction(
   if (!parsed.success) return invalid(fieldErrorsFrom(parsed.error), attempt);
 
   const client = await authorizedClient();
-  if (!client) return { status: 'expired', messageKey: 'state.expired.title', attempt };
+  if (!client) return { status: 'expired', messageKey: 'state.expired.message', attempt };
 
   const result = await client.send(
     'POST',
@@ -217,7 +217,7 @@ export async function linkCustomerAction(
   if (!parsed.success) return invalid(fieldErrorsFrom(parsed.error), attempt);
 
   const client = await authorizedClient();
-  if (!client) return { status: 'expired', messageKey: 'state.expired.title', attempt };
+  if (!client) return { status: 'expired', messageKey: 'state.expired.message', attempt };
 
   // The CUSTOMER is the path resource here and the vehicle is the body — the
   // mirror of every other write on this screen.
@@ -275,7 +275,7 @@ export async function authorizePartyAction(
   if (!parsed.success) return invalid(fieldErrorsFrom(parsed.error), attempt);
 
   const client = await authorizedClient();
-  if (!client) return { status: 'expired', messageKey: 'state.expired.title', attempt };
+  if (!client) return { status: 'expired', messageKey: 'state.expired.message', attempt };
 
   const result = await client.send(
     'POST',
@@ -312,7 +312,7 @@ export async function retirePartyAction(
   }
 
   const client = await authorizedClient();
-  if (!client) return { status: 'expired', messageKey: 'state.expired.title', attempt };
+  if (!client) return { status: 'expired', messageKey: 'state.expired.message', attempt };
 
   const result = await client.send(
     'POST',
