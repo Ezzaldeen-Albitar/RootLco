@@ -1,10 +1,10 @@
 ---
 manual: 'CRM User Manual'
 title: 'Part 1 — Access and account recovery'
-application_version: '5b2c7840da1821f973438d5429665ef4448132f2'
-application_version_short: '5b2c7840'
+application_version: 'f30ce918405164712cc9cdcadb458c4e91a2b5b9'
+application_version_short: 'f30ce918'
 environment: 'LOCAL — a private single-machine environment at http://localhost:3100. Not public, not hosted.'
-date: '2026-09-18'
+date: '2026-09-21'
 scope_statement: 'This manual describes behaviour implemented at the commit named above, and nothing else.'
 ---
 
@@ -191,10 +191,13 @@ always takes effect for you even if the service is briefly unreachable.
 **Who.** A person an administrator has invited. Example: Tariq Hassan (example) has just been
 invited to Al-Noor Auto Services (example).
 
-**Where.** The link in the invitation email. In this local environment no real email is delivered
-anywhere: the message lands in the local mailbox at `http://127.0.0.1:54324`, which the operator of
-the machine opens in a browser to find it. There is no printed or dictated code, and an
-administrator cannot read the link out of the application.
+**Where.** The link in the invitation email. **In this environment no message leaves the machine.**
+No external mail service is configured, so nothing is delivered to a real inbox anywhere: the
+message lands in a mail catcher running beside the application at `http://127.0.0.1:54324`, which
+the operator of the machine opens in a browser to find it. The link inside the message points at
+`localhost`, so it can only be opened on that same machine — sending it on to somebody else's
+computer would give them an address their browser cannot reach. There is no printed or dictated
+code, and an administrator cannot read the link out of the application.
 
 **Steps**
 
@@ -277,8 +280,9 @@ expires.** <!-- auth.forgot.submittedDetail -->
 - The same confirmation appears whether or not an account exists for that address. That is
   deliberate: the application must not disclose who has an account. It is therefore not a
   confirmation that a message was sent to you.
-- In this local environment the message is not delivered to any real inbox. It appears in the local
-  mailbox at `http://127.0.0.1:54324`.
+- In this environment the message is not delivered to any real inbox, and external mail delivery is
+  not active at all. It appears in the local mail catcher at `http://127.0.0.1:54324`, and the reset
+  link inside it addresses `localhost`, so it can only be followed on this machine.
 - The local mail service is configured to send at most thirty messages an hour, so a long run of
   repeated requests will eventually stop producing a message.
 - There is no administrator button that sets a password for you and no code an administrator can
@@ -318,14 +322,19 @@ link can be used once. Choose a password you do not use anywhere else.** <!-- au
 3. Press **Save password** <!-- auth.reset.submit --> .
 
 **Result.** **Password updated** <!-- auth.reset.done --> and **You can now sign in with your new
-password. Any other sessions have been ended.** <!-- auth.reset.doneDetail --> A button **Go to sign
-in** <!-- auth.reset.continue --> takes you to the sign-in page.
+password. A device you were already signed in on stays signed in there until that sign-in runs
+out.** <!-- auth.reset.doneDetail --> A button **Go to sign in** <!-- auth.reset.continue --> takes
+you to the sign-in page.
 
 **Restrictions**
 
 - One use per link, and it expires.
-- Setting a new password ends the account's other sessions, so anyone signed in as that account
-  elsewhere is signed out.
+- **Setting a new password does not immediately sign out a browser that is already signed in.** The
+  old password is dead at once, and no session can renew itself afterwards — but a sign-in already
+  handed to another browser keeps working there until it runs out on its own, which on this
+  installation is an hour (1.8). If the point of the change is that somebody else may have had your
+  password, go to the other device and sign out of it as well, or wait the hour out. The screen
+  states the same thing in its own words, above.
 - Your email address cannot be changed here. It is your sign-in identity and an administrator
   changes it (1.10).
 
@@ -564,7 +573,13 @@ records. Do not expect an automatic response to a fault.
 - An invited person sets a password, then an administrator activates the account; until then sign-in
   is refused. (1.5)
 - A reset or invitation link works once, expires, and in this environment arrives only in the local
-  mailbox at `http://127.0.0.1:54324`; at most thirty messages an hour are sent. (1.5, 1.6)
+  mail catcher at `http://127.0.0.1:54324`; at most thirty messages an hour are sent. External mail
+  delivery is not active, and the links in those messages address `localhost`, so they are usable
+  only on this machine. (1.5, 1.6)
+- **Changing or resetting a password does not cut off a browser that is already signed in.** The old
+  password stops working at once and no session can renew itself afterwards, but a sign-in already
+  in use elsewhere lasts until it runs out — an hour on this installation. Sign that device out
+  yourself. (1.6.2, 1.8)
 - Sessions are not renewed silently; when a session ends, unsaved work on the screen is lost. (1.8)
 - The profile screen is read-only for most accounts, and shows companies and branches as references
   rather than names. (1.10)
@@ -594,6 +609,22 @@ records. Do not expect an automatic response to a fault.
   screen.** The field is editable only for an account holding the user-management permission; no
   other route exists.
 
+<!--
+REVISION 2026-09-21 — sections 1.5, 1.6.1, 1.6.2 and 1.12 were re-read and corrected at develop
+f30ce918405164712cc9cdcadb458c4e91a2b5b9. Every other section of this part is carried unchanged
+from the readings recorded below and was not re-read.
+
+Read for this revision:
+- apps/web/src/i18n/messages/en.json — auth.reset.doneDetail, whose wording changed at this head
+  from "Any other sessions have been ended." to a sentence that matches what actually happens.
+- apps/api/src/modules/iam/provider/supabase-provider.ts signOutEverywhere, and
+  apps/api/src/modules/iam/application/authentication-service.ts completePasswordReset — a global
+  sign-out revokes the identity's refresh tokens; an access token already issued to another device
+  keeps verifying until its own expiry.
+- supabase/config.toml — the local mail catcher on 54324, the hourly send limit, and the absence of
+  any external mail transport; supabase/templates/recovery.html — the reset link addresses the
+  application's own reset page on localhost.
+-->
 <!--
 Sources for Part 1 (read at develop commit beebc6c28c873f498fe0503161eb53caa107a9e3 unless noted):
 - Message catalogue, English: apps/web/src/i18n/messages/en.json — keys auth.login.*, auth.forgot.*,

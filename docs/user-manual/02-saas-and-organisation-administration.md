@@ -1,10 +1,10 @@
 ---
 manual: 'CRM User Manual'
 title: 'Part 2 — SaaS and organisation administration'
-application_version: '5b2c7840da1821f973438d5429665ef4448132f2'
-application_version_short: '5b2c7840'
+application_version: 'f30ce918405164712cc9cdcadb458c4e91a2b5b9'
+application_version_short: 'f30ce918'
 environment: 'LOCAL — a private single-machine environment at http://localhost:3100. Not public, not hosted.'
-date: '2026-09-18'
+date: '2026-09-21'
 scope_statement: 'This manual describes behaviour implemented at the commit named above, and nothing else.'
 ---
 
@@ -867,6 +867,25 @@ administrator the identity and access codes, the organisation codes (companies, 
 departments, employees), and the operational codes the workshop and inventory personas need, so that
 those can be delegated to other people.
 
+**Three permissions were added to the set at this version**, because working the product by hand
+found each of them missing in a way that shut a capability for the whole organisation rather than
+just for one person. A freshly provisioned organisation can now record a customer's contacts,
+addresses and preferences; record the condition evidence a reception visit asks for; and say what
+work is on a work order. Part 3, §3.15 says what each unblocks.
+
+**Two things it still cannot do, and both await an Owner decision.** They are named here because
+they are the two gaps an administrator will meet first:
+
+- **Unit cost on a goods receipt.** Recording what a part cost needs the cost-visibility
+  permission, which the first administrator does not hold and — since nobody can grant a permission
+  they do not hold themselves — cannot obtain from inside the organisation. The receipt form says
+  so: _"Unit costs can be recorded only by someone who may see costs."_ Part 5, §5.19.
+- **Approving a credit note.** The credit permission is not in the set either. A return of a part
+  sold over the counter still raises a credit note and still says it is waiting for a second person
+  — and inside a freshly provisioned organisation there is no such person and no way to make one.
+  The credit-note screen opens and says **"You do not have access. Your account does not have
+  permission for this. An administrator can grant it."** Part 6, §6.2a.
+
 | Screen                                       | Visible to the first administrator? | Why                                                                                                         |
 | -------------------------------------------- | ----------------------------------- | ----------------------------------------------------------------------------------------------------------- |
 | **Users**, **Roles**, **Permissions**        | Yes                                 | The identity and access permissions are in the set.                                                         |
@@ -884,6 +903,7 @@ those can be delegated to other people.
 | **System settings**                          | **No**                              | Same.                                                                                                       |
 | **Notifications**, **Documents**             | **No**                              | Planned, not built — see 2.13.                                                                              |
 | **Appointments**                             | **No**                              | No appointment permission is in the set. See Part 4A.                                                       |
+| **Credit notes**                             | **No**                              | The credit permission is not in the set, so the entry is hidden and the address refuses. Part 6, §6.2a.     |
 
 **You still cannot fix the gaps from inside the workspace.** A role may only be given a permission
 that the person granting it already holds, and this is enforced by the database as well as by the
@@ -985,6 +1005,14 @@ Nothing in this part is a statement that any check, test or gate was run. No hos
 certification, audit or approval is claimed. This phase of the product is not certified.
 
 <!--
+REVISION 2026-09-21 — section 2.11 was re-read and corrected at develop
+f30ce918405164712cc9cdcadb458c4e91a2b5b9, against
+apps/api/src/modules/iam/domain/bootstrap-roles.ts (the three codes added to the bundle and the
+deliberate exclusion of inv.cost.view), apps/web/src/config/navigation.ts (nav.creditNotes, gated
+on sal.credit.manage) and apps/api/src/app/api/v1/credit-notes/** (both reads declare
+sal.credit.manage and sal.finance.view). Everything else in this part is carried unchanged from the
+reading recorded below and was not re-read.
+
 REVISION 2026-09-18 — sections 2.1, 2.1.2, 2.1.3, 2.2, 2.3, 2.4, 2.5, 2.6, 2.7, 2.8, 2.9, 2.10.2,
 2.11, 2.13 and 2.14 were re-read and rewritten at develop 5b2c7840da1821f973438d5429665ef4448132f2.
 Everything else in this part is carried unchanged from the reading below.
