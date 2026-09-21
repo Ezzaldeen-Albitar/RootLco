@@ -51,6 +51,53 @@
  * - **A blocker vocabulary.** A blocker is a note; its status is derived.
  */
 
+/* ------------------------------------------------------------------ *
+ * The refusals this screen must say out loud
+ * ------------------------------------------------------------------ */
+
+/**
+ * The rule tokens whose violation names something no control on this screen can
+ * hold (Owner directive, user-facing errors).
+ *
+ * A violation carries a path and a token. `violationKeysOf` files the path's
+ * last segment as a control name, and a form shows the sentence beside the
+ * control of that name — which works for `body.toState` and `body.signOffBy`
+ * and does not work at all for these two:
+ *
+ * - `closure.<blocker>` — the closure refusal files one violation per
+ *   outstanding blocker, keyed by the blocker's own code. No form has a control
+ *   called `B3`, so the sentence was written into a map nothing reads.
+ * - `body.originatingJobId` — the request form offers no origin control, so the
+ *   sentence naming the missing origin had nowhere to appear either.
+ *
+ * Both belong in the form's own alert, where every other whole-request refusal
+ * on this screen already goes.
+ */
+export const CLOSURE_UNATTACHED_REFUSAL_KEYS: readonly string[] = Object.freeze([
+  'form.violation.closure_blocked',
+  'form.violation.origin_required',
+]);
+
+/**
+ * The first sentence among a failure's field errors that no control will show.
+ *
+ * Membership, not trust: only a key this module has been told about is
+ * returned, so an unfamiliar token still leaves the banner as it was rather
+ * than putting a rule name in front of a service adviser. `rendered` names the
+ * controls the calling form really does show, so a sentence is never printed
+ * twice.
+ */
+export function unattachedRefusalKey(
+  fieldErrors: Readonly<Record<string, string>> | undefined,
+  rendered: readonly string[]
+): string | null {
+  for (const [control, key] of Object.entries(fieldErrors ?? {})) {
+    if (rendered.includes(control)) continue;
+    if (CLOSURE_UNATTACHED_REFUSAL_KEYS.includes(key)) return key;
+  }
+  return null;
+}
+
 export const QUALITY_PERMISSIONS = {
   qcRead: 'qms.quality_control.read',
   qcRecord: 'qms.quality_control.record',
