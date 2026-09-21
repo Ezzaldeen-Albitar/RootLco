@@ -333,9 +333,9 @@ port = 465
 user = "env(SMTP_USER)"
 # The account's password, held only in the untracked root `.env`.
 pass = "env(SMTP_PASS)"
-# The From address. A relay that only accepts mail from its own authenticated
-# account will rewrite the sender to that account regardless of what is set
-# here, so keep this equal to the authenticating account to avoid a mismatch.
+# The From address, the sender identity rather than the login in `user`: it
+# must be an address that mailbox is authorised to send as. Many relays rewrite
+# the sender to the authenticated account, or reject the message, otherwise.
 admin_email = "env(SMTP_ADMIN_EMAIL)"
 # The display name shown beside the From address.
 sender_name = "env(SMTP_SENDER_NAME)"
