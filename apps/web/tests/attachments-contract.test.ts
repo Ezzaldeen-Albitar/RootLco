@@ -358,6 +358,11 @@ describe('a refusal about the chosen file reaches the control the operator has',
     // operator never sees, let alone types. The sentence they get instead is
     // true of every unreadable authorization and names the one step open to
     // them.
+    //
+    // The entry under the service's own name has to GO, not merely be joined by
+    // the one under `file`: the delivery panels render
+    // `Object.values(fieldErrors)[0]` beside their file control, so an entry
+    // left behind is an entry shown.
     const stored = vi
       .spyOn(globalThis, 'fetch')
       .mockResolvedValue(new Response(null, { status: 200 }));
@@ -382,6 +387,10 @@ describe('a refusal about the chosen file reaches the control the operator has',
     expect(state.fieldErrors?.file).toBe('attachments.capture.uploadNotConfirmed');
     expect(state.messageKey).toBe('attachments.capture.uploadNotConfirmed');
     expect(state.fieldErrors?.file).not.toBe('form.violation.invalid_length');
+    expect(state.fieldErrors).not.toHaveProperty('uploadToken');
+    expect(Object.values(state.fieldErrors ?? {})).toEqual([
+      'attachments.capture.uploadNotConfirmed',
+    ]);
     stored.mockRestore();
   });
 

@@ -215,6 +215,12 @@ const FILE_CONTROLS: readonly string[] = ['contentType', 'byteSize'];
  * a token nobody typed that sentence is simply untrue. Those get the one
  * sentence that is true of all of them, and that names the only step the
  * operator can take.
+ *
+ * The entry itself is DROPPED, not shadowed by the one filed under `file`.
+ * Surfaces that have no slot for a control the service named — the delivery
+ * panels read `Object.values(fieldErrors)[0]` — would otherwise render the
+ * untrue sentence beside the file picker, which is the display this re-filing
+ * exists to prevent.
  */
 const TOKEN_REFUSALS_ABOUT_THE_FILE: readonly string[] = [
   'form.violation.expired',
@@ -238,7 +244,10 @@ function aboutTheChosenFile(state: CaptureState): CaptureState {
     FILE_CONTROLS.map((control) => errors[control]).find(saysSomething) ??
     aboutTheAuthorization(errors['uploadToken']);
   if (stated === undefined) return state;
-  return { ...state, messageKey: stated, fieldErrors: { ...errors, file: stated } };
+  const named = Object.fromEntries(
+    Object.entries(errors).filter(([control]) => control !== 'uploadToken')
+  );
+  return { ...state, messageKey: stated, fieldErrors: { ...named, file: stated } };
 }
 
 /**

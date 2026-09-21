@@ -328,8 +328,9 @@ const INTENTIONALLY_GENERIC: Readonly<Record<string, string>> = Object.freeze({
     'sentence; the screens that raise it show their own wording, so a field sentence here ' +
     'would be a second, weaker authority',
   empty_selection:
-    'the refusal is computed from the caller’s OWN permissions — every field they asked for ' +
-    'was withheld — so a specific sentence would tell a reader which fields exist but are ' +
+    'the refusal is computed from the caller’s OWN permissions — nothing they may see is ' +
+    'left, whether they named fields or took the default selection the route supplies when ' +
+    'none is named — so a specific sentence would tell a reader which fields exist but are ' +
     'being kept from them, which is a permission-internal fact and not theirs to learn',
   unknown_price_list:
     '`price-list-service.ts` refuses with "is not visible", not "does not exist"; a sentence ' +
