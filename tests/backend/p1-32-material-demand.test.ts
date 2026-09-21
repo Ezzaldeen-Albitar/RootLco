@@ -73,6 +73,7 @@ import {
   INV_FULL,
   INV_MATERIAL,
   INV_MATERIAL_APPROVER,
+  INV_MATERIAL_NO_STOCK_READ,
   INV_MATERIAL_SCOPED_A2,
   INV_READER,
   INV_SCOPED_A2,
@@ -121,6 +122,7 @@ import { POST as RELEASE } from '@/app/api/v1/stock-reservations/[reservationId]
 import { POST as ISSUE } from '@/app/api/v1/stock-issues/route';
 import { POST as TRANSFER_CREATE } from '@/app/api/v1/stock-transfers/route';
 import { POST as TRANSFER_RECEIVE } from '@/app/api/v1/stock-transfers/[transferId]/receipt/route';
+import { POST as TRANSFER_CANCEL } from '@/app/api/v1/stock-transfers/[transferId]/cancellation/route';
 import { POST as DISCREPANCY } from '@/app/api/v1/stock-transfers/[transferId]/discrepancy-resolution/route';
 import { POST as WRITE_OFF_DECIDE } from '@/app/api/v1/stock-transfer-settlements/[settlementId]/decision/route';
 import { GET as SETTLEMENT_LIST } from '@/app/api/v1/stock-transfer-settlements/route';
@@ -166,8 +168,10 @@ interface Problem {
   readonly violations?: readonly { path: string; rule: string }[];
   readonly materialDraw?: {
     readonly allowance: string | null;
-    readonly alreadyCommitted: string;
+    readonly alreadyCommitted: string | null;
     readonly requested: string | null;
+    /** CC-OD-32: the unit the three quantities are stated in. */
+    readonly unit: string | null;
     readonly reason: string;
   };
 }
@@ -903,6 +907,9 @@ describe('work-order draws measured against the approved requirement', () => {
       allowance: '4.000',
       alreadyCommitted: '3.000',
       requested: '2.000',
+      // CC-OD-32: the figures are useless without it. "approved 4.000" is an
+      // amount of nothing until it says which unit.
+      unit: 'fx_each',
       reason: 'exceeds_requirement',
     });
     // Nothing moved.
@@ -1569,8 +1576,12 @@ describe('a work-order draw with no approved requirement (P1-32-PRE-132)', () =>
     const before = await balanceOf(ITEM_A, cell);
     const figures = {
       allowance: null,
-      alreadyCommitted: '0.000',
+      // CC-OD-32: there is no requirement, so there is nothing to state and
+      // nothing to state it in. Every quantity is absent rather than a zero
+      // that would read as an allowance of none.
+      alreadyCommitted: null,
       requested: null,
+      unit: null,
       reason: 'no_requirement',
     };
 
@@ -2166,5 +2177,415 @@ describe('every material, conversion and specification operation refuses a calle
       }
     }
     expect(await footprint()).toBe(before);
+  });
+});
+
+/**
+ * CC-OD-32 — every material state refusal names the rule that refused it.
+ *
+ * The ten refusals below were a bare `ERR-TRN-001` with no `safeDetails` at
+ * all. `problemFor` publishes the catalogue entry and the safe details only, so
+ * the reason died in the log and the panel could say no more than "this change
+ * cannot be saved" and a correlation reference — measured identically for a
+ * requirement that was already decided, one waiting on a conversion, and a
+ * request that had issued stock.
+ *
+ * What is pinned here is the WIRE: the token, its path, and that nothing else
+ * travelled with it. The sentence each token renders is the web catalogue's
+ * business, asserted in `apps/web/tests`.
+ */
+describe('CC-OD-32: material state refusals carry their rule', () => {
+  const violationsOf = async (response: Response, status: number) => {
+    expect(response.status).toBe(status);
+    const problem = await bodyOf<Problem>(response);
+    return problem.violations;
+  };
+
+  it('names WHICH fact an undecidable requirement is waiting for', async () => {
+    const { lineId } = await job();
+
+    // A derivation with no confirmed capacity: nothing to approve, and the
+    // approver has to confirm the capacity rather than wonder what is wrong.
+    authAs(INV_MATERIAL);
+    const derived = await bodyOf<RequirementBody>(
+      await post(REQUIREMENT_CREATE, '/api/v1/material-requirements', {
+        basis: 'specification',
+        serviceLineId: lineId,
+        itemId: ITEM_A,
+        serviceCondition: 'oil_change',
+      })
+    );
+    expect(derived.status).toBe('approval_required');
+    expect(derived.approvalRequiredReason).toBe('missing_specification');
+
+    authAs(INV_MATERIAL_APPROVER);
+    expect(await violationsOf(await decide(derived.id, { decision: 'approved' }), 409)).toEqual([
+      { path: 'body', rule: 'material_requirement_missing_specification' },
+    ]);
+
+    // The other half of the same state, and the reason it is two tokens and not
+    // one "unresolved": the approver's next act is different. Litres asked for
+    // against an item stocked in each, with no conversion between them.
+    const second = await job();
+    const unconverted = await bodyOf<RequirementBody>(
+      await enteredRequirement(second.lineId, '4', { uomId: LITRE })
+    );
+    expect(unconverted.approvalRequiredReason).toBe('missing_unit_conversion');
+    authAs(INV_MATERIAL_APPROVER);
+    expect(await violationsOf(await decide(unconverted.id, { decision: 'approved' }), 409)).toEqual(
+      [{ path: 'body', rule: 'material_requirement_missing_conversion' }]
+    );
+  });
+
+  it('names a requirement that is no longer awaiting a decision', async () => {
+    const { lineId } = await job();
+    const requirementId = await approvedRequirement(lineId, '4');
+    authAs(INV_MATERIAL_APPROVER);
+    expect(await violationsOf(await decide(requirementId, { decision: 'approved' }), 409)).toEqual([
+      { path: 'body', rule: 'material_requirement_already_decided' },
+    ]);
+  });
+
+  it('names a closed requirement that has nothing to look at again', async () => {
+    const { lineId } = await job();
+    const created = await bodyOf<RequirementBody>(await enteredRequirement(lineId, '4'));
+    authAs(INV_MATERIAL_APPROVER);
+    expect((await decide(created.id, { decision: 'rejected', reason: 'not needed' })).status).toBe(
+      200
+    );
+    authAs(INV_MATERIAL);
+    expect(await violationsOf(await recheck(created.id), 409)).toEqual([
+      { path: 'body', rule: 'material_requirement_closed' },
+    ]);
+    // ... and the same requirement refuses a withdrawal with its own rule,
+    // because "rejected" and "nothing to re-check" are two different answers.
+    expect(
+      await violationsOf(await cancelRequirement(created.id, { reason: 'tidy up' }), 409)
+    ).toEqual([{ path: 'body', rule: 'material_requirement_rejected' }]);
+  });
+
+  it('names the material still committed against a requirement that cannot be withdrawn', async () => {
+    const { workOrderId, lineId, cell } = await job();
+    const requirementId = await approvedRequirement(lineId, '4');
+    authAs(INV_MATERIAL);
+    expect(
+      (
+        await reserve({
+          workOrderId,
+          itemId: ITEM_A,
+          locationId: cell,
+          quantity: '1',
+          materialRequirementId: requirementId,
+        })
+      ).status
+    ).toBe(201);
+    expect(
+      await violationsOf(await cancelRequirement(requirementId, { reason: 'job changed' }), 409)
+    ).toEqual([{ path: 'body', rule: 'material_requirement_committed' }]);
+  });
+
+  it('names the two exception refusals apart from one another', async () => {
+    const { lineId } = await job();
+    const pending = await bodyOf<RequirementBody>(await enteredRequirement(lineId, '4'));
+    authAs(INV_MATERIAL);
+    expect(
+      await violationsOf(
+        await postAt(
+          EXCEPTION_CREATE,
+          `/api/v1/material-requirements/${pending.id}/exceptions`,
+          { requirementId: pending.id },
+          { additionalQuantity: '1', reason: 'more needed' }
+        ),
+        409
+      )
+    ).toEqual([{ path: 'body', rule: 'material_exception_needs_approved_requirement' }]);
+
+    const { lineId: secondLine } = await job();
+    const requirementId = await approvedRequirement(secondLine, '4');
+    authAs(INV_MATERIAL);
+    const exception = await bodyOf<{ id: string }>(
+      await postAt(
+        EXCEPTION_CREATE,
+        `/api/v1/material-requirements/${requirementId}/exceptions`,
+        { requirementId },
+        { additionalQuantity: '1', reason: 'more needed' }
+      )
+    );
+    authAs(INV_MATERIAL_APPROVER);
+    const decideException = (key?: string) =>
+      postAt(
+        EXCEPTION_DECIDE,
+        `/api/v1/material-exceptions/${exception.id}/decision`,
+        { exceptionId: exception.id },
+        { decision: 'approved' },
+        key
+      );
+    expect((await decideException()).status).toBe(200);
+    expect(await violationsOf(await decideException(), 409)).toEqual([
+      { path: 'body', rule: 'material_exception_already_decided' },
+    ]);
+
+    // The requester deciding their own exception is the SAME rule the
+    // requirement decision publishes, deliberately: one rule said two ways on
+    // screen is two rules to the person reading it.
+    const { lineId: thirdLine } = await job();
+    const third = await approvedRequirement(thirdLine, '4');
+    authAs(INV_MATERIAL);
+    const own = await bodyOf<{ id: string }>(
+      await postAt(
+        EXCEPTION_CREATE,
+        `/api/v1/material-requirements/${third}/exceptions`,
+        { requirementId: third },
+        { additionalQuantity: '1', reason: 'more needed' }
+      )
+    );
+    expect(
+      await violationsOf(
+        await postAt(
+          EXCEPTION_DECIDE,
+          `/api/v1/material-exceptions/${own.id}/decision`,
+          { exceptionId: own.id },
+          { decision: 'approved' }
+        ),
+        409
+      )
+    ).toEqual([{ path: 'body', rule: 'material_separation_of_duties' }]);
+  });
+
+  it('tells a settled request apart from one that issued stock', async () => {
+    const { workOrderId, lineId, cell } = await job();
+    const requirementId = await approvedRequirement(lineId, '6');
+    authAs(INV_MATERIAL);
+
+    const reserved = await bodyOf<{ materialRequestId: string | null }>(
+      await reserve({
+        workOrderId,
+        itemId: ITEM_A,
+        locationId: cell,
+        quantity: '1',
+        materialRequirementId: requirementId,
+      })
+    );
+    const openRequest = reserved.materialRequestId ?? '';
+    expect((await closeRequest(openRequest, { reason: 'handed over' })).status).toBe(200);
+    // Closed, so neither act applies any more.
+    expect(
+      await violationsOf(await cancelRequest(openRequest, { reason: 'changed my mind' }), 409)
+    ).toEqual([{ path: 'body', rule: 'material_request_not_open' }]);
+  });
+
+  it('names a request that issued stock as already settled, because issuing settles it', async () => {
+    // MEASURED, not assumed. `material_request_issued` mirrors the database's
+    // "a request that issued stock is closed, not cancelled", but the issue path
+    // closes the request itself in the same transaction
+    // (`InventoryStockService`), so no open request that issued stock can be
+    // reached through the routes. What an operator actually meets after issuing
+    // is the settled request, and that is what this pins. The token stays on the
+    // service branch that maps the database rule; its sentence is asserted with
+    // the rest of the family in the web catalogue walk.
+    const { workOrderId, lineId, cell } = await job();
+    const requirementId = await approvedRequirement(lineId, '6');
+    authAs(INV_MATERIAL);
+    const held = await bodyOf<{ id: string; materialRequestId: string | null }>(
+      await reserve({
+        workOrderId,
+        itemId: ITEM_A,
+        locationId: cell,
+        quantity: '2',
+        materialRequirementId: requirementId,
+      })
+    );
+    expect(held.materialRequestId).not.toBe(null);
+    expect(
+      (
+        await issue({
+          workOrderId,
+          itemId: ITEM_A,
+          locationId: cell,
+          quantity: '1',
+          reservationId: held.id,
+        })
+      ).status
+    ).toBe(201);
+    expect(
+      await violationsOf(
+        await cancelRequest(held.materialRequestId ?? '', { reason: 'job changed' }),
+        409
+      )
+    ).toEqual([{ path: 'body', rule: 'material_request_not_open' }]);
+  });
+
+  it('withholds the figures from a caller who may not read the requirement, and keeps the reason', async () => {
+    // The security gate. Drawing stock is `inv.stock.operate`; reading the
+    // demand that governs it is `inv.stock.read`, and the two are independent
+    // codes. The allowance and the quantity already committed are contents of
+    // the requirement, so a refusal that published them to an actor who cannot
+    // open that requirement would hand out through an error exactly what the
+    // read permission withholds.
+    const { workOrderId, lineId, cell } = await job();
+    const requirementId = await approvedRequirement(lineId, '4');
+
+    authAs(INV_MATERIAL);
+    const entitled = await issue({
+      workOrderId,
+      itemId: ITEM_A,
+      locationId: cell,
+      quantity: '5',
+      materialRequirementId: requirementId,
+    });
+    expect(entitled.status).toBe(409);
+    expect((await bodyOf<Problem>(entitled)).materialDraw).toEqual({
+      allowance: '4.000',
+      alreadyCommitted: '0.000',
+      requested: '5.000',
+      unit: 'fx_each',
+      reason: 'exceeds_requirement',
+    });
+
+    authAs(INV_MATERIAL_NO_STOCK_READ);
+    // The actor can indeed reach the operation — this is not a 403 in disguise.
+    expect((await readRequirement(requirementId)).status).toBe(403);
+    const blind = await issue({
+      workOrderId,
+      itemId: ITEM_A,
+      locationId: cell,
+      quantity: '5',
+      materialRequirementId: requirementId,
+    });
+    expect(blind.status).toBe(409);
+    const withheld = await bodyOf<Problem>(blind);
+    expect(withheld.code).toBe('ERR-INV-001');
+    expect(withheld.materialDraw).toEqual({
+      allowance: null,
+      alreadyCommitted: null,
+      requested: null,
+      unit: null,
+      // The reason still travels: it is about this caller's own request, and a
+      // refusal that says nothing at all is the defect being removed.
+      reason: 'exceeds_requirement',
+    });
+    // Nothing anywhere else in the document carries the figures either.
+    expect(JSON.stringify(withheld)).not.toContain('4.000');
+    expect(JSON.stringify(withheld)).not.toContain('fx_each');
+  });
+});
+
+/**
+ * CC-OD-32 — every transfer state refusal names the rule that refused it.
+ *
+ * Seven refusals travelled with no `safeDetails` at all, so a delivery that had
+ * already arrived, one that was cancelled, a receipt of more than is in transit
+ * and a write-off decided by its own requester were one indistinguishable
+ * conflict on screen. The tokens are pinned on the wire here; the sentences
+ * they render are asserted in `apps/web/tests`.
+ */
+describe('CC-OD-32: transfer state refusals carry their rule', () => {
+  async function dispatched(quantity = '3'): Promise<{ id: string; from: string; to: string }> {
+    const from = await freshLocation(BRANCH_A1);
+    const to = await freshLocation(BRANCH_A2);
+    await seedStock({ itemId: ITEM_A, locationId: from, quantity: '9' });
+    authAs(INV_FULL);
+    const created = await post(TRANSFER_CREATE, '/api/v1/stock-transfers', {
+      itemId: ITEM_A,
+      fromLocationId: from,
+      toLocationId: to,
+      quantity,
+    });
+    expect(created.status).toBe(201);
+    return { id: (await bodyOf<{ id: string }>(created)).id, from, to };
+  }
+
+  const receive = (transferId: string, quantity: string) =>
+    postAt(
+      TRANSFER_RECEIVE,
+      `/api/v1/stock-transfers/${transferId}/receipt`,
+      { transferId },
+      { quantity }
+    );
+
+  const settle = (transferId: string, kind: string, quantity: string) =>
+    postAt(
+      DISCREPANCY,
+      `/api/v1/stock-transfers/${transferId}/discrepancy-resolution`,
+      { transferId },
+      { kind, quantity, reason: 'Did not arrive' }
+    );
+
+  const ruleOf = async (response: Response): Promise<unknown> => {
+    expect(response.status).toBe(409);
+    return (await bodyOf<Problem>(response)).violations;
+  };
+
+  it('tells a delivery that already arrived from one asked for more than is in transit', async () => {
+    const transfer = await dispatched('3');
+    authAs(INV_FULL);
+    expect(await ruleOf(await receive(transfer.id, '4'))).toEqual([
+      { path: 'body.quantity', rule: 'transfer_receipt_exceeds_transit' },
+    ]);
+
+    expect((await receive(transfer.id, '3')).status).toBe(200);
+    expect(await ruleOf(await receive(transfer.id, '1'))).toEqual([
+      { path: 'body', rule: 'transfer_not_receivable' },
+    ]);
+    // The quantity rule names the CONTROL, so the sentence renders beside the
+    // box the operator retypes; the state rule names the request, because no
+    // box on the form is wrong.
+    expect(await ruleOf(await settle(transfer.id, 'write_off', '1'))).toEqual([
+      { path: 'body', rule: 'transfer_nothing_in_transit' },
+    ]);
+  });
+
+  it('names a settlement larger than what is still on its way', async () => {
+    const transfer = await dispatched('3');
+    authAs(INV_FULL);
+    expect(await ruleOf(await settle(transfer.id, 'write_off', '5'))).toEqual([
+      { path: 'body.quantity', rule: 'transfer_settlement_exceeds_transit' },
+    ]);
+  });
+
+  it('names the two write-off decision refusals apart', async () => {
+    const transfer = await dispatched('3');
+    authAs(INV_FULL);
+    const writeOff = await bodyOf<{ id: string }>(await settle(transfer.id, 'write_off', '1'));
+    const decide = (settlementId: string, principal: typeof INV_FULL) => {
+      authAs(principal);
+      return postAt(
+        WRITE_OFF_DECIDE,
+        `/api/v1/stock-transfer-settlements/${settlementId}/decision`,
+        { settlementId },
+        { decision: 'approved', reason: 'Accepted the loss' }
+      );
+    };
+    // The requester may not decide their own write-off.
+    expect(await ruleOf(await decide(writeOff.id, INV_FULL))).toEqual([
+      { path: 'body', rule: 'transfer_separation_of_duties' },
+    ]);
+    expect((await decide(writeOff.id, INV_APPROVER)).status).toBe(200);
+    // Decided once: a second decision is a different refusal with its own rule.
+    expect(await ruleOf(await decide(writeOff.id, INV_APPROVER))).toEqual([
+      { path: 'body', rule: 'transfer_write_off_not_pending' },
+    ]);
+
+    // A return to the origin is not a write-off at all, and says so with the
+    // same rule rather than with a status nobody can read.
+    const returned = await bodyOf<{ id: string }>(
+      await settle(transfer.id, 'return_to_origin', '1')
+    );
+    expect(await ruleOf(await decide(returned.id, INV_APPROVER))).toEqual([
+      { path: 'body', rule: 'transfer_write_off_not_pending' },
+    ]);
+  });
+
+  it('names a delivery that can no longer be cancelled', async () => {
+    const transfer = await dispatched('3');
+    authAs(INV_FULL);
+    expect((await receive(transfer.id, '1')).status).toBe(200);
+    const cancel = await postAt(
+      TRANSFER_CANCEL,
+      `/api/v1/stock-transfers/${transfer.id}/cancellation`,
+      { transferId: transfer.id },
+      { reason: 'Changed our mind' }
+    );
+    expect(await ruleOf(cancel)).toEqual([{ path: 'body', rule: 'transfer_not_cancellable' }]);
   });
 });

@@ -328,6 +328,26 @@ export const INV_MATERIAL_SCOPED_A2: Principal = {
   grantId: 'e1000000-0000-4000-8000-0000000001f5',
 };
 
+/**
+ * Every material code and `inv.stock.operate`, but NOT `inv.stock.read`
+ * (CC-OD-32).
+ *
+ * The two are independent codes in the catalogue: nothing makes holding one
+ * imply the other, and a store operator who draws stock for jobs without being
+ * able to open the demand records is an ordinary shape of grant. That is what
+ * makes the draw refusal's figures a leak worth closing — the allowance and the
+ * quantity already committed are contents of a requirement this actor cannot
+ * read, and a refusal that published them would hand out exactly what the read
+ * permission withholds.
+ */
+export const INV_MATERIAL_NO_STOCK_READ: Principal = {
+  roleId: 'e1000000-0000-4000-8000-0000000001e5',
+  userId: 'e1000000-0000-4000-8000-0000000001e6',
+  subject: 'fx_p1_21_material_no_stock_read',
+  tenantId: TENANT_A,
+  permissions: ALL_MATERIAL.filter((code) => code !== STOCK_READ),
+};
+
 /** Tenant B with the same authority: a refusal is the tenant boundary. */
 export const INV_TENANT_B_MATERIAL: Principal = {
   roleId: 'e1000000-0000-4000-8000-0000000001e3',
@@ -355,6 +375,7 @@ export const P1_21_PRINCIPALS: readonly Principal[] = [
   INV_MATERIAL,
   INV_MATERIAL_APPROVER,
   INV_MATERIAL_SCOPED_A2,
+  INV_MATERIAL_NO_STOCK_READ,
   INV_TENANT_B_MATERIAL,
 ];
 
