@@ -512,7 +512,16 @@ describe('the completion quotes the version the release checks published', () =>
     expect(state.code).toBe('ERR-TRN-001');
   });
 
-  it('carries the authority a refused override named', async () => {
+  it('drops the permission code a refused override named, and keeps the code it branches on', async () => {
+    /*
+     * This case used to assert the opposite — that the authority was carried
+     * onto the state. Nothing renders a permission code any more, and the state
+     * a Server Action returns is serialised into the page, so carrying it meant
+     * shipping a dotted internal code to a browser with no use for it. The
+     * transport still receives it, which is what makes this a drop rather than
+     * an absence, and `ERR-IAM-001` still arrives because the panel chooses its
+     * sentence from that code.
+     */
     send.mockResolvedValue({
       ok: false as const,
       kind: 'forbidden',
@@ -526,7 +535,8 @@ describe('the completion quotes the version the release checks published', () =>
       overrideReason: 'Agreed.',
     });
     expect(state.status).toBe('denied');
-    expect(state.requiredPermissions).toEqual(['sal.delivery.complete']);
+    expect(state.code).toBe('ERR-IAM-001');
+    expect(JSON.stringify(state)).not.toContain('sal.delivery.complete');
   });
 
   it('never reaches the transport once the session has ended', async () => {

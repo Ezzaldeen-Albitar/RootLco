@@ -2633,13 +2633,15 @@ describe('releasing the vehicle', () => {
      * to a reader who cannot act on one and would not recognise it. The refusal
      * now names the PERSON who can release the vehicle or grant the authority,
      * and the second assertion is what keeps the code off the screen.
+     *
+     * The refusal no longer carries the permission code at all — the adapter
+     * drops it, and `apps/web/tests/delivery-api.test.ts` proves that at the
+     * transport boundary where the value exists to be dropped. What is left for
+     * this case to prove is that the panel does not spell a code of its own.
      */
     const user = userEvent.setup();
     readEligibility.mockResolvedValue(okRead(moneyOnlyEligibility));
-    completeDelivery.mockResolvedValue({
-      ...refusedWrite('denied', 'ERR-IAM-001'),
-      requiredPermissions: [COMPLETE],
-    });
+    completeDelivery.mockResolvedValue(refusedWrite('denied', 'ERR-IAM-001'));
     renderRelease();
     const region = await releasePanel();
     await user.type(within(region).getByLabelText(labelled('delivery.completion.odometer')), '90');
