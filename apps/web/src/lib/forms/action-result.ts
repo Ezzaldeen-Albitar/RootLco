@@ -59,6 +59,17 @@ export type ActionStatus =
   | 'throttled'
   /** The backend could not be reached, timed out, or failed. */
   | 'unavailable'
+  /**
+   * The caller aborted the request — a Cancel button, or leaving the screen.
+   *
+   * Its own status rather than `error`, because it is not one. A cancellation
+   * used to arrive here as `error` with the key "Something went wrong", so an
+   * operator who pressed Cancel was told the system had failed and invited to
+   * try again. Nothing failed and nothing was sent to completion, so this status
+   * carries no message key at all: every renderer already drops a state with no
+   * key, and `notifyActionResult` raises no toast for a status with no tone.
+   */
+  | 'cancelled'
   /** Anything else the backend reported. */
   | 'error';
 
@@ -115,7 +126,7 @@ const STATUS_BY_KIND: Record<ApiFailure['kind'], ActionStatus> = {
   server: 'error',
   unavailable: 'unavailable',
   timeout: 'unavailable',
-  cancelled: 'error',
+  cancelled: 'cancelled',
   network: 'unavailable',
 };
 
@@ -158,6 +169,24 @@ export function fromFailure(
   attempt: number,
   messageKeyOverride?: string
 ): ActionState {
+  /*
+   * A cancellation the CALLER asked for, reported as nothing.
+   *
+   * `#request` already separates a caller abort from the client's own deadline,
+   * precisely so a user pressing Cancel is not rendered as a backend fault. That
+   * distinction was then thrown away one layer up: `cancelled` mapped to
+   * `error`, whose banner reads "Something went wrong" and whose page-level
+   * description ends "Trying again is safe" — an apology and an invitation, for
+   * an outcome the operator chose. No key is returned, so every renderer in the
+   * application drops it: `FormFeedback` and `RecordForm` both require a
+   * `messageKey`, and `notifyActionResult` has no tone for this status.
+   *
+   * An override still wins. A caller that genuinely wants to say something about
+   * an abort — none does today — passes its own key and gets it.
+   */
+  if (failure.kind === 'cancelled' && messageKeyOverride === undefined) {
+    return { status: 'cancelled', correlationId: failure.correlationId, attempt };
+  }
   const status = STATUS_BY_KIND[failure.kind];
   const { fieldErrors, formKeys } = violationKeysOf(failure);
   const stated = formKeys.find((key) => key !== VIOLATION_FALLBACK_KEY);
