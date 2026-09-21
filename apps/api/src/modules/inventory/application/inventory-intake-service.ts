@@ -27,6 +27,7 @@ import type { DbHandle } from '@/server/db/transaction';
 import type { ScopeAuthorizer } from '@/server/auth/authorization';
 import type { InventoryRepository, StockLocationRow } from '../data/inventory-repository';
 import { InventoryRuleError, Quantity, assertLegalMovementReference } from '../domain/inventory';
+import { refuseInventoryState } from './inventory-failures';
 
 export interface OpeningBatchView {
   readonly id: string;
@@ -236,16 +237,19 @@ export class InventoryIntakeService {
 
     const location = await this.requireLocation(db, input.locationId);
     if (location.companyId !== batch.companyId || location.branchId !== batch.branchId) {
-      throw new AppFailure('ERR-TRN-001', {
-        message:
-          `Stock location ${location.locationCode} is in a different branch from opening batch ` +
+      refuseInventoryState(
+        'stock_location_other_branch',
+        `Stock location ${location.locationCode} is in a different branch from opening batch ` +
           `${input.batchId}`,
-      });
+        { path: 'body.locationId' }
+      );
     }
     if (location.locationType === 'quarantine') {
-      throw new AppFailure('ERR-TRN-001', {
-        message: 'An opening balance may not be counted into a quarantine location',
-      });
+      refuseInventoryState(
+        'stock_location_quarantine',
+        'An opening balance may not be counted into a quarantine location',
+        { path: 'body.locationId' }
+      );
     }
 
     const item = await this.repository.readItem(db, input.itemId);
@@ -253,9 +257,11 @@ export class InventoryIntakeService {
       throw new AppFailure('ERR-RES-001', { message: `Item ${input.itemId} was not found` });
     }
     if (!item.isStockTracked || item.lifecycleStatus !== 'active') {
-      throw new AppFailure('ERR-TRN-001', {
-        message: `Item ${item.sku} is not an active stock-tracked item`,
-      });
+      refuseInventoryState(
+        'stock_item_not_tracked',
+        `Item ${item.sku} is not an active stock-tracked item`,
+        { path: 'body.itemId' }
+      );
     }
 
     let line: { id: string };
@@ -327,9 +333,10 @@ export class InventoryIntakeService {
 
     const lineCount = await this.repository.countOpeningLines(db, batchId);
     if (lineCount === 0) {
-      throw new AppFailure('ERR-TRN-001', {
-        message: 'An opening batch with no counted lines cannot be approved',
-      });
+      refuseInventoryState(
+        'stock_opening_batch_empty',
+        'An opening batch with no counted lines cannot be approved'
+      );
     }
 
     try {
@@ -642,11 +649,11 @@ export class InventoryIntakeService {
       });
     }
     if (batch.status !== 'draft') {
-      throw new AppFailure('ERR-TRN-001', {
-        message:
-          `Opening batch ${batchId} is ${batch.status}; an approved batch is frozen and its ` +
-          'balances cannot be rewritten',
-      });
+      refuseInventoryState(
+        'stock_opening_batch_frozen',
+        `Opening batch ${batchId} is ${batch.status}; an approved batch is frozen and its ` +
+          'balances cannot be rewritten'
+      );
     }
     return { id: batch.id, companyId: batch.companyId, branchId: batch.branchId };
   }
@@ -659,9 +666,11 @@ export class InventoryIntakeService {
       });
     }
     if (location.status !== 'active') {
-      throw new AppFailure('ERR-TRN-001', {
-        message: `Stock location ${location.locationCode} is ${location.status}`,
-      });
+      refuseInventoryState(
+        'stock_location_not_active',
+        `Stock location ${location.locationCode} is ${location.status}`,
+        { path: 'body.locationId' }
+      );
     }
     return location;
   }
@@ -693,9 +702,11 @@ export class InventoryIntakeService {
      * attaching a new part to it would change the record of what was done.
      */
     if (state.isClosed || state.isTerminal) {
-      throw new AppFailure('ERR-TRN-001', {
-        message: `Work order state "${state.code}" is closed or terminal and takes no new parts`,
-      });
+      refuseInventoryState(
+        'stock_work_order_closed',
+        `Work order state "${state.code}" is closed or terminal and takes no new parts`,
+        { path: 'body.workOrderId' }
+      );
     }
     return { companyId: state.companyId, branchId: state.branchId };
   }

@@ -24,6 +24,7 @@ import {
   succeeded,
   warehouse,
 } from './support/stock-operations';
+import { STOCK_REFUSAL_RULES } from '@/features/inventory/inventory-contract';
 
 /**
  * Stock adjustments, rendered (P1-32).
@@ -273,6 +274,38 @@ describe('the adjustments of a branch', () => {
       EN['inventory.adjustments.decide.refused'] as string
     );
   });
+
+  // CC-OD-32. Every intake, receipt, adjustment, count and stock state refusal
+  // the module can put in front of a person now names its own rule. They do not
+  // all arrive on this form - several belong to a field on another screen - but
+  // the sentence each renders is the one this walk proves exists and reaches an
+  // alert rather than the catalogue's "This value is not accepted here".
+  for (const rule of STOCK_REFUSAL_RULES) {
+    it(`says in words what ${rule} means`, async () => {
+      const user = userEvent.setup();
+      decideAdjustment.mockResolvedValue(refusedWith(`form.violation.${rule}`));
+      renderScreen();
+      await chooseBranch(user, TARGET_FORM, TARGET_SUBMIT);
+      const table = await within(listRegion()).findByRole('table');
+      await user.click(
+        within(table).getByRole('button', {
+          name: `${EN['inventory.adjustments.decide.action'] as string} BRK-001`,
+        })
+      );
+      const form = screen.getByRole('form', { name: /Decide the adjustment for/ });
+      const reason = within(form).getByLabelText(labelled('inventory.adjustments.decide.reason'));
+      await user.type(reason, 'ok');
+      await user.click(
+        within(form).getByRole('button', {
+          name: EN['inventory.adjustments.decide.approve'] as string,
+        })
+      );
+      const alert = await within(form).findByRole('alert');
+      expect(alert).toHaveTextContent(EN[`form.violation.${rule}`] as string);
+      expect(alert).not.toHaveTextContent(EN['form.violation.invalid'] as string);
+      expect(reason).toHaveValue('ok');
+    });
+  }
 
   it('a request sends the item, location, change, quantity and reason', async () => {
     const user = userEvent.setup();

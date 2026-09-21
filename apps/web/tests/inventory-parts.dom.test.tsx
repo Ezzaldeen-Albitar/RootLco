@@ -918,6 +918,129 @@ describe('a work-order draw needs a requirement', () => {
     expect(EN['inventory.refusal.materialDraw.exceeds_requirement']).toContain('exception');
   });
 
+  it('spends the three figures and their unit when the server published them', async () => {
+    // CC-OD-32. "More than the work order is approved to use" left the operator
+    // to guess by how much. The figures are the server's strings, filled into
+    // the sentence by the catalogue; nothing here is added up in the browser.
+    const user = userEvent.setup();
+    listMaterialRequirements.mockImplementation(async () =>
+      okRead({ items: [materialRequirement()], nextCursor: null, hasMore: false })
+    );
+    createReservation.mockImplementation(async () => ({
+      state: {
+        status: 'error',
+        messageKey: 'inventory.refusal.materialDraw.exceeds_requirement.figures',
+        messageValues: {
+          allowance: '4.000',
+          used: '3.500',
+          requested: '9.000',
+          unit: 'L',
+        },
+        correlationId: 'corr',
+      },
+      created: null,
+    }));
+    renderScreen({ canOperate: true, canReadWorkOrder: false });
+
+    await user.click(
+      await screen.findByRole('button', { name: EN['inventory.material.use'] as string })
+    );
+    await user.click(
+      screen.getByRole('button', { name: EN['inventory.parts.reserve.open'] as string })
+    );
+    const form = await reserveForm();
+    await user.selectOptions(
+      within(form).getByLabelText(labelled('inventory.reserve.location')),
+      LOCATION_ID
+    );
+    await user.type(within(form).getByLabelText(labelled('inventory.reserve.quantity')), '9.000');
+    await user.click(
+      within(form).getByRole('button', { name: EN['inventory.parts.reserve.submit'] as string })
+    );
+
+    const refusal = await screen.findByRole('alert');
+    expect(refusal).toHaveTextContent('approved 4.000 L');
+    expect(refusal).toHaveTextContent('already used 3.500 L');
+    expect(refusal).toHaveTextContent('requested 9.000 L');
+    // A placeholder left on screen is the defect this case was written against.
+    expect(refusal.textContent ?? '').not.toContain('{');
+    // What the operator typed is still there to correct.
+    expect(within(form).getByLabelText(labelled('inventory.reserve.quantity'))).toHaveValue(
+      '9.000'
+    );
+  });
+
+  it('says the same refusal in Arabic, figures and all', async () => {
+    const user = userEvent.setup();
+    listMaterialRequirements.mockImplementation(async () =>
+      okRead({ items: [materialRequirement()], nextCursor: null, hasMore: false })
+    );
+    createReservation.mockImplementation(async () => ({
+      state: {
+        status: 'error',
+        messageKey: 'inventory.refusal.materialDraw.exceeds_requirement.figures',
+        messageValues: {
+          allowance: '4.000',
+          used: '3.500',
+          requested: '9.000',
+          unit: 'L',
+        },
+        correlationId: 'corr',
+      },
+      created: null,
+    }));
+    renderRtl(
+      <PartsScreen
+        locale="ar"
+        messages={ar}
+        workOrderId={WORK_ORDER_ID}
+        workOrder={workOrder as never}
+        workOrderRefused={false}
+        canOperate={true}
+        canReadWorkOrder={false}
+        canReadBranches={false}
+        currentUserId={USER_ID}
+        canRequestMaterial={false}
+        canApproveMaterial={false}
+        canDecideMaterialException={false}
+      />
+    );
+
+    await user.click(
+      await screen.findByRole('button', { name: AR['inventory.material.use'] as string })
+    );
+    await user.click(
+      screen.getByRole('button', { name: AR['inventory.parts.reserve.open'] as string })
+    );
+    const form = await screen.findByRole('form', {
+      name: AR['inventory.parts.reserve.heading'] as string,
+    });
+    await user.selectOptions(
+      within(form).getByLabelText(
+        new RegExp(`^${escape(AR['inventory.reserve.location'] as string)}`)
+      ),
+      LOCATION_ID
+    );
+    await user.type(
+      within(form).getByLabelText(
+        new RegExp(`^${escape(AR['inventory.reserve.quantity'] as string)}`)
+      ),
+      '9.000'
+    );
+    await user.click(
+      within(form).getByRole('button', { name: AR['inventory.parts.reserve.submit'] as string })
+    );
+
+    const refusal = await screen.findByRole('alert');
+    expect(refusal.textContent ?? '').toContain('4.000 L');
+    expect(refusal.textContent ?? '').toContain('3.500 L');
+    expect(refusal.textContent ?? '').toContain('9.000 L');
+    expect(refusal.textContent ?? '').not.toContain('{');
+    expect(refusal).not.toHaveTextContent(
+      EN['inventory.refusal.materialDraw.exceeds_requirement.figures'] as string
+    );
+  });
+
   it('settles the material the draw opened, naming that request', async () => {
     const user = userEvent.setup();
     listMaterialRequirements.mockImplementation(async () =>

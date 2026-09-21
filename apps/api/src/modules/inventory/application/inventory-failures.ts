@@ -10,7 +10,40 @@
  */
 import { AppFailure } from '@/server/errors/app-failure';
 import { isSqlState, SQLSTATE } from '@/server/db/repository';
-import { InventoryRuleError, Quantity } from '../domain/inventory';
+import {
+  InventoryRuleError,
+  Quantity,
+  type StockRefusalRule,
+  type TransferRefusalRule,
+} from '../domain/inventory';
+
+/**
+ * Refuses a transfer or a stock write with the rule that refused it on the wire
+ * (CC-OD-32).
+ *
+ * `problemFor` publishes the catalogue entry and `safeDetails` only, so before
+ * this the `message` below died in the log and every state refusal in the
+ * inventory module reached the operator as one sentence: "this record cannot
+ * take that change". The rule token in `violations` is the ONLY machine-readable
+ * statement of the reason, and the web catalogue turns it into a sentence that
+ * says what failed and what to do.
+ *
+ * `path` is `body` for a rule about the whole request — which is most of them,
+ * since a state refusal is about the record and not about one control — and a
+ * control path when there IS a box the operator should look at. A token names a
+ * RULE and never a record: no identifier, quantity, branch or person is in one,
+ * so nothing here can say more than the caller could already read.
+ */
+export function refuseInventoryState(
+  rule: TransferRefusalRule | StockRefusalRule,
+  message: string,
+  options: { readonly code?: 'ERR-TRN-001' | 'ERR-VAL-001'; readonly path?: string } = {}
+): never {
+  throw new AppFailure(options.code ?? 'ERR-TRN-001', {
+    message,
+    safeDetails: { violations: [{ path: options.path ?? 'body', rule }] },
+  });
+}
 
 /**
  * Translates the protected schema's refusals into the controlled error catalog.

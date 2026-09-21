@@ -86,12 +86,13 @@ function problemSchema(): JsonObject {
       materialDraw: {
         type: 'object',
         description:
-          'ERR-INV-001 only. Quantities are exact decimal strings in the requirement unit.',
-        required: ['allowance', 'alreadyCommitted', 'requested', 'reason'],
+          'ERR-INV-001 only. Quantities are exact decimal strings in the requirement unit, which `unit` names. Every quantity is null for a caller who may not read the requirement; the reason is always present.',
+        required: ['allowance', 'alreadyCommitted', 'requested', 'unit', 'reason'],
         properties: {
           allowance: { type: ['string', 'null'] },
-          alreadyCommitted: { type: 'string' },
+          alreadyCommitted: { type: ['string', 'null'] },
           requested: { type: ['string', 'null'] },
+          unit: { type: ['string', 'null'] },
           reason: {
             type: 'string',
             enum: [

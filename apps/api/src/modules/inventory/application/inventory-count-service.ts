@@ -32,7 +32,7 @@ import {
   type StockCountRow,
 } from '../data/inventory-repository';
 import { assertCountableLocation } from '../domain/inventory';
-import { parseCountedQuantity, toDomainFailure } from './inventory-failures';
+import { parseCountedQuantity, refuseInventoryState, toDomainFailure } from './inventory-failures';
 import type { InventoryStockService } from './inventory-stock-service';
 
 export interface StockCountLineView {
@@ -395,9 +395,10 @@ export class InventoryCountService {
 
   private assertInProgress(count: StockCountRow): void {
     if (count.status !== 'open' && count.status !== 'counting') {
-      throw new AppFailure('ERR-TRN-001', {
-        message: `Stock count ${count.id} is ${count.status} and can no longer change`,
-      });
+      refuseInventoryState(
+        'stock_count_closed',
+        `Stock count ${count.id} is ${count.status} and can no longer change`
+      );
     }
   }
 

@@ -221,8 +221,77 @@ export const MATERIAL_REFUSAL_RULES = Object.freeze([
   'material_approval_required',
   'material_unknown_reference',
   'material_demand_rule',
+  // CC-OD-32. The ten state refusals of the requirement, exception and request
+  // life cycle used to travel as a bare `ERR-TRN-001` with no safe details at
+  // all, so the panel could say no more than "this change cannot be saved". Each
+  // one now names the STATE that refused it, which is the fact the operator acts
+  // on; none names a record, a quantity or a person.
+  'material_requirement_missing_specification',
+  'material_requirement_missing_conversion',
+  'material_requirement_already_decided',
+  'material_requirement_closed',
+  'material_requirement_rejected',
+  'material_requirement_committed',
+  'material_exception_needs_approved_requirement',
+  'material_exception_already_decided',
+  'material_request_not_open',
+  'material_request_issued',
 ] as const);
 export type MaterialRefusalRule = (typeof MATERIAL_REFUSAL_RULES)[number];
+
+/**
+ * Why a stock TRANSFER write was refused, as a rule token on the wire
+ * (CC-OD-32).
+ *
+ * The seven state refusals of a transfer carried no `safeDetails` at all: a
+ * dispatch that had already been received, a receipt of more than is in transit
+ * and a cancellation after arrival were one indistinguishable conflict on
+ * screen. Like the material rules these name a rule and never a record — no
+ * transfer identifier, no branch, no quantity is in a token, so a caller learns
+ * nothing from one it could not already read.
+ */
+export const TRANSFER_REFUSAL_RULES = Object.freeze([
+  'transfer_not_receivable',
+  'transfer_receipt_exceeds_transit',
+  'transfer_nothing_in_transit',
+  'transfer_settlement_exceeds_transit',
+  'transfer_write_off_not_pending',
+  'transfer_separation_of_duties',
+  'transfer_not_cancellable',
+] as const);
+export type TransferRefusalRule = (typeof TRANSFER_REFUSAL_RULES)[number];
+
+/**
+ * Why an intake, goods-receipt or stock write was refused, as a rule token on
+ * the wire (CC-OD-32).
+ *
+ * Only the refusals a person can MEET from a screen are here. An invariant the
+ * interface cannot produce — a movement reference the ledger rejects, a row that
+ * vanished mid-transaction — stays an unnamed failure, because a token for it
+ * would be a sentence no operator can act on.
+ */
+export const STOCK_REFUSAL_RULES = Object.freeze([
+  'stock_location_not_active',
+  'stock_location_other_branch',
+  'stock_location_quarantine',
+  'stock_location_transit',
+  'stock_item_not_tracked',
+  'stock_item_archived',
+  'stock_work_order_closed',
+  'stock_work_order_other_branch',
+  'stock_issue_exceeds_reservation',
+  'stock_return_exceeds_issue',
+  'stock_damage_other_branch',
+  'stock_damage_releases_reservations',
+  'stock_opening_batch_frozen',
+  'stock_opening_batch_empty',
+  'stock_receipt_not_draft',
+  'stock_receipt_cost_permission',
+  'stock_adjustment_already_decided',
+  'stock_adjustment_separation_of_duties',
+  'stock_count_closed',
+] as const);
+export type StockRefusalRule = (typeof STOCK_REFUSAL_RULES)[number];
 
 /** `ck_item_unit_conversions_status`. */
 export const UNIT_CONVERSION_STATES = Object.freeze(['active', 'retired'] as const);
