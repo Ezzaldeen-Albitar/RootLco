@@ -605,7 +605,20 @@ describe('inv.material-requirement-create, inv.material-requirement-approve, inv
     expect(replay.status).toBe(200);
     expect((await bodyOf<RequirementBody>(replay)).id).toBe(requirement.id);
     // A second active requirement for the same need on the same line is refused.
-    expect((await enteredRequirement(lineId, '2')).status).toBe(409);
+    //
+    // DEF-T-16: with the reason ON THE WIRE, not only in the status. The problem
+    // document is assembled from the catalogue entry and the safe details alone,
+    // so before this the service's sentence never left the process and the panel
+    // could say nothing but "this change cannot be saved" and a reference. The
+    // token names a rule and no record, so it is safe for any caller that got
+    // this far.
+    const duplicate = await enteredRequirement(lineId, '2');
+    expect(duplicate.status).toBe(409);
+    const duplicateProblem = await bodyOf<Problem>(duplicate);
+    expect(duplicateProblem.code).toBe('ERR-RES-002');
+    expect(duplicateProblem.violations).toEqual([
+      { path: 'body', rule: 'material_duplicate_demand' },
+    ]);
     expect(
       await countRowsOf(
         `SELECT count(*)::text AS n FROM inv.material_requirements WHERE service_line_id = $1`,
@@ -615,7 +628,13 @@ describe('inv.material-requirement-create, inv.material-requirement-approve, inv
 
     // The requester may not approve, and a caller without the code may not either.
     authAs(INV_MATERIAL);
-    expect((await decide(requirement.id, { decision: 'approved' })).status).toBe(409);
+    const ownDecision = await decide(requirement.id, { decision: 'approved' });
+    expect(ownDecision.status).toBe(409);
+    // DEF-T-16, the second rule the same mapping publishes: the refusal names
+    // the separation it enforces rather than leaving the status to speak.
+    expect((await bodyOf<Problem>(ownDecision)).violations).toEqual([
+      { path: 'body', rule: 'material_separation_of_duties' },
+    ]);
     authAs(INV_FULL);
     expect((await decide(requirement.id, { decision: 'approved' })).status).toBe(403);
     authAs(INV_TENANT_B_MATERIAL);
@@ -686,6 +705,73 @@ describe('inv.material-requirement-create, inv.material-requirement-approve, inv
     expect(rejected.status).toBe(200);
     expect((await bodyOf<RequirementBody>(rejected)).status).toBe('rejected');
     expect(await auditCountFor('inv.material_requirement.rejected', requirement.id)).toBe(1);
+  });
+
+  it('names the approval the fact it rested on withdrew, when the conversion is retired before the decision', async () => {
+    const { lineId } = await job();
+    // The conversion the allowance rests on, stated while the requirement is put
+    // forward and withdrawn before it is decided. This is the ONE path on which a
+    // caller sees `material_approval_required`: everywhere else the service
+    // itself catches an unresolved requirement first and answers with the state.
+    authAs(INV_MATERIAL);
+    const conversion = await bodyOf<{ id: string }>(
+      await post(CONVERSION_SET, '/api/v1/unit-conversions', {
+        itemId: ITEM_A_ALT,
+        fromUomId: UOM_EACH,
+        toUomId: LITRE,
+        factor: '0.946000',
+        sourceReference: 'Pack label',
+      })
+    );
+    const inLitres = await bodyOf<RequirementBody>(
+      await enteredRequirement(lineId, '4', { uomId: LITRE, itemId: ITEM_A_ALT })
+    );
+    expect(inLitres).toMatchObject({ status: 'pending_approval', approvalRequiredReason: null });
+    await postAt(
+      CONVERSION_RETIRE,
+      `/api/v1/unit-conversions/${conversion.id}/retirement`,
+      { conversionId: conversion.id },
+      undefined
+    );
+
+    // DEF-T-16, the third rule the same mapping publishes. The database refuses
+    // the approval because the allowance can no longer be measured in the item's
+    // own unit; without the token the approver is told only that the change
+    // cannot be saved, which reads the same as a duplicate demand.
+    authAs(INV_MATERIAL_APPROVER);
+    const withdrawn = await decide(inLitres.id, { decision: 'approved' });
+    expect(withdrawn.status).toBe(409);
+    const withdrawnProblem = await bodyOf<Problem>(withdrawn);
+    expect(withdrawnProblem.code).toBe('ERR-TRN-001');
+    expect(withdrawnProblem.violations).toEqual([
+      { path: 'body', rule: 'material_approval_required' },
+    ]);
+    expect((await bodyOf<RequirementBody>(await readRequirement(inLitres.id))).status).toBe(
+      'pending_approval'
+    );
+    expect(await auditCountFor('inv.material_requirement.approved', inLitres.id)).toBe(0);
+  });
+
+  it('names the unknown reference when a requirement cites a unit that does not exist', async () => {
+    const { lineId } = await job();
+    // DEF-T-16, the third rule the same mapping publishes. A reference the
+    // database refuses reaches the caller as ERR-RES-001, whose title says only
+    // that something was not found — by design it cannot say which of the four
+    // references the request named. The token states the rule that refused the
+    // write, and no identifier, quantity or name travels with it.
+    const unknownUnit = await enteredRequirement(lineId, '1', { uomId: randomUUID() });
+    expect(unknownUnit.status).toBe(404);
+    const unknownProblem = await bodyOf<Problem>(unknownUnit);
+    expect(unknownProblem.code).toBe('ERR-RES-001');
+    expect(unknownProblem.violations).toEqual([
+      { path: 'body', rule: 'material_unknown_reference' },
+    ]);
+    expect(
+      await countRowsOf(
+        `SELECT count(*)::text AS n FROM inv.material_requirements WHERE service_line_id = $1`,
+        [lineId]
+      )
+    ).toBe(0);
   });
 
   it('stores a missing specification as approval required, and derives the allowance once one is confirmed', async () => {
@@ -1120,6 +1206,12 @@ describe('inv.material-exception-create, inv.material-exception-decide', () => {
       { additionalQuantity: '1', reason: 'More' }
     );
     expect(refused.status).toBe(409);
+    expect(
+      await countRowsOf(
+        `SELECT count(*)::text AS n FROM inv.material_requirement_exceptions WHERE requirement_id = $1`,
+        [pending.id]
+      )
+    ).toBe(0);
   });
 });
 
