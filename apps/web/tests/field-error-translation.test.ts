@@ -11,6 +11,11 @@ import {
   VIOLATION_KEY_PREFIX,
 } from '@/lib/api/client';
 import { fieldErrorsFrom } from '@/features/crm/customers/action-support';
+import { COMMAND_REFUSAL_KEYS } from '@/features/receptions/check-in/closure';
+import { APPOINTMENT_REFUSAL_KEYS } from '@/features/appointments/appointments-contract';
+import { WORK_ORDER_REFUSAL_KEYS } from '@/features/work-orders/work-orders-contract';
+import { DELIVERY_REFUSAL_KEYS } from '@/features/delivery/delivery-contract';
+import { PLATFORM_REFUSAL_KEYS } from '@/features/platform/types';
 import { MAX_PERSON_NAME } from '@/features/crm/customers/creation-contract';
 import {
   MAX_PREFERRED_LOCALE,
@@ -364,5 +369,96 @@ describe('a violation rule a shipped form can produce is catalogued', () => {
     // message and never as itself.
     expect(violationMessageKey('unregistered_aggregate')).toBe(VIOLATION_FALLBACK_KEY);
     expect(violationMessageKey('no_such_rule_at_all')).toBe(VIOLATION_FALLBACK_KEY);
+  });
+});
+
+/**
+ * Every refusal token a screen has been told about carries a sentence in both
+ * languages (Owner directive, user-facing errors).
+ *
+ * The five mirror lists are the only places a token is written down on this
+ * side, and each exists because the backend publishes a stable rule name that
+ * the interface has to translate — no server prose ever reaches a screen. A
+ * token listed with no catalogue entry is the worst of the failure modes
+ * available here: `violationMessageKey` quietly returns the generic fallback,
+ * every existing test stays green, and a receptionist is shown "This value is
+ * not accepted here" in place of the sentence that would have told them what to
+ * do. This is the check that turns that into a failure.
+ *
+ * Derived rather than listed: the lists are read, not restated, so a token added
+ * to a mirror without wording fails here on the next run.
+ */
+describe('refusal reason catalogue', () => {
+  const MIRRORS: Readonly<Record<string, readonly string[]>> = {
+    reception: COMMAND_REFUSAL_KEYS,
+    appointment: APPOINTMENT_REFUSAL_KEYS,
+    'work order': WORK_ORDER_REFUSAL_KEYS,
+    delivery: DELIVERY_REFUSAL_KEYS,
+    platform: PLATFORM_REFUSAL_KEYS,
+  };
+
+  it('lists a token for every family, so the loops below are not vacuous', () => {
+    for (const [family, keys] of Object.entries(MIRRORS)) {
+      expect(keys.length, family).toBeGreaterThan(0);
+    }
+  });
+
+  it('carries an English and an Arabic sentence for every listed token', () => {
+    for (const [family, keys] of Object.entries(MIRRORS)) {
+      for (const key of keys) {
+        expect(key, `${family}: not a violation key`).toMatch(/^form\.violation\./);
+        expect(resolvesEverywhere(key), `${family}: ${key} is missing a sentence`).toBe(true);
+      }
+    }
+  });
+
+  it('gives each token a sentence of its own in each language', () => {
+    const english = en as Record<string, string>;
+    const arabic = ar as Record<string, string>;
+    for (const keys of Object.values(MIRRORS)) {
+      for (const key of keys) {
+        // Not the generic sentence: a token whose wording is the fallback says
+        // nothing the fallback did not already say, and publishing it would be
+        // a refusal dressed up as an explanation.
+        expect(english[key], key).not.toBe(english[VIOLATION_FALLBACK_KEY]);
+        // Not pasted from the other catalogue, which is how an untranslated
+        // sentence survives a key-parity check.
+        expect(english[key], key).not.toBe(arabic[key]);
+      }
+    }
+  });
+
+  it('resolves every listed token to itself rather than to the fallback', () => {
+    for (const keys of Object.values(MIRRORS)) {
+      for (const key of keys) {
+        const rule = key.slice(VIOLATION_KEY_PREFIX.length);
+        expect(violationMessageKey(rule), rule).toBe(key);
+      }
+    }
+  });
+
+  it('never states a code, an internal name or an address in a sentence', () => {
+    /*
+     * The Owner's rule, asserted rather than trusted: a refusal sentence names
+     * the business reason and the next step, never the machinery. A rule token
+     * leaking into its own wording is the specific accident this catches — the
+     * tokens are snake case and the sentences are prose, so one appearing in
+     * the other is unmistakable.
+     */
+    const MACHINERY = [
+      /ERR-[A-Z]+-\d+/,
+      /\b[a-z]+_[a-z_]{2,}\b/,
+      /\b\d{3}\b/,
+      /[0-9a-f]{8}-[0-9a-f]{4}/i,
+    ];
+    for (const keys of Object.values(MIRRORS)) {
+      for (const key of keys) {
+        for (const catalogue of [en, ar] as unknown as Record<string, string>[]) {
+          for (const pattern of MACHINERY) {
+            expect(catalogue[key] ?? '', `${key} / ${String(pattern)}`).not.toMatch(pattern);
+          }
+        }
+      }
+    }
   });
 });

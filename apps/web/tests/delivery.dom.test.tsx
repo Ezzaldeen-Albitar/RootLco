@@ -1227,6 +1227,52 @@ describe('confirming who may receive the vehicle', () => {
     await within(region).findByText(EN['delivery.receiver.evidenceOnFile'] as string);
     expect(within(region).queryByText(EN['delivery.receiver.verifyHeading'] as string)).toBeNull();
   });
+  /**
+   * Owner directive, user-facing errors. A person who holds no role on the
+   * visit was refused with nothing an operator could read: the sentence said
+   * the record could not take that change, which is true of a dozen unrelated
+   * refusals. The service now names the rule beside the field the operator
+   * filled in, so the sentence lands on the receiver control and says what to
+   * do — record the role, or choose somebody already on the visit.
+   */
+  it('says beside the receiver field why that person may not collect the vehicle', async () => {
+    // The shape the wire produces, and nothing more: the service files the rule
+    // under `body.receiverPartnerId`, so it arrives as a field error against the
+    // receiver control while the banner keeps the generic conflict sentence.
+    verifyReceiver.mockResolvedValue({
+      status: 'conflict',
+      messageKey: 'state.conflict.title',
+      fieldErrors: { receiverPartnerId: 'form.violation.delivery_receiver_not_entitled' },
+      correlationId: 'corr-receiver-role',
+      attempt: 1,
+    });
+    const user = userEvent.setup();
+    renderScreen({ canManage: true });
+    const region = await screen.findByRole('region', {
+      name: EN['delivery.receiver.heading'] as string,
+    });
+    await user.type(
+      await within(region).findByLabelText(labelled('crm.customers.column.name')),
+      'Layla'
+    );
+    await user.click(
+      within(region).getByRole('button', { name: EN['customerSelector.search'] as string })
+    );
+    await user.click(await within(region).findByRole('button', { name: /Layla Haddad/ }));
+    await user.click(
+      within(region).getByRole('button', { name: EN['delivery.receiver.verifySubmit'] as string })
+    );
+
+    // Beside the control, as its own alert line: the panel shows the first
+    // field error the refusal carried, and this is that line rather than the
+    // block beneath it, which keeps the generic conflict sentence.
+    const said = await within(region).findByText(
+      EN['form.violation.delivery_receiver_not_entitled'] as string
+    );
+    expect(said).toBeVisible();
+    // The rule name itself never reaches the screen; only its sentence does.
+    expect(region.textContent).not.toContain('delivery_receiver_not_entitled');
+  });
 });
 
 /**

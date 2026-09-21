@@ -304,7 +304,18 @@ describe('wo.job-create', () => {
     authAs(FULL);
     const tooEarly = await createJob(draft.workOrderId, { title: 'Premature' });
     expect(tooEarly.status).toBe(409);
-    expect(((await tooEarly.json()) as { code: string }).code).toBe('ERR-TRN-001');
+    const refusedEarly = (await tooEarly.json()) as {
+      code: string;
+      violations?: readonly { path: string; rule: string }[];
+    };
+    expect(refusedEarly.code).toBe('ERR-TRN-001');
+    // Owner directive, user-facing errors. The token is the only thing that
+    // can turn this into a sentence — no server prose reaches a screen — and
+    // it names the stage rule rather than the stage, so it reads correctly
+    // whichever non-accepting stage the order is sitting in.
+    expect(refusedEarly.violations).toEqual([
+      { path: 'path.workOrderId', rule: 'work_order_closed_to_jobs' },
+    ]);
 
     const cancelled = await createWorkOrder();
     await advance(cancelled.workOrderId, [
@@ -642,7 +653,16 @@ describe('the job/work-order transaction boundary', () => {
       settled = true;
       const response = await pending;
       expect(response.status).toBe(409);
-      expect(((await response.json()) as { code: string }).code).toBe('ERR-TRN-001');
+      const lost = (await response.json()) as {
+        code: string;
+        violations?: readonly { path: string; rule: string }[];
+      };
+      expect(lost.code).toBe('ERR-TRN-001');
+      // The lost race publishes the SAME token as the readable refusal: the
+      // operator's cure is identical, and only the moment of discovery differs.
+      expect(lost.violations).toEqual([
+        { path: 'path.workOrderId', rule: 'work_order_closed_to_jobs' },
+      ]);
     } finally {
       if (!settled) await gate.query('ROLLBACK').catch(() => undefined);
       gate.release();
@@ -718,7 +738,15 @@ describe('wo.job-update refuses a job whose work order has already closed', () =
       { version: fixture.jobVersion }
     );
     expect(refused.status).toBe(409);
-    expect(((await refused.json()) as { code: string }).code).toBe('ERR-TRN-001');
+    const refusedEdit = (await refused.json()) as {
+      code: string;
+      violations?: readonly { path: string; rule: string }[];
+    };
+    expect(refusedEdit.code).toBe('ERR-TRN-001');
+    // Filed under the job, which is what the caller addressed.
+    expect(refusedEdit.violations).toEqual([
+      { path: 'path.jobId', rule: 'work_order_closed_to_job_changes' },
+    ]);
 
     // The flag that feeds B4, asserted separately because it is the one that changes
     // what a closure the gate already granted would have meant.

@@ -178,6 +178,23 @@ export function toAppointmentCreatePlan(input: AppointmentCreateInput): Appointm
 }
 
 /**
+ * ## Why each lifecycle refusal below carries a rule token
+ *
+ * Every one of them is `ERR-TRN-001`, and the interface never renders
+ * server-authored prose — so without a token a booking clerk meets one sentence,
+ * "the state does not allow this", for four unrelated refusals with four
+ * different cures. The token names the PRECONDITION the command needed and
+ * nothing else: not the current state, not the customer, not the vehicle. That
+ * keeps it safe to publish to a caller who is already reading the appointment it
+ * names, and it is what lets the catalogue sentence say what to do next.
+ *
+ * The token is per COMMAND rather than per current state. The cure depends on
+ * the command — confirm a time, book again, cancel instead — and never on which
+ * of the closed states the appointment happens to be sitting in; a token per
+ * state would multiply the catalogue without telling the clerk anything more.
+ */
+
+/**
  * Rescheduling sets the confirmed window. Permitted only while the appointment
  * can still be honoured — a cancelled, no-show, or already checked-in
  * appointment has nothing left to move.
@@ -186,6 +203,9 @@ export function assertReschedulable(current: string): void {
   if (TERMINAL_APPOINTMENT_STATUSES.includes(current as AppointmentStatus)) {
     throw new AppFailure('ERR-TRN-001', {
       message: `An appointment in state "${current}" is terminal and cannot be rescheduled`,
+      safeDetails: {
+        violations: [{ path: 'path.appointmentId', rule: 'appointment_not_reschedulable' }],
+      },
     });
   }
 }
@@ -200,6 +220,9 @@ export function assertCancellable(current: string): void {
   if (!(APPOINTMENT_TRANSITIONS[current] ?? []).includes('cancelled')) {
     throw new AppFailure('ERR-TRN-001', {
       message: `An appointment in state "${current}" cannot be cancelled`,
+      safeDetails: {
+        violations: [{ path: 'path.appointmentId', rule: 'appointment_not_cancellable' }],
+      },
     });
   }
 }
@@ -215,6 +238,9 @@ export function assertNoShowRecordable(current: string): void {
       message:
         `An appointment in state "${current}" cannot be recorded as a no-show; ` +
         'only a confirmed appointment can be',
+      safeDetails: {
+        violations: [{ path: 'path.appointmentId', rule: 'appointment_not_confirmed_for_no_show' }],
+      },
     });
   }
 }
@@ -226,6 +252,24 @@ export function assertCheckInEligible(current: string): void {
       message:
         `An appointment in state "${current}" cannot be checked in; ` +
         'only a confirmed appointment can be',
+      // Twice, deliberately, and the second entry is the one an operator sees.
+      // Check-in is the only command here that names its appointment in the BODY
+      // rather than in the address, and the screen that sends it — the check-in
+      // start screen — renders the request-level banner and no per-control error
+      // at all, because the appointment is chosen from a list rather than typed.
+      // A violation filed only under the control would therefore be written to a
+      // map nothing reads, which on screen is indistinguishable from having
+      // dropped it. The bare `body` entry states the same rule about the request
+      // as a whole, which is what `violationKeysOf` routes to the banner.
+      safeDetails: {
+        violations: [
+          {
+            path: 'body.origin.appointmentId',
+            rule: 'appointment_not_confirmed_for_check_in',
+          },
+          { path: 'body', rule: 'appointment_not_confirmed_for_check_in' },
+        ],
+      },
     });
   }
 }

@@ -1303,6 +1303,77 @@ describe('the parties step', () => {
     });
   });
 
+  /**
+   * Owner directive, user-facing errors. The 409 above is the one the API
+   * sends when it says nothing else, and the fixed copy is right for it. When
+   * the API DOES name the rule — the person is not recorded as someone who may
+   * approve work here — the form says that instead, and points at the cure:
+   * record the role, or choose someone whose recorded role allows it. Nothing
+   * about which roles the party holds is added; the sentence says no more than
+   * the refusal already did.
+   */
+  const authorizationRefusal = async (locale: 'en' | 'ar') => {
+    searchCustomerDirectory.mockResolvedValue(
+      page([
+        {
+          id: 'partner-4',
+          displayName: 'Huda Salem',
+          displayNumber: 'C-0004',
+          partyType: 'individual',
+          lifecycleStatus: 'active',
+        },
+      ])
+    );
+    recordAuthorization.mockResolvedValue({
+      status: 'conflict',
+      messageKey: 'form.violation.reception_party_not_authorised',
+      correlationId: 'corr-role-not-held',
+      attempt: 1,
+    });
+    const user = userEvent.setup();
+    const catalogue = (locale === 'en' ? EN : AR) as Record<string, string>;
+    if (locale === 'en') renderLtr(<PartiesStep {...stepProps()} />);
+    else renderRtl(<PartiesStep {...stepProps({ locale: 'ar', messages: ar as typeof en })} />);
+
+    await screen.findByRole('form', { name: catalogue['receptions.authorization.formLabel']! });
+    const nameBoxes = screen.getAllByLabelText(catalogue['crm.customers.column.name']!);
+    await user.type(nameBoxes.at(-1)!, 'Huda');
+    await user.click(
+      screen.getAllByRole('button', { name: catalogue['customerSelector.search']! }).at(-1)!
+    );
+    await user.click(await screen.findByText('Huda Salem'));
+    await user.selectOptions(
+      screen.getByLabelText(new RegExp(catalogue['receptions.authorization.role']!)),
+      'vehicle_owner'
+    );
+    await user.selectOptions(
+      screen.getByLabelText(new RegExp(`^${catalogue['receptions.authorization.decision']!}`)),
+      'approved'
+    );
+    await user.click(
+      screen.getByRole('button', { name: catalogue['receptions.authorization.record']! })
+    );
+    return catalogue;
+  };
+
+  it('names the refusal when the API names it, instead of the non-guessing copy', async () => {
+    const catalogue = await authorizationRefusal('en');
+    expect(
+      await screen.findByText(catalogue['form.violation.reception_party_not_authorised']!)
+    ).toBeInTheDocument();
+    expect(screen.queryByText(EN['receptions.authorization.conflict']!)).toBeNull();
+    // The rule name itself never reaches the screen; only its sentence does.
+    expect(document.body.textContent).not.toContain('reception_party_not_authorised');
+  });
+
+  it('names it in Arabic words, not the English ones', async () => {
+    const catalogue = await authorizationRefusal('ar');
+    expect(
+      await screen.findByText(catalogue['form.violation.reception_party_not_authorised']!)
+    ).toBeInTheDocument();
+    expect(screen.queryByText(EN['form.violation.reception_party_not_authorised']!)).toBeNull();
+  });
+
   it('withdraws the write forms without their permissions, saying why', async () => {
     renderLtr(
       <PartiesStep

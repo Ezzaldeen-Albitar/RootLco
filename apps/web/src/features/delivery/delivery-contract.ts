@@ -536,3 +536,37 @@ export const DELIVERY_ERROR_CODES = {
   /** The handover is blocked. The reasons come from the eligibility read. */
   blocked: 'ERR-TRN-001',
 } as const;
+
+/* ------------------------------------------------------------------ *
+ * The refusal reasons the handover commands publish
+ * ------------------------------------------------------------------ */
+
+/**
+ * Every rule token `delivery-service.ts` publishes for a refusal a user can
+ * reach, mirrored so the catalogue can be held against it.
+ *
+ * The first eight are the eligibility blockers, one token each. The eligibility
+ * READ already lists the blockers on screen as short labels; these are the
+ * sentences the refusal itself carries, and they differ on purpose — a label
+ * says what is wrong, a refusal sentence has to say what to do next. The rest
+ * are the refusals that never reach the eligibility list at all, because they
+ * are about the handover record rather than the work behind it.
+ *
+ * Mirrored rather than imported, because this workspace may not import backend
+ * source. `tests/field-error-translation.test.ts` asserts every entry has a
+ * sentence in both catalogues.
+ */
+export const DELIVERY_REFUSAL_KEYS: readonly string[] = Object.freeze([
+  'form.violation.delivery_work_not_finished',
+  'form.violation.delivery_quality_check_not_passed',
+  'form.violation.delivery_balance_outstanding',
+  'form.violation.delivery_parts_outstanding',
+  'form.violation.delivery_checks_outstanding',
+  'form.violation.delivery_receiver_missing',
+  'form.violation.delivery_signature_missing',
+  'form.violation.delivery_stopped',
+  'form.violation.delivery_already_completed',
+  'form.violation.delivery_receiver_already_recorded',
+  'form.violation.delivery_receiver_not_entitled',
+  'form.violation.delivery_custody_already_released',
+]);

@@ -800,7 +800,10 @@ describe('platform.organization-administrator-invite', () => {
 
   it('refuses a second administrator unless one is asked for explicitly, with a reason', async () => {
     asHolder();
-    const refused = await call<{ code?: string }>(administratorRoute, {
+    const refused = await call<{
+      code?: string;
+      violations?: readonly { path: string; rule: string }[];
+    }>(administratorRoute, {
       path: `/platform/organizations/${tenantThree}/administrators`,
       params: { tenantId: tenantThree },
       idempotencyKey: randomUUID(),
@@ -812,6 +815,13 @@ describe('platform.organization-administrator-invite', () => {
     });
     expect(refused.status).toBe(409);
     expect(refused.body?.code).toBe('ERR-TRN-001');
+    // Owner directive, user-facing errors. The console renders no server prose,
+    // so the token is what turns this into a sentence — and it is filed under
+    // the control that cures it, which is the flag the operator sets to say a
+    // second administrator is wanted.
+    expect(refused.body?.violations).toEqual([
+      { path: 'body.additionalAdministrator', rule: 'platform_administrator_exists' },
+    ]);
     expect(
       await countOf('SELECT count(*)::text FROM iam.user_accounts WHERE tenant_id = $1', [
         tenantThree,

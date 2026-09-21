@@ -172,6 +172,29 @@ export function conflictKindOf(messageKey: string | undefined): ConflictKind {
  * `already_authorized` and `state_not_approvable` name no step on purpose.
  * Neither is cured by filling something in — the visit has moved on — so
  * offering a step would invite work that changes nothing.
+ *
+ * ## The conversion and closure half (Owner directive, user-facing errors)
+ *
+ * The approval refusals above were the only ones that had ever been given a
+ * token, so the three commands beside approve — convert, close without work and
+ * refuse — were still printing the generic sentence for refusals with quite
+ * different cures. `reception_not_authorised` is the one an operator can act on,
+ * and it points at the same step the authorization tokens do, because it is the
+ * same missing thing seen from the conversion button. The other two describe a
+ * visit that has moved on and offer no step, for the reason the paragraph above
+ * gives.
+ *
+ * ## The two the evidence forms raise
+ *
+ * `reception_party_not_authorised` and `reception_closed_to_evidence` are raised
+ * by the authorization and refusal forms on the parties step rather than by a
+ * command on the summary, and they were left out of this list when the rest were
+ * added. Left out, they resolved to the generic sentence on the very forms whose
+ * refusal they describe, and nothing failed when they did — which is why the
+ * catalogue test reads this list. The first is cured on the parties step, by
+ * recording the role the person actually holds, so it names that step even
+ * though it is usually raised there; the second describes a visit that has been
+ * closed and names none.
  */
 export const COMMAND_REFUSAL_KEYS: readonly string[] = Object.freeze([
   'form.violation.already_authorized',
@@ -179,12 +202,19 @@ export const COMMAND_REFUSAL_KEYS: readonly string[] = Object.freeze([
   'form.violation.authorization_missing',
   'form.violation.authorization_withdrawn',
   'form.violation.requester_or_authorization_missing',
+  'form.violation.reception_already_converted',
+  'form.violation.reception_not_authorised',
+  'form.violation.reception_already_finished',
+  'form.violation.reception_party_not_authorised',
+  'form.violation.reception_closed_to_evidence',
 ]);
 
 const REFUSAL_STEPS: Readonly<Record<string, string>> = Object.freeze({
   'form.violation.authorization_missing': PARTIES_STEP_ID,
   'form.violation.authorization_withdrawn': PARTIES_STEP_ID,
   'form.violation.requester_or_authorization_missing': PARTIES_STEP_ID,
+  'form.violation.reception_not_authorised': PARTIES_STEP_ID,
+  'form.violation.reception_party_not_authorised': PARTIES_STEP_ID,
 });
 
 /**

@@ -1496,6 +1496,14 @@ describe('sal.delivery-receiver-verify', () => {
     expect(response.status).toBe(409);
     const problem = await bodyOf<ProblemBody>(response);
     expect(problem.code).toBe('ERR-TRN-001');
+    // Owner directive, user-facing errors. The service's guidance was on the
+    // message and the message never reaches a screen, so the token is what
+    // publishes it. Filed under the control the operator filled in, so the
+    // sentence lands beside the receiver field; it names no role and no list,
+    // which is the same non-disclosing line the wording already held.
+    expect(problem.violations).toEqual([
+      { path: 'body.receiverPartnerId', rule: 'delivery_receiver_not_entitled' },
+    ]);
 
     // Caller-safe, and structurally so: `problemFor` builds the body from the catalog
     // entry plus `safeDetails` alone, so M-dlv-2's trigger text cannot reach the client
@@ -2389,6 +2397,12 @@ describe('sal.delivery-complete', () => {
     expect(refused.status).toBe(409);
     const problem = await bodyOf<ProblemBody>(refused);
     expect(problem.code).toBe('ERR-TRN-001');
+    // One token per remaining reason, in the order the eligibility composition
+    // produces, so the sentence a screen shows first is the reason furthest
+    // upstream. Money owed is the only one outstanding here.
+    expect(problem.violations).toEqual([
+      { path: 'path.deliveryId', rule: 'delivery_balance_outstanding' },
+    ]);
     expectNoSchemaLeak(problem);
 
     // The vehicle did NOT leave: no `delivered` status, no odometer capture, no custody
@@ -2728,7 +2742,13 @@ describe('sal.delivery-complete', () => {
       signatureDocumentVersionId: SIGNATURE_DOCUMENT_VERSION,
     });
     expect(late.status).toBe(409);
-    expect((await bodyOf<ProblemBody>(late)).code).toBe('ERR-TRN-001');
+    const lateProblem = await bodyOf<ProblemBody>(late);
+    expect(lateProblem.code).toBe('ERR-TRN-001');
+    // A finished handover is history. The token says so, and says it about the
+    // handover rather than about the signature, because that is what refused.
+    expect(lateProblem.violations).toEqual([
+      { path: 'path.deliveryId', rule: 'delivery_already_completed' },
+    ]);
 
     authAs(SAL_FULL);
     const lateItem = await recordChecklist(delivery.id, {

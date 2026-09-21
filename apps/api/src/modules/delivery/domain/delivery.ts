@@ -301,6 +301,39 @@ export function assertEligible(decision: EligibilityDecision): void {
 }
 
 /**
+ * The stable rule token a blocker is published under.
+ *
+ * A blocker CODE is an internal name — `part_obligation_outstanding` is a column
+ * vocabulary, not a sentence — and the interface never renders server prose, so
+ * a refusal that carried only the codes reached the operator as the generic
+ * "this cannot be done now". The token is what the interface translates, and it
+ * is a deliberate second vocabulary rather than the code itself: the codes are
+ * read by `sal.complete_delivery` and by the eligibility read, and reusing them
+ * as catalogue keys would tie a customer-facing sentence to a name the database
+ * owns.
+ *
+ * Every code has an entry. The lookup is total by construction — the map is
+ * typed on `BlockerCode`, so adding a blocker without a sentence does not
+ * compile — which is what keeps a new blocker from silently reaching a screen
+ * with no explanation.
+ */
+export const BLOCKER_RULE_TOKENS: Readonly<Record<BlockerCode, string>> = Object.freeze({
+  work_order_not_complete: 'delivery_work_not_finished',
+  quality_control_not_passed: 'delivery_quality_check_not_passed',
+  financial_balance_outstanding: 'delivery_balance_outstanding',
+  part_obligation_outstanding: 'delivery_parts_outstanding',
+  checklist_incomplete: 'delivery_checks_outstanding',
+  receiver_not_verified: 'delivery_receiver_missing',
+  signature_missing: 'delivery_signature_missing',
+  delivery_state_invalid: 'delivery_stopped',
+});
+
+/** Every remaining blocker, as the tokens a screen can translate. */
+export function blockerRuleTokens(decision: EligibilityDecision): readonly string[] {
+  return decision.blockers.map((code) => BLOCKER_RULE_TOKENS[code]);
+}
+
+/**
  * Refuses a signer role outside the closed vocabulary.
  *
  * `ck_delivery_signatures_signer_role` would refuse it too, as `23514` with a
