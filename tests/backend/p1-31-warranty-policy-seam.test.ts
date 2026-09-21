@@ -1480,8 +1480,12 @@ describe('P-10 the provisioning bundle', () => {
     // name — which is why the assertion below is now a POSITIVE one; 83 once
     // P1-32-PRE-134 carried the five material codes every work-order draw now needs.
     // 85 since the Owner directive of 2026-09-16 carried org.company.manage and
-    // org.branch.manage for the two organisation creation operations.
-    expect(TENANT_ADMINISTRATOR_ROLE.permissionCodes).toHaveLength(85);
+    // org.branch.manage for the two organisation creation operations; 88 since the
+    // Owner directive of 2026-09-17 carried three of the four codes a QA campaign
+    // measured as permanently closed in every provisioned organisation — the
+    // fourth, `inv.cost.view`, stays excluded because that exclusion is a recorded
+    // decision (CC-12, open; register gap E-14) only the Owner may reverse.
+    expect(TENANT_ADMINISTRATOR_ROLE.permissionCodes).toHaveLength(88);
     expect(new Set(TENANT_ADMINISTRATOR_ROLE.permissionCodes).size).toBe(
       TENANT_ADMINISTRATOR_ROLE.permissionCodes.length
     );

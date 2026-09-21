@@ -1,4 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import en from '../src/i18n/messages/en.json';
+import ar from '../src/i18n/messages/ar.json';
 
 /**
  * The inventory ADAPTERS (P1-30, `W4`).
@@ -36,6 +38,7 @@ const {
   createOpeningBatch,
   createOpeningBatchLine,
   createReservation,
+  createMaterialRequirement,
   createReturn,
   createStockLocation,
   listAvailability,
@@ -47,12 +50,17 @@ const {
   listOpeningBatches,
   listPartIssues,
   listRequiredParts,
+  listReorderLevels,
   listReservations,
   listUnitsOfMeasure,
   readOpeningBatch,
   releaseReservation,
+  setSalePrice,
 } = await import('@/features/inventory/api');
+const { MATERIAL_REFUSAL_RULES } = await import('@/features/inventory/inventory-contract');
 const { requiresIdempotencyKey, resolveOperation } = await import('@/lib/api/operation-contract');
+const EN = en as Record<string, string>;
+const AR = ar as Record<string, string>;
 
 const COMPANY_ID = '11111111-1111-4111-8111-111111111111';
 const BRANCH_ID = '22222222-2222-4222-8222-222222222222';
@@ -818,5 +826,213 @@ describe('W10 — the batch reads are what make a batch reachable again', () => 
     expect((await listOpeningBatches(TARGET)).status).toBe('expired');
     expect((await readOpeningBatch(BATCH_ID)).status).toBe('expired');
     expect(get).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * DEF-T-14 — a 404 about the BODY is not the generic not-found sentence.
+ *
+ * `inv.item_sale_prices` has a foreign key on each of the company, the branch,
+ * the tax class and the currency, and the service maps all four to one
+ * `ERR-RES-001`. The client's kind map turns every 404 into "Not found", so a
+ * price refused because the organisation does not carry the currency reached
+ * the operator as that title and a correlation reference, on a form whose
+ * currency box is free text and whose screen publishes no list of currencies.
+ */
+describe('a refused sale price says what the server actually refused', () => {
+  const refusal = (code: string) => ({
+    ok: false as const,
+    kind: 'not-found',
+    correlationId: 'corr-1',
+    problem: { code },
+  });
+
+  it('names the four candidates and puts the sentence on the currency box', async () => {
+    send.mockResolvedValue(refusal('ERR-RES-001'));
+    const outcome = await setSalePrice(ITEM_ID, {
+      currencyCode: 'SAR',
+      unitPrice: '12.5000',
+    });
+    expect(outcome.created).toBeNull();
+    expect(outcome.state.messageKey).toBe('inventory.prices.set.notInOrganisation');
+    expect(outcome.state.fieldErrors?.['currencyCode']).toBe(
+      'inventory.prices.set.currencyNotCarried'
+    );
+  });
+
+  it('leaves a 404 that is not ERR-RES-001 as the generic sentence', async () => {
+    send.mockResolvedValue(refusal('ERR-RES-009'));
+    const outcome = await setSalePrice(ITEM_ID, {
+      currencyCode: 'JOD',
+      unitPrice: '12.5000',
+    });
+    expect(outcome.state.messageKey).toBe('state.notFound.title');
+    expect(outcome.state.fieldErrors?.['currencyCode']).toBeUndefined();
+  });
+
+  it('does not reach for that sentence on a write that has no such note', async () => {
+    send.mockResolvedValue(refusal('ERR-RES-001'));
+    const outcome = await createItemCategory({ code: 'brakes', name: 'Brakes' });
+    expect(outcome.state.messageKey).toBe('state.notFound.title');
+    expect(outcome.state.fieldErrors).toBeUndefined();
+  });
+});
+
+/**
+ * DEF-T-15 — the reorder-level list, which never left this process.
+ *
+ * The setup screen records a level and then re-reads the list, and the list
+ * stayed blank: no table, no empty-case sentence, no message. The cause was
+ * here rather than on the screen or in the service. This adapter named
+ * `companyId` and `branchId` among the parameters it handed to `query()`, and
+ * `query()` refuses those names OUTRIGHT — its scope-key guard runs before the
+ * null-and-undefined skip, so naming the key threw whatever the value was. The
+ * throw escaped the `'use server'` module as an HTTP 500 and the section
+ * rendered around a value that never arrived.
+ *
+ * The DOM suite mocks this module wholesale, so only a test that calls the real
+ * adapter can see it. These cases are that test: the first one alone fails on
+ * the old code, with the guard's own error rather than an assertion.
+ */
+describe('the reorder-level list is read as a tenant read, asserting no scope', () => {
+  const LEVEL_ID = '99999999-9999-4999-8999-999999999999';
+
+  it('answers the levels instead of throwing on a scope name the builder refuses', async () => {
+    get.mockResolvedValue(
+      ok({
+        asOf: '2026-09-20T08:00:00Z',
+        levels: { items: [{ id: LEVEL_ID }], nextCursor: null, hasMore: false },
+      })
+    );
+    const state = await listReorderLevels();
+    expect(state.status).toBe('ok');
+    const path = String(get.mock.calls[0]?.[0]);
+    expect(path.startsWith('/api/v1/reorder-levels')).toBe(true);
+    expect(params(path).get('companyId')).toBeNull();
+    expect(params(path).get('branchId')).toBeNull();
+    expect(params(path).get('limit')).toBe('100');
+  });
+
+  it('leaves retired levels out unless they are asked for, and narrows by item', async () => {
+    get.mockResolvedValue(
+      ok({ asOf: 'now', levels: { items: [], nextCursor: null, hasMore: false } })
+    );
+    await listReorderLevels();
+    expect(params(String(get.mock.calls[0]?.[0])).get('includeRetired')).toBeNull();
+
+    await listReorderLevels({ itemId: ITEM_ID, includeRetired: true });
+    const second = params(String(get.mock.calls[1]?.[0]));
+    expect(second.get('includeRetired')).toBe('true');
+    expect(second.get('itemId')).toBe(ITEM_ID);
+  });
+
+  it('maps a refusal to a state the screen can say something about', async () => {
+    get.mockResolvedValue(failure('forbidden'));
+    expect((await listReorderLevels()).status).toBe('denied');
+  });
+});
+
+/**
+ * DEF-T-16 — a refused material request that said only "This change cannot be saved".
+ *
+ * Asking again for a part a service line already has a live request for was
+ * refused twice, from two fresh sessions, with nothing created either time and
+ * nothing on screen but that sentence and a correlation reference. The cause was
+ * on the wire: the refusal is `ERR-RES-002`, a conflict that is not
+ * `ERR-CON-001`, and `failureMessageKey` has exactly one sentence for that whole
+ * class. The service's own message names the rule but never leaves the process,
+ * because `problemFor` assembles the document from the catalogue entry and the
+ * safe details alone.
+ *
+ * So the service publishes the rule as a violation instead, and these cases are
+ * where that reaches a sentence. The first is the refusal the campaign measured.
+ * The loop is the guard: a rule token added to the mirror with no English or no
+ * Arabic sentence renders `form.violation.invalid` — "This value is not accepted
+ * here" — which on screen is no better than the banner this defect is about, and
+ * no other check in the suite can see it.
+ *
+ * The mirror is hand-transcribed (`apps/web` may not import `apps/api`), so this
+ * guards the web half only: a token the API gains and nobody copies here is
+ * caught by the backend suite's own assertions, not by this loop.
+ */
+describe('a refused material requirement says which rule refused it', () => {
+  const MATERIAL_BODY = {
+    basis: 'entered' as const,
+    serviceLineId: '66666666-6666-4666-8666-666666666666',
+    itemId: ITEM_ID,
+    allowanceQuantity: '4.000',
+    uomId: '99999999-9999-4999-8999-999999999999',
+    sourceReference: 'Service manual, page 12',
+  };
+  const refusedWith = (code: string, rule: string, kind: string) => ({
+    ok: false as const,
+    kind,
+    status: code === 'ERR-RES-001' ? 404 : 409,
+    problem: {
+      type: `urn:rootlco:error:${code}`,
+      status: code === 'ERR-RES-001' ? 404 : 409,
+      code,
+      correlationId: 'corr-1',
+      violations: [{ path: 'body', rule }],
+    },
+    correlationId: 'corr-1',
+  });
+
+  it('names the live request the line already has, instead of a bare conflict', async () => {
+    send.mockResolvedValue(refusedWith('ERR-RES-002', 'material_duplicate_demand', 'conflict'));
+    const outcome = await createMaterialRequirement(MATERIAL_BODY);
+    expect(outcome.created).toBeNull();
+    expect(outcome.state.status).toBe('conflict');
+    expect(outcome.state.messageKey).toBe('form.violation.material_duplicate_demand');
+    // The rule is about the line and the part together, so it belongs to the
+    // form rather than to one box.
+    expect(outcome.state.fieldErrors).toBeUndefined();
+    expect(outcome.state.correlationId).toBe('corr-1');
+  });
+
+  it('keeps the rule over the sentence the caller names for the state', async () => {
+    send.mockResolvedValue(refusedWith('ERR-TRN-001', 'material_demand_rule', 'conflict'));
+    const outcome = await createMaterialRequirement(MATERIAL_BODY);
+    expect(outcome.state.messageKey).toBe('form.violation.material_demand_rule');
+    expect(outcome.state.messageKey).not.toBe('inventory.material.create.refused');
+  });
+
+  it('falls back to the caller sentence when the refusal names no rule at all', async () => {
+    send.mockResolvedValue({
+      ok: false as const,
+      kind: 'conflict',
+      status: 409,
+      problem: { code: 'ERR-TRN-001', correlationId: 'corr-1' },
+      correlationId: 'corr-1',
+    });
+    const outcome = await createMaterialRequirement(MATERIAL_BODY);
+    expect(outcome.state.messageKey).toBe('inventory.material.create.refused');
+  });
+
+  it('has an English and an Arabic sentence for every rule the mirror carries', () => {
+    expect(MATERIAL_REFUSAL_RULES.length).toBeGreaterThan(0);
+    for (const rule of MATERIAL_REFUSAL_RULES) {
+      const key = `form.violation.${rule}`;
+      expect(EN[key], `${key} has no English sentence`).toBeTypeOf('string');
+      expect(AR[key], `${key} has no Arabic sentence`).toBeTypeOf('string');
+      expect(EN[key]).not.toBe(AR[key]);
+    }
+  });
+
+  it('maps every rule the mirror carries to its own sentence, and to no other', async () => {
+    const keys: string[] = [];
+    for (const rule of MATERIAL_REFUSAL_RULES) {
+      send.mockResolvedValueOnce(
+        refusedWith(
+          rule === 'material_unknown_reference' ? 'ERR-RES-001' : 'ERR-RES-002',
+          rule,
+          rule === 'material_unknown_reference' ? 'not-found' : 'conflict'
+        )
+      );
+      const outcome = await createMaterialRequirement(MATERIAL_BODY);
+      expect(outcome.state.messageKey).toBe(`form.violation.${rule}`);
+      keys.push(outcome.state.messageKey as string);
+    }
+    expect(new Set(keys).size).toBe(MATERIAL_REFUSAL_RULES.length);
   });
 });

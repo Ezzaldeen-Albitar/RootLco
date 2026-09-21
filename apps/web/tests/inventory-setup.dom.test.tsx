@@ -34,6 +34,10 @@ const createItem = vi.fn();
 const createStockLocation = vi.fn();
 const listLocations = vi.fn();
 const listBranches = vi.fn();
+const listItems = vi.fn();
+const listReorderLevels = vi.fn();
+const setReorderLevel = vi.fn();
+const retireReorderLevel = vi.fn();
 
 vi.mock('@/features/inventory/api', () => ({
   listItemCategories: (...args: unknown[]) => listItemCategories(...args),
@@ -43,6 +47,10 @@ vi.mock('@/features/inventory/api', () => ({
   createStockLocation: (...args: unknown[]) => createStockLocation(...args),
   listLocations: (...args: unknown[]) => listLocations(...args),
   listBranches: (...args: unknown[]) => listBranches(...args),
+  listItems: (...args: unknown[]) => listItems(...args),
+  listReorderLevels: (...args: unknown[]) => listReorderLevels(...args),
+  setReorderLevel: (...args: unknown[]) => setReorderLevel(...args),
+  retireReorderLevel: (...args: unknown[]) => retireReorderLevel(...args),
 }));
 
 vi.mock('next/navigation', () => ({
@@ -95,6 +103,36 @@ const warehouse = {
   status: 'active',
 };
 const branch = { id: BRANCH_ID, companyId: COMPANY_ID, branchCode: 'AMM-1', name: 'Amman' };
+const ITEM_ID = '77777777-7777-4777-8777-777777777777';
+const LEVEL_ID = '88888888-8888-4888-8888-888888888888';
+const catalogueItem = {
+  id: ITEM_ID,
+  itemCategoryId: CATEGORY_ID,
+  sku: 'BRK-001',
+  name: 'Front brake pads',
+  description: null,
+  unitOfMeasure: { id: UNIT_ID, code: 'EA', name: 'Each' },
+  itemType: 'part',
+  isStockTracked: true,
+  isSerialized: false,
+  lifecycleStatus: 'active',
+  recordVersion: 1,
+};
+const reorderLevel = {
+  id: LEVEL_ID,
+  itemId: ITEM_ID,
+  sku: 'BRK-001',
+  itemName: 'Front brake pads',
+  companyId: COMPANY_ID,
+  branchId: BRANCH_ID,
+  locationId: null,
+  locationCode: null,
+  reorderLevelQty: '4.000',
+  preferredOrderQty: '12.000',
+  status: 'active',
+  retiredAt: null,
+  recordVersion: 3,
+};
 
 const okRead = (data: unknown) => ({ status: 'ok' as const, data, correlationId: 'corr' });
 const cursor = (items: readonly unknown[]) => okRead({ items, nextCursor: null, hasMore: false });
@@ -151,6 +189,19 @@ beforeEach(() => {
   listUnitsOfMeasure.mockResolvedValue(okRead({ items: [unit] }));
   listLocations.mockResolvedValue(cursor([warehouse]));
   listBranches.mockResolvedValue(okRead({ items: [branch] }));
+  listItems.mockResolvedValue({
+    status: 'ok' as const,
+    rows: [catalogueItem],
+    nextCursor: null,
+    hasMore: false,
+    correlationId: 'corr',
+  });
+  listReorderLevels.mockResolvedValue(
+    okRead({
+      asOf: '2026-09-20T08:00:00Z',
+      levels: { items: [], nextCursor: null, hasMore: false },
+    })
+  );
 });
 
 describe('categories and units', () => {
@@ -716,5 +767,278 @@ describe('the route page', () => {
     ).toBeVisible();
     expect(await screen.findByText('brakes')).toBeVisible();
     expect(container.querySelector('[dir="rtl"], [dir="ltr"]')).not.toBeNull();
+  });
+});
+
+/**
+ * DEF-T-08 — the reorder level, without which the low-stock rule is inert.
+ *
+ * The attention screen states the rule and its one input: an item with no
+ * recorded level is never listed. No screen recorded one, so for every
+ * organisation the platform provisions the rule could never fire. What is
+ * asserted here is that a level can be recorded, that what is recorded is
+ * listed with its narrowing said in words rather than left blank, that the
+ * quantities travel as the operator's own strings, that retiring sends the
+ * LEVEL's own version, and that the reads are gated.
+ */
+describe('reorder levels', () => {
+  const setForm = () => form('inventory.reorderLevels.set.heading');
+
+  it('reads the levels once with inv.stock.read, and not at all without it', async () => {
+    renderScreen({ canReadStock: false });
+    await screen.findByText('brakes');
+    expect(listReorderLevels).not.toHaveBeenCalled();
+    expect(screen.getByText(EN['inventory.reorderLevels.noPermission'] as string)).toBeVisible();
+  });
+
+  it('says none is recorded, which is why nothing can be reported as running low', async () => {
+    renderScreen({ canReadStock: true });
+    await waitFor(() => expect(listReorderLevels).toHaveBeenCalledTimes(1));
+    expect(await screen.findByText(EN['inventory.reorderLevels.none'] as string)).toBeVisible();
+  });
+
+  it('lists a level with its narrowing in words and its quantities as the server strings', async () => {
+    listReorderLevels.mockResolvedValue(
+      okRead({
+        asOf: '2026-09-20T08:00:00Z',
+        levels: { items: [reorderLevel], nextCursor: null, hasMore: false },
+      })
+    );
+    renderScreen({ canReadStock: true });
+    expect(await screen.findByText('Front brake pads')).toBeVisible();
+    expect(
+      screen.getByText(EN['inventory.reorderLevels.appliesTo.branch'] as string)
+    ).toBeVisible();
+    expect(screen.getByText('4.000')).toBeVisible();
+    expect(screen.getByText('12.000')).toBeVisible();
+  });
+
+  it('names the organisation-wide narrowing rather than leaving the cell blank', async () => {
+    listReorderLevels.mockResolvedValue(
+      okRead({
+        asOf: '2026-09-20T08:00:00Z',
+        levels: {
+          items: [{ ...reorderLevel, companyId: null, branchId: null }],
+          nextCursor: null,
+          hasMore: false,
+        },
+      })
+    );
+    renderScreen({ canReadStock: true });
+    expect(
+      await screen.findByText(EN['inventory.reorderLevels.appliesTo.organisation'] as string)
+    ).toBeVisible();
+  });
+
+  it('offers no form without inv.item.manage', async () => {
+    renderScreen({ canReadStock: true });
+    await waitFor(() => expect(listReorderLevels).toHaveBeenCalled());
+    expect(
+      screen.queryByRole('form', { name: EN['inventory.reorderLevels.set.heading'] as string })
+    ).toBeNull();
+  });
+
+  it('asks for the catalogue only when the operator asks, then offers what it answered', async () => {
+    const user = userEvent.setup();
+    renderScreen({ canManage: true, canReadStock: true });
+    await waitFor(() => expect(listReorderLevels).toHaveBeenCalled());
+    expect(listItems).not.toHaveBeenCalled();
+    await user.click(
+      within(setForm()).getByRole('button', {
+        name: EN['inventory.reorderLevels.items.find'] as string,
+      })
+    );
+    await waitFor(() => expect(listItems).toHaveBeenCalledTimes(1));
+    expect(
+      await within(setForm()).findByRole('option', { name: 'BRK-001 — Front brake pads' })
+    ).toBeInTheDocument();
+  });
+
+  it('records a level for the whole organisation, sending no narrowing it was not given', async () => {
+    const user = userEvent.setup();
+    setReorderLevel.mockResolvedValue(
+      success({ ...reorderLevel, replayed: false }, 'inventory.reorderLevels.set.success')
+    );
+    renderScreen({ canManage: true, canReadStock: true });
+    await waitFor(() => expect(listReorderLevels).toHaveBeenCalled());
+    const panel = setForm();
+    await user.click(
+      within(panel).getByRole('button', {
+        name: EN['inventory.reorderLevels.items.find'] as string,
+      })
+    );
+    await within(panel).findByRole('option', { name: 'BRK-001 — Front brake pads' });
+    await user.selectOptions(
+      within(panel).getByLabelText(labelled('inventory.reorderLevels.set.item')),
+      ITEM_ID
+    );
+    await user.type(
+      within(panel).getByLabelText(labelled('inventory.reorderLevels.set.level')),
+      '4.000'
+    );
+    await user.click(
+      within(panel).getByRole('button', {
+        name: EN['inventory.reorderLevels.set.submit'] as string,
+      })
+    );
+    await waitFor(() => expect(setReorderLevel).toHaveBeenCalledTimes(1));
+    expect(setReorderLevel.mock.calls[0]?.[0]).toEqual({
+      itemId: ITEM_ID,
+      reorderLevelQty: '4.000',
+    });
+    // The list is read again, so what was recorded is what is shown.
+    await waitFor(() => expect(listReorderLevels).toHaveBeenCalledTimes(2));
+  });
+
+  it('accepts zero as a level: tell me the moment this runs out', async () => {
+    const user = userEvent.setup();
+    setReorderLevel.mockResolvedValue(
+      success(
+        { ...reorderLevel, reorderLevelQty: '0.000', replayed: false },
+        'inventory.reorderLevels.set.success'
+      )
+    );
+    renderScreen({ canManage: true, canReadStock: true });
+    await waitFor(() => expect(listReorderLevels).toHaveBeenCalled());
+    const panel = setForm();
+    await user.click(
+      within(panel).getByRole('button', {
+        name: EN['inventory.reorderLevels.items.find'] as string,
+      })
+    );
+    await within(panel).findByRole('option', { name: 'BRK-001 — Front brake pads' });
+    await user.selectOptions(
+      within(panel).getByLabelText(labelled('inventory.reorderLevels.set.item')),
+      ITEM_ID
+    );
+    await user.type(
+      within(panel).getByLabelText(labelled('inventory.reorderLevels.set.level')),
+      '0'
+    );
+    await user.click(
+      within(panel).getByRole('button', {
+        name: EN['inventory.reorderLevels.set.submit'] as string,
+      })
+    );
+    await waitFor(() => expect(setReorderLevel).toHaveBeenCalledTimes(1));
+    expect(setReorderLevel.mock.calls[0]?.[0]).toMatchObject({ reorderLevelQty: '0' });
+  });
+
+  it('refuses a malformed quantity and an unchosen item before any request', async () => {
+    const user = userEvent.setup();
+    renderScreen({ canManage: true, canReadStock: true });
+    await waitFor(() => expect(listReorderLevels).toHaveBeenCalled());
+    const panel = setForm();
+    await user.type(
+      within(panel).getByLabelText(labelled('inventory.reorderLevels.set.level')),
+      '1.2345'
+    );
+    await user.click(
+      within(panel).getByRole('button', {
+        name: EN['inventory.reorderLevels.set.submit'] as string,
+      })
+    );
+    expect(
+      await within(panel).findByText(EN['inventory.reorderLevels.qtyFormat'] as string)
+    ).toBeVisible();
+    expect(within(panel).getByText(EN['field.required'] as string)).toBeVisible();
+    expect(setReorderLevel).not.toHaveBeenCalled();
+  });
+
+  /**
+   * DEF-T-15 — the recorded level was not listed back on the screen that
+   * recorded it. The cause was the adapter (`inventory-api.test.ts` holds the
+   * case that fails on the old code); what this case pins is the screen's half
+   * of the promise: the row the operator just recorded is on the screen when
+   * the re-read answers, with no reload and nothing else pressed.
+   */
+  it('shows the level it just recorded, on the same screen and without a reload', async () => {
+    const user = userEvent.setup();
+    listReorderLevels.mockResolvedValue(
+      okRead({
+        asOf: '2026-09-20T08:00:00Z',
+        levels: { items: [], nextCursor: null, hasMore: false },
+      })
+    );
+    setReorderLevel.mockImplementation(async () => {
+      // The re-read the screen makes after a successful set is the one that
+      // answers with the new row, exactly as the service would.
+      listReorderLevels.mockResolvedValue(
+        okRead({
+          asOf: '2026-09-20T08:05:00Z',
+          levels: { items: [reorderLevel], nextCursor: null, hasMore: false },
+        })
+      );
+      return success({ ...reorderLevel, replayed: false }, 'inventory.reorderLevels.set.success');
+    });
+    renderScreen({ canManage: true, canReadStock: true });
+    expect(await screen.findByText(EN['inventory.reorderLevels.none'] as string)).toBeVisible();
+    expect(screen.queryByText('Front brake pads')).toBeNull();
+
+    const panel = setForm();
+    await user.click(
+      within(panel).getByRole('button', {
+        name: EN['inventory.reorderLevels.items.find'] as string,
+      })
+    );
+    await within(panel).findByRole('option', { name: 'BRK-001 — Front brake pads' });
+    await user.selectOptions(
+      within(panel).getByLabelText(labelled('inventory.reorderLevels.set.item')),
+      ITEM_ID
+    );
+    await user.type(
+      within(panel).getByLabelText(labelled('inventory.reorderLevels.set.level')),
+      '4.000'
+    );
+    await user.click(
+      within(panel).getByRole('button', {
+        name: EN['inventory.reorderLevels.set.submit'] as string,
+      })
+    );
+
+    expect(await screen.findByText('Front brake pads')).toBeVisible();
+    expect(screen.getByText('4.000')).toBeVisible();
+    expect(screen.queryByText(EN['inventory.reorderLevels.none'] as string)).toBeNull();
+  });
+
+  /**
+   * DEF-T-15, the other half: the read failing outright left the section
+   * rendering NOTHING — no table, no empty-case sentence, no word about why —
+   * and silence reads to an operator as "no level is recorded".
+   */
+  it('says the levels could not be read when the read never answers at all', async () => {
+    listReorderLevels.mockRejectedValue(new Error('the action did not answer'));
+    renderScreen({ canManage: true, canReadStock: true });
+    expect(
+      await screen.findByText(EN['inventory.reorderLevels.unavailable'] as string)
+    ).toBeVisible();
+    expect(screen.queryByText(EN['inventory.reorderLevels.none'] as string)).toBeNull();
+  });
+
+  it('retires a level with the LEVEL own version, then reads the list again', async () => {
+    const user = userEvent.setup();
+    listReorderLevels.mockResolvedValue(
+      okRead({
+        asOf: '2026-09-20T08:00:00Z',
+        levels: { items: [reorderLevel], nextCursor: null, hasMore: false },
+      })
+    );
+    retireReorderLevel.mockResolvedValue(
+      success(
+        { ...reorderLevel, status: 'retired', replayed: false },
+        'inventory.reorderLevels.retire.success'
+      )
+    );
+    renderScreen({ canManage: true, canReadStock: true });
+    await screen.findByText('Front brake pads');
+    await user.click(
+      screen.getByRole('button', {
+        name: `${EN['inventory.reorderLevels.retire.action']} BRK-001`,
+      })
+    );
+    await waitFor(() => expect(retireReorderLevel).toHaveBeenCalledTimes(1));
+    expect(retireReorderLevel.mock.calls[0]?.[0]).toBe(LEVEL_ID);
+    expect(retireReorderLevel.mock.calls[0]?.[1]).toBe(3);
+    await waitFor(() => expect(listReorderLevels).toHaveBeenCalledTimes(2));
   });
 });

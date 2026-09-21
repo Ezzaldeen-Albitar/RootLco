@@ -1,10 +1,10 @@
 ---
 manual: 'CRM User Manual'
 title: 'Part 6 — Finance and reporting'
-application_version: '5b2c7840da1821f973438d5429665ef4448132f2'
-application_version_short: '5b2c7840'
+application_version: 'fe09f1a9a8671930f032a18dda497c64e3107d29'
+application_version_short: 'fe09f1a9'
 environment: 'LOCAL — a private single-machine environment at http://localhost:3100. Not public, not hosted.'
-date: '2026-09-18'
+date: '2026-09-21'
 scope_statement: 'This manual describes behaviour implemented at the commit named above, and nothing else.'
 ---
 
@@ -41,13 +41,14 @@ In the left-hand menu <!-- nav.landmark = "Modules" --> you will find:
 | -------------------------------------------------- | --------------------------------------------------- | ------------------------------ | --------------------------------- |
 | "Commerce" <!-- nav.group.commerce -->             | "Billing" <!-- nav.billing -->                      | `/en/invoices`                 | `sal.invoice.manage`              |
 | "Commerce"                                         | "Payments" <!-- nav.payments -->                    | `/en/payments`                 | `sal.finance.view`                |
+| "Commerce"                                         | "Credit notes" <!-- nav.creditNotes -->             | `/en/credit-notes`             | `sal.credit.manage`               |
 | "Records" <!-- nav.group.records -->               | "Reports" <!-- nav.reports -->                      | `/en/reports`                  | `rpt.report.read`                 |
 | "Records" › "Reports"                              | "All reports" <!-- nav.reportsAll -->               | `/en/reports`                  | `rpt.report.read`                 |
 | "Records" › "Reports"                              | "Operational overview" <!-- nav.reportsOverview --> | `/en/reports/overview`         | `rpt.report.read`                 |
 | "Administration" <!-- nav.group.administration --> | "Audit log" <!-- nav.auditLog -->                   | `/en/administration/audit-log` | `iam.audit.view`                  |
 
-In Arabic the same entries read "الفوترة", "المدفوعات", "التقارير", "كل التقارير", "لمحة تشغيلية
-عامة" and "سجل التدقيق". Replace `/en/` with `/ar/` in any address.
+In Arabic the same entries read "الفوترة", "المدفوعات", "إشعارات الخصم", "التقارير", "كل التقارير",
+"لمحة تشغيلية عامة" and "سجل التدقيق". Replace `/en/` with `/ar/` in any address.
 
 A menu entry you do not hold the permission for is not shown at all. The interface tells you plainly
 that the menu is only a convenience: "What you see here is a convenience. Every request is checked
@@ -302,10 +303,15 @@ counter raises a credit note when it comes back. The note waits for a second per
 and nobody has been refunded until then." <!-- inventory.returns.creditExplain --> The return itself
 is Part 5, §5.23.3. The note is born waiting for approval, and approving it is a second person's act.
 
+**The note can now be read, on its own screen.** §6.2a below describes it — and the permission it
+needs, which a newly provisioned organisation does not hold.
+
 **What is still NOT AVAILABLE:**
 
 - **There is no screen that creates a credit note against an invoice directly.** An invoice that was
   not a counter sale, or a counter-sale line nobody brought back, cannot be credited from any screen.
+- **There is no screen that approves one.** The note can be read; the approval the note is waiting
+  for has no interface at this version.
 - **There is no payment-reversal screen.** A receipt can appear as "Reversed" <!-- payments.status.reversed -->
   , and no screen reverses one.
 - An **issued** invoice still cannot be cancelled from any screen. Only a draft can be cancelled
@@ -316,6 +322,73 @@ and payments" report has a "Credit notes" <!-- reports.field.creditNotes --> col
 
 There is no ledger, no chart of accounts and no accounting module of any kind. Nothing beyond
 invoices, credit notes, receipts and allocations exists.
+
+## 6.2a The Credit notes screen — IMPLEMENTED (UI), and out of reach of a new organisation
+
+**Label** — **Credit notes** <!-- creditNotes.page.title --> (navigation: **Credit
+notes** <!-- nav.creditNotes --> ), described as "What has been credited back to a customer, and
+what is still waiting for a second person to approve it." <!-- creditNotes.page.description -->
+
+**Who** — `sal.credit.manage` **and** `sal.finance.view`, together, for both the list and one note.
+Neither read answers without both.
+
+**Where** — its own navigation entry, at `/{language}/credit-notes`, and from **Open the credit
+note** <!-- inventory.returns.openCredit --> on a customer return that raised one (Part 5, §5.23.3).
+
+**Read this before looking for the screen.** `sal.credit.manage` is **not** in the set of
+permissions a new organisation's first administrator is given, and a permission nobody holds cannot
+be granted to anybody. So in a freshly provisioned organisation:
+
+- the **Credit notes** entry is **not shown** in the navigation at all;
+- opening the address directly gives **"Credit notes — You do not have access. Your account does not
+  have permission for this. An administrator can grant it."**;
+- a customer return still raises a credit note, still says a second person must approve it, and
+  **there is nobody in the organisation who can be that person**.
+
+Whether that permission joins the set is an Owner decision, and it has not been taken. Until it is,
+treat a counter-sale return as: the part comes back and the stock moves, the money does not.
+
+**What the screen does, for somebody who does hold both permissions**
+
+**Steps**
+
+1. Choose a branch — **"Choose the branch whose credit notes you want"** <!-- creditNotes.targetLabel -->
+   , because "A credit note belongs to the branch that raised it. Choose one to see what it has
+   credited." <!-- creditNotes.targetExplain --> — and press **Show this branch**
+   <!-- creditNotes.chooseBranch --> .
+2. Read **Credit notes at this branch** <!-- creditNotes.list.heading --> , whose columns are **Why
+   it was raised**, **Amount**, **Approval** and **Action** <!-- creditNotes.column.* --> . Approval
+   reads **Waiting for a second person**, **Approved** or **Refused**
+   <!-- creditNotes.state.pending / .approved / .rejected --> ; an unsettled note shows **Nothing
+   credited yet** <!-- creditNotes.notIssued --> in the amount column.
+3. Choose **Open** <!-- creditNotes.open --> on a row for **The credit note**
+   <!-- creditNotes.detail.heading --> , which shows **Amount**, **Approval**, **Approved on** (or
+   **Not approved yet** <!-- creditNotes.detail.notApproved --> ) and **Why it was raised**
+   <!-- creditNotes.detail.* --> . **Close** <!-- creditNotes.detail.close --> returns to the list.
+
+**What the screen explains about itself.** "A credit note is raised when something already billed is
+given back or corrected. A second person approves it, and nothing is credited until they
+do." <!-- creditNotes.explain -->
+
+**Restrictions — and the most important one is on the screen itself**
+
+- **Nothing here approves anything.** The detail says so: "Approving a credit note is a separate
+  step taken by a second person, and it is not offered on this screen."
+  <!-- creditNotes.detail.approvalNote --> At this version approving a credit note has **no screen
+  anywhere**. **NOT AVAILABLE.**
+- One branch at a time. There is no view across a company.
+- Only the most recent are listed: **"Only the most recent are shown."** <!-- creditNotes.list.truncated -->
+- Where none exists: **"Nothing has been credited at this branch."** <!-- creditNotes.list.none -->
+
+**If it goes wrong**
+
+| Message                                                                                                                                               | What it means                               |
+| ----------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------- |
+| **"You do not have permission to see the credit notes of this branch. That also needs permission to see amounts."** <!-- creditNotes.list.refused --> | One or both permissions are missing.        |
+| **"The credit notes could not be read just now. Try again."** <!-- creditNotes.list.unavailable -->                                                   | The service did not answer.                 |
+| **"That credit note was not found."** <!-- creditNotes.detail.missing -->                                                                             | The note is not at this branch, or is gone. |
+
+**Screenshot** — no screenshot available at this version.
 
 ### 6.2.11 Setting up invoice numbering for a branch
 
@@ -1133,6 +1206,27 @@ rules", [9] "Currencies"; navigation[]; roles_reference[0..4]; cross_cutting.pri
 .correlation_id_for_support, .stale_version_and_conflict, .notifications_audit_documents;
 known_limitations_for_operators items 1,2,3,6,7,8,9,13,14; screenshots_available; not_found items 3,6,8,9.
 Environment: scratchpad/handover-map-A.json — environment.kind, .urls.
+REVISION 2026-09-21 — sections 6.1, 6.2.10 and the new 6.2a were re-read and written at develop
+f30ce918405164712cc9cdcadb458c4e91a2b5b9. Everything else in this part is carried unchanged from
+the readings recorded below.
+
+Read for this revision:
+- apps/api/src/app/api/v1/credit-notes/route.ts (sal.credit-note-list) and
+  .../credit-notes/[creditNoteId]/route.ts (the single read) — both declare sal.credit.manage AND
+  sal.finance.view, and both take the branch as their target.
+- apps/web/src/app/[locale]/(dashboard)/credit-notes/page.tsx and
+  apps/web/src/features/billing/components/CreditNotesScreen.tsx — the branch picker, the list, the
+  single note, the absence of any approval control, and the deliberate choice to show a refusal as
+  a refusal rather than as an empty table.
+- apps/web/src/config/navigation.ts — nav.creditNotes under the Commerce group, gated on
+  sal.credit.manage; apps/web/src/i18n/messages/{en,ar}.json — creditNotes.* and nav.creditNotes.
+- apps/api/src/modules/iam/domain/bootstrap-roles.ts — sal.credit.manage is not in the
+  first-administrator set at this head.
+
+What was exercised rather than read: on 2026-09-21 the returns screen's "Open the credit note" link
+was followed on the local environment as a newly provisioned organisation's first administrator, and
+the screen's refusal was read back from it. No screenshot was captured.
+
 REVISION 2026-09-18 — sections 6.2.1 and 6.2.10 were re-read and rewritten at develop
 5b2c7840da1821f973438d5429665ef4448132f2. Read for this revision:
   apps/web/src/features/billing/api.ts — listCounterSales (sal.counter-sale-list) and

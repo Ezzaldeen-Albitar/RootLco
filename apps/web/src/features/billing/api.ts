@@ -16,6 +16,8 @@ import type {
 import { fromFailure, success, type ActionState } from '@/lib/forms/action-result';
 import type {
   CreatedInvoice,
+  CreditNote,
+  CreditNoteState,
   Invoice,
   InvoiceDetail,
   InvoicePreview,
@@ -210,6 +212,53 @@ export async function listCounterSales(
     '/api/v1/counter-sales' +
       branchTargetQuery(target, { status: filter.status ?? null, limit: 50 })
   );
+}
+
+/* ------------------------------------------------------------------ *
+ * Credit notes (DEF-T-07).
+ *
+ * A credit note is raised by a customer return, which never names the invoice
+ * it lands on, so the note has no parent screen a caller already holds. These
+ * two reads are how it is reached at all — before them the approval operation
+ * took an id no screen printed.
+ * ------------------------------------------------------------------ */
+
+/**
+ * A branch's credit notes (`sal.credit-note-list`), newest first.
+ *
+ * Branch-targeted for the same reason the counter-sale list is: the branch is
+ * the read's TARGET, demanded by the route and re-authorized server-side, so it
+ * travels through `branchTargetQuery` rather than among the filters. One page of
+ * the route's own maximum; the caller reads `hasMore` rather than assuming the
+ * branch fitted.
+ *
+ * A caller without `sal.finance.view` is REFUSED rather than sent an empty page:
+ * the whole row is gated, and an empty list would read as "this branch has
+ * credited nothing". The screen renders that refusal as a refusal.
+ */
+export async function listCreditNotes(
+  target: BranchTarget,
+  filter: {
+    readonly approvalState?: CreditNoteState | undefined;
+    readonly invoiceId?: string | undefined;
+  } = {}
+): Promise<ReadState<CursorPage<CreditNote>>> {
+  return readOperation<CursorPage<CreditNote>>(
+    '/api/v1/credit-notes' +
+      branchTargetQuery(target, {
+        approvalState: filter.approvalState ?? null,
+        invoiceId: filter.invoiceId ?? null,
+        limit: 50,
+      })
+  );
+}
+
+/**
+ * One credit note (`sal.credit-note-detail`) — what a second person is asked to
+ * approve: the amount, the reason the requester gave, and the approval state.
+ */
+export async function readCreditNote(creditNoteId: string): Promise<ReadState<CreditNote>> {
+  return readOperation<CreditNote>(`/api/v1/credit-notes/${encodeURIComponent(creditNoteId)}`);
 }
 
 /**

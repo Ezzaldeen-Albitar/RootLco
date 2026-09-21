@@ -193,6 +193,37 @@ export const MATERIAL_DRAW_REFUSAL_REASONS = Object.freeze([
 ] as const);
 export type MaterialDrawRefusalReason = (typeof MATERIAL_DRAW_REFUSAL_REASONS)[number];
 
+/**
+ * Why a material REQUIREMENT write was refused, as a rule token on the wire
+ * (DEF-T-16).
+ *
+ * A draw publishes `materialDraw.reason` with its figures. A requirement write
+ * published nothing: `mapMaterialFailure` turned each database rule into a
+ * status and a sentence, and `problemFor` reads the catalogue entry and the safe
+ * details only, so the sentence never left the process. Asking twice for the same
+ * part on the same service line therefore reached the operator as a bare
+ * "This change cannot be saved" and a correlation reference.
+ *
+ * These are the tokens that failure carries instead, each in `violations` beside
+ * the request part it belongs to — the same channel `duplicate_opening_cell`
+ * already uses on `ERR-RES-002`. They name a RULE, never a record: no identifier,
+ * no quantity and no name is in a token, so nothing here can leak what the caller
+ * may not read.
+ *
+ * `material_demand_rule` is the honest residual. The database states many
+ * distinct material rules through one check violation and this layer does not
+ * parse their text beyond the three prefixes above it, so a rule it cannot name
+ * is published as one it cannot name rather than as a guess.
+ */
+export const MATERIAL_REFUSAL_RULES = Object.freeze([
+  'material_duplicate_demand',
+  'material_separation_of_duties',
+  'material_approval_required',
+  'material_unknown_reference',
+  'material_demand_rule',
+] as const);
+export type MaterialRefusalRule = (typeof MATERIAL_REFUSAL_RULES)[number];
+
 /** `ck_item_unit_conversions_status`. */
 export const UNIT_CONVERSION_STATES = Object.freeze(['active', 'retired'] as const);
 export type UnitConversionState = (typeof UNIT_CONVERSION_STATES)[number];

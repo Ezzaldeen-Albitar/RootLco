@@ -80,6 +80,8 @@ export const ROUTE_TEMPLATES = Object.freeze([
   '/barcodes/{value}',
   '/blockers/{blockerId}/resolution',
   '/counter-sales',
+  '/credit-notes',
+  '/credit-notes/{creditNoteId}',
   '/credit-notes/{creditNoteId}/approval',
   '/customer-duplicates',
   '/customer-duplicates/{candidateId}/review',

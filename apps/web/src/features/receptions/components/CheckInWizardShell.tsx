@@ -271,6 +271,10 @@ export function CheckInWizardShell({
             session={session}
             writesLocked={locked}
             refresh={refresh}
+            // The same call the numbered buttons above make. A step that
+            // refuses for a reason another step cures can send the operator
+            // there instead of describing the journey (DEF-T-10).
+            goToStep={setChosenStepId}
           />
         </section>
       ) : null}

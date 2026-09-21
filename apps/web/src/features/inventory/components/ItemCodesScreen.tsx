@@ -752,8 +752,16 @@ function SetPriceForm({
         onChange={(event) => setForm((f) => ({ ...f, branchId: event.target.value }))}
         error={errorFor('branchId')}
       />
+      {/*
+       * DEF-T-14. The box is free text because no operation publishes the
+       * currencies an organisation carries — Administration says so itself — so
+       * the help says what the constraint IS rather than leaving the operator to
+       * discover it from a refusal that used to read "Not found" and nothing
+       * else. The refusal now carries its own sentence here; see `setSalePrice`.
+       */}
       <TextField
         label={translate(messages, 'inventory.prices.set.currency')}
+        description={translate(messages, 'inventory.prices.set.currencyHelp')}
         required
         dir="ltr"
         value={form.currencyCode}

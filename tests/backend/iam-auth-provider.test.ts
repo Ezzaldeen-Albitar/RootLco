@@ -693,15 +693,41 @@ describe('iam.auth-password-reset-completion', () => {
     return fake.deliveries[0]!.token;
   }
 
-  it('completes a reset and invalidates every session issued before it', async () => {
+  /**
+   * DEF-T-11 on the RESET path.
+   *
+   * This case used to be called "completes a reset and invalidates every
+   * session issued before it" and asserted that the pre-reset ACCESS token
+   * stopped verifying. It was green only because the double revoked issued
+   * access tokens; the adapter ends a reset by calling the provider's global
+   * sign-out, which revokes REFRESH tokens and cannot reach a signed access
+   * token that has already been handed out. So the test proved a sign-out the
+   * deployed system does not perform — the same shape of false green that let
+   * the console tell an operator their other devices had been signed out.
+   *
+   * Both halves are asserted separately now: the refresh token IS gone, and the
+   * access token is NOT, which bounds the residual by the token's own expiry
+   * and by nothing else — this product publishes no refresh route.
+   */
+  it('completes a reset, ends the refresh token, and leaves an issued access token valid', async () => {
     const login = await authService.login(
       { tenantId: TENANT_A, email: EMAIL_ACTIVE, password: PASSWORD },
       META
     );
     const token = await recoveryToken();
     await authService.completePasswordReset({ token, password: 'a-new-strong-password' });
-    // The pre-reset access token no longer verifies (session revoked by the provider).
-    await expect(fake.verifyToken(login.accessToken)).rejects.toThrow();
+
+    // The old credential is gone, and the session cannot extend itself.
+    await expect(
+      authService.login({ tenantId: TENANT_A, email: EMAIL_ACTIVE, password: PASSWORD }, META)
+    ).rejects.toThrow();
+    expect(login.refreshToken).not.toBeNull();
+    await expect(fake.refreshSession(login.refreshToken as string)).rejects.toMatchObject({
+      reason: 'invalid-token',
+    });
+
+    // The residual, stated rather than assumed.
+    await expect(fake.verifyToken(login.accessToken)).resolves.toBeTruthy();
   });
 
   it('a replayed recovery token is refused (single use)', async () => {

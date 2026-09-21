@@ -1,10 +1,10 @@
 ---
 manual: 'CRM User Manual'
 title: 'Part 5 — Inventory'
-application_version: '5b2c7840da1821f973438d5429665ef4448132f2'
-application_version_short: '5b2c7840'
+application_version: 'fe09f1a9a8671930f032a18dda497c64e3107d29'
+application_version_short: 'fe09f1a9'
 environment: 'LOCAL — a private single-machine environment at http://localhost:3100. Not public, not hosted.'
-date: '2026-09-18'
+date: '2026-09-21'
 scope_statement: 'This manual describes behaviour implemented at the commit named above, and nothing else.'
 ---
 
@@ -52,14 +52,18 @@ opens `/{language}/inventory` and carries a group of sub-entries. The screens ar
 | Stock movements       | `/en/inventory/movements`              | **Stock movements** <!-- inventory.movements.title -->         |
 | Attention             | `/en/attention`                        | **Attention** <!-- attention.page.title -->                    |
 
+One more screen belongs to this area without being under **Inventory** in the sidebar: **Credit
+notes** at `/en/credit-notes`, where the note a customer return raises is read (5.23.3). It is
+described in Part 6, §6.2a, because it is a billing record rather than a stock one.
+
 **Attention** is not under **Inventory** in the sidebar — it is its own entry, because one of its
 five cards is about your subscription rather than your stock. It is documented here (5.30) because
 the other four are stock.
 
 Most screens also carry a short **Inventory screens** <!-- inventory.stockOps.links.label --> link
 strip: **Stock on hand**, **Transfers**, **Goods receipts**, **Adjustments**, **Stock counts**,
-**Counter sales**, **Customer returns**, **Labels**. The older screens carry **Back to inventory**
-<!-- inventory.setup.backToInventory --> to return.
+**Counter sales**, **Customer returns**, **Labels**. The older screens carry **Back to
+inventory** <!-- inventory.setup.backToInventory --> to return.
 
 The whole area turns right-to-left in Arabic; nothing else about inventory changes with the
 language.
@@ -103,23 +107,37 @@ version, in any form an operator can reach:
 The application checks every code again on the server for every single request; what a screen shows
 or hides is only a convenience.
 
-| Code                             | What it buys                                                                                                                                     | Held by a new administrator?             |
-| -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------- |
-| `inv.item.read`                  | The **Inventory** and **Inventory setup** pages, the item search, categories and units, **Labels**, **Unit conversions**, **Vehicle capacities** | Yes                                      |
-| `inv.item.manage`                | Creates categories, items and stock locations; adds and withdraws an item's codes; sets a selling price                                          | Yes                                      |
-| `inv.stock.read`                 | Stock on hand, reservations, locations, opening batches, transfers, goods receipts, counts, adjustments, customer returns, the stock alerts      | Yes                                      |
-| `inv.stock.operate`              | Reserve, release, issue, return; opening batches; transfers; goods receipts; counts; requesting an adjustment; taking a part back                | Yes                                      |
-| `inv.adjustment.approve`         | Approves an opening batch, an adjustment, and a transfer write-off                                                                               | Yes — held so it can be delegated (5.10) |
-| `inv.material.request`           | Asks for the material a job may draw, and asks for extra                                                                                         | Yes                                      |
-| `inv.material.approve`           | Approves a material requirement                                                                                                                  | Yes                                      |
-| `inv.material.exception.approve` | Approves a request for extra material                                                                                                            | Yes                                      |
-| `inv.unit_conversion.manage`     | States and retires a unit conversion                                                                                                             | Yes                                      |
-| `inv.specification.manage`       | Records, confirms and retires a vehicle capacity                                                                                                 | Yes                                      |
-| `inv.cost.view`                  | Unit costs on a goods receipt, and the cost history of an item                                                                                   | No                                       |
-| `sal.invoice.manage`             | Opens **Counter sales**                                                                                                                          | Yes                                      |
-| `sal.finance.view`               | The amounts on a counter sale and on a customer return                                                                                           | Yes                                      |
-| `org.branch.read`                | The branch picker on every stock screen                                                                                                          | Yes                                      |
-| `org.tenant.read`                | The subscription-limits card on **Attention**                                                                                                    | Yes                                      |
+| Code                             | What it buys                                                                                                                                                             | Held by a new administrator?             |
+| -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------- |
+| `inv.item.read`                  | The **Inventory** and **Inventory setup** pages, the item search, categories and units, **Labels**, **Unit conversions**, **Vehicle capacities**                         | Yes                                      |
+| `inv.item.manage`                | Creates categories, items and stock locations; records and stops a reorder level; adds and withdraws an item's codes; sets a selling price                               | Yes                                      |
+| `inv.stock.read`                 | Stock on hand, reservations, locations, opening batches, transfers, goods receipts, counts, adjustments, customer returns, the recorded reorder levels, the stock alerts | Yes                                      |
+| `inv.stock.operate`              | Reserve, release, issue, return; opening batches; transfers; goods receipts; counts; requesting an adjustment; taking a part back                                        | Yes                                      |
+| `inv.adjustment.approve`         | Approves an opening batch, an adjustment, and a transfer write-off                                                                                                       | Yes — held so it can be delegated (5.10) |
+| `inv.material.request`           | Asks for the material a job may draw, and asks for extra                                                                                                                 | Yes                                      |
+| `inv.material.approve`           | Approves a material requirement                                                                                                                                          | Yes                                      |
+| `inv.material.exception.approve` | Approves a request for extra material                                                                                                                                    | Yes                                      |
+| `inv.unit_conversion.manage`     | States and retires a unit conversion                                                                                                                                     | Yes                                      |
+| `inv.specification.manage`       | Records, confirms and retires a vehicle capacity                                                                                                                         | Yes                                      |
+| `inv.cost.view`                  | Unit costs on a goods receipt, and the cost history of an item                                                                                                           | **No** — and see below                   |
+| `sal.credit.manage`              | The **Credit notes** screen, and the credit note a customer return raises                                                                                                | **No** — and see below                   |
+| `sal.invoice.manage`             | Opens **Counter sales**                                                                                                                                                  | Yes                                      |
+| `sal.finance.view`               | The amounts on a counter sale and on a customer return                                                                                                                   | Yes                                      |
+| `org.branch.read`                | The branch picker on every stock screen                                                                                                                                  | Yes                                      |
+| `org.tenant.read`                | The subscription-limits card on **Attention**                                                                                                                            | Yes                                      |
+
+**The two "No" rows are worth planning around, because you cannot fix either from inside the
+organisation.** A permission nobody in an organisation holds cannot be granted to anybody in it, so
+each of these is shut for everyone, not just for the first administrator:
+
+- **Without `inv.cost.view`**, no goods receipt can carry a unit cost and no cost history
+  accumulates. The receipt form states it: **"Unit costs can be recorded only by someone who may see
+  costs."** See 5.19.
+- **Without `sal.credit.manage`**, the **Credit notes** entry is not in the navigation and the
+  screen refuses. A customer return still raises a credit note and still says it is waiting for a
+  second person — and there is nobody who can be that person. See 5.23.3 and Part 6, §6.2a.
+
+Both are the Owner's decision to change, and neither has been changed. Part 3, §3.15 records them.
 
 Three further inventory codes exist in the permission catalogue and still have **no screen** —
 **OPERATOR PROCEDURE** for each. None is held by a freshly provisioned administrator.
@@ -154,6 +172,11 @@ Only after step 5 does any quantity exist. The application says so on the setup 
 **After that first count, stock also arrives by other routes**, each with its own section: a posted
 goods receipt (5.19), a transfer received from another location (5.18), an approved adjustment that
 adds to stock (5.20), and a part taken back from a customer or a job (5.23, 5.15).
+
+**One optional sixth step, and it is the one everybody forgets.** Record a **reorder level** for
+each item you want to be told about (5.7.1). Nothing forces you to, and stock works perfectly well
+without it — but an item with no recorded level can **never** be reported as running low, so until
+you do this the **Running low** signal has nothing to say about it (5.30.1).
 
 ---
 
@@ -319,6 +342,84 @@ left out of the stock-on-hand view unless you ask for them (5.12).
 - **"This code is already used."** <!-- form.violation.duplicate_code -->
 - **"This branch has no stock locations yet — create a warehouse below."** <!-- inventory.setup.locations.none -->
   is an empty list, not an error.
+
+**Screenshot** — no screenshot available at this version.
+
+### 5.7.1 Reorder levels — the quantity at which an item counts as low — IMPLEMENTED (UI)
+
+This is the fourth thing the **Inventory setup** screen does, alongside categories, items and
+locations, and it is the one that makes the **Running low** signal on **Attention** (5.30.1) able
+to say anything at all.
+
+**Label** — **Reorder levels** <!-- inventory.reorderLevels.heading --> , with the explanation
+**"The quantity at or below which an item counts as low. An item with no recorded level is never
+listed as running low, so nothing on the attention screen can point at
+it."** <!-- inventory.reorderLevels.explain -->
+
+**Who** — `inv.stock.read` to see the levels that are recorded — without it, **"Seeing the levels
+that are recorded needs the stock reading permission."** <!-- inventory.reorderLevels.noPermission -->
+— and `inv.item.manage` to record or stop one: **"Recording a reorder level needs the inventory
+management permission, held for the whole organisation."** <!-- inventory.reorderLevels.needsManage -->
+Both are in the set a new organisation's first administrator is given.
+
+**Where** — **Inventory setup**, in its own block.
+
+**Steps to record one** — under **Record a reorder level** <!-- inventory.reorderLevels.set.heading -->
+:
+
+1. **Item** <!-- inventory.reorderLevels.set.item --> . Search the catalogue with **Find the item**
+   <!-- inventory.reorderLevels.items.search --> — **"Part of the reference or of the name. Leave it
+   empty to see the first items in the catalogue."** <!-- inventory.reorderLevels.items.searchHelp -->
+   — press **Find items** <!-- inventory.reorderLevels.items.find --> , and choose one. You never
+   type an identifier.
+2. **Branch** <!-- inventory.reorderLevels.set.branch --> — leave it at **Every branch**
+   <!-- inventory.reorderLevels.set.everyBranch --> , or name one.
+3. **Place inside the branch** <!-- inventory.reorderLevels.set.location --> — leave it at **The
+   whole branch** <!-- inventory.reorderLevels.set.wholeBranch --> , or name one place.
+4. **Counts as low at** <!-- inventory.reorderLevels.set.level --> — the quantity. **"Zero is
+   allowed and means tell me the moment this runs out."** <!-- inventory.reorderLevels.set.levelHelp -->
+5. **Suggested quantity to order** <!-- inventory.reorderLevels.set.order --> — optional, and the
+   form is blunt about what it is: **"Optional, and only a suggestion: nothing here orders
+   anything."** <!-- inventory.reorderLevels.set.orderHelp -->
+6. Press **Record the level** <!-- inventory.reorderLevels.set.submit --> .
+
+**How wide the level reaches** is decided by what you left empty, and the form states the rule:
+**"Leave the branch empty and the level covers every branch of every company. Choose a branch and it
+covers that branch; choose a place inside it and it covers that place alone. Recording a level again
+for the same choice replaces the one that was there."** <!-- inventory.reorderLevels.set.explain -->
+In the table those four widths read **Every branch of every company**, **Every branch of one
+company**, **One branch, as a whole** and **One place inside a
+branch** <!-- inventory.reorderLevels.appliesTo.* --> .
+
+**Result** — **"The reorder level was recorded."** <!-- inventory.reorderLevels.set.success --> and
+the row joins the table straight away, without the page being loaded again.
+
+**Reading them back** — the table **Reorder levels recorded for this
+organisation** <!-- inventory.reorderLevels.caption --> carries **Item**, **Applies to**, **Counts
+as low at**, **Suggested to order** and **Action** <!-- inventory.reorderLevels.column.* --> . Where
+no suggestion was given the cell reads **None recorded** <!-- inventory.reorderLevels.noOrderQty -->
+. Where nothing has been recorded at all: **"No reorder level has been recorded yet, so nothing can
+be reported as running low."** <!-- inventory.reorderLevels.none --> Where there are more than the
+table shows: **"More levels are recorded than are shown
+here."** <!-- inventory.reorderLevels.truncated -->
+
+**Stopping one** — **Stop using this level** <!-- inventory.reorderLevels.retire.action --> .
+Result: **"The level was stopped. It stays readable as the record of what was once
+expected."** <!-- inventory.reorderLevels.retire.success --> A stopped level leaves the table of
+levels in force and is **not** deleted; the item simply stops being reported as low.
+
+**If it goes wrong**
+
+- **"Choose the company as well, or leave the branch empty so the level covers every branch."**
+  <!-- inventory.reorderLevels.branchNeedsCompany -->
+- **"Choose the branch as well, or leave the place empty so the level covers the whole branch."**
+  <!-- inventory.reorderLevels.locationNeedsBranch -->
+- **"The level was refused: what it names is not in a state that can take it."**
+  <!-- inventory.reorderLevels.set.refused -->
+- **"The level was not stopped: its current state does not allow it."**
+  <!-- inventory.reorderLevels.retire.refused -->
+- **"You may not see the reorder levels."** <!-- inventory.reorderLevels.refused --> / **"The reorder
+  levels could not be read just now. Try again."** <!-- inventory.reorderLevels.unavailable -->
 
 **Screenshot** — no screenshot available at this version.
 
@@ -755,10 +856,16 @@ movements are reached from the parts screen through **Stock movements of this wo
 **Result** — The table **Stock movements of the chosen branch, newest first** <!-- inventory.movements.caption -->
 with columns **Sequence**, **When**, **Movement**, **Stock code**, **Location identifier**,
 **Quantity**, **Signed quantity** and **Caused by** <!-- inventory.movements.column.sequence / .occurredAt / .type / .sku / .location / .quantity / .signed / .reference -->
-. **Movement** is one of **Opening**, **Issue**, **Return**, **Damage** or **Adjustment** <!-- inventory.movementType.opening / .issue / .return / .damage / .adjustment -->
-; **Caused by** is one of **Opening count line**, **Part issue**, **Part return**, **Damage record**
-or **Adjustment** <!-- inventory.referenceKind.opening_line / .part_issue / .part_return / .damage / .adjustment -->
+. **Movement** is one of **Opening**, **Issue**, **Return**, **Damage**, **Adjustment**,
+**Transfer**, **Goods received** or **Counter sale** <!-- inventory.movementType.opening / .issue / .return / .damage / .adjustment / .transfer / .receipt / .sale -->
+; **Caused by** is one of **Opening count line**, **Part issue**, **Part return**, **Damage
+record**, **Adjustment**, **Transfer sent**, **Transfer settled**, **Goods received line**,
+**Counter sale line** or **Customer return** <!-- inventory.referenceKind.opening_line / .part_issue / .part_return / .damage / .adjustment / .transfer_dispatch / .transfer_receipt / .goods_receipt_line / .invoice_line / .sales_return -->
 . Direction is shown as **in** or **out** <!-- inventory.direction.in / .out --> .
+
+**Every one of those cells is a sentence, in both languages.** Two of them used not to be: a counter
+sale and its line appeared as internal codes in the **Movement** and **Caused by** columns. At this
+version nothing in this table prints an internal code.
 
 **Restrictions**
 
@@ -783,10 +890,9 @@ again is safe."** <!-- state.error.description --> and **Try again** <!-- state.
 
 ## 5.17 Quarantine stock — what it is and how something gets there — IMPLEMENTED (UI)
 
-A quarantine place is a location you create like any other (5.7), typed **Quarantine**
-<!-- inventory.locationType.quarantine --> . What makes it different is what the rest of the
-
-application does with it.
+A quarantine place is a location you create like any other (5.7), typed
+**Quarantine** <!-- inventory.locationType.quarantine --> . What makes it different is what the rest
+of the application does with it.
 
 **What quarantine means.** The stock screen states it: _"Quarantine rows are stock held apart:
 damaged stock and damaged customer returns are moved into a quarantine location. They are not
@@ -799,9 +905,9 @@ becomes quarantine stock**, held in the quarantine place you name when you take 
 appears on the stock screen like any other row.
 
 **Seeing it.** Quarantine rows are left out of the stock list unless you ask for them: the panel
-says _"One row per item and location. Quarantine locations are left out unless included."_
-<!-- inventory.availability.explain --> Tick **Include quarantine**
-<!-- inventory.availability.includeQuarantine --> to see them.
+says _"One row per item and location. Quarantine locations are left out unless
+included."_ <!-- inventory.availability.explain --> Tick **Include
+quarantine** <!-- inventory.availability.includeQuarantine --> to see them.
 
 **What happens to it next.** Nothing automatic. The application holds the stock apart and records
 how it got there; deciding what becomes of it — scrapping it, returning it to a supplier, repairing
@@ -817,11 +923,10 @@ way it leaves.
 **Label** — **Stock transfers** <!-- inventory.transfers.title --> — _"Send stock between locations,
 receive what arrived, and settle what did not."_ <!-- inventory.transfers.description -->
 
-**Who** — `inv.stock.read` to see them; `inv.stock.operate` to send, receive and settle
-(_"Sending, receiving and settling transfers needs permission to operate stock."_
-<!-- inventory.transfers.needsOperate --> ); `inv.adjustment.approve`, held by a **different person**,
-
-to decide a write-off.
+**Who** — `inv.stock.read` to see them; `inv.stock.operate` to send, receive and settle (_"Sending,
+receiving and settling transfers needs permission to operate
+stock."_ <!-- inventory.transfers.needsOperate --> ); `inv.adjustment.approve`, held by a
+**different person**, to decide a write-off.
 
 **Where** — Sidebar → **Inventory** → **Transfers**, then choose a branch.
 
@@ -837,9 +942,10 @@ the quantity.
 source location at once and is on its way until it is received. While on its way it is available at
 neither end."_ <!-- inventory.transfers.create.explain --> The stock screen carries the same fact
 from the other side: _"In transit is what this item has on its way between locations in the branch.
-It is counted in neither on hand nor available until it is received."_
-<!-- inventory.availability.inTransitNote --> There is an **In transit**
-<!-- inventory.availability.column.inTransit --> column on the stock list for exactly this.
+It is counted in neither on hand nor available until it is
+received."_ <!-- inventory.availability.inTransitNote --> There is an **In
+transit** <!-- inventory.availability.column.inTransit --> column on the stock list for exactly
+this.
 
 **Restrictions**
 
@@ -855,8 +961,8 @@ It is counted in neither on hand nor available until it is received."_
 that arrived** <!-- inventory.transfers.receive.quantity --> .
 
 **The instruction is to enter what physically arrived, not what was sent.** The screen says it:
-_"Enter what physically arrived. If it is less than what is on its way, the rest stays on its way."_
-<!-- inventory.transfers.receive.explain -->
+_"Enter what physically arrived. If it is less than what is on its way, the rest stays on its
+way."_ <!-- inventory.transfers.receive.explain -->
 
 **Result, two cases**
 
@@ -866,9 +972,9 @@ _"Enter what physically arrived. If it is less than what is on its way, the rest
 | Less than that     | **"Part received. Still on its way:"** and the remainder <!-- inventory.transfers.receive.partial --> |
 
 After a partial receipt the screen tells you what the two honest next moves are: _"Receive the rest
-when it arrives, or settle it by returning it to its origin or writing it off."_
-<!-- inventory.transfers.receive.partialNext --> The transfer's status reads **Partly received**
-<!-- inventory.transferStatus.partially_received --> until one of them happens.
+when it arrives, or settle it by returning it to its origin or writing it
+off."_ <!-- inventory.transfers.receive.partialNext --> The transfer's status reads **Partly
+received** <!-- inventory.transferStatus.partially_received --> until one of them happens.
 
 **Restrictions** More than is still on its way is refused: **"This receipt was refused. The quantity
 is more than is still on its way, or the transfer is already closed."**
@@ -877,8 +983,8 @@ is more than is still on its way, or the transfer is already closed."**
 
 **Label** — **Settle missing** <!-- inventory.transfers.resolve.action -->
 
-**Steps** Enter the **Quantity to settle** and choose **What happens to them**
-<!-- inventory.transfers.resolve.kind --> :
+**Steps** Enter the **Quantity to settle** and choose **What happens to
+them** <!-- inventory.transfers.resolve.kind --> :
 
 | Choice               | What happens                                                                             |
 | -------------------- | ---------------------------------------------------------------------------------------- |
@@ -891,16 +997,15 @@ decides it."_ <!-- inventory.transfers.resolve.explain -->
 
 **A write-off is a two-person act.** After requesting one you see **"Write-off requested and waiting
 for a decision. Nothing has moved yet."** <!-- inventory.transfers.resolve.writeOffPending --> and
-**"The person who decides it must be someone else, under write-offs waiting for a decision."**
-<!-- inventory.transfers.resolve.writeOffNoDecision -->
+**"The person who decides it must be someone else, under write-offs waiting for a
+decision."** <!-- inventory.transfers.resolve.writeOffNoDecision -->
 
-**Deciding it.** Under **Write-offs waiting for a decision**
-<!-- inventory.transfers.writeOffs.heading --> , a person holding `inv.adjustment.approve` who is
-
-**not** the requester chooses **Approve write-off** or **Reject write-off**, with a reason either
-way. The screen states the consequence of each: _"Approving removes these units for good. Rejecting
-keeps them on their way, to be received or returned to their origin. Give a reason either way."_
-<!-- inventory.transfers.writeOffs.decide.explain -->
+**Deciding it.** Under **Write-offs waiting for a
+decision** <!-- inventory.transfers.writeOffs.heading --> , a person holding
+`inv.adjustment.approve` who is **not** the requester chooses **Approve write-off** or **Reject
+write-off**, with a reason either way. The screen states the consequence of each: _"Approving
+removes these units for good. Rejecting keeps them on their way, to be received or returned to their
+origin. Give a reason either way."_ <!-- inventory.transfers.writeOffs.decide.explain -->
 
 | Decision | What you see afterwards                                                                                                                  |
 | -------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
@@ -923,14 +1028,13 @@ closed."**
 
 ### 5.18.5 Reading the list
 
-The list is per branch and per direction — **Coming to this branch**
-<!-- inventory.transfers.direction.inbound --> or **Sent by this branch**
-<!-- inventory.transfers.direction.outbound --> — with the columns **Item**, **From and to**,
-
-**Sent**, **Received**, **Still on its way**, **Returned or written off** and **Status**. A status is
-one of **On its way**, **Partly received**, **Received**, **Settled** or **Cancelled**. A location
-outside your access reads **"Not visible to you"** <!-- inventory.transfers.hiddenLocation --> . Only
-the newest fifty are shown.
+The list is per branch and per direction — **Coming to this
+branch** <!-- inventory.transfers.direction.inbound --> or **Sent by this
+branch** <!-- inventory.transfers.direction.outbound --> — with the columns **Item**, **From and
+to**, **Sent**, **Received**, **Still on its way**, **Returned or written off** and **Status**. A
+status is one of **On its way**, **Partly received**, **Received**, **Settled** or **Cancelled**. A
+location outside your access reads **"Not visible to
+you"** <!-- inventory.transfers.hiddenLocation --> . Only the newest fifty are shown.
 
 **Screenshot** — no screenshot available at this version.
 
@@ -982,10 +1086,9 @@ enter or read a unit cost.
 
 **Steps** Open the draft, check it, and post.
 
-**Result** **"Receipt posted; the goods are in stock."** The status reads **Posted**
-<!-- inventory.receiptStatus.posted --> and the screen confirms **"This receipt is posted. Its goods
-
-are in stock."**
+**Result** **"Receipt posted; the goods are in stock."** The status reads
+**Posted** <!-- inventory.receiptStatus.posted --> and the screen confirms **"This receipt is
+posted. Its goods are in stock."**
 
 **Restrictions** _"Posting adds every line to stock and records its cost. A posted receipt cannot be
 changed."_ <!-- inventory.receipts.post.explain --> Posting twice is refused: **"This receipt can no
@@ -1065,16 +1168,17 @@ by a **different person**, to decide.
 ### 5.20.1 Requesting one
 
 **Steps** Choose **Request an adjustment** <!-- inventory.adjustments.create.heading --> , then give
-the **Item and location**, the **Change to stock** — **Add to stock**
-<!-- inventory.adjustments.direction.in --> or **Remove from stock**
-<!-- inventory.adjustments.direction.out --> — the **Quantity** and a **Reason**.
+the **Item and location**, the **Change to stock** — **Add to
+stock** <!-- inventory.adjustments.direction.in --> or **Remove from
+stock** <!-- inventory.adjustments.direction.out --> — the **Quantity** and a **Reason**.
 
-**Result** **"Adjustment requested. Nothing changes in stock until another person approves it."**
-<!-- inventory.adjustments.create.done -->
+**Result** **"Adjustment requested. Nothing changes in stock until another person approves
+it."** <!-- inventory.adjustments.create.done -->
 
 **Restrictions** The panel states the rule before you act: _"A request moves no stock. A different
-person with approval permission must approve it before the quantity changes."_
-<!-- inventory.adjustments.create.explain --> A location holding stock on its way cannot be adjusted:
+person with approval permission must approve it before the quantity
+changes."_ <!-- inventory.adjustments.create.explain --> A location holding stock on its way cannot
+be adjusted:
 
 **"This adjustment cannot be requested for that location right now. A location holding stock on its
 way must be settled through its transfer instead."** <!-- inventory.adjustments.create.refused -->
@@ -1127,13 +1231,12 @@ to count** and add optional **Notes**.
 **Result** **"Count started."** Its status reads **Open** <!-- inventory.countStatus.open --> , then
 **Counting** <!-- inventory.countStatus.counting --> as lines are recorded.
 
-**The thing to understand before you start.** Work does not stop while you count, and the application
-is built for that: _"A count records what one location holds at the moment it starts. Work can
-continue during the count; movements made meanwhile are taken into account."_
-<!-- inventory.counts.explain --> And again on the form: _"Starting a count records what the location
-
-holds right now. Nothing is frozen while you count."_
-<!-- inventory.counts.openForm.explain -->
+**The thing to understand before you start.** Work does not stop while you count, and the
+application is built for that: _"A count records what one location holds at the moment it starts.
+Work can continue during the count; movements made meanwhile are taken into
+account."_ <!-- inventory.counts.explain --> And again on the form: _"Starting a count records what
+the location holds right now. Nothing is frozen while you
+count."_ <!-- inventory.counts.openForm.explain -->
 
 ### 5.21.2 Recording what you counted
 
@@ -1141,16 +1244,31 @@ holds right now. Nothing is frozen while you count."_
 _"Enter a quantity with up to three decimal places. Zero is allowed for an empty shelf."_ — and
 **Save count**.
 
-**Result** **"Counted quantity saved."** A line not yet counted reads **Not counted yet**
-<!-- inventory.counts.line.notCounted --> .
+**Result** **"Counted quantity saved."** A line not yet counted reads **Not counted
+yet** <!-- inventory.counts.line.notCounted --> .
 
-**How the difference is worked out.** Each line shows four figures — **At start**
-<!-- inventory.counts.line.snapshot --> , **Moved during count** <!-- inventory.counts.line.movements -->
-
-, **Counted** and **Difference** — and the screen states the arithmetic: _"The difference compares
-what was counted with what was there at the start plus everything that moved in or out during the
+**How the difference is worked out.** Each line shows four figures — **At
+start** <!-- inventory.counts.line.snapshot --> , **Moved during
+count** <!-- inventory.counts.line.movements --> , **Counted** and **Difference** — and the screen
+states the arithmetic: _"The difference compares what was counted with what was there at the start
+plus everything that moved in or out during the
 count."_ <!-- inventory.counts.detail.varianceExplain --> So a part issued to a job while you were
 counting does not appear as a shortage.
+
+**While the count is still open, the movement column shows no figure, and says why.** The amount
+that moved during a count is worked out **when the count is reconciled** — not continuously — so an
+open count would have to guess at it, and the screen refuses to. The **Moved during count** cell
+reads **Worked out at reconciliation** <!-- inventory.counts.line.movementsAtReconcile --> rather
+than `0.000`, and the screen says: _"What moved during the count is worked out when the count is
+reconciled, so that column shows no figure yet."_ <!-- inventory.counts.detail.movementsPending -->
+It also warns you not to read the difference too early: _"While this count is open, every difference
+shown here compares what was counted with what was there at the start only. Each one is worked out
+again when the count is reconciled, once what moved in or out during the count is
+known."_ <!-- inventory.counts.detail.varianceExplainOpen -->
+
+**Read that once and it saves an argument.** A difference on an open count is provisional. The
+reconciled count is the one that has the movement in it, and the adjustments it raises are computed
+from that.
 
 ### 5.21.3 Closing the count
 
@@ -1186,12 +1304,11 @@ scanned by, and what it is sold for."_ <!-- inventory.identifiers.description --
 
 **Where** — the item's own page, `/{language}/inventory/items/{item}`.
 
-**Steps to add a code** Choose **Add a code** <!-- inventory.identifiers.add.heading --> , choose the
-**Kind of code**, and type the **Code as printed** — _"As printed. Spaces and dashes do not matter."_
-Optionally set **Counted in** (a unit) and **One scan stands for**
-<!-- inventory.identifiers.add.pack --> — _"How many units one scan of this code hands over. A box of
-
-twelve is 12."_
+**Steps to add a code** Choose **Add a code** <!-- inventory.identifiers.add.heading --> , choose
+the **Kind of code**, and type the **Code as printed** — _"As printed. Spaces and dashes do not
+matter."_ Optionally set **Counted in** (a unit) and **One scan stands
+for** <!-- inventory.identifiers.add.pack --> — _"How many units one scan of this code hands over. A
+box of twelve is 12."_
 
 **The kinds of code**
 
@@ -1205,9 +1322,9 @@ twelve is 12."_
 | **Your own code**               | An internal code — see below. |
 
 **Result** **"The code was added."** The list shows **Kind**, **Code**, **One scan stands for**,
-**State** — **In use** <!-- inventory.identifiers.live --> or **Withdrawn**
-<!-- inventory.identifiers.retired --> — and marks the one **Printed on the label**
-<!-- inventory.identifiers.primary --> .
+**State** — **In use** <!-- inventory.identifiers.live --> or
+**Withdrawn** <!-- inventory.identifiers.retired --> — and marks the one **Printed on the
+label** <!-- inventory.identifiers.primary --> .
 
 **The one instruction on this screen that matters most.** _"Enter the code exactly as it is printed
 on the part or on its packaging. Never make one up: a number you invent here belongs to somebody else
@@ -1219,17 +1336,15 @@ code was withdrawn. A scan will no longer find it."**
 
 ### 5.22.2 A code of your own, for a part that arrived with none
 
-**Label** — **Give this item a code of your own**
-<!-- inventory.identifiers.internal.action -->
+**Label** — **Give this item a code of your own** <!-- inventory.identifiers.internal.action -->
 
 **When to use it.** _"For a part that arrived with no code at all."_ Not as a replacement for a code
 that exists.
 
 **How it avoids a clash.** The screen explains: _"The next number is taken from your own series, so
-it can never clash with a code a manufacturer printed."_
-<!-- inventory.identifiers.internal.explain --> You do not type the number; the application takes the
-
-next one.
+it can never clash with a code a manufacturer
+printed."_ <!-- inventory.identifiers.internal.explain --> You do not type the number; the
+application takes the next one.
 
 **Result** **"This item was given a code of your own. Print a label for it."**
 
@@ -1302,6 +1417,16 @@ company**; name both for **One branch**.
 **Result** **"The price was set."** Setting it again replaces the one before it: _"One price is live
 for each combination, so setting it again replaces the one before it."_
 
+**The currency is typed, and it has to be one the organisation already uses.** The field says so:
+_"The three-letter code, and it has to be one this organisation already uses. There is no list to
+choose from yet."_ <!-- inventory.prices.set.currencyHelp --> If it is not, the price is refused
+with two sentences rather than a bare "not found": **"Something this price names is not in this
+organisation: the item itself, the company, the branch, the tax class or the currency. The service
+does not say which of them."** <!-- inventory.prices.set.notInOrganisation --> followed by **"If the
+item, the company and the branch are all still right, then this organisation does not use this
+currency."** <!-- inventory.prices.set.currencyNotCarried --> That second sentence is the one that
+usually tells you what to do.
+
 **Restrictions** An item with no price cannot be sold: **"No selling price is set for this item. A
 counter sale of it is refused until one is."** <!-- inventory.prices.none --> Naming a branch without
 its company is refused: **"Name the company as well when you name a branch."**
@@ -1343,11 +1468,35 @@ selling for nothing."_ <!-- inventory.counterSales.draft.priceNote -->
 sale."_ <!-- inventory.counterSales.sale.paymentNote --> with a **Go to payments for this sale**
 link. See Part 6.
 
-**Restrictions** A draft can be thrown away — **Throw the draft away**
-<!-- inventory.counterSales.void.action --> , with a reason — and **"The draft was thrown away.
+**A drafted sale is not stranded when you leave the screen.** Above the form, the screen lists
+**Sales started here and not finished** <!-- inventory.counterSales.drafts.heading --> for the
+branch you chose — **"A sale that was started but not yet issued or cancelled. Nothing has left the
+shelf on any of these. Reopen one to finish it."** <!-- inventory.counterSales.drafts.explain -->
+Each row shows the **Sale** <!-- inventory.counterSales.column.sale --> and its
+**Total** <!-- inventory.counterSales.column.total --> , is marked **Not finished
+yet** <!-- inventory.counterSales.drafts.notIssued --> , and carries a
+**Reopen** <!-- inventory.counterSales.drafts.reopen --> of its own.
 
-Nothing had moved."** An issued sale cannot. Issuing twice does nothing twice: **"This sale had
-already been issued."**
+Choosing **Reopen** answers **"The sale was reopened. It can be finished or cancelled
+now."** <!-- inventory.counterSales.drafts.reopened --> and puts the draft back on the screen with
+**Issue the sale** and **Throw the draft away** beside it. A draft you are looking at says the same
+thing about itself: **"This sale has been started and not finished. Nothing has left the shelf yet,
+and it stays in the list of sales started here until it is finished or
+cancelled."** <!-- inventory.counterSales.sale.draftListed --> Once it is issued it leaves the list.
+
+Where every sale was finished: **"Every sale started at this branch was
+finished."** <!-- inventory.counterSales.drafts.none --> Where there are more than are shown:
+**"Only the most recent are shown."** <!-- inventory.counterSales.drafts.truncated --> If the list
+cannot be read the screen says which — **"You do not have permission to see the sales started at
+this branch."** <!-- inventory.counterSales.drafts.refused --> or **"The sales started here could
+not be read just now. Try again."** <!-- inventory.counterSales.drafts.unavailable --> — and
+reopening can fail in its own right: **"That sale is no longer
+here."** <!-- inventory.counterSales.drafts.reopenMissing -->
+
+**Restrictions** A draft can be thrown away — **Throw the draft
+away** <!-- inventory.counterSales.void.action --> , with a reason — and **"The draft was thrown
+away. Nothing had moved."** An issued sale cannot. Issuing twice does nothing twice: **"This sale
+had already been issued."**
 
 ### 5.23.3 Customer returns, remaining quantity, and the credit note
 
@@ -1360,13 +1509,39 @@ over the counter, or that was fitted to a job."_ <!-- inventory.returns.descript
 
 1. Say **Where it left on** <!-- inventory.returns.source.kind --> — **Parts handed to a job**
    <!-- inventory.returnSource.part_issue --> or **A line of a counter sale**
-   <!-- inventory.returnSource.invoice_line --> — and give the **Reference**.
-2. Choose **Check what is left** <!-- inventory.returns.source.look --> . The screen answers with
+   <!-- inventory.returnSource.invoice_line --> .
+2. **For a counter sale, the sale and the line are chosen, not typed.** Under **The sale it was
+   bought on** <!-- inventory.returns.sale.label --> the branch's finished sales are offered —
+   _"Finished sales at this branch, most recent first."_ <!-- inventory.returns.sale.help --> —
+   through **Choose the sale** <!-- inventory.returns.sale.choose --> . Choosing one then offers
+   **The line coming back** <!-- inventory.returns.sale.lineLabel --> , each shown as **Line
+   {number}** <!-- inventory.returns.sale.lineNumber --> with its quantity and amount: _"How much of
+   it may still come back is shown once it is chosen."_ <!-- inventory.returns.sale.lineHelp -->
+   There is no **Reference** box on the form while a counter-sale line is the source.
+3. **For parts handed to a job, a reference is still typed**, and the form now says where to find
+   it: _"The reference of the parts that were handed to the job. It is shown on the job the parts
+   went to."_ <!-- inventory.returns.source.issueHelp -->
+4. Choose **Check what is left** <!-- inventory.returns.source.look --> . The screen answers with
    three figures: **Left on it**, **Already back**, and **May still come back**
-   <!-- inventory.returns.figures.remaining --> .
-3. Enter **How many are coming back**, choose **Where it is being received**, and say the
+   <!-- inventory.returns.figures.remaining --> . Those figures are asked of the server for the line
+   you chose, each time you choose one, so they are current rather than remembered.
+5. Enter **How many are coming back**, choose **Where it is being received**, and say the
    **Condition**.
-4. **Take it back** <!-- inventory.returns.create.submit --> .
+6. **Take it back** <!-- inventory.returns.create.submit --> .
+
+**When the sales cannot be offered, the screen says so and offers the old way rather than
+stopping.** **"You do not have permission to see the sales made at this branch, so the sale cannot
+be offered. Type the reference of the line instead."** <!-- inventory.returns.sale.refused --> ,
+**"The sales made here could not be read just now, so the sale cannot be offered. Type the reference
+of the line instead, or try again."** <!-- inventory.returns.sale.unavailable --> , **"No finished
+sale has been made at this branch yet."** <!-- inventory.returns.sale.none --> , and, where the list
+is capped, **"Only the most recent sales are listed. If the one you want is not here, type the
+reference of the line instead."** <!-- inventory.returns.sale.truncated --> A chosen sale whose
+lines cannot be read says which: **"That sale has nothing on it that can come
+back."** <!-- inventory.returns.sale.linesNone --> , **"You do not have permission to see what was
+on that sale."** <!-- inventory.returns.sale.linesRefused --> , **"That sale is no longer
+here."** <!-- inventory.returns.sale.linesMissing --> or **"What was on that sale could not be read
+just now. Try again."** <!-- inventory.returns.sale.linesUnavailable -->
 
 **The two conditions, and where the part goes**
 
@@ -1376,16 +1551,25 @@ over the counter, or that was fitted to a job."_ <!-- inventory.returns.descript
 | **Damaged, held apart** <!-- inventory.returnCondition.damaged -->         | Into a quarantine place you must name (5.17). |
 
 The screen explains the second: _"A damaged part does not go back on the shelf. It is held apart,
-where it cannot be sold or fitted, until somebody decides what becomes of it."_
-<!-- inventory.returns.damagedExplain -->
+where it cannot be sold or fitted, until somebody decides what becomes of
+it."_ <!-- inventory.returns.damagedExplain -->
 
 **The credit note.** A part sold over the counter raises one when it comes back, and it is not a
 refund: _"A part sold over the counter raises a credit note when it comes back. The note waits for a
-second person to approve it, and nobody has been refunded until then."_
-<!-- inventory.returns.creditExplain --> The result message says the same: **"The part was taken
+second person to approve it, and nobody has been refunded until
+then."_ <!-- inventory.returns.creditExplain --> The result message says the same: **"The part was
+taken back, and a credit note is waiting for a second person to approve it."** The row shows
+**Credit note raised** <!-- inventory.returnStatus.credited --> and **Waiting for approval**, and
+carries **Open the credit note** <!-- inventory.returns.openCredit --> , which takes you to the note
+itself (Part 6, §6.2a).
 
-back, and a credit note is waiting for a second person to approve it."** The row shows **Credit note
-raised** <!-- inventory.returnStatus.credited --> and **Waiting for approval**.
+**Read the next paragraph before you promise a customer a refund.** The credit note has a screen at
+this version, and **the second person the message names does not exist in a newly provisioned
+organisation.** Approving a credit note needs the credit permission, which is not in the set a new
+organisation's first administrator is given — and nobody can be granted a permission that nobody
+holds. So in a new organisation the note is raised, it is visible to nobody, and it stays waiting.
+Whether that permission joins the set is an Owner decision and has not been taken. Part 6, §6.2a
+states what the screens do; Part 3, §3.15 states the gap.
 
 **Restrictions**
 
@@ -1441,10 +1625,9 @@ be above zero, with at most twelve places after the point. A conversion is retir
 **Retire** <!-- inventory.conversions.retire.action --> gives **"The conversion was retired."** and a
 second attempt reads **"This conversion has already been retired."**
 
-**Reading the list** Columns: **What it says**, **Applies to** (a part, or **Every part**
-<!-- inventory.conversions.tenantWide --> ), **Where it was read**, **State** — **In force** or
-
-**Retired** — and **Stated on**.
+**Reading the list** Columns: **What it says**, **Applies to** (a part, or **Every
+part** <!-- inventory.conversions.tenantWide --> ), **Where it was read**, **State** — **In force**
+or **Retired** — and **Stated on**.
 
 **Screenshot** — no screenshot available at this version.
 
@@ -1453,8 +1636,8 @@ second attempt reads **"This conversion has already been retired."**
 ## 5.25 Vehicle capacities — IMPLEMENTED (UI)
 
 **Label** — **Vehicle capacities** <!-- inventory.specifications.title --> — _"How much a vehicle
-takes for a given service, with the source it was read from."_
-<!-- inventory.specifications.description -->
+takes for a given service, with the source it was read
+from."_ <!-- inventory.specifications.description -->
 
 **Who** — `inv.item.read` to read, `inv.specification.manage` to record, confirm and retire.
 
@@ -1474,13 +1657,12 @@ yet confirmed** <!-- inventory.specifications.status.recorded --> .
 capacity was confirmed and now answers for matching vehicles."**
 
 **The rule the whole screen exists for.** _"A recorded capacity decides nothing until it is
-confirmed. Only a confirmed one answers for a vehicle when material is asked for."_
-<!-- inventory.specifications.explain --> And two sentences about where a figure may come from:
-
-_"Type the figure exactly as the manual states it. There is no house average."_
-<!-- inventory.specifications.create.capacityHelp --> and _"Name the manual, the plate or the page. A
-
-figure nobody can point at is a guess."_ <!-- inventory.specifications.create.sourceHelp -->
+confirmed. Only a confirmed one answers for a vehicle when material is asked
+for."_ <!-- inventory.specifications.explain --> And two sentences about where a figure may come
+from: _"Type the figure exactly as the manual states it. There is no house
+average."_ <!-- inventory.specifications.create.capacityHelp --> and _"Name the manual, the plate or
+the page. A figure nobody can point at is a
+guess."_ <!-- inventory.specifications.create.sourceHelp -->
 
 **Restrictions** One capacity per vehicle and service kind: **"A capacity for that vehicle and
 service kind is already on file, or your access does not cover every branch."** A capacity is
@@ -1508,17 +1690,40 @@ decide; `inv.material.exception.approve` to decide a request for extra.
 ### 5.26.1 What a requirement is
 
 _"Each service line on this job is allowed a stated amount of one part or one family of parts.
-Reserving and issuing for this job are measured against that amount."_
-<!-- inventory.material.explain -->
+Reserving and issuing for this job are measured against that
+amount."_ <!-- inventory.material.explain -->
 
-So a requirement is per **service line**, and names either one **Part** or **Any part in the group**
-<!-- inventory.material.itemFamily --> .
+So a requirement is per **service line**, and names either one **Part** or **Any part in the
+group** <!-- inventory.material.itemFamily --> .
 
 ### 5.26.2 Asking for material — and where the amount comes from
 
-**Steps** Choose **Ask for material** <!-- inventory.material.create.open --> , give the **Service
-line reference**, name either a **Part reference** or a **Part group reference**, give the **Service
-kind**, and choose **Where the amount comes from** <!-- inventory.material.create.basis --> :
+**Nothing on this form is an identifier you have to know.** At this version the service line and the
+part are both **chosen**:
+
+- **Service line** <!-- inventory.material.create.serviceLine --> — _"The line of this work order
+  the material is for."_ <!-- inventory.material.create.serviceLineChooseHelp --> Use **Choose a
+  line** <!-- inventory.material.create.chooseServiceLine --> ; each line is offered by its own
+  description together with its quantity and unit.
+- **Item** <!-- inventory.stockOps.item.label --> — the same catalogue finder every other stock
+  screen uses. **Find an item** <!-- inventory.stockOps.item.find --> , _"Type the start of the
+  stock code or name, then search."_ <!-- inventory.stockOps.item.findHelp --> , then **Choose an
+  item** <!-- inventory.stockOps.item.choose --> . It is optional, because the material may be named
+  by a part group instead — clearing the choice clears the field.
+- **Part group reference** <!-- inventory.material.create.itemCategoryId --> is still typed. _"Use a
+  group when any part of that kind may be drawn."_ <!-- inventory.material.create.itemCategoryHelp -->
+
+**Where the lines cannot be offered, the screen says which and offers the typed box instead** —
+_"This work order has no service line yet, so there is nothing to ask material for. Record the line
+first."_ <!-- inventory.material.create.serviceLineNone --> , _"The lines of this work order cannot
+be offered, because reading the work order needs a permission you do not hold. Someone who may read
+it can give you the reference of the line."_ <!-- inventory.material.create.serviceLineNoRead --> ,
+or the refused and unavailable forms of the same. Only in those cases does a **Service line
+reference** box appear.
+
+**Steps** Choose **Ask for material** <!-- inventory.material.create.open --> , choose the **Service
+line**, choose the **Item** or name a **Part group reference**, give the **Service kind**, and
+choose **Where the amount comes from** <!-- inventory.material.create.basis --> :
 
 | Basis                                                                                            | What it means                                                             |
 | ------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------- |
@@ -1535,13 +1740,46 @@ service kind. You can still ask, and the request will say the capacity is missin
 confirmed rather than guessed."_
 
 For an entered amount, two sentences carry the rule: _"Type the figure exactly as you read it."_ and
-_"Name the manual, the plate or the page. An amount nobody can point at is a guess."_
-<!-- inventory.material.create.sourceHelp -->
+_"Name the manual, the plate or the page. An amount nobody can point at is a
+guess."_ <!-- inventory.material.create.sourceHelp -->
 
-**Result** **"The request for material was recorded."**
+**Result** **"The request for material was recorded."** Press **Ask for this
+material** <!-- inventory.material.create.submit --> to send it. The new request then appears on the
+panel below, in the state described in 5.26.3.
 
 **Restrictions** One live request per service line and part: **"This service line already has a live
-request for that part, or the job no longer accepts one."**
+request for that part, or the job no longer accepts
+one."** <!-- inventory.material.create.refused -->
+
+**A refused request now names the rule that refused it.** Until this version a refusal on this panel
+could arrive as only **"This change cannot be saved"** and a reference, leaving you to work out
+which rule had stopped it. At this version the service names the rule and the panel prints its
+sentence. Nothing is created by any of them, which is the point of the refusal:
+
+| What you see                                                                                                                                                                                      | What it means                                                    | What to do                                                                               |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| **"This service line already has a live request for that part, or for another part in its group, so nothing was saved. Withdraw that request first, or ask for extra on the one that is there."** | The line already has a live request for that part or its group.  | Withdraw it (5.26.8), or ask for extra against it (5.26.6).                              |
+| **"The person who asked for this may not decide it. Ask another approver to decide it."**                                                                                                         | You asked for it, so you may not decide it.                      | Ask a second person who holds the approval code (5.26.4).                                |
+| **"This still needs an approved amount with every fact that amount rests on, so nothing was saved. Supply what the request says is missing, have it approved, then try again."**                  | A fact the amount rests on is still missing.                     | Supply the missing fact, choose **Check again**, then have it approved (5.26.3, 5.26.4). |
+| **"Something this request names is not in this organisation: the service line, the part, the part group or the unit. The service does not say which of them."**                                   | One of the four things it names cannot be found.                 | Choose the line and the part again from the choosers rather than reusing a reference.    |
+| **"This breaks one of the rules about what the job is allowed to use, so nothing was saved. The service does not say which rule, so check it against what the job already has and try again."**   | A material rule refused it and the service could not name which. | Read the **Material allowed for this job** panel and compare it with what you asked for. |
+
+The last sentence is deliberate rather than vague: where the service cannot say which rule refused
+the request, it says so instead of naming one it is guessing at. The same sentences are printed
+wherever a material request is written — asking, deciding, asking for extra and deciding extra.
+
+**What still arrives as the act's own sentence.** A refusal that comes from the state the record is
+already in, rather than from a material rule, is still answered with the one sentence that belongs
+to the act — **"This request cannot be decided in its current state, or it was asked for by
+you."** <!-- inventory.material.decide.refused --> , **"Extra material cannot be asked for while the
+request is in this state."** <!-- inventory.material.exception.refused --> and the others quoted in
+5.26.4, 5.26.6 and 5.26.8. Those name more than one cause at once, and reading the panel tells you
+which applies.
+
+**Two things the panel still prints as internal references.** A request in the list is shown as
+**Service line** and **Part** followed by a stored identifier rather than the line's description and
+the part's code and name — which the form beside it does use. Read the request back on the form's
+own choices if the reference means nothing to you.
 
 ### 5.26.3 The states a request passes through
 
@@ -1601,9 +1839,8 @@ afterwards:** so the consequence is visible before it is decided.
 **What approval does** — exactly what the screen says: _"An approved request raises the amount
 allowed by exactly that much."_ <!-- inventory.material.exception.explain -->
 
-**Restrictions** A separate person again: _"You asked for this; another approver has to decide it."_
-<!-- inventory.material.exception.ownRequest --> Its own states are **Waiting for approval**,
-
+**Restrictions** A separate person again: _"You asked for this; another approver has to decide
+it."_ <!-- inventory.material.exception.ownRequest --> Its own states are **Waiting for approval**,
 **Approved** and **Turned down**.
 
 ### 5.26.7 Every refusal you can meet when drawing against a job
@@ -1621,10 +1858,9 @@ of the material rules. Each names what to do next.
 
 ### 5.26.8 Settling or withdrawing a requirement
 
-Once the parts are handed over, **Settle it** <!-- inventory.parts.request.close --> releases anything
-still held — **"The material was settled."** If the job changed instead, **Withdraw it**
-<!-- inventory.parts.request.cancel --> , with a reason — **"The request for material was
-
+Once the parts are handed over, **Settle it** <!-- inventory.parts.request.close --> releases
+anything still held — **"The material was settled."** If the job changed instead, **Withdraw
+it** <!-- inventory.parts.request.cancel --> , with a reason — **"The request for material was
 withdrawn."** A requirement parts have already been drawn against cannot be withdrawn: **"Parts have
 already been taken against this, so it cannot be withdrawn. Return or release them first."**
 
@@ -1640,8 +1876,9 @@ chosen allowance."** <!-- inventory.parts.draw.usingRequirement --> Reserving fr
 reads _"Reserving holds the parts for this job. It is measured against the amount the job is
 allowed."_ <!-- inventory.parts.reserve.explain -->
 
-A draw that opens a material request shows it: **"The material this draw opened"**
-<!-- inventory.parts.request.heading --> with its reference, and the two endings in 5.26.8.
+A draw that opens a material request shows it: **"The material this draw
+opened"** <!-- inventory.parts.request.heading --> with its reference, and the two endings in
+5.26.8.
 
 ---
 
@@ -1708,7 +1945,8 @@ reserved — is at or below the reorder level recorded for the item. An item wit
 never listed."_ <!-- attention.lowStock.rule -->
 
 Read the second sentence carefully. **An item with no recorded reorder level never appears here.**
-Silence on this card is not evidence that nothing is low.
+Silence on this card is not evidence that nothing is low. **Record the levels first** — the screen
+that does it is **Inventory setup**, described at 5.7.1 — and this card starts answering.
 
 Columns: **Item**, **Where** (or **Whole branch**), **Available**, **Reorder level**, **Short by**,
 **Suggested order quantity**. The suggestion is only that: _"A suggestion. Nothing is ordered from
@@ -1721,8 +1959,8 @@ Empty: **"Nothing in this branch has reached its reorder level."**
 **"Differences found by a count"** <!-- attention.discrepancy.title -->
 
 **The rule:** _"Listed when a finished stock count found a difference between the shelf and the
-records. The decision says what happened to the correction it raised."_
-<!-- attention.discrepancy.rule -->
+records. The decision says what happened to the correction it
+raised."_ <!-- attention.discrepancy.rule -->
 
 Columns: **Item**, **Count reference**, **Difference**, **Decision** — or **"No correction was
 raised"**. There is a link to **Open stock counts**.
@@ -1751,8 +1989,8 @@ Empty: **"No item in this branch left faster than usual."**
 
 **"Still on their way"** <!-- attention.inTransit.title -->
 
-**The rule:** _"Listed when a transfer was sent more than {days} days ago and has not fully arrived."_
-<!-- attention.inTransit.rule --> Unless changed, that is **7 days**.
+**The rule:** _"Listed when a transfer was sent more than {days} days ago and has not fully
+arrived."_ <!-- attention.inTransit.rule --> Unless changed, that is **7 days**.
 
 Columns: **Transfer**, **From and to**, **Item**, **Still on its way**, **Age**. A branch outside
 your access reads **"a branch not in your list"**.
@@ -1800,16 +2038,39 @@ activated and granted the administrator role, the batch approved by that second 
 approval repeated without a second approval being made, `12.000` confirmed on hand, and the movement
 ledger showing the single opening row. Those are steps 29 to 49 of that run.
 
-**None of the capabilities added since — transfers, goods receipts and cost history, adjustments,
-stock counts, item codes, labels, scanning, counter sales, customer returns, unit conversions,
-vehicle capacities, the material a job is allowed to use, and the Attention screen — was part of that
-run.** Sections 5.17 to 5.30 are written from the code and the application's own wording at the
-commit in the front matter, and from nothing else. An acceptance journey covering them is recorded as
-still owed in
-[`../product/owner-directive-2026-09-16/capability-status.md`](../product/owner-directive-2026-09-16/capability-status.md).
+**None of the capabilities added since was part of that run.** Since then, however, a good deal of
+this part **has** been worked by hand on the local environment, in a real browser and over the
+service, between 2026-09-19 and 2026-09-21. Stated exactly, so that nothing above is read as more
+than it is:
 
-No inventory screen was captured as a screenshot, and no inventory browser case exists. Nothing here
-has been run on a hosted or production environment, because none exists.
+**Exercised, and the sentences quoted above are what the screens said:** creating a category, an
+item, a warehouse and a storage place; a goods receipt recorded and posted (**without** a unit cost,
+for the reason at 5.3); a transfer sent, partly received, its shortfall settled and the write-off
+decided by a second person; a stock count opened, recorded, reconciled, and separately cancelled —
+including the "worked out at reconciliation" wording of 5.21.2; an adjustment requested by one
+person and approved by another; item codes, an internal code, a printed label and a scan; a selling
+price set, and one refused for a currency the organisation does not use; a counter sale drafted,
+left, reopened from the list of unfinished sales and issued; a customer return taken back through
+the sale and the line the screen offered, raising a credit note; the credit-note screen opened and
+its refusal read; a reorder level recorded, listed, used by the **Running low** card and then
+stopped; unit conversions; the whole of the material control surface in 5.26 and 5.27 — the
+allowance, the cap, the reservation-then-issue accounting, two simultaneous draws, an exception
+decided by a different person, returns restoring the allowance, an exact conversion applied to a
+draw, and a request whose specification is missing refusing to be approved.
+
+**Not exercised:** the opening-stock chain, which the earlier acceptance run covered and this work
+did not repeat; quarantine disposal, because there is none; the camera path of the scanner; the
+Arabic rendering of these screens, apart from the parts screen, whose work-order state was read in
+Arabic and is a name there; and the five refusal sentences listed in 5.26.2, which arrived after the
+campaign ended and were read in the code rather than driven in a browser.
+
+An acceptance journey covering this part as a whole is recorded as still owed in
+[`../product/owner-directive-2026-09-16/capability-status.md`](../product/owner-directive-2026-09-16/capability-status.md),
+and the rows that have been measured say so there.
+
+No inventory screen was captured as a screenshot for this manual, and no inventory browser case
+exists in the repository's own test suites. Nothing here has been run on a hosted or production
+environment, because none exists.
 
 Nothing in this part is certified. The phase carries a conditional Owner decision only; the QA and
 security determinations do not exist.
@@ -1836,6 +2097,65 @@ security determinations do not exist.
 - **Any screenshot of an inventory screen** is NOT ESTABLISHED: none was captured in the evidence set
   for this version.
 
+<!--
+REVISION 2026-09-21, second — section 5.26.2 was re-read and written at develop
+fe09f1a9a8671930f032a18dda497c64e3107d29, and 5.31 was amended to say that what it describes was
+read rather than driven. Every other section of this part is carried unchanged from the readings
+recorded below, and the pin in the front matter moved with this reading.
+
+Read for this revision:
+- apps/api/src/modules/inventory/domain/inventory.ts — MATERIAL_REFUSAL_RULES, the five tokens a
+  refused material write now publishes, and why the last of them names no rule.
+- apps/api/src/modules/inventory/application/inventory-material-service.ts — refuseMaterial and
+  mapMaterialFailure, which carry the token in violations against body; and the decide pre-check
+  that publishes the same token as the database constraint behind it.
+- apps/web/src/features/inventory/inventory-contract.ts MATERIAL_REFUSAL_RULES and
+  apps/web/src/features/inventory/api.ts refusalOf, which keeps a violation sentence over the
+  sentence the caller names.
+- apps/web/src/i18n/messages/en.json — form.violation.material_duplicate_demand,
+  material_separation_of_duties, material_approval_required, material_unknown_reference and
+  material_demand_rule; and the act sentences inventory.material.decide.refused,
+  inventory.material.exception.refused and inventory.material.exceptionDecision.refused, which are
+  what a state refusal still reads as.
+
+Nothing in this revision was exercised in a browser, and 5.31 says so.
+-->
+<!--
+REVISION 2026-09-21 — sections 5.1, 5.3, 5.4, 5.7.1 (new), 5.16, 5.21.2, 5.23.2, 5.23.3, 5.26.2,
+5.30.1 and 5.31 were re-read and written at develop f30ce918405164712cc9cdcadb458c4e91a2b5b9.
+Everything else in this part is carried unchanged from the readings recorded below.
+
+Read for this revision:
+- apps/api/src/app/api/v1/reorder-levels/route.ts (inv.reorder-level-list on inv.stock.read,
+  inv.reorder-level-set on inv.item.manage) and
+  apps/api/src/app/api/v1/reorder-levels/[reorderLevelId]/retirement/route.ts
+  (inv.reorder-level-retire on inv.item.manage).
+- apps/api/src/app/api/v1/counter-sales/route.ts — sal.counter-sale-list, which the counter-sales
+  screen now reads to publish the sales started at a branch and not finished.
+- apps/api/src/app/api/v1/returnable-quantities/route.ts — inv.returnable-quantity-read, asked for
+  the line the returns screen offers.
+- apps/api/src/app/api/v1/credit-notes/route.ts and .../[creditNoteId]/route.ts — both declare
+  sal.credit.manage and sal.finance.view; apps/web/src/config/navigation.ts nav.creditNotes, gated
+  on sal.credit.manage.
+- apps/web/src/features/inventory/components/MaterialRequirementsPanel.tsx — the service-line
+  chooser, the catalogue ItemFinder that replaced the typed part reference, and the four cases in
+  which the typed service-line box still appears;
+  apps/web/src/features/inventory/components/stock-operations.tsx ItemFinder for its wording.
+- apps/web/src/i18n/messages/en.json — inventory.reorderLevels.*, inventory.counterSales.drafts.*,
+  inventory.counterSales.sale.draftListed, inventory.counterSales.column.*, inventory.returns.sale.*,
+  inventory.returns.source.issueHelp, inventory.returns.openCredit, creditNotes.*,
+  inventory.counts.line.movementsAtReconcile, inventory.counts.detail.movementsPending,
+  inventory.counts.detail.varianceExplainOpen, inventory.movementType.sale,
+  inventory.referenceKind.invoice_line, inventory.referenceKind.sales_return,
+  inventory.material.create.serviceLine*, inventory.prices.set.currencyHelp and the two price
+  refusal sentences.
+- apps/api/src/modules/iam/domain/bootstrap-roles.ts — inv.cost.view and sal.credit.manage are both
+  outside the first-administrator set at this head, and the same file records that the cost
+  exclusion is a decision rather than an oversight.
+
+What was exercised rather than read is listed in 5.31. No screenshot of any inventory screen was
+captured, so every Screenshot field still says so.
+-->
 <!--
 REVISION 2026-09-18 — sections 5.1, 5.2, 5.3, 5.4, 5.9 and 5.17 to 5.32 were re-read and written at
 develop 5b2c7840da1821f973438d5429665ef4448132f2. Sections 5.5 to 5.16 are carried unchanged from

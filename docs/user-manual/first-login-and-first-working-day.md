@@ -1,10 +1,10 @@
 ---
 manual: 'CRM User Manual'
 title: 'Quick start — First login and first working day'
-application_version: '5b2c7840da1821f973438d5429665ef4448132f2'
-application_version_short: '5b2c7840'
+application_version: 'fe09f1a9a8671930f032a18dda497c64e3107d29'
+application_version_short: 'fe09f1a9'
 environment: 'LOCAL — a private single-machine environment at http://localhost:3100. Not public, not hosted.'
-date: '2026-09-18'
+date: '2026-09-21'
 scope_statement: 'This manual describes behaviour implemented at the commit named above, and nothing else.'
 ---
 
@@ -60,6 +60,20 @@ browser can start it. **Screenshot:** no screenshot available at this version.
 > command against the database, described once in
 > [`../platform/platform-owner-provisioning.md`](../platform/platform-owner-provisioning.md). If you
 > are reading this because nobody can sign in at all, that is the document you need, not this one.
+> On this installation the platform owner signs in as `owner@rootlco.com`; where that account's
+> password is kept is a private matter between the Owner and whoever runs the machine, and it is
+> deliberately not written down in this repository.
+
+> **About the mailbox in step 1.** It is a mail catcher, not a mail service. No message this
+> installation produces leaves the machine, no external mail is configured, and every link inside
+> those messages addresses `localhost` — so a link forwarded to somebody else's computer will not
+> open. The application's own notifications do not use email at all: nothing tells anybody about a
+> work order, an invoice or a delivery except a person telling them.
+
+> **Nothing in this guide is a deployment, and neither is a promotion.** The software moves from a
+> working branch to a main branch once it has been reviewed. That is a statement about the source
+> and installs nothing; at the version this guide describes it has not happened either. The only
+> place this product runs is the machine in front of you.
 
 ---
 
@@ -265,11 +279,19 @@ The provisioned administrator holds all four. **Where:** **Customers** <!-- nav.
    and, if it differs, **Trading name** <!-- crm.customers.create.tradeName --> . Set **Initial
    status** <!-- crm.customers.create.lifecycleStatus --> and **Preferred language** <!-- crm.customers.create.preferredLocale -->
    (_"A registered platform language code, for example ar or en."_).
-4. Now the vehicle: **Vehicles** → **Add a vehicle** <!-- vehicles.create.title --> . _"Register a
+4. **Record the customer's telephone number now**, on the profile you have just created: open the
+   **Contacts** tab, choose **Add contact**, set the channel to **Phone** or **Mobile**, type the
+   number and save. It takes ten seconds and it is what makes the customer findable by phone for
+   the rest of their life with you. The permission for it is in the set you were given.
+5. Now the vehicle: **Vehicles** → **Add a vehicle** <!-- vehicles.create.title --> . _"Register a
    vehicle. Every field is optional."_ <!-- vehicles.create.description --> Record **VIN** <!-- vehicles.create.vin -->
-   , **Make**, **Model**, **Model year**, **Colour** and your own reference if you have them, then
-   **Create vehicle** <!-- vehicles.create.submit --> .
-5. Link the two. The simplest route is step 9 below, the walk-in intake, which records the
+   , **Model year**, **Colour** and your own reference if you have them, then **Create vehicle** <!-- vehicles.create.submit -->
+   .
+   **Do not expect to choose a make or a model.** The make list on a newly provisioned organisation
+   offers nothing but "Not specified", the catalogue is supplied by the platform and is read-only to
+   you, and no permission you could be granted would change that. Put what the vehicle is in your
+   own reference field, and search by plate or chassis number.
+6. Link the two. The simplest route is step 9 below, the walk-in intake, which records the
    relationship as part of receiving the car.
 
 **Result:** **Customer created.** <!-- crm.customers.create.created --> and **Vehicle created.** <!-- vehicles.create.created -->
@@ -280,7 +302,18 @@ new vehicle** <!-- vehicles.create.openCreated --> . **Restrictions:**
 - A new vehicle is a draft: _"A new vehicle is created as a draft. Details can be completed later."_ <!-- vehicles.create.draftNote -->
 - You can search customers by telephone number but not by email address, and vehicle search matches
   VIN and reference **exactly** — _"VIN and vehicle reference are matched exactly. A plate also finds
-  a vehicle by a plate it carried before."_ <!-- vehicles.search.exactMatchNote -->
+  a vehicle by a plate it carried before."_ <!-- vehicles.search.exactMatchNote --> A plate the
+  vehicle used to carry finds it too, and the row says so and names the date that plate stopped
+  being the current one.
+- **Arabic-Indic digits and ASCII digits are the same thing to every search box here.** Typing
+  ٠٧٩١٢٣٤٥٦٧ finds the customer whose number is recorded as 0791234567, and the other way round.
+  The same is true of a plate and of a work-order number. You do not have to switch keyboards.
+- **A telephone number is shown in full only to somebody allowed to see personal details.** Everyone
+  else sees it shortened to its last four digits. That is the product protecting the customer, not a
+  display fault — and searching still works on the whole number even when what you are shown is
+  masked.
+- **Searching by make or model will never match anything in a new organisation**, because no vehicle
+  can carry one (step 5 of this section, above).
 - **Merging two records is NOT AVAILABLE**, for customers and for vehicles alike: _"Merging two
   customer records is not available yet. The rules for it are pending an Owner decision."_ <!-- crm.duplicates.mergePendingDecision -->
   The duplicate queues let you dismiss a pair, nothing more.
@@ -356,6 +389,15 @@ these. **Where:** **Walk-in intake** <!-- nav.walkIn --> at `/{locale}/reception
 **Vehicle check-in** <!-- receptions.checkIn.title --> at `/{locale}/receptions/check-in`.
 **Steps:**
 
+**A shorter way in, when you already have the customer open.** The customer profile carries a
+command **New work order** <!-- crm.customers.profile.newWorkOrder --> . It creates nothing: it
+opens a screen that asks which of that customer's vehicles has been brought in, and only then
+continues to check-in, so you rejoin the steps below at step 3. The rule is on that screen —
+_"Choose one vehicle to continue. A visit cannot be opened without a
+vehicle."_ <!-- receptions.workOrderStart.continueHint --> If the customer has no vehicle recorded,
+the same screen offers **Find or add a vehicle** <!-- receptions.workOrderStart.addVehicle --> .
+**There is no path anywhere in this product that opens a visit for a customer without a vehicle.**
+
 1. **Walk-in intake** — _"Receive a customer who arrived without an appointment: find or add the
    customer and the vehicle, then continue to check-in."_ <!-- receptions.intake.description -->
    Work the three steps: **Find the customer** <!-- receptions.intake.customer.heading --> →
@@ -389,12 +431,20 @@ appears on the **Reception queue** <!-- receptions.queue.title --> for that bran
 - A vehicle may hold only one open visit. If it already has one you see **This vehicle already has
   an open visit** <!-- receptions.checkIn.openVisitTitle --> and **Resume the open visit** <!-- receptions.checkIn.resume -->
   .
-- A provisioned administrator does **not** hold the evidence permissions, so the photograph and
-  evidence steps will refuse or be withheld rather than offered. The fuel-level and warning-light
-  catalogues are configuration with no screen — _"No fuel levels are configured yet. The visit can
-  be opened without one."_ <!-- receptions.checkIn.fuelEmpty --> and _"The warning-light catalogue
-  has no entries, so no lamp can be recorded. This is the catalogue answering correctly, not a
-  failure."_
+- **Approving fails until somebody entitled to decide has authorised the work**, and that is
+  recorded two steps earlier, on **Parties and authorization** — not on the summary. The refusal
+  says exactly that: _"Nobody entitled to decide has approved this visit yet, so the work cannot go
+  ahead. Record that approval on the parties and authorization step, then try again."_ <!-- form.violation.authorization_missing -->
+  and offers **Open the parties and authorization step** <!-- receptions.command.goToAuthorization -->
+  to take you there. **This is the single step people miss on their first visit.** Record the
+  service requester's approval, come back, and approve.
+- A provisioned administrator **can** record the photographs and the condition evidence at this
+  version — that permission is in the set. What is still withheld is **waiving** a required
+  capture: _"Waiving a required capture needs a separate permission you do not hold."_ <!-- receptions.capture.overrideWithheld -->
+  The fuel-level and warning-light catalogues are configuration with no screen — _"No fuel levels
+  are configured yet. The visit can be opened without one."_ <!-- receptions.checkIn.fuelEmpty -->
+  and _"The warning-light catalogue has no entries, so no lamp can be recorded. This is the
+  catalogue answering correctly, not a failure."_
 - Search for the customer by telephone number in the **Phone number** <!-- customerSelector.phone -->
   box: the whole number, or at least its last seven digits.
 
@@ -464,9 +514,21 @@ holds both, which is exactly why the second one has to be delegated to somebody 
 **Where:** **Inventory** → **Parts of a work order**, with the work order open, under **Material
 allowed for this job** <!-- inventory.material.heading --> . **Steps:**
 
-1. Choose **Ask for material** <!-- inventory.material.create.open --> , name the service line and
-   the part (or a group of parts), and say where the amount comes from: the **confirmed capacity for
-   this vehicle**, or an amount you enter by hand **with its source**.
+**Before step 1, the work order has to have a service line**, because material is asked for against
+one. At this version **no screen records a service line** — the permission is in your set, but the
+act has to be performed through the service by whoever runs the installation. If **Choose a line**
+offers nothing, that is why: _"This work order has no service line yet, so there is nothing to ask
+material for. Record the line first."_ <!-- inventory.material.create.serviceLineNone -->
+
+1. Choose **Ask for material** <!-- inventory.material.create.open --> , **choose** the service line
+   from the list (each is offered by its own description, quantity and unit), **choose** the part
+   from the catalogue finder — or name a group of parts instead — and say where the amount comes
+   from: the **confirmed capacity for this vehicle**, or an amount you enter by hand **with its
+   source**. Nothing on this form is an identifier you have to know.
+   **On a new organisation, expect the confirmed-capacity route to say the capacity is missing**,
+   because a capacity needs a vehicle make and the make catalogue is empty (step 7). That is the
+   product refusing to guess an oil quantity, and it is the behaviour you want: enter the amount
+   yourself and name where you read it.
 2. Somebody else approves it. The screen refuses you approving your own: _"You asked for this, so
    someone else has to decide it. Ask a supervisor to approve it."_ <!-- inventory.material.decide.ownRequest -->
 3. Only now reserve or issue the part (step 10, and Part 5, §5.13 to §5.15). The screen confirms
@@ -630,6 +692,13 @@ panel on the work order. **Steps:**
   another branch of the same company, or ask an administrator to add them."_ <!-- delivery.start.noEmployees -->
 - The summary shows references, not names: _"These are internal references. The system holds no
   names for them, so each reference is shown exactly as it is stored."_ <!-- delivery.summary.identifiersExplain -->
+- **The first warranty you try to issue will be refused, and that is correct.** A warranty is issued
+  against the handover, under a warranty plan — and a plan with no window of cover terms covering
+  the day the vehicle went back has nothing to issue: _"No warranty terms are set up for the day
+  this vehicle was handed over, so nothing can be issued. Ask an administrator to set them up."_ <!-- warranty.generate.refusedNotConfigured -->
+  A new organisation starts with no cover terms at all. An administrator opens the plan, adds a
+  window whose "apply from" date is on or before the handover date, and the warranty then issues
+  normally. Part 4D, §4D.15.
 
 **If it goes wrong:** the blockers say exactly what is missing — _"The work order is not finished."_ <!-- delivery.blocker.workOrderNotComplete -->
 , _"Quality control has not passed."_ <!-- delivery.blocker.qualityControlNotPassed --> , _"Money is
@@ -730,6 +799,24 @@ audit log with its **Reference** column is illustrated in
 - **Export needs a permission the provisioned administrator does not hold.** Until it is granted you
   see _"Export is not available for this report with your current permissions."_ The audit log has
   no export at all.
+- **NOT AVAILABLE to you:** recording what a part cost. A goods receipt line offers no cost field —
+  _"Unit costs can be recorded only by someone who may see costs."_ — and that permission is not in
+  your set and cannot be granted by anyone inside the organisation. So no cost history builds up and
+  no margin can be worked out from one. It is an open Owner decision (Part 5, §5.3).
+- **NOT AVAILABLE to you:** approving the credit note a customer return raises. The return works,
+  the note is raised, the screen tells the customer a second person must approve it — and that
+  permission is not in your set either, so there is nobody in the organisation who can be that
+  person. Also an open Owner decision (Part 6, §6.2a).
+- **NOT AVAILABLE:** choosing a vehicle make or model. The catalogue is empty and read-only to you
+  (step 7), so no vehicle carries a make, searching by make or model never matches, and a vehicle
+  capacity cannot be recorded. Another open Owner decision.
+- **NOT AVAILABLE as a screen:** recording a service line on a work order. The permission is yours;
+  the page does not exist, so the act goes through whoever runs the installation (step 10A).
+- **No email leaves this machine and the application sends none.** The two account messages go to
+  the local mail catcher with `localhost` links; nothing tells anybody about a work order, an
+  invoice or a delivery (Part 7, §7.1.2).
+- **This is a local installation and nothing here is deployed.** Moving reviewed source to the main
+  branch is not a deployment, and at this version it has not happened either.
 - **Provisional identity:** the product name **CRM**, the logo and the colours are placeholders.
 - **No AI, HR or accounting module exists in any form.**
 
@@ -767,11 +854,36 @@ audit log with its **Reference** column is illustrated in
 3. No screenshot exists at this version for sign-in, the Overview page, customers, vehicles,
    appointments, reception, check-in, work orders, any inventory screen or any console screen; only
    the delivery queue and one handover record were captured.
-4. Whether anybody has walked this first day end to end in a browser at this commit. Every step is
-   written from the code and the application's own wording; an acceptance journey covering the
-   console and the new inventory work is recorded as still owed in
+4. Whether anybody has walked this first day **in this order, as one continuous day**, in a browser.
+   Most of its individual steps have been driven on the local environment between 2026-09-19 and
+   2026-09-21 — the organisation created from the console, the first administrator's sign-in, the
+   customer and their telephone number, the walk-in visit and its evidence, the approval and its
+   refusal, the conversion, the material controls, the parts leaving the shelf, the handover, the
+   warranty and the counter sale — but not in one sitting and not as one narrative. An acceptance
+   journey covering this part as a whole is recorded as still owed in
    [`../product/owner-directive-2026-09-16/capability-status.md`](../product/owner-directive-2026-09-16/capability-status.md).
+   Nothing here is a claim that a check, a certification or an audit passed.
 
+<!--
+REVISION 2026-09-21 — the day was corrected at develop f30ce918405164712cc9cdcadb458c4e91a2b5b9.
+Changed: step 1 gains three standing notes (the platform owner's sign-in address, what the mail
+catcher is and is not, and that a promotion of reviewed source is not a deployment); step 7 gains
+recording the customer's telephone number, the empty vehicle-make catalogue, and how search treats
+Arabic-Indic digits, an earlier plate and a masked telephone number; step 9 gains the customer-first
+way in, the authorisation that must exist before a visit can be approved, and the fact that evidence
+capture is now available while waiving is not; step 10A gains the missing-screen note about service
+lines and the chooser-based form; step 11 gains the warranty-terms refusal; step 14 gains the cost,
+credit, vehicle-make, service-line, mail and deployment limitations; and the closing NOT ESTABLISHED
+item now says which steps were driven and which were not.
+
+Read for this revision: apps/web/src/features/crm/customers/components/CustomerProfileScreen.tsx and
+apps/web/src/app/[locale]/(dashboard)/crm/customers/[customerId]/work-order/new/page.tsx;
+apps/web/src/features/inventory/components/MaterialRequirementsPanel.tsx;
+apps/api/src/modules/iam/domain/bootstrap-roles.ts; apps/api/src/app/api/v1/vehicle-catalogue/**
+(list operations only, no writer); apps/api/src/modules/shared-services/provider/message-provider.ts
+and supabase/config.toml (no external mail transport); and apps/web/src/i18n/messages/en.json for
+every string quoted above.
+-->
 <!--
 REVISION 2026-09-18 — the first day was rewritten for develop
 5b2c7840da1821f973438d5429665ef4448132f2: a new step 1A (the platform owner creates the

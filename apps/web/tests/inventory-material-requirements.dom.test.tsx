@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import en from '../src/i18n/messages/en.json';
 import ar from '../src/i18n/messages/ar.json';
 import { renderLtr, renderRtl } from './render';
+import { MATERIAL_REFUSAL_RULES } from '@/features/inventory/inventory-contract';
 
 /**
  * What a job is allowed to consume, rendered (P1-32).
@@ -39,6 +40,11 @@ const requestMaterialException = vi.fn();
 const decideMaterialException = vi.fn();
 const listUnitsOfMeasure = vi.fn();
 const listVehicleSpecifications = vi.fn();
+const listServiceLines = vi.fn();
+const listItems = vi.fn();
+vi.mock('@/features/work-orders/api', () => ({
+  listServiceLines: (...args: unknown[]) => listServiceLines(...args),
+}));
 vi.mock('@/features/inventory/api', () => ({
   listMaterialRequirements: (...args: unknown[]) => listMaterialRequirements(...args),
   readMaterialRequirement: (...args: unknown[]) => readMaterialRequirement(...args),
@@ -50,6 +56,9 @@ vi.mock('@/features/inventory/api', () => ({
   decideMaterialException: (...args: unknown[]) => decideMaterialException(...args),
   listUnitsOfMeasure: (...args: unknown[]) => listUnitsOfMeasure(...args),
   listVehicleSpecifications: (...args: unknown[]) => listVehicleSpecifications(...args),
+  // DEF-M-05, second half: the item is CHOSEN from the catalogue now, so the
+  // search the finder issues belongs to this panel's surface.
+  listItems: (...args: unknown[]) => listItems(...args),
 }));
 
 const notifyActionResult = vi.fn((..._args: unknown[]): boolean => true);
@@ -68,6 +77,17 @@ const USER_ID = '99999999-9999-4999-8999-999999999999';
 const OTHER_USER_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const REQUIREMENT_ID = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
 const SERVICE_LINE_ID = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
+/** One service line of the work order, as `wo.service-line-list` publishes it. */
+const serviceLine = {
+  id: SERVICE_LINE_ID,
+  workOrderId: WORK_ORDER_ID,
+  jobId: null,
+  description: 'Engine oil change',
+  quantity: '1.000',
+  unit: 'EA',
+  reference: null,
+  recordVersion: 1,
+};
 const SPECIFICATION_ID = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
 const UOM_ID = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee';
 const EXCEPTION_ID = 'ffffffff-ffff-4fff-8fff-ffffffffffff';
@@ -179,6 +199,7 @@ function renderPanel(over: Record<string, unknown> = {}) {
       canRequest={false}
       canApprove={false}
       canDecideException={false}
+      canReadWorkOrder={true}
       chosenId={null}
       onChoose={vi.fn()}
       onChanged={vi.fn()}
@@ -201,6 +222,14 @@ beforeEach(() => {
     })
   );
   listVehicleSpecifications.mockImplementation(async () => listing([specification()]));
+  listServiceLines.mockImplementation(async () => okRead({ items: [serviceLine] }));
+  listItems.mockImplementation(async () => ({
+    status: 'ok' as const,
+    rows: [{ id: ITEM_ID, sku: 'OIL-5W30', name: 'Engine oil', lifecycleStatus: 'active' }],
+    nextCursor: null,
+    hasMore: false,
+    correlationId: 'corr',
+  }));
 });
 
 describe('the allowance is the server figure', () => {
@@ -510,12 +539,18 @@ describe('asking for a requirement', () => {
     expect(
       within(form).queryByLabelText(labelled('inventory.material.create.allowanceQuantity'))
     ).toBeNull();
-    await user.type(
-      within(form).getByLabelText(labelled('inventory.material.create.serviceLineId')),
+    await user.selectOptions(
+      await within(form).findByLabelText(labelled('inventory.material.create.serviceLine')),
       SERVICE_LINE_ID
     );
-    await user.type(
-      within(form).getByLabelText(labelled('inventory.material.create.itemId')),
+    // DEF-M-05, second half: the part is CHOSEN from the catalogue search every
+    // other stock screen uses. The free-text reference it replaced was a
+    // 36-character identifier no screen in the product prints.
+    await user.click(
+      within(form).getByRole('button', { name: EN['inventory.stockOps.item.search'] as string })
+    );
+    await user.selectOptions(
+      await within(form).findByLabelText(labelled('inventory.stockOps.item.label')),
       ITEM_ID
     );
     await user.type(
@@ -617,8 +652,8 @@ describe('asking for a requirement', () => {
     );
     // The field an operator could mistake for a suggestion starts EMPTY.
     expect(quantity).toHaveValue('');
-    await user.type(
-      within(form).getByLabelText(labelled('inventory.material.create.serviceLineId')),
+    await user.selectOptions(
+      await within(form).findByLabelText(labelled('inventory.material.create.serviceLine')),
       SERVICE_LINE_ID
     );
     await user.type(quantity, '4.250');
@@ -662,6 +697,7 @@ describe('Arabic, right to left', () => {
         canRequest={false}
         canApprove={false}
         canDecideException={false}
+        canReadWorkOrder={true}
         chosenId={null}
         onChoose={vi.fn()}
         onChanged={vi.fn()}
@@ -670,5 +706,186 @@ describe('Arabic, right to left', () => {
     await waitFor(() => expect(listMaterialRequirements).toHaveBeenCalled());
     expect(screen.getByText(AR['inventory.material.heading'] as string)).toBeVisible();
     expect(within(allowance()).getByText('3.500')).toBeVisible();
+  });
+});
+
+/**
+ * DEF-M-05 — the service line is CHOSEN, not typed.
+ *
+ * The form asked for "the reference of the line this material is for" as free
+ * text, and no screen in the product publishes a service line's identifier, so
+ * an operator had to already know a 36-character identifier to use the screen
+ * at all. `wo.service-line-list` publishes the lines under the same code that
+ * renders the work-order header, so they are offered. The box survives only for
+ * the cases the picker cannot cover, and then the screen says which case it is.
+ */
+describe('the service line is offered rather than demanded', () => {
+  const openForm = async (user: ReturnType<typeof userEvent.setup>) => {
+    await user.click(
+      screen.getByRole('button', { name: EN['inventory.material.create.open'] as string })
+    );
+    return screen.findByRole('form', {
+      name: EN['inventory.material.create.heading'] as string,
+    });
+  };
+
+  it('reads the lines only when the form is opened, and only for this work order', async () => {
+    const user = userEvent.setup();
+    renderPanel({ canRequest: true });
+    await waitFor(() => expect(listMaterialRequirements).toHaveBeenCalled());
+    expect(listServiceLines).not.toHaveBeenCalled();
+    await openForm(user);
+    await waitFor(() => expect(listServiceLines).toHaveBeenCalledTimes(1));
+    expect(listServiceLines.mock.calls[0]?.[0]).toBe(WORK_ORDER_ID);
+  });
+
+  it('offers each line by what it is, and no identifier box at all', async () => {
+    const user = userEvent.setup();
+    renderPanel({ canRequest: true });
+    const form = await openForm(user);
+    const picker = await within(form).findByLabelText(
+      labelled('inventory.material.create.serviceLine')
+    );
+    expect(
+      within(picker).getByRole('option', { name: 'Engine oil change — 1.000 EA' })
+    ).toBeInTheDocument();
+    expect(
+      within(form).queryByLabelText(labelled('inventory.material.create.serviceLineId'))
+    ).toBeNull();
+  });
+
+  it('keeps the box, and says why, when the operator may not read the work order', async () => {
+    const user = userEvent.setup();
+    renderPanel({ canRequest: true, canReadWorkOrder: false });
+    const form = await openForm(user);
+    expect(listServiceLines).not.toHaveBeenCalled();
+    expect(
+      within(form).getByLabelText(labelled('inventory.material.create.serviceLineId'))
+    ).toBeVisible();
+    expect(
+      within(form).getByText(EN['inventory.material.create.serviceLineNoRead'] as string)
+    ).toBeVisible();
+  });
+
+  it('says the work order has no line yet rather than offering an empty picker', async () => {
+    const user = userEvent.setup();
+    listServiceLines.mockImplementation(async () => okRead({ items: [] }));
+    renderPanel({ canRequest: true });
+    const form = await openForm(user);
+    expect(
+      await within(form).findByText(EN['inventory.material.create.serviceLineNone'] as string)
+    ).toBeVisible();
+  });
+
+  it('says a refused read was refused, and keeps the box so the work can continue', async () => {
+    const user = userEvent.setup();
+    listServiceLines.mockImplementation(async () => ({
+      status: 'denied' as const,
+      correlationId: 'corr',
+    }));
+    renderPanel({ canRequest: true });
+    const form = await openForm(user);
+    expect(
+      await within(form).findByText(EN['inventory.material.create.serviceLineRefused'] as string)
+    ).toBeVisible();
+    expect(
+      within(form).getByLabelText(labelled('inventory.material.create.serviceLineId'))
+    ).toBeVisible();
+  });
+});
+
+/**
+ * DEF-T-16 — a refused request that said only "This change cannot be saved".
+ *
+ * Asking again for a part the chosen service line already has a live request
+ * for was refused twice, from two fresh sessions, and the panel said nothing
+ * but that sentence and a correlation reference: nine requests before, nine
+ * after, and no statement of whether the line already had one or the job no
+ * longer took one. The reason existed in the service and died there, because
+ * the problem document is assembled from the catalogue entry and the safe
+ * details alone.
+ *
+ * The service now publishes the rule as a violation and `fromFailure` turns it
+ * into a sentence. These cases are the rendering half: one per rule the mirror
+ * carries, so a rule added there without a case is still asserted, and the
+ * catalogue sentences are read rather than restated.
+ *
+ * `canRequest` is on and the adapter is mocked, as everywhere in this file, so
+ * what is under test is the panel — that the state the adapter really produces
+ * (pinned in `inventory-api.test.ts` against the body the API really sends)
+ * reaches the operator as its own words.
+ */
+describe('a refused request says which rule refused it', () => {
+  const askAndBeRefused = async (
+    messageKey: string,
+    locale: 'en' | 'ar' = 'en'
+  ): Promise<HTMLElement> => {
+    const user = userEvent.setup();
+    createMaterialRequirement.mockResolvedValue({
+      state: { status: 'conflict', messageKey, correlationId: 'ref-409', attempt: 1 },
+      created: null,
+    });
+    const catalogue = locale === 'en' ? EN : AR;
+    if (locale === 'en') renderPanel({ canRequest: true });
+    else {
+      renderRtl(
+        <MaterialRequirementsPanel
+          locale="ar"
+          messages={ar}
+          workOrderId={WORK_ORDER_ID}
+          target={{ companyId: COMPANY_ID, branchId: BRANCH_ID }}
+          currentUserId={USER_ID}
+          canRequest={true}
+          canApprove={false}
+          canDecideException={false}
+          canReadWorkOrder={true}
+          chosenId={null}
+          onChoose={vi.fn()}
+          onChanged={vi.fn()}
+        />
+      );
+    }
+    await user.click(
+      screen.getByRole('button', { name: catalogue['inventory.material.create.open'] as string })
+    );
+    const form = await screen.findByRole('form', {
+      name: catalogue['inventory.material.create.heading'] as string,
+    });
+    await user.selectOptions(
+      await within(form).findByLabelText(
+        new RegExp(`^${escape(catalogue['inventory.material.create.serviceLine'] as string)}`)
+      ),
+      SERVICE_LINE_ID
+    );
+    await user.type(
+      within(form).getByLabelText(
+        new RegExp(`^${escape(catalogue['inventory.material.create.serviceCondition'] as string)}`)
+      ),
+      'oil_change'
+    );
+    await user.click(
+      within(form).getByRole('button', {
+        name: catalogue['inventory.material.create.submit'] as string,
+      })
+    );
+    await waitFor(() => expect(createMaterialRequirement).toHaveBeenCalled());
+    return within(form).findByRole('alert');
+  };
+
+  for (const rule of MATERIAL_REFUSAL_RULES) {
+    it(`says in words what ${rule} means, and never the bare sentence`, async () => {
+      const alert = await askAndBeRefused(`form.violation.${rule}`);
+      expect(alert).toHaveTextContent(EN[`form.violation.${rule}`] as string);
+      expect(alert).not.toHaveTextContent(EN['state.conflict.blocked.title'] as string);
+      // The reference stays: it is what support is quoted, beside a reason the
+      // operator can act on rather than instead of one.
+      expect(alert).toHaveTextContent('ref-409');
+    });
+  }
+
+  it('says the refusal the campaign measured in Arabic too', async () => {
+    const alert = await askAndBeRefused('form.violation.material_duplicate_demand', 'ar');
+    expect(alert).toHaveTextContent(AR['form.violation.material_duplicate_demand'] as string);
+    expect(alert).not.toHaveTextContent(AR['state.conflict.blocked.title'] as string);
   });
 });

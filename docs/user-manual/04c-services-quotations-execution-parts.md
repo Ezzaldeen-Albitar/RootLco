@@ -1,10 +1,10 @@
 ---
 manual: 'CRM User Manual'
 title: 'Part 4C — The workshop journey, commercial: services, pricing, quotations, approvals, execution, parts'
-application_version: '5b2c7840da1821f973438d5429665ef4448132f2'
-application_version_short: '5b2c7840'
+application_version: 'fe09f1a9a8671930f032a18dda497c64e3107d29'
+application_version_short: 'fe09f1a9'
 environment: 'LOCAL — a private single-machine environment at http://localhost:3100. Not public, not hosted.'
-date: '2026-09-18'
+date: '2026-09-21'
 scope_statement: 'This manual describes behaviour implemented at the commit named above, and nothing else.'
 ---
 
@@ -1033,10 +1033,12 @@ and **Quality and closure** <!-- workOrders.detail.closureLink --> .
 - **No create-work-order screen.** A work order is born only from an authorized reception visit that
   someone converts: "Turn the authorized visit into a work order. This is the only way a work order
   comes to exist." Part 4B covers that step.
-- **No screen adds a job to a work order, and none adds a work-order line.** The jobs you see are
-  the ones the conversion produced. A freshly provisioned tenant administrator does not even hold
-  the codes that would create them (`wo.work_order.create` and `wo.work_order.line.manage` are not
-  in the bundle).
+- **No screen adds a job to a work order, and none adds a work-order service line.** The jobs you
+  see are the ones the conversion produced. At this version a freshly provisioned administrator
+  **does** hold the permission that records a service line (`wo.work_order.line.manage`), so the act
+  is reachable through the service — but there is still no page that performs it, which makes it an
+  **OPERATOR PROCEDURE**. Creating a work order outright stays impossible for anybody:
+  `wo.work_order.create` is not in the set, and a work order is born only from a converted visit.
 - **No screen records a required part.** The **Required parts** list on the parts screen is
   read-only in this release (4C.6.3).
 - **No technician roster screen.** Technicians are administered by operator procedure; the
@@ -1391,6 +1393,12 @@ lists, approval-limit truncation, no company/branch/department/employee screen, 
 only from an authorized visit, opening stock maker-checker, provisional brand, no hosted execution;
 screenshots_available[] (28 PNGs, none of a screen in this part); not_found[] items 2, 3 and 8.
 Environment: scratchpad/handover-map-A.json — environment.kind (Local is the only environment).
+REVISION 2026-09-21 — section 4C.5.3 was corrected at develop
+f30ce918405164712cc9cdcadb458c4e91a2b5b9, where wo.work_order.line.manage joined the
+first-administrator set in apps/api/src/modules/iam/domain/bootstrap-roles.ts while
+wo.service-line-record still has no screen under apps/web/src. Everything else in this part is
+carried unchanged from the readings below.
+
 REVISION 2026-09-18 — section 4C.6.1 was rewritten at develop
 5b2c7840da1821f973438d5429665ef4448132f2, where a draw against a work order became measurable
 against an approved material requirement (apps/web/src/features/inventory/components/

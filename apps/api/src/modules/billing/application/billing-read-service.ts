@@ -52,6 +52,8 @@ import { Decimal, MONEY, moneyView, type MoneyView } from '@/modules/pricing';
 import { rollUpDecisions } from '@/modules/quotation';
 import type { DbHandle } from '@/server/db/transaction';
 import type { ScopeAuthorizer } from '@/server/auth/authorization';
+import { pageRequest, type Page } from '@/server/db/pagination';
+import { CREDIT_NOTE_ORDER } from '../data/billing-repository';
 import type {
   BillingRepository,
   CommercialSourceRow,
@@ -749,6 +751,42 @@ export class BillingReadService {
     }
     await authorizeScope({ companyId: note.companyId, branchId: note.branchId });
     return toCreditNoteView(note);
+  }
+
+  /**
+   * One branch's credit notes, newest first (DEF-T-07).
+   *
+   * The acceptance campaign raised a credit note from a customer return, was told
+   * a second person had to approve it, and then found nothing anywhere that could
+   * open it. A note is created against an invoice and carries no parent screen of
+   * its own, so without a list it is reachable only by an id no screen prints.
+   *
+   * The branch is the read's TARGET — named by the caller and re-authorized here
+   * before any row is fetched, exactly as `listCounterSales` does — so a caller
+   * cannot page a branch it holds no authority in and learn what was credited
+   * there. RLS narrows again underneath, and `sel_credit_notes_gated` removes
+   * every row from a caller without `sal.finance.view`; that is why the operation
+   * declares the permission rather than answering an empty page that would read
+   * as "this branch has credited nothing".
+   */
+  public async listCreditNotes(
+    db: DbHandle,
+    filter: {
+      readonly companyId: string;
+      readonly branchId: string;
+      readonly approvalState?: string | undefined;
+      readonly invoiceId?: string | undefined;
+    },
+    page: { readonly cursor?: string | undefined; readonly limit?: number | undefined },
+    authorizeScope: ScopeAuthorizer
+  ): Promise<Page<CreditNoteView>> {
+    await authorizeScope({ companyId: filter.companyId, branchId: filter.branchId });
+    const result = await this.repository.listCreditNotes(
+      db,
+      filter,
+      pageRequest(CREDIT_NOTE_ORDER, page)
+    );
+    return { ...result, items: result.items.map(toCreditNoteView) };
   }
 
   // -------------------------------------------------------------------------

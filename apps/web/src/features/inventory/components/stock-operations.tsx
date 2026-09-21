@@ -295,6 +295,7 @@ export function ItemFinder({
   value,
   onChange,
   error,
+  required = true,
 }: {
   readonly messages: Messages;
   /** Distinguishes two finders on one page; part of no visible text. */
@@ -302,6 +303,14 @@ export function ItemFinder({
   readonly value: InventoryItem | null;
   readonly onChange: (item: InventoryItem | null) => void;
   readonly error?: string | undefined;
+  /**
+   * Whether the choice is mandatory. Defaults to true, which is what every
+   * stock operation needs — an adjustment, a sale or a receipt names an item or
+   * it names nothing. A material requirement may instead name a CATEGORY, or
+   * neither, so that caller passes false rather than marking an optional field
+   * required and telling the operator something untrue.
+   */
+  readonly required?: boolean;
 }) {
   const [search, setSearch] = useState('');
   const [found, setFound] = useState<readonly InventoryItem[] | null>(null);
@@ -376,7 +385,7 @@ export function ItemFinder({
       <div className="sm:col-span-3">
         <SelectField
           label={translate(messages, 'inventory.stockOps.item.label')}
-          required
+          required={required}
           value={value?.id ?? ''}
           onChange={(event) =>
             onChange(options.find((item) => item.id === event.target.value) ?? null)

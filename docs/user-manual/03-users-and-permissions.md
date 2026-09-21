@@ -1,10 +1,10 @@
 ---
 manual: 'CRM User Manual'
 title: 'Part 3 — Users and permissions'
-application_version: '5b2c7840da1821f973438d5429665ef4448132f2'
-application_version_short: '5b2c7840'
+application_version: 'fe09f1a9a8671930f032a18dda497c64e3107d29'
+application_version_short: 'fe09f1a9'
 environment: 'LOCAL — a private single-machine environment at http://localhost:3100. Not public, not hosted.'
-date: '2026-09-18'
+date: '2026-09-21'
 scope_statement: 'This manual describes behaviour implemented at the commit named above, and nothing else.'
 ---
 
@@ -400,11 +400,11 @@ For anybody whose work belongs to one site, invite them with **no role**, then u
 where each one applies."_ <!-- users.access.description -->
 
 **Who:** an account holding `iam.grant.manage`. You also need to be able to see the list of roles:
-the screen says so — _"You can grant roles only if you can also see the list of roles."_
-<!-- users.access.needsRoleRead --> Company, branch and department names appear only if you may read
-
-each of those; what you may not read shows as **"Not visible to you"** <!-- users.access.unnamed -->
-and a role you may not read as **"A role you cannot see"** <!-- users.access.unnamedRole --> .
+the screen says so — _"You can grant roles only if you can also see the list of
+roles."_ <!-- users.access.needsRoleRead --> Company, branch and department names appear only if you
+may read each of those; what you may not read shows as **"Not visible to
+you"** <!-- users.access.unnamed --> and a role you may not read as **"A role you cannot
+see"** <!-- users.access.unnamedRole --> .
 
 **Where:** Sidebar → **Administration** → **Users** → choose the person → **Roles and access**, at
 `/{language}/administration/users/{account}`.
@@ -438,8 +438,8 @@ where it applies — **"This role applies in one place only:"** <!-- users.acces
 each company, branch or department. The person's resolved access changes on their next request, and
 they can confirm it themselves on **Your profile** under **Where you can work** —
 **Companies** <!-- profile.scope.companies --> , **Branches** <!-- profile.scope.branches --> — or,
-when there is no limit, **Every company and branch in this workspace.**
-<!-- profile.scope.unrestricted -->
+when there is no limit, **Every company and branch in this
+workspace.** <!-- profile.scope.unrestricted -->
 
 **Adding or removing a place afterwards.** **Add a place** <!-- users.access.addScope --> adds one
 to an existing grant — **"The place was added."** **Remove** <!-- users.access.removeScope --> takes
@@ -480,8 +480,8 @@ reference is wrong _or_ your own scope does not cover it, and check both.
 
 The **Roles and access** screen described in 3.8.2 is the scope editor. **Add a place** and
 **Remove** are on each grant. Where the places cannot be read at all, the screen says so rather than
-showing an empty list: **"The places this role applies in could not be shown."**
-<!-- users.access.scopesUnavailable -->
+showing an empty list: **"The places this role applies in could not be
+shown."** <!-- users.access.scopesUnavailable -->
 
 ---
 
@@ -491,17 +491,16 @@ showing an empty list: **"The places this role applies in could not be shown."**
 
 **Who:** an account holding `iam.grant.manage`.
 
-**Steps:** choose **Take the role away** beside the grant and confirm — **"Take this role away?"**
-<!-- users.access.confirmRevoke -->
+**Steps:** choose **Take the role away** beside the grant and confirm — **"Take this role
+away?"** <!-- users.access.confirmRevoke -->
 
 **Result:** **"The role was taken away."** <!-- users.access.revoked --> It stops applying
 immediately.
 
 **Restrictions.** Two, and the screen states both: **"You cannot take a role away from yourself, and
-the last person who can manage people and roles must keep theirs."**
-<!-- users.access.revokeLimits --> The second is the last-holder protection — a workspace that nobody
-
-can administer is not a state this application will let you create.
+the last person who can manage people and roles must keep
+theirs."** <!-- users.access.revokeLimits --> The second is the last-holder protection — a workspace
+that nobody can administer is not a state this application will let you create.
 
 If what you actually need is to stop someone signing in **now**, do not start with a role — lock the
 account (3.10) and end their sessions (3.12). Both are on the screen and both take effect
@@ -684,31 +683,31 @@ nothing through the interface.
 Read this as: what the role, by itself, lets an account do. "Operation only" means the permission is
 held but no screen exposes it.
 
-| Capability                                                                       | First Owner                                      | Tenant Administrator                                                                                                                                                                |
-| -------------------------------------------------------------------------------- | ------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Sign in, see own profile                                                         | yes (any active account)                         | yes                                                                                                                                                                                 |
-| Open **Administration** and the **Users** list                                   | **no** (`iam.user.read` not held)                | yes                                                                                                                                                                                 |
-| Invite, activate, cancel, lock, unlock, archive an account                       | permission held, but the screen cannot be opened | yes                                                                                                                                                                                 |
-| See another person's sessions; **Sign out everywhere**                           | **no**                                           | yes                                                                                                                                                                                 |
-| Create and archive workspace roles; map permissions                              | permission held, but the screen cannot be opened | yes                                                                                                                                                                                 |
-| Grant and revoke roles; attach and remove scope rows                             | yes (operation only)                             | yes (operation only)                                                                                                                                                                |
-| **Approval limits**                                                              | **no**                                           | yes                                                                                                                                                                                 |
-| **Audit log**, including values otherwise **Withheld**                           | **no**                                           | yes                                                                                                                                                                                 |
-| Read the workspace, companies, branches; manage departments and employee records | **no**                                           | yes (departments and employees are operations only)                                                                                                                                 |
-| **Change** a company or a branch; organisation settings, taxes, subscription     | **no**                                           | **no**                                                                                                                                                                              |
-| Customers and vehicles                                                           | **no**                                           | read, create a customer, manage a customer's vehicles, manage vehicles — **not** merge, duplicate review, notes, consent, restrictions, odometer or status                          |
-| **Appointments**                                                                 | **no**                                           | **no** — no appointment permission at all, so the Appointments entry is hidden                                                                                                      |
-| Reception                                                                        | **no**                                           | read, manage, parties, verify an authorization, signatures, approve, convert to a work order — **not** evidence management or override, closing a visit, or the reception catalogue |
-| Work orders                                                                      | **no**                                           | read, transition, close, manage and transition jobs, request and approve additional work — **not** create a work order, **not** manage its lines                                    |
-| Technicians, labour, diagnostics, quality, rework                                | **no**                                           | yes                                                                                                                                                                                 |
-| Service catalogue, pricing, quotations                                           | **no**                                           | yes                                                                                                                                                                                 |
-| Inventory                                                                        | **no**                                           | items, stock operations, approve an adjustment — **not** costing, custody, external purchases or the inventory audit                                                                |
-| Invoices and payments                                                            | **no**                                           | manage and issue invoices, view finance, record and allocate payments — **not** credit notes, **not** payment reversals                                                             |
-| Delivery and warranty                                                            | **no**                                           | yes                                                                                                                                                                                 |
-| Reports                                                                          | **no**                                           | read and configure — **export is not included**, see 3.15                                                                                                                           |
-| Documents                                                                        | **no**                                           | read and manage — **not** archive                                                                                                                                                   |
-| Notifications                                                                    | **no**                                           | **no**                                                                                                                                                                              |
-| Create a workspace, company or branch                                            | **no**                                           | **no** — a platform operation with no screen                                                                                                                                        |
+| Capability                                                                       | First Owner                                      | Tenant Administrator                                                                                                                                                                                                          |
+| -------------------------------------------------------------------------------- | ------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Sign in, see own profile                                                         | yes (any active account)                         | yes                                                                                                                                                                                                                           |
+| Open **Administration** and the **Users** list                                   | **no** (`iam.user.read` not held)                | yes                                                                                                                                                                                                                           |
+| Invite, activate, cancel, lock, unlock, archive an account                       | permission held, but the screen cannot be opened | yes                                                                                                                                                                                                                           |
+| See another person's sessions; **Sign out everywhere**                           | **no**                                           | yes                                                                                                                                                                                                                           |
+| Create and archive workspace roles; map permissions                              | permission held, but the screen cannot be opened | yes                                                                                                                                                                                                                           |
+| Grant and revoke roles; attach and remove scope rows                             | yes (operation only)                             | yes (operation only)                                                                                                                                                                                                          |
+| **Approval limits**                                                              | **no**                                           | yes                                                                                                                                                                                                                           |
+| **Audit log**, including values otherwise **Withheld**                           | **no**                                           | yes                                                                                                                                                                                                                           |
+| Read the workspace, companies, branches; manage departments and employee records | **no**                                           | yes (departments and employees are operations only)                                                                                                                                                                           |
+| **Change** a company or a branch; organisation settings, taxes, subscription     | **no**                                           | **no**                                                                                                                                                                                                                        |
+| Customers and vehicles                                                           | **no**                                           | read, create a customer, record a customer's contacts, addresses and preferences, manage a customer's vehicles, manage vehicles — **not** merge, duplicate review, notes, consent, restrictions, odometer or status           |
+| **Appointments**                                                                 | **no**                                           | **no** — no appointment permission at all, so the Appointments entry is hidden                                                                                                                                                |
+| Reception                                                                        | **no**                                           | read, manage, parties, verify an authorization, evidence management, signatures, approve, convert to a work order — **not** the evidence override that waives a required capture, closing a visit, or the reception catalogue |
+| Work orders                                                                      | **no**                                           | read, transition, close, manage and transition jobs, manage its lines (operation only — no screen records a line), request and approve additional work — **not** create a work order                                          |
+| Technicians, labour, diagnostics, quality, rework                                | **no**                                           | yes                                                                                                                                                                                                                           |
+| Service catalogue, pricing, quotations                                           | **no**                                           | yes                                                                                                                                                                                                                           |
+| Inventory                                                                        | **no**                                           | items, stock operations, approve an adjustment — **not** costing, custody, external purchases or the inventory audit                                                                                                          |
+| Invoices and payments                                                            | **no**                                           | manage and issue invoices, view finance, record and allocate payments — **not** credit notes, **not** payment reversals                                                                                                       |
+| Delivery and warranty                                                            | **no**                                           | yes                                                                                                                                                                                                                           |
+| Reports                                                                          | **no**                                           | read and configure — **export is not included**, see 3.15                                                                                                                                                                     |
+| Documents                                                                        | **no**                                           | read and manage — **not** archive                                                                                                                                                                                             |
+| Notifications                                                                    | **no**                                           | **no**                                                                                                                                                                                                                        |
+| Create a workspace, company or branch                                            | **no**                                           | **no** — a platform operation with no screen                                                                                                                                                                                  |
 
 A permission that is not held is denied. Anywhere a navigation entry depends on a permission you do
 not hold, the entry is simply not shown — so "the menu item is missing" and "you are not allowed"
@@ -761,6 +760,32 @@ branches, departments and employees, and delegate the workshop and inventory wor
 without asking anyone outside the organisation. Read Part 2, §2.11 for the screen-by-screen table,
 including the fact that an organisation provisioned before a code existed keeps the set it was
 given.
+
+**Three more were added at this version, after working the product by hand found them missing.**
+Each of them was not merely withheld from the first administrator: because a permission nobody in
+the organisation holds can be granted to nobody, each was shut for the whole organisation,
+permanently. They are:
+
+| Added                                                      | What it unblocks                                                                                                                                                                                                                                                                             |
+| ---------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| recording a customer's contacts, addresses and preferences | A newly provisioned organisation could register a customer and then never record their telephone number — including for the customer whose vehicle it had just taken in. Part 4A, §4A.2.5.                                                                                                   |
+| managing a reception visit's condition evidence            | The organisation held the whole reception path from check-in to conversion, and could not perform the one step in the middle of it: recording the pre-service condition the workshop is answerable for. Part 4A, §4A.5.5.                                                                    |
+| managing a work order's lines                              | A work order could be created, moved through its states and closed, and could never say **what work is on it** — and since every part drawn against a job is measured against an approved requirement for a line, this one absence closed the whole material-control surface. Part 5, §5.26. |
+
+**Two gaps that are still open, and are the Owner's to decide.** Do not plan around either of them
+being closed:
+
+1. **Nobody can record what a part cost.** The permission to see costs (`inv.cost.view`) is
+   deliberately **not** in the bundle. In a freshly provisioned organisation that means no goods
+   receipt can carry a unit cost, no cost history accumulates, and — because an unheld permission
+   cannot be granted to anyone — the first administrator cannot hand the job to a colleague either.
+   The exclusion is a recorded decision; reversing it is the Owner's, not an administrator's. Part
+   5, §5.19.
+2. **Nobody can approve a credit note.** The credit permission (`sal.credit.manage`) is not in the
+   bundle. A customer return of a counter-sale part still raises a credit note and still says it is
+   waiting for a second person to approve it — and in a freshly provisioned organisation there is
+   no such second person, and no way to create one. The credit-note screens exist and refuse this
+   identity in plain words. Part 5, §5.23.3 and Part 6, §6.2a.
 
 ---
 
@@ -924,6 +949,23 @@ should confirm with your technical operator rather than assume:
 
 ---
 
+<!--
+REVISION 2026-09-21 — sections 3.14.2 and 3.15 were re-read and corrected at develop
+f30ce918405164712cc9cdcadb458c4e91a2b5b9. Everything else in this part is carried unchanged from
+the readings recorded below and was not re-read.
+
+Read for this revision:
+  apps/api/src/modules/iam/domain/bootstrap-roles.ts — the tenant-administrator bundle at this head,
+    which now carries crm.customer.profile.write, rec.reception.evidence.manage and
+    wo.work_order.line.manage, and deliberately still does not carry inv.cost.view; the same file
+    records why the cost exclusion is the Owner's decision to reverse.
+  apps/api/src/modules/iam/domain/delegation-policy.ts — an administrator may not delegate a
+    permission they do not hold, which is why an excluded code is shut for the whole organisation.
+  apps/api/src/app/api/v1/work-orders/[workOrderId]/service-lines/route.ts (wo.service-line-record)
+    and apps/web/src — no screen calls that operation, so the bundle holds it as an operation only.
+  apps/api/src/app/api/v1/credit-notes/** — sal.credit.manage is declared by both credit-note reads,
+    and is not in the bundle.
+-->
 <!--
 REVISION 2026-09-18 — sections 3.8.2, 3.8.3, 3.9, 3.12.1, 3.13, 3.15, 3.17 step 6, "If somebody
 leaves" and 3.18 were re-read and rewritten at develop

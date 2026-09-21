@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import en from '../src/i18n/messages/en.json';
 import ar from '../src/i18n/messages/ar.json';
 import { renderLtr, renderRtl } from './render';
+import { PLATFORM_WORK_ORDER_STATES } from '@/features/work-orders/work-orders-contract';
 
 /**
  * The parts of a work order, rendered (P1-30, `W5`, FE-011 and FE-012).
@@ -355,6 +356,31 @@ describe('reached from a work order', () => {
       .map((cell) => (cell.textContent ?? '').trim())
       .filter((text) => /^-?\d+(\.\d+)?$/.test(text));
     expect(figures).toEqual(['2.500', '1.000']);
+  });
+
+  /**
+   * DEF-M-04. The header printed the state code itself, so English read
+   * "State in_progress" and Arabic carried the same Latin token inside an RTL
+   * sentence. Every code the platform seeds now has a sentence; a code a tenant
+   * invented has none and is rendered as the token it is rather than guessed at.
+   */
+  it('names every platform work-order state in words, in both languages', async () => {
+    for (const code of PLATFORM_WORK_ORDER_STATES) {
+      const key = `workOrders.state.${code}`;
+      expect(EN[key], `en is missing ${key}`).toBeTypeOf('string');
+      expect(AR[key], `ar is missing ${key}`).toBeTypeOf('string');
+    }
+    renderScreen({ workOrder: { ...workOrder, state: 'in_progress' } });
+    await waitFor(() => expect(listPartIssues).toHaveBeenCalled());
+    expect(screen.getByText(EN['workOrders.state.in_progress'] as string)).toBeVisible();
+    expect(screen.queryByText('in_progress')).toBeNull();
+  });
+
+  it('renders a state the platform does not define as the code it is, not as a key', async () => {
+    renderScreen({ workOrder: { ...workOrder, state: 'awaiting_paint_booth' } });
+    await waitFor(() => expect(listPartIssues).toHaveBeenCalled());
+    expect(screen.getByText('awaiting_paint_booth')).toBeVisible();
+    expect(screen.queryByText('workOrders.state.awaiting_paint_booth')).toBeNull();
   });
 
   it('says a refused work-order read was refused, not that the operator lacks access', async () => {

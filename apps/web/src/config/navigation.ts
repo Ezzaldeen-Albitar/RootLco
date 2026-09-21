@@ -533,6 +533,34 @@ export const NAVIGATION: readonly NavigationGroup[] = Object.freeze([
         status: 'available',
         scope: 'branch',
       },
+      /*
+       * DEF-T-07. A customer return raises a credit note, tells the operator a
+       * second person must approve it, and until this entry existed nothing in
+       * the tenant navigation could open one — so the second person had nothing
+       * to approve and nobody could see what was waiting.
+       *
+       * Gated on `sal.credit.manage`, the authority both credit-note reads
+       * declare. They also require `sal.finance.view`, which a navigation entry
+       * cannot express: the page checks BOTH before it issues a read, so a
+       * caller holding only this one meets a refusal on the page rather than an
+       * empty list that would read as "nothing has been credited".
+       *
+       * In a freshly provisioned organisation this entry is HIDDEN, because
+       * `sal.credit.manage` is not among the codes the tenant administrator
+       * bundle writes and an unheld code cannot be delegated either. The gap
+       * predates these reads — the credit-note writes declare the same code —
+       * and the list route's docblock on the API side states where the decision
+       * to carry it belongs.
+       */
+      {
+        key: 'creditNotes',
+        labelKey: 'nav.creditNotes',
+        icon: 'billing',
+        href: '/credit-notes',
+        permission: 'sal.credit.manage',
+        status: 'available',
+        scope: 'branch',
+      },
       {
         key: 'payments',
         labelKey: 'nav.payments',

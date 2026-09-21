@@ -1,43 +1,81 @@
 ---
 manual: 'CRM User Manual'
 title: 'Front page and table of contents'
-application_version: '5b2c7840da1821f973438d5429665ef4448132f2'
-application_version_short: '5b2c7840'
+application_version: 'fe09f1a9a8671930f032a18dda497c64e3107d29'
+application_version_short: 'fe09f1a9'
 environment: 'LOCAL — a private single-machine environment at http://localhost:3100. Not public, not hosted.'
-date: '2026-09-18'
+date: '2026-09-21'
 scope_statement: 'This manual describes behaviour implemented at the commit named above, and nothing else.'
 ---
 
 # CRM User Manual
 
-**Application version.** `5b2c7840da1821f973438d5429665ef4448132f2` (short form `5b2c7840`), the
-head of the `develop` branch on 2026-09-18.
+**Application version.** `fe09f1a9a8671930f032a18dda497c64e3107d29` (short form `fe09f1a9`), the
+head of the `develop` branch on 2026-09-21.
 
 **Environment.** LOCAL — a private single-machine environment reached at `http://localhost:3100`.
 
-**Date.** 2026-09-18.
+**Date.** 2026-09-21.
 
 **Scope.** This manual describes behaviour implemented at the commit named above, and nothing else.
 
-**What changed since the previous revision (`beebc6c2`, 2026-09-16).** Six changes were merged into
-`develop` between the two commits, and they moved a great deal of this manual from "does not exist"
-to "here is the screen":
+**What changed since the previous revision (`5b2c7840`, 2026-09-18).** Twelve changes were merged
+into `develop` between the two commits. Most of them came from working the product by hand on the
+local environment and fixing what that found, so the changes are small, specific, and mostly about
+screens saying what they mean:
 
-- a **Platform Owner Console** — a separate area for the person who runs the platform. New Part 2A.
-- **organisation administration on screens** — companies, branches, departments, employees, and the
-  roles a person holds together with the places each role applies in. Part 2 and Part 3.
-- **inventory operations** — transfers, goods receipts and cost history, adjustments, stock counts,
-  item codes, labels, scanning, counter sales, customer returns, unit conversions, vehicle
-  capacities, and the material a job is allowed to use. Part 5.
-- **operational alerts** — the **Attention** screen. Part 5.
-- **wider search** — customers by phone, vehicles by make, model and earlier plates, work orders by
-  number, and Arabic-Indic digits treated the same as ASCII ones. Parts 4A, 4B and 7.
-- **an environment inventory** for whoever installs the software, which is not part of this manual;
-  it is [`../platform/environment-configuration.md`](../platform/environment-configuration.md).
+- **the platform operator's own account and security page** — a change-password form in the
+  console, and the true sentence about what a password change does to a session signed in
+  elsewhere. Part 2A.
+- **a supported way to add a second platform operator** — an operator-run script, not a screen. It
+  is described in [`../platform/platform-owner-provisioning.md`](../platform/platform-owner-provisioning.md)
+  §4a and summarised in Part 2A.
+- **three permissions added to the set a new organisation's first administrator is given** — so
+  that organisation can record a customer's telephone number, record the condition evidence a
+  reception visit asks for, and say what work is on a work order. Parts 2, 3, 4A and 4B.
+- **plainer refusals** — approving a visit nobody has authorised, and a selling price in a currency
+  the organisation does not use, now say what is wrong instead of answering "Not found". Parts 4A
+  and 5.
+- **reorder levels on a screen** — the quantity at which an item counts as low can be recorded and
+  read back, so the low-stock signal has something to work from. Part 5.
+- **a list of counter sales started and not finished** — a drafted sale can be reopened after the
+  screen is left. Part 5.
+- **a customer return chooses its sale and its line** — instead of asking for a reference the
+  product published nowhere. Part 5.
+- **credit notes have a screen** — a list and one note, for whoever holds the credit permission.
+  Parts 5 and 6.
+- **asking for material chooses the part from the catalogue and the line from the work order** —
+  nothing is typed as an identifier. Part 5.
+- **work-order states and stock-movement kinds read as words** in both languages, where two screens
+  had shown internal codes. Parts 4B and 5.
+- **an open stock count says its difference is provisional** rather than printing a figure for
+  movement it cannot know yet. Part 5.
+- **a refused request for material names the rule that refused it** — a live request already on that
+  line, a decision by the person who asked for it, a fact the amount still rests on, or something
+  named that this organisation does not have — in both languages, where the screen had answered
+  only "This change cannot be saved" and a reference. Part 5, §5.26.2.
 
 Sections that were re-read against the new commit say so in their own sources comment. A section
 that is unchanged from the previous revision was not re-read, and its sources comment still names
 the commit it was read at — the manual never presents an older reading as a new one.
+
+**Which part was re-read at `fe09f1a9`.** Part 5, §5.26.2 only, for the twelfth change above.
+Everything else in the manual is carried from the readings listed next, and each part's sources
+comment still names the commit its sections were read at.
+
+**Which parts were re-read at `f30ce918`.** Part 1 (§1.5, §1.6 and §1.12, on where mail goes), Part
+2 (§2.11), Part 2A (§2A.2, §2A.3 and the new §2A.14), Part 3 (§3.14.2, §3.15), Part 4A (§4A.2.4,
+§4A.5.0, §4A.5.8), Part 4B (§4B.6.3), Part 4C (§4C.5.3), Part 4D (§4D.11 and §4D.16), Part 5
+(§5.1, §5.3, §5.4, §5.16, §5.21, §5.23, §5.26, §5.30, §5.31), Part 6 (§6.2a), Part 7 (§7.1.2) and
+the quick start. Everything else is carried from the reading at `5b2c7840` and says so where it is
+written.
+
+**No screenshot was re-captured at this revision, and the printed manual was not rebuilt.** The
+figures in [`images/`](images/) are the ones captured for the earlier revision; none of the screens
+changed by the twelve merges above has a picture here, and every workflow that has none still says
+**"no screenshot available at this version"** rather than showing a picture of something else. The
+PDF described in [`tools/README.md`](tools/README.md) is a deliverable produced on demand and is not
+stored in this repository; it was not produced for this revision.
 
 ---
 
@@ -49,6 +87,18 @@ customer-facing link, and no development, staging or production environment. Eve
 this manual — the application at `http://localhost:3100`, the service at `http://localhost:3000`,
 the local mailbox at `http://127.0.0.1:54324` — is reachable only from the machine the software is
 installed on.
+
+**Reviewed source moving between branches is not a deployment either.** The software is kept on a
+working branch and promoted to a main branch once it has been reviewed. That promotion is a
+statement about the source, not about any environment: it installs nothing, starts nothing and
+publishes nothing. At the version this manual describes, the work is on the working branch and has
+not been promoted. Either way, the only place the product runs is the one machine described above.
+
+**No message leaves this machine.** The invitation and password-reset messages the product sends
+are delivered to a mail catcher running beside it, at `http://127.0.0.1:54324`, and no external mail
+service is configured. Every link inside those messages points at `localhost`, so it works on this
+machine and nowhere else. Nothing in the product sends an email about a work order, an invoice, a
+delivery or a stock figure to anybody — see Part 7, §7.1.2.
 
 **Nothing here is a claim that anything was certified, audited or approved.** Where this manual says
 a screen behaves in a particular way, that is a description of the code at the commit named above.
@@ -154,7 +204,7 @@ in its Screenshot field rather than showing a picture of something else.
 | Quick start | [`first-login-and-first-working-day.md`](first-login-and-first-working-day.md)                             | First sign-in, language, navigation, the first customer, vehicle, appointment, work order and handover, and who to call.                                                                                                                                 |
 | 1           | [`01-access-and-account-recovery.md`](01-access-and-account-recovery.md)                                   | Where the application runs, signing in and out, invitations and password reset, Arabic and English, session expiry, refused access, your profile.                                                                                                        |
 | 2           | [`02-saas-and-organisation-administration.md`](02-saas-and-organisation-administration.md)                 | Workspace, company, branch, department, employee and login user — what each word means; the Administration screens that create and run them; subscription limits and what they refuse.                                                                   |
-| 2A          | [`02a-platform-owner-console.md`](02a-platform-owner-console.md)                                           | The platform owner's own console: signing in, the overview figures, organisations, provisioning, plans, subscriptions, charges and receipts, and the activity record.                                                                                    |
+| 2A          | [`02a-platform-owner-console.md`](02a-platform-owner-console.md)                                           | The platform owner's own console: signing in, the overview figures, organisations, provisioning, plans, subscriptions, charges and receipts, the activity record, your own account and password, and how a second platform operator is added.            |
 | 3           | [`03-users-and-permissions.md`](03-users-and-permissions.md)                                               | Inviting a user, activating and locking an account, roles and permissions, branch and company scope, the two seeded roles, and a worked two-branch example.                                                                                              |
 | 4A          | [`04a-customers-vehicles-appointments-reception.md`](04a-customers-vehicles-appointments-reception.md)     | Customers, vehicles and ownership, plates and odometer, duplicates, appointments, walk-in intake and the reception visit.                                                                                                                                |
 | 4B          | [`04b-work-orders-diagnostics-technicians-quality.md`](04b-work-orders-diagnostics-technicians-quality.md) | Work orders and the board, inspection templates, job diagnostics, the technician workspace, quality control, closure and rework.                                                                                                                         |

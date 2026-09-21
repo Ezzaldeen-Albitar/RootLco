@@ -151,7 +151,17 @@ export type OperatorLocationType = (typeof OPERATOR_LOCATION_TYPES)[number];
 export const ACTIVATION_STATES = ['active', 'inactive'] as const;
 export type ActivationState = (typeof ACTIVATION_STATES)[number];
 
-/** `MOVEMENT_TYPES` of the inventory domain, mirrored (W5). */
+/**
+ * `MOVEMENT_TYPES` of the inventory domain, mirrored (W5).
+ *
+ * The mirror is held against `ck_stock_movements_type` as the migrations leave
+ * it, not against the constraint as it was first written. `sale` was added by
+ * the counter-sale slice and was missing here, so the ledger filter offered no
+ * way to ask for a counter sale and the table printed the message key of a row
+ * it had no label for. `tests/inventory-movements.dom.test.tsx` derives the
+ * label check from these two arrays, so a value added on the server without a
+ * label fails a test rather than reaching an operator as a key.
+ */
 export const MOVEMENT_TYPES = [
   'opening',
   'issue',
@@ -160,6 +170,7 @@ export const MOVEMENT_TYPES = [
   'adjustment',
   'transfer',
   'receipt',
+  'sale',
 ] as const;
 export type MovementType = (typeof MOVEMENT_TYPES)[number];
 
@@ -173,6 +184,8 @@ export const REFERENCE_KINDS = [
   'transfer_dispatch',
   'transfer_receipt',
   'goods_receipt_line',
+  'invoice_line',
+  'sales_return',
 ] as const;
 export type ReferenceKind = (typeof REFERENCE_KINDS)[number];
 
@@ -648,6 +661,34 @@ export const MATERIAL_DRAW_REASONS = [
   'no_requirement',
 ] as const;
 export type MaterialDrawReason = (typeof MATERIAL_DRAW_REASONS)[number];
+
+/**
+ * `MATERIAL_REFUSAL_RULES`, mirrored: why a material REQUIREMENT write was
+ * refused (DEF-T-16).
+ *
+ * **Hand-transcribed, like every other list in this file.** `apps/web` may not
+ * import `apps/api` source, so this is a copy of
+ * `apps/api/src/modules/inventory/domain/inventory.ts` and nothing at build time
+ * compares the two. What IS guarded is the half that used to fail silently: a
+ * token with no sentence renders `form.violation.invalid` — "This value is not
+ * accepted here" — which is indistinguishable on screen from the bare conflict
+ * banner this defect was raised about. `inventory-api.test.ts` walks this list
+ * and fails when either catalogue has no sentence for a member, so adding a
+ * token here without writing its English and Arabic is a failing test rather
+ * than a vague screen.
+ *
+ * The tokens arrive in `violations` against `body`, so `fromFailure` renders
+ * them at form level; `refusalOf` keeps a violation key over any sentence a
+ * caller names, because the rule is the more precise reason.
+ */
+export const MATERIAL_REFUSAL_RULES = [
+  'material_duplicate_demand',
+  'material_separation_of_duties',
+  'material_approval_required',
+  'material_unknown_reference',
+  'material_demand_rule',
+] as const;
+export type MaterialRefusalRule = (typeof MATERIAL_REFUSAL_RULES)[number];
 
 /** A unit cost as `numeric(18,4)` accepts it: non-negative, up to four decimals. */
 export const UNIT_COST = /^\d{1,14}(\.\d{1,4})?$/;
@@ -1448,6 +1489,44 @@ export const ALERT_PAGE_SIZE = 10;
  */
 interface AlertList {
   readonly asOf: string;
+}
+
+/**
+ * One configured reorder level — `ReorderLevelView` of `inv.reorder-level-list`.
+ *
+ * The three nullable narrowing fields are the row's own signature and each null
+ * MEANS something: no company is every company of the organisation, no branch is
+ * every branch of the named company, no location makes the level about the
+ * branch as a whole rather than one shelf. The screen says which of the four it
+ * is rather than showing a blank.
+ *
+ * Both quantities are exact decimal strings — `numeric(12,3)` — and nothing on
+ * this side parses, scales or reformats them.
+ */
+export interface ReorderLevel {
+  readonly id: string;
+  readonly itemId: string;
+  readonly sku: string;
+  readonly itemName: string;
+  readonly companyId: string | null;
+  readonly branchId: string | null;
+  readonly locationId: string | null;
+  readonly locationCode: string | null;
+  readonly reorderLevelQty: string;
+  readonly preferredOrderQty: string | null;
+  readonly status: string;
+  readonly retiredAt: string | null;
+  readonly recordVersion: number;
+}
+
+/** The echo of a reorder-level write; `replayed` when the call changed nothing. */
+export interface ReorderLevelEcho extends ReorderLevel {
+  readonly replayed: boolean;
+}
+
+/** `inv.reorder-level-list` — one page of levels, stamped with the read instant. */
+export interface ReorderLevelList extends AlertList {
+  readonly levels: CursorPage<ReorderLevel>;
 }
 
 /** One item whose available quantity has reached its configured reorder level. */

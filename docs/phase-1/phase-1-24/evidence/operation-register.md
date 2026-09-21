@@ -9,10 +9,10 @@ Regenerate with `node scripts/p1-24-operation-register.mjs`; CI runs it with `--
 
 | Measure                  | Value |
 | ------------------------ | ----- |
-| Public operations        | 493   |
+| Public operations        | 495   |
 | Domains (modules)        | 20    |
-| OpenAPI paths            | 385   |
-| OpenAPI operations       | 493   |
+| OpenAPI paths            | 387   |
+| OpenAPI operations       | 495   |
 | OpenAPI schemas          | 3     |
 | OpenAPI security schemes | 1     |
 | Permission codes seeded  | 132   |
@@ -24,7 +24,7 @@ Regenerate with `node scripts/p1-24-operation-register.mjs`; CI runs it with `--
 
 | Classification    | Operations |
 | ----------------- | ---------- |
-| Covered           | 493        |
+| Covered           | 495        |
 | Partially covered | 0          |
 | Uncovered         | 0          |
 | Not applicable    | 0          |
@@ -34,7 +34,7 @@ Regenerate with `node scripts/p1-24-operation-register.mjs`; CI runs it with `--
 
 | Domain          | Operations | Covered | Writes | Audited | Idempotent | Version-guarded |
 | --------------- | ---------- | ------- | ------ | ------- | ---------- | --------------- |
-| billing         | 11         | 11      | 6      | 6       | 6          | 2               |
+| billing         | 13         | 13      | 6      | 6       | 6          | 2               |
 | crm             | 29         | 29      | 15     | 15      | 15         | 0               |
 | delivery        | 22         | 22      | 11     | 11      | 8          | 4               |
 | diagnostics     | 23         | 23      | 15     | 15      | 14         | 4               |
@@ -378,6 +378,8 @@ Regenerate with `node scripts/p1-24-operation-register.mjs`; CI runs it with `--
 | `sal.counter-sale-list`                             | GET    | `/api/v1/counter-sales`                                                                 | branch  | `sal.invoice.manage`                                                 | —                                              | —    | —   | authorization isolation route service success                                                                                 | Covered |
 | `sal.credit-note-approve`                           | POST   | `/api/v1/credit-notes/{creditNoteId}/approval`                                          | branch  | `sal.credit.manage`<br>`sal.finance.view`                            | sal.credit_note.approved                       | yes  | —   | audit authorization cross-tenant denial idempotency isolation outbox route service success                                    | Covered |
 | `sal.credit-note-create`                            | POST   | `/api/v1/invoices/{invoiceId}/credit-notes`                                             | branch  | `sal.credit.manage`<br>`sal.finance.view`                            | sal.credit_note.requested                      | yes  | —   | audit authorization cross-tenant denial idempotency isolation route service success                                           | Covered |
+| `sal.credit-note-detail`                            | GET    | `/api/v1/credit-notes/{creditNoteId}`                                                   | branch  | `sal.credit.manage`<br>`sal.finance.view`                            | —                                              | —    | —   | authorization cross-tenant denial isolation route service success                                                             | Covered |
+| `sal.credit-note-list`                              | GET    | `/api/v1/credit-notes`                                                                  | branch  | `sal.credit.manage`<br>`sal.finance.view`                            | —                                              | —    | —   | authorization denial isolation route service success                                                                          | Covered |
 | `sal.delivery-checklist-record`                     | POST   | `/api/v1/deliveries/{deliveryId}/checklist-results`                                     | branch  | `sal.delivery.manage`                                                | sal.delivery.checklist_recorded                | yes  | —   | audit authorization cross-tenant denial idempotency isolation route service success                                           | Covered |
 | `sal.delivery-checklist-result-list`                | GET    | `/api/v1/deliveries/{deliveryId}/checklist-results`                                     | branch  | `sal.delivery.view`                                                  | —                                              | —    | —   | authorization cross-tenant denial isolation pagination route service success                                                  | Covered |
 | `sal.delivery-checklist-template-create`            | POST   | `/api/v1/delivery-checklist-templates`                                                  | company | `sal.delivery.manage`                                                | sal.delivery_checklist_template.created        | yes  | —   | audit authorization cross-tenant denial idempotency isolation route service success                                           | Covered |
