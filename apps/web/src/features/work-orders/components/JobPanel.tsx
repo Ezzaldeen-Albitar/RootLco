@@ -208,6 +208,17 @@ function AssignmentPanel({
   const [to, setTo] = useState('');
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
+  /**
+   * The refusals that name one of the two controls above.
+   *
+   * `wo.job-assignment-create` refuses a second lead with a violation on
+   * `body.assignmentRole` and refuses a technician who already holds the job
+   * with one on `body.technicianProfileId`. Neither reaches the banner, so both
+   * sentences were being written and never read. What the operator typed is
+   * kept: the cure is to change the role or the person, not to fill the form in
+   * again.
+   */
+  const [fieldErrors, setFieldErrors] = useState<Readonly<Record<string, string>>>({});
 
   /**
    * Re-read this job's assignments.
@@ -246,6 +257,7 @@ function AssignmentPanel({
       return;
     }
     setProblem(null);
+    setFieldErrors({});
     setBusy(true);
     const result = await assignTechnician(job.id, {
       technicianProfileId: technicianProfileId.trim(),
@@ -266,7 +278,13 @@ function AssignmentPanel({
       if (canReadTechnicians) refresh();
       return;
     }
+    if (result.fieldErrors) setFieldErrors(result.fieldErrors);
     setProblem(result.messageKey ?? 'action.failed');
+  };
+
+  const errorFor = (name: string): string | undefined => {
+    const key = fieldErrors[name];
+    return key ? translateDynamic(messages, key) : undefined;
   };
 
   return (
@@ -328,6 +346,7 @@ function AssignmentPanel({
             dir="ltr"
             value={technicianProfileId}
             onChange={(event) => setTechnicianProfileId(event.target.value)}
+            error={errorFor('technicianProfileId')}
           />
           <SelectField
             label={translate(messages, 'workOrders.detail.assignmentRole')}
@@ -337,6 +356,7 @@ function AssignmentPanel({
               { value: 'primary', label: translate(messages, 'workOrders.assignmentRole.primary') },
               { value: 'assist', label: translate(messages, 'workOrders.assignmentRole.assist') },
             ]}
+            error={errorFor('assignmentRole')}
           />
           <TextField
             label={translate(messages, 'workOrders.detail.windowFrom')}

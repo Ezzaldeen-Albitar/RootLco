@@ -11,8 +11,9 @@
 import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import ar from '../src/i18n/messages/ar.json';
 import en from '../src/i18n/messages/en.json';
-import { renderLtr } from './render';
+import { renderLtr, renderRtl } from './render';
 
 const EN = en as Record<string, string>;
 const t = (key: string): string => EN[key] ?? key;
@@ -31,6 +32,9 @@ const readAdditionalWorkApproval = vi.fn();
 const writeQcCheckResult = vi.fn();
 const finalizeQcRecord = vi.fn();
 const closeWorkOrder = vi.fn();
+const requestAdditionalWork = vi.fn();
+const recordAdditionalWorkApproval = vi.fn();
+const signOffRework = vi.fn();
 vi.mock('@/features/quality/api', () => ({
   listQcQueue: (...args: unknown[]) => listQcQueue(...args),
   listQcChecks: () => listQcChecks(),
@@ -49,12 +53,12 @@ vi.mock('@/features/quality/api', () => ({
   writeQcCheckResult: (...args: unknown[]) => writeQcCheckResult(...args),
   finalizeQcRecord: (...args: unknown[]) => finalizeQcRecord(...args),
   createRework: vi.fn(),
-  signOffRework: vi.fn(),
+  signOffRework: (...args: unknown[]) => signOffRework(...args),
   recordReworkCost: vi.fn(),
   raiseReopenAttempt: vi.fn(),
-  requestAdditionalWork: vi.fn(),
+  requestAdditionalWork: (...args: unknown[]) => requestAdditionalWork(...args),
   recordAdditionalWorkDetail: vi.fn(),
-  recordAdditionalWorkApproval: vi.fn(),
+  recordAdditionalWorkApproval: (...args: unknown[]) => recordAdditionalWorkApproval(...args),
   fulfillAdditionalWork: vi.fn(),
   withdrawAdditionalWork: vi.fn(),
   closeWorkOrder: (...args: unknown[]) => closeWorkOrder(...args),
@@ -207,6 +211,9 @@ beforeEach(() => {
     writeQcCheckResult,
     finalizeQcRecord,
     closeWorkOrder,
+    requestAdditionalWork,
+    recordAdditionalWorkApproval,
+    signOffRework,
     readWorkOrderDetail,
   ]) {
     fn.mockReset();
@@ -556,5 +563,254 @@ describe('the closure view', () => {
     expect(screen.queryByRole('heading', { name: t('quality.closure.qcHeading') })).toBeNull();
     expect(screen.queryByRole('heading', { name: t('quality.closure.closeHeading') })).toBeNull();
     expect(listQcRecords).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * Owner directive, user-facing errors: the closure screen says what was
+ * refused, in the place the reader can act on.
+ *
+ * Every refusal below arrives as a violation against a path, and every one of
+ * them was invisible before: `body.toState` and `body.signOffBy` name controls
+ * the forms have but were not reading, while `closure.<blocker>` and
+ * `body.originatingJobId` name no control at all — the first because the
+ * blockers are keyed by their own codes, the second because the request form
+ * offers no origin. Both of the latter belong in the form alert.
+ */
+const AR = ar as Record<string, string>;
+const arT = (key: string): string => AR[key] ?? key;
+
+const reworkLink = {
+  id: 'rw1',
+  originalWorkOrderId: WORK_ORDER,
+  reworkWorkOrderId: '55555555-5555-4555-8555-555555555555',
+  rootCause: 'Caliper refitted out of true',
+  correctiveAction: 'Refit and retest',
+  responsibility: 'workshop',
+  leadTechnicianId: null,
+  isSafetyCritical: true,
+  independentSignOffBy: null,
+  signOffAt: null,
+  recordVersion: 1,
+};
+
+describe('the closure screen says why a command was refused', () => {
+  it('puts the not-a-closing-state refusal beside the state control and keeps the reason', async () => {
+    readClosureEligibility.mockResolvedValue(ok({ ...eligibility, eligible: true, blockers: [] }));
+    closeWorkOrder.mockResolvedValue({
+      status: 'invalid',
+      messageKey: 'form.violation.invalid',
+      fieldErrors: { toState: 'form.violation.not_a_closing_state' },
+      correlationId: 'corr-not-closing',
+      attempt: 1,
+    });
+    const user = userEvent.setup();
+    renderLtr(
+      <WorkOrderClosureScreen
+        locale="en"
+        messages={en}
+        workOrderId={WORK_ORDER}
+        capabilities={everything}
+      />
+    );
+    const select = await screen.findByLabelText(new RegExp(`^${t('quality.closure.closeTo')}`));
+    await user.selectOptions(select, 'closed');
+    // Scoped to the closure panel: the additional-work row carries a control
+    // under the same label, and this case is about the closure command.
+    const closure = within(screen.getByRole('region', { name: t('quality.closure.closeHeading') }));
+    const reason = closure.getByLabelText(new RegExp(`^${t('quality.closure.reason')}`));
+    await user.type(reason, 'Customer collected the vehicle');
+    await user.click(screen.getByRole('button', { name: t('quality.closure.close') }));
+
+    const alert = await screen.findByText(t('form.violation.not_a_closing_state'));
+    expect(alert).toBeVisible();
+    // Re-queried, because the select is remounted on its own choice after each
+    // attempt — that remount is what keeps the choice through a refusal.
+    const settled = screen.getByLabelText(new RegExp(`^${t('quality.closure.closeTo')}`));
+    expect(settled.getAttribute('aria-describedby') ?? '').toContain(alert.id);
+    expect((settled as HTMLSelectElement).value).toBe('closed');
+    expect((reason as HTMLInputElement).value).toBe('Customer collected the vehicle');
+    expect(document.body.textContent).not.toContain('not_a_closing_state');
+  });
+
+  it('lifts the outstanding-steps refusal into the alert, since each one is keyed by its own code', async () => {
+    readClosureEligibility.mockResolvedValue(ok({ ...eligibility, eligible: true, blockers: [] }));
+    closeWorkOrder.mockResolvedValue({
+      status: 'conflict',
+      messageKey: 'form.violation.invalid',
+      fieldErrors: {
+        B1: 'form.violation.closure_blocked',
+        B3: 'form.violation.closure_blocked',
+      },
+      correlationId: 'corr-blocked',
+      attempt: 1,
+    });
+    const user = userEvent.setup();
+    renderLtr(
+      <WorkOrderClosureScreen
+        locale="en"
+        messages={en}
+        workOrderId={WORK_ORDER}
+        capabilities={everything}
+      />
+    );
+    await user.selectOptions(
+      await screen.findByLabelText(new RegExp(`^${t('quality.closure.closeTo')}`)),
+      'closed'
+    );
+    await user.click(screen.getByRole('button', { name: t('quality.closure.close') }));
+
+    expect(await screen.findByText(t('form.violation.closure_blocked'))).toBeVisible();
+    // Not the fixed conflict line, and not the blocker codes either.
+    expect(screen.queryByText(t('quality.closure.conflict'))).toBeNull();
+    expect(document.body.textContent).not.toContain('closure_blocked');
+  });
+
+  it('reads the outstanding-steps refusal in Arabic', async () => {
+    readClosureEligibility.mockResolvedValue(ok({ ...eligibility, eligible: true, blockers: [] }));
+    closeWorkOrder.mockResolvedValue({
+      status: 'conflict',
+      messageKey: 'form.violation.invalid',
+      fieldErrors: { B1: 'form.violation.closure_blocked' },
+      correlationId: 'corr-blocked-ar',
+      attempt: 1,
+    });
+    const user = userEvent.setup();
+    renderRtl(
+      <WorkOrderClosureScreen
+        locale="ar"
+        messages={ar}
+        workOrderId={WORK_ORDER}
+        capabilities={everything}
+      />
+    );
+    await user.selectOptions(
+      await screen.findByLabelText(new RegExp(`^${arT('quality.closure.closeTo')}`)),
+      'closed'
+    );
+    await user.click(screen.getByRole('button', { name: arT('quality.closure.close') }));
+
+    expect(await screen.findByText(arT('form.violation.closure_blocked'))).toBeVisible();
+    expect(document.documentElement.dir).toBe('rtl');
+  });
+
+  it('puts the deciding-party refusal beside the party control, naming nobody on the visit', async () => {
+    recordAdditionalWorkApproval.mockResolvedValue({
+      status: 'invalid',
+      messageKey: 'form.violation.invalid',
+      fieldErrors: { decidingPartyRoleId: 'form.violation.not_on_reception_visit' },
+      correlationId: 'corr-party',
+      attempt: 1,
+    });
+    const user = userEvent.setup();
+    renderLtr(
+      <WorkOrderClosureScreen
+        locale="en"
+        messages={en}
+        workOrderId={WORK_ORDER}
+        capabilities={everything}
+      />
+    );
+    await user.selectOptions(
+      await screen.findByLabelText(new RegExp(`^${t('quality.closure.decision')}`)),
+      'approved'
+    );
+    await user.selectOptions(
+      screen.getByLabelText(new RegExp(`^${t('quality.closure.channel')}`)),
+      'phone'
+    );
+    const party = screen.getByLabelText(new RegExp(`^${t('quality.closure.decidingParty')}`));
+    await user.type(party, 'the-party-reference');
+    const scope = screen.getByLabelText(new RegExp(`^${t('quality.closure.presentedScope')}`));
+    await user.type(scope, 'Rear pads only');
+    await user.click(screen.getByRole('button', { name: t('quality.closure.recordApproval') }));
+
+    const alert = await screen.findByText(t('form.violation.not_on_reception_visit'));
+    expect(alert).toBeVisible();
+    expect(party.getAttribute('aria-describedby') ?? '').toContain(alert.id);
+    expect((scope as HTMLInputElement).value).toBe('Rear pads only');
+  });
+
+  it('puts the independent sign-off refusal beside the name, and keeps the name', async () => {
+    listReworkLinks.mockResolvedValue(ok({ items: [reworkLink] }));
+    signOffRework.mockResolvedValue({
+      status: 'conflict',
+      messageKey: 'form.violation.invalid',
+      fieldErrors: { signOffBy: 'form.violation.not_independent' },
+      correlationId: 'corr-signoff',
+      attempt: 1,
+    });
+    const user = userEvent.setup();
+    renderLtr(
+      <WorkOrderClosureScreen
+        locale="en"
+        messages={en}
+        workOrderId={WORK_ORDER}
+        capabilities={everything}
+      />
+    );
+    const who = await screen.findByLabelText(new RegExp(`^${t('quality.closure.signOffBy')}`));
+    await user.type(who, 'the-colleague-reference');
+    await user.click(screen.getByRole('button', { name: t('quality.closure.signOff') }));
+
+    const alert = await screen.findByText(t('form.violation.not_independent'));
+    expect(alert).toBeVisible();
+    expect(who.getAttribute('aria-describedby') ?? '').toContain(alert.id);
+    expect((who as HTMLInputElement).value).toBe('the-colleague-reference');
+  });
+
+  it('lifts the missing-origin refusal into the request form alert, since the form has no origin control', async () => {
+    requestAdditionalWork.mockResolvedValue({
+      status: 'invalid',
+      messageKey: 'form.violation.invalid',
+      fieldErrors: { originatingJobId: 'form.violation.origin_required' },
+      correlationId: 'corr-origin',
+      attempt: 1,
+    });
+    const user = userEvent.setup();
+    renderLtr(
+      <WorkOrderClosureScreen
+        locale="en"
+        messages={en}
+        workOrderId={WORK_ORDER}
+        capabilities={everything}
+      />
+    );
+    const summary = await screen.findByLabelText(
+      new RegExp(`^${t('quality.closure.additionalWorkSummary')}`)
+    );
+    await user.type(summary, 'Rear pads at 2 mm');
+    await user.click(screen.getByRole('button', { name: t('quality.closure.requestWork') }));
+
+    expect(await screen.findByText(t('form.violation.origin_required'))).toBeVisible();
+    expect((summary as HTMLInputElement).value).toBe('Rear pads at 2 mm');
+    expect(document.body.textContent).not.toContain('origin_required');
+  });
+
+  it('leaves a refusal it has not been told about to the generic banner', async () => {
+    requestAdditionalWork.mockResolvedValue({
+      status: 'invalid',
+      messageKey: 'form.violation.invalid',
+      fieldErrors: { somethingElse: 'form.violation.a_rule_this_screen_never_heard_of' },
+      correlationId: 'corr-unknown-field',
+      attempt: 1,
+    });
+    const user = userEvent.setup();
+    renderLtr(
+      <WorkOrderClosureScreen
+        locale="en"
+        messages={en}
+        workOrderId={WORK_ORDER}
+        capabilities={everything}
+      />
+    );
+    const summary = await screen.findByLabelText(
+      new RegExp(`^${t('quality.closure.additionalWorkSummary')}`)
+    );
+    await user.type(summary, 'Rear pads at 2 mm');
+    await user.click(screen.getByRole('button', { name: t('quality.closure.requestWork') }));
+
+    expect(await screen.findByText(t('form.violation.invalid'))).toBeVisible();
+    expect(document.body.textContent).not.toContain('a_rule_this_screen_never_heard_of');
   });
 });
