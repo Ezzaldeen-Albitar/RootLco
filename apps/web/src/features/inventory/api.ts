@@ -675,6 +675,18 @@ interface MissingResourceNote {
  *
  * A banner that already names a specific violation keeps it: that is the more
  * precise reason, and replacing it would downgrade the message.
+ *
+ * ## DEF-T-16 — why a material refusal now arrives as a violation
+ *
+ * The material REQUIREMENT writes had neither of those channels. A second
+ * request for the same part on the same service line is `ERR-RES-002`, which is
+ * a conflict that is not `ERR-CON-001`, so it rendered "This change cannot be
+ * saved" and a correlation reference — measured twice, from two fresh sessions,
+ * with nothing created either time. The service now publishes a token from
+ * `MATERIAL_REFUSAL_RULES` in `violations` against `body`, so `fromFailure`
+ * finds it before this function runs and the early return above keeps it. That
+ * is why no branch here names `ERR-RES-002`: adding one would be a second,
+ * quieter copy of a mapping the shared reader already performs.
  */
 function refusalOf(
   failure: ApiFailure,

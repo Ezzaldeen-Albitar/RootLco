@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import en from '../src/i18n/messages/en.json';
 import ar from '../src/i18n/messages/ar.json';
 import { renderLtr, renderRtl } from './render';
+import { MATERIAL_REFUSAL_RULES } from '@/features/inventory/inventory-contract';
 
 /**
  * What a job is allowed to consume, rendered (P1-32).
@@ -790,5 +791,101 @@ describe('the service line is offered rather than demanded', () => {
     expect(
       within(form).getByLabelText(labelled('inventory.material.create.serviceLineId'))
     ).toBeVisible();
+  });
+});
+
+/**
+ * DEF-T-16 — a refused request that said only "This change cannot be saved".
+ *
+ * Asking again for a part the chosen service line already has a live request
+ * for was refused twice, from two fresh sessions, and the panel said nothing
+ * but that sentence and a correlation reference: nine requests before, nine
+ * after, and no statement of whether the line already had one or the job no
+ * longer took one. The reason existed in the service and died there, because
+ * the problem document is assembled from the catalogue entry and the safe
+ * details alone.
+ *
+ * The service now publishes the rule as a violation and `fromFailure` turns it
+ * into a sentence. These cases are the rendering half: one per rule the mirror
+ * carries, so a rule added there without a case is still asserted, and the
+ * catalogue sentences are read rather than restated.
+ *
+ * `canRequest` is on and the adapter is mocked, as everywhere in this file, so
+ * what is under test is the panel — that the state the adapter really produces
+ * (pinned in `inventory-api.test.ts` against the body the API really sends)
+ * reaches the operator as its own words.
+ */
+describe('a refused request says which rule refused it', () => {
+  const askAndBeRefused = async (
+    messageKey: string,
+    locale: 'en' | 'ar' = 'en'
+  ): Promise<HTMLElement> => {
+    const user = userEvent.setup();
+    createMaterialRequirement.mockResolvedValue({
+      state: { status: 'conflict', messageKey, correlationId: 'ref-409', attempt: 1 },
+      created: null,
+    });
+    const catalogue = locale === 'en' ? EN : AR;
+    if (locale === 'en') renderPanel({ canRequest: true });
+    else {
+      renderRtl(
+        <MaterialRequirementsPanel
+          locale="ar"
+          messages={ar}
+          workOrderId={WORK_ORDER_ID}
+          target={{ companyId: COMPANY_ID, branchId: BRANCH_ID }}
+          currentUserId={USER_ID}
+          canRequest={true}
+          canApprove={false}
+          canDecideException={false}
+          canReadWorkOrder={true}
+          chosenId={null}
+          onChoose={vi.fn()}
+          onChanged={vi.fn()}
+        />
+      );
+    }
+    await user.click(
+      screen.getByRole('button', { name: catalogue['inventory.material.create.open'] as string })
+    );
+    const form = await screen.findByRole('form', {
+      name: catalogue['inventory.material.create.heading'] as string,
+    });
+    await user.selectOptions(
+      await within(form).findByLabelText(
+        new RegExp(`^${escape(catalogue['inventory.material.create.serviceLine'] as string)}`)
+      ),
+      SERVICE_LINE_ID
+    );
+    await user.type(
+      within(form).getByLabelText(
+        new RegExp(`^${escape(catalogue['inventory.material.create.serviceCondition'] as string)}`)
+      ),
+      'oil_change'
+    );
+    await user.click(
+      within(form).getByRole('button', {
+        name: catalogue['inventory.material.create.submit'] as string,
+      })
+    );
+    await waitFor(() => expect(createMaterialRequirement).toHaveBeenCalled());
+    return within(form).findByRole('alert');
+  };
+
+  for (const rule of MATERIAL_REFUSAL_RULES) {
+    it(`says in words what ${rule} means, and never the bare sentence`, async () => {
+      const alert = await askAndBeRefused(`form.violation.${rule}`);
+      expect(alert).toHaveTextContent(EN[`form.violation.${rule}`] as string);
+      expect(alert).not.toHaveTextContent(EN['state.conflict.blocked.title'] as string);
+      // The reference stays: it is what support is quoted, beside a reason the
+      // operator can act on rather than instead of one.
+      expect(alert).toHaveTextContent('ref-409');
+    });
+  }
+
+  it('says the refusal the campaign measured in Arabic too', async () => {
+    const alert = await askAndBeRefused('form.violation.material_duplicate_demand', 'ar');
+    expect(alert).toHaveTextContent(AR['form.violation.material_duplicate_demand'] as string);
+    expect(alert).not.toHaveTextContent(AR['state.conflict.blocked.title'] as string);
   });
 });

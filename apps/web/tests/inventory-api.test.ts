@@ -1,4 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import en from '../src/i18n/messages/en.json';
+import ar from '../src/i18n/messages/ar.json';
 
 /**
  * The inventory ADAPTERS (P1-30, `W4`).
@@ -36,6 +38,7 @@ const {
   createOpeningBatch,
   createOpeningBatchLine,
   createReservation,
+  createMaterialRequirement,
   createReturn,
   createStockLocation,
   listAvailability,
@@ -54,7 +57,10 @@ const {
   releaseReservation,
   setSalePrice,
 } = await import('@/features/inventory/api');
+const { MATERIAL_REFUSAL_RULES } = await import('@/features/inventory/inventory-contract');
 const { requiresIdempotencyKey, resolveOperation } = await import('@/lib/api/operation-contract');
+const EN = en as Record<string, string>;
+const AR = ar as Record<string, string>;
 
 const COMPANY_ID = '11111111-1111-4111-8111-111111111111';
 const BRANCH_ID = '22222222-2222-4222-8222-222222222222';
@@ -923,5 +929,110 @@ describe('the reorder-level list is read as a tenant read, asserting no scope', 
   it('maps a refusal to a state the screen can say something about', async () => {
     get.mockResolvedValue(failure('forbidden'));
     expect((await listReorderLevels()).status).toBe('denied');
+  });
+});
+
+/**
+ * DEF-T-16 — a refused material request that said only "This change cannot be saved".
+ *
+ * Asking again for a part a service line already has a live request for was
+ * refused twice, from two fresh sessions, with nothing created either time and
+ * nothing on screen but that sentence and a correlation reference. The cause was
+ * on the wire: the refusal is `ERR-RES-002`, a conflict that is not
+ * `ERR-CON-001`, and `failureMessageKey` has exactly one sentence for that whole
+ * class. The service's own message names the rule but never leaves the process,
+ * because `problemFor` assembles the document from the catalogue entry and the
+ * safe details alone.
+ *
+ * So the service publishes the rule as a violation instead, and these cases are
+ * where that reaches a sentence. The first is the refusal the campaign measured.
+ * The loop is the guard: a rule token added to the mirror with no English or no
+ * Arabic sentence renders `form.violation.invalid` — "This value is not accepted
+ * here" — which on screen is no better than the banner this defect is about, and
+ * no other check in the suite can see it.
+ *
+ * The mirror is hand-transcribed (`apps/web` may not import `apps/api`), so this
+ * guards the web half only: a token the API gains and nobody copies here is
+ * caught by the backend suite's own assertions, not by this loop.
+ */
+describe('a refused material requirement says which rule refused it', () => {
+  const MATERIAL_BODY = {
+    basis: 'entered' as const,
+    serviceLineId: '66666666-6666-4666-8666-666666666666',
+    itemId: ITEM_ID,
+    allowanceQuantity: '4.000',
+    uomId: '99999999-9999-4999-8999-999999999999',
+    sourceReference: 'Service manual, page 12',
+  };
+  const refusedWith = (code: string, rule: string, kind: string) => ({
+    ok: false as const,
+    kind,
+    status: code === 'ERR-RES-001' ? 404 : 409,
+    problem: {
+      type: `urn:rootlco:error:${code}`,
+      status: code === 'ERR-RES-001' ? 404 : 409,
+      code,
+      correlationId: 'corr-1',
+      violations: [{ path: 'body', rule }],
+    },
+    correlationId: 'corr-1',
+  });
+
+  it('names the live request the line already has, instead of a bare conflict', async () => {
+    send.mockResolvedValue(refusedWith('ERR-RES-002', 'material_duplicate_demand', 'conflict'));
+    const outcome = await createMaterialRequirement(MATERIAL_BODY);
+    expect(outcome.created).toBeNull();
+    expect(outcome.state.status).toBe('conflict');
+    expect(outcome.state.messageKey).toBe('form.violation.material_duplicate_demand');
+    // The rule is about the line and the part together, so it belongs to the
+    // form rather than to one box.
+    expect(outcome.state.fieldErrors).toBeUndefined();
+    expect(outcome.state.correlationId).toBe('corr-1');
+  });
+
+  it('keeps the rule over the sentence the caller names for the state', async () => {
+    send.mockResolvedValue(refusedWith('ERR-TRN-001', 'material_demand_rule', 'conflict'));
+    const outcome = await createMaterialRequirement(MATERIAL_BODY);
+    expect(outcome.state.messageKey).toBe('form.violation.material_demand_rule');
+    expect(outcome.state.messageKey).not.toBe('inventory.material.create.refused');
+  });
+
+  it('falls back to the caller sentence when the refusal names no rule at all', async () => {
+    send.mockResolvedValue({
+      ok: false as const,
+      kind: 'conflict',
+      status: 409,
+      problem: { code: 'ERR-TRN-001', correlationId: 'corr-1' },
+      correlationId: 'corr-1',
+    });
+    const outcome = await createMaterialRequirement(MATERIAL_BODY);
+    expect(outcome.state.messageKey).toBe('inventory.material.create.refused');
+  });
+
+  it('has an English and an Arabic sentence for every rule the mirror carries', () => {
+    expect(MATERIAL_REFUSAL_RULES.length).toBeGreaterThan(0);
+    for (const rule of MATERIAL_REFUSAL_RULES) {
+      const key = `form.violation.${rule}`;
+      expect(EN[key], `${key} has no English sentence`).toBeTypeOf('string');
+      expect(AR[key], `${key} has no Arabic sentence`).toBeTypeOf('string');
+      expect(EN[key]).not.toBe(AR[key]);
+    }
+  });
+
+  it('maps every rule the mirror carries to its own sentence, and to no other', async () => {
+    const keys: string[] = [];
+    for (const rule of MATERIAL_REFUSAL_RULES) {
+      send.mockResolvedValueOnce(
+        refusedWith(
+          rule === 'material_unknown_reference' ? 'ERR-RES-001' : 'ERR-RES-002',
+          rule,
+          rule === 'material_unknown_reference' ? 'not-found' : 'conflict'
+        )
+      );
+      const outcome = await createMaterialRequirement(MATERIAL_BODY);
+      expect(outcome.state.messageKey).toBe(`form.violation.${rule}`);
+      keys.push(outcome.state.messageKey as string);
+    }
+    expect(new Set(keys).size).toBe(MATERIAL_REFUSAL_RULES.length);
   });
 });
