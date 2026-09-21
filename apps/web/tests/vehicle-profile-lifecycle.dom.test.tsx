@@ -1040,10 +1040,17 @@ describe('the field errors a real 422 carries reach the controls it names', () =
      * disagree the operator must be told which control was refused, not handed
      * "The form could not be saved."
      *
-     * The expected message is the generic key, and that is asserted rather than
-     * papered over: `invalid_transition` is not in the catalogue, the API emits
-     * more than eighty rule tokens, and a catalogue claiming to carry them all
-     * would put a raw token in front of a receptionist within a week.
+     * The expected message is the catalogued `invalid_transition` sentence. That
+     * key was written for the administration identity screens, but the token is
+     * global: `violationMessageKey` derives the key from the rule token alone,
+     * and `vehicle-lifecycle.ts` raises the same token, so one sentence answers
+     * both. It is true of both — the move was refused because of the state the
+     * record is in now — and it is asserted here rather than the generic, which
+     * is what this case read while the catalogue carried no entry for the token.
+     * The generic fallback is still the answer for every rule the catalogue does
+     * not carry: the API emits more than eighty of them, and a catalogue
+     * claiming to carry them all would put a raw token in front of a
+     * receptionist within a week.
      */
     refuseWith({ path: 'body.lifecycleStatus', rule: 'invalid_transition' });
     render();
@@ -1055,7 +1062,7 @@ describe('the field errors a real 422 carries reach the controls it names', () =
     expect((fetchImpl.mock.calls[0] as [string, unknown])[0]).toBe(
       `http://api.test/api/v1/vehicles/${VEHICLE.id}/status`
     );
-    await waitFor(() => expect(messageOn(LIFECYCLE)).toBe(en['form.violation.invalid']));
+    await waitFor(() => expect(messageOn(LIFECYCLE)).toBe(en['form.violation.invalid_transition']));
   });
 
   it('shows the status panel own refusal, which reached nobody before', async () => {
@@ -1084,7 +1091,7 @@ describe('the field errors a real 422 carries reach the controls it names', () =
       en['form.violation.too_big'],
       en['form.violation.required'],
       en['form.violation.invalid_format'],
-      en['form.violation.invalid'],
+      en['form.violation.invalid_transition'],
       en['form.violation.empty_patch'],
       en['vehicles.profile.chooseAStatus'],
       en['form.formError'],
