@@ -416,3 +416,39 @@ export function expiringOrganizations(
   }
   return found.sort((first, second) => first.endsOn.localeCompare(second.endsOn));
 }
+
+/* ------------------------------------------------------------------ *
+ * The refusal reasons the console commands publish
+ * ------------------------------------------------------------------ */
+
+/**
+ * Every rule token the administrator-setup and subscription services publish
+ * for a refusal the console can reach, mirrored so the catalogue can be held
+ * against it.
+ *
+ * `platform_address_not_available` is deliberately ONE token for four different
+ * readings of an email address — a live account on it, a disabled identity, and
+ * an identity bound to an organisation that still exists. The console must not
+ * be able to tell them apart: three of the four are facts about an organisation
+ * other than the one on screen, and a sentence per reading would turn this form
+ * into an address oracle. The wording says what the operator can act on, which
+ * is to use a different address.
+ *
+ * Mirrored rather than imported, because this workspace may not import backend
+ * source. `tests/field-error-translation.test.ts` asserts every entry has a
+ * sentence in both catalogues.
+ */
+export const PLATFORM_REFUSAL_KEYS: readonly string[] = Object.freeze([
+  'form.violation.platform_address_not_available',
+  'form.violation.platform_administrator_exists',
+  'form.violation.platform_no_invitation_to_resend',
+  'form.violation.platform_invitation_already_accepted',
+  'form.violation.platform_plan_not_available',
+  'form.violation.platform_period_starts_too_early',
+  'form.violation.platform_cancellation_too_early',
+  'form.violation.platform_subscription_not_active',
+  'form.violation.platform_change_needs_different_plan',
+  'form.violation.platform_renewal_needs_same_plan',
+  'form.violation.platform_subscription_overlap',
+  'form.violation.platform_plan_version_overlap',
+]);

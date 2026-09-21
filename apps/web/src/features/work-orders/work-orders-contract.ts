@@ -300,3 +300,40 @@ export interface DepartmentOption {
   readonly status: string;
   readonly recordVersion: number;
 }
+
+/* ------------------------------------------------------------------ *
+ * The refusal reasons the work-order commands publish
+ * ------------------------------------------------------------------ */
+
+/**
+ * Every rule token the work-order services publish for a state refusal a user
+ * can reach, mirrored so the catalogue can be held against it.
+ *
+ * One catalogue code covers "this order is closed to new work", "parts are
+ * still held so it cannot be closed", "the customer has not agreed to this
+ * quotation" and a dozen other refusals with different cures. The interface
+ * renders no server prose, so without a token every one of them reached a
+ * service adviser as the same line. The token selects the sentence; the
+ * sentence names the reason and what to do next.
+ *
+ * Mirrored rather than imported, because this workspace may not import backend
+ * source. `tests/field-error-translation.test.ts` asserts every entry has a
+ * sentence in both catalogues, so a token with no wording fails a test instead
+ * of reaching a screen as a raw name.
+ */
+export const WORK_ORDER_REFUSAL_KEYS: readonly string[] = Object.freeze([
+  'form.violation.work_order_closed_to_lines',
+  'form.violation.work_order_closed_to_jobs',
+  'form.violation.work_order_closed_to_job_changes',
+  'form.violation.work_order_stock_still_held',
+  'form.violation.work_order_rework_needs_closed_order',
+  'form.violation.work_order_rework_on_cancelled',
+  'form.violation.work_order_visit_not_ready',
+  'form.violation.work_order_closed_to_extra_work',
+  'form.violation.work_order_extra_work_not_approved',
+  'form.violation.work_order_extra_work_already_settled',
+  'form.violation.work_order_extra_work_already_decided',
+  'form.violation.work_order_quotation_not_issued',
+  'form.violation.work_order_quotation_expired',
+  'form.violation.work_order_quotation_not_accepted',
+]);

@@ -566,3 +566,32 @@ export interface AppointmentDetail {
   readonly createdAt: string;
   readonly updatedAt: string | null;
 }
+
+/* ------------------------------------------------------------------ *
+ * The refusal reasons the lifecycle commands publish
+ * ------------------------------------------------------------------ */
+
+/**
+ * Every rule token `apps/api/src/modules/reception/domain/appointment.ts`
+ * publishes, mirrored so the catalogue can be held against it.
+ *
+ * The four lifecycle commands all refuse with one catalogue code, and the
+ * interface never renders server prose — so before these tokens existed, a
+ * clerk who tried to receive a vehicle against an unconfirmed appointment and a
+ * clerk who tried to cancel one that had already been cancelled read the same
+ * sentence. The token is what selects the sentence, and the sentence is what
+ * names the next step.
+ *
+ * Mirrored rather than imported: this workspace may not import backend source.
+ * The list is therefore a copy, and
+ * `tests/field-error-translation.test.ts` is what stops it becoming a copy that
+ * drifts — it asserts every entry has a sentence in BOTH catalogues, so a token
+ * added here without wording, or a sentence written in one language only, fails
+ * a test rather than reaching a clerk as a raw name.
+ */
+export const APPOINTMENT_REFUSAL_KEYS: readonly string[] = Object.freeze([
+  'form.violation.appointment_not_reschedulable',
+  'form.violation.appointment_not_cancellable',
+  'form.violation.appointment_not_confirmed_for_no_show',
+  'form.violation.appointment_not_confirmed_for_check_in',
+]);
