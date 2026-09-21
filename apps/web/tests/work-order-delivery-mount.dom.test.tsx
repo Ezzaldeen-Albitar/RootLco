@@ -381,6 +381,66 @@ describe('the work-order record says why a command was refused', () => {
     expect(document.body.textContent).not.toContain('primary_already_assigned');
   });
 
+  it('puts the inactive-technician refusal beside the technician control', async () => {
+    // `assign()` runs the eligibility check before the write, and an inactive
+    // profile comes back on `body.technicianProfileId` — the control this form
+    // actually has. Without this case the field mapping added for it is
+    // unexercised, and the only covered assignment refusal is the role one.
+    PERMISSIONS = [WORK_ORDER_READ, 'tech.technician.read', 'tech.assignment.manage'];
+    readWorkOrderDetail.mockResolvedValue({
+      status: 'ok',
+      data: movable,
+      correlationId: 'corr-wo',
+    });
+    listJobAssignments.mockResolvedValue({
+      status: 'ok',
+      data: { items: [] },
+      correlationId: 'corr-assignments',
+    });
+    listJobBlockers.mockResolvedValue({
+      status: 'ok',
+      data: { items: [] },
+      correlationId: 'corr-blockers',
+    });
+    assignTechnician.mockResolvedValue({
+      status: 'invalid',
+      messageKey: 'form.violation.invalid',
+      fieldErrors: { technicianProfileId: 'form.violation.profile-inactive' },
+      correlationId: 'corr-assign',
+      attempt: 1,
+    });
+    const user = userEvent.setup();
+    await renderRecord();
+
+    await user.click(
+      await screen.findByRole('button', { name: EN['workOrders.detail.openJob'] as string })
+    );
+    const profile = await screen.findByLabelText(
+      new RegExp(`^${EN['workOrders.detail.technicianProfileId'] as string}`)
+    );
+    await user.type(profile, 'the-reference-on-screen');
+    await user.type(
+      screen.getByLabelText(new RegExp(`^${EN['workOrders.detail.windowFrom'] as string}`)),
+      '2026-09-01T08:00'
+    );
+    await user.type(
+      screen.getByLabelText(new RegExp(`^${EN['workOrders.detail.windowTo'] as string}`)),
+      '2026-09-01T12:00'
+    );
+    await user.click(
+      screen.getByRole('button', { name: EN['workOrders.detail.assignTechnician'] as string })
+    );
+
+    const alert = await screen.findByText(EN['form.violation.profile-inactive'] as string);
+    expect(alert).toBeVisible();
+    expect(profile.getAttribute('aria-describedby') ?? '').toContain(alert.id);
+    // The sentence has to hold on THIS screen too: the refusal here is that the
+    // technician cannot be given the job, not only that time cannot be logged.
+    expect(alert.textContent).toContain('work cannot be given to them');
+    expect((profile as HTMLInputElement).value).toBe('the-reference-on-screen');
+    expect(document.body.textContent).not.toContain('profile-inactive');
+  });
+
   it('puts the blocker refusal beside the note, with the note still in the box', async () => {
     PERMISSIONS = [WORK_ORDER_READ, 'tech.labor.record'];
     readWorkOrderDetail.mockResolvedValue({
