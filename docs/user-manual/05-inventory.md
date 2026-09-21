@@ -386,11 +386,10 @@ Both are in the set a new organisation's first administrator is given.
 **How wide the level reaches** is decided by what you left empty, and the form states the rule:
 **"Leave the branch empty and the level covers every branch of every company. Choose a branch and it
 covers that branch; choose a place inside it and it covers that place alone. Recording a level again
-for the same choice replaces the one that was there."**
-<!-- inventory.reorderLevels.set.explain --> In the table those four widths read **Every branch of
-
-every company**, **Every branch of one company**, **One branch, as a whole** and **One place inside
-a branch** <!-- inventory.reorderLevels.appliesTo.* --> .
+for the same choice replaces the one that was there."** <!-- inventory.reorderLevels.set.explain -->
+In the table those four widths read **Every branch of every company**, **Every branch of one
+company**, **One branch, as a whole** and **One place inside a
+branch** <!-- inventory.reorderLevels.appliesTo.* --> .
 
 **Result** — **"The reorder level was recorded."** <!-- inventory.reorderLevels.set.success --> and
 the row joins the table straight away, without the page being loaded again.
@@ -1091,10 +1090,9 @@ enter or read a unit cost.
 
 **Steps** Open the draft, check it, and post.
 
-**Result** **"Receipt posted; the goods are in stock."** The status reads **Posted**
-<!-- inventory.receiptStatus.posted --> and the screen confirms **"This receipt is posted. Its goods
-
-are in stock."**
+**Result** **"Receipt posted; the goods are in stock."** The status reads
+**Posted** <!-- inventory.receiptStatus.posted --> and the screen confirms **"This receipt is
+posted. Its goods are in stock."**
 
 **Restrictions** _"Posting adds every line to stock and records its cost. A posted receipt cannot be
 changed."_ <!-- inventory.receipts.post.explain --> Posting twice is refused: **"This receipt can no
@@ -1487,30 +1485,26 @@ shelf on any of these. Reopen one to finish it."**
 <!-- inventory.counterSales.drafts.notIssued --> , and carries a **Reopen**
 <!-- inventory.counterSales.drafts.reopen --> of its own.
 
-Choosing **Reopen** answers **"The sale was reopened. It can be finished or cancelled now."**
-<!-- inventory.counterSales.drafts.reopened --> and puts the draft back on the screen with **Issue
+Choosing **Reopen** answers **"The sale was reopened. It can be finished or cancelled
+now."** <!-- inventory.counterSales.drafts.reopened --> and puts the draft back on the screen with
+**Issue the sale** and **Throw the draft away** beside it. A draft you are looking at says the same
+thing about itself: **"This sale has been started and not finished. Nothing has left the shelf yet,
+and it stays in the list of sales started here until it is finished or
+cancelled."** <!-- inventory.counterSales.sale.draftListed --> Once it is issued it leaves the list.
 
-the sale** and **Throw the draft away** beside it. A draft you are looking at says the same thing
-about itself: **"This sale has been started and not finished. Nothing has left the shelf yet, and it
-stays in the list of sales started here until it is finished or cancelled."**
-<!-- inventory.counterSales.sale.draftListed --> Once it is issued it leaves the list.
+Where every sale was finished: **"Every sale started at this branch was
+finished."** <!-- inventory.counterSales.drafts.none --> Where there are more than are shown:
+**"Only the most recent are shown."** <!-- inventory.counterSales.drafts.truncated --> If the list
+cannot be read the screen says which — **"You do not have permission to see the sales started at
+this branch."** <!-- inventory.counterSales.drafts.refused --> or **"The sales started here could
+not be read just now. Try again."** <!-- inventory.counterSales.drafts.unavailable --> — and
+reopening can fail in its own right: **"That sale is no longer
+here."** <!-- inventory.counterSales.drafts.reopenMissing -->
 
-Where every sale was finished: **"Every sale started at this branch was finished."**
-<!-- inventory.counterSales.drafts.none --> Where there are more than are shown: **"Only the most
-
-recent are shown."** <!-- inventory.counterSales.drafts.truncated --> If the list cannot be read the
-screen says which — **"You do not have permission to see the sales started at this branch."**
-<!-- inventory.counterSales.drafts.refused --> or **"The sales started here could not be read just
-
-now. Try again."** <!-- inventory.counterSales.drafts.unavailable --> — and reopening can fail in
-its own right: **"That sale is no longer here."**
-<!-- inventory.counterSales.drafts.reopenMissing -->
-
-**Restrictions** A draft can be thrown away — **Throw the draft away**
-<!-- inventory.counterSales.void.action --> , with a reason — and **"The draft was thrown away.
-
-Nothing had moved."** An issued sale cannot. Issuing twice does nothing twice: **"This sale had
-already been issued."**
+**Restrictions** A draft can be thrown away — **Throw the draft
+away** <!-- inventory.counterSales.void.action --> , with a reason — and **"The draft was thrown
+away. Nothing had moved."** An issued sale cannot. Issuing twice does nothing twice: **"This sale
+had already been issued."**
 
 ### 5.23.3 Customer returns, remaining quantity, and the credit note
 
@@ -1551,13 +1545,11 @@ of the line instead, or try again."** <!-- inventory.returns.sale.unavailable --
 sale has been made at this branch yet."** <!-- inventory.returns.sale.none --> , and, where the list
 is capped, **"Only the most recent sales are listed. If the one you want is not here, type the
 reference of the line instead."** <!-- inventory.returns.sale.truncated --> A chosen sale whose
-lines cannot be read says which: **"That sale has nothing on it that can come back."**
-<!-- inventory.returns.sale.linesNone --> , **"You do not have permission to see what was on that
-
-sale."** <!-- inventory.returns.sale.linesRefused --> , **"That sale is no longer here."**
-<!-- inventory.returns.sale.linesMissing --> or **"What was on that sale could not be read just now.
-
-Try again."** <!-- inventory.returns.sale.linesUnavailable -->
+lines cannot be read says which: **"That sale has nothing on it that can come
+back."** <!-- inventory.returns.sale.linesNone --> , **"You do not have permission to see what was
+on that sale."** <!-- inventory.returns.sale.linesRefused --> , **"That sale is no longer
+here."** <!-- inventory.returns.sale.linesMissing --> or **"What was on that sale could not be read
+just now. Try again."** <!-- inventory.returns.sale.linesUnavailable -->
 
 **The two conditions, and where the part goes**
 
@@ -1572,13 +1564,12 @@ where it cannot be sold or fitted, until somebody decides what becomes of it."_
 
 **The credit note.** A part sold over the counter raises one when it comes back, and it is not a
 refund: _"A part sold over the counter raises a credit note when it comes back. The note waits for a
-second person to approve it, and nobody has been refunded until then."_
-<!-- inventory.returns.creditExplain --> The result message says the same: **"The part was taken
-
-back, and a credit note is waiting for a second person to approve it."** The row shows **Credit note
-raised** <!-- inventory.returnStatus.credited --> and **Waiting for approval**, and carries **Open
-the credit note** <!-- inventory.returns.openCredit --> , which takes you to the note itself (Part
-6, §6.2a).
+second person to approve it, and nobody has been refunded until
+then."_ <!-- inventory.returns.creditExplain --> The result message says the same: **"The part was
+taken back, and a credit note is waiting for a second person to approve it."** The row shows
+**Credit note raised** <!-- inventory.returnStatus.credited --> and **Waiting for approval**, and
+carries **Open the credit note** <!-- inventory.returns.openCredit --> , which takes you to the note
+itself (Part 6, §6.2a).
 
 **Read the next paragraph before you promise a customer a refund.** The credit note has a screen at
 this version, and **the second person the message names does not exist in a newly provisioned
@@ -1862,10 +1853,9 @@ of the material rules. Each names what to do next.
 
 ### 5.26.8 Settling or withdrawing a requirement
 
-Once the parts are handed over, **Settle it** <!-- inventory.parts.request.close --> releases anything
-still held — **"The material was settled."** If the job changed instead, **Withdraw it**
-<!-- inventory.parts.request.cancel --> , with a reason — **"The request for material was
-
+Once the parts are handed over, **Settle it** <!-- inventory.parts.request.close --> releases
+anything still held — **"The material was settled."** If the job changed instead, **Withdraw
+it** <!-- inventory.parts.request.cancel --> , with a reason — **"The request for material was
 withdrawn."** A requirement parts have already been drawn against cannot be withdrawn: **"Parts have
 already been taken against this, so it cannot be withdrawn. Return or release them first."**
 

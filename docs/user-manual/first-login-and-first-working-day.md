@@ -313,7 +313,7 @@ new vehicle** <!-- vehicles.create.openCreated --> . **Restrictions:**
   display fault — and searching still works on the whole number even when what you are shown is
   masked.
 - **Searching by make or model will never match anything in a new organisation**, because no vehicle
-  can carry one (step 7.5 above).
+  can carry one (step 5 of this section, above).
 - **Merging two records is NOT AVAILABLE**, for customers and for vehicles alike: _"Merging two
   customer records is not available yet. The rules for it are pending an Owner decision."_ <!-- crm.duplicates.mergePendingDecision -->
   The duplicate queues let you dismiss a pair, nothing more.
@@ -393,11 +393,10 @@ these. **Where:** **Walk-in intake** <!-- nav.walkIn --> at `/{locale}/reception
 command **New work order** <!-- crm.customers.profile.newWorkOrder --> . It creates nothing: it
 opens a screen that asks which of that customer's vehicles has been brought in, and only then
 continues to check-in, so you rejoin the steps below at step 3. The rule is on that screen —
-_"Choose one vehicle to continue. A visit cannot be opened without a vehicle."_
-<!-- receptions.workOrderStart.continueHint --> If the customer has no vehicle recorded, the same
-
-screen offers **Find or add a vehicle** <!-- receptions.workOrderStart.addVehicle --> . **There is
-no path anywhere in this product that opens a visit for a customer without a vehicle.**
+_"Choose one vehicle to continue. A visit cannot be opened without a
+vehicle."_ <!-- receptions.workOrderStart.continueHint --> If the customer has no vehicle recorded,
+the same screen offers **Find or add a vehicle** <!-- receptions.workOrderStart.addVehicle --> .
+**There is no path anywhere in this product that opens a visit for a customer without a vehicle.**
 
 1. **Walk-in intake** — _"Receive a customer who arrived without an appointment: find or add the
    customer and the vehicle, then continue to check-in."_ <!-- receptions.intake.description -->
