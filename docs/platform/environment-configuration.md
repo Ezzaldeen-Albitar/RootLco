@@ -485,7 +485,8 @@ What is new is that the alternative is now written down rather than absent.
 `supabase/config.toml:324` carries an `[auth.email.smtp]` block with `enabled = false`
 (`supabase/config.toml:326`). Setting that one flag to `true` and restarting the stack is the whole
 of activation; setting it back to `false` and restarting is the whole of the way back. Both steps
-are spelled out below, because a restart has a consequence that is easy to forget.
+are spelled out below, because that restart has two consequences that are easy to forget: which of
+the two stop commands is safe to use, and a signing-key finding that returns every time.
 
 This section is **provider-neutral**. Nothing in the repository knows which company operates the
 relay, and nothing should: a provider that requires a specially generated password and a provider
@@ -511,14 +512,14 @@ knowing before the flag is flipped.
 
 ### 17.1 The six names
 
-| Name               | Config key                        | Read by                                                                  | Secret |
-| ------------------ | --------------------------------- | ------------------------------------------------------------------------ | ------ |
-| `SMTP_HOST`        | `auth.email.smtp.host:328`        | the auth service, and the relay check                                    | no     |
-| `SMTP_PORT`        | not referenced by the config      | the relay check ONLY — the config is a literal                           | no     |
-| `SMTP_USER`        | `auth.email.smtp.user:333`        | the auth service, and the relay check                                    | no     |
-| `SMTP_PASS`        | `auth.email.smtp.pass:335`        | the auth service, and the relay check                                    | YES    |
-| `SMTP_ADMIN_EMAIL` | `auth.email.smtp.admin_email:339` | the auth service; the relay check reads it only to report that it is set | no     |
-| `SMTP_SENDER_NAME` | `auth.email.smtp.sender_name:341` | the auth service, and the relay check's send mode                        | no     |
+| Name               | Config key                        | Read by                                                              | Secret |
+| ------------------ | --------------------------------- | -------------------------------------------------------------------- | ------ |
+| `SMTP_HOST`        | `auth.email.smtp.host:328`        | the auth service, and the relay check                                | no     |
+| `SMTP_PORT`        | not referenced by the config      | the relay check ONLY — the config is a literal                       | no     |
+| `SMTP_USER`        | `auth.email.smtp.user:333`        | the auth service, and the relay check                                | no     |
+| `SMTP_PASS`        | `auth.email.smtp.pass:335`        | the auth service, and the relay check                                | YES    |
+| `SMTP_ADMIN_EMAIL` | `auth.email.smtp.admin_email:339` | the auth service, and the relay check's send mode, which sends AS it | no     |
+| `SMTP_SENDER_NAME` | `auth.email.smtp.sender_name:341` | the auth service, and the relay check's send mode                    | no     |
 
 Six names, not five. **`SMTP_PASS` is the only secret**; the other five are ordinary settings and
 may appear in a run log. Five of the six are read by the configuration; `SMTP_PORT` is read only by
@@ -587,15 +588,22 @@ Three things about it, all of which matter more than the table.
   by the Owner; the values above are what to expect there, not a substitute for looking.
 - **The password is whatever the provider issued.** No file in this repository trims it, folds its
   case, measures its length or checks its shape, and none may be added that does. Spaces, symbols
-  and unusual lengths are all transmitted byte for byte.
+  and unusual lengths are all transmitted byte for byte. In the `.env` file a value runs from the
+  first `=` to the end of the line and is read exactly as written, leading and trailing spaces
+  included; the single exception is that one pair of surrounding quotes is removed, which is how a
+  value whose own edges are spaces is written down legibly. `tests/ci/owner-acceptance-password.test.ts`
+  asserts both forms against a real file on disk, because the parser — not the caller — is where a
+  well-meaning "tidy the input" line would otherwise live.
 - **The Platform Owner login is unchanged.** It remains `owner@rootlco.com`. Nothing about the relay
   alters which account signs in.
 
 ### 17.4 The relay check
 
 `scripts/dev/check-smtp.mjs` speaks SMTP to the relay directly. It needs no container, no running
-stack and no database, which is what makes it usable while an acceptance campaign is in progress. It
-has four modes, graded by what each risks, and exactly one must be named:
+stack and no database, which is what makes it usable while an acceptance campaign is in progress —
+the check itself touches nothing. **Activation is a different matter**: it restarts the stack, and
+17.5 says what that costs and which stop command must not be used. It has four modes, graded by what
+each risks, and exactly one must be named:
 
 | Mode                    | Opens a socket | Sends the password | Sends mail |
 | ----------------------- | -------------- | ------------------ | ---------- |
@@ -623,7 +631,11 @@ node scripts/dev/check-smtp.mjs --send --to someone@example.com
   a session that ends after it is complete and legal, so this reaches a verdict on the credential
   without sending anything to anyone.
 - `--send` adds one real message to one real recipient. **There is no default recipient**: the
-  address must be given on the command line, so the script never chooses whose mailbox to write to.
+  address must be given on the command line, so the script never chooses whose mailbox to write to,
+  and a `--to` value that begins with `--` is refused rather than treated as an address. It sends
+  **as `SMTP_ADMIN_EMAIL`**, which is the identity the auth service presents (17.2), rather than as
+  `SMTP_USER`, which only logs in. That distinction matters: a relay that accepts the login and
+  refuses that sender address is a failure this mode meets and a login-addressed message would not.
 
 The transport follows the port: `465` is implicit TLS, `587` is STARTTLS (EHLO, STARTTLS, upgrade,
 EHLO again), and any other port is refused rather than guessed. In both cases the session **refuses
@@ -643,10 +655,29 @@ Nothing below needs the network until step 2, and nothing sends mail until step 
 3. Set `enabled = true` on `supabase/config.toml:326`. If — and only if — the auth service is to use
    587, change the literal `port` on `supabase/config.toml:331` at the same time, with the caveat in
    17.2 in mind.
-4. Restart the stack **from the root of the checkout**, so the `env(...)` references resolve:
-   `npm run supabase:stop` then `npm run supabase:start`. That pair is what this repository uses;
-   the CLI resolves `.env` from the working directory, so running it from anywhere else silently
-   leaves the block unexpanded.
+4. Restart the stack **from the root of the checkout**, so the `env(...)` references resolve. Use
+   the CLI's own stop, not the repository's script:
+
+   ```
+   npx supabase stop
+   npm run supabase:start
+   ```
+
+   **`npm run supabase:stop` must not be used here.** It is `supabase stop --no-backup`
+   (`package.json`), and the pinned CLI's own description of that flag is "Deletes all data volumes
+   after stopping." Those volumes are the local database on `127.0.0.1:54322` — the acceptance
+   environment — so the script ends any campaign in progress and takes its data with it. Plain
+   `supabase stop` keeps the CLI's `--backup` default, described by the same binary as "Backs up the
+   current database before stopping", and leaves the volumes alone. The `npx` form runs the same
+   pinned CLI the npm scripts run, from `node_modules/.bin`. Both commands must be run from the
+   checkout root: the CLI resolves `.env` from the working directory, so starting from anywhere
+   else silently leaves the block unexpanded.
+
+   If the data volumes are destroyed anyway, rebuilding is `npm run supabase:start`,
+   `npm run supabase:reset` to apply every migration and seed, `npm run acceptance:create-owner`,
+   and `npm run acceptance:provision-fixtures`. Anything a campaign had produced and not yet
+   recorded is gone, and a campaign that was mid-run restarts from the beginning.
+
 5. **Re-apply `node scripts/dev/owner-acceptance/align-local-jwt.mjs`.** Finding `P1-26-F-045`
    returns after every restart: `supabase start` recreates the auth container with a freshly
    generated asymmetric signing key, the API verifies HMAC only, and sign-in then returns a token
@@ -656,8 +687,9 @@ Nothing below needs the network until step 2, and nothing sends mail until step 
    one.
 
 The way back is the same shape: set `enabled = false` (and restore `port = 465` if it was moved),
-`npm run supabase:stop` and `npm run supabase:start` from the checkout root, and re-apply
-`align-local-jwt.mjs` for the same reason. Local-only mail resumes with no other edit.
+`npx supabase stop` and `npm run supabase:start` from the checkout root — the same non-destructive
+pair, for the same reason — and re-apply `align-local-jwt.mjs`. Local-only mail resumes with no
+other edit.
 
 ### 17.6 The open question this does not settle
 
