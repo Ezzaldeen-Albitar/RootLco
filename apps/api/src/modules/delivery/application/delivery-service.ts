@@ -74,6 +74,7 @@ import {
   type EvidenceCategoryFacts,
   assertEligible,
   assertSignerRole,
+  blockerRuleTokens,
   overridePermission,
   parseOdometerValue,
   withOverrides,
@@ -616,6 +617,9 @@ export class DeliveryService {
         message:
           `Delivery ${deliveryId} already has a verified receiver. A delivery admits exactly ` +
           'one, and it cannot be replaced.',
+        safeDetails: {
+          violations: [{ path: 'path.deliveryId', rule: 'delivery_receiver_already_recorded' }],
+        },
       });
     }
 
@@ -648,6 +652,11 @@ export class DeliveryService {
           message:
             'The named receiver holds no valid reception party role for this delivery’s visit at ' +
             'the time of verification, so they may not take custody of the vehicle.',
+          safeDetails: {
+            violations: [
+              { path: 'body.receiverPartnerId', rule: 'delivery_receiver_not_entitled' },
+            ],
+          },
         });
       }
       toDomainFailure(error, 'Receiver verification');
@@ -1067,11 +1076,35 @@ export class DeliveryService {
         message:
           `delivery is blocked: ${decision.blockers.join(', ')}; unsatisfied mandatory ` +
           `checklist item(s): ${composed.checklistGaps.map((gap) => gap.itemCode).join(', ')}`,
+        // The item codes stay in the message and out of the token. A code is an
+        // internal name, and the screen that shows this sentence already lists
+        // the outstanding checks beside it — the sentence's job is to say why the
+        // handover stopped and where to look, not to repeat the list.
+        safeDetails: {
+          violations: [{ path: 'path.deliveryId', rule: 'delivery_checks_outstanding' }],
+        },
       });
     }
     try {
       assertEligible(decision);
     } catch (error) {
+      // The domain function stays the authority on WHETHER the handover may go
+      // ahead; this only publishes WHY, as one token per remaining blocker. The
+      // order is `composeEligibility`'s own — earliest in the workshop's flow
+      // first — so the sentence a screen shows first is the one furthest
+      // upstream, which is the one worth acting on.
+      if (error instanceof DeliveryRuleError) {
+        throw new AppFailure('ERR-TRN-001', {
+          message: error.message,
+          cause: error,
+          safeDetails: {
+            violations: blockerRuleTokens(decision).map((rule) => ({
+              path: 'path.deliveryId',
+              rule,
+            })),
+          },
+        });
+      }
       toDomainFailure(error, 'Delivery completion');
     }
 
@@ -1092,6 +1125,9 @@ export class DeliveryService {
           message:
             'Custody for this reception visit has already been released, so this delivery ' +
             'cannot release it again.',
+          safeDetails: {
+            violations: [{ path: 'path.deliveryId', rule: 'delivery_custody_already_released' }],
+          },
         });
       }
       toDomainFailure(error, 'Delivery completion');
@@ -1209,11 +1245,17 @@ export class DeliveryService {
     if (delivery.status === 'exception') {
       throw new AppFailure('ERR-TRN-001', {
         message: `${what} is not permitted on a delivery in the terminal "exception" state.`,
+        safeDetails: {
+          violations: [{ path: 'path.deliveryId', rule: 'delivery_stopped' }],
+        },
       });
     }
     if (delivery.status === 'delivered') {
       throw new AppFailure('ERR-TRN-001', {
         message: `${what} is not permitted: this delivery has already been completed.`,
+        safeDetails: {
+          violations: [{ path: 'path.deliveryId', rule: 'delivery_already_completed' }],
+        },
       });
     }
     return delivery;

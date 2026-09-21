@@ -821,11 +821,17 @@ export class AdditionalWorkService extends ApplicationService {
     if (request.state !== 'approved') {
       throw new AppFailure('ERR-TRN-001', {
         message: `Only an approved additional-work request may be fulfilled or waived; this one is "${request.state}"`,
+        safeDetails: {
+          violations: [{ path: 'path.requestId', rule: 'work_order_extra_work_not_approved' }],
+        },
       });
     }
     if (request.fulfillmentState === input.fulfillmentState) {
       throw new AppFailure('ERR-TRN-001', {
         message: `Additional-work request ${requestId} is already "${input.fulfillmentState}"`,
+        safeDetails: {
+          violations: [{ path: 'path.requestId', rule: 'work_order_extra_work_already_settled' }],
+        },
       });
     }
     if (input.fulfillmentState === 'waived' && (input.reason ?? '').trim().length === 0) {
@@ -1032,16 +1038,30 @@ export class AdditionalWorkService extends ApplicationService {
         message: `Quotation revision ${revisionId} has been superseded`,
       });
     }
+    // The three refusals below name the CONTROL the caller filled in, so the
+    // sentence lands beside the quotation field rather than in the banner. None
+    // of them publishes the revision's status or outcome: the caller has already
+    // been authorized for this scope and can read the quotation itself, and a
+    // token carrying the status would have to be re-catalogued every time the
+    // quotation vocabulary grew.
     if (standing.revisionStatus !== 'issued') {
       throw new AppFailure('ERR-TRN-001', {
         message:
           `Quotation revision ${revisionId} is ${standing.revisionStatus}; only an issued ` +
           'revision may be linked',
+        safeDetails: {
+          violations: [
+            { path: 'body.quotationRevisionRef', rule: 'work_order_quotation_not_issued' },
+          ],
+        },
       });
     }
     if (standing.hasExpired) {
       throw new AppFailure('ERR-TRN-001', {
         message: `Quotation revision ${revisionId} has expired`,
+        safeDetails: {
+          violations: [{ path: 'body.quotationRevisionRef', rule: 'work_order_quotation_expired' }],
+        },
       });
     }
     if (standing.outcome !== 'accepted') {
@@ -1049,6 +1069,11 @@ export class AdditionalWorkService extends ApplicationService {
         message:
           `Quotation revision ${revisionId} is not accepted (` +
           `${standing.outcome ?? 'awaiting decisions'}), so it cannot release additional work`,
+        safeDetails: {
+          violations: [
+            { path: 'body.quotationRevisionRef', rule: 'work_order_quotation_not_accepted' },
+          ],
+        },
       });
     }
     return standing.revisionId;
@@ -1092,6 +1117,9 @@ export class AdditionalWorkService extends ApplicationService {
     if (state === undefined || state.isTerminal || !state.allowsAdditionalWork) {
       throw new AppFailure('ERR-TRN-001', {
         message: `Work order state "${locked.state}" does not accept additional work`,
+        safeDetails: {
+          violations: [{ path: 'path.workOrderId', rule: 'work_order_closed_to_extra_work' }],
+        },
       });
     }
     return locked;
@@ -1192,6 +1220,12 @@ export class AdditionalWorkService extends ApplicationService {
     if (parent === undefined || parent.isTerminal) {
       throw new AppFailure('ERR-TRN-001', {
         message: `Work order state "${workOrder?.state ?? 'unknown'}" is closed to additional-work changes`,
+        // The request is what the caller addressed, so that is the route parameter
+        // the token is filed under — the same token the create path publishes,
+        // because the cure is identical.
+        safeDetails: {
+          violations: [{ path: 'path.requestId', rule: 'work_order_closed_to_extra_work' }],
+        },
       });
     }
     // Re-read under its own lock. The unlocked read above is used ONLY for the frozen
@@ -1221,6 +1255,9 @@ export class AdditionalWorkService extends ApplicationService {
       return new AppFailure('ERR-RES-002', {
         message: `Additional-work request ${requestId} already carries a customer decision`,
         cause: error,
+        safeDetails: {
+          violations: [{ path: 'path.requestId', rule: 'work_order_extra_work_already_decided' }],
+        },
       });
     }
     if (isSqlState(error, SQLSTATE.checkViolation)) {

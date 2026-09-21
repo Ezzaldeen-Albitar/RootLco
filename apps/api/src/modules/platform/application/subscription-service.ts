@@ -259,6 +259,13 @@ export class SubscriptionService {
     if (!plan) {
       throw new AppFailure('ERR-RES-001', {
         message: 'No active subscription plan with that code covers the requested start date',
+        // The plan catalogue is the Platform Owner's own, so naming the field
+        // that failed discloses nothing about any organisation. It is the two
+        // inputs together that refused — the plan and the date — and the
+        // sentence says so rather than blaming the plan alone.
+        safeDetails: {
+          violations: [{ path: 'body.planCode', rule: 'platform_plan_not_available' }],
+        },
       });
     }
 
@@ -299,6 +306,9 @@ export class SubscriptionService {
       if (endAt <= live.effectiveFrom.slice(0, 10)) {
         throw new AppFailure('ERR-TRN-001', {
           message: 'The new period would start on or before the day the current subscription began',
+          safeDetails: {
+            violations: [{ path: 'body.effectiveFrom', rule: 'platform_period_starts_too_early' }],
+          },
         });
       }
       // Only ever SHORTEN the live period. A new assignment starting after the
@@ -412,6 +422,9 @@ export class SubscriptionService {
     if (command.effectiveTo <= subscription.effectiveFrom.slice(0, 10)) {
       throw new AppFailure('ERR-TRN-001', {
         message: 'A subscription cannot be cancelled on or before the day it began',
+        safeDetails: {
+          violations: [{ path: 'body.effectiveTo', rule: 'platform_cancellation_too_early' }],
+        },
       });
     }
 
@@ -423,6 +436,9 @@ export class SubscriptionService {
     if (changed === 0) {
       throw new AppFailure('ERR-TRN-001', {
         message: 'Only an active subscription can be cancelled',
+        safeDetails: {
+          violations: [{ path: 'path.subscriptionId', rule: 'platform_subscription_not_active' }],
+        },
       });
     }
 
@@ -485,11 +501,17 @@ export class SubscriptionService {
     if ((kind === 'upgraded' || kind === 'downgraded') && samePlan) {
       throw new AppFailure('ERR-TRN-001', {
         message: `A ${kind === 'upgraded' ? 'upgrade' : 'downgrade'} must name a different plan from the one in force`,
+        safeDetails: {
+          violations: [{ path: 'body.planCode', rule: 'platform_change_needs_different_plan' }],
+        },
       });
     }
     if (kind === 'renewed' && !samePlan) {
       throw new AppFailure('ERR-TRN-001', {
         message: 'A renewal must name the plan already in force; a different plan is a change',
+        safeDetails: {
+          violations: [{ path: 'body.planCode', rule: 'platform_renewal_needs_same_plan' }],
+        },
       });
     }
   }
@@ -502,6 +524,9 @@ export class SubscriptionService {
         throw new AppFailure('ERR-RES-002', {
           message:
             'Another active subscription already covers part of that period for this organization',
+          safeDetails: {
+            violations: [{ path: 'body.effectiveFrom', rule: 'platform_subscription_overlap' }],
+          },
         });
       }
       throw error;
@@ -529,6 +554,9 @@ export class SubscriptionService {
       ) {
         throw new AppFailure('ERR-RES-002', {
           message: 'Another active version of that plan already covers part of that period',
+          safeDetails: {
+            violations: [{ path: 'body.effectiveFrom', rule: 'platform_plan_version_overlap' }],
+          },
         });
       }
       if (isSqlState(error, SQLSTATE.checkViolation)) {

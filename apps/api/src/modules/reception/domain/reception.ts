@@ -221,11 +221,20 @@ export function approvalPath(current: 'opened' | 'inspecting'): readonly Recepti
  * precisely what makes conversion exactly-once: a second attempt finds a
  * terminal state and is refused, and the row lock the service takes first makes
  * two concurrent attempts serial rather than simultaneous.
+ *
+ * Both refusals publish a rule token for the same reason the approval half does:
+ * the interface never renders server prose, so a refusal without a token reaches
+ * the operator as the generic "the state does not allow this". The tokens name
+ * the PRECONDITION only — no party, no decision, no role, no count — which is
+ * the same non-disclosing line the messages already hold.
  */
 export function assertConvertible(current: string): void {
   if (current === 'converted') {
     throw new AppFailure('ERR-TRN-001', {
       message: 'This reception has already been converted to a work order',
+      safeDetails: {
+        violations: [{ path: 'path.receptionId', rule: 'reception_already_converted' }],
+      },
     });
   }
   if (current !== 'authorized') {
@@ -233,6 +242,9 @@ export function assertConvertible(current: string): void {
       message:
         `A reception in state "${current}" cannot be converted; ` +
         'it must be approved (authorized) first',
+      safeDetails: {
+        violations: [{ path: 'path.receptionId', rule: 'reception_not_authorised' }],
+      },
     });
   }
 }
@@ -314,11 +326,21 @@ export function assertStandingAuthorization(decisions: readonly StandingDecision
  *
  * Same non-disclosing refusal as the role-specific check below, so neither
  * becomes a channel for probing which roles a party holds.
+ *
+ * That is also why both publish the SAME token. A screen needs a sentence, and
+ * one token gives it one without telling the caller which of the two rules
+ * refused — two tokens would be exactly the probing channel the uniform wording
+ * was chosen to close.
  */
+export const PARTY_NOT_AUTHORISED_RULE = 'reception_party_not_authorised';
+
 export function assertMayAuthorize(activeRoles: readonly string[]): void {
   if (!activeRoles.some((role) => (AUTHORIZING_ROLES as readonly string[]).includes(role))) {
     throw new AppFailure('ERR-TRN-001', {
       message: 'That party may not authorize work on this reception',
+      safeDetails: {
+        violations: [{ path: 'body.refusingPartnerId', rule: PARTY_NOT_AUTHORISED_RULE }],
+      },
     });
   }
 }
@@ -339,11 +361,18 @@ export function assertMayAuthorize(activeRoles: readonly string[]): void {
  * the four authorizing roles one at a time and learn which a partner holds on
  * this visit. One uniform refusal keeps the contract the module already
  * documents — a refusal never says which roles a party has.
+ *
+ * The token is the SAME one `assertMayAuthorize` publishes, and the sentence it
+ * selects says no more than the uniform wording above: the person named may not
+ * approve work here in the capacity claimed. It carries no role and no list.
  */
 export function assertAuthorizingRoleHeld(claimed: string, activeRoles: readonly string[]): void {
   if (!activeRoles.includes(claimed)) {
     throw new AppFailure('ERR-TRN-001', {
       message: 'That party may not authorize work on this reception in the role claimed',
+      safeDetails: {
+        violations: [{ path: 'body.authorizingRole', rule: PARTY_NOT_AUTHORISED_RULE }],
+      },
     });
   }
 }
@@ -366,6 +395,9 @@ export function assertClosable(current: string): void {
   if (TERMINAL_RECEPTION_STATUSES.includes(current as ReceptionStatus)) {
     throw new AppFailure('ERR-TRN-001', {
       message: `A reception in state "${current}" is terminal and cannot be closed or refused`,
+      safeDetails: {
+        violations: [{ path: 'path.receptionId', rule: 'reception_already_finished' }],
+      },
     });
   }
 }
@@ -375,6 +407,9 @@ export function assertEvidenceRecordable(current: string): void {
   if (TERMINAL_RECEPTION_STATUSES.includes(current as ReceptionStatus)) {
     throw new AppFailure('ERR-TRN-001', {
       message: `A reception in state "${current}" is terminal; no further evidence may be recorded`,
+      safeDetails: {
+        violations: [{ path: 'path.receptionId', rule: 'reception_closed_to_evidence' }],
+      },
     });
   }
 }
