@@ -23,12 +23,13 @@ import {
   startLaborSession,
   stopLaborSession,
 } from '../api';
-import type {
-  JobEvidenceEntry,
-  LaborSession,
-  OwnAssignment,
-  TechnicianQueueEntry,
-  WorkLogEntry,
+import {
+  unattachedRefusalKey,
+  type JobEvidenceEntry,
+  type LaborSession,
+  type OwnAssignment,
+  type TechnicianQueueEntry,
+  type WorkLogEntry,
 } from '../technicians-contract';
 
 /**
@@ -234,6 +235,18 @@ function LaborPanel({
   const [reloadCount, reload] = useReload();
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
+  /**
+   * A refused correction, by the session it was refused on.
+   *
+   * `tech.labor-session-correct` publishes `body.endedAt` when the window ends
+   * at or before it starts and `body.startedAt` when it overlaps a session
+   * already recorded. Both name a control the correction form really has, so
+   * both belong beside it — and the form stays open with the times as typed,
+   * because the cure is to adjust them rather than to start again.
+   */
+  const [correctionErrors, setCorrectionErrors] = useState<
+    Readonly<Record<string, Readonly<Record<string, string>>>>
+  >({});
 
   useEffect(() => {
     let cancelled = false;
@@ -256,24 +269,37 @@ function LaborPanel({
             session.endedAt === null && session.technicianProfileId === identity.technicianProfileId
         ) ?? null);
 
-  /** Sends one command and reports it. True when the record moved and must be re-read. */
-  const run = async (action: () => Promise<ActionState>): Promise<boolean> => {
+  /**
+   * Sends one command and reports it. The outcome is handed back so a caller
+   * can place the refusal where the reader can act on it.
+   *
+   * The clock refusals — a colleague's profile, an inactive profile, a session
+   * already running — are all published against the profile the adapter
+   * resolved, which is no control here, so `unattachedRefusalKey` lifts their
+   * sentence into this panel's alert instead of leaving it unread.
+   */
+  const run = async (action: () => Promise<ActionState>): Promise<ActionState> => {
     setProblem(null);
     setBusy(true);
     const result = await action();
     setBusy(false);
     notifyActionResult(result, messages);
-    if (result.status === 'success') return true;
-    setProblem(problemKeyOf(result, 'technicians.workspace.conflict'));
-    return false;
+    if (result.status !== 'success') {
+      setProblem(
+        unattachedRefusalKey(result.fieldErrors) ??
+          problemKeyOf(result, 'technicians.workspace.conflict')
+      );
+    }
+    return result;
   };
 
   const start = async () => {
-    if (await run(() => startLaborSession(target, entry.jobId, entry.assignmentId))) reload();
+    const result = await run(() => startLaborSession(target, entry.jobId, entry.assignmentId));
+    if (result.status === 'success') reload();
   };
 
   const stop = async (session: LaborSession) => {
-    const moved = await run(() =>
+    const result = await run(() =>
       stopLaborSession(
         target,
         entry.jobId,
@@ -284,14 +310,14 @@ function LaborPanel({
       )
     );
     // The truth is re-read; nothing is patched locally.
-    if (moved) reload();
+    if (result.status === 'success') reload();
   };
 
   const correct = async (
     session: LaborSession,
     body: { startedAt: string; endedAt: string; reason: string }
-  ) => {
-    const moved = await run(() =>
+  ): Promise<boolean> => {
+    const result = await run(() =>
       correctLaborSession(
         target,
         entry.jobId,
@@ -301,7 +327,13 @@ function LaborPanel({
         session.recordVersion
       )
     );
+    const moved = result.status === 'success';
+    setCorrectionErrors((current) => ({
+      ...current,
+      [session.id]: moved ? {} : (result.fieldErrors ?? {}),
+    }));
     if (moved) reload();
+    return moved;
   };
 
   const loadOlder = async () => {
@@ -405,6 +437,7 @@ function LaborPanel({
                   identity !== null && session.technicianProfileId === identity.technicianProfileId
                 }
                 canCorrect={canCorrectLabor && identity !== null}
+                fieldErrors={correctionErrors[session.id] ?? {}}
                 onCorrect={(body) => correct(session, body)}
               />
             </li>
@@ -443,6 +476,7 @@ function SessionRow({
   session,
   mine,
   canCorrect,
+  fieldErrors,
   onCorrect,
 }: {
   readonly locale: Locale;
@@ -450,11 +484,13 @@ function SessionRow({
   readonly session: LaborSession;
   readonly mine: boolean;
   readonly canCorrect: boolean;
+  /** Catalogue keys by control name, for a correction the platform refused. */
+  readonly fieldErrors: Readonly<Record<string, string>>;
   readonly onCorrect: (body: {
     startedAt: string;
     endedAt: string;
     reason: string;
-  }) => Promise<void>;
+  }) => Promise<boolean>;
 }) {
   const [correcting, setCorrecting] = useState(false);
   const [startedAt, setStartedAt] = useState(toLocalInput(session.startedAt));
@@ -462,6 +498,11 @@ function SessionRow({
     session.endedAt === null ? '' : toLocalInput(session.endedAt)
   );
   const [reason, setReason] = useState('');
+
+  const errorFor = (name: string): string | undefined => {
+    const key = fieldErrors[name];
+    return key ? translateDynamic(messages, key) : undefined;
+  };
 
   const who = translate(
     messages,
@@ -499,11 +540,16 @@ function SessionRow({
             event.preventDefault();
             if (startedAt.length === 0 || endedAt.length === 0 || reason.trim().length === 0)
               return;
+            // The form closes only when the correction was accepted. A refused
+            // one keeps both times exactly as they were typed, beside the
+            // sentence saying what is wrong with them.
             void onCorrect({
               startedAt: new Date(startedAt).toISOString(),
               endedAt: new Date(endedAt).toISOString(),
               reason: reason.trim(),
-            }).then(() => setCorrecting(false));
+            }).then((moved) => {
+              if (moved) setCorrecting(false);
+            });
           }}
           className="flex flex-wrap items-end gap-3"
         >
@@ -512,6 +558,7 @@ function SessionRow({
             label={translate(messages, 'technicians.workspace.correctStartedAt')}
             value={startedAt}
             onChange={(event) => setStartedAt(event.target.value)}
+            error={errorFor('startedAt')}
             required
           />
           <TextField
@@ -519,6 +566,7 @@ function SessionRow({
             label={translate(messages, 'technicians.workspace.correctEndedAt')}
             value={endedAt}
             onChange={(event) => setEndedAt(event.target.value)}
+            error={errorFor('endedAt')}
             required
           />
           <TextField

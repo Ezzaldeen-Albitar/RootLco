@@ -331,6 +331,11 @@ const INTENTIONALLY_GENERIC: Readonly<Record<string, string>> = Object.freeze({
     '`price-list-service.ts` refuses with "is not visible", not "does not exist"; a sentence ' +
     'of its own would separate a hidden price list from an absent one and turn the field into ' +
     "an existence oracle for rows outside the caller's scope",
+  not_visible:
+    'the service refuses a diagnostic type that is neither at platform scope nor in the ' +
+    'organisation the caller belongs to; a specific sentence would separate "hidden from ' +
+    'you" from "does not exist" and turn the field into an existence oracle for records ' +
+    'outside the scope the caller may see, so the generic rendering is the decision',
 });
 
 /**
@@ -344,18 +349,9 @@ const INTENTIONALLY_GENERIC: Readonly<Record<string, string>> = Object.freeze({
  * count is a backlog nobody will clear.
  */
 const OWED: readonly string[] = Object.freeze([
-  'after_start',
-  'already_assigned',
-  'assignment_precondition',
-  'awaiting_customer_decision',
   'before_from',
-  'before_job_created',
-  'blank',
   'branch_requires_company',
   'catalogue_constraint',
-  'closure_blocked',
-  'closure_requires_closure_operation',
-  'completion_requires_completion_operation',
   'content_type_not_allowed',
   'control_characters',
   'did_not_verify',
@@ -365,44 +361,23 @@ const OWED: readonly string[] = Object.freeze([
   'empty_selection',
   'empty_update',
   'expired',
-  'foreign_template',
-  'future_instant',
   'identity_disabled',
   'incoherent_scope',
   'invalid_length',
   'invalid_sha256',
   'invalid_transition',
-  'invalid_value',
-  'mandatory_item_unresolved',
   'mismatch',
   'must_be_after_from',
-  'no_items',
   'no_state_change',
-  'not-own-profile',
-  'not_a_closing_state',
-  'not_a_numeric_item',
   'not_after_start',
   'not_allow_listed',
   'not_allowed',
-  'not_independent',
-  'not_on_reception_visit',
-  'not_published',
-  'not_visible',
   'one_subject_required',
-  'origin_conflict',
-  'origin_required',
   'overlapping-window',
   'plan_document',
-  'primary_already_assigned',
-  'profile-inactive',
-  'refused',
-  'required_for_numeric',
   'role_archived',
-  'self_review',
-  'session-already-open',
   'size_out_of_range',
   'template_mismatch',
-  'terminal_state',
   'token_mismatch',
   'too_long',
   'type_mismatch',
@@ -412,13 +387,11 @@ const OWED: readonly string[] = Object.freeze([
   'unknown_permission_code',
   'unknown_purpose',
   'unknown_resource',
-  'unknown_state',
   'unregistered_sequence',
   'unregistered_transition',
   'unsupported_channel',
   'version_already_published',
   'version_immutable',
-  'window-overlaps',
   'window_too_wide',
 ]);
 
@@ -429,7 +402,7 @@ const OWED: readonly string[] = Object.freeze([
  * compares the list against itself, so the only way to raise the ceiling is to
  * edit this number in a diff a reviewer sees beside the tokens it admits.
  */
-const OWED_CEILING = 76;
+const OWED_CEILING = 44;
 
 describe('every rule token the API publishes has a sentence, or is on a named list', () => {
   const files = typeScriptFilesUnder(API_MODULES);

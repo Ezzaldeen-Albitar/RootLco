@@ -9,12 +9,15 @@
 import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import ar from '../src/i18n/messages/ar.json';
 import en from '../src/i18n/messages/en.json';
-import { renderLtr } from './render';
+import { renderLtr, renderRtl } from './render';
 
 const EN = en as Record<string, string>;
+const AR = ar as Record<string, string>;
 /** A message by key, as a string: the catalogue is complete, so a miss is a test defect. */
 const t = (key: string): string => EN[key] ?? key;
+const arT = (key: string): string => AR[key] ?? key;
 
 const listDiagnosticTypes = vi.fn();
 const listTemplates = vi.fn();
@@ -29,6 +32,9 @@ const createReport = vi.fn();
 const writeItemResult = vi.fn();
 const transitionReport = vi.fn();
 const completeReport = vi.fn();
+const createVersion = vi.fn();
+const setVersionStatus = vi.fn();
+const reviewReport = vi.fn();
 vi.mock('@/features/diagnostics/api', () => ({
   listDiagnosticTypes: () => listDiagnosticTypes(),
   listTemplates: (...args: unknown[]) => listTemplates(...args),
@@ -40,9 +46,9 @@ vi.mock('@/features/diagnostics/api', () => ({
   readReportHistory: (...args: unknown[]) => readReportHistory(...args),
   createTemplate: (...args: unknown[]) => createTemplate(...args),
   updateTemplate: vi.fn(),
-  createVersion: vi.fn(),
+  createVersion: (...args: unknown[]) => createVersion(...args),
   createItem: vi.fn(),
-  setVersionStatus: vi.fn(),
+  setVersionStatus: (...args: unknown[]) => setVersionStatus(...args),
   createReport: (...args: unknown[]) => createReport(...args),
   writeItemResult: (...args: unknown[]) => writeItemResult(...args),
   recordMeasurement: vi.fn(),
@@ -51,7 +57,7 @@ vi.mock('@/features/diagnostics/api', () => ({
   recordRecommendation: vi.fn(),
   transitionReport: (...args: unknown[]) => transitionReport(...args),
   completeReport: (...args: unknown[]) => completeReport(...args),
-  reviewReport: vi.fn(),
+  reviewReport: (...args: unknown[]) => reviewReport(...args),
   captureReportEvidence: vi.fn(),
 }));
 vi.mock('@/features/attachments/api', () => ({
@@ -174,6 +180,9 @@ beforeEach(() => {
     writeItemResult,
     transitionReport,
     completeReport,
+    createVersion,
+    setVersionStatus,
+    reviewReport,
   ]) {
     fn.mockReset();
   }
@@ -397,5 +406,245 @@ describe('the job workbench', () => {
     );
     expect(await screen.findByRole('alert')).toHaveTextContent('corr-denied');
     expect(listPublishableVersions).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * Owner directive, user-facing errors: the diagnostics screens say what was
+ * refused, where the reader can act on it.
+ *
+ * `body.copyFromVersionId` and `body.templateVersionId` name controls the two
+ * forms have and were not reading. `versionId` and `items.<code>` name no
+ * control at all — the first is a button, the second is one violation per
+ * unanswered checklist item keyed by the item's own code — so both of those
+ * belong in the form alert beside the button that raised them.
+ */
+describe('the diagnostics screens say why a command was refused', () => {
+  it('puts the wrong-checklist refusal beside the copy control and keeps the choice', async () => {
+    createVersion.mockResolvedValue({
+      status: 'invalid',
+      messageKey: 'form.violation.invalid',
+      fieldErrors: { copyFromVersionId: 'form.violation.foreign_template' },
+      correlationId: 'corr-foreign',
+      attempt: 1,
+    });
+    const user = userEvent.setup();
+    renderLtr(
+      <TemplateDetailScreen
+        locale="en"
+        messages={en}
+        templateId={TEMPLATE}
+        initial={{ template, versions: [draftVersion] }}
+        canManage
+      />
+    );
+    const copyFrom = await screen.findByLabelText(
+      new RegExp(`^${t('diagnostics.template.copyFrom')}`)
+    );
+    await user.selectOptions(copyFrom, VERSION);
+    await user.click(screen.getByRole('button', { name: t('diagnostics.template.newVersion') }));
+
+    const alert = await screen.findByText(t('form.violation.foreign_template'));
+    expect(alert).toBeVisible();
+    const settled = screen.getByLabelText(new RegExp(`^${t('diagnostics.template.copyFrom')}`));
+    expect(settled.getAttribute('aria-describedby') ?? '').toContain(alert.id);
+    expect((settled as HTMLSelectElement).value).toBe(VERSION);
+    expect(document.body.textContent).not.toContain('foreign_template');
+  });
+
+  it('lifts the empty-version refusal into the alert beside the publish button', async () => {
+    setVersionStatus.mockResolvedValue({
+      status: 'invalid',
+      messageKey: 'form.violation.invalid',
+      fieldErrors: { versionId: 'form.violation.no_items' },
+      correlationId: 'corr-empty',
+      attempt: 1,
+    });
+    const user = userEvent.setup();
+    renderLtr(
+      <TemplateDetailScreen
+        locale="en"
+        messages={en}
+        templateId={TEMPLATE}
+        initial={{ template, versions: [draftVersion] }}
+        canManage
+      />
+    );
+    await user.click(
+      await screen.findByRole('button', { name: t('diagnostics.template.publish') })
+    );
+
+    expect(await screen.findByText(t('form.violation.no_items'))).toBeVisible();
+    expect(screen.queryByText(t('diagnostics.template.conflict'))).toBeNull();
+    expect(document.body.textContent).not.toContain('no_items');
+  });
+
+  it('puts the unpublished-version refusal beside the template control on the workbench', async () => {
+    listJobReports.mockResolvedValue(ok({ items: [] }));
+    listPublishableVersions.mockResolvedValue(
+      ok({
+        items: [
+          {
+            versionId: VERSION,
+            templateId: TEMPLATE,
+            templateName: 'Brake check',
+            versionNumber: 1,
+            itemCount: 2,
+          },
+        ],
+      })
+    );
+    createReport.mockResolvedValue({
+      status: 'invalid',
+      messageKey: 'form.violation.invalid',
+      fieldErrors: { templateVersionId: 'form.violation.not_published' },
+      correlationId: 'corr-unpublished',
+      attempt: 1,
+    });
+    const user = userEvent.setup();
+    renderLtr(
+      <JobDiagnosticsScreen
+        locale="en"
+        messages={en}
+        jobId={JOB}
+        capabilities={{ canRecord: true, canComplete: false, canReview: false, canCapture: false }}
+      />
+    );
+    await user.selectOptions(
+      await screen.findByLabelText(new RegExp(`^${t('diagnostics.job.template')}`)),
+      VERSION
+    );
+    await user.click(screen.getByRole('button', { name: t('diagnostics.job.start') }));
+
+    const alert = await screen.findByText(t('form.violation.not_published'));
+    expect(alert).toBeVisible();
+    const settled = screen.getByLabelText(new RegExp(`^${t('diagnostics.job.template')}`));
+    expect(settled.getAttribute('aria-describedby') ?? '').toContain(alert.id);
+    expect((settled as HTMLSelectElement).value).toBe(VERSION);
+  });
+
+  it('lifts the unanswered-items refusal into the alert, since each is keyed by its item code', async () => {
+    listJobReports.mockResolvedValue(ok({ items: [report] }));
+    listPublishableVersions.mockResolvedValue(ok({ items: [] }));
+    readReport.mockResolvedValue(ok(detail));
+    completeReport.mockResolvedValue({
+      status: 'conflict',
+      messageKey: 'form.violation.invalid',
+      fieldErrors: {
+        pad_depth: 'form.violation.mandatory_item_unresolved',
+        road_test: 'form.violation.mandatory_item_unresolved',
+      },
+      correlationId: 'corr-unresolved',
+      attempt: 1,
+    });
+    const user = userEvent.setup();
+    renderLtr(
+      <JobDiagnosticsScreen
+        locale="en"
+        messages={en}
+        jobId={JOB}
+        capabilities={{ canRecord: true, canComplete: true, canReview: false, canCapture: false }}
+      />
+    );
+    await user.click(await screen.findByRole('button', { name: t('diagnostics.job.openReport') }));
+    await user.click(await screen.findByRole('button', { name: t('diagnostics.report.complete') }));
+
+    expect(await screen.findByText(t('form.violation.mandatory_item_unresolved'))).toBeVisible();
+    expect(screen.queryByText(t('diagnostics.report.conflict'))).toBeNull();
+    expect(document.body.textContent).not.toContain('mandatory_item_unresolved');
+  });
+
+  it('reads the unanswered-items refusal in Arabic', async () => {
+    listJobReports.mockResolvedValue(ok({ items: [report] }));
+    listPublishableVersions.mockResolvedValue(ok({ items: [] }));
+    readReport.mockResolvedValue(ok(detail));
+    completeReport.mockResolvedValue({
+      status: 'conflict',
+      messageKey: 'form.violation.invalid',
+      fieldErrors: { pad_depth: 'form.violation.mandatory_item_unresolved' },
+      correlationId: 'corr-unresolved-ar',
+      attempt: 1,
+    });
+    const user = userEvent.setup();
+    renderRtl(
+      <JobDiagnosticsScreen
+        locale="ar"
+        messages={ar}
+        jobId={JOB}
+        capabilities={{ canRecord: true, canComplete: true, canReview: false, canCapture: false }}
+      />
+    );
+    await user.click(
+      await screen.findByRole('button', { name: arT('diagnostics.job.openReport') })
+    );
+    await user.click(
+      await screen.findByRole('button', { name: arT('diagnostics.report.complete') })
+    );
+
+    expect(await screen.findByText(arT('form.violation.mandatory_item_unresolved'))).toBeVisible();
+    expect(document.documentElement.dir).toBe('rtl');
+  });
+
+  it('lifts the own-review refusal into the review form alert', async () => {
+    listJobReports.mockResolvedValue(ok({ items: [{ ...report, status: 'completed' }] }));
+    listPublishableVersions.mockResolvedValue(ok({ items: [] }));
+    readReport.mockResolvedValue(
+      ok({ ...detail, report: { ...report, status: 'completed' }, nextStatuses: [] })
+    );
+    reviewReport.mockResolvedValue({
+      status: 'conflict',
+      messageKey: 'form.violation.invalid',
+      fieldErrors: { reviewer: 'form.violation.self_review' },
+      correlationId: 'corr-self-review',
+      attempt: 1,
+    });
+    const user = userEvent.setup();
+    renderLtr(
+      <JobDiagnosticsScreen
+        locale="en"
+        messages={en}
+        jobId={JOB}
+        capabilities={{ canRecord: true, canComplete: false, canReview: true, canCapture: false }}
+      />
+    );
+    await user.click(await screen.findByRole('button', { name: t('diagnostics.job.openReport') }));
+    await user.selectOptions(
+      await screen.findByLabelText(new RegExp(`^${t('diagnostics.report.reviewResult')}`)),
+      'approved'
+    );
+    const notes = screen.getByLabelText(new RegExp(`^${t('diagnostics.report.reviewNotes')}`));
+    await user.type(notes, 'Checked against the job card');
+    await user.click(screen.getByRole('button', { name: t('diagnostics.report.review') }));
+
+    expect(await screen.findByText(t('form.violation.self_review'))).toBeVisible();
+    // The note survives, so the reader can hand the same words to a colleague.
+    expect((notes as HTMLInputElement).value).toBe('Checked against the job card');
+    expect(document.body.textContent).not.toContain('self_review');
+  });
+
+  it('leaves a refusal it has not been told about to the generic line', async () => {
+    setVersionStatus.mockResolvedValue({
+      status: 'invalid',
+      messageKey: 'form.violation.invalid',
+      fieldErrors: { versionId: 'form.violation.a_rule_this_screen_never_heard_of' },
+      correlationId: 'corr-unknown',
+      attempt: 1,
+    });
+    const user = userEvent.setup();
+    renderLtr(
+      <TemplateDetailScreen
+        locale="en"
+        messages={en}
+        templateId={TEMPLATE}
+        initial={{ template, versions: [draftVersion] }}
+        canManage
+      />
+    );
+    await user.click(
+      await screen.findByRole('button', { name: t('diagnostics.template.publish') })
+    );
+
+    expect(await screen.findByText(t('form.violation.invalid'))).toBeVisible();
+    expect(document.body.textContent).not.toContain('a_rule_this_screen_never_heard_of');
   });
 });

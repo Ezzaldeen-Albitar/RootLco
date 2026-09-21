@@ -70,16 +70,17 @@ import {
   withdrawAdditionalWork,
   writeQcCheckResult,
 } from '../api';
-import type {
-  AdditionalWorkDetail,
-  AdditionalWorkRequest,
-  ClosureEligibility,
-  CustomerApproval,
-  QcCheckVocabularyEntry,
-  QcRecord,
-  QcRecordDetail,
-  ReopenAttempt,
-  ReworkLink,
+import {
+  unattachedRefusalKey,
+  type AdditionalWorkDetail,
+  type AdditionalWorkRequest,
+  type ClosureEligibility,
+  type CustomerApproval,
+  type QcCheckVocabularyEntry,
+  type QcRecord,
+  type QcRecordDetail,
+  type ReopenAttempt,
+  type ReworkLink,
 } from '../quality-contract';
 
 const PRIMARY_BUTTON =
@@ -189,7 +190,15 @@ function Panel({
   );
 }
 
-/** The shared settle-and-report of every command form: pending, problem, epoch. */
+/**
+ * The shared settle-and-report of every command form: pending, problem, epoch.
+ *
+ * A refusal that names a control no form here renders — the additional-work
+ * request refused for naming no origin is the one that reaches this — is
+ * preferred over the generic banner, because it is the only thing in the
+ * response that says what was wrong. `unattachedRefusalKey` recognises a short
+ * list, so anything else leaves the banner exactly as it was.
+ */
 function useCommand(messages: Messages, onDone: () => void) {
   const [pending, setPending] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
@@ -205,7 +214,7 @@ function useCommand(messages: Messages, onDone: () => void) {
       onDone();
       return true;
     }
-    setProblem(problemKeyOf(outcome));
+    setProblem(unattachedRefusalKey(outcome.fieldErrors, []) ?? problemKeyOf(outcome));
     return false;
   };
   return { pending, problem, attempt, run } as const;
@@ -915,6 +924,14 @@ function ReworkRow({
   readonly onChanged: () => void;
 }) {
   const [signOffBy, setSignOffBy] = useState('');
+  /**
+   * `body.signOffBy` — rework may not be signed off by the technician who did
+   * it. The sentence states that rule beside the control holding the name, and
+   * names nobody: who carried the work out is already on this row.
+   */
+  const [signOffFieldErrors, setSignOffFieldErrors] = useState<Readonly<Record<string, string>>>(
+    {}
+  );
   const [cost, setCost] = useState<ReadState<{ reworkCost: string; costCurrency: string }> | null>(
     null
   );
@@ -943,6 +960,7 @@ function ReworkRow({
     if (signOffBy.trim().length === 0) return;
     setPending(true);
     setProblem(null);
+    setSignOffFieldErrors({});
     const outcome = await signOffRework(
       link.id,
       { signOffBy: signOffBy.trim() },
@@ -955,6 +973,7 @@ function ReworkRow({
       onChanged();
       return;
     }
+    setSignOffFieldErrors(outcome.fieldErrors ?? {});
     setProblem(problemKeyOf(outcome));
   };
 
@@ -1021,6 +1040,11 @@ function ReworkRow({
             description={translate(messages, 'quality.closure.signOffByHint')}
             value={signOffBy}
             onChange={(event) => setSignOffBy(event.target.value)}
+            error={
+              signOffFieldErrors['signOffBy']
+                ? translateDynamic(messages, signOffFieldErrors['signOffBy'])
+                : undefined
+            }
             dir="ltr"
             required
           />
@@ -1286,6 +1310,15 @@ function AdditionalWorkRow({
   const { pending, problem, attempt, run } = useCommand(messages, onChanged);
   const [approvalPending, setApprovalPending] = useState(false);
   const [approvalProblem, setApprovalProblem] = useState<string | null>(null);
+  /**
+   * `body.decidingPartyRoleId` — the person named is not recorded on the visit
+   * this order came from. The sentence states that rule and names nobody who
+   * is on the visit; it belongs beside the control that holds the name, and
+   * what was typed in the other three controls stays where it is.
+   */
+  const [approvalFieldErrors, setApprovalFieldErrors] = useState<Readonly<Record<string, string>>>(
+    {}
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -1322,6 +1355,7 @@ function AdditionalWorkRow({
     }
     setApprovalPending(true);
     setApprovalProblem(null);
+    setApprovalFieldErrors({});
     const outcome = await recordAdditionalWorkApproval(
       request.id,
       {
@@ -1342,6 +1376,7 @@ function AdditionalWorkRow({
       onChanged();
       return;
     }
+    setApprovalFieldErrors(outcome.fieldErrors ?? {});
     setApprovalProblem(problemKeyOf(outcome));
   };
 
@@ -1444,6 +1479,11 @@ function AdditionalWorkRow({
             description={translate(messages, 'quality.closure.decidingPartyHint')}
             value={decidingPartyRoleId}
             onChange={(event) => setDecidingPartyRoleId(event.target.value)}
+            error={
+              approvalFieldErrors['decidingPartyRoleId']
+                ? translateDynamic(messages, approvalFieldErrors['decidingPartyRoleId'])
+                : undefined
+            }
             dir="ltr"
             required
           />
@@ -1536,6 +1576,15 @@ function ClosurePanel({
   const [reason, setReason] = useState('');
   const [pending, setPending] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
+  /**
+   * The closure refusals, each shown where the reader can act on it.
+   *
+   * `body.toState` — the chosen state does not close the order — belongs beside
+   * the state control. The outstanding-blocker refusal names each blocker by
+   * its own code, which is no control at all, so it goes to the form's alert
+   * instead of into a map nothing renders.
+   */
+  const [fieldErrors, setFieldErrors] = useState<Readonly<Record<string, string>>>({});
   const [attempt, setAttempt] = useState(0);
 
   if (!capabilities.canTransition || !capabilities.canClose) return null;
@@ -1558,6 +1607,7 @@ function ClosurePanel({
     }
     setPending(true);
     setProblem(null);
+    setFieldErrors({});
     const outcome = await closeWorkOrder(
       workOrderId,
       { toState: chosen.code, ...(reason.trim().length > 0 ? { reason: reason.trim() } : {}) },
@@ -1572,7 +1622,10 @@ function ClosurePanel({
       onDone();
       return;
     }
-    setProblem(problemKeyOf(outcome));
+    setFieldErrors(outcome.fieldErrors ?? {});
+    setProblem(
+      unattachedRefusalKey(outcome.fieldErrors, ['toState', 'reason']) ?? problemKeyOf(outcome)
+    );
     onDone();
   };
 
@@ -1592,6 +1645,11 @@ function ClosurePanel({
             onChange={(event) => setToState(event.target.value)}
             options={targets.map((s) => ({ value: s.code, label: s.code }))}
             placeholder={translate(messages, 'quality.closure.chooseState')}
+            error={
+              fieldErrors['toState']
+                ? translateDynamic(messages, fieldErrors['toState'])
+                : undefined
+            }
             required
           />
           <TextField

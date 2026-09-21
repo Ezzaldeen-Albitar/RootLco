@@ -42,6 +42,17 @@ export function JobBlockersPanel({
   const [resolutions, setResolutions] = useState<Readonly<Record<string, string>>>({});
   const [pending, setPending] = useState<string | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
+  /**
+   * `body.note` — the guard refused the blocker event at the job's present
+   * stage. The sentence belongs beside the note that was refused, and the note
+   * itself is kept: it is cleared only on success.
+   *
+   * Held per form rather than in one map, because raising and resolving both
+   * publish the refusal against `note` and this panel renders one raise form
+   * plus one resolution form per unresolved blocker. A single map would light
+   * up every note box on the panel over one refused resolution.
+   */
+  const [noteError, setNoteError] = useState<Readonly<Record<string, string>>>({});
 
   useEffect(() => {
     let cancelled = false;
@@ -53,24 +64,39 @@ export function JobBlockersPanel({
     };
   }, [jobId, reloadCount]);
 
-  const settle = (outcome: { readonly status: string; readonly messageKey?: string }) => {
+  const settle = (
+    form: string,
+    outcome: {
+      readonly status: string;
+      readonly messageKey?: string;
+      readonly fieldErrors?: Readonly<Record<string, string>>;
+    }
+  ) => {
     if (outcome.status === 'success') {
       reload();
       onChanged?.();
       return true;
     }
+    const stated = outcome.fieldErrors?.['note'];
+    if (stated) setNoteError({ [form]: stated });
     setProblem(outcome.messageKey ?? 'action.failed');
     return false;
+  };
+
+  const errorFor = (form: string): string | undefined => {
+    const key = noteError[form];
+    return key ? translateDynamic(messages, key) : undefined;
   };
 
   const raise = async () => {
     if (note.trim().length === 0) return;
     setPending('raise');
     setProblem(null);
+    setNoteError({});
     const outcome = await raiseJobBlocker(jobId, { note: note.trim() });
     setPending(null);
     notifyActionResult(outcome, messages);
-    if (settle(outcome)) setNote('');
+    if (settle('raise', outcome)) setNote('');
   };
 
   const resolve = async (blockerId: string) => {
@@ -78,10 +104,11 @@ export function JobBlockersPanel({
     if (text.length === 0) return;
     setPending(blockerId);
     setProblem(null);
+    setNoteError({});
     const outcome = await resolveJobBlocker(blockerId, { note: text });
     setPending(null);
     notifyActionResult(outcome, messages);
-    if (settle(outcome)) setResolutions((current) => ({ ...current, [blockerId]: '' }));
+    if (settle(blockerId, outcome)) setResolutions((current) => ({ ...current, [blockerId]: '' }));
   };
 
   return (
@@ -96,6 +123,7 @@ export function JobBlockersPanel({
             label={translate(messages, 'workOrders.detail.blockerNote')}
             value={note}
             onChange={(event) => setNote(event.target.value)}
+            error={errorFor('raise')}
             required
           />
           <button type="submit" disabled={pending !== null} className={SECONDARY_BUTTON}>
@@ -159,6 +187,7 @@ export function JobBlockersPanel({
                         [blocker.id]: event.target.value,
                       }))
                     }
+                    error={errorFor(blocker.id)}
                     required
                   />
                   <button type="submit" disabled={pending !== null} className={SECONDARY_BUTTON}>
