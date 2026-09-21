@@ -101,6 +101,8 @@ describe('the capacity refusal message', () => {
         problem: { code: 'ERR-CAP-001' },
         correlationId: null,
       })
+      // A 403 is a 403 whatever code it carries: the capacity sentences are
+      // reached from a CONFLICT and from nowhere else.
     ).toBe('state.denied.title');
     // Capacity detail on a code that is not the capacity code is ignored.
     expect(

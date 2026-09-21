@@ -2626,7 +2626,14 @@ describe('releasing the vehicle', () => {
     expect(alert).toHaveTextContent('FUEL');
   });
 
-  it('names the authority a refused override needed', async () => {
+  it('names the authority a refused override needed, and never spells it', async () => {
+    /*
+     * This case used to assert the opposite: that the permission code itself
+     * appeared in the notice. It did — as a bulleted list in a monospace font,
+     * to a reader who cannot act on one and would not recognise it. The refusal
+     * now names the PERSON who can release the vehicle or grant the authority,
+     * and the second assertion is what keeps the code off the screen.
+     */
     const user = userEvent.setup();
     readEligibility.mockResolvedValue(okRead(moneyOnlyEligibility));
     completeDelivery.mockResolvedValue({
@@ -2641,7 +2648,8 @@ describe('releasing the vehicle', () => {
     );
     const alert = await within(region).findByRole('alert');
     expect(alert).toHaveTextContent(EN['delivery.completion.refusedOverride'] as string);
-    expect(alert).toHaveTextContent(COMPLETE);
+    expect(alert).not.toHaveTextContent(COMPLETE);
+    expect(within(region).queryByText(COMPLETE)).toBeNull();
   });
 
   it('states that the release checks are not readable without the financial code', async () => {

@@ -10,7 +10,8 @@ import {
   instantFieldError,
   toLocalDateTimeValue,
 } from '@/components/forms/instant';
-import type { ActionState } from '@/lib/forms/action-result';
+import { fromFailure, type ActionState } from '@/lib/forms/action-result';
+import { ApiClient } from '@/lib/api/client';
 
 /**
  * `RecordForm`, rendered directly (`P1-27-QA-001`).
@@ -113,6 +114,103 @@ describe('RecordForm keeps what the operator typed when the write fails', () => 
 
     await waitFor(() => expect(action).toHaveBeenCalled());
     expect(screen.getByLabelText(en['crm.customers.alerts.severity'])).toHaveValue('critical');
+  });
+
+  it('keeps every entry, and says so, when the connection is what failed', async () => {
+    /*
+     * The transport half, driven end to end rather than from a hand-written
+     * state: a real client whose `fetch` rejects, the real kind it derives, the
+     * real mapping, and the sentence the operator is actually shown.
+     *
+     * Before this, a lost connection rendered "Service unavailable" — a label,
+     * with no statement about what had happened to the two minutes of typing on
+     * the screen. The catalogue now says the entries are still there, and this
+     * case is what makes that sentence true rather than reassuring: it asserts
+     * the promise and the text in the same run, so neither can drift from the
+     * other.
+     */
+    const client = new ApiClient({
+      baseUrl: 'https://api.invalid',
+      fetchImpl: () => Promise.reject(new TypeError('Failed to fetch')),
+      newCorrelationId: () => 'corr-network',
+    });
+    const result = await client.send('POST', '/api/v1/health/ready', { any: 'body' });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.kind).toBe('network');
+
+    const action = vi.fn(async (): Promise<ActionState> => fromFailure(result, 1));
+    const user = userEvent.setup();
+    renderForm(action);
+
+    const field = screen.getByLabelText(en['crm.customers.notes.body']);
+    await user.type(field, 'Two minutes of typing nobody should have to repeat');
+    await user.selectOptions(
+      screen.getByLabelText(en['crm.customers.alerts.severity']),
+      'critical'
+    );
+    await user.click(screen.getByRole('button', { name: en['form.submit'] }));
+
+    await waitFor(() => expect(action).toHaveBeenCalled());
+    const banner = await screen.findByRole('alert');
+    expect(banner).toHaveTextContent(en['state.unavailable.message']);
+    // The promise the sentence makes, asserted against the form itself.
+    expect(screen.getByLabelText(en['crm.customers.notes.body'])).toHaveValue(
+      'Two minutes of typing nobody should have to repeat'
+    );
+    expect(screen.getByLabelText(en['crm.customers.alerts.severity'])).toHaveValue('critical');
+  });
+
+  it('says nothing at all when the operator was the one who stopped it', async () => {
+    /*
+     * A cancellation is not a fault and must not be dressed as one. It used to
+     * render "Something went wrong"; the state now carries no message key, so
+     * there is no banner to find — and the entries are still on the page,
+     * because the operator may well be about to press the button again.
+     */
+    const controller = new AbortController();
+    const client = new ApiClient({
+      baseUrl: 'https://api.invalid',
+      fetchImpl: (_input, init) =>
+        new Promise((_resolve, reject) => {
+          init?.signal?.addEventListener('abort', () =>
+            reject(new DOMException('aborted', 'AbortError'))
+          );
+        }),
+      newCorrelationId: () => 'corr-cancelled',
+    });
+    const pending = client.send(
+      'POST',
+      '/api/v1/health/ready',
+      { any: 'body' },
+      {
+        signal: controller.signal,
+      }
+    );
+    controller.abort(new DOMException('aborted', 'AbortError'));
+    const result = await pending;
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.kind).toBe('cancelled');
+
+    const state = fromFailure(result, 1);
+    expect(state.status).toBe('cancelled');
+    expect(state.messageKey).toBeUndefined();
+
+    const action = vi.fn(async (): Promise<ActionState> => state);
+    const user = userEvent.setup();
+    renderForm(action);
+
+    const field = screen.getByLabelText(en['crm.customers.notes.body']);
+    await user.type(field, 'Half an entry the operator abandoned');
+    await user.click(screen.getByRole('button', { name: en['form.submit'] }));
+
+    await waitFor(() => expect(action).toHaveBeenCalled());
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(screen.queryByText(en['state.error.title'])).toBeNull();
+    expect(screen.getByLabelText(en['crm.customers.notes.body'])).toHaveValue(
+      'Half an entry the operator abandoned'
+    );
   });
 
   it('DOES clear on success, so the next entry starts empty', async () => {
