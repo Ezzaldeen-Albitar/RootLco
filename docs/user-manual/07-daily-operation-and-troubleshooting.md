@@ -300,7 +300,7 @@ deliberate.
 Invalid input is shown next to the field, never as a corner notification. The shared vocabulary:
 
 - "This field is required." <!-- form.violation.required -->
-- "This value is not accepted here." <!-- form.violation.invalid -->
+- "This value was not accepted. Check it and try again." <!-- form.violation.invalid -->
 - "This is not written the way this field expects." <!-- form.violation.invalid_format -->
 - "This is longer than the maximum allowed." <!-- form.violation.max_length -->
 - "This choice does not match any existing record." <!-- form.violation.unknown_reference -->
