@@ -232,6 +232,36 @@ describe('the codes panel', () => {
     );
   });
 
+  it('says a code already in use is in use, beside the box, and never says where', async () => {
+    const user = userEvent.setup();
+    addIdentifier.mockResolvedValue({
+      state: {
+        status: 'conflict',
+        messageKey: 'form.formError',
+        fieldErrors: { value: 'form.violation.duplicate_identifier' },
+        attempt: 1,
+      },
+      created: null,
+    });
+    renderLtr(manage());
+    await user.type(
+      await screen.findByLabelText(labelled('inventory.identifiers.add.value')),
+      MANUFACTURER_CODE
+    );
+    await user.click(
+      screen.getByRole('button', { name: EN['inventory.identifiers.add.submit'] as string })
+    );
+    const sentence = EN['form.violation.duplicate_identifier'] as string;
+    expect(await screen.findByText(sentence)).toBeTruthy();
+    // The code the operator scanned is still in the box to be corrected.
+    expect(screen.getByLabelText(labelled('inventory.identifiers.add.value'))).toHaveValue(
+      MANUFACTURER_CODE
+    );
+    // The rule, and not the record that holds the code: nothing names an item,
+    // a branch or a location.
+    expect(sentence).not.toMatch(/item|branch|location|part|warehouse/i);
+  });
+
   it('withdraws a code and says a scan will no longer find it', async () => {
     const user = userEvent.setup();
     renderLtr(manage());

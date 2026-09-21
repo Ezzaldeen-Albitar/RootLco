@@ -554,6 +554,27 @@ export function CheckInStartScreen({
     });
   };
 
+  /*
+   * What the service refused about ONE of the values this form sends.
+   *
+   * `rec.reception-create` publishes `body.branchId`, `body.vehicleId` and
+   * `body.receivingEmployeeId` violations, which reach this screen as field
+   * errors under those names. Nothing on this form read them, so an operator who
+   * chose a branch other than the appointment's, or a person who may not receive
+   * vehicles here, was shown only the shared refusal banner and no indication of
+   * which of the four panels above to go back to. Rendered beside the panel that
+   * carries the value, with everything they typed still in place.
+   */
+  const refusalFor = (name: string) => {
+    const key = state.fieldErrors?.[name];
+    if (key === undefined) return null;
+    return (
+      <p role="alert" className="mt-3 text-body text-error">
+        {translateDynamic(messages, key)}
+      </p>
+    );
+  };
+
   if (created !== null) {
     return (
       <section
@@ -645,6 +666,7 @@ export function CheckInStartScreen({
             onChange={setBranchId}
           />
         </div>
+        {refusalFor('branchId')}
       </fieldset>
 
       <fieldset className="rounded-lg border border-border bg-surface p-4">
@@ -878,6 +900,7 @@ export function CheckInStartScreen({
           employee={employee}
           onChange={setChosenEmployee}
         />
+        {refusalFor('receivingEmployeeId')}
       </fieldset>
 
       <fieldset className="rounded-lg border border-border bg-surface p-4">

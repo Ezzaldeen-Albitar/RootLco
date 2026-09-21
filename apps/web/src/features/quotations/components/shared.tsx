@@ -367,6 +367,30 @@ export function validateLines(lines: readonly DraftLine[]): {
 }
 
 /**
+ * The line errors to render, with the server's line refusal folded in.
+ *
+ * The API refuses a line against `body.lines[<n>].quantity`, and the browser
+ * keeps only the LEAF of that path — so what arrives is one entry named
+ * `quantity`, with the line it belongs to no longer in it. The controls here are
+ * keyed `line-<key>-quantity` by a draft key the server never saw, so the
+ * sentence matched no control and was rendered by nothing at all.
+ *
+ * It is filed under `lines` instead: the alert the editor already draws above
+ * the lines, which is the narrowest place this refusal can honestly be shown.
+ * Pointing at one line would be a guess, and guessing the wrong line is worse
+ * than naming none. A line error the operator's own draft already produced wins,
+ * because that one does know its line.
+ */
+export function lineErrors(
+  own: Readonly<Record<string, string>>,
+  outcome: ActionState | null
+): Readonly<Record<string, string>> {
+  const published = outcome?.fieldErrors?.['quantity'];
+  if (published === undefined || own['lines'] !== undefined) return own;
+  return { ...own, lines: published };
+}
+
+/**
  * A service, found by the beginning of its code or name when the operator
  * holds `svc.service.read`, and named by identifier when they do not.
  */

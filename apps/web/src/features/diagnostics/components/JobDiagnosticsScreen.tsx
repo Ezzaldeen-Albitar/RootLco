@@ -62,12 +62,13 @@ import {
   transitionReport,
   writeItemResult,
 } from '../api';
-import type {
-  DiagnosticReport,
-  DiagnosticReportDetail,
-  PublishableVersion,
-  ReportHistory,
-  TemplateItem,
+import {
+  unattachedRefusalKey,
+  type DiagnosticReport,
+  type DiagnosticReportDetail,
+  type PublishableVersion,
+  type ReportHistory,
+  type TemplateItem,
 } from '../diagnostics-contract';
 
 const PRIMARY_BUTTON =
@@ -240,6 +241,13 @@ function StartReportForm({
   const [templateVersionId, setTemplateVersionId] = useState('');
   const [pending, setPending] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
+  /**
+   * `body.templateVersionId` — the chosen version is not published, so no
+   * inspection may be started from it. The sentence belongs beside the control
+   * that holds the choice; the choice is kept, so the reader sees what they
+   * picked while they pick again.
+   */
+  const [fieldErrors, setFieldErrors] = useState<Readonly<Record<string, string>>>({});
   const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
@@ -276,6 +284,7 @@ function StartReportForm({
           action={async () => {
             setPending(true);
             setProblem(null);
+            setFieldErrors({});
             if (templateVersionId.length === 0) {
               setPending(false);
               setAttempt((n) => n + 1);
@@ -291,6 +300,7 @@ function StartReportForm({
               onStarted();
               return;
             }
+            setFieldErrors(outcome.fieldErrors ?? {});
             setProblem(problemKeyOf(outcome));
           }}
           className="flex flex-wrap items-end gap-3"
@@ -306,6 +316,11 @@ function StartReportForm({
               label: `${version.templateName} — ${translate(messages, 'diagnostics.template.version')} ${version.versionNumber} (${version.itemCount})`,
             }))}
             placeholder={translate(messages, 'diagnostics.job.chooseTemplate')}
+            error={
+              fieldErrors['templateVersionId']
+                ? translateDynamic(messages, fieldErrors['templateVersionId'])
+                : undefined
+            }
             required
           />
           <button type="submit" disabled={pending} className={PRIMARY_BUTTON}>
@@ -702,7 +717,12 @@ function useEntryForm(messages: Messages, onDone: () => void) {
       onDone();
       return true;
     }
-    setProblem(problemKeyOf(outcome));
+    /*
+     * The review refusal names `reviewer`, which is the signed-in user and so
+     * is no control on any of these forms; without this its sentence — ask a
+     * colleague to review it — was filed under a name nothing renders.
+     */
+    setProblem(unattachedRefusalKey(outcome.fieldErrors, []) ?? problemKeyOf(outcome));
     return false;
   };
   return { pending, problem, attempt, run } as const;
@@ -1212,7 +1232,14 @@ function StatusPanel({
       onDone();
       return;
     }
-    setProblem(problemKeyOf(outcome));
+    /*
+     * Completion is refused one violation per unanswered required item, keyed
+     * by the item's own code — no control on this panel is named after a
+     * checklist item, so the sentence telling the technician to answer them
+     * first had nowhere to appear. It is shown here, beside the button that
+     * raised it.
+     */
+    setProblem(unattachedRefusalKey(outcome.fieldErrors, []) ?? problemKeyOf(outcome));
   };
 
   return (

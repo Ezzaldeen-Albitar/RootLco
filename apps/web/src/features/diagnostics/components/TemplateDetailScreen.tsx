@@ -35,7 +35,12 @@ import {
   setVersionStatus,
   updateTemplate,
 } from '../api';
-import type { TemplateDetail, TemplateItem, TemplateVersion } from '../diagnostics-contract';
+import {
+  unattachedRefusalKey,
+  type TemplateDetail,
+  type TemplateItem,
+  type TemplateVersion,
+} from '../diagnostics-contract';
 
 const PRIMARY_BUTTON =
   'rounded-md bg-primary px-4 py-2 text-body font-medium text-on-primary transition-colors duration-fast ease-standard hover:bg-primary-hover disabled:opacity-60';
@@ -302,6 +307,13 @@ function NewVersionForm({
   const [copyFromVersionId, setCopyFromVersionId] = useState('');
   const [pending, setPending] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
+  /**
+   * `body.copyFromVersionId` — the version chosen to copy from belongs to
+   * another checklist. The sentence belongs beside the control that holds the
+   * choice, and the choice itself is kept so the reader can see what they
+   * picked while they pick again.
+   */
+  const [fieldErrors, setFieldErrors] = useState<Readonly<Record<string, string>>>({});
   const [attempt, setAttempt] = useState(0);
 
   return (
@@ -309,6 +321,7 @@ function NewVersionForm({
       action={async () => {
         setPending(true);
         setProblem(null);
+        setFieldErrors({});
         const outcome = await createVersion(
           templateId,
           copyFromVersionId ? { copyFromVersionId } : {}
@@ -321,6 +334,7 @@ function NewVersionForm({
           onDone();
           return;
         }
+        setFieldErrors(outcome.fieldErrors ?? {});
         setProblem(problemKeyOf(outcome));
       }}
       className="flex flex-wrap items-end gap-3"
@@ -336,6 +350,11 @@ function NewVersionForm({
           label: `${translate(messages, 'diagnostics.template.version')} ${version.versionNumber}`,
         }))}
         placeholder={translate(messages, 'diagnostics.template.startEmpty')}
+        error={
+          fieldErrors['copyFromVersionId']
+            ? translateDynamic(messages, fieldErrors['copyFromVersionId'])
+            : undefined
+        }
       />
       <button type="submit" disabled={pending} className={PRIMARY_BUTTON}>
         {translate(
@@ -392,7 +411,12 @@ function VersionItems({
       onChanged();
       return;
     }
-    setProblem(problemKeyOf(outcome));
+    /*
+     * Publishing an empty version is refused against `versionId`, which is a
+     * button and not a box, so the sentence saying to add an item first had
+     * nowhere to appear. It is shown here beside the button that raised it.
+     */
+    setProblem(unattachedRefusalKey(outcome.fieldErrors, []) ?? problemKeyOf(outcome));
   };
 
   return (

@@ -372,6 +372,29 @@ describe('a scrapped vehicle withdraws exactly the writes the server refuses', (
     ).toHaveValue('in_workshop');
   });
 
+  it('shows the refused state beside the state control, with the chosen move kept', async () => {
+    // `veh.vehicle-status-set` publishes `body.lifecycleStatus`; the sentence
+    // belongs at the control the operator would change to clear it.
+    changeVehicleStatusAction.mockResolvedValue({
+      status: 'invalid',
+      messageKey: 'form.formError',
+      fieldErrors: { lifecycleStatus: 'form.violation.invalid_state' },
+      correlationId: 'corr-veh-status',
+      attempt: 1,
+    });
+    const user = userEvent.setup();
+    render();
+
+    const lifecycle = screen.getByLabelText(en['crm.customers.column.status'], { exact: false });
+    await user.selectOptions(lifecycle, 'inactive');
+    await user.click(screen.getByRole('button', { name: en['vehicles.profile.applyStatus'] }));
+
+    expect(await screen.findByText(en['form.violation.invalid_state'])).toBeVisible();
+    expect(screen.getByLabelText(en['crm.customers.column.status'], { exact: false })).toHaveValue(
+      'inactive'
+    );
+  });
+
   it('says why to an operator who never had the status permission', () => {
     /*
      * The note carried a `canChangeStatus &&` conjunct — a permission governing

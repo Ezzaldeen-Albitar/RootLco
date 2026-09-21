@@ -348,6 +348,17 @@ function CreatePolicySection({
   // identifier field rather than a control with nothing in it.
   const offered = companies.length > 0;
   const created = state?.policy ?? null;
+  /*
+   * The control's own complaint first, then the one the service published.
+   *
+   * `wty.warranty-policy-create` refuses an unreachable company against
+   * `body.companyId`, which reaches this screen as a field error under
+   * `companyId`. Read only from the local map, that sentence rendered nowhere
+   * and the operator was left with the shared "check the fields" banner beside
+   * a company they had picked from the directory.
+   */
+  const companyKey = errors['companyId'] ?? state?.fieldErrors?.['companyId'];
+  const companyError = companyKey ? translateDynamic(messages, companyKey) : undefined;
 
   return (
     <Section
@@ -402,9 +413,7 @@ function CreatePolicySection({
             onChange={(event) => setCompanyId(event.target.value)}
             options={companies.map((id) => ({ value: id, label: id }))}
             placeholder={translate(messages, 'warranty.policies.companyPlaceholder')}
-            error={
-              errors['companyId'] ? translateDynamic(messages, errors['companyId']) : undefined
-            }
+            error={companyError}
           />
         ) : (
           <TextField
@@ -419,9 +428,7 @@ function CreatePolicySection({
             dir="ltr"
             value={companyId}
             onChange={(event) => setCompanyId(event.target.value)}
-            error={
-              errors['companyId'] ? translateDynamic(messages, errors['companyId']) : undefined
-            }
+            error={companyError}
           />
         )}
 

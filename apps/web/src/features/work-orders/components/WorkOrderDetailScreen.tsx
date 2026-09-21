@@ -401,6 +401,17 @@ function LifecyclePanel({
   const [reason, setReason] = useState('');
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
+  /**
+   * The refusals that name the state the operator chose.
+   *
+   * `wo.work-order-transition` refuses a closing state with a violation on
+   * `body.toState` and nothing in the banner, so before this the operator was
+   * told only that something went wrong while the sentence explaining that a
+   * closing state goes through the closure command sat unread in the response.
+   * The chosen state and reason are kept, because the cure is to choose a
+   * different state rather than to retype anything.
+   */
+  const [fieldErrors, setFieldErrors] = useState<Readonly<Record<string, string>>>({});
 
   const chosen = nextStates.find((state) => state.code === toState) ?? null;
   const needsReason = chosen?.requiresReason ?? false;
@@ -412,6 +423,7 @@ function LifecyclePanel({
       return;
     }
     setProblem(null);
+    setFieldErrors({});
     setBusy(true);
     const result = await transitionWorkOrder(
       workOrderId,
@@ -432,6 +444,7 @@ function LifecyclePanel({
       onDone();
       return;
     }
+    if (result.fieldErrors) setFieldErrors(result.fieldErrors);
     // A conflict is stated, never retried. The version this screen holds is
     // stale, and the only correct next step is to look again.
     setProblem(
@@ -485,6 +498,11 @@ function LifecyclePanel({
                     : state.code,
               }))}
               placeholder={translate(messages, 'workOrders.detail.chooseState')}
+              error={
+                fieldErrors['toState']
+                  ? translateDynamic(messages, fieldErrors['toState'])
+                  : undefined
+              }
             />
             {needsReason ? (
               <TextField

@@ -945,6 +945,68 @@ describe('reorder levels', () => {
     expect(setReorderLevel).not.toHaveBeenCalled();
   });
 
+  it('states a company the level needs beside the company field, level still typed', async () => {
+    /*
+     * `inv.reorder-level-set` refuses `body.companyId` with the same rule the
+     * price rule uses, and the sentence has to be true of BOTH. A reorder level
+     * is not a price rule, so the wording names neither: it says an entry
+     * narrowed to one branch must also name that branch's company.
+     *
+     * The picker is in its identifier phase here (`canReadBranches: false`),
+     * which is the phase that renders a company control at all — in the listed
+     * phase the branch select carries its own company and no company error can
+     * be shown.
+     */
+    const user = userEvent.setup();
+    setReorderLevel.mockResolvedValue(
+      invalid({ companyId: 'form.violation.branch_needs_company' })
+    );
+    renderScreen({ canManage: true, canReadStock: true });
+    await waitFor(() => expect(listReorderLevels).toHaveBeenCalled());
+    const panel = setForm();
+    await user.click(
+      within(panel).getByRole('button', {
+        name: EN['inventory.reorderLevels.items.find'] as string,
+      })
+    );
+    await within(panel).findByRole('option', { name: 'BRK-001 — Front brake pads' });
+    await user.selectOptions(
+      within(panel).getByLabelText(labelled('inventory.reorderLevels.set.item')),
+      ITEM_ID
+    );
+    await user.type(
+      within(panel).getByLabelText(labelled('inventory.common.companyIdField')),
+      COMPANY_ID
+    );
+    await user.type(
+      within(panel).getByLabelText(labelled('inventory.common.branchIdField')),
+      BRANCH_ID
+    );
+    await user.type(
+      within(panel).getByLabelText(labelled('inventory.reorderLevels.set.level')),
+      '4.000'
+    );
+    await user.click(
+      within(panel).getByRole('button', {
+        name: EN['inventory.reorderLevels.set.submit'] as string,
+      })
+    );
+    await waitFor(() => expect(setReorderLevel).toHaveBeenCalledTimes(1));
+    expect(
+      await within(panel).findByText(EN['form.violation.branch_needs_company'] as string)
+    ).toBeVisible();
+    // Nothing in the sentence is about a price rule, because at this site no
+    // price rule exists.
+    expect(EN['form.violation.branch_needs_company'] as string).not.toMatch(/price/i);
+    // What the operator typed is still there to correct.
+    expect(within(panel).getByLabelText(labelled('inventory.reorderLevels.set.level'))).toHaveValue(
+      '4.000'
+    );
+    expect(within(panel).getByLabelText(labelled('inventory.common.branchIdField'))).toHaveValue(
+      BRANCH_ID
+    );
+  });
+
   /**
    * DEF-T-15 — the recorded level was not listed back on the screen that
    * recorded it. The cause was the adapter (`inventory-api.test.ts` holds the

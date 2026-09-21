@@ -518,6 +518,42 @@ describe('recording a payment', () => {
     expect(String(recordPayment.mock.calls[0]?.[1])).toMatch(UUID_SHAPE);
   });
 
+  it('shows the currency refusal beside the currency box, with the amount still typed', async () => {
+    // What the service publishes for a currency it cannot read, as the adapter
+    // files it: under `currency`, the control this form draws.
+    recordPayment.mockResolvedValue({
+      state: {
+        status: 'invalid',
+        messageKey: 'form.formError',
+        fieldErrors: { currency: 'form.violation.invalid_string' },
+        attempt: 1,
+      },
+      created: null,
+    });
+    const user = userEvent.setup();
+    renderScreen();
+    await chooseBranch(user);
+    const form = await screen.findByRole('form', {
+      name: EN['payments.record.formLabel'] as string,
+    });
+    await user.type(within(form).getByLabelText(labelled('payments.record.payer')), PARTNER_ID);
+    await user.type(within(form).getByLabelText(labelled('payments.record.currency')), 'USD');
+    await user.type(within(form).getByLabelText(labelled('payments.record.amount')), '100.0000');
+    await user.click(
+      within(form).getByRole('button', { name: EN['payments.record.submit'] as string })
+    );
+    expect(
+      await within(form).findByText(EN['form.violation.invalid_string'] as string)
+    ).toBeVisible();
+    // Nothing the cashier typed was thrown away by the refusal.
+    expect(
+      (within(form).getByLabelText(labelled('payments.record.amount')) as HTMLInputElement).value
+    ).toBe('100.0000');
+    expect(
+      (within(form).getByLabelText(labelled('payments.record.currency')) as HTMLInputElement).value
+    ).toBe('USD');
+  });
+
   it('refuses a malformed amount before sending anything', async () => {
     const user = userEvent.setup();
     renderScreen();
@@ -1023,5 +1059,68 @@ describe('Arabic', () => {
       />
     );
     expect(screen.getByText(AR['payments.target.explain'] as string)).toBeVisible();
+  });
+
+  it('states the currency refusal in Arabic, beside the same box', async () => {
+    recordPayment.mockResolvedValue({
+      state: {
+        status: 'invalid',
+        messageKey: 'form.formError',
+        fieldErrors: { currency: 'form.violation.invalid_string' },
+        attempt: 1,
+      },
+      created: null,
+    });
+    const user = userEvent.setup();
+    renderRtl(
+      <PaymentsScreen
+        locale="ar"
+        messages={ar}
+        initialReceiptId={null}
+        initialInvoiceId={null}
+        canRecord={true}
+        canAllocate={false}
+        canReadBranches={false}
+      />
+    );
+    const target = screen.getByRole('form', { name: AR['payments.target.formLabel'] as string });
+    await user.type(
+      within(target).getByLabelText(
+        new RegExp(`^${escape(AR['payments.common.companyIdField'] as string)}`)
+      ),
+      COMPANY_ID
+    );
+    await user.type(
+      within(target).getByLabelText(
+        new RegExp(`^${escape(AR['payments.common.branchIdField'] as string)}`)
+      ),
+      BRANCH_ID
+    );
+    await user.click(
+      within(target).getByRole('button', { name: AR['payments.target.choose'] as string })
+    );
+    const form = await screen.findByRole('form', {
+      name: AR['payments.record.formLabel'] as string,
+    });
+    await user.type(
+      within(form).getByLabelText(new RegExp(`^${escape(AR['payments.record.payer'] as string)}`)),
+      PARTNER_ID
+    );
+    await user.type(
+      within(form).getByLabelText(
+        new RegExp(`^${escape(AR['payments.record.currency'] as string)}`)
+      ),
+      'USD'
+    );
+    await user.type(
+      within(form).getByLabelText(new RegExp(`^${escape(AR['payments.record.amount'] as string)}`)),
+      '100.0000'
+    );
+    await user.click(
+      within(form).getByRole('button', { name: AR['payments.record.submit'] as string })
+    );
+    expect(
+      await within(form).findByText(AR['form.violation.invalid_string'] as string)
+    ).toBeVisible();
   });
 });

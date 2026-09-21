@@ -331,95 +331,53 @@ const INTENTIONALLY_GENERIC: Readonly<Record<string, string>> = Object.freeze({
     'the refusal is computed from the caller’s OWN permissions — every field they asked for ' +
     'was withheld — so a specific sentence would tell a reader which fields exist but are ' +
     'being kept from them, which is a permission-internal fact and not theirs to learn',
+  unknown_price_list:
+    '`price-list-service.ts` refuses with "is not visible", not "does not exist"; a sentence ' +
+    'of its own would separate a hidden price list from an absent one and turn the field into ' +
+    "an existence oracle for rows outside the caller's scope",
+  not_visible:
+    'the service refuses a diagnostic type that is neither at platform scope nor in the ' +
+    'organisation the caller belongs to; a specific sentence would separate "hidden from ' +
+    'you" from "does not exist" and turn the field into an existence oracle for records ' +
+    'outside the scope the caller may see, so the generic rendering is the decision',
 });
 
 /**
  * The measured backlog: tokens the API publishes with no sentence in either
  * catalogue.
  *
- * One hundred and one when this list was first taken, reduced by the five above
- * that are decisions rather than debt. Each remaining entry renders as the
- * catalogue's honest generic today; each is a sentence somebody owes. The list
- * is written down rather than tolerated silently, because a backlog nobody can
- * count is a backlog nobody will clear.
+ * One hundred and one when this list was first taken. Eight of those are
+ * decisions rather than debt and stand in the list above; sixty-nine have been
+ * given sentences since; the twenty-four below are what remains. Each remaining
+ * entry renders as the catalogue's honest generic today; each is a sentence
+ * somebody owes. The list is written down rather than tolerated silently,
+ * because a backlog nobody can count is a backlog nobody will clear.
  */
 const OWED: readonly string[] = Object.freeze([
-  'after_start',
-  'already_assigned',
-  'assignment_precondition',
-  'awaiting_customer_decision',
-  'before_job_created',
-  'blank',
-  'branch_needs_company',
   'branch_requires_company',
   'catalogue_constraint',
-  'closure_blocked',
-  'closure_requires_closure_operation',
-  'completion_requires_completion_operation',
-  'context_already_assigned',
   'digest_format',
   'duplicate-active-profile',
   'duplicate-certification',
-  'duplicate_cell',
-  'duplicate_identifier',
-  'duplicate_signature',
-  'foreign_template',
-  'future_instant',
-  'incoherent_reference',
   'incoherent_scope',
-  'ineligible_reference',
-  'inexact_line_base',
   'invalid_sha256',
-  'invalid_state',
-  'invalid_string',
-  'invalid_value',
-  'mandatory_item_unresolved',
-  'no_items',
-  'not-own-profile',
-  'not_a_closing_state',
-  'not_a_numeric_item',
   'not_allow_listed',
   'not_allowed',
-  'not_forward_only',
-  'not_independent',
-  'not_on_reception_visit',
-  'not_published',
-  'not_visible',
   'one_subject_required',
-  'origin_conflict',
-  'origin_required',
-  'other_requirement',
-  'out_of_range',
   'overlapping-window',
-  'overlapping_coverage',
-  'powertrain_mismatch',
-  'primary_already_assigned',
-  'profile-inactive',
-  'quantity',
-  'refused',
-  'required_for_numeric',
-  'self_review',
-  'session-already-open',
-  'tax_needs_company',
   'template_mismatch',
-  'terminal_state',
   'token_mismatch',
-  'unknown_company',
   'unknown_entity_type',
   'unknown_field',
   'unknown_link_purpose',
   'unknown_permission_code',
-  'unknown_price_list',
   'unknown_purpose',
   'unknown_resource',
-  'unknown_state',
   'unregistered_sequence',
   'unregistered_transition',
   'unsupported_channel',
-  'unsupported_currency',
   'version_already_published',
   'version_immutable',
-  'window-overlaps',
 ]);
 
 /**
@@ -429,7 +387,7 @@ const OWED: readonly string[] = Object.freeze([
  * compares the list against itself, so the only way to raise the ceiling is to
  * edit this number in a diff a reviewer sees beside the tokens it admits.
  */
-const OWED_CEILING = 76;
+const OWED_CEILING = 24;
 
 describe('every rule token the API publishes has a sentence, or is on a named list', () => {
   const files = typeScriptFilesUnder(API_MODULES);

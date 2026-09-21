@@ -42,6 +42,7 @@ import {
 import {
   Figure,
   LinesEditor,
+  lineErrors,
   LinesTable,
   Money,
   OutcomeNote,
@@ -1037,7 +1038,7 @@ function NewRevisionPanel({
           lines={lines}
           onChange={setLines}
           canReadServices={canReadServices}
-          errors={errors}
+          errors={lineErrors(errors, outcome)}
         />
         <OutcomeNote
           messages={messages}
