@@ -774,17 +774,17 @@ export function fieldErrorsOf(failure: ApiFailure): Record<string, string> {
  * rendered anywhere.
  */
 export const FAILURE_MESSAGE_KEY: Record<ApiFailureKind, string> = {
-  unauthenticated: 'state.expired.title',
+  unauthenticated: 'state.expired.message',
   forbidden: 'state.denied.title',
-  'not-found': 'state.notFound.title',
+  'not-found': 'state.notFound.message',
   conflict: 'state.conflict.title',
   validation: 'form.formError',
-  'rate-limited': 'state.error.title',
-  server: 'state.error.title',
-  unavailable: 'state.unavailable.title',
-  timeout: 'state.unavailable.title',
-  cancelled: 'state.error.title',
-  network: 'state.unavailable.title',
+  'rate-limited': 'state.throttled.message',
+  server: 'state.error.message',
+  unavailable: 'state.unavailable.message',
+  timeout: 'state.unavailable.message',
+  cancelled: 'state.cancelled.message',
+  network: 'state.unavailable.message',
 };
 
 /**
@@ -858,6 +858,15 @@ export const CAPACITY_LIMIT_CODE = 'ERR-CAP-001';
 export const ORGANISATION_INACTIVE_CODE = 'ERR-CAP-002';
 
 /**
+ * An external dependency the request needed was unreachable (503).
+ *
+ * The catalogue entry is explicit that the request performed no work, which is
+ * what lets a caller say "nothing was saved" rather than leaving the operator to
+ * guess. The dependency itself is never named to a caller and is not named here.
+ */
+export const UPSTREAM_DEPENDENCY_CODE = 'ERR-DEP-001';
+
+/**
  * The plan a change would assign sits below what the organisation already holds
  * (409).
  *
@@ -918,6 +927,47 @@ export function capacityDetailOf(failure: ApiFailure): CapacityDetail | null {
 }
 
 /**
+ * The platform console's own wording for a refusal.
+ *
+ * The shared sentence for a 403 is written for a company operator, whose remedy
+ * is their own administrator. A platform operator has no company administrator —
+ * the authority over a console grant is the platform owner — so the console
+ * passes this key as its override rather than showing a sentence that sends the
+ * reader to somebody who does not exist.
+ */
+export const PLATFORM_DENIED_MESSAGE_KEY = 'state.denied.platformMessage';
+
+/**
+ * The longest wait a throttle answer is allowed to advise, in seconds.
+ *
+ * An hour. `retryAfterSeconds` is copied from the failure's safe details and is
+ * therefore an untrusted number: a wrong one would tell an operator to wait
+ * three days for a search. Above the bound the advice is dropped and the
+ * no-number sentence is used, which is true whatever the real figure is.
+ */
+export const MAX_ADVISED_WAIT_SECONDS = 3600;
+
+/**
+ * The wait a throttled answer advises, or null when it advised none.
+ *
+ * `retryAfterSeconds` has been declared on `ProblemDetails` since the contract
+ * correction above and had no reader at all: every 429 rendered the generic
+ * "Something went wrong", which is both wrong — nothing went wrong — and
+ * actionless. This is the reader, and it is deliberately strict: a value that is
+ * not a positive whole number of seconds within the bound is treated as absent
+ * rather than rendered, because a sentence that says "Wait 0 seconds" or
+ * "Wait 1e21 seconds" is worse than the one that names no figure.
+ */
+export function retryAfterSecondsOf(failure: ApiFailure): number | null {
+  if (failure.kind !== 'rate-limited') return null;
+  const value: unknown = failure.problem?.retryAfterSeconds;
+  if (!Number.isInteger(value)) return null;
+  const seconds = value as number;
+  if (seconds <= 0 || seconds > MAX_ADVISED_WAIT_SECONDS) return null;
+  return seconds;
+}
+
+/**
  * The message key for a failure an operator must act on — `failureMessageKey`,
  * except that the two capacity refusals get their own sentences.
  *
@@ -927,6 +977,14 @@ export function capacityDetailOf(failure: ApiFailure): CapacityDetail | null {
  * that reaches a form — learns the capacity sentences.
  */
 export function refusalMessageKey(failure: ApiFailure): string {
+  // The numbered throttle sentence is returned ONLY here, because only this path
+  // is paired with `failureMessageValues`. A caller that took the `{seconds}`
+  // key without the values would render the placeholder as written.
+  if (failure.kind === 'rate-limited') {
+    return retryAfterSecondsOf(failure) === null
+      ? 'state.throttled.message'
+      : 'state.throttled.messageWithSeconds';
+  }
   if (failure.kind === 'conflict') {
     const code = failure.problem?.code;
     if (code === CAPACITY_LIMIT_CODE) {
@@ -942,12 +1000,19 @@ export function refusalMessageKey(failure: ApiFailure): string {
 /**
  * The values the refusal message interpolates, or undefined when it takes none.
  *
- * Only numbers the backend published, and only for the capacity messages whose
- * catalogue text has `{limit}` and `{used}` placeholders.
+ * Only numbers the backend published, and only for the messages whose catalogue
+ * text carries the matching placeholder: `{limit}` and `{used}` for a capacity
+ * ceiling, `{seconds}` for a throttle answer that advised a wait. The two sets
+ * are returned by the two branches that can produce the keys naming them, so a
+ * sentence can never receive values meant for a different one.
  */
 export function failureMessageValues(
   failure: ApiFailure
 ): Readonly<Record<string, string>> | undefined {
+  if (failure.kind === 'rate-limited') {
+    const seconds = retryAfterSecondsOf(failure);
+    return seconds === null ? undefined : { seconds: String(seconds) };
+  }
   if (failure.kind !== 'conflict') return undefined;
   const detail = capacityDetailOf(failure);
   if (detail === null) return undefined;

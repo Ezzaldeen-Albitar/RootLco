@@ -630,7 +630,7 @@
   "form.violation.branch_company_mismatch": "This branch does not belong to the company chosen.",
   "form.violation.custom": "This value is not accepted here.",
   "form.violation.empty_patch": "Nothing was changed, so there is nothing to save.",
-  "form.violation.invalid": "This value is not accepted here.",
+  "form.violation.invalid": "This value was not accepted. Check it and try again.",
   "form.violation.invalid_format": "This is not written the way this field expects.",
   "form.violation.invalid_type": "This field did not receive a value it can use.",
   "form.violation.max_length": "This is longer than the maximum allowed.",
@@ -4333,7 +4333,7 @@
   "delivery.completion.submit": "Release the vehicle",
   "delivery.completion.heldBack": "The vehicle cannot be released yet. The release checks above say what is still outstanding.",
   "delivery.completion.refusedBlocked": "The release was refused. These are the reasons the system gave, read again just now:",
-  "delivery.completion.refusedOverride": "You are not allowed to release a vehicle while money is still owed. The permission needed is:",
+  "delivery.completion.refusedOverride": "You do not have permission to release a vehicle while money is still owed. Ask your company administrator to release it, or to give you that permission.",
   "delivery.completion.refusedStale": "Someone else changed this handover while you were working on it. The page has been refreshed; check it and try again.",
   "delivery.completion.refusedNoVersion": "This release could not be sent. Refresh the page and try again.",
   "delivery.completion.done": "The vehicle has been released.",
@@ -5583,5 +5583,14 @@
   "creditNotes.detail.notApproved": "Not approved yet",
   "creditNotes.detail.reason": "Why it was raised",
   "creditNotes.detail.approvalNote": "Approving a credit note is a separate step taken by a second person, and it is not offered on this screen.",
-  "creditNotes.detail.close": "Close"
+  "creditNotes.detail.close": "Close",
+  "state.throttled.message": "Too many requests were sent in a short time. Wait a moment, then try again.",
+  "state.throttled.messageWithSeconds": "Too many requests were sent in a short time. Wait {seconds} seconds, then try again.",
+  "state.notFound.message": "This record is not available here. It may have been removed, or you may not have access to it. Go back to the list and try again.",
+  "state.unavailable.message": "The connection to the server was lost, or the server did not answer in time. Your entries are still on this page. Check the connection and try again.",
+  "state.denied.platformMessage": "You do not have permission for this. Contact the platform owner.",
+  "state.expired.message": "Your session ended. Sign in again to continue; what you typed on this page was not saved.",
+  "state.error.message": "The request did not complete. Your entries are still on this page. Try again, and give the reference shown here if it keeps happening.",
+  "state.cancelled.message": "You stopped this request, so nothing was changed.",
+  "users.invite.notSent": "The invitation could not be sent, so nothing was saved. Check the email address, then try sending it again."
 }

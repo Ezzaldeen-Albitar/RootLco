@@ -630,7 +630,7 @@
   "form.violation.branch_company_mismatch": "هذا الفرع لا يتبع الشركة المختارة.",
   "form.violation.custom": "هذه القيمة غير مقبولة هنا.",
   "form.violation.empty_patch": "لم يتغيّر شيء، فلا يوجد ما يُحفظ.",
-  "form.violation.invalid": "هذه القيمة غير مقبولة هنا.",
+  "form.violation.invalid": "لم تُقبل هذه القيمة. راجعها ثم أعد المحاولة.",
   "form.violation.invalid_format": "الصيغة المُدخلة لا تطابق ما يقبله هذا الحقل.",
   "form.violation.invalid_type": "لم يستلم هذا الحقل قيمة يمكنه استخدامها.",
   "form.violation.max_length": "أطول من الحد الأقصى المسموح به.",
@@ -4333,7 +4333,7 @@
   "delivery.completion.submit": "تسليم المركبة",
   "delivery.completion.heldBack": "لا يمكن تسليم المركبة بعد. فحوص التسليم أعلاه تبيّن ما هو مطلوب.",
   "delivery.completion.refusedBlocked": "رُفض التسليم. هذه هي الأسباب التي ذكرها النظام، وقد قُرئت من جديد للتو:",
-  "delivery.completion.refusedOverride": "لا تملك صلاحية تسليم المركبة مع وجود مبالغ مستحقة. الصلاحية المطلوبة هي:",
+  "delivery.completion.refusedOverride": "لا تملك صلاحية تسليم المركبة مع وجود مبالغ مستحقة. اطلب من مسؤول شركتك أن يتولّى التسليم أو أن يمنحك هذه الصلاحية.",
   "delivery.completion.refusedStale": "غيّر شخص آخر هذا التسليم أثناء عملك عليه. حُدِّثت الصفحة، فراجعها ثم أعد المحاولة.",
   "delivery.completion.refusedNoVersion": "تعذّر إرسال هذا التسليم. حدِّث الصفحة ثم أعد المحاولة.",
   "delivery.completion.done": "تم تسليم المركبة.",
@@ -5583,5 +5583,14 @@
   "creditNotes.detail.notApproved": "لم يُوافَق عليه بعد",
   "creditNotes.detail.reason": "سبب إنشائه",
   "creditNotes.detail.approvalNote": "الموافقة على إشعار الخصم خطوة منفصلة يقوم بها شخص ثانٍ، وهي غير معروضة في هذه الشاشة.",
-  "creditNotes.detail.close": "أغلق"
+  "creditNotes.detail.close": "أغلق",
+  "state.throttled.message": "أُرسلت طلبات كثيرة خلال وقت قصير. انتظر قليلًا ثم أعد المحاولة.",
+  "state.throttled.messageWithSeconds": "أُرسلت طلبات كثيرة خلال وقت قصير. انتظر {seconds} ثانية ثم أعد المحاولة.",
+  "state.notFound.message": "هذا السجلّ غير متاح هنا. قد يكون قد حُذف، أو قد لا تملك صلاحية الاطّلاع عليه. عُد إلى القائمة ثم أعد المحاولة.",
+  "state.unavailable.message": "انقطع الاتصال بالخادم، أو لم يردّ الخادم في الوقت المتاح. ما أدخلته ما زال موجودًا في هذه الصفحة. تحقّق من الاتصال ثم أعد المحاولة.",
+  "state.denied.platformMessage": "لا تملك صلاحية لهذا الإجراء. تواصل مع مالك المنصّة.",
+  "state.expired.message": "انتهت جلستك. سجّل الدخول مرّة أخرى للمتابعة؛ وما كتبته في هذه الصفحة لم يُحفظ.",
+  "state.error.message": "لم يكتمل الطلب. ما أدخلته ما زال موجودًا في هذه الصفحة. أعد المحاولة، وإن تكرّر الأمر فاذكر المرجع المعروض هنا.",
+  "state.cancelled.message": "أوقفت هذا الطلب، فلم يتغيّر شيء.",
+  "users.invite.notSent": "تعذّر إرسال الدعوة، فلم يُحفظ شيء. تحقّق من البريد الإلكتروني ثم أعد إرسالها."
 }
