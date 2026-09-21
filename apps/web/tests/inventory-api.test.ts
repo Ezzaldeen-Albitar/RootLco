@@ -57,7 +57,8 @@ const {
   releaseReservation,
   setSalePrice,
 } = await import('@/features/inventory/api');
-const { MATERIAL_REFUSAL_RULES } = await import('@/features/inventory/inventory-contract');
+const { MATERIAL_REFUSAL_RULES, STOCK_REFUSAL_RULES, TRANSFER_REFUSAL_RULES } =
+  await import('@/features/inventory/inventory-contract');
 const { requiresIdempotencyKey, resolveOperation } = await import('@/lib/api/operation-contract');
 const EN = en as Record<string, string>;
 const AR = ar as Record<string, string>;
@@ -1010,12 +1011,70 @@ describe('a refused material requirement says which rule refused it', () => {
   });
 
   it('has an English and an Arabic sentence for every rule the mirror carries', () => {
+    // CC-OD-32 widened this from the material family to every rule token the
+    // inventory module publishes. A token with no sentence renders
+    // `form.violation.invalid` — "This value is not accepted here" — which on
+    // screen is the bare conflict banner this whole change exists to remove, so
+    // adding a token to a mirror without writing its English and its Arabic is
+    // a failing test rather than a vague screen.
+    const mirrored = [...MATERIAL_REFUSAL_RULES, ...TRANSFER_REFUSAL_RULES, ...STOCK_REFUSAL_RULES];
+    expect(mirrored.length).toBe(new Set(mirrored).size);
     expect(MATERIAL_REFUSAL_RULES.length).toBeGreaterThan(0);
-    for (const rule of MATERIAL_REFUSAL_RULES) {
+    expect(TRANSFER_REFUSAL_RULES.length).toBeGreaterThan(0);
+    expect(STOCK_REFUSAL_RULES.length).toBeGreaterThan(0);
+    for (const rule of mirrored) {
       const key = `form.violation.${rule}`;
       expect(EN[key], `${key} has no English sentence`).toBeTypeOf('string');
       expect(AR[key], `${key} has no Arabic sentence`).toBeTypeOf('string');
       expect(EN[key]).not.toBe(AR[key]);
+    }
+  });
+
+  it('says what failed and what to do, and never names a record or a code', () => {
+    // The Owner requirement, as an assertion: a refusal sentence states the
+    // business reason and the next step. What it may NOT contain is anything
+    // that is not language — an error code, a rule token, a database name, a
+    // long identifier. `check-plain-language.mjs` owns the vocabulary; this
+    // owns the shape, because a catalogue entry that merely reads well can
+    // still be a dead end.
+    const forbidden = [/ERR-[A-Z]+-\d/, /[0-9a-f]{8}-[0-9a-f]{4}-/i, /[a-z]+_[a-z]+_[a-z]+/];
+    for (const rule of [
+      ...MATERIAL_REFUSAL_RULES,
+      ...TRANSFER_REFUSAL_RULES,
+      ...STOCK_REFUSAL_RULES,
+    ]) {
+      const key = `form.violation.${rule}`;
+      for (const locale of [EN, AR]) {
+        const sentence = locale[key] as string;
+        expect(sentence.length, `${key} is too short to say anything`).toBeGreaterThan(40);
+        for (const pattern of forbidden) {
+          expect(pattern.test(sentence), `${key} exposes an internal name`).toBe(false);
+        }
+      }
+    }
+  });
+
+  it('gives every draw refusal a figure-bearing twin that spends all three numbers', () => {
+    // The cap refusal publishes the allowance, what is already used and what was
+    // asked for. A sentence that dropped one of them would leave the operator
+    // doing the subtraction the server already did.
+    for (const reason of [
+      'exceeds_requirement',
+      'approval_required',
+      'missing_conversion',
+      'missing_specification',
+      'no_requirement',
+    ]) {
+      for (const locale of [EN, AR]) {
+        const plain = locale[`inventory.refusal.materialDraw.${reason}`] as string;
+        const withFigures = locale[`inventory.refusal.materialDraw.${reason}.figures`] as string;
+        expect(plain, `${reason} lost its figureless sentence`).toBeTypeOf('string');
+        expect(withFigures, `${reason} has no figure-bearing sentence`).toBeTypeOf('string');
+        expect(withFigures).toContain('{allowance}');
+        expect(withFigures).toContain('{used}');
+        expect(withFigures).toContain('{requested}');
+        expect(withFigures).toContain('{unit}');
+      }
     }
   });
 

@@ -687,8 +687,116 @@ export const MATERIAL_REFUSAL_RULES = [
   'material_approval_required',
   'material_unknown_reference',
   'material_demand_rule',
+  'material_requirement_missing_specification',
+  'material_requirement_missing_conversion',
+  'material_requirement_already_decided',
+  'material_requirement_closed',
+  'material_requirement_rejected',
+  'material_requirement_committed',
+  'material_exception_needs_approved_requirement',
+  'material_exception_already_decided',
+  'material_request_not_open',
+  'material_request_issued',
 ] as const;
 export type MaterialRefusalRule = (typeof MATERIAL_REFUSAL_RULES)[number];
+
+/**
+ * `TRANSFER_REFUSAL_RULES`, mirrored: why a stock transfer write was refused
+ * (CC-OD-32).
+ *
+ * Hand-transcribed from `apps/api/src/modules/inventory/domain/inventory.ts`
+ * for the same reason as the list above, and guarded the same way:
+ * `inventory-api.test.ts` walks it and fails when either catalogue has no
+ * sentence for a member.
+ */
+export const TRANSFER_REFUSAL_RULES = [
+  'transfer_not_receivable',
+  'transfer_receipt_exceeds_transit',
+  'transfer_nothing_in_transit',
+  'transfer_settlement_exceeds_transit',
+  'transfer_write_off_not_pending',
+  'transfer_separation_of_duties',
+  'transfer_not_cancellable',
+] as const;
+export type TransferRefusalRule = (typeof TRANSFER_REFUSAL_RULES)[number];
+
+/**
+ * `STOCK_REFUSAL_RULES`, mirrored: why an intake, goods-receipt, adjustment,
+ * count or stock write was refused (CC-OD-32).
+ *
+ * Only the refusals a person can MEET from a screen are here, which is why the
+ * list is shorter than the number of states the module defends. Several of
+ * these arrive against a control rather than the whole request — a location, an
+ * item, a quantity, a unit cost — and `violationKeysOf` files those under the
+ * control they name, so the sentence renders beside the box the operator has to
+ * change rather than in the banner.
+ */
+export const STOCK_REFUSAL_RULES = [
+  'stock_location_not_active',
+  'stock_location_other_branch',
+  'stock_location_quarantine',
+  'stock_location_transit',
+  'stock_item_not_tracked',
+  'stock_item_archived',
+  'stock_work_order_closed',
+  'stock_work_order_other_branch',
+  'stock_issue_exceeds_reservation',
+  'stock_return_exceeds_issue',
+  'stock_damage_other_branch',
+  'stock_damage_releases_reservations',
+  'stock_opening_batch_frozen',
+  'stock_opening_batch_empty',
+  'stock_receipt_not_draft',
+  'stock_receipt_cost_permission',
+  'stock_adjustment_already_decided',
+  'stock_adjustment_separation_of_duties',
+  'stock_count_closed',
+] as const;
+export type StockRefusalRule = (typeof STOCK_REFUSAL_RULES)[number];
+
+/**
+ * The figures an `ERR-INV-001` publishes, when it publishes them (CC-OD-32).
+ *
+ * All four or none. The API sends every quantity as null to a caller who may
+ * not read the requirement they describe — drawing stock and reading the demand
+ * that governs it are separate permissions — and sends no unit while the
+ * requirement has none, and a figure without its unit is not a smaller answer
+ * but a wrong one: "4" of a fluid means nothing until it says litres. So a
+ * partial set is treated as no set, and the screen falls back to the sentence
+ * that names the remedy without the numbers.
+ */
+export interface MaterialDrawFigures {
+  readonly allowance: string;
+  readonly alreadyCommitted: string;
+  readonly requested: string;
+  readonly unit: string;
+}
+
+/**
+ * Reads the figures off a refusal detail, or null when they are absent,
+ * incomplete or not strings.
+ *
+ * Takes `unknown` on purpose. The shared client's hand-transcribed
+ * `MaterialDrawDetails` does not yet carry `unit`, and that file belongs to
+ * another change in flight; validating the shape here rather than trusting a
+ * declared type is what the reader would have to do for a wire value anyway.
+ * Nothing but four exact decimal strings can leave this function, so no
+ * server-authored text can reach a screen through it.
+ */
+export function materialDrawFiguresOf(detail: unknown): MaterialDrawFigures | null {
+  if (detail === null || typeof detail !== 'object') return null;
+  const { allowance, alreadyCommitted, requested, unit } = detail as Record<string, unknown>;
+  if (
+    typeof allowance !== 'string' ||
+    typeof alreadyCommitted !== 'string' ||
+    typeof requested !== 'string' ||
+    typeof unit !== 'string' ||
+    unit.length === 0
+  ) {
+    return null;
+  }
+  return { allowance, alreadyCommitted, requested, unit };
+}
 
 /** A unit cost as `numeric(18,4)` accepts it: non-negative, up to four decimals. */
 export const UNIT_COST = /^\d{1,14}(\.\d{1,4})?$/;
