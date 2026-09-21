@@ -3,6 +3,7 @@
 import { z } from 'zod';
 import { authorizedClient } from '@/lib/api/server-client';
 import {
+  PLATFORM_DENIED_MESSAGE_KEY,
   VIOLATION_FALLBACK_KEY,
   failureMessageKey,
   overCapacityOf,
@@ -55,6 +56,21 @@ function keysOf(error: z.ZodError): Record<string, string> {
   return out;
 }
 
+/**
+ * `fromFailure`, with the console's own word for a refusal.
+ *
+ * The shared sentence for a 403 tells the reader to contact their company
+ * administrator. A platform operator has none — the authority over a console
+ * grant is the platform owner — so every write in this module names that
+ * authority instead. Nothing else changes: the key is an override, so the
+ * refusal still carries no permission code and no record identifier.
+ */
+function platformFailure(failure: ApiFailure, attempt: number): ActionState {
+  return failure.kind === 'forbidden'
+    ? fromFailure(failure, attempt, PLATFORM_DENIED_MESSAGE_KEY)
+    : fromFailure(failure, attempt);
+}
+
 async function send(
   method: 'POST' | 'PATCH',
   path: string,
@@ -63,11 +79,11 @@ async function send(
   options: { readonly ifMatch?: number } = {}
 ): Promise<ActionState> {
   const client = await authorizedClient();
-  if (!client) return { status: 'expired', messageKey: 'state.expired.title', attempt: 1 };
+  if (!client) return { status: 'expired', messageKey: 'state.expired.message', attempt: 1 };
   const result = await client.send(method, path, body, {
     ...(options.ifMatch !== undefined ? { ifMatch: options.ifMatch } : {}),
   });
-  if (!result.ok) return fromFailure(result, 1);
+  if (!result.ok) return platformFailure(result, 1);
   return success(doneKey, 1);
 }
 
@@ -177,7 +193,7 @@ function provisionFailure(failure: ApiFailure, attempt: number): ProvisionState 
       formKey = key;
     }
   }
-  const base = fromFailure(failure, attempt);
+  const base = platformFailure(failure, attempt);
   return {
     ...base,
     messageKey:
@@ -257,7 +273,7 @@ export async function provisionOrganizationAction(
   };
 
   const client = await authorizedClient();
-  if (!client) return { status: 'expired', messageKey: 'state.expired.title', attempt };
+  if (!client) return { status: 'expired', messageKey: 'state.expired.message', attempt };
   const result = await client.send<{ readonly tenantId: string }>(
     'POST',
     '/api/v1/platform/organizations',
@@ -336,7 +352,7 @@ export async function assignSubscriptionAction(
     return invalid({ overCapacityReason: 'overlay.reasonRequired' }, 1);
   }
   const client = await authorizedClient();
-  if (!client) return { status: 'expired', messageKey: 'state.expired.title', attempt: 1 };
+  if (!client) return { status: 'expired', messageKey: 'state.expired.message', attempt: 1 };
   const result = await client.send(
     'POST',
     `${organizationPath(tenantId)}/subscriptions`,
@@ -345,7 +361,7 @@ export async function assignSubscriptionAction(
   if (result.ok) return success('platform.subscription.done', 1);
   const overCapacity = overCapacityOf(result);
   return {
-    ...fromFailure(result, 1),
+    ...platformFailure(result, 1),
     ...(overCapacity.length > 0 ? { overCapacity } : {}),
   };
 }
@@ -726,7 +742,7 @@ export async function changeOwnPasswordAction(input: PasswordChangeInput): Promi
   if (!parsed.success) return invalid(keysOf(parsed.error), 1);
 
   const client = await authorizedClient();
-  if (!client) return { status: 'expired', messageKey: 'state.expired.title', attempt: 1 };
+  if (!client) return { status: 'expired', messageKey: 'state.expired.message', attempt: 1 };
 
   const result = await client.send<{ status: string; otherSessions: string }>(
     'POST',
@@ -754,7 +770,7 @@ export async function changeOwnPasswordAction(input: PasswordChangeInput): Promi
         attempt: 1,
       };
     }
-    return fromFailure(result, 1);
+    return platformFailure(result, 1);
   }
 
   return success(
