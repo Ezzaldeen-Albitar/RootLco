@@ -1,9 +1,10 @@
 'use client';
 
 import { useActionState, useId, useState, type ReactNode } from 'react';
+import { FailureExplanation } from '@/components/states/States';
 import { invalid, type ActionState } from '@/lib/forms/action-result';
 import type { Messages } from '@/i18n/get-messages';
-import { translate, translateDynamic } from '@/i18n/get-messages';
+import { translate, translateDynamic, translateWithValues } from '@/i18n/get-messages';
 import { composeInstant, instantFieldError, toLocalDateTimeValue } from './instant';
 
 /**
@@ -522,7 +523,21 @@ export function RecordForm({
 
         {state.status !== 'idle' && state.status !== 'success' && state.messageKey ? (
           <p role="alert" className="text-body text-error">
-            {translateDynamic(messages, state.messageKey)}
+            {/*
+              The values as well as the key. A refusal sentence may name a
+              number the server published — the wait a throttle advised, the
+              ceiling a subscription reached — and those sentences carry a
+              `{name}` placeholder. Translating the key alone printed the
+              placeholder as written.
+            */}
+            {translateWithValues(messages, state.messageKey, state.messageValues)}
+            {/*
+              And the next step, when the key is a heading with a sentence
+              behind it. A refused permission arrives as `state.denied.title` —
+              four words that name the verdict and nothing an operator can act
+              on. `FailureExplanation` is the one place that pairing is decided.
+            */}
+            <FailureExplanation messages={messages} messageKey={state.messageKey} />
             {state.correlationId ? (
               // The reference an operator can quote. Without it a support call
               // starts with "something went wrong at some point today".

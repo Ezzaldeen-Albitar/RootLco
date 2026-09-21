@@ -2,8 +2,9 @@
 
 import { useActionState, useCallback, useId, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { FailureExplanation } from '@/components/states/States';
 import type { Messages } from '@/i18n/get-messages';
-import { translate, translateDynamic } from '@/i18n/get-messages';
+import { translate, translateDynamic, translateWithValues } from '@/i18n/get-messages';
 import type { Locale } from '@/i18n/config';
 import type { ActionState } from '@/lib/forms/action-result';
 import { changeVehicleStatusAction, updateVehicleAction } from '../profile-api';
@@ -875,7 +876,8 @@ function Outcome({
       role={failed ? 'alert' : 'status'}
       className={`text-body ${failed ? 'text-error' : 'text-success'}`}
     >
-      {translateDynamic(messages, state.messageKey)}
+      {translateWithValues(messages, state.messageKey, state.messageValues)}
+      <FailureExplanation messages={messages} messageKey={state.messageKey} />
       {state.correlationId ? (
         <code className="ms-2 font-mono text-caption">{state.correlationId}</code>
       ) : null}

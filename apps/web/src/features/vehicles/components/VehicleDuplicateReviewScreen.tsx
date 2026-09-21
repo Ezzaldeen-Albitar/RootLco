@@ -8,8 +8,9 @@ import { useServerTable } from '@/components/data-table/use-server-table';
 import { MatchExplanation } from '@/components/duplicates/MatchExplanation';
 import type { ActionState } from '@/lib/forms/action-result';
 import { vehicleMatchReasons } from '@/lib/duplicates/explanations';
+import { FailureExplanation } from '@/components/states/States';
 import type { Messages } from '@/i18n/get-messages';
-import { translate, translateDynamic } from '@/i18n/get-messages';
+import { translate, translateDynamic, translateWithValues } from '@/i18n/get-messages';
 import type { Locale } from '@/i18n/config';
 import { formatDate, formatDateTime } from '@/lib/format';
 import { listVehicleDuplicates, reviewVehicleDuplicateAction } from '../duplicates-api';
@@ -444,7 +445,8 @@ function VehicleDuplicateDecisionPanel({
               state.status === 'success' ? 'text-success' : 'text-error'
             }`}
           >
-            {translateDynamic(messages, state.messageKey)}
+            {translateWithValues(messages, state.messageKey, state.messageValues)}
+            <FailureExplanation messages={messages} messageKey={state.messageKey} />
             {state.correlationId ? (
               <code className="ms-2 font-mono text-caption">{state.correlationId}</code>
             ) : null}

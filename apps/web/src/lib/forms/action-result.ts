@@ -81,9 +81,13 @@ export interface ActionState {
    * Values for the `{name}` placeholders in the catalogue text of `messageKey`.
    *
    * Only numbers the backend published about the refusal itself — the capacity
-   * ceiling and its usage — and never prose. Present only when the key is the
-   * failure's own key, so an override or a violation banner never receives
-   * values meant for a different sentence.
+   * ceiling and its usage, the wait a throttle advised — and never prose.
+   * Present only when the key is the failure's own key, so an override or a
+   * violation banner never receives values meant for a different sentence.
+   *
+   * A renderer that shows `messageKey` must pass this to `translateWithValues`.
+   * Dropping it does not fall back to a shorter sentence; it prints `{limit}` or
+   * `{seconds}` to the operator exactly as the catalogue spells it.
    */
   readonly messageValues?: Readonly<Record<string, string>>;
   /**

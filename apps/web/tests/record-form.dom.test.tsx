@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import en from '../src/i18n/messages/en.json';
 import ar from '../src/i18n/messages/ar.json';
-import { renderLtr } from './render';
+import { BOTH_DIRECTIONS, messagesFor, renderLtr } from './render';
 import { RecordForm } from '@/components/forms/RecordForm';
 import {
   composeInstant,
@@ -211,6 +211,115 @@ describe('RecordForm keeps what the operator typed when the write fails', () => 
     expect(screen.getByLabelText(en['crm.customers.notes.body'])).toHaveValue(
       'Half an entry the operator abandoned'
     );
+  });
+
+  it('fills the number a refusal sentence names, instead of printing the placeholder', async () => {
+    /*
+     * The banner renders `messageKey`, and two families of refusal sentence
+     * carry a `{name}` placeholder the server's own figures fill: the throttle
+     * wait, and the capacity ceiling. This component translated the key and
+     * dropped `messageValues`, so an operator who sent one request too many was
+     * told to "Wait {seconds} seconds" — the catalogue's source text, on screen,
+     * in front of a customer.
+     *
+     * Driven through `fromFailure` rather than from a hand-written state, so the
+     * key and the values are paired by the code that pairs them in production.
+     * Both assertions are needed: the first would pass against a form that
+     * rendered nothing at all, and the second is the one that fails when the
+     * values are dropped again.
+     */
+    const state = fromFailure(
+      {
+        ok: false,
+        kind: 'rate-limited',
+        status: 429,
+        problem: { retryAfterSeconds: 30 },
+        correlationId: 'corr-throttled',
+      },
+      1
+    );
+    const action = vi.fn(async (): Promise<ActionState> => state);
+    const user = userEvent.setup();
+    renderForm(action);
+
+    await user.type(
+      screen.getByLabelText(en['crm.customers.notes.body']),
+      'An entry worth keeping'
+    );
+    await user.click(screen.getByRole('button', { name: en['form.submit'] }));
+
+    await waitFor(() => expect(action).toHaveBeenCalled());
+    const banner = await screen.findByRole('alert');
+    expect(banner).toHaveTextContent(
+      'Too many requests were sent in a short time. Wait 30 seconds, then try again.'
+    );
+    expect(banner.textContent).not.toContain('{seconds}');
+  });
+
+  it.each(BOTH_DIRECTIONS)(
+    'adds the next step under a refused permission (%s)',
+    async (locale, renderIn) => {
+      /*
+       * `state.denied.title` is a LABEL — "You do not have access" — and for a
+       * 403 it is the whole of what this banner said. True, and the reader is no
+       * further forward: nothing on screen named who can undo it. The heading is
+       * left exactly as it was, because sealed records and the user manual quote
+       * it by that key; the sentence is a second element beneath it.
+       *
+       * Both languages, in the same case, because the sentence is only worth
+       * anything to the operator who reads the one they were given. The last
+       * assertion is the direction that actually fails when the pairing is
+       * dropped: the heading alone would still satisfy the first.
+       */
+      const catalogue = messagesFor(locale);
+      const action = vi.fn(async (): Promise<ActionState> => ({
+        status: 'denied',
+        messageKey: 'state.denied.title',
+        correlationId: 'corr-denied',
+        attempt: 1,
+      }));
+      const user = userEvent.setup();
+      renderIn(
+        <RecordForm
+          messages={catalogue}
+          fields={FIELDS}
+          action={action}
+          submitKey="form.submit"
+          titleKey="crm.customers.notes.add"
+        />
+      );
+
+      await user.click(screen.getByRole('button', { name: catalogue['form.submit'] }));
+
+      await waitFor(() => expect(action).toHaveBeenCalled());
+      const banner = await screen.findByRole('alert');
+      // The heading still reads exactly as it did, as its own node.
+      expect(screen.getByText(catalogue['state.denied.title'])).toBeInTheDocument();
+      expect(banner).toHaveTextContent(catalogue['state.denied.message']);
+      // And the Arabic really is Arabic: a catalogue that copied the English
+      // would satisfy every assertion above in both runs.
+      expect(en['state.denied.message']).not.toBe(ar['state.denied.message']);
+    }
+  );
+
+  it('leaves a key that is already a sentence with no second line', async () => {
+    // The control on the case above. A pairing that fired for every key would
+    // append the wrong sentence to `state.expired.message`, which explains
+    // itself, and both cases would still be green.
+    const action = vi.fn(async (): Promise<ActionState> => ({
+      status: 'expired',
+      messageKey: 'state.expired.message',
+      attempt: 1,
+    }));
+    const user = userEvent.setup();
+    renderForm(action);
+
+    await user.click(screen.getByRole('button', { name: en['form.submit'] }));
+
+    await waitFor(() => expect(action).toHaveBeenCalled());
+    const banner = await screen.findByRole('alert');
+    expect(banner).toHaveTextContent(en['state.expired.message']);
+    expect(banner.textContent?.trim()).toBe(en['state.expired.message']);
   });
 
   it('DOES clear on success, so the next entry starts empty', async () => {

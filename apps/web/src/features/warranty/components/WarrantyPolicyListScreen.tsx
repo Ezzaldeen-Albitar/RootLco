@@ -4,10 +4,10 @@ import Link from 'next/link';
 import { useEffect, useState } from 'react';
 
 import { SelectField, TextField } from '@/components/forms/Field';
-import { EmptyState, LoadingState } from '@/components/states/States';
+import { EmptyState, FailureExplanation, LoadingState } from '@/components/states/States';
 import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
-import { translate, translateDynamic } from '@/i18n/get-messages';
+import { translate, translateDynamic, translateWithValues } from '@/i18n/get-messages';
 
 import {
   createWarrantyPolicy,
@@ -470,7 +470,8 @@ function CreatePolicySection({
 
       {state && state.status !== 'success' ? (
         <p role="alert" className="mt-3 text-body text-error">
-          {translateDynamic(messages, refusalKeyFor(state))}
+          {translateWithValues(messages, refusalKeyFor(state), state.messageValues)}
+          <FailureExplanation messages={messages} messageKey={refusalKeyFor(state)} />
         </p>
       ) : null}
     </Section>

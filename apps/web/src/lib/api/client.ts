@@ -978,8 +978,13 @@ export function retryAfterSecondsOf(failure: ApiFailure): number | null {
  */
 export function refusalMessageKey(failure: ApiFailure): string {
   // The numbered throttle sentence is returned ONLY here, because only this path
-  // is paired with `failureMessageValues`. A caller that took the `{seconds}`
-  // key without the values would render the placeholder as written.
+  // is paired with `failureMessageValues`. That pairing is a property of this
+  // function, not of its readers, and the readers were where it failed: the
+  // capacity sentences reached here already carry `{limit}` and `{used}`, and
+  // every banner in the product translated the key while dropping the values, so
+  // the placeholder rendered as written. The renderers now interpolate —
+  // `RecordForm.tsx`, the vehicle, reception, warranty and delivery banners —
+  // and `apps/web/tests/record-form.dom.test.tsx` holds one of them to it.
   if (failure.kind === 'rate-limited') {
     return retryAfterSecondsOf(failure) === null
       ? 'state.throttled.message'

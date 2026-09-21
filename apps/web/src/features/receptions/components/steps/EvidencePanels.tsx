@@ -5,6 +5,7 @@ import { INITIAL_REQUEST, type TableRequest } from '@/components/data-table/tabl
 import { useServerTable } from '@/components/data-table/use-server-table';
 import {
   ErrorState,
+  FailureExplanation,
   LoadingState,
   PermissionDeniedState,
   SessionExpiredState,
@@ -12,7 +13,7 @@ import {
 } from '@/components/states/States';
 import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
-import { translate, translateDynamic } from '@/i18n/get-messages';
+import { translate, translateDynamic, translateWithValues } from '@/i18n/get-messages';
 import { formatDateTime } from '@/lib/format';
 import type { ActionState } from '@/lib/forms/action-result';
 import { listConditionEvidence } from '../../api';
@@ -485,8 +486,9 @@ export function StepOutcome({
       {state.status === 'conflict'
         ? translate(messages, 'receptions.evidence.conflict')
         : state.messageKey
-          ? translateDynamic(messages, state.messageKey)
+          ? translateWithValues(messages, state.messageKey, state.messageValues)
           : translate(messages, 'action.failed')}
+      <FailureExplanation messages={messages} messageKey={state.messageKey ?? ''} />
       {state.correlationId ? (
         <code className="ms-2 font-mono text-caption">{state.correlationId}</code>
       ) : null}

@@ -340,6 +340,34 @@ describe('a rejected submit does not discard the operator work', () => {
     await submit();
     expect(await screen.findByText(en['field.tooLong'])).toBeInTheDocument();
   });
+
+  it.each(['en', 'ar'] as const)(
+    'tells a refused operator who can give them access (%s)',
+    async (locale) => {
+      /*
+       * A real screen, not the shared form in isolation, because the banner an
+       * operator meets is the one this screen renders.
+       *
+       * A 403 reaches it as `state.denied.title` — "You do not have access",
+       * which is the verdict and nothing else. The heading is unchanged; what
+       * this asserts is the line beneath it, which names the person who can undo
+       * the refusal. Both languages, because a next step is only a next step in
+       * the language the operator was given.
+       */
+      const messages = locale === 'en' ? en : ar;
+      createVehicleAction.mockResolvedValue({
+        status: 'denied',
+        attempt: 1,
+        messageKey: 'state.denied.title',
+        correlationId: 'corr-denied',
+      });
+      const { container } = render(locale);
+      await submit(locale);
+
+      expect(await screen.findByText(messages['state.denied.title'])).toBeInTheDocument();
+      expect(container.textContent ?? '').toContain(messages['state.denied.message']);
+    }
+  );
 });
 
 describe('the catalogue is dependent, because the database requires it', () => {

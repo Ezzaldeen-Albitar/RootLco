@@ -9,6 +9,7 @@ import {
   isLocale,
   localeFromPathname,
 } from '../src/i18n/config';
+import { explanationFor } from '../src/i18n/get-messages';
 
 /**
  * Translation completeness, as a gate rather than a review habit.
@@ -113,5 +114,40 @@ describe('message catalogues', () => {
     for (const key of EN_KEYS) {
       expect(key, `${key} has no namespace`).toMatch(/^[a-z][a-zA-Z]*\./);
     }
+  });
+});
+
+/**
+ * The heading-to-sentence pairing, which is derived rather than listed.
+ *
+ * A banner that renders a failure key alone shows a LABEL when the key is a
+ * heading: "You do not have access" is the verdict and no more. `explanationFor`
+ * is the one place the second line is decided, so this is where the decision is
+ * held — including the direction that matters, which is that it stays silent
+ * rather than inventing a line.
+ */
+describe('the sentence that belongs under a failure heading', () => {
+  it('pairs a heading with the sentence of the same name, in both catalogues', () => {
+    for (const catalogue of [en, ar as typeof en] as const) {
+      expect(explanationFor(catalogue, 'state.denied.title')).toBe(
+        (catalogue as Record<string, string>)['state.denied.message']
+      );
+      expect(explanationFor(catalogue, 'state.notFound.title')).toBe(
+        (catalogue as Record<string, string>)['state.notFound.message']
+      );
+    }
+    // Not the same words in both, so neither run above passed on the English.
+    expect(explanationFor(en, 'state.denied.title')).not.toBe(
+      explanationFor(ar as typeof en, 'state.denied.title')
+    );
+  });
+
+  it('says nothing for a key that is already a sentence, or has no pair', () => {
+    // `state.conflict.title` is a heading whose sentence nobody has written; a
+    // pairing that guessed one would render the KEY under the heading.
+    expect(explanationFor(en, 'state.expired.message')).toBeNull();
+    expect(explanationFor(en, 'form.formError')).toBeNull();
+    expect(explanationFor(en, 'state.conflict.title')).toBeNull();
+    expect(explanationFor(en, 'state.empty.title')).toBeNull();
   });
 });

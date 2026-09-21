@@ -20,13 +20,14 @@ import { notifyActionResult } from '@/components/notifications/action-notificati
 import { CustomerSelector, type SelectedCustomer } from '@/components/party/CustomerSelector';
 import {
   ErrorState,
+  FailureExplanation,
   LoadingState,
   PermissionDeniedState,
   SessionExpiredState,
 } from '@/components/states/States';
 import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
-import { translate, translateDynamic } from '@/i18n/get-messages';
+import { translate, translateDynamic, translateWithValues } from '@/i18n/get-messages';
 import { formatDateTime } from '@/lib/format';
 import type { ActionState } from '@/lib/forms/action-result';
 import { listCustomerVehicles } from '@/lib/customers/vehicles';
@@ -945,7 +946,8 @@ export function CheckInStartScreen({
         </div>
       ) : state.status !== 'idle' && state.status !== 'success' && state.messageKey ? (
         <p role="alert" className="text-body text-error">
-          {translateDynamic(messages, state.messageKey)}
+          {translateWithValues(messages, state.messageKey, state.messageValues)}
+          <FailureExplanation messages={messages} messageKey={state.messageKey} />
           {state.correlationId ? (
             <code className="ms-2 font-mono text-caption">{state.correlationId}</code>
           ) : null}

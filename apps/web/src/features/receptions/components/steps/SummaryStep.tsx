@@ -9,13 +9,14 @@ import { notifyActionResult } from '@/components/notifications/action-notificati
 import { PartyLabel } from '@/components/party/PartyLabel';
 import {
   ErrorState,
+  FailureExplanation,
   LoadingState,
   PermissionDeniedState,
   SessionExpiredState,
 } from '@/components/states/States';
 import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
-import { translate, translateDynamic } from '@/i18n/get-messages';
+import { translate, translateDynamic, translateWithValues } from '@/i18n/get-messages';
 import { formatDateTime } from '@/lib/format';
 import type { ActionState } from '@/lib/forms/action-result';
 import {
@@ -792,8 +793,9 @@ export function CommandOutcome({
   return (
     <p role="alert" className="text-body text-error" lang={locale}>
       {state.messageKey
-        ? translateDynamic(messages, state.messageKey)
+        ? translateWithValues(messages, state.messageKey, state.messageValues)
         : translate(messages, 'action.failed')}
+      <FailureExplanation messages={messages} messageKey={state.messageKey ?? ''} />
       {state.correlationId ? (
         <code className="ms-2 font-mono text-caption">{state.correlationId}</code>
       ) : null}
