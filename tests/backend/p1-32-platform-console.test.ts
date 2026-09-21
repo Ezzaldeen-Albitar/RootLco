@@ -850,6 +850,18 @@ describe('platform.subscription-assign / subscription-cancel', () => {
       body: { planCode: PLAN_LARGE, effectiveFrom: day(-5), kind: 'renewed', reason: 'wrong' },
     });
     expect(otherRenewal.status).toBe(409);
+
+    // Owner directive, user-facing errors. Both refusals are real operator
+    // mistakes with opposite cures — record a renewal, or record a change —
+    // and the console never renders server prose, so the token is what selects
+    // the sentence that says which. Filed under the plan control, because that
+    // is the field the operator changes to put it right.
+    expect(
+      (sameUpgrade.body as { violations?: readonly { path: string; rule: string }[] }).violations
+    ).toEqual([{ path: 'body.planCode', rule: 'platform_change_needs_different_plan' }]);
+    expect(
+      (otherRenewal.body as { violations?: readonly { path: string; rule: string }[] }).violations
+    ).toEqual([{ path: 'body.planCode', rule: 'platform_renewal_needs_same_plan' }]);
   });
 
   it('upgrades by closing the live period the day before, and the detail reflects the new limit', async () => {

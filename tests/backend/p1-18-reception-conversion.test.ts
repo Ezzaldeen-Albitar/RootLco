@@ -819,7 +819,20 @@ describe('refusals', () => {
       });
       const response = await convert(reception.visitId, { version: reception.recordVersion });
       expect(response.status).toBe(409);
-      expect(((await response.json()) as ConvertBody).code).toBe('ERR-TRN-001');
+      const body = (await response.json()) as ConvertBody;
+      expect(body.code).toBe('ERR-TRN-001');
+      // Owner directive, user-facing errors. The interface renders no server
+      // prose, so this token is the ONLY thing that can make the refusal say
+      // "this visit has not been approved yet" instead of the generic state
+      // sentence. Pinned on the wire, because a token that stops being
+      // published fails nothing else: the request still answers 409 and every
+      // other assertion here still holds.
+      expect(body.violations).toEqual([
+        { path: 'path.receptionId', rule: 'reception_not_authorised' },
+      ]);
+      // It names the precondition and nothing about the visit's own state, so
+      // it discloses no more than the caller is already reading.
+      expect(JSON.stringify(body.violations)).not.toContain(status);
       expect(await workOrderCount(reception.visitId)).toBe(0);
       expect((await receptionStatus(reception.visitId)).status).toBe(status);
     }
@@ -838,7 +851,14 @@ describe('refusals', () => {
     // report as already done, so the lifecycle rule is what answers.
     const response = await convert(reception.visitId, { version: reception.recordVersion });
     expect(response.status).toBe(409);
-    expect(((await response.json()) as ConvertBody).code).toBe('ERR-TRN-001');
+    const body = (await response.json()) as ConvertBody;
+    expect(body.code).toBe('ERR-TRN-001');
+    // The second half of the pair: a visit that has already been converted has
+    // no cure, and the token is what lets the screen say so rather than invite
+    // a retry that would be refused identically.
+    expect(body.violations).toEqual([
+      { path: 'path.receptionId', rule: 'reception_already_converted' },
+    ]);
     expect(await workOrderCount(reception.visitId)).toBe(0);
   });
 

@@ -402,6 +402,32 @@ describe('no-show is recorded, not assumed (FE-005)', () => {
     // causes read differently and send the operator to different next steps.
     expect(await screen.findByText(en['state.conflict.blocked.title'])).toBeInTheDocument();
   });
+  /**
+   * Owner directive, user-facing errors. 'The state does not allow this' was
+   * the whole of what a clerk was told, for four lifecycle refusals whose cures
+   * are different. The service now publishes a rule name beside each one and
+   * the banner renders the sentence it selects, so the clerk is told that the
+   * appointment is not confirmed and that confirming it is the next step.
+   */
+  it('names the unmet precondition instead of the generic state sentence', async () => {
+    recordAppointmentNoShow.mockResolvedValue({
+      status: 'conflict',
+      messageKey: 'form.violation.appointment_not_confirmed_for_no_show',
+      correlationId: 'cid-token',
+      attempt: 1,
+    });
+    const user = userEvent.setup();
+    renderScreen({ status: 'confirmed' });
+    await user.click(screen.getByRole('button', { name: en['appointments.noShow.openDialog'] }));
+    await user.click(screen.getByRole('button', { name: en['appointments.noShow.confirm'] }));
+
+    expect(
+      await screen.findByText(en['form.violation.appointment_not_confirmed_for_no_show'])
+    ).toBeInTheDocument();
+    // Not in addition to the generic sentence: one banner, and it says the
+    // specific thing.
+    expect(screen.queryByText(en['state.conflict.blocked.title'])).toBeNull();
+  });
 });
 
 describe('facts and directions', () => {

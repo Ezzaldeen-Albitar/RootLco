@@ -1303,7 +1303,16 @@ describe('apt.appointment-reschedule', () => {
       2
     );
     expect(response.status).toBe(409);
-    expect(((await response.json()) as Body).code).toBe('ERR-TRN-001');
+    const refused = (await response.json()) as Body;
+    expect(refused.code).toBe('ERR-TRN-001');
+    // Owner directive, user-facing errors. One catalogue code covers four
+    // lifecycle refusals with four different cures, and no server prose ever
+    // reaches a screen — so this token is the only thing that can turn the
+    // refusal into a sentence a clerk can act on. Pinned on the wire, because
+    // a token that stopped being published would fail nothing else here.
+    expect(refused.violations).toEqual([
+      { path: 'path.appointmentId', rule: 'appointment_not_reschedulable' },
+    ]);
     expect((await readAppointment(appointment)).confirmed_from).toBeNull();
   });
 
@@ -1387,7 +1396,11 @@ describe('apt.appointment-cancel', () => {
 
     const again = await cancel(appointment, { cancellationReasonId: REASON_A }, 2);
     expect(again.status).toBe(409);
-    expect(((await again.json()) as Body).code).toBe('ERR-TRN-001');
+    const refusedAgain = (await again.json()) as Body;
+    expect(refusedAgain.code).toBe('ERR-TRN-001');
+    expect(refusedAgain.violations).toEqual([
+      { path: 'path.appointmentId', rule: 'appointment_not_cancellable' },
+    ]);
 
     const row = await readAppointment(appointment);
     expect(row.cancelled_at?.toISOString()).toBe(first.cancelled_at?.toISOString());
@@ -1506,7 +1519,14 @@ describe('apt.appointment-no-show', () => {
     // You cannot fail to show up for an appointment nobody confirmed.
     const fromRequested = await noShow(requested, 1);
     expect(fromRequested.status).toBe(409);
-    expect(((await fromRequested.json()) as Body).code).toBe('ERR-TRN-001');
+    const refusedRequested = (await fromRequested.json()) as Body;
+    expect(refusedRequested.code).toBe('ERR-TRN-001');
+    // The same token from both states, because the cure is the same one:
+    // confirm the time, or cancel instead. A token per state would multiply
+    // the catalogue without telling the clerk anything more.
+    expect(refusedRequested.violations).toEqual([
+      { path: 'path.appointmentId', rule: 'appointment_not_confirmed_for_no_show' },
+    ]);
     const stillRequested = await readAppointment(requested);
     expect(stillRequested.lifecycle_status).toBe('requested');
     expect(stillRequested.no_show_recorded_at).toBeNull();
@@ -1516,7 +1536,11 @@ describe('apt.appointment-no-show', () => {
     await cancel(cancelled, { cancellationReasonId: REASON_A }, 1);
     const fromCancelled = await noShow(cancelled, 2);
     expect(fromCancelled.status).toBe(409);
-    expect(((await fromCancelled.json()) as Body).code).toBe('ERR-TRN-001');
+    const refusedCancelled = (await fromCancelled.json()) as Body;
+    expect(refusedCancelled.code).toBe('ERR-TRN-001');
+    expect(refusedCancelled.violations).toEqual([
+      { path: 'path.appointmentId', rule: 'appointment_not_confirmed_for_no_show' },
+    ]);
     const stillCancelled = await readAppointment(cancelled);
     expect(stillCancelled.lifecycle_status).toBe('cancelled');
     expect(stillCancelled.no_show_recorded_at).toBeNull();

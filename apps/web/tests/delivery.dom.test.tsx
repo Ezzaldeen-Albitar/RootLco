@@ -1227,6 +1227,49 @@ describe('confirming who may receive the vehicle', () => {
     await within(region).findByText(EN['delivery.receiver.evidenceOnFile'] as string);
     expect(within(region).queryByText(EN['delivery.receiver.verifyHeading'] as string)).toBeNull();
   });
+  /**
+   * Owner directive, user-facing errors. A person who holds no role on the
+   * visit was refused with nothing an operator could read: the sentence said
+   * the record could not take that change, which is true of a dozen unrelated
+   * refusals. The service now names the rule beside the field the operator
+   * filled in, so the sentence lands on the receiver control and says what to
+   * do — record the role, or choose somebody already on the visit.
+   */
+  it('says beside the receiver field why that person may not collect the vehicle', async () => {
+    verifyReceiver.mockResolvedValue({
+      status: 'conflict',
+      messageKey: 'form.violation.delivery_receiver_not_entitled',
+      fieldErrors: { receiverPartnerId: 'form.violation.delivery_receiver_not_entitled' },
+      correlationId: 'corr-receiver-role',
+      attempt: 1,
+    });
+    const user = userEvent.setup();
+    renderScreen({ canManage: true });
+    const region = await screen.findByRole('region', {
+      name: EN['delivery.receiver.heading'] as string,
+    });
+    await user.type(
+      await within(region).findByLabelText(labelled('crm.customers.column.name')),
+      'Layla'
+    );
+    await user.click(
+      within(region).getByRole('button', { name: EN['customerSelector.search'] as string })
+    );
+    await user.click(await within(region).findByRole('button', { name: /Layla Haddad/ }));
+    await user.click(
+      within(region).getByRole('button', { name: EN['delivery.receiver.verifySubmit'] as string })
+    );
+
+    // Twice on purpose: beside the control, and in the refusal block that
+    // carries the reference. Both are the sentence, neither is the rule name.
+    const said = await within(region).findAllByText(
+      EN['form.violation.delivery_receiver_not_entitled'] as string
+    );
+    expect(said.length).toBeGreaterThanOrEqual(1);
+    for (const node of said) expect(node).toBeVisible();
+    // The rule name itself never reaches the screen; only its sentence does.
+    expect(region.textContent).not.toContain('delivery_receiver_not_entitled');
+  });
 });
 
 /**

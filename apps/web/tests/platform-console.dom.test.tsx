@@ -553,6 +553,56 @@ describe('the subscription dialog', () => {
     await waitFor(() => expect(refresh).toHaveBeenCalled());
   });
 
+  /**
+   * Owner directive, user-facing errors. A subscription change that names the
+   * plan already in force is a real mistake with a real cure, and the console
+   * reported it as the generic 'this record cannot take that change'. The
+   * service now names the rule and the dialog renders the sentence it selects,
+   * which says what to do instead — record a renewal.
+   */
+  it('states why a plan change was refused, in words the operator can act on', async () => {
+    assignSubscriptionAction.mockResolvedValue({
+      status: 'conflict',
+      messageKey: 'form.violation.platform_change_needs_different_plan',
+      correlationId: 'corr-same-plan',
+      attempt: 1,
+    });
+    renderLtr(
+      <OrganizationDetailScreen
+        locale="en"
+        messages={messages}
+        organization={detail}
+        plans={[plan]}
+        charges={null}
+        capabilities={{ ...NONE, canManageSubscription: true }}
+        today="2026-09-16"
+      />
+    );
+    await userEvent.click(
+      screen.getByRole('button', { name: L('platform.subscription.act.upgraded') })
+    );
+    const dialog = await screen.findByRole('dialog');
+    await userEvent.selectOptions(
+      within(dialog).getByLabelText(new RegExp(`^${L('platform.subscription.plan')}`)),
+      'test_plan'
+    );
+    fireEvent.change(
+      within(dialog).getByLabelText(new RegExp(`^${L('platform.subscription.starts')}`)),
+      { target: { value: '2026-10-01' } }
+    );
+    await userEvent.type(
+      within(dialog).getByLabelText(new RegExp(`^${L('platform.reason')}`)),
+      'Wrong plan chosen'
+    );
+    await userEvent.click(within(dialog).getByRole('button', { name: L('platform.save') }));
+
+    await waitFor(() => expect(assignSubscriptionAction).toHaveBeenCalledTimes(1));
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent(
+      L('form.violation.platform_change_needs_different_plan') as string
+    );
+    expect(refresh).not.toHaveBeenCalled();
+  });
+
   it('accepts a free number of months', async () => {
     assignSubscriptionAction.mockResolvedValue({
       status: 'success',
