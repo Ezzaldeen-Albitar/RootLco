@@ -322,12 +322,12 @@ otp_expiry = 3600
 # The key names are the ones this pinned CLI defines for the block (enabled,
 # host, port, user, pass, admin_email, sender_name).
 [auth.email.smtp]
-# The switch, and the only line activation changes.
+# The switch. Activation changes this line; choosing 587 changes the port too.
 enabled = false
 # Relay hostname.
 host = "env(SMTP_HOST)"
-# Relay port, a literal for the reason given above. 465 is implicit TLS, which
-# is what `scripts/dev/check-smtp.mjs` speaks.
+# Relay port, a literal for the reason given above. 465 is implicit TLS.
+# `check-smtp.mjs` also speaks 587 STARTTLS; whether THIS image does is unknown.
 port = 465
 # The account authenticating to the relay.
 user = "env(SMTP_USER)"
