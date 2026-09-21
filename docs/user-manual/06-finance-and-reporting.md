@@ -325,10 +325,9 @@ invoices, credit notes, receipts and allocations exists.
 
 ## 6.2a The Credit notes screen — IMPLEMENTED (UI), and out of reach of a new organisation
 
-**Label** — **Credit notes** <!-- creditNotes.page.title --> (navigation: **Credit notes**
-<!-- nav.creditNotes --> ), described as "What has been credited back to a customer, and what is
-
-still waiting for a second person to approve it." <!-- creditNotes.page.description -->
+**Label** — **Credit notes** <!-- creditNotes.page.title --> (navigation: **Credit
+notes** <!-- nav.creditNotes --> ), described as "What has been credited back to a customer, and
+what is still waiting for a second person to approve it." <!-- creditNotes.page.description -->
 
 **Who** — `sal.credit.manage` **and** `sal.finance.view`, together, for both the list and one note.
 Neither read answers without both.
@@ -368,8 +367,8 @@ treat a counter-sale return as: the part comes back and the stock moves, the mon
    <!-- creditNotes.detail.* --> . **Close** <!-- creditNotes.detail.close --> returns to the list.
 
 **What the screen explains about itself.** "A credit note is raised when something already billed is
-given back or corrected. A second person approves it, and nothing is credited until they do."
-<!-- creditNotes.explain -->
+given back or corrected. A second person approves it, and nothing is credited until they
+do." <!-- creditNotes.explain -->
 
 **Restrictions — and the most important one is on the screen itself**
 

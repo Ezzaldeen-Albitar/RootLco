@@ -127,13 +127,12 @@ allows (2.9).
 | Employee           | You, on the **Employees** screen (2.7)                      | A full screen: add, deactivate, reactivate — one branch at a time.                                                 |
 | Login user         | You, on the **Users** screen                                | Full screen: invite, activate, lock, unlock, archive, sign out everywhere, and roles and access. See Part 3.       |
 
-A standing notice remains on the **Organization** screen: **"Limited in this release"**
-<!-- admin.contractGap.title --> — _"The service publishes no company or branch directory, so
-
-references are shown rather than names."_ <!-- admin.contractGap.noDirectory --> It now applies to
-the **settings** blocks lower down that page, and to the other settings-backed screens, where a
-company or a branch is still identified by reference. The **Companies and branches** block above
-those settings names both by name.
+A standing notice remains on the **Organization** screen: **"Limited in this
+release"** <!-- admin.contractGap.title --> — _"The service publishes no company or branch
+directory, so references are shown rather than names."_ <!-- admin.contractGap.noDirectory --> It
+now applies to the **settings** blocks lower down that page, and to the other settings-backed
+screens, where a company or a branch is still identified by reference. The **Companies and
+branches** block above those settings names both by name.
 
 ---
 
@@ -335,16 +334,17 @@ and receipt numbering is set up with it, so it can start trading without a furth
 
 ### 2.5.3 Activating or deactivating a branch — IMPLEMENTED (UI)
 
-**Label** **Branch status** <!-- organization.branchStatus --> , **Active** <!-- organization.branchStatus.active -->
-, **Inactive** <!-- organization.branchStatus.inactive --> , **Change branch status**
-<!-- organization.branchStatus.change --> .
+**Label** **Branch status** <!-- organization.branchStatus --> ,
+**Active** <!-- organization.branchStatus.active --> ,
+**Inactive** <!-- organization.branchStatus.inactive --> , **Change branch
+status** <!-- organization.branchStatus.change --> .
 
 **Who** Someone holding the settings-management permission.
 **Where** Beside each branch in the **Companies and branches** block on the **Organization** screen.
 
-**Steps** Choose **Activate** or **Deactivate** and confirm — **"Activate this branch?"**
-<!-- organization.branch.confirmActivate --> or **"Deactivate this branch?"**
-<!-- organization.branch.confirmDeactivate --> .
+**Steps** Choose **Activate** or **Deactivate** and confirm — **"Activate this
+branch?"** <!-- organization.branch.confirmActivate --> or **"Deactivate this
+branch?"** <!-- organization.branch.confirmDeactivate --> .
 
 **Result** The branch moves state through the transition engine, and the change is written to an
 append-only branch status history with the actor and the time taken from the session, not from the
@@ -362,8 +362,8 @@ screen and try again.
 
 ## 2.6 Departments — IMPLEMENTED (UI)
 
-**Label** **Departments** <!-- nav.departments --> — _"The departments inside each branch."_
-<!-- departments.description -->
+**Label** **Departments** <!-- nav.departments --> — _"The departments inside each
+branch."_ <!-- departments.description -->
 
 **Who** Someone holding the department-read permission to open the screen, and the
 department-management permission to change anything. Both are part of the set the first
@@ -426,14 +426,15 @@ it.
      your personnel system, if you use one."_ <!-- employees.employmentRefHint -->
 
 **Result** **"The employee was added."** <!-- employees.created --> The person can now be named as
-the employee who handed a vehicle over. Each row shows **Has a login** <!-- employees.hasLogin --> or
-**No login** <!-- employees.noLogin --> . Long registers are paged with **Show more**
-<!-- employees.showMore --> .
+the employee who handed a vehicle over. Each row shows **Has a login** <!-- employees.hasLogin -->
+or **No login** <!-- employees.noLogin --> . Long registers are paged with **Show
+more** <!-- employees.showMore --> .
 
 **Deactivating and reactivating.** **Deactivate** <!-- employees.deactivate --> is confirmed with a
 sentence that states exactly what it costs: _"They can no longer be named on a new vehicle handover.
-Handovers already recorded do not change."_ <!-- employees.confirmDeactivateBody --> **Reactivate**
-<!-- employees.reactivate --> reverses it: _"They can be named on new vehicle handovers again."_
+Handovers already recorded do not change."_ <!-- employees.confirmDeactivateBody -->
+**Reactivate** <!-- employees.reactivate --> reverses it: _"They can be named on new vehicle
+handovers again."_
 
 **Restrictions**
 
@@ -494,10 +495,9 @@ refused and nothing is created.
 
 **Where to see them.** Sidebar → **Administration** → **Organization**, in the block **"Subscription
 and capacity"** <!-- organization.capacity.title --> — _"What your subscription allows, and how much
-of it is in use."_ <!-- organization.capacity.description --> The block shows the **Subscription**
-<!-- organization.capacity.plan --> , when it **Started** and when it **Ends** (or **"No end date"**),
-
-and one row per limit:
+of it is in use."_ <!-- organization.capacity.description --> The block shows the
+**Subscription** <!-- organization.capacity.plan --> , when it **Started** and when it **Ends** (or
+**"No end date"**), and one row per limit:
 
 | Row               | What it reads                                                                          |
 | ----------------- | -------------------------------------------------------------------------------------- |
@@ -506,12 +506,11 @@ and one row per limit:
 | **User accounts** | The same.                                                                              |
 
 A limit the plan leaves blank reads **Unlimited** <!-- organization.capacity.unlimited --> . A row
-approaching its ceiling reads **"Nearly full."** <!-- organization.capacity.nearlyFull --> ; one that
-has reached it reads **"The limit is reached. Ask the platform owner to raise it."**
-<!-- organization.capacity.full --> Where your organisation has no subscription at all, the block
-
-reads **"No active subscription was found for this organisation."**
-<!-- organization.capacity.noPlan -->
+approaching its ceiling reads **"Nearly full."** <!-- organization.capacity.nearlyFull --> ; one
+that has reached it reads **"The limit is reached. Ask the platform owner to raise
+it."** <!-- organization.capacity.full --> Where your organisation has no subscription at all, the
+block reads **"No active subscription was found for this
+organisation."** <!-- organization.capacity.noPlan -->
 
 **What a refusal looks like.** Each of the three has its own sentence, and each names both figures
 and what to do next:

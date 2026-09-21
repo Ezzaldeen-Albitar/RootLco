@@ -400,11 +400,11 @@ For anybody whose work belongs to one site, invite them with **no role**, then u
 where each one applies."_ <!-- users.access.description -->
 
 **Who:** an account holding `iam.grant.manage`. You also need to be able to see the list of roles:
-the screen says so — _"You can grant roles only if you can also see the list of roles."_
-<!-- users.access.needsRoleRead --> Company, branch and department names appear only if you may read
-
-each of those; what you may not read shows as **"Not visible to you"** <!-- users.access.unnamed -->
-and a role you may not read as **"A role you cannot see"** <!-- users.access.unnamedRole --> .
+the screen says so — _"You can grant roles only if you can also see the list of
+roles."_ <!-- users.access.needsRoleRead --> Company, branch and department names appear only if you
+may read each of those; what you may not read shows as **"Not visible to
+you"** <!-- users.access.unnamed --> and a role you may not read as **"A role you cannot
+see"** <!-- users.access.unnamedRole --> .
 
 **Where:** Sidebar → **Administration** → **Users** → choose the person → **Roles and access**, at
 `/{language}/administration/users/{account}`.
@@ -438,8 +438,8 @@ where it applies — **"This role applies in one place only:"** <!-- users.acces
 each company, branch or department. The person's resolved access changes on their next request, and
 they can confirm it themselves on **Your profile** under **Where you can work** —
 **Companies** <!-- profile.scope.companies --> , **Branches** <!-- profile.scope.branches --> — or,
-when there is no limit, **Every company and branch in this workspace.**
-<!-- profile.scope.unrestricted -->
+when there is no limit, **Every company and branch in this
+workspace.** <!-- profile.scope.unrestricted -->
 
 **Adding or removing a place afterwards.** **Add a place** <!-- users.access.addScope --> adds one
 to an existing grant — **"The place was added."** **Remove** <!-- users.access.removeScope --> takes
@@ -480,8 +480,8 @@ reference is wrong _or_ your own scope does not cover it, and check both.
 
 The **Roles and access** screen described in 3.8.2 is the scope editor. **Add a place** and
 **Remove** are on each grant. Where the places cannot be read at all, the screen says so rather than
-showing an empty list: **"The places this role applies in could not be shown."**
-<!-- users.access.scopesUnavailable -->
+showing an empty list: **"The places this role applies in could not be
+shown."** <!-- users.access.scopesUnavailable -->
 
 ---
 
@@ -491,17 +491,16 @@ showing an empty list: **"The places this role applies in could not be shown."**
 
 **Who:** an account holding `iam.grant.manage`.
 
-**Steps:** choose **Take the role away** beside the grant and confirm — **"Take this role away?"**
-<!-- users.access.confirmRevoke -->
+**Steps:** choose **Take the role away** beside the grant and confirm — **"Take this role
+away?"** <!-- users.access.confirmRevoke -->
 
 **Result:** **"The role was taken away."** <!-- users.access.revoked --> It stops applying
 immediately.
 
 **Restrictions.** Two, and the screen states both: **"You cannot take a role away from yourself, and
-the last person who can manage people and roles must keep theirs."**
-<!-- users.access.revokeLimits --> The second is the last-holder protection — a workspace that nobody
-
-can administer is not a state this application will let you create.
+the last person who can manage people and roles must keep
+theirs."** <!-- users.access.revokeLimits --> The second is the last-holder protection — a workspace
+that nobody can administer is not a state this application will let you create.
 
 If what you actually need is to stop someone signing in **now**, do not start with a role — lock the
 account (3.10) and end their sessions (3.12). Both are on the screen and both take effect
