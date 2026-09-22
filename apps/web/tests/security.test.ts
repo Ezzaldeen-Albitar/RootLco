@@ -778,6 +778,7 @@ describe('a resource scope reaches the wire through exactly two named doors', ()
       'features/appointments/api.ts',
       'features/overview/api.ts',
       'features/receptions/api.ts',
+      'features/warranty/warranty-api.ts',
       'features/work-orders/api.ts',
       // The definition itself, so this fails if the helper moves.
       'lib/api/read-operation.ts',

@@ -4,10 +4,10 @@ import { authorizedClient } from '@/lib/api/server-client';
 import type { ApiFailure } from '@/lib/api/client';
 import {
   STATUS_BY_KIND,
-  branchTargetQuery,
+  branchScopeQuery,
   query,
   readOperation,
-  type BranchTarget,
+  type BranchScope,
   type ItemsOnly,
   type ReadFailureStatus,
   type ReadState,
@@ -17,6 +17,7 @@ import type { BranchOption } from '@/features/services/services-contract';
 import { PAGE_SIZE } from './warranty-contract';
 import type {
   WarrantyConfigurationStatus,
+  WarrantyListCriteria,
   WarrantyCoverageCreateBody,
   WarrantyCoverageTerms,
   WarrantyGenerateBody,
@@ -41,13 +42,17 @@ import type {
  * refusal reaches a screen as a refusal and never as an empty list — which an
  * operator reads as "there is nothing here" when the truth is "you may not see it".
  *
- * ## The list's branch pair is a TARGET, not a scope assertion
+ * ## The list's scope is a TARGET, not a scope assertion
  *
- * `wty.warranty-list` makes `companyId` and `branchId` required and authorizes
- * exactly that pair before any row is read. They travel through
- * `branchTargetQuery`, which is the only door `lib/api` opens for a resource pair;
- * `query()` refuses both names outright, because "I am in branch Y" is a claim about
- * the caller that the server resolves from the session and never accepts from here.
+ * `wty.warranty-list` makes `companyId` required and, since the Owner directive
+ * `P1-32-PRE-OD-UX`, leaves `branchId` OPTIONAL: a named branch is authorized
+ * before any row is read, exactly as before, and an omitted one asks for every
+ * branch of that company the caller may read, which the API resolves one branch
+ * at a time against this operation's own code. The scope travels through
+ * `branchScopeQuery`, one of the two doors `lib/api` opens for a resource
+ * selector; `query()` refuses both names outright, because "I am in branch Y" is
+ * a claim about the caller that the server resolves from the session and never
+ * accepts from here.
  *
  * ## The cursor is the server's, and so is the end of the set
  *
@@ -164,15 +169,21 @@ function coverageStatusPath(policyId: string, coverageId: string): string {
  * so a parameter is either meant or not sent.
  */
 export async function listWarranties(
-  target: BranchTarget,
-  vehicleId: string | null,
+  scope: BranchScope,
+  criteria: WarrantyListCriteria,
   cursor: string | null
 ): Promise<WarrantyListState> {
   const client = await authorizedClient();
   if (!client) return { ...EMPTY, status: 'expired', correlationId: null };
 
   const result = await client.get<WarrantyPage<WarrantyListRow>>(
-    '/api/v1/warranties' + branchTargetQuery(target, { vehicleId, cursor, limit: PAGE_SIZE })
+    '/api/v1/warranties' +
+      branchScopeQuery(scope, {
+        vehicleId: criteria.vehicleId,
+        q: criteria.q,
+        cursor,
+        limit: PAGE_SIZE,
+      })
   );
   if (!result.ok) {
     return { ...EMPTY, status: STATUS_BY_KIND[result.kind], correlationId: result.correlationId };

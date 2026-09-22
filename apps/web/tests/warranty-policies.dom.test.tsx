@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import en from '../src/i18n/messages/en.json';
 import ar from '../src/i18n/messages/ar.json';
-import { renderLtr, renderRtl } from './render';
+import { TEST_COMPANY, inBranch, renderLtr, renderRtl } from './render';
 
 /**
  * The warranty plan administration screens, rendered (P1-31, FE-008).
@@ -158,9 +158,16 @@ beforeEach(() => {
 
 async function renderListPage(locale = 'en') {
   const tree = await PolicyListPage({ params: Promise.resolve({ locale }) });
-  return locale === 'ar'
-    ? renderRtl(tree as React.ReactElement)
-    : renderLtr(tree as React.ReactElement);
+  /*
+   * Inside a working context, because the company a plan belongs to is chosen
+   * from the NAMED list the platform publishes for this caller. It used to be
+   * typed as a reference, by exactly the operator whose branch-directory read
+   * was refused.
+   */
+  const ui = inBranch(tree as React.ReactElement, {
+    locale: locale === 'ar' ? 'ar' : 'en',
+  });
+  return locale === 'ar' ? renderRtl(ui) : renderLtr(ui);
 }
 
 async function renderDetailPage(locale = 'en') {
@@ -211,7 +218,13 @@ describe('the plan list', () => {
     const rows = within(screen.getByRole('table'));
     expect(rows.getByText('standard_12')).toBeInTheDocument();
     expect(rows.getByText(EN['warranty.configurationStatus.active'] as string)).toBeInTheDocument();
-    expect(rows.getByText(COMPANY_ID)).toBeInTheDocument();
+    /*
+     * The company by NAME. The column used to print the reference, which is a
+     * string no reader can recognise a workshop by; the working context
+     * publishes the name, so that is what the column shows.
+     */
+    expect(rows.getByText(TEST_COMPANY.name)).toBeInTheDocument();
+    expect(rows.queryByText(COMPANY_ID)).toBeNull();
   });
 
   it('asks for every plan by default, retired ones included', async () => {
@@ -319,8 +332,8 @@ describe('creating a plan is drawn on the administration code and on nothing els
     PERMISSIONS = [READ, MANAGE];
     const user = userEvent.setup();
     await renderListPage();
-    await user.type(
-      screen.getByRole('textbox', { name: labelled('warranty.common.companyIdField') }),
+    await user.selectOptions(
+      screen.getByRole('combobox', { name: labelled('warranty.policies.companyField') }),
       COMPANY_ID
     );
     await user.type(
@@ -342,12 +355,12 @@ describe('creating a plan is drawn on the administration code and on nothing els
     });
   });
 
-  it('refuses a malformed reference in the control rather than in a request', async () => {
+  it('refuses a malformed plan reference in the control rather than in a request', async () => {
     PERMISSIONS = [READ, MANAGE];
     const user = userEvent.setup();
     await renderListPage();
-    await user.type(
-      screen.getByRole('textbox', { name: labelled('warranty.common.companyIdField') }),
+    await user.selectOptions(
+      screen.getByRole('combobox', { name: labelled('warranty.policies.companyField') }),
       COMPANY_ID
     );
     await user.type(
@@ -361,13 +374,28 @@ describe('creating a plan is drawn on the administration code and on nothing els
     await user.click(
       screen.getByRole('button', { name: EN['warranty.policies.createSubmit'] as string })
     );
+    // The route answers a malformed reference with a refusal of the whole body,
+    // which reads like an outage instead of a correctable field.
     expect(
       await screen.findByText(EN['warranty.policies.codeFormat'] as string)
     ).toBeInTheDocument();
     expect(createWarrantyPolicy).not.toHaveBeenCalled();
   });
 
-  it('shows a refused company beside the company box, with the reference still typed', async () => {
+  it('offers the company by name, and never as the reference it is', async () => {
+    PERMISSIONS = [READ, MANAGE];
+    await renderListPage();
+    const picker = await screen.findByRole('combobox', {
+      name: labelled('warranty.policies.companyField'),
+    });
+    const options = Array.from(picker.querySelectorAll('option'))
+      .map((option) => option.textContent ?? '')
+      .filter((text) => text.length > 0);
+    expect(options).toContain(TEST_COMPANY.name);
+    expect(options).not.toContain(COMPANY_ID);
+  });
+
+  it('shows a refused company beside the company picker', async () => {
     PERMISSIONS = [READ, MANAGE];
     createWarrantyPolicy.mockResolvedValue({
       status: 'invalid',
@@ -379,8 +407,8 @@ describe('creating a plan is drawn on the administration code and on nothing els
     });
     const user = userEvent.setup();
     await renderListPage();
-    await user.type(
-      screen.getByRole('textbox', { name: labelled('warranty.common.companyIdField') }),
+    await user.selectOptions(
+      screen.getByRole('combobox', { name: labelled('warranty.policies.companyField') }),
       COMPANY_ID
     );
     await user.type(
@@ -408,8 +436,8 @@ describe('creating a plan is drawn on the administration code and on nothing els
     const user = userEvent.setup();
     await renderListPage();
     await waitFor(() => expect(listWarrantyPolicies).toHaveBeenCalledTimes(1));
-    await user.type(
-      screen.getByRole('textbox', { name: labelled('warranty.common.companyIdField') }),
+    await user.selectOptions(
+      screen.getByRole('combobox', { name: labelled('warranty.policies.companyField') }),
       COMPANY_ID
     );
     await user.type(
@@ -439,8 +467,8 @@ describe('creating a plan is drawn on the administration code and on nothing els
     });
     const user = userEvent.setup();
     await renderListPage();
-    await user.type(
-      screen.getByRole('textbox', { name: labelled('warranty.common.companyIdField') }),
+    await user.selectOptions(
+      screen.getByRole('combobox', { name: labelled('warranty.policies.companyField') }),
       COMPANY_ID
     );
     await user.type(

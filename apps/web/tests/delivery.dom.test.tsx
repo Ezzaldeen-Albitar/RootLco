@@ -4,7 +4,16 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import en from '../src/i18n/messages/en.json';
 import ar from '../src/i18n/messages/ar.json';
 import type { captureDeliverySignature as RealCaptureDeliverySignature } from '@/features/delivery/signature-capture';
-import { renderLtr, renderRtl } from './render';
+import {
+  BranchSwitch,
+  OTHER_BRANCH,
+  TEST_BRANCH,
+  TEST_COMPANY,
+  branchSnapshot,
+  inBranch,
+  renderLtr,
+  renderRtl,
+} from './render';
 
 /**
  * The vehicle handover, rendered (P1-31, FE-001, FE-002, FE-003, FE-004,
@@ -447,22 +456,19 @@ const deliveredRow = {
   readyToStartDelivery: false,
 };
 
-async function renderQueuePage(locale = 'en') {
+async function renderQueuePage(locale = 'en', snapshot = branchSnapshot()) {
   const tree = await DeliveryQueuePage({ params: Promise.resolve({ locale }) });
-  return renderLtr(tree as React.ReactElement);
+  // Inside a working context: the queue is addressed to the branch the operator
+  // is working in, which the header holds and this screen reads.
+  return renderLtr(inBranch(tree as React.ReactElement, { snapshot }));
 }
 
-/** Mounts the queue and asks for the pre-filled branch, which is where it reads. */
+/** Mounts the queue, which reads the working branch on arrival. */
 async function showQueue(locale: 'en' | 'ar' = 'en') {
   const catalogue = locale === 'ar' ? ar : en;
   const render = locale === 'ar' ? renderRtl : renderLtr;
   const view = render(
-    <DeliveryReadinessScreen locale={locale} messages={catalogue} scopeOptions={QUEUE_SCOPES} />
-  );
-  await userEvent.click(
-    screen.getByRole('button', {
-      name: (catalogue as Record<string, string>)['delivery.queue.show'] as string,
-    })
+    inBranch(<DeliveryReadinessScreen locale={locale} messages={catalogue} />, { locale })
   );
   await waitFor(() => expect(listDeliveryReadiness).toHaveBeenCalled());
   return view;
@@ -2869,120 +2875,108 @@ describe('the ready-for-delivery queue decides before it reads', () => {
     expect(screen.getByText(EN['state.denied.title'] as string)).toBeVisible();
     // Both halves. "Nothing was read" alone would stay green with the gate
     // deleted if the screen happened not to render.
-    expect(screen.queryByText(EN['delivery.queue.show'] as string)).toBeNull();
+    expect(screen.queryByTestId('delivery-queue-branch')).toBeNull();
     expect(listDeliveryReadiness).not.toHaveBeenCalled();
-    expect(readDeliveryReadinessScopes).not.toHaveBeenCalled();
   });
 
-  it('renders the queue for a caller who holds all three codes', async () => {
+  it('reads the working branch on arrival for a caller who holds all three codes', async () => {
     PERMISSIONS = [...QUEUE_CODES];
     await renderQueuePage();
-    expect(screen.getByRole('button', { name: EN['delivery.queue.show'] as string })).toBeVisible();
     expect(screen.queryByText(EN['state.denied.title'] as string)).toBeNull();
+    await waitFor(() => expect(listDeliveryReadiness).toHaveBeenCalled());
+    const asked = listDeliveryReadiness.mock.calls[0]?.[0] as Record<string, unknown>;
+    expect(asked['companyId']).toBe(TEST_COMPANY.id);
+    expect(asked['branchId']).toBe(TEST_BRANCH.id);
   });
 
-  it('requests nothing at all until an operator names a branch', async () => {
+  it('requests nothing at all while no branch is chosen, and says which control answers', async () => {
     PERMISSIONS = [...QUEUE_CODES];
-    await renderQueuePage();
-    expect(screen.getByText(EN['delivery.queue.idleTitle'] as string)).toBeVisible();
+    const second = { ...TEST_BRANCH, id: '77777777-7777-4777-8777-777777777777', name: 'Second' };
+    await renderQueuePage('en', branchSnapshot([TEST_BRANCH, second]));
+    expect(screen.getByTestId('delivery-queue-blocked')).toHaveTextContent(
+      EN['workingContext.chooseFirst'] as string
+    );
     // The branch pair is the authorization TARGET. Reading before it is named
     // would degrade a branch-scoped check into a scope-blind permission test.
+    await new Promise((resolve) => setTimeout(resolve, 350));
     expect(listDeliveryReadiness).not.toHaveBeenCalled();
   });
 });
 
-describe('the queue selects authorized named scopes', () => {
-  it('shows directory names rather than raw identifier inputs', async () => {
+describe('the queue names its branch and offers no way to type one', () => {
+  it('states the branch by name and asks nothing about it', async () => {
+    /*
+     * The queue used to open on two selects over a directory it read for
+     * itself, above a Show button. The branch is chosen once, in the header, and
+     * a second control here would be a second authority for the same fact.
+     */
     PERMISSIONS = [...QUEUE_CODES];
     await renderQueuePage();
-    expect(screen.getByRole('option', { name: 'Workshop company' })).toBeVisible();
-    expect(screen.getByRole('option', { name: 'Service branch' })).toBeVisible();
-    expect(screen.queryByRole('textbox')).toBeNull();
-    expect(listDeliveryReadiness).not.toHaveBeenCalled();
+    await waitFor(() => expect(listDeliveryReadiness).toHaveBeenCalled());
+    const field = screen.getByTestId('delivery-queue-branch');
+    expect(field).toHaveTextContent(TEST_BRANCH.name);
+    expect(within(field).queryByRole('combobox')).toBeNull();
+    expect(within(field).queryByRole('textbox')).toBeNull();
   });
 
-  it('clears the selected branch when its company changes and requires a new matching branch', async () => {
-    const secondCompany = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
-    const secondBranch = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
-    renderLtr(
-      <DeliveryReadinessScreen
-        locale="en"
-        messages={en}
-        scopeOptions={{
-          ...QUEUE_SCOPES,
-          data: {
-            companies: [
-              ...QUEUE_SCOPES.data.companies,
-              { id: secondCompany, legalName: 'Second company' },
-            ],
-            branches: [
-              ...QUEUE_SCOPES.data.branches,
-              { id: secondBranch, companyId: secondCompany, name: 'Second branch' },
-            ],
-          },
-        }}
-      />
-    );
+  it('refuses to guess a branch when the operator is reading all of them', async () => {
+    /*
+     * `sal.delivery-readiness-list` makes BOTH halves mandatory, unlike the
+     * boards whose branch became optional. So "all my branches" is refused in
+     * the shared words rather than answered by picking one.
+     */
     const user = userEvent.setup();
-    const company = screen.getByRole('combobox', {
-      name: new RegExp(EN['delivery.queue.company'] as string),
-    });
-    const branch = screen.getByRole('combobox', {
-      name: new RegExp(EN['delivery.queue.branch'] as string),
-    });
-    await user.selectOptions(company, COMPANY_ID);
-    await user.selectOptions(branch, BRANCH_ID);
-    await user.selectOptions(company, secondCompany);
-    expect(branch).toHaveValue('');
-    expect(screen.queryByRole('option', { name: 'Service branch' })).toBeNull();
-    await user.click(screen.getByRole('button', { name: EN['delivery.queue.show'] as string }));
-    expect(listDeliveryReadiness).not.toHaveBeenCalled();
-    await user.selectOptions(branch, secondBranch);
-    await user.click(screen.getByRole('button', { name: EN['delivery.queue.show'] as string }));
-    await waitFor(() =>
-      expect(listDeliveryReadiness).toHaveBeenCalledWith(
-        expect.objectContaining({ companyId: secondCompany, branchId: secondBranch })
+    PERMISSIONS = [...QUEUE_CODES];
+    renderLtr(
+      inBranch(
+        <>
+          <BranchSwitch to="all" label="use all" />
+          <DeliveryReadinessScreen locale="en" messages={en} />
+        </>,
+        { snapshot: branchSnapshot([TEST_BRANCH, OTHER_BRANCH]) }
       )
     );
+    await user.click(screen.getByRole('button', { name: 'use all' }));
+    expect(await screen.findByTestId('delivery-queue-blocked')).toHaveTextContent(
+      EN['workingContext.needsOneBranch'] as string
+    );
   });
 
-  it.each(['denied', 'unavailable', 'expired'])(
-    'shows directory %s without offering raw scope entry or reading the queue',
-    async (status) => {
-      PERMISSIONS = [...QUEUE_CODES];
-      readDeliveryReadinessScopes.mockResolvedValue({ status, correlationId: 'scope-unavailable' });
-      await renderQueuePage();
-      expect(screen.queryByRole('textbox')).toBeNull();
-      expect(screen.queryByRole('combobox')).toBeNull();
-      expect(
-        screen.queryByRole('button', { name: EN['delivery.queue.show'] as string })
-      ).toBeNull();
-      expect(listDeliveryReadiness).not.toHaveBeenCalled();
-      expect(screen.getByText(EN[`state.${status}.title`] as string)).toBeVisible();
-    }
-  );
-
-  it('distinguishes an empty authorized directory from an empty readiness queue', async () => {
+  it('re-targets the queue when the branch changes in the header', async () => {
+    const user = userEvent.setup();
     PERMISSIONS = [...QUEUE_CODES];
-    readDeliveryReadinessScopes.mockResolvedValue({
-      status: 'ok',
-      data: { companies: [], branches: [] },
-      correlationId: null,
-    });
-    await renderQueuePage();
-    expect(screen.getByText(EN['delivery.queue.noScopesTitle'] as string)).toBeVisible();
-    expect(screen.queryByText(EN['delivery.queue.noneMatching'] as string)).toBeNull();
-    expect(listDeliveryReadiness).not.toHaveBeenCalled();
+    renderLtr(
+      inBranch(
+        <>
+          <BranchSwitch to={TEST_BRANCH.id} label="use main" />
+          <BranchSwitch to={OTHER_BRANCH.id} label="use second" />
+          <DeliveryReadinessScreen locale="en" messages={en} />
+        </>,
+        { snapshot: branchSnapshot([TEST_BRANCH, OTHER_BRANCH]) }
+      )
+    );
+    await user.click(screen.getByRole('button', { name: 'use main' }));
+    await waitFor(() =>
+      expect(
+        (listDeliveryReadiness.mock.calls.at(-1)?.[0] as Record<string, unknown>)['branchId']
+      ).toBe(TEST_BRANCH.id)
+    );
+    await user.click(screen.getByRole('button', { name: 'use second' }));
+    await waitFor(() =>
+      expect(
+        (listDeliveryReadiness.mock.calls.at(-1)?.[0] as Record<string, unknown>)['branchId']
+      ).toBe(OTHER_BRANCH.id)
+    );
   });
 });
 
 describe('the queue renders the verdict it was given and derives none of it', () => {
-  it('names the branch the operator chose, and no scope of its own', async () => {
+  it('names the branch the operator is working in, and no scope of its own', async () => {
     listDeliveryReadiness.mockResolvedValue(queuePage([readyRow]));
     await showQueue();
     const asked = listDeliveryReadiness.mock.calls[0]?.[0] as Record<string, unknown>;
-    expect(asked['companyId']).toBe(COMPANY_ID);
-    expect(asked['branchId']).toBe(BRANCH_ID);
+    expect(asked['companyId']).toBe(TEST_COMPANY.id);
+    expect(asked['branchId']).toBe(TEST_BRANCH.id);
     expect(asked['cursor']).toBeNull();
     // No eligibility is ever asserted by a request. There is no such parameter
     // on the operation and this screen must never invent one.

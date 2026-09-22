@@ -1,25 +1,24 @@
 'use client';
 
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo } from 'react';
 import Link from 'next/link';
 import { DataTable, type Column } from '@/components/data-table/DataTable';
 import { INITIAL_REQUEST, type TableRequest } from '@/components/data-table/table-state';
 import { useServerTable } from '@/components/data-table/use-server-table';
-import { SelectField } from '@/components/forms/Field';
-import { EmptyState } from '@/components/states/States';
-import type { BranchTarget, ReadState } from '@/lib/api/read-operation';
+import {
+  RequiresConcreteBranch,
+  WorkingBranchField,
+} from '@/features/working-context/components/WorkingBranchField';
+import { useBranchTarget } from '@/features/working-context/use-branch-target';
+import { useWorkingContext } from '@/features/working-context/WorkingContextProvider';
+import type { BranchTarget } from '@/lib/api/read-operation';
 import { formatDate } from '@/lib/format';
 import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic } from '@/i18n/get-messages';
 import { BlockerLabel, StatusLabel } from './CodeLabel';
-import { PanelFailure } from './PanelShell';
 import { listDeliveryReadiness } from '../readiness-api';
-import {
-  MAX_READINESS_PAGE_SIZE,
-  type DeliveryReadinessRow,
-  type DeliveryReadinessScopeOptions,
-} from '../readiness-contract';
+import { MAX_READINESS_PAGE_SIZE, type DeliveryReadinessRow } from '../readiness-contract';
 
 /**
  * The ready-for-delivery queue (P1-31, FE-001, Owner decision **D-3**).
@@ -53,12 +52,19 @@ import {
  * rather than to chase the customer. The two are drawn differently on purpose;
  * collapsing them turns an outage into a customer conversation.
  *
- * ## Nothing is requested until an operator names a branch
+ * ## It reads on arrival, for the branch the operator is working in
  *
- * The operation is branch-scoped and the pair is the authorization target, not a
- * convenience: without it the backend's check degrades to a scope-blind
- * permission test. So the results are a separately MOUNTED component — before a
- * target is submitted, the component that would issue the read does not exist.
+ * The queue used to open on two selects and a Show button, above a sentence
+ * saying nothing was loaded. The branch is the working context's own named
+ * selection now — chosen once, in the header — so there is nothing left to
+ * validate before asking, and a service adviser who opens the ready-for-delivery
+ * queue has expressed intent by opening it.
+ *
+ * The pair is still the authorization TARGET rather than a convenience: without
+ * it the backend's check degrades to a scope-blind permission test. This
+ * operation makes both halves mandatory, unlike the boards whose branch became
+ * optional, so "all my branches" is refused here in the shared words and the
+ * header is named as the one control that answers.
  *
  * ## No action is offered here
  *
@@ -80,136 +86,42 @@ interface Submitted {
   readonly target: BranchTarget;
 }
 
-interface Draft {
-  readonly companyId: string;
-  readonly branchId: string;
-}
-
 export function DeliveryReadinessScreen({
   locale,
   messages,
-  scopeOptions,
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
-  readonly scopeOptions: ReadState<DeliveryReadinessScopeOptions>;
 }) {
-  const companies = scopeOptions.status === 'ok' ? scopeOptions.data.companies : [];
-  const branches = scopeOptions.status === 'ok' ? scopeOptions.data.branches : [];
-  const initialCompany = companies.length === 1 ? (companies[0]?.id ?? '') : '';
-  const initialBranches = branches.filter((branch) => branch.companyId === initialCompany);
-  const [draft, setDraft] = useState<Draft>({
-    companyId: initialCompany,
-    branchId: initialBranches.length === 1 ? (initialBranches[0]?.id ?? '') : '',
-  });
-  const [submitted, setSubmitted] = useState<Submitted | null>(null);
-  const [errors, setErrors] = useState<Readonly<Record<string, string>>>({});
-
-  const submit = () => {
-    const found: Record<string, string> = {};
-    if (!companies.some((company) => company.id === draft.companyId))
-      found['companyId'] = 'field.required';
-    if (
-      !branches.some(
-        (branch) => branch.id === draft.branchId && branch.companyId === draft.companyId
-      )
-    )
-      found['branchId'] = 'field.required';
-    setErrors(found);
-    if (Object.keys(found).length > 0) return;
-
-    setSubmitted({
-      target: { companyId: draft.companyId.trim(), branchId: draft.branchId.trim() },
-    });
-  };
-
-  const errorFor = (name: string): string | undefined => {
-    const key = errors[name];
-    return key ? translateDynamic(messages, key) : undefined;
-  };
-
-  if (scopeOptions.status !== 'ok') {
-    return (
-      <PanelFailure
-        messages={messages}
-        status={scopeOptions.status}
-        correlationId={scopeOptions.correlationId}
-      />
-    );
-  }
-  if (
-    companies.length === 0 ||
-    !branches.some((branch) => companies.some((company) => company.id === branch.companyId))
-  ) {
-    return (
-      <EmptyState
-        messages={messages}
-        titleKey="delivery.queue.noScopesTitle"
-        descriptionKey="delivery.queue.noScopesBody"
-      />
-    );
-  }
+  const context = useWorkingContext();
+  const branch = useBranchTarget();
 
   return (
     <div className="flex min-h-0 flex-col gap-4">
-      <form
-        onSubmit={(event) => {
-          event.preventDefault();
-          submit();
-        }}
-        noValidate
-        aria-label={translate(messages, 'delivery.queue.formLabel')}
-        className="rounded-lg border border-border bg-surface p-4"
-      >
-        <div className="grid gap-3 sm:grid-cols-2">
-          <SelectField
-            label={translate(messages, 'delivery.queue.company')}
-            options={companies.map((company) => ({ value: company.id, label: company.legalName }))}
-            placeholder={translate(messages, 'form.select.placeholder')}
-            required
-            value={draft.companyId}
-            onChange={(event) => setDraft({ companyId: event.target.value, branchId: '' })}
-            error={errorFor('companyId')}
-          />
-          <SelectField
-            label={translate(messages, 'delivery.queue.branch')}
-            options={branches
-              .filter((branch) => branch.companyId === draft.companyId)
-              .map((branch) => ({ value: branch.id, label: branch.name }))}
-            placeholder={translate(messages, 'form.select.placeholder')}
-            required
-            disabled={!draft.companyId}
-            value={draft.branchId}
-            onChange={(event) => setDraft((d) => ({ ...d, branchId: event.target.value }))}
-            error={errorFor('branchId')}
-          />
-        </div>
+      <div className="rounded-lg border border-border bg-surface p-4">
+        {/*
+          The branch is STATED, not asked. It is the header's own selection and
+          there is exactly one place it can be changed; a second control here
+          would be a second authority for the same fact.
+        */}
+        <WorkingBranchField messages={messages} testId="delivery-queue-branch" />
+      </div>
 
-        <div className="mt-4 flex flex-wrap items-center gap-3">
-          <button
-            type="submit"
-            className="rounded-md bg-primary px-4 py-2 text-body font-medium text-on-primary transition-colors duration-fast ease-standard hover:bg-primary-hover"
-          >
-            {translate(messages, 'delivery.queue.show')}
-          </button>
-        </div>
-      </form>
-
-      {submitted === null ? (
-        <EmptyState
-          messages={messages}
-          titleKey="delivery.queue.idleTitle"
-          descriptionKey="delivery.queue.idleBody"
-        />
-      ) : (
-        // Mounted only after submission — see the docblock. The key restarts the
-        // table on a new branch rather than paging the old one.
+      {branch.kind === 'ready' ? (
+        /*
+         * Keyed on the branch AND the working-context version, so a branch
+         * changed in the header throws the previous branch's cursor stack away
+         * with its rows rather than paging one branch's queue under another
+         * branch's name.
+         */
         <ReadinessResults
-          key={JSON.stringify(submitted)}
+          key={`${context.version}:${branch.target.branchId}`}
           locale={locale}
           messages={messages}
-          submitted={submitted}
+          submitted={{ target: branch.target }}
         />
+      ) : (
+        <RequiresConcreteBranch messages={messages} state={branch} testId="delivery-queue-blocked" />
       )}
     </div>
   );

@@ -6,7 +6,6 @@ import { requireSession } from '@/features/authentication/api/session';
 import { holds } from '@/features/crm/permissions';
 import { DeliveryReadinessScreen } from '@/features/delivery/components/DeliveryReadinessScreen';
 import { DELIVERY_READINESS_PERMISSIONS } from '@/features/delivery/readiness-contract';
-import { readDeliveryReadinessScopes } from '@/features/delivery/readiness-api';
 import { isLocale } from '@/i18n/config';
 import { getMessages } from '@/i18n/get-messages';
 import { pageMetadata } from '@/lib/page-metadata';
@@ -83,8 +82,6 @@ export default async function DeliveryReadinessPage({
     );
   }
 
-  const scopeOptions = await readDeliveryReadinessScopes();
-
   return (
     <>
       <PageHeader
@@ -95,7 +92,7 @@ export default async function DeliveryReadinessPage({
         crumbs={crumbs}
       />
       <PageBody>
-        <DeliveryReadinessScreen locale={locale} messages={messages} scopeOptions={scopeOptions} />
+        <DeliveryReadinessScreen locale={locale} messages={messages} />
       </PageBody>
     </>
   );
