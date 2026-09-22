@@ -2210,11 +2210,18 @@ export class WorkOrderRepository extends Repository {
     scope: { readonly companyId: string; readonly branchIds: readonly string[] }
   ): Promise<readonly OverviewStateCountRow[]> {
     const context = this.assertContext(db);
-    const result = await this.run<{ state: string; total: number; awaiting_parts: number }>(
+    // The projection is `parts_requested` and NOT `awaiting_parts`. The column
+    // being counted is `parts_forward_state`, a forward contract with three
+    // values of its own; `awaiting_parts` is a `wo.work_order_states` CODE, and
+    // naming the alias after it would put a state name in this module's
+    // TypeScript — which is the mirror `tests/foundation/p1-19-module-foundation`
+    // refuses, and which would be wrong on its own terms because an order in any
+    // state may have parts requested.
+    const result = await this.run<{ state: string; total: number; parts_requested: number }>(
       db,
       `SELECT state,
               count(*)::int AS total,
-              count(*) FILTER (WHERE parts_forward_state = 'requested')::int AS awaiting_parts
+              count(*) FILTER (WHERE parts_forward_state = 'requested')::int AS parts_requested
          FROM wo.work_orders
         WHERE tenant_id = $1 AND company_id = $2 AND branch_id = ANY($3::uuid[])
           AND deleted_at IS NULL
@@ -2225,7 +2232,7 @@ export class WorkOrderRepository extends Repository {
     return result.rows.map((row) => ({
       state: row.state,
       total: row.total,
-      awaitingParts: row.awaiting_parts,
+      awaitingParts: row.parts_requested,
     }));
   }
 
