@@ -42,6 +42,7 @@ import {
   ensureTestLogins,
 } from './helpers';
 import {
+  BRANCH_A2,
   FULL,
   advance,
   createOpenWorkOrder,
@@ -54,8 +55,10 @@ import {
   INV_READER,
   ITEM_A,
   ITEM_A_ALT,
+  ITEM_A_ARCHIVED,
   ITEM_A_UNTRACKED,
   QUARANTINE_A1,
+  QUARANTINE_A2,
   STORAGE_A1,
   WAREHOUSE_A1,
   auditCountFor,
@@ -63,6 +66,7 @@ import {
   balanceOf,
   cleanP1_21Fixtures,
   establishP1_21Fixtures,
+  freshLocation,
   movementCountFor,
   outboxCountFor,
   countRowsOf,
@@ -76,6 +80,7 @@ import { POST as RELEASE } from '@/app/api/v1/stock-reservations/[reservationId]
 import { POST as ISSUE } from '@/app/api/v1/stock-issues/route';
 import { POST as RETURN } from '@/app/api/v1/stock-returns/route';
 import { POST as DAMAGE } from '@/app/api/v1/damaged-stock/route';
+import { POST as TRANSFER_CREATE } from '@/app/api/v1/stock-transfers/route';
 import { GET as ELIGIBILITY } from '@/app/api/v1/work-orders/[workOrderId]/closure-eligibility/route';
 import { POST as CLOSURE } from '@/app/api/v1/work-orders/[workOrderId]/closure/route';
 import { POST as TRANSITION } from '@/app/api/v1/work-orders/[workOrderId]/transition/route';
@@ -135,6 +140,12 @@ const releaseCall = (reservationId: string, body: unknown = {}): Promise<Respons
   );
 
 const bodyOf = async <T>(response: Response): Promise<T> => (await response.json()) as T;
+
+/** The problem document, as far as the refusal-token cases at the foot read it. */
+interface Problem {
+  readonly code?: string;
+  readonly violations?: readonly { readonly path?: string; readonly rule?: string }[];
+}
 
 beforeAll(async () => {
   admin = adminPool();
@@ -1255,5 +1266,229 @@ describe('H3 — a return publishes its movement too', () => {
     // Without this a consumer projecting availability sees stock leave on every issue
     // and never come back — a monotonically diverging projection.
     expect(published).toBe(1);
+  });
+});
+
+/**
+ * The refusal TOKENS the stock commands publish, driven through their routes.
+ *
+ * `STOCK_REFUSAL_RULES` names eighteen refusals a person can meet from a screen,
+ * and the web catalogue carries a sentence for each — but until these cases
+ * existed no backend test drove a single one of them, so nothing held the wire
+ * shape. A token renamed, a path moved from `body.locationId` to `body`, or a
+ * refusal downgraded to the general 409 would have changed which sentence an
+ * operator reads and no test would have noticed.
+ *
+ * Each case asserts the four things a screen depends on: the status, the
+ * catalogue code, the violation PATH — which is what decides the control the
+ * sentence appears beside — and the RULE, which is what selects the sentence.
+ */
+describe('the stock refusal tokens, on the wire', () => {
+  it('names the quarantine location that may not be reserved from', async () => {
+    await seedStock({ itemId: ITEM_A, locationId: QUARANTINE_A1, quantity: '4.000' });
+    authAs(INV_FULL);
+    const response = await post(RESERVE, '/api/v1/stock-reservations', {
+      itemId: ITEM_A,
+      locationId: QUARANTINE_A1,
+      quantity: '1.000',
+    });
+    expect(response.status).toBe(409);
+    const problem = (await response.json()) as Problem;
+    expect(problem.code).toBe('ERR-TRN-001');
+    expect(problem.violations?.[0]?.path).toBe('body.locationId');
+    expect(problem.violations?.[0]?.rule).toBe('stock_location_quarantine');
+  });
+
+  it('names the transit location that may not be reserved from', async () => {
+    // A transit location is system-owned: exactly one per branch, minted by
+    // `inv.dispatch_transfer`. So the only honest way to reach this refusal is to
+    // dispatch a real transfer and then name the cell it created.
+    await seedStock({ itemId: ITEM_A, locationId: WAREHOUSE_A1, quantity: '6.000' });
+    authAs(INV_FULL);
+    const transfer = await bodyOf<{ transitLocationId: string }>(
+      await post(TRANSFER_CREATE, '/api/v1/stock-transfers', {
+        itemId: ITEM_A,
+        fromLocationId: WAREHOUSE_A1,
+        toLocationId: STORAGE_A1,
+        quantity: '2.000',
+      })
+    );
+    const response = await post(RESERVE, '/api/v1/stock-reservations', {
+      itemId: ITEM_A,
+      locationId: transfer.transitLocationId,
+      quantity: '1.000',
+    });
+    expect(response.status).toBe(409);
+    const problem = (await response.json()) as Problem;
+    expect(problem.code).toBe('ERR-TRN-001');
+    expect(problem.violations?.[0]?.path).toBe('body.locationId');
+    expect(problem.violations?.[0]?.rule).toBe('stock_location_transit');
+  });
+
+  it('names the inactive location that may not be reserved from', async () => {
+    // No operation deactivates a location: the 118-code catalogue mints no
+    // location-status authority, so `inv.stock-location-create` is the only write
+    // and it always lands `active`. The status column and its CHECK are real and
+    // the refusal is real, so the cell is stood up as reference data the way
+    // `freshLocation` stands up every other one, and the REQUEST is real.
+    const dormant = await freshLocation();
+    await seedStock({ itemId: ITEM_A, locationId: dormant, quantity: '3.000' });
+    await admin.query(`UPDATE inv.stock_locations SET status = 'inactive' WHERE id = $1`, [
+      dormant,
+    ]);
+    authAs(INV_FULL);
+    const response = await post(RESERVE, '/api/v1/stock-reservations', {
+      itemId: ITEM_A,
+      locationId: dormant,
+      quantity: '1.000',
+    });
+    expect(response.status).toBe(409);
+    const problem = (await response.json()) as Problem;
+    expect(problem.code).toBe('ERR-TRN-001');
+    expect(problem.violations?.[0]?.path).toBe('body.locationId');
+    expect(problem.violations?.[0]?.rule).toBe('stock_location_not_active');
+  });
+
+  it('names the archived item that takes no stock movement', async () => {
+    authAs(INV_FULL);
+    const response = await post(RESERVE, '/api/v1/stock-reservations', {
+      itemId: ITEM_A_ARCHIVED,
+      locationId: WAREHOUSE_A1,
+      quantity: '1.000',
+    });
+    expect(response.status).toBe(409);
+    const problem = (await response.json()) as Problem;
+    expect(problem.code).toBe('ERR-TRN-001');
+    expect(problem.violations?.[0]?.path).toBe('body.itemId');
+    expect(problem.violations?.[0]?.rule).toBe('stock_item_archived');
+  });
+
+  it('names the item that is not stock-tracked', async () => {
+    authAs(INV_FULL);
+    const response = await post(RESERVE, '/api/v1/stock-reservations', {
+      itemId: ITEM_A_UNTRACKED,
+      locationId: WAREHOUSE_A1,
+      quantity: '1.000',
+    });
+    expect(response.status).toBe(409);
+    const problem = (await response.json()) as Problem;
+    expect(problem.code).toBe('ERR-TRN-001');
+    expect(problem.violations?.[0]?.path).toBe('body.itemId');
+    expect(problem.violations?.[0]?.rule).toBe('stock_item_not_tracked');
+  });
+
+  it('names the work order that sits in another branch from the stock', async () => {
+    const elsewhere = await createOpenWorkOrder({ branchId: BRANCH_A2 });
+    await seedStock({ itemId: ITEM_A, locationId: WAREHOUSE_A1, quantity: '5.000' });
+    authAs(INV_FULL);
+    const response = await post(ISSUE, '/api/v1/stock-issues', {
+      workOrderId: elsewhere.workOrderId,
+      itemId: ITEM_A,
+      locationId: WAREHOUSE_A1,
+      quantity: '1.000',
+    });
+    expect(response.status).toBe(409);
+    const problem = (await response.json()) as Problem;
+    expect(problem.code).toBe('ERR-TRN-001');
+    expect(problem.violations?.[0]?.path).toBe('body.workOrderId');
+    expect(problem.violations?.[0]?.rule).toBe('stock_work_order_other_branch');
+  });
+
+  it('names the quantity that exceeds what the reservation holds', async () => {
+    const wo = await createOpenWorkOrder();
+    const demand = await approvedDemandFor(wo.workOrderId);
+    await seedStock({ itemId: ITEM_A, locationId: WAREHOUSE_A1, quantity: '9.000' });
+    authAs(INV_FULL);
+    const reservation = await bodyOf<{ id: string }>(
+      await post(RESERVE, '/api/v1/stock-reservations', {
+        itemId: ITEM_A,
+        locationId: WAREHOUSE_A1,
+        quantity: '2.000',
+        workOrderId: wo.workOrderId,
+        materialRequirementId: demand[ITEM_A],
+      })
+    );
+    const response = await post(ISSUE, '/api/v1/stock-issues', {
+      workOrderId: wo.workOrderId,
+      materialRequirementId: demand[ITEM_A],
+      itemId: ITEM_A,
+      locationId: WAREHOUSE_A1,
+      quantity: '5.000',
+      reservationId: reservation.id,
+    });
+    expect(response.status).toBe(409);
+    const problem = (await response.json()) as Problem;
+    expect(problem.code).toBe('ERR-TRN-001');
+    expect(problem.violations?.[0]?.path).toBe('body.quantity');
+    expect(problem.violations?.[0]?.rule).toBe('stock_issue_exceeds_reservation');
+  });
+
+  it('names the quantity that exceeds what was issued', async () => {
+    const wo = await createOpenWorkOrder();
+    const demand = await approvedDemandFor(wo.workOrderId);
+    await seedStock({ itemId: ITEM_A, locationId: WAREHOUSE_A1, quantity: '8.000' });
+    authAs(INV_FULL);
+    const issued = await bodyOf<{ id: string }>(
+      await post(ISSUE, '/api/v1/stock-issues', {
+        workOrderId: wo.workOrderId,
+        materialRequirementId: demand[ITEM_A],
+        itemId: ITEM_A,
+        locationId: WAREHOUSE_A1,
+        quantity: '2.000',
+      })
+    );
+    const response = await post(RETURN, '/api/v1/stock-returns', {
+      partIssueId: issued.id,
+      quantity: '5.000',
+    });
+    expect(response.status).toBe(409);
+    const problem = (await response.json()) as Problem;
+    expect(problem.code).toBe('ERR-TRN-001');
+    expect(problem.violations?.[0]?.path).toBe('body.quantity');
+    expect(problem.violations?.[0]?.rule).toBe('stock_return_exceeds_issue');
+  });
+
+  it('names the quarantine cell that lies in another branch from the damage', async () => {
+    await seedStock({ itemId: ITEM_A, locationId: WAREHOUSE_A1, quantity: '5.000' });
+    authAs(INV_FULL);
+    const response = await post(DAMAGE, '/api/v1/damaged-stock', {
+      itemId: ITEM_A,
+      fromLocationId: WAREHOUSE_A1,
+      quarantineLocationId: QUARANTINE_A2,
+      quantity: '1.000',
+      reason: 'Dropped during handling',
+    });
+    expect(response.status).toBe(409);
+    const problem = (await response.json()) as Problem;
+    expect(problem.code).toBe('ERR-TRN-001');
+    expect(problem.violations?.[0]?.path).toBe('body.quarantineLocationId');
+    expect(problem.violations?.[0]?.rule).toBe('stock_damage_other_branch');
+  });
+
+  it('refuses a damage that would release whole reservations for a fraction', async () => {
+    // A reservation is released WHOLE, so a 0.001 damage at a cell whose stock is
+    // entirely reserved would void the reservation for a thousandth of its size.
+    const cell = await freshLocation();
+    await seedStock({ itemId: ITEM_A, locationId: cell, quantity: '4.000' });
+    authAs(INV_FULL);
+    await post(RESERVE, '/api/v1/stock-reservations', {
+      itemId: ITEM_A,
+      locationId: cell,
+      quantity: '4.000',
+    });
+    const response = await post(DAMAGE, '/api/v1/damaged-stock', {
+      itemId: ITEM_A,
+      fromLocationId: cell,
+      quarantineLocationId: QUARANTINE_A1,
+      quantity: '0.001',
+      reason: 'Corner of one box crushed',
+    });
+    expect(response.status).toBe(409);
+    const problem = (await response.json()) as Problem;
+    expect(problem.code).toBe('ERR-TRN-001');
+    // Published against the request: the cure is to release the reservation, which
+    // is not a control on the damage form.
+    expect(problem.violations?.[0]?.path).toBe('body');
+    expect(problem.violations?.[0]?.rule).toBe('stock_damage_releases_reservations');
   });
 });
