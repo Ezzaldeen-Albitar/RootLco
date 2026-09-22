@@ -38,6 +38,8 @@ import { AuditRepository } from './data/audit-repository';
 // P1-31 P-11: the provider-free branch read the report engine resolves its
 // period bounds with. See `iamOrganizationContext` below.
 import { BranchContextRepository } from './data/branch-context-repository';
+// Owner directive P1-32-PRE-OD-UX: the caller's own companies and branches.
+import { WorkingContextRepository } from './data/working-context-repository';
 
 import { IdentityPolicy } from './domain/identity-policy';
 import { DelegationPolicy } from './domain/delegation-policy';
@@ -52,6 +54,7 @@ import { OrganizationSettingsService } from './application/organization-settings
 import { OrganizationAdministrationService } from './application/organization-administration-service';
 import { AuditViewService } from './application/audit-view-service';
 import { EmployeeAdministrationService } from './application/employee-administration-service';
+import { WorkingContextService } from './application/working-context-service';
 
 import {
   identityProvider,
@@ -80,6 +83,15 @@ export { USER_ORDERING } from './data/identity-repository';
 export { ROLE_ORDERING } from './data/authorization-repository';
 export { AUDIT_ORDERING } from './data/audit-repository';
 export type { LoginResult, SessionSummary } from './application/authentication-service';
+/**
+ * The working-context wire shapes (Owner directive, P1-32-PRE-OD-UX). Published so
+ * the route can name what it returns without reaching into `application/`.
+ */
+export type { WorkingContextView } from './application/working-context-service';
+export type {
+  WorkingContextBranchRow,
+  WorkingContextCompanyRow,
+} from './data/working-context-repository';
 export type { FirstOwnerBootstrap, FirstOwnerInput } from './application/tenant-bootstrap-service';
 /**
  * The administrator-setup port (P1-32-PRE-151).
@@ -357,6 +369,11 @@ export const iamModule = composeModule({
       organization: new OrganizationSettingsService(organization, authorization, delegationPolicy),
       organizationAdministration: new OrganizationAdministrationService(organizationAdministration),
       auditView: new AuditViewService(audit, authorization),
+      // Owner directive P1-32-PRE-OD-UX. On `iamModule` rather than in a root of
+      // its own: it is the working companion of `authentication.describeSession`,
+      // reached by the same caller on the same screen, and a fifth composition
+      // root for one read would be a root whose name says less than its neighbour.
+      workingContext: new WorkingContextService(new WorkingContextRepository()),
       // The First-Owner bootstrap (P1-29 W9): the second half of
       // platform.organization-provision, called by the platform module inside
       // its provisioning transaction's platform-on-target window.

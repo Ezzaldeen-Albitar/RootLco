@@ -1,10 +1,10 @@
 {
   "generatedFrom": "scripts/check-operation-test-coverage.mjs",
   "counts": {
-    "registered": 495,
-    "publicApi": 495,
+    "registered": 496,
+    "publicApi": 496,
     "internal": 0,
-    "withRequiredEvidence": 495,
+    "withRequiredEvidence": 496,
     "invocationOnly": 0,
     "p1_15": {
       "registered": 28,
@@ -3815,6 +3815,25 @@
         "stale-version",
         "success"
       ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "iam.working-context-read",
+      "surface": "public-api",
+      "method": "GET",
+      "path": "/auth/working-context",
+      "public": false,
+      "files": [
+        "tests/backend/iam-auth-provider.test.ts",
+        "tests/backend/p1-24-iam-route-depth.test.ts"
+      ],
+      "referenced": true,
+      "derived": ["route", "service", "success", "authorization"],
+      "declared": ["success", "authorization"],
+      "required": ["route", "service", "success", "authorization"],
+      "provided": ["authorization", "route", "service", "success"],
       "missing": [],
       "metadataOnly": false,
       "unitOnly": false

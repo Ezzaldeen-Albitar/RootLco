@@ -303,7 +303,9 @@ describe('the API application lives in the workspace', () => {
     // modules, the `/credit-notes` collection and `/credit-notes/{creditNoteId}`,
     // carrying one operation each — the approval module beneath the second path
     // already existed and is unchanged.
-    expect(routeFiles.length).toBe(387);
+    // 388 with the Owner directive working-context read: one new route module,
+    // `auth/working-context`, carrying one operation.
+    expect(routeFiles.length).toBe(388);
 
     // Non-vacuity. A discovery assertion that only checks a count would pass
     // against a set with one route swapped for another, so the comparison that
@@ -410,7 +412,9 @@ describe('the API application lives in the workspace', () => {
     // over one new route module.
     // 495 with the Owner directive credit-note reads (DEF-T-07): two operations
     // over two new route modules, the credit-note list and the credit-note detail.
-    expect(report.operations).toHaveLength(495);
+    // 496 with the Owner directive working-context read: one operation over one
+    // new route module.
+    expect(report.operations).toHaveLength(496);
 
     // Three node processes, each loading the whole route surface, so the cost
     // grows with the surface. The budget was 30 s and began timing out inside the

@@ -48,6 +48,7 @@ import '@/app/api/v1/meta/ping/route';
 import '@/app/api/v1/auth/login/route';
 import '@/app/api/v1/auth/logout/route';
 import '@/app/api/v1/auth/session/route';
+import '@/app/api/v1/auth/working-context/route';
 import '@/app/api/v1/auth/password-reset/route';
 import '@/app/api/v1/auth/password-reset/completion/route';
 import '@/app/api/v1/iam/invitations/route';

@@ -77,6 +77,7 @@ export const ROUTE_TEMPLATES = Object.freeze([
   '/auth/password-reset',
   '/auth/password-reset/completion',
   '/auth/session',
+  '/auth/working-context',
   '/barcodes/{value}',
   '/blockers/{blockerId}/resolution',
   '/counter-sales',

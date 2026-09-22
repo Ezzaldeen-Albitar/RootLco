@@ -2038,6 +2038,14 @@ export const MANIFEST = {
     required: ['success'],
     note: 'describeSession resolves identity, scope, permissions',
   },
+  'iam.working-context-read': {
+    files: [
+      'tests/backend/iam-auth-provider.test.ts',
+      'tests/backend/p1-24-iam-route-depth.test.ts',
+    ],
+    required: ['success', 'authorization'],
+    note: 'the caller own companies and branches, narrowed by sel_legal_companies_tenant and sel_branches_scope; a branch-scoped caller sees only its branches, an unrestricted one the whole tenant, a grant-less one nothing, and no other tenant row is ever named',
+  },
   'iam.auth-password-reset': {
     files: [
       'tests/backend/iam-auth-provider.test.ts',

@@ -528,7 +528,13 @@ describe('the coverage include lists are pinned, because they are the denominato
     // measured backend file: inventory/application/inventory-alert-service.ts. The
     // shared capacity classifier lives under `src/shared`, which this include list
     // does not admit, so it moves the count by nothing.
-    expect(files.length).toBe(310);
+    // 312 with the Owner directive working-context read: TWO more measured
+    // backend files, `modules/iam/data/working-context-repository.ts` (the read's
+    // only SQL) and `modules/iam/application/working-context-service.ts` (the rule
+    // that tells an unrestricted caller from a grant-less one). The baseline's
+    // percentage floors are untouched: re-establishing them needs a hosted
+    // measurement run, which this slice did not perform and does not claim.
+    expect(files.length).toBe(312);
     expect(backendCoverage?.exclude).toContain(`${API_SRC_PATH}/server/openapi/**`);
     const instrumented = files.filter(
       (file) => !file.startsWith(`${API_SRC_PATH}/server/openapi/`)
@@ -628,6 +634,8 @@ describe('the coverage include lists are pinned, because they are the denominato
     // 309 with the Owner directive operational stock alerts: the one added file,
     // inventory/application/inventory-alert-service.ts, is not under
     // `server/openapi/`, so it is instrumented as well as measured.
-    expect(instrumented.length).toBe(309);
+    // 311 with the Owner directive working-context read: neither added file is
+    // under `server/openapi/`, so both are instrumented as well as measured.
+    expect(instrumented.length).toBe(311);
   });
 });

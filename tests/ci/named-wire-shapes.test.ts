@@ -189,8 +189,11 @@ describe('every route body serialises a named type', () => {
     // serialises the NAMED `CreditNoteView` and the list a `Page<CreditNoteView>`,
     // which the checker resolves through the same generic the other paged reads
     // use — so `named` moves by two and `composed` does not move.
-    expect(summary.bodies).toBe(495);
-    expect(summary.named).toBe(443);
+    // 496 with the Owner directive working-context read: the route serialises the
+    // NAMED `WorkingContextView`, so `named` moves by one and `composed` does not
+    // move.
+    expect(summary.bodies).toBe(496);
+    expect(summary.named).toBe(444);
     expect(summary.composed).toBe(52);
     expect(summary.anonymous).toBe(0);
     expect(summary.unresolved).toBe(0);
