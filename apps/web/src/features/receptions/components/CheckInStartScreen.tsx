@@ -31,6 +31,8 @@ import {
 } from '@/features/working-context/components/WorkingBranchField';
 import { useBranchTarget } from '@/features/working-context/use-branch-target';
 import { useUnsavedGuard } from '@/features/working-context/WorkingContextProvider';
+import { useClearOnCorrect } from '@/lib/forms/use-clear-on-correct';
+import { useFocusFirstInvalid } from '@/lib/forms/use-focus-first-invalid';
 import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic, translateWithValues } from '@/i18n/get-messages';
@@ -541,6 +543,20 @@ export function CheckInStartScreen({
   /* --- submission ----------------------------------------------------------- */
 
   const [state, setState] = useState<ActionState>(IDLE);
+
+  /* --- what the last submission was refused about ------------------------ */
+
+  /*
+   * The two shared refusal behaviours, installed on the form rather than
+   * reimplemented panel by panel.
+   *
+   * `useFocusFirstInvalid` puts the cursor on the first control the refusal
+   * marked, so a long form that fails somewhere below the fold does not leave
+   * the operator hunting for red text. `useClearOnCorrect` retires a complaint
+   * the moment the value it was about changes.
+   */
+  const formRef = useFocusFirstInvalid(state);
+  const corrections = useClearOnCorrect(state);
   const [localError, setLocalError] = useState<string | null>(null);
   const [created, setCreated] = useState<ReceptionCreated | null>(null);
   const [pending, startTransition] = useTransition();
@@ -606,13 +622,47 @@ export function CheckInStartScreen({
    * vehicles here, was shown only the shared refusal banner and no indication of
    * which of the four panels above to go back to. Rendered beside the panel that
    * carries the value, with everything they typed still in place.
+   *
+   * ## The shared cue, and the shared clearing rule
+   *
+   * The sentence carries the same shape-and-colour mark every other refused
+   * field in the product carries — a bordered exclamation beside the text —
+   * rather than colour alone, which is invisible to a reader who cannot see it
+   * and to a colour-blind one who can. And it stops being shown the moment the
+   * operator changes the value it was about, through `useClearOnCorrect`: a
+   * complaint about a value that is no longer there is a false statement, and
+   * leaving it up makes the operator resubmit to find out which of the
+   * complaints still stand.
+   *
+   * ## What this deliberately does NOT do
+   *
+   * It does not set `aria-invalid` on the paragraph. `useFocusFirstInvalid`
+   * finds `[aria-invalid="true"]`, which is the attribute assistive technology
+   * announces as an invalid CONTROL, and the three values refused here are not
+   * controls: the branch is the header's selection, the vehicle is a row chosen
+   * from a list, and the receiving employee is a person chosen from a directory.
+   * Marking the sentence would move the cursor onto a paragraph and would
+   * announce "invalid" about something nobody can edit. The hook is still
+   * installed below, and it moves the cursor to the ordinary fields —
+   * the fuel level, the odometer, the note — when the refusal is about one of
+   * those.
    */
   const refusalFor = (name: string) => {
-    const key = state.fieldErrors?.[name];
+    const key = corrections.errorFor(name);
     if (key === undefined) return null;
     return (
-      <p role="alert" className="mt-3 text-body text-error">
-        {translateDynamic(messages, key)}
+      <p
+        role="alert"
+        data-testid={`check-in-refusal-${name}`}
+        className="mt-3 flex items-start gap-1.5 text-body text-error"
+      >
+        <span
+          aria-hidden="true"
+          className="mt-px inline-flex size-4 shrink-0 items-center justify-center rounded-full border border-error text-caption font-bold leading-none"
+        >
+          !
+        </span>
+        <span>{translateDynamic(messages, key)}</span>
       </p>
     );
   };
@@ -678,6 +728,7 @@ export function CheckInStartScreen({
 
   return (
     <form
+      ref={formRef}
       aria-label={translate(messages, 'receptions.checkIn.formLabel')}
       onSubmit={(event) => {
         event.preventDefault();
@@ -829,9 +880,20 @@ export function CheckInStartScreen({
                     messages={messages}
                     table={vehicles}
                     chosen={effectiveVehicle}
-                    onChoose={setWalkInVehicle}
+                    onChoose={(next) => {
+                      corrections.noteEdited('vehicleId');
+                      setWalkInVehicle(next);
+                    }}
                   />
                 ) : null}
+                {/*
+                 * `body.vehicleId` is published by `rec.reception-create` — a
+                 * vehicle of another workspace, or one already held on an open
+                 * visit — and was the one refusal of the three this form never
+                 * rendered. The operator saw only the shared banner and no
+                 * indication that it was the car they picked.
+                 */}
+                {refusalFor('vehicleId')}
               </>
             )}
             <TextAreaField
@@ -930,7 +992,10 @@ export function CheckInStartScreen({
           sessionUserId={sessionUserId}
           sessionUserName={sessionUserName}
           employee={employee}
-          onChange={setChosenEmployee}
+          onChange={(next) => {
+            corrections.noteEdited('receivingEmployeeId');
+            setChosenEmployee(next);
+          }}
         />
         {refusalFor('receivingEmployeeId')}
       </fieldset>
