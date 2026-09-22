@@ -363,6 +363,9 @@ const EXPECTED_AUDIT_ACTIONS = [
   'org.tenant.status_changed',
   'org.tenant_subscription.changed',
   'platform.operator.authority_granted',
+  // P1-32-PRE-OD-UX — the revocation counterpart, written only by
+  // scripts/platform/revoke-platform-operator.mjs.
+  'platform.operator.authority_revoked',
   'qms.quality_control.check_recorded',
   'qms.quality_control.finalized',
   'qms.quality_control.opened',
