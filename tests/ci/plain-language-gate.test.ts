@@ -172,25 +172,34 @@ const API_MODULES = join(ROOT, 'apps', 'api', 'src', 'modules');
 interface RuleToken {
   readonly rule: string;
   readonly file: string;
-  readonly how: 'violation-literal' | 'rule-list';
+  readonly how: 'violation-literal' | 'violation-shorthand' | 'rule-list';
 }
 
 /**
  * Every rule token declared in one TypeScript source, by parsing it.
  *
- * Two shapes are recognised, and they are the two the API actually uses:
+ * Three shapes are recognised, and they are the ones the API actually uses:
  *
  *   1. an object literal carrying both `path` and a string-literal `rule` —
  *      the pair `safeDetails.violations` is built from;
- *   2. a closed rule-list constant named `*_RULES`, frozen or not, whose
+ *   2. the same pair written with ES shorthand. `{ path, rule: 'invalid_value' }`
+ *      is how every service that takes the path from its caller publishes a
+ *      violation, and reading only `PropertyAssignment` made all of them
+ *      invisible: the gate saw two of the six sites emitting `invalid_value`
+ *      and none of the four reception ones. A shorthand `rule` is resolved when
+ *      the identifier binds to a file-local `const` holding a string literal,
+ *      and is otherwise left alone;
+ *   3. a closed rule-list constant named `*_RULES`, frozen or not, whose
  *      elements are string literals. A service that publishes one member of
- *      such a list publishes all of them.
+ *      such a list publishes all of them — which is what covers the shorthand
+ *      `{ path, rule }` helpers whose `rule` parameter is typed by one of those
+ *      lists.
  *
- * A `rule` whose value is not a string literal is deliberately NOT collected: it
- * is a computed token this gate cannot name, and reporting a guess would be
- * worse than reporting nothing. The two anti-vacuity cases below assert that
- * both shapes are still being found, so a parser that stopped recognising one of
- * them fails rather than reporting a shorter backlog.
+ * A `rule` this parser cannot resolve to a string is deliberately NOT collected:
+ * it is a computed token the gate cannot name, and reporting a guess would be
+ * worse than reporting nothing. The anti-vacuity cases below assert that all
+ * three shapes are still being found, so a parser that stopped recognising one
+ * of them fails rather than reporting a shorter backlog.
  */
 export function rulesInSource(fileName: string, text: string): RuleToken[] {
   const source = ts.createSourceFile(
@@ -207,6 +216,32 @@ export function rulesInSource(fileName: string, text: string): RuleToken[] {
     if (ts.isStringLiteral(node)) return node.text;
     return null;
   };
+
+  /**
+   * File-local `const x = 'literal'` bindings, for resolving a shorthand `rule`.
+   *
+   * A name declared more than once in the file is dropped rather than guessed
+   * at: two bindings mean the parser cannot say which one a shorthand refers to
+   * without scope analysis, and a gate that guesses is the failure mode this
+   * whole file exists to prevent.
+   */
+  const literalConstants = new Map<string, string | null>();
+  const collectConstants = (node: ts.Node): void => {
+    if (
+      ts.isVariableDeclaration(node) &&
+      ts.isIdentifier(node.name) &&
+      node.initializer !== undefined &&
+      ts.isStringLiteralLike(node.initializer)
+    ) {
+      const name = node.name.text;
+      literalConstants.set(
+        name,
+        literalConstants.has(name) ? null : (node.initializer.text as string)
+      );
+    }
+    ts.forEachChild(node, collectConstants);
+  };
+  collectConstants(source);
 
   const unwrap = (node: ts.Expression): ts.Expression => {
     let current = node;
@@ -232,7 +267,23 @@ export function rulesInSource(fileName: string, text: string): RuleToken[] {
     if (ts.isObjectLiteralExpression(node)) {
       let hasPath = false;
       let rule: string | null = null;
+      let shorthand = false;
       for (const property of node.properties) {
+        if (ts.isShorthandPropertyAssignment(property)) {
+          const name = property.name.text;
+          if (name === 'path') {
+            hasPath = true;
+            shorthand = true;
+          }
+          if (name === 'rule') {
+            const resolved = literalConstants.get(name) ?? null;
+            if (resolved !== null) {
+              rule = resolved;
+              shorthand = true;
+            }
+          }
+          continue;
+        }
         if (!ts.isPropertyAssignment(property)) continue;
         const name = nameOf(property.name);
         if (name === 'path') hasPath = true;
@@ -240,7 +291,13 @@ export function rulesInSource(fileName: string, text: string): RuleToken[] {
           rule = property.initializer.text;
         }
       }
-      if (hasPath && rule !== null) found.push({ rule, file: fileName, how: 'violation-literal' });
+      if (hasPath && rule !== null) {
+        found.push({
+          rule,
+          file: fileName,
+          how: shorthand ? 'violation-shorthand' : 'violation-literal',
+        });
+      }
     }
 
     if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.initializer) {
@@ -411,6 +468,10 @@ describe('every rule token the API publishes has a sentence, or is on a named li
       'the parser no longer recognises a published violation'
     ).toBe(true);
     expect(
+      tokens.some((token) => token.how === 'violation-shorthand'),
+      'the parser no longer recognises a violation written with ES shorthand'
+    ).toBe(true);
+    expect(
       tokens.some((token) => token.how === 'rule-list'),
       'the parser no longer recognises a closed rule-list constant'
     ).toBe(true);
@@ -458,6 +519,58 @@ describe('every rule token the API publishes has a sentence, or is on a named li
     expect(rules).toContain('written_in_code');
     expect(rules).toContain('from_a_frozen_list');
     expect(rules).not.toContain('written_only_in_a_comment');
+  });
+
+  it('reads a violation written with ES shorthand, which it used to be blind to', () => {
+    // The blind spot this case closes: a service that takes the field path from
+    // its caller writes `{ path, rule: '…' }`, and a reader that only accepts a
+    // `PropertyAssignment` named `path` saw nothing there at all. Six sites
+    // published `invalid_value`; the gate could name two.
+    const text = [
+      'function refuse(path: string) {',
+      "  throw new AppFailure('ERR-VAL-001', {",
+      "    safeDetails: { violations: [{ path, rule: 'from_a_shorthand_path' }] },",
+      '  });',
+      '}',
+    ].join('\n');
+    const tokens = rulesInSource('probe.ts', text);
+    expect(tokens.map((token) => token.rule)).toContain('from_a_shorthand_path');
+    expect(tokens.map((token) => token.how)).toContain('violation-shorthand');
+  });
+
+  it('resolves a shorthand rule to a file-local constant, and refuses an ambiguous one', () => {
+    const resolvable = [
+      "const rule = 'from_a_local_constant';",
+      "const path = 'body.x';",
+      'export const violation = { path, rule };',
+    ].join('\n');
+    expect(rulesInSource('probe.ts', resolvable).map((token) => token.rule)).toContain(
+      'from_a_local_constant'
+    );
+
+    // Two bindings of the same name: the parser cannot say which one the
+    // shorthand refers to, so it names neither rather than guessing at one.
+    const ambiguous = [
+      "const rule = 'first_binding';",
+      'function elsewhere() {',
+      "  const rule = 'second_binding';",
+      "  return { path: 'body.x', rule };",
+      '}',
+      "export const violation = { path: 'body.y', rule };",
+    ].join('\n');
+    expect(rulesInSource('probe.ts', ambiguous)).toEqual([]);
+  });
+
+  it('does not invent a token for a rule it cannot resolve', () => {
+    // The `{ path, rule }` helpers whose `rule` is a parameter. Their tokens are
+    // covered by the closed `*_RULES` constants that type those parameters, and
+    // this parser must not guess a name for the parameter itself.
+    const text = [
+      'function refuse(path: string, rule: string): never {',
+      "  throw new AppFailure('ERR-VAL-001', { safeDetails: { violations: [{ path, rule }] } });",
+      '}',
+    ].join('\n');
+    expect(rulesInSource('probe.ts', text)).toEqual([]);
   });
 
   it('keeps both lists shrinking: nothing exempt is stale, nothing exempt is already written', () => {

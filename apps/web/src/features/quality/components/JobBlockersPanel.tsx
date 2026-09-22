@@ -43,9 +43,13 @@ export function JobBlockersPanel({
   const [pending, setPending] = useState<string | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
   /**
-   * `body.note` — the guard refused the blocker event at the job's present
-   * stage. The sentence belongs beside the note that was refused, and the note
-   * itself is kept: it is cleared only on success.
+   * `body.note` — the blocker event was refused by the database guard. There is
+   * no stage condition behind it: `wo.guard_job_blocker_event` refuses a
+   * resolution that names something other than a raised blocker of this same
+   * job, and the frozen CHECKs refuse a blank note and a raise that carries a
+   * reference. The job's own stage is never consulted. The sentence belongs
+   * beside the note that was refused, and the note itself is kept: it is
+   * cleared only on success.
    *
    * Held per form rather than in one map, because raising and resolving both
    * publish the refusal against `note` and this panel renders one raise form

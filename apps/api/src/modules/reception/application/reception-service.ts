@@ -767,9 +767,18 @@ export class ReceptionService extends ApplicationService {
       });
     }
     if (isSqlState(error, SQLSTATE.checkViolation)) {
+      // Three CHECKs on `rec.reception_party_roles` arrive here indistinguishably
+      // as 23514, and the one this used to name is the one the request cannot
+      // meet: `ck_reception_party_roles_role` is already enforced ahead of the
+      // insert by `z.enum(RECEPTION_PARTY_ROLES)` on the route, and
+      // `ck_reception_party_roles_source_not_blank` by the normalisation above,
+      // which stores NULL rather than a blank. So the sentence pointed a reader
+      // at the role control over a refusal the role control cannot have caused.
+      // Published against the request rather than a field, with the honest
+      // general token, because that is what is actually known.
       return new AppFailure('ERR-VAL-001', {
-        message: 'The relationship role is not one the reception contract recognises',
-        safeDetails: { violations: [{ path: 'body.relationshipRole', rule: 'invalid_value' }] },
+        message: 'The party-role assignment was not accepted as submitted',
+        safeDetails: { violations: [{ path: 'body', rule: 'invalid_value' }] },
       });
     }
     return error;
@@ -845,6 +854,13 @@ export class ReceptionService extends ApplicationService {
     }
   }
 
+  /**
+   * The path comes from the call site, which knows which request it was reading;
+   * the token comes from the error, because only the domain knows which of its
+   * rules refused. Publishing both causes as `invalid_value` told a receptionist
+   * whose walk-in note was nothing but spaces to go and check the choices, the
+   * length and the range of the entry — none of which is what refused it.
+   */
   private planOrFail<T>(build: () => T, path: string): T {
     try {
       return build();
@@ -852,7 +868,7 @@ export class ReceptionService extends ApplicationService {
       if (error instanceof ReceptionRuleError) {
         throw new AppFailure('ERR-VAL-001', {
           message: error.message,
-          safeDetails: { violations: [{ path, rule: 'invalid_value' }] },
+          safeDetails: { violations: [{ path, rule: error.rule }] },
           cause: error,
         });
       }

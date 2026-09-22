@@ -60,6 +60,7 @@ import {
   INV_TENANT_B,
   ITEM_A,
   ITEM_A_ALT,
+  QUARANTINE_A1,
   auditCountFor,
   authAs,
   balanceOf,
@@ -1390,5 +1391,132 @@ describe('CC-OD-32: the purchase-cost refusal names the permission', () => {
       { path: 'body', rule: 'stock_receipt_cost_permission' },
     ]);
     expect(await onHandAt(ITEM_A, location)).toBe('0.000');
+  });
+});
+
+/**
+ * The refusal TOKENS these operations publish, driven through their routes.
+ *
+ * The sibling half of the block at the foot of `p1-21-inventory-stock.test.ts`:
+ * `STOCK_REFUSAL_RULES` carries a web sentence for each of eighteen refusals and
+ * no backend case drove any of them, so nothing held the path or the token
+ * steady. Each case asserts the status, the catalogue code, and the violation
+ * exactly — the path decides which control the sentence appears beside, the rule
+ * decides which sentence it is.
+ */
+describe('the intake and counting refusal tokens, on the wire', () => {
+  it('names a goods-receipt line pointed at a quarantine cell', async () => {
+    const { response } = await createReceipt([
+      { itemId: ITEM_A, locationId: QUARANTINE_A1, quantity: '3.000' },
+    ]);
+    expect(response.status).toBe(409);
+    expect((await bodyOf<ProblemViolations>(response)).violations).toEqual([
+      { path: 'body.lines.0.locationId', rule: 'stock_location_quarantine' },
+    ]);
+  });
+
+  it('names a goods-receipt line pointed at a transit cell', async () => {
+    // The transit cell is minted by a real dispatch, because no operator may
+    // create one: it is system-owned, one per branch, named by the transfer.
+    const source = await freshLocation();
+    await seedStock({ itemId: ITEM_A, locationId: source, quantity: '4.000' });
+    const destination = await freshLocation();
+    const { transfer } = await dispatch({
+      itemId: ITEM_A,
+      fromLocationId: source,
+      toLocationId: destination,
+      quantity: '2.000',
+    });
+    const { response } = await createReceipt([
+      { itemId: ITEM_A, locationId: transfer.transitLocationId, quantity: '1.000' },
+    ]);
+    expect(response.status).toBe(409);
+    expect((await bodyOf<ProblemViolations>(response)).violations).toEqual([
+      { path: 'body.lines.0.locationId', rule: 'stock_location_transit' },
+    ]);
+  });
+
+  it('names a goods receipt that has already been entered into stock', async () => {
+    const location = await freshLocation();
+    const { receipt } = await createReceipt([
+      { itemId: ITEM_A, locationId: location, quantity: '2.000' },
+    ]);
+    authAs(INV_FULL);
+    const posted = await postReceipt(receipt.id, receipt.recordVersion);
+    expect(posted.status).toBe(200);
+    const again = await bodyOf<ReceiptBody>(posted.clone());
+
+    const second = await postReceipt(receipt.id, again.recordVersion);
+    expect(second.status).toBe(409);
+    expect((await bodyOf<ProblemViolations>(second)).violations).toEqual([
+      { path: 'body', rule: 'stock_receipt_not_draft' },
+    ]);
+  });
+
+  it('names an adjustment against a transit cell', async () => {
+    const source = await freshLocation();
+    await seedStock({ itemId: ITEM_A, locationId: source, quantity: '4.000' });
+    const destination = await freshLocation();
+    const { transfer } = await dispatch({
+      itemId: ITEM_A,
+      fromLocationId: source,
+      toLocationId: destination,
+      quantity: '2.000',
+    });
+    const { response } = await requestAdjustment({ locationId: transfer.transitLocationId });
+    expect(response.status).toBe(409);
+    expect((await bodyOf<ProblemViolations>(response)).violations).toEqual([
+      { path: 'body.locationId', rule: 'stock_location_transit' },
+    ]);
+  });
+
+  it('names an adjustment somebody has already decided', async () => {
+    const location = await freshLocation();
+    const { adjustment } = await requestAdjustment({ locationId: location });
+    authAs(INV_APPROVER);
+    expect((await decide(adjustment.id, 'rejected')).status).toBe(200);
+
+    const again = await decide(adjustment.id, 'approved');
+    expect(again.status).toBe(409);
+    expect((await bodyOf<ProblemViolations>(again)).violations).toEqual([
+      { path: 'body', rule: 'stock_adjustment_already_decided' },
+    ]);
+  });
+
+  it('names the requester who tried to decide their own adjustment', async () => {
+    const location = await freshLocation();
+    const { adjustment } = await requestAdjustment({ locationId: location }, INV_APPROVER);
+    // The same person, now wearing the approving hat. Maker-checker is the point.
+    authAs(INV_APPROVER);
+    const response = await decide(adjustment.id, 'approved');
+    expect(response.status).toBe(409);
+    expect((await bodyOf<ProblemViolations>(response)).violations).toEqual([
+      { path: 'body', rule: 'stock_adjustment_separation_of_duties' },
+    ]);
+  });
+
+  it('names a count that has been closed and can take no more lines', async () => {
+    const location = await freshLocation();
+    await seedStock({ itemId: ITEM_A, locationId: location, quantity: '2.000' });
+    const { count } = await openCount({ locationId: location });
+    authAs(INV_FULL);
+    const cancelled = await postAt(
+      COUNT_CANCEL,
+      `/api/v1/stock-counts/${count.id}/cancellation`,
+      { countId: count.id },
+      { reason: 'recount tomorrow' }
+    );
+    expect(cancelled.status).toBe(200);
+    const closed = await bodyOf<CountBody>(cancelled);
+
+    const response = await recordLine(
+      { id: count.id, recordVersion: closed.recordVersion },
+      ITEM_A,
+      '2.000'
+    );
+    expect(response.status).toBe(409);
+    expect((await bodyOf<ProblemViolations>(response)).violations).toEqual([
+      { path: 'body', rule: 'stock_count_closed' },
+    ]);
   });
 });

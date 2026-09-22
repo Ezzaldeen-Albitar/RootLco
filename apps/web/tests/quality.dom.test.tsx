@@ -81,6 +81,7 @@ const WORK_ORDER = '11111111-1111-4111-8111-111111111111';
 const RECORD = '22222222-2222-4222-8222-222222222222';
 const CHECK_A = '33333333-3333-4333-8333-333333333333';
 const CHECK_B = '44444444-4444-4444-8444-444444444444';
+const JOB = '55555555-5555-4555-8555-555555555555';
 const COMPANY = '88888888-8888-4888-8888-888888888888';
 const BRANCH = '99999999-9999-4999-8999-999999999999';
 
@@ -175,7 +176,18 @@ const workOrderDetail = {
     customer: null,
     vehicle: { id: 'veh', plate: null, vin: null, make: null, model: null, modelYear: null },
   },
-  jobs: [],
+  jobs: [
+    {
+      id: JOB,
+      workOrderId: WORK_ORDER,
+      title: 'Front brake service',
+      jobType: null,
+      departmentId: null,
+      state: 'in_progress',
+      requiresDiagnostic: false,
+      recordVersion: 1,
+    },
+  ],
   nextStates: [
     { code: 'closed', requiresReason: false, isTerminal: true, isCancellation: false },
     { code: 'cancelled', requiresReason: true, isTerminal: true, isCancellation: true },
@@ -759,12 +771,14 @@ describe('the closure screen says why a command was refused', () => {
     expect((who as HTMLInputElement).value).toBe('the-colleague-reference');
   });
 
-  it('lifts the missing-origin refusal into the request form alert, since the form has no origin control', async () => {
+  it('sends the origin chosen from the job picker, and the request is accepted', async () => {
+    // The product defect this closes: the form sent neither origin and
+    // `additional-work-service` refuses exactly that, so every request raised
+    // from this screen was refused whatever was typed into it.
     requestAdditionalWork.mockResolvedValue({
-      status: 'invalid',
-      messageKey: 'form.violation.invalid',
-      fieldErrors: { originatingJobId: 'form.violation.origin_required' },
-      correlationId: 'corr-origin',
+      status: 'success',
+      messageKey: 'action.saved',
+      correlationId: 'corr-origin-ok',
       attempt: 1,
     });
     const user = userEvent.setup();
@@ -780,11 +794,89 @@ describe('the closure screen says why a command was refused', () => {
       new RegExp(`^${t('quality.closure.additionalWorkSummary')}`)
     );
     await user.type(summary, 'Rear pads at 2 mm');
+    const origin = screen.getByLabelText(new RegExp(`^${t('quality.closure.originatingJob')}`));
+    // The picker offers the order's own jobs by their titles, so nobody types
+    // a 36-character identifier to say where the work came from.
+    expect(
+      within(origin as HTMLSelectElement).getByRole('option', { name: 'Front brake service' })
+    ).toBeInTheDocument();
+    await user.selectOptions(origin, JOB);
     await user.click(screen.getByRole('button', { name: t('quality.closure.requestWork') }));
 
-    expect(await screen.findByText(t('form.violation.origin_required'))).toBeVisible();
+    await waitFor(() =>
+      expect(requestAdditionalWork).toHaveBeenCalledWith(WORK_ORDER, {
+        originatingJobId: JOB,
+        summary: 'Rear pads at 2 mm',
+      })
+    );
+  });
+
+  it('refuses a request with no origin chosen, beside the picker, and keeps the typed text', async () => {
+    const user = userEvent.setup();
+    renderLtr(
+      <WorkOrderClosureScreen
+        locale="en"
+        messages={en}
+        workOrderId={WORK_ORDER}
+        capabilities={everything}
+      />
+    );
+    const summary = await screen.findByLabelText(
+      new RegExp(`^${t('quality.closure.additionalWorkSummary')}`)
+    );
+    await user.type(summary, 'Rear pads at 2 mm');
+    await user.click(screen.getByRole('button', { name: t('quality.closure.requestWork') }));
+
+    const origin = screen.getByLabelText(new RegExp(`^${t('quality.closure.originatingJob')}`));
+    const sentence = await screen.findByText(t('form.violation.origin_required'));
+    expect(sentence).toBeVisible();
+    expect(origin.getAttribute('aria-describedby') ?? '').toContain(sentence.id);
     expect((summary as HTMLInputElement).value).toBe('Rear pads at 2 mm');
+    expect(requestAdditionalWork).not.toHaveBeenCalled();
     expect(document.body.textContent).not.toContain('origin_required');
+  });
+
+  it('puts a refused origin from the service beside the picker, not in the form alert', async () => {
+    requestAdditionalWork.mockResolvedValue({
+      status: 'invalid',
+      messageKey: 'form.violation.invalid',
+      fieldErrors: { originatingJobId: 'form.violation.origin_conflict' },
+      correlationId: 'corr-origin-conflict',
+      attempt: 1,
+    });
+    const user = userEvent.setup();
+    renderLtr(
+      <WorkOrderClosureScreen
+        locale="en"
+        messages={en}
+        workOrderId={WORK_ORDER}
+        capabilities={everything}
+      />
+    );
+    const summary = await screen.findByLabelText(
+      new RegExp(`^${t('quality.closure.additionalWorkSummary')}`)
+    );
+    await user.type(summary, 'Rear pads at 2 mm');
+    const origin = screen.getByLabelText(new RegExp(`^${t('quality.closure.originatingJob')}`));
+    await user.selectOptions(origin, JOB);
+    await user.click(screen.getByRole('button', { name: t('quality.closure.requestWork') }));
+
+    const sentence = await screen.findByText(t('form.violation.origin_conflict'));
+    /*
+     * Re-queried, not re-used. The picker is remounted once the action settles —
+     * an uncontrolled value is the only shape that survives the form reset a
+     * `<form action>` performs — so the node captured before the submit is
+     * detached, and asserting against it would be asserting about a control that
+     * is no longer on the page.
+     */
+    const refused = screen.getByLabelText(new RegExp(`^${t('quality.closure.originatingJob')}`));
+    expect(refused.getAttribute('aria-describedby') ?? '').toContain(sentence.id);
+    // And the refusal did not cost the operator the choice they had made: the
+    // remounted control comes back on the same job, which is what the sentence
+    // beside it is about.
+    expect((refused as HTMLSelectElement).value).toBe(JOB);
+    expect((summary as HTMLInputElement).value).toBe('Rear pads at 2 mm');
+    expect(document.body.textContent).not.toContain('origin_conflict');
   });
 
   it('leaves a refusal it has not been told about to the generic banner', async () => {
@@ -808,6 +900,10 @@ describe('the closure screen says why a command was refused', () => {
       new RegExp(`^${t('quality.closure.additionalWorkSummary')}`)
     );
     await user.type(summary, 'Rear pads at 2 mm');
+    await user.selectOptions(
+      screen.getByLabelText(new RegExp(`^${t('quality.closure.originatingJob')}`)),
+      JOB
+    );
     await user.click(screen.getByRole('button', { name: t('quality.closure.requestWork') }));
 
     expect(await screen.findByText(t('form.violation.invalid'))).toBeVisible();
