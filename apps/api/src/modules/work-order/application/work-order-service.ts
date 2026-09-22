@@ -40,6 +40,7 @@ import {
   CLOSURE_BLOCKER_REGISTRY,
   DEFERRED_CLOSURE_BLOCKERS,
   type ClosureBlockerCode,
+  type WorkOrderStateGroup,
 } from '../domain/work-order';
 
 export interface ClosureBlocker {
@@ -790,18 +791,21 @@ export class WorkOrderService extends ApplicationService {
       readonly assignedToMe?: boolean | undefined;
       readonly readyForDelivery?: boolean | undefined;
       readonly awaitingQuality?: boolean | undefined;
+      readonly stateGroup?: WorkOrderStateGroup | undefined;
     }
   ): Promise<{
     readonly assignedTechnicianProfileId?: string | undefined;
     readonly matchNothing?: boolean | undefined;
     readonly readyStates?: readonly string[] | undefined;
     readonly awaitingQualityIds?: readonly string[] | undefined;
+    readonly groupStates?: readonly string[] | undefined;
   }> {
     const resolved: {
       assignedTechnicianProfileId?: string;
       matchNothing?: boolean;
       readyStates?: readonly string[];
       awaitingQualityIds?: readonly string[];
+      groupStates?: readonly string[];
     } = {};
 
     if (asked.awaitingQuality === true) {
@@ -832,6 +836,24 @@ export class WorkOrderService extends ApplicationService {
       // on it alone would offer every abandoned job for handover.
       resolved.readyStates = (await this.catalog.workOrderStates(db))
         .filter((state) => state.isClosed && !state.isCancellation)
+        .map((state) => state.code);
+    }
+
+    if (asked.stateGroup !== undefined) {
+      // Resolved from the LIVE catalogue, one flag pair at a time, for the
+      // reason `readyStates` is: `wo.work_order_states` is tenant-extensible, so
+      // a group named by state CODE here would stop describing a tenant the
+      // moment it defined one of its own. The three groups partition the
+      // catalogue — see `WORK_ORDER_STATE_GROUPS` — so `terminal` excludes the
+      // cancellations rather than containing them, and no work order is returned
+      // by two of the three.
+      const catalogue = await this.catalog.workOrderStates(db);
+      resolved.groupStates = catalogue
+        .filter((state) => {
+          if (asked.stateGroup === 'cancelled') return state.isCancellation;
+          if (asked.stateGroup === 'terminal') return state.isTerminal && !state.isCancellation;
+          return !state.isTerminal && !state.isCancellation;
+        })
         .map((state) => state.code);
     }
 
