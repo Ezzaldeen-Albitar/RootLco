@@ -954,10 +954,11 @@ your notes deliberately.
    to **Yes** <!-- quality.closure.yes --> or **No** <!-- quality.closure.no --> , and press
    **Request additional work** <!-- quality.closure.requestWork --> . Leave the job unchosen and the
    request is not sent: the panel answers "Extra work has to say which job or inspection finding it
-   came from, and this request names neither." <!-- form.violation.origin_required --> beside that
-   box, and what you typed stays. If the work order has no jobs on it yet the box reads "This work
-   order has no jobs yet, so there is nothing for extra work to be recorded against."
-   <!-- quality.closure.originatingJobNone --> — add a job first (§4B.6.3).
+   came from, and this request names neither. Choose the job the work was found on."
+   <!-- form.violation.origin_required --> beside that box, and what you typed stays. If the work
+   order has no jobs on it yet the box reads "This work order has no jobs yet, so there is nothing
+   for extra work to be recorded against. Add a job to the work order first."
+   <!-- quality.closure.originatingJobNone --> (§4B.6.3).
 2. Add the detail: **Description** <!-- quality.closure.description --> then **Record the
    description** <!-- quality.closure.recordDescription --> .
 3. Record the customer's answer under **Customer approval** <!-- quality.closure.approval --> :
