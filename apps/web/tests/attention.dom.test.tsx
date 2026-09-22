@@ -892,6 +892,10 @@ function chart(headingKey: string): HTMLElement {
 
 describe('the dashboard reads once for the branch it is addressed to', () => {
   beforeEach(() => {
+    // The working branch is REMEMBERED between visits, and the store outlives a
+    // single case. Cleared here so each one starts where a first-time reader
+    // does: nothing chosen, and nothing read until something is.
+    window.localStorage.clear();
     readDashboardSummary.mockReset();
     readDashboardSummary.mockResolvedValue(okRead(dashboardSummary()));
   });
@@ -1020,6 +1024,10 @@ describe('the dashboard reads once for the branch it is addressed to', () => {
 
 describe('a withheld figure is not a zero, and an unanswerable one is not either', () => {
   beforeEach(() => {
+    // The working branch is REMEMBERED between visits, and the store outlives a
+    // single case. Cleared here so each one starts where a first-time reader
+    // does: nothing chosen, and nothing read until something is.
+    window.localStorage.clear();
     readDashboardSummary.mockReset();
   });
 
@@ -1091,6 +1099,10 @@ describe('a withheld figure is not a zero, and an unanswerable one is not either
 
 describe('every figure opens the list it counted', () => {
   beforeEach(() => {
+    // The working branch is REMEMBERED between visits, and the store outlives a
+    // single case. Cleared here so each one starts where a first-time reader
+    // does: nothing chosen, and nothing read until something is.
+    window.localStorage.clear();
     readDashboardSummary.mockReset();
     readDashboardSummary.mockResolvedValue(okRead(dashboardSummary()));
   });
@@ -1172,6 +1184,10 @@ describe('every figure opens the list it counted', () => {
 
 describe('the charts are drawings with the figures written out beside them', () => {
   beforeEach(() => {
+    // The working branch is REMEMBERED between visits, and the store outlives a
+    // single case. Cleared here so each one starts where a first-time reader
+    // does: nothing chosen, and nothing read until something is.
+    window.localStorage.clear();
     readDashboardSummary.mockReset();
     readDashboardSummary.mockResolvedValue(okRead(dashboardSummary()));
   });
@@ -1266,6 +1282,10 @@ describe('the charts are drawings with the figures written out beside them', () 
 
 describe('the dashboard in Arabic, and reachable from the keyboard', () => {
   beforeEach(() => {
+    // The working branch is REMEMBERED between visits, and the store outlives a
+    // single case. Cleared here so each one starts where a first-time reader
+    // does: nothing chosen, and nothing read until something is.
+    window.localStorage.clear();
     readDashboardSummary.mockReset();
     readDashboardSummary.mockResolvedValue(okRead(dashboardSummary()));
   });

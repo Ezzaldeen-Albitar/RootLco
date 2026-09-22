@@ -62,8 +62,8 @@ describe('sidebar', () => {
     renderLtr(
       <Sidebar locale="en" messages={messages} groups={groups} pathname="/en" collapsed={false} />
     );
-    const overview = screen.getByRole('link', { name: 'Overview' });
-    expect(overview).toHaveAttribute('aria-current', 'page');
+    const dashboard = screen.getByRole('link', { name: 'Dashboard' });
+    expect(dashboard).toHaveAttribute('aria-current', 'page');
   });
 
   it('renders a planned module as NOT a link', () => {
@@ -102,11 +102,11 @@ describe('sidebar', () => {
     const { rerender } = renderLtr(
       <Sidebar locale="en" messages={messages} groups={groups} pathname="/en" collapsed={false} />
     );
-    expect(screen.getByRole('link', { name: 'Overview' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Dashboard' })).toBeInTheDocument();
     rerender(<Sidebar locale="en" messages={messages} groups={groups} pathname="/en" collapsed />);
     // Collapsing is a VISUAL affordance; it must not change what a screen
     // reader announces.
-    expect(screen.getByRole('link', { name: 'Overview' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Dashboard' })).toBeInTheDocument();
   });
 
   it('shows only what the actor may see', () => {
@@ -120,7 +120,7 @@ describe('sidebar', () => {
         collapsed={false}
       />
     );
-    expect(screen.getByRole('link', { name: 'Overview' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Dashboard' })).toBeInTheDocument();
     expect(screen.queryByText('Billing')).toBeNull();
   });
 
