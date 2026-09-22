@@ -38,19 +38,25 @@ import type {
  * `check-api-boundary.mjs` says so. This file turns operations into view states
  * and nothing else.
  *
- * ## The branch pair is a TARGET, not a filter, and it is not optional
+ * ## The company is a selector, the branch is an optional target
  *
- * `wo.work-order-list` declares `scope: 'branch'`, and a branch scope is inert
- * without a target: the pre-handler check reads the pair out of the query and,
- * with no pair, degrades to a scope-BLIND permission test. An operator holding
- * `wo.work_order.read` in one branch and any grant at all in another would then
- * see the second branch's board. So the pair travels through
- * `branchTargetQuery`, which refuses a half-built target rather than serialising
- * `undefined` into a URL.
+ * `wo.work-order-list` declares `scope: 'branch'`, and a NAMED branch is still
+ * the authorization target: the pre-handler check reads the pair out of the
+ * query and decides against the branch actually being read. What changed under
+ * the Owner directive (`P1-32-PRE-OD-UX`) is that omitting the branch is now a
+ * REQUEST rather than a gap — it asks for every branch of the named company the
+ * caller may read, and the route resolves that set inside the transaction by
+ * putting each candidate branch to this operation's own permission code and
+ * refusing a caller that holds none. So the omission cannot widen what this
+ * operator is entitled to see.
  *
- * That is also why the screen mounts its results only once an operator has named
- * a branch: there is no request to make before then, and no default that would
- * be a guess about which board they meant.
+ * Both shapes travel through `branchScopeQuery`, which demands the company and
+ * refuses a blank branch: an omitted branch is the documented request, a blank
+ * one is a malformed reference answered 422 far from the mistake.
+ *
+ * The board therefore reads on mount. There is nothing left to validate before
+ * asking — the branch is the working context's own named selection — and the
+ * first request is bounded rather than unbounded.
  *
  * ## A denial is not an empty page
  *

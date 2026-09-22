@@ -21,10 +21,10 @@ import { useFocusFirstInvalid } from '@/lib/forms/use-focus-first-invalid';
 import {
   addDays,
   dayIn,
+  endOfDay,
   formatDayInZone,
   formatInZone,
   rangeOfDays,
-  startOfDay,
 } from '@/lib/branch-time';
 import { intlLocale } from '@/lib/format';
 import type { Locale } from '@/i18n/config';
@@ -160,7 +160,16 @@ function windowOf(
       // the person asking. Six back plus today.
       return rangeOfDays(zone, addDays(today, -6), today);
     case 'beforeToday':
-      return { to: startOfDay(zone, today).toISOString() };
+      /*
+       * The LAST instant of yesterday, not the first instant of today.
+       *
+       * The route compares `custody_accepted_at <= to`, closed on both ends. The
+       * start of today satisfies that comparison, so sending it puts every visit
+       * received in the first millisecond of today — midnight arrivals, and any
+       * row the database stamped exactly on the boundary — into a board headed
+       * "before today".
+       */
+      return { to: endOfDay(zone, addDays(today, -1)).toISOString() };
     case 'custom':
       return rangeOfDays(zone, period.from, period.to);
   }
@@ -251,6 +260,15 @@ export function ReceptionQueueScreen({
    * `null` is "there is nothing to ask for yet": no resolvable scope, or a
    * custom period with only one of its two days filled in. The hook makes no
    * request at all in that state.
+   *
+   * Building it inline is also what makes a branch change safe. The scope and
+   * the zone are DERIVED from the working context on every render, so there is
+   * no stored copy of either to reset when the header moves — the criteria are
+   * already the new branch's in the same render the version changes in, and
+   * `useSearchRequest` treats that version change as a submission of exactly
+   * these criteria rather than waiting out a debounce on the previous ones. The
+   * filters below are state, and they SURVIVE a branch change on purpose: they
+   * are what the operator asked for and they are not about the branch.
    */
   const asked: Asked | null =
     scope === null || (period.kind === 'custom' && (period.from === '' || period.to === ''))
@@ -399,7 +417,19 @@ export function ReceptionQueueScreen({
         // Rendered only while the board spans branches — see `hiddenColumnIds`
         // below. The name, never the identifier: a reference here would be a
         // second thing for the operator to look up.
-        cell: (row) => <bdi>{context.branchName(row.branchId) ?? ''}</bdi>,
+        /*
+         * The name, or an absence rendered AS an absence.
+         *
+         * `branchName` answers null for a branch the directory no longer
+         * publishes — revoked between the read and the render, or simply not in
+         * this operator's list. An empty cell reads as a rendering fault; the
+         * dash is the same mark the technician column uses for "there is
+         * nothing here to name".
+         */
+        cell: (row) => {
+          const name = context.branchName(row.branchId);
+          return name === null ? <span className="text-text-muted">—</span> : <bdi>{name}</bdi>;
+        },
       },
       {
         id: 'custodyAcceptedAt',

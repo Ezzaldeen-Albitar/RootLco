@@ -115,14 +115,33 @@ export interface DashboardSummaryCriteria {
 }
 
 /**
- * The number a section is worth showing, or `null`.
+ * What a screen should render for one figure.
  *
- * `null` for a withheld or unanswerable section, and the CALLER renders nothing
- * at all rather than a zero or a dash that reads as one. Collapsing the three
- * states here would be the mistake `DashboardSection` exists to prevent; this
- * helper only spares every call site the same three-arm switch for the one case
- * where "show the figure or show no figure" is the whole decision.
+ * FOUR arms, not two, because the three the operation publishes mean three
+ * different things to the person reading and a fourth — the whole read failed —
+ * means a fourth:
+ *
+ *   - `figure`      the platform computed it;
+ *   - `withheld`    the caller lacks the section's own module read code. A zero
+ *                   here would be a false statement about the workshop instead
+ *                   of a true one about the caller;
+ *   - `unavailable` the schema holds nothing the question could be asked of.
+ *                   Different from withheld: no permission would change it;
+ *   - `absent`      no answer at all, because the aggregate itself was not read.
+ *
+ * The `reason` a section carries for `unavailable` is deliberately NOT part of
+ * this: it is a server-authored SENTENCE, and no server prose reaches a screen
+ * in this application. The caller renders its own catalogue sentence.
  */
-export function figureOf(section: DashboardSection<number> | undefined): number | null {
-  return section !== undefined && section.status === 'ok' ? section.value : null;
+export type FigureState =
+  | { readonly kind: 'figure'; readonly value: number }
+  | { readonly kind: 'withheld' }
+  | { readonly kind: 'unavailable' }
+  | { readonly kind: 'absent' };
+
+export function figureStateOf(section: DashboardSection<number> | undefined): FigureState {
+  if (section === undefined) return { kind: 'absent' };
+  if (section.status === 'ok') return { kind: 'figure', value: section.value };
+  if (section.status === 'unauthorized') return { kind: 'withheld' };
+  return { kind: 'unavailable' };
 }

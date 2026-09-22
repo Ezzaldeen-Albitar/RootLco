@@ -455,44 +455,91 @@ describe('the work-order board reads on arrival and narrows honestly', () => {
     expect(screen.getByText('Foreman on duty')).toBeInTheDocument();
   });
 
-  it('takes its counts from the aggregate, and shows none for a section it may not read', async () => {
-    readDashboardSummary.mockResolvedValue({
-      status: 'ok',
-      correlationId: null,
-      data: {
-        period: { kind: 'today', from: '2026-09-22', to: '2026-09-22', timezone: 'Asia/Riyadh' },
-        generatedAt: '2026-09-22T06:00:00.000Z',
-        branchIds: [BRANCH],
-        sections: {
-          receptionsOpened: { status: 'ok', value: 2 },
-          activeWorkOrders: { status: 'ok', value: 7 },
-          awaitingApproval: { status: 'ok', value: 3 },
-          awaitingParts: { status: 'unauthorized' },
-          readyForDelivery: { status: 'ok', value: 1 },
-          completedInPeriod: { status: 'ok', value: 4 },
-          workOrdersByState: { status: 'unauthorized' },
-          intakeCompletionTrend: { status: 'unauthorized' },
-          technicianWorkload: { status: 'unauthorized' },
-          lowStock: { status: 'unauthorized' },
-          pendingApprovalsCount: { status: 'unauthorized' },
-          overdue: { status: 'unauthorized' },
-        },
+  const summaryWith = (sections: Record<string, unknown>) => ({
+    status: 'ok',
+    correlationId: null,
+    data: {
+      period: { kind: 'today', from: '2026-09-22', to: '2026-09-22', timezone: 'Asia/Riyadh' },
+      generatedAt: '2026-09-22T06:00:00.000Z',
+      branchIds: [BRANCH],
+      sections: {
+        receptionsOpened: { status: 'ok', value: 2 },
+        activeWorkOrders: { status: 'ok', value: 7 },
+        awaitingApproval: { status: 'ok', value: 3 },
+        awaitingParts: { status: 'ok', value: 5 },
+        readyForDelivery: { status: 'ok', value: 1 },
+        completedInPeriod: { status: 'ok', value: 4 },
+        workOrdersByState: { status: 'unauthorized' },
+        intakeCompletionTrend: { status: 'unauthorized' },
+        technicianWorkload: { status: 'unauthorized' },
+        lowStock: { status: 'unauthorized' },
+        pendingApprovalsCount: { status: 'unauthorized' },
+        overdue: { status: 'unavailable', reason: 'nothing to measure lateness against' },
+        ...sections,
       },
-    });
-    render();
-    const approval = await screen.findByRole('button', {
-      name: new RegExp(en['workOrders.queue.view.awaitingApproval']),
-    });
-    expect(approval).toHaveTextContent('3');
-    // Withheld for want of a permission. A zero here would be a false statement
-    // about the workshop instead of a true one about the caller.
-    const parts = screen.getByRole('button', {
-      name: new RegExp(en['workOrders.queue.view.awaitingParts']),
-    });
-    expect(parts.textContent).toBe(en['workOrders.queue.view.awaitingParts']);
+    },
+  });
 
-    expect(screen.getByTestId('figure-active')).toHaveTextContent('7');
+  it('takes every figure from the aggregate, and names the clock the day was counted on', async () => {
+    readDashboardSummary.mockResolvedValue(summaryWith({}));
+    render();
+    expect(await screen.findByTestId('figure-active')).toHaveTextContent('7');
     expect(screen.getByTestId('figure-completed')).toHaveTextContent('4');
+    expect(screen.getByTestId('figure-awaitingApproval')).toHaveTextContent('3');
+    expect(screen.getByTestId('figure-awaitingParts')).toHaveTextContent('5');
+    expect(screen.getByTestId('figure-readyForDelivery')).toHaveTextContent('1');
+    // The aggregate resolves the day on the branch's clock, and a figure headed
+    // "finished today" is a claim about a boundary the reader cannot see.
+    expect(screen.getByTestId('figure-zone')).toHaveTextContent('Asia/Riyadh');
+  });
+
+  it('prints NO figure on a view button, because the two count different sets', async () => {
+    /*
+     * The disagreement this closes. The aggregate counts NON-TERMINAL orders
+     * whose parts are `requested`; the list filter is a bare
+     * `parts_forward_state` other than `none`, in any state. Both numbers are
+     * honest and they are about different sets, so a figure printed on the chip
+     * read as a preview of a list it did not describe.
+     */
+    readDashboardSummary.mockResolvedValue(summaryWith({}));
+    render();
+    await screen.findByTestId('figure-awaitingParts');
+    for (const view of ['awaitingParts', 'awaitingApproval', 'readyForDelivery'] as const) {
+      const chip = screen.getByRole('button', {
+        name: new RegExp(en[`workOrders.queue.view.${view}`] as string),
+      });
+      expect(chip.textContent, view).toBe(en[`workOrders.queue.view.${view}`]);
+    }
+    // And the strip says plainly what it is about, so the two cannot be read as
+    // the same claim.
+    expect(screen.getByTestId('work-order-summary-strip')).toHaveTextContent(
+      en['workOrders.queue.figure.note'] as string
+    );
+  });
+
+  it('tells a withheld figure apart from one that cannot be worked out', async () => {
+    readDashboardSummary.mockResolvedValue(
+      summaryWith({
+        // No permission for the section. A zero would be a false statement about
+        // the workshop instead of a true one about the caller.
+        awaitingParts: { status: 'unauthorized' },
+        // Nothing in the platform the question could be asked of; no permission
+        // would change it.
+        readyForDelivery: { status: 'unavailable', reason: 'a sentence the server wrote' },
+      })
+    );
+    render();
+    expect(await screen.findByTestId('figure-awaitingParts')).toHaveTextContent(
+      en['workOrders.queue.figure.withheld'] as string
+    );
+    expect(screen.getByTestId('figure-readyForDelivery')).toHaveTextContent(
+      en['workOrders.queue.figure.unavailable'] as string
+    );
+    // Neither reads as nought, and the server's own sentence never reaches the
+    // screen.
+    const strip = screen.getByTestId('work-order-summary-strip');
+    expect(strip.textContent ?? '').not.toContain('a sentence the server wrote');
+    expect(screen.getByTestId('figure-active')).toHaveTextContent('7');
   });
 
   it('shows no figure strip at all when the aggregate could not be read', async () => {
@@ -566,6 +613,50 @@ describe('the work-order board reads on arrival and narrows honestly', () => {
     expect(screen.queryByText('WO-000123')).toBeNull();
   });
 
+  it('issues NO read for the branch it just left', async () => {
+    /*
+     * The defect the hook's version handling closes.
+     *
+     * The criteria are derived from the working context during render, so they
+     * are the new branch's the moment the header moves — but the key the hook
+     * FETCHED was the debounced one, and `version` was not debounced. The
+     * request that went out was therefore the previous branch's criteria at the
+     * new version: a whole read issued for the branch the operator had just
+     * left, answered, and rendered under the new branch's heading.
+     *
+     * Asserted over EVERY call rather than over the last one: a read for the old
+     * branch that is later superseded still happened, still spent one of thirty
+     * requests, and still showed rows under the wrong heading for as long as it
+     * was the newest answer.
+     */
+    const user = userEvent.setup();
+    renderLtr(
+      inBranch(
+        <>
+          <BranchSwitch to={TEST_BRANCH.id} label="use main" />
+          <BranchSwitch to={OTHER_BRANCH.id} label="use second" />
+          <WorkOrderQueueScreen locale="en" messages={en} />
+        </>,
+        { snapshot: branchSnapshot([TEST_BRANCH, OTHER_BRANCH]) }
+      )
+    );
+    await user.click(screen.getByRole('button', { name: 'use main' }));
+    await waitFor(() => expect(listWorkOrders).toHaveBeenCalled());
+
+    listWorkOrders.mockClear();
+    await user.click(screen.getByRole('button', { name: 'use second' }));
+    await waitFor(() => expect(listWorkOrders).toHaveBeenCalled());
+    // Waited well past the debounce, so a late read for the old branch would
+    // have landed by now.
+    await new Promise((resolve) => setTimeout(resolve, 400));
+
+    const branches = listWorkOrders.mock.calls.map(
+      (call) => (call[0] as { branchId: string | null }).branchId
+    );
+    expect(branches).not.toContain(TEST_BRANCH.id);
+    expect(branches).toContain(OTHER_BRANCH.id);
+  });
+
   it('asks for every branch of the company on "all my branches"', async () => {
     const user = userEvent.setup();
     renderLtr(
@@ -581,6 +672,37 @@ describe('the work-order board reads on arrival and narrows honestly', () => {
     await waitFor(() =>
       expect(lastCall().scope).toEqual({ companyId: TEST_COMPANY.id, branchId: null })
     );
+  });
+
+  it('says so, and reads nothing, when the branches span more than one company', async () => {
+    /*
+     * `companyId` is mandatory on this operation and "all my branches" across
+     * two companies resolves to none. Picking one would put a board on screen
+     * for a company nobody named, so the screen says which control answers it.
+     */
+    const OTHER_COMPANY_BRANCH = {
+      ...OTHER_BRANCH,
+      id: '66666666-6666-4666-8666-666666666666',
+      companyId: '77777777-7777-4777-8777-777777777777',
+      name: 'Another company branch',
+    };
+    const user = userEvent.setup();
+    renderLtr(
+      inBranch(
+        <>
+          <BranchSwitch to="all" label="use all" />
+          <WorkOrderQueueScreen locale="en" messages={en} />
+        </>,
+        { snapshot: branchSnapshot([TEST_BRANCH, OTHER_COMPANY_BRANCH]) }
+      )
+    );
+    await user.click(screen.getByRole('button', { name: 'use all' }));
+
+    expect(await screen.findByTestId('work-order-queue-spans-companies')).toHaveTextContent(
+      en['workingContext.spansCompanies'] as string
+    );
+    await new Promise((resolve) => setTimeout(resolve, 350));
+    expect(listWorkOrders).not.toHaveBeenCalled();
   });
 
   it('states an empty result as a statement about the search', async () => {
