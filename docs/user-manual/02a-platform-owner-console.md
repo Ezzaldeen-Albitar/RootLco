@@ -89,15 +89,48 @@ to you:
 - the address already belongs to an account in the operators' organisation, or to an account in any
   customer organisation.
 
-**Always ask for the rehearsal first.** All three commands accept a rehearsal mode that reads,
+**Always ask for the rehearsal first.** All four commands accept a rehearsal mode that reads,
 prints what a real run would do, and writes nothing.
 
-**Taking authority away is a manual act today.** There is no command that revokes platform
-authority and no screen that does it, at this version. Removing an owner means someone changing the
-record by hand on the database, outside the product, and there is no supported procedure for it
-written down. That is a reason to be careful about how many owners you create, and a reason to keep
-more than one: if every account holding platform authority is lost, none of the three commands can
-recover it.
+### 2A.2.2 Removing a platform operator — OPERATOR PROCEDURE
+
+**There is no screen for this either.** What exists is a fourth operator command, described in §4b
+of the provisioning document above. Like the one that adds an owner, it is run by an owner who
+already holds authority and who proves who they are first.
+
+**What it does.** In a single transaction it takes **all** of the named owner's platform authority —
+there is no way to take one code away and leave the rest — ends the sessions that account has
+recorded, and writes a record naming who removed whom, why, and which codes were taken. If anything
+fails, the whole thing rolls back.
+
+**Nothing is deleted.** The authority records stay, marked as revoked and carrying who revoked them
+and when. The account itself stays too, and keeps its history — it simply holds no platform
+authority any more. Signing in still works; the console does not open.
+
+**What it refuses, and why it matters.** Both refusals exist to make a permanent lock-out
+impossible:
+
+- **the platform's first owner** — the account the original setup record names. That account cannot
+  be removed by this command in any environment. Where no such record exists, the command treats the
+  owner holding the oldest authority as the first one and refuses that instead;
+- **the last remaining owner** — including an owner trying to remove themselves. If that were
+  allowed, nobody could ever be made an owner again: every one of the four commands would refuse.
+  Add another owner first.
+
+It also refuses an address that belongs to nobody, an address that belongs to a customer
+organisation's own user, and an owner whose authority has already been taken away.
+
+**What happens to the removed owner's open sessions.** Every session this product has recorded for
+them ends immediately, so the next thing they do is refused. One thing does **not** happen, and it
+is stated because it matters: the sign-in service that holds their password has no way, at this
+version, to end somebody else's sessions on request, so a sign-in token already issued to them keeps
+being accepted by that service until it expires — an hour on this installation. It gains them
+nothing here: the console checks the authority record on every request, and that record now says
+they hold none, so every console page refuses them from the moment the command commits. If they
+should also lose the ability to sign in at all, that is a separate act at the sign-in service.
+
+**Ask for the rehearsal first.** In rehearsal mode the command prints what it would take away and
+how many sessions it would end, and writes nothing.
 
 ## 2A.3 Signing in and landing on the console — IMPLEMENTED (UI)
 
@@ -567,8 +600,8 @@ Stated plainly, so nobody looks for a screen that is not there:
 - **It does not take a payment.** A payment is recorded after it happened elsewhere. There is no
   payment provider and no card handling anywhere in this product. **NOT AVAILABLE.**
 - **It does not raise a platform owner, and it does not remove one.** Creating another owner is the
-  operator command described in 2A.2.1; taking authority away has no command and no screen at all.
-  **OPERATOR PROCEDURE**, and for removal, **NOT AVAILABLE**.
+  operator command described in 2A.2.1; removing one is the operator command described in 2A.2.2.
+  Neither has a screen, and neither is planned to get one. **OPERATOR PROCEDURE.**
 - **It shows no email address or name for the signed-in owner**, by decision: the console's session
   read does not return them. What it does show about you is on **Account and security** (2A.14).
 - **It sends nothing outside this machine.** The invitation a new organisation's administrator
@@ -590,10 +623,31 @@ Questions this part could not answer from the code and records available at this
 - **What a platform owner should do when an organisation is deliberately left over its limits.**
   The software permits it and records the reason; no policy about reviewing such organisations
   exists to describe.
-- **What to do if every account holding platform authority is lost.** All three operator commands
-  refuse in that situation, by design, and no recovery procedure exists to describe.
+- **What to do if every account holding platform authority is lost.** All four operator commands
+  refuse in that situation, by design, and no recovery procedure exists to describe. The command in
+  2A.2.2 refuses to remove the last owner precisely so the situation cannot be reached by accident.
+- **Whether the command in 2A.2.2 has been run against a deployed environment.** It has not. What it
+  does is proved against a database built from the project's own schema, and no installation
+  anywhere has been measured using it.
 
 <!--
+REVISION 2026-09-22 — section 2A.2.2 was written, and 2A.2.1, 2A.15 and 2A.16 were re-read and
+amended, at the commit that added scripts/platform/revoke-platform-operator.mjs.
+
+Read for this revision:
+- scripts/platform/revoke-platform-operator.mjs — the revoker proof, the first-owner and
+  last-owner refusals and how each is decided, the grant and session updates, the audit record,
+  and the rehearsal mode.
+- docs/platform/platform-owner-provisioning.md §4b — the operator-facing procedure this section
+  summarises.
+- apps/api/src/modules/iam/provider/supabase-provider.ts revokeAllSessions — the recorded absence
+  of any endpoint that ends every session of a user id, which is why the paragraph about tokens
+  says what it says.
+- supabase/migrations/20260831090000_iam_platform_authority.sql — iam.has_platform_authority, the
+  check the console makes on every request.
+
+Nothing in 2A.2.2 was exercised in a browser; the command is not a screen.
+
 REVISION 2026-09-21 — sections 2A.2, 2A.2.1, 2A.3, 2A.14, 2A.15 and 2A.16 were re-read and written
 at develop f30ce918405164712cc9cdcadb458c4e91a2b5b9. Every other section of this part is carried
 unchanged from the reading recorded below and was not re-read.
