@@ -253,7 +253,7 @@ export function StateBarChart({
           const labelX = rtl ? WIDTH - 4 : 4;
           const countX = rtl ? WIDTH - LABEL_WIDTH - length - 6 : LABEL_WIDTH + length + 6;
           return (
-            <a key={row.code} href={row.href} tabIndex={-1}>
+            <g key={row.code}>
               <text
                 x={labelX}
                 y={y + 15}
@@ -283,10 +283,43 @@ export function StateBarChart({
               >
                 {formatInteger(row.count, locale)}
               </text>
-            </a>
+            </g>
           );
         })}
       </svg>
+      {/*
+        The keyboard's way in, and everybody else's second one.
+
+        The bars themselves are not links. A shape inside a `role="img"` is
+        pruned from the accessibility tree along with anything nested in it, so
+        an anchor drawn there is reachable by a mouse and by nothing else —
+        which is a control that exists for some readers and not others. The
+        legend beside the drawing carries one ordinary link per state, in the
+        same order, with the same count and the same destination, and it is
+        always present rather than hidden behind the table's disclosure.
+      */}
+      <ul className="mt-3 flex flex-wrap gap-2">
+        {rows.map((row) => (
+          <li key={row.code}>
+            <a
+              href={row.href}
+              className="flex items-center gap-2 rounded-md border border-border px-2 py-1 text-caption text-text-primary transition-colors duration-fast ease-standard hover:bg-surface-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+            >
+              <span
+                aria-hidden="true"
+                className={
+                  row.isTerminal
+                    ? 'inline-block h-3 w-3 rounded-sm border border-border-strong bg-surface-subtle'
+                    : 'inline-block h-3 w-3 rounded-sm bg-primary'
+                }
+              />
+              <bdi>{row.label}</bdi>
+              {row.isTerminal ? <span className="text-text-muted">{finished}</span> : null}
+              <span className="text-text-secondary">{formatInteger(row.count, locale)}</span>
+            </a>
+          </li>
+        ))}
+      </ul>
     </ChartFrame>
   );
 }

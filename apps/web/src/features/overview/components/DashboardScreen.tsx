@@ -345,6 +345,21 @@ export function DashboardScreen({
         </div>
       ) : null}
 
+      {/*
+        Pressing "Choose dates" does not change a single figure — the days have
+        not been named yet, so there is nothing to ask for. Without this line
+        the control reads as applied while every number below still answers the
+        period before it, which is the screen stating one period and showing
+        another.
+      */}
+      {custom && period.kind !== 'custom' ? (
+        <p className="text-supporting text-warning">
+          {formatMessage(t('dashboard.period.notApplied'), {
+            period: translateDynamic(messages, `dashboard.period.${period.kind}`),
+          })}
+        </p>
+      ) : null}
+
       <p className="text-supporting text-text-secondary">
         {summary === null
           ? t('dashboard.period.pending')
@@ -398,7 +413,7 @@ export function DashboardScreen({
         />
       );
     }
-    if (answer.status !== 'ok' || summary === null) {
+    if (answer.status !== 'ok') {
       return (
         <ErrorState
           messages={messages}
@@ -407,7 +422,10 @@ export function DashboardScreen({
       );
     }
 
-    const sections = summary.sections;
+    // Read off the ANSWER rather than the derived `summary`: the two can only
+    // ever hold the same object, and testing the second for absence was a
+    // branch no run could reach — dead code that reads like a handled case.
+    const sections = answer.data.sections;
 
     const cards: readonly FigureCard[] = [
       {

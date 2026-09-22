@@ -5888,5 +5888,7 @@
   "dashboard.actions.lowStock": "Items below the level you set",
   "dashboard.actions.otherWarnings": "Other warnings about stock and your plan",
   "dashboard.actions.openApprovals": "Open the waiting list",
-  "dashboard.actions.openAttention": "Open the warnings page"
+  "dashboard.actions.openAttention": "Open the warnings page",
+  "dashboard.period.notApplied": "The figures still cover {period}. Choose two dates and press Use these dates.",
+  "workOrders.queue.stateNotRecognised": "The state you asked for is not one this workshop uses, so every work order is shown."
 }

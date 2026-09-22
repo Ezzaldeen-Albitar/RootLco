@@ -5888,5 +5888,7 @@
   "dashboard.actions.lowStock": "أصناف تحت الحد الذي حددته",
   "dashboard.actions.otherWarnings": "تنبيهات أخرى عن المخزون والاشتراك",
   "dashboard.actions.openApprovals": "فتح قائمة الانتظار",
-  "dashboard.actions.openAttention": "فتح صفحة التنبيهات"
+  "dashboard.actions.openAttention": "فتح صفحة التنبيهات",
+  "dashboard.period.notApplied": "الأرقام ما زالت تغطي {period}. اختر تاريخين ثم اضغط استخدام هذين التاريخين.",
+  "workOrders.queue.stateNotRecognised": "الحالة التي طلبتها ليست من الحالات المستخدمة في هذه الورشة، لذلك تظهر جميع أوامر العمل."
 }

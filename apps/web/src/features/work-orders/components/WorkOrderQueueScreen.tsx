@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { DataTable, type Column } from '@/components/data-table/DataTable';
 import { INITIAL_REQUEST } from '@/components/data-table/table-state';
 import { DigitsEcho } from '@/components/forms/DigitsEcho';
@@ -160,10 +160,13 @@ export function WorkOrderQueueScreen({
    */
   readonly initialView?: WorkOrderBoardView | undefined;
   /**
-   * The state code this board opens filtered to, likewise validated by the
-   * route against the shape the operation accepts. A code is vocabulary and not
-   * something anybody typed, which is why it is the one filter value allowed to
-   * travel in an address at all.
+   * The state code this board opens filtered to.
+   *
+   * The route checks its SHAPE against the one the operation accepts; this
+   * screen checks its MEANING against the workshop's own catalogue, because the
+   * two are different questions and only the second can be answered here. A
+   * well-formed code for a state nobody defined is dropped with a notice, and
+   * the board reads unfiltered. See the arrival note in the body.
    */
   readonly initialState?: string | undefined;
 }) {
@@ -174,9 +177,14 @@ export function WorkOrderQueueScreen({
    * The arriving view and state are the board's STARTING position and nothing
    * more. Once here, the strip and the picker own them — a reader who presses
    * another view is not fighting the address they came from.
+   *
+   * The view is one of seven this repository declares, so it is believed on
+   * sight. The state is a code out of the WORKSHOP's own vocabulary, which this
+   * repository does not hold: it is left out of the filter until the catalogue
+   * has been read and says the workshop keeps it. See the arrival note below.
    */
   const [view, setView] = useState<ViewKind>(initialView);
-  const [state, setState] = useState(initialState);
+  const [state, setState] = useState('');
   const [kind, setKind] = useState<'' | WorkOrderKind>('');
   const [term, setTerm] = useState('');
   const [draftFrom, setDraftFrom] = useState('');
@@ -210,15 +218,52 @@ export function WorkOrderQueueScreen({
    * itself — which is exactly what it did before this read existed.
    */
   const [catalogue, setCatalogue] = useState<readonly WorkOrderStateCatalogueEntry[]>([]);
+
+  /*
+   * What became of a state code that arrived in the address.
+   *
+   *   `none`     — none arrived.
+   *   `pending`  — one did, and the catalogue has not answered yet. The board
+   *                asks for NOTHING in this state: a code matching the
+   *                operation's shape is not thereby a code this workshop keeps,
+   *                and sending it would either narrow the board by a state
+   *                nobody defined or be answered 422 far from the link.
+   *   `accepted` — the catalogue names it. The picker shows it and the read
+   *                carries it.
+   *   `refused`  — the catalogue does not name it, or could not be read. The
+   *                code is DROPPED, the picker stands at "Any state", and a
+   *                line says the requested state was not recognised rather than
+   *                letting the board look filtered when it is not.
+   *
+   * A ref decides it once, at arrival. The catalogue is re-read whenever the
+   * working branch changes, and re-running this on a later read would overwrite
+   * a state the operator has since chosen with one from an address they left
+   * behind.
+   */
+  const requestedState = initialState.trim();
+  const openedWith: 'none' | 'pending' = requestedState === '' ? 'none' : 'pending';
+  // Both start from the same expression rather than one reading the other: a
+  // ref may not be read during render, and this is the render that sets up.
+  const arrivalRef = useRef<'none' | 'pending' | 'accepted' | 'refused'>(openedWith);
+  const [arrival, setArrival] = useState<'none' | 'pending' | 'accepted' | 'refused'>(openedWith);
+
   useEffect(() => {
     let cancelled = false;
     void readWorkOrderCatalogue().then((read) => {
-      if (!cancelled && read.status === 'ok') setCatalogue(read.data.workOrderStates);
+      if (cancelled) return;
+      const states = read.status === 'ok' ? read.data.workOrderStates : [];
+      if (read.status === 'ok') setCatalogue(states);
+      if (arrivalRef.current === 'pending') {
+        const known = states.some((entry) => entry.code === requestedState);
+        arrivalRef.current = known ? 'accepted' : 'refused';
+        setArrival(arrivalRef.current);
+        if (known) setState(requestedState);
+      }
     });
     return () => {
       cancelled = true;
     };
-  }, [context.version]);
+  }, [context.version, requestedState]);
 
   /*
    * The figures, read once per scope and period.
@@ -276,8 +321,13 @@ export function WorkOrderQueueScreen({
    * content asks for the same thing. `null` is "there is nothing to ask for",
    * which here means no resolvable scope.
    */
+  /*
+   * Nothing is asked for while a code that arrived in the address is still
+   * unresolved. A board that read first and narrowed second would show the
+   * whole branch for a frame under a heading the address promised was filtered.
+   */
   const asked: Asked | null =
-    scope === null
+    scope === null || arrival === 'pending'
       ? null
       : {
           scope,
@@ -721,6 +771,21 @@ export function WorkOrderQueueScreen({
           <h2 id="work-order-queue-heading" className="sr-only">
             {translate(messages, 'workOrders.queue.resultsHeading')}
           </h2>
+
+          {/*
+            An address asked for a state this workshop does not keep. The board
+            is showing everything, and says so — silently ignoring the request
+            would leave the reader believing they are looking at a filtered list.
+          */}
+          {arrival === 'refused' ? (
+            <p
+              role="status"
+              data-testid="work-order-queue-state-unknown"
+              className="rounded-md bg-warning-subtle px-3 py-2 text-supporting text-text-secondary"
+            >
+              {translate(messages, 'workOrders.queue.stateNotRecognised')}
+            </p>
+          ) : null}
 
           <SearchStates
             messages={messages}
