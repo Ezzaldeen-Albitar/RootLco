@@ -4,7 +4,25 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import en from '../src/i18n/messages/en.json';
 import ar from '../src/i18n/messages/ar.json';
 import { formatMoney } from '../src/lib/money';
-import { renderLtr, renderRtl } from './render';
+import type { ReactElement } from 'react';
+import {
+  TEST_BRANCH,
+  branchSnapshot,
+  inBranch,
+  renderLtr as renderInLtr,
+  renderRtl as renderInRtl,
+} from './render';
+
+/*
+ * The credit-notes list is addressed to a branch, and that branch is the
+ * working context's own named selection now — chosen once in the header,
+ * never on the screen (Owner directive, `P1-32-PRE-OD-UX`). So every render
+ * here goes inside a provider.
+ */
+const renderLtr = (ui: ReactElement, options?: Parameters<typeof renderInLtr>[1]) =>
+  renderInLtr(inBranch(ui), options);
+const renderRtl = (ui: ReactElement, options?: Parameters<typeof renderInRtl>[1]) =>
+  renderInRtl(inBranch(ui, { locale: 'ar' }), options);
 
 /**
  * The invoice of a work order, rendered (P1-30, `W6`, FE-014, FE-015, FE-019,
@@ -829,28 +847,37 @@ describe('credit notes are reachable', () => {
     <CreditNotesScreen locale="en" messages={en} canReadBranches initialCreditNoteId={initial} />
   );
 
-  it('lists the chosen branch notes with the server amount and the state in words', async () => {
-    const user = userEvent.setup();
+  it('lists the working branch notes with the server amount and the state in words', async () => {
+    /*
+     * This used to choose a branch from a select on the screen and press a
+     * submit. Both are gone: the branch is stated, the list reads on arrival,
+     * and what is asserted is that it is the branch the header holds.
+     */
     renderLtr(creditNotesScreen());
-    const form = await screen.findByRole('form', {
+    const section = await screen.findByRole('region', {
       name: EN['creditNotes.targetLabel'] as string,
     });
-    await user.selectOptions(await within(form).findByRole('combobox'), BRANCH_ID_FIXTURE);
-    await user.click(
-      within(form).getByRole('button', { name: EN['creditNotes.chooseBranch'] as string })
-    );
+    expect(section).toHaveTextContent(TEST_BRANCH.name);
+    expect(within(section).queryAllByRole('combobox')).toEqual([]);
 
     expect(await screen.findByText('A part was billed twice on the same job')).toBeTruthy();
     expect(screen.getByText(money('40.0000'))).toBeTruthy();
     expect(screen.getByText(EN['creditNotes.state.pending'] as string)).toBeTruthy();
   });
 
-  it('opens a note named in the address without a branch ever being chosen', async () => {
-    renderLtr(creditNotesScreen(CREDIT_NOTE_ID));
+  it('opens a note named in the address even when no branch can be resolved', async () => {
+    /*
+     * The list read is what needs a branch; the detail does not, and that is
+     * what makes the link from a return's result work at all. The case used to
+     * establish it by never choosing a branch — which no longer withholds the
+     * list, since the header holds one — so it establishes it where the
+     * distinction still bites: an operator with no authorized branch at all.
+     */
+    renderInLtr(
+      inBranch(creditNotesScreen(CREDIT_NOTE_ID), { snapshot: branchSnapshot([], 'none') })
+    );
     await waitFor(() => expect(readCreditNote).toHaveBeenCalledWith(CREDIT_NOTE_ID));
     expect(await screen.findByText(EN['creditNotes.detail.notApproved'] as string)).toBeTruthy();
-    // The list read is what needs a branch; the detail does not, which is what
-    // makes the link from a return's result work at all.
     expect(listCreditNotes).not.toHaveBeenCalled();
   });
 
@@ -877,15 +904,7 @@ describe('credit notes are reachable', () => {
 
   it('shows a refusal as a refusal rather than as a branch that credited nothing', async () => {
     listCreditNotes.mockResolvedValue({ status: 'denied', correlationId: 'corr' });
-    const user = userEvent.setup();
     renderLtr(creditNotesScreen());
-    const form = await screen.findByRole('form', {
-      name: EN['creditNotes.targetLabel'] as string,
-    });
-    await user.selectOptions(await within(form).findByRole('combobox'), BRANCH_ID_FIXTURE);
-    await user.click(
-      within(form).getByRole('button', { name: EN['creditNotes.chooseBranch'] as string })
-    );
     expect(await screen.findByText(EN['creditNotes.list.refused'] as string)).toBeTruthy();
     expect(screen.queryByText(EN['creditNotes.list.none'] as string)).toBeNull();
   });
