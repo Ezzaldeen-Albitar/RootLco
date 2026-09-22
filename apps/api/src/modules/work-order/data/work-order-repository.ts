@@ -2706,4 +2706,79 @@ export class WorkOrderRepository extends Repository {
       activeCount: row.active_count,
     }));
   }
+  /**
+   * The board facts for ONE work order (Owner directive, P1-32-PRE-OD-UX).
+   *
+   * The detail read publishes the same row the board does — the screen types
+   * itself against one shape and `p1-29-w3-work-order-detail` holds the payload
+   * to it — so it needs the same two facts, for a single id.
+   *
+   * ONE statement, and deliberately the SAME shape as the list query rather than
+   * a second way of asking: the identical `LEFT JOIN LATERAL` picks the newest
+   * live assignment together with its register row, and the identical `CASE`
+   * dates the completion only while the order is actually in a terminal state.
+   * Two spellings of "who is on this car" is how a detail screen and a board come
+   * to disagree about the same work order.
+   *
+   * `terminalStates` is resolved by the SERVICE from the live catalogue and
+   * passed down, for the reason the list passes it: joining `wo.work_order_states`
+   * here would put the platform/tenant precedence in a second place.
+   */
+  async boardFactsFor(
+    db: DbHandle,
+    workOrderId: string,
+    terminalStates: readonly string[]
+  ): Promise<{
+    readonly assignedTechnicianProfileId: string | null;
+    readonly assignedTechnicianUserId: string | null;
+    readonly completedAt: Date | null;
+  } | null> {
+    const context = this.assertContext(db);
+    const row = await this.runOne<{
+      assigned_technician_profile_id: string | null;
+      assigned_technician_user_id: string | null;
+      completed_at: Date | null;
+    }>(
+      db,
+      `SELECT assignment.technician_profile_id AS assigned_technician_profile_id,
+              assignment.user_id               AS assigned_technician_user_id,
+              (CASE
+                 WHEN $3::text[] IS NOT NULL AND wo.work_orders.state = ANY($3::text[])
+                 THEN (SELECT max(h.occurred_at)
+                         FROM wo.work_order_status_history h
+                        WHERE h.tenant_id = wo.work_orders.tenant_id
+                          AND h.work_order_id = wo.work_orders.id
+                          AND h.to_state = ANY($3::text[]))
+                 ELSE NULL
+               END)                            AS completed_at
+         FROM wo.work_orders
+         LEFT JOIN LATERAL (
+           SELECT a.technician_profile_id, t.user_id
+             FROM wo.job_assignments a
+             JOIN wo.jobs j
+               ON j.tenant_id = a.tenant_id AND j.id = a.job_id
+              AND j.deleted_at IS NULL
+             JOIN tech.technician_profiles t
+               ON t.tenant_id = a.tenant_id AND t.id = a.technician_profile_id
+              AND t.deleted_at IS NULL
+              AND t.is_active
+            WHERE a.tenant_id = wo.work_orders.tenant_id
+              AND j.work_order_id = wo.work_orders.id
+              AND a.valid_to IS NULL
+            ORDER BY a.valid_from DESC, a.id DESC
+            LIMIT 1
+         ) AS assignment ON true
+        WHERE wo.work_orders.tenant_id = $1
+          AND wo.work_orders.id = $2
+          AND wo.work_orders.deleted_at IS NULL`,
+      [context.principal.tenantId, workOrderId, [...terminalStates]]
+    );
+    return row === null
+      ? null
+      : {
+          assignedTechnicianProfileId: row.assigned_technician_profile_id,
+          assignedTechnicianUserId: row.assigned_technician_user_id,
+          completedAt: row.completed_at,
+        };
+  }
 }

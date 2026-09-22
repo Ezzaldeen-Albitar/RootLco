@@ -294,7 +294,16 @@ export interface ReachableState {
  * contract nothing can populate.
  */
 export interface WorkOrderDetail {
-  readonly workOrder: WorkOrderSummary;
+  /**
+   * The SAME row the board publishes, board fields and all.
+   *
+   * Not a plainer `WorkOrderSummary`: a screen types itself against one shape,
+   * and `tests/backend/p1-29-w3-work-order-detail.test.ts` holds this payload to
+   * the very mirror the list is held to. A detail read that carried fewer fields
+   * than the list it was opened from would be a screen that loses the technician
+   * and the quality result the moment an operator clicks a row.
+   */
+  readonly workOrder: WorkOrderBoardSummary;
   readonly jobs: readonly JobView[];
   readonly nextStates: readonly ReachableState[];
 }
@@ -339,6 +348,43 @@ export interface JobHistoryView {
   readonly workOrderId: string;
   readonly origin: { readonly initialState: string };
   readonly transitions: Page<WorkOrderHistoryEntry>;
+}
+
+/** The two facts the board query and the detail query both select. */
+interface BoardFacts {
+  readonly assignedTechnicianProfileId: string | null;
+  readonly assignedTechnicianUserId: string | null;
+  readonly completedAt: Date | null;
+}
+
+/**
+ * Attaches the three board fields to a summary (Owner directive,
+ * P1-32-PRE-OD-UX).
+ *
+ * Written ONCE and used by both the list and the detail. The alternative was two
+ * copies of the same four lines, and the two reads are held to the SAME mirror by
+ * `p1-29-w1-work-order-queue` and `p1-29-w3-work-order-detail` — so two copies
+ * would be two chances for a screen to lose a field on the way from a board row
+ * to the row it opens.
+ *
+ * `displayName` is null rather than a refusal when the caller may not read the
+ * user directory: the assignment is a work-order fact, the person's NAME is the
+ * iam module's to withhold. `qualityState` is null when quality control was never
+ * opened, which is a different fact from `pending` and must not be collapsed.
+ */
+function toBoardSummary(
+  summary: WorkOrderSummary,
+  facts: BoardFacts | null | undefined,
+  displayName: string | null,
+  qualityState: string | null
+): WorkOrderBoardSummary {
+  const profileId = facts?.assignedTechnicianProfileId ?? null;
+  return {
+    ...summary,
+    assignedTechnician: profileId === null ? null : { id: profileId, displayName },
+    completedAt: facts?.completedAt?.toISOString() ?? null,
+    qualityState,
+  };
 }
 
 const toSummary = (
@@ -717,28 +763,13 @@ export class WorkOrderService extends ApplicationService {
     const boardFacts = new Map(rows.items.map((row) => [row.id, row]));
     const items: WorkOrderBoardSummary[] = summaries.map((summary) => {
       const facts = boardFacts.get(summary.id);
-      const profileId = facts?.assignedTechnicianProfileId ?? null;
-      return {
-        ...summary,
-        assignedTechnician:
-          profileId === null
-            ? null
-            : {
-                id: profileId,
-                // Null rather than a refusal when the caller may not read the
-                // user directory: the assignment is a work-order fact, the
-                // person's name is the iam module's to withhold.
-                displayName:
-                  facts?.assignedTechnicianUserId === null ||
-                  facts?.assignedTechnicianUserId === undefined
-                    ? null
-                    : (names.get(facts.assignedTechnicianUserId)?.displayName ?? null),
-              },
-        completedAt: facts?.completedAt?.toISOString() ?? null,
-        // Absent from the map means quality control was never opened, which is a
-        // different fact from `pending` and is published as null.
-        qualityState: quality.get(summary.id) ?? null,
-      };
+      const userId = facts?.assignedTechnicianUserId ?? null;
+      return toBoardSummary(
+        summary,
+        facts,
+        userId === null ? null : (names.get(userId)?.displayName ?? null),
+        quality.get(summary.id) ?? null
+      );
     });
     return { ...rows, items };
   }
@@ -895,8 +926,32 @@ export class WorkOrderService extends ApplicationService {
               ];
             });
     const [enriched] = await withPartyContext(db, [workOrder]);
+    const summary = enriched ?? toSummary(workOrder);
+    // The SAME three fields the board publishes, so a screen that opens a row
+    // keeps everything the row showed it. The terminal codes come from `states`,
+    // which this read already loaded for `nextStates` — so the catalogue is
+    // resolved once and the board facts cost one further statement.
+    const facts = await this.repository.boardFactsFor(
+      db,
+      workOrderId,
+      states.filter((state) => state.isTerminal).map((state) => state.code)
+    );
+    const names =
+      facts?.assignedTechnicianUserId == null
+        ? new Map<string, { displayName: string }>()
+        : await iamDirectory().directory.resolveDisplayIdentities(db, [
+            facts.assignedTechnicianUserId,
+          ]);
+    const quality = await qualityModule().workOrderPort.resultsFor(db, [workOrder.id]);
     return {
-      workOrder: enriched ?? toSummary(workOrder),
+      workOrder: toBoardSummary(
+        summary,
+        facts,
+        facts?.assignedTechnicianUserId == null
+          ? null
+          : (names.get(facts.assignedTechnicianUserId)?.displayName ?? null),
+        quality.get(workOrder.id) ?? null
+      ),
       jobs: jobs.map(toJobView),
       nextStates,
     };
