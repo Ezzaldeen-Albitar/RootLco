@@ -1295,6 +1295,19 @@ describe('the reception search box', () => {
   let decoyVisitId = '';
 
   beforeAll(async () => {
+    // The reception number sequence, provisioned so the REAL check-in path
+    // allocates one. `ReceptionService` guards the allocation with
+    // `isProvisioned` and leaves `display_number` NULL for a tenant that has no
+    // sequence — which is correct behaviour and also means the reference arm of
+    // the search box is unexercised unless the fixture provisions it. Stamping a
+    // number onto the row afterwards would test the SQL and not the product.
+    await admin.query(
+      `INSERT INTO shared.number_sequences
+         (tenant_id, sequence_code, prefix_template, next_value, pad_width, created_by)
+       VALUES ($1,'reception_visit','RCP-',1,6,$2)
+       ON CONFLICT ON CONSTRAINT uq_number_sequences_scope DO NOTHING`,
+      [TENANT_A, USER_A]
+    );
     await asAdminTx(TENANT_A, async (client) => {
       await client.query(
         `INSERT INTO crm.business_partners (id, tenant_id, party_type, display_name, lifecycle_status, created_by)

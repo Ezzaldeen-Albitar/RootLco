@@ -60,9 +60,11 @@ import {
   createOpenWorkOrder,
   createWorkOrder,
   establishP1_19Fixtures,
+  establishTechnicianFixtures,
 } from './p1-19-helpers';
 import { __setPrimaryPoolForTests } from '@/server/db/pool';
 import { __resetAuthenticatorForTests } from '@/server/context/principal';
+import { __resetRateLimitForTests } from '@/server/http/rate-limit';
 import { GET as LIST } from '@/app/api/v1/work-orders/route';
 import { GET as DETAIL } from '@/app/api/v1/work-orders/[workOrderId]/route';
 import { GET as HISTORY } from '@/app/api/v1/work-orders/[workOrderId]/history/route';
@@ -118,11 +120,23 @@ beforeAll(async () => {
   await cleanBackendFixtures(admin);
   await ensureBackendFixtures(admin);
   await establishP1_19Fixtures(admin);
+  // The technician profiles the board's assignment case names. `wo.job_assignments`
+  // carries `fk_job_assignments_technician`, so a profile has to exist before an
+  // assignment can; this suite read work orders only until the board grew a
+  // technician column.
+  await establishTechnicianFixtures();
   runtime = runtimeAppPool(6);
   __setPrimaryPoolForTests(runtime);
 });
 
-afterEach(() => __resetAuthenticatorForTests());
+afterEach(() => {
+  __resetAuthenticatorForTests();
+  // `wo.work-order-list` carries the `expensive-read` policy, and the board
+  // cases added by the Owner directive (P1-32-PRE-OD-UX) each make several list
+  // calls. Without this the LAST case in the file starts answering 429 and the
+  // failure reads as a broken filter rather than as an exhausted budget.
+  __resetRateLimitForTests();
+});
 afterAll(async () => {
   __setPrimaryPoolForTests(undefined);
   if (runtime) await runtime.end();
@@ -290,8 +304,19 @@ describe('wo.work-order-list', () => {
   });
 
   it('refuses a missing scope, an unknown parameter, a bad cursor and a timezone-less date', async () => {
+    // The COMPANY is what may never be omitted. `branchId` became optional with
+    // the Owner directive (P1-32-PRE-OD-UX) — a company on its own now asks for
+    // every branch of it the caller may read — so this assertion moved from the
+    // pair to the company alone rather than being dropped. A request naming
+    // neither still has no scope to be judged against and is refused.
     authAs(READER);
-    expect((await list({ companyId: COMPANY_A1 })).status).toBe(422);
+    expect((await list({ branchId: BRANCH_A1 })).status).toBe(422);
+    authAs(READER);
+    expect((await list({})).status).toBe(422);
+    // And the company alone is now a legitimate request, which is what makes the
+    // two refusals above about the missing company and not about the pair.
+    authAs(READER);
+    expect((await list({ companyId: COMPANY_A1, limit: '1' })).status).toBe(200);
     authAs(READER);
     expect((await board({ unexpected: 'x' })).status).toBe(422);
     authAs(READER);
@@ -654,16 +679,57 @@ describe('wo.work-order-list — the enriched board', () => {
       )
       .then((result) => result.rows[0]?.id ?? '');
 
+    // WITHOUT `iam.user.read`: the assignment is still reported, with the id and
+    // no name. The assignment is a work-order fact; the person's NAME is the iam
+    // module's to withhold, and withholding it must not refuse the whole row.
     authAs(READER);
-    const assigned = (await boardRow(seeded.workOrderId)).assignedTechnician as {
+    const withheld = (await boardRow(seeded.workOrderId)).assignedTechnician as {
       id: string;
       displayName: string | null;
     } | null;
-    expect(assigned?.id).toBe(TECH_A1);
-    // The name is resolved through the iam directory for the whole page in one
-    // statement. READER may read the user directory, so it is a name and not a
-    // bare id — the field existing but always null would be the silent failure.
-    expect(assigned?.displayName).toBe('Fixture Technician');
+    expect(withheld?.id).toBe(TECH_A1);
+    expect(withheld?.displayName).toBeNull();
+
+    // WITH `iam.user.read`: the same row now carries the name, resolved through
+    // the iam directory in one statement for the whole page. Both halves are
+    // asserted because a field that is always null would pass the first on its
+    // own while the resolution was completely broken.
+    const NAME_ROLE = 'c1900000-0000-4000-8000-0000000003a1';
+    const NAME_GRANT = 'c1900000-0000-4000-8000-0000000003a2';
+    await admin.query(
+      `INSERT INTO iam.roles (id, tenant_id, role_code, name, created_by)
+       VALUES ($1,$2,'fx_p1_19_board_names','Board name reader',$3)
+       ON CONFLICT (id) DO NOTHING`,
+      [NAME_ROLE, TENANT_A, USER_A]
+    );
+    await admin.query(
+      `INSERT INTO iam.role_permissions (tenant_id, role_id, permission_id, effect, created_by)
+       SELECT $1,$2,id,'allow',$3 FROM iam.permissions WHERE permission_code = 'iam.user.read'
+       ON CONFLICT DO NOTHING`,
+      [TENANT_A, NAME_ROLE, USER_A]
+    );
+    await admin.query(
+      `INSERT INTO iam.role_grants
+         (id, tenant_id, user_id, role_id, scope_mode, status, granted_by, created_by)
+       VALUES ($1,$2,$3,$4,'unrestricted','active',$5,$5)
+       ON CONFLICT (id) DO NOTHING`,
+      [NAME_GRANT, TENANT_A, READER.userId, NAME_ROLE, USER_A]
+    );
+    try {
+      authAs(READER);
+      const named = (await boardRow(seeded.workOrderId)).assignedTechnician as {
+        id: string;
+        displayName: string | null;
+      } | null;
+      expect(named?.id).toBe(TECH_A1);
+      expect(named?.displayName).toBe('Fixture Technician');
+    } finally {
+      // Removed again so the rest of this file sees the principal it was written
+      // against: a grant left behind would silently widen every later case.
+      await admin.query('DELETE FROM iam.role_grants WHERE id = $1', [NAME_GRANT]);
+      await admin.query('DELETE FROM iam.role_permissions WHERE role_id = $1', [NAME_ROLE]);
+      await admin.query('DELETE FROM iam.roles WHERE id = $1', [NAME_ROLE]);
+    }
 
     // `wo.job_assignments` is append-then-close: ending an assignment stamps
     // `valid_to` and the ROW SURVIVES, so "currently assigned" has to follow the
