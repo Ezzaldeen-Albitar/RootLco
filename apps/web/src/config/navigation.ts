@@ -116,8 +116,20 @@ export const NAVIGATION: readonly NavigationGroup[] = Object.freeze([
     labelKey: 'nav.group.work',
     items: [
       {
+        /*
+         * The key stays `overview` — it is the entry's identity, and `isActive`,
+         * the ownership records and the console's own separate entry all name
+         * it. What changed is the LABEL: the screen behind it is now the
+         * workshop's dashboard rather than a description of the product, and an
+         * entry whose word does not match the screen sends people looking
+         * elsewhere for the figures that are right here.
+         *
+         * `permission` stays null. Every signed-in person lands here, and the
+         * page's sections gate themselves on the status the summary publishes
+         * for each of them.
+         */
         key: 'overview',
-        labelKey: 'nav.overview',
+        labelKey: 'nav.dashboard',
         icon: 'overview',
         href: '/',
         permission: null,
