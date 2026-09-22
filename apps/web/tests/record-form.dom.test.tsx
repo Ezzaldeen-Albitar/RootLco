@@ -5,6 +5,7 @@ import en from '../src/i18n/messages/en.json';
 import ar from '../src/i18n/messages/ar.json';
 import { BOTH_DIRECTIONS, messagesFor, renderLtr } from './render';
 import { RecordForm } from '@/components/forms/RecordForm';
+import { TextField } from '@/components/forms/Field';
 import {
   composeInstant,
   instantFieldError,
@@ -650,5 +651,171 @@ describe('instantFieldError — the rule for a browser with no date-time control
       expect(key in (en as Record<string, string>), key).toBe(true);
       expect(key in (ar as Record<string, string>), key).toBe(true);
     }
+  });
+});
+
+/* ====================================================================== *
+ * After a refusal: where the cursor goes, what stops complaining, and how
+ * the complaint is carried
+ * ====================================================================== */
+
+/**
+ * Three behaviours that did not exist, and one that did and is now pinned.
+ *
+ * A form refused, marked three fields and left focus on the submit button. The
+ * operator was told the save failed and had to hunt for red text — red text
+ * being the only carrier of "this one", and the corrections they made having no
+ * effect on it until they spent another request finding out.
+ */
+function refusal(fieldErrors: Record<string, string>, attempt = 1): ActionState {
+  return { status: 'invalid', messageKey: 'form.formError', fieldErrors, attempt };
+}
+
+describe('after a refusal the cursor lands on the first thing to fix', () => {
+  it('focuses the first invalid control in DOM ORDER, not the first error key', async () => {
+    // Both fields are refused and the error map is deliberately written with
+    // the SECOND field first, so a hook that trusted key order would focus the
+    // wrong control and this case would catch it.
+    const action = vi.fn(
+      async (): Promise<ActionState> => refusal({ severity: 'field.required', reason: 'field.required' })
+    );
+    const user = userEvent.setup();
+    renderForm(action);
+
+    const submit = screen.getByRole('button', { name: en['form.submit'] });
+    await user.click(submit);
+    await waitFor(() => expect(action).toHaveBeenCalled());
+
+    const reason = screen.getByLabelText(en['crm.customers.notes.body'], { exact: false });
+    await waitFor(() => expect(document.activeElement).toBe(reason));
+    // And not where it was left, which is the whole defect.
+    expect(document.activeElement).not.toBe(submit);
+  });
+
+  it('marks ONLY the fields that are wrong, so the query cannot pick a healthy one', async () => {
+    const action = vi.fn(async (): Promise<ActionState> => refusal({ severity: 'field.required' }));
+    const user = userEvent.setup();
+    renderForm(action);
+    await user.click(screen.getByRole('button', { name: en['form.submit'] }));
+    await waitFor(() => expect(action).toHaveBeenCalled());
+
+    const reason = screen.getByLabelText(en['crm.customers.notes.body'], { exact: false });
+    const severity = screen.getByLabelText(en['crm.customers.alerts.severity'], { exact: false });
+    // Absent, not `"false"`. `aria-invalid="false"` would be invisible to the
+    // query; a bare attribute on every control would make the first field the
+    // answer every time.
+    expect(reason).not.toHaveAttribute('aria-invalid');
+    expect(severity).toHaveAttribute('aria-invalid', 'true');
+    await waitFor(() => expect(document.activeElement).toBe(severity));
+  });
+
+  it('does NOT move focus when the refusal names no field', async () => {
+    // A rate limit or an outage is a banner, not a field, and stealing focus on
+    // one would take the operator away from whatever they had moved on to.
+    const action = vi.fn(async (): Promise<ActionState> => ({
+      status: 'unavailable',
+      messageKey: 'state.unavailable.title',
+      correlationId: 'corr-x',
+      attempt: 1,
+    }));
+    const user = userEvent.setup();
+    renderForm(action);
+    const submit = screen.getByRole('button', { name: en['form.submit'] });
+    await user.click(submit);
+    await waitFor(() => expect(action).toHaveBeenCalled());
+    expect(document.activeElement).toBe(submit);
+  });
+});
+
+describe('a corrected field stops complaining before the next submission', () => {
+  it('clears the error for the field the operator edits, and only that one', async () => {
+    const action = vi.fn(
+      async (): Promise<ActionState> => refusal({ reason: 'field.required', severity: 'field.required' })
+    );
+    const user = userEvent.setup();
+    renderForm(action);
+    await user.click(screen.getByRole('button', { name: en['form.submit'] }));
+    await waitFor(() => expect(action).toHaveBeenCalled());
+    expect(screen.getAllByRole('alert').length).toBeGreaterThanOrEqual(2);
+
+    await user.type(screen.getByLabelText(en['crm.customers.notes.body'], { exact: false }), 'ok');
+
+    const reason = screen.getByLabelText(en['crm.customers.notes.body'], { exact: false });
+    await waitFor(() => expect(reason).not.toHaveAttribute('aria-invalid'));
+    // The one the operator has NOT touched still says so: a correction must
+    // never quieten a complaint about a different field.
+    expect(screen.getByLabelText(en['crm.customers.alerts.severity'], { exact: false })).toHaveAttribute(
+      'aria-invalid',
+      'true'
+    );
+  });
+
+  it('brings the complaint BACK when the next attempt refuses the same field', async () => {
+    // The direction that makes the clearing honest. It does not claim the new
+    // value is acceptable — only that the old sentence was about a value that
+    // is no longer there.
+    let attempt = 0;
+    const action = vi.fn(async (): Promise<ActionState> => {
+      attempt += 1;
+      return refusal({ reason: 'field.required' }, attempt);
+    });
+    const user = userEvent.setup();
+    renderForm(action);
+    const submit = screen.getByRole('button', { name: en['form.submit'] });
+
+    await user.click(submit);
+    await waitFor(() => expect(action).toHaveBeenCalledTimes(1));
+    await user.type(screen.getByLabelText(en['crm.customers.notes.body'], { exact: false }), 'x');
+    await waitFor(() =>
+      expect(screen.getByLabelText(en['crm.customers.notes.body'], { exact: false })).not.toHaveAttribute(
+        'aria-invalid'
+      )
+    );
+
+    await user.click(submit);
+    await waitFor(() => expect(action).toHaveBeenCalledTimes(2));
+    await waitFor(() =>
+      expect(screen.getByLabelText(en['crm.customers.notes.body'], { exact: false })).toHaveAttribute(
+        'aria-invalid',
+        'true'
+      )
+    );
+  });
+});
+
+describe('an error is not carried by colour alone', () => {
+  it('leads the message with a glyph that is hidden from assistive technology', async () => {
+    const action = vi.fn(async (): Promise<ActionState> => refusal({ reason: 'field.required' }));
+    const user = userEvent.setup();
+    renderForm(action);
+    await user.click(screen.getByRole('button', { name: en['form.submit'] }));
+    await waitFor(() => expect(action).toHaveBeenCalled());
+
+    const alert = screen.getAllByRole('alert')[0] as HTMLElement;
+    // The sentence is there, and so is a shape in front of it. Under forced
+    // colours or in greyscale, red supporting text and grey supporting text are
+    // the same text.
+    expect(alert).toHaveTextContent(en['field.required']);
+    const glyph = alert.querySelector('[aria-hidden="true"]');
+    expect(glyph, 'the error carries no non-colour cue').not.toBeNull();
+    expect(glyph).toHaveTextContent('!');
+    // Announcing "exclamation mark" before every message is noise; the sentence
+    // and `aria-invalid` already carry the meaning.
+    expect(alert.textContent).toContain(en['field.required']);
+  });
+
+  it('carries the same cue on a FieldFrame control', () => {
+    renderLtr(<TextField label="Chassis number" error="This does not look right" />);
+    const alert = screen.getByRole('alert');
+    expect(alert).toHaveTextContent('This does not look right');
+    expect(alert.querySelector('[aria-hidden="true"]')).toHaveTextContent('!');
+    // And nothing is marked invalid when there is nothing wrong.
+    expect(screen.getByLabelText('Chassis number')).toHaveAttribute('aria-invalid', 'true');
+  });
+
+  it('writes no aria-invalid at all on a healthy FieldFrame control', () => {
+    renderLtr(<TextField label="Chassis number" />);
+    expect(screen.getByLabelText('Chassis number')).not.toHaveAttribute('aria-invalid');
+    expect(screen.queryByRole('alert')).toBeNull();
   });
 });
