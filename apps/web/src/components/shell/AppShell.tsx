@@ -79,6 +79,16 @@ export interface AppShellProps {
   readonly navigation?: readonly NavigationGroup[];
   /** A short label naming the surface, shown in the header beside the menu. */
   readonly contextLabel?: string | undefined;
+  /**
+   * The working-context control, shown in the header after `contextLabel`.
+   *
+   * Passed in rather than rendered here, for the same reason `account` is: this
+   * shell serves two audiences, and only one of them has branches. The Platform
+   * Owner Console passes nothing and gets nothing — a console operator has no
+   * working branch, and a control offering one would be inviting them to choose
+   * something that does not apply to the surface they are on.
+   */
+  readonly workingContext?: ReactNode;
 }
 
 export function AppShell({
@@ -90,6 +100,7 @@ export function AppShell({
   account,
   navigation = NAVIGATION,
   contextLabel,
+  workingContext,
 }: AppShellProps) {
   const pathname = usePathname() ?? `/${locale}`;
   const [collapsed, setCollapsed] = usePersistedFlag(COLLAPSE_KEY, false);
@@ -269,6 +280,7 @@ export function AppShell({
           drawerTriggerRef={drawerTriggerRef}
           account={account}
           contextLabel={contextLabel}
+          workingContext={workingContext}
         />
         <div className="flex min-h-0 flex-1">
           {/*
@@ -345,6 +357,7 @@ function AppHeader({
   drawerTriggerRef,
   account,
   contextLabel,
+  workingContext,
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
@@ -354,6 +367,7 @@ function AppHeader({
   readonly drawerTriggerRef: React.RefObject<HTMLButtonElement | null>;
   readonly account?: ReactNode;
   readonly contextLabel?: string | undefined;
+  readonly workingContext?: ReactNode;
 }) {
   return (
     // NOT `sticky`. It used to be, from when the document scrolled — and since
@@ -404,6 +418,13 @@ function AppHeader({
           {contextLabel}
         </span>
       ) : null}
+
+      {/*
+        After the context label, because the label names the SURFACE and this
+        names where the operator is working within it — general to specific,
+        reading order, in both scripts.
+      */}
+      {workingContext}
 
       <div className="ms-auto flex items-center gap-2">
         {/*
