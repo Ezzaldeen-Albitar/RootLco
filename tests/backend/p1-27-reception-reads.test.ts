@@ -81,6 +81,7 @@ import {
   RECEPTION_HISTORY_OPERATION,
 } from '@/app/api/v1/receptions/[receptionId]/history/route';
 import { POST as APPROVE } from '@/app/api/v1/receptions/[receptionId]/approve/route';
+import { POST as CLOSE_WITHOUT_WORK } from '@/app/api/v1/receptions/[receptionId]/close-without-work/route';
 
 /** Tenant B's own company and branch — a real scope, not a fabricated id. */
 const COMPANY_B1 = 'c1150000-0000-4000-8000-0000000000b1';
@@ -156,6 +157,11 @@ const FULL_PERMISSIONS = [
   'rec.reception.approve',
   'rec.reception.convert',
   'rec.reception.read',
+  // Owner directive P1-32-PRE-OD-UX. The `finished` status group needs a
+  // visit that really reached a terminal status, and the only honest way to
+  // produce one is the shipped close command — `rec.reception_visits.status`
+  // is guarded in the database, so an UPDATE past the graph is refused.
+  'rec.reception.close',
   'iam.sensitive.view',
   // Owner directive P1-32-PRE-OD-UX. The search box's NAME and PHONE arms read
   // `crm.*`, so they are switched off for a caller that does not work with
@@ -452,6 +458,7 @@ beforeAll(async () => {
             ('rec.reception.approve','rec','Approve a reception visit for work','high',$1),
             ('rec.reception.convert','rec','Convert an approved reception into a work order','high',$1),
             ('rec.reception.read','rec','Read reception visits, parties, authorizations, condition evidence and custody history','low',$1),
+            ('rec.reception.close','rec','Close a reception visit without work or refuse it','high',$1),
             ('veh.vehicle.read','veh','Search and read vehicles in the caller tenant','low',$1),
             ('crm.customer.read','crm','Search and read customers in the tenant','low',$1)
      ON CONFLICT (permission_code) DO NOTHING`,
@@ -1191,13 +1198,17 @@ describe('the branch board', () => {
     expect(row).toBeDefined();
     // `branchId` joined the row with the Owner directive (P1-32-PRE-OD-UX):
     // the page may now span several branches, so every row names its own.
+    // `customer` and `plate` joined it with the same directive: a board that
+    // named only a vehicle id left an operator matching cars by identifier.
     expect(Object.keys(row ?? {}).sort()).toEqual([
       'branchId',
       'custodyAcceptedAt',
       'custodyReleasedAt',
+      'customer',
       'displayNumber',
       'id',
       'origin',
+      'plate',
       'receptionStatus',
       'recordVersion',
       'vehicleDisplayNumber',
@@ -1276,6 +1287,159 @@ describe('the branch-optional board', () => {
     // second company has no visits, which is a fact this caller may not learn.
     expect(other.status).toBe(403);
     expect(((await other.json()) as PageBody).code).toBe('ERR-IAM-001');
+  });
+});
+
+// ===========================================================================
+// The status group and the two row facts a board reads by (Owner directive,
+// P1-32-PRE-OD-UX)
+//
+// `statusGroup` is the control a board offers instead of six lifecycle codes,
+// and it is expanded from `TERMINAL_RECEPTION_STATUSES` inside the module so the
+// frozen graph is stated once. The row grew `customer` and `plate` because a
+// board that named only a vehicle id left an operator matching cars by
+// identifier — and `displayName` is gated on `crm.customer.read`, proved in both
+// directions on one principal below.
+// ===========================================================================
+describe('the reception status group and the row facts', () => {
+  /** Closes a visit without work through the shipped, version-guarded command. */
+  async function closeWithoutWork(receptionId: string): Promise<void> {
+    authAs(SUBJ_FULL);
+    const response = await CLOSE_WITHOUT_WORK(
+      new Request(`${R}/${receptionId}/close-without-work`, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'idempotency-key': crypto.randomUUID(),
+          'if-match': '"1"',
+        },
+        body: JSON.stringify({ reason: 'Review fixture: no work required' }),
+      }),
+      { params: Promise.resolve({ receptionId }) }
+    );
+    if (response.status !== 200) {
+      throw new Error(`fixture closure failed with ${response.status}: ${await response.text()}`);
+    }
+  }
+
+  /** The ids one board query returns, as the full-permission caller. */
+  async function idsFor(extra: string): Promise<readonly unknown[]> {
+    authAs(SUBJ_FULL);
+    const response = await listReceptions(
+      `?companyId=${COMPANY_A1}&branchId=${BRANCH_A1}&limit=100${extra}`
+    );
+    expect(response.status, extra).toBe(200);
+    return (((await response.json()) as PageBody).items ?? []).map((item) => item.id);
+  }
+
+  /** One board row by id, as the current caller. */
+  async function boardRow(receptionId: string): Promise<Item> {
+    const response = await listReceptions(
+      `?companyId=${COMPANY_A1}&branchId=${BRANCH_A1}&limit=100`
+    );
+    expect(response.status).toBe(200);
+    const found = (((await response.json()) as PageBody).items ?? []).find(
+      (item) => item.id === receptionId
+    );
+    expect(found, receptionId).toBeDefined();
+    return found as Item;
+  }
+
+  it('statusGroup open holds the live visits and finished holds the terminal ones', async () => {
+    authAs(SUBJ_FULL);
+    const live = await openReception();
+    const done = await openReception();
+    await closeWithoutWork(done.id);
+
+    const open = await idsFor('&statusGroup=open');
+    expect(open).toContain(live.id);
+    expect(open).not.toContain(done.id);
+
+    const finished = await idsFor('&statusGroup=finished');
+    expect(finished).toContain(done.id);
+    expect(finished).not.toContain(live.id);
+  });
+
+  it('refuses statusGroup beside status, and an unknown group', async () => {
+    authAs(SUBJ_FULL);
+    // 422 and not an empty page: the intersection of a group and one of its own
+    // members is that member, and of a group and a foreign member is nothing —
+    // and nothing on a board reads as a branch with no cars in it.
+    const both = await listReceptions(
+      `?companyId=${COMPANY_A1}&branchId=${BRANCH_A1}&status=opened&statusGroup=open`
+    );
+    expect(both.status).toBe(422);
+    // And the refusal names a CATALOGUED rule token rather than a Zod issue
+    // code: a refinement can only report `custom`, which reaches the operator as
+    // the generic "this value was not accepted".
+    expect(((await both.json()) as { violations?: readonly unknown[] }).violations).toEqual([
+      { path: 'query.statusGroup', rule: 'status_and_group_exclusive' },
+    ]);
+    authAs(SUBJ_FULL);
+    expect(
+      (await listReceptions(`?companyId=${COMPANY_A1}&branchId=${BRANCH_A1}&statusGroup=closed`))
+        .status
+    ).toBe(422);
+  });
+
+  it('names the service requester and the plate, and withholds only the NAME', async () => {
+    authAs(SUBJ_FULL);
+    const visit = await openReception();
+    const PLATE = 'ZY 7788';
+    await asAdminTx(TENANT_A, async (client) => {
+      await client.query(
+        `INSERT INTO veh.plate_history
+           (tenant_id, vehicle_id, country_code, plate_raw, valid_from, created_by)
+         VALUES ($1,$2,'JO',$3,current_date,$4)`,
+        [TENANT_A, visit.vehicleId, PLATE, USER_A]
+      );
+    });
+
+    authAs(SUBJ_FULL);
+    const named = await boardRow(visit.id);
+    expect(named.plate).toBe(PLATE);
+    expect(named.customer).toEqual({ id: PARTNER_A, displayName: 'Reception Read Requester' });
+
+    // WITHOUT `crm.customer.read`: the role is still reported, with the partner
+    // id and no name. The party is a reception fact; the person's NAME is the
+    // CRM module's to withhold, and withholding it must not drop the row, the
+    // block, or the plate beside it.
+    const removed = await admin.query(
+      `DELETE FROM iam.role_permissions
+        WHERE tenant_id = $1 AND role_id = $2
+          AND permission_id = (SELECT id FROM iam.permissions WHERE permission_code = 'crm.customer.read')`,
+      [TENANT_A, ROLE_FULL]
+    );
+    expect(removed.rowCount, 'the fixture never granted crm.customer.read').toBe(1);
+    try {
+      authAs(SUBJ_FULL);
+      const withheld = await boardRow(visit.id);
+      expect(withheld.customer).toEqual({ id: PARTNER_A, displayName: null });
+      expect(withheld.plate).toBe(PLATE);
+    } finally {
+      await admin.query(
+        `INSERT INTO iam.role_permissions (tenant_id, role_id, permission_id, effect, created_by)
+         SELECT $1,$2,id,'allow',$3 FROM iam.permissions WHERE permission_code = 'crm.customer.read'
+         ON CONFLICT DO NOTHING`,
+        [TENANT_A, ROLE_FULL, USER_A]
+      );
+    }
+    // Both halves asserted, because a block that was always null would satisfy
+    // the withheld case on its own while the resolution was entirely broken.
+    authAs(SUBJ_FULL);
+    expect((await boardRow(visit.id)).customer).toEqual({
+      id: PARTNER_A,
+      displayName: 'Reception Read Requester',
+    });
+  });
+
+  it('publishes a null plate for a vehicle that carries none', async () => {
+    authAs(SUBJ_FULL);
+    const unplated = await openReception();
+    authAs(SUBJ_FULL);
+    // An ordinary row and not a fault: `veh.plate_history` is dated and a
+    // vehicle may simply have no open interval.
+    expect((await boardRow(unplated.id)).plate).toBeNull();
   });
 });
 

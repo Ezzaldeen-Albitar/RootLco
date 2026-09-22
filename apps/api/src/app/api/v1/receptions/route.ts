@@ -30,6 +30,7 @@
  */
 import { z } from 'zod';
 import { defineOperation } from '@/server/auth/operation-registry';
+import { AppFailure } from '@/server/errors/app-failure';
 import { handleOperation } from '@/server/http/route-handler';
 import {
   parseJsonBody,
@@ -43,6 +44,7 @@ import {
   MAX_SOC_PERCENT,
   MAX_WALK_IN_NOTE,
   MIN_SOC_PERCENT,
+  RECEPTION_STATUS_GROUPS,
   RECEPTION_STATUSES,
   receptionModule,
 } from '@/modules/reception';
@@ -130,6 +132,33 @@ export async function POST(request: Request): Promise<Response> {
 // ---------------------------------------------------------------------------
 
 /**
+ * The plate on a board row is shown to EVERY holder of `rec.reception.read`,
+ * and that is a decision rather than an omission (Owner directive,
+ * P1-32-PRE-OD-UX).
+ *
+ * The customer NAME beside it is narrowed — it is resolved through the CRM
+ * module's own read, which checks `crm.customer.read` and answers an unentitled
+ * caller with nothing — so the obvious question is why the plate is not narrowed
+ * too. It is not, for three reasons, and the shipped board already answers the
+ * same way:
+ *
+ *  - `wo.work-order-list` publishes the plate as `WorkOrderSummary.vehicle`
+ *    (`work-order-service.ts`) to every holder of `wo.work_order.read`, with no
+ *    vehicle-side capability check. Narrowing here and not there would give one
+ *    tenant two different answers about the same car on two screens an operator
+ *    reads side by side;
+ *  - the plate is the property of the VEHICLE, and a caller who may read this
+ *    visit already holds that vehicle's id, its display number and its whole
+ *    condition record. `docs/database/veh-ownership-visibility-matrix.md` reserves
+ *    the CRM columns, not the registration;
+ *  - a board that named only a vehicle id made an operator match cars by
+ *    identifier, which is the defect this field exists to remove.
+ *
+ * So: no narrowing, deliberately, and recorded here so the next reader does not
+ * have to decide it again.
+ */
+
+/**
  * `branchId` is OPTIONAL (Owner directive, P1-32-PRE-OD-UX).
  *
  * Omitting it asks for every branch of the company the caller may read, which is
@@ -145,6 +174,20 @@ const ListQuery = z
     companyId: schemas.uuid,
     branchId: schemas.uuid.optional(),
     status: z.enum(RECEPTION_STATUSES).optional(),
+    /**
+     * The status GROUP (Owner directive, P1-32-PRE-OD-UX) — `open` for the
+     * visits still in play, `finished` for the three terminal exits.
+     *
+     * The control a board actually offers, because "today's queue" is one
+     * question and six lifecycle codes are six. The group is expanded into the
+     * statuses it covers inside the module, from `TERMINAL_RECEPTION_STATUSES`,
+     * so the frozen graph is stated once.
+     *
+     * Mutually exclusive with `status`, refused below rather than ANDed: the
+     * intersection is either that one status or an empty page, and an empty page
+     * on a board is indistinguishable from a branch with nothing in it.
+     */
+    statusGroup: z.enum(RECEPTION_STATUS_GROUPS).optional(),
     vehicleId: schemas.uuid.optional(),
     /**
      * Inclusive bounds on the instant custody was accepted (Owner directive,
@@ -183,6 +226,38 @@ const ListQuery = z
     }
   });
 
+/**
+ * The one cross-field refusal this query carries, as a CATALOGUED rule token.
+ *
+ * Asserted here rather than in the `superRefine` above, and the difference is
+ * what the caller receives: `toViolations` publishes `issue.code` as the rule,
+ * and every refinement issue carries the code `custom`, so a refinement can only
+ * state its reason in an English message the problem document does not publish.
+ * A catalogued token is what the browser turns into a sentence in the operator's
+ * own language.
+ *
+ * The inverted-window refusal above is left as it was. It is not this change's
+ * to reshape, and moving it would alter a refusal shape that shipped before this
+ * directive; it is recorded here as the one refusal on this route that still
+ * reaches a screen as the generic sentence.
+ */
+function assertStatusFilterCoherent(query: {
+  readonly status?: string | undefined;
+  readonly statusGroup?: string | undefined;
+}): void {
+  if (query.status === undefined || query.statusGroup === undefined) return;
+  // See `statusGroup` above: ANDing them is well defined and useless, and the
+  // useless answer looks exactly like a quiet board.
+  throw new AppFailure('ERR-VAL-001', {
+    // Not published: `problemFor` renders the catalogue title and the
+    // violations, never this string. It exists for the log line.
+    message: 'The board query names a status and a status group at once',
+    safeDetails: {
+      violations: [{ path: 'query.statusGroup', rule: 'status_and_group_exclusive' }],
+    },
+  });
+}
+
 export const RECEPTION_LIST_OPERATION = defineOperation({
   id: 'rec.reception-list',
   module: 'reception',
@@ -206,6 +281,7 @@ export async function GET(request: Request): Promise<Response> {
       // Parsed INSIDE the handler so a malformed query is rendered as the
       // shared problem document rather than an unhandled 500.
       const query = parseOrFail(ListQuery, raw, 'query');
+      assertStatusFilterCoherent(query);
       // A named branch was already decided by the `scopeTargetOption` target
       // below, so it is passed through unchanged; an omitted one is resolved
       // here, inside the transaction, against the caller's own grants.
@@ -216,6 +292,7 @@ export async function GET(request: Request): Promise<Response> {
           companyId: query.companyId,
           branchIds,
           status: query.status,
+          statusGroup: query.statusGroup,
           vehicleId: query.vehicleId,
           from: query.from,
           to: query.to,
