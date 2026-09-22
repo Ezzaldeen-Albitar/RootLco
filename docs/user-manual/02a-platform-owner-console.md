@@ -541,12 +541,12 @@ only the tidying up did not.
 
 **If it goes wrong**
 
-| Message                                                                                    | What it means                                                                                                  |
-| ------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------- |
-| **"That is not your current password. Try again."**                                        | The first box is wrong. You are not signed out for a typing error.                                             |
-| **"The two new passwords are not the same."**                                              | The second and third boxes disagree.                                                                           |
-| **"The new password is the same as the current one. Choose a different one."**             | Nothing would change.                                                                                          |
-| **"This password was not accepted. Choose a longer one, or one that is harder to guess."** | The identity service refused it. The product states no rule of its own, so there is no length to quote at you. |
+| Message                                                                                    | What it means                                                                                                                                                                                                                   |
+| ------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **"We could not confirm your current password. Enter it again."**                          | The first box was not confirmed. The product gives this same answer whatever the reason and never says the password was wrong, so nothing here tells anybody whether a guess landed. You are not signed out for a typing error. |
+| **"The two new passwords are not the same."**                                              | The second and third boxes disagree.                                                                                                                                                                                            |
+| **"The new password is the same as the current one. Choose a different one."**             | Nothing would change.                                                                                                                                                                                                           |
+| **"This password was not accepted. Choose a longer one, or one that is harder to guess."** | The identity service refused it. The product states no rule of its own, so there is no length to quote at you.                                                                                                                  |
 
 **Restrictions.** This page changes **your own** password and nobody else's. There is no screen
 anywhere that sets another person's password — not an organisation's administrator's, and not
