@@ -39,6 +39,7 @@ import {
   type Page,
   type PageRequest,
 } from '@/server/db/pagination';
+import { halfOpenLocalDayRange, type LocalDayPeriod } from '@/server/db/period';
 import type { ReceptionStatus } from '../domain/reception';
 
 /** Renders a nullable timestamptz as millisecond ISO, or null. */
@@ -220,6 +221,59 @@ export class ReceptionReadRepository extends Repository {
    * nothing. The service turns null into the uniform 404 and authorizes
    * against the returned company and branch (P1-18-A-01).
    */
+  /**
+   * How many reception visits were OPENED in the period (Owner directive).
+   *
+   * ## Why this is an aggregate and not a page
+   *
+   * `listReceptions` answers "which visits", bounded by a keyset page. A
+   * dashboard asks "how many", and a count taken from the rows of a page is a
+   * count bounded by the page size — a number that reads as a fact and is really
+   * a truncation. One `count(*)` over the same table, never a `length` over a
+   * list.
+   *
+   * ## `custody_accepted_at`, and not `created_at`
+   *
+   * The visit's own instant is the one the platform already sorts this table by
+   * (`RECEPTION_LIST_ORDERING` is `custody_accepted_at_desc`). `created_at` is
+   * when the row was written, which is the same thing in ordinary use and is not
+   * the same thing at all for a visit recorded after the fact.
+   *
+   * The calendar day is resolved in the branch's own zone by
+   * `halfOpenLocalDayRange`, the one helper every reported period composes, so
+   * "opened on the 3rd" means the 3rd where the workshop is (D-17).
+   *
+   * ## No authorization here
+   *
+   * The company and the branch array are the caller's claim, and the caller
+   * authorizes each pair before it asks — an aggregate has no row to take a
+   * scope from, and a zero must not be able to report whether a branch exists.
+   */
+  async overviewVisitsOpened(
+    db: DbHandle,
+    scope: { readonly companyId: string; readonly branchIds: readonly string[] },
+    period: LocalDayPeriod
+  ): Promise<number> {
+    const context = this.assertContext(db);
+    const row = await this.runOne<{ total: number }>(
+      db,
+      `SELECT count(*)::int AS total
+         FROM rec.reception_visits
+        WHERE tenant_id = $1 AND company_id = $2 AND branch_id = ANY($3::uuid[])
+          AND deleted_at IS NULL
+          AND ${halfOpenLocalDayRange('custody_accepted_at', 4, 5, 6)}`,
+      [
+        context.principal.tenantId,
+        scope.companyId,
+        scope.branchIds,
+        period.from,
+        period.toExclusive,
+        period.timezoneName,
+      ]
+    );
+    return row?.total ?? 0;
+  }
+
   async requireLiveVisit(
     db: DbHandle,
     receptionVisitId: string

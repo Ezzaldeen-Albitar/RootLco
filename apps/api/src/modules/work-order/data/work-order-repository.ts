@@ -28,8 +28,35 @@
 import { Repository } from '@/server/db/repository';
 import type { DbHandle } from '@/server/db/transaction';
 import { buildPage, keysetFragment, type Page, type PageRequest } from '@/server/db/pagination';
-import { halfOpenLocalDayRange } from '@/server/db/period';
+import { halfOpenLocalDayRange, type LocalDayPeriod } from '@/server/db/period';
 import { toWorkOrderSearchTerms } from '../domain/work-order';
+
+/** One current state and how many live work orders are in it. */
+export interface OverviewStateCountRow {
+  readonly state: string;
+  readonly total: number;
+  /** How many of that state's orders have parts requested but not yet reserved. */
+  readonly awaitingParts: number;
+}
+
+/** Additional-work requests awaiting a decision, and the orders they hold up. */
+export interface OverviewPendingApprovalRow {
+  readonly requests: number;
+  readonly workOrders: number;
+}
+
+/** A count bucketed into one calendar day of the branch's own timezone. */
+export interface OverviewDayCountRow {
+  /** `YYYY-MM-DD`, in the zone the period was resolved in. */
+  readonly localDay: string;
+  readonly total: number;
+}
+
+/** One technician's current open-assignment load. */
+export interface OverviewAssignmentCountRow {
+  readonly technicianProfileId: string;
+  readonly activeCount: number;
+}
 
 export interface WorkOrderRow {
   readonly id: string;
@@ -2143,5 +2170,223 @@ export class WorkOrderRepository extends Repository {
     if (row.b3) hits.push({ code: 'B3' });
     if (row.b4) hits.push({ code: 'B4' });
     return hits;
+  }
+
+  // -------------------------------------------------------------------------
+  // Overview aggregates (Owner directive — the tenant dashboard)
+  //
+  // Five statements, each a single SQL aggregate over the RLS-bound transaction.
+  // None of them pages, and that is the point rather than an optimisation: a
+  // figure derived by counting the rows of a page is a figure bounded by the
+  // page size, and it reads as a fact rather than as a truncation. The branch
+  // set arrives as an ARRAY because a dashboard may answer for one branch or for
+  // every branch of a company the caller is authorized in, and one statement per
+  // branch would make a company of thirty branches thirty round trips for one
+  // number.
+  //
+  // NO AUTHORIZATION HAPPENS HERE, deliberately, on the `statusSummary`
+  // precedent: the company and the branch array are the caller's claim and the
+  // CALLER authorizes each pair before it asks, because an aggregate has no row
+  // to take a scope from and a zero must not be able to report whether a branch
+  // exists.
+  // -------------------------------------------------------------------------
+
+  /**
+   * Live work orders in the named branches, grouped by their current state.
+   *
+   * `awaitingParts` rides along in the SAME aggregate rather than in a second
+   * statement, because it is a property of the same rows under the same
+   * predicate: two statements could observe two snapshots and publish a
+   * per-state total that does not add up to the figure beside it.
+   *
+   * Grouped by the raw `state` code and NOT joined to `wo.work_order_states`
+   * here. The catalogue is dual-scoped — a platform row and a tenant row may
+   * share a code — so resolving precedence in SQL would be a second copy of the
+   * rule `WorkOrderCatalogService` already owns, and the two would eventually
+   * disagree about which name a tenant's state has.
+   */
+  async overviewStateCounts(
+    db: DbHandle,
+    scope: { readonly companyId: string; readonly branchIds: readonly string[] }
+  ): Promise<readonly OverviewStateCountRow[]> {
+    const context = this.assertContext(db);
+    const result = await this.run<{ state: string; total: number; awaiting_parts: number }>(
+      db,
+      `SELECT state,
+              count(*)::int AS total,
+              count(*) FILTER (WHERE parts_forward_state = 'requested')::int AS awaiting_parts
+         FROM wo.work_orders
+        WHERE tenant_id = $1 AND company_id = $2 AND branch_id = ANY($3::uuid[])
+          AND deleted_at IS NULL
+        GROUP BY state
+        ORDER BY state`,
+      [context.principal.tenantId, scope.companyId, scope.branchIds]
+    );
+    return result.rows.map((row) => ({
+      state: row.state,
+      total: row.total,
+      awaitingParts: row.awaiting_parts,
+    }));
+  }
+
+  /**
+   * Additional-work requests still awaiting a decision, two ways.
+   *
+   * `requests` counts the decisions somebody owes; `workOrders` counts the jobs
+   * held up by at least one of them. They are different questions and a screen
+   * needs both — five requests on one order is one stalled vehicle, not five —
+   * so they come from one statement over one snapshot rather than from two.
+   *
+   * `pending` only. An APPROVED request that is not yet fulfilled also blocks
+   * closure (`wo.guard_work_order_closure` blocker B3), but nobody is waiting on
+   * a decision for it; counting it here would tell a service advisor to chase an
+   * approval that has already been given.
+   */
+  async overviewPendingApprovals(
+    db: DbHandle,
+    scope: { readonly companyId: string; readonly branchIds: readonly string[] }
+  ): Promise<OverviewPendingApprovalRow> {
+    const context = this.assertContext(db);
+    const row = await this.runOne<{ requests: number; work_orders: number }>(
+      db,
+      `SELECT count(*)::int                        AS requests,
+              count(DISTINCT work_order_id)::int   AS work_orders
+         FROM wo.additional_work_requests
+        WHERE tenant_id = $1 AND company_id = $2 AND branch_id = ANY($3::uuid[])
+          AND deleted_at IS NULL
+          AND state = 'pending'`,
+      [context.principal.tenantId, scope.companyId, scope.branchIds]
+    );
+    // An aggregate with no GROUP BY always produces a row, so the null branch is
+    // unreachable; it is written as zeros rather than as a throw because the
+    // honest reading of "no rows matched" for a COUNT is zero.
+    return { requests: row?.requests ?? 0, workOrders: row?.work_orders ?? 0 };
+  }
+
+  /**
+   * Work orders OPENED on each local calendar day of the period.
+   *
+   * The day comes from `halfOpenLocalDayRange` and `AT TIME ZONE`, not from a
+   * `date_trunc` on the server's own zone: "opened on the 3rd" means the 3rd
+   * where the workshop is. The same helper and the same zone parameter bound the
+   * completion series below, so the two halves of one chart cannot bucket one
+   * instant into two different days.
+   */
+  async overviewOpenedPerDay(
+    db: DbHandle,
+    scope: { readonly companyId: string; readonly branchIds: readonly string[] },
+    period: LocalDayPeriod
+  ): Promise<readonly OverviewDayCountRow[]> {
+    const context = this.assertContext(db);
+    const result = await this.run<{ local_day: string; total: number }>(
+      db,
+      `SELECT to_char((opened_at AT TIME ZONE $6)::date, 'YYYY-MM-DD') AS local_day,
+              count(*)::int AS total
+         FROM wo.work_orders
+        WHERE tenant_id = $1 AND company_id = $2 AND branch_id = ANY($3::uuid[])
+          AND deleted_at IS NULL
+          AND ${halfOpenLocalDayRange('opened_at', 4, 5, 6)}
+        GROUP BY 1
+        ORDER BY 1`,
+      [
+        context.principal.tenantId,
+        scope.companyId,
+        scope.branchIds,
+        period.from,
+        period.toExclusive,
+        period.timezoneName,
+      ]
+    );
+    return result.rows.map((row) => ({ localDay: row.local_day, total: row.total }));
+  }
+
+  /**
+   * Work orders that REACHED one of the named states on each local day.
+   *
+   * Read from `wo.work_order_status_history` and not from `wo.work_orders`,
+   * because the master row carries no completion instant: `updated_at` moves for
+   * any change at all, and a state a work order left again would be invisible.
+   * The history is trigger-emitted, append-only and coherence-guarded to the
+   * master, so it is the only place the platform records WHEN a state was
+   * entered.
+   *
+   * `count(DISTINCT work_order_id)` rather than `count(*)`: the caller passes the
+   * closed, non-cancellation codes, and a tenant whose graph allows a closed
+   * order to be reopened and closed again would otherwise count that vehicle
+   * twice on one day.
+   *
+   * `states` is a parameter and not a literal for the reason
+   * `listClosedNonCancelled` gives: the closed/cancellation flags are read from
+   * the LIVE catalogue, which tenants may shadow, so no state NAME is written
+   * into this file. An empty array matches nothing, which is the honest answer
+   * for a tenant whose catalogue resolves no such state.
+   */
+  async overviewStateEntriesPerDay(
+    db: DbHandle,
+    scope: { readonly companyId: string; readonly branchIds: readonly string[] },
+    states: readonly string[],
+    period: LocalDayPeriod
+  ): Promise<readonly OverviewDayCountRow[]> {
+    const context = this.assertContext(db);
+    const result = await this.run<{ local_day: string; total: number }>(
+      db,
+      `SELECT to_char((occurred_at AT TIME ZONE $6)::date, 'YYYY-MM-DD') AS local_day,
+              count(DISTINCT work_order_id)::int AS total
+         FROM wo.work_order_status_history
+        WHERE tenant_id = $1 AND company_id = $2 AND branch_id = ANY($3::uuid[])
+          AND to_state = ANY($7::text[])
+          AND ${halfOpenLocalDayRange('occurred_at', 4, 5, 6)}
+        GROUP BY 1
+        ORDER BY 1`,
+      [
+        context.principal.tenantId,
+        scope.companyId,
+        scope.branchIds,
+        period.from,
+        period.toExclusive,
+        period.timezoneName,
+        states,
+      ]
+    );
+    return result.rows.map((row) => ({ localDay: row.local_day, total: row.total }));
+  }
+
+  /**
+   * How many jobs each technician currently holds an OPEN assignment on.
+   *
+   * `valid_to IS NULL` is what "currently" means on this table: the row set is
+   * the assignment HISTORY, so a closed assignment is a row with an end instant
+   * and a reason, and counting it would report a workload somebody finished.
+   *
+   * Every role is counted, `primary` and `assist` alike. One active primary
+   * assignment per job is a unique index; an assisting technician is still
+   * occupied by the job, and a workload figure that ignored them would understate
+   * exactly the people a foreman is trying to see.
+   *
+   * The technician's NAME is not here. `tech.technician_profiles` is another
+   * module's table and this one may not read it — the label is resolved through
+   * `@/modules/technician` by whoever composes the two.
+   */
+  async overviewActiveAssignments(
+    db: DbHandle,
+    scope: { readonly companyId: string; readonly branchIds: readonly string[] }
+  ): Promise<readonly OverviewAssignmentCountRow[]> {
+    const context = this.assertContext(db);
+    const result = await this.run<{ technician_profile_id: string; active_count: number }>(
+      db,
+      `SELECT technician_profile_id,
+              count(DISTINCT job_id)::int AS active_count
+         FROM wo.job_assignments
+        WHERE tenant_id = $1 AND company_id = $2 AND branch_id = ANY($3::uuid[])
+          AND deleted_at IS NULL
+          AND valid_to IS NULL
+        GROUP BY technician_profile_id
+        ORDER BY technician_profile_id`,
+      [context.principal.tenantId, scope.companyId, scope.branchIds]
+    );
+    return result.rows.map((row) => ({
+      technicianProfileId: row.technician_profile_id,
+      activeCount: row.active_count,
+    }));
   }
 }

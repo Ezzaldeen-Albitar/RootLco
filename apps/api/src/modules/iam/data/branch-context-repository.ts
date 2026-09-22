@@ -88,4 +88,62 @@ export class BranchContextRepository extends Repository {
           timezoneName: row.timezone_name,
         };
   }
+
+  /**
+   * Every branch of ONE company that is within this caller's RLS reach.
+   *
+   * ## Why the reach read and not `listBranches`
+   *
+   * `OrganizationAdministrationRepository.listBranches` is the ADMINISTRATION
+   * read: it is bounded by `ORG_REACH_LIMIT`, shaped for a selector, and gated
+   * by an administration permission the operator of a workshop dashboard has no
+   * reason to hold. This is the same two attributes `findBranch` already
+   * publishes, asked for a company instead of for a branch, and it exists so a
+   * consumer that must answer "for all the branches I can see" does not have to
+   * ask for a page and hope it was long enough.
+   *
+   * ## It is NOT an authorization decision, and cannot be used as one
+   *
+   * Exactly as `findBranch` records. `sel_branches_scope` narrows on the
+   * permission-BLIND `iam.allowed_company_ids()` / `allowed_branch_ids()` union
+   * (P1-18-A-01), so a row appearing here means only that some active grant
+   * touches that branch — never that the caller may read the data a consumer is
+   * about to aggregate for it. A caller must evaluate its own permission
+   * against each pair before it counts anything, which is what
+   * `DashboardSummaryService` does and what this comment exists to make
+   * unavoidable.
+   *
+   * UNBOUNDED, deliberately, and bounded in fact by the schema: a branch is an
+   * organisational structure created by an administrator, not a transaction, so
+   * the row count is the size of the organisation and not of its trading. A
+   * keyset page here would hand a consumer a partial branch set with no way to
+   * tell that it was partial, which for an aggregate is worse than a long read —
+   * it is a wrong total that looks right.
+   */
+  async listBranchesForCompany(
+    db: DbHandle,
+    companyId: string
+  ): Promise<readonly BranchContextRow[]> {
+    const context = this.assertContext(db);
+    const result = await this.run<{
+      id: string;
+      company_id: string;
+      name: string;
+      timezone_name: string;
+    }>(
+      db,
+      `SELECT id, company_id, name, timezone_name
+         FROM org.branches
+        WHERE tenant_id = $1 AND company_id = $2
+          AND deleted_at IS NULL
+        ORDER BY name, id`,
+      [context.principal.tenantId, companyId]
+    );
+    return result.rows.map((row) => ({
+      branchId: row.id,
+      companyId: row.company_id,
+      name: row.name,
+      timezoneName: row.timezone_name,
+    }));
+  }
 }

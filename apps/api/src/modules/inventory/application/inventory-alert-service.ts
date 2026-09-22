@@ -669,6 +669,29 @@ export class InventoryAlertService {
     };
   }
 
+  /**
+   * How many items are low in one branch (Owner directive — the dashboard).
+   *
+   * NO authorization is performed here, and that is the opposite of what
+   * `listLowStock` above does — so it is stated rather than left to be noticed.
+   * `listLowStock` is reached by a route whose whole subject is one branch, and
+   * it re-authorizes that pair inside the transaction. This is reached by the
+   * dashboard, which has already evaluated `inv.stock.read` against every branch
+   * in its set and omits the figure entirely for a caller that does not hold it.
+   * Re-authorizing here would put a second, differently-shaped scope decision
+   * behind a number, and the two would eventually disagree about which branch a
+   * caller may count.
+   *
+   * The count and the alert list share one SQL selection, so the dashboard's
+   * figure is the length of the list an operator would see if they opened it.
+   */
+  public async countLowStock(
+    db: DbHandle,
+    filter: { readonly companyId: string; readonly branchId: string }
+  ): Promise<number> {
+    return this.repository.countLowStock(db, filter);
+  }
+
   /** Counted lines whose variance was not zero, on counts that were reconciled. */
   public async listCountDiscrepancies(
     db: DbHandle,

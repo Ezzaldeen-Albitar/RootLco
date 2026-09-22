@@ -1832,6 +1832,79 @@ export interface LowStockRow {
   readonly preferredOrderQty: string | null;
 }
 
+/**
+ * The low-stock SELECTION, written ONCE.
+ *
+ * Two reads answer with it — the alert's page and the dashboard's count — and
+ * they must agree by construction rather than by inspection. A second copy of
+ * this text would be a second definition of what "low" means, and the two would
+ * drift the first time a location type, a specificity rule or an archived-item
+ * exclusion changed on one of them: the alert would list eleven items and the
+ * dashboard would say twelve, and nothing would fail.
+ *
+ * It is a COMPLETE statement, so the page appends its keyset window to the
+ * trailing `WHERE` and the count wraps the whole thing as a subquery. Neither
+ * has to know how the other reads it.
+ *
+ * Parameters, in the order every caller binds them:
+ *   $1 tenant id · $2 company id · $3 branch id · $4 item id or NULL
+ *
+ * The three structural properties the alert route publishes live in this text
+ * and not in either caller: the query STARTS from `inv.item_reorder_levels`, so
+ * an item with no configured level is never low however empty its shelf; the
+ * comparison is on the GENERATED `available_qty` column, never re-derived; and
+ * quarantine and transit cells are excluded from a branch total, because stock
+ * nobody can fit is not stock the branch has.
+ */
+const LOW_STOCK_SELECTION = `WITH applicable AS (
+         SELECT r.id, r.item_id, r.location_id, r.reorder_level_qty, r.preferred_order_qty,
+                row_number() OVER (
+                  PARTITION BY r.item_id, r.location_id
+                  ORDER BY (r.branch_id IS NOT NULL) DESC, (r.company_id IS NOT NULL) DESC
+                ) AS specificity_rank
+           FROM inv.item_reorder_levels r
+          WHERE r.tenant_id = $1
+            AND r.status = 'active'
+            AND (r.company_id IS NULL OR r.company_id = $2)
+            AND (r.branch_id IS NULL OR r.branch_id = $3)
+            AND ($4::uuid IS NULL OR r.item_id = $4)
+       ),
+       branch_totals AS (
+         SELECT b.item_id,
+                sum(b.on_hand_qty)   AS on_hand_qty,
+                sum(b.reserved_qty)  AS reserved_qty,
+                sum(b.available_qty) AS available_qty
+           FROM inv.stock_balances b
+           JOIN inv.stock_locations sl ON sl.tenant_id = b.tenant_id AND sl.id = b.location_id
+          WHERE b.tenant_id = $1 AND b.company_id = $2 AND b.branch_id = $3
+            AND sl.location_type NOT IN ('quarantine', 'transit')
+          GROUP BY b.item_id
+       )
+       SELECT a.id, a.item_id, i.sku, i.name AS item_name,
+              CASE WHEN a.location_id IS NULL THEN 'branch' ELSE 'location' END AS scope,
+              a.location_id, l.location_code,
+              q.on_hand_qty, q.reserved_qty, q.available_qty,
+              a.reorder_level_qty,
+              a.reorder_level_qty - q.available_qty AS shortfall_qty,
+              a.preferred_order_qty,
+              i.sku AS sort_value
+         FROM applicable a
+         JOIN inv.item_master i ON i.tenant_id = $1 AND i.id = a.item_id
+         LEFT JOIN inv.stock_locations l ON l.tenant_id = $1 AND l.id = a.location_id
+         LEFT JOIN branch_totals bt ON bt.item_id = a.item_id
+         LEFT JOIN inv.stock_balances c
+           ON c.tenant_id = $1 AND c.company_id = $2 AND c.branch_id = $3
+          AND c.item_id = a.item_id AND c.location_id = a.location_id
+         CROSS JOIN LATERAL (
+           SELECT COALESCE(CASE WHEN a.location_id IS NULL THEN bt.on_hand_qty   ELSE c.on_hand_qty   END, 0) AS on_hand_qty,
+                  COALESCE(CASE WHEN a.location_id IS NULL THEN bt.reserved_qty  ELSE c.reserved_qty  END, 0) AS reserved_qty,
+                  COALESCE(CASE WHEN a.location_id IS NULL THEN bt.available_qty ELSE c.available_qty END, 0) AS available_qty
+         ) q
+        WHERE a.specificity_rank = 1
+          AND i.deleted_at IS NULL
+          AND i.lifecycle_status <> 'archived'
+          AND q.available_qty <= a.reorder_level_qty`;
+
 /** One counted line whose variance was not zero, with its adjustment's state. */
 export interface CountDiscrepancyRow {
   readonly countId: string;
@@ -6453,54 +6526,7 @@ export class InventoryRepository extends Repository {
     );
     const result = await this.run<LowStockSqlRow & { sort_value: string }>(
       db,
-      `WITH applicable AS (
-         SELECT r.id, r.item_id, r.location_id, r.reorder_level_qty, r.preferred_order_qty,
-                row_number() OVER (
-                  PARTITION BY r.item_id, r.location_id
-                  ORDER BY (r.branch_id IS NOT NULL) DESC, (r.company_id IS NOT NULL) DESC
-                ) AS specificity_rank
-           FROM inv.item_reorder_levels r
-          WHERE r.tenant_id = $1
-            AND r.status = 'active'
-            AND (r.company_id IS NULL OR r.company_id = $2)
-            AND (r.branch_id IS NULL OR r.branch_id = $3)
-            AND ($4::uuid IS NULL OR r.item_id = $4)
-       ),
-       branch_totals AS (
-         SELECT b.item_id,
-                sum(b.on_hand_qty)   AS on_hand_qty,
-                sum(b.reserved_qty)  AS reserved_qty,
-                sum(b.available_qty) AS available_qty
-           FROM inv.stock_balances b
-           JOIN inv.stock_locations sl ON sl.tenant_id = b.tenant_id AND sl.id = b.location_id
-          WHERE b.tenant_id = $1 AND b.company_id = $2 AND b.branch_id = $3
-            AND sl.location_type NOT IN ('quarantine', 'transit')
-          GROUP BY b.item_id
-       )
-       SELECT a.id, a.item_id, i.sku, i.name AS item_name,
-              CASE WHEN a.location_id IS NULL THEN 'branch' ELSE 'location' END AS scope,
-              a.location_id, l.location_code,
-              q.on_hand_qty, q.reserved_qty, q.available_qty,
-              a.reorder_level_qty,
-              a.reorder_level_qty - q.available_qty AS shortfall_qty,
-              a.preferred_order_qty,
-              i.sku AS sort_value
-         FROM applicable a
-         JOIN inv.item_master i ON i.tenant_id = $1 AND i.id = a.item_id
-         LEFT JOIN inv.stock_locations l ON l.tenant_id = $1 AND l.id = a.location_id
-         LEFT JOIN branch_totals bt ON bt.item_id = a.item_id
-         LEFT JOIN inv.stock_balances c
-           ON c.tenant_id = $1 AND c.company_id = $2 AND c.branch_id = $3
-          AND c.item_id = a.item_id AND c.location_id = a.location_id
-         CROSS JOIN LATERAL (
-           SELECT COALESCE(CASE WHEN a.location_id IS NULL THEN bt.on_hand_qty   ELSE c.on_hand_qty   END, 0) AS on_hand_qty,
-                  COALESCE(CASE WHEN a.location_id IS NULL THEN bt.reserved_qty  ELSE c.reserved_qty  END, 0) AS reserved_qty,
-                  COALESCE(CASE WHEN a.location_id IS NULL THEN bt.available_qty ELSE c.available_qty END, 0) AS available_qty
-         ) q
-        WHERE a.specificity_rank = 1
-          AND i.deleted_at IS NULL
-          AND i.lifecycle_status <> 'archived'
-          AND q.available_qty <= a.reorder_level_qty
+      `${LOW_STOCK_SELECTION}
           ${keyset.predicate}
         ${keyset.order}
         ${keyset.limitClause}`,
@@ -6531,6 +6557,38 @@ export class InventoryRepository extends Repository {
       request,
       LOW_STOCK_ORDER
     );
+  }
+
+  /**
+   * HOW MANY items are low in one branch (Owner directive — the dashboard).
+   *
+   * The same selection the alert pages, counted instead of windowed, so the
+   * figure on the dashboard and the list behind it can never disagree: there is
+   * one definition of "low" in this file and both reads compose it.
+   *
+   * No `itemId` parameter. The alert narrows to one item because an operator
+   * asks about one; a dashboard count narrowed to one item would be a figure
+   * whose meaning depended on a filter nobody can see, so `$4` is bound NULL and
+   * the count answers for the whole branch.
+   *
+   * ONE branch, matching the alert exactly. The selection resolves level
+   * specificity per `(item, location)` against a single `$3`, and widening that
+   * to a branch ARRAY would change which level wins for an item that has both a
+   * company-wide and a branch-specific one — which is a change to the rule, not
+   * to the plumbing. A caller reporting on several branches asks once per branch
+   * and adds the answers, which is exactly what the alert set does.
+   */
+  public async countLowStock(
+    db: DbHandle,
+    filter: { readonly companyId: string; readonly branchId: string }
+  ): Promise<number> {
+    const context = this.assertContext(db);
+    const row = await this.runOne<{ total: number }>(
+      db,
+      `SELECT count(*)::int AS total FROM (${LOW_STOCK_SELECTION}) low`,
+      [context.principal.tenantId, filter.companyId, filter.branchId, null]
+    );
+    return row?.total ?? 0;
   }
 
   /**

@@ -32,6 +32,7 @@ import { LaborSessionService } from './application/labor-session-service';
 import { TechnicianRosterRepository } from './data/technician-roster-repository';
 import { TechnicianRosterService } from './application/technician-roster-service';
 import { LaborReportPort } from './application/labor-report-port';
+import { TechnicianLabelPort } from './application/technician-label-port';
 
 export type {
   AvailabilityRow,
@@ -123,6 +124,13 @@ export const technicianModule = composeModule({
       // directory, which narrows to an empty map for a caller who may not be
       // told it — and that composition is not a repository's business.
       reportPort: new LaborReportPort(new LaborSessionRepository()),
+      // Owner directive — the tenant dashboard. The LABEL port: one read, so a
+      // consumer that counts assignments by profile id can name the people
+      // without being handed the roster writes. It shares the roster repository
+      // rather than constructing a second one, for the reason `jobBoard` shares
+      // the state catalogue: two instances would be two readings of one tenant's
+      // roster.
+      labelPort: new TechnicianLabelPort(roster),
     };
   },
 });
