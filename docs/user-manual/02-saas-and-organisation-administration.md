@@ -286,10 +286,12 @@ and has no screen at this version — **OPERATOR PROCEDURE** for that one act.
 - In the branch choosers that operational screens open with.
 
 In the **settings** blocks — **System settings**, **Numbering rules**, **Taxes**, **Currencies**,
-and the company and branch settings lower down the **Organization** screen — a company is still
-identified by a **Company reference** <!-- admin.scope.companyId --> rather than by name, and those
-screens still carry the notice _"The service publishes no company or branch directory, so references
-are shown rather than names."_ <!-- admin.contractGap.noDirectory -->
+and the company and branch settings lower down the **Organization** screen — a company or a branch
+is chosen by **name** from a list, labelled **Company** <!-- admin.scope.company --> or **Branch**
+<!-- admin.scope.branch --> . The list holds the active companies and branches your account may act
+
+in, and a branch is shown with the company it belongs to, so two workshops with the same name can be
+told apart. If the list is empty, the screen says so rather than leaving a blank space.
 
 ---
 
@@ -610,9 +612,10 @@ branches respectively. **Where** Sidebar → **Administration** → **Settings**
    you may read companies or branches; the create and status controls appear only with the matching
    management permission.
 4. The **Company settings** panel <!-- organization.settings.company --> and the **Branch settings**
-   panel <!-- organization.settings.branch --> each ask for a **Company reference** <!-- admin.scope.companyId -->
-   or **Branch reference** <!-- admin.scope.branchId --> first.
-5. With a reference entered, add a value under **Add or update a setting** <!-- organization.setting.add -->
+   panel <!-- organization.settings.branch --> each begin with a **Company** <!-- admin.scope.company -->
+   or **Branch** <!-- admin.scope.branch --> chooser, listing by name the companies and branches
+   your account may act in. The first one is selected for you.
+5. With one chosen, add a value under **Add or update a setting** <!-- organization.setting.add -->
    : **Setting** _(required_ — _"Lower case letters, digits, dots and underscores."_ <!-- organization.setting.keyHint -->
    _)_, **Type** <!-- organization.setting.type --> , **Value** <!-- organization.setting.value -->
    (_"The value is stored exactly as entered and validated against the type you choose."_ <!-- organization.setting.valueHint -->
@@ -623,13 +626,12 @@ branches respectively. **Where** Sidebar → **Administration** → **Settings**
 
 - The **Workspace code** and **Status** cannot be changed from here by anyone. Workspace status is a
   platform act (2.3).
-- If your account is unrestricted across the workspace, the screen cannot pre-fill a company or
-  branch for you and tells you so: _"Your session resolves to no specific company or branch, so
-  enter the reference you want to work on."_ <!-- admin.scope.noneResolved --> Typing a reference
-  buys no access — an identifier outside your authority is refused identically whether or not it
-  names a real company.
-- Standing notice: **"Limited in this release"** <!-- admin.contractGap.title --> / _"The service
-  publishes no company or branch directory, so references are shown rather than names."_ <!-- admin.contractGap.noDirectory -->
+- An account that is not restricted to particular companies sees **all** the active companies of
+  the workspace in the chooser — that is what being unrestricted means here. It used to see two
+  empty boxes and a sentence asking it to type a reference, which was the widest account being given
+  the least help; there is nothing to type now.
+- Choosing from the list buys no access. Whichever company is named, the service authorizes the
+  request against your own authority, exactly as it did when the reference was typed.
   **If it goes wrong**
 - _"That language or time zone is not registered on the platform."_ <!-- organization.error.unknownReference -->
   — the value you typed is not one the platform knows. There is no list to choose from at this
@@ -1050,7 +1052,7 @@ Message catalogue keys, apps/web/src/i18n/messages/en.json (Arabic from ar.json,
 app.provisionalBrand; brand.byCompany; admin.title, admin.description, admin.readOnly, admin.save,
 admin.saved, admin.actionFailed, admin.recordVersion,
 admin.contractGap.title/.noDirectory/.noCatalogue/.settingsBacked,
-admin.scope.tenant/.company/.branch/.companyId/.branchId/.noneResolved/.pickBranch,
+admin.scope.tenant/.company/.branch/.label/.unrestricted/.pickBranch/.pickCompany,
 admin.section.identity/.identityBody/.configuration/.configurationBody/.audit/.auditBody;
 organization.title/.description/.tenant/.tenantCode/.displayName/.status/.defaultLocale/
 .defaultLocaleHint/.defaultTimezone/.defaultTimezoneHint/.settings.company/.settings.branch/

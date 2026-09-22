@@ -12,11 +12,7 @@ import { CapacityPanel } from '@/features/administration/organization/components
 import { OrganizationStructure } from '@/features/administration/organization/components/OrganizationStructure';
 import { SettingsEditor } from '@/features/administration/organization/components/SettingsEditor';
 import { TenantForm } from '@/features/administration/organization/components/TenantForm';
-import {
-  ContractNotice,
-  Panel,
-  ReadBoundary,
-} from '@/features/administration/shared/components/ScreenStates';
+import { Panel, ReadBoundary } from '@/features/administration/shared/components/ScreenStates';
 import { PERMISSIONS, holds } from '@/features/administration/shared/permissions';
 import { isLocale } from '@/i18n/config';
 import { getMessages, translate } from '@/i18n/get-messages';
@@ -117,8 +113,6 @@ export default async function OrganizationPage({
               />
             </Panel>
           ) : null}
-
-          <ContractNotice messages={messages} bodyKeys={['admin.contractGap.noDirectory']} />
 
           {canReadCompanies ? (
             <Panel title={t('organization.settings.company')}>

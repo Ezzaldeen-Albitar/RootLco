@@ -467,10 +467,83 @@ async function firstReceptionId(request: APIRequestContext, token: string): Prom
  * both shapes really occur in this suite and a helper that assumed one would
  * fail on the other account for a reason that is not a defect.
  */
-async function nameScope(field: Locator, value: string): Promise<void> {
-  const tag = await field.evaluate((element) => element.tagName.toLowerCase());
-  if (tag === 'select') await field.selectOption(value);
-  else await field.fill(value);
+/**
+ * Every element that shows the branch a screen is addressed to.
+ *
+ * Two names because the appointment surfaces label theirs for the pair they
+ * carry and the rest use the shared one; one selector so a new screen cannot
+ * quietly escape the read-only check below.
+ */
+const BRANCH_ON_PAGE =
+  '[data-testid="working-branch-field"], [data-testid="appointment-branch-target"]';
+
+/**
+ * Works in a branch, the way an operator now does: once, in the header.
+ *
+ * ## What this replaced, and why the replacement is not a rename
+ *
+ * It was `nameScope`, and it typed or picked a company and a branch REFERENCE
+ * into two controls on whatever screen the case was about. Both halves of that
+ * are gone. The pair is chosen once in the header and every screen reads it, so
+ * there is nothing on the screen to fill; and the choice is offered BY NAME,
+ * because `GET /auth/working-context` publishes the named, active entities the
+ * caller is authorized for. The old shape existed only because the platform
+ * published no directory — it does now.
+ *
+ * ## Chosen by VALUE, asserted by NAME
+ *
+ * The option is selected on its value, which is the branch reference this file
+ * already holds as a fixture — a name is not something a fixture can promise,
+ * and an acceptance stack that renamed a branch would fail for a reason that is
+ * not a defect. What IS asserted is the thing the change was for: the text the
+ * operator reads is not that reference.
+ *
+ * ## One authorized branch is never asked about
+ *
+ * An operator with exactly one branch gets it selected for them and sees a
+ * sentence rather than a control, so this accepts both shapes. Which one the
+ * acceptance principal meets depends on the bootstrap, and hard-coding either
+ * would make this file fail on a stack that is perfectly correct.
+ */
+async function workInBranch(page: Page, branchId: string): Promise<void> {
+  const chooser = page.getByTestId('working-context-select');
+  if ((await chooser.count()) > 0) {
+    await chooser.selectOption(branchId);
+    await expect(
+      chooser.locator(`option[value="${branchId}"]`),
+      'the header offered the branch as a reference rather than by name'
+    ).not.toHaveText(branchId);
+  } else {
+    const named = page.getByTestId('working-context-single');
+    await expect(named, 'the header named no branch at all').toBeVisible();
+    await expect(named, 'the header showed a reference rather than a name').not.toContainText(
+      branchId
+    );
+  }
+  await expectBranchIsReadOnly(page);
+}
+
+/**
+ * The branch on a screen is a STATEMENT, not a question.
+ *
+ * The defect this closes was not that the old controls were ugly: an operator
+ * whose grant is not narrowed — the widest one there is — met two free-text
+ * boxes and was asked to type a reference they had to find somewhere else. So
+ * the assertion is the absence of any control at all where the branch is shown,
+ * which is a fact about the page rather than about a particular label, and
+ * therefore survives the labels being retired.
+ */
+async function expectBranchIsReadOnly(page: Page): Promise<void> {
+  const field = page.locator(BRANCH_ON_PAGE).first();
+  if ((await field.count()) === 0) return;
+  await expect(
+    field.getByRole('textbox'),
+    'a screen still asks the operator to type a branch reference'
+  ).toHaveCount(0);
+  await expect(
+    field.getByRole('combobox'),
+    'a screen still offers its own branch picker beside the header one'
+  ).toHaveCount(0);
 }
 
 /** The rendered text of the page, lower-cased, after the segment has streamed. */
@@ -706,17 +779,31 @@ test.describe('the appointment calendar reads only for a named branch', () => {
     );
     await expect(page.getByRole('main')).toContainText(say('en', 'appointments.calendar.idleBody'));
 
-    // Pressing Show with no target must refuse LOCALLY, not spend a request.
+    /*
+     * No request before intent — restated for the control that now decides it.
+     *
+     * This used to press Show with the pair empty and expect two "required"
+     * messages. There is no pair on the screen to leave empty. What takes its
+     * place is the same claim one level up: while the operator has not chosen a
+     * branch, the screen says which control answers and its Show is refused,
+     * and no read is issued either way.
+     *
+     * Conditional on the chooser existing, because an operator with exactly one
+     * authorized branch has it selected for them and has nothing to withhold.
+     * Asserting the unchosen state unconditionally would fail on a perfectly
+     * correct single-branch stack.
+     */
     const before = posts.length;
-    await page.getByRole('button', { name: say('en', 'appointments.calendar.show') }).click();
-    await expect(page.getByText(say('en', 'field.required')).first()).toBeVisible();
-    expect(posts.length - before, 'an incomplete branch target must not issue a read').toBe(0);
+    if ((await page.getByTestId('working-context-select').count()) > 0) {
+      await expect(page.getByTestId('requires-concrete-branch').first()).toBeVisible();
+      await page.getByRole('button', { name: say('en', 'appointments.calendar.show') }).click();
+      expect(posts.length - before, 'a branch nobody chose must not issue a read').toBe(0);
+    }
 
     // The positive control, twice over: the listener really is wired, and a
-    // COMPLETE target really does issue the read. Without this the assertion
+    // chosen branch really does issue the read. Without this the assertion
     // above would also pass on a page that made no requests at all.
-    await nameScope(page.getByLabel(say('en', 'admin.scope.companyId')), COMPANY_A);
-    await nameScope(page.getByLabel(say('en', 'admin.scope.branchId')), BRANCH_A);
+    await workInBranch(page, BRANCH_A);
     await page.getByRole('button', { name: say('en', 'appointments.calendar.show') }).click();
 
     await expect
@@ -748,8 +835,7 @@ test.describe('the appointment calendar reads only for a named branch', () => {
     await page.goto('/en/appointments');
     await segmentRendered(page, '/en/appointments');
 
-    await nameScope(page.getByLabel(say('en', 'admin.scope.companyId')), COMPANY_A);
-    await nameScope(page.getByLabel(say('en', 'admin.scope.branchId')), BRANCH_A);
+    await workInBranch(page, BRANCH_A);
     await page.getByLabel(say('en', 'appointments.calendar.fromDay')).fill('2026-08-20');
     await page.getByLabel(say('en', 'appointments.calendar.toDay')).fill('2026-08-10');
     await page.getByRole('button', { name: say('en', 'appointments.calendar.show') }).click();
@@ -832,8 +918,7 @@ test.describe('the reception queue is a board for one named branch', () => {
     await expect(page.getByText(say('en', 'field.required')).first()).toBeVisible();
     expect(posts.length - before, 'an incomplete branch target must not issue a read').toBe(0);
 
-    await nameScope(page.getByLabel(say('en', 'receptions.checkIn.company')), COMPANY_A);
-    await nameScope(page.getByLabel(say('en', 'receptions.checkIn.branch')), BRANCH_A);
+    await workInBranch(page, BRANCH_A);
     await page.getByRole('button', { name: say('en', 'receptions.queue.show') }).click();
 
     await expect
@@ -890,8 +975,7 @@ test.describe('the reception queue is a board for one named branch', () => {
       expect(options, `the queue filter does not offer ${status} as a label`).toContain(label);
     }
 
-    await nameScope(page.getByLabel(say('en', 'receptions.checkIn.company')), COMPANY_A);
-    await nameScope(page.getByLabel(say('en', 'receptions.checkIn.branch')), BRANCH_A);
+    await workInBranch(page, BRANCH_A);
     await page.getByRole('button', { name: say('en', 'receptions.queue.show') }).click();
     await expect(page.getByRole('main')).toContainText(say('en', 'receptions.queue.noneMatching'), {
       timeout: 20_000,
@@ -1172,8 +1256,7 @@ test.describe('nothing this phase reads reaches the address bar', () => {
      */
     await page.goto('/en/receptions');
     await segmentRendered(page, '/en/receptions');
-    await nameScope(page.getByLabel(say('en', 'receptions.checkIn.company')), COMPANY_A);
-    await nameScope(page.getByLabel(say('en', 'receptions.checkIn.branch')), BRANCH_A);
+    await workInBranch(page, BRANCH_A);
     await page.getByRole('button', { name: say('en', 'receptions.queue.show') }).click();
     await expect(page.getByRole('main')).toContainText(say('en', 'receptions.queue.noneMatching'), {
       timeout: 20_000,
@@ -1188,8 +1271,7 @@ test.describe('nothing this phase reads reaches the address bar', () => {
 
     await page.goto('/en/appointments');
     await segmentRendered(page, '/en/appointments');
-    await nameScope(page.getByLabel(say('en', 'admin.scope.companyId')), COMPANY_A);
-    await nameScope(page.getByLabel(say('en', 'admin.scope.branchId')), BRANCH_A);
+    await workInBranch(page, BRANCH_A);
     await page.getByRole('button', { name: say('en', 'appointments.calendar.show') }).click();
     await expect(page.getByRole('main')).toContainText(
       say('en', 'appointments.calendar.noneInRange'),
@@ -1410,8 +1492,7 @@ test.describe('check-in can originate from an appointment', () => {
     await expect(page.getByRole('main')).toContainText(say('en', 'receptions.checkIn.targetFirst'));
 
     const before = posts.length;
-    await nameScope(page.getByLabel(say('en', 'receptions.checkIn.company')), COMPANY_A);
-    await nameScope(page.getByLabel(say('en', 'receptions.checkIn.branch')), BRANCH_A);
+    await workInBranch(page, BRANCH_A);
     await expect(load, 'a named branch target did not enable the picker').toBeEnabled();
     await expect(
       page.getByRole('main'),
@@ -1931,8 +2012,36 @@ test.describe('the P1-28 surface discloses nothing of another workspace', () => 
      */
     await page.goto('/en/receptions');
     await segmentRendered(page, '/en/receptions');
-    await nameScope(page.getByLabel(say('en', 'receptions.checkIn.company')), COMPANY_B);
-    await nameScope(page.getByLabel(say('en', 'receptions.checkIn.branch')), BRANCH_B);
+    /*
+     * The foreign branch cannot be NAMED here any more, and that is a stronger
+     * property than the one this case used to assert.
+     *
+     * It used to type Tenant B's company and branch into two controls and check
+     * that whatever came back was not Tenant B's. The controls are gone: the
+     * branch is chosen from the working context, which publishes only the
+     * active entities this caller is authorized for, so a Tenant B branch is
+     * not on offer at all. The old assertion is kept underneath it — the board
+     * the operator DOES get names nothing of Tenant B — because "it is not
+     * offered" and "it does not leak" are two different claims and this case is
+     * worth both.
+     */
+    const chooser = page.getByTestId('working-context-select');
+    if ((await chooser.count()) > 0) {
+      await expect(
+        chooser.locator(`option[value="${BRANCH_B}"]`),
+        'the header offered a branch of another workspace'
+      ).toHaveCount(0);
+      await expect(
+        chooser.locator(`option[value="${COMPANY_B}"]`),
+        'the header offered a company of another workspace'
+      ).toHaveCount(0);
+    }
+    const chooserText = (await chooser.count()) > 0 ? await chooser.innerText() : '';
+    expect(chooserText.toLowerCase(), 'the branch list named another workspace').not.toContain(
+      'isolation branch b'
+    );
+
+    await workInBranch(page, BRANCH_A);
     await page.getByRole('button', { name: say('en', 'receptions.queue.show') }).click();
 
     const main = page.getByRole('main');
@@ -2392,8 +2501,7 @@ test.describe('the configured workspace: the four catalogue-blocked capabilities
     await expect(main).toContainText(say('en', 'appointments.book.requesterRequired'));
     expect(posts.length, 'an incomplete booking was sent to the server').toBe(0);
 
-    await nameScope(page.getByLabel(say('en', 'admin.scope.companyId')), manifest.companyId);
-    await nameScope(page.getByLabel(say('en', 'admin.scope.branchId')), manifest.branchId);
+    await workInBranch(page, manifest.branchId);
 
     // The customer, by NAME — the whole reason `CustomerSelector` exists.
     const selector = page.getByTestId('customer-selector');
@@ -2566,8 +2674,7 @@ test.describe('the configured workspace: the four catalogue-blocked capabilities
     ).not.toContainText(say('en', 'receptions.checkIn.fuelEmpty'));
     await expect(main).not.toContainText(say('en', 'receptions.checkIn.fuelUnavailable'));
 
-    await nameScope(page.getByLabel(say('en', 'receptions.checkIn.company')), manifest.companyId);
-    await nameScope(page.getByLabel(say('en', 'receptions.checkIn.branch')), manifest.branchId);
+    await workInBranch(page, manifest.branchId);
 
     const selector = page.getByTestId('customer-selector');
     await selector

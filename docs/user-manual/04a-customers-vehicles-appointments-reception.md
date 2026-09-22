@@ -58,19 +58,33 @@ The single-branch screens in this part are:
 Customer search, vehicle search and both duplicate queues are **not** branch-scoped: they read
 across the whole workspace.
 
-**How the branch is named.** There is no company or branch directory in this release. On the
-appointment screens the two fields are **"Company reference"** <!-- admin.scope.companyId --> and
-**"Branch reference"** <!-- admin.scope.branchId --> , and the screen says why: "The service
-publishes no company or branch directory, so references are shown rather than names." <!-- admin.contractGap.noDirectory -->
-If your account is restricted to particular branches, the two fields become pick-lists of the
-references you are allowed to use. If it is not, you type the reference in, and the screen tells you
-so: "Your session resolves to no specific company or branch, so enter the reference you want to work
-on." <!-- admin.scope.noneResolved -->
+**How the branch is named.** You choose it **once**, in the page header, and every screen reads that
+choice. The control is labelled **"Working branch"** <!-- workingContext.label --> and lists, by
+name, the active branches your account may act in, grouped by company.
 
-On the check-in screen the same two fields are labelled **"Company identifier"** <!-- receptions.checkIn.company -->
-and **"Branch identifier"** <!-- receptions.checkIn.branch --> , under the legend **"Branch"** <!-- receptions.checkIn.targetLegend -->
-, with the note "Your account is not restricted to specific branches, so enter the identifier
-directly." <!-- receptions.checkIn.scopeUnrestricted -->
+- **One branch.** It is chosen for you and shown as a sentence — the branch name, then the company.
+  You are never asked.
+- **Several.** Pick one from the header. Until you do, the header asks: "Choose your branch to
+  start" <!-- workingContext.prompt --> , and a screen that needs a branch says so and keeps its
+  button unavailable: "Choose your branch at the top of the page to continue"
+  <!-- workingContext.chooseFirst --> .
+- **All my branches** <!-- workingContext.allBranches --> is offered when you have more than one. It
+  is for reading. A screen that records something against one branch refuses it and says "Choose one
+  branch in the header to continue" <!-- workingContext.needsOneBranch --> .
+- **None.** If no branch is assigned to you yet the header says so <!-- workingContext.noBranch --> .
+- **Not readable.** If the branch list could not be read the header says so and offers to try again
+  <!-- workingContext.unavailable --> .
+
+Every branch-scoped screen — appointments, the reception queue, check-in, the work-order board, the
+quality queue, the technician workspace — shows the branch it is addressed to as **text**, with the
+line "To work somewhere else, change your branch at the top of the page."
+<!-- workingContext.changeInHeader --> . None of them asks you to type or pick a reference; the
+
+header is the only place the answer changes.
+
+Changing branch while a form holds something you have not saved asks first: "Leave this unsaved
+work?" <!-- workingContext.discard.title --> . Lists re-read for the new branch as soon as you
+switch, so what is on screen always belongs to the branch named above it.
 
 **Practical consequence.** Keep the branch references for Al-Noor Auto Services (example) written
 down at the front desk. You will type them several times a day, and no screen will look them up for
@@ -1881,8 +1895,10 @@ Message catalogue, read at origin/develop beebc6c28c873f498fe0503161eb53caa107a9
     receptions.channel.*, receptions.status.*, receptions.origin.*, receptions.fuel.*,
     receptions.acknowledgement.*;
     customerSelector.*, party.unavailable, attachments.capture.*, state.*, action.*, field.*,
-    admin.scope.companyId, admin.scope.branchId, admin.scope.noneResolved,
-    admin.contractGap.noDirectory, form.violation.below_current_odometer, app.provisionalBrand,
+    workingContext.label, workingContext.prompt, workingContext.chooseFirst,
+    workingContext.allBranches, workingContext.needsOneBranch, workingContext.noBranch,
+    workingContext.unavailable, workingContext.changeInHeader, workingContext.discard.title,
+    form.violation.below_current_odometer, app.provisionalBrand,
     nav.customers, nav.customerDuplicates, nav.vehicles, nav.vehicleDuplicates, nav.appointments,
     nav.receptions, nav.walkIn, nav.group.customers, nav.group.work.
   apps/web/src/i18n/messages/ar.json — nav.customers, nav.customerDuplicates, nav.vehicles,
