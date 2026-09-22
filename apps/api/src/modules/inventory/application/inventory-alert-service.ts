@@ -669,6 +669,35 @@ export class InventoryAlertService {
     };
   }
 
+  /**
+   * WHICH items are low in one branch (Owner directive — the dashboard).
+   *
+   * Ids rather than a count, because one item can raise several findings — a
+   * branch-wide level and a level on each shelf are three rows about one part —
+   * so a consumer reporting on more than one branch must be able to take the
+   * UNION rather than a sum. Publishing a number here would make double-counting
+   * the default and silent.
+   *
+   * NO authorization is performed here, and that is the opposite of what
+   * `listLowStock` above does — so it is stated rather than left to be noticed.
+   * `listLowStock` is reached by a route whose whole subject is one branch, and
+   * it re-authorizes that pair inside the transaction. This is reached by the
+   * dashboard, which has already evaluated `inv.stock.read` against every branch
+   * in its set and omits the figure entirely for a caller that does not hold it.
+   * Re-authorizing here would put a second, differently-shaped scope decision
+   * behind a number, and the two would eventually disagree about which branch a
+   * caller may count.
+   *
+   * The ids and the alert list share one SQL selection, so an item named here is
+   * an item an operator would find on the alert if they opened it.
+   */
+  public async lowStockItemIds(
+    db: DbHandle,
+    filter: { readonly companyId: string; readonly branchId: string }
+  ): Promise<readonly string[]> {
+    return this.repository.lowStockItemIds(db, filter);
+  }
+
   /** Counted lines whose variance was not zero, on counts that were reconciled. */
   public async listCountDiscrepancies(
     db: DbHandle,

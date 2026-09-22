@@ -20,6 +20,7 @@ import { AppFailure } from '@/server/errors/app-failure';
 import type { DbHandle } from '@/server/db/transaction';
 import type { ScopeAuthorizer } from '@/server/auth/authorization';
 import { pageRequest, type Page } from '@/server/db/pagination';
+import type { LocalDayPeriod } from '@/server/db/period';
 import {
   AUTHORIZATION_ORDERING,
   CONDITION_EVIDENCE_ORDERING,
@@ -49,6 +50,24 @@ export class ReceptionReadService extends ApplicationService {
 
   constructor(private readonly reads: ReceptionReadRepository) {
     super();
+  }
+
+  /**
+   * How many reception visits were opened in the period, across a branch set.
+   *
+   * Owner directive — the tenant dashboard. NO authorization is performed here,
+   * deliberately: the caller has already evaluated `rec.reception.read` against
+   * the company and every branch it passes, and RLS narrows the statement
+   * underneath. A second, differently-shaped check would be a second definition
+   * of scope — the argument `LaborReportPort` records on the other side of the
+   * same dashboard.
+   */
+  async overviewVisitsOpened(
+    db: DbHandle,
+    scope: { readonly companyId: string; readonly branchIds: readonly string[] },
+    period: LocalDayPeriod
+  ): Promise<number> {
+    return this.reads.overviewVisitsOpened(db, scope, period);
   }
 
   /** Operation A. The ETag the route emits is this row's `recordVersion`. */
