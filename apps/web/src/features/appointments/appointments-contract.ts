@@ -65,6 +65,7 @@
 
 import {
   MAX_INSTANT_LENGTH,
+  classifyUtcOffset,
   hasExplicitUtcOffset,
   validateInstant,
   type InstantIssue,
@@ -408,10 +409,16 @@ export function canRecordNoShow(status: AppointmentStatus): boolean {
  * It moved to `components/forms/instant.ts` because the reception odometer needs
  * the identical rule and reaches it through the VEHICLES feature, which may
  * never import this one. Nothing about the rule changed; every appointment
- * screen and every appointment test still imports these four names from here.
- * See that module for why the displacement is capped at ±15:59.
+ * screen and every appointment test still imports these names from here.
+ * See that module for why the displacement is bounded at the civil range.
  */
-export { MAX_INSTANT_LENGTH, hasExplicitUtcOffset, validateInstant, type InstantIssue };
+export {
+  MAX_INSTANT_LENGTH,
+  classifyUtcOffset,
+  hasExplicitUtcOffset,
+  validateInstant,
+  type InstantIssue,
+};
 
 export type WindowIssue = InstantIssue | 'not_after_start';
 
@@ -594,11 +601,15 @@ export const APPOINTMENT_REFUSAL_KEYS: readonly string[] = Object.freeze([
   'form.violation.appointment_not_cancellable',
   'form.violation.appointment_not_confirmed_for_no_show',
   'form.violation.appointment_not_confirmed_for_check_in',
-  // The three window rules. They used to arrive as the general "something here
-  // was not accepted", which for a missing time zone points a clerk at an entry
-  // that looks perfectly correct on the form, because the zone is not part of
-  // what the form shows them.
+  // The window rules. They used to arrive as the general "something here was not
+  // accepted", which for a missing time zone points a clerk at an entry that
+  // looks perfectly correct on the form, because the zone is not part of what the
+  // form shows them. The three zone rules are separate from each other for the
+  // same reason: an absent offset is supplied, a mistyped one is rewritten, and
+  // one outside the range no place on earth keeps needs the range named.
   'form.violation.appointment_time_unreadable',
   'form.violation.appointment_time_zone_missing',
+  'form.violation.appointment_time_zone_unreadable',
+  'form.violation.appointment_time_zone_out_of_range',
   'form.violation.appointment_window_backwards',
 ]);
