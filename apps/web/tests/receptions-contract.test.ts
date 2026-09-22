@@ -15,6 +15,7 @@ import {
   RECEPTION_OPERATIONS,
   RECEPTION_PARTY_ROLES,
   RECEPTION_PERMISSIONS,
+  RECEPTION_STATUS_GROUPS,
   RECEPTION_STATUSES,
   RECEPTION_TRANSITIONS,
   TERMINAL_RECEPTION_STATUSES,
@@ -321,6 +322,24 @@ describe('the lifecycle mirror matches the frozen CHECK constraint', () => {
     for (const status of RECEPTION_STATUSES) {
       expect(canConvert(status), status).toBe(status === 'authorized');
     }
+  });
+
+  it('the two status groups partition the vocabulary, with no status in both', () => {
+    // `statusGroup` is a filter the board offers instead of six lifecycle codes,
+    // and the backend expands it from `TERMINAL_RECEPTION_STATUSES`. Pinned as a
+    // PARTITION rather than as two lists: a status in neither group is
+    // unreachable through the control, and one in both would be listed twice.
+    expect([...RECEPTION_STATUS_GROUPS]).toEqual(['open', 'finished']);
+    const finished = RECEPTION_STATUSES.filter((status) =>
+      (TERMINAL_RECEPTION_STATUSES as readonly string[]).includes(status)
+    );
+    const open = RECEPTION_STATUSES.filter(
+      (status) => !(TERMINAL_RECEPTION_STATUSES as readonly string[]).includes(status)
+    );
+    expect(finished.length, 'no status resolved into the finished group').toBeGreaterThan(0);
+    expect(open.length, 'no status resolved into the open group').toBeGreaterThan(0);
+    expect([...open, ...finished].sort()).toEqual([...RECEPTION_STATUSES].sort());
+    expect(open.filter((status) => finished.includes(status))).toEqual([]);
   });
 
   it('offers both terminal exits from every non-terminal state', () => {

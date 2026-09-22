@@ -145,6 +145,33 @@ describe('listWorkOrders maps a published page onto table rows', () => {
     expect(path).not.toContain('customerId=');
     expect(path).not.toContain('number=');
     expect(path).not.toContain('q=');
+    expect(path).not.toContain('stateGroup=');
+    expect(path).not.toContain('completedFrom=');
+    expect(path).not.toContain('completedTo=');
+  });
+
+  it('sends the state group and the completion window when they were chosen', async () => {
+    get.mockResolvedValue(ok({ items: [], nextCursor: null, hasMore: false }));
+
+    await listWorkOrders(
+      TARGET,
+      {
+        stateGroup: 'active',
+        completedFrom: '2026-09-01T00:00:00.000Z',
+        completedTo: '2026-09-30T23:59:59.999Z',
+      },
+      REQUEST,
+      null
+    );
+
+    const url = new URL(`https://api.invalid${String(get.mock.calls[0]?.[0])}`);
+    expect(url.searchParams.get('stateGroup')).toBe('active');
+    expect(url.searchParams.get('completedFrom')).toBe('2026-09-01T00:00:00.000Z');
+    expect(url.searchParams.get('completedTo')).toBe('2026-09-30T23:59:59.999Z');
+    // `stateGroup` and `state` are mutually exclusive at the backend, which
+    // answers 422 rather than intersecting them — so a screen that offers both
+    // controls must never send both, and this criteria object sent neither.
+    expect(url.searchParams.get('state')).toBeNull();
   });
 
   it('sends the P1-32 number and free-text criteria as typed, beside the target', async () => {
