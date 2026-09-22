@@ -100,18 +100,6 @@ export interface WorkOrderBoardRow extends WorkOrderRow {
    * catalogue come to disagree.
    */
   readonly completedAt: Date | null;
-  /**
-   * `qms.quality_control_records.overall_result` for this work order, or null
-   * when quality control has never been opened on it.
-   *
-   * A real recorded column — `pending`, `passed` or `failed` — and not a derived
-   * label. `approvalState` and `deliveryReadiness` were asked for beside it and
-   * are ABSENT from this row on purpose: the schema records no work-order-level
-   * approval state (approval is per additional-work request) and no delivery
-   * readiness at all (it is computed from the state catalogue), so publishing
-   * either would be inventing a fact.
-   */
-  readonly qualityState: string | null;
 }
 
 /** Ordering contract for the work-order list. Newest opened first, id tie-break. */
@@ -229,8 +217,16 @@ export interface WorkOrderListFilter {
   readonly awaitingParts?: boolean | undefined;
   /** An additional-work request is still `pending` a customer decision. */
   readonly awaitingApproval?: boolean | undefined;
-  /** A quality-control record exists and its `overall_result` is still `pending`. */
-  readonly awaitingQuality?: boolean | undefined;
+  /**
+   * The work orders this scope has awaiting quality, resolved by the QUALITY
+   * module and passed down as ids.
+   *
+   * Not a boolean, and not a correlated subquery: `qms.*` belongs to another
+   * module and this layer may not name it. `undefined` means the caller did not
+   * ask; an EMPTY array means it asked and nothing qualifies, which must match
+   * nothing rather than everything.
+   */
+  readonly awaitingQualityIds?: readonly string[] | undefined;
   /**
    * The codes that mean "finished and not abandoned", resolved by the SERVICE
    * from the live catalogue when the caller asked `readyForDelivery`.
@@ -746,7 +742,7 @@ export class WorkOrderRepository extends Repository {
       filter.assignedTechnicianProfileId ?? null,
       filter.awaitingParts === true,
       filter.awaitingApproval === true,
-      filter.awaitingQuality === true,
+      filter.awaitingQualityIds === undefined ? null : [...filter.awaitingQualityIds],
       filter.readyStates === undefined ? null : [...filter.readyStates],
       filter.matchNothing === true,
     ];
@@ -772,7 +768,6 @@ export class WorkOrderRepository extends Repository {
       assigned_technician_profile_id: string | null;
       assigned_technician_user_id: string | null;
       completed_at: Date | null;
-      quality_state: string | null;
     }>(
       db,
       `SELECT id, company_id, branch_id, reception_visit_id, vehicle_id, kind, state,
@@ -815,15 +810,7 @@ export class WorkOrderRepository extends Repository {
                           AND h.work_order_id = wo.work_orders.id
                           AND h.to_state = ANY($15::text[]))
                  ELSE NULL
-               END)                                      AS completed_at,
-              -- A recorded column, not a derived label.
-              (SELECT q.overall_result
-                 FROM qms.quality_control_records q
-                WHERE q.tenant_id = wo.work_orders.tenant_id
-                  AND q.work_order_id = wo.work_orders.id
-                  AND q.deleted_at IS NULL
-                ORDER BY q.created_at DESC, q.id DESC
-                LIMIT 1)                                   AS quality_state
+               END)                                      AS completed_at
          FROM wo.work_orders
          LEFT JOIN LATERAL (
            SELECT a.technician_profile_id, t.user_id
@@ -927,13 +914,14 @@ export class WorkOrderRepository extends Repository {
                    -- called "awaiting approval" forever.
                    AND r.deleted_at IS NULL
                    AND r.state = 'pending'))
-          AND (NOT $19::boolean OR EXISTS (
-                SELECT 1
-                  FROM qms.quality_control_records q
-                 WHERE q.tenant_id = wo.work_orders.tenant_id
-                   AND q.work_order_id = wo.work_orders.id
-                   AND q.deleted_at IS NULL
-                   AND q.overall_result = 'pending'))
+          -- awaitingQuality. The ids are resolved by the QUALITY module, which
+          -- owns that schema, and bound here as an array: a correlated EXISTS
+          -- would make this layer a second reader of another module's table, and
+          -- the foundation rule forbids the schema reference itself rather than
+          -- only the import, so hiding the same SQL behind a helper would not
+          -- satisfy it. NULL means the caller did not ask; an EMPTY array means it
+          -- asked and nothing in this scope qualifies, which must match nothing.
+          AND ($19::uuid[] IS NULL OR id = ANY($19::uuid[]))
           AND ($20::text[] IS NULL OR state = ANY($20::text[]))
           -- The caller asked assignedToMe and resolves to no technician profile.
           -- FALSE and not an empty id list, because "no profile" and "no filter"
@@ -960,7 +948,6 @@ export class WorkOrderRepository extends Repository {
       assignedTechnicianProfileId: row.assigned_technician_profile_id,
       assignedTechnicianUserId: row.assigned_technician_user_id,
       completedAt: row.completed_at,
-      qualityState: row.quality_state,
     }));
     return buildPage(rows, page, WORK_ORDER_LIST_ORDER, (row) => ({
       sortValue: row.openedAt.toISOString(),

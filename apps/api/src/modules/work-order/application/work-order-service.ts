@@ -697,6 +697,14 @@ export class WorkOrderService extends ApplicationService {
     // board flag were applied in SQL before the keyset window, so enriching here
     // cannot shorten it.
     const summaries = await withPartyContext(db, rows.items);
+    // The quality result comes from the module that OWNS `qms.*`, in one
+    // statement for the whole page. This board may not read that schema — a
+    // second reader of a table is a second definition of what it means — so the
+    // fact is asked for rather than computed here.
+    const quality = await qualityModule().workOrderPort.resultsFor(
+      db,
+      rows.items.map((row) => row.id)
+    );
     // ONE statement for the whole page, never one per row: the board renders a
     // technician column and a per-row lookup is the N+1 this avoids.
     const names = await iamDirectory().directory.resolveDisplayIdentities(db, [
@@ -727,7 +735,9 @@ export class WorkOrderService extends ApplicationService {
                     : (names.get(facts.assignedTechnicianUserId)?.displayName ?? null),
               },
         completedAt: facts?.completedAt?.toISOString() ?? null,
-        qualityState: facts?.qualityState ?? null,
+        // Absent from the map means quality control was never opened, which is a
+        // different fact from `pending` and is published as null.
+        qualityState: quality.get(summary.id) ?? null,
       };
     });
     return { ...rows, items };
@@ -744,19 +754,34 @@ export class WorkOrderService extends ApplicationService {
   async resolveBoardFilters(
     db: DbHandle,
     asked: {
+      readonly companyId: string;
+      readonly branchIds?: readonly string[] | undefined;
       readonly assignedToMe?: boolean | undefined;
       readonly readyForDelivery?: boolean | undefined;
+      readonly awaitingQuality?: boolean | undefined;
     }
   ): Promise<{
     readonly assignedTechnicianProfileId?: string | undefined;
     readonly matchNothing?: boolean | undefined;
     readonly readyStates?: readonly string[] | undefined;
+    readonly awaitingQualityIds?: readonly string[] | undefined;
   }> {
     const resolved: {
       assignedTechnicianProfileId?: string;
       matchNothing?: boolean;
       readyStates?: readonly string[];
+      awaitingQualityIds?: readonly string[];
     } = {};
+
+    if (asked.awaitingQuality === true) {
+      // Asked of the QUALITY module, in the same scope the board is reading, so
+      // the two narrow identically. An empty answer is honest and must match
+      // nothing — `undefined` would mean "no predicate" and return the board.
+      resolved.awaitingQualityIds = await qualityModule().workOrderPort.idsAwaitingQuality(db, {
+        companyId: asked.companyId,
+        branchIds: asked.branchIds,
+      });
+    }
 
     if (asked.assignedToMe === true) {
       const profileId = await this.repository.findTechnicianProfileForCaller(db);

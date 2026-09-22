@@ -171,6 +171,7 @@ export const APPOINTMENT_LIST_OPERATION = defineOperation({
   scope: 'branch',
   auditClass: 'none',
   rateLimitPolicy: 'expensive-read',
+  branchNarrowing: 'authorized-union',
   cacheCategory: 'never',
 });
 

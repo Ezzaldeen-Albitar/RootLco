@@ -152,6 +152,7 @@ export const WORK_ORDER_LIST_OPERATION = defineOperation({
   scope: 'branch',
   auditClass: 'none',
   rateLimitPolicy: 'expensive-read',
+  branchNarrowing: 'authorized-union',
   cacheCategory: 'never',
 });
 
@@ -183,13 +184,16 @@ export async function GET(request: Request): Promise<Response> {
             q: query.q,
             awaitingParts: query.awaitingParts,
             awaitingApproval: query.awaitingApproval,
-            awaitingQuality: query.awaitingQuality,
-            // Resolved INSIDE the module: both flags are questions about the
-            // tenant's own catalogue and its own technician register, and a route
-            // that answered them would re-implement the module.
+            // Resolved INSIDE the module: every one of these is a question about
+            // the tenant's own catalogue, its own technician register or another
+            // module's schema, and a route that answered them would re-implement
+            // the module — or, for quality, read a table it may not name.
             ...(await workOrderModule().workOrders.resolveBoardFilters(db, {
+              companyId: query.companyId,
+              branchIds,
               assignedToMe: query.assignedToMe,
               readyForDelivery: query.readyForDelivery,
+              awaitingQuality: query.awaitingQuality,
             })),
           },
           { cursor: query.cursor, limit: query.limit }
