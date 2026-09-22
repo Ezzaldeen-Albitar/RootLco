@@ -862,7 +862,19 @@ describe('the closure screen says why a command was refused', () => {
     await user.click(screen.getByRole('button', { name: t('quality.closure.requestWork') }));
 
     const sentence = await screen.findByText(t('form.violation.origin_conflict'));
-    expect(origin.getAttribute('aria-describedby') ?? '').toContain(sentence.id);
+    /*
+     * Re-queried, not re-used. The picker is remounted once the action settles —
+     * an uncontrolled value is the only shape that survives the form reset a
+     * `<form action>` performs — so the node captured before the submit is
+     * detached, and asserting against it would be asserting about a control that
+     * is no longer on the page.
+     */
+    const refused = screen.getByLabelText(new RegExp(`^${t('quality.closure.originatingJob')}`));
+    expect(refused.getAttribute('aria-describedby') ?? '').toContain(sentence.id);
+    // And the refusal did not cost the operator the choice they had made: the
+    // remounted control comes back on the same job, which is what the sentence
+    // beside it is about.
+    expect((refused as HTMLSelectElement).value).toBe(JOB);
     expect((summary as HTMLInputElement).value).toBe('Rear pads at 2 mm');
     expect(document.body.textContent).not.toContain('origin_conflict');
   });

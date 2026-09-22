@@ -1301,6 +1301,22 @@ function AdditionalWorkPanel({
             required
           />
           <SelectField
+            /*
+             * Remounted per attempt with an UNCONTROLLED value, which is the
+             * shape the sibling picker beside it already uses.
+             *
+             * A controlled `value=` that does not change between renders is not
+             * re-written to the DOM, and the form reset that follows an action
+             * wins: the box then showed a job the state no longer held. The
+             * remount key is what makes the reset harmless, and `defaultValue`
+             * is read from the state the refusal did NOT clear — it is emptied
+             * only when the request succeeded — so the operator's choice
+             * survives a refusal and is gone once the work was actually
+             * requested. The field error rides the same remount: the new node
+             * carries the new `aria-describedby`, so the sentence stays beside
+             * the control it is about.
+             */
+            key={`originating-job-${attempt}`}
             name="originatingJobId"
             label={translate(messages, 'quality.closure.originatingJob')}
             description={translate(
@@ -1311,7 +1327,7 @@ function AdditionalWorkPanel({
                   ? 'quality.closure.originatingJobNone'
                   : 'quality.closure.originatingJobHint'
             )}
-            value={originatingJobId}
+            defaultValue={originatingJobId}
             onChange={(event) => {
               setOriginatingJobId(event.target.value);
               setOriginError(null);
