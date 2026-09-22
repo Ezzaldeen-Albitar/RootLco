@@ -737,7 +737,9 @@ test.describe('the P1-28 modules are reachable from the sidebar', () => {
 
     await nav.getByRole('link', { name: say('en', 'nav.receptions'), exact: true }).click();
     await expect(page).toHaveURL(/\/en\/receptions$/);
-    await expect(page.getByRole('main')).toContainText(say('en', 'receptions.queue.idleTitle'));
+    // The board reads on arrival now, so what proves the route rendered is its
+    // own period control rather than an idle state that no longer exists.
+    await expect(page.getByRole('main')).toContainText(say('en', 'receptions.queue.periodLabel'));
   });
 });
 
@@ -901,7 +903,19 @@ test.describe('the booking screen states the blocked truth rather than offering 
  * ================================================================== */
 
 test.describe('the reception queue is a board for one named branch', () => {
-  test('it reads nothing until a branch is named, then states a real result', async ({ page }) => {
+  test('it reads the working branch on arrival, and states a real result', async ({ page }) => {
+    /*
+     * The property changed with the screen (Owner directive P1-32-PRE-OD-UX).
+     *
+     * This case used to assert that the board read NOTHING until a branch
+     * target was submitted on the form. There is no form target any more and no
+     * Show button: the branch is the header's own named selection, the board
+     * reads on arrival, and the read is BOUNDED to that branch's day. So what is
+     * asserted now is the replacement promise — a read happens without being
+     * asked twice, it is addressed to the branch the header names, and a board
+     * holding nothing says "no matches" rather than making a claim about the
+     * whole branch.
+     */
     const posts: string[] = [];
     const observed: string[] = [];
     page.on('request', (request) => {
@@ -911,29 +925,23 @@ test.describe('the reception queue is a board for one named branch', () => {
 
     await page.goto('/en/receptions');
     await segmentRendered(page, '/en/receptions');
-    await expect(page.getByRole('main')).toContainText(say('en', 'receptions.queue.idleTitle'));
+    await expect(page.getByRole('main')).toContainText(say('en', 'receptions.queue.periodLabel'));
 
     const before = posts.length;
-    await page.getByRole('button', { name: say('en', 'receptions.queue.show') }).click();
-    await expect(page.getByText(say('en', 'field.required')).first()).toBeVisible();
-    expect(posts.length - before, 'an incomplete branch target must not issue a read').toBe(0);
-
     await workInBranch(page, BRANCH_A);
-    await page.getByRole('button', { name: say('en', 'receptions.queue.show') }).click();
 
     await expect
-      .poll(() => posts.length - before, { message: 'naming a branch issued no read at all' })
+      .poll(() => posts.length - before, { message: 'the board issued no read at all' })
       .toBeGreaterThan(0);
     expect(observed.length, 'the listener saw no requests at all').toBeGreaterThan(0);
 
-    // The board's own honest sentence for zero rows — never the table's generic
-    // empty state, which would claim something about the whole branch.
-    await expect(page.getByRole('main')).toContainText(say('en', 'receptions.queue.noneMatching'), {
+    // An answered read that returned nothing. "No matches" is a statement about
+    // the search; the table's generic "nothing here yet" would be a claim about
+    // the whole branch on the evidence of one day.
+    await expect(page.getByRole('main')).toContainText(say('en', 'state.noResults.title'), {
       timeout: 20_000,
     });
-    // And the ordering is STATED, because the operation publishes no total and
-    // the board must not imply one.
-    await expect(page.getByRole('main')).toContainText(say('en', 'receptions.queue.orderingNote'));
+    await expect(page.getByRole('main')).not.toContainText(say('en', 'state.empty.title'));
   });
 
   test('the status vocabulary renders as labels, and an empty board offers no close', async ({
@@ -961,6 +969,8 @@ test.describe('the reception queue is a board for one named branch', () => {
     await page.goto('/en/receptions');
     await segmentRendered(page, '/en/receptions');
 
+    // Grouped into "still with us" and "finished" since the Owner directive, so
+    // the options sit inside optgroups — still options, still labelled.
     const filter = page.getByLabel(say('en', 'receptions.queue.statusFilter'));
     const options = (await filter.locator('option').allInnerTexts()).map((text) => text.trim());
     for (const status of [
@@ -976,15 +986,18 @@ test.describe('the reception queue is a board for one named branch', () => {
     }
 
     await workInBranch(page, BRANCH_A);
-    await page.getByRole('button', { name: say('en', 'receptions.queue.show') }).click();
-    await expect(page.getByRole('main')).toContainText(say('en', 'receptions.queue.noneMatching'), {
+    await expect(page.getByRole('main')).toContainText(say('en', 'state.noResults.title'), {
       timeout: 20_000,
     });
 
-    await expect(
-      page.getByRole('link', { name: say('en', 'receptions.queue.releaseVehicle') }),
-      'a board holding no visit rendered a custody-release affordance'
-    ).toHaveCount(0);
+    // The next action is a ROW action. A page holding no visit must offer none
+    // at all — one rendered without a row would name a visit that is not there.
+    for (const key of ['receptions.queue.continueCheckIn', 'receptions.queue.open'] as const) {
+      await expect(
+        page.getByRole('link', { name: say('en', key) }),
+        'a board holding no visit rendered a row action'
+      ).toHaveCount(0);
+    }
   });
 });
 
@@ -1257,8 +1270,7 @@ test.describe('nothing this phase reads reaches the address bar', () => {
     await page.goto('/en/receptions');
     await segmentRendered(page, '/en/receptions');
     await workInBranch(page, BRANCH_A);
-    await page.getByRole('button', { name: say('en', 'receptions.queue.show') }).click();
-    await expect(page.getByRole('main')).toContainText(say('en', 'receptions.queue.noneMatching'), {
+    await expect(page.getByRole('main')).toContainText(say('en', 'state.noResults.title'), {
       timeout: 20_000,
     });
 
@@ -1372,7 +1384,9 @@ test.describe('a read-only operator meets a denial, not an empty screen', () => 
       page.getByRole('main'),
       'the reader was denied the queue its read permission covers'
     ).not.toContainText(say('en', 'state.denied.title'));
-    await expect(page.getByRole('main')).toContainText(say('en', 'receptions.queue.idleTitle'));
+    // The board reads on arrival, so what proves the reader reached it is the
+    // board's own control rather than an idle state the screen no longer has.
+    await expect(page.getByRole('main')).toContainText(say('en', 'receptions.queue.periodLabel'));
   });
 
   test('every write affordance is absent for the reader, and the wizard says why', async ({
@@ -2042,7 +2056,6 @@ test.describe('the P1-28 surface discloses nothing of another workspace', () => 
     );
 
     await workInBranch(page, BRANCH_A);
-    await page.getByRole('button', { name: say('en', 'receptions.queue.show') }).click();
 
     const main = page.getByRole('main');
     // Whatever the answer is, it is not Tenant B's data. The board may state a

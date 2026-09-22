@@ -1104,10 +1104,58 @@ export interface CloseReceptionInput {
   readonly reason: string;
 }
 
-/** The `.strict()` list query, minus the mandatory branch target. */
+/**
+ * The `.strict()` list query, minus the branch scope it travels beside.
+ *
+ * `companyId` and `branchId` are NOT here. The company is the resource
+ * selector and the branch is the authorization target; since the Owner
+ * directive (`P1-32-PRE-OD-UX`) the branch may also be left unnamed, which asks
+ * for every branch of that company the caller may read. Both travel as a
+ * `BranchScope`, so nothing in this type can be mistaken for something an
+ * operator chose from a filter.
+ */
 export interface ReceptionListCriteria {
   readonly status?: ReceptionStatus;
   readonly vehicleId?: string;
+  /**
+   * Inclusive bounds on the instant custody was accepted — the same column the
+   * board orders on, so the filter and the ordering date the same fact.
+   *
+   * ISO instants with an explicit offset. They are computed from a CALENDAR day
+   * in the branch's own zone (`lib/branch-time.ts`), never from the reader's
+   * laptop clock: a period boundary is a business date and the platform's is the
+   * branch's. An inverted pair is a 422, so the screen refuses one first.
+   */
+  readonly from?: string;
+  readonly to?: string;
+  /**
+   * One free-text box: part of a party's name, the tail of their phone number,
+   * part of any plate the vehicle has carried, part of its VIN, or part of the
+   * reception number. Two characters at least.
+   */
+  readonly q?: string;
+}
+
+/** `MIN_SEARCH_FRAGMENT` in `shared/text/search-terms.ts`. */
+export const MIN_RECEPTION_SEARCH = 2;
+/** `MAX_SEARCH_FRAGMENT` in `shared/text/search-terms.ts`. */
+export const MAX_RECEPTION_SEARCH = 80;
+
+/**
+ * The statuses a visit can still move out of — the frozen graph's non-terminal
+ * half, DERIVED rather than listed.
+ *
+ * A second hand-written list of three codes is a second thing to forget when the
+ * graph changes. `TERMINAL_RECEPTION_STATUSES` is the one fact, and this is its
+ * complement.
+ */
+export const UNFINISHED_RECEPTION_STATUSES: readonly ReceptionStatus[] = RECEPTION_STATUSES.filter(
+  (status) => !TERMINAL_RECEPTION_STATUSES.includes(status)
+);
+
+/** Whether a visit has reached one of the graph's three exits. */
+export function isFinishedReception(status: ReceptionStatus): boolean {
+  return TERMINAL_RECEPTION_STATUSES.includes(status);
 }
 
 /* ------------------------------------------------------------------ *
@@ -1184,6 +1232,14 @@ export interface ReceptionClosed {
 /** One row of the branch reception board, most recently received first. */
 export interface ReceptionListEntry {
   readonly id: string;
+  /**
+   * The branch the visit was received in (Owner directive, `P1-32-PRE-OD-UX`).
+   *
+   * Published since the branch became an optional filter: a page that can span
+   * several branches has to say which one each row belongs to, or the board
+   * reads as one branch's day with another branch's cars in it.
+   */
+  readonly branchId: string;
   readonly displayNumber: string | null;
   readonly receptionStatus: ReceptionStatus;
   readonly origin: 'appointment' | 'walk_in';

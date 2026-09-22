@@ -66,6 +66,9 @@ function draft(over: Partial<CreateDraft> = {}): CreateDraft {
 function listRow(over: Partial<ReceptionListEntry> = {}): ReceptionListEntry {
   return {
     id: 'rv-1',
+    // Published since the branch became an optional filter: a page that can
+    // span several branches has to say which one each row belongs to.
+    branchId: '22222222-2222-4222-8222-222222222222',
     displayNumber: 'R-0001',
     receptionStatus: 'opened',
     origin: 'walk_in',

@@ -5,8 +5,10 @@ import type { ServerPage } from '@/components/data-table/use-server-table';
 import { authorizedClient } from '@/lib/api/server-client';
 import {
   STATUS_BY_KIND,
+  branchScopeQuery,
   branchTargetQuery,
   readOperation,
+  type BranchScope,
   type BranchTarget,
   type CursorPage,
   type ItemsOnly,
@@ -21,6 +23,7 @@ import type {
 import type {
   DepartmentOption,
   JobAssignment,
+  WorkOrderCatalogue,
   WorkOrderDetail,
   WorkOrderListCriteria,
   WorkOrderListEntry,
@@ -58,8 +61,21 @@ import type {
  */
 const EMPTY = { rows: [], nextCursor: null, hasMore: false } as const;
 
+/**
+ * A board flag on the wire, or nothing at all.
+ *
+ * Three states, not two: asked ON, asked OFF, and never asked. `undefined`
+ * leaves the parameter out — which is the only way to say "no opinion" to a
+ * `.strict()` schema — while `false` is sent as the literal `'false'`, because
+ * the route reads the two words and a caller that meant to turn a flag off must
+ * be able to say so.
+ */
+function flag(value: boolean | undefined): string | undefined {
+  return value === undefined ? undefined : value ? 'true' : 'false';
+}
+
 export async function listWorkOrders(
-  target: BranchTarget,
+  scope: BranchScope,
   criteria: WorkOrderListCriteria,
   request: TableRequest,
   cursor: string | null
@@ -69,7 +85,7 @@ export async function listWorkOrders(
 
   const path =
     '/api/v1/work-orders' +
-    branchTargetQuery(target, {
+    branchScopeQuery(scope, {
       state: criteria.state,
       kind: criteria.kind,
       openedFrom: criteria.openedFrom,
@@ -77,6 +93,15 @@ export async function listWorkOrders(
       customerId: criteria.customerId,
       number: criteria.number,
       q: criteria.q,
+      // Written as the literal the route's `z.enum(['true','false'])` takes.
+      // `String(false)` is `'false'`, which the route reads as OFF; leaving the
+      // flag out entirely is what "did not ask" means, and `branchScopeQuery`
+      // drops an undefined value rather than serialising it.
+      assignedToMe: flag(criteria.assignedToMe),
+      awaitingParts: flag(criteria.awaitingParts),
+      awaitingApproval: flag(criteria.awaitingApproval),
+      awaitingQuality: flag(criteria.awaitingQuality),
+      readyForDelivery: flag(criteria.readyForDelivery),
       cursor,
       limit: request.pageSize,
     });
@@ -96,6 +121,21 @@ export async function listWorkOrders(
     hasMore: result.data.hasMore,
     correlationId: result.correlationId,
   };
+}
+
+/**
+ * The tenant's work-order state graph (`wo.work-order-catalogue`).
+ *
+ * A board needs it to answer one question honestly: which states mean the car is
+ * still here. `wo.work_order_states` is tenant-extensible, so the answer is DATA
+ * and not a union in this repository — the route exists precisely so a screen
+ * never has to hard-code a code.
+ *
+ * `scope: 'tenant'`, no parameters, and `.strict()` — so nothing is sent. Not
+ * paginated: the catalogue is bounded by the tenant's own configuration.
+ */
+export async function readWorkOrderCatalogue(): Promise<ReadState<WorkOrderCatalogue>> {
+  return readOperation<WorkOrderCatalogue>('/api/v1/work-order-catalogue');
 }
 
 /* ------------------------------------------------------------------ *
