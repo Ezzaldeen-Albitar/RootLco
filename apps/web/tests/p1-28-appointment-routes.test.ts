@@ -121,21 +121,21 @@ describe('the calendar route', () => {
   it('renders the screen only for a holder of the read permission', async () => {
     PERMISSIONS = [APPOINTMENT_PERMISSIONS.read];
     const granted = await CalendarPage({ params: Promise.resolve({ locale: 'en' }) });
-    expect(findProps(granted, 'companyIds')).not.toBeNull();
+    expect(findProps(granted, 'canCheckIn')).not.toBeNull();
 
     PERMISSIONS = ALL.filter((p) => p !== APPOINTMENT_PERMISSIONS.read);
     const denied = await CalendarPage({ params: Promise.resolve({ locale: 'en' }) });
-    expect(findProps(denied, 'companyIds')).toBeNull();
+    expect(findProps(denied, 'canCheckIn')).toBeNull();
   });
 
   it('grants the booking offer from the manage permission and nothing else', async () => {
     PERMISSIONS = [APPOINTMENT_PERMISSIONS.read, APPOINTMENT_PERMISSIONS.manage];
     const granted = await CalendarPage({ params: Promise.resolve({ locale: 'en' }) });
-    expect(findProps(granted, 'companyIds')?.['canManage']).toBe(true);
+    expect(findProps(granted, 'canCheckIn')?.['canManage']).toBe(true);
 
     PERMISSIONS = ALL.filter((p) => p !== APPOINTMENT_PERMISSIONS.manage);
     const denied = await CalendarPage({ params: Promise.resolve({ locale: 'en' }) });
-    expect(findProps(denied, 'companyIds')?.['canManage']).toBe(false);
+    expect(findProps(denied, 'canCheckIn')?.['canManage']).toBe(false);
   });
 
   it('grants the day queue’s arrival affordance from the RECEPTION permission', async () => {
@@ -147,20 +147,31 @@ describe('the calendar route', () => {
      */
     PERMISSIONS = [APPOINTMENT_PERMISSIONS.read, RECEPTION_PERMISSIONS.manage];
     const granted = await CalendarPage({ params: Promise.resolve({ locale: 'en' }) });
-    expect(findProps(granted, 'companyIds')?.['canCheckIn']).toBe(true);
+    expect(findProps(granted, 'canCheckIn')?.['canCheckIn']).toBe(true);
 
     // Every appointment permission and NOT the reception one: still false.
     PERMISSIONS = ALL;
     const denied = await CalendarPage({ params: Promise.resolve({ locale: 'en' }) });
-    expect(findProps(denied, 'companyIds')?.['canCheckIn']).toBe(false);
+    expect(findProps(denied, 'canCheckIn')?.['canCheckIn']).toBe(false);
   });
 
-  it("passes the session's own resolved scope as the target options", async () => {
+  it('hands the screen no company or branch reference at all', async () => {
+    /*
+     * This case used to assert the opposite: that the session's resolved
+     * `companyIds` and `branchIds` reached the screen as the OPTIONS for a
+     * branch target the operator picked. They were bare references with no names
+     * on them, and an unrestricted grant publishes both as empty arrays — so the
+     * widest-reaching operator of all was offered a picker with nothing in it and
+     * two boxes to type into. The branch is the working context's own named
+     * selection now, read from the header, so the page passes neither.
+     */
     PERMISSIONS = [APPOINTMENT_PERMISSIONS.read];
     const tree = await CalendarPage({ params: Promise.resolve({ locale: 'en' }) });
-    const props = findProps(tree, 'companyIds');
-    expect(props?.['companyIds']).toEqual(['11111111-1111-4111-8111-111111111111']);
-    expect(props?.['branchIds']).toEqual(['22222222-2222-4222-8222-222222222222']);
+    const props = findProps(tree, 'canCheckIn');
+    expect(props).not.toBeNull();
+    expect(props?.['companyIds']).toBeUndefined();
+    expect(props?.['branchIds']).toBeUndefined();
+    expect(findProps(tree, 'companyIds')).toBeNull();
   });
 });
 
