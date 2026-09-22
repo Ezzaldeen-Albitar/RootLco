@@ -1113,6 +1113,12 @@ function handlersOf(relative: string): {
     const handler = enclosingFunctionNode(call);
     if (!id || !handler) continue;
     const described = describeFunction(handler);
+    if (byOperationId.has(id)) {
+      // Two handlers bound to one operation id means the map silently kept the
+      // last, and every per-operation judgement below would then be about a
+      // handler nobody chose. Refused rather than resolved.
+      throw new Error(`${relative} binds operation ${id} to more than one handler`);
+    }
     byOperationId.set(id, handler);
     handlers.push({ name: described.name, node: handler });
   }
@@ -1120,35 +1126,84 @@ function handlersOf(relative: string): {
 }
 
 /**
+ * Every call to `name` inside `scope`, in BOTH callee forms.
+ *
+ * `callsToNode` matches a bare identifier callee only, so `input.authorizedBranches(…)`
+ * — the same seam reached without destructuring — is invisible to it. A gate that
+ * could be evaded by not destructuring would be a gate about punctuation, so the
+ * property form is matched here rather than assumed away in prose.
+ */
+function callsNamed(scope: ts.Node, name: string): ts.CallExpression[] {
+  const found: ts.CallExpression[] = [];
+  const visit = (node: ts.Node): void => {
+    if (ts.isCallExpression(node)) {
+      const callee = node.expression;
+      const matches =
+        (ts.isIdentifier(callee) && callee.text === name) ||
+        (ts.isPropertyAccessExpression(callee) && callee.name.text === name);
+      if (matches) found.push(node);
+    }
+    ts.forEachChild(node, visit);
+  };
+  ts.forEachChild(scope, visit);
+  return found;
+}
+
+/**
  * What one handler does about branch narrowing, judged against ITS OWN operation.
  *
- * Every part of this is per-operation rather than per-file, and that is the point
- * of the shape. An earlier version walked the whole file: it asked whether ANY
- * `defineOperation` in the module declared `branchNarrowing` and whether ANY
- * `authorizedBranches` call appeared anywhere in it, which in a module with two
- * operations would let a declaration on one exempt an optional parameter on the
- * other. Single-operation files make that indistinguishable from the correct
- * rule, which is exactly why it has to be written correctly now rather than when
- * the second operation arrives.
+ * ## The rule, exactly as enforced
+ *
+ * An optional `branchId` is admitted only when ALL of these hold for the handler
+ * being judged:
+ *
+ *  1. every schema the handler hands to `parseOrFail` is DECLARED IN THIS FILE,
+ *     so the optionality can actually be read (`schemaResolved`). An imported
+ *     schema is refused rather than skipped — a check that cannot see the schema
+ *     it is judging must not report "no optional parameter found";
+ *  2. `companyId` is not optional. It never is, whatever else is declared;
+ *  3. THIS operation's own `defineOperation` carries
+ *     `branchNarrowing: 'authorized-union'` (`declares`);
+ *  4. the seam is called inside this handler (`seamCalled`), in either callee
+ *     form;
+ *  5. the seam's answer is bound by `const` and never reassigned
+ *     (`seamBindingIsConst`). `let branchIds = await seam(…); branchIds = []` is
+ *     refused outright rather than chased through a dataflow analysis this file
+ *     has no business containing;
+ *  6. that binding REACHES AN ARGUMENT OF THE CALL WHOSE RESULT THE HANDLER
+ *     RETURNS (`tracesSeamResult`) — the awaited call inside a `return`, which is
+ *     the read the narrowing is supposed to narrow.
+ *
+ * ## Why (6) is worded that way
+ *
+ * The first version asked whether the binding was referenced anywhere in the
+ * handler. `handleOperation(…)` is itself a call whose argument subtree is the
+ * entire body, so ANY mention scored — `logger.info(branchIds)`, or even
+ * `if (branchIds.length === 0) {}` — while the read beside it received `[]` and
+ * the page stayed narrowed by `app.branch_ids` alone. Reaching "some call" is not
+ * the property that matters. Reaching THE READ is.
+ *
+ * A binding reaches a call when it appears in an argument directly, through a
+ * spread, as a property VALUE (shorthand included), or as a property value of a
+ * local object literal that argument names. A property KEY is never a use, or
+ * `{ branchIds: [] }` would score by naming the field it replaces; a
+ * property-access NAME is never a use, or `query.branchIds` would; and the
+ * declaration's own name is never a use, or the binding site would score itself.
  */
 interface NarrowingAudit {
   /** The schema THIS handler parses makes `branchId` optional. */
   readonly optionalBranch: boolean;
   /** The schema THIS handler parses makes `companyId` optional. Never permitted. */
   readonly optionalCompany: boolean;
+  /** Every schema this handler parses was found in this file. */
+  readonly schemaResolved: boolean;
   /** THIS operation's own declaration carries `branchNarrowing: 'authorized-union'`. */
   readonly declares: boolean;
-  /**
-   * The seam is called AND its answer reaches the read.
-   *
-   * The question a weaker gate forgets to ask. Calling `authorizedBranches` and
-   * throwing the answer away leaves the page narrowed by `app.branch_ids` alone —
-   * the permission-blind union of every grant — while every structural check
-   * still passes, because the call is right there in the file. So the binding the
-   * call produces has to be traced into an argument of the read it is supposed to
-   * narrow; a handler that discards it, or that passes a literal `[]` beside it,
-   * fails.
-   */
+  /** The seam is called in this handler, in either callee form. */
+  readonly seamCalled: boolean;
+  /** Its answer is bound by `const` and never reassigned. */
+  readonly seamBindingIsConst: boolean;
+  /** That binding reaches an argument of the call whose result the handler returns. */
   readonly tracesSeamResult: boolean;
 }
 
@@ -1157,43 +1212,51 @@ function auditBranchNarrowing(
   handler: ts.Node,
   declaration: ts.ObjectLiteralExpression | undefined
 ): NarrowingAudit {
-  // --- the schema THIS handler parses -------------------------------------
-  // Bound by `parseOrFail(Schema, …)` inside the handler, so a second schema in
-  // the same module — the POST body beside a GET query — cannot answer for it.
+  const within = (node: ts.Node): boolean =>
+    node.getStart(file) >= handler.getStart(file) && node.getEnd() <= handler.getEnd();
+
+  // --- (1) the schema THIS handler parses ----------------------------------
   const schemaNames = new Set<string>();
-  for (const call of callsToNode(file, 'parseOrFail')) {
-    if (call.getStart(file) < handler.getStart(file) || call.getEnd() > handler.getEnd()) continue;
+  for (const call of callsNamed(file, 'parseOrFail')) {
+    if (!within(call)) continue;
     const first = call.arguments[0];
     if (first && ts.isIdentifier(first)) schemaNames.add(first.text);
   }
 
-  const optional = { branchId: false, companyId: false };
-  const inspectSchema = (node: ts.Node): void => {
-    if (
-      ts.isVariableDeclaration(node) &&
-      ts.isIdentifier(node.name) &&
-      schemaNames.has(node.name.text) &&
-      node.initializer
-    ) {
-      const walk = (candidate: ts.Node): void => {
-        if (ts.isPropertyAssignment(candidate)) {
-          const field = candidate.name.getText(file);
-          if (
-            (field === 'branchId' || field === 'companyId') &&
-            /\.optional\(\)/.test(candidate.initializer.getText(file))
-          ) {
-            optional[field as 'branchId' | 'companyId'] = true;
-          }
-        }
-        ts.forEachChild(candidate, walk);
-      };
-      walk(node.initializer);
+  const declared = new Map<string, ts.Node>();
+  const collectDeclarations = (node: ts.Node): void => {
+    if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.initializer) {
+      declared.set(node.name.text, node.initializer);
     }
-    ts.forEachChild(node, inspectSchema);
+    ts.forEachChild(node, collectDeclarations);
   };
-  inspectSchema(file);
+  collectDeclarations(file);
 
-  // --- THIS operation's own declaration ------------------------------------
+  const optional = { branchId: false, companyId: false };
+  let schemaResolved = true;
+  for (const name of schemaNames) {
+    const initializer = declared.get(name);
+    if (initializer === undefined) {
+      // Imported, or built somewhere this file cannot see. Refused, not skipped.
+      schemaResolved = false;
+      continue;
+    }
+    const walk = (candidate: ts.Node): void => {
+      if (ts.isPropertyAssignment(candidate)) {
+        const field = candidate.name.getText(file);
+        if (
+          (field === 'branchId' || field === 'companyId') &&
+          /\.optional\(\)/.test(candidate.initializer.getText(file))
+        ) {
+          optional[field as 'branchId' | 'companyId'] = true;
+        }
+      }
+      ts.forEachChild(candidate, walk);
+    };
+    walk(initializer);
+  }
+
+  // --- (3) THIS operation's own declaration --------------------------------
   const declares =
     declaration !== undefined &&
     declaration.properties.some(
@@ -1203,15 +1266,35 @@ function auditBranchNarrowing(
         /'authorized-union'/.test(property.initializer.getText(file))
     );
 
-  // --- the seam, and what becomes of its answer ----------------------------
-  const within = (node: ts.Node): boolean =>
-    node.getStart(file) >= handler.getStart(file) && node.getEnd() <= handler.getEnd();
+  // --- (6) the call whose result this handler returns ----------------------
+  // Every awaited call inside a `return`, minus the seam itself. That is the read
+  // the page comes from; a logging call is never one of them, so logging needs no
+  // special case and none is written.
+  const readCalls: ts.CallExpression[] = [];
+  const collectReads = (node: ts.Node): void => {
+    if (ts.isReturnStatement(node) && node.expression) {
+      const scan = (inner: ts.Node): void => {
+        if (
+          ts.isAwaitExpression(inner) &&
+          ts.isCallExpression(inner.expression) &&
+          callsNamed(inner.expression, 'authorizedBranches').length === 0
+        ) {
+          readCalls.push(inner.expression);
+        }
+        ts.forEachChild(inner, scan);
+      };
+      scan(node.expression);
+    }
+    ts.forEachChild(node, collectReads);
+  };
+  collectReads(handler);
 
+  // --- (4)(5) the seam, its binding, and where the answer goes -------------
+  const seamCalls = callsNamed(handler, 'authorizedBranches').filter(within);
+  let seamBindingIsConst = false;
   let tracesSeamResult = false;
-  for (const call of callsToNode(file, 'authorizedBranches')) {
-    if (!within(call)) continue;
 
-    // Walk out of `await` / parentheses to the declaration the call feeds.
+  for (const call of seamCalls) {
     let cursor: ts.Node = call;
     while (
       cursor.parent &&
@@ -1221,76 +1304,108 @@ function auditBranchNarrowing(
     ) {
       cursor = cursor.parent;
     }
-    const declarationNode = cursor.parent;
-    if (!declarationNode || !ts.isVariableDeclaration(declarationNode)) continue;
+    const binding = cursor.parent;
+    if (!binding || !ts.isVariableDeclaration(binding)) continue;
 
-    // Every name the call binds: `const x = …` and `const { a, b } = …` alike.
+    const list = binding.parent;
+    const isConst =
+      list !== undefined &&
+      ts.isVariableDeclarationList(list) &&
+      (list.flags & ts.NodeFlags.Const) !== 0;
+
     const bound: string[] = [];
     const collect = (name: ts.Node): void => {
       if (ts.isIdentifier(name)) bound.push(name.text);
       else ts.forEachChild(name, collect);
     };
-    collect(declarationNode.name);
+    collect(binding.name);
     if (bound.length === 0) continue;
 
-    // The binding must REACH a call other than the seam itself: it is read inside
-    // the argument list of something, which is what "the answer narrows the read"
-    // looks like in a syntax tree. A handler that binds the answer and never uses
-    // it fails here, and so does one that passes `[]` in its place.
-    const reaches = (): boolean => {
+    // Reassignment refuses the whole shape: `let x = seam; x = []` is not a
+    // narrowing, and following it properly is a dataflow analysis this file has
+    // no business containing.
+    let reassigned = false;
+    const findAssignments = (node: ts.Node): void => {
+      if (
+        ts.isBinaryExpression(node) &&
+        node.operatorToken.kind === ts.SyntaxKind.EqualsToken &&
+        ts.isIdentifier(node.left) &&
+        bound.includes(node.left.text)
+      ) {
+        reassigned = true;
+      }
+      ts.forEachChild(node, findAssignments);
+    };
+    findAssignments(handler);
+    if (isConst && !reassigned) seamBindingIsConst = true;
+
+    // Does the binding reach an argument of a read call?
+    const localObjects = new Map<string, ts.ObjectLiteralExpression>();
+    const collectObjects = (node: ts.Node): void => {
+      if (
+        ts.isVariableDeclaration(node) &&
+        ts.isIdentifier(node.name) &&
+        node.initializer &&
+        ts.isObjectLiteralExpression(node.initializer)
+      ) {
+        localObjects.set(node.name.text, node.initializer);
+      }
+      ts.forEachChild(node, collectObjects);
+    };
+    collectObjects(handler);
+
+    const usesBinding = (node: ts.Node, depth = 0): boolean => {
       let used = false;
-      const walk = (node: ts.Node): void => {
+      const scan = (inner: ts.Node): void => {
         if (used) return;
-        if (ts.isCallExpression(node) && node !== call && within(node)) {
-          for (const argument of node.arguments) {
-            const scan = (inner: ts.Node): void => {
-              if (used) return;
-              // A property KEY is not a use of the binding. `{ branchIds: [] }`
-              // names the field and passes an empty literal — the exact way to
-              // call the seam, bind its answer and then narrow by nothing — so
-              // counting the key would have scored that as wired. Only the
-              // initializer is scanned; a shorthand `{ branchIds }` has none and
-              // is a real reference, which is why it is not excluded here.
-              // The BINDING SITE is not a use either. `handleOperation(...)` is
-              // itself a call whose argument subtree contains the whole handler
-              // body, declaration included, so scanning it naively finds the very
-              // `const branchIds = ...` the trace is asking about and scores a
-              // discarded answer as wired.
-              if (ts.isVariableDeclaration(inner)) {
-                if (inner.initializer) scan(inner.initializer);
-                return;
-              }
-              if (ts.isPropertyAssignment(inner)) {
-                scan(inner.initializer);
-                return;
-              }
-              // `query.branchIds` reads a field off something else, not the
-              // binding, so only the left-hand side can be a use.
-              if (ts.isPropertyAccessExpression(inner)) {
-                scan(inner.expression);
-                return;
-              }
-              if (ts.isIdentifier(inner) && bound.includes(inner.text)) used = true;
-              else ts.forEachChild(inner, scan);
-            };
-            scan(argument);
-          }
+        // A property KEY is not a use; only its value is.
+        if (ts.isPropertyAssignment(inner)) {
+          scan(inner.initializer);
+          return;
         }
-        ts.forEachChild(node, walk);
+        // `query.branchIds` reads a field off something else.
+        if (ts.isPropertyAccessExpression(inner)) {
+          scan(inner.expression);
+          return;
+        }
+        // The binding SITE is not a use of itself.
+        if (ts.isVariableDeclaration(inner)) {
+          if (inner.initializer) scan(inner.initializer);
+          return;
+        }
+        if (ts.isIdentifier(inner)) {
+          if (bound.includes(inner.text)) used = true;
+          // One level of indirection: an argument that names a local object
+          // literal is opened, so `const filter = { branchIds }; read(db, filter)`
+          // counts and a second copy of the rule is not needed at every call site.
+          else if (depth === 0 && localObjects.has(inner.text)) {
+            const object = localObjects.get(inner.text);
+            if (object && usesBinding(object, depth + 1)) used = true;
+          }
+          return;
+        }
+        ts.forEachChild(inner, scan);
       };
-      walk(handler);
+      scan(node);
       return used;
     };
-    if (reaches()) {
-      tracesSeamResult = true;
-      break;
+
+    for (const read of readCalls) {
+      if (read.arguments.some((argument) => usesBinding(argument))) {
+        tracesSeamResult = true;
+        break;
+      }
     }
+    if (tracesSeamResult) break;
   }
 
   return {
     optionalBranch: optional.branchId,
     optionalCompany: optional.companyId,
+    schemaResolved,
     declares,
+    seamCalled: seamCalls.length > 0,
+    seamBindingIsConst,
     tracesSeamResult,
   };
 }
@@ -1475,26 +1590,54 @@ describe('no caller-supplied scope narrowing on the ten P1-22 isolation operatio
         );
 
         if (audit.optionalBranch) {
+          // Each clause of the rule the audit's docblock states, asserted
+          // separately so a refusal names the one that failed rather than a
+          // boolean nobody can act on.
+          expect(
+            audit.schemaResolved,
+            `${relative} ${name} parses a schema this file does not declare, so its optionality cannot be judged`
+          ).toBe(true);
           expect(
             audit.declares,
             `${relative} ${name} declares an OPTIONAL branchId without its OWN operation declaring branchNarrowing: 'authorized-union'`
           ).toBe(true);
           expect(
+            audit.seamCalled,
+            `${relative} ${name} declares branchNarrowing but never calls authorizedBranches`
+          ).toBe(true);
+          expect(
+            audit.seamBindingIsConst,
+            `${relative} ${name} does not bind the authorizedBranches answer with const, or reassigns it`
+          ).toBe(true);
+          expect(
             audit.tracesSeamResult,
-            `${relative} ${name} declares branchNarrowing but the authorizedBranches answer never reaches the read`
+            `${relative} ${name} never passes the authorizedBranches answer to the call whose result it returns`
           ).toBe(true);
         }
       }
     }
   });
 
+  /**
+   * The five reads that carry the exemption, named by OPERATION rather than
+   * discovered by a suffix.
+   *
+   * `find((id) => id.endsWith('-list'))` was the earlier spelling, and it picks
+   * whichever operation happens to sort first if a module ever binds two. The
+   * point of this section is that every judgement is about a named operation, so
+   * the names are written down.
+   */
+  const BRANCH_NARROWING_READS = [
+    { route: 'src/app/api/v1/receptions/route.ts', operation: 'rec.reception-list' },
+    { route: 'src/app/api/v1/appointments/route.ts', operation: 'apt.appointment-list' },
+    { route: 'src/app/api/v1/work-orders/route.ts', operation: 'wo.work-order-list' },
+    { route: 'src/app/api/v1/deliveries/route.ts', operation: 'sal.delivery-list' },
+    { route: 'src/app/api/v1/warranties/route.ts', operation: 'wty.warranty-list' },
+  ] as const;
+
   it('refuses an optional branchId the seam does not actually narrow', () => {
-    // The falsifiability of the rule above, and it runs the SAME predicate the
-    // rule runs. An earlier version of this case re-implemented the check with a
-    // file-wide `callsToNode(...).length > 0`, which proved the copy and not the
-    // gate — the two could have disagreed and only the copy was ever asserted.
-    //
-    // Four synthetic modules, none of them on disk, each wrong in one way:
+    // The falsifiability of the rule above, running the SAME predicate the rule
+    // runs. Each module is wrong in exactly one way, and the way is named.
     const cases = [
       {
         why: 'optional branch, no declaration and no seam',
@@ -1509,7 +1652,7 @@ describe('no caller-supplied scope narrowing on the ten P1-22 isolation operatio
             });
           }
         `,
-        expect: { declares: false, tracesSeamResult: false },
+        expect: { declares: false, seamCalled: false, tracesSeamResult: false },
       },
       {
         why: 'declared, but the seam is never called',
@@ -1526,7 +1669,7 @@ describe('no caller-supplied scope narrowing on the ten P1-22 isolation operatio
             });
           }
         `,
-        expect: { declares: true, tracesSeamResult: false },
+        expect: { declares: true, seamCalled: false, tracesSeamResult: false },
       },
       {
         why: 'the seam is called and its answer is DISCARDED',
@@ -1544,10 +1687,13 @@ describe('no caller-supplied scope narrowing on the ten P1-22 isolation operatio
             });
           }
         `,
-        expect: { declares: true, tracesSeamResult: false },
+        expect: { declares: true, seamCalled: true, tracesSeamResult: false },
       },
       {
-        why: 'the seam is called, bound, and an empty literal is passed instead',
+        why: 'the answer is bound and LOGGED, while the read still receives []',
+        // The case the first version of this gate passed. The binding really is
+        // referenced — `handleOperation`'s argument subtree is the whole body, so
+        // any mention used to score — and the read is narrowed by nothing.
         source: `
           export const OP = defineOperation({
             id: 'x.list', scope: 'branch', branchNarrowing: 'authorized-union',
@@ -1558,11 +1704,37 @@ describe('no caller-supplied scope narrowing on the ten P1-22 isolation operatio
             return handleOperation(OP, request, async ({ db, authorizedBranches }) => {
               const query = parseOrFail(Query, raw, 'query');
               const branchIds = await authorizedBranches(query.companyId);
+              log.info('narrowed', { branchIds });
+              if (branchIds.length === 0) {
+                log.warn('none');
+              }
               return { body: await read(db, { ...query, branchIds: [] }) };
             });
           }
         `,
-        expect: { declares: true, tracesSeamResult: false },
+        expect: { declares: true, seamCalled: true, tracesSeamResult: false },
+      },
+      {
+        why: 'the answer is REBOUND to [] before the read',
+        source: `
+          export const OP = defineOperation({
+            id: 'x.list', scope: 'branch', branchNarrowing: 'authorized-union',
+          });
+          const Query = z.object({ companyId: schemas.uuid, branchId: schemas.uuid.optional() });
+          export async function GET(request: Request) {
+            const raw = searchParamsToObject(new URL(request.url).searchParams);
+            return handleOperation(OP, request, async ({ db, authorizedBranches }) => {
+              const query = parseOrFail(Query, raw, 'query');
+              let branchIds = await authorizedBranches(query.companyId);
+              branchIds = [];
+              return { body: await read(db, { ...query, branchIds }) };
+            });
+          }
+        `,
+        // It reaches the read, so the trace alone would admit it — the `const`
+        // clause is what refuses it, which is why both are asserted.
+        expect: { declares: true, seamCalled: true, tracesSeamResult: true },
+        alsoExpect: { seamBindingIsConst: false },
       },
     ] as const;
 
@@ -1572,17 +1744,51 @@ describe('no caller-supplied scope narrowing on the ten P1-22 isolation operatio
       if (!file) continue;
       const { handler, declaration } = syntheticHandler(file);
       const audit = auditBranchNarrowing(file, handler, declaration);
-      // Each one really does declare the optional branch, or it would be refused
-      // for a reason other than the one being tested.
+      // Each really does declare the optional branch on a schema this file can
+      // see, or it would be refused for a reason other than the one being tested.
       expect(audit.optionalBranch, scenario.why).toBe(true);
+      expect(audit.schemaResolved, scenario.why).toBe(true);
       expect(audit.declares, scenario.why).toBe(scenario.expect.declares);
+      expect(audit.seamCalled, scenario.why).toBe(scenario.expect.seamCalled);
       expect(audit.tracesSeamResult, scenario.why).toBe(scenario.expect.tracesSeamResult);
-      // The rule the main loop applies rejects every one of them.
-      expect(audit.declares && audit.tracesSeamResult, scenario.why).toBe(false);
+      const also = (scenario as { alsoExpect?: { seamBindingIsConst: boolean } }).alsoExpect;
+      if (also) expect(audit.seamBindingIsConst, scenario.why).toBe(also.seamBindingIsConst);
+      // And the conjunction the main loop applies rejects every one of them.
+      expect(
+        audit.declares && audit.seamCalled && audit.seamBindingIsConst && audit.tracesSeamResult,
+        scenario.why
+      ).toBe(false);
     }
+  });
 
-    // And the POSITIVE control, so the predicate is not merely rejecting
-    // everything: the seam is called, bound, and the binding reaches the read.
+  it('refuses a schema it cannot see rather than reporting no optional parameter', () => {
+    // A census route whose query schema is IMPORTED. The optionality is
+    // unreadable from this file, and the honest answer is a refusal — a check
+    // that silently found no optional parameter would report a clean bill of
+    // health on a module it never inspected.
+    const imported = parseModule(`
+      import { ListQuery } from './shared-query';
+      export const OP = defineOperation({ id: 'x.list', scope: 'branch' });
+      export async function GET(request: Request) {
+        const raw = searchParamsToObject(new URL(request.url).searchParams);
+        return handleOperation(OP, request, async ({ db }) => {
+          const query = parseOrFail(ListQuery, raw, 'query');
+          return { body: await read(db, query) };
+        });
+      }
+    `);
+    expect(imported).not.toBeNull();
+    if (!imported) return;
+    const { handler, declaration } = syntheticHandler(imported);
+    const audit = auditBranchNarrowing(imported, handler, declaration);
+    expect(audit.schemaResolved, 'an imported schema was silently treated as readable').toBe(false);
+    // And it is not quietly reported as "no optional branch found", which is the
+    // vacuous pass this case exists to prevent being mistaken for a clean result.
+    expect(audit.optionalBranch).toBe(false);
+  });
+
+  it('admits the wired shape, and the five real reads satisfy every clause', () => {
+    // The POSITIVE control, so the predicate is not merely rejecting everything.
     const wired = parseModule(`
       export const OP = defineOperation({
         id: 'x.list', scope: 'branch', branchNarrowing: 'authorized-union',
@@ -1605,31 +1811,27 @@ describe('no caller-supplied scope narrowing on the ten P1-22 isolation operatio
       const { handler, declaration } = syntheticHandler(wired);
       const audit = auditBranchNarrowing(wired, handler, declaration);
       expect(audit.optionalBranch).toBe(true);
+      expect(audit.schemaResolved).toBe(true);
       expect(audit.declares).toBe(true);
+      expect(audit.seamCalled).toBe(true);
+      expect(audit.seamBindingIsConst).toBe(true);
       expect(audit.tracesSeamResult).toBe(true);
     }
 
-    // The five REAL reads satisfy the same predicate, bound to their OWN
-    // operation rather than to whatever the file happens to declare.
-    for (const relative of [
-      'src/app/api/v1/receptions/route.ts',
-      'src/app/api/v1/appointments/route.ts',
-      'src/app/api/v1/work-orders/route.ts',
-      'src/app/api/v1/deliveries/route.ts',
-      'src/app/api/v1/warranties/route.ts',
-    ]) {
-      const { file, byOperationId, declarationByOperationId } = handlersOf(relative);
-      const listId = [...byOperationId.keys()].find((id) => id.endsWith('-list'));
-      expect(listId, `${relative} binds no list operation`).toBeDefined();
-      if (!listId) continue;
-      const handler = byOperationId.get(listId);
-      expect(handler, `${relative} ${listId} has no handler`).toBeDefined();
+    // The five REAL reads, each judged against the operation it is named with.
+    for (const { route, operation } of BRANCH_NARROWING_READS) {
+      const { file, byOperationId, declarationByOperationId } = handlersOf(route);
+      const handler = byOperationId.get(operation);
+      expect(handler, `${route} does not bind ${operation}`).toBeDefined();
       if (!handler) continue;
-      const audit = auditBranchNarrowing(file, handler, declarationByOperationId.get(listId));
-      expect(audit.optionalCompany, `${relative} ${listId}`).toBe(false);
-      expect(audit.optionalBranch, `${relative} ${listId}`).toBe(true);
-      expect(audit.declares, `${relative} ${listId}`).toBe(true);
-      expect(audit.tracesSeamResult, `${relative} ${listId}`).toBe(true);
+      const audit = auditBranchNarrowing(file, handler, declarationByOperationId.get(operation));
+      expect(audit.optionalCompany, `${route} ${operation}`).toBe(false);
+      expect(audit.schemaResolved, `${route} ${operation}`).toBe(true);
+      expect(audit.optionalBranch, `${route} ${operation}`).toBe(true);
+      expect(audit.declares, `${route} ${operation}`).toBe(true);
+      expect(audit.seamCalled, `${route} ${operation}`).toBe(true);
+      expect(audit.seamBindingIsConst, `${route} ${operation}`).toBe(true);
+      expect(audit.tracesSeamResult, `${route} ${operation}`).toBe(true);
     }
   });
 
