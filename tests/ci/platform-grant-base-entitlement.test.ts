@@ -31,6 +31,11 @@
  * P1-32-PRE-OD-OPERATOR and is the only one that can MINT an operator, so its
  * own refusals — grantor proof, home tenant, over-grant, self-grant, address —
  * are driven here too, at the bottom of the file.
+ *
+ * `revoke-platform-operator.mjs` (P1-32-PRE-OD-UX) is not a writer by that
+ * enumeration — it INSERTs nothing — but it is the one path that sets
+ * `revoked_at` on the same table, and its refusals are driven here for the same
+ * reason and in the same place.
  */
 import { spawnSync } from 'node:child_process';
 import { readFileSync, readdirSync, statSync } from 'node:fs';
@@ -56,6 +61,14 @@ import {
   readAddOperatorInput,
   selfGrantRefusal,
 } from '../../scripts/platform/add-platform-operator.mjs';
+import {
+  GENESIS_AUDIT_ACTION,
+  firstOwnerRefusal,
+  lastOperatorRefusal,
+  readRevokeOperatorInput,
+  revokerRefusal,
+  targetRefusal,
+} from '../../scripts/platform/revoke-platform-operator.mjs';
 
 const SESSION_ROUTE = join(
   REPOSITORY_ROOT,
@@ -539,6 +552,163 @@ describe('adding a second platform operator refuses everything it must', () => {
     expect(connects, 'main reaches the provider before the transaction exists').toBeLessThan(
       invites
     );
+  });
+});
+
+/**
+ * Taking platform authority away: every refusal, at the pure-function level
+ * (P1-32-PRE-OD-UX).
+ *
+ * ## Why the two lock-out rules are the whole point
+ *
+ * `scripts/platform/revoke-platform-operator.mjs` is the only path that sets
+ * `revoked_at` on `iam.platform_grants`, and the states it must never reach are
+ * unrecoverable rather than merely wrong: with no operator left, genesis refuses
+ * because a grant exists for another account, the grant script cannot mint one,
+ * and the addition script cannot prove a grantor. So the refusals are exported
+ * pure functions and each is driven here with inputs no run would produce — a
+ * revoker who does not exist, an organisation's own account as revoker, an
+ * address nobody holds, an operator already revoked, the account the genesis
+ * record names, the earliest holder when no genesis record exists at all, and a
+ * platform that would be left empty.
+ *
+ * The admitting cases are asserted beside the refusals, so a function that
+ * refused EVERYTHING — which would pass every refusal case — fails here.
+ *
+ * These cases join this file rather than a new one for the reason
+ * P1-32-PRE-OD-CONSOLE-003 recorded: a new file under `tests/ci` moves a count a
+ * sealed phase record states, and the cases are the evidence, not the file
+ * boundary. What the transaction does is proved in
+ * `tests/backend/p1-29-w9-platform-genesis.test.ts`, cases R1–R4.
+ */
+describe('revoking a platform operator refuses everything it must', () => {
+  const HOME_TENANT = 'platform_operators';
+  const OPERATOR = {
+    accountId: 'account-operator',
+    email: 'second.operator@example.test',
+    status: 'active',
+    tenantCode: HOME_TENANT,
+    held: [PLATFORM_BASE_AUTHORITY_CODE],
+  };
+
+  it('names the genesis record it identifies the first owner by', () => {
+    expect(GENESIS_AUDIT_ACTION).toBe('platform.operator.genesis');
+  });
+
+  it('admits a revoker seated at home, active and holding authority', () => {
+    expect(revokerRefusal(OPERATOR, HOME_TENANT)).toBeNull();
+  });
+
+  it('refuses a run that proved no revoker at all', () => {
+    for (const absent of [null, undefined]) {
+      const refusal = revokerRefusal(absent, HOME_TENANT);
+      expect(refusal).toBeTypeOf('string');
+      expect(refusal).toContain('no revoker was proved');
+    }
+  });
+
+  it("refuses an organisation's own account as revoker, suspended, or holding nothing", () => {
+    expect(revokerRefusal({ ...OPERATOR, tenantCode: 'some_organisation' }, HOME_TENANT)).toContain(
+      'some_organisation'
+    );
+    expect(revokerRefusal({ ...OPERATOR, status: 'suspended' }, HOME_TENANT)).toBeTypeOf('string');
+    expect(revokerRefusal({ ...OPERATOR, held: [] }, HOME_TENANT)).toBeTypeOf('string');
+  });
+
+  it('admits a target that is an operator, and refuses every address that is not', () => {
+    expect(targetRefusal(OPERATOR, HOME_TENANT)).toBeNull();
+    for (const absent of [null, undefined]) {
+      expect(targetRefusal(absent, HOME_TENANT)).toContain('no account holds that address');
+    }
+    expect(targetRefusal({ ...OPERATOR, tenantCode: 'some_organisation' }, HOME_TENANT)).toContain(
+      'some_organisation'
+    );
+    // Already revoked: there is nothing to take, and the message says so rather
+    // than writing a second record for the same fact.
+    expect(targetRefusal({ ...OPERATOR, held: [] }, HOME_TENANT)).toContain('nothing to revoke');
+  });
+
+  it('refuses the account the genesis record names, whatever its position', () => {
+    const refusal = firstOwnerRefusal({
+      accountId: OPERATOR.accountId,
+      genesisMarked: true,
+      earliestHolder: false,
+    });
+    expect(refusal).toBeTypeOf('string');
+    expect(refusal).toContain('platform.operator.genesis');
+    expect(refusal).toContain(OPERATOR.accountId);
+  });
+
+  it('falls back to the earliest holder only when no genesis record exists', () => {
+    const fallback = firstOwnerRefusal({
+      accountId: OPERATOR.accountId,
+      genesisMarked: false,
+      earliestHolder: true,
+    });
+    expect(fallback).toBeTypeOf('string');
+    expect(fallback).toContain('earliest unrevoked');
+    // An account that is neither marked nor earliest is revocable — otherwise
+    // every case above would pass over a function that refused everything.
+    expect(
+      firstOwnerRefusal({
+        accountId: OPERATOR.accountId,
+        genesisMarked: false,
+        earliestHolder: false,
+      })
+    ).toBeNull();
+  });
+
+  it('refuses a run that would leave the platform with no operator, and admits one that does not', () => {
+    for (const empty of [[], undefined]) {
+      const refusal = lastOperatorRefusal(empty);
+      expect(refusal).toBeTypeOf('string');
+      expect(refusal).toContain('last holder of platform authority');
+      // The message names the three scripts that cannot recover from it, so the
+      // operator reading it knows the state is terminal rather than awkward.
+      expect(refusal).toContain('genesis');
+      expect(refusal).toContain('add-platform-operator.mjs');
+    }
+    expect(lastOperatorRefusal(['account-someone-else'])).toBeNull();
+  });
+
+  it('refuses a confirmation that does not repeat the address, and a blank reason', () => {
+    const env = {
+      ROOTLCO_ENV: 'local-acceptance',
+      REVOKE_OPERATOR_EMAIL: OPERATOR.email,
+      REVOKE_OPERATOR_REASON: 'no longer on the platform team',
+      REVOKE_OPERATOR_GRANTOR_EMAIL: 'first.operator@example.test',
+    };
+    expect(() => readRevokeOperatorInput(env, ['--confirm', 'someone.else@example.test'])).toThrow(
+      /--confirm/
+    );
+    expect(() =>
+      readRevokeOperatorInput({ ...env, REVOKE_OPERATOR_REASON: '   ' }, [
+        '--confirm',
+        OPERATOR.email,
+      ])
+    ).toThrow(/REASON/);
+    expect(() =>
+      readRevokeOperatorInput({ ...env, ROOTLCO_ENV: 'production' }, ['--confirm', OPERATOR.email])
+    ).toThrow(/ROOTLCO_ENV/);
+    // The admitted shape, so the three refusals above are about what they name.
+    const input = readRevokeOperatorInput(env, ['--confirm', OPERATOR.email, '--dry-run']);
+    expect(input).toMatchObject({ dryRun: true, homeTenantCode: HOME_TENANT });
+    expect(input.operator.email).toBe(OPERATOR.email);
+  });
+
+  /**
+   * The enumeration above counts writers by `INSERT INTO iam.platform_grants`,
+   * which a revocation never performs. This case states the other half in the
+   * same exact style: exactly one file under `scripts/` sets `revoked_at` on that
+   * table, so a second revocation path — wherever it appeared — fails here rather
+   * than quietly inheriting these refusals without applying them.
+   */
+  it('is the only code path under scripts/ that revokes a platform grant', () => {
+    const revokers = scriptFiles().filter((file) => {
+      const source = readFileSync(join(REPOSITORY_ROOT, file.split('/').join(sep)), 'utf8');
+      return /UPDATE iam\.platform_grants[\s\S]{0,200}revoked_at\s*=/.test(source);
+    });
+    expect(revokers).toEqual(['scripts/platform/revoke-platform-operator.mjs']);
   });
 });
 

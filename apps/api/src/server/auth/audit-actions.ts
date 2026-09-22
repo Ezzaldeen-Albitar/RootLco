@@ -2174,6 +2174,13 @@ export const AUDIT_ACTIONS: readonly AuditActionDefinition[] = Object.freeze([
     description:
       'Platform authority codes were granted to an existing operator account by an out-of-band operator act on a privileged connection. No product path writes iam.platform_grants, so this record and the genesis one are the only trail there is.',
   },
+  {
+    code: 'platform.operator.authority_revoked',
+    class: 'security',
+    entityType: 'iam.user_account',
+    description:
+      'Every platform authority code an operator account held was revoked, and its recorded sessions were ended, by an out-of-band operator act on a privileged connection. Nothing is deleted: the grants keep their rows and carry revoked_at and revoked_by, so the trail states who took the authority away and when.',
+  },
 ]);
 
 const BY_CODE: ReadonlyMap<string, AuditActionDefinition> = new Map(
