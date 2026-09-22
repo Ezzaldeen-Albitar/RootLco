@@ -315,6 +315,7 @@ export async function listReceptions(
     '/api/v1/receptions' +
     branchTargetQuery(target, {
       status: criteria.status,
+      statusGroup: criteria.statusGroup,
       vehicleId: criteria.vehicleId,
       cursor,
       limit: request.pageSize,

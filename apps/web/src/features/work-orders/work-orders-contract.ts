@@ -42,11 +42,24 @@ export const WORK_ORDER_PERMISSIONS = {
  * `ck_work_orders_kind`, mirrored. Two values, closed.
  *
  * Mirrored rather than imported: `apps/web` may not import from `apps/api`, and
- * `tests/work-orders-contract.test.ts` holds this array against the route source
- * so a third kind added in the Backend fails a test rather than a reviewer.
+ * `tests/work-orders-queue-api.test.ts` holds this array against the backend
+ * domain source so a third kind added in the Backend fails a test rather than a
+ * reviewer. That gate is real as of the Owner directive (P1-32-PRE-OD-UX); this
+ * sentence named a file that did not exist before it.
  */
 export const WORK_ORDER_KINDS = ['ordinary', 'rework'] as const;
 export type WorkOrderKind = (typeof WORK_ORDER_KINDS)[number];
+
+/**
+ * The state groups `wo.work-order-list` accepts, mirrored from
+ * `WORK_ORDER_STATE_GROUPS` in the work-order domain.
+ *
+ * Mirrored rather than imported for the reason the kinds are: `apps/web` may not
+ * import from `apps/api`, and the contract test holds this array against the
+ * backend source so a fourth group fails a test rather than a reviewer.
+ */
+export const WORK_ORDER_STATE_GROUPS = ['active', 'terminal', 'cancelled'] as const;
+export type WorkOrderStateGroup = (typeof WORK_ORDER_STATE_GROUPS)[number];
 
 /**
  * The state codes seeded at PLATFORM scope, transcribed from
@@ -187,6 +200,26 @@ export interface WorkOrderAssignedTechnician {
 export interface WorkOrderListCriteria {
   /** An opaque catalogue code. An unknown one returns an empty page, not a 422. */
   readonly state?: string;
+  /**
+   * A state GROUP (Owner directive, P1-32-PRE-OD-UX), resolved by the backend
+   * from the tenant catalogue's terminal and cancellation flags.
+   *
+   * A CLOSED vocabulary where `state` is open, and the two may not be sent
+   * together — the backend answers 422 rather than intersecting them, so a
+   * screen offering both controls must clear one when the other is chosen.
+   *
+   * The three partition the catalogue: `terminal` excludes the cancellations
+   * rather than containing them, so no work order is returned by two groups.
+   */
+  readonly stateGroup?: WorkOrderStateGroup;
+  /**
+   * Inclusive bounds on the completion instant — the same value a row publishes
+   * as `completedAt`. Either bound narrows the board to finished work, because
+   * an unfinished work order has no completion instant. An inverted window is a
+   * 422, never an empty page.
+   */
+  readonly completedFrom?: string;
+  readonly completedTo?: string;
   readonly kind?: WorkOrderKind;
   readonly openedFrom?: string;
   readonly openedTo?: string;

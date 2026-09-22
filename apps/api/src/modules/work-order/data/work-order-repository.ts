@@ -265,6 +265,55 @@ export interface WorkOrderListFilter {
    * delivery readiness queue already answers.
    */
   readonly readyStates?: readonly string[] | undefined;
+  /**
+   * The codes of the state GROUP the caller asked for, resolved by the SERVICE
+   * from the live catalogue (Owner directive, P1-32-PRE-OD-UX).
+   *
+   * A third code set beside `state` and `states` rather than a reuse of either,
+   * and the separation is load-bearing. `state` is the caller's single opaque
+   * code and `states` is the readiness queue's internally resolved set; folding a
+   * group into `states` would make two callers of one service silently overwrite
+   * each other's predicate the day a third one passes both. All three AND
+   * together, which is well defined: a caller naming a state AND a group it does
+   * not belong to gets an empty page, and the route refuses that combination
+   * before it can happen anyway.
+   *
+   * An EMPTY array matches nothing and is honest: a tenant whose catalogue
+   * resolves no state in the asked group has no work order in it. `undefined`
+   * means the caller asked for no group at all.
+   */
+  readonly groupStates?: readonly string[] | undefined;
+  /**
+   * Inclusive bounds on the COMPLETION instant (Owner directive,
+   * P1-32-PRE-OD-UX) — the same value the row publishes as `completedAt`, not a
+   * second derivation of it.
+   *
+   * There is no `completed_at` column, so the predicate is applied to the
+   * lateral that computes the published value; see the statement below for why
+   * the derivation moved out of the SELECT list. A work order that is not
+   * currently in a terminal state has no completion instant, so a window
+   * NARROWS to finished work by construction — a bounded question about
+   * completions cannot be answered with a car that is still on the ramp.
+   */
+  readonly completedFrom?: Date | undefined;
+  /** Inclusive upper bound on the completion instant. */
+  readonly completedTo?: Date | undefined;
+  /**
+   * The codes a work order must be in for a COMPLETION WINDOW to return it,
+   * resolved by the service when either bound was sent.
+   *
+   * The same predicate `stateGroup: 'terminal'` uses — terminal AND NOT a
+   * cancellation — and NOT `terminalStates`, which is the wider set that dates
+   * `completedAt`. The two sets are deliberately different and the difference is
+   * the point: a cancellation is a terminal transition, so it HAS a dated
+   * instant and a row may honestly publish it, but "what was finished in
+   * September" must not answer with the cars that were abandoned in September.
+   * A window whose group disagreed with `stateGroup: 'terminal'` would give two
+   * controls on one board two different meanings for the same word.
+   *
+   * `undefined` when no bound was sent, which leaves the board unnarrowed.
+   */
+  readonly completionStates?: readonly string[] | undefined;
 }
 
 /**
@@ -772,6 +821,10 @@ export class WorkOrderRepository extends Repository {
       filter.awaitingQualityIds === undefined ? null : [...filter.awaitingQualityIds],
       filter.readyStates === undefined ? null : [...filter.readyStates],
       filter.matchNothing === true,
+      filter.groupStates === undefined ? null : [...filter.groupStates],
+      filter.completedFrom ?? null,
+      filter.completedTo ?? null,
+      filter.completionStates === undefined ? null : [...filter.completionStates],
     ];
     const keyset = keysetFragment(
       page,
@@ -823,21 +876,15 @@ export class WorkOrderRepository extends Repository {
               -- is no completed_at column and none is invented: the ledger knows,
               -- and the terminal CODES come from the service ($15) rather than
               -- from a second join onto wo.work_order_states.
-              -- ...and ONLY while the order is still IN one. A reopened work
-              -- order has a terminal transition in its ledger and is not
-              -- finished, so reading the ledger alone would report a completion
-              -- instant for a car back on the ramp. The CURRENT state decides
-              -- whether there is a completion at all; the ledger decides when it
-              -- was.
-              (CASE
-                 WHEN $15::text[] IS NOT NULL AND wo.work_orders.state = ANY($15::text[])
-                 THEN (SELECT max(h.occurred_at)
-                         FROM wo.work_order_status_history h
-                        WHERE h.tenant_id = wo.work_orders.tenant_id
-                          AND h.work_order_id = wo.work_orders.id
-                          AND h.to_state = ANY($15::text[]))
-                 ELSE NULL
-               END)                                      AS completed_at
+              --
+              -- Computed in the LATERAL below rather than inline here, because
+              -- the Owner directive (P1-32-PRE-OD-UX) added completedFrom /
+              -- completedTo and a WHERE clause cannot see a SELECT alias. The
+              -- alternative was to write the derivation twice — once to publish
+              -- it and once to filter on it — and two copies of one definition
+              -- is how a page ends up filtered by an instant different from the
+              -- one it displays.
+              completion.at                                   AS completed_at
          FROM wo.work_orders
          LEFT JOIN LATERAL (
            SELECT a.technician_profile_id, t.user_id
@@ -857,6 +904,28 @@ export class WorkOrderRepository extends Repository {
             ORDER BY a.valid_from DESC, a.id DESC
             LIMIT 1
          ) AS assignment ON true
+         -- The completion instant, ONE definition, used by the projection above
+         -- and by the completedFrom/completedTo window below.
+         --
+         -- Gated on the CURRENT state, not on the ledger alone. A reopened work
+         -- order has a terminal transition in its history and is not finished,
+         -- so the ledger by itself would report a completion for a car back on
+         -- the ramp. The current state decides whether there is a completion at
+         -- all; the ledger decides when it was.
+         --
+         -- max() over no rows is NULL and the subquery always returns exactly
+         -- one row, so this is a LEFT JOIN in name only — it never drops a work
+         -- order, it only leaves the instant null. That matters: an unfiltered
+         -- board must still list every open order.
+         LEFT JOIN LATERAL (
+           SELECT max(h.occurred_at) AS at
+             FROM wo.work_order_status_history h
+            WHERE h.tenant_id = wo.work_orders.tenant_id
+              AND h.work_order_id = wo.work_orders.id
+              AND $15::text[] IS NOT NULL
+              AND wo.work_orders.state = ANY($15::text[])
+              AND h.to_state = ANY($15::text[])
+         ) AS completion ON true
         WHERE tenant_id = $1 AND company_id = $2
           -- NULL is "every branch of the company", which only a caller the
           -- policies impose no branch narrowing on can reach.
@@ -954,6 +1023,28 @@ export class WorkOrderRepository extends Repository {
           -- FALSE and not an empty id list, because "no profile" and "no filter"
           -- are the same absence and must not be the same answer.
           AND NOT $21::boolean
+          -- stateGroup. The codes of the asked group, resolved by the service
+          -- from the live catalogue exactly as readyStates is. An EMPTY array
+          -- matches nothing, which is the honest answer for a tenant whose
+          -- catalogue holds no state in that group; NULL is "no group asked".
+          AND ($22::text[] IS NULL OR state = ANY($22::text[]))
+          -- completedFrom / completedTo, closed on both ends, over the SAME
+          -- lateral the row publishes as completedAt. A work order with no
+          -- completion instant has a NULL here and is excluded by either bound,
+          -- which is the intended narrowing rather than an accident of NULL
+          -- comparison: a window over completions cannot contain a work order
+          -- that has not been completed.
+          --
+          -- $25 is the second half of that narrowing and is NOT redundant. It is
+          -- the closed-and-not-cancelled set, resolved by the service whenever a
+          -- bound was sent, and it is what keeps an ABANDONED job out of a
+          -- window that asks what was finished — a cancellation is a terminal
+          -- transition, so it has a dated instant and would otherwise sit inside
+          -- the window. It is exactly the set stateGroup = terminal resolves,
+          -- so the two controls agree about the word.
+          AND ($25::text[] IS NULL OR state = ANY($25::text[]))
+          AND ($23::timestamptz IS NULL OR completion.at >= $23)
+          AND ($24::timestamptz IS NULL OR completion.at <= $24)
           ${keyset.predicate}
         ${keyset.order}
         ${keyset.limitClause}`,

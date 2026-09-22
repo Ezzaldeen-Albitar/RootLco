@@ -5766,5 +5766,8 @@
   "quality.closure.originatingJobHint": "The job this extra work was discovered on. Extra work is always recorded against the job it came out of.",
   "quality.closure.originatingJobNone": "This work order has no jobs yet, so there is nothing for extra work to be recorded against. Add a job to the work order first.",
   "quality.closure.originatingJobPlaceholder": "Choose a job",
-  "quality.closure.originatingJobUnknown": "The jobs on this work order have not been read yet. They appear here as soon as the work order has been read."
+  "quality.closure.originatingJobUnknown": "The jobs on this work order have not been read yet. They appear here as soon as the work order has been read.",
+  "form.violation.state_and_group_exclusive": "Choose either a single stage or a group of stages, not both. Clear one of them and search again.",
+  "form.violation.status_and_group_exclusive": "Choose either a single status or a group of statuses, not both. Clear one of them and search again.",
+  "form.violation.completion_window_inverted": "The finished-on dates are the wrong way round. The earlier date goes first and the later date second."
 }
