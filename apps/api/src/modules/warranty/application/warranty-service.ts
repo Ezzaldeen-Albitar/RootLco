@@ -56,7 +56,12 @@ import { appendAudit } from '@/server/audit/audit';
 import { publishEvent } from '@/server/events/publisher';
 import { isSqlState, sqlState, SQLSTATE } from '@/server/db/repository';
 import type { DbHandle } from '@/server/db/transaction';
-import { toEntitySearchTerms } from '@/shared/text/search-terms';
+import {
+  CUSTOMER_SEARCH_PERMISSION,
+  toEntitySearchTerms,
+  withoutCustomerArms,
+} from '@/shared/text/search-terms';
+import { callerHoldsPermissionAnywhere } from '@/server/auth/authorization';
 import type { ScopeAuthorizer } from '@/server/auth/authorization';
 import { deliveryModule } from '@/modules/delivery';
 import { workOrderModule, type LineRow } from '@/modules/work-order';
@@ -720,7 +725,7 @@ export class WarrantyService {
     const request: PageRequest = pageRequest(WARRANTY_ORDER, page);
     const result = await this.repository.listWarranties(
       db,
-      { ...filter, search: toEntitySearchTerms(filter.q) },
+      { ...filter, search: await searchTermsFor(db, filter.q) },
       request
     );
     const policies = new Map<string, WarrantyPolicyRow>(
@@ -1067,4 +1072,20 @@ export class WarrantyService {
       replayed,
     };
   }
+}
+
+/**
+ * Reduces the caller's box, with the customer arms switched off unless the
+ * caller may read customers (Owner directive, P1-32-PRE-OD-UX).
+ *
+ * One statement, once per request, and only when a box was actually sent — a
+ * list without `q` costs nothing. See `withoutCustomerArms` for the bound this
+ * leaves and why the other three arms need no gate.
+ */
+async function searchTermsFor(db: DbHandle, q: string | undefined) {
+  const terms = toEntitySearchTerms(q);
+  if (!terms.present) return terms;
+  return (await callerHoldsPermissionAnywhere(db, CUSTOMER_SEARCH_PERMISSION))
+    ? terms
+    : withoutCustomerArms(terms);
 }

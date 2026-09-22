@@ -18,7 +18,12 @@
 import { ApplicationService } from '@/server/layering';
 import { AppFailure } from '@/server/errors/app-failure';
 import type { DbHandle } from '@/server/db/transaction';
-import { toEntitySearchTerms } from '@/shared/text/search-terms';
+import {
+  CUSTOMER_SEARCH_PERMISSION,
+  toEntitySearchTerms,
+  withoutCustomerArms,
+} from '@/shared/text/search-terms';
+import { callerHoldsPermissionAnywhere } from '@/server/auth/authorization';
 import type { ScopeAuthorizer } from '@/server/auth/authorization';
 import { pageRequest, type Page } from '@/server/db/pagination';
 import {
@@ -93,7 +98,7 @@ export class ReceptionReadService extends ApplicationService {
         to: query.to,
         // Reduced in the APPLICATION layer rather than in the route, so every
         // caller of this service folds the box the same way.
-        search: toEntitySearchTerms(query.q),
+        search: await searchTermsFor(db, query.q),
       },
       pageRequest(RECEPTION_LIST_ORDERING, query)
     );
@@ -193,4 +198,20 @@ export class ReceptionReadService extends ApplicationService {
     await authorizeScope({ companyId: visit.companyId, branchId: visit.branchId });
     return visit;
   }
+}
+
+/**
+ * Reduces the caller's box, with the customer arms switched off unless the
+ * caller may read customers (Owner directive, P1-32-PRE-OD-UX).
+ *
+ * One statement, once per request, and only when a box was actually sent — a
+ * list without `q` costs nothing. See `withoutCustomerArms` for the bound this
+ * leaves and why the other three arms need no gate.
+ */
+async function searchTermsFor(db: DbHandle, q: string | undefined) {
+  const terms = toEntitySearchTerms(q);
+  if (!terms.present) return terms;
+  return (await callerHoldsPermissionAnywhere(db, CUSTOMER_SEARCH_PERMISSION))
+    ? terms
+    : withoutCustomerArms(terms);
 }

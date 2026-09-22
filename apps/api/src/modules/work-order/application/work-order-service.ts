@@ -130,8 +130,16 @@ export interface WorkOrderBoardSummary extends WorkOrderSummary {
    */
   readonly assignedTechnician: { readonly id: string; readonly displayName: string | null } | null;
   /**
-   * When the work order last entered a terminal state, or null while it is open.
-   * Read from the transition ledger, because no column records it.
+   * When the work order last entered a terminal state, or null whenever it is
+   * not currently IN one.
+   *
+   * Read from the transition ledger, because no column records it — and gated on
+   * the CURRENT state, because the ledger alone would answer the wrong question
+   * after a reopen: a work order that was closed and then put back on the ramp
+   * still has a terminal transition in its history, and reporting that instant
+   * would tell a board the car is finished while a technician is under it. The
+   * current state decides whether there is a completion at all; the ledger
+   * decides when it was.
    */
   readonly completedAt: string | null;
   /**

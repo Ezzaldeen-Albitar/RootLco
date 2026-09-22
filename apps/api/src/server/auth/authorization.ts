@@ -363,6 +363,34 @@ export async function callerHoldsPermissionTenantWide(
 }
 
 /**
+ * Whether the caller holds a permission code ANYWHERE in its tenant (Owner
+ * directive, P1-32-PRE-OD-UX).
+ *
+ * Scope-blind on purpose, and it is the right question for exactly one job: a
+ * free-text search box that can filter on another domain's data. The unified
+ * search on the reception, appointment, delivery and warranty lists matches a
+ * customer's display name and the tail of their phone number, both of which live
+ * in `crm.*`; the operation declaring only `rec.reception.read` must not turn
+ * into a way of probing the customer register.
+ *
+ * `iam.has_permission` rather than `iam.has_permission_in_scope`, because the
+ * question is "does this caller work with customer data at all", not "in this
+ * branch" — and the scoped form's company arm matches only a company-typed grant
+ * row, which would answer NO for the branch-scoped operator the whole feature is
+ * for. The answer is used ONLY to DISABLE two arms of a disjunction, so it can
+ * narrow a page and can never widen one.
+ */
+export async function callerHoldsPermissionAnywhere(
+  db: DbHandle,
+  permissionCode: string
+): Promise<boolean> {
+  const result = await db.query<{ allowed: boolean }>('SELECT iam.has_permission($1) AS allowed', [
+    permissionCode,
+  ]);
+  return result.rows[0]?.allowed === true;
+}
+
+/**
  * The CALLER's own effective approval ceiling for a limit type (P1-20-BE-006).
  *
  * An approval limit is an authorization fact — how much this actor may approve —

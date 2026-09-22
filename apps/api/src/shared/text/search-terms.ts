@@ -77,12 +77,58 @@ export interface EntitySearchTerms {
   readonly phoneDigits: string;
   /** Whether `phoneDigits` is long enough to be matched as a suffix. */
   readonly phoneSuffixEligible: boolean;
-  /** The plate rule — compared against `veh.plate_history.plate_normalized`. */
+  /**
+   * The plate rule, LIKE-escaped — compared against
+   * `veh.plate_history.plate_normalized`.
+   *
+   * ESCAPED, and that is not decoration. `normalizePlate` folds digits, strips
+   * the separators and uppercases, and deliberately KEEPS every other character
+   * so a jurisdiction plate written in Arabic letters survives — which means it
+   * also keeps `%` and `_`. Unescaped, a box of `%%` would reduce to `%%` and the
+   * arm would become `LIKE '%%%%'`: every row in the branch, returned by the one
+   * arm whose whole design is that an empty fragment disables it.
+   */
   readonly plateFragment: string;
-  /** The VIN rule — compared against `veh.vehicles.vin_normalized`. */
+  /**
+   * The VIN rule, LIKE-escaped — compared against `veh.vehicles.vin_normalized`.
+   *
+   * `normalizeVin` strips everything outside `[A-Z0-9]`, so no metacharacter can
+   * survive it and the escape is inert today. It is applied anyway: the five arms
+   * are read together, and one that is safe only because of a rule written in
+   * another file is a defect waiting for that rule to be relaxed.
+   */
   readonly vinFragment: string;
   /** Digits folded and LIKE-escaped — compared against a business reference number. */
   readonly referenceFragment: string;
+}
+
+/**
+ * The permission a caller needs before the box may match CUSTOMER data.
+ *
+ * The name and phone arms read `crm.business_partners` and `crm.contact_points`.
+ * An operation declaring only `rec.reception.read` must not become a way of
+ * probing the customer register, so those two arms are switched off for a caller
+ * who does not work with customers at all. The other three arms — plate, VIN and
+ * the paperwork number — are about the vehicle and the job, which the caller is
+ * already reading.
+ */
+export const CUSTOMER_SEARCH_PERMISSION = 'crm.customer.read';
+
+/**
+ * Switches off the two arms that read customer data.
+ *
+ * The bound this leaves is worth stating plainly, because it is what makes the
+ * arms safe rather than merely narrow even for a caller who DOES hold the code:
+ * the phone arm matches an exact stored value or a suffix of at least
+ * `MIN_PHONE_SUFFIX` digits and never a shorter tail, so it is a lookup and not
+ * an enumeration; and NEITHER arm ever puts customer data in the response — the
+ * page carries the reception, appointment, delivery or warranty row, and no name,
+ * number or contact point crosses the wire from these lists at all. The arms
+ * answer "is this row connected to the person I typed", never "who is this".
+ */
+export function withoutCustomerArms(terms: EntitySearchTerms): EntitySearchTerms {
+  if (!terms.present) return terms;
+  return { ...terms, nameFragment: '', phoneDigits: '', phoneSuffixEligible: false };
 }
 
 /** The terms of a request that carried no box. Every arm is off. */
@@ -122,8 +168,8 @@ export function toEntitySearchTerms(q: string | undefined): EntitySearchTerms {
     nameFragment: escapeLike(foldSearchText(q) ?? ''),
     phoneDigits,
     phoneSuffixEligible: phoneDigits.length >= MIN_PHONE_SUFFIX,
-    plateFragment: normalizePlate(q) ?? '',
-    vinFragment: normalizeVin(q) ?? '',
+    plateFragment: escapeLike(normalizePlate(q) ?? ''),
+    vinFragment: escapeLike(normalizeVin(q) ?? ''),
     referenceFragment: escapeLike(foldDigits(q.trim())),
   };
 }

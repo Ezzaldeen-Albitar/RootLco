@@ -143,7 +143,7 @@ export function searchFragment(
           FROM veh.plate_history ph
          WHERE ph.tenant_id = ${anchors.tenant}
            AND ph.vehicle_id = ${anchors.vehicleId}
-           AND ph.plate_normalized LIKE '%' || ${plate}::text || '%'))`
+           AND ph.plate_normalized LIKE '%' || ${plate}::text || '%' ESCAPE '\\'))`
   );
   arms.push(
     `(${vin}::text <> '' AND EXISTS (
@@ -151,7 +151,7 @@ export function searchFragment(
           FROM veh.vehicles v
          WHERE v.tenant_id = ${anchors.tenant}
            AND v.id = ${anchors.vehicleId}
-           AND v.vin_normalized LIKE '%' || ${vin}::text || '%'))`
+           AND v.vin_normalized LIKE '%' || ${vin}::text || '%' ESCAPE '\\'))`
   );
 
   return {

@@ -224,9 +224,22 @@ export async function GET(request: Request): Promise<Response> {
         }),
       };
     },
-    // `scopeTargetOption` can only make authorization STRICTER: a malformed or
-    // absent pair yields no target and the schema above then refuses. Tenant is
-    // never accepted from the client; it comes from the resolved principal.
+    // The pre-handler target, and what now stands behind it.
+    //
+    // `scopeTargetOption` reads the pair out of not-yet-validated input and
+    // yields a target only when BOTH are well-formed UUIDs, so it can only ever
+    // make authorization stricter (P1-18-A-01).
+    //
+    // What it can no longer do is carry the whole decision. Since the Owner
+    // directive (P1-32-PRE-OD-UX) an absent `branchId` is LEGAL, so an absent
+    // pair yields no target and this pre-handler check degrades to the
+    // scope-blind `iam.has_permission` — it is NOT refused by the schema any
+    // more, and a comment saying so would be describing the old contract. The
+    // decision for that request is made inside the transaction by
+    // `resolveAuthorizedBranches`, which evaluates this operation's declared
+    // codes once per candidate branch of the named company and refuses a caller
+    // that holds none. Tenant is never accepted from the client either way; it
+    // comes from the resolved principal.
     scopeTargetOption(raw)
   );
 }

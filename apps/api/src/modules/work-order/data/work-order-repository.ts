@@ -777,44 +777,45 @@ export class WorkOrderRepository extends Repository {
       db,
       `SELECT id, company_id, branch_id, reception_visit_id, vehicle_id, kind, state,
               parts_forward_state, display_number, opened_at, created_by, record_version,
-              -- Owner directive P1-32-PRE-OD-UX. Three correlated scalars rather
-              -- than three joins: a work order has many jobs and a job many
-              -- historical assignments, so a join would return the work order
-              -- once per row and turn a page of ten into a page of thirty.
-              (SELECT a.technician_profile_id
-                 FROM wo.job_assignments a
-                 JOIN wo.jobs j
-                   ON j.tenant_id = a.tenant_id AND j.id = a.job_id
-                  AND j.deleted_at IS NULL
-                WHERE a.tenant_id = wo.work_orders.tenant_id
-                  AND j.work_order_id = wo.work_orders.id
-                  -- LIVE assignment: the table is append-then-close, so an open
-                  -- valid_to is the fact, not a status anyone maintains.
-                  AND a.valid_to IS NULL
-                ORDER BY a.valid_from DESC, a.id DESC
-                LIMIT 1)                                   AS assigned_technician_profile_id,
-              (SELECT t.user_id
-                 FROM wo.job_assignments a
-                 JOIN wo.jobs j
-                   ON j.tenant_id = a.tenant_id AND j.id = a.job_id
-                  AND j.deleted_at IS NULL
-                 JOIN tech.technician_profiles t
-                   ON t.tenant_id = a.tenant_id AND t.id = a.technician_profile_id
-                WHERE a.tenant_id = wo.work_orders.tenant_id
-                  AND j.work_order_id = wo.work_orders.id
-                  AND a.valid_to IS NULL
-                ORDER BY a.valid_from DESC, a.id DESC
-                LIMIT 1)                                   AS assigned_technician_user_id,
+              -- Owner directive P1-32-PRE-OD-UX. The board facts are read as
+              -- correlated scalars and one LATERAL, never as plain joins: a work
+              -- order has many jobs and a job many historical assignments, so a
+              -- join would return the work order once per row and turn a page of
+              -- ten into a page of thirty.
+              --
+              -- BOTH halves of the assignment come from ONE row. Two independent
+              -- scalars is what this was, and two scalars can name two different
+              -- assignments: the id arm did not join the technician register and
+              -- the name arm did, so a live assignment whose profile had been
+              -- soft-deleted or retired was skipped by one and not the other, and
+              -- the board would have shown one technician id beside another
+              -- technician name.
+              --
+              -- The register is filtered in that same row - not deleted, still
+              -- active - so an assignment held by a retired technician reads as
+              -- NO current assignment rather than as an assignment to somebody
+              -- the register says has gone.
+              assignment.technician_profile_id                AS assigned_technician_profile_id,
+              assignment.user_id                              AS assigned_technician_user_id,
               -- The instant this work order last entered a terminal state. There
               -- is no completed_at column and none is invented: the ledger knows,
               -- and the terminal CODES come from the service ($15) rather than
               -- from a second join onto wo.work_order_states.
-              (SELECT max(h.occurred_at)
-                 FROM wo.work_order_status_history h
-                WHERE h.tenant_id = wo.work_orders.tenant_id
-                  AND h.work_order_id = wo.work_orders.id
-                  AND $15::text[] IS NOT NULL
-                  AND h.to_state = ANY($15::text[]))       AS completed_at,
+              -- ...and ONLY while the order is still IN one. A reopened work
+              -- order has a terminal transition in its ledger and is not
+              -- finished, so reading the ledger alone would report a completion
+              -- instant for a car back on the ramp. The CURRENT state decides
+              -- whether there is a completion at all; the ledger decides when it
+              -- was.
+              (CASE
+                 WHEN $15::text[] IS NOT NULL AND wo.work_orders.state = ANY($15::text[])
+                 THEN (SELECT max(h.occurred_at)
+                         FROM wo.work_order_status_history h
+                        WHERE h.tenant_id = wo.work_orders.tenant_id
+                          AND h.work_order_id = wo.work_orders.id
+                          AND h.to_state = ANY($15::text[]))
+                 ELSE NULL
+               END)                                      AS completed_at,
               -- A recorded column, not a derived label.
               (SELECT q.overall_result
                  FROM qms.quality_control_records q
@@ -824,6 +825,24 @@ export class WorkOrderRepository extends Repository {
                 ORDER BY q.created_at DESC, q.id DESC
                 LIMIT 1)                                   AS quality_state
          FROM wo.work_orders
+         LEFT JOIN LATERAL (
+           SELECT a.technician_profile_id, t.user_id
+             FROM wo.job_assignments a
+             JOIN wo.jobs j
+               ON j.tenant_id = a.tenant_id AND j.id = a.job_id
+              AND j.deleted_at IS NULL
+             JOIN tech.technician_profiles t
+               ON t.tenant_id = a.tenant_id AND t.id = a.technician_profile_id
+              AND t.deleted_at IS NULL
+              AND t.is_active
+            WHERE a.tenant_id = wo.work_orders.tenant_id
+              AND j.work_order_id = wo.work_orders.id
+              -- LIVE assignment: the table is append-then-close, so an open
+              -- valid_to is the fact, not a status anyone maintains.
+              AND a.valid_to IS NULL
+            ORDER BY a.valid_from DESC, a.id DESC
+            LIMIT 1
+         ) AS assignment ON true
         WHERE tenant_id = $1 AND company_id = $2
           -- NULL is "every branch of the company", which only a caller the
           -- policies impose no branch narrowing on can reach.
@@ -877,13 +896,13 @@ export class WorkOrderRepository extends Repository {
                     FROM veh.plate_history ph
                    WHERE ph.tenant_id = wo.work_orders.tenant_id
                      AND ph.vehicle_id = wo.work_orders.vehicle_id
-                     AND ph.plate_normalized LIKE '%' || $13::text || '%'))
+                     AND ph.plate_normalized LIKE '%' || $13::text || '%' ESCAPE '\\'))
              OR ($14::text <> '' AND EXISTS (
                   SELECT 1
                     FROM veh.vehicles v
                    WHERE v.tenant_id = wo.work_orders.tenant_id
                      AND v.id = wo.work_orders.vehicle_id
-                     AND v.vin_normalized LIKE '%' || $14::text || '%'))))
+                     AND v.vin_normalized LIKE '%' || $14::text || '%' ESCAPE '\\'))))
           -- Owner directive P1-32-PRE-OD-UX. Each flag is FALSE when the caller
           -- did not ask, so an unasked filter contributes nothing; each one that
           -- IS asked is backed by a column or a row the schema really keeps.
@@ -903,6 +922,10 @@ export class WorkOrderRepository extends Repository {
                   FROM wo.additional_work_requests r
                  WHERE r.tenant_id = wo.work_orders.tenant_id
                    AND r.work_order_id = wo.work_orders.id
+                   -- Every other read of this table filters the tombstone, and a
+                   -- withdrawn request must not pin a work order in a queue
+                   -- called "awaiting approval" forever.
+                   AND r.deleted_at IS NULL
                    AND r.state = 'pending'))
           AND (NOT $19::boolean OR EXISTS (
                 SELECT 1
