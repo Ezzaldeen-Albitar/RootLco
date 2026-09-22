@@ -291,11 +291,12 @@ function CreateDialog({
   /*
    * The companies this operator may act in, BY NAME.
    *
-   * `companyIds` is still accepted by this component so the page did not have
-   * to change, and is no longer read here: it carries bare references and no
-   * names, and an empty one means unrestricted rather than none — the two facts
-   * that produced the reference select and the free-text fallback this control
-   * used to offer.
+   * What this replaced was the session's `companyIds`: bare references with no
+   * names, whose EMPTY state meant unrestricted rather than none. Those two
+   * facts together produced the two controls this screen used to offer — a
+   * select over strings nobody can read, and a free-text box for the operator
+   * with the widest reach. The prop is gone from this component and from its
+   * page; the working context is the only source now.
    */
   const { companies: workingCompanies } = useWorkingContext();
   const [companyId, setCompanyId] = useState(workingCompanies[0]?.id ?? '');

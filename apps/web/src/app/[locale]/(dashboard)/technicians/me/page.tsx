@@ -76,8 +76,6 @@ export default async function TechnicianWorkspacePage({
         <TechnicianWorkspaceScreen
           locale={locale}
           messages={messages}
-          companyIds={session.companyIds}
-          branchIds={session.branchIds}
           capabilities={{
             canRecordLabor: holds(session.permissions, TECHNICIAN_WORKSPACE_PERMISSIONS.labor),
             canCorrectLabor: holds(

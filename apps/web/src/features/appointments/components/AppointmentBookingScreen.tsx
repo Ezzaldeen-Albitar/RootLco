@@ -77,12 +77,6 @@ export function AppointmentBookingScreen({
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
-  /**
-   * The session's bare references. Accepted so the page did not have to change,
-   * and no longer read: the branch is the working context's named selection.
-   */
-  readonly companyIds?: readonly string[];
-  readonly branchIds?: readonly string[];
   /** `apt.catalogue-appointment-type-list`, read once on the server. */
   readonly types: IntakeCatalogueResult;
   /** `apt.catalogue-source-channel-list`, read once on the server. */
