@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { PUBLISHED_OPERATIONS } from '@/lib/api/idempotent-operations';
 import { requiresIdempotencyKey, resolveOperation } from '@/lib/api/operation-contract';
 import {
@@ -25,6 +25,7 @@ import {
   refusalRequiresPartner,
 } from '@/features/receptions/receptions-contract';
 import { CUSTOMER_VEHICLE_LIST_OPERATION } from '@/lib/customers/vehicles-contract';
+import type { ReceptionListEntry } from '@/features/receptions/receptions-contract';
 
 /**
  * The QA-001 contract mirror for the reception module (P1-28, Wave A), plus
@@ -35,6 +36,24 @@ import { CUSTOMER_VEHICLE_LIST_OPERATION } from '@/lib/customers/vehicles-contra
  * directions, so a new `rec.*` operation fails here until this layer covers
  * it, and an invented row fails immediately.
  */
+
+/**
+ * The board adapter is exercised here too (Owner directive, P1-32-PRE-OD-UX).
+ *
+ * A DOM test of the queue screen mocks `@/features/receptions/api` wholesale, so
+ * it exercises the screen and CANNOT exercise the adapter — the note
+ * `work-orders-queue-api.test.ts` carries, for the same reason. Only the HTTP
+ * client is mocked here, so the criteria really are serialised and the row
+ * really is carried through.
+ *
+ * Mocking `server-client` at module scope is inert for the rest of this file:
+ * nothing else in it imports the client.
+ */
+const get = vi.fn();
+vi.mock('@/lib/api/server-client', () => ({
+  authorizedClient: async () => ({ get }) as unknown,
+}));
+const { listReceptions } = await import('@/features/receptions/api');
 
 const OPENAPI = JSON.parse(
   readFileSync(join(process.cwd(), '..', '..', 'docs', 'api', 'openapi.v1.json'), 'utf8')
@@ -430,5 +449,121 @@ describe('the vocabularies keep the server distinctions', () => {
     expect([MIN_SOC_PERCENT, MAX_SOC_PERCENT]).toEqual([0, 100]);
     expect([MIN_COORD, MAX_COORD]).toEqual([0, 1]);
     expect(MAX_CLOSURE_REASON).toBe(500);
+  });
+});
+
+describe('the board adapter sends the criteria and carries the row through', () => {
+  const TARGET = {
+    companyId: '11111111-1111-4111-8111-111111111111',
+    branchId: '22222222-2222-4222-8222-222222222222',
+  } as const;
+  const REQUEST = { pageSize: 25 } as never;
+  const PARTNER = '66666666-6666-4666-8666-666666666666';
+
+  /** One published row. Every field is one the backend really returns. */
+  const ROW: ReceptionListEntry = {
+    id: '33333333-3333-4333-8333-333333333333',
+    displayNumber: 'R-000123',
+    receptionStatus: 'opened',
+    origin: 'walk_in',
+    vehicleId: '55555555-5555-4555-8555-555555555555',
+    vehicleDisplayNumber: 'V-9',
+    custodyAcceptedAt: '2026-09-01T09:30:00.000Z',
+    custodyReleasedAt: null,
+    recordVersion: 1,
+    customer: { id: PARTNER, displayName: 'A registered partner' },
+    plate: 'AB 1234',
+  };
+
+  const ok = (data: unknown) => ({ ok: true as const, data, correlationId: 'corr-1' });
+
+  beforeEach(() => {
+    get.mockReset();
+  });
+
+  it('sends statusGroup when it was chosen', async () => {
+    get.mockResolvedValue(ok({ items: [], nextCursor: null, hasMore: false }));
+
+    await listReceptions(TARGET, { statusGroup: 'finished' }, REQUEST, null);
+
+    const url = new URL(`https://api.invalid${String(get.mock.calls[0]?.[0])}`);
+    expect(url.searchParams.get('statusGroup')).toBe('finished');
+    // `statusGroup` and `status` are mutually exclusive at the backend, which
+    // answers 422 rather than intersecting them, so this criteria object sent
+    // one and not the other.
+    expect(url.searchParams.get('status')).toBeNull();
+  });
+
+  it('omits statusGroup that was not chosen rather than sending it empty', async () => {
+    get.mockResolvedValue(ok({ items: [], nextCursor: null, hasMore: false }));
+
+    await listReceptions(TARGET, {}, REQUEST, null);
+
+    const path = String(get.mock.calls[0]?.[0]);
+    // `.strict()` at the backend makes an empty-but-present parameter a 422,
+    // not a silent ignore, so "not sent" has to mean not sent.
+    expect(path).not.toContain('statusGroup=');
+    expect(path).not.toContain('status=');
+  });
+
+  it('carries the customer block and the plate through unchanged', async () => {
+    get.mockResolvedValue(ok({ items: [ROW], nextCursor: null, hasMore: false }));
+
+    const result = await listReceptions(TARGET, {}, REQUEST, null);
+
+    expect(result.status).toBe('ok');
+    // Field by field rather than a reference comparison: `toBe` on the same
+    // object would pass even if the adapter rebuilt the row and dropped half of
+    // it, because it would be comparing the fixture to itself.
+    expect(result.rows[0]).toEqual(ROW);
+    expect(result.rows[0]?.customer).toEqual({ id: PARTNER, displayName: 'A registered partner' });
+    expect(result.rows[0]?.plate).toBe('AB 1234');
+  });
+
+  it('renders a withheld name and an absent customer or plate as null', async () => {
+    // Three REAL states of the data, not error cases: a caller without
+    // `crm.customer.read` is told the role and not the name; a visit may name no
+    // service requester at all; a registered vehicle may carry no plate.
+    get.mockResolvedValue(
+      ok({
+        items: [
+          { ...ROW, customer: { id: PARTNER, displayName: null } },
+          { ...ROW, id: 'rv-2', customer: null, plate: null },
+        ],
+        nextCursor: null,
+        hasMore: false,
+      })
+    );
+
+    const result = await listReceptions(TARGET, {}, REQUEST, null);
+
+    expect(result.rows[0]?.customer).toEqual({ id: PARTNER, displayName: null });
+    expect(result.rows[1]?.customer).toBeNull();
+    expect(result.rows[1]?.plate).toBeNull();
+  });
+});
+
+/**
+ * The mirror gate for the status groups (Owner directive, P1-32-PRE-OD-UX).
+ *
+ * Held against the backend source as TEXT, for the reason the lifecycle mirror
+ * above is held against the migration: `apps/web` may never import `apps/api`,
+ * and a vocabulary copied by hand is only a mirror while something checks it.
+ */
+describe('RECEPTION_STATUS_GROUPS mirrors the backend vocabulary', () => {
+  it('states exactly the groups the reception domain exports', () => {
+    const domain = readFileSync(
+      join(process.cwd(), '..', 'api', 'src', 'modules', 'reception', 'domain', 'reception.ts'),
+      'utf8'
+    );
+    const declaration = /export const RECEPTION_STATUS_GROUPS = \[([^\]]*)\] as const;/.exec(
+      domain
+    );
+    expect(declaration, 'RECEPTION_STATUS_GROUPS was renamed, moved or reshaped').not.toBeNull();
+    const members = [...declaration![1]!.matchAll(/'([^']+)'/g)].map((match) => match[1]);
+    // Anti-vacuity: an expression matching an empty group would compare two
+    // empty lists and report clean.
+    expect(members.length, 'no member was read out of the backend vocabulary').toBe(2);
+    expect([...RECEPTION_STATUS_GROUPS]).toEqual(members);
   });
 });

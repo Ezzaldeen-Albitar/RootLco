@@ -42,8 +42,10 @@ export const WORK_ORDER_PERMISSIONS = {
  * `ck_work_orders_kind`, mirrored. Two values, closed.
  *
  * Mirrored rather than imported: `apps/web` may not import from `apps/api`, and
- * `tests/work-orders-contract.test.ts` holds this array against the route source
- * so a third kind added in the Backend fails a test rather than a reviewer.
+ * `tests/work-orders-queue-api.test.ts` holds this array against the backend
+ * domain source so a third kind added in the Backend fails a test rather than a
+ * reviewer. That gate is real as of the Owner directive (P1-32-PRE-OD-UX); this
+ * sentence named a file that did not exist before it.
  */
 export const WORK_ORDER_KINDS = ['ordinary', 'rework'] as const;
 export type WorkOrderKind = (typeof WORK_ORDER_KINDS)[number];
