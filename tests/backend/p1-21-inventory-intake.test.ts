@@ -44,6 +44,7 @@ import {
   BRANCH_A2,
   BRANCH_B1,
   COMPANY_B1,
+  advance,
   createOpenWorkOrder,
   establishP1_19Fixtures,
 } from './p1-19-helpers';
@@ -56,6 +57,7 @@ import {
   ITEM_A,
   ITEM_A_ALT,
   ITEM_A_ARCHIVED,
+  ITEM_A_UNTRACKED,
   QUARANTINE_A1,
   STORAGE_A1,
   WAREHOUSE_A1,
@@ -112,6 +114,12 @@ const approveCall = (batchId: string, key = randomUUID()): Promise<Response> =>
   );
 
 const bodyOf = async <T>(response: Response): Promise<T> => (await response.json()) as T;
+
+/** The problem document, as far as the refusal-token cases at the foot read it. */
+interface Problem {
+  readonly code?: string;
+  readonly violations?: readonly { readonly path?: string; readonly rule?: string }[];
+}
 
 const newBatch = async (branchId = BRANCH_A1): Promise<string> => {
   const response = await post(BATCH_CREATE, '/api/v1/opening-inventory-batches', {
@@ -916,5 +924,149 @@ describe('opening approval publishes its movements, and tenancy is proved on rea
     );
     expect(Number(stillThere.rows[0]?.n)).toBe(1);
     await admin.query(`DELETE FROM inv.opening_inventory_batches WHERE id = $1`, [tenantBBatch]);
+  });
+});
+
+/**
+ * The refusal TOKENS the intake commands publish, driven through their routes.
+ *
+ * The third of the three blocks that pin `STOCK_REFUSAL_RULES` on the wire — the
+ * others close `p1-21-inventory-stock.test.ts` and
+ * `p1-32-inventory-operations.test.ts`. Every one of those tokens carries a
+ * sentence in the web catalogue and not one had a backend case driving it, so a
+ * renamed token or a moved path would have changed the sentence an operator
+ * reads with nothing failing.
+ */
+describe('the intake refusal tokens, on the wire', () => {
+  it('names an opening line counted into another branch', async () => {
+    authAs(INV_FULL);
+    const batch = await newBatch();
+    authAs(INV_FULL);
+    const response = await lineCall(batch, {
+      itemId: ITEM_A,
+      locationId: WAREHOUSE_A2,
+      quantity: '1.000',
+    });
+    expect(response.status).toBe(409);
+    const problem = await bodyOf<Problem>(response);
+    expect(problem.code).toBe('ERR-TRN-001');
+    expect(problem.violations?.[0]?.path).toBe('body.locationId');
+    expect(problem.violations?.[0]?.rule).toBe('stock_location_other_branch');
+  });
+
+  it('names an opening line counted into a quarantine cell', async () => {
+    authAs(INV_FULL);
+    const batch = await newBatch();
+    authAs(INV_FULL);
+    const response = await lineCall(batch, {
+      itemId: ITEM_A,
+      locationId: QUARANTINE_A1,
+      quantity: '1.000',
+    });
+    expect(response.status).toBe(409);
+    const problem = await bodyOf<Problem>(response);
+    expect(problem.code).toBe('ERR-TRN-001');
+    expect(problem.violations?.[0]?.path).toBe('body.locationId');
+    expect(problem.violations?.[0]?.rule).toBe('stock_location_quarantine');
+  });
+
+  // No case for `stock_location_not_active`: no operation deactivates a cell —
+  // `inv.stock-location-create` is the only write to `inv.stock_locations` and it
+  // always lands `active` — so the precondition is unreachable through the API and
+  // a case for it would have to be manufactured with an admin UPDATE behind the
+  // operations. It is listed as unreachable rather than contrived.
+
+  // The two item refusals are separate cases because they are separate causes and
+  // the sentences differ: one says the part is retired, the other says stock is
+  // not counted for it and asks for counting to be turned on. Said of a retired
+  // part the second is an instruction that fixes nothing.
+  it('names an opening line for a retired item', async () => {
+    authAs(INV_FULL);
+    const batch = await newBatch();
+    authAs(INV_FULL);
+    const response = await lineCall(batch, {
+      itemId: ITEM_A_ARCHIVED,
+      locationId: WAREHOUSE_A1,
+      quantity: '1.000',
+    });
+    expect(response.status).toBe(409);
+    const problem = await bodyOf<Problem>(response);
+    expect(problem.code).toBe('ERR-TRN-001');
+    expect(problem.violations?.[0]?.path).toBe('body.itemId');
+    expect(problem.violations?.[0]?.rule).toBe('stock_item_archived');
+  });
+
+  it('names an opening line for an item stock is not kept for', async () => {
+    authAs(INV_FULL);
+    const batch = await newBatch();
+    authAs(INV_FULL);
+    const response = await lineCall(batch, {
+      itemId: ITEM_A_UNTRACKED,
+      locationId: WAREHOUSE_A1,
+      quantity: '1.000',
+    });
+    expect(response.status).toBe(409);
+    const problem = await bodyOf<Problem>(response);
+    expect(problem.code).toBe('ERR-TRN-001');
+    expect(problem.violations?.[0]?.path).toBe('body.itemId');
+    expect(problem.violations?.[0]?.rule).toBe('stock_item_not_tracked');
+  });
+
+  it('names an opening batch approved with nothing counted into it', async () => {
+    authAs(INV_FULL);
+    const batch = await newBatch();
+    authAs(INV_APPROVER);
+    const response = await approveCall(batch);
+    expect(response.status).toBe(409);
+    const problem = await bodyOf<Problem>(response);
+    expect(problem.code).toBe('ERR-TRN-001');
+    expect(problem.violations?.[0]?.path).toBe('body');
+    expect(problem.violations?.[0]?.rule).toBe('stock_opening_batch_empty');
+  });
+
+  it('names an approved opening batch that can no longer be rewritten', async () => {
+    // A cell of its own: `uq_stock_movements_opening_cell` allows exactly one
+    // opening movement per (item, location), and the shared fixture cells have
+    // been opened by earlier cases in this file.
+    const cell = await freshLocation();
+    authAs(INV_FULL);
+    const batch = await newBatch();
+    authAs(INV_FULL);
+    expect(
+      (await lineCall(batch, { itemId: ITEM_A, locationId: cell, quantity: '1.000' })).status
+    ).toBe(201);
+    authAs(INV_APPROVER);
+    expect((await approveCall(batch)).status).toBe(200);
+
+    authAs(INV_FULL);
+    const response = await lineCall(batch, {
+      itemId: ITEM_A_ALT,
+      locationId: cell,
+      quantity: '1.000',
+    });
+    expect(response.status).toBe(409);
+    const problem = await bodyOf<Problem>(response);
+    expect(problem.code).toBe('ERR-TRN-001');
+    expect(problem.violations?.[0]?.path).toBe('body');
+    expect(problem.violations?.[0]?.rule).toBe('stock_opening_batch_frozen');
+  });
+
+  it('names a work order that is finished and takes no more parts', async () => {
+    const order = await createOpenWorkOrder();
+    await advance(order.workOrderId, [
+      { toState: 'cancelled', reason: 'Customer took the vehicle away' },
+    ]);
+    authAs(INV_FULL);
+    const response = await post(CUSTOMER_PART, '/api/v1/customer-supplied-parts', {
+      workOrderId: order.workOrderId,
+      description: 'Customer-supplied alternator',
+      quantity: '1.000',
+      itemRef: ITEM_A,
+    });
+    expect(response.status).toBe(409);
+    const problem = await bodyOf<Problem>(response);
+    expect(problem.code).toBe('ERR-TRN-001');
+    expect(problem.violations?.[0]?.path).toBe('body.workOrderId');
+    expect(problem.violations?.[0]?.rule).toBe('stock_work_order_closed');
   });
 });

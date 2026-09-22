@@ -256,12 +256,23 @@ export class InventoryIntakeService {
     if (!item) {
       throw new AppFailure('ERR-RES-001', { message: `Item ${input.itemId} was not found` });
     }
-    if (!item.isStockTracked || item.lifecycleStatus !== 'active') {
+    // Two causes, two tokens, as `requireStockTrackedItem` already separates them
+    // for the stock operations. Collapsed into one they told the counter "stock is
+    // not counted for this part — ask for stock counting to be turned on for it"
+    // about a RETIRED part, where turning stock counting on is neither the problem
+    // nor the remedy. The lifecycle is checked first because it is the stronger
+    // fact: an archived part is refused whatever its tracking flag says.
+    if (item.lifecycleStatus !== 'active') {
       refuseInventoryState(
-        'stock_item_not_tracked',
-        `Item ${item.sku} is not an active stock-tracked item`,
+        'stock_item_archived',
+        `Item ${item.sku} is archived and cannot take an opening balance`,
         { path: 'body.itemId' }
       );
+    }
+    if (!item.isStockTracked) {
+      refuseInventoryState('stock_item_not_tracked', `Item ${item.sku} is not stock-tracked`, {
+        path: 'body.itemId',
+      });
     }
 
     let line: { id: string };

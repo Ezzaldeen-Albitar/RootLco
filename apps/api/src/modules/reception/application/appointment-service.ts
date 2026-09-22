@@ -466,6 +466,12 @@ export class AppointmentService extends ApplicationService {
    * by the call site, which is the layer that knows which request field it was
    * validating. Inventing a path inside the domain would be worse than passing
    * one in: it would be a guess presented as a contract.
+   *
+   * The TOKEN, by contrast, comes from the domain, because the domain is the only
+   * layer that knows which of the three window rules refused. All three used to
+   * arrive as `invalid_value`, which reads "check the choices, the length and the
+   * range" — untrue of every one of them, and actively misleading for a missing
+   * time zone, which is not visible in the entry at all.
    */
   private planOrFail<T>(build: () => T, path: string): T {
     try {
@@ -474,7 +480,7 @@ export class AppointmentService extends ApplicationService {
       if (error instanceof AppointmentRuleError) {
         throw new AppFailure('ERR-VAL-001', {
           message: error.message,
-          safeDetails: { violations: [{ path, rule: 'invalid_value' }] },
+          safeDetails: { violations: [{ path, rule: error.rule }] },
           cause: error,
         });
       }

@@ -6633,6 +6633,8 @@
       ],
       "missingEvidence": [],
       "tests": [
+        "tests/backend/p1-21-inventory-intake.test.ts",
+        "tests/backend/p1-21-inventory-stock.test.ts",
         "tests/backend/p1-30-inventory-master-data.test.ts",
         "tests/backend/p1-31-provisioning-bundle.test.ts"
       ],
