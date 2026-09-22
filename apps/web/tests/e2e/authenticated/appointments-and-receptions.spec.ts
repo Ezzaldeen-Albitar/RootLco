@@ -1500,15 +1500,47 @@ test.describe('check-in can originate from an appointment', () => {
       'the walk-in requester control survived the switch to an appointment origin'
     ).toHaveCount(0);
 
-    // No branch target yet, so the picker must not be usable and must SAY why
-    // rather than answering an empty list the operator would read as "none".
+    /*
+     * The picker must not answer before it is addressed to a branch — an empty
+     * list read WITHOUT a branch is one an operator would take for "this
+     * customer has no appointments".
+     *
+     * Which state the principal starts in is a property of the BOOTSTRAP, not
+     * of this screen, and both are correct, so both are asserted rather than
+     * one being assumed:
+     *
+     *   - several authorized branches, none chosen yet — the picker is
+     *     unavailable and the screen says why;
+     *   - exactly one — it is chosen for them before the page paints, so the
+     *     picker is ALREADY usable and the header names where it will read.
+     *
+     * The earlier version asserted only the first, which the single-branch
+     * acceptance principal can no longer enter: the pair used to be two empty
+     * controls on this form, and it is now a selection the shell makes.
+     */
     const load = page.getByRole('button', {
       name: say('en', 'receptions.checkIn.loadAppointments'),
     });
-    await expect(load, 'the appointment picker was usable with no branch named').toBeDisabled();
-    await expect(page.getByRole('main')).toContainText(say('en', 'receptions.checkIn.targetFirst'));
-
     const before = posts.length;
+
+    if ((await page.getByTestId('working-context-select').count()) > 0) {
+      await expect(load, 'the appointment picker was usable with no branch named').toBeDisabled();
+      await expect(page.getByRole('main')).toContainText(
+        say('en', 'receptions.checkIn.targetFirst')
+      );
+    } else {
+      const named = page.getByTestId('working-context-single');
+      await expect(named, 'the header named no branch for a single-branch account').toBeVisible();
+      expect(
+        (await named.innerText()).trim().length,
+        'the header named a branch with no name'
+      ).toBeGreaterThan(0);
+      await expect(
+        load,
+        'a branch chosen for the operator still left the appointment picker unusable'
+      ).toBeEnabled();
+    }
+
     await workInBranch(page, BRANCH_A);
     await expect(load, 'a named branch target did not enable the picker').toBeEnabled();
     await expect(
