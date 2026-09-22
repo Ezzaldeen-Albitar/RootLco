@@ -343,6 +343,27 @@ beforeAll(async () => {
   });
 
   // --- Owner directive P1-32-PRE-OD-UX -------------------------------------
+  // Owner directive P1-32-PRE-OD-UX: the search box's NAME and PHONE arms read
+  // `crm.*` and are switched off for a caller that does not work with customers.
+  // Granted on this principal's own role, additively, so no shared fixture moves.
+  await admin.query(
+    `INSERT INTO iam.role_permissions (tenant_id, role_id, permission_id, effect, created_by)
+     SELECT $1,$2,id,'allow',$3 FROM iam.permissions WHERE permission_code = 'crm.customer.read'
+     ON CONFLICT DO NOTHING`,
+    [TENANT_A, SAL_READER.roleId, USER_A]
+  );
+  await admin.query(
+    `INSERT INTO iam.role_permissions (tenant_id, role_id, permission_id, effect, created_by)
+     SELECT $1,$2,id,'allow',$3 FROM iam.permissions WHERE permission_code = 'crm.customer.read'
+     ON CONFLICT DO NOTHING`,
+    [TENANT_A, SAL_FULL.roleId, USER_A]
+  );
+  await admin.query(
+    `INSERT INTO iam.role_permissions (tenant_id, role_id, permission_id, effect, created_by)
+     SELECT $1,$2,id,'allow',$3 FROM iam.permissions WHERE permission_code = 'crm.customer.read'
+     ON CONFLICT DO NOTHING`,
+    [TENANT_A, SAL_PERMISSION_ELSEWHERE.roleId, USER_A]
+  );
   await admin.query(
     `INSERT INTO org.branches (id, tenant_id, company_id, branch_code, name, timezone_name, created_by)
      VALUES ($1,$2,$3,'branch_od_del','Fixture Branch OD Delivery','UTC',$4)

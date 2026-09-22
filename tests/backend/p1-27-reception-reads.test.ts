@@ -47,6 +47,7 @@ import {
   runtimeAppPool,
 } from './helpers';
 import { __setPrimaryPoolForTests } from '@/server/db/pool';
+import { __resetRateLimitForTests } from '@/server/http/rate-limit';
 import {
   StaticClaimsAuthenticator,
   __resetAuthenticatorForTests,
@@ -156,6 +157,11 @@ const FULL_PERMISSIONS = [
   'rec.reception.convert',
   'rec.reception.read',
   'iam.sensitive.view',
+  // Owner directive P1-32-PRE-OD-UX. The search box's NAME and PHONE arms read
+  // `crm.*`, so they are switched off for a caller that does not work with
+  // customers at all. A receptionist who searches the board by customer name
+  // does, and this is the shape that principal really has.
+  'crm.customer.read',
 ];
 
 interface Item {
@@ -446,7 +452,8 @@ beforeAll(async () => {
             ('rec.reception.approve','rec','Approve a reception visit for work','high',$1),
             ('rec.reception.convert','rec','Convert an approved reception into a work order','high',$1),
             ('rec.reception.read','rec','Read reception visits, parties, authorizations, condition evidence and custody history','low',$1),
-            ('veh.vehicle.read','veh','Search and read vehicles in the caller tenant','low',$1)
+            ('veh.vehicle.read','veh','Search and read vehicles in the caller tenant','low',$1),
+            ('crm.customer.read','crm','Search and read customers in the tenant','low',$1)
      ON CONFLICT (permission_code) DO NOTHING`,
     [USER_A]
   );
@@ -604,7 +611,13 @@ beforeAll(async () => {
   __setPrimaryPoolForTests(runtime);
 });
 
-afterEach(() => __resetAuthenticatorForTests());
+afterEach(() => {
+  __resetAuthenticatorForTests();
+  // `rec.reception-list` carries the `expensive-read` policy and the Owner
+  // directive cases (P1-32-PRE-OD-UX) each make several list calls; without this
+  // a later case answers 429 and the failure reads as a broken filter.
+  __resetRateLimitForTests();
+});
 afterAll(async () => {
   __setPrimaryPoolForTests(undefined);
   if (runtime) await runtime.end();
@@ -1405,6 +1418,54 @@ describe('the reception search box', () => {
     expect(number).not.toBeNull();
     const ids = await search((number as string).slice(-4));
     expect(ids).toContain(namedVisitId);
+  });
+
+  it('switches the NAME and PHONE arms off for a caller who may not read customers', async () => {
+    // Both arms read `crm.business_partners` / `crm.contact_points`, so an
+    // operation declaring only `rec.reception.read` must not become a way of
+    // probing the customer register. The gate is `crm.customer.read` held
+    // ANYWHERE in the tenant, and it can only ever DISABLE arms.
+    //
+    // Proved in both directions on one principal, because a one-sided assertion
+    // would pass just as well against a box that never matched anything.
+    expect(await search('khatib')).toContain(namedVisitId);
+    expect(await search('٠١١٢٢٣٣')).toContain(namedVisitId);
+
+    const permission = await admin.query<{ id: string }>(
+      `DELETE FROM iam.role_permissions
+        WHERE tenant_id = $1 AND role_id = $2
+          AND permission_id = (SELECT id FROM iam.permissions WHERE permission_code = 'crm.customer.read')
+        RETURNING permission_id AS id`,
+      [TENANT_A, ROLE_FULL]
+    );
+    expect(permission.rowCount, 'the fixture never granted crm.customer.read').toBe(1);
+    try {
+      // The two customer arms now match nothing...
+      expect(await search('khatib')).toEqual([]);
+      expect(await search('٠١١٢٢٣٣')).toEqual([]);
+      // ...while the three arms about the VEHICLE and the PAPERWORK — which the
+      // caller is already reading — are untouched. That is what makes this a gate
+      // on customer data rather than on the search box.
+      expect(await search('ab1234')).toContain(namedVisitId);
+    } finally {
+      await admin.query(
+        `INSERT INTO iam.role_permissions (tenant_id, role_id, permission_id, effect, created_by)
+         SELECT $1,$2,id,'allow',$3 FROM iam.permissions WHERE permission_code = 'crm.customer.read'
+         ON CONFLICT DO NOTHING`,
+        [TENANT_A, ROLE_FULL, USER_A]
+      );
+    }
+    expect(await search('khatib')).toContain(namedVisitId);
+  });
+
+  it('a box of LIKE metacharacters matches nothing instead of every visit', async () => {
+    // `normalizePlate` keeps every character it does not fold, `%` and `_`
+    // included, so an unescaped fragment would make the plate arm `LIKE '%%%%'`
+    // and hand back the whole branch — the disabled-arm design defeated by two
+    // characters.
+    for (const box of ['%%', '__', '%_%']) {
+      expect(await search(box), box).toEqual([]);
+    }
   });
 
   it('returns an empty page for a box nothing matches', async () => {

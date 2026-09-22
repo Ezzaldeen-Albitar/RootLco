@@ -64,6 +64,7 @@ import {
 } from './p1-19-helpers';
 import { __setPrimaryPoolForTests } from '@/server/db/pool';
 import { __resetAuthenticatorForTests } from '@/server/context/principal';
+import { POST as CLOSE_WORK_ORDER } from '@/app/api/v1/work-orders/[workOrderId]/closure/route';
 import { __resetRateLimitForTests } from '@/server/http/rate-limit';
 import { GET as LIST } from '@/app/api/v1/work-orders/route';
 import { GET as DETAIL } from '@/app/api/v1/work-orders/[workOrderId]/route';
@@ -843,5 +844,214 @@ describe('wo.work-order-list — the enriched board', () => {
     expect(
       (await list({ companyId: COMPANY_A1, branchId: BRANCH_A1, awaitingDelivery: 'true' })).status
     ).toBe(422);
+  });
+});
+
+// ===========================================================================
+// The remaining board flags, and three defects found in review
+// (Owner directive, P1-32-PRE-OD-UX)
+// ===========================================================================
+describe('wo.work-order-list — the approval and delivery flags', () => {
+  /** One board row by id, as the current caller. */
+  async function row(workOrderId: string): Promise<Record<string, unknown>> {
+    const response = await list({ companyId: COMPANY_A1, branchId: BRANCH_A1, limit: '100' });
+    expect(response.status).toBe(200);
+    const found = (await page(response)).items.find((item) => item.id === workOrderId);
+    expect(found, workOrderId).toBeDefined();
+    return found as unknown as Record<string, unknown>;
+  }
+
+  /** The ids a single board flag returns. */
+  async function flagged(flag: string): Promise<readonly string[]> {
+    authAs(READER);
+    const response = await list({
+      companyId: COMPANY_A1,
+      branchId: BRANCH_A1,
+      [flag]: 'true',
+      limit: '100',
+    });
+    expect(response.status).toBe(200);
+    return (await page(response)).items.map((item) => item.id);
+  }
+
+  it('awaitingApproval follows a pending additional-work request', async () => {
+    const waiting = await createWorkOrder();
+    const untouched = await createWorkOrder();
+    await admin.query(
+      `INSERT INTO wo.additional_work_requests
+         (tenant_id, company_id, branch_id, work_order_id, summary, state, is_required, created_by)
+       VALUES ($1,$2,$3,$4,'Review fixture request','pending',false,$5)`,
+      [TENANT_A, COMPANY_A1, BRANCH_A1, waiting.workOrderId, USER_A]
+    );
+
+    const ids = await flagged('awaitingApproval');
+    expect(ids).toContain(waiting.workOrderId);
+    expect(ids).not.toContain(untouched.workOrderId);
+  });
+
+  it('a WITHDRAWN request no longer pins the work order in the approval queue', async () => {
+    const waiting = await createWorkOrder();
+    const requestId = await admin
+      .query<{ id: string }>(
+        `INSERT INTO wo.additional_work_requests
+           (tenant_id, company_id, branch_id, work_order_id, summary, state, is_required, created_by)
+         VALUES ($1,$2,$3,$4,'Review fixture withdrawn','pending',false,$5) RETURNING id`,
+        [TENANT_A, COMPANY_A1, BRANCH_A1, waiting.workOrderId, USER_A]
+      )
+      .then((result) => result.rows[0]?.id ?? '');
+    expect(await flagged('awaitingApproval')).toContain(waiting.workOrderId);
+
+    // Soft-deleted. Every other read of this table filters the tombstone, and a
+    // queue that did not would hold the order for ever with nothing to act on.
+    await admin.query(
+      `UPDATE wo.additional_work_requests SET deleted_at = now(), deleted_by = $2 WHERE id = $1`,
+      [requestId, USER_A]
+    );
+    expect(await flagged('awaitingApproval')).not.toContain(waiting.workOrderId);
+  });
+
+  /**
+   * Drives a work order all the way to the platform `closed` state.
+   *
+   * Through the REAL graph and the REAL closure operation, because neither can
+   * be gone around: `wo.work_orders.state` is guarded in the database so a direct
+   * UPDATE from `draft` is refused, and `closed` is reachable only through
+   * `/closure` — the generic transition refuses it with
+   * `closure_requires_closure_operation`.
+   *
+   * A tenant handover state was tried first and is IMPOSSIBLE:
+   * `ck_work_order_states_tenant_not_terminal` forbids a tenant row from being
+   * terminal, closed or a cancellation at all, so the closed, non-cancellation
+   * set is always exactly the platform's `closed`.
+   */
+  async function driveToClosed(workOrderId: string): Promise<void> {
+    const version = await advance(workOrderId, [
+      { toState: 'open' },
+      { toState: 'in_progress' },
+      { toState: 'qc_pending' },
+      { toState: 'ready_to_close' },
+    ]);
+    authAs(FULL);
+    const closed = await CLOSE_WORK_ORDER(
+      new Request(`http://localhost/api/v1/work-orders/${workOrderId}/closure`, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'if-match': `"${version}"`,
+          'idempotency-key': crypto.randomUUID(),
+        },
+        body: JSON.stringify({ toState: 'closed' }),
+      }),
+      { params: Promise.resolve({ workOrderId }) }
+    );
+    if (closed.status !== 200) {
+      throw new Error(`fixture closure failed with ${closed.status}: ${await closed.text()}`);
+    }
+  }
+
+  it('readyForDelivery matches a CLOSED order and never a cancelled one', async () => {
+    const finished = await createWorkOrder();
+    await driveToClosed(finished.workOrderId);
+    // `cancelled` is is_closed AND is_cancellation — the whole reason the queue
+    // cannot be built on `is_closed` alone: an abandoned job must never be
+    // offered for handover.
+    const abandoned = await createWorkOrder();
+    await advance(abandoned.workOrderId, [
+      { toState: 'cancelled', reason: 'review fixture abandonment' },
+    ]);
+    const stillOpen = await createWorkOrder();
+
+    const ids = await flagged('readyForDelivery');
+    expect(ids).toContain(finished.workOrderId);
+    expect(ids).not.toContain(abandoned.workOrderId);
+    expect(ids).not.toContain(stillOpen.workOrderId);
+  });
+
+  it('the closed, non-cancellation set a tenant can resolve is always the platform one', async () => {
+    // The review asked for "a tenant whose catalogue resolves no closed,
+    // non-cancellation state matches nothing". That tenant CANNOT EXIST, and the
+    // schema is where it is refused rather than the application: a tenant row may
+    // not be terminal, closed or a cancellation, and a tenant cannot delete a
+    // platform row. So the resolved set is always exactly {closed} and is never
+    // empty. Asserted here rather than left as a claim in a docblock, because the
+    // empty-set branch in the repository is unreachable and a reader is entitled
+    // to know why it is still written.
+    const refused = await admin
+      .query(
+        `INSERT INTO wo.work_order_states
+           (scope, tenant_id, code, name, is_terminal, is_closed, is_cancellation, created_by)
+         VALUES ('tenant',$1,'zz_review_closed','Tenant closed',true,true,false,$2)`,
+        [TENANT_A, USER_A]
+      )
+      .then(() => null)
+      .catch((error: unknown) => error);
+    expect(refused).not.toBeNull();
+    expect(String(refused)).toContain('ck_work_order_states_tenant_not_terminal');
+
+    const resolved = await admin.query<{ code: string }>(
+      `SELECT DISTINCT ON (code) code
+         FROM wo.work_order_states
+        WHERE (scope = 'platform' OR tenant_id = $1)
+          AND deleted_at IS NULL AND status = 'active'
+          AND is_closed AND NOT is_cancellation
+        ORDER BY code, (scope = 'tenant') DESC`,
+      [TENANT_A]
+    );
+    expect(resolved.rows.map((state) => state.code)).toEqual(['closed']);
+  });
+
+  it('completedAt dates a TERMINAL order from the ledger and stays null for an open one', async () => {
+    const abandoned = await createWorkOrder();
+    await advance(abandoned.workOrderId, [
+      { toState: 'cancelled', reason: 'review fixture completion' },
+    ]);
+    const stillOpen = await createWorkOrder();
+
+    authAs(READER);
+    const done = await row(abandoned.workOrderId);
+    // `cancelled` is terminal, so the ledger's transition into it dates the end
+    // of the work. There is no completed_at column; this is read from
+    // `wo.work_order_status_history`.
+    expect(done.completedAt).not.toBeNull();
+    expect(Date.parse(done.completedAt as string)).not.toBeNaN();
+
+    authAs(READER);
+    expect((await row(stillOpen.workOrderId)).completedAt).toBeNull();
+
+    // A REOPEN would be the other half of this — the ledger holds a terminal
+    // transition while the current state is not terminal, and `completedAt` must
+    // go back to null. It is NOT exercised here because the product cannot
+    // produce it: BR-WO-002 freezes a terminal state and the approved graph gives
+    // `closed` and `cancelled` no outbound edge, so there is no way to reopen a
+    // work order through any operation. The state check in the SQL is therefore
+    // defence against a tenant graph that adds a reopen edge, and is recorded as
+    // defence rather than claimed as a fixed defect with a live reproduction.
+  });
+});
+
+describe('wo.work-order-list — the search box cannot be turned into a wildcard', () => {
+  it('a box of LIKE metacharacters matches nothing instead of every row', async () => {
+    const present = await createWorkOrder();
+
+    authAs(READER);
+    const everything = await list({ companyId: COMPANY_A1, branchId: BRANCH_A1, limit: '100' });
+    expect((await page(everything)).items.length).toBeGreaterThan(0);
+
+    // `normalizePlate` keeps every character it does not fold, `%` and `_`
+    // included, so an unescaped fragment would make the plate arm `LIKE '%%%%'`
+    // and return the whole branch — the disabled-arm design defeated by two
+    // characters.
+    for (const box of ['%%', '__', '%_%']) {
+      const response = await list({
+        companyId: COMPANY_A1,
+        branchId: BRANCH_A1,
+        q: box,
+        limit: '100',
+      });
+      expect(response.status, box).toBe(200);
+      const ids = (await page(response)).items.map((item) => item.id);
+      expect(ids, box).not.toContain(present.workOrderId);
+      authAs(READER);
+    }
   });
 });

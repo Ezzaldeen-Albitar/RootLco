@@ -710,6 +710,21 @@ beforeAll(async () => {
   await appendTransitions(TIED.warrantyId, ADVANCE, { inOneTransaction: true });
 
   // --- Owner directive P1-32-PRE-OD-UX -------------------------------------
+  // Owner directive P1-32-PRE-OD-UX: the search box's NAME and PHONE arms read
+  // `crm.*` and are switched off for a caller that does not work with customers.
+  // Granted on this principal's own role, additively, so no shared fixture moves.
+  await admin.query(
+    `INSERT INTO iam.role_permissions (tenant_id, role_id, permission_id, effect, created_by)
+     SELECT $1,$2,id,'allow',$3 FROM iam.permissions WHERE permission_code = 'crm.customer.read'
+     ON CONFLICT DO NOTHING`,
+    [TENANT_A, SAL_FULL.roleId, USER_A]
+  );
+  await admin.query(
+    `INSERT INTO iam.role_permissions (tenant_id, role_id, permission_id, effect, created_by)
+     SELECT $1,$2,id,'allow',$3 FROM iam.permissions WHERE permission_code = 'crm.customer.read'
+     ON CONFLICT DO NOTHING`,
+    [TENANT_A, SAL_PERMISSION_ELSEWHERE.roleId, USER_A]
+  );
   // A THIRD branch of the same company, plus a second branch scope on
   // `SAL_PERMISSION_ELSEWHERE`'s grant, so that principal holds TWO authorized
   // branches while BRANCH_A1 stays inside its RLS union and outside its

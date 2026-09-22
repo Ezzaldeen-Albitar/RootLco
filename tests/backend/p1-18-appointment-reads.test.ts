@@ -120,6 +120,10 @@ const FULL_PERMISSIONS = [
   'apt.appointment.manage',
   'apt.appointment.lifecycle.manage',
   'apt.appointment.read',
+  // Owner directive P1-32-PRE-OD-UX. The search box's NAME and PHONE arms read
+  // `crm.*`, so they are off for a caller that does not work with customers; a
+  // scheduler searching the calendar by requester name does.
+  'crm.customer.read',
 ];
 
 interface Detail {
@@ -314,7 +318,8 @@ beforeAll(async () => {
      VALUES ('apt.appointment.manage','apt','Create and reschedule appointments in the caller scope','medium',$1),
             ('apt.appointment.lifecycle.manage','apt','Cancel an appointment or record a no-show','medium',$1),
             ('apt.appointment.read','apt','Read appointments, the branch calendar and the appointment catalogues','low',$1),
-            ('veh.vehicle.read','veh','Search and read vehicles in the caller tenant','low',$1)
+            ('veh.vehicle.read','veh','Search and read vehicles in the caller tenant','low',$1),
+            ('crm.customer.read','crm','Search and read customers in the tenant','low',$1)
      ON CONFLICT (permission_code) DO NOTHING`,
     [USER_A]
   );
