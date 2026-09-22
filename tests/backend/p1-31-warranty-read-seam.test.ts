@@ -75,7 +75,7 @@ import {
   ensureTestLogins,
   runtimeAppPool,
 } from './helpers';
-import { BRANCH_A2, establishP1_19Fixtures, type Principal } from './p1-19-helpers';
+import { BRANCH_A2, PARTNER_A, establishP1_19Fixtures, type Principal } from './p1-19-helpers';
 import {
   BRANCH_A9,
   COMPANY_A9,
@@ -123,10 +123,52 @@ let OD_IN_A2: ArrangedWarranty;
 let OD_IN_A3: ArrangedWarranty;
 let OD_SEARCHABLE: ArrangedWarranty;
 
+/**
+ * The display fixtures (Owner directive, P1-32-PRE-OD-UX).
+ *
+ * `OD_SEARCHABLE` already carries a plate and a party on its visit, so the same
+ * warranty is given a tenant catalogue make and model and a display number and
+ * becomes the one record every display assertion below reads. Its VIN is the one
+ * the shared visit fixture generated, so it is read back rather than asserted from
+ * a constant this file made up.
+ */
+const OD_MAKE = 'f1320000-0000-4000-8000-000000000811';
+const OD_MODEL = 'f1320000-0000-4000-8000-000000000812';
+const OD_MAKE_NAME = 'Fixture Make';
+const OD_MODEL_NAME = 'Fixture Model';
+const OD_MAKE_MODEL = `${OD_MAKE_NAME} ${OD_MODEL_NAME}`;
+const OD_VEHICLE_NUMBER = 'FX-P132-WTY-V1';
+/** Read back from `veh.vehicles.vin_normalized`; the fixture generates it. */
+let OD_VIN = '';
+/**
+ * The party `rec.accept_check_in` recorded as the visit's service requester, and
+ * the name `crm.business_partners` holds for it.
+ *
+ * The check-in primitive writes exactly one `service_requester` row, and the
+ * search fixture above adds a SECOND partner in the same role with a later
+ * `valid_from`. That is not a flaw in the fixture: `uq_reception_party_roles_active`
+ * is unique on (visit, partner, role), so two partners legitimately holding the
+ * role at once is a state the read has to answer deterministically — and it names
+ * the earliest `valid_from`, which is this one.
+ */
+const OD_CHECKIN_PARTNER_NAME = 'Reception Requester';
+/** That partner's id, named so every assertion says which one it means. */
+const OD_PARTNER_EXPECTED = PARTNER_A;
+
 /** The code this slice mints. Written once, used by every assertion below. */
 const WARRANTY_READ = 'wty.warranty.read';
 const WARRANTY_ISSUE = 'wty.warranty.issue';
 const POLICY_MANAGE = 'wty.policy.manage';
+/**
+ * The two codes the display blocks are narrowed on (Owner directive,
+ * P1-32-PRE-OD-UX).
+ *
+ * Neither is a warranty code and neither gates the read itself: a caller holding
+ * `wty.warranty.read` alone still gets every row and every warranty field. These
+ * decide only what the two display blocks are allowed to say.
+ */
+const VEHICLE_READ = 'veh.vehicle.read';
+const CUSTOMER_READ = 'crm.customer.read';
 
 // ---------------------------------------------------------------------------
 // Wire shapes
@@ -150,6 +192,16 @@ interface WarrantyListRow {
     readonly name: string;
     readonly status: string;
   };
+  /** The car, named (Owner directive, P1-32-PRE-OD-UX). */
+  readonly vehicle: {
+    readonly id: string;
+    readonly plate: string | null;
+    readonly vin: string | null;
+    readonly makeModel: string | null;
+    readonly displayNumber: string | null;
+  };
+  /** The party who brought it in, or null when the visit names none. */
+  readonly customer: { readonly id: string; readonly displayName: string | null } | null;
   readonly recordVersion: number;
 }
 
@@ -316,11 +368,66 @@ const WTY_READ_ELSEWHERE: Principal = {
 const WIDENING_ROLE = 'f1310000-0000-4000-8000-0000000007f3';
 const WIDENING_PERMISSION = 'org.tenant.read';
 
+/**
+ * The three display principals (Owner directive, P1-32-PRE-OD-UX).
+ *
+ * Each is the warranty read code PLUS exactly one more, so every assertion below
+ * about a withheld field is about THAT code and never about tenancy, scope or a
+ * second absent permission. `WTY_READ_ONLY`, which holds the warranty code alone,
+ * is the fourth corner of the same square.
+ *
+ * Minted here rather than added to a shared fixture role: `SAL_FULL` is used by
+ * several suites against the same database, and widening it would change what
+ * those suites are testing.
+ */
+const WTY_READ_WITH_VEHICLE: Principal = {
+  roleId: 'f1320000-0000-4000-8000-000000000801',
+  userId: 'f1320000-0000-4000-8000-000000000802',
+  subject: 'fx_p1_32_wty_read_vehicle',
+  tenantId: TENANT_A,
+  permissions: [WARRANTY_READ, VEHICLE_READ],
+};
+
+const WTY_READ_WITH_CUSTOMER: Principal = {
+  roleId: 'f1320000-0000-4000-8000-000000000803',
+  userId: 'f1320000-0000-4000-8000-000000000804',
+  subject: 'fx_p1_32_wty_read_customer',
+  tenantId: TENANT_A,
+  permissions: [WARRANTY_READ, CUSTOMER_READ],
+};
+
+const WTY_READ_WITH_DISPLAY: Principal = {
+  roleId: 'f1320000-0000-4000-8000-000000000805',
+  userId: 'f1320000-0000-4000-8000-000000000806',
+  subject: 'fx_p1_32_wty_read_display',
+  tenantId: TENANT_A,
+  permissions: [WARRANTY_READ, VEHICLE_READ, CUSTOMER_READ],
+};
+
+/**
+ * Tenant B, holding every display code there is.
+ *
+ * The decisive cross-tenant principal: it could be told a plate, a VIN and a name
+ * about any car in its OWN tenant, so anything it learns about tenant A's warranty
+ * is a leak from the resolution rather than a missing permission.
+ */
+const WTY_DISPLAY_TENANT_B: Principal = {
+  roleId: 'f1320000-0000-4000-8000-000000000807',
+  userId: 'f1320000-0000-4000-8000-000000000808',
+  subject: 'fx_p1_32_wty_display_tenant_b',
+  tenantId: TENANT_B,
+  permissions: [WARRANTY_READ, VEHICLE_READ, CUSTOMER_READ],
+};
+
 const LOCAL_PRINCIPALS = [
   WTY_READ_ONLY,
   WTY_ISSUE_ONLY,
   WTY_POLICY_ONLY,
   WTY_READ_TENANT_B,
+  WTY_READ_WITH_VEHICLE,
+  WTY_READ_WITH_CUSTOMER,
+  WTY_READ_WITH_DISPLAY,
+  WTY_DISPLAY_TENANT_B,
 ] as const;
 
 /**
@@ -429,6 +536,56 @@ async function seedScopedPrincipal(
     companyId: scope.companyId,
     branchId: scope.branchId,
   });
+}
+
+/**
+ * Gives one vehicle a catalogue make and model and a display number, and returns
+ * the VIN the shared fixture generated for it (Owner directive, P1-32-PRE-OD-UX).
+ *
+ * By SQL because the vehicle update route is the only writer of a car's catalogue
+ * references, and reaching it would mean arranging a second authenticated
+ * principal in the middle of a fixture — this file's subject is the warranty read
+ * rather than the vehicle write. (Its operation id is deliberately not spelled
+ * here: the P1-24 register counts a raw mention in a test file as a reference, and
+ * this file is not evidence for that operation.)
+ *
+ * `tg_vehicles_catalog_refs` validates both references on UPDATE, so a make or
+ * model this tenant cannot use is refused here rather than silently ignored — the
+ * fixture cannot fabricate a catalogue link that the product would not allow.
+ */
+async function seedVehicleDisplay(vehicleId: string): Promise<string> {
+  const client = await admin.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query(
+      `SELECT set_config('app.user_id',$1,true), set_config('app.tenant_id',$2,true)`,
+      [USER_A, TENANT_A]
+    );
+    await client.query(
+      `INSERT INTO veh.makes (id, scope, tenant_id, code, name, created_by)
+       VALUES ($1,'tenant',$2,'fx_p132_make',$3,$4) ON CONFLICT (id) DO NOTHING`,
+      [OD_MAKE, TENANT_A, OD_MAKE_NAME, USER_A]
+    );
+    await client.query(
+      `INSERT INTO veh.models (id, scope, tenant_id, make_id, code, name, created_by)
+       VALUES ($1,'tenant',$2,$3,'fx_p132_model',$4,$5) ON CONFLICT (id) DO NOTHING`,
+      [OD_MODEL, TENANT_A, OD_MAKE, OD_MODEL_NAME, USER_A]
+    );
+    const updated = await client.query<{ vin_normalized: string | null }>(
+      `UPDATE veh.vehicles
+          SET make_id = $2, model_id = $3, display_number = $4
+        WHERE tenant_id = $1 AND id = $5
+        RETURNING vin_normalized`,
+      [TENANT_A, OD_MAKE, OD_MODEL, OD_VEHICLE_NUMBER, vehicleId]
+    );
+    await client.query('COMMIT');
+    return updated.rows[0]?.vin_normalized ?? '';
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
 }
 
 /** A COMPANY_A9 policy and coverage, so a warranty can exist in a second branch. */
@@ -787,6 +944,11 @@ beforeAll(async () => {
      VALUES ($1,$2,'JO',$3,current_date,$4)`,
     [TENANT_A, OD_SEARCHABLE.delivery.vehicleId, OD_SEARCH_PLATE, USER_A]
   );
+  // The display fixtures: a tenant catalogue make and model, and a vehicle number,
+  // on the SAME car the plate above belongs to. Tenant-scoped rather than platform
+  // rows, because the platform catalogue ships empty by policy and a fixture must
+  // not be the thing that fills it.
+  OD_VIN = await seedVehicleDisplay(OD_SEARCHABLE.delivery.vehicleId);
 }, 240_000);
 
 afterEach(() => {
@@ -1653,5 +1815,166 @@ describe('the warranty search box', () => {
         })
       ).status
     ).toBe(422);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The display blocks (Owner directive, P1-32-PRE-OD-UX)
+//
+// A warranty row named its car by uuid and named its customer not at all, so a
+// list of warranties could not be read by the person looking at it. The two blocks
+// below close that, and the interesting half is what they REFUSE to say: the
+// registration is the vehicle module's to withhold and the name is the CRM
+// module's, so each is proved present for a caller holding that module's code and
+// absent for a caller holding only the warranty one.
+//
+// Every case below reads ONE arranged warranty — `OD_SEARCHABLE` — whose car
+// carries a plate, a VIN, a catalogue make and model and a vehicle number, and
+// whose originating visit names a service requester. A fixture missing any of them
+// would make an assertion pass by accident.
+// ---------------------------------------------------------------------------
+
+describe('the warranty row names the car and the customer', () => {
+  /** `OD_SEARCHABLE`'s row off the branch list, as one principal sees it. */
+  async function rowFor(principal: Principal): Promise<WarrantyListRow> {
+    authAs(principal);
+    const response = await listWarranties({
+      companyId: COMPANY_A1,
+      branchId: OD_SEARCHABLE.delivery.branchId,
+      limit: 100,
+    });
+    expect(response.status, principal.subject).toBe(200);
+    const row = (await bodyOf<WarrantyListBody>(response)).items.find(
+      (item) => item.id === OD_SEARCHABLE.warrantyId
+    );
+    expect(row, `${principal.subject} could not see the arranged warranty`).toBeDefined();
+    __resetAuthenticatorForTests();
+    return row!;
+  }
+
+  /** The same warranty off the detail read. */
+  async function detailFor(principal: Principal): Promise<WarrantyDetailBody> {
+    authAs(principal);
+    const response = await readWarranty(OD_SEARCHABLE.warrantyId);
+    expect(response.status, principal.subject).toBe(200);
+    const body = await bodyOf<WarrantyDetailBody>(response);
+    __resetAuthenticatorForTests();
+    return body;
+  }
+
+  it('the fixture really carries every field the cases below assert', async () => {
+    // Anti-vacuity, run first: a plate or a VIN that was never seeded would make
+    // every "withheld" assertion below pass while proving nothing at all.
+    expect(OD_VIN.length, 'the fixture vehicle has no normalised VIN').toBeGreaterThan(0);
+    expect(OD_SEARCH_PLATE.length).toBeGreaterThan(0);
+    const seeded = await admin.query<{ display_number: string | null; plate: string | null }>(
+      `SELECT v.display_number,
+              (SELECT ph.plate_raw FROM veh.plate_history ph
+                WHERE ph.tenant_id = v.tenant_id AND ph.vehicle_id = v.id
+                  AND ph.valid_to IS NULL LIMIT 1) AS plate
+         FROM veh.vehicles v WHERE v.tenant_id = $1 AND v.id = $2`,
+      [TENANT_A, OD_SEARCHABLE.delivery.vehicleId]
+    );
+    expect(seeded.rows[0]?.display_number).toBe(OD_VEHICLE_NUMBER);
+    expect(seeded.rows[0]?.plate).toBe(OD_SEARCH_PLATE);
+  });
+
+  it('gives a caller holding both codes the whole block, on the list and on the detail', async () => {
+    for (const body of [
+      await rowFor(WTY_READ_WITH_DISPLAY),
+      await detailFor(WTY_READ_WITH_DISPLAY),
+    ]) {
+      expect(body.vehicle.id).toBe(OD_SEARCHABLE.delivery.vehicleId);
+      expect(body.vehicle.plate).toBe(OD_SEARCH_PLATE);
+      expect(body.vehicle.vin).toBe(OD_VIN);
+      expect(body.vehicle.makeModel).toBe(OD_MAKE_MODEL);
+      expect(body.vehicle.displayNumber).toBe(OD_VEHICLE_NUMBER);
+      // The identifier stays beside the block, so nothing that navigated by it
+      // breaks and nothing has to be reconstructed from a label.
+      expect(body.vehicleId).toBe(body.vehicle.id);
+
+      // The visit's earliest service requester, named. Two partners hold that
+      // role on this visit, so this also pins the tie-break: the read answers
+      // with the earliest `valid_from` rather than an arbitrary one of the two.
+      expect(body.customer?.id).toBe(OD_PARTNER_EXPECTED);
+      expect(body.customer?.displayName).toBe(OD_CHECKIN_PARTNER_NAME);
+    }
+  });
+
+  it('withholds the plate and the VIN from a caller without veh.vehicle.read', async () => {
+    // The counterfactual of the case above, one code apart. This caller is told
+    // WHICH car — the id, the number and the catalogue label — and is not told its
+    // registration, which is the vehicle module's to give.
+    for (const body of [
+      await rowFor(WTY_READ_WITH_CUSTOMER),
+      await detailFor(WTY_READ_WITH_CUSTOMER),
+    ]) {
+      expect(body.vehicle.plate).toBeNull();
+      expect(body.vehicle.vin).toBeNull();
+      expect(body.vehicle.makeModel).toBe(OD_MAKE_MODEL);
+      expect(body.vehicle.displayNumber).toBe(OD_VEHICLE_NUMBER);
+      // The narrowing is on the registration and nothing else: the name still
+      // arrives, because this caller holds the CRM code.
+      expect(body.customer?.displayName).toBe(OD_CHECKIN_PARTNER_NAME);
+    }
+  });
+
+  it('withholds the name from a caller without crm.customer.read but keeps the link', async () => {
+    for (const body of [
+      await rowFor(WTY_READ_WITH_VEHICLE),
+      await detailFor(WTY_READ_WITH_VEHICLE),
+    ]) {
+      // The warranty HAS a customer and this caller is told so — the block is
+      // published with its id and without the name. Dropping the block would
+      // report that the warranty was issued to nobody.
+      expect(body.customer?.id).toBe(OD_PARTNER_EXPECTED);
+      expect(body.customer?.displayName).toBeNull();
+      // And the registration still arrives, because this caller holds the vehicle
+      // code. The two narrowings are independent.
+      expect(body.vehicle.plate).toBe(OD_SEARCH_PLATE);
+      expect(body.vehicle.vin).toBe(OD_VIN);
+    }
+  });
+
+  it('withholds both from a caller holding the warranty code alone', async () => {
+    for (const body of [await rowFor(WTY_READ_ONLY), await detailFor(WTY_READ_ONLY)]) {
+      expect(body.vehicle.plate).toBeNull();
+      expect(body.vehicle.vin).toBeNull();
+      expect(body.customer?.displayName).toBeNull();
+      // Everything the warranty itself says is still published: the blocks narrow,
+      // they never turn the read into a partial one.
+      expect(body.vehicle.makeModel).toBe(OD_MAKE_MODEL);
+      expect(body.id).toBe(OD_SEARCHABLE.warrantyId);
+      expect(body.status).toBe('issued');
+      expect(body.odometerAtIssue).toMatch(DECIMAL_STRING);
+    }
+  });
+
+  it('tells another tenant nothing about the car or the customer', async () => {
+    // The decisive isolation case. This principal holds the vehicle code AND the
+    // customer code AND the warranty code in tenant B, so nothing but tenancy can
+    // be refusing it — and the refusal is read from the response TEXT, so a plate
+    // or a name leaking into any field of any shape would fail it.
+    authAs(WTY_DISPLAY_TENANT_B);
+    const detail = await readWarranty(OD_SEARCHABLE.warrantyId);
+    expect(detail.status).toBe(404);
+    const text = await detail.text();
+    expect(JSON.parse(text).code).toBe('ERR-RES-001');
+    for (const secret of [OD_SEARCH_PLATE, OD_VIN, OD_CHECKIN_PARTNER_NAME, OD_VEHICLE_NUMBER]) {
+      expect(text, secret).not.toContain(secret);
+    }
+    __resetAuthenticatorForTests();
+
+    // The list side of the same boundary: a company in tenant A is refused rather
+    // than answered with an empty page, so the absence above is the tenant
+    // boundary and not a warranty that failed to arrange.
+    authAs(WTY_DISPLAY_TENANT_B);
+    const list = await listWarranties({
+      companyId: COMPANY_A1,
+      branchId: OD_SEARCHABLE.delivery.branchId,
+      limit: 100,
+    });
+    expect(list.status).toBe(403);
+    expect((await problemOf(list)).code).toBe('ERR-IAM-001');
   });
 });
