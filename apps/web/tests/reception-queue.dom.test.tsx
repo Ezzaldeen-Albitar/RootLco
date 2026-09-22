@@ -52,8 +52,40 @@ vi.mock('@/features/receptions/api', () => ({
   listReceptions: (...args: unknown[]) => listReceptions(...args),
 }));
 
+/**
+ * The session the ROUTE resolves, so the address cases at the end of this file
+ * can invoke it. The screen cases render the board directly and never see it.
+ */
+let PERMISSIONS: readonly string[] = [];
+vi.mock('@/features/authentication/api/session', () => ({
+  requireSession: async () => ({
+    permissions: PERMISSIONS,
+    email: 'operator@test.local',
+    companyIds: [],
+    branchIds: [],
+  }),
+}));
+
+/** The props one element in a route's returned tree carries. */
+function propsCarrying(node: unknown, prop: string): Record<string, unknown> | null {
+  if (node === null || typeof node !== 'object') return null;
+  const props = (node as { props?: Record<string, unknown> }).props;
+  if (props && typeof props === 'object' && prop in props) return props;
+  const children = props?.['children'];
+  for (const child of Array.isArray(children) ? children : [children]) {
+    const found = propsCarrying(child, prop);
+    if (found) return found;
+  }
+  return null;
+}
+
 const { ReceptionQueueScreen } =
   await import('@/features/receptions/components/ReceptionQueueScreen');
+const ReceptionQueuePage = (await import('@/app/[locale]/(dashboard)/receptions/page'))
+  .default as (args: {
+  params: Promise<Record<string, string>>;
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
+}) => Promise<unknown>;
 
 const COMPANY = TEST_COMPANY.id;
 const BRANCH = TEST_BRANCH.id;
@@ -602,5 +634,97 @@ describe('the day the board asks about is the day at the branch', () => {
     expect(addDays('2026-03-01', -1)).toBe('2026-02-28');
     expect(addDays('2026-12-31', 1)).toBe('2027-01-01');
     expect(addDays('2028-02-28', 1)).toBe('2028-02-29');
+  });
+});
+
+/* -------------------------------------------------------------------------- *
+ * Arriving from a figure counted over a period (Owner directive,
+ * `P1-32-PRE-OD-UX`)
+ *
+ * The dashboard counts visits over a period and links here. A link that landed
+ * on "today" whatever the figure covered would answer a different question from
+ * the one the reader clicked, so the period travels — and is checked on arrival,
+ * because an address is written by anybody.
+ * -------------------------------------------------------------------------- */
+
+describe('the reception board opens on the period the address names', () => {
+  beforeEach(() => {
+    PERMISSIONS = ['rec.reception.read'];
+  });
+
+  /** The props the ROUTE hands the board, for one address. */
+  async function routeProps(query: Record<string, string | string[]>) {
+    const tree = await ReceptionQueuePage({
+      params: Promise.resolve({ locale: 'en' }),
+      searchParams: Promise.resolve(query),
+    });
+    const props = propsCarrying(tree, 'initialPeriod');
+    expect(props, 'the route did not render the board').not.toBeNull();
+    return props as Record<string, unknown>;
+  }
+
+  it('passes a declared period through', async () => {
+    expect((await routeProps({ period: 'last7' }))['initialPeriod']).toEqual({
+      kind: 'last7',
+      from: '',
+      to: '',
+    });
+  });
+
+  it('passes a chosen range through with both its days', async () => {
+    expect(
+      (await routeProps({ period: 'custom', from: '2026-09-01', to: '2026-09-10' }))[
+        'initialPeriod'
+      ]
+    ).toEqual({ kind: 'custom', from: '2026-09-01', to: '2026-09-10' });
+  });
+
+  it('drops a period it does not declare', async () => {
+    for (const period of ['last30', 'Today', 'week']) {
+      expect((await routeProps({ period }))['initialPeriod']).toBeUndefined();
+    }
+  });
+
+  it('drops a chosen range that is inverted, incomplete or not a calendar day', async () => {
+    const bad: readonly Record<string, string>[] = [
+      { period: 'custom', from: '2026-09-10', to: '2026-09-01' },
+      { period: 'custom', from: '2026-09-01' },
+      { period: 'custom', to: '2026-09-01' },
+      { period: 'custom', from: 'yesterday', to: 'today' },
+      { period: 'custom', from: '2026-9-1', to: '2026-9-10' },
+      { period: 'custom' },
+    ];
+    for (const query of bad) {
+      expect((await routeProps(query))['initialPeriod'], JSON.stringify(query)).toBeUndefined();
+    }
+  });
+
+  it('reads one value from a repeated parameter rather than a list', async () => {
+    expect((await routeProps({ period: ['yesterday', 'last7'] }))['initialPeriod']).toEqual({
+      kind: 'yesterday',
+      from: '',
+      to: '',
+    });
+  });
+
+  it('reads the arriving period on first paint, not today', async () => {
+    const today = dayIn(ZONE);
+    renderQueue({ initialPeriod: { kind: 'last7', from: '', to: '' } });
+    await waitFor(() => expect(listReceptions).toHaveBeenCalledTimes(1));
+    expect(lastCall().filters).toEqual(rangeOfDays(ZONE, addDays(today, -6), today));
+  });
+
+  it('reads an arriving range, and shows its two days in the form', async () => {
+    renderQueue({ initialPeriod: { kind: 'custom', from: '2026-09-01', to: '2026-09-10' } });
+    await waitFor(() => expect(listReceptions).toHaveBeenCalledTimes(1));
+    expect(lastCall().filters).toEqual(rangeOfDays(ZONE, '2026-09-01', '2026-09-10'));
+    // The boxes agree with the list. An empty pair would invite the reader to
+    // "apply" a period they never asked for.
+    expect(
+      (screen.getByLabelText(EN['receptions.queue.fromDay'] as string) as HTMLInputElement).value
+    ).toBe('2026-09-01');
+    expect(
+      (screen.getByLabelText(EN['receptions.queue.toDay'] as string) as HTMLInputElement).value
+    ).toBe('2026-09-10');
   });
 });

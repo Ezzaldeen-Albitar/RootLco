@@ -1,4 +1,4 @@
-import { screen, waitFor, within } from '@testing-library/react';
+import { act, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -6,6 +6,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import ar from '../src/i18n/messages/ar.json';
 import { PermissionDeniedState } from '@/components/states/States';
+import { formatMessage } from '@/i18n/get-messages';
 import {
   BranchSwitch,
   OTHER_BRANCH,
@@ -1336,5 +1337,110 @@ describe('the dashboard in Arabic, and reachable from the keyboard', () => {
     await waitFor(() => {
       expect(readDashboardSummary).toHaveBeenCalledTimes(2);
     });
+  });
+});
+
+describe('the dashboard answers for the period and the branch it is showing', () => {
+  beforeEach(() => {
+    window.localStorage.clear();
+    readDashboardSummary.mockReset();
+    readDashboardSummary.mockResolvedValue(okRead(dashboardSummary()));
+  });
+
+  it('discards an answer that arrives after the one that replaced it', async () => {
+    // The ordering that makes a screen lie: a slow read for the OLD period
+    // lands after the fast read for the new one, and the reader sees figures
+    // for a period the heading no longer names.
+    const user = userEvent.setup();
+    let release: (value: unknown) => void = () => undefined;
+    const slow = new Promise((resolve) => {
+      release = resolve;
+    });
+    readDashboardSummary.mockReturnValueOnce(slow);
+    readDashboardSummary.mockResolvedValue(
+      okRead(dashboardSummary({ activeWorkOrders: figure(99) }))
+    );
+
+    renderLtr(inBranch(<DashboardScreen locale="en" messages={messagesFor('en')} />));
+    await user.click(
+      screen.getByRole('button', { name: EN['dashboard.period.yesterday'] as string })
+    );
+    await screen.findByText('99');
+
+    release(okRead(dashboardSummary({ activeWorkOrders: figure(7) })));
+    await act(async () => {
+      await slow;
+    });
+
+    expect(screen.queryByText('7')).toBeNull();
+    expect(screen.getByText('99')).toBeTruthy();
+  });
+
+  it('says which period the figures still cover while dates are being chosen', async () => {
+    const user = userEvent.setup();
+    renderLtr(inBranch(<DashboardScreen locale="en" messages={messagesFor('en')} />));
+    await screen.findByText('7');
+
+    await user.click(screen.getByRole('button', { name: EN['dashboard.period.custom'] as string }));
+
+    // Pressing the control changes no figure — no days have been named yet —
+    // so the screen must not read as though it had.
+    expect(
+      screen.getByText(
+        formatMessage(EN['dashboard.period.notApplied'] as string, {
+          period: EN['dashboard.period.today'] as string,
+        })
+      )
+    ).toBeTruthy();
+    expect(screen.getByText('7')).toBeTruthy();
+    expect(readDashboardSummary).toHaveBeenCalledTimes(1);
+  });
+
+  it('drops that line once the chosen days are applied', async () => {
+    const user = userEvent.setup();
+    renderLtr(inBranch(<DashboardScreen locale="en" messages={messagesFor('en')} />));
+    await screen.findByText('7');
+
+    await user.click(screen.getByRole('button', { name: EN['dashboard.period.custom'] as string }));
+    await user.type(screen.getByLabelText(EN['dashboard.period.from'] as string), '2026-09-01');
+    await user.type(screen.getByLabelText(EN['dashboard.period.to'] as string), '2026-09-10');
+    await user.click(screen.getByRole('button', { name: EN['dashboard.period.apply'] as string }));
+
+    await waitFor(() => {
+      expect(readDashboardSummary).toHaveBeenLastCalledWith(
+        { companyId: TEST_COMPANY.id, branchId: TEST_BRANCH.id },
+        { period: 'custom', from: '2026-09-01', to: '2026-09-10' }
+      );
+    });
+    expect(
+      screen.queryByText(
+        formatMessage(EN['dashboard.period.notApplied'] as string, {
+          period: EN['dashboard.period.today'] as string,
+        })
+      )
+    ).toBeNull();
+  });
+
+  it('puts every state within reach of a keyboard, outside the drawing', async () => {
+    const { container } = renderLtr(
+      inBranch(<DashboardScreen locale="en" messages={messagesFor('en')} />)
+    );
+    await screen.findByText('7');
+
+    // Nothing inside the drawing is a control: a shape under `role="img"` is
+    // pruned from the accessibility tree along with anything nested in it, so a
+    // link drawn there would exist for a mouse and for nobody else.
+    expect(container.querySelectorAll('svg a').length).toBe(0);
+
+    const link = screen.getByRole('link', { name: /With the insurer/ });
+    expect(link.closest('svg')).toBeNull();
+    expect(link.getAttribute('href')).toBe('/en/work-orders?state=awaiting_insurer');
+    (link as HTMLElement).focus();
+    expect(document.activeElement).toBe(link);
+
+    // One per state, and the table is not the only way to any of them.
+    for (const label of ['In progress', 'Closed']) {
+      expect(screen.getByRole('link', { name: new RegExp(label) })).toBeTruthy();
+    }
   });
 });

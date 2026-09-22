@@ -19,6 +19,16 @@ import {
   type FilterDefinition,
   type TableRequest,
 } from '../src/components/data-table/table-state';
+import {
+  WORK_ORDER_BOARD_VIEWS,
+  WORK_ORDER_STATE_CODE_PATTERN,
+  isWorkOrderBoardView,
+} from '../src/features/work-orders/work-orders-contract';
+import {
+  RECEPTION_BOARD_PERIODS,
+  isReceptionBoardPeriod,
+} from '../src/features/receptions/receptions-contract';
+import { isCalendarDay } from '../src/lib/branch-time';
 
 const DEFINITIONS: readonly FilterDefinition[] = [
   {
@@ -215,5 +225,92 @@ describe('reading state back from a URL', () => {
   it('ignores a filter key it does not know', () => {
     const params = new URLSearchParams('unknownKey=whatever');
     expect(fromSearchParams(params, DEFINITIONS).filters).toEqual([]);
+  });
+});
+
+/* -------------------------------------------------------------------------- *
+ * What the two boards accept out of an address (Owner directive,
+ * `P1-32-PRE-OD-UX`)
+ *
+ * The dashboard links a figure to the list it counted, and the narrowing
+ * travels in the address. This module's rule decides what may: a registered key
+ * carrying a value from a DECLARED set, never anything an operator typed. So
+ * each of those sets is pinned here, beside the rule, in both directions — a
+ * validator that accepts everything and one that accepts nothing both produce a
+ * board that looks right on the happy path.
+ * -------------------------------------------------------------------------- */
+
+describe('the names a board will answer to', () => {
+  it('accepts exactly the seven views the work-order board offers', () => {
+    expect([...WORK_ORDER_BOARD_VIEWS].sort()).toEqual(
+      [
+        'all',
+        'awaitingApproval',
+        'awaitingParts',
+        'awaitingQuality',
+        'mine',
+        'openedToday',
+        'readyForDelivery',
+      ].sort()
+    );
+    for (const view of WORK_ORDER_BOARD_VIEWS) expect(isWorkOrderBoardView(view)).toBe(true);
+  });
+
+  it('refuses a view name that reads plausibly and is not one of them', () => {
+    // `completedToday` is the view somebody will try to link to first: the
+    // dashboard publishes the FIGURE and the operation has no window to filter
+    // it by, which is exactly why it must not become a silent no-op.
+    for (const name of ['completedToday', 'openStates', 'ALL', 'awaitingapproval', '', ' all']) {
+      expect(isWorkOrderBoardView(name), name).toBe(false);
+    }
+  });
+
+  it('accepts exactly the five periods the reception board offers', () => {
+    expect([...RECEPTION_BOARD_PERIODS].sort()).toEqual(
+      ['beforeToday', 'custom', 'last7', 'today', 'yesterday'].sort()
+    );
+    for (const period of RECEPTION_BOARD_PERIODS) expect(isReceptionBoardPeriod(period)).toBe(true);
+  });
+
+  it('refuses a period the board does not offer', () => {
+    for (const name of ['last30', 'week', 'Today', '', 'custom ']) {
+      expect(isReceptionBoardPeriod(name), name).toBe(false);
+    }
+  });
+
+  it('accepts a state code of the shape the operation accepts, and nothing else', () => {
+    for (const code of ['open', 'in_progress', 'awaiting_insurer', 'closed', 'a1_b2']) {
+      expect(WORK_ORDER_STATE_CODE_PATTERN.test(code), code).toBe(true);
+    }
+    for (const code of ['In_Progress', '_open', '1open', 'a', 'a-b', 'a b', '', 'x'.repeat(64)]) {
+      expect(WORK_ORDER_STATE_CODE_PATTERN.test(code), code).toBe(false);
+    }
+  });
+
+  it('keeps every carried name out of the forbidden list, and the dangerous ones in', () => {
+    // The point of the rule, asserted in both directions so it cannot be read
+    // as "these three happen to be allowed today".
+    for (const key of ['view', 'state', 'period', 'from', 'to']) {
+      expect(isForbiddenUrlKey(key), key).toBe(false);
+    }
+    for (const key of ['search', 'q', 'plate', 'customerName', 'vin', 'amount']) {
+      expect(isForbiddenUrlKey(key), key).toBe(true);
+    }
+  });
+
+  it('accepts a calendar day and refuses an instant or a malformed one', () => {
+    expect(isCalendarDay('2026-09-22')).toBe(true);
+    for (const value of ['2026-9-22', '22-09-2026', '2026-09-22T00:00:00Z', 'today', '']) {
+      expect(isCalendarDay(value), value).toBe(false);
+    }
+  });
+
+  it('rejects an inverted range by comparison, which is what the routes do', () => {
+    // `YYYY-MM-DD` sorts lexicographically as it sorts chronologically, which is
+    // why both routes compare the two strings rather than parsing them. Pinned
+    // so a later "improvement" to date arithmetic cannot quietly change it.
+    expect('2026-09-01' <= '2026-09-10').toBe(true);
+    expect('2026-09-10' <= '2026-09-01').toBe(false);
+    expect('2026-09-10' <= '2026-09-10').toBe(true);
   });
 });
