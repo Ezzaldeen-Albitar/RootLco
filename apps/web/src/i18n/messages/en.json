@@ -1348,6 +1348,8 @@
   "roles.managePermissions": "Permissions",
   "roles.systemLocked": "This role is built into the platform and cannot be changed.",
   "roles.title": "Roles",
+  "search.clear": "Clear what you typed",
+  "search.submit": "Search",
   "shell.breadcrumbs": "Breadcrumb",
   "shell.closeNavigation": "Close navigation",
   "shell.collapseNavigation": "Collapse navigation",

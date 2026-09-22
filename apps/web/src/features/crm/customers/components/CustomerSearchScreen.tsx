@@ -38,16 +38,32 @@ import {
  * Digits typed on an Arabic keyboard are echoed as Western digits under a box
  * for reading only. What is sent is what was typed; the backend folds them.
  *
- * ## It searches on intent, never on a keystroke
+ * ## It searches on intent, never on a bare keystroke
  *
  * `crm.customer-search` is `expensive-read`: **30 requests per 60 seconds**,
- * keyed by operation, tenant and user. Search-as-you-type spends that in under
- * three seconds of typing, and the operator's reward for typing a customer's
- * name is a 429.
+ * keyed by operation, workspace and user. A request per CHARACTER spends that
+ * in under three seconds of typing, and the operator's reward for typing a
+ * customer's name is a refusal.
  *
- * So the primary action is an explicit Search button, Enter submits the form,
- * and typing does nothing at all. There is no debounce, because a debounce is
- * still a request per pause.
+ * So the primary action is an explicit Search button and Enter submits the form.
+ *
+ * ## The sentence that used to close this paragraph was wrong, and is corrected
+ *
+ * It read: "There is no debounce, because a debounce is still a request per
+ * pause." The first half is true and the conclusion does not follow. The
+ * comparison that decides it is not "debounced typing versus nothing" but
+ * "debounced typing versus what the operator actually does" — type, press
+ * Search, read, correct the spelling, press Search again — which is one request
+ * per attempt, uncancelled, with no upper bound. A 300 ms debounce that ABORTS
+ * the request before it sends one per pause and abandons the rest, which is
+ * fewer requests against the same limit, not more.
+ *
+ * The mechanism now exists (`lib/use-debounced-value.ts`,
+ * `lib/api/use-search-request.ts`, `components/search/SearchBox.tsx`) and is
+ * what a new search surface should be built on. This screen keeps its explicit
+ * Search for a reason that survives the correction: the results are a SEPARATELY
+ * MOUNTED component, which is what makes "no request before intent" structural
+ * here rather than a rule somebody has to remember.
  *
  * **The results are a separate component, mounted only after a submission.**
  * `useServerTable` reads on mount, so not mounting the hook makes "no request

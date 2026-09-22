@@ -1348,6 +1348,8 @@
   "roles.managePermissions": "الصلاحيات",
   "roles.systemLocked": "هذا الدور مدمج في المنصّة ولا يمكن تغييره.",
   "roles.title": "الأدوار",
+  "search.clear": "امسح ما كتبته",
+  "search.submit": "ابحث",
   "shell.breadcrumbs": "مسار التنقّل",
   "shell.closeNavigation": "إغلاق قائمة التنقّل",
   "shell.collapseNavigation": "طيّ قائمة التنقّل",
