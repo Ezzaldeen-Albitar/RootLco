@@ -45,10 +45,7 @@ import {
   type ReceptionReadRepository,
   type ReceptionScopeRow,
 } from '../data/reception-read-repository';
-import {
-  receptionStatusesInGroup,
-  type ReceptionStatusGroup,
-} from '../domain/reception';
+import { receptionStatusesInGroup, type ReceptionStatusGroup } from '../domain/reception';
 
 /** Cursor/limit pair every list read accepts, already schema-validated. */
 export interface PageQuery {
@@ -125,9 +122,7 @@ export class ReceptionReadService extends ApplicationService {
         branchIds: query.branchIds,
         status: query.status,
         statuses:
-          query.statusGroup === undefined
-            ? undefined
-            : receptionStatusesInGroup(query.statusGroup),
+          query.statusGroup === undefined ? undefined : receptionStatusesInGroup(query.statusGroup),
         vehicleId: query.vehicleId,
         from: query.from,
         to: query.to,

@@ -57,9 +57,7 @@ export const RECEPTION_STATUS_GROUPS = ['open', 'finished'] as const;
 export type ReceptionStatusGroup = (typeof RECEPTION_STATUS_GROUPS)[number];
 
 /** The statuses one group covers, derived from the terminal list. */
-export function receptionStatusesInGroup(
-  group: ReceptionStatusGroup
-): readonly ReceptionStatus[] {
+export function receptionStatusesInGroup(group: ReceptionStatusGroup): readonly ReceptionStatus[] {
   return RECEPTION_STATUSES.filter((status) =>
     group === 'finished'
       ? TERMINAL_RECEPTION_STATUSES.includes(status)
