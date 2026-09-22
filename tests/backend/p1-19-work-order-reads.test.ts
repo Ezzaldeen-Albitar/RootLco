@@ -851,7 +851,7 @@ describe('wo.work-order-list — the enriched board', () => {
 // The remaining board flags, and three defects found in review
 // (Owner directive, P1-32-PRE-OD-UX)
 // ===========================================================================
-describe('wo.work-order-list — the approval and delivery flags', () => {
+describe('wo.work-order-list — the approval, delivery, group and window filters', () => {
   /** One board row by id, as the current caller. */
   async function row(workOrderId: string): Promise<Record<string, unknown>> {
     const response = await list({ companyId: COMPANY_A1, branchId: BRANCH_A1, limit: '100' });
@@ -1026,6 +1026,124 @@ describe('wo.work-order-list — the approval and delivery flags', () => {
     // work order through any operation. The state check in the SQL is therefore
     // defence against a tenant graph that adds a reopen edge, and is recorded as
     // defence rather than claimed as a fixed defect with a live reproduction.
+  });
+
+  /** The ids one board query returns, as the read-only caller. */
+  async function idsFor(extra: Record<string, string>): Promise<readonly string[]> {
+    authAs(READER);
+    const response = await list({
+      companyId: COMPANY_A1,
+      branchId: BRANCH_A1,
+      limit: '100',
+      ...extra,
+    });
+    expect(response.status, JSON.stringify(extra)).toBe(200);
+    return (await page(response)).items.map((item) => item.id);
+  }
+
+  it('stateGroup partitions the board and the three groups never overlap', async () => {
+    // One work order in each group, produced through the real graph: `draft` and
+    // `open` are neither terminal nor a cancellation, `closed` is terminal and
+    // not a cancellation, `cancelled` is both.
+    const fresh = await createWorkOrder();
+    const working = await createOpenWorkOrder();
+    const finished = await createWorkOrder();
+    await driveToClosed(finished.workOrderId);
+    const abandoned = await createWorkOrder();
+    await advance(abandoned.workOrderId, [
+      { toState: 'cancelled', reason: 'review fixture state group' },
+    ]);
+
+    const active = await idsFor({ stateGroup: 'active' });
+    expect(active).toContain(fresh.workOrderId);
+    // The older open one the directive names: a work order that has been on the
+    // ramp for a while is still active, and a group built on `is_closed` alone
+    // would have been right about it for the wrong reason.
+    expect(active).toContain(working.workOrderId);
+    expect(active).not.toContain(finished.workOrderId);
+    expect(active).not.toContain(abandoned.workOrderId);
+
+    const terminal = await idsFor({ stateGroup: 'terminal' });
+    expect(terminal).toContain(finished.workOrderId);
+    // `cancelled` is `is_terminal` too, so a group that did not subtract the
+    // cancellations would list the abandoned job under both labels.
+    expect(terminal).not.toContain(abandoned.workOrderId);
+    expect(terminal).not.toContain(fresh.workOrderId);
+
+    const cancelled = await idsFor({ stateGroup: 'cancelled' });
+    expect(cancelled).toContain(abandoned.workOrderId);
+    expect(cancelled).not.toContain(finished.workOrderId);
+    expect(cancelled).not.toContain(fresh.workOrderId);
+  });
+
+  it('completedFrom/completedTo bound the board by the published completion instant', async () => {
+    const abandoned = await createWorkOrder();
+    await advance(abandoned.workOrderId, [
+      { toState: 'cancelled', reason: 'review fixture completion window' },
+    ]);
+    const stillOpen = await createWorkOrder();
+
+    authAs(READER);
+    const completedAt = (await row(abandoned.workOrderId)).completedAt as string;
+    expect(completedAt).not.toBeNull();
+    const at = Date.parse(completedAt);
+
+    // A window that straddles the recorded instant holds it, and the open order
+    // has no completion instant at all so no window can contain it.
+    const around = await idsFor({
+      completedFrom: new Date(at - 60_000).toISOString(),
+      completedTo: new Date(at + 60_000).toISOString(),
+    });
+    expect(around).toContain(abandoned.workOrderId);
+    expect(around).not.toContain(stillOpen.workOrderId);
+
+    // A window that ends before it does not. Asserted in both directions,
+    // because a filter that always returned nothing would satisfy the second
+    // half of the first case on its own.
+    const before = await idsFor({
+      completedFrom: new Date(at - 86_400_000).toISOString(),
+      completedTo: new Date(at - 60_000).toISOString(),
+    });
+    expect(before).not.toContain(abandoned.workOrderId);
+
+    // A lower bound on its own still narrows to finished work: `completedAt` is
+    // null for the open order, and NULL >= anything is never true.
+    const since = await idsFor({ completedFrom: new Date(at - 60_000).toISOString() });
+    expect(since).toContain(abandoned.workOrderId);
+    expect(since).not.toContain(stillOpen.workOrderId);
+  });
+
+  it('refuses state beside stateGroup, an unknown group and an inverted window', async () => {
+    authAs(READER);
+    const both = await list({
+      companyId: COMPANY_A1,
+      branchId: BRANCH_A1,
+      state: 'draft',
+      stateGroup: 'active',
+    });
+    // 422 and not an empty page: the intersection is always either the state on
+    // its own or nothing, and nothing on a board reads as an empty branch.
+    expect(both.status).toBe(422);
+
+    authAs(READER);
+    const unknown = await list({
+      companyId: COMPANY_A1,
+      branchId: BRANCH_A1,
+      stateGroup: 'finished',
+    });
+    // A group IS a closed vocabulary, unlike `state`: no tenant row could make
+    // `finished` meaningful here, so it is a validation error rather than an
+    // empty page.
+    expect(unknown.status).toBe(422);
+
+    authAs(READER);
+    const inverted = await list({
+      companyId: COMPANY_A1,
+      branchId: BRANCH_A1,
+      completedFrom: '2026-02-01T00:00:00.000Z',
+      completedTo: '2026-01-01T00:00:00.000Z',
+    });
+    expect(inverted.status).toBe(422);
   });
 });
 
