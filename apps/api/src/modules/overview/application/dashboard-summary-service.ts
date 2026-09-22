@@ -294,7 +294,9 @@ export class DashboardSummaryService extends ApplicationService {
         technicianWorkload: mayReadTechnicians
           ? ok(await this.technicianWorkload(db, scope))
           : unauthorized(),
-        lowStock: mayReadStock ? ok(await this.lowStock(db, query.companyId, branchIds)) : unauthorized(),
+        lowStock: mayReadStock
+          ? ok(await this.lowStock(db, query.companyId, branchIds))
+          : unauthorized(),
         pendingApprovalsCount: ok(approvals.requests),
         overdue: unavailable(NO_DUE_INSTANT),
       },
@@ -369,7 +371,9 @@ export class DashboardSummaryService extends ApplicationService {
     scope: { readonly companyId: string; readonly branchIds: readonly string[] }
   ): Promise<boolean> {
     for (const branchId of scope.branchIds) {
-      if (!(await callerHoldsPermission(db, permissionCode, { companyId: scope.companyId, branchId })))
+      if (
+        !(await callerHoldsPermission(db, permissionCode, { companyId: scope.companyId, branchId }))
+      )
         return false;
     }
     return true;
