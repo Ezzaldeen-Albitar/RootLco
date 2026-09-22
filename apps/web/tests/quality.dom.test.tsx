@@ -13,7 +13,7 @@ import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import ar from '../src/i18n/messages/ar.json';
 import en from '../src/i18n/messages/en.json';
-import { renderLtr, renderRtl } from './render';
+import { TEST_BRANCH, TEST_COMPANY, inBranch, renderLtr, renderRtl } from './render';
 
 const EN = en as Record<string, string>;
 const t = (key: string): string => EN[key] ?? key;
@@ -82,8 +82,11 @@ const RECORD = '22222222-2222-4222-8222-222222222222';
 const CHECK_A = '33333333-3333-4333-8333-333333333333';
 const CHECK_B = '44444444-4444-4444-8444-444444444444';
 const JOB = '55555555-5555-4555-8555-555555555555';
-const COMPANY = '88888888-8888-4888-8888-888888888888';
-const BRANCH = '99999999-9999-4999-8999-999999999999';
+// The branch the screen is standing in. It is no longer a pair of controls on
+// the queue form — the operator chooses once, in the header — so the test says
+// which branch the operator is working in rather than filling two boxes.
+const COMPANY = TEST_COMPANY.id;
+const BRANCH = TEST_BRANCH.id;
 
 const ok = <T,>(data: T) => ({ status: 'ok' as const, data, correlationId: 'corr' });
 const denied = { status: 'denied' as const, correlationId: 'corr-denied' };
@@ -271,9 +274,7 @@ describe('the QC queue', () => {
     listQcQueue.mockResolvedValue(
       ok({ items: [{ ...record, cursor: 'c1' }], nextCursor: null, hasMore: false })
     );
-    renderLtr(
-      <QualityQueueScreen locale="en" messages={en} companyIds={[COMPANY]} branchIds={[BRANCH]} />
-    );
+    renderLtr(inBranch(<QualityQueueScreen locale="en" messages={en} />));
     const link = await screen.findByRole('link', { name: t('quality.queue.openOrder') });
     expect(link).toHaveAttribute('href', `/en/work-orders/${WORK_ORDER}/closure`);
     expect(listQcQueue).toHaveBeenCalledWith({ companyId: COMPANY, branchId: BRANCH }, {}, null);
@@ -281,9 +282,7 @@ describe('the QC queue', () => {
 
   it('renders a refused queue as the refusal it was', async () => {
     listQcQueue.mockResolvedValue(denied);
-    renderLtr(
-      <QualityQueueScreen locale="en" messages={en} companyIds={[COMPANY]} branchIds={[BRANCH]} />
-    );
+    renderLtr(inBranch(<QualityQueueScreen locale="en" messages={en} />));
     expect(await screen.findByText('corr-denied', { exact: false })).toBeInTheDocument();
   });
 });

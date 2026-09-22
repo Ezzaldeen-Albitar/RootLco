@@ -3,6 +3,11 @@ import type { ReactElement } from 'react';
 import type { Locale } from '@/i18n/config';
 import { directionOf } from '@/i18n/config';
 import { getMessages, type Messages } from '@/i18n/get-messages';
+import { WorkingContextProvider } from '@/features/working-context/WorkingContextProvider';
+import type {
+  WorkingContextBranch,
+  WorkingContextSnapshot,
+} from '@/features/working-context/working-context-contract';
 
 /**
  * Render helpers that put the component in a real DIRECTION.
@@ -42,3 +47,66 @@ export const BOTH_DIRECTIONS: readonly [Locale, typeof renderLtr][] = [
 ];
 
 export const messagesFor = getMessages;
+
+/**
+ * A screen, standing in the branch an operator is working in.
+ *
+ * ## Why this exists rather than props on each screen
+ *
+ * The company/branch pair used to be two controls on every branch-addressed
+ * screen, so a test set it by typing a reference or picking one from a select.
+ * It is now one choice held by the shell, so a test that renders a screen
+ * OUTSIDE the provider is rendering it for an operator whose branch list could
+ * not be read — which is a real state, and not the one most cases are about.
+ *
+ * The default is a single authorized branch, because that is both the ordinary
+ * workshop and the case the provider auto-selects: the screen is addressed and
+ * reads immediately, exactly as a one-branch session did before.
+ */
+export const TEST_COMPANY = {
+  id: '11111111-1111-4111-8111-111111111111',
+  name: 'Test Operations',
+  code: 'OPS',
+};
+
+export const TEST_BRANCH: WorkingContextBranch = {
+  id: '22222222-2222-4222-8222-222222222222',
+  companyId: TEST_COMPANY.id,
+  code: 'MAIN',
+  name: 'Main workshop',
+  city: null,
+  timezone: 'Asia/Riyadh',
+  status: 'active',
+};
+
+export function branchSnapshot(
+  branches: readonly WorkingContextBranch[] = [TEST_BRANCH],
+  status: WorkingContextSnapshot['status'] = 'ready'
+): WorkingContextSnapshot {
+  return {
+    status,
+    tenantId: '33333333-3333-4333-8333-333333333333',
+    accountId: '44444444-4444-4444-8444-444444444444',
+    unrestricted: false,
+    companies: [TEST_COMPANY],
+    branches,
+    };
+}
+
+/** Wraps a screen in a working context. Pass the snapshot to vary the case. */
+export function inBranch(
+  ui: ReactElement,
+  options: {
+    readonly snapshot?: WorkingContextSnapshot;
+    readonly locale?: Locale;
+  } = {}
+): ReactElement {
+  return (
+    <WorkingContextProvider
+      snapshot={options.snapshot ?? branchSnapshot()}
+      messages={getMessages(options.locale ?? 'en')}
+    >
+      {ui}
+    </WorkingContextProvider>
+  );
+}

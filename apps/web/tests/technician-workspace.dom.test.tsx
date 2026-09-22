@@ -2,7 +2,7 @@ import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import en from '../src/i18n/messages/en.json';
-import { renderLtr } from './render';
+import { TEST_BRANCH, TEST_COMPANY, inBranch, renderLtr } from './render';
 
 /**
  * The technician workspace, rendered (P1-29, `W4`).
@@ -48,8 +48,10 @@ vi.mock('@/components/notifications/action-notifications', () => ({
 const { TechnicianWorkspaceScreen } =
   await import('@/features/technicians/components/TechnicianWorkspaceScreen');
 
-const COMPANY = '11111111-1111-4111-8111-111111111111';
-const BRANCH = '22222222-2222-4222-8222-222222222222';
+// The branch the technician is standing in, chosen once in the header rather
+// than picked from two selects over raw references on this screen.
+const COMPANY = TEST_COMPANY.id;
+const BRANCH = TEST_BRANCH.id;
 const JOB = '77777777-7777-4777-8777-777777777777';
 const ASSIGNMENT = 'aaaaaaaa-0000-4000-8000-000000000001';
 const ME = 'bbbbbbbb-0000-4000-8000-000000000001';
@@ -84,13 +86,7 @@ const ALL = {
 
 function renderScreen(capabilities = ALL) {
   return renderLtr(
-    <TechnicianWorkspaceScreen
-      locale="en"
-      messages={en}
-      companyIds={[COMPANY]}
-      branchIds={[BRANCH]}
-      capabilities={capabilities}
-    />
+    inBranch(<TechnicianWorkspaceScreen locale="en" messages={en} capabilities={capabilities} />)
   );
 }
 

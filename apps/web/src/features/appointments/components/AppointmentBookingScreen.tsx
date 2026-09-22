@@ -69,15 +69,17 @@ interface SelectedVehicle {
 export function AppointmentBookingScreen({
   locale,
   messages,
-  companyIds,
-  branchIds,
   types,
   channels,
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
-  readonly companyIds: readonly string[];
-  readonly branchIds: readonly string[];
+  /**
+   * The session's bare references. Accepted so the page did not have to change,
+   * and no longer read: the branch is the working context's named selection.
+   */
+  readonly companyIds?: readonly string[];
+  readonly branchIds?: readonly string[];
   /** `apt.catalogue-appointment-type-list`, read once on the server. */
   readonly types: IntakeCatalogueResult;
   /** `apt.catalogue-source-channel-list`, read once on the server. */
@@ -172,8 +174,6 @@ export function AppointmentBookingScreen({
       <div className="grid gap-3 sm:grid-cols-2">
         <BranchTargetFields
           messages={messages}
-          companyIds={companyIds}
-          branchIds={branchIds}
           companyId={companyId}
           branchId={branchId}
           onCompanyChange={setCompanyId}

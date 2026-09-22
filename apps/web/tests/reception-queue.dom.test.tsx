@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import en from '../src/i18n/messages/en.json';
 import ar from '../src/i18n/messages/ar.json';
-import { renderLtr, renderRtl } from './render';
+import { TEST_BRANCH, branchSnapshot, inBranch, renderLtr, renderRtl } from './render';
 import { RECEPTION_STATUSES } from '@/features/receptions/receptions-contract';
 import { receptionAffordances } from '@/features/receptions/check-in/closure';
 
@@ -54,16 +54,14 @@ function page(rows: readonly unknown[], hasMore = false) {
   };
 }
 
-function renderQueue(over: Record<string, unknown> = {}) {
+function renderQueue(
+  over: Record<string, unknown> = {},
+  snapshot = branchSnapshot()
+) {
+  // The branch is no longer a control on this form. It is the working context's
+  // own named selection, so a test states it by standing the screen in a branch.
   return renderLtr(
-    <ReceptionQueueScreen
-      locale="en"
-      messages={en}
-      companyIds={[COMPANY]}
-      branchIds={[BRANCH]}
-      canCreate
-      {...over}
-    />
+    inBranch(<ReceptionQueueScreen locale="en" messages={en} canCreate {...over} />, { snapshot })
   );
 }
 
@@ -84,12 +82,27 @@ describe('nothing is requested until a branch is named', () => {
     expect(screen.getByText(EN['receptions.queue.idleTitle'] as string)).toBeVisible();
   });
 
-  it('refuses to submit without a branch target, and still reads nothing', async () => {
+  it('refuses to submit until a branch is chosen, and still reads nothing', async () => {
+    // Several branches are authorized and none is chosen yet, so the screen is
+    // not addressed to one. It says which control answers that — the header —
+    // and the button cannot be pressed. It used to render two free-text boxes
+    // here and complain that a reference was required.
     const user = userEvent.setup();
-    renderQueue({ companyIds: [], branchIds: [] });
-    await user.click(screen.getByRole('button', { name: EN['receptions.queue.show'] as string }));
-    expect(await screen.findAllByText(EN['field.required'] as string)).not.toHaveLength(0);
+    const second = { ...TEST_BRANCH, id: '55555555-5555-4555-8555-555555555555', name: 'Second' };
+    renderQueue({}, branchSnapshot([TEST_BRANCH, second]));
+    const show = screen.getByRole('button', { name: EN['receptions.queue.show'] as string });
+    expect(show).toBeDisabled();
+    expect(screen.getByTestId('requires-concrete-branch')).toHaveTextContent(
+      EN['workingContext.chooseFirst'] as string
+    );
+    await user.click(show);
     expect(listReceptions).not.toHaveBeenCalled();
+  });
+
+  it('names the branch it is addressed to, instead of showing a reference', () => {
+    renderQueue();
+    expect(screen.getByTestId('working-branch-field')).toHaveTextContent(TEST_BRANCH.name);
+    expect(screen.getByTestId('working-branch-field')).not.toHaveTextContent(TEST_BRANCH.id);
   });
 
   it('sends the branch target the operator named, as a resource selector', async () => {
@@ -287,13 +300,7 @@ describe('both directions', () => {
   it('renders in Arabic, right to left', async () => {
     const user = userEvent.setup();
     renderRtl(
-      <ReceptionQueueScreen
-        locale="ar"
-        messages={ar}
-        companyIds={[COMPANY]}
-        branchIds={[BRANCH]}
-        canCreate
-      />
+      inBranch(<ReceptionQueueScreen locale="ar" messages={ar} canCreate />, { locale: 'ar' })
     );
     expect(screen.getByText(AR['receptions.queue.idleTitle'] as string)).toBeVisible();
     await user.click(screen.getByRole('button', { name: AR['receptions.queue.show'] as string }));

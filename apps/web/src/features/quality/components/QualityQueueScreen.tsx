@@ -1,11 +1,14 @@
 'use client';
 
 /**
- * The branch QC queue (P1-29 W8): `qms.qc-record-branch-list` for one branch
- * target chosen from the session's own companies and branches — the W4 shape,
- * for the W4 reason: a scope is resolved server-side from the session, and the
- * screen only says WHICH of the caller's branches to show. Each row links to
- * the work order's quality and closure view.
+ * The branch QC queue (P1-29 W8): `qms.qc-record-branch-list` for the branch
+ * the operator is working in — a scope is resolved server-side from the
+ * session, and the screen only says WHICH of the caller's branches to show.
+ * Each row links to the work order's quality and closure view.
+ *
+ * The branch is the working context's NAMED selection, chosen once in the
+ * header. It used to be two selects over raw references on this form, which
+ * asked an operator to recognise a branch by a string they could not read.
  */
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
@@ -18,6 +21,8 @@ import {
   PermissionDeniedState,
   SessionExpiredState,
 } from '@/components/states/States';
+import { WorkingBranchField } from '@/features/working-context/components/WorkingBranchField';
+import { useBranchTarget } from '@/features/working-context/use-branch-target';
 import type { BranchTarget, CursorPage, ReadState } from '@/lib/api/read-operation';
 import { formatDateTime } from '@/lib/format';
 import type { Locale } from '@/i18n/config';
@@ -34,23 +39,19 @@ const OVERALL_RESULTS = ['open', 'passed', 'failed'] as const;
 export function QualityQueueScreen({
   locale,
   messages,
-  companyIds,
-  branchIds,
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
-  readonly companyIds: readonly string[];
-  readonly branchIds: readonly string[];
+  /**
+   * The session's bare references. Accepted so the page did not have to change,
+   * and no longer read: the branch is the working context's named selection.
+   */
+  readonly companyIds?: readonly string[];
+  readonly branchIds?: readonly string[];
 }) {
-  const single =
-    companyIds.length === 1 && branchIds.length === 1
-      ? { companyId: companyIds[0] ?? '', branchId: branchIds[0] ?? '' }
-      : null;
-  const [draft, setDraft] = useState<BranchTarget>({
-    companyId: companyIds.length === 1 ? (companyIds[0] ?? '') : '',
-    branchId: branchIds.length === 1 ? (branchIds[0] ?? '') : '',
-  });
-  const [target, setTarget] = useState<BranchTarget | null>(single);
+  const branch = useBranchTarget();
+  const selected = branch.kind === 'ready' ? branch.target : null;
+  const [target, setTarget] = useState<BranchTarget | null>(selected);
   const [overallResult, setOverallResult] = useState('');
   const [pages, setPages] = useState<readonly CursorPage<QcRecord>[]>([]);
   const [state, setState] = useState<ReadState<CursorPage<QcRecord>> | null>(null);
@@ -79,45 +80,36 @@ export function QualityQueueScreen({
     else setState(next);
   };
 
-  const submitTarget = () => {
-    if (draft.companyId.length === 0 || draft.branchId.length === 0) return;
+  /*
+   * The queue follows the header.
+   *
+   * There is no "show" button any more, because there is no longer a question
+   * on this form to answer: the branch is chosen once, above, and a queue that
+   * kept showing the previous branch's rows until somebody pressed a button
+   * would be the stale-heading defect this whole change exists to remove. The
+   * pages are cleared with it, so the old branch's rows never survive the
+   * switch.
+   *
+   * Adjusted DURING render rather than in an effect — React's documented shape
+   * for "reset state when an input changes", and the one `use-server-table`
+   * already uses for its own load key. An effect would render one frame with
+   * the previous branch's rows still on screen under the new branch's name.
+   */
+  const selectedKey = selected === null ? '' : `${selected.companyId}/${selected.branchId}`;
+  const [lastSelectedKey, setLastSelectedKey] = useState(selectedKey);
+  if (selectedKey !== lastSelectedKey) {
+    setLastSelectedKey(selectedKey);
     setState(null);
     setPages([]);
-    setTarget({ companyId: draft.companyId, branchId: draft.branchId });
-  };
+    setTarget(selected);
+  }
 
   return (
     <div className="flex min-h-0 flex-col gap-6">
-      {single === null ? (
-        <form
-          onSubmit={(event) => {
-            event.preventDefault();
-            submitTarget();
-          }}
-          noValidate
-          className="flex flex-wrap items-end gap-3"
-        >
-          <SelectField
-            label={translate(messages, 'quality.queue.company')}
-            value={draft.companyId}
-            onChange={(event) => setDraft({ ...draft, companyId: event.target.value })}
-            options={companyIds.map((id) => ({ value: id, label: id }))}
-            placeholder={translate(messages, 'quality.queue.company')}
-            required
-          />
-          <SelectField
-            label={translate(messages, 'quality.queue.branch')}
-            value={draft.branchId}
-            onChange={(event) => setDraft({ ...draft, branchId: event.target.value })}
-            options={branchIds.map((id) => ({ value: id, label: id }))}
-            placeholder={translate(messages, 'quality.queue.branch')}
-            required
-          />
-          <button type="submit" className={SECONDARY_BUTTON}>
-            {translate(messages, 'quality.queue.showQueue')}
-          </button>
-        </form>
-      ) : null}
+      <WorkingBranchField
+        messages={messages}
+        label={translate(messages, 'quality.queue.branch')}
+      />
 
       {target === null ? null : (
         <section

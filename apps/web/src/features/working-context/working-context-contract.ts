@@ -176,7 +176,7 @@ export function snapshotOf(
  * request that carries it. What is stored is discarded outright unless the
  * branch is still in the list the server itself just published.
  */
-export function storageKeyFor(tenantId: string, accountId: string): string {
+export function preferenceKeyFor(tenantId: string, accountId: string): string {
   return `rootlco.working-context.${tenantId}.${accountId}`;
 }
 

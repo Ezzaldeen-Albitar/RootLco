@@ -1,7 +1,6 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { SelectField } from '@/components/forms/Field';
 import {
   BackendUnavailableState,
   EmptyState,
@@ -12,6 +11,8 @@ import {
 } from '@/components/states/States';
 import type { BranchTarget, ItemsOnly, ReadState } from '@/lib/api/read-operation';
 import { formatDateTime } from '@/lib/format';
+import { WorkingBranchField } from '@/features/working-context/components/WorkingBranchField';
+import { useBranchTarget } from '@/features/working-context/use-branch-target';
 import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
 import { translate } from '@/i18n/get-messages';
@@ -47,27 +48,26 @@ import { JobWorkPanel, type WorkspaceCapabilities } from './JobWorkPanel';
 export function TechnicianWorkspaceScreen({
   locale,
   messages,
-  companyIds,
-  branchIds,
   capabilities,
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
-  /** The session's resolved scope — server-resolved, never asserted back. */
-  readonly companyIds: readonly string[];
-  readonly branchIds: readonly string[];
+  /**
+   * The session's bare references. Accepted so the page did not have to change,
+   * and no longer read: the branch is the working context's named selection.
+   */
+  readonly companyIds?: readonly string[];
+  readonly branchIds?: readonly string[];
   readonly capabilities: WorkspaceCapabilities;
 }) {
-  const single =
-    companyIds.length === 1 && branchIds.length === 1
-      ? { companyId: companyIds[0] ?? '', branchId: branchIds[0] ?? '' }
-      : null;
-
-  const [draft, setDraft] = useState<BranchTarget>({
-    companyId: companyIds.length === 1 ? (companyIds[0] ?? '') : '',
-    branchId: branchIds.length === 1 ? (branchIds[0] ?? '') : '',
-  });
-  const [target, setTarget] = useState<BranchTarget | null>(single);
+  /*
+   * A technician's queue is for the branch they are standing in, and that is
+   * now stated once in the header rather than picked from raw references on
+   * this form.
+   */
+  const branch = useBranchTarget();
+  const selectedTarget = branch.kind === 'ready' ? branch.target : null;
+  const [target, setTarget] = useState<BranchTarget | null>(selectedTarget);
   const [queue, setQueue] = useState<ReadState<ItemsOnly<TechnicianQueueEntry>> | null>(null);
   const [reload, setReload] = useState(0);
   const [selected, setSelected] = useState<string | null>(null);
@@ -85,45 +85,29 @@ export function TechnicianWorkspaceScreen({
 
   const refresh = () => setReload((n) => n + 1);
 
-  const submitTarget = () => {
-    if (draft.companyId.length === 0 || draft.branchId.length === 0) return;
+  /*
+   * The queue follows the header, and it is reset DURING render rather than in
+   * an effect — React's documented shape for "reset state when an input
+   * changes". An effect would paint one frame of the previous branch's jobs
+   * under the new branch's name, which is the stale-heading defect this change
+   * exists to remove.
+   */
+  const targetKey =
+    selectedTarget === null ? '' : `${selectedTarget.companyId}/${selectedTarget.branchId}`;
+  const [lastTargetKey, setLastTargetKey] = useState(targetKey);
+  if (targetKey !== lastTargetKey) {
+    setLastTargetKey(targetKey);
     setSelected(null);
     setQueue(null);
-    setTarget({ companyId: draft.companyId, branchId: draft.branchId });
-  };
+    setTarget(selectedTarget);
+  }
 
   return (
     <div className="flex min-h-0 flex-col gap-6">
-      {single === null ? (
-        <form
-          onSubmit={(event) => {
-            event.preventDefault();
-            submitTarget();
-          }}
-          noValidate
-          className="flex flex-wrap items-end gap-3"
-        >
-          <SelectField
-            label={translate(messages, 'technicians.workspace.company')}
-            value={draft.companyId}
-            onChange={(event) => setDraft({ ...draft, companyId: event.target.value })}
-            options={companyIds.map((id) => ({ value: id, label: id }))}
-            placeholder={translate(messages, 'technicians.workspace.company')}
-            required
-          />
-          <SelectField
-            label={translate(messages, 'technicians.workspace.branch')}
-            value={draft.branchId}
-            onChange={(event) => setDraft({ ...draft, branchId: event.target.value })}
-            options={branchIds.map((id) => ({ value: id, label: id }))}
-            placeholder={translate(messages, 'technicians.workspace.branch')}
-            required
-          />
-          <button type="submit" className={SECONDARY_BUTTON}>
-            {translate(messages, 'technicians.workspace.showQueue')}
-          </button>
-        </form>
-      ) : null}
+      <WorkingBranchField
+        messages={messages}
+        label={translate(messages, 'technicians.workspace.branch')}
+      />
 
       {target === null ? null : queue === null ? (
         <LoadingState messages={messages} />

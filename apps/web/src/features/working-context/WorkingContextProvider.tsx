@@ -6,7 +6,6 @@ import {
   useContext,
   useEffect,
   useMemo,
-  useRef,
   useState,
   type ReactNode,
 } from 'react';
@@ -16,7 +15,7 @@ import { translate } from '@/i18n/get-messages';
 import { usePersistedPreference } from '@/lib/use-persisted-flag';
 import {
   ALL_BRANCHES,
-  storageKeyFor,
+  preferenceKeyFor,
   type WorkingContextBranch,
   type WorkingContextCompany,
   type WorkingContextSnapshot,
@@ -165,24 +164,33 @@ export function WorkingContextProvider({
    * remembered branch to the next, so the absence of either half means nothing
    * is read and nothing is written.
    */
-  const storageKey =
-    tenantId !== null && accountId !== null ? storageKeyFor(tenantId, accountId) : '';
-  const [stored, setStored] = usePersistedPreference(storageKey);
+  const preferenceKey =
+    tenantId !== null && accountId !== null ? preferenceKeyFor(tenantId, accountId) : '';
+  const [stored, setStored] = usePersistedPreference(preferenceKey);
 
-  const [version, setVersion] = useState(0);
+  /*
+   * The version and the controller move TOGETHER, as one value.
+   *
+   * They were two pieces of state, and that is a bug waiting to happen: a
+   * reader that saw the new version with the old signal, or the reverse, would
+   * either drop a live read or commit a superseded one. One object means there
+   * is no intermediate state in which they disagree.
+   *
+   * It is state rather than a ref because the signal is READ during render —
+   * every consumer takes it off the context value — and a ref read during
+   * render is not guaranteed to be the value the render is about.
+   */
+  const [epoch, setEpoch] = useState<{
+    readonly version: number;
+    readonly controller: AbortController;
+  }>(() => ({ version: 0, controller: new AbortController() }));
   const [pending, setPending] = useState<string | null>(null);
 
-  // Lazy, because `new AbortController()` in a `useState` initialiser would be
-  // re-created by a Strict Mode double render and the signal handed out would
-  // not be the one later aborted.
-  const controllerRef = useRef<AbortController | null>(null);
-  if (controllerRef.current === null) controllerRef.current = new AbortController();
+  // A Set, created once. The registry identity must be stable: every guard
+  // registers against it in an effect keyed on that identity.
+  const [guards] = useState<GuardRegistry>(() => new Set());
 
-  const guardsRef = useRef<GuardRegistry | null>(null);
-  if (guardsRef.current === null) guardsRef.current = new Set();
-  const guards = guardsRef.current;
-
-  const usable = storageKey.length > 0;
+  const usable = preferenceKey.length > 0;
 
   const selection = useMemo<WorkingContextSelection | null>(() => {
     if (status !== 'ready') return null;
@@ -230,11 +238,10 @@ export function WorkingContextProvider({
     (next: string) => {
       if (usable) setStored(next);
       // The outstanding reads are superseded the moment the branch changes.
-      controllerRef.current?.abort();
-      controllerRef.current = new AbortController();
-      setVersion((current) => current + 1);
+      epoch.controller.abort();
+      setEpoch({ version: epoch.version + 1, controller: new AbortController() });
     },
-    [usable, setStored]
+    [usable, setStored, epoch]
   );
 
   const select = useCallback(
@@ -250,15 +257,14 @@ export function WorkingContextProvider({
   );
 
   const value = useMemo<WorkingContext>(() => {
-    const signal = (controllerRef.current as AbortController).signal;
     return {
       status,
       unrestricted,
       companies,
       branches,
       selection,
-      version,
-      signal,
+      version: epoch.version,
+      signal: epoch.controller.signal,
       select,
       companyOf: (branchId) => {
         const branch = branches.find((entry) => entry.id === branchId);
@@ -268,7 +274,7 @@ export function WorkingContextProvider({
       branchName: (branchId) => branches.find((entry) => entry.id === branchId)?.name ?? null,
       switchPending: pending !== null,
     };
-  }, [status, unrestricted, companies, branches, selection, version, select, pending]);
+  }, [status, unrestricted, companies, branches, selection, epoch, select, pending]);
 
   return (
     <WorkingContextValue.Provider value={value}>

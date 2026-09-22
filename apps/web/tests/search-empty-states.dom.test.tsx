@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import en from '../src/i18n/messages/en.json';
 import ar from '../src/i18n/messages/ar.json';
-import { renderLtr, renderRtl } from './render';
+import { TEST_BRANCH, TEST_COMPANY, inBranch, renderLtr, renderRtl } from './render';
 import type { CatalogueResult } from '@/features/vehicles/catalogue-api';
 
 /** A healthy make catalogue — see the note in `vehicle-screens.dom.test.tsx`. */
@@ -194,8 +194,9 @@ describe('the vehicle search distinguishes them as well', () => {
 });
 
 describe('the work-order board searches by number and free text (P1-32)', () => {
-  const COMPANY = '11111111-1111-4111-8111-111111111111';
-  const BRANCH = '22222222-2222-4222-8222-222222222222';
+  // The branch the board is addressed to, chosen once in the header.
+  const COMPANY = TEST_COMPANY.id;
+  const BRANCH = TEST_BRANCH.id;
   const ROW = {
     id: '33333333-3333-4333-8333-333333333333',
     companyId: COMPANY,
@@ -218,9 +219,7 @@ describe('the work-order board searches by number and free text (P1-32)', () => 
   });
 
   const render = () =>
-    renderLtr(
-      <WorkOrderQueueScreen locale="en" messages={en} companyIds={[COMPANY]} branchIds={[BRANCH]} />
-    );
+    renderLtr(inBranch(<WorkOrderQueueScreen locale="en" messages={en} />));
 
   it('issues no request while typing', async () => {
     const user = userEvent.setup();
@@ -252,9 +251,7 @@ describe('the work-order board searches by number and free text (P1-32)', () => 
 
   it('echoes Arabic-Indic digits for reading and sends the number as typed', async () => {
     const user = userEvent.setup();
-    renderRtl(
-      <WorkOrderQueueScreen locale="ar" messages={ar} companyIds={[COMPANY]} branchIds={[BRANCH]} />
-    );
+    renderRtl(inBranch(<WorkOrderQueueScreen locale="ar" messages={ar} />, { locale: 'ar' }));
     const box = screen.getByLabelText(ar['workOrders.queue.numberFilter']);
     await user.type(box, '١٢٣');
     expect(screen.getByTestId('digits-echo')).toHaveTextContent('123');

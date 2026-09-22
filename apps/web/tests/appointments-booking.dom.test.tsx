@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import en from '../src/i18n/messages/en.json';
 import ar from '../src/i18n/messages/ar.json';
-import { renderLtr, renderRtl } from './render';
+import { inBranch, renderLtr, renderRtl } from './render';
 import type { IntakeCatalogueResult } from '@/features/appointments/catalogue-api';
 
 /**
@@ -122,15 +122,17 @@ beforeEach(() => {
 });
 
 function renderScreen({ types = TYPES, channels = CHANNELS } = {}) {
+  // The branch is the working context's named selection, chosen in the header,
+  // not a pair of controls on the booking form.
   return renderLtr(
-    <AppointmentBookingScreen
-      locale="en"
-      messages={en}
-      companyIds={['11111111-1111-4111-8111-111111111111']}
-      branchIds={['22222222-2222-4222-8222-222222222222']}
-      types={types}
-      channels={channels}
-    />
+    inBranch(
+      <AppointmentBookingScreen
+        locale="en"
+        messages={en}
+        types={types}
+        channels={channels}
+      />
+    )
   );
 }
 
@@ -141,14 +143,8 @@ async function chooseCustomer(user: ReturnType<typeof userEvent.setup>) {
 }
 
 async function fillForm(user: ReturnType<typeof userEvent.setup>) {
-  await user.selectOptions(
-    screen.getByLabelText(new RegExp(en['admin.scope.companyId'])),
-    '11111111-1111-4111-8111-111111111111'
-  );
-  await user.selectOptions(
-    screen.getByLabelText(new RegExp(en['admin.scope.branchId'])),
-    '22222222-2222-4222-8222-222222222222'
-  );
+  // The two scope selects that used to open this helper are gone with the
+  // controls: the branch comes from the working context the screen stands in.
   await chooseCustomer(user);
   // The customer's vehicles appear only after the choice; pick the one.
   await user.click(await screen.findByRole('button', { name: /V-0100/ }));
@@ -304,14 +300,15 @@ describe('booking', () => {
 describe('both directions', () => {
   it('renders in Arabic, right to left', () => {
     renderRtl(
-      <AppointmentBookingScreen
-        locale="ar"
-        messages={ar}
-        companyIds={['11111111-1111-4111-8111-111111111111']}
-        branchIds={['22222222-2222-4222-8222-222222222222']}
-        types={TYPES}
-        channels={CHANNELS}
-      />
+      inBranch(
+        <AppointmentBookingScreen
+          locale="ar"
+          messages={ar}
+          types={TYPES}
+          channels={CHANNELS}
+        />,
+        { locale: 'ar' }
+      )
     );
     expect(screen.getByText(ar['appointments.book.vehicleAfterCustomer'])).toBeInTheDocument();
     expect(
@@ -404,14 +401,15 @@ describe('F1 — one page of ten was every vehicle this picker could offer', () 
     listCustomerVehicles.mockResolvedValue(pageOf([VEHICLE_ENTRY], true));
     const user = userEvent.setup();
     renderRtl(
-      <AppointmentBookingScreen
-        locale="ar"
-        messages={ar}
-        companyIds={['11111111-1111-4111-8111-111111111111']}
-        branchIds={['22222222-2222-4222-8222-222222222222']}
-        types={TYPES}
-        channels={CHANNELS}
-      />
+      inBranch(
+        <AppointmentBookingScreen
+          locale="ar"
+          messages={ar}
+          types={TYPES}
+          channels={CHANNELS}
+        />,
+        { locale: 'ar' }
+      )
     );
     await user.type(screen.getByLabelText(ar['crm.customers.column.name']), 'Nadia');
     await user.click(screen.getByRole('button', { name: ar['customerSelector.search'] }));

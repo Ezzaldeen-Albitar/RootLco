@@ -24,7 +24,7 @@ import {
   type WorkingContext,
 } from '@/features/working-context/WorkingContextProvider';
 import {
-  storageKeyFor,
+  preferenceKeyFor,
   type WorkingContextSnapshot,
 } from '@/features/working-context/working-context-contract';
 import { BOTH_DIRECTIONS, renderLtr, renderRtl } from './render';
@@ -929,7 +929,7 @@ function DirtyScreen({ dirty }: { readonly dirty: boolean }) {
   return null;
 }
 
-const WC_KEY = storageKeyFor(WC_TENANT, WC_ACCOUNT);
+const WC_KEY = preferenceKeyFor(WC_TENANT, WC_ACCOUNT);
 
 describe('the working context', () => {
   beforeEach(() => {
@@ -982,7 +982,7 @@ describe('the working context', () => {
   });
 
   it('does not let one operator inherit the branch of the last person on the machine', () => {
-    window.localStorage.setItem(storageKeyFor(WC_TENANT, 'somebody-else'), 'b-2');
+    window.localStorage.setItem(preferenceKeyFor(WC_TENANT, 'somebody-else'), 'b-2');
     const { seen } = renderContext(wcSnapshot([MAIN, SECOND]));
     expect(seen().selection).toBeNull();
   });

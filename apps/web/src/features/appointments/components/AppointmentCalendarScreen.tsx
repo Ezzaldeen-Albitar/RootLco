@@ -8,6 +8,7 @@ import { INITIAL_REQUEST, type TableRequest } from '@/components/data-table/tabl
 import { useServerTable } from '@/components/data-table/use-server-table';
 import { SelectField, TextField } from '@/components/forms/Field';
 import { EmptyState } from '@/components/states/States';
+import { useWorkingContext } from '@/features/working-context/WorkingContextProvider';
 import type { BranchTarget } from '@/lib/api/read-operation';
 import { formatDateTime } from '@/lib/format';
 import type { Messages } from '@/i18n/get-messages';
@@ -107,22 +108,25 @@ function initialDraft(now = new Date()): Draft {
 export function AppointmentCalendarScreen({
   locale,
   messages,
-  companyIds,
-  branchIds,
   canManage,
   canCheckIn,
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
   /** The session's resolved scope — server-resolved, never asserted back. */
-  readonly companyIds: readonly string[];
-  readonly branchIds: readonly string[];
+  /**
+   * The session's bare references. Accepted so the page did not have to change,
+   * and no longer read: the branch is the working context's named selection.
+   */
+  readonly companyIds?: readonly string[];
+  readonly branchIds?: readonly string[];
   /** `apt.appointment.manage` — gates the offer to book. */
   readonly canManage: boolean;
   /** `rec.reception.manage` — gates the day queue's arrival affordance. */
   readonly canCheckIn: boolean;
 }) {
   const [draft, setDraft] = useState<Draft>(() => initialDraft());
+  const { version: workingContextVersion } = useWorkingContext();
   const [submitted, setSubmitted] = useState<SubmittedCalendar | null>(null);
   const [errors, setErrors] = useState<Readonly<Record<string, string>>>({});
 
@@ -179,8 +183,6 @@ export function AppointmentCalendarScreen({
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           <BranchTargetFields
             messages={messages}
-            companyIds={companyIds}
-            branchIds={branchIds}
             companyId={draft.companyId}
             branchId={draft.branchId}
             onCompanyChange={(companyId) => setDraft((d) => ({ ...d, companyId }))}
@@ -254,9 +256,11 @@ export function AppointmentCalendarScreen({
         />
       ) : (
         // Mounted only after submission — see the docblock. The key restarts
-        // the table on a new target or range rather than paging the old one.
+        // the table on a new target or range rather than paging the old one,
+        // and carries the working-context version so a branch changed in the
+        // header cannot leave the previous branch's rows on screen.
         <CalendarResults
-          key={JSON.stringify(submitted)}
+          key={`${workingContextVersion}:${JSON.stringify(submitted)}`}
           locale={locale}
           messages={messages}
           submitted={submitted}

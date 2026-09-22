@@ -63,7 +63,7 @@ vi.mock('next/navigation', () => ({
 
 const { requireSession, readSession } = await import('@/features/authentication/api/session');
 const { loadWorkingContext } = await import('@/features/working-context/api');
-const { WORKING_CONTEXT_PATH, isWorkingContextShape, storageKeyFor } = await import(
+const { WORKING_CONTEXT_PATH, isWorkingContextShape, preferenceKeyFor } = await import(
   '@/features/working-context/working-context-contract'
 );
 const { GET } = await import('@/app/[locale]/(auth)/session-ended/route');
@@ -376,8 +376,8 @@ describe('the working-context read', () => {
   it('keys the remembered choice to the workspace AND the account', () => {
     // A shared office machine is ordinary. Two operators signing in one after
     // the other must not inherit each other's branch.
-    expect(storageKeyFor('t-1', 'u-1')).toBe('rootlco.working-context.t-1.u-1');
-    expect(storageKeyFor('t-1', 'u-1')).not.toBe(storageKeyFor('t-1', 'u-2'));
-    expect(storageKeyFor('t-1', 'u-1')).not.toBe(storageKeyFor('t-2', 'u-1'));
+    expect(preferenceKeyFor('t-1', 'u-1')).toBe('rootlco.working-context.t-1.u-1');
+    expect(preferenceKeyFor('t-1', 'u-1')).not.toBe(preferenceKeyFor('t-1', 'u-2'));
+    expect(preferenceKeyFor('t-1', 'u-1')).not.toBe(preferenceKeyFor('t-2', 'u-1'));
   });
 });
