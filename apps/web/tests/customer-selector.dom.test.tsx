@@ -20,10 +20,17 @@ import { renderLtr, renderRtl } from './render';
  *   1. the operator sees and chooses a NAME, and
  *   2. the uuid is submitted and never rendered.
  *
- * Plus the property that keeps it usable at all: it does not search while
- * somebody is typing. `GET /api/v1/customers` is `expensive-read` at 30 requests
- * per 60 seconds, and a search-as-you-type chooser spends that budget in under
- * three seconds and then rate-limits the operator out of the form.
+ * Plus the property that keeps it usable at all, which CHANGED under the Owner
+ * directive (`P1-32-PRE-OD-UX`) and is now the stronger of the two.
+ *
+ * It used to search only on an explicit action, because a request per CHARACTER
+ * would spend `GET /api/v1/customers` — `expensive-read`, 30 requests per 60
+ * seconds — in under three seconds of typing. It now searches as the operator
+ * types, through `useSearchRequest`: one request per PAUSE, with every
+ * superseded answer discarded. That is FEWER requests than the type-press-read-
+ * correct-press loop it replaces, and the cases below hold the part that
+ * matters — nothing on mount, nothing per keystroke, and one request for one
+ * settled term.
  */
 
 const searchCustomerDirectory = vi.fn();
@@ -105,11 +112,27 @@ describe('the selector asks nothing until it is asked', () => {
     expect(screen.getByText(en['customerSelector.idle'])).toBeInTheDocument();
   });
 
-  it('issues no request while the operator types a name', async () => {
+  it('issues no request PER KEYSTROKE, and exactly one for the settled term', async () => {
     const user = userEvent.setup();
     renderLtr(<Harness />);
     await user.type(screen.getByLabelText(en['crm.customers.column.name']), 'Layla Haddad');
-    // Twelve keystrokes. Search-as-you-type would have spent 12 of 30.
+    // Twelve keystrokes. A request per character would have spent 12 of 30.
+    expect(searchCustomerDirectory).not.toHaveBeenCalled();
+
+    // One, once the term settles — and still one after the timer has had time
+    // to fire again, because nothing changed.
+    await waitFor(() => expect(searchCustomerDirectory).toHaveBeenCalledTimes(1));
+    await new Promise((resolve) => setTimeout(resolve, 350));
+    expect(searchCustomerDirectory).toHaveBeenCalledTimes(1);
+    expect(searchCustomerDirectory.mock.calls[0]?.[2]).toEqual({ name: 'Layla Haddad' });
+  });
+
+  it('refuses a one-character free-text term before spending a request', async () => {
+    const user = userEvent.setup();
+    renderLtr(<Harness />);
+    await user.type(screen.getByLabelText(en['customerSelector.q']), 'L');
+    expect(await screen.findByText(en['crm.customers.search.qTooShort'])).toBeInTheDocument();
+    await new Promise((resolve) => setTimeout(resolve, 350));
     expect(searchCustomerDirectory).not.toHaveBeenCalled();
   });
 
@@ -118,8 +141,10 @@ describe('the selector asks nothing until it is asked', () => {
     renderLtr(<Harness />);
     await user.click(screen.getByRole('button', { name: en['customerSelector.search'] }));
     // An empty search asks the backend for "everything" and spends a slot to
-    // say something nobody asked.
+    // say something nobody asked. Waited out, so the debounce cannot hide one.
+    await new Promise((resolve) => setTimeout(resolve, 350));
     expect(searchCustomerDirectory).not.toHaveBeenCalled();
+    expect(screen.getByText(en['customerSelector.idle'])).toBeInTheDocument();
   });
 
   it('searches once, on the explicit action', async () => {
@@ -174,6 +199,8 @@ describe('the operator chooses a name and the form carries an id', () => {
     await user.click(screen.getByRole('button', { name: en['customerSelector.change'] }));
 
     expect(screen.queryByTestId('customer-selector-value')).not.toBeInTheDocument();
+    // The list collapsed with the choice: the criteria that produced it are
+    // gone, so there is nothing left for a stray second click to replace.
     expect(screen.getByText(en['customerSelector.idle'])).toBeInTheDocument();
   });
 

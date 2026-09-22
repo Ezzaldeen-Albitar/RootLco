@@ -33,7 +33,7 @@ vi.mock('@/lib/api/server-client', () => ({
   authorizedClient: () => authorizedClient(),
 }));
 
-const { listWorkOrders } = await import('@/features/work-orders/api');
+const { listWorkOrders, readWorkOrderCatalogue } = await import('@/features/work-orders/api');
 
 const TARGET = {
   companyId: '11111111-1111-4111-8111-111111111111',
@@ -64,6 +64,12 @@ const ROW = {
     registrationPlate: 'ABC-1234',
     makeModel: 'A make and model',
   },
+  // The three fields the Owner directive added to the published row. Present
+  // here because they are present there: a fixture that omitted them would let
+  // an adapter that dropped them pass.
+  assignedTechnician: { id: '77777777-7777-4777-8777-777777777777', displayName: null },
+  completedAt: null,
+  qualityState: null,
 };
 
 const REQUEST = { pageSize: 25 } as never;
@@ -197,5 +203,126 @@ describe('listWorkOrders maps a published page onto table rows', () => {
 
     expect(result.status).toBe('expired');
     expect(get).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * The board scope and the board flags (Owner directive, `P1-32-PRE-OD-UX`).
+ *
+ * Two contract changes meet in this adapter and both are easy to get quietly
+ * wrong. An absent branch must be OMITTED rather than sent blank — the route
+ * reads an omission as "every branch of this company I may read" and a blank
+ * value as a malformed reference. And a flag turned OFF must travel as the
+ * literal word, because the route parses `'true'`/`'false'` and a coerced
+ * boolean would make every non-empty string true.
+ */
+describe('the branch may be left unnamed, and that is a request', () => {
+  it('sends the company alone when no branch is named', async () => {
+    get.mockResolvedValue(ok({ items: [], nextCursor: null, hasMore: false }));
+
+    await listWorkOrders({ companyId: TARGET.companyId, branchId: null }, {}, REQUEST, null);
+
+    const url = new URL(`https://api.invalid${String(get.mock.calls[0]?.[0])}`);
+    expect(url.searchParams.get('companyId')).toBe(TARGET.companyId);
+    // Omitted, not blank. A blank one would be a malformed reference at the
+    // backend and a 422 far from the mistake.
+    expect(url.searchParams.has('branchId')).toBe(false);
+    expect(String(get.mock.calls[0]?.[0])).not.toContain('branchId=');
+  });
+
+  it('refuses a blank company rather than asking for everything', async () => {
+    await expect(
+      listWorkOrders({ companyId: '', branchId: null }, {}, REQUEST, null)
+    ).rejects.toThrow(/companyId/);
+  });
+
+  it('still refuses a scope key smuggled among the filters', async () => {
+    get.mockResolvedValue(ok({ items: [], nextCursor: null, hasMore: false }));
+    await expect(
+      listWorkOrders(TARGET, { state: 'open', branchId: 'forged' } as never, REQUEST, null)
+    ).resolves.toBeDefined();
+    // The criteria are named one by one in the adapter, so an unknown key is
+    // never handed to the query builder at all — which is why the call above
+    // succeeds and the forged value simply does not travel.
+    expect(String(get.mock.calls[0]?.[0])).not.toContain('forged');
+  });
+});
+
+describe('a board flag is three-valued on the wire', () => {
+  it('sends the literal word for a flag that was asked for', async () => {
+    get.mockResolvedValue(ok({ items: [], nextCursor: null, hasMore: false }));
+
+    await listWorkOrders(
+      TARGET,
+      {
+        assignedToMe: true,
+        awaitingParts: true,
+        awaitingApproval: true,
+        awaitingQuality: true,
+        readyForDelivery: true,
+      },
+      REQUEST,
+      null
+    );
+
+    const url = new URL(`https://api.invalid${String(get.mock.calls[0]?.[0])}`);
+    for (const flag of [
+      'assignedToMe',
+      'awaitingParts',
+      'awaitingApproval',
+      'awaitingQuality',
+      'readyForDelivery',
+    ]) {
+      expect(url.searchParams.get(flag), flag).toBe('true');
+    }
+  });
+
+  it('distinguishes a flag turned OFF from a flag nobody asked about', async () => {
+    get.mockResolvedValue(ok({ items: [], nextCursor: null, hasMore: false }));
+
+    await listWorkOrders(TARGET, { assignedToMe: false }, REQUEST, null);
+
+    const url = new URL(`https://api.invalid${String(get.mock.calls[0]?.[0])}`);
+    // OFF is a request. The route reads the word, so this must be the word and
+    // not an omission — and not an empty value, which the query builder drops.
+    expect(url.searchParams.get('assignedToMe')).toBe('false');
+    // The four nobody mentioned are absent entirely.
+    for (const flag of [
+      'awaitingParts',
+      'awaitingApproval',
+      'awaitingQuality',
+      'readyForDelivery',
+    ]) {
+      expect(url.searchParams.has(flag), flag).toBe(false);
+    }
+  });
+});
+
+describe('the state catalogue read the board labels its rows from', () => {
+  it('asks the tenant-scoped catalogue with no parameters at all', async () => {
+    get.mockResolvedValue(
+      ok({
+        workOrderStates: [
+          { code: 'open', name: 'Open', isTerminal: false, isClosed: false, isCancellation: false },
+        ],
+        jobStates: [],
+        workOrderTransitions: [],
+        jobTransitions: [],
+      })
+    );
+
+    const read = await readWorkOrderCatalogue();
+
+    // `.strict()` and deliberately empty: a cursor or a limit here would imply a
+    // page boundary the catalogue does not have.
+    expect(String(get.mock.calls[0]?.[0])).toBe('/api/v1/work-order-catalogue');
+    expect(read.status).toBe('ok');
+    expect(read.status === 'ok' ? read.data.workOrderStates[0]?.code : null).toBe('open');
+  });
+
+  it('answers a refusal as a refusal, so a board can go on rendering codes', async () => {
+    get.mockResolvedValue(failure('forbidden'));
+    const read = await readWorkOrderCatalogue();
+    expect(read.status).toBe('denied');
   });
 });
