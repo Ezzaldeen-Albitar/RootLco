@@ -5766,5 +5766,16 @@
   "quality.closure.originatingJobHint": "المهمة التي اكتُشف فيها هذا العمل الإضافي. يُسجَّل العمل الإضافي دائمًا على المهمة التي نشأ عنها.",
   "quality.closure.originatingJobNone": "لا توجد مهام بعد على أمر العمل هذا، فلا شيء يُسجَّل عليه العمل الإضافي. أضف مهمة إلى أمر العمل أولًا.",
   "quality.closure.originatingJobPlaceholder": "اختر مهمة",
-  "quality.closure.originatingJobUnknown": "لم تُقرأ بعد المهام المسجّلة على أمر العمل هذا. ستظهر هنا فور قراءة أمر العمل."
+  "quality.closure.originatingJobUnknown": "لم تُقرأ بعد المهام المسجّلة على أمر العمل هذا. ستظهر هنا فور قراءة أمر العمل.",
+  "workingContext.allBranches": "كل فروعي",
+  "workingContext.choose": "اختر فرعك",
+  "workingContext.discard.confirm": "تجاهل وغيّر الفرع",
+  "workingContext.discard.description": "لديك إدخالات في هذه الشاشة لم تُحفظ بعد. تغيير الفرع الآن سيؤدي إلى فقدانها.",
+  "workingContext.discard.title": "هل تترك العمل غير المحفوظ؟",
+  "workingContext.label": "فرع العمل",
+  "workingContext.noBranch": "لا يوجد فرع مُسنَد إليك بعد. اطلب من مديرك إضافة فرع.",
+  "workingContext.otherCompany": "فروع أخرى",
+  "workingContext.prompt": "اختر فرعك للبدء",
+  "workingContext.retry": "حاول مرة أخرى",
+  "workingContext.unavailable": "تعذّرت قراءة قائمة فروعك."
 }
