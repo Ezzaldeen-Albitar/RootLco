@@ -324,9 +324,9 @@ describe('page header', () => {
       <PageHeader
         locale="en"
         messages={messages}
-        titleKey="overview.title"
-        descriptionKey="overview.description"
-        crumbs={[{ labelKey: 'nav.overview', href: '/en' }, { labelKey: 'nav.gallery' }]}
+        titleKey="dashboard.title"
+        descriptionKey="dashboard.description"
+        crumbs={[{ labelKey: 'nav.dashboard', href: '/en' }, { labelKey: 'nav.gallery' }]}
       />
     );
     expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1);
@@ -338,7 +338,7 @@ describe('page header', () => {
         locale="en"
         messages={messages}
         titleKey="gallery.title"
-        crumbs={[{ labelKey: 'nav.overview', href: '/en' }, { labelKey: 'nav.gallery' }]}
+        crumbs={[{ labelKey: 'nav.dashboard', href: '/en' }, { labelKey: 'nav.gallery' }]}
       />
     );
     const nav = screen.getByRole('navigation', { name: 'Breadcrumb' });
@@ -445,14 +445,14 @@ describe('exactly one breadcrumb says it is the current page', () => {
   const TRAILS = crumbTrailsInSource();
 
   /** Real keys for the crumbs whose `labelKey` the source computes at runtime. */
-  const RUNTIME_LABEL_KEYS = ['nav.overview', 'nav.gallery', 'nav.profile'];
+  const RUNTIME_LABEL_KEYS = ['nav.dashboard', 'nav.gallery', 'nav.profile'];
 
   function renderTrail(trail: SourceTrail) {
     return renderLtr(
       <PageHeader
         locale="en"
         messages={messages}
-        titleKey="overview.title"
+        titleKey="dashboard.title"
         crumbs={trail.crumbs.map((crumb, index) => ({
           labelKey: crumb.labelKey ?? (RUNTIME_LABEL_KEYS[index] as string),
           ...(crumb.href === null ? {} : { href: crumb.href }),

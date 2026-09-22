@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process';
-import { readFileSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import { join, relative, sep } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
   brand,
@@ -152,12 +152,40 @@ describe('the approved brand assets', () => {
 });
 
 describe('the provisional declaration is governed by brand state', () => {
-  // P1-25-F-026. The header notice and the overview card were rendered
-  // UNCONDITIONALLY, which quietly falsified the phase's central claim: an
-  // approved brand would still have shipped a product announcing "final brand
-  // pending". Both are now guarded on `brand.isProvisional`, and these tests
-  // exist so the guard cannot be removed without a red suite.
-  const SURFACES = ['src/components/shell/AppShell.tsx', 'src/app/[locale]/(dashboard)/page.tsx'];
+  /*
+   * P1-25-F-026. The header notice and the overview card were rendered
+   * UNCONDITIONALLY, which quietly falsified the phase's central claim: an
+   * approved brand would still have shipped a product announcing "final brand
+   * pending". Both were guarded on `brand.isProvisional`, and these cases exist
+   * so the guard cannot be removed without a red suite.
+   *
+   * The surfaces are now FOUND rather than listed. The overview page used to be
+   * one of the two and no longer says anything about the brand — it is the
+   * workshop's dashboard — and a hand-written list would have had to be edited
+   * to say so, which is the same edit somebody would make to silence a real
+   * failure. Collecting every file that renders provisional copy means a THIRD
+   * surface is governed the day it is written, and a surface that stops
+   * rendering the copy leaves the set by itself.
+   */
+  const PROVISIONAL_COPY = /provisionalBrand|brandTitle|brandBody/;
+
+  function sourcesUnder(dir: string, out: string[] = []): string[] {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const path = join(dir, entry.name);
+      if (entry.isDirectory()) sourcesUnder(path, out);
+      else if (entry.name.endsWith('.tsx')) out.push(path);
+    }
+    return out;
+  }
+
+  const SURFACES = sourcesUnder(join(ROOT, 'src'))
+    .filter((path) => PROVISIONAL_COPY.test(readFileSync(path, 'utf8')))
+    .map((path) => relative(ROOT, path).split(sep).join('/'));
+
+  it('finds the surfaces at all, so the two cases below are not vacuous', () => {
+    expect(SURFACES.length, 'no surface renders provisional-state copy').toBeGreaterThan(0);
+    expect(SURFACES).toContain('src/components/shell/AppShell.tsx');
+  });
 
   it('guards every surface that renders provisional-state copy', () => {
     for (const rel of SURFACES) {

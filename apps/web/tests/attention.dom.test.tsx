@@ -6,7 +6,17 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import ar from '../src/i18n/messages/ar.json';
 import { PermissionDeniedState } from '@/components/states/States';
-import { messagesFor, renderLtr, renderRtl } from './render';
+import {
+  BranchSwitch,
+  OTHER_BRANCH,
+  TEST_BRANCH,
+  TEST_COMPANY,
+  branchSnapshot,
+  inBranch,
+  messagesFor,
+  renderLtr,
+  renderRtl,
+} from './render';
 import {
   BRANCH_ID,
   COMPANY_ID,
@@ -73,6 +83,16 @@ vi.mock('@/features/attention/api', () => ({
   readCapacityAlerts: (...args: unknown[]) => readCapacityAlerts(...args),
 }));
 
+/**
+ * The dashboard's one read, mocked here for the same reason the five alert
+ * reads are: this file is where the screens that tell an operator what needs
+ * attention are proved, and the dashboard is now the first of them.
+ */
+const readDashboardSummary = vi.fn();
+vi.mock('@/features/overview/api', () => ({
+  readDashboardSummary: (...args: unknown[]) => readDashboardSummary(...args),
+}));
+
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }),
   notFound: () => {
@@ -90,6 +110,7 @@ vi.mock('@/features/authentication/api/session', () => ({
 }));
 
 const { AttentionScreen } = await import('@/features/attention/components/AttentionScreen');
+const { DashboardScreen } = await import('@/features/overview/components/DashboardScreen');
 const { StockAlertIndicator } = await import('@/features/inventory/components/StockAlertIndicator');
 type RoutePage = (args: { params: Promise<Record<string, string>> }) => Promise<React.ReactNode>;
 const AttentionPage = (await import('@/app/[locale]/(dashboard)/attention/page'))
@@ -789,3 +810,509 @@ function findScreenProps(node: unknown): Record<string, unknown> | null {
   }
   return null;
 }
+
+/* -------------------------------------------------------------------------- *
+ * The dashboard (Owner directive, `P1-32-PRE-OD-UX`)
+ *
+ * It lives in this file because it is the same question this suite already
+ * asks of the Attention area: does a screen that summarises a workshop state
+ * only what it was told, and does it say the difference between "none",
+ * "not yours to see" and "we could not find out"?
+ * -------------------------------------------------------------------------- */
+
+/** A section the platform computed. */
+function figure<T>(value: T) {
+  return { status: 'ok' as const, value };
+}
+/** A section this reader may not see. NEVER to be rendered as a zero. */
+const WITHHELD = { status: 'unauthorized' as const };
+/** A section the platform cannot answer at all. */
+function unanswerable(reason: string) {
+  return { status: 'unavailable' as const, reason };
+}
+
+const GENERATED_AT = '2026-09-22T09:00:00.000Z';
+
+function dashboardSummary(over: Record<string, unknown> = {}) {
+  return {
+    period: {
+      kind: 'today',
+      from: '2026-09-22',
+      to: '2026-09-22',
+      timezone: 'Asia/Riyadh',
+    },
+    generatedAt: GENERATED_AT,
+    branchIds: [TEST_BRANCH.id],
+    sections: {
+      receptionsOpened: figure(4),
+      activeWorkOrders: figure(7),
+      awaitingApproval: figure(2),
+      awaitingParts: figure(1),
+      // Withheld on purpose: the delivery code gates it, and plenty of readers
+      // of this screen do not hold it.
+      readyForDelivery: WITHHELD,
+      completedInPeriod: figure(5),
+      workOrdersByState: figure([
+        { state: 'in_progress', label: 'In progress', count: 5, isTerminal: false },
+        // A code the platform does not define: the workshop's own word for it
+        // is what must appear, never the code and never a guess.
+        { state: 'awaiting_insurer', label: 'With the insurer', count: 2, isTerminal: false },
+        { state: 'closed', label: 'Closed', count: 3, isTerminal: true },
+      ]),
+      intakeCompletionTrend: figure([
+        { date: '2026-09-21', opened: 2, completed: 1 },
+        { date: '2026-09-22', opened: 3, completed: 4 },
+      ]),
+      technicianWorkload: figure([
+        { technicianId: 'tech-1', displayName: 'Technician one', activeCount: 3 },
+        { technicianId: 'tech-2', displayName: null, activeCount: 1 },
+      ]),
+      lowStock: figure(6),
+      pendingApprovalsCount: figure(2),
+      overdue: unanswerable('nothing records when a work order was promised'),
+      ...over,
+    },
+  };
+}
+
+/** The tile for one figure, found by the section it renders. */
+function tile(container: HTMLElement, id: string): HTMLElement {
+  const element = container.querySelector(`[data-figure="${id}"]`);
+  if (!element) throw new Error(`no tile for ${id}`);
+  return element as HTMLElement;
+}
+
+/** The chart section under a heading, by the heading's own words. */
+function chart(headingKey: string): HTMLElement {
+  const heading = screen.getByRole('heading', { name: EN[headingKey] as string });
+  const section = heading.closest('section');
+  if (!section) throw new Error(`no chart under ${headingKey}`);
+  return section as HTMLElement;
+}
+
+describe('the dashboard reads once for the branch it is addressed to', () => {
+  beforeEach(() => {
+    readDashboardSummary.mockReset();
+    readDashboardSummary.mockResolvedValue(okRead(dashboardSummary()));
+  });
+
+  it('asks for today, for the working branch, exactly once', async () => {
+    renderLtr(inBranch(<DashboardScreen locale="en" messages={messagesFor('en')} />));
+
+    await screen.findByText('7');
+    expect(readDashboardSummary).toHaveBeenCalledTimes(1);
+    expect(readDashboardSummary).toHaveBeenCalledWith(
+      { companyId: TEST_COMPANY.id, branchId: TEST_BRANCH.id },
+      { period: 'today' }
+    );
+  });
+
+  it('states the period it covers and the moment the figures were taken', async () => {
+    const { container } = renderLtr(
+      inBranch(<DashboardScreen locale="en" messages={messagesFor('en')} />)
+    );
+
+    await screen.findByText('7');
+    // The zone the days were counted in travels in the answer and is said, so a
+    // reader in another one knows which midnight the figures stop at.
+    expect(container.textContent).toContain('Asia/Riyadh');
+    expect(screen.getByText(/Figures as they stood at/)).toBeTruthy();
+  });
+
+  it('asks again, for the new period, when the period changes', async () => {
+    const user = userEvent.setup();
+    renderLtr(inBranch(<DashboardScreen locale="en" messages={messagesFor('en')} />));
+    await screen.findByText('7');
+
+    await user.click(screen.getByRole('button', { name: EN['dashboard.period.yesterday'] }));
+
+    await waitFor(() => {
+      expect(readDashboardSummary).toHaveBeenCalledTimes(2);
+    });
+    expect(readDashboardSummary).toHaveBeenLastCalledWith(
+      { companyId: TEST_COMPANY.id, branchId: TEST_BRANCH.id },
+      { period: 'yesterday' }
+    );
+  });
+
+  it('refuses a period that ends before it starts, at the field', async () => {
+    const user = userEvent.setup();
+    renderLtr(inBranch(<DashboardScreen locale="en" messages={messagesFor('en')} />));
+    await screen.findByText('7');
+
+    await user.click(screen.getByRole('button', { name: EN['dashboard.period.custom'] }));
+    const from = screen.getByLabelText(EN['dashboard.period.from'] as string);
+    const to = screen.getByLabelText(EN['dashboard.period.to'] as string);
+    await user.type(from, '2026-09-10');
+    await user.type(to, '2026-09-01');
+    await user.click(screen.getByRole('button', { name: EN['dashboard.period.apply'] }));
+
+    expect(screen.getByText(EN['dashboard.period.inverted'] as string)).toBeTruthy();
+    // Refused here, so nothing was sent: the first read is still the only one.
+    expect(readDashboardSummary).toHaveBeenCalledTimes(1);
+  });
+
+  it('refuses a period longer than the operation accepts, at the field', async () => {
+    const user = userEvent.setup();
+    renderLtr(inBranch(<DashboardScreen locale="en" messages={messagesFor('en')} />));
+    await screen.findByText('7');
+
+    await user.click(screen.getByRole('button', { name: EN['dashboard.period.custom'] }));
+    await user.type(screen.getByLabelText(EN['dashboard.period.from'] as string), '2026-01-01');
+    await user.type(screen.getByLabelText(EN['dashboard.period.to'] as string), '2026-12-31');
+    await user.click(screen.getByRole('button', { name: EN['dashboard.period.apply'] }));
+
+    expect(screen.getByText(EN['dashboard.period.tooLong'] as string)).toBeTruthy();
+    expect(readDashboardSummary).toHaveBeenCalledTimes(1);
+  });
+
+  it('never shows the previous branch figures under the new branch', async () => {
+    const user = userEvent.setup();
+    renderLtr(
+      inBranch(
+        <>
+          <BranchSwitch to={TEST_BRANCH.id} label="first branch" />
+          <BranchSwitch to={OTHER_BRANCH.id} label="second branch" />
+          <DashboardScreen locale="en" messages={messagesFor('en')} />
+        </>,
+        { snapshot: branchSnapshot([TEST_BRANCH, OTHER_BRANCH]) }
+      )
+    );
+
+    // Two branches and none chosen: the header asks, and nothing is read.
+    expect(readDashboardSummary).not.toHaveBeenCalled();
+
+    await user.click(screen.getByRole('button', { name: 'first branch' }));
+    await screen.findByText('7');
+
+    // The next answer never arrives. The figures of the branch just left must
+    // not sit under the new branch's heading while it is in flight.
+    readDashboardSummary.mockReturnValueOnce(new Promise(() => undefined));
+    await user.click(screen.getByRole('button', { name: 'second branch' }));
+
+    await waitFor(() => {
+      expect(screen.queryByText('7')).toBeNull();
+    });
+    expect(readDashboardSummary).toHaveBeenLastCalledWith(
+      { companyId: TEST_COMPANY.id, branchId: OTHER_BRANCH.id },
+      { period: 'today' }
+    );
+  });
+
+  it('asks for nothing, and says why, when the branches span two companies', async () => {
+    const elsewhere = { ...OTHER_BRANCH, companyId: '99999999-9999-4999-8999-999999999999' };
+    renderLtr(
+      inBranch(
+        <>
+          <BranchSwitch to="all" label="everywhere" />
+          <DashboardScreen locale="en" messages={messagesFor('en')} />
+        </>,
+        { snapshot: branchSnapshot([TEST_BRANCH, elsewhere]) }
+      )
+    );
+
+    await userEvent.setup().click(screen.getByRole('button', { name: 'everywhere' }));
+
+    expect(await screen.findByText(EN['workingContext.spansCompanies'] as string)).toBeTruthy();
+    expect(readDashboardSummary).not.toHaveBeenCalled();
+  });
+});
+
+describe('a withheld figure is not a zero, and an unanswerable one is not either', () => {
+  beforeEach(() => {
+    readDashboardSummary.mockReset();
+  });
+
+  it('renders the three section states as three different statements', async () => {
+    readDashboardSummary.mockResolvedValue(
+      okRead(
+        dashboardSummary({
+          completedInPeriod: unanswerable('the platform cannot work this out'),
+        })
+      )
+    );
+    const { container } = renderLtr(
+      inBranch(<DashboardScreen locale="en" messages={messagesFor('en')} />)
+    );
+    await screen.findByText('7');
+
+    // Computed: the number, and nothing else.
+    expect(tile(container, 'activeWorkOrders').textContent).toContain('7');
+
+    // Withheld: said in words, and NEVER as a figure of any kind.
+    const withheld = tile(container, 'readyForDelivery');
+    expect(withheld.textContent).toContain(EN['dashboard.card.withheld']);
+    expect(withheld.textContent).not.toContain('0');
+
+    // Unanswerable: a third sentence, distinct from the refusal above.
+    const cannot = tile(container, 'completedInPeriod');
+    expect(cannot.textContent).toContain(EN['dashboard.card.unavailable']);
+    expect(cannot.textContent).not.toContain('0');
+    expect(cannot.textContent).not.toContain(EN['dashboard.card.withheld']);
+  });
+
+  it('says nothing at all about lateness', async () => {
+    readDashboardSummary.mockResolvedValue(okRead(dashboardSummary()));
+    const { container } = renderLtr(
+      inBranch(<DashboardScreen locale="en" messages={messagesFor('en')} />)
+    );
+    await screen.findByText('7');
+
+    // The summary publishes `overdue` as permanently unanswerable, and this
+    // screen draws no card for it: the platform records no promised date, so
+    // there is nothing here that could be late.
+    expect(container.querySelector('[data-figure="overdue"]')).toBeNull();
+    expect(container.textContent?.toLowerCase()).not.toContain('overdue');
+  });
+
+  it('withholds a whole chart in words when its section is withheld', async () => {
+    readDashboardSummary.mockResolvedValue(
+      okRead(dashboardSummary({ technicianWorkload: WITHHELD }))
+    );
+    renderLtr(inBranch(<DashboardScreen locale="en" messages={messagesFor('en')} />));
+    await screen.findByText('7');
+
+    expect(screen.getByText(EN['dashboard.section.withheld'] as string)).toBeTruthy();
+    expect(screen.queryByRole('heading', { name: EN['dashboard.workload.title'] as string })).toBe(
+      null
+    );
+  });
+
+  it('says a refusal of the whole read with its reference', async () => {
+    readDashboardSummary.mockResolvedValue({ status: 'denied', correlationId: 'ref-77' });
+    const { container } = renderLtr(
+      inBranch(<DashboardScreen locale="en" messages={messagesFor('en')} />)
+    );
+
+    await screen.findByText(EN['state.denied.title'] as string);
+    expect(container.textContent).toContain('ref-77');
+  });
+});
+
+describe('every figure opens the list it counted', () => {
+  beforeEach(() => {
+    readDashboardSummary.mockReset();
+    readDashboardSummary.mockResolvedValue(okRead(dashboardSummary()));
+  });
+
+  it('carries the view a work-order figure was counted over', async () => {
+    const { container } = renderLtr(
+      inBranch(<DashboardScreen locale="en" messages={messagesFor('en')} />)
+    );
+    await screen.findByText('7');
+
+    expect(tile(container, 'activeWorkOrders').getAttribute('href')).toBe('/en/work-orders');
+    expect(tile(container, 'awaitingApproval').getAttribute('href')).toBe(
+      '/en/work-orders?view=awaitingApproval'
+    );
+    expect(tile(container, 'awaitingParts').getAttribute('href')).toBe(
+      '/en/work-orders?view=awaitingParts'
+    );
+  });
+
+  it('carries the period a reception figure was counted over', async () => {
+    const user = userEvent.setup();
+    const { container } = renderLtr(
+      inBranch(<DashboardScreen locale="en" messages={messagesFor('en')} />)
+    );
+    await screen.findByText('7');
+
+    expect(tile(container, 'receptionsOpened').getAttribute('href')).toBe(
+      '/en/receptions?period=today'
+    );
+
+    await user.click(screen.getByRole('button', { name: EN['dashboard.period.last7'] }));
+    await waitFor(() => {
+      expect(tile(container, 'receptionsOpened').getAttribute('href')).toBe(
+        '/en/receptions?period=last7'
+      );
+    });
+  });
+
+  it('sends a stock figure to the page where stock is acted on', async () => {
+    const { container } = renderLtr(
+      inBranch(<DashboardScreen locale="en" messages={messagesFor('en')} />)
+    );
+    await screen.findByText('7');
+
+    expect(tile(container, 'lowStock').getAttribute('href')).toBe('/en/attention');
+  });
+
+  it('offers no link for a figure no list can be narrowed to', async () => {
+    const { container } = renderLtr(
+      inBranch(<DashboardScreen locale="en" messages={messagesFor('en')} />)
+    );
+    await screen.findByText('7');
+
+    // The board takes an OPENED window and no completed one. A link to the
+    // unfiltered board would answer a different question from the one the
+    // figure asked, so the tile is not a link at all.
+    expect(tile(container, 'completedInPeriod').tagName).toBe('DIV');
+  });
+
+  it('puts what is waiting for someone beside where it is dealt with', async () => {
+    renderLtr(inBranch(<DashboardScreen locale="en" messages={messagesFor('en')} />));
+    await screen.findByText('7');
+
+    const panel = screen
+      .getByRole('heading', { name: EN['dashboard.actions.title'] as string })
+      .closest('section') as HTMLElement;
+    expect(
+      within(panel)
+        .getByRole('link', { name: EN['dashboard.actions.openApprovals'] as string })
+        .getAttribute('href')
+    ).toBe('/en/work-orders?view=awaitingApproval');
+    expect(
+      within(panel)
+        .getAllByRole('link', { name: EN['dashboard.actions.openAttention'] as string })[0]
+        ?.getAttribute('href')
+    ).toBe('/en/attention');
+  });
+});
+
+describe('the charts are drawings with the figures written out beside them', () => {
+  beforeEach(() => {
+    readDashboardSummary.mockReset();
+    readDashboardSummary.mockResolvedValue(okRead(dashboardSummary()));
+  });
+
+  it('names what each drawing is, for a reader who cannot see it', async () => {
+    const { container } = renderLtr(
+      inBranch(<DashboardScreen locale="en" messages={messagesFor('en')} />)
+    );
+    await screen.findByText('7');
+
+    const drawings = container.querySelectorAll('svg[role="img"]');
+    expect(drawings.length).toBe(3);
+    for (const drawing of Array.from(drawings)) {
+      expect(drawing.querySelector('title')?.textContent).toBeTruthy();
+      expect(drawing.querySelector('desc')?.textContent).toBeTruthy();
+    }
+  });
+
+  it('offers the states as a table, each row opening its own list', async () => {
+    const user = userEvent.setup();
+    renderLtr(inBranch(<DashboardScreen locale="en" messages={messagesFor('en')} />));
+    await screen.findByText('7');
+
+    const section = chart('dashboard.byState.title');
+    await user.click(
+      within(section).getByRole('button', { name: EN['dashboard.chart.showTable'] as string })
+    );
+
+    const table = within(section).getByRole('table');
+    // The platform's own word for its own state, and the workshop's word for
+    // the state the platform does not define.
+    expect(within(table).getByText('In progress')).toBeTruthy();
+    expect(within(table).getByText('With the insurer')).toBeTruthy();
+    expect(
+      within(table)
+        .getByRole('link', { name: /With the insurer/ })
+        .getAttribute('href')
+    ).toBe('/en/work-orders?state=awaiting_insurer');
+    // A finished state is marked in words, not by colour alone.
+    expect(within(table).getAllByText(EN['dashboard.byState.finished'] as string).length).toBe(1);
+  });
+
+  it('offers the trend as a table with a row for every day', async () => {
+    const user = userEvent.setup();
+    renderLtr(inBranch(<DashboardScreen locale="en" messages={messagesFor('en')} />));
+    await screen.findByText('7');
+
+    const section = chart('dashboard.trend.title');
+    await user.click(
+      within(section).getByRole('button', { name: EN['dashboard.chart.showTable'] as string })
+    );
+
+    const rows = within(within(section).getByRole('table')).getAllByRole('row');
+    // One head row and one row per day of the answer.
+    expect(rows.length).toBe(3);
+  });
+
+  it('says a technician whose name is withheld, rather than inventing one', async () => {
+    const user = userEvent.setup();
+    renderLtr(inBranch(<DashboardScreen locale="en" messages={messagesFor('en')} />));
+    await screen.findByText('7');
+
+    const section = chart('dashboard.workload.title');
+    await user.click(
+      within(section).getByRole('button', { name: EN['dashboard.chart.showTable'] as string })
+    );
+
+    expect(
+      within(section).getAllByText(EN['dashboard.workload.unnamed'] as string).length
+    ).toBeGreaterThan(0);
+  });
+
+  it('draws nothing at all for a period in which nothing happened', async () => {
+    readDashboardSummary.mockResolvedValue(
+      okRead(
+        dashboardSummary({
+          workOrdersByState: figure([]),
+          intakeCompletionTrend: figure([
+            { date: '2026-09-21', opened: 0, completed: 0 },
+            { date: '2026-09-22', opened: 0, completed: 0 },
+          ]),
+        })
+      )
+    );
+    renderLtr(inBranch(<DashboardScreen locale="en" messages={messagesFor('en')} />));
+    await screen.findByText('7');
+
+    expect(screen.getByText(EN['dashboard.byState.emptyTitle'] as string)).toBeTruthy();
+    expect(screen.getByText(EN['dashboard.trend.emptyTitle'] as string)).toBeTruthy();
+  });
+});
+
+describe('the dashboard in Arabic, and reachable from the keyboard', () => {
+  beforeEach(() => {
+    readDashboardSummary.mockReset();
+    readDashboardSummary.mockResolvedValue(okRead(dashboardSummary()));
+  });
+
+  it('is written in Arabic, in a right-to-left document', async () => {
+    renderRtl(
+      inBranch(<DashboardScreen locale="ar" messages={messagesFor('ar')} />, { locale: 'ar' })
+    );
+
+    expect(
+      await screen.findByRole('button', { name: AR['dashboard.period.today'] as string })
+    ).toBeTruthy();
+    expect(screen.getByRole('button', { name: AR['dashboard.refresh'] as string })).toBeTruthy();
+    expect(
+      screen.getByRole('heading', { name: AR['dashboard.byState.title'] as string })
+    ).toBeTruthy();
+    expect(document.documentElement.dir).toBe('rtl');
+  });
+
+  it('reaches the period controls and the refresh in the order they are read', async () => {
+    const user = userEvent.setup();
+    renderLtr(inBranch(<DashboardScreen locale="en" messages={messagesFor('en')} />));
+    await screen.findByText('7');
+
+    await user.tab();
+    expect(document.activeElement).toBe(
+      screen.getByRole('button', { name: EN['dashboard.period.today'] })
+    );
+    for (let step = 0; step < 3; step += 1) await user.tab();
+    expect(document.activeElement).toBe(
+      screen.getByRole('button', { name: EN['dashboard.period.custom'] })
+    );
+    await user.tab();
+    expect(document.activeElement).toBe(
+      screen.getByRole('button', { name: EN['dashboard.refresh'] })
+    );
+  });
+
+  it('asks again when the refresh is pressed', async () => {
+    const user = userEvent.setup();
+    renderLtr(inBranch(<DashboardScreen locale="en" messages={messagesFor('en')} />));
+    await screen.findByText('7');
+
+    await user.click(screen.getByRole('button', { name: EN['dashboard.refresh'] }));
+
+    await waitFor(() => {
+      expect(readDashboardSummary).toHaveBeenCalledTimes(2);
+    });
+  });
+});

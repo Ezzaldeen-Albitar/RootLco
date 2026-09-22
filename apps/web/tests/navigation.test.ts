@@ -16,7 +16,7 @@ const ALL = flattenNavigation();
 
 const item = (over: Partial<NavigationItem> = {}): NavigationItem => ({
   key: 'k',
-  labelKey: 'nav.overview',
+  labelKey: 'nav.dashboard',
   icon: 'overview',
   href: '/x',
   permission: null,
