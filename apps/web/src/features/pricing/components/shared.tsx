@@ -6,6 +6,7 @@ import { INITIAL_REQUEST } from '@/components/data-table/table-state';
 import { SelectField, TextField } from '@/components/forms/Field';
 import { listServices } from '@/features/services/api';
 import type { BranchOption, ServiceSummary } from '@/features/services/services-contract';
+import { useWorkingContext } from '@/features/working-context/WorkingContextProvider';
 import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic } from '@/i18n/get-messages';
 import type { ActionState } from '@/lib/forms/action-result';
@@ -81,7 +82,38 @@ export function canNameBranch(branches: Branches): boolean {
   return branches.phase !== 'loading';
 }
 
+/**
+ * The working context, mapped onto the shape this picker already speaks.
+ *
+ * The layout reads `GET /auth/working-context` ONCE per request and publishes
+ * the named, active branches this operator is authorized for. Where that answer
+ * exists there is nothing for a second read of `org.branch-list` to add: it is
+ * the same operator, the same workspace, the same moment — and issuing it
+ * anyway is one request per screen for a fact the shell already holds, which is
+ * what five separate branch hooks across inventory and pricing were each doing.
+ *
+ * `countryCode` is the one field the working context does not publish. It is
+ * `null` rather than invented; nothing in these pickers reads it.
+ */
+function branchesFromContext(
+  context: ReturnType<typeof useWorkingContext>
+): readonly BranchOption[] | null {
+  if (context.status !== 'ready' || context.branches.length === 0) return null;
+  return context.branches.map((branch) => ({
+    id: branch.id,
+    companyId: branch.companyId,
+    branchCode: branch.code,
+    name: branch.name,
+    city: branch.city,
+    countryCode: null,
+    timezoneName: branch.timezone,
+    status: branch.status,
+  }));
+}
+
 export function useBranches(canRead: boolean): Branches {
+  const context = useWorkingContext();
+  const fromContext = branchesFromContext(context);
   const [items, setItems] = useState<readonly BranchOption[] | null>(null);
   const [failure, setFailure] = useState<{ key: string; retryable: boolean } | null>(null);
   const [attempt, setAttempt] = useState(0);
@@ -96,7 +128,9 @@ export function useBranches(canRead: boolean): Branches {
   }, []);
 
   useEffect(() => {
-    if (!canRead) return;
+    // Not read at all when the shell already holds the answer. This is the
+    // request that stopped being made once per screen.
+    if (!canRead || fromContext !== null) return;
     let live = true;
     void listBranches().then((state) => {
       if (!live) return;
@@ -118,11 +152,15 @@ export function useBranches(canRead: boolean): Branches {
     return () => {
       live = false;
     };
-  }, [canRead, attempt]);
+  }, [canRead, attempt, fromContext]);
 
   // Derived last and in this order: permission, then failure, then arrival, then
   // emptiness. Nothing outside this function can observe the raw fields.
   if (!canRead) return NOT_OFFERED;
+  // Before the failure branch: the shell's own answer cannot be stale here and
+  // cannot have failed, so a screen mounted during a `org.branch-list` hiccup
+  // still lists names rather than dropping to identifier fields.
+  if (fromContext !== null) return { phase: 'listed', items: fromContext };
   if (failure !== null) {
     return { phase: 'failed', messageKey: failure.key, retry: failure.retryable ? retry : null };
   }
@@ -174,6 +212,7 @@ export function BranchPairPicker({
    * still holds — and would still send — the typed pair. Clearing only when a
    * list has arrived that cannot contain the pair is the narrowest fix.
    */
+  const workingContext = useWorkingContext();
   const listedItems = branches.phase === 'listed' ? branches.items : null;
   const stale =
     listedItems !== null &&
@@ -220,6 +259,45 @@ export function BranchPairPicker({
         placeholder={placeholder}
         error={errors?.['branchId']}
       />
+    );
+  }
+
+  /*
+   * The working context could not be read, and this screen is inside one.
+   *
+   * The three phases below take the pair as typed references, and the reason
+   * given for that is sound where it applies: `org.branch-list` lists what a
+   * caller may REACH, an empty list is not a statement about what they may
+   * operate on, and the server re-authorizes the pair anyway. None of it
+   * applies here. This is not "the list is empty" — it is "the shell could not
+   * read the directory at all", and answering that with two boxes asking for a
+   * reference nobody can look up is the exact defect this phase removed from
+   * six other screens.
+   *
+   * `present` rather than `status` decides it, because a component rendered
+   * with no provider above it reports `unavailable` too, and that one must keep
+   * behaving as it always did.
+   */
+  if (workingContext.present && workingContext.status === 'unavailable') {
+    return (
+      <div className="flex flex-col gap-1.5 sm:col-span-3">
+        <p className="text-label font-medium text-text-primary">{label}</p>
+        <p role="status" className="text-supporting text-text-secondary">
+          {translate(messages, 'workingContext.unavailable')}
+        </p>
+        {branches.phase === 'failed' && branches.retry !== null ? (
+          // `type="button"`: every caller renders this picker inside a form.
+          <div>
+            <button type="button" onClick={branches.retry} className={SECONDARY_BUTTON}>
+              {translate(messages, 'workingContext.retry')}
+            </button>
+          </div>
+        ) : (
+          <p className="text-supporting text-text-muted">
+            {translate(messages, 'workingContext.retryInHeader')}
+          </p>
+        )}
+      </div>
     );
   }
 

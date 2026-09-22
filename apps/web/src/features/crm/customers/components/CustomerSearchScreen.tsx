@@ -3,9 +3,12 @@
 import { useCallback, useId, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { DataTable, type Column } from '@/components/data-table/DataTable';
-import { INITIAL_REQUEST, type TableRequest } from '@/components/data-table/table-state';
-import { useServerTable } from '@/components/data-table/use-server-table';
+import { INITIAL_REQUEST } from '@/components/data-table/table-state';
 import { DigitsEcho } from '@/components/forms/DigitsEcho';
+import { SearchBox } from '@/components/search/SearchBox';
+import { useWorkingContext } from '@/features/working-context/WorkingContextProvider';
+import { useSearchRequest } from '@/lib/api/use-search-request';
+import type { CursorPage, ReadState } from '@/lib/api/read-operation';
 import { EmptyState } from '@/components/states/States';
 import type { Messages } from '@/i18n/get-messages';
 import { translate } from '@/i18n/get-messages';
@@ -38,16 +41,32 @@ import {
  * Digits typed on an Arabic keyboard are echoed as Western digits under a box
  * for reading only. What is sent is what was typed; the backend folds them.
  *
- * ## It searches on intent, never on a keystroke
+ * ## It searches on intent, never on a bare keystroke
  *
  * `crm.customer-search` is `expensive-read`: **30 requests per 60 seconds**,
- * keyed by operation, tenant and user. Search-as-you-type spends that in under
- * three seconds of typing, and the operator's reward for typing a customer's
- * name is a 429.
+ * keyed by operation, workspace and user. A request per CHARACTER spends that
+ * in under three seconds of typing, and the operator's reward for typing a
+ * customer's name is a refusal.
  *
- * So the primary action is an explicit Search button, Enter submits the form,
- * and typing does nothing at all. There is no debounce, because a debounce is
- * still a request per pause.
+ * So the primary action is an explicit Search button and Enter submits the form.
+ *
+ * ## The sentence that used to close this paragraph was wrong, and is corrected
+ *
+ * It read: "There is no debounce, because a debounce is still a request per
+ * pause." The first half is true and the conclusion does not follow. The
+ * comparison that decides it is not "debounced typing versus nothing" but
+ * "debounced typing versus what the operator actually does" — type, press
+ * Search, read, correct the spelling, press Search again — which is one request
+ * per attempt, uncancelled, with no upper bound. A 300 ms debounce that ABORTS
+ * the request before it sends one per pause and abandons the rest, which is
+ * fewer requests against the same limit, not more.
+ *
+ * The mechanism now exists (`lib/use-debounced-value.ts`,
+ * `lib/api/use-search-request.ts`, `components/search/SearchBox.tsx`) and is
+ * what a new search surface should be built on. This screen keeps its explicit
+ * Search for a reason that survives the correction: the results are a SEPARATELY
+ * MOUNTED component, which is what makes "no request before intent" structural
+ * here rather than a rule somebody has to remember.
  *
  * **The results are a separate component, mounted only after a submission.**
  * `useServerTable` reads on mount, so not mounting the hook makes "no request
@@ -155,12 +174,39 @@ function CustomerSearchResults({
   readonly criteria: CustomerSearchCriteria;
   readonly canCreate: boolean;
 }) {
+  const { version: workingContextVersion } = useWorkingContext();
+
   const load = useCallback(
-    (request: TableRequest, cursor: string | null) => searchCustomers(request, cursor, criteria),
-    [criteria]
+    async (
+      asked: CustomerSearchCriteria,
+      cursor: string | null
+    ): Promise<ReadState<CursorPage<CustomerSearchHit>>> => {
+      const page = await searchCustomers(INITIAL_REQUEST, cursor, asked);
+      if (page.status !== 'ok') return { status: page.status, correlationId: page.correlationId };
+      return {
+        status: 'ok',
+        data: { items: page.rows, nextCursor: page.nextCursor, hasMore: page.hasMore },
+        correlationId: page.correlationId,
+      };
+    },
+    []
   );
 
-  const table = useServerTable<CustomerSearchHit>(load, { initial: INITIAL_REQUEST });
+  /*
+   * The search, not a table read (P1-32).
+   *
+   * `useServerTable` reads whenever its key moves and has no notion of a term
+   * settling, a submission, or an answer being superseded. `useSearchRequest`
+   * owns those three and hands back the same page contract, so the table and
+   * its pager below are unchanged — Previous and Next still walk the cursor
+   * stack, and a criteria or branch change still restarts at page one.
+   */
+  const search = useSearchRequest<CustomerSearchHit, CustomerSearchCriteria>({
+    criteria,
+    load,
+    version: workingContextVersion,
+  });
+  const table = search.table;
 
   const columns = useMemo<readonly Column<CustomerSearchHit>[]>(
     () => [
@@ -224,7 +270,16 @@ function CustomerSearchResults({
     [messages]
   );
 
-  const noResults = table.status === 'idle' && table.response?.rows.length === 0;
+  /*
+   * "No matches" is the PHASE, not a row count.
+   *
+   * `table.status === 'idle' && rows.length === 0` was true of an answered read
+   * with no rows — and also, for one render, of a table that had not been asked
+   * anything yet. `empty` is reachable only from a COMPLETED read that returned
+   * nothing, so the sentence cannot appear before there is an answer to base it
+   * on.
+   */
+  const noResults = search.phase === 'empty';
 
   return (
     <>
@@ -296,7 +351,6 @@ function SearchForm({
   readonly onClear: () => void;
 }) {
   const [expanded, setExpanded] = useState(false);
-  const qId = `${formId}-q`;
   const filtersId = `${formId}-filters`;
   const nameId = `${formId}-name`;
   const numberId = `${formId}-number`;
@@ -321,29 +375,31 @@ function SearchForm({
         {translate(messages, 'crm.customers.search.formLabel')}
       </h2>
 
+      {/*
+        The shared search box (P1-32), replacing a hand-rolled input.
+        
+        What it brings that the hand-rolled one did not: a clear control, Escape
+        to empty the box, Enter handled explicitly rather than relying on
+        implicit form submission, an `inputMode` that does not summon a
+        digits-only keypad for a box that also takes a name, and the same
+        non-colour error cue every other field carries. The words are still this
+        screen's: the label and the example say what may be typed HERE, because
+        a generic "Search…" is the shape of a control rather than a question.
+      */}
       <div className="flex flex-col gap-1">
-        <label className="text-body font-medium text-text-primary" htmlFor={qId}>
-          {translate(messages, 'crm.customers.search.q')}
-        </label>
-        <input
-          id={qId}
-          type="search"
+        <SearchBox
+          messages={messages}
+          label={translate(messages, 'crm.customers.search.q')}
+          example={translate(messages, 'crm.customers.search.qHint')}
           value={draft.q ?? ''}
           maxLength={MAX_NAME_LENGTH}
-          onChange={(event) => onChange({ ...draft, q: event.target.value })}
-          className="rounded-md border border-border bg-surface px-3 py-2 text-body"
-          aria-describedby={tooShort ? `${qId}-hint ${qId}-error` : `${qId}-hint`}
-          aria-invalid={tooShort || undefined}
+          onChange={(next) => onChange({ ...draft, q: next })}
+          onSubmit={onSubmit}
+          error={tooShort ? translate(messages, 'crm.customers.search.qTooShort') : undefined}
+          inlineSubmit={false}
+          testId="customer-search-box"
         />
-        <span id={`${qId}-hint`} className="text-caption text-text-muted">
-          {translate(messages, 'crm.customers.search.qHint')}
-        </span>
         <DigitsEcho messages={messages} value={draft.q} />
-        {tooShort ? (
-          <span id={`${qId}-error`} role="alert" className="text-caption text-error">
-            {translate(messages, 'crm.customers.search.qTooShort')}
-          </span>
-        ) : null}
       </div>
 
       <div className="mt-3">

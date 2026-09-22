@@ -3,7 +3,15 @@ import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import en from '../src/i18n/messages/en.json';
 import ar from '../src/i18n/messages/ar.json';
-import { renderLtr, renderRtl } from './render';
+import {
+  BranchSwitch,
+  OTHER_BRANCH,
+  TEST_BRANCH,
+  branchSnapshot,
+  inBranch,
+  renderLtr,
+  renderRtl,
+} from './render';
 import { RECEPTION_STATUSES } from '@/features/receptions/receptions-contract';
 import { receptionAffordances } from '@/features/receptions/check-in/closure';
 
@@ -54,16 +62,11 @@ function page(rows: readonly unknown[], hasMore = false) {
   };
 }
 
-function renderQueue(over: Record<string, unknown> = {}) {
+function renderQueue(over: Record<string, unknown> = {}, snapshot = branchSnapshot()) {
+  // The branch is no longer a control on this form. It is the working context's
+  // own named selection, so a test states it by standing the screen in a branch.
   return renderLtr(
-    <ReceptionQueueScreen
-      locale="en"
-      messages={en}
-      companyIds={[COMPANY]}
-      branchIds={[BRANCH]}
-      canCreate
-      {...over}
-    />
+    inBranch(<ReceptionQueueScreen locale="en" messages={en} canCreate {...over} />, { snapshot })
   );
 }
 
@@ -84,12 +87,27 @@ describe('nothing is requested until a branch is named', () => {
     expect(screen.getByText(EN['receptions.queue.idleTitle'] as string)).toBeVisible();
   });
 
-  it('refuses to submit without a branch target, and still reads nothing', async () => {
+  it('refuses to submit until a branch is chosen, and still reads nothing', async () => {
+    // Several branches are authorized and none is chosen yet, so the screen is
+    // not addressed to one. It says which control answers that — the header —
+    // and the button cannot be pressed. It used to render two free-text boxes
+    // here and complain that a reference was required.
     const user = userEvent.setup();
-    renderQueue({ companyIds: [], branchIds: [] });
-    await user.click(screen.getByRole('button', { name: EN['receptions.queue.show'] as string }));
-    expect(await screen.findAllByText(EN['field.required'] as string)).not.toHaveLength(0);
+    const second = { ...TEST_BRANCH, id: '55555555-5555-4555-8555-555555555555', name: 'Second' };
+    renderQueue({}, branchSnapshot([TEST_BRANCH, second]));
+    const show = screen.getByRole('button', { name: EN['receptions.queue.show'] as string });
+    expect(show).toBeDisabled();
+    expect(screen.getByTestId('requires-concrete-branch')).toHaveTextContent(
+      EN['workingContext.chooseFirst'] as string
+    );
+    await user.click(show);
     expect(listReceptions).not.toHaveBeenCalled();
+  });
+
+  it('names the branch it is addressed to, instead of showing a reference', () => {
+    renderQueue();
+    expect(screen.getByTestId('working-branch-field')).toHaveTextContent(TEST_BRANCH.name);
+    expect(screen.getByTestId('working-branch-field')).not.toHaveTextContent(TEST_BRANCH.id);
   });
 
   it('sends the branch target the operator named, as a resource selector', async () => {
@@ -287,18 +305,87 @@ describe('both directions', () => {
   it('renders in Arabic, right to left', async () => {
     const user = userEvent.setup();
     renderRtl(
-      <ReceptionQueueScreen
-        locale="ar"
-        messages={ar}
-        companyIds={[COMPANY]}
-        branchIds={[BRANCH]}
-        canCreate
-      />
+      inBranch(<ReceptionQueueScreen locale="ar" messages={ar} canCreate />, { locale: 'ar' })
     );
     expect(screen.getByText(AR['receptions.queue.idleTitle'] as string)).toBeVisible();
     await user.click(screen.getByRole('button', { name: AR['receptions.queue.show'] as string }));
     await waitFor(() => expect(listReceptions).toHaveBeenCalled());
     expect(await screen.findByText(AR['receptions.queue.custodyHeld'] as string)).toBeVisible();
     expect(document.documentElement.dir).toBe('rtl');
+  });
+});
+
+describe('a branch changed in the header re-targets the board', () => {
+  it('reads the NEW branch at once and drops the previous branch rows', async () => {
+    /*
+     * The defect this closes. Remounting the table on the context version was
+     * half a fix and the dangerous half: `submitted` still held the branch that
+     * was current when Show was pressed, so the remount re-issued the read
+     * against the OLD branch while the field above named the new one. One
+     * branch of work under another branch name is worse than a stale list — it
+     * is a confident wrong answer.
+     */
+    const user = userEvent.setup();
+    listReceptions.mockResolvedValue(page([row({ displayNumber: 'R-0001' })]));
+    renderLtr(
+      inBranch(
+        <>
+          <BranchSwitch to={TEST_BRANCH.id} label="use main" />
+          <BranchSwitch to={OTHER_BRANCH.id} label="use second" />
+          <ReceptionQueueScreen locale="en" messages={en} canCreate />
+        </>,
+        { snapshot: branchSnapshot([TEST_BRANCH, OTHER_BRANCH]) }
+      )
+    );
+
+    await user.click(screen.getByRole('button', { name: 'use main' }));
+    await show(user);
+    expect(listReceptions.mock.calls[0]?.[0]).toEqual({
+      companyId: TEST_BRANCH.companyId,
+      branchId: TEST_BRANCH.id,
+    });
+    expect(await screen.findByText('R-0001')).toBeVisible();
+
+    listReceptions.mockClear();
+    listReceptions.mockResolvedValue(page([row({ displayNumber: 'R-0002' })]));
+    await user.click(screen.getByRole('button', { name: 'use second' }));
+
+    // No second press of Show. The board follows the header, because the
+    // heading above it already does.
+    await waitFor(() => expect(listReceptions).toHaveBeenCalled());
+    expect(listReceptions.mock.calls[0]?.[0]).toEqual({
+      companyId: OTHER_BRANCH.companyId,
+      branchId: OTHER_BRANCH.id,
+    });
+    expect(await screen.findByText('R-0002')).toBeVisible();
+    expect(screen.queryByText('R-0001')).toBeNull();
+  });
+
+  it('returns to the idle state when the selection stops being one branch', async () => {
+    // "All my branches" is not a target the route can take, so a board that
+    // kept reading would be reading somewhere nobody named.
+    const user = userEvent.setup();
+    renderLtr(
+      inBranch(
+        <>
+          <BranchSwitch to={TEST_BRANCH.id} label="use main" />
+          <BranchSwitch to="all" label="use all" />
+          <ReceptionQueueScreen locale="en" messages={en} canCreate />
+        </>,
+        { snapshot: branchSnapshot([TEST_BRANCH, OTHER_BRANCH]) }
+      )
+    );
+    await user.click(screen.getByRole('button', { name: 'use main' }));
+    await show(user);
+    listReceptions.mockClear();
+
+    await user.click(screen.getByRole('button', { name: 'use all' }));
+    await waitFor(() =>
+      expect(screen.getByText(EN['receptions.queue.idleTitle'] as string)).toBeVisible()
+    );
+    expect(listReceptions).not.toHaveBeenCalled();
+    expect(screen.getByTestId('requires-concrete-branch')).toHaveTextContent(
+      EN['workingContext.needsOneBranch'] as string
+    );
   });
 });

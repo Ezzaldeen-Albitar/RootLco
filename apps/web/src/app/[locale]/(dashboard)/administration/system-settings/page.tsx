@@ -72,17 +72,22 @@ export default async function SystemSettingsPage({
       />
       <PageBody>
         <div className="flex flex-col gap-6">
-          <ContractNotice
-            messages={messages}
-            bodyKeys={['systemSettings.noPlatformScope', 'admin.contractGap.noDirectory']}
-          />
+          {/*
+            The "no company or branch directory" half of this notice was
+            removed, because it stopped being true: the settings panels below
+            choose a company or a branch BY NAME from the working context.
+            A standing notice describing a limit the product no longer has is
+            not caution, it is a false statement about the screen the operator
+            is looking at. The platform-scope sentence stays — that limit is
+            real.
+          */}
+          <ContractNotice messages={messages} bodyKeys={['systemSettings.noPlatformScope']} />
 
           {canReadCompany ? (
             <Panel title={t('organization.settings.company')}>
               <SettingsEditor
                 messages={messages}
                 scope="company"
-                scopeIds={session.companyIds}
                 canWrite={canWrite}
                 keyPrefix=""
               />
@@ -91,13 +96,7 @@ export default async function SystemSettingsPage({
 
           {canReadBranch ? (
             <Panel title={t('organization.settings.branch')}>
-              <SettingsEditor
-                messages={messages}
-                scope="branch"
-                scopeIds={session.branchIds}
-                canWrite={canWrite}
-                keyPrefix=""
-              />
+              <SettingsEditor messages={messages} scope="branch" canWrite={canWrite} keyPrefix="" />
             </Panel>
           ) : null}
         </div>

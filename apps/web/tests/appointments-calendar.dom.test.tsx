@@ -3,7 +3,15 @@ import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import en from '../src/i18n/messages/en.json';
 import ar from '../src/i18n/messages/ar.json';
-import { renderLtr, renderRtl } from './render';
+import {
+  BranchSwitch,
+  OTHER_BRANCH,
+  TEST_BRANCH,
+  branchSnapshot,
+  inBranch,
+  renderLtr,
+  renderRtl,
+} from './render';
 import type { AppointmentListEntry } from '@/features/appointments/appointments-contract';
 
 /**
@@ -68,33 +76,29 @@ beforeEach(() => {
   listAppointments.mockResolvedValue(page());
 });
 
-function renderScreen({
-  companyIds = ['11111111-1111-4111-8111-111111111111'],
-  branchIds = ['22222222-2222-4222-8222-222222222222'],
-  canManage = false,
-  canCheckIn = false,
-} = {}) {
+function renderScreen({ canManage = false, canCheckIn = false, snapshot = branchSnapshot() } = {}) {
   return renderLtr(
-    <AppointmentCalendarScreen
-      locale="en"
-      messages={en}
-      companyIds={companyIds}
-      branchIds={branchIds}
-      canManage={canManage}
-      canCheckIn={canCheckIn}
-    />
+    inBranch(
+      <AppointmentCalendarScreen
+        locale="en"
+        messages={en}
+        canManage={canManage}
+        canCheckIn={canCheckIn}
+      />,
+      { snapshot }
+    )
   );
 }
 
+/**
+ * Asking for the calendar.
+ *
+ * The two selectOptions calls that used to stand here are gone with the
+ * controls they drove: the branch is chosen once, in the header, and this
+ * screen reads it. The button remains, because the DAY RANGE is still a
+ * question this form asks.
+ */
 async function submitTarget(user: ReturnType<typeof userEvent.setup>) {
-  await user.selectOptions(
-    screen.getByLabelText(new RegExp(en['admin.scope.companyId'])),
-    '11111111-1111-4111-8111-111111111111'
-  );
-  await user.selectOptions(
-    screen.getByLabelText(new RegExp(en['admin.scope.branchId'])),
-    '22222222-2222-4222-8222-222222222222'
-  );
   await user.click(screen.getByRole('button', { name: en['appointments.calendar.show'] }));
 }
 
@@ -107,13 +111,22 @@ describe('before the operator has named a branch', () => {
     expect(screen.getByText(en['appointments.calendar.idleTitle'])).toBeInTheDocument();
   });
 
-  it('refuses to submit without the pair, naming each missing half', async () => {
+  it('refuses to submit until a branch is chosen, and says where to choose it', async () => {
+    /*
+     * This case used to assert two "required" messages under two free-text
+     * boxes, shown to an operator whose resolved scope was EMPTY — which means
+     * unrestricted, not "none". There is nothing to type here now: several
+     * branches are authorized, none is chosen, and the sentence names the one
+     * control that answers.
+     */
     const user = userEvent.setup();
-    renderScreen({ companyIds: [], branchIds: [] });
+    const second = { ...TEST_BRANCH, id: '77777777-7777-4777-8777-777777777777', name: 'Second' };
+    renderScreen({ snapshot: branchSnapshot([TEST_BRANCH, second]) });
     await user.click(screen.getByRole('button', { name: en['appointments.calendar.show'] }));
     expect(listAppointments).not.toHaveBeenCalled();
-    // Unrestricted scope renders typed entry; both halves are still required.
-    expect(screen.getAllByText(en['field.required'])).toHaveLength(2);
+    expect(screen.getByTestId('requires-concrete-branch')).toHaveTextContent(
+      en['workingContext.chooseFirst']
+    );
   });
 
   it('refuses an inverted range beside the field, without a request', async () => {
@@ -338,25 +351,71 @@ describe('both directions', () => {
   it('renders in Arabic, right to left', async () => {
     const user = userEvent.setup();
     renderRtl(
-      <AppointmentCalendarScreen
-        locale="ar"
-        messages={ar}
-        companyIds={['11111111-1111-4111-8111-111111111111']}
-        branchIds={['22222222-2222-4222-8222-222222222222']}
-        canManage={false}
-        canCheckIn={false}
-      />
+      inBranch(
+        <AppointmentCalendarScreen
+          locale="ar"
+          messages={ar}
+          canManage={false}
+          canCheckIn={false}
+        />,
+        { locale: 'ar' }
+      )
     );
     expect(screen.getByText(ar['appointments.calendar.idleTitle'])).toBeInTheDocument();
-    await user.selectOptions(
-      screen.getByLabelText(new RegExp(ar['admin.scope.companyId'])),
-      '11111111-1111-4111-8111-111111111111'
-    );
-    await user.selectOptions(
-      screen.getByLabelText(new RegExp(ar['admin.scope.branchId'])),
-      '22222222-2222-4222-8222-222222222222'
-    );
+    // The branch is named, in Arabic, by the context rather than picked here.
+    expect(screen.getByTestId('appointment-branch-target')).toHaveTextContent(TEST_BRANCH.name);
     await user.click(screen.getByRole('button', { name: ar['appointments.calendar.show'] }));
     expect(await screen.findByText('APT-0007')).toBeInTheDocument();
+  });
+});
+
+describe('a branch changed in the header re-targets the calendar', () => {
+  it('reads the NEW branch and drops the previous branch rows', async () => {
+    /*
+     * The stale-branch defect. The results were keyed on the context version so
+     * they remounted, but `submitted` still carried the branch that was current
+     * when Show was pressed — so the remount re-read the OLD branch while the
+     * field above it named the new one.
+     */
+    const user = userEvent.setup();
+    listAppointments.mockResolvedValue(page());
+    renderLtr(
+      inBranch(
+        <>
+          <BranchSwitch to={TEST_BRANCH.id} label="use main" />
+          <BranchSwitch to={OTHER_BRANCH.id} label="use second" />
+          <AppointmentCalendarScreen
+            locale="en"
+            messages={en}
+            canManage={false}
+            canCheckIn={false}
+          />
+        </>,
+        { snapshot: branchSnapshot([TEST_BRANCH, OTHER_BRANCH]) }
+      )
+    );
+
+    await user.click(screen.getByRole('button', { name: 'use main' }));
+    await user.click(screen.getByRole('button', { name: en['appointments.calendar.show'] }));
+    await waitFor(() => expect(listAppointments).toHaveBeenCalled());
+    expect(listAppointments.mock.calls[0]?.[0]).toEqual({
+      companyId: TEST_BRANCH.companyId,
+      branchId: TEST_BRANCH.id,
+    });
+    expect(await screen.findByText('APT-0007')).toBeInTheDocument();
+
+    listAppointments.mockClear();
+    listAppointments.mockResolvedValue(
+      page({ rows: [{ ...ROW, id: 'other-appointment', displayNumber: 'APT-0008' }] })
+    );
+    await user.click(screen.getByRole('button', { name: 'use second' }));
+
+    await waitFor(() => expect(listAppointments).toHaveBeenCalled());
+    expect(listAppointments.mock.calls[0]?.[0]).toEqual({
+      companyId: OTHER_BRANCH.companyId,
+      branchId: OTHER_BRANCH.id,
+    });
+    expect(await screen.findByText('APT-0008')).toBeInTheDocument();
+    expect(screen.queryByText('APT-0007')).toBeNull();
   });
 });

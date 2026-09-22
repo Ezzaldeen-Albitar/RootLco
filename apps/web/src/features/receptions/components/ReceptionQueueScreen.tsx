@@ -5,8 +5,11 @@ import { useCallback, useMemo, useState } from 'react';
 import { DataTable, type Column } from '@/components/data-table/DataTable';
 import { INITIAL_REQUEST, type TableRequest } from '@/components/data-table/table-state';
 import { useServerTable } from '@/components/data-table/use-server-table';
-import { SelectField, TextField } from '@/components/forms/Field';
+import { SelectField } from '@/components/forms/Field';
 import { EmptyState } from '@/components/states/States';
+import { WorkingBranchField } from '@/features/working-context/components/WorkingBranchField';
+import { useBranchTarget } from '@/features/working-context/use-branch-target';
+import { useWorkingContext } from '@/features/working-context/WorkingContextProvider';
 import type { BranchTarget } from '@/lib/api/read-operation';
 import { formatDateTime } from '@/lib/format';
 import type { Locale } from '@/i18n/config';
@@ -34,6 +37,15 @@ import { receptionAffordances } from '../check-in/closure';
  * calendar and the vehicle search use: before a target is submitted, the
  * component that would issue the read does not exist. "No request before intent"
  * is structural here, not a flag somebody can forget to check.
+ *
+ * ## The branch is NAMED, and it is named once
+ *
+ * The pair used to be two controls on this form: a select over raw references,
+ * or two free-text boxes for the operator whose grant is not narrowed. It is
+ * now the working context's own selection, chosen in the header and shown here
+ * by name. "All my branches" is refused rather than guessed — the route schema
+ * demands one branch, and picking one on the operator's behalf would put a
+ * board on screen for somewhere they did not ask about.
  *
  * ## Truncation is honest, and there is no total
  *
@@ -70,33 +82,57 @@ interface Submitted {
 }
 
 interface Draft {
-  readonly companyId: string;
-  readonly branchId: string;
   readonly status: '' | ReceptionStatus;
 }
 
 export function ReceptionQueueScreen({
   locale,
   messages,
-  companyIds,
-  branchIds,
   canCreate,
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
-  /** The session's resolved scope — server-resolved, never asserted back. */
-  readonly companyIds: readonly string[];
-  readonly branchIds: readonly string[];
+  /**
+   * The session's bare references. Accepted so the page did not have to change,
+   * and no longer read: the branch is the working context's named selection.
+   */
+  readonly companyIds?: readonly string[];
+  readonly branchIds?: readonly string[];
   /** `rec.reception.manage` — gates the offer to open a new visit. */
   readonly canCreate: boolean;
 }) {
-  const [draft, setDraft] = useState<Draft>({
-    companyId: companyIds.length === 1 ? (companyIds[0] ?? '') : '',
-    branchId: branchIds.length === 1 ? (branchIds[0] ?? '') : '',
-    status: '',
-  });
+  const branch = useBranchTarget();
+  const { version } = useWorkingContext();
+  const [draft, setDraft] = useState<Draft>({ status: '' });
   const [submitted, setSubmitted] = useState<Submitted | null>(null);
-  const [errors, setErrors] = useState<Readonly<Record<string, string>>>({});
+
+  /*
+   * A branch changed in the header RE-TARGETS what is on screen.
+   *
+   * Remounting the results on `version` was half a fix and the dangerous half.
+   * `submitted` still held the branch that was current when Show was pressed,
+   * so the remount re-issued the read against the OLD branch while the header
+   * — and the field above — named the new one. The operator was looking at one
+   * branch's work under another branch's name, which is worse than a stale
+   * list: it is a confident wrong answer.
+   *
+   * The filters survive, because they are what the operator asked for and they
+   * are not about the branch. The target is replaced, and the key remount
+   * throws the cursor stack away with the old page. A selection that is no
+   * longer one branch — "all my branches", or nothing chosen — returns the
+   * screen to its idle state rather than guessing which branch to read.
+   *
+   * Adjusted DURING render, React's documented shape for "reset state when an
+   * input changes", and the same one `use-server-table` uses for its load key.
+   * An effect would paint one frame of the previous branch's rows first.
+   */
+  const [lastContextVersion, setLastContextVersion] = useState(version);
+  if (version !== lastContextVersion) {
+    setLastContextVersion(version);
+    setSubmitted((current) =>
+      current === null || branch.kind !== 'ready' ? null : { ...current, target: branch.target }
+    );
+  }
 
   const statusOptions = useMemo(
     () =>
@@ -108,21 +144,14 @@ export function ReceptionQueueScreen({
   );
 
   const submit = () => {
-    const found: Record<string, string> = {};
-    if (draft.companyId.trim().length === 0) found['companyId'] = 'field.required';
-    if (draft.branchId.trim().length === 0) found['branchId'] = 'field.required';
-    setErrors(found);
-    if (Object.keys(found).length > 0) return;
-
+    // The branch cannot be missing or mistyped any more: it is the header's own
+    // selection or it is nothing, and the button is disabled while it is
+    // nothing. There is no local pair left to validate.
+    if (branch.kind !== 'ready') return;
     setSubmitted({
-      target: { companyId: draft.companyId.trim(), branchId: draft.branchId.trim() },
+      target: branch.target,
       criteria: draft.status ? { status: draft.status } : {},
     });
-  };
-
-  const errorFor = (name: string): string | undefined => {
-    const key = errors[name];
-    return key ? translateDynamic(messages, key) : undefined;
   };
 
   return (
@@ -137,21 +166,9 @@ export function ReceptionQueueScreen({
         className="rounded-lg border border-border bg-surface p-4"
       >
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          <ScopeField
-            messages={messages}
-            label={translate(messages, 'receptions.checkIn.company')}
-            ids={companyIds}
-            value={draft.companyId}
-            onChange={(next) => setDraft((d) => ({ ...d, companyId: next }))}
-            error={errorFor('companyId')}
-          />
-          <ScopeField
+          <WorkingBranchField
             messages={messages}
             label={translate(messages, 'receptions.checkIn.branch')}
-            ids={branchIds}
-            value={draft.branchId}
-            onChange={(next) => setDraft((d) => ({ ...d, branchId: next }))}
-            error={errorFor('branchId')}
           />
           <SelectField
             label={translate(messages, 'receptions.queue.statusFilter')}
@@ -167,7 +184,8 @@ export function ReceptionQueueScreen({
         <div className="mt-4 flex flex-wrap items-center gap-3">
           <button
             type="submit"
-            className="rounded-md bg-primary px-4 py-2 text-body font-medium text-on-primary transition-colors duration-fast ease-standard hover:bg-primary-hover"
+            disabled={branch.kind !== 'ready'}
+            className="rounded-md bg-primary px-4 py-2 text-body font-medium text-on-primary transition-colors duration-fast ease-standard hover:bg-primary-hover disabled:cursor-not-allowed disabled:opacity-60"
           >
             {translate(messages, 'receptions.queue.show')}
           </button>
@@ -190,64 +208,17 @@ export function ReceptionQueueScreen({
         />
       ) : (
         // Mounted only after submission — see the docblock. The key restarts the
-        // table on a new target or filter rather than paging the old one.
+        // table on a new target or filter rather than paging the old one, and
+        // carries the working-context version so a branch change cannot leave
+        // the previous branch's rows on screen under the new heading.
         <QueueResults
-          key={JSON.stringify(submitted)}
+          key={`${version}:${JSON.stringify(submitted)}`}
           locale={locale}
           messages={messages}
           submitted={submitted}
         />
       )}
     </div>
-  );
-}
-
-/**
- * One scope identifier: a select over the session's resolved ids, or a plain
- * identifier input when the session is UNRESTRICTED (an empty array means
- * "everything in the workspace", and the platform publishes no company/branch
- * directory this screen could turn into names).
- */
-function ScopeField({
-  messages,
-  label,
-  ids,
-  value,
-  onChange,
-  error,
-}: {
-  readonly messages: Messages;
-  readonly label: string;
-  readonly ids: readonly string[];
-  readonly value: string;
-  readonly onChange: (next: string) => void;
-  readonly error: string | undefined;
-}) {
-  if (ids.length > 0) {
-    return (
-      <SelectField
-        label={label}
-        description={translate(messages, 'admin.contractGap.noDirectory')}
-        required
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-        options={ids.map((id) => ({ value: id, label: id }))}
-        placeholder={translate(messages, 'form.select.placeholder')}
-        error={error}
-      />
-    );
-  }
-  return (
-    <TextField
-      label={label}
-      description={translate(messages, 'receptions.checkIn.scopeUnrestricted')}
-      required
-      spellCheck={false}
-      dir="ltr"
-      value={value}
-      onChange={(event) => onChange(event.target.value)}
-      error={error}
-    />
   );
 }
 

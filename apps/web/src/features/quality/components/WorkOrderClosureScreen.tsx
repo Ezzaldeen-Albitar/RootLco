@@ -43,6 +43,7 @@ import type { ItemsOnly, ReadState } from '@/lib/api/read-operation';
 import type { ActionState } from '@/lib/forms/action-result';
 import { formatDateTime } from '@/lib/format';
 import type { Locale } from '@/i18n/config';
+import { useUnsavedGuard } from '@/features/working-context/WorkingContextProvider';
 import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic } from '@/i18n/get-messages';
 import {
@@ -416,6 +417,12 @@ function QcPanel({
   const [openId, setOpenId] = useState<string | null>(null);
   const [reloadCount, reload] = useReload();
   const [notes, setNotes] = useState('');
+
+  /*
+   * Unsaved work, declared to the shell, so a branch changed in the header asks
+   * before it discards what is typed here.
+   */
+  useUnsavedGuard(notes.trim().length > 0);
   const { pending, problem, run } = useCommand(messages, () => {
     reload();
     onChanged();
@@ -661,13 +668,36 @@ function CheckAnswerForm({
 }) {
   const [result, setResult] = useState('');
   const [note, setNote] = useState('');
+  /*
+   * The result that was last RECORDED, not merely chosen.
+   *
+   * The result is deliberately retained after a successful submit: it seeds the
+   * `defaultValue` of a select that React remounts on `attempt`, and blanking
+   * it would leave the operator looking at a placeholder for a check they have
+   * just recorded. So "the draft is non-empty" is not the same question as
+   * "there is unsaved work" here, and using the first for the second left the
+   * guard permanently dirty — the shell asked about every later branch switch
+   * for a check that was saved.
+   *
+   * Comparing against what was recorded answers the real question: a result the
+   * operator has changed SINCE the save is unsaved work; the same one is not.
+   */
+  const [savedResult, setSavedResult] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
+
+  /*
+   * Unsaved work, declared to the shell, so a branch changed in the header asks
+   * before it discards what is typed here.
+   */
+  useUnsavedGuard(result !== (savedResult ?? '') || note.trim().length > 0);
+
   return (
     <form
       action={async () => {
         if (!result) return;
         await onSubmit(result, note);
         setAttempt((n) => n + 1);
+        setSavedResult(result);
         setNote('');
       }}
       className="mt-2 flex flex-wrap items-end gap-2"
@@ -710,6 +740,12 @@ function FinalizeForm({
 }) {
   const [overallResult, setOverallResult] = useState('');
   const [notes, setNotes] = useState('');
+
+  /*
+   * Unsaved work, declared to the shell, so a branch changed in the header asks
+   * before it discards what is typed here.
+   */
+  useUnsavedGuard(overallResult.length > 0 || notes.trim().length > 0);
   const [pending, setPending] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
@@ -791,6 +827,12 @@ function ReworkPanel({
   const [links, setLinks] = useState<ReadState<ItemsOnly<ReworkLink>> | null>(null);
   const [reloadCount, reload] = useReload();
   const [rootCause, setRootCause] = useState('');
+
+  /*
+   * Unsaved work, declared to the shell, so a branch changed in the header asks
+   * before it discards what is typed here.
+   */
+  useUnsavedGuard(rootCause.trim().length > 0);
   const [correctiveAction, setCorrectiveAction] = useState('');
   const [responsibility, setResponsibility] = useState('');
   const [safetyCritical, setSafetyCritical] = useState('');

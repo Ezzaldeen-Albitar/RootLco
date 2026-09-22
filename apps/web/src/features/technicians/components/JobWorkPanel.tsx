@@ -10,6 +10,7 @@ import type { BranchTarget, CursorPage, ItemsOnly, ReadState } from '@/lib/api/r
 import type { ActionState } from '@/lib/forms/action-result';
 import { formatDateTime } from '@/lib/format';
 import type { Locale } from '@/i18n/config';
+import { useUnsavedGuard } from '@/features/working-context/WorkingContextProvider';
 import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic } from '@/i18n/get-messages';
 import {
@@ -499,6 +500,12 @@ function SessionRow({
   );
   const [reason, setReason] = useState('');
 
+  /*
+   * Unsaved work, declared to the shell, so a branch changed in the header asks
+   * before it discards what is typed here.
+   */
+  useUnsavedGuard(reason.trim().length > 0);
+
   const errorFor = (name: string): string | undefined => {
     const key = fieldErrors[name];
     return key ? translateDynamic(messages, key) : undefined;
@@ -548,7 +555,19 @@ function SessionRow({
               endedAt: new Date(endedAt).toISOString(),
               reason: reason.trim(),
             }).then((moved) => {
-              if (moved) setCorrecting(false);
+              if (!moved) return;
+              setCorrecting(false);
+              /*
+               * The reason is CLEARED, because it has been recorded.
+               *
+               * Leaving it would strand the unsaved-work guard: the draft still
+               * held text, so the shell went on asking "discard your unsaved
+               * work?" on every branch switch for the rest of the session, for
+               * a correction that was accepted minutes ago. A guard that is
+               * always dirty teaches an operator to dismiss the question
+               * without reading it, which is worse than not asking.
+               */
+              setReason('');
             });
           }}
           className="flex flex-wrap items-end gap-3"
@@ -619,6 +638,12 @@ function WorkLogPanel({
   const [reloadCount, reload] = useReload();
   const [text, setText] = useState('');
   const [loggedAt, setLoggedAt] = useState('');
+
+  /*
+   * Unsaved work, declared to the shell, so a branch changed in the header asks
+   * before it discards what is typed here.
+   */
+  useUnsavedGuard(text.trim().length > 0 || loggedAt.length > 0);
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Readonly<Record<string, string>>>({});
@@ -796,6 +821,12 @@ function EvidencePanel({
   const [categoryCode, setCategoryCode] = useState('');
   const [evidenceType, setEvidenceType] = useState('');
   const [note, setNote] = useState('');
+
+  /*
+   * Unsaved work, declared to the shell, so a branch changed in the header asks
+   * before it discards what is typed here.
+   */
+  useUnsavedGuard(note.trim().length > 0 || categoryCode.length > 0 || evidenceType.length > 0);
   const [pending, setPending] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Readonly<Record<string, string>>>({});
@@ -870,6 +901,13 @@ function EvidencePanel({
               setAttempt((n) => n + 1);
               notifyActionResult(outcome, messages);
               if (outcome.status === 'success') {
+                // The CATEGORY is cleared with the rest of the draft. It was
+                // left behind, so the unsaved-work guard stayed dirty after a
+                // capture that succeeded and the shell asked about every later
+                // branch switch. The select is keyed on `attempt`, so it
+                // remounts against the cleared value rather than keeping the
+                // old choice on screen.
+                setCategoryCode('');
                 setEvidenceType('');
                 setNote('');
                 reload();

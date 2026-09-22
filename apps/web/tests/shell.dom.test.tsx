@@ -1,14 +1,15 @@
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative, sep } from 'node:path';
-import { screen, within } from '@testing-library/react';
+import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import ts from 'typescript';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { axe } from 'vitest-axe';
 import { DataTable, type Column, type TableStatus } from '@/components/data-table/DataTable';
 import { INITIAL_REQUEST, type TableRequest } from '@/components/data-table/table-state';
 import { MoneyField } from '@/components/forms/MoneyField';
+import { RecordForm } from '@/components/forms/RecordForm';
 import { TextField } from '@/components/forms/Field';
 import { PageHeader } from '@/components/shell/PageHeader';
 import { LocaleSwitcher, swapLocale } from '@/components/shell/LocaleSwitcher';
@@ -16,14 +17,30 @@ import { Sidebar } from '@/components/shell/Sidebar';
 import { NAVIGATION, flattenNavigation, hrefFor, navigationLinks } from '@/config/navigation';
 import { getMessages } from '@/i18n/get-messages';
 import { visibleNavigation } from '@/lib/permissions';
+import { WorkingContextControl } from '@/features/working-context/components/WorkingContextControl';
+import {
+  WorkingContextProvider,
+  useUnsavedGuard,
+  useWorkingContext,
+  type WorkingContext,
+} from '@/features/working-context/WorkingContextProvider';
+import {
+  preferenceKeyFor,
+  type WorkingContextSnapshot,
+} from '@/features/working-context/working-context-contract';
 import { BOTH_DIRECTIONS, renderLtr, renderRtl } from './render';
 
 // `useSearchParams` joined the mock when the locale switcher began preserving
 // safe query parameters. An empty instance is the honest default: these cases
 // assert the SWAP, and the carrying rule has its own tests below.
+const refreshed = vi.hoisted(() => vi.fn());
+
 vi.mock('next/navigation', () => ({
   usePathname: () => '/en',
   useSearchParams: () => new URLSearchParams(''),
+  // The working-context header control offers a retry when the branch list
+  // could not be read, and a retry is a fresh render of the route that read it.
+  useRouter: () => ({ refresh: refreshed }),
 }));
 
 const messages = getMessages('en');
@@ -847,3 +864,349 @@ function staticText(node: ts.Expression): string | null {
   }
   return null;
 }
+
+/**
+ * The working context — where the operator is working, asked once.
+ *
+ * ## What these cases are actually defending
+ *
+ * Every rule here exists because its opposite was shipped. The pair fields
+ * across appointments, receptions and work orders each asked for a company and
+ * a branch as raw references, and the operator with the widest grant — whose
+ * session resolves to EMPTY lists, meaning unrestricted — was handed a
+ * free-text box. So: one branch is never asked about, a remembered choice is
+ * honoured only while it is still authorized, nothing is chosen on the
+ * operator's behalf, and a change cannot quietly re-address a half-filled form.
+ */
+
+const WC_TENANT = '2f1c5b3e-6a4d-4b21-9c8e-1f2a3b4c5d6e';
+const WC_ACCOUNT = '9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d';
+
+function wcBranch(id: string, companyId: string, name: string) {
+  return {
+    id,
+    companyId,
+    code: id.toUpperCase(),
+    name,
+    city: null,
+    timezone: 'Asia/Riyadh',
+    status: 'active',
+  };
+}
+
+const WC_COMPANIES = [
+  { id: 'c-1', name: 'Northern Operations', code: 'NORTH' },
+  { id: 'c-2', name: 'Coastal Operations', code: 'COAST' },
+];
+
+function wcSnapshot(
+  branches: readonly ReturnType<typeof wcBranch>[],
+  status: WorkingContextSnapshot['status'] = 'ready'
+): WorkingContextSnapshot {
+  return {
+    status,
+    tenantId: status === 'unavailable' ? null : WC_TENANT,
+    accountId: WC_ACCOUNT,
+    unrestricted: false,
+    companies: WC_COMPANIES,
+    branches,
+  };
+}
+
+const MAIN = wcBranch('b-1', 'c-1', 'Main workshop');
+const SECOND = wcBranch('b-2', 'c-1', 'Second workshop');
+const COAST = wcBranch('b-3', 'c-2', 'Coastal workshop');
+
+function Probe({ onContext }: { readonly onContext: (context: WorkingContext) => void }) {
+  const context = useWorkingContext();
+  useEffect(() => {
+    onContext(context);
+  }, [context, onContext]);
+  return null;
+}
+
+function DirtyScreen({ dirty }: { readonly dirty: boolean }) {
+  useUnsavedGuard(dirty);
+  return null;
+}
+
+const WC_KEY = preferenceKeyFor(WC_TENANT, WC_ACCOUNT);
+
+describe('the working context', () => {
+  beforeEach(() => {
+    window.localStorage.clear();
+    refreshed.mockClear();
+  });
+
+  function renderContext(
+    snapshot: WorkingContextSnapshot,
+    extra?: ReactNode
+  ): { readonly seen: () => WorkingContext } {
+    const onContext = vi.fn();
+    renderLtr(
+      <WorkingContextProvider snapshot={snapshot} messages={messages}>
+        <Probe onContext={onContext} />
+        {extra}
+        <WorkingContextControl messages={messages} />
+      </WorkingContextProvider>
+    );
+    return {
+      seen: () => onContext.mock.calls[onContext.mock.calls.length - 1]?.[0] as WorkingContext,
+    };
+  }
+
+  it('auto-selects the only branch, and never asks about it', () => {
+    // A required control with one option is a chore, not a decision — and the
+    // pair fields used to render exactly that on every screen.
+    const { seen } = renderContext(wcSnapshot([MAIN]));
+    expect(seen().selection).toEqual({ companyId: 'c-1', branchId: 'b-1', allBranches: false });
+    expect(screen.queryByTestId('working-context-select')).toBeNull();
+    expect(screen.getByTestId('working-context-single')).toHaveTextContent(
+      'Main workshop · Northern Operations'
+    );
+  });
+
+  it('restores a remembered branch that is still authorized', () => {
+    window.localStorage.setItem(WC_KEY, 'b-2');
+    const { seen } = renderContext(wcSnapshot([MAIN, SECOND]));
+    expect(seen().selection).toEqual({ companyId: 'c-1', branchId: 'b-2', allBranches: false });
+  });
+
+  it('DISCARDS a remembered branch the server no longer publishes, and clears it', async () => {
+    // The failure this closes: a revoked branch would otherwise be sent on
+    // every read and refused server-side, which reads to the operator as a
+    // broken screen rather than as a grant that changed.
+    window.localStorage.setItem(WC_KEY, 'b-9');
+    const { seen } = renderContext(wcSnapshot([MAIN, SECOND]));
+    expect(seen().selection).toBeNull();
+    await waitFor(() => expect(window.localStorage.getItem(WC_KEY)).toBeNull());
+  });
+
+  it('does not let one operator inherit the branch of the last person on the machine', () => {
+    window.localStorage.setItem(preferenceKeyFor(WC_TENANT, 'somebody-else'), 'b-2');
+    const { seen } = renderContext(wcSnapshot([MAIN, SECOND]));
+    expect(seen().selection).toBeNull();
+  });
+
+  it('asks ONCE when several are authorized and none is remembered', () => {
+    renderContext(wcSnapshot([MAIN, SECOND, COAST]));
+    const prompt = screen.getByTestId('working-context-prompt');
+    expect(prompt).toHaveTextContent('Choose your branch to start');
+    // Announced, not merely shown. It is the first action of the session.
+    expect(prompt).toHaveAttribute('role', 'status');
+    expect(prompt).toHaveAttribute('aria-live', 'polite');
+  });
+
+  it('groups the choices by company and offers every branch as a reading posture', () => {
+    renderContext(wcSnapshot([MAIN, SECOND, COAST]));
+    const select = screen.getByTestId('working-context-select');
+    expect(within(select).getByRole('group', { name: 'Northern Operations' })).toBeInTheDocument();
+    expect(within(select).getByRole('group', { name: 'Coastal Operations' })).toBeInTheDocument();
+    expect(within(select).getByRole('option', { name: 'All my branches' })).toBeInTheDocument();
+  });
+
+  it('offers no "all" entry when there is only one branch, because there is no set', () => {
+    renderContext(wcSnapshot([MAIN]));
+    expect(screen.queryByRole('option', { name: 'All my branches' })).toBeNull();
+  });
+
+  it('increments the version and ABORTS the outstanding signal on a change', async () => {
+    const user = userEvent.setup();
+    const { seen } = renderContext(wcSnapshot([MAIN, SECOND]));
+    const before = seen();
+    expect(before.signal.aborted).toBe(false);
+
+    await user.selectOptions(screen.getByTestId('working-context-select'), 'b-2');
+
+    await waitFor(() => expect(seen().version).toBe(before.version + 1));
+    // A list mid-read when the branch changed must not commit its rows under
+    // the new heading.
+    expect(before.signal.aborted).toBe(true);
+    expect(seen().signal.aborted).toBe(false);
+    expect(seen().selection).toEqual({ companyId: 'c-1', branchId: 'b-2', allBranches: false });
+  });
+
+  it('names no company for an "all" selection that spans more than one', async () => {
+    const user = userEvent.setup();
+    const { seen } = renderContext(wcSnapshot([MAIN, COAST]));
+    await user.selectOptions(screen.getByTestId('working-context-select'), 'all');
+    await waitFor(() =>
+      expect(seen().selection).toEqual({ companyId: null, branchId: null, allBranches: true })
+    );
+  });
+
+  it('ASKS before changing branch while a screen holds unsaved work', async () => {
+    const user = userEvent.setup();
+    const { seen } = renderContext(wcSnapshot([MAIN, SECOND]), <DirtyScreen dirty />);
+    const before = seen();
+
+    await user.selectOptions(screen.getByTestId('working-context-select'), 'b-2');
+
+    const dialog = await screen.findByRole('alertdialog');
+    expect(within(dialog).getByText('Leave this unsaved work?')).toBeInTheDocument();
+    // Nothing has moved yet: not the selection, not the version, not the signal.
+    expect(seen().selection).toEqual(before.selection);
+    expect(seen().version).toBe(before.version);
+    expect(before.signal.aborted).toBe(false);
+
+    await user.click(within(dialog).getByRole('button', { name: 'Discard and change branch' }));
+    await waitFor(() =>
+      expect(seen().selection).toEqual({ companyId: 'c-1', branchId: 'b-2', allBranches: false })
+    );
+  });
+
+  it('leaves the branch alone when the operator chooses to stay', async () => {
+    const user = userEvent.setup();
+    window.localStorage.setItem(WC_KEY, 'b-1');
+    const { seen } = renderContext(wcSnapshot([MAIN, SECOND]), <DirtyScreen dirty />);
+    await user.selectOptions(screen.getByTestId('working-context-select'), 'b-2');
+    const dialog = await screen.findByRole('alertdialog');
+    await user.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+    expect(seen().selection).toMatchObject({ branchId: 'b-1' });
+  });
+
+  it('switches without asking when no screen holds unsaved work', async () => {
+    const user = userEvent.setup();
+    const { seen } = renderContext(wcSnapshot([MAIN, SECOND]), <DirtyScreen dirty={false} />);
+    await user.selectOptions(screen.getByTestId('working-context-select'), 'b-2');
+    await waitFor(() => expect(seen().selection).toMatchObject({ branchId: 'b-2' }));
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+  });
+
+  it('says the branch list could not be read, and offers to try again', async () => {
+    const user = userEvent.setup();
+    renderContext(wcSnapshot([], 'unavailable'));
+    expect(screen.getByTestId('working-context-unavailable')).toHaveTextContent(
+      'Your branch list could not be read.'
+    );
+    // An empty control here would read as "you have no branches", which is a
+    // different and much worse sentence.
+    expect(screen.queryByTestId('working-context-select')).toBeNull();
+    await user.click(screen.getByRole('button', { name: 'Try again' }));
+    expect(refreshed).toHaveBeenCalled();
+  });
+
+  it('says so plainly when no branch is assigned at all', () => {
+    renderContext(wcSnapshot([], 'none'));
+    expect(screen.getByTestId('working-context-none')).toHaveTextContent(
+      'No branch is assigned to you yet.'
+    );
+    expect(screen.queryByTestId('working-context-select')).toBeNull();
+  });
+
+  it('reads as a control in Arabic too, with no direction-specific markup', () => {
+    renderRtl(
+      <WorkingContextProvider snapshot={wcSnapshot([MAIN, SECOND])} messages={arabic}>
+        <WorkingContextControl messages={arabic} />
+      </WorkingContextProvider>
+    );
+    expect(document.documentElement.dir).toBe('rtl');
+    expect(screen.getByLabelText(arabic['workingContext.label'])).toBeInTheDocument();
+    expect(screen.getByTestId('working-context-prompt')).toHaveTextContent(
+      arabic['workingContext.prompt']
+    );
+  });
+});
+
+describe('the remembered branch, revoked and re-read', () => {
+  beforeEach(() => {
+    window.localStorage.clear();
+  });
+
+  it('DISCARDS a stored "all" once only one branch is left', async () => {
+    /*
+     * "All my branches" is a set, and a set of one is a branch. Keeping the
+     * stored value would leave the operator in a posture no screen can write
+     * from — every form would refuse with "choose one branch" while the header
+     * showed a plain sentence and no control to change it.
+     */
+    window.localStorage.setItem(WC_KEY, 'all');
+    const onContext = vi.fn();
+    renderLtr(
+      <WorkingContextProvider snapshot={wcSnapshot([MAIN])} messages={messages}>
+        <Probe onContext={onContext} />
+      </WorkingContextProvider>
+    );
+    const seen = () => onContext.mock.calls[onContext.mock.calls.length - 1]?.[0] as WorkingContext;
+    // Auto-selected, because one branch is never asked about.
+    expect(seen().selection).toEqual({ companyId: 'c-1', branchId: 'b-1', allBranches: false });
+    await waitFor(() => expect(window.localStorage.getItem(WC_KEY)).toBeNull());
+  });
+
+  it('follows the choice made in ANOTHER TAB', async () => {
+    /*
+     * A `storage` event fires only in the other documents, which is exactly
+     * what it is for here: an operator with the board open on one screen and a
+     * form on another must not have the two disagree about where they are
+     * working. The preference goes through the single browser-storage
+     * authority, so this behaviour is the collapse flag's, inherited.
+     */
+    const onContext = vi.fn();
+    renderLtr(
+      <WorkingContextProvider snapshot={wcSnapshot([MAIN, SECOND])} messages={messages}>
+        <Probe onContext={onContext} />
+      </WorkingContextProvider>
+    );
+    const seen = () => onContext.mock.calls[onContext.mock.calls.length - 1]?.[0] as WorkingContext;
+    expect(seen().selection).toBeNull();
+
+    /*
+     * Exactly what another tab does: write, then the browser notifies this one.
+     *
+     * A bare `Event('storage')` rather than a `StorageEvent` carrying the key
+     * and the new value, and the difference is the point rather than a
+     * shortcut. `use-persisted-flag.ts` subscribes with a zero-argument
+     * callback and RE-READS storage when it fires — it never looks at the
+     * event's payload — so a notification is the whole of what production
+     * depends on, and asserting against a hand-built payload would be asserting
+     * against something no code reads. It also keeps this file clear of a
+     * `StorageEvent` constructor that the static analysis models with one
+     * parameter.
+     */
+    window.localStorage.setItem(WC_KEY, 'b-2');
+    window.dispatchEvent(new Event('storage'));
+
+    await waitFor(() =>
+      expect(seen().selection).toEqual({ companyId: 'c-1', branchId: 'b-2', allBranches: false })
+    );
+  });
+});
+
+describe('a form with unsaved work blocks a branch switch', () => {
+  beforeEach(() => {
+    window.localStorage.clear();
+  });
+
+  it('ASKS when a RecordForm has been typed into', async () => {
+    /*
+     * `useUnsavedGuard` existed with no caller, which is the "declared but
+     * never wired" defect this repository keeps finding. `RecordForm` is where
+     * wiring it pays for itself: eleven write surfaces render through it, and
+     * its `set` is the single place every field kind reports a change.
+     */
+    const user = userEvent.setup();
+    renderLtr(
+      <WorkingContextProvider snapshot={wcSnapshot([MAIN, SECOND])} messages={messages}>
+        <RecordForm
+          messages={messages}
+          fields={[{ name: 'reason', kind: 'text', labelKey: 'crm.customers.notes.body' }]}
+          action={async () => ({ status: 'success', messageKey: 'action.succeeded', attempt: 1 })}
+          submitKey="form.submit"
+          titleKey="crm.customers.notes.add"
+        />
+        <WorkingContextControl messages={messages} />
+      </WorkingContextProvider>
+    );
+
+    // Clean: the switch goes through without a question.
+    await user.selectOptions(screen.getByTestId('working-context-select'), 'b-2');
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+
+    await user.type(screen.getByLabelText(messages['crm.customers.notes.body']), 'a note');
+    await user.selectOptions(screen.getByTestId('working-context-select'), 'b-1');
+
+    const dialog = await screen.findByRole('alertdialog');
+    expect(within(dialog).getByText(messages['workingContext.discard.title'])).toBeInTheDocument();
+  });
+});

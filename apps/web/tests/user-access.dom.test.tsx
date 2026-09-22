@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import en from '../src/i18n/messages/en.json';
 import ar from '../src/i18n/messages/ar.json';
-import { renderLtr, renderRtl } from './render';
+import { inBranch, renderLtr, renderRtl } from './render';
 import type { AccessGrant, RoleOption, UserRow } from '@/features/administration/users/api';
 import type { BranchView, CompanyView } from '@/features/administration/organization/types';
 import { NAVIGATION } from '@/config/navigation';
@@ -559,23 +559,27 @@ describe('an approval limit’s effective window', () => {
     });
     send.mockResolvedValue(refusal([{ path: 'body.effectiveTo', rule: 'not_after_start' }]));
     const user = userEvent.setup();
+    // The company is chosen BY NAME now, from the working context, so the test
+    // states which companies this operator may act in rather than handing the
+    // screen a bare reference.
     renderLtr(
-      <ApprovalLimitsScreen
-        locale="en"
-        messages={en}
-        roles={[
-          {
-            id: ROLE.id,
-            roleCode: ROLE.roleCode,
-            name: ROLE.name,
-            description: null,
-            isSystem: false,
-            recordVersion: 1,
-          },
-        ]}
-        companyIds={[COMPANY.id]}
-        canManage
-      />
+      inBranch(
+        <ApprovalLimitsScreen
+          locale="en"
+          messages={en}
+          roles={[
+            {
+              id: ROLE.id,
+              roleCode: ROLE.roleCode,
+              name: ROLE.name,
+              description: null,
+              isSystem: false,
+              recordVersion: 1,
+            },
+          ]}
+          canManage
+        />
+      )
     );
 
     await user.click(await screen.findByRole('button', { name: EN('approvalLimits.create') }));

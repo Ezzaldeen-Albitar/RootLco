@@ -854,16 +854,24 @@ describe('P1-28-SEC-003 — the ONE door, and the abuse cases that try the walls
      * would refuse it as a cursor issued for a different ordering contract. Both
      * list screens mount the results component under a key derived from the
      * WHOLE submission, so a new target is a new table with no cursor at all.
+     *
+     * The key now carries the WORKING-CONTEXT VERSION as well, and that half is
+     * the stronger one. The branch is chosen in the header rather than on the
+     * form, so it can change without the submission changing at all — and a
+     * table keyed on the submission alone would then page branch A's cursor
+     * under branch B's name. The version moves on every change, so it cannot.
      */
     for (const relative of [
       ['features', 'appointments', 'components', 'AppointmentCalendarScreen.tsx'],
       ['features', 'receptions', 'components', 'ReceptionQueueScreen.tsx'],
+      ['features', 'work-orders', 'components', 'WorkOrderQueueScreen.tsx'],
     ]) {
       const source = webFile(...relative);
-      expect(source, relative.join('/')).toContain('key={JSON.stringify(submitted)}');
+      expect(source, relative.join('/')).toContain('JSON.stringify(submitted)');
+      expect(source, relative.join('/')).toMatch(/key=\{`\$\{[A-Za-z]*[Vv]ersion\}:/);
       // And the submission that keys it carries the target, so a branch change
       // really does change the key.
-      expect(source, relative.join('/')).toMatch(/target:\s*\{\s*companyId/);
+      expect(source, relative.join('/')).toMatch(/target:\s*(\{\s*companyId|branch\.target)/);
     }
   });
 

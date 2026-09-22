@@ -59,13 +59,7 @@ export default async function ApprovalLimitsPage({
         crumbs={crumbs}
       />
       <PageBody fill>
-        <ApprovalLimitsScreen
-          locale={locale}
-          messages={messages}
-          roles={roles}
-          companyIds={session.companyIds}
-          canManage
-        />
+        <ApprovalLimitsScreen locale={locale} messages={messages} roles={roles} canManage />
       </PageBody>
     </>
   );
