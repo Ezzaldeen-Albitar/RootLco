@@ -76,6 +76,21 @@
  * inside the same transaction by SQL that reads the rows just written rather than
  * the variables that wrote them.
  *
+ * ## Why the last-owner rule needs a lock, not just a count
+ *
+ * Counting the survivors and then revoking is a read followed by a write, and
+ * under READ COMMITTED two runs revoking the LAST TWO holders each read "one
+ * other holder remains", each pass the rule, and both commit — producing exactly
+ * the empty platform the rule exists to prevent. The in-transaction re-assertion
+ * does not close it: both transactions count the same pre-commit snapshot.
+ *
+ * So every run takes `REVOCATION_LOCK_SQL` — a transaction-scoped advisory lock
+ * on a constant key — immediately after `BEGIN`, before the first read that
+ * decides the rule, and holds it to COMMIT or ROLLBACK. Revocations on a platform
+ * are therefore serialized against each other: the second run reads the first
+ * one's outcome and is refused. Proved in
+ * `tests/backend/p1-29-w9-platform-genesis.test.ts`, case R5.
+ *
  * ## Sessions, stated as they are
  *
  * The same transaction revokes every unrevoked row this account holds in
@@ -147,6 +162,30 @@ const ALLOWED_ENVIRONMENTS = new Set(['local-acceptance', 'production-genesis'])
  * owner. Spelled once here and read from `iam.audit_records` below.
  */
 export const GENESIS_AUDIT_ACTION = 'platform.operator.genesis';
+
+/**
+ * The lock every revocation takes before it counts who holds platform authority.
+ *
+ * Without it the last-holder rule is a read followed by a write with no
+ * serialization between them: two runs revoking the last two holders each read
+ * "one other holder remains", each pass, and both commit — leaving a platform
+ * with no operator, which is the one state this script exists to prevent and the
+ * one nothing in this repository recovers from. The in-transaction re-assertion
+ * does not close it either: both transactions count the same pre-commit
+ * snapshot under READ COMMITTED and both see a survivor.
+ *
+ * A transaction-scoped advisory lock on a CONSTANT key, taken immediately after
+ * BEGIN and released at COMMIT or ROLLBACK, so every revocation on the platform
+ * is serialized against every other. The key is derived from the table name
+ * rather than written as a number, so it cannot silently collide with a literal
+ * somebody else picks; `iam.audit_append` derives its own the same way.
+ *
+ * Not `SELECT ... FOR UPDATE` over the unrevoked rows: the rows a run must
+ * serialize against are the ones it is NOT revoking — every other holder's — and
+ * a run that locked those would have to lock the whole table to be correct.
+ */
+export const REVOCATION_LOCK_SQL =
+  "SELECT pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtextextended('iam.platform_grants:revocation', 0))";
 
 class RevokeRefused extends Error {
   constructor(message, exitCode = 2) {
@@ -463,6 +502,11 @@ export async function runRevokeOperator(client, input, provenSubject) {
   const homeTenantCode = input.homeTenantCode ?? 'platform_operators';
   await client.query('BEGIN');
   try {
+    // 0. Before the first read of anything that decides the last-holder rule,
+    //    and held to COMMIT or ROLLBACK: a concurrent revocation must see this
+    //    run's outcome, never its middle.
+    await client.query(REVOCATION_LOCK_SQL);
+
     // 1. The revoker, from the identity their sign-in proved.
     const candidate = await readAccount(
       client,
@@ -505,7 +549,9 @@ export async function runRevokeOperator(client, input, provenSubject) {
     });
     if (ownerProblem) fail(ownerProblem, 4);
 
-    // 4. The lock-out rule: who would be left.
+    // 4. The lock-out rule: who would be left. Read under the lock taken at
+    //    step 0, so a concurrent revocation cannot be counted as a survivor
+    //    here and then commit its own removal before this one does.
     const remaining = await client.query(
       `SELECT DISTINCT g.account_id
          FROM iam.platform_grants g
@@ -576,6 +622,9 @@ export async function runRevokeOperator(client, input, provenSubject) {
       );
     }
     if (check.holders === 0) {
+      // Meaningful only because of the lock at step 0: under READ COMMITTED and
+      // without it, two concurrent runs would each count the other as a
+      // survivor here and both would commit.
       fail('Refused in-transaction: this run would leave the platform with no operator', 4);
     }
     if (check.account_kept !== 1) {
@@ -616,8 +665,15 @@ export async function runRevokeOperator(client, input, provenSubject) {
     const result = {
       outcome: input.dryRun ? 'dry-run' : 'revoked',
       operatorAccountId: target.accountId,
+      operatorEmail: target.email,
       homeTenantId: acting.tenantId,
       revokerAccountId: acting.accountId,
+      // The address of the account the SIGN-IN proved, read back from the row
+      // the transaction resolved. `input.revoker.email` is what the environment
+      // asked for and is never written to evidence: it is unverified, and on a
+      // provider where an address has moved since it would name somebody who did
+      // not perform this act.
+      revokerEmail: acting.email,
       revokedGrants: revokedCodes,
       sessionsEnded: sessions.rowCount ?? 0,
       remainingOperators: check.holders,
@@ -657,8 +713,11 @@ function writeEvidence(input, result) {
       name: input.db.database,
       user: input.db.user,
     },
-    operator: { email: input.operator.email, identityProvider: input.operator.provider },
-    revoker: { email: input.revoker.email },
+    // Both addresses come from the rows the transaction resolved, never from the
+    // environment that asked for the run: the evidence states who was acted on
+    // and who acted, as the database answered.
+    operator: { email: result.operatorEmail, identityProvider: input.operator.provider },
+    revoker: { email: result.revokerEmail },
     reason: input.reason,
     providerSessions:
       'not ended — GoTrue 2.x has no endpoint that ends every session of a user id, so an already ' +

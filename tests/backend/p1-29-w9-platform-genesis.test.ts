@@ -52,6 +52,11 @@
  *       the rows and the account in place, and is recorded
  *   R4  the LAST holder of platform authority is refused, self-revocation
  *       included
+ *   R5  two CONCURRENT revocations of the last two holders cannot both commit —
+ *       the guard `REVOCATION_LOCK_SQL` exists for, driven on two connections
+ *
+ * The `admin` pool carries three connections, which is what makes R5 a real
+ * race rather than two sequential calls dressed up as one.
  *
  * R3 measures the refusal that follows by calling `iam.has_platform_authority`
  * on the control-plane login — the exact predicate
@@ -165,6 +170,9 @@ function input(overrides: Record<string, string> = {}) {
 /** The addresses and identities the A-cases use, all derived from this run. */
 const SECOND = `second_op_${RUN}@fixture.test`;
 const THIRD = `third_op_${RUN}@fixture.test`;
+/** The two operators R5 races against each other, established by R5 itself. */
+const FOURTH = `fourth_op_${RUN}@fixture.test`;
+const FIFTH = `fifth_op_${RUN}@fixture.test`;
 const ORGANISATION = `addoporg_${RUN}`;
 /** The second operator, established by A1 and used as a grantor by A2. */
 let secondAccountId: string;
@@ -1015,6 +1023,107 @@ describe('W9 — platform operator genesis', () => {
         [thirdAccountId]
       )
     ).toMatchObject({ rowCount: 0 });
+  });
+
+  /**
+   * The last-holder rule is a READ followed by a WRITE, and without
+   * serialization that is not a rule at all: under READ COMMITTED two runs
+   * revoking the last two holders each read "one other holder remains", each
+   * pass, and both commit — leaving a platform with no operator, which is the
+   * one state nothing in this repository recovers from. The in-transaction
+   * re-assertion does not close it either: both transactions count the same
+   * pre-commit snapshot.
+   *
+   * So this case drives the two runs CONCURRENTLY, on two connections, through
+   * the real script, and asserts the outcome is one commit and one refusal
+   * rather than two commits. Which run wins is not asserted — that is a race and
+   * naming a winner would be a flake — but the SHAPE is deterministic because
+   * `REVOCATION_LOCK_SQL` serializes them: the second run reads the first one's
+   * committed outcome and is refused BY THE PRE-WRITE RULE, before it has
+   * touched a row.
+   *
+   * That last part is what the case actually pins, and it is worth saying
+   * exactly. Measured with the lock removed on 2026-09-22, the two runs did not
+   * both commit on this machine: the loser was caught by the in-transaction
+   * re-assertion instead, because its verification query happened to run after
+   * the winner committed. That is luck, not a guard — the re-assertion counts a
+   * READ COMMITTED snapshot, so a different interleaving admits both — and it
+   * also means the loser had already written its UPDATEs before anything stopped
+   * it. Asserting the refusal MESSAGE, not merely that one run failed, is
+   * therefore the whole point: with the lock the refusal is the deterministic
+   * pre-write one, and without it this case fails.
+   *
+   * Both runs are self-revocations, which is what makes the surviving refusal
+   * the LAST-HOLDER one rather than the revoker one: each run's revoker is its
+   * own target, so the loser still holds authority when it is refused.
+   */
+  it('R5 two concurrent revocations of the last two holders cannot both commit', async () => {
+    // Two more operators, established through the sanctioned path by the holder
+    // R4 left in place, so this case builds its own precondition.
+    const third = await admin.query<{ id: string }>(
+      'SELECT id FROM iam.user_accounts WHERE lower(email) = $1',
+      [THIRD]
+    );
+    const thirdAccountId = third.rows[0]?.id as string;
+    await add(
+      addInput(FOURTH, THIRD, [PLATFORM_BASE_AUTHORITY_CODE]),
+      `sub_fourth_${RUN}`,
+      `sub_third_${RUN}`
+    );
+    await add(
+      addInput(FIFTH, THIRD, [PLATFORM_BASE_AUTHORITY_CODE]),
+      `sub_fifth_${RUN}`,
+      `sub_third_${RUN}`
+    );
+    // Now exactly two holders are left to race: the third operator steps down
+    // first, through the script, leaving the two this case established.
+    await revoke(revokeInput(THIRD, FOURTH), `sub_fourth_${RUN}`);
+    expect(await heldCodes(thirdAccountId)).toEqual([]);
+    const before = await admin.query<{ n: number }>(
+      'SELECT count(DISTINCT account_id)::int AS n FROM iam.platform_grants WHERE revoked_at IS NULL'
+    );
+    expect(before.rows[0]?.n).toBe(2);
+
+    const settled = await Promise.allSettled([
+      revoke(revokeInput(FOURTH, FOURTH), `sub_fourth_${RUN}`),
+      revoke(revokeInput(FIFTH, FIFTH), `sub_fifth_${RUN}`),
+    ]);
+    const kept = settled.filter((outcome) => outcome.status === 'fulfilled');
+    const refused = settled.filter((outcome) => outcome.status === 'rejected');
+    expect(kept).toHaveLength(1);
+    expect(refused).toHaveLength(1);
+    expect((refused[0] as PromiseRejectedResult).reason).toMatchObject({
+      exitCode: 4,
+      message: expect.stringContaining('last holder of platform authority'),
+    });
+
+    // The whole point: somebody still holds platform authority.
+    const after = await admin.query<{ n: number }>(
+      'SELECT count(DISTINCT account_id)::int AS n FROM iam.platform_grants WHERE revoked_at IS NULL'
+    );
+    expect(after.rows[0]?.n).toBe(1);
+
+    // And the survivor cannot step down either — the sequential form of the
+    // same rule, so the concurrent result above is not a lucky ordering.
+    const survivor = await admin.query<{ email: string }>(
+      `SELECT DISTINCT lower(a.email) AS email
+         FROM iam.platform_grants g
+         JOIN iam.user_accounts a ON a.id = g.account_id
+        WHERE g.revoked_at IS NULL`
+    );
+    const address = survivor.rows[0]?.email as string;
+    const subject = address === FOURTH ? `sub_fourth_${RUN}` : `sub_fifth_${RUN}`;
+    await expect(revoke(revokeInput(address, address), subject)).rejects.toMatchObject({
+      exitCode: 4,
+      message: expect.stringContaining('last holder of platform authority'),
+    });
+    expect(
+      (
+        await admin.query<{ n: number }>(
+          'SELECT count(DISTINCT account_id)::int AS n FROM iam.platform_grants WHERE revoked_at IS NULL'
+        )
+      ).rows[0]?.n
+    ).toBe(1);
   });
 
   it('G7 the shared database is untouched: an unrelated operator grant survives the whole lifecycle', async () => {

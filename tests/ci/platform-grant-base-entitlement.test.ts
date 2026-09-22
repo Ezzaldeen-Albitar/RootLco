@@ -63,6 +63,7 @@ import {
 } from '../../scripts/platform/add-platform-operator.mjs';
 import {
   GENESIS_AUDIT_ACTION,
+  REVOCATION_LOCK_SQL,
   firstOwnerRefusal,
   lastOperatorRefusal,
   readRevokeOperatorInput,
@@ -703,6 +704,52 @@ describe('revoking a platform operator refuses everything it must', () => {
    * table, so a second revocation path — wherever it appeared — fails here rather
    * than quietly inheriting these refusals without applying them.
    */
+  /**
+   * The lock only serializes anything if it is taken BEFORE the reads it
+   * protects. Taken after the holder count — or after the UPDATE — it would hold
+   * a real lock around the wrong half of the transaction and every case above
+   * would still pass, while two concurrent runs emptied the platform. Asserted
+   * as source order, because the alternative is to drive two connections, which
+   * `tests/backend/p1-29-w9-platform-genesis.test.ts` case R5 does. The extractor
+   * fails closed, so a rename cannot leave these comparisons passing over
+   * nothing.
+   */
+  it('takes the revocation lock before it counts who would be left', () => {
+    const SCRIPT = join(
+      REPOSITORY_ROOT,
+      'scripts/platform/revoke-platform-operator.mjs'.split('/').join(sep)
+    );
+    const source = readFileSync(SCRIPT, 'utf8');
+    // A constant key, so every run contends for the SAME lock. A key built from
+    // an account id would let two runs take different locks and serialize
+    // nothing.
+    expect(REVOCATION_LOCK_SQL).toContain('pg_advisory_xact_lock');
+    expect(REVOCATION_LOCK_SQL).not.toContain('$1');
+
+    const start = source.indexOf('export async function runRevokeOperator(');
+    expect(start, 'runRevokeOperator in revoke-platform-operator.mjs').toBeGreaterThan(-1);
+    const end = source.indexOf('\n}\n', start);
+    expect(end, 'the extractor must find the end of the function').toBeGreaterThan(start);
+    const body = source.slice(start, end);
+    const at = (needle: string): number => {
+      const index = body.indexOf(needle);
+      expect(index, `${needle} in runRevokeOperator`).toBeGreaterThan(-1);
+      return index;
+    };
+    expect(body.indexOf('noSuchStatementAnywhere'), 'the extractor must fail closed').toBe(-1);
+    const lock = at('REVOCATION_LOCK_SQL');
+    expect(
+      at("await client.query('BEGIN')"),
+      'the lock is taken before the transaction'
+    ).toBeLessThan(lock);
+    expect(lock, 'the survivors are counted before the lock').toBeLessThan(
+      at('lastOperatorRefusal(')
+    );
+    expect(lock, 'a grant is revoked before the lock').toBeLessThan(
+      at('UPDATE iam.platform_grants')
+    );
+  });
+
   it('is the only code path under scripts/ that revokes a platform grant', () => {
     const revokers = scriptFiles().filter((file) => {
       const source = readFileSync(join(REPOSITORY_ROOT, file.split('/').join(sep)), 'utf8');
