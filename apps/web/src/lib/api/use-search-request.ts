@@ -72,7 +72,18 @@ export type SearchPhase =
   | 'unavailable'
   /** The caller may not read this. Retrying cannot change it. */
   | 'refused'
-  /** Anything else, including an ended session. */
+  /**
+   * The session ended while the screen was open.
+   *
+   * Its own phase, and that is the point. It used to arrive as `failed`
+   * carrying `state.expired.message`, which every renderer then had to
+   * recognise by comparing an error KEY — one did, and the rest showed
+   * "Something went wrong" with a Try-again button that could only fail again.
+   * A phase is a fact about the read; a key is a sentence about it, and asking
+   * a screen to infer the first from the second is how the two came apart.
+   */
+  | 'expired'
+  /** Anything else. Worth retrying, and the reference is worth reporting. */
   | 'failed';
 
 export interface SearchOutcome<Row> {
@@ -125,9 +136,11 @@ const IDLE: SearchOutcome<never> = {
 /**
  * How a read outcome becomes a phase.
  *
- * `expired` is `failed` rather than `unavailable` on purpose: the two differ in
- * what the operator must do next, and offering "try again" to somebody whose
- * session has ended is offering a button that cannot work.
+ * An ended session is its OWN phase rather than a `failed` carrying a
+ * particular key. The two differ in what the operator must do next — sign in
+ * again, rather than try the same request once more — and a renderer that had
+ * to tell them apart by comparing an error key got it wrong everywhere the
+ * comparison was forgotten.
  */
 function outcomeOf<Row>(state: ReadState<CursorPage<Row>>): SearchOutcome<Row> {
   if (state.status === 'ok') {
@@ -142,9 +155,11 @@ function outcomeOf<Row>(state: ReadState<CursorPage<Row>>): SearchOutcome<Row> {
   const phase: SearchPhase =
     state.status === 'denied'
       ? 'refused'
-      : state.status === 'unavailable'
-        ? 'unavailable'
-        : 'failed';
+      : state.status === 'expired'
+        ? 'expired'
+        : state.status === 'unavailable'
+          ? 'unavailable'
+          : 'failed';
   const error =
     state.status === 'denied'
       ? 'state.denied.title'
@@ -397,7 +412,7 @@ export function useSearchRequest<Row, Criteria>(options: {
   }, []);
 
   /*
-   * `TableStatus` and `SearchPhase` say the same six things in different words.
+   * `TableStatus` and `SearchPhase` say the same seven things in different words.
    *
    * `idle` and `empty` both map to the table's `idle` — an answered read — and
    * the ZERO-ROW case is the table's to render or the screen's to suppress,
@@ -408,15 +423,15 @@ export function useSearchRequest<Row, Criteria>(options: {
       ? 'loading'
       : outcome.phase === 'refused'
         ? 'denied'
-        : outcome.phase === 'unavailable'
-          ? 'unavailable'
-          : outcome.phase === 'failed'
-            ? outcome.error === 'state.expired.message'
-              ? 'expired'
-              : outcome.error === 'state.notFound.title'
+        : outcome.phase === 'expired'
+          ? 'expired'
+          : outcome.phase === 'unavailable'
+            ? 'unavailable'
+            : outcome.phase === 'failed'
+              ? outcome.error === 'state.notFound.title'
                 ? 'not-found'
                 : 'error'
-            : 'idle';
+              : 'idle';
 
   const request: TableRequest = useMemo(() => withPage(INITIAL_REQUEST, wantedPage), [wantedPage]);
 

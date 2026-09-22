@@ -114,8 +114,10 @@ import {
 
 /** The views the operation can actually be sent. See the docblock. */
 type ViewKind =
+  | 'active'
   | 'all'
   | 'openedToday'
+  | 'completedToday'
   | 'mine'
   | 'awaitingApproval'
   | 'awaitingParts'
@@ -123,8 +125,10 @@ type ViewKind =
   | 'readyForDelivery';
 
 const VIEW_KINDS: readonly ViewKind[] = [
+  'active',
   'all',
   'openedToday',
+  'completedToday',
   'mine',
   'awaitingApproval',
   'awaitingParts',
@@ -132,15 +136,42 @@ const VIEW_KINDS: readonly ViewKind[] = [
   'readyForDelivery',
 ];
 
+/** The board opens on the work that is still the workshop's problem. */
+const DEFAULT_VIEW: ViewKind = 'active';
+
 /** What the read is asked for: the scope it is addressed to and the filters. */
 interface Asked {
   readonly scope: BranchScope;
   readonly filters: WorkOrderListCriteria;
 }
 
-/** The flags one view turns on. Everything absent is "did not ask". */
-function flagsOf(view: ViewKind): WorkOrderListCriteria {
+/**
+ * What one view asks for. Everything absent is "did not ask".
+ *
+ * Two of them are windows rather than flags, and both are measured on the
+ * BRANCH's clock: "created today" over the opened instant and "completed today"
+ * over the completion instant. Either completion bound narrows the board to
+ * finished work by construction, because an unfinished work order has no
+ * completion instant at all.
+ */
+function criteriaOf(view: ViewKind, zone: string): WorkOrderListCriteria {
+  const today = dayIn(zone);
   switch (view) {
+    case 'active': {
+      // The GROUP, not a state code. The backend resolves it from the tenant
+      // catalogue's own flags, so a workshop that defines its own state is
+      // covered on the day it defines it — and it is exactly the set the
+      // overview aggregate calls active.
+      return { stateGroup: 'active' };
+    }
+    case 'openedToday': {
+      const window = rangeOfDays(zone, today, today);
+      return { openedFrom: window.from, openedTo: window.to };
+    }
+    case 'completedToday': {
+      const window = rangeOfDays(zone, today, today);
+      return { completedFrom: window.from, completedTo: window.to };
+    }
     case 'mine':
       return { assignedToMe: true };
     case 'awaitingApproval':
@@ -152,7 +183,6 @@ function flagsOf(view: ViewKind): WorkOrderListCriteria {
     case 'readyForDelivery':
       return { readyForDelivery: true };
     case 'all':
-    case 'openedToday':
       return {};
   }
 }
@@ -173,7 +203,7 @@ export function WorkOrderQueueScreen({
   const context = useWorkingContext();
   const branch = useBranchTarget();
 
-  const [view, setView] = useState<ViewKind>('all');
+  const [view, setView] = useState<ViewKind>(DEFAULT_VIEW);
   const [state, setState] = useState('');
   const [kind, setKind] = useState<'' | WorkOrderKind>('');
   const [term, setTerm] = useState('');
@@ -264,13 +294,14 @@ export function WorkOrderQueueScreen({
   const termIsSearchable = trimmed.length >= MIN_WORK_ORDER_SEARCH;
   const termTooShort = trimmed.length > 0 && !termIsSearchable;
 
-  const today = dayIn(zone);
+  /*
+   * The operator's own opened-date range, which is a SEPARATE control from the
+   * "created today" view and overrides it when both are set: the explicit dates
+   * are the more specific ask, and sending two windows over one column would be
+   * the screen arguing with itself.
+   */
   const openedWindow =
-    view === 'openedToday'
-      ? rangeOfDays(zone, today, today)
-      : openedRange === null
-        ? null
-        : rangeOfDays(zone, openedRange.from, openedRange.to);
+    openedRange === null ? null : rangeOfDays(zone, openedRange.from, openedRange.to);
 
   /*
    * Built inline on every render — `useSearchRequest` keys on the SERIALISED
@@ -291,7 +322,15 @@ export function WorkOrderQueueScreen({
       : {
           scope,
           filters: {
-            ...flagsOf(view),
+            ...criteriaOf(view, zone),
+            /*
+             * A state CODE and a state GROUP may not travel together: the route
+             * answers 422 `state_and_group_exclusive` rather than intersecting
+             * them. The exclusion is structural here rather than validated —
+             * choosing a state moves the view off `active`, and choosing
+             * `active` clears the state — so the refusal is unreachable and the
+             * screen never has to explain it.
+             */
             ...(state.trim() === '' ? {} : { state: state.trim() }),
             ...(kind === '' ? {} : { kind }),
             ...(openedWindow === null
@@ -352,8 +391,23 @@ export function WorkOrderQueueScreen({
     setOpenedRange(null);
   };
 
+  /*
+   * Choosing a state moves the view off the one that sends a group, and
+   * choosing that view clears the state. See the criteria above: the backend
+   * refuses the pair, and the honest fix is a screen that cannot send it.
+   */
+  const chooseState = (next: string) => {
+    setState(next);
+    if (next !== '' && view === 'active') setView('all');
+  };
+
+  const chooseView = (next: ViewKind) => {
+    setView(next);
+    if (next === 'active') setState('');
+  };
+
   const clearFilters = () => {
-    setView('all');
+    setView(DEFAULT_VIEW);
     setState('');
     setKind('');
     setTerm('');
@@ -571,6 +625,51 @@ export function WorkOrderQueueScreen({
     },
   ] as const;
   const figures = FIGURES.map((entry) => ({ ...entry, state: figureStateOf(entry.section) }));
+
+  /**
+   * The figure a view's chip may carry, or `null` where the two still count
+   * different sets.
+   *
+   * Three of the nine agree EXACTLY, and each agreement is a fact about the
+   * database rather than a resemblance:
+   *
+   *   - `active` — the route resolves the group as
+   *     `!isTerminal && !isCancellation` and the aggregate as `!isTerminal`.
+   *     `ck_work_order_states_cancellation` makes a cancellation terminal, so
+   *     the second conjunct is implied and the sets are identical.
+   *   - `awaitingApproval` — both are "an additional-work request of this scope
+   *     is `pending` and not deleted".
+   *   - `readyForDelivery` — both resolve `isClosed && !isCancellation` from
+   *     the live catalogue.
+   *
+   * The other six carry no figure, and each for a stated reason:
+   *
+   *   - `all` and `mine` — the aggregate publishes no such total.
+   *   - `openedToday` — the aggregate's per-day opened counts sit inside a
+   *     trend array under their own definition, which has not been held against
+   *     this window.
+   *   - `completedToday` — the aggregate counts ENTRIES into a finished state
+   *     during the day; the list requires the order to be finished NOW. They
+   *     disagree about a job completed this morning and reopened this
+   *     afternoon.
+   *   - `awaitingParts` — the aggregate counts non-terminal orders whose parts
+   *     are `requested`; the list filter is any state whose parts are not
+   *     `none`.
+   *   - `awaitingQuality` — the aggregate publishes no section for it.
+   */
+  const chipFigure = (kindOfView: ViewKind): number | null => {
+    if (sections === null) return null;
+    const section =
+      kindOfView === 'active'
+        ? sections.activeWorkOrders
+        : kindOfView === 'awaitingApproval'
+          ? sections.awaitingApproval
+          : kindOfView === 'readyForDelivery'
+            ? sections.readyForDelivery
+            : undefined;
+    const resolved = figureStateOf(section);
+    return resolved.kind === 'figure' ? resolved.value : null;
+  };
   const anyFigure = figures.some((entry) => entry.state.kind !== 'absent');
   const figureZone =
     summary !== null && summary.read.status === 'ok' ? summary.read.data.period.timezone : null;
@@ -593,37 +692,39 @@ export function WorkOrderQueueScreen({
           className="flex flex-wrap items-center gap-2"
         >
           {/*
-            NO FIGURE ON A CHIP, and that is a correction rather than a
-            simplification.
+            A FIGURE ONLY WHERE THE TWO PREDICATES ARE THE SAME SET.
 
-            A number beside "Waiting for parts" is read as "this is how many the
-            list below will show", and for that view it was not: the aggregate
-            counts NON-TERMINAL orders whose `parts_forward_state` is
-            `requested`, while the list filter is a bare `parts_forward_state`
-            other than `none` in any state at all. Two honest numbers about two
-            different sets, one beside the other, with nothing saying so.
+            A number beside a view is read as "this is how many the list below
+            will show", so it may only appear where that is true. `chipFigure`
+            carries the three that agree and the reason each of the other six
+            does not; the strip below carries every published figure, labelled
+            by what the AGGREGATE counts, for the ones a chip cannot claim.
 
-            Rather than pair each chip with a figure whose predicate has to be
-            checked against it — and re-checked whenever either side moves —
-            every published figure now lives in the strip below, each labelled
-            with the AGGREGATE's own definition, and the strip says plainly that
-            it is about the branch's day and not about the list.
+            The figures are still branch-wide: a chip's number is the view's own
+            predicate over the whole branch, and the list additionally honours
+            whatever else the operator has set here. The strip says so.
           */}
-          {VIEW_KINDS.map((kindOfView) => (
-            <button
-              key={kindOfView}
-              type="button"
-              aria-pressed={view === kindOfView}
-              onClick={() => setView(kindOfView)}
-              className={
-                view === kindOfView
-                  ? 'rounded-md border border-border bg-primary px-3 py-1.5 text-body text-on-primary transition-colors duration-fast ease-standard focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring'
-                  : 'rounded-md border border-border px-3 py-1.5 text-body text-text-primary transition-colors duration-fast ease-standard hover:bg-surface-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring'
-              }
-            >
-              {translateDynamic(messages, `workOrders.queue.view.${kindOfView}`)}
-            </button>
-          ))}
+          {VIEW_KINDS.map((kindOfView) => {
+            const figure = chipFigure(kindOfView);
+            return (
+              <button
+                key={kindOfView}
+                type="button"
+                aria-pressed={view === kindOfView}
+                onClick={() => chooseView(kindOfView)}
+                className={
+                  view === kindOfView
+                    ? 'rounded-md border border-border bg-primary px-3 py-1.5 text-body text-on-primary transition-colors duration-fast ease-standard focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring'
+                    : 'rounded-md border border-border px-3 py-1.5 text-body text-text-primary transition-colors duration-fast ease-standard hover:bg-surface-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring'
+                }
+              >
+                {translateDynamic(messages, `workOrders.queue.view.${kindOfView}`)}
+                {figure === null ? null : (
+                  <span className="ms-2 text-caption">{formatInteger(figure, locale)}</span>
+                )}
+              </button>
+            );
+          })}
         </div>
 
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -641,7 +742,7 @@ export function WorkOrderQueueScreen({
             label={translate(messages, 'workOrders.queue.stateFilter')}
             description={translate(messages, 'workOrders.queue.stateFilterHelp')}
             value={state}
-            onChange={(event) => setState(event.target.value)}
+            onChange={(event) => chooseState(event.target.value)}
             groups={stateGroups}
             placeholder={translate(messages, 'workOrders.queue.anyState')}
           />
@@ -792,6 +893,7 @@ export function WorkOrderQueueScreen({
 
           <SearchStates
             messages={messages}
+            locale={locale}
             phase={search.phase}
             correlationId={search.correlationId}
             {...(search.phase === 'empty'

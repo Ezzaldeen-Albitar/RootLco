@@ -49,6 +49,21 @@ export const WORK_ORDER_KINDS = ['ordinary', 'rework'] as const;
 export type WorkOrderKind = (typeof WORK_ORDER_KINDS)[number];
 
 /**
+ * The state groups `wo.work-order-list` accepts, mirrored from
+ * `WORK_ORDER_STATE_GROUPS` in the work-order domain.
+ *
+ * Mirrored rather than imported for the reason the kinds are: `apps/web` may not
+ * import from `apps/api`, and the contract test holds this array against the
+ * backend source so a fourth group fails a test rather than a reviewer.
+ *
+ * The three PARTITION the catalogue — `terminal` excludes the cancellations
+ * rather than containing them — so no work order is returned by two groups, and
+ * "active" is exactly the set the aggregate calls active.
+ */
+export const WORK_ORDER_STATE_GROUPS = ['active', 'terminal', 'cancelled'] as const;
+export type WorkOrderStateGroup = (typeof WORK_ORDER_STATE_GROUPS)[number];
+
+/**
  * The state codes seeded at PLATFORM scope, transcribed from
  * `supabase/seeds/06_wo_job_state_graph.sql`.
  *
@@ -187,6 +202,25 @@ export interface WorkOrderAssignedTechnician {
 export interface WorkOrderListCriteria {
   /** An opaque catalogue code. An unknown one returns an empty page, not a 422. */
   readonly state?: string;
+  /**
+   * A state GROUP (Owner directive, `P1-32-PRE-OD-UX`), resolved by the backend
+   * from the tenant catalogue's terminal and cancellation flags.
+   *
+   * A CLOSED vocabulary where `state` is open, and the two may not be sent
+   * together — the backend answers 422 with `state_and_group_exclusive` rather
+   * than intersecting them, so a screen offering both controls must clear one
+   * when the other is chosen.
+   */
+  readonly stateGroup?: WorkOrderStateGroup;
+  /**
+   * Inclusive bounds on the COMPLETION instant — the same value a row publishes
+   * as `completedAt`. Either bound narrows the board to finished work by
+   * construction, because an unfinished work order has no completion instant.
+   * An inverted window is a 422 (`completion_window_inverted`), never an empty
+   * page.
+   */
+  readonly completedFrom?: string;
+  readonly completedTo?: string;
   readonly kind?: WorkOrderKind;
   readonly openedFrom?: string;
   readonly openedTo?: string;
@@ -291,6 +325,26 @@ export function workOrderStateLabel(
   const entry = catalogue.find((state) => state.code === code);
   return entry?.name ?? code;
 }
+
+/**
+ * What the board's own QUERY can be refused for (Owner directive,
+ * `P1-32-PRE-OD-UX`).
+ *
+ * A separate list from `WORK_ORDER_REFUSAL_KEYS`, which names the STATE
+ * refusals a command answers — "this order is closed to new work" and its
+ * siblings. These two are about the REQUEST: a state code sent beside a state
+ * group, and a completion window whose end precedes its start.
+ *
+ * Both are unreachable from the board as it is built — the controls cannot hold
+ * a code and a group at once, and an inverted window is refused at the field —
+ * and they are catalogued anyway. A refusal that reaches an operator as a raw
+ * token is the failure the catalogue exists to prevent, and "it cannot happen"
+ * is the sentence that is true right up until a screen changes.
+ */
+export const WORK_ORDER_QUERY_REFUSAL_KEYS: readonly string[] = Object.freeze([
+  'form.violation.state_and_group_exclusive',
+  'form.violation.completion_window_inverted',
+]);
 
 /** `MAX_WORK_ORDER_SEARCH_FRAGMENT` in the domain. */
 export const MAX_WORK_ORDER_SEARCH = 80;

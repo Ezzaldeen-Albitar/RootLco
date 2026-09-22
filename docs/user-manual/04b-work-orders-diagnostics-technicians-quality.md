@@ -159,14 +159,25 @@ described as "The work orders of this branch, most recently opened first." <!-- 
 The board loads as the page opens, for the branch named at the top of every page — which is also
 shown here, read-only, as **Branch** <!-- workOrders.queue.branch --> . Then narrow it:
 
-1. Choose one of the views along the top <!-- workOrders.queue.viewLabel --> : **All**,
-   **Created today**, **My work**, **Waiting for the customer to agree**, **Waiting for parts**,
-   **Waiting for a quality check** or **Ready to hand over** <!-- workOrders.queue.view.* --> .
-   **Created today** counts the day on the branch's own clock.
+1. The board opens on **Still with us** <!-- workOrders.queue.view.active --> — every work order
+   that is neither finished nor abandoned, of any age. That is the day's work, and it is where a
+   foreman starts. The other views along the top <!-- workOrders.queue.viewLabel --> are **All**,
+   **Created today**, **Finished today** <!-- workOrders.queue.view.completedToday --> , **My
+   work**, **Waiting for the customer to agree**, **Waiting for parts**, **Waiting for a quality
+   check** and **Ready to hand over** <!-- workOrders.queue.view.* --> . **Created today** counts by
+   when the order was opened and **Finished today** by when it was finished — two different
+   questions — and both count the day on the branch's own clock.
+
+   Three of the views carry a number: **Still with us**, **Waiting for the customer to agree** and
+   **Ready to hand over**. Those three are the ones where the figure counts exactly the same work
+   orders the view lists. The others deliberately carry none — see the strip below.
+
 2. Optionally narrow by **State** <!-- workOrders.queue.stateFilter --> — "The states your workshop
    has set up." <!-- workOrders.queue.stateFilterHelp --> They are listed by name, grouped into
    **Still with us** <!-- workOrders.queue.stateGroupOpen --> and **Finished** <!-- workOrders.queue.stateGroupFinished -->
-   , and the names are your workshop's own; there is no code to type.
+   , and the names are your workshop's own; there is no code to type. Choosing one state moves the
+   view to **All**, and going back to **Still with us** clears the state — the platform takes either
+   a single state or a whole group, never both, so the screen keeps them apart for you.
 3. Optionally narrow by **Kind** <!-- workOrders.queue.kindFilter --> — **Any kind** <!-- workOrders.queue.anyKind -->
    , **Ordinary** <!-- workOrders.kind.ordinary --> or **Rework** <!-- workOrders.kind.rework --> .
 4. Optionally set **Opened from** <!-- workOrders.queue.openedFrom --> and **Opened to** <!-- workOrders.queue.openedTo -->
@@ -181,10 +192,15 @@ shown here, read-only, as **Branch** <!-- workOrders.queue.branch --> . Then nar
 Above the list sits a strip of figures for the branch's day — how many orders are open, how many
 finished today, how many are waiting on a customer decision, how many have parts requested and how
 many are closed and ready to hand over. Each one is labelled with exactly what it counts, and the
-strip says which clock the day was counted on. **They are figures for the whole branch, not a
-preview of the list below**, which is why they are not printed on the view buttons. A figure you are
-not allowed to see reads "not available to you" <!-- workOrders.queue.figure.withheld --> rather
-than nought, because nought would be a statement about the workshop instead of about you.
+strip says which clock the day was counted on. **They are figures for the whole branch**, so they do
+not shrink when you narrow the list with the other filters.
+
+Where a figure counts exactly the work orders a view lists, it is printed on that view's button too.
+Where it does not, it is left in the strip alone rather than put somewhere it would be misread — for
+example "parts requested" counts orders that are still with you, while the **Waiting for parts**
+view lists any order with parts outstanding whatever its state. A figure you are not allowed to see
+reads "not available to you" <!-- workOrders.queue.figure.withheld --> rather than nought, because
+nought would be a statement about the workshop instead of about you.
 
 **Result** · **Work orders for the chosen branch** <!-- workOrders.queue.resultsHeading --> with the
 columns **Number** <!-- workOrders.queue.column.reference --> , **Customer**, **Vehicle**, **State**,
@@ -208,11 +224,9 @@ order shows the customer of its own visit, which may differ from the vehicle's c
 
 **Restrictions** · One branch, or all your branches of one company — never across two companies. No
 total count is published, so the board cannot tell you how many work orders exist, only what it
-read. Two views you might expect are **not** offered, because the platform cannot be asked for
-them: every open order at once (it filters by one state at a time) and everything finished today (it
-records no finished-on date to filter by). Both figures are in the strip above the list instead.
-Nothing here is ever marked late: a work order records when it was opened and never when it was
-promised, so there is no due date to be late against.
+read. A single state and a whole group are alternatives, not a pair. Nothing here is ever marked
+late: a work order records when it was opened and never when it was promised, so there is no due
+date to be late against.
 
 **If it goes wrong** · A search that matched nothing says so about the SEARCH, and offers
 **"Clear the filters"** <!-- workOrders.queue.clearFilters --> ; it never claims the branch is

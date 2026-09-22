@@ -5838,5 +5838,17 @@
   "workOrders.queue.figure.withheld": "not available to you",
   "workOrders.queue.figure.unavailable": "cannot be worked out",
   "workOrders.queue.figure.note": "These figures cover the whole branch for today. The list below shows only what the filters above ask for.",
-  "workOrders.queue.figure.zone": "Days are counted on the clock at"
+  "workOrders.queue.figure.zone": "Days are counted on the clock at",
+  "workOrders.queue.view.active": "Still with us",
+  "workOrders.queue.view.completedToday": "Finished today",
+  "receptions.queue.statusWhole.open": "Everything still with us",
+  "receptions.queue.statusWhole.finished": "Everything finished",
+  "receptions.queue.olderUnfinished": "Still with us from before today",
+  "receptions.queue.column.customer": "Customer",
+  "receptions.queue.column.noCustomer": "No customer recorded for this visit",
+  "receptions.queue.column.customerHidden": "Recorded; you may not see who",
+  "receptions.queue.column.noPlate": "No plate",
+  "form.violation.state_and_group_exclusive": "Choose either one state or a whole group of them, not both.",
+  "form.violation.status_and_group_exclusive": "Choose either one status or a whole group of them, not both.",
+  "form.violation.completion_window_inverted": "The second date cannot be earlier than the first."
 }

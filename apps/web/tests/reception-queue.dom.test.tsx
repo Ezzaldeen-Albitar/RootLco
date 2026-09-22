@@ -68,6 +68,8 @@ function row(over: Record<string, unknown> = {}) {
     origin: 'walk_in',
     vehicleId: 'veh-9',
     vehicleDisplayNumber: 'V-9',
+    customer: { id: 'partner-1', displayName: 'A recorded customer' },
+    plate: 'ABC-1234',
     custodyAcceptedAt: '2026-08-13T07:00:00.000Z',
     custodyReleasedAt: null,
     recordVersion: 3,
@@ -285,10 +287,12 @@ describe('the status control is grouped from the graph, not from a list', () => 
     const select = screen.getByLabelText(EN['receptions.queue.statusFilter'] as string, {
       exact: false,
     });
+    // The two whole-group answers sit above the codes and are asserted by their
+    // own case; this one is about the six codes the frozen graph defines.
     const values = within(select)
       .getAllByRole('option')
       .map((option) => (option as HTMLOptionElement).value)
-      .filter((value) => value !== '');
+      .filter((value) => value !== '' && !value.startsWith('group:'));
     expect([...values].sort()).toEqual([...RECEPTION_STATUSES].sort());
 
     const groups = within(select).getAllByRole('group');
@@ -322,6 +326,105 @@ describe('the status control is grouped from the graph, not from a list', () => 
     // A filter change spends a fresh cursor, never the one the previous
     // ordering issued.
     expect(listReceptions.mock.calls.at(-1)?.[3]).toBeNull();
+  });
+});
+
+describe('what is still with us from before today is ONE button', () => {
+  it('sends the open GROUP with an upper bound, in one request', async () => {
+    /*
+     * It was two controls used together, because `status` took one code at a
+     * time and the set of unfinished statuses could not be sent. `statusGroup`
+     * is that set, so the question is one request again.
+     */
+    const user = userEvent.setup();
+    renderQueue();
+    await waitFor(() => expect(listReceptions).toHaveBeenCalledTimes(1));
+
+    await user.click(
+      screen.getByRole('button', { name: EN['receptions.queue.olderUnfinished'] as string })
+    );
+    const yesterday = addDays(dayIn(ZONE), -1);
+    await waitFor(() =>
+      expect(lastCall().filters).toEqual({
+        statusGroup: 'open',
+        to: endOfDay(ZONE, yesterday).toISOString(),
+      })
+    );
+  });
+
+  it('never sends a status code beside a status group', async () => {
+    /*
+     * The route answers 422 `status_and_group_exclusive` rather than
+     * intersecting them. One control holds either answer, so the pair is not a
+     * state the screen can be in.
+     */
+    const user = userEvent.setup();
+    renderQueue();
+    await waitFor(() => expect(listReceptions).toHaveBeenCalledTimes(1));
+
+    const select = screen.getByLabelText(EN['receptions.queue.statusFilter'] as string, {
+      exact: false,
+    });
+    await user.selectOptions(select, 'group:finished');
+    await waitFor(() => expect(lastCall().filters['statusGroup']).toBe('finished'));
+    await user.selectOptions(select, 'authorized');
+    await waitFor(() => expect(lastCall().filters['status']).toBe('authorized'));
+
+    for (const call of listReceptions.mock.calls) {
+      const filters = call[1] as Record<string, unknown>;
+      expect(
+        filters['status'] !== undefined && filters['statusGroup'] !== undefined,
+        'a code and a group travelled together'
+      ).toBe(false);
+    }
+  });
+
+  it('offers both whole groups above the six codes, from the graph', async () => {
+    renderQueue();
+    await waitFor(() => expect(listReceptions).toHaveBeenCalled());
+    const select = screen.getByLabelText(EN['receptions.queue.statusFilter'] as string, {
+      exact: false,
+    });
+    const values = within(select)
+      .getAllByRole('option')
+      .map((option) => (option as HTMLOptionElement).value)
+      .filter((value) => value !== '');
+    expect(values.slice(0, 2)).toEqual(['group:open', 'group:finished']);
+    expect([...values.slice(2)].sort()).toEqual([...RECEPTION_STATUSES].sort());
+  });
+});
+
+describe('the customer and the plate', () => {
+  it('names the customer and shows the plate the car carries today', async () => {
+    renderQueue();
+    const table = await screen.findByRole('table');
+    expect(within(table).getByText('A recorded customer')).toBeVisible();
+    expect(within(table).getByText('ABC-1234')).toBeVisible();
+  });
+
+  it('tells three absences apart rather than rendering one blank', async () => {
+    listReceptions.mockResolvedValue(
+      page([
+        row({ id: 'a', displayNumber: 'R-1', customer: null, plate: null }),
+        row({
+          id: 'b',
+          displayNumber: 'R-2',
+          customer: { id: 'partner-2', displayName: null },
+          plate: 'XYZ-9',
+        }),
+      ])
+    );
+    const { container } = renderQueue();
+    // A visit that names no service requester yet — permitted by the platform.
+    expect(
+      await screen.findByText(EN['receptions.queue.column.noCustomer'] as string)
+    ).toBeVisible();
+    // A visit that HAS one, read by somebody who may not see who. Said in
+    // words, never as the identifier.
+    expect(screen.getByText(EN['receptions.queue.column.customerHidden'] as string)).toBeVisible();
+    expect(container.textContent ?? '').not.toContain('partner-2');
+    // A registered vehicle carrying no plate.
+    expect(screen.getByText(EN['receptions.queue.column.noPlate'] as string)).toBeVisible();
   });
 });
 
@@ -362,6 +465,24 @@ describe('the one search box', () => {
 });
 
 describe('every non-answer reads as itself', () => {
+  it('renders an ENDED SESSION as itself, with the way back and no Try-again', async () => {
+    listReceptions.mockResolvedValue({
+      status: 'expired',
+      rows: [],
+      nextCursor: null,
+      hasMore: false,
+      correlationId: null,
+    });
+    renderQueue();
+    expect(await screen.findByText(EN['state.expired.title'] as string)).toBeVisible();
+    expect(screen.queryByText(EN['state.error.title'] as string)).toBeNull();
+    expect(screen.queryByRole('button', { name: EN['state.retry'] as string })).toBeNull();
+    expect(screen.getByRole('link', { name: EN['auth.backToLogin'] as string })).toHaveAttribute(
+      'href',
+      '/en/login'
+    );
+  });
+
   it('renders a refusal as a refusal, never as an empty board', async () => {
     listReceptions.mockResolvedValue({
       status: 'denied',

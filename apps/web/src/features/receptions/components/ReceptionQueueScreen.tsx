@@ -34,12 +34,14 @@ import { listReceptions } from '../api';
 import {
   MAX_RECEPTION_SEARCH,
   MIN_RECEPTION_SEARCH,
+  RECEPTION_STATUS_GROUPS,
   TERMINAL_RECEPTION_STATUSES,
   UNFINISHED_RECEPTION_STATUSES,
   isFinishedReception,
   type ReceptionListCriteria,
   type ReceptionListEntry,
   type ReceptionStatus,
+  type ReceptionStatusGroup,
 } from '../receptions-contract';
 
 /**
@@ -78,28 +80,32 @@ import {
  * ## What the platform does not publish is not shown
  *
  * There is no due date on a reception visit, anywhere in the schema, so nothing
- * here says "overdue" or "due today". The row carries no customer name and no
- * registration plate either — `ReceptionListEntry` publishes the vehicle's own
- * reference and nothing about its owner — so the board shows the visit, the
- * vehicle reference and the custody fact, and the customer is found on the visit
- * it links to. An empty column headed "Customer" would be a promise the read
- * cannot keep.
+ * here says "overdue" or "due today", and no control offers to sort by one.
  *
- * ## One status at a time, and the reason it is grouped anyway
+ * The customer and the plate ARE published now, and both carry an absence the
+ * board renders as words rather than as a blank: a visit that names no service
+ * requester yet, a customer whose name this caller may not read, and a
+ * registered vehicle carrying no plate are three ordinary states of the data,
+ * not three rendering faults.
  *
- * `status` on the wire is ONE code (`z.enum(...).optional()`), so "every
- * unfinished visit" is not a request this operation can be sent, and a browser
- * that filtered a fetched page to the three would produce short pages and a
- * `hasMore` that lies. What the control CAN do is stop making the operator hold
- * the graph in their head: the six codes are offered in two groups — still with
- * us, and finished — derived from `TERMINAL_RECEPTION_STATUSES` rather than
- * listed here, so a graph change moves the control instead of leaving it
- * confidently wrong.
+ * ## One control, over a whole group or over a single code
  *
- * "What is still here from before today" is therefore two controls used
- * together: the **Before today** period, which sends only an upper bound, and
- * one status from the **Still with us** group. It is not one button, because one
- * button would have to claim a request the operation cannot be sent.
+ * `status` on the wire is ONE frozen code, and for one wave "every unfinished
+ * visit" was simply not a request this operation could be sent — a browser that
+ * filtered a fetched page to the three would produce short pages and a
+ * `hasMore` that lies. `statusGroup` is that request, and it arrived with the
+ * board-list contracts.
+ *
+ * Both answers live in ONE select: the two groups at the top as whole answers,
+ * the six codes beneath them grouped the same way. The route refuses a code and
+ * a group sent together (`status_and_group_exclusive`), and a single control
+ * cannot hold both — so the refusal is unreachable rather than explained. The
+ * grouping is derived from `TERMINAL_RECEPTION_STATUSES`, so a graph change
+ * moves the control instead of leaving it confidently wrong.
+ *
+ * "What is still here from before today" is therefore one button again: the
+ * **Before today** period, which sends only an upper bound, and the `open`
+ * group beside it.
  *
  * ## Everything restarts on a branch change, and paging restarts on a filter
  *
@@ -206,7 +212,17 @@ export function ReceptionQueueScreen({
   const [period, setPeriod] = useState<AppliedPeriod>(TODAY_PERIOD);
   const [draftFrom, setDraftFrom] = useState('');
   const [draftTo, setDraftTo] = useState('');
-  const [status, setStatus] = useState<'' | ReceptionStatus>('');
+  /*
+   * ONE control over two kinds of answer.
+   *
+   * `status` is a single frozen code and `statusGroup` is `open` or `finished`;
+   * the route refuses the pair with `status_and_group_exclusive` rather than
+   * intersecting them. A select whose value is either `group:open` or a code
+   * makes that exclusion structural — there is no state in which both are set —
+   * and it puts the answer an operator actually wants ("everything still with
+   * us") at the top of the same list they were already reading.
+   */
+  const [status, setStatus] = useState<'' | `group:${ReceptionStatusGroup}` | ReceptionStatus>('');
   const [term, setTerm] = useState('');
   /**
    * The filter form's own refusals, in the shape every form on this product
@@ -276,7 +292,11 @@ export function ReceptionQueueScreen({
       : {
           scope,
           filters: {
-            ...(status === '' ? {} : { status }),
+            ...(status === ''
+              ? {}
+              : status.startsWith('group:')
+                ? { statusGroup: status.slice('group:'.length) as ReceptionStatusGroup }
+                : { status: status as ReceptionStatus }),
             ...windowOf(period, zone),
             ...(termIsSearchable ? { q: trimmed } : {}),
           },
@@ -334,6 +354,20 @@ export function ReceptionQueueScreen({
     setPeriod({ kind, from: '', to: '' });
   };
 
+  /**
+   * "What is still here from before today", as one button.
+   *
+   * It was two controls used together — the period, then a status from the
+   * "still with us" group — because `status` took one code at a time and the
+   * set of unfinished statuses could not be sent. `statusGroup` is that set,
+   * so the question is one request again and the button asks it.
+   */
+  const olderUnfinished = () => {
+    setRefusal(IDLE);
+    setPeriod({ kind: 'beforeToday', from: '', to: '' });
+    setStatus('group:open');
+  };
+
   const clearFilters = () => {
     setRefusal(IDLE);
     setPeriod(TODAY_PERIOD);
@@ -343,7 +377,22 @@ export function ReceptionQueueScreen({
     setTerm('');
   };
 
+  /*
+   * The two groups first, as whole answers, then the six codes underneath them
+   * grouped the same way. The group entries are what the platform can now be
+   * asked directly; the codes are still one at a time, and the grouping is
+   * derived from `TERMINAL_RECEPTION_STATUSES` rather than listed here.
+   */
   const statusOptions = useMemo(
+    () =>
+      RECEPTION_STATUS_GROUPS.map((group) => ({
+        value: `group:${group}`,
+        label: translateDynamic(messages, `receptions.queue.statusWhole.${group}`),
+      })),
+    [messages]
+  );
+
+  const statusGroups = useMemo(
     () => [
       {
         label: translate(messages, 'receptions.queue.statusGroupOpen'),
@@ -393,18 +442,56 @@ export function ReceptionQueueScreen({
           ),
       },
       {
+        id: 'customer',
+        headerKey: 'receptions.queue.column.customer',
+        /*
+         * Three facts, told apart.
+         *
+         * No customer at all is a visit that names no service requester yet,
+         * which the platform permits. A customer whose `displayName` is null is
+         * a caller who may not read the directory — the visit HAS one, and the
+         * row says so in words rather than falling back to the identifier,
+         * which is the one thing an operator can do nothing with.
+         */
+        cell: (row) =>
+          row.customer === null ? (
+            <span className="text-text-muted">
+              {translate(messages, 'receptions.queue.column.noCustomer')}
+            </span>
+          ) : row.customer.displayName === null ? (
+            <span className="text-text-muted">
+              {translate(messages, 'receptions.queue.column.customerHidden')}
+            </span>
+          ) : (
+            <bdi>{row.customer.displayName}</bdi>
+          ),
+      },
+      {
         id: 'vehicle',
         headerKey: 'receptions.queue.column.vehicle',
-        cell: (row) =>
-          row.vehicleDisplayNumber ? (
-            <code className="font-mono text-caption" dir="ltr">
-              {row.vehicleDisplayNumber}
-            </code>
-          ) : (
-            <span className="text-text-muted">
-              {translate(messages, 'receptions.queue.column.noVehicleReference')}
-            </span>
-          ),
+        /*
+         * The plate first, because that is what a receptionist reads off the
+         * car in front of them, with the vehicle's own reference under it. A
+         * registered but unplated vehicle is ordinary, not a fault.
+         */
+        cell: (row) => (
+          <span className="flex flex-col">
+            {row.plate ? (
+              <code className="font-mono text-caption" dir="ltr">
+                {row.plate}
+              </code>
+            ) : (
+              <span className="text-text-muted">
+                {translate(messages, 'receptions.queue.column.noPlate')}
+              </span>
+            )}
+            {row.vehicleDisplayNumber ? (
+              <code className="font-mono text-caption text-text-muted" dir="ltr">
+                {row.vehicleDisplayNumber}
+              </code>
+            ) : null}
+          </span>
+        ),
       },
       {
         id: 'receptionStatus',
@@ -507,6 +594,16 @@ export function ReceptionQueueScreen({
           ))}
         </div>
 
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={olderUnfinished}
+            className="rounded-md border border-border px-3 py-1.5 text-body text-text-primary transition-colors duration-fast ease-standard hover:bg-surface-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+          >
+            {translate(messages, 'receptions.queue.olderUnfinished')}
+          </button>
+        </div>
+
         <p data-testid="reception-period-label" className="text-supporting text-text-muted">
           {periodLabel}
         </p>
@@ -560,8 +657,9 @@ export function ReceptionQueueScreen({
           <SelectField
             label={translate(messages, 'receptions.queue.statusFilter')}
             value={status}
-            onChange={(event) => setStatus(event.target.value as '' | ReceptionStatus)}
-            groups={statusOptions}
+            onChange={(event) => setStatus(event.target.value as typeof status)}
+            options={statusOptions}
+            groups={statusGroups}
             placeholder={translate(messages, 'receptions.queue.anyStatus')}
           />
           <div className="sm:col-span-2">
@@ -628,6 +726,7 @@ export function ReceptionQueueScreen({
 
           <SearchStates
             messages={messages}
+            locale={locale}
             phase={search.phase}
             correlationId={search.correlationId}
             idle={

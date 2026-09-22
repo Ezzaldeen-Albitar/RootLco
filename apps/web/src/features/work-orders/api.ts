@@ -93,6 +93,11 @@ export async function listWorkOrders(
     '/api/v1/work-orders' +
     branchScopeQuery(scope, {
       state: criteria.state,
+      // Never both: the route refuses the pair rather than intersecting it, and
+      // the screen clears one when the other is chosen.
+      stateGroup: criteria.stateGroup,
+      completedFrom: criteria.completedFrom,
+      completedTo: criteria.completedTo,
       kind: criteria.kind,
       openedFrom: criteria.openedFrom,
       openedTo: criteria.openedTo,

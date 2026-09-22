@@ -1116,6 +1116,16 @@ export interface CloseReceptionInput {
  */
 export interface ReceptionListCriteria {
   readonly status?: ReceptionStatus;
+  /**
+   * A status GROUP (Owner directive, `P1-32-PRE-OD-UX`) — `open` for the visits
+   * still in play, `finished` for the three terminal exits.
+   *
+   * This is what "every unfinished visit" finally became a request the platform
+   * can be SENT. It may not travel beside `status`: the backend answers 422
+   * with `status_and_group_exclusive` rather than intersecting them, so a
+   * screen offering both controls clears one when the other is chosen.
+   */
+  readonly statusGroup?: ReceptionStatusGroup;
   readonly vehicleId?: string;
   /**
    * Inclusive bounds on the instant custody was accepted — the same column the
@@ -1135,6 +1145,30 @@ export interface ReceptionListCriteria {
    */
   readonly q?: string;
 }
+
+/**
+ * The two status groups `rec.reception-list` accepts, mirrored from
+ * `RECEPTION_STATUS_GROUPS` in the reception domain.
+ *
+ * Mirrored rather than imported — `apps/web` may not import from `apps/api` —
+ * and held against the backend source by the contract test, so a third group
+ * fails a test rather than a reviewer.
+ */
+export const RECEPTION_STATUS_GROUPS = ['open', 'finished'] as const;
+export type ReceptionStatusGroup = (typeof RECEPTION_STATUS_GROUPS)[number];
+
+/**
+ * What the board's own QUERY can be refused for (Owner directive,
+ * `P1-32-PRE-OD-UX`) — a status code sent beside a status group.
+ *
+ * Unreachable from the board, which offers both answers through ONE control and
+ * therefore cannot hold both at once, and catalogued anyway: a refusal that
+ * reaches an operator as a raw token is the failure the catalogue exists to
+ * prevent, and "it cannot happen" is true only until a screen changes.
+ */
+export const RECEPTION_QUERY_REFUSAL_KEYS: readonly string[] = Object.freeze([
+  'form.violation.status_and_group_exclusive',
+]);
 
 /** `MIN_SEARCH_FRAGMENT` in `shared/text/search-terms.ts`. */
 export const MIN_RECEPTION_SEARCH = 2;
@@ -1249,6 +1283,34 @@ export interface ReceptionListEntry {
   /** `null` means the workshop still holds the vehicle. */
   readonly custodyReleasedAt: string | null;
   readonly recordVersion: number;
+  /**
+   * The party who brought the car, or null when the visit names none (Owner
+   * directive, `P1-32-PRE-OD-UX`).
+   *
+   * **The null case is real** — a visit can legitimately exist before a service
+   * requester is recorded, so the screen renders the absence.
+   *
+   * `displayName` is null ON ITS OWN when the caller may not read customers: the
+   * role is a reception fact and the person's name is not, so the row arrives
+   * either way and a screen must render the id-without-a-name case as words
+   * rather than falling back to the identifier.
+   */
+  readonly customer: ReceptionListCustomer | null;
+  /**
+   * The plate the vehicle carries today, or null when it carries none. A
+   * registered but unplated vehicle is an ordinary row, not a fault.
+   */
+  readonly plate: string | null;
+}
+
+/**
+ * The customer block of a board row. A named type rather than an inline object,
+ * because the contract test compares this mirror against the published row
+ * field by field and an inline shape is invisible to it.
+ */
+export interface ReceptionListCustomer {
+  readonly id: string;
+  readonly displayName: string | null;
 }
 
 /** The full detail row. The `recordVersion` is the `If-Match` the guarded commands demand. */

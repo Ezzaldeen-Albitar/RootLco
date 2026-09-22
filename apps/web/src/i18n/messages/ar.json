@@ -5838,5 +5838,17 @@
   "workOrders.queue.figure.withheld": "غير متاح لك",
   "workOrders.queue.figure.unavailable": "يتعذّر احتسابه",
   "workOrders.queue.figure.note": "هذه الأرقام تخص الفرع بأكمله لليوم. أما القائمة أدناه فتعرض ما طلبته عوامل التصفية أعلاه فقط.",
-  "workOrders.queue.figure.zone": "تُحتسب الأيام حسب توقيت"
+  "workOrders.queue.figure.zone": "تُحتسب الأيام حسب توقيت",
+  "workOrders.queue.view.active": "ما زالت لدينا",
+  "workOrders.queue.view.completedToday": "انتهت اليوم",
+  "receptions.queue.statusWhole.open": "كل ما زال لدينا",
+  "receptions.queue.statusWhole.finished": "كل ما انتهى",
+  "receptions.queue.olderUnfinished": "ما زال لدينا من قبل اليوم",
+  "receptions.queue.column.customer": "العميل",
+  "receptions.queue.column.noCustomer": "لا يوجد عميل مسجّل لهذه الزيارة",
+  "receptions.queue.column.customerHidden": "مسجّل، ولا يمكنك معرفة من",
+  "receptions.queue.column.noPlate": "بلا لوحة",
+  "form.violation.state_and_group_exclusive": "اختر حالة واحدة أو مجموعة كاملة، لا الاثنتين معًا.",
+  "form.violation.status_and_group_exclusive": "اختر حالة واحدة أو مجموعة كاملة، لا الاثنتين معًا.",
+  "form.violation.completion_window_inverted": "لا يمكن أن يكون التاريخ الثاني أسبق من الأول."
 }
