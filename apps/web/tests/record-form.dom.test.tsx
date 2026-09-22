@@ -709,6 +709,33 @@ describe('after a refusal the cursor lands on the first thing to fix', () => {
     await waitFor(() => expect(document.activeElement).toBe(severity));
   });
 
+  it('does NOT move focus on MOUNT, even when the state already carries errors', async () => {
+    /*
+     * A mount is not a refusal. A form can be rendered already holding an
+     * attempt and its errors — remounted after a settled action, restored under
+     * a new key, handed a state a parent is keeping — and moving the cursor
+     * then takes the operator somewhere they did not ask to go, on arrival,
+     * while a screen reader is still announcing the page.
+     *
+     * The trigger is "an attempt arrived AFTER mount", not "an attempt exists",
+     * and this is the case that says so.
+     */
+    const state: ActionState = refusal({ reason: 'field.required' }, 4);
+    renderLtr(
+      <RecordForm
+        messages={en}
+        fields={FIELDS}
+        action={async () => state}
+        submitKey="form.submit"
+        titleKey="crm.customers.notes.add"
+      />
+    );
+    // Nothing has been submitted here; the control is marked only once an
+    // attempt lands, so the honest check is that focus never left the body.
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    expect(document.activeElement).toBe(document.body);
+  });
+
   it('does NOT move focus when the refusal names no field', async () => {
     // A rate limit or an outage is a banner, not a field, and stealing focus on
     // one would take the operator away from whatever they had moved on to.

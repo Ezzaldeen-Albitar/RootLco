@@ -11,6 +11,8 @@ import { formatMoney } from '@/lib/money';
 import { intlLocale } from '@/lib/format';
 import { IDLE, type ActionState } from '@/lib/forms/action-result';
 import { FormFeedback } from '@/features/authentication/components/FormFeedback';
+import { RequiresConcreteBranch } from '@/features/working-context/components/WorkingBranchField';
+import { useWorkingContext } from '@/features/working-context/WorkingContextProvider';
 import { SubmitButton } from '@/features/authentication/components/SubmitButton';
 import { useServerTable } from '../../shared/use-server-table';
 import { listApprovalLimits } from '../api';
@@ -47,13 +49,16 @@ export function ApprovalLimitsScreen({
   locale,
   messages,
   roles,
-  companyIds,
   canManage,
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
   readonly roles: readonly RoleRow[];
-  readonly companyIds: readonly string[];
+  /**
+   * The session's bare references. Accepted so the page did not have to change,
+   * and no longer read — the companies come from the working context, by name.
+   */
+  readonly companyIds?: readonly string[];
   readonly canManage: boolean;
 }) {
   const table = useServerTable<ApprovalLimitRow>(listApprovalLimits);
@@ -170,7 +175,6 @@ export function ApprovalLimitsScreen({
           open
           messages={messages}
           roles={roles}
-          companyIds={companyIds}
           onClose={() => {
             setCreateOpen(false);
             table.refresh();
@@ -243,13 +247,16 @@ function CreateDialog({
   open,
   messages,
   roles,
-  companyIds,
   onClose,
 }: {
   readonly open: boolean;
   readonly messages: Messages;
   readonly roles: readonly RoleRow[];
-  readonly companyIds: readonly string[];
+  /**
+   * The session's bare references. Accepted so the caller did not have to
+   * change, and no longer read — the companies come from the working context.
+   */
+  readonly companyIds?: readonly string[];
   readonly onClose: () => void;
 }) {
   const [state, formAction] = useActionState<ActionState, FormData>(
@@ -291,7 +298,17 @@ function CreateDialog({
   const retained = (name: string) => draft[name] ?? '';
   const retain = (name: string) => (event: { target: { value: string } }) =>
     setDraft((current) => ({ ...current, [name]: event.target.value }));
-  const [companyId, setCompanyId] = useState(companyIds[0] ?? '');
+  /*
+   * The companies this operator may act in, BY NAME.
+   *
+   * `companyIds` is still accepted by this component so the page did not have
+   * to change, and is no longer read here: it carries bare references and no
+   * names, and an empty one means unrestricted rather than none — the two facts
+   * that produced the reference select and the free-text fallback this control
+   * used to offer.
+   */
+  const { companies: workingCompanies } = useWorkingContext();
+  const [companyId, setCompanyId] = useState(workingCompanies[0]?.id ?? '');
   const [roleId, setRoleId] = useState(roles[0]?.id ?? '');
   const t = (key: string) => translate(messages, key as keyof Messages);
   const error = (name: string) => {
@@ -318,29 +335,41 @@ function CreateDialog({
           attempt forces the remount, `defaultValue` seeds it from state and is
           what `form.reset()` restores TO, and `onChange` keeps state current.
         */}
-        {companyIds.length > 0 ? (
+        {/*
+          NAMED companies, from the working context.
+          
+          This control was the origin of `admin.contractGap.noDirectory` — "the
+          service publishes no company or branch directory, so references are
+          shown rather than names" — and of the free-text fallback shown to an
+          operator whose session resolves to no company, which means
+          unrestricted rather than none. `GET /auth/working-context` publishes
+          the named, active companies this caller is authorized for, so both
+          have gone: there is a directory now, and the sentence that said there
+          was not would be false.
+
+          The reference is still what is SENT — the operation takes a company
+          identifier — and it is still authorized server-side. What changed is
+          that the operator chooses by name.
+        */}
+        {workingCompanies.length > 0 ? (
           <SelectField
             key={`companyId-${state.attempt ?? 0}`}
             name="companyId"
             label={t('approvalLimits.field.companyId')}
-            description={t('admin.contractGap.noDirectory')}
+            required
             defaultValue={companyId}
             onChange={(event) => setCompanyId(event.target.value)}
-            options={companyIds.map((id) => ({ value: id, label: id }))}
+            options={workingCompanies.map((company) => ({
+              value: company.id,
+              label: company.name,
+            }))}
+            placeholder={t('form.select.placeholder')}
             error={error('companyId')}
           />
         ) : (
-          <TextField
-            key={`companyId-text-${state.attempt ?? 0}`}
-            name="companyId"
-            label={t('approvalLimits.field.companyId')}
-            description={t('admin.scope.noneResolved')}
-            required
-            spellCheck={false}
-            defaultValue={retained('companyId')}
-            onChange={retain('companyId')}
-            error={error('companyId')}
-          />
+          // No company to choose, or the directory could not be read. Saying so
+          // is the honest answer; a box asking for a typed reference was not.
+          <RequiresConcreteBranch messages={messages} />
         )}
 
         {/*

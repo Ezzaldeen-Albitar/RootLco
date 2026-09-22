@@ -3,7 +3,10 @@ import type { ReactElement } from 'react';
 import type { Locale } from '@/i18n/config';
 import { directionOf } from '@/i18n/config';
 import { getMessages, type Messages } from '@/i18n/get-messages';
-import { WorkingContextProvider } from '@/features/working-context/WorkingContextProvider';
+import {
+  WorkingContextProvider,
+  useWorkingContext,
+} from '@/features/working-context/WorkingContextProvider';
 import type {
   WorkingContextBranch,
   WorkingContextSnapshot,
@@ -108,5 +111,40 @@ export function inBranch(
     >
       {ui}
     </WorkingContextProvider>
+  );
+}
+
+/** A second branch, for the cases that switch between two. */
+export const OTHER_BRANCH: WorkingContextBranch = {
+  id: '55555555-5555-4555-8555-555555555555',
+  companyId: TEST_COMPANY.id,
+  code: 'SECOND',
+  name: 'Second workshop',
+  city: null,
+  timezone: 'Asia/Riyadh',
+  status: 'active',
+};
+
+/**
+ * A bare control that changes the working branch.
+ *
+ * The real one lives in the header and offers a retry through the router, which
+ * a screen suite would then have to mock for a reason that has nothing to do
+ * with the screen. This does the one thing those cases need — call `select` —
+ * so a test can ask "and what happens to this list when the branch changes?"
+ * without dragging the shell in.
+ */
+export function BranchSwitch({
+  to,
+  label = 'switch branch',
+}: {
+  readonly to: string;
+  readonly label?: string;
+}) {
+  const { select } = useWorkingContext();
+  return (
+    <button type="button" onClick={() => select(to)}>
+      {label}
+    </button>
   );
 }

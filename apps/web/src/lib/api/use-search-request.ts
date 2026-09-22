@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { SEARCH_DEBOUNCE_MS, useDebouncedValue } from '../use-debounced-value';
 import type { CursorPage, ReadState } from './read-operation';
 
@@ -59,6 +59,18 @@ export interface SearchOutcome<Row> {
   /** A translation KEY, never server prose. Null unless the phase is a failure. */
   readonly error: string | null;
   readonly correlationId: string | null;
+}
+
+export interface SearchResult<Row> extends SearchOutcome<Row> {
+  /**
+   * Ask NOW, without waiting for the term to settle.
+   *
+   * Enter and the Search control are statements of intent, and making an
+   * operator who has already decided wait out a 300 ms timer is the interface
+   * being slower than the person using it. Calling it twice with the same term
+   * re-issues, which is what makes it usable as a retry.
+   */
+  readonly submit: () => void;
 }
 
 const IDLE: SearchOutcome<never> = {
@@ -124,7 +136,7 @@ export function useSearchRequest<Row, Criteria>(options: {
    */
   readonly version?: number;
   readonly debounceMs?: number;
-}): SearchOutcome<Row> {
+}): SearchResult<Row> {
   const { criteria, load, version = 0, debounceMs = SEARCH_DEBOUNCE_MS } = options;
 
   /*
@@ -132,24 +144,66 @@ export function useSearchRequest<Row, Criteria>(options: {
    *
    * A screen builds its criteria inline, so the OBJECT is new on every render
    * and is useless as an effect key. Its content is not: two objects that
-   * serialise the same ask for the same thing.
+   * serialise the same ask for the same thing. It follows that criteria must be
+   * JSON-serialisable, which they already are — every one of them becomes query
+   * parameters.
    */
   const key = criteria === null ? null : JSON.stringify(criteria);
   const settledKey = useDebouncedValue(key, debounceMs);
-  const wanted = settledKey === null ? null : `${settledKey}#${version}`;
 
   /*
-   * The latest loader and criteria, kept OUT of the effect's dependencies.
+   * An explicit submission skips the wait.
    *
-   * Including them would re-read on every render, because both are new objects
-   * each time; excluding them with a suppression would be a suppression. This
-   * box is refreshed by an effect declared FIRST, and React runs effects in
-   * declaration order after a commit, so the read below always sees the values
-   * belonging to the render that triggered it.
+   * `forced.key` is the term the operator submitted. While the box still holds
+   * that term the settled value is bypassed; the moment they type again the key
+   * moves on and the debounce takes over. `nonce` is what lets the same term be
+   * submitted twice — pressing Search again on a failed read has to re-issue.
    */
-  const box = useRef({ load, criteria });
+  const [forced, setForced] = useState<{ readonly key: string; readonly nonce: number } | null>(
+    null
+  );
+  const submitted = forced !== null && forced.key === key;
+  const activeKey = submitted ? key : settledKey;
+  const wanted =
+    activeKey === null ? null : `${activeKey}#${version}#${submitted ? forced.nonce : 0}`;
+
+  const submit = useCallback(() => {
+    if (key === null) return;
+    setForced((previous) => ({ key, nonce: (previous?.nonce ?? 0) + 1 }));
+  }, [key]);
+
+  /*
+   * The criteria that produced each key, and the latest loader.
+   *
+   * The loader is here for the ordinary reason: it is a new function on every
+   * render and would re-read on every render if it were a dependency, and
+   * excluding it with a suppression would be a suppression.
+   *
+   * The criteria are here for a sharper reason. While the debounce lags, the
+   * key being fetched is the SETTLED one and `criteria` is already the newer
+   * object — so reading the current criteria at issue time fetched one thing
+   * and filed the answer under the name of another. The rows would then be
+   * shown the moment the debounce caught up, as if they had been read for the
+   * newer term. The map hands back the criteria that the key actually names, so
+   * what is fetched and what it is filed under cannot come apart.
+   *
+   * Bounded, because a search box generates a key per keystroke and this must
+   * not grow with the session.
+   */
+  const box = useRef<{
+    load: typeof load;
+    seen: Map<string, Criteria>;
+  }>({ load, seen: new Map() });
   useEffect(() => {
-    box.current = { load, criteria };
+    box.current.load = load;
+    if (key === null || criteria === null) return;
+    const seen = box.current.seen;
+    seen.set(key, criteria);
+    while (seen.size > 8) {
+      const oldest = seen.keys().next().value;
+      if (oldest === undefined) break;
+      seen.delete(oldest);
+    }
   });
 
   const sequence = useRef(0);
@@ -159,16 +213,16 @@ export function useSearchRequest<Row, Criteria>(options: {
   } | null>(null);
 
   useEffect(() => {
-    if (wanted === null) return undefined;
+    if (wanted === null || activeKey === null) return undefined;
+    const asked = box.current.seen.get(activeKey);
+    if (asked === undefined) return undefined;
     const controller = new AbortController();
     sequence.current += 1;
     const mine = sequence.current;
     void (async () => {
-      const current = box.current.criteria;
-      if (current === null) return;
       // Awaited before any state write, so nothing here is a synchronous
       // setState inside an effect body.
-      const state = await box.current.load(current, controller.signal);
+      const state = await box.current.load(asked, controller.signal);
       // Two guards, not one. The abort covers this effect being cleaned up; the
       // sequence covers a slower SIBLING request that was started earlier and is
       // still in flight.
@@ -176,14 +230,14 @@ export function useSearchRequest<Row, Criteria>(options: {
       setHeld({ key: wanted, outcome: outcomeOf(state) });
     })();
     return () => controller.abort();
-  }, [wanted]);
+  }, [wanted, activeKey]);
 
-  if (wanted === null) return IDLE as SearchOutcome<Row>;
+  if (wanted === null) return { ...(IDLE as SearchOutcome<Row>), submit };
   // Loading is DERIVED — "what I am holding is not what I want" — rather than
   // written at the top of the effect, which would cascade a render on every
   // keystroke and is what `react-hooks/set-state-in-effect` exists to catch.
   if (held === null || held.key !== wanted) {
-    return { phase: 'loading', rows: [], page: null, error: null, correlationId: null };
+    return { phase: 'loading', rows: [], page: null, error: null, correlationId: null, submit };
   }
-  return held.outcome;
+  return { ...held.outcome, submit };
 }

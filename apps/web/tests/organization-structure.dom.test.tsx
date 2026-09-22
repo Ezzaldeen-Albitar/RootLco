@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import en from '../src/i18n/messages/en.json';
 import ar from '../src/i18n/messages/ar.json';
-import { renderLtr, renderRtl } from './render';
+import { inBranch, renderLtr, renderRtl } from './render';
 import type {
   BranchView,
   CapacityView,
@@ -425,8 +425,6 @@ describe('the subscription and capacity panel', () => {
  * check, which was written and then rendered nowhere.
  */
 describe('a setting value the platform will not store', () => {
-  const SCOPE = '10000000-0000-4000-8000-000000000001';
-
   const refusal = (path: string, rule: string) => ({
     ok: false as const,
     kind: 'validation' as const,
@@ -446,20 +444,22 @@ describe('a setting value the platform will not store', () => {
     get.mockResolvedValue({ ok: true, status: 200, data: { items: [] }, correlationId: 'corr-1' });
     const paint = locale === 'en' ? renderLtr : renderRtl;
     return paint(
-      <SettingsEditor
-        messages={messages}
-        scope="company"
-        scopeIds={[SCOPE]}
-        canWrite
-        keyPrefix=""
-        suggestions={[
-          {
-            key: 'org.working_hours.start',
-            labelKey: 'organization.setting.key',
-            valueType: 'string',
-          },
-        ]}
-      />
+      inBranch(
+        <SettingsEditor
+          messages={messages}
+          scope="company"
+          canWrite
+          keyPrefix=""
+          suggestions={[
+            {
+              key: 'org.working_hours.start',
+              labelKey: 'organization.setting.key',
+              valueType: 'string',
+            },
+          ]}
+        />,
+        { locale }
+      )
     );
   };
 

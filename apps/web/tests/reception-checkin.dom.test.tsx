@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import en from '../src/i18n/messages/en.json';
 import ar from '../src/i18n/messages/ar.json';
-import { branchSnapshot, inBranch, renderLtr, renderRtl } from './render';
+import { BranchSwitch, branchSnapshot, inBranch, renderLtr, renderRtl } from './render';
 import type { CheckInStepProps } from '@/features/receptions/check-in/wizard';
 import type { ReceptionDetail } from '@/features/receptions/receptions-contract';
 
@@ -1936,5 +1936,35 @@ describe('F1 — the three states a paged read can report', () => {
         AR['receptions.checkIn.vehiclesTruncated']!
       );
     });
+  });
+});
+
+describe('a visit cannot be recorded against "all my branches"', () => {
+  it('refuses the submit and says which control answers', async () => {
+    /*
+     * `POST /receptions` names both halves of the pair as mandatory, so "all my
+     * branches" is not a target it can take — and choosing one on the operator
+     * behalf would put a vehicle into custody at a workshop nobody named. On
+     * the screen where a branch matters most, guessing is the worst option
+     * available.
+     */
+    const user = userEvent.setup();
+    renderLtr(
+      inBranch(
+        <>
+          <BranchSwitch to="all" label="use all" />
+          <CheckInStartScreen {...startProps()} />
+        </>,
+        { snapshot: NO_BRANCH_CHOSEN }
+      )
+    );
+    await user.click(screen.getByRole('button', { name: 'use all' }));
+
+    expect(
+      await screen.findByRole('button', { name: EN['receptions.checkIn.submit'] as string })
+    ).toBeDisabled();
+    expect(screen.getByTestId('submit-needs-branch')).toHaveTextContent(
+      EN['workingContext.needsOneBranch'] as string
+    );
   });
 });

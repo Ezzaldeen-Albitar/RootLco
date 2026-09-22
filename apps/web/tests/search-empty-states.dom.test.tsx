@@ -3,7 +3,16 @@ import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import en from '../src/i18n/messages/en.json';
 import ar from '../src/i18n/messages/ar.json';
-import { TEST_BRANCH, TEST_COMPANY, inBranch, renderLtr, renderRtl } from './render';
+import {
+  BranchSwitch,
+  OTHER_BRANCH,
+  TEST_BRANCH,
+  TEST_COMPANY,
+  branchSnapshot,
+  inBranch,
+  renderLtr,
+  renderRtl,
+} from './render';
 import type { CatalogueResult } from '@/features/vehicles/catalogue-api';
 
 /** A healthy make catalogue — see the note in `vehicle-screens.dom.test.tsx`. */
@@ -258,6 +267,45 @@ describe('the work-order board searches by number and free text (P1-32)', () => 
     await waitFor(() => expect(listWorkOrders).toHaveBeenCalledTimes(1));
     const [, criteria] = listWorkOrders.mock.calls[0] as [unknown, { number?: string }];
     expect(criteria.number).toBe('١٢٣');
+  });
+
+  it('re-targets the board when the branch changes, keeping the filters', async () => {
+    /*
+     * The stale-branch defect, on the board. The key carried the context
+     * version so the table remounted — but `submitted` still held the branch
+     * that was current when Show was pressed, so the remount re-read the OLD
+     * branch under the NEW branch name.
+     */
+    const user = userEvent.setup();
+    renderLtr(
+      inBranch(
+        <>
+          <BranchSwitch to={TEST_BRANCH.id} label="use main" />
+          <BranchSwitch to={OTHER_BRANCH.id} label="use second" />
+          <WorkOrderQueueScreen locale="en" messages={en} />
+        </>,
+        { snapshot: branchSnapshot([TEST_BRANCH, OTHER_BRANCH]) }
+      )
+    );
+    await user.click(screen.getByRole('button', { name: 'use main' }));
+    await user.type(screen.getByLabelText(en['workOrders.queue.searchFilter']), 'ABC{Enter}');
+    await waitFor(() => expect(listWorkOrders).toHaveBeenCalledTimes(1));
+    expect(await screen.findByText('WO-000123')).toBeInTheDocument();
+
+    listWorkOrders.mockClear();
+    listWorkOrders.mockResolvedValue({
+      ...EMPTY_PAGE,
+      rows: [{ ...ROW, id: 'other-row', displayNumber: 'WO-000999', branchId: OTHER_BRANCH.id }],
+    });
+    await user.click(screen.getByRole('button', { name: 'use second' }));
+
+    await waitFor(() => expect(listWorkOrders).toHaveBeenCalled());
+    const [target, criteria] = listWorkOrders.mock.calls[0] as [unknown, unknown];
+    expect(target).toEqual({ companyId: OTHER_BRANCH.companyId, branchId: OTHER_BRANCH.id });
+    // The filter is what the operator asked for and is not about the branch.
+    expect(criteria).toEqual({ q: 'ABC' });
+    expect(await screen.findByText('WO-000999')).toBeInTheDocument();
+    expect(screen.queryByText('WO-000123')).toBeNull();
   });
 
   it('states an empty result as a statement about the search', async () => {

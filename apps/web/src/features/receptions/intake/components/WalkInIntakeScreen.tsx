@@ -4,6 +4,7 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { CustomerSelector, type SelectedCustomer } from '@/components/party/CustomerSelector';
 import { PartyLabel } from '@/components/party/PartyLabel';
+import { useUnsavedGuard } from '@/features/working-context/WorkingContextProvider';
 import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic } from '@/i18n/get-messages';
 import type { Locale } from '@/i18n/config';
@@ -109,6 +110,12 @@ export function WalkInIntakeScreen({
   const [customer, setCustomer] = useState<ChosenCustomer | null>(null);
   const [vehicle, setVehicle] = useState<ChosenVehicle | null>(null);
   const [linkOutcome, setLinkOutcome] = useState<LinkOutcome | null>(null);
+
+  /*
+   * Unsaved work, declared to the shell, so a branch changed in the header asks
+   * before it discards what is typed here.
+   */
+  useUnsavedGuard(customer !== null || vehicle !== null);
 
   /*
    * The step is DERIVED, not stored. A stored step and a stored choice can

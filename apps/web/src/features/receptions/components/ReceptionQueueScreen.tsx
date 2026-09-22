@@ -106,6 +106,34 @@ export function ReceptionQueueScreen({
   const [draft, setDraft] = useState<Draft>({ status: '' });
   const [submitted, setSubmitted] = useState<Submitted | null>(null);
 
+  /*
+   * A branch changed in the header RE-TARGETS what is on screen.
+   *
+   * Remounting the results on `version` was half a fix and the dangerous half.
+   * `submitted` still held the branch that was current when Show was pressed,
+   * so the remount re-issued the read against the OLD branch while the header
+   * — and the field above — named the new one. The operator was looking at one
+   * branch's work under another branch's name, which is worse than a stale
+   * list: it is a confident wrong answer.
+   *
+   * The filters survive, because they are what the operator asked for and they
+   * are not about the branch. The target is replaced, and the key remount
+   * throws the cursor stack away with the old page. A selection that is no
+   * longer one branch — "all my branches", or nothing chosen — returns the
+   * screen to its idle state rather than guessing which branch to read.
+   *
+   * Adjusted DURING render, React's documented shape for "reset state when an
+   * input changes", and the same one `use-server-table` uses for its load key.
+   * An effect would paint one frame of the previous branch's rows first.
+   */
+  const [lastContextVersion, setLastContextVersion] = useState(version);
+  if (version !== lastContextVersion) {
+    setLastContextVersion(version);
+    setSubmitted((current) =>
+      current === null || branch.kind !== 'ready' ? null : { ...current, target: branch.target }
+    );
+  }
+
   const statusOptions = useMemo(
     () =>
       RECEPTION_STATUSES.map((status) => ({

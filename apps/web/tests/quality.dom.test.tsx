@@ -13,7 +13,16 @@ import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import ar from '../src/i18n/messages/ar.json';
 import en from '../src/i18n/messages/en.json';
-import { TEST_BRANCH, TEST_COMPANY, inBranch, renderLtr, renderRtl } from './render';
+import {
+  BranchSwitch,
+  OTHER_BRANCH,
+  TEST_BRANCH,
+  TEST_COMPANY,
+  branchSnapshot,
+  inBranch,
+  renderLtr,
+  renderRtl,
+} from './render';
 
 const EN = en as Record<string, string>;
 const t = (key: string): string => EN[key] ?? key;
@@ -907,5 +916,28 @@ describe('the closure screen says why a command was refused', () => {
 
     expect(await screen.findByText(t('form.violation.invalid'))).toBeVisible();
     expect(document.body.textContent).not.toContain('a_rule_this_screen_never_heard_of');
+  });
+});
+
+describe('the QC queue is about ONE branch', () => {
+  it('reads nothing and says which control answers while "all my branches" is chosen', async () => {
+    // `qms.qc-record-branch-list` takes one branch. A board that guessed would
+    // show an operator somebody else work under a heading naming everybody.
+    const user = userEvent.setup();
+    listQcQueue.mockClear();
+    renderLtr(
+      inBranch(
+        <>
+          <BranchSwitch to="all" label="use all" />
+          <QualityQueueScreen locale="en" messages={en} />
+        </>,
+        { snapshot: branchSnapshot([TEST_BRANCH, OTHER_BRANCH]) }
+      )
+    );
+    await user.click(screen.getByRole('button', { name: 'use all' }));
+    expect(await screen.findByTestId('requires-concrete-branch')).toHaveTextContent(
+      t('workingContext.needsOneBranch')
+    );
+    expect(listQcQueue).not.toHaveBeenCalled();
   });
 });

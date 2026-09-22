@@ -10,6 +10,7 @@ import type { BranchTarget, CursorPage, ItemsOnly, ReadState } from '@/lib/api/r
 import type { ActionState } from '@/lib/forms/action-result';
 import { formatDateTime } from '@/lib/format';
 import type { Locale } from '@/i18n/config';
+import { useUnsavedGuard } from '@/features/working-context/WorkingContextProvider';
 import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic } from '@/i18n/get-messages';
 import {
@@ -499,6 +500,12 @@ function SessionRow({
   );
   const [reason, setReason] = useState('');
 
+  /*
+   * Unsaved work, declared to the shell, so a branch changed in the header asks
+   * before it discards what is typed here.
+   */
+  useUnsavedGuard(reason.trim().length > 0);
+
   const errorFor = (name: string): string | undefined => {
     const key = fieldErrors[name];
     return key ? translateDynamic(messages, key) : undefined;
@@ -619,6 +626,12 @@ function WorkLogPanel({
   const [reloadCount, reload] = useReload();
   const [text, setText] = useState('');
   const [loggedAt, setLoggedAt] = useState('');
+
+  /*
+   * Unsaved work, declared to the shell, so a branch changed in the header asks
+   * before it discards what is typed here.
+   */
+  useUnsavedGuard(text.trim().length > 0 || loggedAt.length > 0);
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Readonly<Record<string, string>>>({});
@@ -796,6 +809,12 @@ function EvidencePanel({
   const [categoryCode, setCategoryCode] = useState('');
   const [evidenceType, setEvidenceType] = useState('');
   const [note, setNote] = useState('');
+
+  /*
+   * Unsaved work, declared to the shell, so a branch changed in the header asks
+   * before it discards what is typed here.
+   */
+  useUnsavedGuard(note.trim().length > 0 || categoryCode.length > 0 || evidenceType.length > 0);
   const [pending, setPending] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Readonly<Record<string, string>>>({});

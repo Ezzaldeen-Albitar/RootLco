@@ -97,8 +97,25 @@ export function useFocusFirstInvalid(
   const attempt = state.attempt ?? 0;
   const hasFieldErrors = Object.keys(state.fieldErrors ?? {}).length > 0;
 
+  /*
+   * The attempt this form was BORN with, and the reason it is recorded.
+   *
+   * A mount is not a refusal. A form can be rendered already carrying an
+   * attempt and its errors — remounted after a settled action, restored under a
+   * new key, or handed a state that a parent is holding — and moving the cursor
+   * then takes the operator somewhere they did not ask to go, before they have
+   * read anything. Worse, it does it on arrival, which is exactly when a
+   * screen reader is announcing the page.
+   *
+   * So the trigger is "an attempt ARRIVED AFTER mount", not "an attempt
+   * exists". A fresh form mounts at 0 and the first refusal is 1, so the
+   * ordinary case is unaffected.
+   */
+  const bornAt = useRef(attempt);
+
   useEffect(() => {
     if (!enabled || !hasFieldErrors) return undefined;
+    if (attempt <= bornAt.current) return undefined;
     const form = formRef.current;
     if (form === null) return undefined;
 

@@ -91,6 +91,18 @@ export interface WorkingContext {
   readonly branchName: (branchId: string) => string | null;
   /** True while the discard question is open. Exposed so a screen can wait. */
   readonly switchPending: boolean;
+  /**
+   * Whether a provider is above this component at all.
+   *
+   * `status` cannot answer it. A component outside the provider and a component
+   * whose directory read failed both report `unavailable`, and the right
+   * behaviour differs: the first is a surface that simply has no working
+   * context — the Platform Owner Console, a component under test on its own —
+   * and must go on rendering exactly as it did; the second is a workspace
+   * screen that genuinely could not name its branches and should say so rather
+   * than fall back to asking for a typed reference.
+   */
+  readonly present: boolean;
 }
 
 /** One screen's declaration that it holds unsaved work. */
@@ -120,6 +132,7 @@ const FALLBACK_CONTEXT: WorkingContext = {
   companyOf: () => null,
   branchName: () => null,
   switchPending: false,
+  present: false,
 };
 
 const WorkingContextValue = createContext<WorkingContext>(FALLBACK_CONTEXT);
@@ -238,11 +251,34 @@ export function WorkingContextProvider({
   const apply = useCallback(
     (next: string) => {
       if (usable) setStored(next);
-      // The outstanding reads are superseded the moment the branch changes.
-      epoch.controller.abort();
-      setEpoch({ version: epoch.version + 1, controller: new AbortController() });
+      /*
+       * FUNCTIONAL, and the abort happens INSIDE the update.
+       *
+       * Reading `epoch` from the closure looked equivalent and was not. Two
+       * calls in one tick — a cross-tab storage event landing while the
+       * operator uses the select, or two guards resolving together — both saw
+       * the same `epoch`, so both computed the same next version and both
+       * aborted the same controller: one increment was lost, and the
+       * controller created by the losing call was handed to nobody while the
+       * one it replaced was never aborted. A superseded read then had a live
+       * signal and a version that had not moved.
+       *
+       * Taking `previous` from React guarantees each call sees the result of
+       * the one before it, so every change increments exactly once and every
+       * controller it retires is the one actually in use.
+       *
+       * The updater is not pure, which is deliberate and is the narrow case
+       * where it is safe: `abort()` on an already-aborted controller does
+       * nothing, so a Strict Mode double invocation retires the same controller
+       * twice with no second effect. The spare controller the discarded call
+       * creates is never handed out.
+       */
+      setEpoch((previous) => {
+        previous.controller.abort();
+        return { version: previous.version + 1, controller: new AbortController() };
+      });
     },
-    [usable, setStored, epoch]
+    [usable, setStored]
   );
 
   const select = useCallback(
@@ -274,6 +310,7 @@ export function WorkingContextProvider({
       },
       branchName: (branchId) => branches.find((entry) => entry.id === branchId)?.name ?? null,
       switchPending: pending !== null,
+      present: true,
     };
   }, [status, unrestricted, companies, branches, selection, epoch, select, pending]);
 

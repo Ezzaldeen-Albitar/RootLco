@@ -2,6 +2,7 @@
 
 import { useActionState, useId, useState, type ReactNode } from 'react';
 import { FailureExplanation } from '@/components/states/States';
+import { useUnsavedGuard } from '@/features/working-context/WorkingContextProvider';
 import { invalid, type ActionState } from '@/lib/forms/action-result';
 import { useClearOnCorrect } from '@/lib/forms/use-clear-on-correct';
 import { useFocusFirstInvalid } from '@/lib/forms/use-focus-first-invalid';
@@ -333,6 +334,22 @@ export function RecordForm({
   const [values, setValues] = useState<Record<string, string>>(() =>
     seedValues(fields, initialValues)
   );
+
+  /*
+   * Unsaved work, declared to the shell.
+   *
+   * Changing the working branch re-addresses every write on the page, so a
+   * half-filled form must be asked about rather than silently re-pointed. This
+   * component is where eleven write surfaces get that for free: `set` below is
+   * the one place every field kind reports a change, so a flag raised there
+   * covers all of them without a listener per control.
+   *
+   * It is lowered on SUCCESS and on nothing else. A failed attempt leaves the
+   * operator's text on screen — that is the property this component exists for
+   * — so the work is still unsaved and the question still has to be asked.
+   */
+  const [dirty, setDirty] = useState(false);
+  useUnsavedGuard(dirty);
   // Per-instance, because the vehicle profile renders more than one of these on
   // one screen. The id used to be `record-${field.name}`, which is stable and
   // therefore duplicated across instances — two `id="record-effectiveDate"`
@@ -352,6 +369,8 @@ export function RecordForm({
       // Cleared only here, and only for an append. On any failure the
       // operator's text stays put either way.
       if (clearOnSuccess) setValues({});
+      // The work is stored, so there is nothing left to warn about.
+      setDirty(false);
       onRecorded?.();
     }
     return result;
@@ -374,6 +393,7 @@ export function RecordForm({
 
   const set = (name: string, value: string) => {
     corrections.noteEdited(name);
+    setDirty(true);
     setValues((current) => ({ ...current, [name]: value }));
   };
 

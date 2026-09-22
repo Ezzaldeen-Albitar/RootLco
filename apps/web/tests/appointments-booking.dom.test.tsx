@@ -3,7 +3,14 @@ import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import en from '../src/i18n/messages/en.json';
 import ar from '../src/i18n/messages/ar.json';
-import { inBranch, renderLtr, renderRtl } from './render';
+import {
+  BranchSwitch,
+  TEST_BRANCH,
+  branchSnapshot,
+  inBranch,
+  renderLtr,
+  renderRtl,
+} from './render';
 import type { IntakeCatalogueResult } from '@/features/appointments/catalogue-api';
 
 /**
@@ -402,6 +409,33 @@ describe('F1 — one page of ten was every vehicle this picker could offer', () 
 
     expect(await screen.findByTestId('booking-vehicles-truncated')).toHaveTextContent(
       ar['appointments.book.vehiclesTruncated']
+    );
+  });
+});
+
+describe('a booking cannot be addressed to "all my branches"', () => {
+  it('refuses the submit and says which control answers', async () => {
+    // `POST /appointments` names both halves of the pair as mandatory. Picking
+    // one on the operator behalf would book a vehicle into a workshop nobody
+    // named.
+    const user = userEvent.setup();
+    const second = { ...TEST_BRANCH, id: '88888888-8888-4888-8888-888888888888', name: 'Second' };
+    renderLtr(
+      inBranch(
+        <>
+          <BranchSwitch to="all" label="use all" />
+          <AppointmentBookingScreen locale="en" messages={en} types={TYPES} channels={CHANNELS} />
+        </>,
+        { snapshot: branchSnapshot([TEST_BRANCH, second]) }
+      )
+    );
+    await user.click(screen.getByRole('button', { name: 'use all' }));
+
+    expect(
+      await screen.findByRole('button', { name: en['appointments.book.submit'] })
+    ).toBeDisabled();
+    expect(screen.getByTestId('submit-needs-branch')).toHaveTextContent(
+      en['workingContext.needsOneBranch']
     );
   });
 });

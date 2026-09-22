@@ -45,6 +45,9 @@ export function SearchBox({
   example,
   busy = false,
   autoFocus = false,
+  error,
+  maxLength,
+  inlineSubmit = true,
   testId = 'search-box',
 }: {
   readonly messages: Messages;
@@ -59,11 +62,31 @@ export function SearchBox({
   readonly example?: string | undefined;
   readonly busy?: boolean;
   readonly autoFocus?: boolean;
+  /**
+   * A refusal about what was typed — a term the backend is known to reject, for
+   * instance. Carried here rather than beside the box so the control is marked
+   * invalid as well as described, which is what `useFocusFirstInvalid` finds.
+   */
+  readonly error?: string | undefined;
+  readonly maxLength?: number | undefined;
+  /**
+   * Whether the box carries its own search control.
+   *
+   * A screen that already has a Search button of its own passes `false`: two
+   * controls with the same name on one form are two things for a keyboard user
+   * to disambiguate and two ways for a test to find the wrong one. `onSubmit`
+   * is still honoured — Enter is handled here in both cases, because this box
+   * is used outside a form on some surfaces and implicit submission does not
+   * exist there.
+   */
+  readonly inlineSubmit?: boolean;
   readonly testId?: string;
 }) {
   const base = useId();
   const inputId = `${base}-search`;
   const exampleId = example ? `${base}-example` : undefined;
+  const errorId = error ? `${base}-error` : undefined;
+  const describedBy = [exampleId, errorId].filter(Boolean).join(' ') || undefined;
 
   const onKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
     if (event.key === 'Enter') {
@@ -100,8 +123,11 @@ export function SearchBox({
           spellCheck={false}
           autoComplete="off"
           autoFocus={autoFocus}
-          aria-describedby={exampleId}
+          aria-describedby={describedBy}
+          aria-invalid={error ? true : undefined}
+          aria-errormessage={errorId}
           aria-busy={busy || undefined}
+          maxLength={maxLength}
           value={value}
           placeholder={placeholder}
           onChange={(event) => onChange(event.target.value)}
@@ -119,7 +145,7 @@ export function SearchBox({
               <span aria-hidden="true">&times;</span>
             </button>
           ) : null}
-          {onSubmit ? (
+          {onSubmit && inlineSubmit ? (
             <button
               type="button"
               onClick={onSubmit}
@@ -133,6 +159,22 @@ export function SearchBox({
       {example ? (
         <p id={exampleId} className="text-supporting text-text-muted">
           {example}
+        </p>
+      ) : null}
+      {error ? (
+        // The same shape-and-colour cue every other field carries.
+        <p
+          id={errorId}
+          role="alert"
+          className="flex items-start gap-1.5 text-supporting text-error"
+        >
+          <span
+            aria-hidden="true"
+            className="mt-px inline-flex size-4 shrink-0 items-center justify-center rounded-full border border-error text-caption font-bold leading-none"
+          >
+            !
+          </span>
+          <span>{error}</span>
         </p>
       ) : null}
     </div>

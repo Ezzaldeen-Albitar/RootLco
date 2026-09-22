@@ -3,7 +3,15 @@ import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import en from '../src/i18n/messages/en.json';
 import ar from '../src/i18n/messages/ar.json';
-import { TEST_BRANCH, branchSnapshot, inBranch, renderLtr, renderRtl } from './render';
+import {
+  BranchSwitch,
+  OTHER_BRANCH,
+  TEST_BRANCH,
+  branchSnapshot,
+  inBranch,
+  renderLtr,
+  renderRtl,
+} from './render';
 import type { AppointmentListEntry } from '@/features/appointments/appointments-contract';
 
 /**
@@ -358,5 +366,56 @@ describe('both directions', () => {
     expect(screen.getByTestId('appointment-branch-target')).toHaveTextContent(TEST_BRANCH.name);
     await user.click(screen.getByRole('button', { name: ar['appointments.calendar.show'] }));
     expect(await screen.findByText('APT-0007')).toBeInTheDocument();
+  });
+});
+
+describe('a branch changed in the header re-targets the calendar', () => {
+  it('reads the NEW branch and drops the previous branch rows', async () => {
+    /*
+     * The stale-branch defect. The results were keyed on the context version so
+     * they remounted, but `submitted` still carried the branch that was current
+     * when Show was pressed — so the remount re-read the OLD branch while the
+     * field above it named the new one.
+     */
+    const user = userEvent.setup();
+    listAppointments.mockResolvedValue(page());
+    renderLtr(
+      inBranch(
+        <>
+          <BranchSwitch to={TEST_BRANCH.id} label="use main" />
+          <BranchSwitch to={OTHER_BRANCH.id} label="use second" />
+          <AppointmentCalendarScreen
+            locale="en"
+            messages={en}
+            canManage={false}
+            canCheckIn={false}
+          />
+        </>,
+        { snapshot: branchSnapshot([TEST_BRANCH, OTHER_BRANCH]) }
+      )
+    );
+
+    await user.click(screen.getByRole('button', { name: 'use main' }));
+    await user.click(screen.getByRole('button', { name: en['appointments.calendar.show'] }));
+    await waitFor(() => expect(listAppointments).toHaveBeenCalled());
+    expect(listAppointments.mock.calls[0]?.[0]).toEqual({
+      companyId: TEST_BRANCH.companyId,
+      branchId: TEST_BRANCH.id,
+    });
+    expect(await screen.findByText('APT-0007')).toBeInTheDocument();
+
+    listAppointments.mockClear();
+    listAppointments.mockResolvedValue(
+      page({ rows: [{ ...ROW, id: 'other-appointment', displayNumber: 'APT-0008' }] })
+    );
+    await user.click(screen.getByRole('button', { name: 'use second' }));
+
+    await waitFor(() => expect(listAppointments).toHaveBeenCalled());
+    expect(listAppointments.mock.calls[0]?.[0]).toEqual({
+      companyId: OTHER_BRANCH.companyId,
+      branchId: OTHER_BRANCH.id,
+    });
+    expect(await screen.findByText('APT-0008')).toBeInTheDocument();
+    expect(screen.queryByText('APT-0007')).toBeNull();
   });
 });

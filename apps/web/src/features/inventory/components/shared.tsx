@@ -214,6 +214,7 @@ export function BranchPairPicker({
    * contain the pair, is the narrowest possible fix: it discards nothing on a
    * retry that fails, and it cannot fire in any other phase.
    */
+  const workingContext = useWorkingContext();
   const listedItems = branches.phase === 'listed' ? branches.items : null;
   const stale =
     listedItems !== null &&
@@ -268,6 +269,45 @@ export function BranchPairPicker({
         placeholder={placeholder}
         error={errors?.['branchId']}
       />
+    );
+  }
+
+  /*
+   * The working context could not be read, and this screen is inside one.
+   *
+   * The three phases below take the pair as typed references, and the reason
+   * given for that is sound where it applies: `org.branch-list` lists what a
+   * caller may REACH, an empty list is not a statement about what they may
+   * operate on, and the server re-authorizes the pair anyway. None of it
+   * applies here. This is not "the list is empty" — it is "the shell could not
+   * read the directory at all", and answering that with two boxes asking for a
+   * reference nobody can look up is the exact defect this phase removed from
+   * six other screens.
+   *
+   * `present` rather than `status` decides it, because a component rendered
+   * with no provider above it reports `unavailable` too, and that one must keep
+   * behaving as it always did.
+   */
+  if (workingContext.present && workingContext.status === 'unavailable') {
+    return (
+      <div className="flex flex-col gap-1.5 sm:col-span-3">
+        <p className="text-label font-medium text-text-primary">{label}</p>
+        <p role="status" className="text-supporting text-text-secondary">
+          {translate(messages, 'workingContext.unavailable')}
+        </p>
+        {branches.phase === 'failed' && branches.retry !== null ? (
+          // `type="button"`: every caller renders this picker inside a form.
+          <div>
+            <button type="button" onClick={branches.retry} className={SECONDARY_BUTTON}>
+              {translate(messages, 'workingContext.retry')}
+            </button>
+          </div>
+        ) : (
+          <p className="text-supporting text-text-muted">
+            {translate(messages, 'workingContext.retryInHeader')}
+          </p>
+        )}
+      </div>
     );
   }
 

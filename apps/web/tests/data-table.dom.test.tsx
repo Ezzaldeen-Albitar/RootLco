@@ -233,6 +233,9 @@ function SearchHarness({
       <p data-testid="rows">{outcome.rows.map((row) => row.id).join(',')}</p>
       <p data-testid="error">{outcome.error ?? ''}</p>
       <p data-testid="paged">{outcome.page === null ? 'none' : String(outcome.page.hasMore)}</p>
+      <button type="button" onClick={outcome.submit}>
+        ask now
+      </button>
     </div>
   );
 }
@@ -374,6 +377,50 @@ describe('a search request', () => {
     await waitFor(() => expect(load).toHaveBeenCalledTimes(1));
     rerender(<SearchHarness term="same" load={load} version={1} />);
     await waitFor(() => expect(load).toHaveBeenCalledTimes(2));
+  });
+
+  it('asks AT ONCE when the operator submits, without waiting for the term to settle', async () => {
+    /*
+     * Enter and the Search control are statements of intent. Making somebody
+     * who has already decided wait out a timer is the interface being slower
+     * than the person using it — and the debounce was applied to the explicit
+     * path as well as the typed one.
+     *
+     * The debounce here is 20 ms; the assertion runs before any timer could
+     * have fired, so a hook that still waited would fail it.
+     */
+    const load = vi.fn(async (criteria: { q: string }) => okPage([{ id: `r-${criteria.q}` }]));
+    renderLtr(<SearchHarness term="now" load={load} />);
+    await userEvent.setup().click(screen.getByRole('button', { name: 'ask now' }));
+    await waitFor(() => expect(load).toHaveBeenCalled());
+    expect(load.mock.calls[0]?.[0]).toEqual({ q: 'now' });
+  });
+
+  it('re-issues on a SECOND submit of the same term, which is what a retry is', async () => {
+    const load = vi.fn(async (criteria: { q: string }) => okPage([{ id: `r-${criteria.q}` }]));
+    const user = userEvent.setup();
+    renderLtr(<SearchHarness term="same" load={load} />);
+    await waitFor(() => expect(load).toHaveBeenCalledTimes(1));
+    await user.click(screen.getByRole('button', { name: 'ask now' }));
+    await waitFor(() => expect(load).toHaveBeenCalledTimes(2));
+  });
+
+  it('files rows under the criteria it ACTUALLY fetched, not the settled name', async () => {
+    /*
+     * While the debounce lags, the key being fetched is the settled one and the
+     * criteria object is already newer. Reading the current criteria at issue
+     * time fetched one thing and filed the answer under the name of another —
+     * so the rows appeared the moment the debounce caught up, as if they had
+     * been read for the newer term.
+     */
+    const load = vi.fn(async (criteria: { q: string }) => okPage([{ id: `for-${criteria.q}` }]));
+    const { rerender } = renderLtr(<SearchHarness term="" load={load} />);
+    rerender(<SearchHarness term="ab" load={load} />);
+    rerender(<SearchHarness term="abc" load={load} />);
+    await waitFor(() => expect(screen.getByTestId('phase')).toHaveTextContent('ready'));
+    expect(load).toHaveBeenCalledTimes(1);
+    expect(load.mock.calls[0]?.[0]).toEqual({ q: 'abc' });
+    expect(screen.getByTestId('rows')).toHaveTextContent('for-abc');
   });
 
   it('reports "no matches" ONLY from a completed read', async () => {

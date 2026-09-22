@@ -2,7 +2,15 @@ import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import en from '../src/i18n/messages/en.json';
-import { TEST_BRANCH, TEST_COMPANY, inBranch, renderLtr } from './render';
+import {
+  BranchSwitch,
+  OTHER_BRANCH,
+  TEST_BRANCH,
+  TEST_COMPANY,
+  branchSnapshot,
+  inBranch,
+  renderLtr,
+} from './render';
 
 /**
  * The technician workspace, rendered (P1-29, `W4`).
@@ -476,5 +484,28 @@ describe('a refused clock or correction says what is wrong', () => {
         screen.queryByRole('button', { name: EN['technicians.workspace.correctSubmit']! })
       ).toBeNull()
     );
+  });
+});
+
+describe('the technician queue is about ONE branch', () => {
+  it('reads nothing and says which control answers while "all my branches" is chosen', async () => {
+    // A technician stands in one workshop. A queue spanning several would mix
+    // other people jobs into their own list.
+    const user = userEvent.setup();
+    readMyQueue.mockClear();
+    renderLtr(
+      inBranch(
+        <>
+          <BranchSwitch to="all" label="use all" />
+          <TechnicianWorkspaceScreen locale="en" messages={en} capabilities={ALL} />
+        </>,
+        { snapshot: branchSnapshot([TEST_BRANCH, OTHER_BRANCH]) }
+      )
+    );
+    await user.click(screen.getByRole('button', { name: 'use all' }));
+    expect(await screen.findByTestId('requires-concrete-branch')).toHaveTextContent(
+      en['workingContext.needsOneBranch']
+    );
+    expect(readMyQueue).not.toHaveBeenCalled();
   });
 });

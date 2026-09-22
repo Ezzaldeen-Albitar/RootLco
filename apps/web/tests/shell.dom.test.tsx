@@ -9,6 +9,7 @@ import { axe } from 'vitest-axe';
 import { DataTable, type Column, type TableStatus } from '@/components/data-table/DataTable';
 import { INITIAL_REQUEST, type TableRequest } from '@/components/data-table/table-state';
 import { MoneyField } from '@/components/forms/MoneyField';
+import { RecordForm } from '@/components/forms/RecordForm';
 import { TextField } from '@/components/forms/Field';
 import { PageHeader } from '@/components/shell/PageHeader';
 import { LocaleSwitcher, swapLocale } from '@/components/shell/LocaleSwitcher';
@@ -1105,5 +1106,95 @@ describe('the working context', () => {
     expect(screen.getByTestId('working-context-prompt')).toHaveTextContent(
       arabic['workingContext.prompt']
     );
+  });
+});
+
+describe('the remembered branch, revoked and re-read', () => {
+  beforeEach(() => {
+    window.localStorage.clear();
+  });
+
+  it('DISCARDS a stored "all" once only one branch is left', async () => {
+    /*
+     * "All my branches" is a set, and a set of one is a branch. Keeping the
+     * stored value would leave the operator in a posture no screen can write
+     * from — every form would refuse with "choose one branch" while the header
+     * showed a plain sentence and no control to change it.
+     */
+    window.localStorage.setItem(WC_KEY, 'all');
+    const onContext = vi.fn();
+    renderLtr(
+      <WorkingContextProvider snapshot={wcSnapshot([MAIN])} messages={messages}>
+        <Probe onContext={onContext} />
+      </WorkingContextProvider>
+    );
+    const seen = () => onContext.mock.calls[onContext.mock.calls.length - 1]?.[0] as WorkingContext;
+    // Auto-selected, because one branch is never asked about.
+    expect(seen().selection).toEqual({ companyId: 'c-1', branchId: 'b-1', allBranches: false });
+    await waitFor(() => expect(window.localStorage.getItem(WC_KEY)).toBeNull());
+  });
+
+  it('follows the choice made in ANOTHER TAB', async () => {
+    /*
+     * A `storage` event fires only in the other documents, which is exactly
+     * what it is for here: an operator with the board open on one screen and a
+     * form on another must not have the two disagree about where they are
+     * working. The preference goes through the single browser-storage
+     * authority, so this behaviour is the collapse flag's, inherited.
+     */
+    const onContext = vi.fn();
+    renderLtr(
+      <WorkingContextProvider snapshot={wcSnapshot([MAIN, SECOND])} messages={messages}>
+        <Probe onContext={onContext} />
+      </WorkingContextProvider>
+    );
+    const seen = () => onContext.mock.calls[onContext.mock.calls.length - 1]?.[0] as WorkingContext;
+    expect(seen().selection).toBeNull();
+
+    // Exactly what another tab does: write, then the browser notifies this one.
+    window.localStorage.setItem(WC_KEY, 'b-2');
+    window.dispatchEvent(new StorageEvent('storage', { key: WC_KEY, newValue: 'b-2' }));
+
+    await waitFor(() =>
+      expect(seen().selection).toEqual({ companyId: 'c-1', branchId: 'b-2', allBranches: false })
+    );
+  });
+});
+
+describe('a form with unsaved work blocks a branch switch', () => {
+  beforeEach(() => {
+    window.localStorage.clear();
+  });
+
+  it('ASKS when a RecordForm has been typed into', async () => {
+    /*
+     * `useUnsavedGuard` existed with no caller, which is the "declared but
+     * never wired" defect this repository keeps finding. `RecordForm` is where
+     * wiring it pays for itself: eleven write surfaces render through it, and
+     * its `set` is the single place every field kind reports a change.
+     */
+    const user = userEvent.setup();
+    renderLtr(
+      <WorkingContextProvider snapshot={wcSnapshot([MAIN, SECOND])} messages={messages}>
+        <RecordForm
+          messages={messages}
+          fields={[{ name: 'reason', kind: 'text', labelKey: 'crm.customers.notes.body' }]}
+          action={async () => ({ status: 'success', messageKey: 'action.succeeded', attempt: 1 })}
+          submitKey="form.submit"
+          titleKey="crm.customers.notes.add"
+        />
+        <WorkingContextControl messages={messages} />
+      </WorkingContextProvider>
+    );
+
+    // Clean: the switch goes through without a question.
+    await user.selectOptions(screen.getByTestId('working-context-select'), 'b-2');
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+
+    await user.type(screen.getByLabelText(messages['crm.customers.notes.body']), 'a note');
+    await user.selectOptions(screen.getByTestId('working-context-select'), 'b-1');
+
+    const dialog = await screen.findByRole('alertdialog');
+    expect(within(dialog).getByText(messages['workingContext.discard.title'])).toBeInTheDocument();
   });
 });

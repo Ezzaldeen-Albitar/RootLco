@@ -4,6 +4,7 @@ import { useCallback, useId, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { DataTable, type Column } from '@/components/data-table/DataTable';
+import { SearchBox } from '@/components/search/SearchBox';
 import { INITIAL_REQUEST, type TableRequest } from '@/components/data-table/table-state';
 import { useServerTable } from '@/components/data-table/use-server-table';
 import { DigitsEcho } from '@/components/forms/DigitsEcho';
@@ -81,38 +82,62 @@ export function VehicleSearchScreen({ locale, messages, canCreate, makes }: Prop
   const blocked = isEmptyCriteria(draft);
   const [tooShort, setTooShort] = useState(false);
 
+  /*
+   * One submission path, shared by the form and by the search box.
+   *
+   * `SearchBox` intercepts Enter rather than relying on implicit submission —
+   * it is used outside a form on other surfaces — so the rule that decides what
+   * a submission does has to live somewhere both can reach it. Two copies would
+   * be two chances for the too-short refusal to disagree with itself.
+   */
+  const submitSearch = () => {
+    if (blocked) return;
+    // The backend refuses a one-character free-text, make or model value.
+    if (hasTooShortCriteria(draft)) {
+      setTooShort(true);
+      return;
+    }
+    setTooShort(false);
+    setSubmitted(draft);
+  };
+
   return (
     <div className="flex min-h-0 flex-col gap-4">
       <form
         id={formId}
         onSubmit={(event) => {
           event.preventDefault();
-          // Enter submits, because this is a real form with a real submit
-          // button — not a keydown handler that reimplements one.
-          if (blocked) return;
-          // The backend refuses a one-character free-text, make or model value.
-          if (hasTooShortCriteria(draft)) {
-            setTooShort(true);
-            return;
-          }
-          setTooShort(false);
-          setSubmitted(draft);
+          submitSearch();
         }}
         className="rounded-lg border border-border bg-surface p-4"
       >
+        {/*
+          The shared search box (P1-32), replacing a hand-rolled input.
+          
+          What it brings that the hand-rolled one did not: a clear control,
+          Escape to empty the box, Enter handled explicitly rather than by
+          implicit form submission, an `inputMode` that does not summon a
+          digits-only keypad for a box that also takes a make or a model, and
+          the same non-colour error cue every other field carries. The words
+          stay this screen's — they say what may be typed HERE.
+        */}
         <div className="mb-3">
-          <Field
+          <SearchBox
             messages={messages}
-            id={`${formId}-q`}
-            labelKey="vehicles.search.q"
-            hintKey="vehicles.search.qHint"
+            label={translate(messages, 'vehicles.search.q')}
+            example={translate(messages, 'vehicles.search.qHint')}
             value={draft.q}
-            onChange={(v) => set('q', v)}
             maxLength={MAX_VEHICLE_TEXT}
-            dir="auto"
-            note={null}
-            echo
+            onChange={(next) => set('q', next)}
+            onSubmit={submitSearch}
+            // NOT wired to `tooShort`: that refusal is about the free-text box,
+            // the make OR the model, and marking only this control invalid would
+            // point the operator at the wrong field. The form states it once,
+            // below, exactly as it did before.
+            inlineSubmit={false}
+            testId="vehicle-search-box"
           />
+          <DigitsEcho messages={messages} value={draft.q} />
         </div>
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           <Field

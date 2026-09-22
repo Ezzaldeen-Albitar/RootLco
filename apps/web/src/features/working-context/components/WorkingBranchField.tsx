@@ -87,10 +87,19 @@ export function WorkingBranchField({
 export function RequiresConcreteBranch({
   messages,
   state,
+  testId = 'requires-concrete-branch',
 }: {
   readonly messages: Messages;
   /** Defaults to the screen's own branch state. Passed in only to save a lookup. */
   readonly state?: BranchTargetState | undefined;
+  /**
+   * A form may say this twice — once where the branch is named, and again
+   * beside a submit the operator has just found disabled at the bottom of a
+   * long form. The second one is not duplication, it is the answer arriving
+   * where the question was asked; naming them apart is what lets a test say
+   * which it means.
+   */
+  readonly testId?: string;
 }) {
   const own = useBranchTarget();
   const resolved = state ?? own;
@@ -99,7 +108,7 @@ export function RequiresConcreteBranch({
   return (
     <p
       role="status"
-      data-testid="requires-concrete-branch"
+      data-testid={testId}
       className="rounded-md bg-warning-subtle px-3 py-2 text-supporting text-text-secondary"
     >
       {translateDynamic(messages, key)}

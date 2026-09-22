@@ -5782,5 +5782,6 @@
   "workingContext.otherCompany": "فروع أخرى",
   "workingContext.prompt": "اختر فرعك للبدء",
   "workingContext.retry": "حاول مرة أخرى",
+  "workingContext.retryInHeader": "استخدم زر المحاولة مرة أخرى بجانب فرعك في أعلى الصفحة.",
   "workingContext.unavailable": "تعذّرت قراءة قائمة فروعك."
 }

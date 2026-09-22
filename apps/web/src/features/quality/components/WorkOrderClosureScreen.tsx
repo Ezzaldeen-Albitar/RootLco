@@ -43,6 +43,7 @@ import type { ItemsOnly, ReadState } from '@/lib/api/read-operation';
 import type { ActionState } from '@/lib/forms/action-result';
 import { formatDateTime } from '@/lib/format';
 import type { Locale } from '@/i18n/config';
+import { useUnsavedGuard } from '@/features/working-context/WorkingContextProvider';
 import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic } from '@/i18n/get-messages';
 import {
@@ -416,6 +417,12 @@ function QcPanel({
   const [openId, setOpenId] = useState<string | null>(null);
   const [reloadCount, reload] = useReload();
   const [notes, setNotes] = useState('');
+
+  /*
+   * Unsaved work, declared to the shell, so a branch changed in the header asks
+   * before it discards what is typed here.
+   */
+  useUnsavedGuard(notes.trim().length > 0);
   const { pending, problem, run } = useCommand(messages, () => {
     reload();
     onChanged();
@@ -661,6 +668,12 @@ function CheckAnswerForm({
 }) {
   const [result, setResult] = useState('');
   const [note, setNote] = useState('');
+
+  /*
+   * Unsaved work, declared to the shell, so a branch changed in the header asks
+   * before it discards what is typed here.
+   */
+  useUnsavedGuard(result.length > 0 || note.trim().length > 0);
   const [attempt, setAttempt] = useState(0);
   return (
     <form
@@ -710,6 +723,12 @@ function FinalizeForm({
 }) {
   const [overallResult, setOverallResult] = useState('');
   const [notes, setNotes] = useState('');
+
+  /*
+   * Unsaved work, declared to the shell, so a branch changed in the header asks
+   * before it discards what is typed here.
+   */
+  useUnsavedGuard(overallResult.length > 0 || notes.trim().length > 0);
   const [pending, setPending] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
@@ -791,6 +810,12 @@ function ReworkPanel({
   const [links, setLinks] = useState<ReadState<ItemsOnly<ReworkLink>> | null>(null);
   const [reloadCount, reload] = useReload();
   const [rootCause, setRootCause] = useState('');
+
+  /*
+   * Unsaved work, declared to the shell, so a branch changed in the header asks
+   * before it discards what is typed here.
+   */
+  useUnsavedGuard(rootCause.trim().length > 0);
   const [correctiveAction, setCorrectiveAction] = useState('');
   const [responsibility, setResponsibility] = useState('');
   const [safetyCritical, setSafetyCritical] = useState('');

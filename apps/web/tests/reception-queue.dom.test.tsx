@@ -3,7 +3,15 @@ import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import en from '../src/i18n/messages/en.json';
 import ar from '../src/i18n/messages/ar.json';
-import { TEST_BRANCH, branchSnapshot, inBranch, renderLtr, renderRtl } from './render';
+import {
+  BranchSwitch,
+  OTHER_BRANCH,
+  TEST_BRANCH,
+  branchSnapshot,
+  inBranch,
+  renderLtr,
+  renderRtl,
+} from './render';
 import { RECEPTION_STATUSES } from '@/features/receptions/receptions-contract';
 import { receptionAffordances } from '@/features/receptions/check-in/closure';
 
@@ -304,5 +312,80 @@ describe('both directions', () => {
     await waitFor(() => expect(listReceptions).toHaveBeenCalled());
     expect(await screen.findByText(AR['receptions.queue.custodyHeld'] as string)).toBeVisible();
     expect(document.documentElement.dir).toBe('rtl');
+  });
+});
+
+describe('a branch changed in the header re-targets the board', () => {
+  it('reads the NEW branch at once and drops the previous branch rows', async () => {
+    /*
+     * The defect this closes. Remounting the table on the context version was
+     * half a fix and the dangerous half: `submitted` still held the branch that
+     * was current when Show was pressed, so the remount re-issued the read
+     * against the OLD branch while the field above named the new one. One
+     * branch of work under another branch name is worse than a stale list — it
+     * is a confident wrong answer.
+     */
+    const user = userEvent.setup();
+    listReceptions.mockResolvedValue(page([row({ displayNumber: 'R-0001' })]));
+    renderLtr(
+      inBranch(
+        <>
+          <BranchSwitch to={TEST_BRANCH.id} label="use main" />
+          <BranchSwitch to={OTHER_BRANCH.id} label="use second" />
+          <ReceptionQueueScreen locale="en" messages={en} canCreate />
+        </>,
+        { snapshot: branchSnapshot([TEST_BRANCH, OTHER_BRANCH]) }
+      )
+    );
+
+    await user.click(screen.getByRole('button', { name: 'use main' }));
+    await show(user);
+    expect(listReceptions.mock.calls[0]?.[0]).toEqual({
+      companyId: TEST_BRANCH.companyId,
+      branchId: TEST_BRANCH.id,
+    });
+    expect(await screen.findByText('R-0001')).toBeVisible();
+
+    listReceptions.mockClear();
+    listReceptions.mockResolvedValue(page([row({ displayNumber: 'R-0002' })]));
+    await user.click(screen.getByRole('button', { name: 'use second' }));
+
+    // No second press of Show. The board follows the header, because the
+    // heading above it already does.
+    await waitFor(() => expect(listReceptions).toHaveBeenCalled());
+    expect(listReceptions.mock.calls[0]?.[0]).toEqual({
+      companyId: OTHER_BRANCH.companyId,
+      branchId: OTHER_BRANCH.id,
+    });
+    expect(await screen.findByText('R-0002')).toBeVisible();
+    expect(screen.queryByText('R-0001')).toBeNull();
+  });
+
+  it('returns to the idle state when the selection stops being one branch', async () => {
+    // "All my branches" is not a target the route can take, so a board that
+    // kept reading would be reading somewhere nobody named.
+    const user = userEvent.setup();
+    renderLtr(
+      inBranch(
+        <>
+          <BranchSwitch to={TEST_BRANCH.id} label="use main" />
+          <BranchSwitch to="all" label="use all" />
+          <ReceptionQueueScreen locale="en" messages={en} canCreate />
+        </>,
+        { snapshot: branchSnapshot([TEST_BRANCH, OTHER_BRANCH]) }
+      )
+    );
+    await user.click(screen.getByRole('button', { name: 'use main' }));
+    await show(user);
+    listReceptions.mockClear();
+
+    await user.click(screen.getByRole('button', { name: 'use all' }));
+    await waitFor(() =>
+      expect(screen.getByText(EN['receptions.queue.idleTitle'] as string)).toBeVisible()
+    );
+    expect(listReceptions).not.toHaveBeenCalled();
+    expect(screen.getByTestId('requires-concrete-branch')).toHaveTextContent(
+      EN['workingContext.needsOneBranch'] as string
+    );
   });
 });

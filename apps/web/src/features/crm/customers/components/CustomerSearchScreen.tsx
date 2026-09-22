@@ -6,6 +6,7 @@ import { DataTable, type Column } from '@/components/data-table/DataTable';
 import { INITIAL_REQUEST, type TableRequest } from '@/components/data-table/table-state';
 import { useServerTable } from '@/components/data-table/use-server-table';
 import { DigitsEcho } from '@/components/forms/DigitsEcho';
+import { SearchBox } from '@/components/search/SearchBox';
 import { EmptyState } from '@/components/states/States';
 import type { Messages } from '@/i18n/get-messages';
 import { translate } from '@/i18n/get-messages';
@@ -312,7 +313,6 @@ function SearchForm({
   readonly onClear: () => void;
 }) {
   const [expanded, setExpanded] = useState(false);
-  const qId = `${formId}-q`;
   const filtersId = `${formId}-filters`;
   const nameId = `${formId}-name`;
   const numberId = `${formId}-number`;
@@ -337,29 +337,31 @@ function SearchForm({
         {translate(messages, 'crm.customers.search.formLabel')}
       </h2>
 
+      {/*
+        The shared search box (P1-32), replacing a hand-rolled input.
+        
+        What it brings that the hand-rolled one did not: a clear control, Escape
+        to empty the box, Enter handled explicitly rather than relying on
+        implicit form submission, an `inputMode` that does not summon a
+        digits-only keypad for a box that also takes a name, and the same
+        non-colour error cue every other field carries. The words are still this
+        screen's: the label and the example say what may be typed HERE, because
+        a generic "Search…" is the shape of a control rather than a question.
+      */}
       <div className="flex flex-col gap-1">
-        <label className="text-body font-medium text-text-primary" htmlFor={qId}>
-          {translate(messages, 'crm.customers.search.q')}
-        </label>
-        <input
-          id={qId}
-          type="search"
+        <SearchBox
+          messages={messages}
+          label={translate(messages, 'crm.customers.search.q')}
+          example={translate(messages, 'crm.customers.search.qHint')}
           value={draft.q ?? ''}
           maxLength={MAX_NAME_LENGTH}
-          onChange={(event) => onChange({ ...draft, q: event.target.value })}
-          className="rounded-md border border-border bg-surface px-3 py-2 text-body"
-          aria-describedby={tooShort ? `${qId}-hint ${qId}-error` : `${qId}-hint`}
-          aria-invalid={tooShort || undefined}
+          onChange={(next) => onChange({ ...draft, q: next })}
+          onSubmit={onSubmit}
+          error={tooShort ? translate(messages, 'crm.customers.search.qTooShort') : undefined}
+          inlineSubmit={false}
+          testId="customer-search-box"
         />
-        <span id={`${qId}-hint`} className="text-caption text-text-muted">
-          {translate(messages, 'crm.customers.search.qHint')}
-        </span>
         <DigitsEcho messages={messages} value={draft.q} />
-        {tooShort ? (
-          <span id={`${qId}-error`} role="alert" className="text-caption text-error">
-            {translate(messages, 'crm.customers.search.qTooShort')}
-          </span>
-        ) : null}
       </div>
 
       <div className="mt-3">
