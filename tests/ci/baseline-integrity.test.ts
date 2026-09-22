@@ -528,7 +528,17 @@ describe('the coverage include lists are pinned, because they are the denominato
     // measured backend file: inventory/application/inventory-alert-service.ts. The
     // shared capacity classifier lives under `src/shared`, which this include list
     // does not admit, so it moves the count by nothing.
-    expect(files.length).toBe(310);
+    // 316 with the Owner directive tenant dashboard, which adds SIX measured
+    // backend files and no other kind: the four of the new `overview` module
+    // (`index.ts`, `domain/dashboard-period.ts`,
+    // `data/overview-clock-repository.ts` and
+    // `application/dashboard-summary-service.ts`) and the two ports the owning
+    // modules publish for it,
+    // `work-order/application/work-order-overview-port.ts` and
+    // `technician/application/technician-label-port.ts`. The route lives under
+    // `src/app`, which this include list does not admit, so it moves the count by
+    // nothing.
+    expect(files.length).toBe(316);
     expect(backendCoverage?.exclude).toContain(`${API_SRC_PATH}/server/openapi/**`);
     const instrumented = files.filter(
       (file) => !file.startsWith(`${API_SRC_PATH}/server/openapi/`)
@@ -628,6 +638,11 @@ describe('the coverage include lists are pinned, because they are the denominato
     // 309 with the Owner directive operational stock alerts: the one added file,
     // inventory/application/inventory-alert-service.ts, is not under
     // `server/openapi/`, so it is instrumented as well as measured.
-    expect(instrumented.length).toBe(309);
+    // 315 with the Owner directive tenant dashboard: none of its six added files
+    // is under `server/openapi/`, so both numbers move by six together — which is
+    // what says no file slipped in behind the exclusion. The floors stay
+    // untouched for the reason above: re-establishing them needs a hosted
+    // measurement run, which this slice did not perform and does not claim.
+    expect(instrumented.length).toBe(315);
   });
 });
