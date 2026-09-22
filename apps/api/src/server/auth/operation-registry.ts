@@ -82,6 +82,31 @@ export interface OperationDeclaration {
   /** Whether responses may be cached, and under which eligibility category. */
   readonly cacheCategory?: string;
   /**
+   * Declares that this READ accepts a company without a branch, and what happens
+   * when the branch is omitted (Owner directive, P1-32-PRE-OD-UX).
+   *
+   * `'authorized-union'` is the only value, and it means exactly one thing: the
+   * page covers the branches of the named company in which this caller actually
+   * holds this operation's declared codes, resolved one branch at a time by
+   * `resolveAuthorizedBranches`, and a caller holding none is REFUSED rather than
+   * answered with an empty page.
+   *
+   * ## Why a declaration and not a comment
+   *
+   * An optional `branchId` on a branch-scoped read is, on its face, the exact
+   * shape P1-22 §16 exists to keep out: omit the pair and `authorizeScope` is
+   * skipped, leaving `app.branch_ids` — the permission-blind union of every grant
+   * — as the only narrowing. Widening a list by making a parameter optional is
+   * therefore something that must never happen QUIETLY. This field is what makes
+   * it loud: `tests/backend/p1-22-isolation.test.ts` accepts an optional scope
+   * parameter only from an operation that declares this AND whose handler really
+   * routes the request through the `authorizedBranches` seam, which it checks by
+   * parsing the route module rather than by reading a comment. An optional
+   * parameter without the declaration still fails, and a declaration without the
+   * seam fails too.
+   */
+  readonly branchNarrowing?: 'authorized-union';
+  /**
    * The success status this operation actually returns. Defaults to 200.
    *
    * It exists because the published contract used to advertise `200` for all 334

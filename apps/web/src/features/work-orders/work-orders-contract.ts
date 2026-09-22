@@ -134,6 +134,41 @@ export interface WorkOrderListEntry {
   readonly recordVersion: number;
   readonly customer: WorkOrderCustomer | null;
   readonly vehicle: WorkOrderVehicle;
+  /**
+   * Who is currently on the car, or null when no job carries a live assignment
+   * (Owner directive, P1-32-PRE-OD-UX).
+   *
+   * `displayName` is null on its own when the caller may not read the user
+   * directory: the assignment is a work-order fact and the person's NAME is not,
+   * so the row is published either way and a screen renders the absence rather
+   * than assuming a name is always there.
+   */
+  readonly assignedTechnician: WorkOrderAssignedTechnician | null;
+  /**
+   * When the work order last entered a terminal state, or null whenever it is
+   * not currently in one. There is no `completed_at` column: the API reads the
+   * transition ledger and gates it on the current state, so a reopened order
+   * reports null again.
+   */
+  readonly completedAt: string | null;
+  /**
+   * `pending`, `passed` or `failed`, or null when quality control was never
+   * opened on this work order. Null and `pending` are DIFFERENT facts and a
+   * screen must not collapse them.
+   */
+  readonly qualityState: string | null;
+}
+
+/**
+ * The technician holding the live assignment.
+ *
+ * A named type rather than an inline object for the reason every other nested
+ * projection here is one: the contract test compares this mirror against the
+ * published row field by field, and an inline shape is invisible to it.
+ */
+export interface WorkOrderAssignedTechnician {
+  readonly id: string;
+  readonly displayName: string | null;
 }
 
 /**

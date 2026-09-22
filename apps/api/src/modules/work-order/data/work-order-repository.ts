@@ -82,6 +82,53 @@ export interface WorkOrderRow {
   readonly recordVersion: number;
 }
 
+/**
+ * The branch board's row: a work order plus the four facts a board needs and a
+ * report does not (Owner directive, P1-32-PRE-OD-UX).
+ *
+ * A SEPARATE type from `WorkOrderRow` rather than four more fields on it, and
+ * the reason is honesty rather than taste. `WorkOrderRow` is also what
+ * `statusSummary` returns to the report engine, and that statement does not and
+ * should not compute an assignment, a completion instant or a quality result. If
+ * the fields lived on the shared row those reads would publish `null` for every
+ * one of them — a false statement about a work order that may well be assigned,
+ * finished and passed. The board asks for them, so the board's type carries
+ * them.
+ */
+export interface WorkOrderBoardRow extends WorkOrderRow {
+  /**
+   * The technician profile currently holding a LIVE assignment on one of this
+   * work order's jobs, or null (Owner directive, P1-32-PRE-OD-UX).
+   *
+   * `wo.job_assignments` is append-then-close and a live row is one whose
+   * `valid_to` is NULL, so "currently assigned" is a fact the table records
+   * rather than a status anyone maintains. The name is NOT joined here: the
+   * profile carries a `user_id` and the display name lives in
+   * `iam.user_accounts`, which is another module's table — the service resolves
+   * it through `iamDirectory()` for the whole page at once.
+   *
+   * ONE technician, not the set: the board shows who is on the car. A work order
+   * with several assigned jobs reports the most recently assigned, which is what
+   * `assigned_at DESC` picks.
+   */
+  readonly assignedTechnicianProfileId: string | null;
+  /** The `user_id` of that profile, so the service can resolve a name for it. */
+  readonly assignedTechnicianUserId: string | null;
+  /**
+   * When this work order last entered a TERMINAL state, or null while it is open
+   * (Owner directive, P1-32-PRE-OD-UX).
+   *
+   * There is no `completed_at` column on `wo.work_orders` and none is invented
+   * here. The instant is read from `wo.work_order_status_history`, which is the
+   * append-only ledger of every transition, and the set of terminal codes is
+   * resolved by the SERVICE from the live catalogue and passed down — never
+   * joined to `wo.work_order_states` in this statement, because resolving the
+   * platform/tenant precedence in a second place is how two reads of one
+   * catalogue come to disagree.
+   */
+  readonly completedAt: Date | null;
+}
+
 /** Ordering contract for the work-order list. Newest opened first, id tie-break. */
 export const WORK_ORDER_LIST_ORDER = Object.freeze({
   key: 'wo.work_orders:opened_at_desc',
@@ -103,7 +150,15 @@ export const JOB_HISTORY_ORDER = Object.freeze({
 /** Server-side filter for the branch work-order board. */
 export interface WorkOrderListFilter {
   readonly companyId: string;
-  readonly branchId: string;
+  /**
+   * The branches the page may cover (Owner directive, P1-32-PRE-OD-UX).
+   *
+   * `undefined` means every branch of the company, reachable only by a caller
+   * row-level security imposes no branch narrowing on: the route resolves the set
+   * through `authorizedBranches`, and that refuses rather than returning an empty
+   * one. A list is a NARROWING of the policy, never a widening of it.
+   */
+  readonly branchIds?: readonly string[] | undefined;
   readonly state?: string | undefined;
   readonly kind?: string | undefined;
   /** Inclusive lower bound on `opened_at`. */
@@ -158,6 +213,58 @@ export interface WorkOrderListFilter {
    * `hasMore` that lies.
    */
   readonly q?: string | undefined;
+  /**
+   * The terminal state codes, resolved by the SERVICE from the live catalogue
+   * (Owner directive, P1-32-PRE-OD-UX).
+   *
+   * Used only to date `completedAt`. Passed down rather than joined, for the
+   * reason `states` is passed down: resolving the platform/tenant catalogue
+   * precedence in a second place is how two reads of one catalogue disagree. An
+   * EMPTY array is honest — a tenant whose catalogue has no terminal state has no
+   * completed work order — and null would mean "every transition counts".
+   */
+  readonly terminalStates?: readonly string[] | undefined;
+  /**
+   * Narrow to the work orders one technician profile currently holds a live job
+   * assignment on. `assignedToMe` on the wire; the route resolves the caller to a
+   * profile and an unresolvable caller is answered with an empty page rather than
+   * with everything.
+   */
+  readonly assignedTechnicianProfileId?: string | undefined;
+  /**
+   * Set FALSE by a caller that asked `assignedToMe` and could not be resolved to a
+   * technician profile.
+   *
+   * A separate flag rather than an empty `assignedTechnicianProfileId`, because
+   * "no profile" and "no filter" are the same absence in TypeScript and must not
+   * be the same answer: one is an empty page, the other is the whole board.
+   */
+  readonly matchNothing?: boolean | undefined;
+  /** Parts are outstanding: `parts_forward_state` is anything but `none`. */
+  readonly awaitingParts?: boolean | undefined;
+  /** An additional-work request is still `pending` a customer decision. */
+  readonly awaitingApproval?: boolean | undefined;
+  /**
+   * The work orders this scope has awaiting quality, resolved by the QUALITY
+   * module and passed down as ids.
+   *
+   * Not a boolean, and not a correlated subquery: `qms.*` belongs to another
+   * module and this layer may not name it. `undefined` means the caller did not
+   * ask; an EMPTY array means it asked and nothing qualifies, which must match
+   * nothing rather than everything.
+   */
+  readonly awaitingQualityIds?: readonly string[] | undefined;
+  /**
+   * The codes that mean "finished and not abandoned", resolved by the SERVICE
+   * from the live catalogue when the caller asked `readyForDelivery`.
+   *
+   * A CODE SET and not a boolean, for the reason `states` is one: the predicate
+   * is `state = ANY(...)`, and there is no stored readiness flag to test. An
+   * empty array matches nothing, which is the honest answer for a tenant whose
+   * catalogue resolves no closed, non-cancellation state — exactly what the
+   * delivery readiness queue already answers.
+   */
+  readonly readyStates?: readonly string[] | undefined;
 }
 
 /**
@@ -591,6 +698,35 @@ export class WorkOrderRepository extends Repository {
   }
 
   /**
+   * The ACTIVE technician profile of the calling user in this tenant, or null
+   * (Owner directive, P1-32-PRE-OD-UX).
+   *
+   * Backs `assignedToMe`. A caller who is not a technician resolves to null, and
+   * the service turns that into an empty page rather than into no filter at all —
+   * "my work" must never widen to "everyone's".
+   *
+   * The user comes from the CONTEXT and never from the request: a caller-supplied
+   * id would turn a convenience filter into a way of reading another person's
+   * workload. `tech.technician_profiles` is another module's table read for a
+   * single scoped fact, the same shape the board's other correlated reads take.
+   */
+  async findTechnicianProfileForCaller(db: DbHandle): Promise<string | null> {
+    const context = this.assertContext(db);
+    const row = await this.runOne<{ id: string }>(
+      db,
+      `SELECT id
+         FROM tech.technician_profiles
+        WHERE tenant_id = $1 AND user_id = $2
+          AND is_active
+          AND deleted_at IS NULL
+        ORDER BY id
+        LIMIT 1`,
+      [context.principal.tenantId, context.principal.userId]
+    );
+    return row?.id ?? null;
+  }
+
+  /**
    * One keyset page of the branch's work orders, newest opened first.
    *
    * Company and branch are REQUIRED filter columns rather than optional
@@ -611,13 +747,13 @@ export class WorkOrderRepository extends Repository {
     db: DbHandle,
     filter: WorkOrderListFilter,
     page: PageRequest
-  ): Promise<Page<WorkOrderRow>> {
+  ): Promise<Page<WorkOrderBoardRow>> {
     const context = this.assertContext(db);
     const terms = toWorkOrderSearchTerms({ number: filter.number, q: filter.q });
     const values: unknown[] = [
       context.principal.tenantId,
       filter.companyId,
-      filter.branchId,
+      filter.branchIds === undefined ? null : [...filter.branchIds],
       filter.state ?? null,
       filter.kind ?? null,
       filter.openedFrom ?? null,
@@ -629,6 +765,13 @@ export class WorkOrderRepository extends Repository {
       terms.nameFragment,
       terms.plateFragment,
       terms.vinFragment,
+      filter.terminalStates === undefined ? null : [...filter.terminalStates],
+      filter.assignedTechnicianProfileId ?? null,
+      filter.awaitingParts === true,
+      filter.awaitingApproval === true,
+      filter.awaitingQualityIds === undefined ? null : [...filter.awaitingQualityIds],
+      filter.readyStates === undefined ? null : [...filter.readyStates],
+      filter.matchNothing === true,
     ];
     const keyset = keysetFragment(
       page,
@@ -649,12 +792,75 @@ export class WorkOrderRepository extends Repository {
       opened_at: Date;
       created_by: string | null;
       record_version: number;
+      assigned_technician_profile_id: string | null;
+      assigned_technician_user_id: string | null;
+      completed_at: Date | null;
     }>(
       db,
       `SELECT id, company_id, branch_id, reception_visit_id, vehicle_id, kind, state,
-              parts_forward_state, display_number, opened_at, created_by, record_version
+              parts_forward_state, display_number, opened_at, created_by, record_version,
+              -- Owner directive P1-32-PRE-OD-UX. The board facts are read as
+              -- correlated scalars and one LATERAL, never as plain joins: a work
+              -- order has many jobs and a job many historical assignments, so a
+              -- join would return the work order once per row and turn a page of
+              -- ten into a page of thirty.
+              --
+              -- BOTH halves of the assignment come from ONE row. Two independent
+              -- scalars is what this was, and two scalars can name two different
+              -- assignments: the id arm did not join the technician register and
+              -- the name arm did, so a live assignment whose profile had been
+              -- soft-deleted or retired was skipped by one and not the other, and
+              -- the board would have shown one technician id beside another
+              -- technician name.
+              --
+              -- The register is filtered in that same row - not deleted, still
+              -- active - so an assignment held by a retired technician reads as
+              -- NO current assignment rather than as an assignment to somebody
+              -- the register says has gone.
+              assignment.technician_profile_id                AS assigned_technician_profile_id,
+              assignment.user_id                              AS assigned_technician_user_id,
+              -- The instant this work order last entered a terminal state. There
+              -- is no completed_at column and none is invented: the ledger knows,
+              -- and the terminal CODES come from the service ($15) rather than
+              -- from a second join onto wo.work_order_states.
+              -- ...and ONLY while the order is still IN one. A reopened work
+              -- order has a terminal transition in its ledger and is not
+              -- finished, so reading the ledger alone would report a completion
+              -- instant for a car back on the ramp. The CURRENT state decides
+              -- whether there is a completion at all; the ledger decides when it
+              -- was.
+              (CASE
+                 WHEN $15::text[] IS NOT NULL AND wo.work_orders.state = ANY($15::text[])
+                 THEN (SELECT max(h.occurred_at)
+                         FROM wo.work_order_status_history h
+                        WHERE h.tenant_id = wo.work_orders.tenant_id
+                          AND h.work_order_id = wo.work_orders.id
+                          AND h.to_state = ANY($15::text[]))
+                 ELSE NULL
+               END)                                      AS completed_at
          FROM wo.work_orders
-        WHERE tenant_id = $1 AND company_id = $2 AND branch_id = $3
+         LEFT JOIN LATERAL (
+           SELECT a.technician_profile_id, t.user_id
+             FROM wo.job_assignments a
+             JOIN wo.jobs j
+               ON j.tenant_id = a.tenant_id AND j.id = a.job_id
+              AND j.deleted_at IS NULL
+             JOIN tech.technician_profiles t
+               ON t.tenant_id = a.tenant_id AND t.id = a.technician_profile_id
+              AND t.deleted_at IS NULL
+              AND t.is_active
+            WHERE a.tenant_id = wo.work_orders.tenant_id
+              AND j.work_order_id = wo.work_orders.id
+              -- LIVE assignment: the table is append-then-close, so an open
+              -- valid_to is the fact, not a status anyone maintains.
+              AND a.valid_to IS NULL
+            ORDER BY a.valid_from DESC, a.id DESC
+            LIMIT 1
+         ) AS assignment ON true
+        WHERE tenant_id = $1 AND company_id = $2
+          -- NULL is "every branch of the company", which only a caller the
+          -- policies impose no branch narrowing on can reach.
+          AND ($3::uuid[] IS NULL OR branch_id = ANY($3::uuid[]))
           AND deleted_at IS NULL
           AND ($4::text IS NULL OR state = $4)
           AND ($5::text IS NULL OR kind = $5)
@@ -704,19 +910,56 @@ export class WorkOrderRepository extends Repository {
                     FROM veh.plate_history ph
                    WHERE ph.tenant_id = wo.work_orders.tenant_id
                      AND ph.vehicle_id = wo.work_orders.vehicle_id
-                     AND ph.plate_normalized LIKE '%' || $13::text || '%'))
+                     AND ph.plate_normalized LIKE '%' || $13::text || '%' ESCAPE '\\'))
              OR ($14::text <> '' AND EXISTS (
                   SELECT 1
                     FROM veh.vehicles v
                    WHERE v.tenant_id = wo.work_orders.tenant_id
                      AND v.id = wo.work_orders.vehicle_id
-                     AND v.vin_normalized LIKE '%' || $14::text || '%'))))
+                     AND v.vin_normalized LIKE '%' || $14::text || '%' ESCAPE '\\'))))
+          -- Owner directive P1-32-PRE-OD-UX. Each flag is FALSE when the caller
+          -- did not ask, so an unasked filter contributes nothing; each one that
+          -- IS asked is backed by a column or a row the schema really keeps.
+          AND ($16::uuid IS NULL OR EXISTS (
+                SELECT 1
+                  FROM wo.job_assignments a
+                  JOIN wo.jobs j
+                    ON j.tenant_id = a.tenant_id AND j.id = a.job_id
+                   AND j.deleted_at IS NULL
+                 WHERE a.tenant_id = wo.work_orders.tenant_id
+                   AND j.work_order_id = wo.work_orders.id
+                   AND a.technician_profile_id = $16::uuid
+                   AND a.valid_to IS NULL))
+          AND (NOT $17::boolean OR parts_forward_state <> 'none')
+          AND (NOT $18::boolean OR EXISTS (
+                SELECT 1
+                  FROM wo.additional_work_requests r
+                 WHERE r.tenant_id = wo.work_orders.tenant_id
+                   AND r.work_order_id = wo.work_orders.id
+                   -- Every other read of this table filters the tombstone, and a
+                   -- withdrawn request must not pin a work order in a queue
+                   -- called "awaiting approval" forever.
+                   AND r.deleted_at IS NULL
+                   AND r.state = 'pending'))
+          -- awaitingQuality. The ids are resolved by the QUALITY module, which
+          -- owns that schema, and bound here as an array: a correlated EXISTS
+          -- would make this layer a second reader of another module's table, and
+          -- the foundation rule forbids the schema reference itself rather than
+          -- only the import, so hiding the same SQL behind a helper would not
+          -- satisfy it. NULL means the caller did not ask; an EMPTY array means it
+          -- asked and nothing in this scope qualifies, which must match nothing.
+          AND ($19::uuid[] IS NULL OR id = ANY($19::uuid[]))
+          AND ($20::text[] IS NULL OR state = ANY($20::text[]))
+          -- The caller asked assignedToMe and resolves to no technician profile.
+          -- FALSE and not an empty id list, because "no profile" and "no filter"
+          -- are the same absence and must not be the same answer.
+          AND NOT $21::boolean
           ${keyset.predicate}
         ${keyset.order}
         ${keyset.limitClause}`,
       [...values, ...keyset.values]
     );
-    const rows: WorkOrderRow[] = result.rows.map((row) => ({
+    const rows: WorkOrderBoardRow[] = result.rows.map((row) => ({
       id: row.id,
       companyId: row.company_id,
       branchId: row.branch_id,
@@ -729,6 +972,9 @@ export class WorkOrderRepository extends Repository {
       openedAt: row.opened_at,
       createdBy: row.created_by,
       recordVersion: row.record_version,
+      assignedTechnicianProfileId: row.assigned_technician_profile_id,
+      assignedTechnicianUserId: row.assigned_technician_user_id,
+      completedAt: row.completed_at,
     }));
     return buildPage(rows, page, WORK_ORDER_LIST_ORDER, (row) => ({
       sortValue: row.openedAt.toISOString(),
@@ -2459,5 +2705,80 @@ export class WorkOrderRepository extends Repository {
       technicianProfileId: row.technician_profile_id,
       activeCount: row.active_count,
     }));
+  }
+  /**
+   * The board facts for ONE work order (Owner directive, P1-32-PRE-OD-UX).
+   *
+   * The detail read publishes the same row the board does — the screen types
+   * itself against one shape and `p1-29-w3-work-order-detail` holds the payload
+   * to it — so it needs the same two facts, for a single id.
+   *
+   * ONE statement, and deliberately the SAME shape as the list query rather than
+   * a second way of asking: the identical `LEFT JOIN LATERAL` picks the newest
+   * live assignment together with its register row, and the identical `CASE`
+   * dates the completion only while the order is actually in a terminal state.
+   * Two spellings of "who is on this car" is how a detail screen and a board come
+   * to disagree about the same work order.
+   *
+   * `terminalStates` is resolved by the SERVICE from the live catalogue and
+   * passed down, for the reason the list passes it: joining `wo.work_order_states`
+   * here would put the platform/tenant precedence in a second place.
+   */
+  async boardFactsFor(
+    db: DbHandle,
+    workOrderId: string,
+    terminalStates: readonly string[]
+  ): Promise<{
+    readonly assignedTechnicianProfileId: string | null;
+    readonly assignedTechnicianUserId: string | null;
+    readonly completedAt: Date | null;
+  } | null> {
+    const context = this.assertContext(db);
+    const row = await this.runOne<{
+      assigned_technician_profile_id: string | null;
+      assigned_technician_user_id: string | null;
+      completed_at: Date | null;
+    }>(
+      db,
+      `SELECT assignment.technician_profile_id AS assigned_technician_profile_id,
+              assignment.user_id               AS assigned_technician_user_id,
+              (CASE
+                 WHEN $3::text[] IS NOT NULL AND wo.work_orders.state = ANY($3::text[])
+                 THEN (SELECT max(h.occurred_at)
+                         FROM wo.work_order_status_history h
+                        WHERE h.tenant_id = wo.work_orders.tenant_id
+                          AND h.work_order_id = wo.work_orders.id
+                          AND h.to_state = ANY($3::text[]))
+                 ELSE NULL
+               END)                            AS completed_at
+         FROM wo.work_orders
+         LEFT JOIN LATERAL (
+           SELECT a.technician_profile_id, t.user_id
+             FROM wo.job_assignments a
+             JOIN wo.jobs j
+               ON j.tenant_id = a.tenant_id AND j.id = a.job_id
+              AND j.deleted_at IS NULL
+             JOIN tech.technician_profiles t
+               ON t.tenant_id = a.tenant_id AND t.id = a.technician_profile_id
+              AND t.deleted_at IS NULL
+              AND t.is_active
+            WHERE a.tenant_id = wo.work_orders.tenant_id
+              AND j.work_order_id = wo.work_orders.id
+              AND a.valid_to IS NULL
+            ORDER BY a.valid_from DESC, a.id DESC
+            LIMIT 1
+         ) AS assignment ON true
+        WHERE wo.work_orders.tenant_id = $1
+          AND wo.work_orders.id = $2
+          AND wo.work_orders.deleted_at IS NULL`,
+      [context.principal.tenantId, workOrderId, [...terminalStates]]
+    );
+    return row === null
+      ? null
+      : {
+          assignedTechnicianProfileId: row.assigned_technician_profile_id,
+          assignedTechnicianUserId: row.assigned_technician_user_id,
+          completedAt: row.completed_at,
+        };
   }
 }

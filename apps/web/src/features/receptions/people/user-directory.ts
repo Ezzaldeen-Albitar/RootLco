@@ -30,6 +30,8 @@
  *   - `iam.user-detail` — one account by id, the same fields. This is the one
  *     the actor-name resolution spends.
  *   - `iam.auth-session` — the session bootstrap, which registers the SAME code.
+ *   - `iam.working-context-read` — the caller's own companies and branches,
+ *     which registers it for the same reason: it describes the caller to itself.
  *
  * The third entry decides how this reads. `GET /auth/session` requires
  * `iam.user.read`, so **every operator who can load the application at all
@@ -54,6 +56,11 @@ export const USER_DIRECTORY_OPERATIONS = Object.freeze([
   'iam.user-list',
   'iam.user-detail',
   'iam.auth-session',
+  // The caller's OWN directory-class read (Owner directive, P1-32-PRE-OD-UX):
+  // which companies and branches this operator may work in. It registers the
+  // same code for the same reason `iam.auth-session` does — it describes the
+  // caller to itself and discloses nothing the caller does not already hold.
+  'iam.working-context-read',
 ]);
 
 /**

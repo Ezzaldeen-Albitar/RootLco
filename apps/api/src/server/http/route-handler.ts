@@ -44,8 +44,10 @@ import {
   requireScopeClaimInTenant,
   requireScopeTargetInTenant,
   requireScopedPermissions,
+  resolveAuthorizedBranches,
   type AuthorizationTarget,
   type ScopeAuthorizer,
+  type BranchScopeResolver,
 } from '../auth/authorization';
 import { requireFeature } from '../auth/entitlement';
 import type { RegisteredOperation } from '../auth/operation-registry';
@@ -108,6 +110,21 @@ export interface HandlerInput {
    * operation's own declaration rather than restating it.
    */
   readonly authorizeScope: ScopeAuthorizer;
+  /**
+   * The branches of one company this caller may run this operation in (Owner
+   * directive, P1-32-PRE-OD-UX).
+   *
+   * What the branch-optional reads call when the caller names a company and no
+   * branch. `undefined` means "every branch of that company"; a list means
+   * exactly those; a caller with none is refused with the same document the
+   * other scope refusals carry. See `resolveAuthorizedBranches` for why a
+   * company-only target cannot answer this on its own.
+   *
+   * Bound to the operation for the same reason `authorizeScope` is: the
+   * permission codes stay in `defineOperation` and the refusal carries the
+   * operation's own declared codes.
+   */
+  readonly authorizedBranches: BranchScopeResolver;
   /**
    * Resolves the scope a BODY-SCOPED create claims, and refuses it when the
    * caller cannot see it inside its own tenant (CC-56, applying CC-14 § 2).
@@ -443,6 +460,10 @@ export async function handleOperation<T>(
               // and reopen P1-18-A-01 through this very API.
               authorizeScope: (target: AuthorizationTarget) =>
                 requireScopedPermissions(db, operation, target),
+              // Bound to the same operation and the same handle, so it can
+              // never answer for a declaration other than this one's.
+              authorizedBranches: (companyId: string) =>
+                resolveAuthorizedBranches(db, operation, companyId),
               // Bound to the same `operation` and the same handle, so the refusal
               // it raises carries the declared codes and runs inside this
               // transaction — a scope claim refused after a partial write would
@@ -526,6 +547,14 @@ async function handlePublic<T>(
     // caller, and returning "allowed" would be the dangerous reading.
     authorizeScope: () => {
       throw new Error(`Operation ${operation.id} is public and cannot authorize a scope`);
+    },
+    // Same argument once more, and the throw matters MORE here than above: the
+    // resolver's ordinary answer is a branch list, so a stub returning `[]`
+    // would look like a working narrowing and quietly empty every page, while
+    // one returning `undefined` would admit every branch in the tenant. Neither
+    // is a decision.
+    authorizedBranches: () => {
+      throw new Error(`Operation ${operation.id} is public and cannot resolve a branch scope`);
     },
     // Same argument: a public operation has no tenant to resolve a claim inside,
     // so asking is a coding error and answering "visible" would be the dangerous

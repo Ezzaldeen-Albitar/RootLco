@@ -47,6 +47,7 @@ import {
   runtimeAppPool,
 } from './helpers';
 import { __setPrimaryPoolForTests } from '@/server/db/pool';
+import { __resetRateLimitForTests } from '@/server/http/rate-limit';
 import {
   StaticClaimsAuthenticator,
   __resetAuthenticatorForTests,
@@ -86,6 +87,14 @@ const COMPANY_B1 = 'c1150000-0000-4000-8000-0000000000b1';
 const BRANCH_B1 = 'c1150000-0000-4000-8000-0000000000b2';
 /** A second branch of the same company, for the isolation split. */
 const BRANCH_A2 = 'c1150000-0000-4000-8000-0000000000a2';
+/**
+ * A third branch of COMPANY_A1 and a second company of TENANT_A, added with the
+ * Owner directive (P1-32-PRE-OD-UX) so the branch-union read has something it
+ * must NOT return and a company it must refuse outright.
+ */
+const BRANCH_A3 = 'c1150000-0000-4000-8000-0000000000a3';
+const COMPANY_A2 = 'c1150000-0000-4000-8000-0000000000a4';
+const BRANCH_A4 = 'c1150000-0000-4000-8000-0000000000a5';
 
 const ROLE_FULL = 'c1150000-0000-4000-8000-000000000101';
 const USER_FULL = 'c1150000-0000-4000-8000-000000000102';
@@ -148,6 +157,11 @@ const FULL_PERMISSIONS = [
   'rec.reception.convert',
   'rec.reception.read',
   'iam.sensitive.view',
+  // Owner directive P1-32-PRE-OD-UX. The search box's NAME and PHONE arms read
+  // `crm.*`, so they are switched off for a caller that does not work with
+  // customers at all. A receptionist who searches the board by customer name
+  // does, and this is the shape that principal really has.
+  'crm.customer.read',
 ];
 
 interface Item {
@@ -257,21 +271,33 @@ async function newVehicle(tenantId = TENANT_A): Promise<string> {
 
 /** Opens a reception through the real check-in route. Leaves it `opened`, RV 1. */
 async function openReception(
-  overrides: { readonly evSocPercent?: number; readonly fuelLevelId?: string } = {}
+  overrides: {
+    readonly evSocPercent?: number;
+    readonly fuelLevelId?: string;
+    /** Which branch to receive into. Defaults to BRANCH_A1. */
+    readonly branchId?: string;
+    /** Which partner requested the service. Defaults to PARTNER_A. */
+    readonly serviceRequesterPartnerId?: string;
+  } = {}
 ): Promise<{ id: string; vehicleId: string }> {
   const vehicleId = await newVehicle();
+  const {
+    branchId: intoBranch = BRANCH_A1,
+    serviceRequesterPartnerId = PARTNER_A,
+    ...rest
+  } = overrides;
   const response = await CREATE_RECEPTION(
     new Request(R, {
       method: 'POST',
       headers: { 'content-type': 'application/json', 'idempotency-key': crypto.randomUUID() },
       body: JSON.stringify({
         companyId: COMPANY_A1,
-        branchId: BRANCH_A1,
+        branchId: intoBranch,
         vehicleId,
         receivingEmployeeId: USER_FULL,
-        serviceRequesterPartnerId: PARTNER_A,
+        serviceRequesterPartnerId,
         origin: { kind: 'walk_in' },
-        ...overrides,
+        ...rest,
       }),
     })
   );
@@ -426,7 +452,8 @@ beforeAll(async () => {
             ('rec.reception.approve','rec','Approve a reception visit for work','high',$1),
             ('rec.reception.convert','rec','Convert an approved reception into a work order','high',$1),
             ('rec.reception.read','rec','Read reception visits, parties, authorizations, condition evidence and custody history','low',$1),
-            ('veh.vehicle.read','veh','Search and read vehicles in the caller tenant','low',$1)
+            ('veh.vehicle.read','veh','Search and read vehicles in the caller tenant','low',$1),
+            ('crm.customer.read','crm','Search and read customers in the tenant','low',$1)
      ON CONFLICT (permission_code) DO NOTHING`,
     [USER_A]
   );
@@ -435,6 +462,23 @@ beforeAll(async () => {
     `INSERT INTO org.branches (id, tenant_id, company_id, branch_code, name, timezone_name, created_by)
      VALUES ($1,$2,$3,'branch_a2_read','Fixture Branch A2 Read','UTC',$4) ON CONFLICT (id) DO NOTHING`,
     [BRANCH_A2, TENANT_A, COMPANY_A1, USER_A]
+  );
+  // The third branch and the second company the branch-union read is measured
+  // against (Owner directive, P1-32-PRE-OD-UX).
+  await admin.query(
+    `INSERT INTO org.branches (id, tenant_id, company_id, branch_code, name, timezone_name, created_by)
+     VALUES ($1,$2,$3,'branch_a3_read','Fixture Branch A3 Read','UTC',$4) ON CONFLICT (id) DO NOTHING`,
+    [BRANCH_A3, TENANT_A, COMPANY_A1, USER_A]
+  );
+  await admin.query(
+    `INSERT INTO org.legal_companies (id, tenant_id, company_code, legal_name, base_currency_code, created_by)
+     VALUES ($1,$2,'company_a2_read','Fixture Company A2 Read','USD',$3) ON CONFLICT (id) DO NOTHING`,
+    [COMPANY_A2, TENANT_A, USER_A]
+  );
+  await admin.query(
+    `INSERT INTO org.branches (id, tenant_id, company_id, branch_code, name, timezone_name, created_by)
+     VALUES ($1,$2,$3,'branch_a4_read','Fixture Branch A4 Read','UTC',$4) ON CONFLICT (id) DO NOTHING`,
+    [BRANCH_A4, TENANT_A, COMPANY_A2, USER_A]
   );
   await admin.query(
     `INSERT INTO org.legal_companies (id, tenant_id, company_code, legal_name, base_currency_code, created_by)
@@ -567,7 +611,13 @@ beforeAll(async () => {
   __setPrimaryPoolForTests(runtime);
 });
 
-afterEach(() => __resetAuthenticatorForTests());
+afterEach(() => {
+  __resetAuthenticatorForTests();
+  // `rec.reception-list` carries the `expensive-read` policy and the Owner
+  // directive cases (P1-32-PRE-OD-UX) each make several list calls; without this
+  // a later case answers 429 and the failure reads as a broken filter.
+  __resetRateLimitForTests();
+});
 afterAll(async () => {
   __setPrimaryPoolForTests(undefined);
   if (runtime) await runtime.end();
@@ -1139,7 +1189,10 @@ describe('the branch board', () => {
 
     const row = (page.items ?? []).find((item) => item.id === first.id);
     expect(row).toBeDefined();
+    // `branchId` joined the row with the Owner directive (P1-32-PRE-OD-UX):
+    // the page may now span several branches, so every row names its own.
     expect(Object.keys(row ?? {}).sort()).toEqual([
+      'branchId',
       'custodyAcceptedAt',
       'custodyReleasedAt',
       'displayNumber',
@@ -1150,6 +1203,7 @@ describe('the branch board', () => {
       'vehicleDisplayNumber',
       'vehicleId',
     ]);
+    expect(row?.branchId).toBe(BRANCH_A1);
     expect(row?.recordVersion).toBe(1);
 
     // The status filter narrows to the vocabulary value asked for, and an
@@ -1162,5 +1216,294 @@ describe('the branch board', () => {
     expect(
       (await listReceptions(`?companyId=${COMPANY_A1}&branchId=${BRANCH_A1}&status=bogus`)).status
     ).toBe(422);
+  });
+});
+
+// ===========================================================================
+// The branch-optional board (Owner directive, P1-32-PRE-OD-UX)
+//
+// Omitting `branchId` asks for every branch of the company the caller may read.
+// The falsifiable case is USER_ELSEWHERE, which holds `rec.reception.read`
+// scoped to BRANCH_A2 and a DECOY grant in BRANCH_A1 carrying an unrelated
+// permission. Row-level security unions both branches, so a union built from the
+// policy alone would hand back BRANCH_A1's visits; the page must contain only
+// BRANCH_A2's, because that is the only branch where the caller holds the code
+// this operation declares.
+// ===========================================================================
+describe('the branch-optional board', () => {
+  it('omitting branchId returns the authorized branches and nothing from a third', async () => {
+    authAs(SUBJ_FULL);
+    const inA1 = await openReception();
+    const inA2 = await openReception({ branchId: BRANCH_A2 });
+    const inA3 = await openReception({ branchId: BRANCH_A3 });
+
+    // The unrestricted caller sees all three: `undefined` really does mean
+    // every branch of the company, so the narrowing below is not an artefact of
+    // an empty tenant.
+    const all = await listReceptions(`?companyId=${COMPANY_A1}&limit=100`);
+    expect(all.status).toBe(200);
+    const allIds = (((await all.json()) as PageBody).items ?? []).map((item) => item.id);
+    expect(allIds).toEqual(expect.arrayContaining([inA1.id, inA2.id, inA3.id]));
+
+    // The branch-narrowed caller sees ONLY the branch its read code covers.
+    authAs(SUBJ_ELSEWHERE);
+    const narrowed = await listReceptions(`?companyId=${COMPANY_A1}&limit=100`);
+    expect(narrowed.status).toBe(200);
+    const rows = ((await narrowed.json()) as PageBody).items ?? [];
+    const ids = rows.map((item) => item.id);
+    expect(ids).toContain(inA2.id);
+    // BRANCH_A1 is inside the caller's RLS reach through the decoy grant, so
+    // this is the assertion that fails if the union is taken from the policy
+    // instead of from a per-branch permission decision.
+    expect(ids).not.toContain(inA1.id);
+    expect(ids).not.toContain(inA3.id);
+    // Every row names its own branch, which is what makes a multi-branch page
+    // readable at all.
+    expect(rows.every((item) => item.branchId === BRANCH_A2)).toBe(true);
+  });
+
+  it('a branchId the caller does not hold is refused exactly as before', async () => {
+    authAs(SUBJ_ELSEWHERE);
+    const tampered = await listReceptions(`?companyId=${COMPANY_A1}&branchId=${BRANCH_A1}`);
+    expect(tampered.status).toBe(403);
+    expect(((await tampered.json()) as PageBody).code).toBe('ERR-IAM-001');
+  });
+
+  it('a company none of the caller branches belong to is refused, not answered empty', async () => {
+    authAs(SUBJ_ELSEWHERE);
+    const other = await listReceptions(`?companyId=${COMPANY_A2}&limit=100`);
+    // A refusal and not an empty page: an empty page would report that the
+    // second company has no visits, which is a fact this caller may not learn.
+    expect(other.status).toBe(403);
+    expect(((await other.json()) as PageBody).code).toBe('ERR-IAM-001');
+  });
+});
+
+// ===========================================================================
+// The free-text box and the date window (Owner directive, P1-32-PRE-OD-UX)
+//
+// Five arms, one box. Each case below types what a person at a counter actually
+// types — a name, a phone number off an Arabic keypad, a plate written with
+// spaces, a plate written in Arabic letters, a VIN in lower case — and asserts
+// the same visit comes back, because the fragment is folded by exactly the rule
+// the stored column was folded by.
+//
+// The negative cases matter as much: a fragment that matches nothing returns an
+// empty page rather than the branch, and a one-character fragment is refused at
+// the edge rather than answered with a page that says nothing.
+// ===========================================================================
+describe('the reception search box', () => {
+  const SEARCH_PARTNER = 'c1150000-0000-4000-8000-0000000000e1';
+  const SEARCH_PARTNER_NAME = 'Munira Al-Khatib';
+  /** Stored as ASCII digits; the TAIL is what a person quotes. */
+  const SEARCH_PHONE = '962790112233';
+  /** A Latin plate, stored with a space the normaliser strips. */
+  const PLATE_LATIN = 'AB 1234';
+  /** An Arabic-letter plate with Arabic-Indic digits: both survive the fold. */
+  const PLATE_ARABIC = 'ا ب ٥٦٧٨';
+
+  let namedVisitId = '';
+  let namedVehicleId = '';
+  let arabicPlateVisitId = '';
+  let decoyVisitId = '';
+
+  beforeAll(async () => {
+    // The reception number sequence, provisioned so the REAL check-in path
+    // allocates one. `ReceptionService` guards the allocation with
+    // `isProvisioned` and leaves `display_number` NULL for a tenant that has no
+    // sequence — which is correct behaviour and also means the reference arm of
+    // the search box is unexercised unless the fixture provisions it. Stamping a
+    // number onto the row afterwards would test the SQL and not the product.
+    await admin.query(
+      `INSERT INTO shared.number_sequences
+         (tenant_id, sequence_code, prefix_template, next_value, pad_width, created_by)
+       VALUES ($1,'reception_visit','RCP-',1,6,$2)
+       ON CONFLICT ON CONSTRAINT uq_number_sequences_scope DO NOTHING`,
+      [TENANT_A, USER_A]
+    );
+    await asAdminTx(TENANT_A, async (client) => {
+      await client.query(
+        `INSERT INTO crm.business_partners (id, tenant_id, party_type, display_name, lifecycle_status, created_by)
+         VALUES ($1,$2,'individual',$3,'active',$4) ON CONFLICT (id) DO NOTHING`,
+        [SEARCH_PARTNER, TENANT_A, SEARCH_PARTNER_NAME, USER_A]
+      );
+      await client.query(
+        `INSERT INTO crm.contact_points
+           (tenant_id, partner_id, channel, normalized_value, raw_value, is_primary, created_by)
+         VALUES ($1,$2,'mobile',$3,$3,true,$4)`,
+        [TENANT_A, SEARCH_PARTNER, SEARCH_PHONE, USER_A]
+      );
+    });
+
+    authAs(SUBJ_FULL);
+    const named = await openReception({ serviceRequesterPartnerId: SEARCH_PARTNER });
+    namedVisitId = named.id;
+    namedVehicleId = named.vehicleId;
+    const arabic = await openReception();
+    arabicPlateVisitId = arabic.id;
+    // The visit no arm may reach: a different party, a different vehicle, no plate.
+    decoyVisitId = (await openReception()).id;
+
+    await asAdminTx(TENANT_A, async (client) => {
+      await client.query(
+        `INSERT INTO veh.plate_history
+           (tenant_id, vehicle_id, country_code, plate_raw, valid_from, created_by)
+         VALUES ($1,$2,'JO',$3,current_date,$5), ($1,$4,'JO',$6,current_date,$5)`,
+        [TENANT_A, namedVehicleId, PLATE_LATIN, arabic.vehicleId, USER_A, PLATE_ARABIC]
+      );
+    });
+  });
+
+  /** The ids on the page for one box, as the full-permission caller. */
+  async function search(box: string): Promise<readonly unknown[]> {
+    authAs(SUBJ_FULL);
+    const response = await listReceptions(
+      `?companyId=${COMPANY_A1}&branchId=${BRANCH_A1}&limit=100&q=${encodeURIComponent(box)}`
+    );
+    expect(response.status).toBe(200);
+    return (((await response.json()) as PageBody).items ?? []).map((item) => item.id);
+  }
+
+  it('finds the visit by part of the customer name, folded', async () => {
+    const ids = await search('khatib');
+    expect(ids).toContain(namedVisitId);
+    expect(ids).not.toContain(decoyVisitId);
+  });
+
+  it('finds the visit by a phone tail typed in Arabic-Indic digits', async () => {
+    // The last seven digits of SEARCH_PHONE in Arabic-Indic numerals.
+    // `normalizePhoneDigits` folds them to ASCII before the suffix comparison,
+    // so a number read off an Arabic keypad reaches the same contact point.
+    const ids = await search('٠١١٢٢٣٣');
+    expect(ids).toContain(namedVisitId);
+    expect(ids).not.toContain(decoyVisitId);
+  });
+
+  it('finds the visit by a Latin plate however the spaces and case fall', async () => {
+    for (const typed of ['ab1234', 'AB  1234', 'ab-1234']) {
+      const ids = await search(typed);
+      expect(ids, typed).toContain(namedVisitId);
+      expect(ids, typed).not.toContain(decoyVisitId);
+    }
+  });
+
+  it('finds the visit by an Arabic-letter plate whose digits were typed either way', async () => {
+    // `veh.normalize_plate` folds the digits and strips the separators and leaves
+    // every other character alone, so an Arabic plate is matched by an Arabic
+    // fragment — with the digits in either numeral system.
+    for (const typed of ['ا ب ٥٦٧٨', 'اب5678']) {
+      const ids = await search(typed);
+      expect(ids, typed).toContain(arabicPlateVisitId);
+      expect(ids, typed).not.toContain(decoyVisitId);
+    }
+  });
+
+  it('finds the visit by a VIN fragment in lower case', async () => {
+    const vin = await scalar(`SELECT vin_normalized AS value FROM veh.vehicles WHERE id = $1`, [
+      namedVehicleId,
+    ]);
+    expect(vin).not.toBeNull();
+    const ids = await search((vin as string).slice(-8).toLowerCase());
+    expect(ids).toContain(namedVisitId);
+    expect(ids).not.toContain(decoyVisitId);
+  });
+
+  it('finds the visit by part of its reception number', async () => {
+    const number = await scalar(
+      `SELECT display_number AS value FROM rec.reception_visits WHERE id = $1`,
+      [namedVisitId]
+    );
+    // Asserted rather than skipped when absent: an arm that silently stops being
+    // exercised is the shape of evidence this repository keeps finding hollow.
+    expect(number).not.toBeNull();
+    const ids = await search((number as string).slice(-4));
+    expect(ids).toContain(namedVisitId);
+  });
+
+  it('switches the NAME and PHONE arms off for a caller who may not read customers', async () => {
+    // Both arms read `crm.business_partners` / `crm.contact_points`, so an
+    // operation declaring only `rec.reception.read` must not become a way of
+    // probing the customer register. The gate is `crm.customer.read` held
+    // ANYWHERE in the tenant, and it can only ever DISABLE arms.
+    //
+    // Proved in both directions on one principal, because a one-sided assertion
+    // would pass just as well against a box that never matched anything.
+    expect(await search('khatib')).toContain(namedVisitId);
+    expect(await search('٠١١٢٢٣٣')).toContain(namedVisitId);
+
+    const permission = await admin.query<{ id: string }>(
+      `DELETE FROM iam.role_permissions
+        WHERE tenant_id = $1 AND role_id = $2
+          AND permission_id = (SELECT id FROM iam.permissions WHERE permission_code = 'crm.customer.read')
+        RETURNING permission_id AS id`,
+      [TENANT_A, ROLE_FULL]
+    );
+    expect(permission.rowCount, 'the fixture never granted crm.customer.read').toBe(1);
+    try {
+      // The two customer arms now match nothing...
+      expect(await search('khatib')).toEqual([]);
+      expect(await search('٠١١٢٢٣٣')).toEqual([]);
+      // ...while the three arms about the VEHICLE and the PAPERWORK — which the
+      // caller is already reading — are untouched. That is what makes this a gate
+      // on customer data rather than on the search box.
+      expect(await search('ab1234')).toContain(namedVisitId);
+    } finally {
+      await admin.query(
+        `INSERT INTO iam.role_permissions (tenant_id, role_id, permission_id, effect, created_by)
+         SELECT $1,$2,id,'allow',$3 FROM iam.permissions WHERE permission_code = 'crm.customer.read'
+         ON CONFLICT DO NOTHING`,
+        [TENANT_A, ROLE_FULL, USER_A]
+      );
+    }
+    expect(await search('khatib')).toContain(namedVisitId);
+  });
+
+  it('a box of LIKE metacharacters matches nothing instead of every visit', async () => {
+    // `normalizePlate` keeps every character it does not fold, `%` and `_`
+    // included, so an unescaped fragment would make the plate arm `LIKE '%%%%'`
+    // and hand back the whole branch — the disabled-arm design defeated by two
+    // characters.
+    for (const box of ['%%', '__', '%_%']) {
+      expect(await search(box), box).toEqual([]);
+    }
+  });
+
+  it('returns an empty page for a box nothing matches', async () => {
+    expect(await search('zzzznosuchcustomer')).toEqual([]);
+  });
+
+  it('refuses a one-character box at the edge (422), never an empty page', async () => {
+    authAs(SUBJ_FULL);
+    const tooShort = await listReceptions(`?companyId=${COMPANY_A1}&branchId=${BRANCH_A1}&q=a`);
+    expect(tooShort.status).toBe(422);
+    const tooLong = await listReceptions(
+      `?companyId=${COMPANY_A1}&branchId=${BRANCH_A1}&q=${'a'.repeat(81)}`
+    );
+    expect(tooLong.status).toBe(422);
+  });
+
+  it('bounds the board by the custody instant and refuses an inverted window', async () => {
+    authAs(SUBJ_FULL);
+    const wide = await listReceptions(
+      `?companyId=${COMPANY_A1}&branchId=${BRANCH_A1}&limit=100` +
+        `&from=2000-01-01T00:00:00.000Z&to=2999-01-01T00:00:00.000Z`
+    );
+    expect(wide.status).toBe(200);
+    expect((((await wide.json()) as PageBody).items ?? []).length).toBeGreaterThan(0);
+
+    // A window that closed long before this run holds none of its visits.
+    const past = await listReceptions(
+      `?companyId=${COMPANY_A1}&branchId=${BRANCH_A1}&limit=100` +
+        `&from=2000-01-01T00:00:00.000Z&to=2000-01-02T00:00:00.000Z`
+    );
+    expect(past.status).toBe(200);
+    expect(((await past.json()) as PageBody).items ?? []).toEqual([]);
+
+    // Inverted: refused, because an empty page would read as "no visits".
+    const inverted = await listReceptions(
+      `?companyId=${COMPANY_A1}&branchId=${BRANCH_A1}` +
+        `&from=2026-02-01T00:00:00.000Z&to=2026-01-01T00:00:00.000Z`
+    );
+    expect(inverted.status).toBe(422);
   });
 });

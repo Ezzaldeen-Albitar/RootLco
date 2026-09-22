@@ -39,6 +39,8 @@ import {
   type Page,
   type PageRequest,
 } from '@/server/db/pagination';
+import { searchFragment } from '@/server/db/search-predicate';
+import { NO_SEARCH_TERMS, type EntitySearchTerms } from '@/shared/text/search-terms';
 import { halfOpenLocalDayRange, type LocalDayPeriod } from '@/server/db/period';
 import type { ReceptionStatus } from '../domain/reception';
 
@@ -126,6 +128,14 @@ export interface ReceptionDetailRow {
 
 export interface ReceptionListEntry {
   readonly id: string;
+  /**
+   * The branch the visit was received in (Owner directive, P1-32-PRE-OD-UX).
+   *
+   * Added when `branchId` became an optional filter: a page that can now span
+   * several branches has to say which one each row is from, or the board reads
+   * as one branch's day with another branch's cars in it.
+   */
+  readonly branchId: string;
   readonly displayNumber: string | null;
   readonly receptionStatus: ReceptionStatus;
   readonly origin: 'appointment' | 'walk_in';
@@ -208,7 +218,30 @@ export interface ReceptionHistoryEntry {
 
 export interface ReceptionListFilter {
   readonly companyId: string;
-  readonly branchId: string;
+  /**
+   * Inclusive lower bound on `custody_accepted_at` (Owner directive,
+   * P1-32-PRE-OD-UX).
+   *
+   * `custody_accepted_at` and not `created_at`: the business fact a reception
+   * board is dated by is WHEN THE VEHICLE WAS TAKEN IN, which is also the column
+   * the list already orders on, so the filter and the ordering describe the same
+   * instant. A row-metadata timestamp would date the paperwork instead.
+   */
+  readonly from?: string | undefined;
+  /** Inclusive upper bound on `custody_accepted_at`. */
+  readonly to?: string | undefined;
+  /** One free-text box, already reduced by `toEntitySearchTerms`. */
+  readonly search?: EntitySearchTerms | undefined;
+  /**
+   * The branches the page may cover (Owner directive, P1-32-PRE-OD-UX).
+   *
+   * `undefined` means every branch of the company — which is only ever reached
+   * by a caller row-level security imposes no branch narrowing on, because the
+   * route resolves it through `authorizedBranches` and that refuses rather than
+   * returning an empty set. A list is the branches the caller was authorized in,
+   * so it is a NARROWING of the policy and never a widening of it.
+   */
+  readonly branchIds?: readonly string[] | undefined;
   readonly status?: string | undefined;
   readonly vehicleId?: string | undefined;
 }
@@ -449,18 +482,39 @@ export class ReceptionReadRepository extends Repository {
     const values: unknown[] = [
       context.principal.tenantId,
       filter.companyId,
-      filter.branchId,
+      filter.branchIds === undefined ? null : [...filter.branchIds],
       filter.status ?? null,
       filter.vehicleId ?? null,
+      filter.from ?? null,
+      filter.to ?? null,
     ];
+    // The search values are bound BEFORE the keyset's, so the keyset's first
+    // placeholder accounts for both.
+    const search = searchFragment(
+      filter.search ?? NO_SEARCH_TERMS,
+      {
+        tenant: 'rv.tenant_id',
+        vehicleId: 'rv.vehicle_id',
+        // Any role on the visit, not only the service requester: someone looking
+        // for a customer wants every car that customer is connected to.
+        partnerIds: `SELECT r.partner_id
+                       FROM rec.reception_party_roles r
+                      WHERE r.tenant_id = rv.tenant_id
+                        AND r.reception_visit_id = rv.id
+                        AND r.deleted_at IS NULL`,
+        reference: 'rv.display_number',
+      },
+      values.length + 1
+    );
     const keyset = keysetFragment(
       page,
       { sort: 'rv.custody_accepted_at', id: 'rv.id' },
       RECEPTION_LIST_ORDERING,
-      values.length + 1
+      values.length + search.values.length + 1
     );
     const result = await this.run<{
       id: string;
+      branch_id: string;
       display_number: string | null;
       reception_status: ReceptionStatus;
       appointment_id: string | null;
@@ -472,25 +526,34 @@ export class ReceptionReadRepository extends Repository {
       custody_accepted_at_cursor: string;
     }>(
       db,
-      `SELECT rv.id, rv.display_number, rv.reception_status, rv.appointment_id,
+      `SELECT rv.id, rv.branch_id, rv.display_number, rv.reception_status, rv.appointment_id,
               rv.vehicle_id, v.display_number AS vehicle_display_number,
               rv.custody_accepted_at, rv.custody_released_at, rv.record_version,
               ${cursorTimestamp('rv.custody_accepted_at')} AS custody_accepted_at_cursor
          FROM rec.reception_visits rv
          LEFT JOIN veh.vehicles v ON v.tenant_id = rv.tenant_id AND v.id = rv.vehicle_id
-        WHERE rv.tenant_id = $1 AND rv.company_id = $2 AND rv.branch_id = $3
+        WHERE rv.tenant_id = $1 AND rv.company_id = $2
+          -- NULL is "every branch of the company", which only a caller the
+          -- policies impose no branch narrowing on can reach; the route refuses
+          -- rather than sending an empty set, so this can never widen a page.
+          AND ($3::uuid[] IS NULL OR rv.branch_id = ANY($3::uuid[]))
           AND rv.deleted_at IS NULL
           AND ($4::text IS NULL OR rv.reception_status = $4)
           AND ($5::uuid IS NULL OR rv.vehicle_id = $5)
+          -- Closed on both ends, over the instant custody was accepted.
+          AND ($6::timestamptz IS NULL OR rv.custody_accepted_at >= $6)
+          AND ($7::timestamptz IS NULL OR rv.custody_accepted_at <= $7)
+          ${search.predicate}
           ${keyset.predicate}
         ${keyset.order}
         ${keyset.limitClause}`,
-      [...values, ...keyset.values]
+      [...values, ...search.values, ...keyset.values]
     );
     return buildPageWithCursors(
       result.rows.map((row) => ({
         item: {
           id: row.id,
+          branchId: row.branch_id,
           displayNumber: row.display_number,
           receptionStatus: row.reception_status,
           origin: (row.appointment_id !== null ? 'appointment' : 'walk_in') as

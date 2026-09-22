@@ -38,6 +38,7 @@ import {
   scopeTargetOption,
   searchParamsToObject,
 } from '@/server/http/validation';
+import { MAX_SEARCH_FRAGMENT, MIN_SEARCH_FRAGMENT } from '@/shared/text/search-terms';
 import {
   MAX_SOC_PERCENT,
   MAX_WALK_IN_NOTE,
@@ -128,16 +129,59 @@ export async function POST(request: Request): Promise<Response> {
 // decides against the branch actually read (P1-18-A-01).
 // ---------------------------------------------------------------------------
 
+/**
+ * `branchId` is OPTIONAL (Owner directive, P1-32-PRE-OD-UX).
+ *
+ * Omitting it asks for every branch of the company the caller may read, which is
+ * how a person who works in three branches sees their day without picking one
+ * three times. It is not a widening: `authorizedBranches` decides the set, one
+ * branch at a time, against this operation's own declared codes, and refuses a
+ * caller that holds none of them — see `resolveAuthorizedBranches`. Naming a
+ * branch is unchanged and is still refused exactly as before, by the
+ * `scopeTargetOption` target below.
+ */
 const ListQuery = z
   .object({
     companyId: schemas.uuid,
-    branchId: schemas.uuid,
+    branchId: schemas.uuid.optional(),
     status: z.enum(RECEPTION_STATUSES).optional(),
     vehicleId: schemas.uuid.optional(),
+    /**
+     * Inclusive bounds on the instant custody was accepted (Owner directive,
+     * P1-32-PRE-OD-UX) — the column the board already orders on, so the filter
+     * and the ordering date the same business fact.
+     */
+    from: z.string().datetime({ offset: true }).optional(),
+    to: z.string().datetime({ offset: true }).optional(),
+    /**
+     * One free-text box (Owner directive, P1-32-PRE-OD-UX): part of a party's
+     * name, the tail of their phone number, part of any plate the vehicle has
+     * carried, part of its VIN, or part of the reception number. It narrows a
+     * board the caller is already entitled to and never widens one.
+     */
+    q: z.string().min(MIN_SEARCH_FRAGMENT).max(MAX_SEARCH_FRAGMENT).optional(),
     cursor: schemas.cursor.optional(),
     limit: schemas.limit.optional(),
   })
-  .strict();
+  .strict()
+  .superRefine((query, context) => {
+    if (
+      query.from !== undefined &&
+      query.to !== undefined &&
+      Date.parse(query.to) < Date.parse(query.from)
+    ) {
+      // An inverted range matches nothing by construction, so answering it with
+      // an empty page would read as "no visits" rather than "bad request" — the
+      // rule `apt.appointment-list` already applies to its own window. Compared
+      // as INSTANTS: both values carry an explicit offset, and a lexical
+      // comparison of offset-bearing ISO strings is wrong in both directions.
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['to'],
+        message: 'to must not be earlier than from',
+      });
+    }
+  });
 
 export const RECEPTION_LIST_OPERATION = defineOperation({
   id: 'rec.reception-list',
@@ -149,6 +193,7 @@ export const RECEPTION_LIST_OPERATION = defineOperation({
   scope: 'branch',
   auditClass: 'none',
   rateLimitPolicy: 'expensive-read',
+  branchNarrowing: 'authorized-union',
   cacheCategory: 'never',
 });
 
@@ -157,17 +202,45 @@ export async function GET(request: Request): Promise<Response> {
   return handleOperation(
     RECEPTION_LIST_OPERATION,
     request,
-    async ({ db }) => ({
+    async ({ db, authorizedBranches }) => {
       // Parsed INSIDE the handler so a malformed query is rendered as the
       // shared problem document rather than an unhandled 500.
-      body: await receptionModule().receptionRead.listReceptions(
-        db,
-        parseOrFail(ListQuery, raw, 'query')
-      ),
-    }),
-    // `scopeTargetOption` can only make authorization STRICTER: a malformed or
-    // absent pair yields no target and the schema above then refuses. Tenant is
-    // never accepted from the client; it comes from the resolved principal.
+      const query = parseOrFail(ListQuery, raw, 'query');
+      // A named branch was already decided by the `scopeTargetOption` target
+      // below, so it is passed through unchanged; an omitted one is resolved
+      // here, inside the transaction, against the caller's own grants.
+      const branchIds =
+        query.branchId === undefined ? await authorizedBranches(query.companyId) : [query.branchId];
+      return {
+        body: await receptionModule().receptionRead.listReceptions(db, {
+          companyId: query.companyId,
+          branchIds,
+          status: query.status,
+          vehicleId: query.vehicleId,
+          from: query.from,
+          to: query.to,
+          q: query.q,
+          cursor: query.cursor,
+          limit: query.limit,
+        }),
+      };
+    },
+    // The pre-handler target, and what now stands behind it.
+    //
+    // `scopeTargetOption` reads the pair out of not-yet-validated input and
+    // yields a target only when BOTH are well-formed UUIDs, so it can only ever
+    // make authorization stricter (P1-18-A-01).
+    //
+    // What it can no longer do is carry the whole decision. Since the Owner
+    // directive (P1-32-PRE-OD-UX) an absent `branchId` is LEGAL, so an absent
+    // pair yields no target and this pre-handler check degrades to the
+    // scope-blind `iam.has_permission` — it is NOT refused by the schema any
+    // more, and a comment saying so would be describing the old contract. The
+    // decision for that request is made inside the transaction by
+    // `resolveAuthorizedBranches`, which evaluates this operation's declared
+    // codes once per candidate branch of the named company and refuses a caller
+    // that holds none. Tenant is never accepted from the client either way; it
+    // comes from the resolved principal.
     scopeTargetOption(raw)
   );
 }

@@ -114,9 +114,9 @@ One minimal actor is seeded per set rather than per operation, so the table belo
 | `sal.delivery-checklist-template-rename`      | `apps/api/src/app/api/v1/delivery-checklist-templates/[templateId]/route.ts:87`                            |
 | `sal.delivery-checklist-template-status-set`  | `apps/api/src/app/api/v1/delivery-checklist-templates/[templateId]/status/route.ts:48`                     |
 | `sal.delivery-complete`                       | `apps/api/src/app/api/v1/deliveries/[deliveryId]/completion/route.ts:76`                                   |
-| `sal.delivery-create`                         | `apps/api/src/app/api/v1/deliveries/route.ts:62`                                                           |
+| `sal.delivery-create`                         | `apps/api/src/app/api/v1/deliveries/route.ts:63`                                                           |
 | `sal.delivery-eligibility-read`               | `apps/api/src/app/api/v1/deliveries/[deliveryId]/eligibility/route.ts:47`                                  |
-| `sal.delivery-list`                           | `apps/api/src/app/api/v1/deliveries/route.ts:129`                                                          |
+| `sal.delivery-list`                           | `apps/api/src/app/api/v1/deliveries/route.ts:144`                                                          |
 | `sal.delivery-read`                           | `apps/api/src/app/api/v1/deliveries/[deliveryId]/route.ts:64`                                              |
 | `sal.delivery-readiness-list`                 | `apps/api/src/app/api/v1/delivery-readiness/route.ts:94`                                                   |
 | `sal.delivery-receiver-read`                  | `apps/api/src/app/api/v1/deliveries/[deliveryId]/authorized-receiver/route.ts:136`                         |
@@ -128,7 +128,7 @@ One minimal actor is seeded per set rather than per operation, so the table belo
 | `wty.warranty-coverage-status-set`            | `apps/api/src/app/api/v1/warranty-policies/[policyId]/coverage-windows/[coverageId]/status/route.ts:56`    |
 | `wty.warranty-detail`                         | `apps/api/src/app/api/v1/warranties/[warrantyId]/route.ts:45`                                              |
 | `wty.warranty-generate`                       | `apps/api/src/app/api/v1/deliveries/[deliveryId]/warranties/route.ts:57`                                   |
-| `wty.warranty-list`                           | `apps/api/src/app/api/v1/warranties/route.ts:87`                                                           |
+| `wty.warranty-list`                           | `apps/api/src/app/api/v1/warranties/route.ts:102`                                                          |
 | `wty.warranty-policy-create`                  | `apps/api/src/app/api/v1/warranty-policies/route.ts:211`                                                   |
 | `wty.warranty-policy-list`                    | `apps/api/src/app/api/v1/warranty-policies/route.ts:85`                                                    |
 | `wty.warranty-policy-read`                    | `apps/api/src/app/api/v1/warranty-policies/[policyId]/route.ts:43`                                         |

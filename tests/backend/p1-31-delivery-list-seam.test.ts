@@ -61,6 +61,7 @@ import {
 } from './helpers';
 import { establishP1_19Fixtures, type Principal } from './p1-19-helpers';
 import {
+  BRANCH_A2,
   BRANCH_A9,
   COMPANY_A9,
   SAL_FULL,
@@ -78,6 +79,7 @@ import {
 } from './p1-22-helpers';
 import { __setPrimaryPoolForTests } from '@/server/db/pool';
 import { __resetAuthenticatorForTests } from '@/server/context/principal';
+import { __resetRateLimitForTests } from '@/server/http/rate-limit';
 import {
   DELIVERY_LIST_OPERATION,
   GET as LIST_DELIVERIES,
@@ -87,6 +89,24 @@ import { GET as READ_DELIVERY } from '@/app/api/v1/deliveries/[deliveryId]/route
 
 let admin: Pool;
 let runtime: Pool;
+
+/**
+ * The Owner-directive fixtures (P1-32-PRE-OD-UX).
+ *
+ * A THIRD branch of the same company, a delivery in it and one in BRANCH_A2, and
+ * a searchable customer with a name, a phone and a plate. `OD_BRANCH` is added to
+ * `SAL_PERMISSION_ELSEWHERE`'s grant so that principal holds TWO authorized
+ * branches while BRANCH_A1 stays inside its RLS union and outside its authority —
+ * which is what makes the branch-optional page falsifiable.
+ */
+const OD_BRANCH = 'f1220000-0000-4000-8000-0000000000d3';
+const OD_PARTNER = 'f1220000-0000-4000-8000-0000000000d4';
+const OD_SEARCH_NAME = 'Rawan Al-Masri';
+const OD_SEARCH_PHONE = '962795443322';
+const OD_SEARCH_PLATE = 'EF 7722';
+let OD_IN_A2: OpenedDelivery;
+let OD_IN_A3: OpenedDelivery;
+let OD_SEARCHABLE: OpenedDelivery;
 
 /**
  * The operation id, written as a literal.
@@ -322,6 +342,90 @@ beforeAll(async () => {
     branchId: BRANCH_A9,
   });
 
+  // --- Owner directive P1-32-PRE-OD-UX -------------------------------------
+  // Owner directive P1-32-PRE-OD-UX: the search box's NAME and PHONE arms read
+  // `crm.*` and are switched off for a caller that does not work with customers.
+  // Granted on this principal's own role, additively, so no shared fixture moves.
+  await admin.query(
+    `INSERT INTO iam.role_permissions (tenant_id, role_id, permission_id, effect, created_by)
+     SELECT $1,$2,id,'allow',$3 FROM iam.permissions WHERE permission_code = 'crm.customer.read'
+     ON CONFLICT DO NOTHING`,
+    [TENANT_A, SAL_READER.roleId, USER_A]
+  );
+  await admin.query(
+    `INSERT INTO iam.role_permissions (tenant_id, role_id, permission_id, effect, created_by)
+     SELECT $1,$2,id,'allow',$3 FROM iam.permissions WHERE permission_code = 'crm.customer.read'
+     ON CONFLICT DO NOTHING`,
+    [TENANT_A, SAL_FULL.roleId, USER_A]
+  );
+  await admin.query(
+    `INSERT INTO iam.role_permissions (tenant_id, role_id, permission_id, effect, created_by)
+     SELECT $1,$2,id,'allow',$3 FROM iam.permissions WHERE permission_code = 'crm.customer.read'
+     ON CONFLICT DO NOTHING`,
+    [TENANT_A, SAL_PERMISSION_ELSEWHERE.roleId, USER_A]
+  );
+  await admin.query(
+    `INSERT INTO org.branches (id, tenant_id, company_id, branch_code, name, timezone_name, created_by)
+     VALUES ($1,$2,$3,'branch_od_del','Fixture Branch OD Delivery','UTC',$4)
+     ON CONFLICT (id) DO NOTHING`,
+    [OD_BRANCH, TENANT_A, FIRST.chain.companyId, USER_A]
+  );
+  // A SECOND authorized branch for the permission-elsewhere principal. Additive:
+  // no existing case in this file names OD_BRANCH, so the isolation assertions
+  // above are untouched.
+  await admin.query(
+    `INSERT INTO iam.grant_scopes (tenant_id, grant_id, scope_type, company_id, branch_id, created_by)
+     SELECT $1,$2,'branch',$3,$4,$5
+      WHERE NOT EXISTS (
+        SELECT 1 FROM iam.grant_scopes
+         WHERE tenant_id = $1 AND grant_id = $2 AND branch_id = $4)`,
+    [TENANT_A, SAL_PERMISSION_ELSEWHERE.grantId, FIRST.chain.companyId, OD_BRANCH, USER_A]
+  );
+  OD_IN_A2 = await openDelivery('p131_od_a2', {
+    companyId: FIRST.chain.companyId,
+    branchId: BRANCH_A2,
+  });
+  OD_IN_A3 = await openDelivery('p131_od_a3', {
+    companyId: FIRST.chain.companyId,
+    branchId: OD_BRANCH,
+  });
+  // The searchable delivery: its originating visit names a partner with a
+  // distinctive name and a phone, and its vehicle carries a plate.
+  OD_SEARCHABLE = await openDelivery('p131_od_search');
+  await admin.query(
+    `INSERT INTO crm.business_partners (id, tenant_id, party_type, display_name, lifecycle_status, created_by)
+     VALUES ($1,$2,'individual',$3,'active',$4) ON CONFLICT (id) DO NOTHING`,
+    [OD_PARTNER, TENANT_A, OD_SEARCH_NAME, USER_A]
+  );
+  await admin.query(
+    `INSERT INTO crm.contact_points
+       (tenant_id, partner_id, channel, normalized_value, raw_value, is_primary, created_by)
+     SELECT $1,$2,'mobile',$3,$3,true,$4
+      WHERE NOT EXISTS (
+        SELECT 1 FROM crm.contact_points WHERE tenant_id = $1 AND partner_id = $2)`,
+    [TENANT_A, OD_PARTNER, OD_SEARCH_PHONE, USER_A]
+  );
+  await admin.query(
+    `INSERT INTO rec.reception_party_roles
+       (tenant_id, company_id, branch_id, reception_visit_id, partner_id, relationship_role,
+        valid_from, created_by)
+     VALUES ($1,$2,$3,$4,$5,'service_requester',now(),$6)`,
+    [
+      TENANT_A,
+      OD_SEARCHABLE.chain.companyId,
+      OD_SEARCHABLE.chain.branchId,
+      OD_SEARCHABLE.chain.visitId,
+      OD_PARTNER,
+      USER_A,
+    ]
+  );
+  await admin.query(
+    `INSERT INTO veh.plate_history
+       (tenant_id, vehicle_id, country_code, plate_raw, valid_from, created_by)
+     VALUES ($1,$2,'JO',$3,current_date,$4)`,
+    [TENANT_A, OD_SEARCHABLE.chain.vehicleId, OD_SEARCH_PLATE, USER_A]
+  );
+
   SCOPE = { companyId: FIRST.chain.companyId, branchId: FIRST.chain.branchId };
   // The fixtures are only comparable if they really landed in one scope.
   expect(SECOND.chain.companyId).toBe(SCOPE.companyId);
@@ -331,7 +435,13 @@ beforeAll(async () => {
   expect(ELSEWHERE.chain.branchId).not.toBe(SCOPE.branchId);
 }, 240_000);
 
-afterEach(() => __resetAuthenticatorForTests());
+afterEach(() => {
+  __resetAuthenticatorForTests();
+  // `sal.delivery-list` carries the `expensive-read` policy and the Owner
+  // directive cases (P1-32-PRE-OD-UX) each make several list calls; without this
+  // a later case answers 429 and the failure reads as a broken filter.
+  __resetRateLimitForTests();
+});
 
 afterAll(async () => {
   __setPrimaryPoolForTests(undefined);
@@ -665,5 +775,96 @@ describe('the list pages', () => {
     });
     expect(crossed.status).toBe(400);
     expect((await problemOf(crossed)).code).toBe('ERR-PAG-001');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The branch-optional list and the search box (Owner directive, P1-32-PRE-OD-UX)
+// ---------------------------------------------------------------------------
+
+describe('the branch-optional delivery list', () => {
+  it('omitting branchId returns the two authorized branches and nothing from the third', async () => {
+    // `SAL_PERMISSION_ELSEWHERE` holds every sal code in BRANCH_A2 and, through
+    // this suite's extra scope row, in OD_BRANCH — and its widening grant puts
+    // BRANCH_A1 inside the permission-blind allowed-branch union without giving
+    // it any authority there. A page built from row-level security alone returns
+    // BRANCH_A1's deliveries; a page built from a per-branch permission decision
+    // returns exactly the other two.
+    authAs(SAL_PERMISSION_ELSEWHERE);
+    const response = await listDeliveries({ companyId: SCOPE.companyId, limit: 100 });
+    expect(response.status).toBe(200);
+    const rows = (await bodyOf<DeliveryListBody>(response)).items;
+    const ids = rows.map((row) => row.id);
+
+    expect(ids).toEqual(expect.arrayContaining([OD_IN_A2.deliveryId, OD_IN_A3.deliveryId]));
+    // The assertion that fails if the union comes from the policy.
+    expect(ids).not.toContain(FIRST.deliveryId);
+    expect(ids).not.toContain(SECOND.deliveryId);
+    expect(rows.every((row) => row.branchId === BRANCH_A2 || row.branchId === OD_BRANCH)).toBe(
+      true
+    );
+
+    // The complement, so the absence above is the narrowing rather than a
+    // fixture that never landed: an unrestricted caller naming the same company
+    // sees all three branches.
+    authAs(SAL_FULL);
+    const everything = await listDeliveries({ companyId: SCOPE.companyId, limit: 100 });
+    expect(everything.status).toBe(200);
+    const allIds = (await bodyOf<DeliveryListBody>(everything)).items.map((row) => row.id);
+    expect(allIds).toEqual(
+      expect.arrayContaining([FIRST.deliveryId, OD_IN_A2.deliveryId, OD_IN_A3.deliveryId])
+    );
+  });
+
+  it('a branchId the caller holds no code in is still refused', async () => {
+    authAs(SAL_PERMISSION_ELSEWHERE);
+    const response = await listDeliveries(SCOPE);
+    expect(response.status).toBe(403);
+    expect((await problemOf(response)).code).toBe('ERR-IAM-001');
+  });
+
+  it('a company none of the caller branches belong to is refused, not answered empty', async () => {
+    authAs(SAL_PERMISSION_ELSEWHERE);
+    const response = await listDeliveries({ companyId: COMPANY_A9, limit: 100 });
+    // A refusal and not an empty page: an empty page would report that the other
+    // company has no deliveries, which is not this caller's to learn.
+    expect(response.status).toBe(403);
+    expect((await problemOf(response)).code).toBe('ERR-IAM-001');
+  });
+});
+
+describe('the delivery search box', () => {
+  /** The ids on the page for one box, as the branch reader. */
+  async function search(box: string): Promise<readonly string[]> {
+    authAs(SAL_READER);
+    const response = await listDeliveries({ ...SCOPE, limit: 100, q: box });
+    expect(response.status).toBe(200);
+    return (await bodyOf<DeliveryListBody>(response)).items.map((row) => row.id);
+  }
+
+  it('finds the delivery by part of the customer name on its originating visit', async () => {
+    const ids = await search(OD_SEARCH_NAME.slice(0, 6));
+    expect(ids).toContain(OD_SEARCHABLE.deliveryId);
+    expect(ids).not.toContain(SECOND.deliveryId);
+  });
+
+  it('finds the delivery by a phone tail typed in Arabic-Indic digits', async () => {
+    const ids = await search('٥٤٤٣٣٢٢');
+    expect(ids).toContain(OD_SEARCHABLE.deliveryId);
+    expect(ids).not.toContain(SECOND.deliveryId);
+  });
+
+  it('finds the delivery by the plate of the vehicle it handed over', async () => {
+    for (const typed of ['ef7722', 'EF  7722']) {
+      const ids = await search(typed);
+      expect(ids, typed).toContain(OD_SEARCHABLE.deliveryId);
+      expect(ids, typed).not.toContain(SECOND.deliveryId);
+    }
+  });
+
+  it('returns an empty page for a box nothing matches and refuses a one-character box', async () => {
+    expect(await search('zzzznosuchcustomer')).toEqual([]);
+    authAs(SAL_READER);
+    expect((await listDeliveries({ ...SCOPE, q: 'a' })).status).toBe(422);
   });
 });

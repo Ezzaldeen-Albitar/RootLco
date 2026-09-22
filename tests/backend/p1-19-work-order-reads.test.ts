@@ -34,7 +34,9 @@ import {
   BRANCH_A1,
   COMPANY_A1,
   SUBJECT_UNPERMITTED,
+  TENANT_A,
   TENANT_B,
+  USER_A,
   adminPool,
   cleanBackendFixtures,
   ensureBackendFixtures,
@@ -44,7 +46,9 @@ import {
 import {
   BRANCH_A2,
   BRANCH_B1,
+  COMPANY_A2,
   COMPANY_B1,
+  TECH_A1,
   FULL,
   PERMISSION_ELSEWHERE,
   READER,
@@ -56,9 +60,12 @@ import {
   createOpenWorkOrder,
   createWorkOrder,
   establishP1_19Fixtures,
+  establishTechnicianFixtures,
 } from './p1-19-helpers';
 import { __setPrimaryPoolForTests } from '@/server/db/pool';
 import { __resetAuthenticatorForTests } from '@/server/context/principal';
+import { POST as CLOSE_WORK_ORDER } from '@/app/api/v1/work-orders/[workOrderId]/closure/route';
+import { __resetRateLimitForTests } from '@/server/http/rate-limit';
 import { GET as LIST } from '@/app/api/v1/work-orders/route';
 import { GET as DETAIL } from '@/app/api/v1/work-orders/[workOrderId]/route';
 import { GET as HISTORY } from '@/app/api/v1/work-orders/[workOrderId]/history/route';
@@ -114,11 +121,23 @@ beforeAll(async () => {
   await cleanBackendFixtures(admin);
   await ensureBackendFixtures(admin);
   await establishP1_19Fixtures(admin);
+  // The technician profiles the board's assignment case names. `wo.job_assignments`
+  // carries `fk_job_assignments_technician`, so a profile has to exist before an
+  // assignment can; this suite read work orders only until the board grew a
+  // technician column.
+  await establishTechnicianFixtures();
   runtime = runtimeAppPool(6);
   __setPrimaryPoolForTests(runtime);
 });
 
-afterEach(() => __resetAuthenticatorForTests());
+afterEach(() => {
+  __resetAuthenticatorForTests();
+  // `wo.work-order-list` carries the `expensive-read` policy, and the board
+  // cases added by the Owner directive (P1-32-PRE-OD-UX) each make several list
+  // calls. Without this the LAST case in the file starts answering 429 and the
+  // failure reads as a broken filter rather than as an exhausted budget.
+  __resetRateLimitForTests();
+});
 afterAll(async () => {
   __setPrimaryPoolForTests(undefined);
   if (runtime) await runtime.end();
@@ -286,8 +305,19 @@ describe('wo.work-order-list', () => {
   });
 
   it('refuses a missing scope, an unknown parameter, a bad cursor and a timezone-less date', async () => {
+    // The COMPANY is what may never be omitted. `branchId` became optional with
+    // the Owner directive (P1-32-PRE-OD-UX) — a company on its own now asks for
+    // every branch of it the caller may read — so this assertion moved from the
+    // pair to the company alone rather than being dropped. A request naming
+    // neither still has no scope to be judged against and is refused.
     authAs(READER);
-    expect((await list({ companyId: COMPANY_A1 })).status).toBe(422);
+    expect((await list({ branchId: BRANCH_A1 })).status).toBe(422);
+    authAs(READER);
+    expect((await list({})).status).toBe(422);
+    // And the company alone is now a legitimate request, which is what makes the
+    // two refusals above about the missing company and not about the pair.
+    authAs(READER);
+    expect((await list({ companyId: COMPANY_A1, limit: '1' })).status).toBe(200);
     authAs(READER);
     expect((await board({ unexpected: 'x' })).status).toBe(422);
     authAs(READER);
@@ -533,5 +563,495 @@ describe('wo.work-order-history', () => {
     expect((await history(created.workOrderId)).status).toBe(403);
     authAs(SCOPED_ELSEWHERE);
     expect((await history(created.workOrderId)).status).toBe(404);
+  });
+});
+
+// ===========================================================================
+// The branch-optional board (Owner directive, P1-32-PRE-OD-UX)
+//
+// `branchId` is now optional beside a company. The falsifiable principal is
+// PERMISSION_ELSEWHERE: it holds `wo.work_order.read` scoped to BRANCH_A2 and a
+// WIDENING grant in BRANCH_A1 carrying `org.tenant.read` and no work-order
+// authority at all. `app.branch_ids` is the permission-blind union of both, so a
+// page built from row-level security alone would hand back BRANCH_A1's board —
+// the P1-18-A-01 shape. The union must instead be built from a per-branch
+// permission decision, and these cases are what tells the two apart.
+// ===========================================================================
+describe('wo.work-order-list — the branch-optional board', () => {
+  it('omitting branchId returns the caller authorized branches and nothing from a third', async () => {
+    const inA1 = await createWorkOrder();
+    const inA2 = await createWorkOrder({ branchId: BRANCH_A2 });
+
+    // An unrestricted reader is answered for the whole company, so the
+    // narrowing below cannot be an artefact of an empty second branch.
+    authAs(READER);
+    const everything = await list({ companyId: COMPANY_A1, limit: '100' });
+    expect(everything.status).toBe(200);
+    const everyId = (await page(everything)).items.map((item) => item.id);
+    expect(everyId).toEqual(expect.arrayContaining([inA1.workOrderId, inA2.workOrderId]));
+
+    // The narrowed caller is answered for BRANCH_A2 alone.
+    authAs(PERMISSION_ELSEWHERE);
+    const narrowed = await list({ companyId: COMPANY_A1, limit: '100' });
+    expect(narrowed.status).toBe(200);
+    const ids = (await page(narrowed)).items.map((item) => item.id);
+    expect(ids).toContain(inA2.workOrderId);
+    // The assertion that fails if the branch union is taken from the policy
+    // rather than from a decision about this operation's own code.
+    expect(ids).not.toContain(inA1.workOrderId);
+  });
+
+  it('a branchId the caller holds no read in is still refused', async () => {
+    authAs(PERMISSION_ELSEWHERE);
+    const tampered = await list({ companyId: COMPANY_A1, branchId: BRANCH_A1 });
+    expect(tampered.status).toBe(403);
+    expect(((await tampered.json()) as { code: string }).code).toBe('ERR-IAM-001');
+  });
+
+  it('a company none of the caller branches belong to is refused, not answered empty', async () => {
+    authAs(PERMISSION_ELSEWHERE);
+    const other = await list({ companyId: COMPANY_A2, limit: '100' });
+    // A refusal, not an empty page: an empty page would tell this caller that
+    // the second company has no work orders, which is not its to learn.
+    expect(other.status).toBe(403);
+    expect(((await other.json()) as { code: string }).code).toBe('ERR-IAM-001');
+  });
+});
+
+// ===========================================================================
+// The enriched board row and its flags (Owner directive, P1-32-PRE-OD-UX)
+//
+// Every field and every filter here is backed by a column or a row the schema
+// really keeps. Three that were asked for are ABSENT, and the first case asserts
+// their absence rather than leaving it to a reader: `dueAt` (no promised or due
+// timestamp exists on `wo.work_orders` or anywhere beneath it), `approvalState`
+// (approval is recorded per additional-work request, not per work order) and
+// `deliveryReadiness` (nothing records it — it is derived from the state
+// catalogue). A key-set assertion is what catches one being added back later
+// without the schema to support it.
+// ===========================================================================
+describe('wo.work-order-list — the enriched board', () => {
+  /** One board row by id, as the current caller. */
+  async function boardRow(workOrderId: string): Promise<Record<string, unknown>> {
+    const response = await list({ companyId: COMPANY_A1, branchId: BRANCH_A1, limit: '100' });
+    expect(response.status).toBe(200);
+    const row = (await page(response)).items.find((item) => item.id === workOrderId);
+    expect(row, workOrderId).toBeDefined();
+    return row as unknown as Record<string, unknown>;
+  }
+
+  it('publishes the three recorded board fields and none of the three the schema cannot support', async () => {
+    const created = await createWorkOrder();
+
+    authAs(READER);
+    const row = await boardRow(created.workOrderId);
+    const keys = Object.keys(row);
+
+    // Present, because the schema records them.
+    expect(keys).toEqual(
+      expect.arrayContaining(['assignedTechnician', 'completedAt', 'qualityState'])
+    );
+    // Absent, because it does not. Asserted, not assumed.
+    expect(keys).not.toContain('dueAt');
+    expect(keys).not.toContain('approvalState');
+    expect(keys).not.toContain('deliveryReadiness');
+
+    // A freshly converted work order: nobody assigned, nothing finished, no QC.
+    expect(row.assignedTechnician).toBeNull();
+    expect(row.completedAt).toBeNull();
+    expect(row.qualityState).toBeNull();
+  });
+
+  it('names the technician holding the LIVE assignment and forgets them once it is closed', async () => {
+    const seeded = await createOpenWorkOrder();
+    const jobId = await admin
+      .query<{ id: string }>(
+        `INSERT INTO wo.jobs (tenant_id, company_id, branch_id, work_order_id, title, created_by)
+         VALUES ($1,$2,$3,$4,'Board fixture job',$5) RETURNING id`,
+        [TENANT_A, COMPANY_A1, BRANCH_A1, seeded.workOrderId, USER_A]
+      )
+      .then((result) => result.rows[0]?.id ?? '');
+    const assignmentId = await admin
+      .query<{ id: string }>(
+        `INSERT INTO wo.job_assignments
+           (tenant_id, company_id, branch_id, job_id, technician_profile_id, created_by)
+         VALUES ($1,$2,$3,$4,$5,$6) RETURNING id`,
+        [TENANT_A, COMPANY_A1, BRANCH_A1, jobId, TECH_A1, USER_A]
+      )
+      .then((result) => result.rows[0]?.id ?? '');
+
+    // WITHOUT `iam.user.read`: the assignment is still reported, with the id and
+    // no name. The assignment is a work-order fact; the person's NAME is the iam
+    // module's to withhold, and withholding it must not refuse the whole row.
+    authAs(READER);
+    const withheld = (await boardRow(seeded.workOrderId)).assignedTechnician as {
+      id: string;
+      displayName: string | null;
+    } | null;
+    expect(withheld?.id).toBe(TECH_A1);
+    expect(withheld?.displayName).toBeNull();
+
+    // WITH `iam.user.read`: the same row now carries the name, resolved through
+    // the iam directory in one statement for the whole page. Both halves are
+    // asserted because a field that is always null would pass the first on its
+    // own while the resolution was completely broken.
+    const NAME_ROLE = 'c1900000-0000-4000-8000-0000000003a1';
+    const NAME_GRANT = 'c1900000-0000-4000-8000-0000000003a2';
+    await admin.query(
+      `INSERT INTO iam.roles (id, tenant_id, role_code, name, created_by)
+       VALUES ($1,$2,'fx_p1_19_board_names','Board name reader',$3)
+       ON CONFLICT (id) DO NOTHING`,
+      [NAME_ROLE, TENANT_A, USER_A]
+    );
+    await admin.query(
+      `INSERT INTO iam.role_permissions (tenant_id, role_id, permission_id, effect, created_by)
+       SELECT $1,$2,id,'allow',$3 FROM iam.permissions WHERE permission_code = 'iam.user.read'
+       ON CONFLICT DO NOTHING`,
+      [TENANT_A, NAME_ROLE, USER_A]
+    );
+    await admin.query(
+      `INSERT INTO iam.role_grants
+         (id, tenant_id, user_id, role_id, scope_mode, status, granted_by, created_by)
+       VALUES ($1,$2,$3,$4,'unrestricted','active',$5,$5)
+       ON CONFLICT (id) DO NOTHING`,
+      [NAME_GRANT, TENANT_A, READER.userId, NAME_ROLE, USER_A]
+    );
+    try {
+      authAs(READER);
+      const named = (await boardRow(seeded.workOrderId)).assignedTechnician as {
+        id: string;
+        displayName: string | null;
+      } | null;
+      expect(named?.id).toBe(TECH_A1);
+      expect(named?.displayName).toBe('Fixture Technician');
+    } finally {
+      // Removed again so the rest of this file sees the principal it was written
+      // against: a grant left behind would silently widen every later case.
+      await admin.query('DELETE FROM iam.role_grants WHERE id = $1', [NAME_GRANT]);
+      await admin.query('DELETE FROM iam.role_permissions WHERE role_id = $1', [NAME_ROLE]);
+      await admin.query('DELETE FROM iam.roles WHERE id = $1', [NAME_ROLE]);
+    }
+
+    // `wo.job_assignments` is append-then-close: ending an assignment stamps
+    // `valid_to` and the ROW SURVIVES, so "currently assigned" has to follow the
+    // stamp rather than the row's existence.
+    await admin.query(
+      `UPDATE wo.job_assignments SET valid_to = now(), reason = 'board fixture' WHERE id = $1`,
+      [assignmentId]
+    );
+    authAs(READER);
+    expect((await boardRow(seeded.workOrderId)).assignedTechnician).toBeNull();
+  });
+
+  it('assignedToMe answers an EMPTY page for a caller who is not a technician', async () => {
+    await createWorkOrder();
+
+    authAs(READER);
+    // READER holds `wo.work_order.read` and has no technician profile. The answer
+    // is an empty page and never the whole board: "my work" must not widen to
+    // "everyone's" because the caller has no technician record.
+    const none = await list({
+      companyId: COMPANY_A1,
+      branchId: BRANCH_A1,
+      assignedToMe: 'true',
+      limit: '100',
+    });
+    expect(none.status).toBe(200);
+    expect((await page(none)).items).toEqual([]);
+
+    // The same caller without the flag still sees a board, so the empty page
+    // above is the filter working and not the read being broken.
+    authAs(READER);
+    const unfiltered = await list({ companyId: COMPANY_A1, branchId: BRANCH_A1, limit: '100' });
+    expect((await page(unfiltered)).items.length).toBeGreaterThan(0);
+  });
+
+  it('awaitingParts follows parts_forward_state and nothing else', async () => {
+    const waiting = await createWorkOrder();
+    const settled = await createWorkOrder();
+    await admin.query(`UPDATE wo.work_orders SET parts_forward_state = 'requested' WHERE id = $1`, [
+      waiting.workOrderId,
+    ]);
+
+    authAs(READER);
+    const response = await list({
+      companyId: COMPANY_A1,
+      branchId: BRANCH_A1,
+      awaitingParts: 'true',
+      limit: '100',
+    });
+    expect(response.status).toBe(200);
+    const ids = (await page(response)).items.map((item) => item.id);
+    expect(ids).toContain(waiting.workOrderId);
+    expect(ids).not.toContain(settled.workOrderId);
+  });
+
+  it('awaitingQuality follows a pending quality-control record', async () => {
+    const checking = await createWorkOrder();
+    const untouched = await createWorkOrder();
+    await admin.query(
+      `INSERT INTO qms.quality_control_records
+         (tenant_id, company_id, branch_id, work_order_id, overall_result, created_by)
+       VALUES ($1,$2,$3,$4,'pending',$5)`,
+      [TENANT_A, COMPANY_A1, BRANCH_A1, checking.workOrderId, USER_A]
+    );
+
+    authAs(READER);
+    const response = await list({
+      companyId: COMPANY_A1,
+      branchId: BRANCH_A1,
+      awaitingQuality: 'true',
+      limit: '100',
+    });
+    expect(response.status).toBe(200);
+    const ids = (await page(response)).items.map((item) => item.id);
+    expect(ids).toContain(checking.workOrderId);
+    expect(ids).not.toContain(untouched.workOrderId);
+
+    // The recorded result also reaches the row, rather than only the filter.
+    authAs(READER);
+    expect((await boardRow(checking.workOrderId)).qualityState).toBe('pending');
+  });
+
+  it('a flag sent as false does not behave as true', async () => {
+    const waiting = await createWorkOrder();
+    const settled = await createWorkOrder();
+    await admin.query(`UPDATE wo.work_orders SET parts_forward_state = 'requested' WHERE id = $1`, [
+      waiting.workOrderId,
+    ]);
+
+    authAs(READER);
+    // The literal-boolean schema exists for exactly this: `z.coerce.boolean()`
+    // makes every non-empty string true, so `awaitingParts=false` would silently
+    // turn the filter ON and hide the settled row.
+    const off = await list({
+      companyId: COMPANY_A1,
+      branchId: BRANCH_A1,
+      awaitingParts: 'false',
+      limit: '100',
+    });
+    expect(off.status).toBe(200);
+    const ids = (await page(off)).items.map((item) => item.id);
+    expect(ids).toContain(waiting.workOrderId);
+    expect(ids).toContain(settled.workOrderId);
+  });
+
+  it('an unknown flag value and an unknown flag are both refused', async () => {
+    authAs(READER);
+    expect(
+      (await list({ companyId: COMPANY_A1, branchId: BRANCH_A1, awaitingParts: 'yes' })).status
+    ).toBe(422);
+    expect(
+      (await list({ companyId: COMPANY_A1, branchId: BRANCH_A1, awaitingDelivery: 'true' })).status
+    ).toBe(422);
+  });
+});
+
+// ===========================================================================
+// The remaining board flags, and three defects found in review
+// (Owner directive, P1-32-PRE-OD-UX)
+// ===========================================================================
+describe('wo.work-order-list — the approval and delivery flags', () => {
+  /** One board row by id, as the current caller. */
+  async function row(workOrderId: string): Promise<Record<string, unknown>> {
+    const response = await list({ companyId: COMPANY_A1, branchId: BRANCH_A1, limit: '100' });
+    expect(response.status).toBe(200);
+    const found = (await page(response)).items.find((item) => item.id === workOrderId);
+    expect(found, workOrderId).toBeDefined();
+    return found as unknown as Record<string, unknown>;
+  }
+
+  /** The ids a single board flag returns. */
+  async function flagged(flag: string): Promise<readonly string[]> {
+    authAs(READER);
+    const response = await list({
+      companyId: COMPANY_A1,
+      branchId: BRANCH_A1,
+      [flag]: 'true',
+      limit: '100',
+    });
+    expect(response.status).toBe(200);
+    return (await page(response)).items.map((item) => item.id);
+  }
+
+  it('awaitingApproval follows a pending additional-work request', async () => {
+    const waiting = await createWorkOrder();
+    const untouched = await createWorkOrder();
+    await admin.query(
+      `INSERT INTO wo.additional_work_requests
+         (tenant_id, company_id, branch_id, work_order_id, summary, state, is_required, created_by)
+       VALUES ($1,$2,$3,$4,'Review fixture request','pending',false,$5)`,
+      [TENANT_A, COMPANY_A1, BRANCH_A1, waiting.workOrderId, USER_A]
+    );
+
+    const ids = await flagged('awaitingApproval');
+    expect(ids).toContain(waiting.workOrderId);
+    expect(ids).not.toContain(untouched.workOrderId);
+  });
+
+  it('a WITHDRAWN request no longer pins the work order in the approval queue', async () => {
+    const waiting = await createWorkOrder();
+    const requestId = await admin
+      .query<{ id: string }>(
+        `INSERT INTO wo.additional_work_requests
+           (tenant_id, company_id, branch_id, work_order_id, summary, state, is_required, created_by)
+         VALUES ($1,$2,$3,$4,'Review fixture withdrawn','pending',false,$5) RETURNING id`,
+        [TENANT_A, COMPANY_A1, BRANCH_A1, waiting.workOrderId, USER_A]
+      )
+      .then((result) => result.rows[0]?.id ?? '');
+    expect(await flagged('awaitingApproval')).toContain(waiting.workOrderId);
+
+    // Soft-deleted. Every other read of this table filters the tombstone, and a
+    // queue that did not would hold the order for ever with nothing to act on.
+    await admin.query(
+      `UPDATE wo.additional_work_requests SET deleted_at = now(), deleted_by = $2 WHERE id = $1`,
+      [requestId, USER_A]
+    );
+    expect(await flagged('awaitingApproval')).not.toContain(waiting.workOrderId);
+  });
+
+  /**
+   * Drives a work order all the way to the platform `closed` state.
+   *
+   * Through the REAL graph and the REAL closure operation, because neither can
+   * be gone around: `wo.work_orders.state` is guarded in the database so a direct
+   * UPDATE from `draft` is refused, and `closed` is reachable only through
+   * `/closure` — the generic transition refuses it with
+   * `closure_requires_closure_operation`.
+   *
+   * A tenant handover state was tried first and is IMPOSSIBLE:
+   * `ck_work_order_states_tenant_not_terminal` forbids a tenant row from being
+   * terminal, closed or a cancellation at all, so the closed, non-cancellation
+   * set is always exactly the platform's `closed`.
+   */
+  async function driveToClosed(workOrderId: string): Promise<void> {
+    const version = await advance(workOrderId, [
+      { toState: 'open' },
+      { toState: 'in_progress' },
+      { toState: 'qc_pending' },
+      { toState: 'ready_to_close' },
+    ]);
+    authAs(FULL);
+    const closed = await CLOSE_WORK_ORDER(
+      new Request(`http://localhost/api/v1/work-orders/${workOrderId}/closure`, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'if-match': `"${version}"`,
+          'idempotency-key': crypto.randomUUID(),
+        },
+        body: JSON.stringify({ toState: 'closed' }),
+      }),
+      { params: Promise.resolve({ workOrderId }) }
+    );
+    if (closed.status !== 200) {
+      throw new Error(`fixture closure failed with ${closed.status}: ${await closed.text()}`);
+    }
+  }
+
+  it('readyForDelivery matches a CLOSED order and never a cancelled one', async () => {
+    const finished = await createWorkOrder();
+    await driveToClosed(finished.workOrderId);
+    // `cancelled` is is_closed AND is_cancellation — the whole reason the queue
+    // cannot be built on `is_closed` alone: an abandoned job must never be
+    // offered for handover.
+    const abandoned = await createWorkOrder();
+    await advance(abandoned.workOrderId, [
+      { toState: 'cancelled', reason: 'review fixture abandonment' },
+    ]);
+    const stillOpen = await createWorkOrder();
+
+    const ids = await flagged('readyForDelivery');
+    expect(ids).toContain(finished.workOrderId);
+    expect(ids).not.toContain(abandoned.workOrderId);
+    expect(ids).not.toContain(stillOpen.workOrderId);
+  });
+
+  it('the closed, non-cancellation set a tenant can resolve is always the platform one', async () => {
+    // The review asked for "a tenant whose catalogue resolves no closed,
+    // non-cancellation state matches nothing". That tenant CANNOT EXIST, and the
+    // schema is where it is refused rather than the application: a tenant row may
+    // not be terminal, closed or a cancellation, and a tenant cannot delete a
+    // platform row. So the resolved set is always exactly {closed} and is never
+    // empty. Asserted here rather than left as a claim in a docblock, because the
+    // empty-set branch in the repository is unreachable and a reader is entitled
+    // to know why it is still written.
+    const refused = await admin
+      .query(
+        `INSERT INTO wo.work_order_states
+           (scope, tenant_id, code, name, is_terminal, is_closed, is_cancellation, created_by)
+         VALUES ('tenant',$1,'zz_review_closed','Tenant closed',true,true,false,$2)`,
+        [TENANT_A, USER_A]
+      )
+      .then(() => null)
+      .catch((error: unknown) => error);
+    expect(refused).not.toBeNull();
+    expect(String(refused)).toContain('ck_work_order_states_tenant_not_terminal');
+
+    const resolved = await admin.query<{ code: string }>(
+      `SELECT DISTINCT ON (code) code
+         FROM wo.work_order_states
+        WHERE (scope = 'platform' OR tenant_id = $1)
+          AND deleted_at IS NULL AND status = 'active'
+          AND is_closed AND NOT is_cancellation
+        ORDER BY code, (scope = 'tenant') DESC`,
+      [TENANT_A]
+    );
+    expect(resolved.rows.map((state) => state.code)).toEqual(['closed']);
+  });
+
+  it('completedAt dates a TERMINAL order from the ledger and stays null for an open one', async () => {
+    const abandoned = await createWorkOrder();
+    await advance(abandoned.workOrderId, [
+      { toState: 'cancelled', reason: 'review fixture completion' },
+    ]);
+    const stillOpen = await createWorkOrder();
+
+    authAs(READER);
+    const done = await row(abandoned.workOrderId);
+    // `cancelled` is terminal, so the ledger's transition into it dates the end
+    // of the work. There is no completed_at column; this is read from
+    // `wo.work_order_status_history`.
+    expect(done.completedAt).not.toBeNull();
+    expect(Date.parse(done.completedAt as string)).not.toBeNaN();
+
+    authAs(READER);
+    expect((await row(stillOpen.workOrderId)).completedAt).toBeNull();
+
+    // A REOPEN would be the other half of this — the ledger holds a terminal
+    // transition while the current state is not terminal, and `completedAt` must
+    // go back to null. It is NOT exercised here because the product cannot
+    // produce it: BR-WO-002 freezes a terminal state and the approved graph gives
+    // `closed` and `cancelled` no outbound edge, so there is no way to reopen a
+    // work order through any operation. The state check in the SQL is therefore
+    // defence against a tenant graph that adds a reopen edge, and is recorded as
+    // defence rather than claimed as a fixed defect with a live reproduction.
+  });
+});
+
+describe('wo.work-order-list — the search box cannot be turned into a wildcard', () => {
+  it('a box of LIKE metacharacters matches nothing instead of every row', async () => {
+    const present = await createWorkOrder();
+
+    authAs(READER);
+    const everything = await list({ companyId: COMPANY_A1, branchId: BRANCH_A1, limit: '100' });
+    expect((await page(everything)).items.length).toBeGreaterThan(0);
+
+    // `normalizePlate` keeps every character it does not fold, `%` and `_`
+    // included, so an unescaped fragment would make the plate arm `LIKE '%%%%'`
+    // and return the whole branch — the disabled-arm design defeated by two
+    // characters.
+    for (const box of ['%%', '__', '%_%']) {
+      const response = await list({
+        companyId: COMPANY_A1,
+        branchId: BRANCH_A1,
+        q: box,
+        limit: '100',
+      });
+      expect(response.status, box).toBe(200);
+      const ids = (await page(response)).items.map((item) => item.id);
+      expect(ids, box).not.toContain(present.workOrderId);
+      authAs(READER);
+    }
   });
 });
