@@ -217,11 +217,6 @@ export class ReceptionReadRepository extends Repository {
   protected readonly module = 'reception';
 
   /**
-   * The live visit's scope facts, or null. NOT `FOR UPDATE`: a read locks
-   * nothing. The service turns null into the uniform 404 and authorizes
-   * against the returned company and branch (P1-18-A-01).
-   */
-  /**
    * How many reception visits were OPENED in the period (Owner directive).
    *
    * ## Why this is an aggregate and not a page
@@ -274,6 +269,11 @@ export class ReceptionReadRepository extends Repository {
     return row?.total ?? 0;
   }
 
+  /**
+   * The live visit's scope facts, or null. NOT `FOR UPDATE`: a read locks
+   * nothing. The service turns null into the uniform 404 and authorizes
+   * against the returned company and branch (P1-18-A-01).
+   */
   async requireLiveVisit(
     db: DbHandle,
     receptionVisitId: string

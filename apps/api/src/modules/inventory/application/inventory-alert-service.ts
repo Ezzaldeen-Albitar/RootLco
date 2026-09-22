@@ -670,7 +670,13 @@ export class InventoryAlertService {
   }
 
   /**
-   * How many items are low in one branch (Owner directive — the dashboard).
+   * WHICH items are low in one branch (Owner directive — the dashboard).
+   *
+   * Ids rather than a count, because one item can raise several findings — a
+   * branch-wide level and a level on each shelf are three rows about one part —
+   * so a consumer reporting on more than one branch must be able to take the
+   * UNION rather than a sum. Publishing a number here would make double-counting
+   * the default and silent.
    *
    * NO authorization is performed here, and that is the opposite of what
    * `listLowStock` above does — so it is stated rather than left to be noticed.
@@ -682,14 +688,14 @@ export class InventoryAlertService {
    * behind a number, and the two would eventually disagree about which branch a
    * caller may count.
    *
-   * The count and the alert list share one SQL selection, so the dashboard's
-   * figure is the length of the list an operator would see if they opened it.
+   * The ids and the alert list share one SQL selection, so an item named here is
+   * an item an operator would find on the alert if they opened it.
    */
-  public async countLowStock(
+  public async lowStockItemIds(
     db: DbHandle,
     filter: { readonly companyId: string; readonly branchId: string }
-  ): Promise<number> {
-    return this.repository.countLowStock(db, filter);
+  ): Promise<readonly string[]> {
+    return this.repository.lowStockItemIds(db, filter);
   }
 
   /** Counted lines whose variance was not zero, on counts that were reconciled. */

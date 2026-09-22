@@ -156,6 +156,16 @@ export interface DashboardSections {
   readonly workOrdersByState: DashboardSection<readonly DashboardStateBucket[]>;
   readonly intakeCompletionTrend: DashboardSection<readonly DashboardTrendPoint[]>;
   readonly technicianWorkload: DashboardSection<readonly DashboardTechnicianLoad[]>;
+  /**
+   * Distinct ITEMS at or below their configured reorder level.
+   *
+   * Items, not findings: the inventory alert raises one row per applicable
+   * reorder level per branch, so a part with a branch level and two shelf levels
+   * is three rows, and the same part low in two branches is more again. This
+   * figure is the union, because "how many parts are running out" is the question
+   * a dashboard is asked. The alert list is therefore expected to be LONGER than
+   * this number, and that is not a disagreement between them.
+   */
   readonly lowStock: DashboardSection<number>;
   readonly pendingApprovalsCount: DashboardSection<number>;
   readonly overdue: DashboardSection<number>;
@@ -405,23 +415,42 @@ export class DashboardSummaryService extends ApplicationService {
   }
 
   /**
-   * How many items are low, across the resolved branches.
+   * How many distinct ITEMS are low, across the resolved branches.
    *
-   * One call per branch and the answers added. The inventory module's selection
-   * resolves reorder-level specificity against ONE branch, and widening it to an
-   * array would change which level wins for an item that has both a company-wide
-   * and a branch-specific one — a change to the alert rule rather than to the
-   * plumbing, and the alert and this figure must stay the same rule.
+   * ## A union, never a sum
+   *
+   * The inventory alert's unit is a FINDING — one row per applicable reorder
+   * level per branch — so one part can raise several: a branch-wide level plus a
+   * level on each of two shelves is three rows, and the same part low in two
+   * branches adds two more. Adding the per-branch answers would publish "5 items
+   * low" for a stock-room holding one empty bin, which is the wrong figure in the
+   * direction that causes an unnecessary order. The module therefore returns IDS
+   * and this collects them into a set, so the number is the count of parts a
+   * buyer would have to do something about.
+   *
+   * ## Still one call per branch
+   *
+   * The inventory selection resolves reorder-level specificity against ONE
+   * branch, and widening it to an array would change which level wins for an item
+   * that has both a company-wide and a branch-specific one — a change to the
+   * alert RULE rather than to the plumbing, and the alert and this figure must
+   * stay the same rule. Sequential rather than `Promise.all`, because every
+   * statement here runs on the one client the transaction holds.
    */
   private async lowStock(
     db: DbHandle,
     companyId: string,
     branchIds: readonly string[]
   ): Promise<number> {
-    let total = 0;
+    const items = new Set<string>();
     for (const branchId of branchIds) {
-      total += await inventoryModule().alerts.countLowStock(db, { companyId, branchId });
+      for (const itemId of await inventoryModule().alerts.lowStockItemIds(db, {
+        companyId,
+        branchId,
+      })) {
+        items.add(itemId);
+      }
     }
-    return total;
+    return items.size;
   }
 }

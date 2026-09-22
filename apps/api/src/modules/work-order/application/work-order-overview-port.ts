@@ -175,11 +175,32 @@ export class WorkOrderOverviewPort extends ApplicationService {
     return new Map(rows.map((row) => [row.localDay, row.total]));
   }
 
-  /** Each technician's current open-assignment load, by profile id. */
+  /**
+   * Each technician's LIVE open-assignment load, by profile id.
+   *
+   * "Live" is decided by the job's state and the work order's state, not by the
+   * assignment row alone: `wo.job_assignments.valid_to` is stamped only by a
+   * reassignment or a removal, so an assignment on a job finished last year is
+   * still an unended row. Both state sets are resolved from the live catalogue
+   * HERE — the one place that already resolves platform/tenant precedence — and
+   * passed down, so no state name reaches the repository's SQL and a tenant that
+   * adds its own terminal state is honoured without a code change.
+   */
   async assignmentLoad(
     db: DbHandle,
     scope: OverviewScope
   ): Promise<readonly TechnicianAssignmentLoad[]> {
-    return this.repository.overviewActiveAssignments(db, scope);
+    const jobStates = (await this.catalog.jobStates(db))
+      .filter((state) => !state.isTerminal)
+      .map((state) => state.code);
+    // `!isTerminal` alone would already exclude every cancellation, because
+    // `ck_work_order_states_cancellation` makes a cancellation terminal. Both
+    // flags are read anyway: they are independent columns, and a predicate that
+    // relied on the constraint rather than on the row would be reading the
+    // schema's promise instead of the tenant's data.
+    const workOrderStates = (await this.catalog.workOrderStates(db))
+      .filter((state) => !state.isTerminal && !state.isCancellation)
+      .map((state) => state.code);
+    return this.repository.overviewActiveAssignments(db, scope, { jobStates, workOrderStates });
   }
 }

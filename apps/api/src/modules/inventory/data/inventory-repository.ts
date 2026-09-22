@@ -6560,35 +6560,48 @@ export class InventoryRepository extends Repository {
   }
 
   /**
-   * HOW MANY items are low in one branch (Owner directive — the dashboard).
+   * WHICH ITEMS are low in one branch (Owner directive — the dashboard).
    *
-   * The same selection the alert pages, counted instead of windowed, so the
-   * figure on the dashboard and the list behind it can never disagree: there is
-   * one definition of "low" in this file and both reads compose it.
+   * The same selection the alert pages, projected to distinct item ids instead
+   * of windowed, so the definition of "low" behind the dashboard figure and the
+   * list behind the alert is one piece of text in this file.
+   *
+   * ## Item IDS and not a count, and that is the whole point of the shape
+   *
+   * The alert's unit is a FINDING — one row per applicable reorder level per
+   * branch — so one item can raise several: a branch-wide level and a level on
+   * each of two shelves are three rows about one part, and the same part low in
+   * two branches is two more. A caller that added per-branch counts would
+   * therefore publish "5 items low" for a stock-room holding one empty bin.
+   * Returning the ids lets the caller take the union across the branches it is
+   * reporting on and answer the question a person actually asks, which is how
+   * many PARTS are running out.
+   *
+   * `DISTINCT item_id` already collapses the several-levels-per-item case within
+   * one branch; the cross-branch collapse belongs to whoever chose the branch
+   * set.
    *
    * No `itemId` parameter. The alert narrows to one item because an operator
-   * asks about one; a dashboard count narrowed to one item would be a figure
-   * whose meaning depended on a filter nobody can see, so `$4` is bound NULL and
-   * the count answers for the whole branch.
+   * asks about one; a dashboard figure narrowed to one item would be a number
+   * whose meaning depended on a filter nobody can see, so `$4` is bound NULL.
    *
    * ONE branch, matching the alert exactly. The selection resolves level
    * specificity per `(item, location)` against a single `$3`, and widening that
    * to a branch ARRAY would change which level wins for an item that has both a
-   * company-wide and a branch-specific one — which is a change to the rule, not
-   * to the plumbing. A caller reporting on several branches asks once per branch
-   * and adds the answers, which is exactly what the alert set does.
+   * company-wide and a branch-specific one — a change to the RULE rather than to
+   * the plumbing. A caller reporting on several branches asks once per branch.
    */
-  public async countLowStock(
+  public async lowStockItemIds(
     db: DbHandle,
     filter: { readonly companyId: string; readonly branchId: string }
-  ): Promise<number> {
+  ): Promise<readonly string[]> {
     const context = this.assertContext(db);
-    const row = await this.runOne<{ total: number }>(
+    const result = await this.run<{ item_id: string }>(
       db,
-      `SELECT count(*)::int AS total FROM (${LOW_STOCK_SELECTION}) low`,
+      `SELECT DISTINCT item_id FROM (${LOW_STOCK_SELECTION}) low`,
       [context.principal.tenantId, filter.companyId, filter.branchId, null]
     );
-    return row?.total ?? 0;
+    return result.rows.map((row) => row.item_id);
   }
 
   /**

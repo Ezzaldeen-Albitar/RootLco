@@ -2327,6 +2327,17 @@ export class WorkOrderRepository extends Repository {
    * the LIVE catalogue, which tenants may shadow, so no state NAME is written
    * into this file. An empty array matches nothing, which is the honest answer
    * for a tenant whose catalogue resolves no such state.
+   *
+   * ## The MASTER is joined, only to exclude a retired work order
+   *
+   * `wo.work_order_status_history` has no `deleted_at` of its own — it is an
+   * append-only ledger and soft-deleting a row would be rewriting history — so a
+   * retired work order keeps every transition it ever made. Without this join the
+   * completion series counted them, which put a figure on the dashboard that the
+   * board beside it (`overviewStateCounts`, which does filter `deleted_at`) could
+   * not account for: a branch that finished nothing today could still report a
+   * completion, and nothing on the screen would explain it. The join carries no
+   * other predicate; the history's own scope columns still bound the read.
    */
   async overviewStateEntriesPerDay(
     db: DbHandle,
@@ -2337,12 +2348,16 @@ export class WorkOrderRepository extends Repository {
     const context = this.assertContext(db);
     const result = await this.run<{ local_day: string; total: number }>(
       db,
-      `SELECT to_char((occurred_at AT TIME ZONE $6)::date, 'YYYY-MM-DD') AS local_day,
-              count(DISTINCT work_order_id)::int AS total
-         FROM wo.work_order_status_history
-        WHERE tenant_id = $1 AND company_id = $2 AND branch_id = ANY($3::uuid[])
-          AND to_state = ANY($7::text[])
-          AND ${halfOpenLocalDayRange('occurred_at', 4, 5, 6)}
+      `SELECT to_char((h.occurred_at AT TIME ZONE $6)::date, 'YYYY-MM-DD') AS local_day,
+              count(DISTINCT h.work_order_id)::int AS total
+         FROM wo.work_order_status_history h
+         JOIN wo.work_orders w
+           ON w.tenant_id = h.tenant_id AND w.company_id = h.company_id
+          AND w.branch_id = h.branch_id AND w.id = h.work_order_id
+        WHERE h.tenant_id = $1 AND h.company_id = $2 AND h.branch_id = ANY($3::uuid[])
+          AND w.deleted_at IS NULL
+          AND h.to_state = ANY($7::text[])
+          AND ${halfOpenLocalDayRange('h.occurred_at', 4, 5, 6)}
         GROUP BY 1
         ORDER BY 1`,
       [
@@ -2361,14 +2376,43 @@ export class WorkOrderRepository extends Repository {
   /**
    * How many jobs each technician currently holds an OPEN assignment on.
    *
-   * `valid_to IS NULL` is what "currently" means on this table: the row set is
-   * the assignment HISTORY, so a closed assignment is a row with an end instant
-   * and a reason, and counting it would report a workload somebody finished.
+   * ## `valid_to IS NULL` is NOT sufficient, and that was a real defect
    *
-   * Every role is counted, `primary` and `assist` alike. One active primary
-   * assignment per job is a unique index; an assisting technician is still
-   * occupied by the job, and a workload figure that ignored them would understate
-   * exactly the people a foreman is trying to see.
+   * The assignment row set is a HISTORY, and `valid_to` is stamped by exactly two
+   * acts: a reassignment and a removal. Nothing stamps it when the job finishes
+   * and nothing stamps it when the work order closes — so an assignment on a job
+   * completed six months ago is still a row with a null end instant, and counting
+   * it reported a workload nobody has. A foreman reading the board would see a
+   * technician as fully loaded who is in fact free.
+   *
+   * The end of the work is therefore read where the platform actually records it:
+   * the JOB's state and the WORK ORDER's state. An assignment counts only while
+   * both are live —
+   *
+   *   * the job is in a NON-TERMINAL job state (`completed` and `cancelled` are
+   *     the platform's terminal ones, and a tenant may add more);
+   *   * the work order is in a NON-TERMINAL, NON-CANCELLATION state. The second
+   *     half is redundant against the deployed catalogue, where
+   *     `ck_work_order_states_cancellation` makes every cancellation terminal, and
+   *     it is passed anyway because the two flags are independent columns and the
+   *     caller reads them from the live rows rather than from that constraint.
+   *
+   * Both state sets arrive as PARAMETERS, resolved from the live catalogue by the
+   * caller, for the reason `listClosedNonCancelled` gives: `wo.job_states` and
+   * `wo.work_order_states` are dual-scoped tables a tenant may shadow, so the
+   * platform/tenant precedence is resolved in ONE place and no state name is
+   * written into this file. An empty array matches nothing, which is the honest
+   * answer for a catalogue that resolves no such state.
+   *
+   * Soft-deleted jobs and work orders are excluded on the same argument the board
+   * uses: a retired row is not work anybody is doing.
+   *
+   * ## Every role is counted
+   *
+   * `primary` and `assist` alike. One active primary assignment per job is a
+   * unique index; an assisting technician is still occupied by the job, and a
+   * figure that ignored them would understate exactly the people a foreman is
+   * trying to see.
    *
    * The technician's NAME is not here. `tech.technician_profiles` is another
    * module's table and this one may not read it — the label is resolved through
@@ -2376,20 +2420,40 @@ export class WorkOrderRepository extends Repository {
    */
   async overviewActiveAssignments(
     db: DbHandle,
-    scope: { readonly companyId: string; readonly branchIds: readonly string[] }
+    scope: { readonly companyId: string; readonly branchIds: readonly string[] },
+    live: {
+      /** Job-state codes that are NOT terminal. */
+      readonly jobStates: readonly string[];
+      /** Work-order-state codes that are neither terminal nor a cancellation. */
+      readonly workOrderStates: readonly string[];
+    }
   ): Promise<readonly OverviewAssignmentCountRow[]> {
     const context = this.assertContext(db);
     const result = await this.run<{ technician_profile_id: string; active_count: number }>(
       db,
-      `SELECT technician_profile_id,
-              count(DISTINCT job_id)::int AS active_count
-         FROM wo.job_assignments
-        WHERE tenant_id = $1 AND company_id = $2 AND branch_id = ANY($3::uuid[])
-          AND deleted_at IS NULL
-          AND valid_to IS NULL
-        GROUP BY technician_profile_id
-        ORDER BY technician_profile_id`,
-      [context.principal.tenantId, scope.companyId, scope.branchIds]
+      `SELECT a.technician_profile_id,
+              count(DISTINCT a.job_id)::int AS active_count
+         FROM wo.job_assignments a
+         JOIN wo.jobs j
+           ON j.tenant_id = a.tenant_id AND j.company_id = a.company_id
+          AND j.branch_id = a.branch_id AND j.id = a.job_id
+         JOIN wo.work_orders w
+           ON w.tenant_id = j.tenant_id AND w.company_id = j.company_id
+          AND w.branch_id = j.branch_id AND w.id = j.work_order_id
+        WHERE a.tenant_id = $1 AND a.company_id = $2 AND a.branch_id = ANY($3::uuid[])
+          AND a.deleted_at IS NULL
+          AND a.valid_to IS NULL
+          AND j.deleted_at IS NULL AND j.state = ANY($4::text[])
+          AND w.deleted_at IS NULL AND w.state = ANY($5::text[])
+        GROUP BY a.technician_profile_id
+        ORDER BY a.technician_profile_id`,
+      [
+        context.principal.tenantId,
+        scope.companyId,
+        scope.branchIds,
+        live.jobStates,
+        live.workOrderStates,
+      ]
     );
     return result.rows.map((row) => ({
       technicianProfileId: row.technician_profile_id,
