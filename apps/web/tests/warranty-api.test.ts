@@ -275,8 +275,13 @@ describe('the car and the customer arrive named', () => {
     const state = await readWarranty(WARRANTY_ID);
 
     expect(state.status).toBe('ok');
-    expect(state.data?.vehicle).toEqual(ROW.vehicle);
-    expect(state.data?.customer).toEqual(ROW.customer);
+    // Narrowed by a guard rather than by the assertion above: `ReadState` is a
+    // discriminated union and `expect` does not narrow it, so without this the
+    // two assertions below would be reaching for a field the failure arm has no
+    // reason to carry.
+    if (state.status !== 'ok') throw new Error('the record read did not succeed');
+    expect(state.data.vehicle).toEqual(ROW.vehicle);
+    expect(state.data.customer).toEqual(ROW.customer);
   });
 });
 
