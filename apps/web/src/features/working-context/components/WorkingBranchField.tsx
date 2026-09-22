@@ -87,11 +87,24 @@ export function WorkingBranchField({
 export function RequiresConcreteBranch({
   messages,
   state,
+  fallbackKey,
   testId = 'requires-concrete-branch',
 }: {
   readonly messages: Messages;
   /** Defaults to the screen's own branch state. Passed in only to save a lookup. */
   readonly state?: BranchTargetState | undefined;
+  /**
+   * What to say when the branch state is fine and there is still nothing to
+   * choose from.
+   *
+   * A screen may be picking something other than a branch — the settings editor
+   * and the approval limits both choose a COMPANY — and a caller whose own list
+   * came back empty was rendering this and getting nothing at all: a labelled
+   * control area with no control and no sentence, which reads as a broken
+   * screen rather than as an empty list. The caller names what is missing,
+   * because only the caller knows which list it was.
+   */
+  readonly fallbackKey?: string | undefined;
   /**
    * A form may say this twice — once where the branch is named, and again
    * beside a submit the operator has just found disabled at the bottom of a
@@ -103,7 +116,7 @@ export function RequiresConcreteBranch({
 }) {
   const own = useBranchTarget();
   const resolved = state ?? own;
-  const key = branchBlockMessageKey(resolved);
+  const key = branchBlockMessageKey(resolved) ?? fallbackKey ?? null;
   if (key === null) return null;
   return (
     <p

@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import en from '../src/i18n/messages/en.json';
 import ar from '../src/i18n/messages/ar.json';
-import { inBranch, renderLtr, renderRtl } from './render';
+import { TEST_BRANCH, branchSnapshot, inBranch, renderLtr, renderRtl } from './render';
 import type {
   BranchView,
   CapacityView,
@@ -513,5 +513,30 @@ describe('a setting value the platform will not store', () => {
     expect(await screen.findByText(arabic)).toBeVisible();
     expect(arabic).toMatch(/[؀-ۿ]/);
     expect(arabic).not.toBe(EN('form.violation.type_mismatch'));
+  });
+});
+
+describe('the settings editor when there is nothing to choose', () => {
+  it('SAYS SO rather than rendering a labelled area with no control', () => {
+    /*
+     * The notice was written for a BRANCH state, and `ready` makes it silent —
+     * correctly, when the question is which branch. This editor asks which
+     * COMPANY, and a caller whose own list came back empty got nothing at all:
+     * a heading, a blank space, and no sentence. That reads as a broken screen
+     * rather than as an empty list, so the caller names what is missing.
+     */
+    get.mockResolvedValue({ ok: true, status: 200, data: { items: [] }, correlationId: 'corr-1' });
+    renderLtr(
+      inBranch(
+        <SettingsEditor messages={en} scope="company" canWrite keyPrefix="" suggestions={[]} />,
+        { snapshot: { ...branchSnapshot([TEST_BRANCH]), companies: [] } }
+      )
+    );
+    expect(screen.getByTestId('requires-concrete-branch')).toHaveTextContent(
+      en['workingContext.noCompany']
+    );
+    // No company picker — the other selects on this form belong to the setting
+    // being written, not to the scope.
+    expect(screen.queryByLabelText(new RegExp(en['admin.scope.company']))).toBeNull();
   });
 });

@@ -78,7 +78,6 @@ export function SettingsBackedScreen({
             <SettingsEditor
               messages={messages}
               scope="company"
-              scopeIds={session.companyIds}
               canWrite={holds(session.permissions, PERMISSIONS.settingsManage)}
               keyPrefix={keyPrefix}
               suggestions={suggestions}

@@ -12,6 +12,7 @@ import {
   toLocalDateTimeValue,
 } from '@/components/forms/instant';
 import { fromFailure, type ActionState } from '@/lib/forms/action-result';
+import { useFocusFirstInvalid } from '@/lib/forms/use-focus-first-invalid';
 import { ApiClient } from '@/lib/api/client';
 
 /**
@@ -709,31 +710,50 @@ describe('after a refusal the cursor lands on the first thing to fix', () => {
     await waitFor(() => expect(document.activeElement).toBe(severity));
   });
 
-  it('does NOT move focus on MOUNT, even when the state already carries errors', async () => {
+  it('does NOT move focus on MOUNT, and DOES on the attempt that follows', async () => {
     /*
-     * A mount is not a refusal. A form can be rendered already holding an
-     * attempt and its errors — remounted after a settled action, restored under
-     * a new key, handed a state a parent is keeping — and moving the cursor
-     * then takes the operator somewhere they did not ask to go, on arrival,
-     * while a screen reader is still announcing the page.
+     * A mount is not a refusal.
      *
-     * The trigger is "an attempt arrived AFTER mount", not "an attempt exists",
-     * and this is the case that says so.
+     * `RecordForm` itself cannot reach this: its `useActionState` starts at
+     * `EMPTY`, so attempt zero with no errors is the only state it can mount
+     * with. The guard is for the OTHER callers the hook is exposed to — a
+     * hand-built `useActionState` form whose state is held by a parent, or one
+     * remounted under a new key while its last result is still in hand. Those
+     * can mount carrying an attempt and its errors, and moving the cursor then
+     * takes the operator somewhere they did not ask to go, on arrival, while a
+     * screen reader is still announcing the page.
+     *
+     * So the hook is driven DIRECTLY here, with the state as an input. The
+     * previous version of this case rendered a `RecordForm` that had not been
+     * submitted, asserted that focus was still on the body, and would have
+     * passed against a hook with no guard at all — it proved nothing, because
+     * nothing in it was ever marked invalid.
      */
-    const state: ActionState = refusal({ reason: 'field.required' }, 4);
-    renderLtr(
-      <RecordForm
-        messages={en}
-        fields={FIELDS}
-        action={async () => state}
-        submitKey="form.submit"
-        titleKey="crm.customers.notes.add"
-      />
-    );
-    // Nothing has been submitted here; the control is marked only once an
-    // attempt lands, so the honest check is that focus never left the body.
+    function FocusHarness({ state }: { readonly state: ActionState }) {
+      const formRef = useFocusFirstInvalid(state);
+      return (
+        <form ref={formRef}>
+          <input aria-label="first" />
+          <input
+            aria-label="second"
+            aria-invalid={state.fieldErrors?.['second'] === undefined ? undefined : true}
+          />
+        </form>
+      );
+    }
+
+    const carried = refusal({ second: 'field.required' }, 4);
+    const { rerender } = renderLtr(<FocusHarness state={carried} />);
+
+    // The control IS marked invalid — without this the case would be vacuous
+    // in the same way the old one was.
+    expect(screen.getByLabelText('second')).toHaveAttribute('aria-invalid', 'true');
     await new Promise((resolve) => setTimeout(resolve, 30));
     expect(document.activeElement).toBe(document.body);
+
+    // One new attempt, same errors: now it moves.
+    rerender(<FocusHarness state={refusal({ second: 'field.required' }, 5)} />);
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByLabelText('second')));
   });
 
   it('does NOT move focus when the refusal names no field', async () => {

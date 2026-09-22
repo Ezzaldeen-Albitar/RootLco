@@ -509,3 +509,82 @@ describe('the technician queue is about ONE branch', () => {
     expect(readMyQueue).not.toHaveBeenCalled();
   });
 });
+
+describe('the unsaved-work guard stands down once the work is recorded', () => {
+  /**
+   * A guard that never stands down is worse than no guard.
+   *
+   * The correction reason and the evidence category were left in state after a
+   * SUCCESSFUL submit — the reason because nothing cleared it, the category
+   * because it was cleared one field short — so the shell went on asking
+   * "discard your unsaved work?" on every branch switch for the rest of the
+   * session, about work that had been accepted minutes earlier. An operator
+   * meeting that question repeatedly learns to dismiss it without reading it,
+   * which is exactly when it matters.
+   */
+  function renderWorkspace() {
+    return renderLtr(
+      inBranch(
+        <>
+          <BranchSwitch to={TEST_BRANCH.id} label="use main" />
+          <BranchSwitch to={OTHER_BRANCH.id} label="use second" />
+          <TechnicianWorkspaceScreen
+            locale="en"
+            messages={en}
+            capabilities={{ ...ALL, canCorrectLabor: true }}
+          />
+        </>,
+        { snapshot: branchSnapshot([TEST_BRANCH, OTHER_BRANCH]) }
+      )
+    );
+  }
+
+  const stoppedSession = {
+    id: 'mine-stopped',
+    technicianProfileId: ME,
+    jobId: JOB,
+    startedAt: '2026-07-26T08:00:00.000Z',
+    endedAt: '2026-07-26T10:00:00.000Z',
+    source: 'manual',
+    correctionOfId: null,
+    recordVersion: 3,
+  };
+
+  it('asks while a correction reason is typed, and NOT after it is accepted', async () => {
+    listLaborSessions.mockResolvedValue(page([stoppedSession]));
+    correctLaborSession.mockResolvedValue({ status: 'success', attempt: 1 });
+    const user = userEvent.setup();
+    renderWorkspace();
+    await user.click(screen.getByRole('button', { name: 'use main' }));
+    await user.click(
+      await screen.findByRole('button', { name: EN['technicians.workspace.open']! })
+    );
+    await user.click(
+      await screen.findByRole('button', { name: EN['technicians.workspace.correctHeading']! })
+    );
+    await user.type(
+      screen.getByLabelText(new RegExp(`^${EN['technicians.workspace.correctReason']!}`)),
+      'Clocked in late by mistake'
+    );
+
+    // Typed and unsent: the switch asks.
+    await user.click(screen.getByRole('button', { name: 'use second' }));
+    expect(await screen.findByRole('alertdialog')).toBeInTheDocument();
+    await user.click(
+      within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Cancel' })
+    );
+
+    await user.click(
+      screen.getByRole('button', { name: EN['technicians.workspace.correctSubmit']! })
+    );
+    await waitFor(() =>
+      expect(
+        screen.queryByRole('button', { name: EN['technicians.workspace.correctSubmit']! })
+      ).toBeNull()
+    );
+
+    // Recorded. The switch goes through without a question.
+    await user.click(screen.getByRole('button', { name: 'use main' }));
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+  });
+});

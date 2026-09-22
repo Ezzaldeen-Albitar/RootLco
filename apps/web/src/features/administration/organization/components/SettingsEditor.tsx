@@ -62,11 +62,6 @@ export function SettingsEditor({
 }: {
   readonly messages: Messages;
   readonly scope: SettingsScope;
-  /**
-   * The session's bare references. Accepted so the six screens did not have to
-   * change, and no longer read — the choices come from the working context.
-   */
-  readonly scopeIds?: readonly string[];
   readonly canWrite: boolean;
   /** Only keys under this prefix are listed. Empty string lists everything. */
   readonly keyPrefix: string;
@@ -146,7 +141,12 @@ export function SettingsEditor({
         ) : (
           // Nothing to choose, or the directory could not be read. Saying which
           // is the honest answer; a box asking for a typed reference was not.
-          <RequiresConcreteBranch messages={messages} />
+          <RequiresConcreteBranch
+            messages={messages}
+            fallbackKey={
+              scope === 'company' ? 'workingContext.noCompany' : 'workingContext.noBranch'
+            }
+          />
         )}
       </div>
 

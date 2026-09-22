@@ -125,7 +125,6 @@ export default async function OrganizationPage({
               <SettingsEditor
                 messages={messages}
                 scope="company"
-                scopeIds={session.companyIds}
                 canWrite={canWriteSettings}
                 keyPrefix=""
               />
@@ -137,7 +136,6 @@ export default async function OrganizationPage({
               <SettingsEditor
                 messages={messages}
                 scope="branch"
-                scopeIds={session.branchIds}
                 canWrite={canWriteSettings}
                 keyPrefix=""
               />

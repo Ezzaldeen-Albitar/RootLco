@@ -54,11 +54,6 @@ export function ApprovalLimitsScreen({
   readonly locale: Locale;
   readonly messages: Messages;
   readonly roles: readonly RoleRow[];
-  /**
-   * The session's bare references. Accepted so the page did not have to change,
-   * and no longer read — the companies come from the working context, by name.
-   */
-  readonly companyIds?: readonly string[];
   readonly canManage: boolean;
 }) {
   const table = useServerTable<ApprovalLimitRow>(listApprovalLimits);
@@ -252,11 +247,6 @@ function CreateDialog({
   readonly open: boolean;
   readonly messages: Messages;
   readonly roles: readonly RoleRow[];
-  /**
-   * The session's bare references. Accepted so the caller did not have to
-   * change, and no longer read — the companies come from the working context.
-   */
-  readonly companyIds?: readonly string[];
   readonly onClose: () => void;
 }) {
   const [state, formAction] = useActionState<ActionState, FormData>(
@@ -369,7 +359,7 @@ function CreateDialog({
         ) : (
           // No company to choose, or the directory could not be read. Saying so
           // is the honest answer; a box asking for a typed reference was not.
-          <RequiresConcreteBranch messages={messages} />
+          <RequiresConcreteBranch messages={messages} fallbackKey="workingContext.noCompany" />
         )}
 
         {/*

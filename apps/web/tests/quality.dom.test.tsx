@@ -941,3 +941,52 @@ describe('the QC queue is about ONE branch', () => {
     expect(listQcQueue).not.toHaveBeenCalled();
   });
 });
+
+describe('the unsaved-work guard stands down once a check is recorded', () => {
+  it('asks while a result is chosen and NOT after it is recorded', async () => {
+    /*
+     * The chosen result is deliberately RETAINED after a successful submit: it
+     * seeds the `defaultValue` of a select React remounts, and blanking it
+     * would show a placeholder for a check the operator has just recorded. So
+     * "the draft is non-empty" was the wrong question — it left the guard
+     * permanently dirty, and the shell asked about every later branch switch
+     * for work that was saved. "Different from what was recorded" is the right
+     * one, and this case is the difference between them.
+     */
+    writeQcCheckResult.mockResolvedValue({ status: 'success', correlationId: 'c', attempt: 1 });
+    const user = userEvent.setup();
+    renderLtr(
+      inBranch(
+        <>
+          <BranchSwitch to={TEST_BRANCH.id} label="use main" />
+          <BranchSwitch to={OTHER_BRANCH.id} label="use second" />
+          <WorkOrderClosureScreen
+            locale="en"
+            messages={en}
+            workOrderId={WORK_ORDER}
+            capabilities={everything}
+          />
+        </>,
+        { snapshot: branchSnapshot([TEST_BRANCH, OTHER_BRANCH]) }
+      )
+    );
+    await user.click(screen.getByRole('button', { name: 'use main' }));
+    await user.click(await screen.findByRole('button', { name: t('quality.closure.openRecord') }));
+    const road = (await screen.findByText('Road safety')).closest('li') as HTMLElement;
+    await user.selectOptions(within(road).getByRole('combobox'), 'pass');
+
+    // Chosen and unsent: the switch asks.
+    await user.click(screen.getByRole('button', { name: 'use second' }));
+    expect(await screen.findByRole('alertdialog')).toBeInTheDocument();
+    await user.click(
+      within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Cancel' })
+    );
+
+    await user.click(within(road).getByRole('button', { name: t('quality.closure.record') }));
+    await waitFor(() => expect(writeQcCheckResult).toHaveBeenCalled());
+
+    // Recorded, and the result is still on screen because it is what was saved.
+    await user.click(screen.getByRole('button', { name: 'use main' }));
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+  });
+});

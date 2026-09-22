@@ -5779,6 +5779,7 @@
   "workingContext.label": "فرع العمل",
   "workingContext.needsOneBranch": "اختر فرعًا واحدًا من الأعلى للمتابعة",
   "workingContext.noBranch": "لا يوجد فرع مُسنَد إليك بعد. اطلب من مديرك إضافة فرع.",
+  "workingContext.noCompany": "لا توجد شركة مُسنَدة إليك بعد. اطلب من مديرك إضافة شركة.",
   "workingContext.otherCompany": "فروع أخرى",
   "workingContext.prompt": "اختر فرعك للبدء",
   "workingContext.retry": "حاول مرة أخرى",

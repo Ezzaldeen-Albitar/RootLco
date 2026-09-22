@@ -82,7 +82,6 @@ export default async function SystemSettingsPage({
               <SettingsEditor
                 messages={messages}
                 scope="company"
-                scopeIds={session.companyIds}
                 canWrite={canWrite}
                 keyPrefix=""
               />
@@ -91,13 +90,7 @@ export default async function SystemSettingsPage({
 
           {canReadBranch ? (
             <Panel title={t('organization.settings.branch')}>
-              <SettingsEditor
-                messages={messages}
-                scope="branch"
-                scopeIds={session.branchIds}
-                canWrite={canWrite}
-                keyPrefix=""
-              />
+              <SettingsEditor messages={messages} scope="branch" canWrite={canWrite} keyPrefix="" />
             </Panel>
           ) : null}
         </div>

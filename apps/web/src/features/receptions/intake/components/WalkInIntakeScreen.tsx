@@ -112,12 +112,6 @@ export function WalkInIntakeScreen({
   const [linkOutcome, setLinkOutcome] = useState<LinkOutcome | null>(null);
 
   /*
-   * Unsaved work, declared to the shell, so a branch changed in the header asks
-   * before it discards what is typed here.
-   */
-  useUnsavedGuard(customer !== null || vehicle !== null);
-
-  /*
    * The step is DERIVED, not stored. A stored step and a stored choice can
    * disagree — a cleared customer with a step still saying "vehicle" renders a
    * vehicle list for nobody — and a derivation cannot.
@@ -130,6 +124,19 @@ export function WalkInIntakeScreen({
         : linkOutcome === null
           ? 'link'
           : 'done';
+
+  /*
+   * Unsaved work, declared to the shell, so a branch changed mid-assembly asks
+   * before it discards the pair.
+   *
+   * NOT at `done`. Everything the wizard had to record has been recorded by
+   * then — the customer exists, the vehicle exists, and the relationship has
+   * been answered — so what is on screen is a read-back, not a draft. Asking
+   * about it would be asking the operator to confirm the discarding of work
+   * that is already stored, and a guard that fires on a finished screen teaches
+   * them to dismiss the question without reading it.
+   */
+  useUnsavedGuard(step !== 'done' && (customer !== null || vehicle !== null));
 
   const chooseVehicle = (chosen: ChosenVehicle) => {
     setVehicle(chosen);

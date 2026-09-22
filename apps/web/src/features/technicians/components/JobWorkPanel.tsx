@@ -555,7 +555,19 @@ function SessionRow({
               endedAt: new Date(endedAt).toISOString(),
               reason: reason.trim(),
             }).then((moved) => {
-              if (moved) setCorrecting(false);
+              if (!moved) return;
+              setCorrecting(false);
+              /*
+               * The reason is CLEARED, because it has been recorded.
+               *
+               * Leaving it would strand the unsaved-work guard: the draft still
+               * held text, so the shell went on asking "discard your unsaved
+               * work?" on every branch switch for the rest of the session, for
+               * a correction that was accepted minutes ago. A guard that is
+               * always dirty teaches an operator to dismiss the question
+               * without reading it, which is worse than not asking.
+               */
+              setReason('');
             });
           }}
           className="flex flex-wrap items-end gap-3"
@@ -889,6 +901,13 @@ function EvidencePanel({
               setAttempt((n) => n + 1);
               notifyActionResult(outcome, messages);
               if (outcome.status === 'success') {
+                // The CATEGORY is cleared with the rest of the draft. It was
+                // left behind, so the unsaved-work guard stayed dirty after a
+                // capture that succeeded and the shell asked about every later
+                // branch switch. The select is keyed on `attempt`, so it
+                // remounts against the cleared value rather than keeping the
+                // old choice on screen.
+                setCategoryCode('');
                 setEvidenceType('');
                 setNote('');
                 reload();
