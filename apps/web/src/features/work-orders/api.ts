@@ -96,11 +96,11 @@ export async function listWorkOrders(
       // Never both: the route refuses the pair rather than intersecting it, and
       // the screen clears one when the other is chosen.
       stateGroup: criteria.stateGroup,
-      completedFrom: criteria.completedFrom,
-      completedTo: criteria.completedTo,
       kind: criteria.kind,
       openedFrom: criteria.openedFrom,
       openedTo: criteria.openedTo,
+      completedFrom: criteria.completedFrom,
+      completedTo: criteria.completedTo,
       customerId: criteria.customerId,
       number: criteria.number,
       q: criteria.q,

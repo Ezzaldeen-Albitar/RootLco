@@ -5837,7 +5837,7 @@
   "receptions.queue.column.noCustomer": "No customer recorded for this visit",
   "receptions.queue.column.customerHidden": "Recorded; you may not see who",
   "receptions.queue.column.noPlate": "No plate",
-  "form.violation.state_and_group_exclusive": "Choose either one state or a whole group of them, not both.",
-  "form.violation.status_and_group_exclusive": "Choose either one status or a whole group of them, not both.",
-  "form.violation.completion_window_inverted": "The second date cannot be earlier than the first."
+  "form.violation.state_and_group_exclusive": "Choose either a single stage or a group of stages, not both. Clear one of them and search again.",
+  "form.violation.status_and_group_exclusive": "Choose either a single status or a group of statuses, not both. Clear one of them and search again.",
+  "form.violation.completion_window_inverted": "The finished-on dates are the wrong way round. The earlier date goes first and the later date second."
 }

@@ -42,8 +42,10 @@ export const WORK_ORDER_PERMISSIONS = {
  * `ck_work_orders_kind`, mirrored. Two values, closed.
  *
  * Mirrored rather than imported: `apps/web` may not import from `apps/api`, and
- * `tests/work-orders-contract.test.ts` holds this array against the route source
- * so a third kind added in the Backend fails a test rather than a reviewer.
+ * `tests/work-orders-queue-api.test.ts` holds this array against the backend
+ * domain source so a third kind added in the Backend fails a test rather than a
+ * reviewer. That gate is real as of the Owner directive (P1-32-PRE-OD-UX); this
+ * sentence named a file that did not exist before it.
  */
 export const WORK_ORDER_KINDS = ['ordinary', 'rework'] as const;
 export type WorkOrderKind = (typeof WORK_ORDER_KINDS)[number];
@@ -58,7 +60,7 @@ export type WorkOrderKind = (typeof WORK_ORDER_KINDS)[number];
  *
  * The three PARTITION the catalogue — `terminal` excludes the cancellations
  * rather than containing them — so no work order is returned by two groups, and
- * "active" is exactly the set the aggregate calls active.
+ * `active` is exactly the set the overview aggregate calls active.
  */
 export const WORK_ORDER_STATE_GROUPS = ['active', 'terminal', 'cancelled'] as const;
 export type WorkOrderStateGroup = (typeof WORK_ORDER_STATE_GROUPS)[number];
@@ -210,6 +212,9 @@ export interface WorkOrderListCriteria {
    * together — the backend answers 422 with `state_and_group_exclusive` rather
    * than intersecting them, so a screen offering both controls must clear one
    * when the other is chosen.
+   *
+   * The three partition the catalogue: `terminal` excludes the cancellations
+   * rather than containing them, so no work order is returned by two groups.
    */
   readonly stateGroup?: WorkOrderStateGroup;
   /**

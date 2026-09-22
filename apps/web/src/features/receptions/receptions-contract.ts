@@ -1146,30 +1146,6 @@ export interface ReceptionListCriteria {
   readonly q?: string;
 }
 
-/**
- * The two status groups `rec.reception-list` accepts, mirrored from
- * `RECEPTION_STATUS_GROUPS` in the reception domain.
- *
- * Mirrored rather than imported — `apps/web` may not import from `apps/api` —
- * and held against the backend source by the contract test, so a third group
- * fails a test rather than a reviewer.
- */
-export const RECEPTION_STATUS_GROUPS = ['open', 'finished'] as const;
-export type ReceptionStatusGroup = (typeof RECEPTION_STATUS_GROUPS)[number];
-
-/**
- * What the board's own QUERY can be refused for (Owner directive,
- * `P1-32-PRE-OD-UX`) — a status code sent beside a status group.
- *
- * Unreachable from the board, which offers both answers through ONE control and
- * therefore cannot hold both at once, and catalogued anyway: a refusal that
- * reaches an operator as a raw token is the failure the catalogue exists to
- * prevent, and "it cannot happen" is true only until a screen changes.
- */
-export const RECEPTION_QUERY_REFUSAL_KEYS: readonly string[] = Object.freeze([
-  'form.violation.status_and_group_exclusive',
-]);
-
 /** `MIN_SEARCH_FRAGMENT` in `shared/text/search-terms.ts`. */
 export const MIN_RECEPTION_SEARCH = 2;
 /** `MAX_SEARCH_FRAGMENT` in `shared/text/search-terms.ts`. */
@@ -1191,6 +1167,30 @@ export const UNFINISHED_RECEPTION_STATUSES: readonly ReceptionStatus[] = RECEPTI
 export function isFinishedReception(status: ReceptionStatus): boolean {
   return TERMINAL_RECEPTION_STATUSES.includes(status);
 }
+
+/**
+ * The two status groups `rec.reception-list` accepts, mirrored from
+ * `RECEPTION_STATUS_GROUPS` in the reception domain.
+ *
+ * `open` is every status `TERMINAL_RECEPTION_STATUSES` does not name, so the two
+ * groups partition the frozen vocabulary. "finished" rather than "closed":
+ * `converted` is terminal for the visit and is the opposite of abandoned.
+ */
+export const RECEPTION_STATUS_GROUPS = ['open', 'finished'] as const;
+export type ReceptionStatusGroup = (typeof RECEPTION_STATUS_GROUPS)[number];
+
+/**
+ * What the board's own QUERY can be refused for (Owner directive,
+ * `P1-32-PRE-OD-UX`) — a status code sent beside a status group.
+ *
+ * Unreachable from the board, which offers both answers through ONE control and
+ * therefore cannot hold both at once, and catalogued anyway: a refusal that
+ * reaches an operator as a raw token is the failure the catalogue exists to
+ * prevent, and "it cannot happen" is true only until a screen changes.
+ */
+export const RECEPTION_QUERY_REFUSAL_KEYS: readonly string[] = Object.freeze([
+  'form.violation.status_and_group_exclusive',
+]);
 
 /* ------------------------------------------------------------------ *
  * Responses, exactly as the services publish them
