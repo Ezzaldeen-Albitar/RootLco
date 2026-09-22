@@ -1099,7 +1099,15 @@ export class WarrantyRepository extends Repository {
     db: DbHandle,
     filter: {
       readonly companyId: string;
-      readonly branchId: string;
+      /**
+       * The branches the page may cover (Owner directive, P1-32-PRE-OD-UX).
+       *
+       * `undefined` means every branch of the company, reachable only by a caller
+       * row-level security imposes no branch narrowing on; the route resolves the
+       * set through `authorizedBranches`, which refuses rather than returning an
+       * empty one.
+       */
+      readonly branchIds?: readonly string[] | undefined;
       readonly vehicleId?: string | undefined;
     },
     request: PageRequest
@@ -1108,7 +1116,7 @@ export class WarrantyRepository extends Repository {
     const values: unknown[] = [
       context.principal.tenantId,
       filter.companyId,
-      filter.branchId,
+      filter.branchIds === undefined ? null : [...filter.branchIds],
       filter.vehicleId ?? null,
     ];
     const keyset = keysetFragment(
@@ -1121,7 +1129,10 @@ export class WarrantyRepository extends Repository {
       db,
       `SELECT ${RECORD_COLUMNS}
          FROM wty.warranty_records
-        WHERE tenant_id = $1 AND company_id = $2 AND branch_id = $3
+        WHERE tenant_id = $1 AND company_id = $2
+          -- NULL is "every branch of the company", which only a caller the
+          -- policies impose no branch narrowing on can reach.
+          AND ($3::uuid[] IS NULL OR branch_id = ANY($3::uuid[]))
           AND deleted_at IS NULL
           AND ($4::uuid IS NULL OR vehicle_id = $4)
           ${keyset.predicate}

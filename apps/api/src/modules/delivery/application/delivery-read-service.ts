@@ -492,7 +492,20 @@ export class DeliveryReadService {
     db: DbHandle,
     filter: {
       readonly companyId: string;
-      readonly branchId: string;
+      /**
+       * The branch the CALLER named, when it named one (Owner directive,
+       * P1-32-PRE-OD-UX).
+       *
+       * Kept beside `branchIds` rather than folded into it because the two mean
+       * different things to the guard below: a named branch is a claim this
+       * service must decide, and a resolved set has already been decided, one
+       * branch at a time, by `resolveAuthorizedBranches`. Collapsing them would
+       * either re-authorize a set that was already authorized or, worse, let a
+       * resolved set pass as an unchecked claim.
+       */
+      readonly branchId?: string | undefined;
+      /** The branches the page may cover. `undefined` means every branch of the company. */
+      readonly branchIds?: readonly string[] | undefined;
       readonly status?: string | undefined;
       readonly workOrderId?: string | undefined;
       readonly vehicleId?: string | undefined;
@@ -500,7 +513,13 @@ export class DeliveryReadService {
     page: { readonly cursor?: string | undefined; readonly limit?: number | undefined },
     authorizeScope: ScopeAuthorizer
   ): Promise<Page<DeliveryRecordView>> {
-    await authorizeScope({ companyId: filter.companyId, branchId: filter.branchId });
+    // A NAMED branch is still decided here and refused exactly as before. An
+    // omitted one was decided by `resolveAuthorizedBranches` before this call,
+    // per branch, against this same operation's codes — so re-running the pair
+    // check would have nothing to add and no pair to run it on.
+    if (filter.branchId !== undefined) {
+      await authorizeScope({ companyId: filter.companyId, branchId: filter.branchId });
+    }
     const request: PageRequest = pageRequest(DELIVERY_RECORD_ORDER, page);
     const result = await this.repository.listDeliveries(db, filter, request);
     return { ...result, items: result.items.map(toDeliveryView) };

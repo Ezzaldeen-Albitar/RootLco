@@ -44,6 +44,7 @@ import {
 import {
   BRANCH_A2,
   BRANCH_B1,
+  COMPANY_A2,
   COMPANY_B1,
   FULL,
   PERMISSION_ELSEWHERE,
@@ -533,5 +534,57 @@ describe('wo.work-order-history', () => {
     expect((await history(created.workOrderId)).status).toBe(403);
     authAs(SCOPED_ELSEWHERE);
     expect((await history(created.workOrderId)).status).toBe(404);
+  });
+});
+
+// ===========================================================================
+// The branch-optional board (Owner directive, P1-32-PRE-OD-UX)
+//
+// `branchId` is now optional beside a company. The falsifiable principal is
+// PERMISSION_ELSEWHERE: it holds `wo.work_order.read` scoped to BRANCH_A2 and a
+// WIDENING grant in BRANCH_A1 carrying `org.tenant.read` and no work-order
+// authority at all. `app.branch_ids` is the permission-blind union of both, so a
+// page built from row-level security alone would hand back BRANCH_A1's board —
+// the P1-18-A-01 shape. The union must instead be built from a per-branch
+// permission decision, and these cases are what tells the two apart.
+// ===========================================================================
+describe('wo.work-order-list — the branch-optional board', () => {
+  it('omitting branchId returns the caller authorized branches and nothing from a third', async () => {
+    const inA1 = await createWorkOrder();
+    const inA2 = await createWorkOrder({ branchId: BRANCH_A2 });
+
+    // An unrestricted reader is answered for the whole company, so the
+    // narrowing below cannot be an artefact of an empty second branch.
+    authAs(READER);
+    const everything = await list({ companyId: COMPANY_A1, limit: '100' });
+    expect(everything.status).toBe(200);
+    const everyId = (await page(everything)).items.map((item) => item.id);
+    expect(everyId).toEqual(expect.arrayContaining([inA1.workOrderId, inA2.workOrderId]));
+
+    // The narrowed caller is answered for BRANCH_A2 alone.
+    authAs(PERMISSION_ELSEWHERE);
+    const narrowed = await list({ companyId: COMPANY_A1, limit: '100' });
+    expect(narrowed.status).toBe(200);
+    const ids = (await page(narrowed)).items.map((item) => item.id);
+    expect(ids).toContain(inA2.workOrderId);
+    // The assertion that fails if the branch union is taken from the policy
+    // rather than from a decision about this operation's own code.
+    expect(ids).not.toContain(inA1.workOrderId);
+  });
+
+  it('a branchId the caller holds no read in is still refused', async () => {
+    authAs(PERMISSION_ELSEWHERE);
+    const tampered = await list({ companyId: COMPANY_A1, branchId: BRANCH_A1 });
+    expect(tampered.status).toBe(403);
+    expect(((await tampered.json()) as { code: string }).code).toBe('ERR-IAM-001');
+  });
+
+  it('a company none of the caller branches belong to is refused, not answered empty', async () => {
+    authAs(PERMISSION_ELSEWHERE);
+    const other = await list({ companyId: COMPANY_A2, limit: '100' });
+    // A refusal, not an empty page: an empty page would tell this caller that
+    // the second company has no work orders, which is not its to learn.
+    expect(other.status).toBe(403);
+    expect(((await other.json()) as { code: string }).code).toBe('ERR-IAM-001');
   });
 });

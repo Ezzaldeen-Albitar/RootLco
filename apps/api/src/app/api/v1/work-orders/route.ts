@@ -55,7 +55,14 @@ export const dynamic = 'force-dynamic';
 const Query = z
   .object({
     companyId: schemas.uuid,
-    branchId: schemas.uuid,
+    /**
+     * OPTIONAL (Owner directive, P1-32-PRE-OD-UX). Omitted, it asks for every
+     * branch of the company the caller may read; `authorizedBranches` decides
+     * that set one branch at a time against this operation's declared code and
+     * refuses a caller holding none. A named branch is decided exactly as
+     * before, by the `scopeTargetOption` target below.
+     */
+    branchId: schemas.uuid.optional(),
     state: z
       .string()
       .regex(/^[a-z][a-z0-9_]{1,62}$/, 'must be a lower-snake state code')
@@ -114,18 +121,20 @@ export async function GET(request: Request): Promise<Response> {
   return handleOperation(
     WORK_ORDER_LIST_OPERATION,
     request,
-    async ({ db }) => {
+    async ({ db, authorizedBranches }) => {
       // Parsed INSIDE the handler so a malformed query is rendered as the shared
       // problem document by the pipeline. Parsing it outside would let the
       // `AppFailure` escape the route function entirely, and the caller would see
       // an unhandled 500 instead of a 422 naming the field.
       const query = parseOrFail(Query, raw, 'query');
+      const branchIds =
+        query.branchId === undefined ? await authorizedBranches(query.companyId) : [query.branchId];
       return {
         body: await workOrderModule().workOrders.list(
           db,
           {
             companyId: query.companyId,
-            branchId: query.branchId,
+            branchIds,
             state: query.state,
             kind: query.kind,
             openedFrom: query.openedFrom === undefined ? undefined : new Date(query.openedFrom),

@@ -117,7 +117,14 @@ export async function POST(request: Request): Promise<Response> {
 const ListQuery = z
   .object({
     companyId: schemas.uuid,
-    branchId: schemas.uuid,
+    /**
+     * OPTIONAL (Owner directive, P1-32-PRE-OD-UX). Omitted, it asks for every
+     * branch of the company the caller may read; `authorizedBranches` decides
+     * that set one branch at a time against this operation's declared code and
+     * refuses a caller holding none. A named branch is decided exactly as
+     * before, by `authorizeScope` inside the service.
+     */
+    branchId: schemas.uuid.optional(),
     status: z.enum(DELIVERY_STATUSES).optional(),
     workOrderId: schemas.uuid.optional(),
     vehicleId: schemas.uuid.optional(),
@@ -144,16 +151,19 @@ export async function GET(request: Request): Promise<Response> {
   return handleOperation(
     DELIVERY_LIST_OPERATION,
     request,
-    async ({ db, authorizeScope }) => {
+    async ({ db, authorizeScope, authorizedBranches }) => {
       // Parsed INSIDE the handler so a malformed query renders the shared problem
       // document rather than an unhandled 500.
       const query = parseOrFail(ListQuery, raw, 'query');
+      const branchIds =
+        query.branchId === undefined ? await authorizedBranches(query.companyId) : [query.branchId];
       return {
         body: await deliveryModule().reads.listDeliveries(
           db,
           {
             companyId: query.companyId,
-            branchId: query.branchId,
+            ...(query.branchId === undefined ? {} : { branchId: query.branchId }),
+            branchIds,
             ...(query.status === undefined ? {} : { status: query.status }),
             ...(query.workOrderId === undefined ? {} : { workOrderId: query.workOrderId }),
             ...(query.vehicleId === undefined ? {} : { vehicleId: query.vehicleId }),

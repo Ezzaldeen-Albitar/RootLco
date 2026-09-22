@@ -45,6 +45,18 @@ export interface AuthorizationTarget {
  */
 export type ScopeAuthorizer = (target: AuthorizationTarget) => Promise<void>;
 
+/**
+ * Resolves the branches one company's read may cover (Owner directive,
+ * P1-32-PRE-OD-UX).
+ *
+ * `undefined` means "every branch of that company the policies admit" and is the
+ * answer for a caller carrying no branch narrowing at all; a list means "exactly
+ * these". It is never an empty list — a caller with no branch it may read is
+ * refused rather than answered with a page that reads as "nothing happened
+ * today".
+ */
+export type BranchScopeResolver = (companyId: string) => Promise<readonly string[] | undefined>;
+
 export interface AuthorizationDecision {
   readonly allowed: boolean;
   /** Codes that evaluated false. Safe to return: they are public API metadata. */
@@ -179,6 +191,107 @@ export async function requirePermissions(
     // and telling a caller which permission they lack is a usability win with no
     // information gain for an attacker. The *resource* is never mentioned.
     safeDetails: { requiredPermissions: operation.permissions },
+  });
+}
+
+/**
+ * The branches of one company this caller may run this operation in (Owner
+ * directive, P1-32-PRE-OD-UX).
+ *
+ * ## The question the branch-optional reads had to answer first
+ *
+ * A reception board, a calendar, a work-order board, a delivery list and a
+ * warranty list all used to REQUIRE a branch. Making the branch optional is a
+ * usability change with an authorization problem underneath it, because
+ * `iam.has_permission_in_scope` cannot be asked "may this caller read the whole
+ * company": its company arm matches only a grant scope row whose `scope_type` is
+ * `company`, so a genuinely branch-scoped operator — the person the feature is
+ * FOR — would be refused by a company-only target, while an unrestricted one
+ * would sail through. Fail-closed in the wrong place is still wrong.
+ *
+ * So the question is asked once per branch instead, and the answer is the SET of
+ * branches that said yes. The page is then built over that set. Nothing is
+ * widened: a branch that says no is a branch the page does not contain.
+ *
+ * ## Three cases, and the middle one is the whole point
+ *
+ *   no branch narrowing at all (unrestricted, or company-scoped grants only)
+ *     — `app.branch_ids` is unset, the policies impose no branch narrowing, and
+ *       the honest target IS the company. `requireScopedPermissions` decides it
+ *       and `undefined` is returned, meaning "every branch of the company".
+ *
+ *   branch-narrowed — the caller holds `app.branch_ids`, so row-level security
+ *       already bounds every row to that union whatever this function returns.
+ *       The union is nonetheless resolved against THIS company and filtered to
+ *       the branches that carry this operation's codes, which is strictly
+ *       narrower than the policy: a caller holding the read in one branch and
+ *       some other grant in a second is answered for the first alone.
+ *
+ *   nothing left — refused, and with the SAME document the other scope refusals
+ *       carry. A caller naming a company none of its branches belongs to is the
+ *       case the middle branch cannot answer by itself, because
+ *       `iam.has_permission_in_scope`'s branch arm matches a branch id without
+ *       consulting the company beside it; resolving the candidates against
+ *       `org.branches` first is what turns that into a refusal instead of an
+ *       empty page.
+ *
+ * The candidate read runs under the CALLER'S OWN RLS and carries the tenant from
+ * the CONTEXT, exactly like `branchVisibleInTenant`, so it answers "visible to
+ * this caller inside its tenant" and is not an existence oracle.
+ */
+export async function resolveAuthorizedBranches(
+  db: DbHandle,
+  operation: RegisteredOperation,
+  companyId: string
+): Promise<readonly string[] | undefined> {
+  const context: RequestContext = db.context;
+  const held = context.branchIds;
+
+  if (held.length === 0) {
+    // No branch narrowing: the company IS the scope, and the ordinary scoped
+    // check is the right decision to make about it.
+    await requireScopedPermissions(db, operation, { companyId });
+    return undefined;
+  }
+
+  const candidates = await db.query<{ id: string }>(
+    `SELECT id
+       FROM org.branches
+      WHERE tenant_id = $1 AND company_id = $2
+        AND id = ANY($3::uuid[])
+        AND deleted_at IS NULL
+      ORDER BY id`,
+    [context.principal.tenantId, companyId, [...held]]
+  );
+
+  const permitted: string[] = [];
+  for (const row of candidates.rows) {
+    const decision = await evaluatePermissions(
+      db,
+      operation,
+      { companyId, branchId: row.id },
+      { forceScoped: true }
+    );
+    if (decision.allowed) permitted.push(row.id);
+  }
+  if (permitted.length > 0) return permitted;
+
+  metrics().increment(METRICS.errorCount, { code: 'ERR-IAM-001', operation: operation.id });
+  log.warn('Authorization denied', {
+    ...contextLogFields(context),
+    result: 'denied',
+    errorCode: 'ERR-IAM-001',
+    context: { reason: 'no-authorized-branch-in-company', declaredScope: operation.scope },
+  });
+  throw new AppFailure('ERR-IAM-001', {
+    // `safeDetails` first, for the reason `requireScopeTargetInTenant` states:
+    // the P1-24 mutation matrix anchors M2 on the two-line sequence in
+    // `requirePermissions`, and that anchor must match exactly one site.
+    safeDetails: { requiredPermissions: operation.permissions },
+    // Names the operation, never the company and never a branch.
+    message:
+      `Denied ${operation.id}: the caller holds no branch of the named company ` +
+      `it may run this operation in`,
   });
 }
 

@@ -113,7 +113,14 @@ export async function POST(request: Request): Promise<Response> {
 const ListQuery = z
   .object({
     companyId: schemas.uuid,
-    branchId: schemas.uuid,
+    /**
+     * OPTIONAL (Owner directive, P1-32-PRE-OD-UX). Omitting it asks for every
+     * branch of the company the caller may read; `authorizedBranches` decides
+     * that set one branch at a time against this operation's own declared codes
+     * and refuses a caller holding none. A named branch is decided exactly as
+     * before, by the `scopeTargetOption` target below.
+     */
+    branchId: schemas.uuid.optional(),
     status: z.enum(APPOINTMENT_STATUSES).optional(),
     vehicleId: schemas.uuid.optional(),
     /** Inclusive range bounds; the effective window must OVERLAP [from, to]. */
@@ -165,14 +172,25 @@ export async function GET(request: Request): Promise<Response> {
   return handleOperation(
     APPOINTMENT_LIST_OPERATION,
     request,
-    async ({ db }) => ({
+    async ({ db, authorizedBranches }) => {
       // Parsed INSIDE the handler so a malformed query is rendered as the
       // shared problem document rather than an unhandled 500.
-      body: await receptionModule().appointmentRead.listAppointments(
-        db,
-        parseOrFail(ListQuery, raw, 'query')
-      ),
-    }),
+      const query = parseOrFail(ListQuery, raw, 'query');
+      const branchIds =
+        query.branchId === undefined ? await authorizedBranches(query.companyId) : [query.branchId];
+      return {
+        body: await receptionModule().appointmentRead.listAppointments(db, {
+          companyId: query.companyId,
+          branchIds,
+          status: query.status,
+          vehicleId: query.vehicleId,
+          from: query.from,
+          to: query.to,
+          cursor: query.cursor,
+          limit: query.limit,
+        }),
+      };
+    },
     // The pre-handler check must not be scope-blind, and it runs before the
     // schema. `scopeTargetOption` reads the pair out of not-yet-validated input
     // and yields NO target unless both are well-formed UUIDs — it can only ever

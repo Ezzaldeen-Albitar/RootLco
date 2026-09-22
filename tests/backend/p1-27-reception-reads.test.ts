@@ -86,6 +86,14 @@ const COMPANY_B1 = 'c1150000-0000-4000-8000-0000000000b1';
 const BRANCH_B1 = 'c1150000-0000-4000-8000-0000000000b2';
 /** A second branch of the same company, for the isolation split. */
 const BRANCH_A2 = 'c1150000-0000-4000-8000-0000000000a2';
+/**
+ * A third branch of COMPANY_A1 and a second company of TENANT_A, added with the
+ * Owner directive (P1-32-PRE-OD-UX) so the branch-union read has something it
+ * must NOT return and a company it must refuse outright.
+ */
+const BRANCH_A3 = 'c1150000-0000-4000-8000-0000000000a3';
+const COMPANY_A2 = 'c1150000-0000-4000-8000-0000000000a4';
+const BRANCH_A4 = 'c1150000-0000-4000-8000-0000000000a5';
 
 const ROLE_FULL = 'c1150000-0000-4000-8000-000000000101';
 const USER_FULL = 'c1150000-0000-4000-8000-000000000102';
@@ -257,21 +265,27 @@ async function newVehicle(tenantId = TENANT_A): Promise<string> {
 
 /** Opens a reception through the real check-in route. Leaves it `opened`, RV 1. */
 async function openReception(
-  overrides: { readonly evSocPercent?: number; readonly fuelLevelId?: string } = {}
+  overrides: {
+    readonly evSocPercent?: number;
+    readonly fuelLevelId?: string;
+    /** Which branch to receive into. Defaults to BRANCH_A1. */
+    readonly branchId?: string;
+  } = {}
 ): Promise<{ id: string; vehicleId: string }> {
   const vehicleId = await newVehicle();
+  const { branchId: intoBranch = BRANCH_A1, ...rest } = overrides;
   const response = await CREATE_RECEPTION(
     new Request(R, {
       method: 'POST',
       headers: { 'content-type': 'application/json', 'idempotency-key': crypto.randomUUID() },
       body: JSON.stringify({
         companyId: COMPANY_A1,
-        branchId: BRANCH_A1,
+        branchId: intoBranch,
         vehicleId,
         receivingEmployeeId: USER_FULL,
         serviceRequesterPartnerId: PARTNER_A,
         origin: { kind: 'walk_in' },
-        ...overrides,
+        ...rest,
       }),
     })
   );
@@ -435,6 +449,23 @@ beforeAll(async () => {
     `INSERT INTO org.branches (id, tenant_id, company_id, branch_code, name, timezone_name, created_by)
      VALUES ($1,$2,$3,'branch_a2_read','Fixture Branch A2 Read','UTC',$4) ON CONFLICT (id) DO NOTHING`,
     [BRANCH_A2, TENANT_A, COMPANY_A1, USER_A]
+  );
+  // The third branch and the second company the branch-union read is measured
+  // against (Owner directive, P1-32-PRE-OD-UX).
+  await admin.query(
+    `INSERT INTO org.branches (id, tenant_id, company_id, branch_code, name, timezone_name, created_by)
+     VALUES ($1,$2,$3,'branch_a3_read','Fixture Branch A3 Read','UTC',$4) ON CONFLICT (id) DO NOTHING`,
+    [BRANCH_A3, TENANT_A, COMPANY_A1, USER_A]
+  );
+  await admin.query(
+    `INSERT INTO org.legal_companies (id, tenant_id, company_code, legal_name, base_currency_code, created_by)
+     VALUES ($1,$2,'company_a2_read','Fixture Company A2 Read','USD',$3) ON CONFLICT (id) DO NOTHING`,
+    [COMPANY_A2, TENANT_A, USER_A]
+  );
+  await admin.query(
+    `INSERT INTO org.branches (id, tenant_id, company_id, branch_code, name, timezone_name, created_by)
+     VALUES ($1,$2,$3,'branch_a4_read','Fixture Branch A4 Read','UTC',$4) ON CONFLICT (id) DO NOTHING`,
+    [BRANCH_A4, TENANT_A, COMPANY_A2, USER_A]
   );
   await admin.query(
     `INSERT INTO org.legal_companies (id, tenant_id, company_code, legal_name, base_currency_code, created_by)
@@ -1139,7 +1170,10 @@ describe('the branch board', () => {
 
     const row = (page.items ?? []).find((item) => item.id === first.id);
     expect(row).toBeDefined();
+    // `branchId` joined the row with the Owner directive (P1-32-PRE-OD-UX):
+    // the page may now span several branches, so every row names its own.
     expect(Object.keys(row ?? {}).sort()).toEqual([
+      'branchId',
       'custodyAcceptedAt',
       'custodyReleasedAt',
       'displayNumber',
@@ -1150,6 +1184,7 @@ describe('the branch board', () => {
       'vehicleDisplayNumber',
       'vehicleId',
     ]);
+    expect(row?.branchId).toBe(BRANCH_A1);
     expect(row?.recordVersion).toBe(1);
 
     // The status filter narrows to the vocabulary value asked for, and an
@@ -1162,5 +1197,65 @@ describe('the branch board', () => {
     expect(
       (await listReceptions(`?companyId=${COMPANY_A1}&branchId=${BRANCH_A1}&status=bogus`)).status
     ).toBe(422);
+  });
+});
+
+// ===========================================================================
+// The branch-optional board (Owner directive, P1-32-PRE-OD-UX)
+//
+// Omitting `branchId` asks for every branch of the company the caller may read.
+// The falsifiable case is USER_ELSEWHERE, which holds `rec.reception.read`
+// scoped to BRANCH_A2 and a DECOY grant in BRANCH_A1 carrying an unrelated
+// permission. Row-level security unions both branches, so a union built from the
+// policy alone would hand back BRANCH_A1's visits; the page must contain only
+// BRANCH_A2's, because that is the only branch where the caller holds the code
+// this operation declares.
+// ===========================================================================
+describe('the branch-optional board', () => {
+  it('omitting branchId returns the authorized branches and nothing from a third', async () => {
+    authAs(SUBJ_FULL);
+    const inA1 = await openReception();
+    const inA2 = await openReception({ branchId: BRANCH_A2 });
+    const inA3 = await openReception({ branchId: BRANCH_A3 });
+
+    // The unrestricted caller sees all three: `undefined` really does mean
+    // every branch of the company, so the narrowing below is not an artefact of
+    // an empty tenant.
+    const all = await listReceptions(`?companyId=${COMPANY_A1}&limit=100`);
+    expect(all.status).toBe(200);
+    const allIds = (((await all.json()) as PageBody).items ?? []).map((item) => item.id);
+    expect(allIds).toEqual(expect.arrayContaining([inA1.id, inA2.id, inA3.id]));
+
+    // The branch-narrowed caller sees ONLY the branch its read code covers.
+    authAs(SUBJ_ELSEWHERE);
+    const narrowed = await listReceptions(`?companyId=${COMPANY_A1}&limit=100`);
+    expect(narrowed.status).toBe(200);
+    const rows = ((await narrowed.json()) as PageBody).items ?? [];
+    const ids = rows.map((item) => item.id);
+    expect(ids).toContain(inA2.id);
+    // BRANCH_A1 is inside the caller's RLS reach through the decoy grant, so
+    // this is the assertion that fails if the union is taken from the policy
+    // instead of from a per-branch permission decision.
+    expect(ids).not.toContain(inA1.id);
+    expect(ids).not.toContain(inA3.id);
+    // Every row names its own branch, which is what makes a multi-branch page
+    // readable at all.
+    expect(rows.every((item) => item.branchId === BRANCH_A2)).toBe(true);
+  });
+
+  it('a branchId the caller does not hold is refused exactly as before', async () => {
+    authAs(SUBJ_ELSEWHERE);
+    const tampered = await listReceptions(`?companyId=${COMPANY_A1}&branchId=${BRANCH_A1}`);
+    expect(tampered.status).toBe(403);
+    expect(((await tampered.json()) as PageBody).code).toBe('ERR-IAM-001');
+  });
+
+  it('a company none of the caller branches belong to is refused, not answered empty', async () => {
+    authAs(SUBJ_ELSEWHERE);
+    const other = await listReceptions(`?companyId=${COMPANY_A2}&limit=100`);
+    // A refusal and not an empty page: an empty page would report that the
+    // second company has no visits, which is a fact this caller may not learn.
+    expect(other.status).toBe(403);
+    expect(((await other.json()) as PageBody).code).toBe('ERR-IAM-001');
   });
 });

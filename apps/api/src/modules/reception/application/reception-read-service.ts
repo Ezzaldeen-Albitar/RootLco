@@ -70,7 +70,8 @@ export class ReceptionReadService extends ApplicationService {
     db: DbHandle,
     query: {
       readonly companyId: string;
-      readonly branchId: string;
+      /** Resolved by the route; `undefined` means every branch of the company. */
+      readonly branchIds?: readonly string[] | undefined;
       readonly status?: string | undefined;
       readonly vehicleId?: string | undefined;
     } & PageQuery
@@ -79,7 +80,7 @@ export class ReceptionReadService extends ApplicationService {
       db,
       {
         companyId: query.companyId,
-        branchId: query.branchId,
+        branchIds: query.branchIds,
         status: query.status,
         vehicleId: query.vehicleId,
       },

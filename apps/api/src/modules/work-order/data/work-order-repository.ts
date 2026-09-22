@@ -76,7 +76,15 @@ export const JOB_HISTORY_ORDER = Object.freeze({
 /** Server-side filter for the branch work-order board. */
 export interface WorkOrderListFilter {
   readonly companyId: string;
-  readonly branchId: string;
+  /**
+   * The branches the page may cover (Owner directive, P1-32-PRE-OD-UX).
+   *
+   * `undefined` means every branch of the company, reachable only by a caller
+   * row-level security imposes no branch narrowing on: the route resolves the set
+   * through `authorizedBranches`, and that refuses rather than returning an empty
+   * one. A list is a NARROWING of the policy, never a widening of it.
+   */
+  readonly branchIds?: readonly string[] | undefined;
   readonly state?: string | undefined;
   readonly kind?: string | undefined;
   /** Inclusive lower bound on `opened_at`. */
@@ -590,7 +598,7 @@ export class WorkOrderRepository extends Repository {
     const values: unknown[] = [
       context.principal.tenantId,
       filter.companyId,
-      filter.branchId,
+      filter.branchIds === undefined ? null : [...filter.branchIds],
       filter.state ?? null,
       filter.kind ?? null,
       filter.openedFrom ?? null,
@@ -627,7 +635,10 @@ export class WorkOrderRepository extends Repository {
       `SELECT id, company_id, branch_id, reception_visit_id, vehicle_id, kind, state,
               parts_forward_state, display_number, opened_at, created_by, record_version
          FROM wo.work_orders
-        WHERE tenant_id = $1 AND company_id = $2 AND branch_id = $3
+        WHERE tenant_id = $1 AND company_id = $2
+          -- NULL is "every branch of the company", which only a caller the
+          -- policies impose no branch narrowing on can reach.
+          AND ($3::uuid[] IS NULL OR branch_id = ANY($3::uuid[]))
           AND deleted_at IS NULL
           AND ($4::text IS NULL OR state = $4)
           AND ($5::text IS NULL OR kind = $5)

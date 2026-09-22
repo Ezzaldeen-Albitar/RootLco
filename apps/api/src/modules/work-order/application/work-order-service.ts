@@ -673,7 +673,13 @@ export class WorkOrderService extends ApplicationService {
     const states = (await this.catalog.workOrderStates(db))
       .filter((state) => state.isClosed && !state.isCancellation)
       .map((state) => state.code);
-    return this.list(db, { ...filter, states }, page);
+    // The readiness queue names ONE branch and authorizes that pair itself, so
+    // the set handed down is that single branch.
+    return this.list(
+      db,
+      { companyId: filter.companyId, branchIds: [filter.branchId], states },
+      page
+    );
   }
 
   /** The work order, its live jobs, and the edges it can currently take. */

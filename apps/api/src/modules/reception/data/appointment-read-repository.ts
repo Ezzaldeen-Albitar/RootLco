@@ -80,6 +80,14 @@ export interface AppointmentDetailRow {
 
 export interface AppointmentListEntry {
   readonly id: string;
+  /**
+   * The branch the appointment is booked in (Owner directive, P1-32-PRE-OD-UX).
+   *
+   * Added when `branchId` became an optional filter: a calendar that can now
+   * span several branches has to say which one each slot belongs to, or two
+   * workshops' days are shown as one.
+   */
+  readonly branchId: string;
   readonly displayNumber: string | null;
   readonly lifecycleStatus: AppointmentStatus;
   readonly vehicleId: string;
@@ -98,7 +106,15 @@ export interface AppointmentListEntry {
 
 export interface AppointmentListFilter {
   readonly companyId: string;
-  readonly branchId: string;
+  /**
+   * The branches the page may cover (Owner directive, P1-32-PRE-OD-UX).
+   *
+   * `undefined` means every branch of the company, which is only reached by a
+   * caller row-level security imposes no branch narrowing on: the route resolves
+   * the set through `authorizedBranches`, and that refuses rather than returning
+   * an empty one. A list is a NARROWING of the policy, never a widening of it.
+   */
+  readonly branchIds?: readonly string[] | undefined;
   readonly status?: string | undefined;
   readonly vehicleId?: string | undefined;
   /** Inclusive lower bound: the effective window must END at or after this. */
@@ -210,7 +226,7 @@ export class AppointmentReadRepository extends Repository {
     const values: unknown[] = [
       context.principal.tenantId,
       filter.companyId,
-      filter.branchId,
+      filter.branchIds === undefined ? null : [...filter.branchIds],
       filter.status ?? null,
       filter.vehicleId ?? null,
       filter.from ?? null,
@@ -224,6 +240,7 @@ export class AppointmentReadRepository extends Repository {
     );
     const result = await this.run<{
       id: string;
+      branch_id: string;
       display_number: string | null;
       lifecycle_status: AppointmentStatus;
       vehicle_id: string;
@@ -240,7 +257,7 @@ export class AppointmentReadRepository extends Repository {
       effective_from_cursor: string;
     }>(
       db,
-      `SELECT a.id, a.display_number, a.lifecycle_status, a.vehicle_id,
+      `SELECT a.id, a.branch_id, a.display_number, a.lifecycle_status, a.vehicle_id,
               v.display_number AS vehicle_display_number,
               a.requester_partner_id, bp.display_name AS requester_display_name,
               a.appointment_type_id, t.name AS appointment_type_name,
@@ -252,7 +269,10 @@ export class AppointmentReadRepository extends Repository {
          LEFT JOIN crm.business_partners bp
            ON bp.tenant_id = a.tenant_id AND bp.id = a.requester_partner_id
          LEFT JOIN apt.appointment_types t ON t.id = a.appointment_type_id
-        WHERE a.tenant_id = $1 AND a.company_id = $2 AND a.branch_id = $3
+        WHERE a.tenant_id = $1 AND a.company_id = $2
+          -- NULL is "every branch of the company", which only a caller the
+          -- policies impose no branch narrowing on can reach.
+          AND ($3::uuid[] IS NULL OR a.branch_id = ANY($3::uuid[]))
           AND a.deleted_at IS NULL
           AND ($4::text IS NULL OR a.lifecycle_status = $4)
           AND ($5::uuid IS NULL OR a.vehicle_id = $5)
@@ -267,6 +287,7 @@ export class AppointmentReadRepository extends Repository {
       result.rows.map((row) => ({
         item: {
           id: row.id,
+          branchId: row.branch_id,
           displayNumber: row.display_number,
           lifecycleStatus: row.lifecycle_status,
           vehicleId: row.vehicle_id,

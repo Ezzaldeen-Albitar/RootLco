@@ -128,10 +128,21 @@ export async function POST(request: Request): Promise<Response> {
 // decides against the branch actually read (P1-18-A-01).
 // ---------------------------------------------------------------------------
 
+/**
+ * `branchId` is OPTIONAL (Owner directive, P1-32-PRE-OD-UX).
+ *
+ * Omitting it asks for every branch of the company the caller may read, which is
+ * how a person who works in three branches sees their day without picking one
+ * three times. It is not a widening: `authorizedBranches` decides the set, one
+ * branch at a time, against this operation's own declared codes, and refuses a
+ * caller that holds none of them — see `resolveAuthorizedBranches`. Naming a
+ * branch is unchanged and is still refused exactly as before, by the
+ * `scopeTargetOption` target below.
+ */
 const ListQuery = z
   .object({
     companyId: schemas.uuid,
-    branchId: schemas.uuid,
+    branchId: schemas.uuid.optional(),
     status: z.enum(RECEPTION_STATUSES).optional(),
     vehicleId: schemas.uuid.optional(),
     cursor: schemas.cursor.optional(),
@@ -157,14 +168,26 @@ export async function GET(request: Request): Promise<Response> {
   return handleOperation(
     RECEPTION_LIST_OPERATION,
     request,
-    async ({ db }) => ({
+    async ({ db, authorizedBranches }) => {
       // Parsed INSIDE the handler so a malformed query is rendered as the
       // shared problem document rather than an unhandled 500.
-      body: await receptionModule().receptionRead.listReceptions(
-        db,
-        parseOrFail(ListQuery, raw, 'query')
-      ),
-    }),
+      const query = parseOrFail(ListQuery, raw, 'query');
+      // A named branch was already decided by the `scopeTargetOption` target
+      // below, so it is passed through unchanged; an omitted one is resolved
+      // here, inside the transaction, against the caller's own grants.
+      const branchIds =
+        query.branchId === undefined ? await authorizedBranches(query.companyId) : [query.branchId];
+      return {
+        body: await receptionModule().receptionRead.listReceptions(db, {
+          companyId: query.companyId,
+          branchIds,
+          status: query.status,
+          vehicleId: query.vehicleId,
+          cursor: query.cursor,
+          limit: query.limit,
+        }),
+      };
+    },
     // `scopeTargetOption` can only make authorization STRICTER: a malformed or
     // absent pair yields no target and the schema above then refuses. Tenant is
     // never accepted from the client; it comes from the resolved principal.

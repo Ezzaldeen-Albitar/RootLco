@@ -689,13 +689,30 @@ export class WarrantyService {
     db: DbHandle,
     filter: {
       readonly companyId: string;
-      readonly branchId: string;
+      /**
+       * The branch the CALLER named, when it named one (Owner directive,
+       * P1-32-PRE-OD-UX).
+       *
+       * Kept beside `branchIds` because the two mean different things to the
+       * guard below: a named branch is a claim this service must decide, and a
+       * resolved set has already been decided one branch at a time by
+       * `resolveAuthorizedBranches`. Collapsing them would let a resolved set
+       * pass as an unchecked claim, or re-decide a set already decided.
+       */
+      readonly branchId?: string | undefined;
+      /** The branches the page may cover. `undefined` means every branch of the company. */
+      readonly branchIds?: readonly string[] | undefined;
       readonly vehicleId?: string | undefined;
     },
     page: { readonly cursor?: string | undefined; readonly limit?: number | undefined },
     authorizeScope: ScopeAuthorizer
   ): Promise<Page<WarrantyRecordListView>> {
-    await authorizeScope({ companyId: filter.companyId, branchId: filter.branchId });
+    // A NAMED branch is decided here and refused exactly as before. An omitted
+    // one was decided per branch before this call, so there is no pair left to
+    // check and nothing a repeat would add.
+    if (filter.branchId !== undefined) {
+      await authorizeScope({ companyId: filter.companyId, branchId: filter.branchId });
+    }
 
     const request: PageRequest = pageRequest(WARRANTY_ORDER, page);
     const result = await this.repository.listWarranties(db, filter, request);

@@ -77,7 +77,14 @@ export const dynamic = 'force-dynamic';
 const ListQuery = z
   .object({
     companyId: schemas.uuid,
-    branchId: schemas.uuid,
+    /**
+     * OPTIONAL (Owner directive, P1-32-PRE-OD-UX). Omitted, it asks for every
+     * branch of the company the caller may read; `authorizedBranches` decides
+     * that set one branch at a time against this operation's declared code and
+     * refuses a caller holding none. A named branch is decided exactly as
+     * before, by `authorizeScope` inside the service.
+     */
+    branchId: schemas.uuid.optional(),
     vehicleId: schemas.uuid.optional(),
     cursor: schemas.cursor.optional(),
     limit: schemas.limit.optional(),
@@ -102,14 +109,17 @@ export async function GET(request: Request): Promise<Response> {
   return handleOperation(
     WARRANTY_LIST_OPERATION,
     request,
-    async ({ db, authorizeScope }) => {
+    async ({ db, authorizeScope, authorizedBranches }) => {
       const query = parseOrFail(ListQuery, raw, 'query');
+      const branchIds =
+        query.branchId === undefined ? await authorizedBranches(query.companyId) : [query.branchId];
       return {
         body: await warrantyModule().warranties.listWarranties(
           db,
           {
             companyId: query.companyId,
-            branchId: query.branchId,
+            ...(query.branchId === undefined ? {} : { branchId: query.branchId }),
+            branchIds,
             ...(query.vehicleId === undefined ? {} : { vehicleId: query.vehicleId }),
           },
           {
