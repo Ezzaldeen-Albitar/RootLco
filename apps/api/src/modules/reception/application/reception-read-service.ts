@@ -15,6 +15,7 @@
  * same pair travels as the route's `authorizationTarget` and the pre-handler
  * check has already decided against it.
  */
+import { crmModule } from '@/modules/crm';
 import { ApplicationService } from '@/server/layering';
 import { AppFailure } from '@/server/errors/app-failure';
 import type { DbHandle } from '@/server/db/transaction';
@@ -44,6 +45,10 @@ import {
   type ReceptionReadRepository,
   type ReceptionScopeRow,
 } from '../data/reception-read-repository';
+import {
+  receptionStatusesInGroup,
+  type ReceptionStatusGroup,
+} from '../domain/reception';
 
 /** Cursor/limit pair every list read accepts, already schema-validated. */
 export interface PageQuery {
@@ -98,6 +103,13 @@ export class ReceptionReadService extends ApplicationService {
       /** Resolved by the route; `undefined` means every branch of the company. */
       readonly branchIds?: readonly string[] | undefined;
       readonly status?: string | undefined;
+      /**
+       * `open` or `finished` (Owner directive, P1-32-PRE-OD-UX). Resolved HERE
+       * into the statuses it covers, because the vocabulary and its terminal
+       * list belong to this module's domain — a route that expanded the group
+       * itself would be a second copy of the frozen graph.
+       */
+      readonly statusGroup?: ReceptionStatusGroup | undefined;
       readonly vehicleId?: string | undefined;
       /** Inclusive bounds on the instant custody was accepted. */
       readonly from?: string | undefined;
@@ -106,12 +118,16 @@ export class ReceptionReadService extends ApplicationService {
       readonly q?: string | undefined;
     } & PageQuery
   ): Promise<Page<ReceptionListEntry>> {
-    return this.reads.listReceptions(
+    const page = await this.reads.listReceptions(
       db,
       {
         companyId: query.companyId,
         branchIds: query.branchIds,
         status: query.status,
+        statuses:
+          query.statusGroup === undefined
+            ? undefined
+            : receptionStatusesInGroup(query.statusGroup),
         vehicleId: query.vehicleId,
         from: query.from,
         to: query.to,
@@ -121,6 +137,7 @@ export class ReceptionReadService extends ApplicationService {
       },
       pageRequest(RECEPTION_LIST_ORDERING, query)
     );
+    return { ...page, items: await nameCustomers(db, page.items) };
   }
 
   /** Active IAM users who may receive custody in the requested branch. */
@@ -233,4 +250,45 @@ async function searchTermsFor(db: DbHandle, q: string | undefined) {
   return (await callerHoldsPermissionAnywhere(db, CUSTOMER_SEARCH_PERMISSION))
     ? terms
     : withoutCustomerArms(terms);
+}
+
+/**
+ * Names the customer of every row on one page, in ONE additional statement
+ * (Owner directive, P1-32-PRE-OD-UX).
+ *
+ * Batched deliberately: a board renders a page with a customer column, and a
+ * per-row lookup is the N+1 every other enriched read in this repository was
+ * written to avoid.
+ *
+ * Resolved through the CRM module's PUBLIC read rather than by joining
+ * `crm.business_partners` in the reception statement. That read checks
+ * `crm.customer.read` for itself and answers an EMPTY map to a caller who does
+ * not hold it, so an unentitled caller keeps the role and loses only the name —
+ * which is the same narrowing the work-order board applies to its technician
+ * column, and it can never widen what the CRM permission model already decided.
+ *
+ * An id absent from the map is left `null` rather than failing the page: a
+ * partner may be soft-deleted, merged away or outside this caller's reach, and
+ * that is a sentence for the screen to say, not a reason to hide the other rows.
+ */
+async function nameCustomers(
+  db: DbHandle,
+  items: readonly ReceptionListEntry[]
+): Promise<readonly ReceptionListEntry[]> {
+  const partnerIds = [
+    ...new Set(items.flatMap((item) => (item.customer === null ? [] : [item.customer.id]))),
+  ];
+  if (partnerIds.length === 0) return items;
+  const identities = await crmModule().customerRead.resolveDisplayIdentities(db, partnerIds);
+  return items.map((item) =>
+    item.customer === null
+      ? item
+      : {
+          ...item,
+          customer: {
+            id: item.customer.id,
+            displayName: identities.get(item.customer.id)?.displayName ?? null,
+          },
+        }
+  );
 }

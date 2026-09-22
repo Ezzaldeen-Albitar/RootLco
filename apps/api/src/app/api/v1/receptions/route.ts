@@ -43,6 +43,7 @@ import {
   MAX_SOC_PERCENT,
   MAX_WALK_IN_NOTE,
   MIN_SOC_PERCENT,
+  RECEPTION_STATUS_GROUPS,
   RECEPTION_STATUSES,
   receptionModule,
 } from '@/modules/reception';
@@ -145,6 +146,20 @@ const ListQuery = z
     companyId: schemas.uuid,
     branchId: schemas.uuid.optional(),
     status: z.enum(RECEPTION_STATUSES).optional(),
+    /**
+     * The status GROUP (Owner directive, P1-32-PRE-OD-UX) — `open` for the
+     * visits still in play, `finished` for the three terminal exits.
+     *
+     * The control a board actually offers, because "today's queue" is one
+     * question and six lifecycle codes are six. The group is expanded into the
+     * statuses it covers inside the module, from `TERMINAL_RECEPTION_STATUSES`,
+     * so the frozen graph is stated once.
+     *
+     * Mutually exclusive with `status`, refused below rather than ANDed: the
+     * intersection is either that one status or an empty page, and an empty page
+     * on a board is indistinguishable from a branch with nothing in it.
+     */
+    statusGroup: z.enum(RECEPTION_STATUS_GROUPS).optional(),
     vehicleId: schemas.uuid.optional(),
     /**
      * Inclusive bounds on the instant custody was accepted (Owner directive,
@@ -165,6 +180,15 @@ const ListQuery = z
   })
   .strict()
   .superRefine((query, context) => {
+    if (query.status !== undefined && query.statusGroup !== undefined) {
+      // See `statusGroup` above: ANDing them is well defined and useless, and
+      // the useless answer looks exactly like a quiet board.
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['statusGroup'],
+        message: 'statusGroup and status may not both be sent',
+      });
+    }
     if (
       query.from !== undefined &&
       query.to !== undefined &&
@@ -216,6 +240,7 @@ export async function GET(request: Request): Promise<Response> {
           companyId: query.companyId,
           branchIds,
           status: query.status,
+          statusGroup: query.statusGroup,
           vehicleId: query.vehicleId,
           from: query.from,
           to: query.to,
