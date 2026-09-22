@@ -1187,27 +1187,41 @@ function unwrap(node: ts.Node): ts.Node {
  *
  * ## What THE READ is, precisely
  *
- * Inside the `handleOperation` callback, the returned object literal's `body`
- * property value — or, following ONE level, the local `const x = await …` that
- * value names. The awaited call producing that value is the read. Nothing else
- * counts, and that is the whole correction: an earlier version scanned every
- * `await` under `return handleOperation(…)`, which is the entire body, so an
- * awaited logger beside a `[]` read scored as wired.
+ * Inside the `handleOperation` callback — and NOT inside any function nested in
+ * it — EVERY `return` that carries a `body` property. Its value, or the local
+ * `const x = await …` that value names, followed one level. The awaited call
+ * producing it is a read, and every read found must satisfy the rule: a handler
+ * with a narrowed first return and an unnarrowed second is not narrowed.
  *
- * ## What is refused by failing closed rather than by being understood
+ * An earlier version scanned every `await` under `return handleOperation(…)`,
+ * which is the entire body, so `await logger.info({ branchIds })` beside a `[]`
+ * read scored as wired. Another judged only the FIRST body-bearing return.
  *
- * Helper-call indirection — `return { body: await buildPage(db, branchIds) }`
- * where the helper performs the read — is REFUSED, because the binding reaches a
- * call this file cannot follow into. That is deliberate: the alternative is
- * inter-procedural analysis in a test, and the safe direction for a guard that
- * cannot tell is no. A route written that way must inline the read or the gate
- * will say it is not narrowed.
+ * ## Helper indirection is ADMITTED, and the docblock used to lie about it
  *
- * A binding reaches a call when it appears in an argument directly, through a
- * spread, as a property VALUE (shorthand included), or as a property value of a
- * local object literal that argument names. A property KEY is never a use, a
- * property-access NAME is never a use, and a declaration's own name is never a
- * use.
+ * `return { body: await buildPage(db, filter) }` where `buildPage` performs the
+ * read passes, because the helper IS the read by this definition. An earlier
+ * version of this comment claimed such a shape was refused; it never was, and a
+ * comment asserting a guarantee the code does not provide is worse than no
+ * comment. What the gate actually requires is stated below and is what makes the
+ * helper case safe enough to admit: the binding must be a property of the
+ * FILTER the helper is handed, so a helper called with `{ …query, branchIds: [] }`
+ * still fails.
+ *
+ * ## THE FILTER, which is where the binding must appear
+ *
+ * Among the read's arguments, the filter is the object literal — or the local
+ * object literal an argument names, followed one level — that carries a spread
+ * of the parsed query or a `companyId` property. The binding must be a property
+ * VALUE of THAT object (direct, shorthand, or through a spread of a local object
+ * literal), and the override check runs in that same object.
+ *
+ * Binding the trace to the filter is what refuses
+ * `read(db, { …q, branchIds: [] }, { trace: branchIds })`: the answer is passed,
+ * and passed somewhere that narrows nothing.
+ *
+ * A property KEY is never a use, a property-access NAME is never a use, and a
+ * declaration's own name is never a use.
  */
 interface NarrowingAudit {
   readonly optionalBranch: boolean;
@@ -1298,8 +1312,9 @@ function auditBranchNarrowing(
     }
   }
 
-  // --- (6) THE READ --------------------------------------------------------
-  let readCall: ts.CallExpression | undefined;
+  // --- (6) THE READS -------------------------------------------------------
+  const readCalls: ts.CallExpression[] = [];
+  let unresolvedBody = true;
   if (callback) {
     const localConsts = new Map<string, ts.Node>();
     const collectLocals = (node: ts.Node): void => {
@@ -1323,27 +1338,50 @@ function auditBranchNarrowing(
       return undefined;
     };
 
+    /**
+     * EVERY body-bearing return in the callback, and none from a function
+     * nested inside it.
+     *
+     * The nesting rule is not fussiness: `items.map((i) => ({ body: i }))` has a
+     * `return` carrying `body` that belongs to the callback of `map`, not to the
+     * handler, and reading it as the handler's read makes an inner literal stand
+     * in for the real one. Traversal therefore stops at any arrow or function
+     * expression other than the handler callback itself.
+     *
+     * A body value that is not an awaited call — `page.items`, or a wrapper — is
+     * recorded as a body WITHOUT a read, so `readFound` stays false and the
+     * handler fails closed rather than being silently excused.
+     */
+    let bodyCount = 0;
     const visitReturns = (node: ts.Node): void => {
-      if (readCall) return;
+      if (node !== callback && (ts.isArrowFunction(node) || ts.isFunctionExpression(node))) return;
       if (ts.isReturnStatement(node) && node.expression) {
         const returned = unwrap(node.expression);
         if (ts.isObjectLiteralExpression(returned)) {
           for (const property of returned.properties) {
+            let value: ts.Node | undefined;
             if (ts.isPropertyAssignment(property) && property.name.getText(file) === 'body') {
-              readCall = fromBodyValue(property.initializer);
+              value = property.initializer;
             } else if (
               ts.isShorthandPropertyAssignment(property) &&
               property.name.text === 'body'
             ) {
-              readCall = fromBodyValue(property.name);
+              value = property.name;
             }
-            if (readCall) return;
+            if (value === undefined) continue;
+            bodyCount += 1;
+            const call = fromBodyValue(value);
+            if (call) readCalls.push(call);
           }
         }
       }
       ts.forEachChild(node, visitReturns);
     };
     visitReturns(callback);
+    // A `body` this file could not resolve to an awaited call leaves the handler
+    // with fewer reads than bodies, and that is a refusal: `page.items` and a
+    // response wrapper both land here.
+    unresolvedBody = bodyCount !== readCalls.length || bodyCount === 0;
   }
 
   // --- (4)(5)(7) the seam, its binding, and where the answer goes ----------
@@ -1407,7 +1445,7 @@ function auditBranchNarrowing(
     findAssignments(handler);
     if (isConst && !reassigned) seamBindingIsConst = true;
 
-    if (!readCall) continue;
+    if (readCalls.length === 0) continue;
 
     const localObjects = new Map<string, ts.ObjectLiteralExpression>();
     const collectObjects = (node: ts.Node): void => {
@@ -1423,25 +1461,49 @@ function auditBranchNarrowing(
     };
     collectObjects(handler);
 
+    /** The object literal an argument IS, or the local one it names. */
+    const asObject = (argument: ts.Node): ts.ObjectLiteralExpression | undefined => {
+      const value = unwrap(argument);
+      if (ts.isObjectLiteralExpression(value)) return value;
+      if (ts.isIdentifier(value)) return localObjects.get(value.text);
+      return undefined;
+    };
+
     /**
-     * (7) Anything VISIBLE that replaces the narrowing after it is placed.
+     * THE FILTER: the argument that carries the scope.
      *
-     * A later property named `branchIds`/`branchId` is an override outright. A
-     * later SPREAD is an override when the thing being spread can be seen to
-     * mention one of those keys — `{ branchIds, ...(retry ? { branchIds: [] } : {}) }`
-     * is narrowed by whatever the conditional says.
-     *
-     * ## The limit, stated rather than implied
-     *
-     * A spread of something OPAQUE — an identifier, or the result of a call —
-     * is NOT detected. It cannot be, without following the value, and the two
-     * real routes that spread after the narrowing both do it with conditionals
-     * whose object literals name only unrelated filters (`status`, `q`) or with
-     * a call that returns other board filters. Flagging every opaque spread
-     * would refuse correct code, and a gate that refuses correct code is a gate
-     * somebody disables. So this is a KNOWN hole with a test that says so,
-     * rather than a silent one.
+     * Recognised by a spread of the parsed query or a `companyId` property —
+     * the two shapes every one of these reads actually uses. A page argument
+     * (`{ cursor, limit }`) and a trace argument match neither, which is the
+     * point: passing the answer to one of those narrows nothing.
      */
+    const isFilter = (object: ts.ObjectLiteralExpression): boolean =>
+      object.properties.some((property) => {
+        if (ts.isSpreadAssignment(property)) {
+          const spread = unwrap(property.expression);
+          return ts.isIdentifier(spread) && /quer|filter|raw/i.test(spread.text);
+        }
+        return (
+          (ts.isPropertyAssignment(property) || ts.isShorthandPropertyAssignment(property)) &&
+          property.name.getText(file) === 'companyId'
+        );
+      });
+
+    /** Is the binding a property VALUE of this object, directly or via a spread of a local one? */
+    const carriedBy = (object: ts.ObjectLiteralExpression, depth = 0): boolean =>
+      object.properties.some((property) => {
+        if (ts.isShorthandPropertyAssignment(property)) return bound.includes(property.name.text);
+        if (ts.isPropertyAssignment(property)) {
+          const value = unwrap(property.initializer);
+          return ts.isIdentifier(value) && bound.includes(value.text);
+        }
+        if (ts.isSpreadAssignment(property) && depth === 0) {
+          const inner = asObject(property.expression);
+          return inner !== undefined && carriedBy(inner, depth + 1);
+        }
+        return false;
+      });
+
     const mentionsBranchKey = (node: ts.Node): boolean => {
       // Only values the spread could actually BE are inspected: the literal
       // itself, or the arms of a conditional. Descending further would read the
@@ -1463,6 +1525,15 @@ function auditBranchNarrowing(
       return false;
     };
 
+    /**
+     * (7) Anything VISIBLE that replaces the narrowing after it is placed, in
+     * the SAME object the narrowing was placed in.
+     *
+     * A later property named `branchIds`/`branchId` is an override outright. A
+     * later SPREAD is one when the thing spread can be SEEN to name a branch
+     * key. A spread of something opaque is not detected — that needs the value
+     * rather than the syntax — and the limit has its own test.
+     */
     const inspectOverride = (object: ts.ObjectLiteralExpression): void => {
       let seenBinding = false;
       for (const property of object.properties) {
@@ -1480,44 +1551,31 @@ function auditBranchNarrowing(
         const carries =
           (ts.isShorthandPropertyAssignment(property) && bound.includes(property.name.text)) ||
           (ts.isPropertyAssignment(property) &&
-            ts.isIdentifier(property.initializer) &&
-            bound.includes(property.initializer.text));
+            ts.isIdentifier(unwrap(property.initializer)) &&
+            bound.includes((unwrap(property.initializer) as ts.Identifier).text));
         if (carries) seenBinding = true;
       }
     };
 
-    const usesBinding = (node: ts.Node, depth = 0): boolean => {
-      let used = false;
-      const scan = (inner: ts.Node): void => {
-        if (used) return;
-        if (ts.isObjectLiteralExpression(inner)) inspectOverride(inner);
-        if (ts.isPropertyAssignment(inner)) {
-          scan(inner.initializer);
-          return;
+    // EVERY read must be narrowed. A handler whose first return is narrowed and
+    // whose second is not is not a narrowed handler.
+    const narrowedEvery = readCalls.every((read) => {
+      const filters = read.arguments
+        .map((argument) => asObject(argument))
+        .filter((object): object is ts.ObjectLiteralExpression => object !== undefined)
+        .filter((object) => isFilter(object));
+      if (filters.length === 0) return false;
+      let narrowed = false;
+      for (const filter of filters) {
+        if (carriedBy(filter)) {
+          narrowed = true;
+          inspectOverride(filter);
         }
-        if (ts.isPropertyAccessExpression(inner)) {
-          scan(inner.expression);
-          return;
-        }
-        if (ts.isVariableDeclaration(inner)) {
-          if (inner.initializer) scan(inner.initializer);
-          return;
-        }
-        if (ts.isIdentifier(inner)) {
-          if (bound.includes(inner.text)) used = true;
-          else if (depth === 0 && localObjects.has(inner.text)) {
-            const object = localObjects.get(inner.text);
-            if (object && usesBinding(object, depth + 1)) used = true;
-          }
-          return;
-        }
-        ts.forEachChild(inner, scan);
-      };
-      scan(node);
-      return used;
-    };
+      }
+      return narrowed;
+    });
+    if (narrowedEvery) tracesSeamResult = true;
 
-    if (readCall.arguments.some((argument) => usesBinding(argument))) tracesSeamResult = true;
     if (tracesSeamResult) break;
   }
 
@@ -1529,7 +1587,7 @@ function auditBranchNarrowing(
     seamCalled: seamCalls.length > 0,
     seamFromCallback,
     seamBindingIsConst,
-    readFound: readCall !== undefined,
+    readFound: readCalls.length > 0 && !unresolvedBody,
     tracesSeamResult,
     overriddenAfterNarrowing,
   };
@@ -1968,6 +2026,139 @@ describe('no caller-supplied scope narrowing on the ten P1-22 isolation operatio
       audit.overriddenAfterNarrowing,
       'an opaque spread is not detected — if this ever becomes true the limit has been closed and this test should say so'
     ).toBe(false);
+  });
+
+  it('judges EVERY body-bearing return, not just the first', () => {
+    // A handler whose first return is narrowed and whose second is not is not a
+    // narrowed handler. Judging only the first is how a second path ships wide.
+    const audit = auditOf(
+      moduleWith(`async ({ db, authorizedBranches }) => {
+         const query = parseOrFail(Query, raw, 'query');
+         const branchIds = await authorizedBranches(query.companyId);
+         if (query.vehicleId !== undefined) {
+           return { body: await read(db, { ...query, branchIds }) };
+         }
+         return { body: await read(db, { ...query, branchIds: [] }) };
+       }`)
+    );
+    expect(audit).not.toBeNull();
+    if (!audit) return;
+    expect(audit.tracesSeamResult, 'the unnarrowed second return was not judged').toBe(false);
+  });
+
+  it('ignores a body-shaped return inside a nested function', () => {
+    // `items.map((i) => ({ body: i }))` has a `return` carrying `body`, and it
+    // belongs to the callback of `map`. Reading it as the handler's read lets an
+    // inner literal stand in for the real one, which is then free to be `[]`.
+    const audit = auditOf(
+      moduleWith(`async ({ db, authorizedBranches }) => {
+         const query = parseOrFail(Query, raw, 'query');
+         const branchIds = await authorizedBranches(query.companyId);
+         const rows = items.map((i) => ({ body: i, branchIds }));
+         return { body: await read(db, { ...query, branchIds: [] }) };
+       }`)
+    );
+    expect(audit).not.toBeNull();
+    if (!audit) return;
+    expect(audit.tracesSeamResult, 'a nested body literal was taken for the read').toBe(false);
+  });
+
+  it('requires the answer in the FILTER, not merely somewhere in the call', () => {
+    // The answer is passed — to a trace argument, which narrows nothing.
+    const audit = auditOf(
+      moduleWith(`async ({ db, authorizedBranches }) => {
+         const query = parseOrFail(Query, raw, 'query');
+         const branchIds = await authorizedBranches(query.companyId);
+         return { body: await read(db, { ...query, branchIds: [] }, { trace: branchIds }) };
+       }`)
+    );
+    expect(audit).not.toBeNull();
+    if (!audit) return;
+    expect(audit.tracesSeamResult, 'the answer reached a non-filter argument').toBe(false);
+  });
+
+  it('admits a helper that receives the narrowed filter, and refuses one that does not', () => {
+    // The docblock used to claim helper indirection was REFUSED. It never was:
+    // the helper IS the read by this definition. What makes that safe to admit
+    // is the filter rule, so both directions are asserted here rather than left
+    // to a comment that was wrong once already.
+    const narrowed = auditOf(
+      moduleWith(`async ({ db, authorizedBranches }) => {
+         const query = parseOrFail(Query, raw, 'query');
+         const branchIds = await authorizedBranches(query.companyId);
+         return { body: await buildPage(db, { ...query, branchIds }) };
+       }`)
+    );
+    expect(narrowed).not.toBeNull();
+    if (narrowed) expect(narrowed.tracesSeamResult).toBe(true);
+
+    const wide = auditOf(
+      moduleWith(`async ({ db, authorizedBranches }) => {
+         const query = parseOrFail(Query, raw, 'query');
+         const branchIds = await authorizedBranches(query.companyId);
+         return { body: await buildPage(db, { ...query, branchIds: [] }) };
+       }`)
+    );
+    expect(wide).not.toBeNull();
+    if (wide) expect(wide.tracesSeamResult).toBe(false);
+  });
+
+  it('records what it refuses by failing closed rather than by understanding', () => {
+    // Four shapes the gate cannot reason about. Each is REFUSED, and each is
+    // recorded here so the refusal is known behaviour rather than a surprise to
+    // whoever writes one. A route that needs any of them must be written the
+    // ordinary way, or this suite must grow to understand it deliberately.
+    const closed = [
+      {
+        why: 'value-level neutralisation in the filter itself',
+        body: `async ({ db, authorizedBranches }) => {
+           const query = parseOrFail(Query, raw, 'query');
+           const branchIds = await authorizedBranches(query.companyId);
+           return { body: await read(db, { ...query, branchIds: branchIds.slice(0, 0) }) };
+         }`,
+      },
+      {
+        why: 're-destructuring the seam out of the input parameter',
+        body: `async (input) => {
+           const query = parseOrFail(Query, raw, 'query');
+           const { authorizedBranches } = input;
+           const branchIds = await authorizedBranches(query.companyId);
+           return { body: await read(db, { ...query, branchIds }) };
+         }`,
+      },
+      {
+        why: 'a member-access body',
+        body: `async ({ db, authorizedBranches }) => {
+           const query = parseOrFail(Query, raw, 'query');
+           const branchIds = await authorizedBranches(query.companyId);
+           const page = await read(db, { ...query, branchIds });
+           return { body: page.items };
+         }`,
+      },
+      {
+        why: 'a response wrapper around the read',
+        body: `async ({ db, authorizedBranches }) => {
+           const query = parseOrFail(Query, raw, 'query');
+           const branchIds = await authorizedBranches(query.companyId);
+           return { body: envelope(await read(db, { ...query, branchIds })) };
+         }`,
+      },
+    ] as const;
+
+    for (const scenario of closed) {
+      const audit = auditOf(moduleWith(scenario.body));
+      expect(audit, scenario.why).not.toBeNull();
+      if (!audit) continue;
+      const admitted =
+        audit.declares &&
+        audit.seamCalled &&
+        audit.seamFromCallback &&
+        audit.seamBindingIsConst &&
+        audit.readFound &&
+        audit.tracesSeamResult &&
+        !audit.overriddenAfterNarrowing;
+      expect(admitted, `${scenario.why} — refused, and recorded as a known limit`).toBe(false);
+    }
   });
 
   it('refuses a schema it cannot see rather than reporting no optional parameter', () => {
