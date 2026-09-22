@@ -1,9 +1,16 @@
-import { screen } from '@testing-library/react';
+import { screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import en from '../src/i18n/messages/en.json';
 import ar from '../src/i18n/messages/ar.json';
-import { renderLtr, renderRtl } from './render';
+import {
+  TEST_BRANCH,
+  TEST_COMPANY,
+  branchSnapshot,
+  inBranch,
+  renderLtr,
+  renderRtl,
+} from './render';
 
 /**
  * The shared pieces the appointment and reception screens are built out of
@@ -503,84 +510,83 @@ describe('EvidenceSection', () => {
 });
 
 /* ====================================================================== *
- * BranchTargetFields — a resource selector, and the directory that is missing
+ * BranchTargetFields — a resource selector, now NAMED
  * ====================================================================== */
 
 describe('BranchTargetFields', () => {
-  const COMPANY = 'ffffffff-ffff-4fff-8fff-ffffffffffff';
-  const BRANCH = '10101010-1010-4010-8010-101010101010';
-
-  it('offers the session’s OWN resolved references, and says why there are no names', () => {
-    renderLtr(
-      <BranchTargetFields
-        messages={en}
-        companyIds={[COMPANY]}
-        branchIds={[BRANCH]}
-        companyId={COMPANY}
-        branchId={BRANCH}
-        onCompanyChange={vi.fn()}
-        onBranchChange={vi.fn()}
-      />
+  function fields(over: Record<string, unknown> = {}, snapshot = branchSnapshot()) {
+    return renderLtr(
+      inBranch(
+        <BranchTargetFields
+          messages={en}
+          companyId=""
+          branchId=""
+          onCompanyChange={vi.fn()}
+          onBranchChange={vi.fn()}
+          {...over}
+        />,
+        { snapshot }
+      )
     );
-    // Two selects, each carrying the contract-gap sentence: the platform
-    // publishes no company or branch directory, so there are no names to show.
-    expect(screen.getAllByRole('combobox')).toHaveLength(2);
-    expect(screen.getAllByText(EN['admin.contractGap.noDirectory'] as string)).toHaveLength(2);
-    expect(screen.getByRole('option', { name: COMPANY })).toBeInTheDocument();
+  }
+
+  it('NAMES the branch instead of offering a reference to recognise', () => {
+    /*
+     * This block used to assert the opposite, and it was right at the time:
+     * two selects whose options were raw references, each carrying the sentence
+     * "the service publishes no company or branch directory". The directory now
+     * exists — `GET /auth/working-context` publishes named, active entities —
+     * so the reference is gone from the screen entirely.
+     */
+    fields();
+    const shown = screen.getByTestId('appointment-branch-target');
+    expect(shown).toHaveTextContent(TEST_BRANCH.name);
+    expect(shown).toHaveTextContent(TEST_COMPANY.name);
+    expect(shown).not.toHaveTextContent(TEST_BRANCH.id);
   });
 
-  it('falls back to a typed reference when the session resolves NO scope', () => {
-    // An empty resolved list means unrestricted within the workspace, not "no
-    // access" — offering an empty select would read as the opposite.
-    renderLtr(
-      <BranchTargetFields
-        messages={en}
-        companyIds={[]}
-        branchIds={[]}
-        companyId=""
-        branchId=""
-        onCompanyChange={vi.fn()}
-        onBranchChange={vi.fn()}
-      />
-    );
+  it('offers NO control at all, because the header owns the choice', () => {
+    // A second editable pair here would be a second authority for one fact.
+    fields();
     expect(screen.queryAllByRole('combobox')).toHaveLength(0);
-    expect(screen.getAllByText(EN['admin.scope.noneResolved'] as string)).toHaveLength(2);
+    expect(screen.queryAllByRole('textbox')).toHaveLength(0);
   });
 
-  it('reports each half separately, so an error lands on the field it is about', () => {
-    renderLtr(
-      <BranchTargetFields
-        messages={en}
-        companyIds={[]}
-        branchIds={[]}
-        companyId=""
-        branchId=""
-        onCompanyChange={vi.fn()}
-        onBranchChange={vi.fn()}
-        branchError="This branch is required"
-      />
-    );
-    expect(screen.getByText('This branch is required')).toBeVisible();
+  it('never offers a free-text box, not even to an operator with no narrowing', () => {
+    /*
+     * The defect this closes. An EMPTY resolved scope means unrestricted within
+     * the workspace, so the operator with the MOST reach was the one handed two
+     * boxes and asked to type a reference. They now get the same named list as
+     * everybody else.
+     */
+    fields({}, branchSnapshot([TEST_BRANCH], 'ready'));
+    expect(screen.queryAllByRole('textbox')).toHaveLength(0);
+    expect(screen.getByTestId('appointment-branch-target')).toHaveTextContent(TEST_BRANCH.name);
   });
 
-  it('reports what the operator typed, for the branch half only', async () => {
+  it('reports the branch upward, so the surrounding form still builds its request', async () => {
+    // The props did not change: the screen keeps its own copy of the pair, and
+    // the header's choice is pushed into it.
     const onCompanyChange = vi.fn();
     const onBranchChange = vi.fn();
-    renderLtr(
-      <BranchTargetFields
-        messages={en}
-        companyIds={[]}
-        branchIds={[]}
-        companyId=""
-        branchId=""
-        onCompanyChange={onCompanyChange}
-        onBranchChange={onBranchChange}
-      />
+    fields({ onCompanyChange, onBranchChange });
+    await waitFor(() => expect(onBranchChange).toHaveBeenCalledWith(TEST_BRANCH.id));
+    expect(onCompanyChange).toHaveBeenCalledWith(TEST_COMPANY.id);
+  });
+
+  it('says what to do when several branches are authorized and none is chosen', () => {
+    const second = { ...TEST_BRANCH, id: '66666666-6666-4666-8666-666666666666', name: 'Second' };
+    fields({}, branchSnapshot([TEST_BRANCH, second]));
+    expect(screen.getByTestId('requires-concrete-branch')).toHaveTextContent(
+      EN['workingContext.chooseFirst'] as string
     );
-    const fields = screen.getAllByRole('textbox');
-    await userEvent.type(fields[1] as HTMLElement, 'b');
-    expect(onBranchChange).toHaveBeenCalledWith('b');
-    expect(onCompanyChange).not.toHaveBeenCalled();
+  });
+
+  it('renders a server complaint about either half once, under the pair', () => {
+    fields({ branchError: 'This branch is required' });
+    const alerts = screen.getAllByRole('alert');
+    expect(alerts).toHaveLength(1);
+    expect(alerts[0]).toHaveTextContent('This branch is required');
   });
 });
 

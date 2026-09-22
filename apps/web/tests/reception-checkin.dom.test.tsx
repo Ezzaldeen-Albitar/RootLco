@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import en from '../src/i18n/messages/en.json';
 import ar from '../src/i18n/messages/ar.json';
-import { renderLtr, renderRtl } from './render';
+import { BranchSwitch, branchSnapshot, inBranch, renderLtr, renderRtl } from './render';
 import type { CheckInStepProps } from '@/features/receptions/check-in/wizard';
 import type { ReceptionDetail } from '@/features/receptions/receptions-contract';
 
@@ -164,14 +164,39 @@ const SESSION = { userId: 'user-1', displayName: 'Front Desk' };
  * their own case below.
  */
 
+/**
+ * The branch this check-in is for.
+ *
+ * It used to be two controls on the form — a select over raw references, or two
+ * free-text boxes for an operator whose grant is not narrowed. Recording
+ * custody of a vehicle against a branch somebody typed is exactly the fault
+ * this replaces, so the branch is the working context's named selection and the
+ * test states it by standing the screen in one.
+ */
+const CHECKIN_BRANCH = {
+  id: 'branch-1',
+  companyId: 'company-1',
+  code: 'B1',
+  name: 'Main workshop',
+  city: null,
+  timezone: 'Asia/Riyadh',
+  status: 'active',
+};
+
+const CHECKIN_CONTEXT = branchSnapshot([CHECKIN_BRANCH]);
+
+/** No branch chosen yet: two are authorized and the header has not been used. */
+const NO_BRANCH_CHOSEN = branchSnapshot([
+  CHECKIN_BRANCH,
+  { ...CHECKIN_BRANCH, id: 'branch-2', name: 'Second workshop' },
+]);
+
 function startProps(over: Record<string, unknown> = {}) {
   return {
     locale: 'en' as const,
     messages: en,
     sessionUserId: 'user-1',
     sessionUserName: 'Front Desk',
-    companyIds: ['company-1'],
-    branchIds: ['branch-1'],
     canCreate: true,
     canListAppointments: true,
     canPickEmployee: false,
@@ -234,14 +259,14 @@ beforeEach(() => {
 
 describe('the start screen — origin XOR', () => {
   it('starts as a walk-in and shows the requester search, not the appointment picker', () => {
-    renderLtr(<CheckInStartScreen {...startProps()} />);
+    renderLtr(inBranch(<CheckInStartScreen {...startProps()} />, { snapshot: CHECKIN_CONTEXT }));
     expect(screen.getByText(EN['receptions.checkIn.requester']!)).toBeInTheDocument();
     expect(screen.queryByText(EN['receptions.checkIn.loadAppointments']!)).not.toBeInTheDocument();
   });
 
   it('switching to appointment swaps the panels — one origin at a time, ever', async () => {
     const user = userEvent.setup();
-    renderLtr(<CheckInStartScreen {...startProps()} />);
+    renderLtr(inBranch(<CheckInStartScreen {...startProps()} />, { snapshot: CHECKIN_CONTEXT }));
 
     await user.click(screen.getByRole('radio', { name: /Appointment/ }));
     expect(screen.getByText(EN['receptions.checkIn.loadAppointments']!)).toBeInTheDocument();
@@ -255,7 +280,7 @@ describe('the start screen — origin XOR', () => {
   it('choosing an appointment surfaces the open visit of ITS vehicle, with a resume link', async () => {
     listReceptions.mockResolvedValue(page([OPEN_VISIT_ROW]));
     const user = userEvent.setup();
-    renderLtr(<CheckInStartScreen {...startProps()} />);
+    renderLtr(inBranch(<CheckInStartScreen {...startProps()} />, { snapshot: CHECKIN_CONTEXT }));
 
     await user.click(screen.getByRole('radio', { name: /Appointment/ }));
     await user.click(screen.getByText(EN['receptions.checkIn.loadAppointments']!));
@@ -281,7 +306,7 @@ describe('the start screen — origin XOR', () => {
       attempt: 1,
     });
     const user = userEvent.setup();
-    renderLtr(<CheckInStartScreen {...startProps()} />);
+    renderLtr(inBranch(<CheckInStartScreen {...startProps()} />, { snapshot: CHECKIN_CONTEXT }));
 
     await user.click(screen.getByRole('radio', { name: /Appointment/ }));
     await user.click(screen.getByText(EN['receptions.checkIn.loadAppointments']!));
@@ -307,7 +332,7 @@ describe('the start screen — origin XOR', () => {
       },
     });
     const user = userEvent.setup();
-    renderLtr(<CheckInStartScreen {...startProps()} />);
+    renderLtr(inBranch(<CheckInStartScreen {...startProps()} />, { snapshot: CHECKIN_CONTEXT }));
 
     await user.click(screen.getByRole('radio', { name: /Appointment/ }));
     await user.click(screen.getByText(EN['receptions.checkIn.loadAppointments']!));
@@ -343,7 +368,7 @@ describe('the start screen — origin XOR', () => {
       attempt: 1,
     });
     const user = userEvent.setup();
-    renderLtr(<CheckInStartScreen {...startProps()} />);
+    renderLtr(inBranch(<CheckInStartScreen {...startProps()} />, { snapshot: CHECKIN_CONTEXT }));
 
     await user.click(screen.getByRole('radio', { name: /Appointment/ }));
     await user.click(screen.getByText(EN['receptions.checkIn.loadAppointments']!));
@@ -369,7 +394,7 @@ describe('the start screen — origin XOR', () => {
       attempt: 1,
     });
     const user = userEvent.setup();
-    renderLtr(<CheckInStartScreen {...startProps()} />);
+    renderLtr(inBranch(<CheckInStartScreen {...startProps()} />, { snapshot: CHECKIN_CONTEXT }));
 
     await user.click(screen.getByRole('radio', { name: /Appointment/ }));
     await user.click(screen.getByText(EN['receptions.checkIn.loadAppointments']!));
@@ -391,7 +416,12 @@ describe('the start screen — origin XOR', () => {
       attempt: 1,
     });
     const user = userEvent.setup();
-    renderRtl(<CheckInStartScreen {...startProps({ messages: ar as typeof en })} />);
+    renderRtl(
+      inBranch(<CheckInStartScreen {...startProps({ messages: ar as typeof en })} />, {
+        snapshot: CHECKIN_CONTEXT,
+        locale: 'ar',
+      })
+    );
 
     // The accessible name carries the option's description too, so the label is
     // matched as a prefix rather than whole.
@@ -409,7 +439,7 @@ describe('the start screen — origin XOR', () => {
   });
 
   it('defaults the receiving employee to the operator, and states what the picker reads', () => {
-    renderLtr(<CheckInStartScreen {...startProps()} />);
+    renderLtr(inBranch(<CheckInStartScreen {...startProps()} />, { snapshot: CHECKIN_CONTEXT }));
     expect(
       screen.getByText(`${EN['receptions.checkIn.employeeSelf']} — Front Desk`)
     ).toBeInTheDocument();
@@ -420,7 +450,11 @@ describe('the start screen — origin XOR', () => {
 
   it('offers the BRANCH-eligible list, and asks the operation for that branch', async () => {
     const user = userEvent.setup();
-    renderLtr(<CheckInStartScreen {...startProps({ canPickEmployee: true })} />);
+    renderLtr(
+      inBranch(<CheckInStartScreen {...startProps({ canPickEmployee: true })} />, {
+        snapshot: CHECKIN_CONTEXT,
+      })
+    );
 
     await waitFor(() => expect(listReceivingEmployeeCandidates).toHaveBeenCalled());
     // The branch target travels. A picker that asked tenant-wide would answer
@@ -446,7 +480,11 @@ describe('the start screen — origin XOR', () => {
     listReceivingEmployeeCandidates.mockResolvedValue(
       page([{ id: 'user-9', displayName: 'Other Branch Person' }])
     );
-    renderLtr(<CheckInStartScreen {...startProps({ canPickEmployee: true })} />);
+    renderLtr(
+      inBranch(<CheckInStartScreen {...startProps({ canPickEmployee: true })} />, {
+        snapshot: CHECKIN_CONTEXT,
+      })
+    );
 
     // TWO awaited settles sit behind this — the list resolving, then the effect
     // withdrawing the default — so the wait is explicit and generous rather than
@@ -527,7 +565,9 @@ describe('the start screen — origin XOR', () => {
         });
 
         const user = userEvent.setup();
-        renderLtr(<CheckInStartScreen {...startProps()} />);
+        renderLtr(
+          inBranch(<CheckInStartScreen {...startProps()} />, { snapshot: CHECKIN_CONTEXT })
+        );
 
         // The lookup asks only once a vehicle is chosen.
         await user.click(screen.getByRole('radio', { name: /Appointment/ }));
@@ -563,7 +603,7 @@ describe('the start screen — origin XOR', () => {
       });
 
       const user = userEvent.setup();
-      renderLtr(<CheckInStartScreen {...startProps()} />);
+      renderLtr(inBranch(<CheckInStartScreen {...startProps()} />, { snapshot: CHECKIN_CONTEXT }));
       await user.click(screen.getByRole('radio', { name: /Appointment/ }));
       await user.click(screen.getByText(EN['receptions.checkIn.loadAppointments']!));
       await user.click(await screen.findByText(/Layla Haddad/));
@@ -588,7 +628,7 @@ describe('the start screen — origin XOR', () => {
       });
 
       const user = userEvent.setup();
-      renderLtr(<CheckInStartScreen {...startProps()} />);
+      renderLtr(inBranch(<CheckInStartScreen {...startProps()} />, { snapshot: CHECKIN_CONTEXT }));
       await user.click(screen.getByRole('radio', { name: /Appointment/ }));
       await user.click(screen.getByText(EN['receptions.checkIn.loadAppointments']!));
       await user.click(await screen.findByText(/Layla Haddad/));
@@ -618,7 +658,11 @@ describe('the start screen — origin XOR', () => {
       correlationId: 'corr-page-1',
     });
 
-    renderLtr(<CheckInStartScreen {...startProps({ canPickEmployee: true })} />);
+    renderLtr(
+      inBranch(<CheckInStartScreen {...startProps({ canPickEmployee: true })} />, {
+        snapshot: CHECKIN_CONTEXT,
+      })
+    );
     await waitFor(() => expect(listReceivingEmployeeCandidates).toHaveBeenCalled());
 
     expect(
@@ -671,7 +715,11 @@ describe('the start screen — origin XOR', () => {
     );
 
     const user = userEvent.setup();
-    renderLtr(<CheckInStartScreen {...startProps({ canPickEmployee: true })} />);
+    renderLtr(
+      inBranch(<CheckInStartScreen {...startProps({ canPickEmployee: true })} />, {
+        snapshot: CHECKIN_CONTEXT,
+      })
+    );
     await waitFor(() => expect(listReceivingEmployeeCandidates).toHaveBeenCalled());
 
     // Page one: the operator holds their own default, as the earlier case proves.
@@ -707,16 +755,20 @@ describe('the start screen — origin XOR', () => {
      * branch chosen yet, and a read that failed. The component shipped with the
      * first of them and three cases in this file caught it.
      */
-    renderLtr(<CheckInStartScreen {...startProps({ canPickEmployee: false })} />);
+    renderLtr(
+      inBranch(<CheckInStartScreen {...startProps({ canPickEmployee: false })} />, {
+        snapshot: CHECKIN_CONTEXT,
+      })
+    );
     expect(
       screen.queryByText(EN['receptions.checkIn.employeeSelfIneligible']!)
     ).not.toBeInTheDocument();
     cleanup();
 
     renderLtr(
-      <CheckInStartScreen
-        {...startProps({ canPickEmployee: true, companyIds: [], branchIds: [] })}
-      />
+      inBranch(<CheckInStartScreen {...startProps({ canPickEmployee: true })} />, {
+        snapshot: NO_BRANCH_CHOSEN,
+      })
     );
     expect(
       screen.queryByText(EN['receptions.checkIn.employeeSelfIneligible']!)
@@ -731,7 +783,11 @@ describe('the start screen — origin XOR', () => {
       hasMore: false,
       correlationId: 'corr-fail',
     });
-    renderLtr(<CheckInStartScreen {...startProps({ canPickEmployee: true })} />);
+    renderLtr(
+      inBranch(<CheckInStartScreen {...startProps({ canPickEmployee: true })} />, {
+        snapshot: CHECKIN_CONTEXT,
+      })
+    );
     await waitFor(() => expect(listReceivingEmployeeCandidates).toHaveBeenCalled());
     expect(
       screen.queryByText(EN['receptions.checkIn.employeeSelfIneligible']!)
@@ -742,7 +798,11 @@ describe('the start screen — origin XOR', () => {
   });
 
   it('without rec.reception.manage the create form is withdrawn, with the reason', () => {
-    renderLtr(<CheckInStartScreen {...startProps({ canCreate: false })} />);
+    renderLtr(
+      inBranch(<CheckInStartScreen {...startProps({ canCreate: false })} />, {
+        snapshot: CHECKIN_CONTEXT,
+      })
+    );
     expect(screen.getByText(EN['state.denied.title']!)).toBeInTheDocument();
     expect(screen.getByText(EN['receptions.checkIn.createDenied']!)).toBeInTheDocument();
     expect(
@@ -751,7 +811,12 @@ describe('the start screen — origin XOR', () => {
   });
 
   it('renders in Arabic, RTL, from the same catalogue', () => {
-    renderRtl(<CheckInStartScreen {...startProps({ messages: ar as typeof en })} />);
+    renderRtl(
+      inBranch(<CheckInStartScreen {...startProps({ messages: ar as typeof en })} />, {
+        snapshot: CHECKIN_CONTEXT,
+        locale: 'ar',
+      })
+    );
     expect(document.documentElement.dir).toBe('rtl');
     expect(screen.getByText(AR['receptions.checkIn.requester']!)).toBeInTheDocument();
     expect(screen.getByText(AR['receptions.checkIn.employeeHint']!)).toBeInTheDocument();
@@ -836,7 +901,11 @@ describe('the start screen — the walk-in handoff', () => {
 
   it('pre-selects the customer and the vehicle the intake just recorded', async () => {
     listCustomerVehicles.mockResolvedValue(page([OTHER_VEHICLE, HANDED_OVER_VEHICLE]));
-    renderLtr(<CheckInStartScreen {...startProps({ walkInHandoff: handoff })} />);
+    renderLtr(
+      inBranch(<CheckInStartScreen {...startProps({ walkInHandoff: handoff })} />, {
+        snapshot: CHECKIN_CONTEXT,
+      })
+    );
 
     // The customer is already chosen — by NAME, never by identifier — so the
     // search controls are not what the operator is looking at.
@@ -866,7 +935,11 @@ describe('the start screen — the walk-in handoff', () => {
     listCustomerVehicles.mockResolvedValue(page([HANDED_OVER_VEHICLE]));
     createReception.mockResolvedValue({ status: 'success', correlationId: 'c', attempt: 1 });
     const user = userEvent.setup();
-    renderLtr(<CheckInStartScreen {...startProps({ walkInHandoff: handoff })} />);
+    renderLtr(
+      inBranch(<CheckInStartScreen {...startProps({ walkInHandoff: handoff })} />, {
+        snapshot: CHECKIN_CONTEXT,
+      })
+    );
 
     await chosenVehicles();
     await user.click(screen.getByRole('button', { name: EN['receptions.checkIn.submit']! }));
@@ -882,7 +955,11 @@ describe('the start screen — the walk-in handoff', () => {
 
   it('states it when the handed-over vehicle is not on that customer list', async () => {
     listCustomerVehicles.mockResolvedValue(page([OTHER_VEHICLE]));
-    renderLtr(<CheckInStartScreen {...startProps({ walkInHandoff: handoff })} />);
+    renderLtr(
+      inBranch(<CheckInStartScreen {...startProps({ walkInHandoff: handoff })} />, {
+        snapshot: CHECKIN_CONTEXT,
+      })
+    );
 
     await waitFor(() =>
       expect(screen.getByTestId('walk-in-handoff-notice')).toHaveTextContent(
@@ -894,7 +971,7 @@ describe('the start screen — the walk-in handoff', () => {
   });
 
   it('starts empty when the page passes no handoff', () => {
-    renderLtr(<CheckInStartScreen {...startProps()} />);
+    renderLtr(inBranch(<CheckInStartScreen {...startProps()} />, { snapshot: CHECKIN_CONTEXT }));
     expect(screen.queryByTestId('walk-in-handoff-notice')).not.toBeInTheDocument();
     expect(screen.getByText(EN['customerSelector.idle']!)).toBeInTheDocument();
   });
@@ -902,7 +979,11 @@ describe('the start screen — the walk-in handoff', () => {
   it('is consumed once — switching origin drops it and switching back does not restore it', async () => {
     listCustomerVehicles.mockResolvedValue(page([HANDED_OVER_VEHICLE]));
     const user = userEvent.setup();
-    renderLtr(<CheckInStartScreen {...startProps({ walkInHandoff: handoff })} />);
+    renderLtr(
+      inBranch(<CheckInStartScreen {...startProps({ walkInHandoff: handoff })} />, {
+        snapshot: CHECKIN_CONTEXT,
+      })
+    );
     await chosenVehicles();
 
     await user.click(screen.getByRole('radio', { name: /Appointment/ }));
@@ -1676,7 +1757,11 @@ describe('F1 — the three states a paged read can report', () => {
        * "that vehicle is not in this customer's list", with no way to reach it.
        */
       listCustomerVehicles.mockResolvedValue(truncated([OTHER_LINK]));
-      renderLtr(<CheckInStartScreen {...startProps({ walkInHandoff: handoff })} />);
+      renderLtr(
+        inBranch(<CheckInStartScreen {...startProps({ walkInHandoff: handoff })} />, {
+          snapshot: CHECKIN_CONTEXT,
+        })
+      );
 
       await waitFor(() =>
         expect(screen.getByTestId('walk-in-handoff-notice')).toHaveTextContent(
@@ -1690,7 +1775,11 @@ describe('F1 — the three states a paged read can report', () => {
 
     it('says nothing was learned when the vehicle list could not be read', async () => {
       listCustomerVehicles.mockResolvedValue(unreadable());
-      renderLtr(<CheckInStartScreen {...startProps({ walkInHandoff: handoff })} />);
+      renderLtr(
+        inBranch(<CheckInStartScreen {...startProps({ walkInHandoff: handoff })} />, {
+          snapshot: CHECKIN_CONTEXT,
+        })
+      );
 
       await waitFor(() =>
         expect(screen.getByTestId('walk-in-handoff-notice')).toHaveTextContent(
@@ -1702,7 +1791,11 @@ describe('F1 — the three states a paged read can report', () => {
     it('reaches the handed-over vehicle on the next page and selects it', async () => {
       listCustomerVehicles.mockResolvedValue(truncated([OTHER_LINK]));
       const user = userEvent.setup();
-      renderLtr(<CheckInStartScreen {...startProps({ walkInHandoff: handoff })} />);
+      renderLtr(
+        inBranch(<CheckInStartScreen {...startProps({ walkInHandoff: handoff })} />, {
+          snapshot: CHECKIN_CONTEXT,
+        })
+      );
       await screen.findByTestId('walk-in-handoff-notice');
 
       const pager = await screen.findByRole('navigation', {
@@ -1721,7 +1814,11 @@ describe('F1 — the three states a paged read can report', () => {
 
     it('states truncation beside the picker rather than presenting one page as the list', async () => {
       listCustomerVehicles.mockResolvedValue(truncated([OTHER_LINK]));
-      renderLtr(<CheckInStartScreen {...startProps({ walkInHandoff: handoff })} />);
+      renderLtr(
+        inBranch(<CheckInStartScreen {...startProps({ walkInHandoff: handoff })} />, {
+          snapshot: CHECKIN_CONTEXT,
+        })
+      );
 
       expect(await screen.findByTestId('checkin-vehicles-truncated')).toHaveTextContent(
         EN['receptions.checkIn.vehiclesTruncated']!
@@ -1746,7 +1843,11 @@ describe('F1 — the three states a paged read can report', () => {
           Promise.resolve(cursor === null ? truncated([MATCHING_LINK]) : page([OTHER_LINK]))
       );
       const user = userEvent.setup();
-      renderLtr(<CheckInStartScreen {...startProps({ walkInHandoff: handoff })} />);
+      renderLtr(
+        inBranch(<CheckInStartScreen {...startProps({ walkInHandoff: handoff })} />, {
+          snapshot: CHECKIN_CONTEXT,
+        })
+      );
 
       await waitFor(() =>
         expect(screen.getByTestId('walk-in-handoff-notice')).toHaveTextContent(
@@ -1777,7 +1878,11 @@ describe('F1 — the three states a paged read can report', () => {
           Promise.resolve(cursor === null ? truncated([OTHER_LINK]) : page([MATCHING_LINK]))
       );
       const user = userEvent.setup();
-      renderLtr(<CheckInStartScreen {...startProps({ walkInHandoff: handoff })} />);
+      renderLtr(
+        inBranch(<CheckInStartScreen {...startProps({ walkInHandoff: handoff })} />, {
+          snapshot: CHECKIN_CONTEXT,
+        })
+      );
       await screen.findByTestId('checkin-vehicles-truncated');
 
       const pager = await screen.findByRole('navigation', {
@@ -1803,7 +1908,11 @@ describe('F1 — the three states a paged read can report', () => {
 
     it('says nothing about truncation when the read covered the set', async () => {
       listCustomerVehicles.mockResolvedValue(page([MATCHING_LINK]));
-      renderLtr(<CheckInStartScreen {...startProps({ walkInHandoff: handoff })} />);
+      renderLtr(
+        inBranch(<CheckInStartScreen {...startProps({ walkInHandoff: handoff })} />, {
+          snapshot: CHECKIN_CONTEXT,
+        })
+      );
       await screen.findByTestId('walk-in-handoff-notice');
 
       expect(screen.queryByTestId('checkin-vehicles-truncated')).not.toBeInTheDocument();
@@ -1811,7 +1920,12 @@ describe('F1 — the three states a paged read can report', () => {
 
     it('renders both new sentences in Arabic, not as keys', async () => {
       listCustomerVehicles.mockResolvedValue(truncated([OTHER_LINK]));
-      renderRtl(<CheckInStartScreen {...startProps({ walkInHandoff: handoff, messages: AR })} />);
+      renderRtl(
+        inBranch(<CheckInStartScreen {...startProps({ walkInHandoff: handoff, messages: AR })} />, {
+          snapshot: CHECKIN_CONTEXT,
+          locale: 'ar',
+        })
+      );
 
       await waitFor(() =>
         expect(screen.getByTestId('walk-in-handoff-notice')).toHaveTextContent(
@@ -1822,5 +1936,35 @@ describe('F1 — the three states a paged read can report', () => {
         AR['receptions.checkIn.vehiclesTruncated']!
       );
     });
+  });
+});
+
+describe('a visit cannot be recorded against "all my branches"', () => {
+  it('refuses the submit and says which control answers', async () => {
+    /*
+     * `POST /receptions` names both halves of the pair as mandatory, so "all my
+     * branches" is not a target it can take — and choosing one on the operator
+     * behalf would put a vehicle into custody at a workshop nobody named. On
+     * the screen where a branch matters most, guessing is the worst option
+     * available.
+     */
+    const user = userEvent.setup();
+    renderLtr(
+      inBranch(
+        <>
+          <BranchSwitch to="all" label="use all" />
+          <CheckInStartScreen {...startProps()} />
+        </>,
+        { snapshot: NO_BRANCH_CHOSEN }
+      )
+    );
+    await user.click(screen.getByRole('button', { name: 'use all' }));
+
+    expect(
+      await screen.findByRole('button', { name: EN['receptions.checkIn.submit'] as string })
+    ).toBeDisabled();
+    expect(screen.getByTestId('submit-needs-branch')).toHaveTextContent(
+      EN['workingContext.needsOneBranch'] as string
+    );
   });
 });

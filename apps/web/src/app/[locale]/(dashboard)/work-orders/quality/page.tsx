@@ -56,12 +56,7 @@ export default async function QualityQueuePage({
         crumbs={crumbs}
       />
       <PageBody>
-        <QualityQueueScreen
-          locale={locale}
-          messages={messages}
-          companyIds={session.companyIds}
-          branchIds={session.branchIds}
-        />
+        <QualityQueueScreen locale={locale} messages={messages} />
       </PageBody>
     </>
   );

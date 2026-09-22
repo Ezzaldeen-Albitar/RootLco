@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import en from '../src/i18n/messages/en.json';
 import ar from '../src/i18n/messages/ar.json';
-import { renderLtr, renderRtl } from './render';
+import { branchSnapshot, inBranch, renderLtr, renderRtl } from './render';
 
 /**
  * Inventory, rendered (P1-30, `W4`, FE-008/009/010).
@@ -953,5 +953,47 @@ describe('Arabic, right to left', () => {
         new RegExp('^' + escape(AR['inventory.items.category'] as string))
       )
     ).toBeInstanceOf(HTMLSelectElement);
+  });
+});
+
+describe('the branch picker when the shell could not read the directory', () => {
+  it('SAYS SO instead of asking for a typed reference', () => {
+    /*
+     * The three fallback phases below the list take the pair as typed
+     * references, and the reason given for that is sound where it applies: the
+     * branch list names what a caller may REACH, an empty one is not a
+     * statement about what they may operate on, and the server re-authorizes
+     * the pair anyway.
+     *
+     * None of it applies when the SHELL could not read the directory at all.
+     * Answering that with two boxes asking for a reference nobody can look up
+     * is the exact defect this phase removed from six other screens.
+     */
+    renderLtr(
+      inBranch(
+        <InventoryScreen
+          locale="en"
+          messages={en}
+          initialWorkOrderId={null}
+          canReadStock
+          canOperate={false}
+          canReadBranches={false}
+        />,
+        { snapshot: branchSnapshot([], 'unavailable') }
+      )
+    );
+    expect(screen.getByText(en['workingContext.unavailable'])).toBeVisible();
+    expect(screen.queryByLabelText(labelled('inventory.common.companyIdField'))).toBeNull();
+    expect(screen.queryByLabelText(labelled('inventory.common.branchIdField'))).toBeNull();
+  });
+
+  it('keeps the identifier fields for a component with NO shell above it', () => {
+    // A component outside the provider reports the same "not readable" state,
+    // and that one must keep behaving exactly as it did. Whether a shell is
+    // above it is what decides, not the state alone.
+    renderScreen({ canReadStock: true, canReadBranches: false });
+    expect(
+      within(targetForm()).getByLabelText(labelled('inventory.common.companyIdField'))
+    ).toBeVisible();
   });
 });

@@ -16,6 +16,9 @@ import {
   ErrorState,
 } from '@/components/states/States';
 import { FormFeedback } from '@/features/authentication/components/FormFeedback';
+import { RequiresConcreteBranch } from '@/features/working-context/components/WorkingBranchField';
+import { useBranchTarget } from '@/features/working-context/use-branch-target';
+import { useUnsavedGuard } from '@/features/working-context/WorkingContextProvider';
 import { notifyActionResult } from '@/components/notifications/action-notifications';
 import { IDLE, invalid } from '@/lib/forms/action-result';
 import { listCustomerVehicles } from '@/lib/customers/vehicles';
@@ -69,15 +72,11 @@ interface SelectedVehicle {
 export function AppointmentBookingScreen({
   locale,
   messages,
-  companyIds,
-  branchIds,
   types,
   channels,
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
-  readonly companyIds: readonly string[];
-  readonly branchIds: readonly string[];
   /** `apt.catalogue-appointment-type-list`, read once on the server. */
   readonly types: IntakeCatalogueResult;
   /** `apt.catalogue-source-channel-list`, read once on the server. */
@@ -91,6 +90,31 @@ export function AppointmentBookingScreen({
   const [typeId, setTypeId] = useState('');
   const [channelId, setChannelId] = useState('');
   const [windowDraft, setWindowDraft] = useState<WindowDraft>(EMPTY_WINDOW);
+
+  /*
+   * A booking is addressed to ONE branch.
+   *
+   * `POST /appointments` names `companyId` and `branchId` as mandatory, so
+   * "all my branches" is not a target it can take — and picking one on the
+   * operator's behalf would book a vehicle into a workshop nobody named. The
+   * submit is refused for every selection that is not a single branch, and the
+   * shared notice says which control answers.
+   */
+  const branchTarget = useBranchTarget();
+  const branchReady = branchTarget.kind === 'ready';
+
+  /*
+   * Unsaved work, declared to the shell, so changing branch mid-booking asks
+   * rather than silently re-addressing the write.
+   */
+  const dirty =
+    customer !== null ||
+    vehicle !== null ||
+    typeId.length > 0 ||
+    channelId.length > 0 ||
+    windowDraft.from.length > 0 ||
+    windowDraft.to.length > 0;
+  useUnsavedGuard(dirty);
 
   // Booking is impossible without a type to book: the id is a mandatory,
   // catalogued reference. An empty catalogue disables the form honestly below.
@@ -172,8 +196,6 @@ export function AppointmentBookingScreen({
       <div className="grid gap-3 sm:grid-cols-2">
         <BranchTargetFields
           messages={messages}
-          companyIds={companyIds}
-          branchIds={branchIds}
           companyId={companyId}
           branchId={branchId}
           onCompanyChange={setCompanyId}
@@ -267,10 +289,18 @@ export function AppointmentBookingScreen({
         {translate(messages, 'appointments.book.requestedNote')}
       </p>
 
+      {branchReady ? null : (
+        <RequiresConcreteBranch
+          messages={messages}
+          state={branchTarget}
+          testId="submit-needs-branch"
+        />
+      )}
+
       <div>
         <button
           type="submit"
-          disabled={pending || typesEmpty}
+          disabled={pending || typesEmpty || !branchReady}
           aria-busy={pending || undefined}
           className="rounded-lg bg-primary px-5 py-2.5 text-button font-medium text-on-primary transition-colors duration-fast ease-standard hover:bg-primary-hover disabled:cursor-not-allowed disabled:opacity-70"
         >

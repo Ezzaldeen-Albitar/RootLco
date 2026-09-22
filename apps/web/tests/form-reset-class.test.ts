@@ -330,6 +330,17 @@ const RENDERS_COMPONENT = /<([A-Z]\w*)/g;
  * used to be `EXEMPT` while the diagnostic said `OUTSIDE_A_FORM`, which sent
  * whoever read it looking for an identifier that did not exist.
  */
+/*
+ * Four entries left this list when the branch pair did.
+ *
+ * Two on the technician workspace and two on the QC queue each exempted a
+ * `SelectField` over raw company and branch references. Those controls no
+ * longer exist: the branch is the working context's named selection, chosen
+ * once in the header and rendered on the screen as text. An exemption for a
+ * control that is gone is not harmless — this file asserts that every entry
+ * matches exactly one control, precisely so a stale exemption cannot sit here
+ * quietly covering nothing.
+ */
 const OUTSIDE_A_FORM: readonly { file: string; match: string; why: string }[] = [
   {
     file: 'components/forms/Field.tsx',
@@ -367,29 +378,9 @@ const OUTSIDE_A_FORM: readonly { file: string; match: string; why: string }[] = 
     why: 'A file input CANNOT carry a default. Browsers refuse a programmatic write to `input[type=file].value` — that is the guard against a page selecting a file the operator never chose — so `defaultValue` is not a shape this control can take. What a reset costs here is the file selection, which the operator re-makes deliberately; there is no typed text to strand.',
   },
   {
-    file: 'features/technicians/components/TechnicianWorkspaceScreen.tsx',
-    match: "<SelectField label={translate(messages, 'technicians.workspace.company')}",
-    why: 'The branch-target company picker (P1-29 W4). It sits in a `<form onSubmit={…}>` that prevents its own default and sets state — never a Server Action, so React never resets it. The only `<form action={…}>` in this tree is the evidence capture in `JobWorkPanel.tsx`, which this screen renders as a SIBLING of the target form, not inside it — read off the element nesting.',
-  },
-  {
-    file: 'features/technicians/components/TechnicianWorkspaceScreen.tsx',
-    match: "<SelectField label={translate(messages, 'technicians.workspace.branch')}",
-    why: 'The branch-target branch picker, the other half of the same pair, in the same `onSubmit` form for the same reason.',
-  },
-  {
     file: 'features/diagnostics/components/TemplateCatalogueScreen.tsx',
     match: `<SelectField name="status" label={translate(messages, 'diagnostics.catalogue.filterStatus')}`,
     why: 'The catalogue status FILTER (P1-29 W7). It sits in the list section, outside every `<form action={…}>` on the screen, and re-reads the list on change; nothing submits it, so no Server Action ever resets it — read off the element nesting.',
-  },
-  {
-    file: 'features/quality/components/QualityQueueScreen.tsx',
-    match: "<SelectField label={translate(messages, 'quality.queue.company')}",
-    why: 'The branch-target company picker (P1-29 W8), the W4 shape: a `<form onSubmit={…}>` that prevents its own default and sets state — never a Server Action, so React never resets it.',
-  },
-  {
-    file: 'features/quality/components/QualityQueueScreen.tsx',
-    match: "<SelectField label={translate(messages, 'quality.queue.branch')}",
-    why: 'The branch-target branch picker, the other half of the same pair, in the same `onSubmit` form for the same reason.',
   },
   {
     file: 'features/quality/components/QualityQueueScreen.tsx',
@@ -833,13 +824,20 @@ describe('every reset-sensitive control in the form-owning trees is protected', 
 
   it('follows a component into the form that renders it, not just the file that owns one', () => {
     /*
-     * Non-vacuity for the derived edge, on the file that proves it: the
-     * company/branch pair is the authorization target of every booking, it owns
-     * no form, hands controls to none, and is in no hand-written list. If the
-     * closure ever stops running, this is the assertion that says so — rather
-     * than the inventory quietly reporting zero uncovered controls again.
+     * Non-vacuity for the derived edge, on a file that proves it: the requested
+     * window is part of every booking, it owns no form, hands controls to none,
+     * and is in no hand-written list. If the closure ever stops running, this is
+     * the assertion that says so — rather than the inventory quietly reporting
+     * zero uncovered controls again.
+     *
+     * It used to be `BranchTargetFields.tsx`, which satisfied the same three
+     * conditions until it stopped rendering a control at all: the company and
+     * branch pair is now the working context's named selection, shown as text,
+     * so there is nothing there for a form reset to strand. The exemplar moved
+     * rather than the claim — `WindowFields` is its sibling in the same form and
+     * is reachable only the same way.
      */
-    const target = 'features/appointments/components/BranchTargetFields.tsx';
+    const target = 'features/appointments/components/WindowFields.tsx';
     const src = stripComments(readFileSync(join(SRC, ...target.split('/')), 'utf8'));
 
     expect(OWNS_FORM.test(src), `${target} owns a form, so it proves nothing here`).toBe(false);
@@ -889,7 +887,9 @@ describe('every reset-sensitive control in the form-owning trees is protected', 
       'features/vehicles/components/VehicleCreateScreen.tsx',
       'features/appointments/components/AppointmentDetailScreen.tsx',
       'features/appointments/components/AppointmentBookingScreen.tsx',
-      'features/appointments/components/BranchTargetFields.tsx',
+      // Was `BranchTargetFields.tsx`, which renders no control any more — see
+      // the derived-edge case above. Its sibling in the same form stands in.
+      'features/appointments/components/WindowFields.tsx',
       'features/administration/access/components/ApprovalLimitsScreen.tsx',
     ]) {
       expect(

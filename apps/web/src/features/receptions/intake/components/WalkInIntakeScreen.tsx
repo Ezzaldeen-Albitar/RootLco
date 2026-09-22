@@ -4,6 +4,7 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { CustomerSelector, type SelectedCustomer } from '@/components/party/CustomerSelector';
 import { PartyLabel } from '@/components/party/PartyLabel';
+import { useUnsavedGuard } from '@/features/working-context/WorkingContextProvider';
 import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic } from '@/i18n/get-messages';
 import type { Locale } from '@/i18n/config';
@@ -123,6 +124,19 @@ export function WalkInIntakeScreen({
         : linkOutcome === null
           ? 'link'
           : 'done';
+
+  /*
+   * Unsaved work, declared to the shell, so a branch changed mid-assembly asks
+   * before it discards the pair.
+   *
+   * NOT at `done`. Everything the wizard had to record has been recorded by
+   * then — the customer exists, the vehicle exists, and the relationship has
+   * been answered — so what is on screen is a read-back, not a draft. Asking
+   * about it would be asking the operator to confirm the discarding of work
+   * that is already stored, and a guard that fires on a finished screen teaches
+   * them to dismiss the question without reading it.
+   */
+  useUnsavedGuard(step !== 'done' && (customer !== null || vehicle !== null));
 
   const chooseVehicle = (chosen: ChosenVehicle) => {
     setVehicle(chosen);

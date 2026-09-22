@@ -6,6 +6,8 @@ import type { Messages } from '@/i18n/get-messages';
 import { translate } from '@/i18n/get-messages';
 import { IDLE, type ActionState } from '@/lib/forms/action-result';
 import { FormFeedback } from '@/features/authentication/components/FormFeedback';
+import { RequiresConcreteBranch } from '@/features/working-context/components/WorkingBranchField';
+import { useWorkingContext } from '@/features/working-context/WorkingContextProvider';
 import { readSettings } from '../api';
 import type { SettingValueType, SettingView, SettingsScope } from '../types';
 import { writeSettingAction } from '../actions';
@@ -25,17 +27,23 @@ import { writeSettingAction } from '../actions';
  * never what it should be. The operator types the value; nothing here defaults
  * one.
  *
- * ## Why the scope identifier is typed rather than chosen from a list
+ * ## The scope is CHOSEN BY NAME, and this paragraph used to say it could not be
  *
- * There is no company or branch directory operation (`P1-26-F-008`).
- * `GET /api/v1/auth/session` returns bare identifiers, and returns **none** for
- * an unrestricted actor. So the control offers the identifiers the session
- * resolved, and otherwise accepts one.
+ * It read: "There is no company or branch directory operation (`P1-26-F-008`).
+ * `GET /api/v1/auth/session` returns bare identifiers, and returns none for an
+ * unrestricted actor. So the control offers the identifiers the session
+ * resolved, and otherwise accepts one." Both halves were true and both have
+ * been answered. `GET /auth/working-context` publishes the named, active
+ * companies and branches the caller is authorized for, and states
+ * `unrestricted` explicitly instead of leaving an empty list to mean it — so
+ * the operator with the widest reach is no longer the one handed a box and
+ * asked to type a reference they have to find somewhere else.
  *
- * That is not client-authoritative scope. `requireCompanyInScope` runs
- * `assertScopeWithinAuthority` **before** `companyExists`, so an identifier
+ * What has NOT changed is where authority lives. The chosen reference is still
+ * sent and still re-authorized: `requireCompanyInScope` runs
+ * `assertScopeWithinAuthority` **before** `companyExists`, so a reference
  * outside the caller's authority is refused identically whether or not it names
- * a real company. Typing one buys no information and no access.
+ * a real company. Offering names buys the operator legibility, not access.
  */
 
 export interface SuggestedKey {
@@ -48,14 +56,12 @@ export interface SuggestedKey {
 export function SettingsEditor({
   messages,
   scope,
-  scopeIds,
   canWrite,
   keyPrefix,
   suggestions = [],
 }: {
   readonly messages: Messages;
   readonly scope: SettingsScope;
-  readonly scopeIds: readonly string[];
   readonly canWrite: boolean;
   /** Only keys under this prefix are listed. Empty string lists everything. */
   readonly keyPrefix: string;
@@ -63,7 +69,26 @@ export function SettingsEditor({
 }) {
   const t = (key: string) => translate(messages, key as keyof Messages);
 
-  const [scopeId, setScopeId] = useState(scopeIds[0] ?? '');
+  /*
+   * The companies or branches this operator may act in, by name.
+   *
+   * Branches are labelled with their company, because two workshops in one
+   * organisation may share a name and the operator has to be able to tell them
+   * apart without reading a reference.
+   */
+  const { companies, branches } = useWorkingContext();
+  const scopeOptions =
+    scope === 'company'
+      ? companies.map((company) => ({ value: company.id, label: company.name }))
+      : branches.map((branch) => {
+          const owner = companies.find((company) => company.id === branch.companyId);
+          return {
+            value: branch.id,
+            label: owner === undefined ? branch.name : `${branch.name} · ${owner.name}`,
+          };
+        });
+
+  const [scopeId, setScopeId] = useState(scopeOptions[0]?.value ?? '');
   const [settings, setSettings] = useState<readonly SettingView[] | null>(null);
   const [readStatus, setReadStatus] = useState<'idle' | 'denied' | 'error'>('idle');
   const [generation, setGeneration] = useState(0);
@@ -104,21 +129,23 @@ export function SettingsEditor({
   return (
     <div className="flex flex-col gap-5">
       <div className="max-w-md">
-        {scopeIds.length > 0 ? (
+        {scopeOptions.length > 0 ? (
           <SelectField
-            label={t(scope === 'company' ? 'admin.scope.companyId' : 'admin.scope.branchId')}
-            description={t('admin.contractGap.noDirectory')}
+            label={t(scope === 'company' ? 'admin.scope.company' : 'admin.scope.branch')}
+            required
             value={scopeId}
             onChange={(event) => setScopeId(event.target.value)}
-            options={scopeIds.map((id) => ({ value: id, label: id }))}
+            options={scopeOptions}
+            placeholder={t('form.select.placeholder')}
           />
         ) : (
-          <TextField
-            label={t(scope === 'company' ? 'admin.scope.companyId' : 'admin.scope.branchId')}
-            description={t('admin.scope.noneResolved')}
-            value={scopeId}
-            spellCheck={false}
-            onChange={(event) => setScopeId(event.target.value)}
+          // Nothing to choose, or the directory could not be read. Saying which
+          // is the honest answer; a box asking for a typed reference was not.
+          <RequiresConcreteBranch
+            messages={messages}
+            fallbackKey={
+              scope === 'company' ? 'workingContext.noCompany' : 'workingContext.noBranch'
+            }
           />
         )}
       </div>

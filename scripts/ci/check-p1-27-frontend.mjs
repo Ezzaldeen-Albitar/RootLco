@@ -375,6 +375,19 @@ export const MODULE_DISPOSITION = Object.freeze({
   'apps/web/src/components/print': 'in-surface',
   /** `Icon`, rendered inside P1-27 controls. */
   'apps/web/src/components/primitives': 'in-surface',
+  /*
+   * `SearchBox` — the one control the customer and vehicle searches ask
+   * through (P1-32).
+   *
+   * `in-surface` rather than excluded, and the reason is this gate's own
+   * subject matter: the box is where an operator types a name, a phone number,
+   * a plate or a chassis fragment, so it is exactly the surface SEC-002 is
+   * about — free text must never reach the address bar, and a scope must never
+   * be asserted from the client. Keeping it out would leave the control that
+   * handles the most sensitive keystrokes in the phase unmeasured, which is the
+   * shape of omission `MODULE_DISPOSITION` exists to make impossible.
+   */
+  'apps/web/src/components/search': 'in-surface',
   /** `PageHeader`, and the locale switcher that carries table state across it. */
   'apps/web/src/components/shell': 'in-surface',
   /** `States` — every denial, error and empty state these screens render. */

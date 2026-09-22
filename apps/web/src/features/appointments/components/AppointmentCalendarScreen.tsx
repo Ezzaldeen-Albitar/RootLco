@@ -8,6 +8,8 @@ import { INITIAL_REQUEST, type TableRequest } from '@/components/data-table/tabl
 import { useServerTable } from '@/components/data-table/use-server-table';
 import { SelectField, TextField } from '@/components/forms/Field';
 import { EmptyState } from '@/components/states/States';
+import { useBranchTarget } from '@/features/working-context/use-branch-target';
+import { useWorkingContext } from '@/features/working-context/WorkingContextProvider';
 import type { BranchTarget } from '@/lib/api/read-operation';
 import { formatDateTime } from '@/lib/format';
 import type { Messages } from '@/i18n/get-messages';
@@ -107,23 +109,51 @@ function initialDraft(now = new Date()): Draft {
 export function AppointmentCalendarScreen({
   locale,
   messages,
-  companyIds,
-  branchIds,
   canManage,
   canCheckIn,
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
   /** The session's resolved scope — server-resolved, never asserted back. */
-  readonly companyIds: readonly string[];
-  readonly branchIds: readonly string[];
   /** `apt.appointment.manage` — gates the offer to book. */
   readonly canManage: boolean;
   /** `rec.reception.manage` — gates the day queue's arrival affordance. */
   readonly canCheckIn: boolean;
 }) {
   const [draft, setDraft] = useState<Draft>(() => initialDraft());
+  const { version: workingContextVersion } = useWorkingContext();
+  const branchTarget = useBranchTarget();
   const [submitted, setSubmitted] = useState<SubmittedCalendar | null>(null);
+
+  /*
+   * A branch changed in the header RE-TARGETS what is on screen.
+   *
+   * Remounting the results on `version` was half a fix and the dangerous half.
+   * `submitted` still held the branch that was current when Show was pressed,
+   * so the remount re-issued the read against the OLD branch while the header
+   * — and the field above — named the new one. The operator was looking at one
+   * branch's work under another branch's name, which is worse than a stale
+   * list: it is a confident wrong answer.
+   *
+   * The filters survive, because they are what the operator asked for and they
+   * are not about the branch. The target is replaced, and the key remount
+   * throws the cursor stack away with the old page. A selection that is no
+   * longer one branch — "all my branches", or nothing chosen — returns the
+   * screen to its idle state rather than guessing which branch to read.
+   *
+   * Adjusted DURING render, React's documented shape for "reset state when an
+   * input changes", and the same one `use-server-table` uses for its load key.
+   * An effect would paint one frame of the previous branch's rows first.
+   */
+  const [lastContextVersion, setLastContextVersion] = useState(workingContextVersion);
+  if (workingContextVersion !== lastContextVersion) {
+    setLastContextVersion(workingContextVersion);
+    setSubmitted((current) =>
+      current === null || branchTarget.kind !== 'ready'
+        ? null
+        : { ...current, target: branchTarget.target }
+    );
+  }
   const [errors, setErrors] = useState<Readonly<Record<string, string>>>({});
 
   const statusOptions = useMemo(
@@ -179,8 +209,6 @@ export function AppointmentCalendarScreen({
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           <BranchTargetFields
             messages={messages}
-            companyIds={companyIds}
-            branchIds={branchIds}
             companyId={draft.companyId}
             branchId={draft.branchId}
             onCompanyChange={(companyId) => setDraft((d) => ({ ...d, companyId }))}
@@ -254,9 +282,11 @@ export function AppointmentCalendarScreen({
         />
       ) : (
         // Mounted only after submission — see the docblock. The key restarts
-        // the table on a new target or range rather than paging the old one.
+        // the table on a new target or range rather than paging the old one,
+        // and carries the working-context version so a branch changed in the
+        // header cannot leave the previous branch's rows on screen.
         <CalendarResults
-          key={JSON.stringify(submitted)}
+          key={`${workingContextVersion}:${JSON.stringify(submitted)}`}
           locale={locale}
           messages={messages}
           submitted={submitted}

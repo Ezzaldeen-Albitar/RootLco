@@ -3,7 +3,15 @@ import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import en from '../src/i18n/messages/en.json';
 import ar from '../src/i18n/messages/ar.json';
-import { renderLtr, renderRtl } from './render';
+import {
+  BranchSwitch,
+  OTHER_BRANCH,
+  TEST_BRANCH,
+  branchSnapshot,
+  inBranch,
+  renderLtr,
+  renderRtl,
+} from './render';
 
 /**
  * Walk-in customer and vehicle intake (`P1-28-FE-006`, `TC-P1-28-XD-001`).
@@ -1345,5 +1353,48 @@ describe('continuing from the customer profile into the existing check-in flow',
     expect(within(block).getByTestId('work-order-start-selected-number')).toHaveTextContent(
       'V-0007'
     );
+  });
+});
+
+describe('the unsaved-work guard stops at the finished step', () => {
+  it('asks while the pair is being assembled and NOT once it is recorded', async () => {
+    /*
+     * A guard that never stands down is worse than no guard: the shell asks
+     * about every branch switch for the rest of the session, and the operator
+     * learns to dismiss the question without reading it. At `done` there is no
+     * draft left — the customer exists, the vehicle exists, the relationship
+     * has been answered — so what is on screen is a read-back.
+     */
+    const user = userEvent.setup();
+    renderLtr(
+      inBranch(
+        <>
+          <BranchSwitch to={TEST_BRANCH.id} label="use main" />
+          <BranchSwitch to={OTHER_BRANCH.id} label="use second" />
+          <WalkInIntakeScreen {...props()} />
+        </>,
+        { snapshot: branchSnapshot([TEST_BRANCH, OTHER_BRANCH]) }
+      )
+    );
+    await user.click(screen.getByRole('button', { name: 'use main' }));
+
+    await chooseCustomer(user);
+    // Mid-assembly: a customer is chosen and nothing is recorded yet.
+    await user.click(screen.getByRole('button', { name: 'use second' }));
+    expect(await screen.findByRole('alertdialog')).toBeInTheDocument();
+    await user.click(
+      within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Cancel' })
+    );
+
+    const list = screen.getByTestId('customer-vehicle-list');
+    await within(list).findByText('V-0007');
+    await user.click(
+      within(list).getByRole('button', { name: en['receptions.intake.vehicle.choose'] })
+    );
+    await screen.findByText(en['receptions.intake.done.heading']);
+
+    // Finished. The switch goes through without a question.
+    await user.click(screen.getByRole('button', { name: 'use second' }));
+    expect(screen.queryByRole('alertdialog')).toBeNull();
   });
 });

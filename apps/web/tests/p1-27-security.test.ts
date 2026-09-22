@@ -235,6 +235,18 @@ const MODULE_DISPOSITION = {
   'components/party': 'in-surface',
   /** `Icon`, rendered inside P1-27 controls. */
   'components/primitives': 'in-surface',
+  /**
+   * `SearchBox` — the box the customer and vehicle searches ask through
+   * (P1-32).
+   *
+   * Folded in rather than excluded, and the reason is this section's own
+   * subject: the box is where an operator types a name, a phone number, a plate
+   * or a chassis fragment, so it is exactly the surface `SEC-002` is about —
+   * free text must not reach the address bar, and a scope must not be asserted
+   * from the client. Keeping it out would leave the one control that handles
+   * the most sensitive keystrokes in the phase unmeasured.
+   */
+  'components/search': 'in-surface',
   /** `PageHeader`, and the locale switcher that carries table state across it. */
   'components/shell': 'in-surface',
   /** `States` — every denial, error and empty state these screens render. */
@@ -386,7 +398,7 @@ describe('P1-27-SEC-001 — permission and resolved scope', () => {
     // Anti-vacuity: the derivation really read something. A regex that matched
     // nothing would make the equality below a comparison of two empty sets.
     expect(imported.length, 'no module imports were discovered — the derivation is broken').toBe(
-      13
+      14
     );
     expect(imported, 'a module the CRM/vehicle trees import has no recorded disposition').toEqual(
       Object.keys(MODULE_DISPOSITION).sort()
