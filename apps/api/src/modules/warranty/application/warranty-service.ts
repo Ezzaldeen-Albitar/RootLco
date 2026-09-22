@@ -56,6 +56,12 @@ import { appendAudit } from '@/server/audit/audit';
 import { publishEvent } from '@/server/events/publisher';
 import { isSqlState, sqlState, SQLSTATE } from '@/server/db/repository';
 import type { DbHandle } from '@/server/db/transaction';
+import {
+  CUSTOMER_SEARCH_PERMISSION,
+  toEntitySearchTerms,
+  withoutCustomerArms,
+} from '@/shared/text/search-terms';
+import { callerHoldsPermissionAnywhere } from '@/server/auth/authorization';
 import type { ScopeAuthorizer } from '@/server/auth/authorization';
 import { deliveryModule } from '@/modules/delivery';
 import { workOrderModule, type LineRow } from '@/modules/work-order';
@@ -689,16 +695,39 @@ export class WarrantyService {
     db: DbHandle,
     filter: {
       readonly companyId: string;
-      readonly branchId: string;
+      /**
+       * The branch the CALLER named, when it named one (Owner directive,
+       * P1-32-PRE-OD-UX).
+       *
+       * Kept beside `branchIds` because the two mean different things to the
+       * guard below: a named branch is a claim this service must decide, and a
+       * resolved set has already been decided one branch at a time by
+       * `resolveAuthorizedBranches`. Collapsing them would let a resolved set
+       * pass as an unchecked claim, or re-decide a set already decided.
+       */
+      readonly branchId?: string | undefined;
+      /** The branches the page may cover. `undefined` means every branch of the company. */
+      readonly branchIds?: readonly string[] | undefined;
       readonly vehicleId?: string | undefined;
+      /** The raw free-text box; reduced here, once, by the shared rule. */
+      readonly q?: string | undefined;
     },
     page: { readonly cursor?: string | undefined; readonly limit?: number | undefined },
     authorizeScope: ScopeAuthorizer
   ): Promise<Page<WarrantyRecordListView>> {
-    await authorizeScope({ companyId: filter.companyId, branchId: filter.branchId });
+    // A NAMED branch is decided here and refused exactly as before. An omitted
+    // one was decided per branch before this call, so there is no pair left to
+    // check and nothing a repeat would add.
+    if (filter.branchId !== undefined) {
+      await authorizeScope({ companyId: filter.companyId, branchId: filter.branchId });
+    }
 
     const request: PageRequest = pageRequest(WARRANTY_ORDER, page);
-    const result = await this.repository.listWarranties(db, filter, request);
+    const result = await this.repository.listWarranties(
+      db,
+      { ...filter, search: await searchTermsFor(db, filter.q) },
+      request
+    );
     const policies = new Map<string, WarrantyPolicyRow>(
       (
         await this.repository.findPolicies(db, filter.companyId, [
@@ -1043,4 +1072,20 @@ export class WarrantyService {
       replayed,
     };
   }
+}
+
+/**
+ * Reduces the caller's box, with the customer arms switched off unless the
+ * caller may read customers (Owner directive, P1-32-PRE-OD-UX).
+ *
+ * One statement, once per request, and only when a box was actually sent — a
+ * list without `q` costs nothing. See `withoutCustomerArms` for the bound this
+ * leaves and why the other three arms need no gate.
+ */
+async function searchTermsFor(db: DbHandle, q: string | undefined) {
+  const terms = toEntitySearchTerms(q);
+  if (!terms.present) return terms;
+  return (await callerHoldsPermissionAnywhere(db, CUSTOMER_SEARCH_PERMISSION))
+    ? terms
+    : withoutCustomerArms(terms);
 }

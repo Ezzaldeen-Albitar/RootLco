@@ -86,6 +86,7 @@ import {
   POLICY_ACTIVE,
   POLICY_ACTIVE_CODE,
   SAL_FULL,
+  SAL_PERMISSION_ELSEWHERE,
   SAL_TENANT_B,
   authAs,
   cleanP1_22Fixtures,
@@ -96,6 +97,7 @@ import {
 } from './p1-22-helpers';
 import { __setPrimaryPoolForTests } from '@/server/db/pool';
 import { __resetAuthenticatorForTests } from '@/server/context/principal';
+import { __resetRateLimitForTests } from '@/server/http/rate-limit';
 import { TENANT_ADMINISTRATOR_ROLE } from '@/modules/iam';
 import { POST as GENERATE_WARRANTY } from '@/app/api/v1/deliveries/[deliveryId]/warranties/route';
 import { WARRANTY_LIST_OPERATION, GET as LIST_WARRANTIES } from '@/app/api/v1/warranties/route';
@@ -110,6 +112,16 @@ import {
 
 let admin: Pool;
 let runtime: Pool;
+
+/** The Owner-directive fixtures (P1-32-PRE-OD-UX). See the beforeAll. */
+const OD_BRANCH = 'f1220000-0000-4000-8000-0000000000e3';
+const OD_PARTNER = 'f1220000-0000-4000-8000-0000000000e4';
+const OD_SEARCH_NAME = 'Rawan Al-Masri';
+const OD_SEARCH_PHONE = '962795443322';
+const OD_SEARCH_PLATE = 'GH 5533';
+let OD_IN_A2: ArrangedWarranty;
+let OD_IN_A3: ArrangedWarranty;
+let OD_SEARCHABLE: ArrangedWarranty;
 
 /** The code this slice mints. Written once, used by every assertion below. */
 const WARRANTY_READ = 'wty.warranty.read';
@@ -536,8 +548,11 @@ interface ArrangedWarranty {
  * is that a warranty a workshop actually issued can be found again — not that a row
  * planted by the fixture can be selected.
  */
-async function arrangeWarranty(tag: string): Promise<ArrangedWarranty> {
-  const delivery = await seedDeliveredDelivery(tag);
+async function arrangeWarranty(
+  tag: string,
+  scope: { readonly companyId?: string; readonly branchId?: string } = {}
+): Promise<ArrangedWarranty> {
+  const delivery = await seedDeliveredDelivery(tag, scope);
   authAs(SAL_FULL);
   const response = await generateWarranty(delivery.deliveryId, POLICY_ACTIVE);
   if (response.status !== 201) {
@@ -693,9 +708,94 @@ beforeAll(async () => {
   await appendTransitions(LEDGER.warrantyId, ADVANCE);
   TIED = await arrangeWarranty('p131_wty_tied');
   await appendTransitions(TIED.warrantyId, ADVANCE, { inOneTransaction: true });
+
+  // --- Owner directive P1-32-PRE-OD-UX -------------------------------------
+  // Owner directive P1-32-PRE-OD-UX: the search box's NAME and PHONE arms read
+  // `crm.*` and are switched off for a caller that does not work with customers.
+  // Granted on this principal's own role, additively, so no shared fixture moves.
+  await admin.query(
+    `INSERT INTO iam.role_permissions (tenant_id, role_id, permission_id, effect, created_by)
+     SELECT $1,$2,id,'allow',$3 FROM iam.permissions WHERE permission_code = 'crm.customer.read'
+     ON CONFLICT DO NOTHING`,
+    [TENANT_A, SAL_FULL.roleId, USER_A]
+  );
+  await admin.query(
+    `INSERT INTO iam.role_permissions (tenant_id, role_id, permission_id, effect, created_by)
+     SELECT $1,$2,id,'allow',$3 FROM iam.permissions WHERE permission_code = 'crm.customer.read'
+     ON CONFLICT DO NOTHING`,
+    [TENANT_A, SAL_PERMISSION_ELSEWHERE.roleId, USER_A]
+  );
+  // A THIRD branch of the same company, plus a second branch scope on
+  // `SAL_PERMISSION_ELSEWHERE`'s grant, so that principal holds TWO authorized
+  // branches while BRANCH_A1 stays inside its RLS union and outside its
+  // authority. Additive: no existing case in this file names OD_BRANCH.
+  await admin.query(
+    `INSERT INTO org.branches (id, tenant_id, company_id, branch_code, name, timezone_name, created_by)
+     VALUES ($1,$2,$3,'branch_od_wty','Fixture Branch OD Warranty','UTC',$4)
+     ON CONFLICT (id) DO NOTHING`,
+    [OD_BRANCH, TENANT_A, COMPANY_A1, USER_A]
+  );
+  await admin.query(
+    `INSERT INTO iam.grant_scopes (tenant_id, grant_id, scope_type, company_id, branch_id, created_by)
+     SELECT $1,$2,'branch',$3,$4,$5
+      WHERE NOT EXISTS (
+        SELECT 1 FROM iam.grant_scopes
+         WHERE tenant_id = $1 AND grant_id = $2 AND branch_id = $4)`,
+    [TENANT_A, SAL_PERMISSION_ELSEWHERE.grantId, COMPANY_A1, OD_BRANCH, USER_A]
+  );
+  OD_IN_A2 = await arrangeWarranty('p131_wty_od_a2', {
+    companyId: COMPANY_A1,
+    branchId: BRANCH_A2,
+  });
+  OD_IN_A3 = await arrangeWarranty('p131_wty_od_a3', {
+    companyId: COMPANY_A1,
+    branchId: OD_BRANCH,
+  });
+  // The searchable warranty: the work order's visit names a partner with a
+  // distinctive name and a phone, and the vehicle carries a plate.
+  OD_SEARCHABLE = await arrangeWarranty('p131_wty_od_search');
+  await admin.query(
+    `INSERT INTO crm.business_partners (id, tenant_id, party_type, display_name, lifecycle_status, created_by)
+     VALUES ($1,$2,'individual',$3,'active',$4) ON CONFLICT (id) DO NOTHING`,
+    [OD_PARTNER, TENANT_A, OD_SEARCH_NAME, USER_A]
+  );
+  await admin.query(
+    `INSERT INTO crm.contact_points
+       (tenant_id, partner_id, channel, normalized_value, raw_value, is_primary, created_by)
+     SELECT $1,$2,'mobile',$3,$3,true,$4
+      WHERE NOT EXISTS (
+        SELECT 1 FROM crm.contact_points WHERE tenant_id = $1 AND partner_id = $2)`,
+    [TENANT_A, OD_PARTNER, OD_SEARCH_PHONE, USER_A]
+  );
+  await admin.query(
+    `INSERT INTO rec.reception_party_roles
+       (tenant_id, company_id, branch_id, reception_visit_id, partner_id, relationship_role,
+        valid_from, created_by)
+     VALUES ($1,$2,$3,$4,$5,'service_requester',now(),$6)`,
+    [
+      TENANT_A,
+      OD_SEARCHABLE.delivery.companyId,
+      OD_SEARCHABLE.delivery.branchId,
+      OD_SEARCHABLE.delivery.visitId,
+      OD_PARTNER,
+      USER_A,
+    ]
+  );
+  await admin.query(
+    `INSERT INTO veh.plate_history
+       (tenant_id, vehicle_id, country_code, plate_raw, valid_from, created_by)
+     VALUES ($1,$2,'JO',$3,current_date,$4)`,
+    [TENANT_A, OD_SEARCHABLE.delivery.vehicleId, OD_SEARCH_PLATE, USER_A]
+  );
 }, 240_000);
 
-afterEach(() => __resetAuthenticatorForTests());
+afterEach(() => {
+  __resetAuthenticatorForTests();
+  // `wty.warranty-list` carries the `expensive-read` policy and the Owner
+  // directive cases (P1-32-PRE-OD-UX) each make several list calls; without this
+  // a later case answers 429 and the failure reads as a broken filter.
+  __resetRateLimitForTests();
+});
 
 afterAll(async () => {
   __setPrimaryPoolForTests(undefined);
@@ -1448,5 +1548,110 @@ describe('P-18 the ledger is refused across a tenant and across a branch', () =>
     const refused = await readStatusHistory(LEDGER.warrantyId);
     expect(refused.status).toBe(403);
     expect((await problemOf(refused)).code).toBe('ERR-IAM-001');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The branch-optional list and the search box (Owner directive, P1-32-PRE-OD-UX)
+// ---------------------------------------------------------------------------
+
+describe('the branch-optional warranty list', () => {
+  it('omitting branchId returns the two authorized branches and nothing from the third', async () => {
+    // `SAL_PERMISSION_ELSEWHERE` holds the read in BRANCH_A2 and, through this
+    // suite's extra scope row, in OD_BRANCH — while its widening grant puts
+    // BRANCH_A1 inside the permission-blind allowed-branch union with no
+    // authority there. A page built from row-level security alone returns
+    // BRANCH_A1's warranties; a page built from a per-branch decision does not.
+    authAs(SAL_PERMISSION_ELSEWHERE);
+    const response = await listWarranties({ companyId: COMPANY_A1, limit: 100 });
+    expect(response.status).toBe(200);
+    const rows = (await bodyOf<WarrantyListBody>(response)).items;
+    const ids = rows.map((row) => row.id);
+
+    expect(ids).toEqual(expect.arrayContaining([OD_IN_A2.warrantyId, OD_IN_A3.warrantyId]));
+    // The assertion that fails if the union comes from the policy.
+    expect(ids).not.toContain(FIRST.warrantyId);
+    expect(ids).not.toContain(SECOND.warrantyId);
+    expect(rows.every((row) => row.branchId === BRANCH_A2 || row.branchId === OD_BRANCH)).toBe(
+      true
+    );
+
+    // The complement, so the absence above is the narrowing rather than a
+    // fixture that never landed.
+    authAs(SAL_FULL);
+    const everything = await listWarranties({ companyId: COMPANY_A1, limit: 100 });
+    expect(everything.status).toBe(200);
+    const allIds = (await bodyOf<WarrantyListBody>(everything)).items.map((row) => row.id);
+    expect(allIds).toEqual(
+      expect.arrayContaining([FIRST.warrantyId, OD_IN_A2.warrantyId, OD_IN_A3.warrantyId])
+    );
+  });
+
+  it('a branchId the caller holds no read in is still refused', async () => {
+    authAs(SAL_PERMISSION_ELSEWHERE);
+    const response = await listWarranties({
+      companyId: COMPANY_A1,
+      branchId: FIRST.delivery.branchId,
+    });
+    expect(response.status).toBe(403);
+    expect((await problemOf(response)).code).toBe('ERR-IAM-001');
+  });
+
+  it('a company none of the caller branches belong to is refused, not answered empty', async () => {
+    authAs(SAL_PERMISSION_ELSEWHERE);
+    const response = await listWarranties({ companyId: COMPANY_A9, limit: 100 });
+    // A refusal and not an empty page: an empty page would report that the other
+    // company issues no warranties, which is not this caller's to learn.
+    expect(response.status).toBe(403);
+    expect((await problemOf(response)).code).toBe('ERR-IAM-001');
+  });
+});
+
+describe('the warranty search box', () => {
+  /** The ids on the page for one box, as the full caller in BRANCH_A1. */
+  async function search(box: string): Promise<readonly string[]> {
+    authAs(SAL_FULL);
+    const response = await listWarranties({
+      companyId: COMPANY_A1,
+      branchId: OD_SEARCHABLE.delivery.branchId,
+      limit: 100,
+      q: box,
+    });
+    expect(response.status).toBe(200);
+    return (await bodyOf<WarrantyListBody>(response)).items.map((row) => row.id);
+  }
+
+  it('finds the warranty by part of the customer name on its work order visit', async () => {
+    const ids = await search(OD_SEARCH_NAME.slice(0, 6));
+    expect(ids).toContain(OD_SEARCHABLE.warrantyId);
+    expect(ids).not.toContain(SECOND.warrantyId);
+  });
+
+  it('finds the warranty by a phone tail typed in Arabic-Indic digits', async () => {
+    const ids = await search('٥٤٤٣٣٢٢');
+    expect(ids).toContain(OD_SEARCHABLE.warrantyId);
+    expect(ids).not.toContain(SECOND.warrantyId);
+  });
+
+  it('finds the warranty by the plate of the covered vehicle', async () => {
+    for (const typed of ['gh5533', 'GH  5533']) {
+      const ids = await search(typed);
+      expect(ids, typed).toContain(OD_SEARCHABLE.warrantyId);
+      expect(ids, typed).not.toContain(SECOND.warrantyId);
+    }
+  });
+
+  it('returns an empty page for a box nothing matches and refuses a one-character box', async () => {
+    expect(await search('zzzznosuchcustomer')).toEqual([]);
+    authAs(SAL_FULL);
+    expect(
+      (
+        await listWarranties({
+          companyId: COMPANY_A1,
+          branchId: OD_SEARCHABLE.delivery.branchId,
+          q: 'a',
+        })
+      ).status
+    ).toBe(422);
   });
 });

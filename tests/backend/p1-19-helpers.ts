@@ -40,6 +40,17 @@ export const SYSTEM_ACTOR = '00000000-0000-4000-8000-000000000001';
 
 /** A second tenant-A branch, so "granted elsewhere" names a real branch. */
 export const BRANCH_A2 = 'a1100000-0000-4000-8000-0000000000a2';
+/**
+ * A SECOND tenant-A company, with a branch of its own (Owner directive,
+ * P1-32-PRE-OD-UX).
+ *
+ * The branch-optional board must refuse a company none of the caller's branches
+ * belong to rather than answer an empty page, and that case cannot be built out
+ * of tenant B: a foreign tenant is refused by the tenant boundary long before
+ * the branch resolution this is about.
+ */
+export const COMPANY_A2 = 'a1000000-0000-4000-8000-0000000000a2';
+export const BRANCH_A4 = 'a1100000-0000-4000-8000-0000000000a4';
 /** Tenant B org scaffolding: the shared fixtures build tenant A's only. */
 export const COMPANY_B1 = 'b1000000-0000-4000-8000-000000000001';
 export const BRANCH_B1 = 'b1100000-0000-4000-8000-000000000001';
@@ -602,12 +613,29 @@ export async function establishP1_19Fixtures(pool: Pool): Promise<void> {
     [COMPANY_B1, TENANT_B, USER_A]
   );
   await admin.query(
+    `INSERT INTO org.legal_companies
+       (id, tenant_id, company_code, legal_name, base_currency_code, created_by)
+     VALUES ($1,$2,'company_a2','Fixture Company A2','USD',$3) ON CONFLICT (id) DO NOTHING`,
+    [COMPANY_A2, TENANT_A, USER_A]
+  );
+  await admin.query(
     `INSERT INTO org.branches
        (id, tenant_id, company_id, branch_code, name, timezone_name, created_by)
      VALUES ($1,$2,$3,'branch_b1','Fixture Branch B1','UTC',$4),
-            ($5,$6,$7,'branch_a2','Fixture Branch A2','UTC',$4)
+            ($5,$6,$7,'branch_a2','Fixture Branch A2','UTC',$4),
+            ($8,$6,$9,'branch_a4','Fixture Branch A4','UTC',$4)
      ON CONFLICT (id) DO NOTHING`,
-    [BRANCH_B1, TENANT_B, COMPANY_B1, USER_A, BRANCH_A2, TENANT_A, COMPANY_A1]
+    [
+      BRANCH_B1,
+      TENANT_B,
+      COMPANY_B1,
+      USER_A,
+      BRANCH_A2,
+      TENANT_A,
+      COMPANY_A1,
+      BRANCH_A4,
+      COMPANY_A2,
+    ]
   );
 
   for (const principal of PRINCIPALS) await seedPrincipal(principal);

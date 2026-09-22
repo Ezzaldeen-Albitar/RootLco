@@ -9,10 +9,10 @@ Regenerate with `node scripts/p1-24-operation-register.mjs`; CI runs it with `--
 
 | Measure                  | Value |
 | ------------------------ | ----- |
-| Public operations        | 496   |
+| Public operations        | 497   |
 | Domains (modules)        | 21    |
-| OpenAPI paths            | 388   |
-| OpenAPI operations       | 496   |
+| OpenAPI paths            | 389   |
+| OpenAPI operations       | 497   |
 | OpenAPI schemas          | 3     |
 | OpenAPI security schemes | 1     |
 | Permission codes seeded  | 132   |
@@ -24,7 +24,7 @@ Regenerate with `node scripts/p1-24-operation-register.mjs`; CI runs it with `--
 
 | Classification    | Operations |
 | ----------------- | ---------- |
-| Covered           | 496        |
+| Covered           | 497        |
 | Partially covered | 0          |
 | Uncovered         | 0          |
 | Not applicable    | 0          |
@@ -38,7 +38,7 @@ Regenerate with `node scripts/p1-24-operation-register.mjs`; CI runs it with `--
 | crm             | 29         | 29      | 15     | 15      | 15         | 0               |
 | delivery        | 22         | 22      | 11     | 11      | 8          | 4               |
 | diagnostics     | 23         | 23      | 15     | 15      | 14         | 4               |
-| iam             | 55         | 55      | 34     | 32      | 15         | 10              |
+| iam             | 56         | 56      | 34     | 32      | 15         | 10              |
 | inventory       | 81         | 81      | 46     | 47      | 42         | 3               |
 | meta            | 1          | 1       | 0      | 0       | 0          | 0               |
 | overview        | 1          | 1       | 0      | 0       | 0          | 0               |
@@ -172,6 +172,7 @@ Regenerate with `node scripts/p1-24-operation-register.mjs`; CI runs it with `--
 | `iam.user-session-revoke-all`                       | DELETE | `/api/v1/iam/users/{userId}/sessions`                                                   | tenant  | `iam.user.manage`<br>`iam.session.view_all`                          | iam.session.revoked_all                        | —    | —   | audit authorization cross-tenant denial idempotency outbox route service success                                              | Covered |
 | `iam.user-status-change`                            | POST   | `/api/v1/iam/users/{userId}/status`                                                     | tenant  | `iam.user.manage`<br>`iam.session.view_all`                          | iam.user.locked                                | yes  | —   | audit authorization cross-tenant denial idempotency outbox route service success                                              | Covered |
 | `iam.user-update`                                   | PATCH  | `/api/v1/iam/users/{userId}`                                                            | tenant  | `iam.user.manage`                                                    | iam.user.updated                               | —    | yes | audit authorization cross-tenant denial route service stale-version success                                                   | Covered |
+| `iam.working-context-read`                          | GET    | `/api/v1/auth/working-context`                                                          | tenant  | `iam.user.read`                                                      | —                                              | —    | —   | authorization route service success                                                                                           | Covered |
 | `inv.aged-in-transit-alert-read`                    | GET    | `/api/v1/inventory-alerts/aged-in-transit`                                              | branch  | `inv.stock.read`                                                     | —                                              | —    | —   | authorization cross-tenant denial isolation route service success                                                             | Covered |
 | `inv.barcode-resolve`                               | GET    | `/api/v1/barcodes/{value}`                                                              | tenant  | `inv.item.read`                                                      | —                                              | —    | —   | authorization cross-tenant denial isolation route service success                                                             | Covered |
 | `inv.count-discrepancy-alert-read`                  | GET    | `/api/v1/inventory-alerts/count-discrepancies`                                          | branch  | `inv.stock.read`                                                     | —                                              | —    | —   | authorization cross-tenant denial isolation route service success                                                             | Covered |

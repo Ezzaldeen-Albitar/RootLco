@@ -69,6 +69,8 @@ import {
   type Page,
   type PageRequest,
 } from '@/server/db/pagination';
+import { searchFragment } from '@/server/db/search-predicate';
+import { NO_SEARCH_TERMS, type EntitySearchTerms } from '@/shared/text/search-terms';
 import type { DbHandle } from '@/server/db/transaction';
 
 /**
@@ -649,10 +651,20 @@ export class DeliveryRepository extends Repository {
     db: DbHandle,
     filter: {
       readonly companyId: string;
-      readonly branchId: string;
+      /**
+       * The branches the page may cover (Owner directive, P1-32-PRE-OD-UX).
+       *
+       * `undefined` means every branch of the company, reachable only by a caller
+       * row-level security imposes no branch narrowing on; the route resolves the
+       * set through `authorizedBranches`, which refuses rather than returning an
+       * empty one.
+       */
+      readonly branchIds?: readonly string[] | undefined;
       readonly status?: string | undefined;
       readonly workOrderId?: string | undefined;
       readonly vehicleId?: string | undefined;
+      /** One free-text box, already reduced by `toEntitySearchTerms`. */
+      readonly search?: EntitySearchTerms | undefined;
     },
     request: PageRequest
   ): Promise<Page<DeliveryRecordRow>> {
@@ -660,31 +672,56 @@ export class DeliveryRepository extends Repository {
     const values: unknown[] = [
       context.principal.tenantId,
       filter.companyId,
-      filter.branchId,
+      filter.branchIds === undefined ? null : [...filter.branchIds],
       filter.status ?? null,
       filter.workOrderId ?? null,
       filter.vehicleId ?? null,
     ];
+    const search = searchFragment(
+      filter.search ?? NO_SEARCH_TERMS,
+      {
+        tenant: 'sal.delivery_records.tenant_id',
+        vehicleId: 'sal.delivery_records.vehicle_id',
+        // A delivery carries the RECEPTION VISIT it came from, so the parties are
+        // the visit's — the same set the work-order board searches.
+        partnerIds: `SELECT r.partner_id
+                       FROM rec.reception_party_roles r
+                      WHERE r.tenant_id = sal.delivery_records.tenant_id
+                        AND r.reception_visit_id = sal.delivery_records.reception_visit_id
+                        AND r.deleted_at IS NULL`,
+        // A delivery record has no number of its own; the paperwork number a
+        // person reads off the job card is its work order's.
+        reference: `SELECT w.display_number
+                      FROM wo.work_orders w
+                     WHERE w.tenant_id = sal.delivery_records.tenant_id
+                       AND w.id = sal.delivery_records.work_order_id`,
+      },
+      values.length + 1
+    );
     const keyset = keysetFragment(
       request,
       { sort: 'created_at', id: 'id' },
       DELIVERY_RECORD_ORDER,
-      values.length + 1
+      values.length + search.values.length + 1
     );
     const result = await this.run<DeliveryRecordSql & { sort_value: string }>(
       db,
       `SELECT ${DELIVERY_COLUMNS},
               ${cursorTimestamp('created_at')} AS sort_value
          FROM sal.delivery_records
-        WHERE tenant_id = $1 AND company_id = $2 AND branch_id = $3
+        WHERE tenant_id = $1 AND company_id = $2
+          -- NULL is "every branch of the company", which only a caller the
+          -- policies impose no branch narrowing on can reach.
+          AND ($3::uuid[] IS NULL OR branch_id = ANY($3::uuid[]))
           AND deleted_at IS NULL
           AND ($4::text IS NULL OR status = $4)
           AND ($5::uuid IS NULL OR work_order_id = $5)
           AND ($6::uuid IS NULL OR vehicle_id = $6)
+          ${search.predicate}
           ${keyset.predicate}
         ${keyset.order}
         ${keyset.limitClause}`,
-      [...values, ...keyset.values]
+      [...values, ...search.values, ...keyset.values]
     );
     return buildPageWithCursors(
       result.rows.map((row) => ({

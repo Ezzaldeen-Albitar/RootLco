@@ -39,6 +39,7 @@ import {
   scopeTargetOption,
   searchParamsToObject,
 } from '@/server/http/validation';
+import { MAX_SEARCH_FRAGMENT, MIN_SEARCH_FRAGMENT } from '@/shared/text/search-terms';
 import { DELIVERY_STATUSES, deliveryModule } from '@/modules/delivery';
 
 export const runtime = 'nodejs';
@@ -117,10 +118,24 @@ export async function POST(request: Request): Promise<Response> {
 const ListQuery = z
   .object({
     companyId: schemas.uuid,
-    branchId: schemas.uuid,
+    /**
+     * OPTIONAL (Owner directive, P1-32-PRE-OD-UX). Omitted, it asks for every
+     * branch of the company the caller may read; `authorizedBranches` decides
+     * that set one branch at a time against this operation's declared code and
+     * refuses a caller holding none. A named branch is decided exactly as
+     * before, by `authorizeScope` inside the service.
+     */
+    branchId: schemas.uuid.optional(),
     status: z.enum(DELIVERY_STATUSES).optional(),
     workOrderId: schemas.uuid.optional(),
     vehicleId: schemas.uuid.optional(),
+    /**
+     * One free-text box (Owner directive, P1-32-PRE-OD-UX): part of a party's
+     * name on the originating visit, the tail of their phone number, part of any
+     * plate the vehicle has carried, part of its VIN, or part of the work-order
+     * number the delivery belongs to.
+     */
+    q: z.string().min(MIN_SEARCH_FRAGMENT).max(MAX_SEARCH_FRAGMENT).optional(),
     cursor: schemas.cursor.optional(),
     limit: schemas.limit.optional(),
   })
@@ -136,6 +151,7 @@ export const DELIVERY_LIST_OPERATION = defineOperation({
   scope: 'branch',
   auditClass: 'none',
   rateLimitPolicy: 'expensive-read',
+  branchNarrowing: 'authorized-union',
   cacheCategory: 'never',
 });
 
@@ -144,19 +160,23 @@ export async function GET(request: Request): Promise<Response> {
   return handleOperation(
     DELIVERY_LIST_OPERATION,
     request,
-    async ({ db, authorizeScope }) => {
+    async ({ db, authorizeScope, authorizedBranches }) => {
       // Parsed INSIDE the handler so a malformed query renders the shared problem
       // document rather than an unhandled 500.
       const query = parseOrFail(ListQuery, raw, 'query');
+      const branchIds =
+        query.branchId === undefined ? await authorizedBranches(query.companyId) : [query.branchId];
       return {
         body: await deliveryModule().reads.listDeliveries(
           db,
           {
             companyId: query.companyId,
-            branchId: query.branchId,
+            ...(query.branchId === undefined ? {} : { branchId: query.branchId }),
+            branchIds,
             ...(query.status === undefined ? {} : { status: query.status }),
             ...(query.workOrderId === undefined ? {} : { workOrderId: query.workOrderId }),
             ...(query.vehicleId === undefined ? {} : { vehicleId: query.vehicleId }),
+            ...(query.q === undefined ? {} : { q: query.q }),
           },
           {
             ...(query.cursor === undefined ? {} : { cursor: query.cursor }),

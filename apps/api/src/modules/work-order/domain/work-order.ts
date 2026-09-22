@@ -390,7 +390,11 @@ export function toWorkOrderSearchTerms(input: {
     hasFreeText: true,
     numberFragment: escapeLikeFragment(foldDigits(input.q.trim())),
     nameFragment: escapeLikeFragment(foldSearchText(input.q) ?? ''),
-    plateFragment: normalizePlate(input.q) ?? '',
-    vinFragment: normalizeVin(input.q) ?? '',
+    // LIKE-escaped for the reason `shared/text/search-terms.ts` gives: the plate
+    // rule keeps every character it does not fold, `%` and `_` among them, so an
+    // unescaped fragment of `%%` would turn the plate arm into `LIKE '%%%%'` and
+    // match every row in the branch.
+    plateFragment: escapeLikeFragment(normalizePlate(input.q) ?? ''),
+    vinFragment: escapeLikeFragment(normalizeVin(input.q) ?? ''),
   };
 }

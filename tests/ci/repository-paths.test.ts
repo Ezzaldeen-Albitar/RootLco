@@ -305,7 +305,10 @@ describe('the API application lives in the workspace', () => {
     // already existed and is unchanged.
     // 388 with the Owner directive tenant dashboard: one new route module,
     // `dashboard/summary`, carrying one operation.
-    expect(routeFiles.length).toBe(388);
+    // 389 with the Owner directive working-context read: one new route module,
+    // `auth/working-context`, carrying one operation. The two lines land on
+    // disjoint paths, so the counts add rather than collide.
+    expect(routeFiles.length).toBe(389);
 
     // Non-vacuity. A discovery assertion that only checks a count would pass
     // against a set with one route swapped for another, so the comparison that
@@ -414,7 +417,9 @@ describe('the API application lives in the workspace', () => {
     // over two new route modules, the credit-note list and the credit-note detail.
     // 496 with the Owner directive tenant dashboard: one operation over one new
     // route module, for the reason stated above the route-module count.
-    expect(report.operations).toHaveLength(496);
+    // 497 with the Owner directive working-context read: one operation over one
+    // new route module, for the same reason.
+    expect(report.operations).toHaveLength(497);
 
     // Three node processes, each loading the whole route surface, so the cost
     // grows with the surface. The budget was 30 s and began timing out inside the

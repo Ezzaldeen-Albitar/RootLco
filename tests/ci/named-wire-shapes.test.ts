@@ -192,8 +192,11 @@ describe('every route body serialises a named type', () => {
     // 496 with the Owner directive tenant dashboard: one operation, the
     // overview summary, serialising the NAMED `DashboardSummaryView` — so `named`
     // moves by one and `composed` does not move.
-    expect(summary.bodies).toBe(496);
-    expect(summary.named).toBe(444);
+    // 497 with the Owner directive working-context read: the route serialises the
+    // NAMED `WorkingContextView`, so `named` moves by one again and `composed`
+    // still does not move.
+    expect(summary.bodies).toBe(497);
+    expect(summary.named).toBe(445);
     expect(summary.composed).toBe(52);
     expect(summary.anonymous).toBe(0);
     expect(summary.unresolved).toBe(0);

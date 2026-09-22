@@ -1242,10 +1242,43 @@ describe('no caller-supplied scope narrowing on the ten P1-22 isolation operatio
           `${relative} ${name} reads a query string but passes no scopeTargetOption`
         ).toBe(true);
 
-        // 3. `companyId` and `branchId` are REQUIRED wherever the module declares them.
-        //    An optional pair is the exact shape this section exists to keep out: omit
-        //    it and `authorizeScope` is skipped, leaving `app.branch_ids` — the
-        //    permission-blind union of every grant — as the only narrowing.
+        // 3. `companyId` and `branchId` are REQUIRED wherever the module declares
+        //    them — UNLESS the operation declares `branchNarrowing` and really
+        //    routes the request through the `authorizedBranches` seam.
+        //
+        //    An optional pair is otherwise the exact shape this section exists to
+        //    keep out: omit it and `authorizeScope` is skipped, leaving
+        //    `app.branch_ids` — the permission-blind union of every grant — as the
+        //    only narrowing. The Owner directive (P1-32-PRE-OD-UX) makes an
+        //    optional BRANCH legitimate on five reads, and the point of the
+        //    exemption is that it cannot be taken quietly: the operation says so
+        //    in its own declaration, and the handler is PARSED to confirm the seam
+        //    is called. A comment claiming it would prove nothing, which is why
+        //    nothing here reads one.
+        //
+        //    `companyId` is never exempt. A read with neither has no scope to be
+        //    judged against at all.
+        const declaresNarrowing = callsToNode(file, 'defineOperation').some((call) => {
+          const argument = call.arguments[0];
+          if (!argument || !ts.isObjectLiteralExpression(argument)) return false;
+          return argument.properties.some(
+            (property) =>
+              ts.isPropertyAssignment(property) &&
+              property.name.getText(file) === 'branchNarrowing' &&
+              /'authorized-union'/.test(property.initializer.getText(file))
+          );
+        });
+        // CONTAINMENT, not immediate enclosure. The seam is destructured from
+        // `HandlerInput` and called inside the handler arrow that
+        // `handleOperation` receives, so its enclosing FUNCTION is that arrow and
+        // never the exported `GET` — unlike `scopeTargetOption`, which is an
+        // argument of `handleOperation` itself. Comparing enclosing functions
+        // here would reject every correct route, which is how a guard that looks
+        // strict ends up being one nobody can satisfy.
+        const usesSeam = callsToNode(file, 'authorizedBranches').some(
+          (call) => call.getStart(file) >= node.getStart(file) && call.getEnd() <= node.getEnd()
+        );
+
         const optionalScope: string[] = [];
         const visit = (candidate: ts.Node): void => {
           if (
@@ -1253,13 +1286,92 @@ describe('no caller-supplied scope narrowing on the ten P1-22 isolation operatio
             ['companyId', 'branchId'].includes(candidate.name.getText(file)) &&
             /\.optional\(\)/.test(candidate.initializer.getText(file))
           ) {
-            optionalScope.push(candidate.getText(file));
+            optionalScope.push(candidate.name.getText(file));
           }
           ts.forEachChild(candidate, visit);
         };
         visit(file);
-        expect(optionalScope, `${relative} declares an OPTIONAL scope parameter`).toEqual([]);
+
+        // A company may never be optional, whatever is declared.
+        expect(
+          optionalScope.filter((field) => field === 'companyId'),
+          `${relative} declares an OPTIONAL companyId`
+        ).toEqual([]);
+
+        if (optionalScope.includes('branchId')) {
+          expect(
+            declaresNarrowing,
+            `${relative} ${name} declares an OPTIONAL branchId without branchNarrowing: 'authorized-union'`
+          ).toBe(true);
+          expect(
+            usesSeam,
+            `${relative} ${name} declares branchNarrowing but never calls authorizedBranches`
+          ).toBe(true);
+        }
       }
+    }
+  });
+
+  it('refuses an optional branchId that is not declared and not routed through the seam', () => {
+    // The falsifiability of the rule above. Two synthetic route modules, neither
+    // of them on disk: one declares an optional branch with no `branchNarrowing`
+    // and no seam call, the other declares the field but never calls the seam.
+    // Both must be rejected by the same predicates the case above applies, or the
+    // exemption is a hole rather than a door.
+    const withoutDeclaration = parseModule(`
+      export const OP = defineOperation({ id: 'x.list', scope: 'branch' });
+      const Query = z.object({ companyId: schemas.uuid, branchId: schemas.uuid.optional() });
+      export async function GET(request: Request) {
+        const raw = searchParamsToObject(new URL(request.url).searchParams);
+        return handleOperation(OP, request, async ({ db }) => ({ body: await read(db, raw) }));
+      }
+    `);
+    const declaredButUnwired = parseModule(`
+      export const OP = defineOperation({
+        id: 'x.list', scope: 'branch', branchNarrowing: 'authorized-union',
+      });
+      const Query = z.object({ companyId: schemas.uuid, branchId: schemas.uuid.optional() });
+      export async function GET(request: Request) {
+        const raw = searchParamsToObject(new URL(request.url).searchParams);
+        return handleOperation(OP, request, async ({ db }) => ({ body: await read(db, raw) }));
+      }
+    `);
+    expect(withoutDeclaration).not.toBeNull();
+    expect(declaredButUnwired).not.toBeNull();
+
+    const declares = (file: ts.SourceFile): boolean =>
+      callsToNode(file, 'defineOperation').some((call) => {
+        const argument = call.arguments[0];
+        if (!argument || !ts.isObjectLiteralExpression(argument)) return false;
+        return argument.properties.some(
+          (property) =>
+            ts.isPropertyAssignment(property) &&
+            property.name.getText(file) === 'branchNarrowing' &&
+            /'authorized-union'/.test(property.initializer.getText(file))
+        );
+      });
+    const callsSeam = (file: ts.SourceFile): boolean =>
+      callsToNode(file, 'authorizedBranches').length > 0;
+
+    // Neither would be admitted: the first fails the declaration test, the second
+    // passes it and fails the seam test.
+    expect(declares(withoutDeclaration as ts.SourceFile)).toBe(false);
+    expect(declares(declaredButUnwired as ts.SourceFile)).toBe(true);
+    expect(callsSeam(declaredButUnwired as ts.SourceFile)).toBe(false);
+
+    // And the five REAL reads that carry the exemption satisfy both, so the
+    // predicates are not merely rejecting everything.
+    for (const relative of [
+      'src/app/api/v1/receptions/route.ts',
+      'src/app/api/v1/appointments/route.ts',
+      'src/app/api/v1/work-orders/route.ts',
+      'src/app/api/v1/deliveries/route.ts',
+      'src/app/api/v1/warranties/route.ts',
+    ]) {
+      const file = parseModule(readFileSync(resolve(API_ROOT, relative), 'utf8'));
+      expect(file, `${relative} did not parse`).not.toBeNull();
+      expect(declares(file as ts.SourceFile), `${relative} declares branchNarrowing`).toBe(true);
+      expect(callsSeam(file as ts.SourceFile), `${relative} calls authorizedBranches`).toBe(true);
     }
   });
 

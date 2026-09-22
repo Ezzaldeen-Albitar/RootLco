@@ -538,7 +538,19 @@ describe('the coverage include lists are pinned, because they are the denominato
     // `technician/application/technician-label-port.ts`. The route lives under
     // `src/app`, which this include list does not admit, so it moves the count by
     // nothing.
-    expect(files.length).toBe(316);
+    // 320 with the Owner directive UX backend, which adds FOUR more on top of
+    // those six: `modules/iam/data/working-context-repository.ts` (the
+    // working-context read only SQL), `modules/iam/application/working-context-service.ts`
+    // (the rule that tells an unrestricted caller from a grant-less one),
+    // `server/db/search-predicate.ts` (the single place the five-arm search
+    // disjunction is written) and
+    // `modules/quality/application/work-order-quality-port.ts` (the owning module
+    // answer for the board quality column). `shared/text/search-terms.ts` sits
+    // under `src/shared`, which this include list does not admit, so it moves the
+    // count by nothing. The baseline percentage floors are untouched:
+    // re-establishing them needs a hosted measurement run, which neither line
+    // performed and neither claims.
+    expect(files.length).toBe(320);
     expect(backendCoverage?.exclude).toContain(`${API_SRC_PATH}/server/openapi/**`);
     const instrumented = files.filter(
       (file) => !file.startsWith(`${API_SRC_PATH}/server/openapi/`)
@@ -643,6 +655,9 @@ describe('the coverage include lists are pinned, because they are the denominato
     // what says no file slipped in behind the exclusion. The floors stay
     // untouched for the reason above: re-establishing them needs a hosted
     // measurement run, which this slice did not perform and does not claim.
-    expect(instrumented.length).toBe(315);
+    // 319 with the Owner directive UX backend, whose four added files are not
+    // under `server/openapi/` either, so the two numbers move by four together
+    // for the same reason.
+    expect(instrumented.length).toBe(319);
   });
 });

@@ -367,7 +367,9 @@ describe('P1-28-SEC-001 — the receiving-employee picker, and what iam.user.rea
       USER_DIRECTORY_PERMISSION
     );
 
-    expect(USER_DIRECTORY_OPERATIONS.length).toBe(3);
+    // Four since the Owner directive (P1-32-PRE-OD-UX) added
+    // `iam.working-context-read`, the caller's own directory-class read.
+    expect(USER_DIRECTORY_OPERATIONS.length).toBe(4);
     for (const id of USER_DIRECTORY_OPERATIONS) {
       expect(operation(id).permissions, id).toContain(USER_DIRECTORY_PERMISSION);
     }
