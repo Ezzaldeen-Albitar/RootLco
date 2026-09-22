@@ -5735,7 +5735,7 @@
   "form.violation.refused": "This blocker entry was not accepted. A note in words is required, and a resolution has to answer a blocker that is still open on this job. Check what was written, then try again.",
   "form.violation.already_assigned": "This technician already holds this job. Choose a different technician, or leave the assignment as it is.",
   "form.violation.primary_already_assigned": "This job already has a lead technician. End the current lead assignment first, or add this person as a helper instead.",
-  "form.violation.origin_required": "Extra work has to say which job or inspection finding it came from, and this request names neither. Record it from the job the work was found on.",
+  "form.violation.origin_required": "Extra work has to say which job or inspection finding it came from, and this request names neither. Choose the job the work was found on.",
   "form.violation.origin_conflict": "The job and the inspection finding chosen here do not belong together. Choose the job the finding was recorded on.",
   "form.violation.not_on_reception_visit": "Only someone recorded on this visit may decide about this work. Choose a person who is on the visit.",
   "form.violation.completion_requires_completion_operation": "An inspection is finished with the action that completes the report, not by moving it to another stage. Use that action instead.",
@@ -5761,5 +5761,6 @@
   "quality.closure.originatingJob": "Found while working on",
   "quality.closure.originatingJobHint": "The job this extra work was discovered on. Extra work is always recorded against the job it came out of.",
   "quality.closure.originatingJobNone": "This work order has no jobs yet, so there is nothing for extra work to be recorded against. Add a job to the work order first.",
-  "quality.closure.originatingJobPlaceholder": "Choose a job"
+  "quality.closure.originatingJobPlaceholder": "Choose a job",
+  "quality.closure.originatingJobUnknown": "The jobs on this work order have not been read yet. They appear here as soon as the work order has been read."
 }

@@ -1233,7 +1233,12 @@ function AdditionalWorkPanel({
   const [required, setRequired] = useState('');
   const [originatingJobId, setOriginatingJobId] = useState('');
   const [originError, setOriginError] = useState<string | null>(null);
-  const jobs = detail !== null && detail.status === 'ok' ? detail.data.jobs : [];
+  // Two different emptinesses. `detail` is null while the read is in flight and
+  // carries a problem when it failed, and in both the job list is simply not
+  // known — saying "this work order has no jobs yet" there would state a cause
+  // that has not been established, on every first paint.
+  const jobsKnown = detail !== null && detail.status === 'ok';
+  const jobs = jobsKnown ? detail.data.jobs : [];
   const { pending, problem, attempt, run } = useCommand(
     messages,
     () => {
@@ -1300,9 +1305,11 @@ function AdditionalWorkPanel({
             label={translate(messages, 'quality.closure.originatingJob')}
             description={translate(
               messages,
-              jobs.length === 0
-                ? 'quality.closure.originatingJobNone'
-                : 'quality.closure.originatingJobHint'
+              !jobsKnown
+                ? 'quality.closure.originatingJobUnknown'
+                : jobs.length === 0
+                  ? 'quality.closure.originatingJobNone'
+                  : 'quality.closure.originatingJobHint'
             )}
             value={originatingJobId}
             onChange={(event) => {
