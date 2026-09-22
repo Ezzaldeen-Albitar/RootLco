@@ -928,7 +928,9 @@ describe('the dashboard reads once for the branch it is addressed to', () => {
     renderLtr(inBranch(<DashboardScreen locale="en" messages={messagesFor('en')} />));
     await screen.findByText('7');
 
-    await user.click(screen.getByRole('button', { name: EN['dashboard.period.yesterday'] }));
+    await user.click(
+      screen.getByRole('button', { name: EN['dashboard.period.yesterday'] as string })
+    );
 
     await waitFor(() => {
       expect(readDashboardSummary).toHaveBeenCalledTimes(2);
@@ -944,12 +946,12 @@ describe('the dashboard reads once for the branch it is addressed to', () => {
     renderLtr(inBranch(<DashboardScreen locale="en" messages={messagesFor('en')} />));
     await screen.findByText('7');
 
-    await user.click(screen.getByRole('button', { name: EN['dashboard.period.custom'] }));
+    await user.click(screen.getByRole('button', { name: EN['dashboard.period.custom'] as string }));
     const from = screen.getByLabelText(EN['dashboard.period.from'] as string);
     const to = screen.getByLabelText(EN['dashboard.period.to'] as string);
     await user.type(from, '2026-09-10');
     await user.type(to, '2026-09-01');
-    await user.click(screen.getByRole('button', { name: EN['dashboard.period.apply'] }));
+    await user.click(screen.getByRole('button', { name: EN['dashboard.period.apply'] as string }));
 
     expect(screen.getByText(EN['dashboard.period.inverted'] as string)).toBeTruthy();
     // Refused here, so nothing was sent: the first read is still the only one.
@@ -961,10 +963,10 @@ describe('the dashboard reads once for the branch it is addressed to', () => {
     renderLtr(inBranch(<DashboardScreen locale="en" messages={messagesFor('en')} />));
     await screen.findByText('7');
 
-    await user.click(screen.getByRole('button', { name: EN['dashboard.period.custom'] }));
+    await user.click(screen.getByRole('button', { name: EN['dashboard.period.custom'] as string }));
     await user.type(screen.getByLabelText(EN['dashboard.period.from'] as string), '2026-01-01');
     await user.type(screen.getByLabelText(EN['dashboard.period.to'] as string), '2026-12-31');
-    await user.click(screen.getByRole('button', { name: EN['dashboard.period.apply'] }));
+    await user.click(screen.getByRole('button', { name: EN['dashboard.period.apply'] as string }));
 
     expect(screen.getByText(EN['dashboard.period.tooLong'] as string)).toBeTruthy();
     expect(readDashboardSummary).toHaveBeenCalledTimes(1);
@@ -1133,7 +1135,7 @@ describe('every figure opens the list it counted', () => {
       '/en/receptions?period=today'
     );
 
-    await user.click(screen.getByRole('button', { name: EN['dashboard.period.last7'] }));
+    await user.click(screen.getByRole('button', { name: EN['dashboard.period.last7'] as string }));
     await waitFor(() => {
       expect(tile(container, 'receptionsOpened').getAttribute('href')).toBe(
         '/en/receptions?period=last7'
@@ -1312,15 +1314,15 @@ describe('the dashboard in Arabic, and reachable from the keyboard', () => {
 
     await user.tab();
     expect(document.activeElement).toBe(
-      screen.getByRole('button', { name: EN['dashboard.period.today'] })
+      screen.getByRole('button', { name: EN['dashboard.period.today'] as string })
     );
     for (let step = 0; step < 3; step += 1) await user.tab();
     expect(document.activeElement).toBe(
-      screen.getByRole('button', { name: EN['dashboard.period.custom'] })
+      screen.getByRole('button', { name: EN['dashboard.period.custom'] as string })
     );
     await user.tab();
     expect(document.activeElement).toBe(
-      screen.getByRole('button', { name: EN['dashboard.refresh'] })
+      screen.getByRole('button', { name: EN['dashboard.refresh'] as string })
     );
   });
 
@@ -1329,7 +1331,7 @@ describe('the dashboard in Arabic, and reachable from the keyboard', () => {
     renderLtr(inBranch(<DashboardScreen locale="en" messages={messagesFor('en')} />));
     await screen.findByText('7');
 
-    await user.click(screen.getByRole('button', { name: EN['dashboard.refresh'] }));
+    await user.click(screen.getByRole('button', { name: EN['dashboard.refresh'] as string }));
 
     await waitFor(() => {
       expect(readDashboardSummary).toHaveBeenCalledTimes(2);
