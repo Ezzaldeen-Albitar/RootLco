@@ -55,24 +55,37 @@ import {
  *
  * ## The quick views are exactly the ones the operation can be SENT
  *
- * Five board flags exist on the wire and each is backed by a row the schema
- * really keeps: a live job assignment for the caller, a non-`none` parts
- * forward state, a pending additional-work request, a pending quality result,
- * and a closed non-cancellation state. Those five, plus "opened today" over the
- * `openedFrom`/`openedTo` window and the unfiltered board, are the seven views
- * offered here.
+ * NINE, and each is one request the route already accepts:
  *
- * **Two views that were asked for are not offered, because the operation cannot
- * express them.** `state` on the wire is ONE catalogue code
- * (`z.string().regex(...).optional()`), so "every non-terminal state" is not a
- * request that can be sent; and there is no `completedFrom`/`completedTo`
- * window, so "completed today" is not one either. Filtering a fetched page in
- * the browser would produce short pages and a `hasMore` that lies, which is the
- * failure the backend's own query-time filtering exists to avoid. Both figures
- * ARE published by `ovw.dashboard-summary-read` and appear in the strip — a
- * count the platform computed is honest even where a filter does not exist.
+ *   - **Still with us** — `stateGroup: 'active'`, and the DEFAULT. The backend
+ *     resolves the group from the tenant catalogue's own terminal and
+ *     cancellation flags, so a workshop that defines its own state is covered
+ *     on the day it defines it. Any age: the question is "what is still ours",
+ *     not "what arrived recently".
+ *   - **All** — no narrowing at all.
+ *   - **Created today** — `openedFrom`/`openedTo` over the branch's day.
+ *   - **Finished today** — `completedFrom`/`completedTo` over the same day. A
+ *     different question from the one above it, and the platform records it
+ *     separately; either bound narrows the board to finished work by
+ *     construction, because an unfinished order has no completion instant.
+ *   - the five board FLAGS, each backed by a row the schema really keeps: a live
+ *     job assignment for the caller, a non-`none` parts forward state, a pending
+ *     additional-work request, a pending quality result, and a closed
+ *     non-cancellation state.
  *
- * ## Counts come from the aggregate, never from the page — and never from a chip
+ * Two of these could not be asked for at all one wave ago — `state` took a
+ * single catalogue code and there was no completion window — and this screen
+ * reported them as gaps rather than filtering a fetched page in the browser,
+ * which produces short pages and a `hasMore` that lies. The board-list
+ * contracts closed both.
+ *
+ * A state CODE and a state GROUP may not travel together: the route answers 422
+ * `state_and_group_exclusive` rather than intersecting them. The exclusion is
+ * structural here — choosing a state moves the view off **Still with us**, and
+ * choosing that view clears the state — so the refusal is unreachable and the
+ * screen never has to explain it.
+ *
+ * ## Counts come from the aggregate, never from the page
  *
  * A board holds one page. Counting its rows answers "how many are on this page"
  * and printing that beside a view called "Waiting for parts" states something
@@ -81,15 +94,18 @@ import {
  * this screen reads it through `features/overview`, which the dashboard wave
  * reuses.
  *
- * The figures do NOT sit on the view buttons, and that is a correction rather
- * than a layout choice. The aggregate's "awaiting parts" counts NON-TERMINAL
- * orders whose `parts_forward_state` is `requested`; the list's filter is a
- * bare `parts_forward_state` other than `none`, in any state at all. Two honest
- * numbers about two different sets, printed beside each other, with nothing
- * saying so. Rather than audit each pairing whenever either side moves, every
- * figure lives in one strip, each labelled with the set the AGGREGATE counts,
- * and the strip says plainly that it is about the branch's day rather than
- * about the list.
+ * ## A figure sits on a chip only where the two count the same SET
+ *
+ * Two of the nine views qualify, and each is an identity rather than a
+ * resemblance — `chipFigure` below carries the proof for each, and the reason
+ * every other view carries no number. The rest of the published figures live in
+ * the strip, labelled with the set the AGGREGATE counts, and the strip says
+ * plainly that it is about the branch's day rather than about the list.
+ *
+ * The pairing is checked, not assumed. "Awaiting parts" is the case that taught
+ * it: the aggregate counts NON-TERMINAL orders whose `parts_forward_state` is
+ * `requested`, the list filter is a bare `parts_forward_state` other than
+ * `none` in any state at all, and the two sat beside each other as one claim.
  *
  * Each figure carries its own state and all three are rendered apart: computed,
  * withheld for want of the section's own read code, or unanswerable. A withheld
@@ -630,19 +646,17 @@ export function WorkOrderQueueScreen({
    * The figure a view's chip may carry, or `null` where the two still count
    * different sets.
    *
-   * Three of the nine agree EXACTLY, and each agreement is a fact about the
+   * TWO of the nine agree EXACTLY, and each agreement is a fact about the
    * database rather than a resemblance:
    *
    *   - `active` — the route resolves the group as
    *     `!isTerminal && !isCancellation` and the aggregate as `!isTerminal`.
    *     `ck_work_order_states_cancellation` makes a cancellation terminal, so
    *     the second conjunct is implied and the sets are identical.
-   *   - `awaitingApproval` — both are "an additional-work request of this scope
-   *     is `pending` and not deleted".
    *   - `readyForDelivery` — both resolve `isClosed && !isCancellation` from
    *     the live catalogue.
    *
-   * The other six carry no figure, and each for a stated reason:
+   * The other seven carry no figure, and each for a stated reason:
    *
    *   - `all` and `mine` — the aggregate publishes no such total.
    *   - `openedToday` — the aggregate's per-day opened counts sit inside a
@@ -656,17 +670,28 @@ export function WorkOrderQueueScreen({
    *     are `requested`; the list filter is any state whose parts are not
    *     `none`.
    *   - `awaitingQuality` — the aggregate publishes no section for it.
+   *   - `awaitingApproval` — CLOSE, and not the same set. Both sides count a
+   *     `pending`, undeleted additional-work request, but the LIST reaches the
+   *     request through its work order and the aggregate reaches it through the
+   *     branch: the aggregate's statement selects from
+   *     `wo.additional_work_requests` on the scope columns alone and never
+   *     joins the parent, so a request whose work order has been soft-deleted is
+   *     still counted while the list — which walks from the work order — cannot
+   *     return it. The gap is small and it is real, and a number that is
+   *     occasionally one larger than the list beneath it is exactly the quiet
+   *     disagreement this whole arrangement exists to prevent. The figure stays
+   *     in the strip, where it is labelled as the branch's count rather than as
+   *     this view's, and a backend follow-up adding the parent join is what
+   *     would bring it onto the chip.
    */
   const chipFigure = (kindOfView: ViewKind): number | null => {
     if (sections === null) return null;
     const section =
       kindOfView === 'active'
         ? sections.activeWorkOrders
-        : kindOfView === 'awaitingApproval'
-          ? sections.awaitingApproval
-          : kindOfView === 'readyForDelivery'
-            ? sections.readyForDelivery
-            : undefined;
+        : kindOfView === 'readyForDelivery'
+          ? sections.readyForDelivery
+          : undefined;
     const resolved = figureStateOf(section);
     return resolved.kind === 'figure' ? resolved.value : null;
   };
@@ -696,7 +721,7 @@ export function WorkOrderQueueScreen({
 
             A number beside a view is read as "this is how many the list below
             will show", so it may only appear where that is true. `chipFigure`
-            carries the three that agree and the reason each of the other six
+            carries the two that agree and the reason each of the other seven
             does not; the strip below carries every published figure, labelled
             by what the AGGREGATE counts, for the ones a chip cannot claim.
 

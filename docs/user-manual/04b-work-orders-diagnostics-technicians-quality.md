@@ -168,9 +168,9 @@ shown here, read-only, as **Branch** <!-- workOrders.queue.branch --> . Then nar
    when the order was opened and **Finished today** by when it was finished — two different
    questions — and both count the day on the branch's own clock.
 
-   Three of the views carry a number: **Still with us**, **Waiting for the customer to agree** and
-   **Ready to hand over**. Those three are the ones where the figure counts exactly the same work
-   orders the view lists. The others deliberately carry none — see the strip below.
+   Two of the views carry a number: **Still with us** and **Ready to hand over**. Those two are the
+   ones where the figure counts exactly the same work orders the view lists. The others deliberately
+   carry none — see the strip below.
 
 2. Optionally narrow by **State** <!-- workOrders.queue.stateFilter --> — "The states your workshop
    has set up." <!-- workOrders.queue.stateFilterHelp --> They are listed by name, grouped into

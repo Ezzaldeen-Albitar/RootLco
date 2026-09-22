@@ -575,16 +575,19 @@ describe('the work-order board reads on arrival and narrows honestly', () => {
 
   it('prints a figure on a chip ONLY where the two count the same set', async () => {
     /*
-     * The three that agree, and each agreement is a fact rather than a
+     * The two that agree, and each agreement is a fact rather than a
      * resemblance: `active` is `!isTerminal` on both sides once
-     * `ck_work_order_states_cancellation` is taken into account;
-     * `awaitingApproval` is "a pending, undeleted additional-work request" on
-     * both; `readyForDelivery` is `isClosed && !isCancellation` on both.
+     * `ck_work_order_states_cancellation` is taken into account, and
+     * `readyForDelivery` is `isClosed && !isCancellation` on both.
      *
-     * And the six that do not, above all `awaitingParts`: the aggregate counts
-     * NON-TERMINAL orders whose parts are `requested`, the list filter is any
-     * state whose parts are not `none`. A figure there read as a preview of a
-     * list it did not describe.
+     * And the seven that do not. `awaitingParts` is the loudest — the aggregate
+     * counts NON-TERMINAL orders whose parts are `requested`, the list filter is
+     * any state whose parts are not `none` — and `awaitingApproval` is the
+     * quietest: both count a pending, undeleted request, but the aggregate
+     * selects from the request table on the scope columns alone while the list
+     * walks from the work order, so a request whose parent was soft-deleted is
+     * counted and not listed. A number one larger than the rows beneath it is
+     * exactly the disagreement a chip figure must not carry.
      */
     readDashboardSummary.mockResolvedValue(summaryWith({}));
     render();
@@ -595,7 +598,6 @@ describe('the work-order board reads on arrival and narrows honestly', () => {
     const chip = (view: string) => screen.getByRole('button', { name: new RegExp(label(view)) });
 
     expect(chip('active')).toHaveTextContent('7');
-    expect(chip('awaitingApproval')).toHaveTextContent('3');
     expect(chip('readyForDelivery')).toHaveTextContent('1');
 
     for (const view of [
@@ -603,6 +605,7 @@ describe('the work-order board reads on arrival and narrows honestly', () => {
       'openedToday',
       'completedToday',
       'mine',
+      'awaitingApproval',
       'awaitingParts',
       'awaitingQuality',
     ] as const) {
