@@ -98,12 +98,15 @@ export type {
 export type {
   GenerateWarrantyInput,
   WarrantyCoverageView,
+  WarrantyCustomerView,
   WarrantyDeliveryFacts,
+  WarrantyDetailView,
   WarrantyItemView,
   WarrantyPolicyView,
   WarrantyRecordListView,
   WarrantyStatusHistoryEntryView,
   WarrantyStatusHistoryEnvelope,
+  WarrantyVehicleView,
   WarrantyView,
 } from './application/warranty-service';
 

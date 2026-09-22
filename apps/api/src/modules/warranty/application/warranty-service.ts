@@ -63,7 +63,10 @@ import {
 } from '@/shared/text/search-terms';
 import { callerHoldsPermissionAnywhere } from '@/server/auth/authorization';
 import type { ScopeAuthorizer } from '@/server/auth/authorization';
+import { crmModule } from '@/modules/crm';
 import { deliveryModule } from '@/modules/delivery';
+import { SERVICE_REQUESTER } from '@/modules/reception';
+import { vehicleModule } from '@/modules/vehicle';
 import { workOrderModule, type LineRow } from '@/modules/work-order';
 import { pageRequest, type Page, type PageRequest } from '@/server/db/pagination';
 import {
@@ -167,6 +170,60 @@ export interface WarrantyPolicyView {
 }
 
 /**
+ * The car a warranty covers, NAMED rather than referenced (Owner directive,
+ * P1-32-PRE-OD-UX).
+ *
+ * Before this block a warranty row carried `vehicleId` and nothing else, so an
+ * operator matched cars by uuid — the unrecoverable-identifier defect this phase
+ * keeps finding, on the one record whose entire subject is a particular car.
+ *
+ * Resolved through `@/modules/vehicle`'s own published read, never by joining
+ * `veh.*` in the warranty repository: that read owns the rule about who may be
+ * told a registration, and a join here would be a second definition of it.
+ *
+ * `plate` and `vin` are null for a caller that does not hold `veh.vehicle.read`,
+ * and null again when the vehicle carries neither — the two are deliberately
+ * indistinguishable, because a field that reports a VIN exists while refusing to
+ * show it tells the caller the thing it is withholding. `makeModel` and
+ * `displayNumber` are not withheld; see `VehicleReadService.resolveDisplayIdentities`
+ * for why, and note that `vehicleId` was already published to every warranty
+ * reader, so nothing here widens the set of cars a caller can enumerate.
+ *
+ * Every field except `id` may be null: a vehicle may be registered without a
+ * plate, entered without a VIN, and cite no catalogue row at all.
+ */
+export interface WarrantyVehicleView {
+  readonly id: string;
+  readonly plate: string | null;
+  readonly vin: string | null;
+  readonly makeModel: string | null;
+  readonly displayNumber: string | null;
+}
+
+/**
+ * The party the warranty was issued to (Owner directive, P1-32-PRE-OD-UX).
+ *
+ * A warranty record names no party of its own, so this is the `service_requester`
+ * on the reception visit its work order came from — the party who brought the car
+ * and asked for the work, which is the party a claim would come back from.
+ *
+ * `displayName` is null ON ITS OWN for a caller that does not hold
+ * `crm.customer.read`: the link is a reception fact and the person's name is the
+ * CRM module's to withhold, so the block is published either way and only the name
+ * is missing. Resolved through `crmModule().customerRead.resolveDisplayIdentities`,
+ * which checks that capability for itself — this module never joins
+ * `crm.business_partners`.
+ *
+ * The WHOLE block is null when the originating visit names no service requester,
+ * which is a real state rather than an error: `rec.reception_party_roles` requires
+ * the role only before a visit is activated.
+ */
+export interface WarrantyCustomerView {
+  readonly id: string;
+  readonly displayName: string | null;
+}
+
+/**
  * A warranty record as a caller sees it.
  *
  * No monetary field, because `wty` has none. `status` is reported verbatim from the
@@ -194,14 +251,40 @@ export interface WarrantyView {
 }
 
 /**
+ * `wty.warranty-detail`'s published shape: the record, plus the two display blocks
+ * the Owner directive added (P1-32-PRE-OD-UX).
+ *
+ * An EXTENSION of `WarrantyView` rather than two more fields on it, because
+ * `WarrantyView` is also what `wty.warranty-generate` answers with. Adding the
+ * blocks there would put two extra reads — one against `veh`, one against `crm` —
+ * on a WRITE path whose job is to issue a warranty, and would make a generation
+ * fail for a reason that has nothing to do with the warranty. The write keeps the
+ * shape it had; the read publishes more.
+ *
+ * Spelled exactly as `WarrantyRecordListView` spells the same two blocks, so a
+ * screen that lists warranties and then opens one sees ONE shape for the car and
+ * the customer rather than two.
+ */
+export interface WarrantyDetailView extends WarrantyView {
+  readonly vehicle: WarrantyVehicleView;
+  /** Null when the originating visit names no service requester. */
+  readonly customer: WarrantyCustomerView | null;
+}
+
+/**
  * One warranty record on a list page (P1-31 prerequisite P-6).
  *
- * Every field is spelled exactly as `WarrantyView` spells it, and carries the
- * same meaning — `odometerLimit` is the record's ABSOLUTE ceiling here too, never
- * the coverage's relative allowance — so a screen that lists warranties and then
- * opens one sees ONE shape rather than two.
+ * Every field is spelled exactly as `WarrantyDetailView` spells it, and carries
+ * the same meaning — `odometerLimit` is the record's ABSOLUTE ceiling here too,
+ * never the coverage's relative allowance — so a screen that lists warranties and
+ * then opens one sees ONE shape rather than two.
  *
  * What it does not carry, and why:
+ *
+ *  - **`vehicle` and `customer` ARE carried** (Owner directive, P1-32-PRE-OD-UX),
+ *    for the reason `policy` is: a row that named the car by uuid could not be
+ *    read by the person looking at it. Both are resolved for the WHOLE page in one
+ *    statement each, never one pair per row.
  *
  *  - **No coverage terms and no covered items.** Both are `WarrantyView`'s, and
  *    both are already published by `wty.warranty-detail`. Repeating them per row
@@ -232,6 +315,13 @@ export interface WarrantyRecordListView {
   /** ABSOLUTE ceiling, or null when the coverage sets no distance limit. */
   readonly odometerLimit: string | null;
   readonly policy: WarrantyPolicyView;
+  /**
+   * The car, named (Owner directive, P1-32-PRE-OD-UX). `vehicleId` stays above,
+   * so nothing that navigated by it breaks.
+   */
+  readonly vehicle: WarrantyVehicleView;
+  /** The party who brought it in, or null when the visit names none. */
+  readonly customer: WarrantyCustomerView | null;
   readonly recordVersion: number;
 }
 
@@ -564,7 +654,7 @@ export class WarrantyService {
     db: DbHandle,
     warrantyRecordId: string,
     authorizeScope: ScopeAuthorizer
-  ): Promise<WarrantyView> {
+  ): Promise<WarrantyDetailView> {
     const found = await this.repository.findWarrantyRecord(db, warrantyRecordId);
     if (found === null) {
       throw new AppFailure('ERR-RES-001', {
@@ -585,7 +675,14 @@ export class WarrantyService {
         message: 'A warranty record cites a policy or coverage row that is not readable',
       });
     }
-    return this.toView(record, policy, coverage, found.items, false);
+    // Resolved AFTER the scope decision, deliberately: a caller refused this
+    // record must not have caused a `veh` or `crm` read on its behalf.
+    const display = await resolveDisplayBlocks(db, this.repository, [record]);
+    return {
+      ...this.toView(record, policy, coverage, found.items, false),
+      vehicle: vehicleBlockFor(record.vehicleId, display.vehicles),
+      customer: display.customers.get(record.workOrderId) ?? null,
+    };
   }
 
   // -------------------------------------------------------------------------
@@ -735,6 +832,11 @@ export class WarrantyService {
         ])
       ).map((row) => [row.id, row])
     );
+    // The car and the customer for the WHOLE page (Owner directive,
+    // P1-32-PRE-OD-UX) — one statement each, on the `findPolicies` precedent
+    // immediately above. A per-row lookup would make this page an N+1 against a
+    // read that already carries the `expensive-read` bucket.
+    const display = await resolveDisplayBlocks(db, this.repository, result.items);
 
     return {
       ...result,
@@ -763,6 +865,8 @@ export class WarrantyService {
             name: policy.name,
             status: policy.status,
           },
+          vehicle: vehicleBlockFor(record.vehicleId, display.vehicles),
+          customer: display.customers.get(record.workOrderId) ?? null,
           recordVersion: record.recordVersion,
         };
       }),
@@ -1088,4 +1192,88 @@ async function searchTermsFor(db: DbHandle, q: string | undefined) {
   return (await callerHoldsPermissionAnywhere(db, CUSTOMER_SEARCH_PERMISSION))
     ? terms
     : withoutCustomerArms(terms);
+}
+
+/**
+ * Names the car and the customer of a whole set of warranty records (Owner
+ * directive, P1-32-PRE-OD-UX).
+ *
+ * Three statements for any number of records, never three per record: the vehicle
+ * identities, the partner ids, and then the partners' names. The first two are
+ * independent and run together; the third cannot start until the second has said
+ * which partners there are.
+ *
+ * Every hop goes through a PUBLIC module surface or through this module's own
+ * repository, and the division is the point:
+ *
+ *  - `@/modules/vehicle` decides whether this caller may be told a plate or a VIN.
+ *    This module does not re-implement that rule and does not touch `veh.*`.
+ *  - `@/modules/crm` decides whether this caller may be told a name, and answers
+ *    an unentitled caller with an empty map. This module does not touch `crm.*`.
+ *  - the LINK — which partner is the service requester on the visit this record's
+ *    work order came from — is a `rec`/`wo` fact that this repository already
+ *    walks for the list's search box, so it stays here.
+ *
+ * An id that resolves to nothing is left null or absent rather than failing the
+ * page: a partner may be merged away and a vehicle may be soft-deleted, and that
+ * is a sentence for the screen to say, not a reason to hide the other rows.
+ */
+async function resolveDisplayBlocks(
+  db: DbHandle,
+  repository: WarrantyRepository,
+  records: readonly { readonly vehicleId: string; readonly workOrderId: string }[]
+): Promise<{
+  readonly vehicles: ReadonlyMap<string, WarrantyVehicleView>;
+  readonly customers: ReadonlyMap<string, WarrantyCustomerView>;
+}> {
+  if (records.length === 0) return { vehicles: new Map(), customers: new Map() };
+  const [vehicles, partnerByWorkOrder] = await Promise.all([
+    vehicleModule().vehicleRead.resolveDisplayIdentities(
+      db,
+      records.map((record) => record.vehicleId)
+    ),
+    repository.findCustomerPartnerIds(
+      db,
+      records.map((record) => record.workOrderId),
+      SERVICE_REQUESTER
+    ),
+  ]);
+  const identities = await crmModule().customerRead.resolveDisplayIdentities(db, [
+    ...new Set(partnerByWorkOrder.values()),
+  ]);
+  return {
+    vehicles,
+    customers: new Map(
+      [...partnerByWorkOrder].map(([workOrderId, partnerId]) => [
+        workOrderId,
+        // The id is published even when the name is withheld or unresolvable: the
+        // link is this module's fact, and dropping the block would report that the
+        // warranty has no customer.
+        { id: partnerId, displayName: identities.get(partnerId)?.displayName ?? null },
+      ])
+    ),
+  };
+}
+
+/**
+ * The vehicle block for one record, with the id-only fallback.
+ *
+ * `wty.warranty_records.vehicle_id` is NOT NULL, so the id is always known and the
+ * block is never absent — only unlabelled, when the vehicle is soft-deleted or the
+ * catalogue and the plate history have nothing to say. Same shape of answer the
+ * work-order board gives for the same situation.
+ */
+function vehicleBlockFor(
+  vehicleId: string,
+  vehicles: ReadonlyMap<string, WarrantyVehicleView>
+): WarrantyVehicleView {
+  return (
+    vehicles.get(vehicleId) ?? {
+      id: vehicleId,
+      plate: null,
+      vin: null,
+      makeModel: null,
+      displayNumber: null,
+    }
+  );
 }
