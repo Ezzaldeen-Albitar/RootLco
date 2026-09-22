@@ -140,7 +140,8 @@ export function assertRefusalAttributable(
     throw new EvidenceRuleError(
       'refusingPartnerId is required when refusalType is "authorization", because that ' +
         "refusal becomes the party's standing authorization decision and only that " +
-        'party can supersede it'
+        'party can supersede it',
+      'companion_field_required'
     );
   }
 }
@@ -188,15 +189,43 @@ export const MAX_COORD = 1;
 export const MAX_CONTENT_QUANTITY = 2_147_483_647;
 export const MAX_DECLARED_VALUE = 999_999_999_999.99;
 
+/**
+ * Why a piece of condition evidence was refused, as a rule token on the wire.
+ *
+ * Every member used to reach the reader as `invalid_value` — one sentence for
+ * five different causes, and untrue of four of them. The one that matters most
+ * is the last: an `authorization` refusal that names nobody is not a mistyped
+ * entry at all, it is a second entry the form never asked for, and telling the
+ * receptionist to re-check what they typed sends them to look at the wrong
+ * thing.
+ */
+export const EVIDENCE_FIELD_RULES = Object.freeze([
+  'blank',
+  'max_length',
+  'out_of_range',
+  'quantity',
+  'companion_field_required',
+] as const);
+export type EvidenceFieldRule = (typeof EVIDENCE_FIELD_RULES)[number];
+
 export class EvidenceRuleError extends Error {
   public override readonly name = 'EvidenceRuleError';
+
+  public constructor(
+    message: string,
+    /** The token the publishing service puts on the wire for this cause. */
+    public readonly rule: EvidenceFieldRule
+  ) {
+    super(message);
+  }
 }
 
 /** Mirrors the frozen `ck_damage_marks_coord_x` / `_coord_y` range. */
 export function assertCoordinate(value: number, field: string): void {
   if (!Number.isFinite(value) || value < MIN_COORD || value > MAX_COORD) {
     throw new EvidenceRuleError(
-      `${field} must be a fraction of the map between ${MIN_COORD} and ${MAX_COORD}`
+      `${field} must be a fraction of the map between ${MIN_COORD} and ${MAX_COORD}`,
+      'out_of_range'
     );
   }
 }
@@ -210,10 +239,10 @@ export function assertCoordinate(value: number, field: string): void {
 export function requireNonBlank(value: string, field: string, max: number): string {
   const trimmed = value.trim();
   if (trimmed.length === 0) {
-    throw new EvidenceRuleError(`${field} must not be blank`);
+    throw new EvidenceRuleError(`${field} must not be blank`, 'blank');
   }
   if (trimmed.length > max) {
-    throw new EvidenceRuleError(`${field} must be at most ${max} characters`);
+    throw new EvidenceRuleError(`${field} must be at most ${max} characters`, 'max_length');
   }
   return trimmed;
 }
@@ -231,7 +260,8 @@ export function optionalNonBlank(
 export function assertQuantity(value: number): void {
   if (!Number.isInteger(value) || value <= 0 || value > MAX_CONTENT_QUANTITY) {
     throw new EvidenceRuleError(
-      `quantity must be a whole number between 1 and ${MAX_CONTENT_QUANTITY}`
+      `quantity must be a whole number between 1 and ${MAX_CONTENT_QUANTITY}`,
+      'quantity'
     );
   }
 }
@@ -239,6 +269,9 @@ export function assertQuantity(value: number): void {
 /** Mirrors `ck_vehicle_content_details_value_nonneg`, plus `numeric(14, 2)`. */
 export function assertDeclaredValue(value: number): void {
   if (!Number.isFinite(value) || value < 0 || value > MAX_DECLARED_VALUE) {
-    throw new EvidenceRuleError(`declaredValue must be between 0 and ${MAX_DECLARED_VALUE}`);
+    throw new EvidenceRuleError(
+      `declaredValue must be between 0 and ${MAX_DECLARED_VALUE}`,
+      'out_of_range'
+    );
   }
 }

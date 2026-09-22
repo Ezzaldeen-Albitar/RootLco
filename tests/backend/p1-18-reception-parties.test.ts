@@ -730,6 +730,24 @@ describe('rec.reception-party-role: assignment', () => {
     expect(await roleCount(visit, PARTNER_DRIVER, 'payer')).toBe(1);
   });
 
+  /**
+   * The vocabulary refusal, and the layer that issues it.
+   *
+   * `rec.reception_party_roles` carries three CHECKs that all arrive as SQLSTATE
+   * 23514, indistinguishable from one another. The service's handler for that
+   * state used to publish the path `body.relationshipRole`, which named the one
+   * cause the request cannot have: the role vocabulary is already enforced ahead
+   * of the insert by the route's own enum, and the not-blank CHECK by the
+   * service's normalisation. So the sentence pointed a reader at a control that
+   * could not have caused the refusal. The handler now publishes `body` — the
+   * request, not a field — because that is what is actually known.
+   *
+   * This case pins the half that a caller can reach: an unrecognised role is
+   * answered BY THE ROUTE, on the role field, with the schema's own token. The
+   * assertion that it is NOT the general request-level violation is what would
+   * fail if the enum were ever dropped and the refusal fell through to the
+   * database handler, which is the change that made the old path wrong.
+   */
   it('refuses a relationship role outside the frozen seven-value vocabulary', async () => {
     authAs(SUBJ_RECEPTION);
     const visit = await seedVisit();
@@ -743,6 +761,8 @@ describe('rec.reception-party-role: assignment', () => {
     expect((body.violations ?? []).map((violation) => violation.path)).toContain(
       'body.relationshipRole'
     );
+    expect((body.violations ?? []).map((violation) => violation.path)).not.toContain('body');
+    expect(body.violations?.[0]?.rule).toBe('invalid_value');
     expect(await roleCount(visit, PARTNER_OWNER, 'chief_mechanic')).toBe(0);
   });
 });

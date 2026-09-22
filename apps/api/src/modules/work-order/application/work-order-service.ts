@@ -786,11 +786,32 @@ export class WorkOrderService extends ApplicationService {
         ? jobStates.find((state) => !state.isTerminal && !state.assignmentRequired)
         : jobStates.find((state) => state.code === input.state);
     if (initial === undefined) {
+      // Two different refusals used to share one token, and only one of them is
+      // about the caller's choice. `unknown_state` renders as "choose a stage
+      // from the list" — true when the caller named a stage this workshop does
+      // not use, and false when the caller named none and the catalogue holds no
+      // stage a job may open in: there is then no list to choose from, and the
+      // person reading it cannot fix it from this form at all.
+      //
+      // NO BACKEND CASE DRIVES `no_opening_stage`, and none can: the branch needs
+      // a catalogue holding no active, non-terminal, assignment-free job state,
+      // and `jobStates()` resolves `scope = 'platform' OR tenant_id = $1`, so the
+      // platform row `planned` (non-terminal, assignment_required = false, active)
+      // is visible to every tenant that exists. No operation writes
+      // `wo.job_states` at all — the catalogue is read-only to the API — so no
+      // sequence of real requests can empty it. Reaching this line in a test would
+      // mean writing the table behind the operations, which proves nothing about
+      // what a caller can do. The branch stays because the state it describes is
+      // reachable in the DATABASE (a seed that never ran, a tenant row deactivated
+      // by an operator), and a 500 there would be worse than a sentence.
+      if (input.state === undefined) {
+        throw new AppFailure('ERR-VAL-001', {
+          message: 'No job state is configured that a job may start in',
+          safeDetails: { violations: [{ path: 'body.state', rule: 'no_opening_stage' }] },
+        });
+      }
       throw new AppFailure('ERR-VAL-001', {
-        message:
-          input.state === undefined
-            ? 'No job state is configured that a job may start in'
-            : `Job state "${input.state}" is not an active state`,
+        message: `Job state "${input.state}" is not an active state`,
         safeDetails: { violations: [{ path: 'body.state', rule: 'unknown_state' }] },
       });
     }

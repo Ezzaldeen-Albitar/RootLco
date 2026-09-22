@@ -781,7 +781,13 @@ export class ReceptionEvidenceService extends ApplicationService {
   /**
    * Turns a domain rule violation into the platform's validation problem. The
    * path comes from the call site because `EvidenceRuleError` carries a message
-   * and no field reference.
+   * and no field reference; the TOKEN comes from the error, because only the
+   * domain knows which of its rules refused.
+   *
+   * All five used to be published as `invalid_value`, whose sentence sends the
+   * reader back to check the choices, the length and the range of what they
+   * entered. For a missing companion field that is the wrong instruction
+   * entirely: nothing entered is wrong, something required was not entered.
    */
   private ruleOrFail<T>(build: () => T, path: string): T {
     try {
@@ -790,7 +796,7 @@ export class ReceptionEvidenceService extends ApplicationService {
       if (error instanceof EvidenceRuleError) {
         throw new AppFailure('ERR-VAL-001', {
           message: error.message,
-          safeDetails: { violations: [{ path, rule: 'invalid_value' }] },
+          safeDetails: { violations: [{ path, rule: error.rule }] },
           cause: error,
         });
       }

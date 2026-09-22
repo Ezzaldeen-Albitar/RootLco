@@ -54,9 +54,45 @@ export const TERMINAL_APPOINTMENT_STATUSES: readonly AppointmentStatus[] = [
 
 export const MAX_DISPLAY_NUMBER = 64;
 
+/**
+ * Why a window this layer decided was refused, as a rule token on the wire.
+ *
+ * Every member of this list used to be published as `invalid_value`, whose
+ * sentence tells a receptionist to check the choices, the length and the range
+ * of what they typed. None of them is a length or a choice problem, and the zone
+ * ones are not even visible in what they typed: an appointment time with no time
+ * zone looks exactly like one with a time zone on a form. A sentence that sends
+ * somebody to re-read a correct entry is worse than a vague one, so each cause
+ * now names itself.
+ *
+ * The three zone members are separate for the same reason the family was split
+ * off `invalid_value` at all. They used to be one token, and the three remedies
+ * are different: an ABSENT offset is added, an UNREADABLE one is rewritten in
+ * the shape the field expects, and an OUT-OF-RANGE one is a displacement no
+ * place on earth keeps, so the sentence has to name the bounds. One token could
+ * only ever carry one of those three instructions, and carried the first — which
+ * told a caller whose entry already ended in an offset to supply the offset.
+ */
+export const APPOINTMENT_WINDOW_RULES = Object.freeze([
+  'appointment_time_unreadable',
+  'appointment_time_zone_missing',
+  'appointment_time_zone_unreadable',
+  'appointment_time_zone_out_of_range',
+  'appointment_window_backwards',
+] as const);
+export type AppointmentWindowRule = (typeof APPOINTMENT_WINDOW_RULES)[number];
+
 /** Raised for a rule this layer can decide without the database. */
 export class AppointmentRuleError extends Error {
   public override readonly name = 'AppointmentRuleError';
+
+  public constructor(
+    message: string,
+    /** The token the publishing service puts on the wire for this cause. */
+    public readonly rule: AppointmentWindowRule
+  ) {
+    super(message);
+  }
 }
 
 export interface AppointmentCreateInput {
@@ -96,7 +132,10 @@ export interface CancelInput {
 function instant(value: string, field: string): number {
   const ms = Date.parse(value);
   if (Number.isNaN(ms)) {
-    throw new AppointmentRuleError(`${field} is not a valid timestamp`);
+    throw new AppointmentRuleError(
+      `${field} is not a valid timestamp`,
+      'appointment_time_unreadable'
+    );
   }
   return ms;
 }
@@ -107,23 +146,77 @@ function instant(value: string, field: string): number {
  * calendar in another country is a real booking on the wrong hour. Refusing it
  * is the whole point — the alternative is a plausible wrong answer.
  *
- * The displacement is capped at ±15:59 because that is PostgreSQL's own limit on
- * a `timestamptz` offset, not a guess about which zones exist. V8 parses hours up
- * to 23 quite happily, so `…+16:00` satisfies `Date.parse` and every other guard
- * in this module and is refused only by the database, as `22009` — an unmapped
- * SQLSTATE, which surfaces as a 500 and an exception-monitor incident any caller
- * could manufacture at will. Refusing it here is the same rule this module states
- * above: decide it before PostgreSQL sees it. The real world stays inside the
- * bound with room to spare — the widest offset in use is +14:00 (Kiribati).
+ * The displacement is bounded because an unbounded one reaches PostgreSQL. V8
+ * parses an offset hour anywhere in 00–23 quite happily, so `…+16:00` satisfies
+ * `Date.parse` and every other guard in this module and is refused only by the
+ * database, as `22009` — an unmapped SQLSTATE, which surfaces as a 500 and an
+ * exception-monitor incident any caller could manufacture at will. Refusing it
+ * here is the same rule this module states above: decide it before PostgreSQL
+ * sees it.
+ *
+ * The published bound is -12:00…+14:00, the range of civil offsets actually in
+ * use (+14:00 is Kiribati, -12:00 the far side of the date line). PostgreSQL's
+ * own `timestamptz` limit is wider, ±15:59, but a bound a sentence cannot name
+ * is a bound nobody can act on: "no wider than ±15:59" tells a receptionist
+ * nothing about which value to write, whereas the civil range is the set their
+ * branch's offset is drawn from. Everything PostgreSQL would refuse is still
+ * refused here, earlier, and by name.
+ *
+ * ## Three causes, not one
+ *
+ * `requireOffset` used to ask one question — does this end in a recognisable
+ * offset — and publish one token for every No. So a missing offset, a mistyped
+ * one (`…+9`, `…+09`) and an impossible one (`…+16:00`) all told the caller to
+ * supply an offset, which is wrong advice for the two entries that already
+ * carried one. The three are decided separately below and each carries its own
+ * token, because each has a different next step.
+ *
+ * The three expressions are duplicated verbatim in
+ * `apps/web/src/components/forms/instant.ts`, which is the browser-side
+ * pre-check for the same rule, and must be changed with it: a client that
+ * classifies differently from the server sends the operator to fix a value the
+ * server would have accepted, or vice versa.
  */
-const OFFSET = /(?:Z|[+-](?:0\d|1[0-5]):[0-5]\d)$/;
+const ZULU = /Z$/;
+const OFFSET = /([+-])(\d{2}):(\d{2})$/;
+/**
+ * A tail that is an offset ATTEMPT rather than an offset. The sign must follow a
+ * clock time, which is what keeps the hyphens inside the date (`2026-09-01`)
+ * from reading as the start of a displacement.
+ */
+const OFFSET_ATTEMPT = /\d{2}:\d{2}(?::\d{2})?(?:\.\d+)?[+-][^+-]*$/;
+
+const MIN_OFFSET_MINUTES = -12 * 60;
+const MAX_OFFSET_MINUTES = 14 * 60;
 
 function requireOffset(value: string, field: string): void {
-  if (!OFFSET.test(value)) {
+  if (ZULU.test(value)) return;
+
+  const parts = OFFSET.exec(value);
+  if (!parts) {
+    if (OFFSET_ATTEMPT.test(value)) {
+      throw new AppointmentRuleError(
+        `${field} ends in something that is not a readable UTC offset; write it as ` +
+          '…Z or …±HH:MM',
+        'appointment_time_zone_unreadable'
+      );
+    }
     throw new AppointmentRuleError(
-      `${field} must carry an explicit UTC offset (…Z or …±HH:MM, no wider than ` +
-        '±15:59); a timezone-less timestamp would be resolved against the server ' +
-        'zone rather than the branch zone'
+      `${field} must carry an explicit UTC offset (…Z or …±HH:MM); a timezone-less ` +
+        'timestamp would be resolved against the server zone rather than the branch zone',
+      'appointment_time_zone_missing'
+    );
+  }
+
+  const magnitude = Number.parseInt(parts[2] ?? '', 10) * 60 + Number.parseInt(parts[3] ?? '', 10);
+  const displacement = parts[1] === '-' ? -magnitude : magnitude;
+  // Stated as "inside the bound" rather than "outside it" so that a displacement
+  // that somehow failed to read as a number is refused rather than admitted.
+  if (!(displacement >= MIN_OFFSET_MINUTES && displacement <= MAX_OFFSET_MINUTES)) {
+    throw new AppointmentRuleError(
+      `${field} carries a UTC offset outside the range in civil use, which runs from ` +
+        '-12:00 to +14:00',
+      'appointment_time_zone_out_of_range'
     );
   }
 }
@@ -135,7 +228,10 @@ function window(from: string, to: string, label: string): void {
   const end = instant(to, `${label}To`);
   // Mirrors ck_appointments_requested_window / ck_appointments_confirmed_window.
   if (end <= start) {
-    throw new AppointmentRuleError(`${label}To must be strictly after ${label}From`);
+    throw new AppointmentRuleError(
+      `${label}To must be strictly after ${label}From`,
+      'appointment_window_backwards'
+    );
   }
 }
 

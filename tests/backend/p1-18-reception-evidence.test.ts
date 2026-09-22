@@ -43,6 +43,7 @@ import {
   expectSqlState,
   runtimeAppPool,
 } from './helpers';
+import { MAX_COMPLAINT_TEXT } from '@/modules/reception';
 import { __setPrimaryPoolForTests } from '@/server/db/pool';
 import {
   StaticClaimsAuthenticator,
@@ -979,7 +980,14 @@ describe('rec.reception-condition-evidence', () => {
       coordY: 0.5,
     });
     expect(outX.status).toBe(422);
-    expect((await json(outX)).code).toBe('ERR-VAL-001');
+    const outXProblem = await json(outX);
+    expect(outXProblem.code).toBe('ERR-VAL-001');
+    // Named, not just coded. The refusal is the ROUTE's: the schema bounds the
+    // coordinate with the same two numbers the module does, so the module's
+    // `out_of_range` token never reaches a caller. See the case below, which
+    // holds that statement for the whole family.
+    expect(outXProblem.violations?.[0]?.path).toBe('body.coordX');
+    expect(outXProblem.violations?.[0]?.rule).toBe('too_big');
 
     const outY = await recordEvidence(visit, {
       kind: 'damage_mark',
@@ -990,7 +998,10 @@ describe('rec.reception-condition-evidence', () => {
       coordY: -0.1,
     });
     expect(outY.status).toBe(422);
-    expect((await json(outY)).code).toBe('ERR-VAL-001');
+    const outYProblem = await json(outY);
+    expect(outYProblem.code).toBe('ERR-VAL-001');
+    expect(outYProblem.violations?.[0]?.path).toBe('body.coordY');
+    expect(outYProblem.violations?.[0]?.rule).toBe('too_small');
 
     expect(await damageMarks(visit)).toBe(0);
     // A mark placed at the boundary is legal, so the two refusals are about the
@@ -1028,7 +1039,10 @@ describe('rec.reception-condition-evidence', () => {
       quantity: 3_000_000_000,
     });
     expect(bigQuantity.status).toBe(422);
-    expect((await json(bigQuantity)).code).toBe('ERR-VAL-001');
+    const bigQuantityProblem = await json(bigQuantity);
+    expect(bigQuantityProblem.code).toBe('ERR-VAL-001');
+    expect(bigQuantityProblem.violations?.[0]?.path).toBe('body.quantity');
+    expect(bigQuantityProblem.violations?.[0]?.rule).toBe('too_big');
 
     const bigValue = await recordEvidence(visit, {
       kind: 'contents',
@@ -1037,7 +1051,10 @@ describe('rec.reception-condition-evidence', () => {
       declaredCurrency: 'USD',
     });
     expect(bigValue.status).toBe(422);
-    expect((await json(bigValue)).code).toBe('ERR-VAL-001');
+    const bigValueProblem = await json(bigValue);
+    expect(bigValueProblem.code).toBe('ERR-VAL-001');
+    expect(bigValueProblem.violations?.[0]?.path).toBe('body.declaredValue');
+    expect(bigValueProblem.violations?.[0]?.rule).toBe('too_big');
 
     // Neither refusal wrote anything — not the parent row, and not the
     // `restricted` detail row that carries the value.
@@ -1054,6 +1071,103 @@ describe('rec.reception-condition-evidence', () => {
     expect(atCeiling.status).toBe(201);
     expect(await contents(visit)).toBe(1);
     expect(await contentDetails(visit)).toBe(1);
+  });
+
+  /**
+   * `EVIDENCE_FIELD_RULES` names five causes that used to travel as
+   * `invalid_value`. The token is what picks the sentence a receptionist reads, so
+   * each one is asserted on the wire rather than at the function that raises it —
+   * and asserting them that way is what showed that only two of the five can get
+   * there.
+   *
+   * `blank` and `companion_field_required` are the module's to decide. A text of
+   * nothing but spaces passes `min(1)`, which counts characters rather than
+   * content, so the module is the first layer that can refuse it; the companion
+   * rule is a relationship between two fields no single-field schema can express.
+   *
+   * `max_length`, `out_of_range` and `quantity` cannot reach a caller. Every route
+   * that calls the module bounds those fields with the SAME numbers the module
+   * does — the module exports them and the schemas import them — so the schema
+   * always answers first, with its own `too_big`/`too_small`. The module's copies
+   * are defence in depth for the second caller that route will one day have, and
+   * they are pinned here as unreachable rather than left looking like tokens a
+   * client should wait for: a client written from the module's list alone would
+   * carry three sentences it can never show.
+   */
+  it('publishes the two field rules it decides and lets the schema answer the bounds', async () => {
+    authAs(SUBJ_FULL);
+    const visit = await newVisit();
+
+    // Blank-but-present, on a REQUIRED text: `min(1)` is satisfied and the
+    // frozen `btrim(x) <> ''` CHECK is not.
+    const blankComplaint = await recordEvidence(visit, {
+      kind: 'complaint',
+      category: 'mechanical',
+      complaintText: '   ',
+      reportedByPartnerId: PARTNER_A,
+    });
+    expect(blankComplaint.status).toBe(422);
+    const blankComplaintProblem = await json(blankComplaint);
+    expect(blankComplaintProblem.code).toBe('ERR-VAL-001');
+    expect(blankComplaintProblem.violations?.[0]?.path).toBe('body.complaintText');
+    expect(blankComplaintProblem.violations?.[0]?.rule).toBe('blank');
+
+    // And on a second kind, so the token is the module's rule and not one
+    // branch's accident.
+    const blankZone = await recordEvidence(visit, {
+      kind: 'leak',
+      leakType: 'oil',
+      vehicleZone: '   ',
+      severity: 'minor',
+    });
+    expect(blankZone.status).toBe(422);
+    const blankZoneProblem = await json(blankZone);
+    expect(blankZoneProblem.violations?.[0]?.path).toBe('body.vehicleZone');
+    expect(blankZoneProblem.violations?.[0]?.rule).toBe('blank');
+
+    // The ceiling the module also guards, refused one layer earlier. Asserted
+    // against the module's token explicitly: if a route bound is ever relaxed
+    // below the module's, this stops being true and the case says so.
+    const longComplaint = await recordEvidence(visit, {
+      kind: 'complaint',
+      category: 'mechanical',
+      complaintText: 'x'.repeat(MAX_COMPLAINT_TEXT + 1),
+      reportedByPartnerId: PARTNER_A,
+    });
+    expect(longComplaint.status).toBe(422);
+    const longComplaintProblem = await json(longComplaint);
+    expect(longComplaintProblem.violations?.[0]?.path).toBe('body.complaintText');
+    expect(longComplaintProblem.violations?.[0]?.rule).toBe('too_big');
+    expect(longComplaintProblem.violations?.[0]?.rule).not.toBe('max_length');
+
+    // Nothing was written by any of the three.
+    expect(await complaints(visit)).toBe(0);
+    expect(await leaks(visit)).toBe(0);
+
+    // The control: the same two kinds record when the text carries content, so
+    // the refusals above are about the values and not about the kinds.
+    expect(
+      (
+        await recordEvidence(visit, {
+          kind: 'complaint',
+          category: 'mechanical',
+          complaintText: 'A knocking noise under load.',
+          reportedByPartnerId: PARTNER_A,
+        })
+      ).status
+    ).toBe(201);
+    expect(
+      (
+        await recordEvidence(visit, {
+          kind: 'leak',
+          leakType: 'oil',
+          vehicleZone: 'engine_bay',
+          severity: 'minor',
+        })
+      ).status
+    ).toBe(201);
+    expect(await complaints(visit)).toBe(1);
+    expect(await leaks(visit)).toBe(1);
   });
 
   it('refuses a finding on an inspection that is no longer in progress', async () => {
@@ -1590,6 +1704,12 @@ describe('rec.reception-refusal', () => {
     const problem = await json(refused);
     expect(problem.code).toBe('ERR-VAL-001');
     expect(problem.violations?.[0]?.path).toBe('body.refusingPartnerId');
+    // The TOKEN is asserted, not only the path: the sentence the receptionist
+    // reads is chosen by it, and nothing entered here is wrong — an entry the
+    // form did not ask for is missing. Published as `invalid_value` this read
+    // "check the choices, the length and the range", which sends the reader to
+    // re-read correct entries.
+    expect(problem.violations?.[0]?.rule).toBe('companion_field_required');
     expect(await refusals(visit)).toBe(0);
   });
 
