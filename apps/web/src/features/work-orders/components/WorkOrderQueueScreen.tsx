@@ -7,6 +7,9 @@ import { useServerTable } from '@/components/data-table/use-server-table';
 import { DigitsEcho } from '@/components/forms/DigitsEcho';
 import { SelectField, TextField } from '@/components/forms/Field';
 import { EmptyState } from '@/components/states/States';
+import { WorkingBranchField } from '@/features/working-context/components/WorkingBranchField';
+import { useBranchTarget } from '@/features/working-context/use-branch-target';
+import { useWorkingContext } from '@/features/working-context/WorkingContextProvider';
 import type { BranchTarget } from '@/lib/api/read-operation';
 import { formatDateTime } from '@/lib/format';
 import type { Locale } from '@/i18n/config';
@@ -77,8 +80,6 @@ interface Submitted {
 }
 
 interface Draft {
-  readonly companyId: string;
-  readonly branchId: string;
   readonly kind: '' | WorkOrderKind;
   readonly state: string;
   readonly number: string;
@@ -88,24 +89,53 @@ interface Draft {
 export function WorkOrderQueueScreen({
   locale,
   messages,
-  companyIds,
-  branchIds,
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
-  /** The session's resolved scope — server-resolved, never asserted back. */
-  readonly companyIds: readonly string[];
-  readonly branchIds: readonly string[];
+  /**
+   * The session's bare references. Accepted so the page did not have to change,
+   * and no longer read: the branch is the working context's named selection.
+   */
+  readonly companyIds?: readonly string[];
+  readonly branchIds?: readonly string[];
 }) {
+  const branch = useBranchTarget();
+  const { version } = useWorkingContext();
   const [draft, setDraft] = useState<Draft>({
-    companyId: companyIds.length === 1 ? (companyIds[0] ?? '') : '',
-    branchId: branchIds.length === 1 ? (branchIds[0] ?? '') : '',
     kind: '',
     state: '',
     number: '',
     q: '',
   });
   const [submitted, setSubmitted] = useState<Submitted | null>(null);
+
+  /*
+   * A branch changed in the header RE-TARGETS what is on screen.
+   *
+   * Remounting the results on `version` was half a fix and the dangerous half.
+   * `submitted` still held the branch that was current when Show was pressed,
+   * so the remount re-issued the read against the OLD branch while the header
+   * — and the field above — named the new one. The operator was looking at one
+   * branch's work under another branch's name, which is worse than a stale
+   * list: it is a confident wrong answer.
+   *
+   * The filters survive, because they are what the operator asked for and they
+   * are not about the branch. The target is replaced, and the key remount
+   * throws the cursor stack away with the old page. A selection that is no
+   * longer one branch — "all my branches", or nothing chosen — returns the
+   * screen to its idle state rather than guessing which branch to read.
+   *
+   * Adjusted DURING render, React's documented shape for "reset state when an
+   * input changes", and the same one `use-server-table` uses for its load key.
+   * An effect would paint one frame of the previous branch's rows first.
+   */
+  const [lastContextVersion, setLastContextVersion] = useState(version);
+  if (version !== lastContextVersion) {
+    setLastContextVersion(version);
+    setSubmitted((current) =>
+      current === null || branch.kind !== 'ready' ? null : { ...current, target: branch.target }
+    );
+  }
   const [errors, setErrors] = useState<Readonly<Record<string, string>>>({});
 
   const kindOptions = useMemo(
@@ -118,9 +148,11 @@ export function WorkOrderQueueScreen({
   );
 
   const submit = () => {
+    // The branch is the header's own named selection or it is nothing, and the
+    // button is disabled while it is nothing — there is no local pair left to
+    // validate. Everything below is still this screen's own filter checking.
+    if (branch.kind !== 'ready') return;
     const found: Record<string, string> = {};
-    if (draft.companyId.trim().length === 0) found['companyId'] = 'field.required';
-    if (draft.branchId.trim().length === 0) found['branchId'] = 'field.required';
     // The backend regex for a state code. Checked here so a typo is a field
     // message rather than a 422 the operator has to interpret — and NOT to
     // decide which codes exist, which is the tenant's catalogue to answer.
@@ -143,10 +175,7 @@ export function WorkOrderQueueScreen({
       ...(number ? { number } : {}),
       ...(q ? { q } : {}),
     };
-    setSubmitted({
-      target: { companyId: draft.companyId.trim(), branchId: draft.branchId.trim() },
-      criteria,
-    });
+    setSubmitted({ target: branch.target, criteria });
   };
 
   const errorFor = (name: string): string | undefined => {
@@ -166,21 +195,9 @@ export function WorkOrderQueueScreen({
         className="rounded-lg border border-border bg-surface p-4"
       >
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <ScopeField
-            messages={messages}
-            label={translate(messages, 'workOrders.queue.company')}
-            ids={companyIds}
-            value={draft.companyId}
-            onChange={(next) => setDraft((d) => ({ ...d, companyId: next }))}
-            error={errorFor('companyId')}
-          />
-          <ScopeField
+          <WorkingBranchField
             messages={messages}
             label={translate(messages, 'workOrders.queue.branch')}
-            ids={branchIds}
-            value={draft.branchId}
-            onChange={(next) => setDraft((d) => ({ ...d, branchId: next }))}
-            error={errorFor('branchId')}
           />
           <SelectField
             label={translate(messages, 'workOrders.queue.kindFilter')}
@@ -230,7 +247,8 @@ export function WorkOrderQueueScreen({
         <div className="mt-4 flex flex-wrap items-center gap-3">
           <button
             type="submit"
-            className="rounded-md bg-primary px-4 py-2 text-body font-medium text-on-primary transition-colors duration-fast ease-standard hover:bg-primary-hover"
+            disabled={branch.kind !== 'ready'}
+            className="rounded-md bg-primary px-4 py-2 text-body font-medium text-on-primary transition-colors duration-fast ease-standard hover:bg-primary-hover disabled:cursor-not-allowed disabled:opacity-60"
           >
             {translate(messages, 'workOrders.queue.show')}
           </button>
@@ -245,64 +263,17 @@ export function WorkOrderQueueScreen({
         />
       ) : (
         // Mounted only after submission — see the docblock. The key restarts the
-        // table on a new target or filter rather than paging the old one.
+        // table on a new target or filter rather than paging the old one, and
+        // carries the working-context version so a branch change cannot leave
+        // the previous branch's rows on screen under the new heading.
         <QueueResults
-          key={JSON.stringify(submitted)}
+          key={`${version}:${JSON.stringify(submitted)}`}
           locale={locale}
           messages={messages}
           submitted={submitted}
         />
       )}
     </div>
-  );
-}
-
-/**
- * One scope identifier: a select over the session's resolved ids, or a plain
- * identifier input when the session is UNRESTRICTED (an empty array means
- * "everything in the workspace", and the platform publishes no company/branch
- * directory this screen could turn into names).
- */
-function ScopeField({
-  messages,
-  label,
-  ids,
-  value,
-  onChange,
-  error,
-}: {
-  readonly messages: Messages;
-  readonly label: string;
-  readonly ids: readonly string[];
-  readonly value: string;
-  readonly onChange: (next: string) => void;
-  readonly error?: string | undefined;
-}) {
-  if (ids.length > 0) {
-    return (
-      <SelectField
-        label={label}
-        description={translate(messages, 'admin.contractGap.noDirectory')}
-        required
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-        options={ids.map((id) => ({ value: id, label: id }))}
-        placeholder={translate(messages, 'form.select.placeholder')}
-        error={error}
-      />
-    );
-  }
-  return (
-    <TextField
-      label={label}
-      description={translate(messages, 'workOrders.queue.scopeUnrestricted')}
-      required
-      spellCheck={false}
-      dir="ltr"
-      value={value}
-      onChange={(event) => onChange(event.target.value)}
-      error={error}
-    />
   );
 }
 

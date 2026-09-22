@@ -14,6 +14,7 @@ import { notifyActionResult } from '@/components/notifications/action-notificati
 import type { ItemsOnly, ReadState } from '@/lib/api/read-operation';
 import { formatDateTime } from '@/lib/format';
 import type { Locale } from '@/i18n/config';
+import { useUnsavedGuard } from '@/features/working-context/WorkingContextProvider';
 import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic } from '@/i18n/get-messages';
 import { listJobBlockers, raiseJobBlocker, resolveJobBlocker } from '../api';
@@ -39,6 +40,12 @@ export function JobBlockersPanel({
   const [reloadCount, setReloadCount] = useState(0);
   const reload = useCallback(() => setReloadCount((n) => n + 1), []);
   const [note, setNote] = useState('');
+
+  /*
+   * Unsaved work, declared to the shell, so a branch changed in the header asks
+   * before it discards what is typed here.
+   */
+  useUnsavedGuard(note.trim().length > 0);
   const [resolutions, setResolutions] = useState<Readonly<Record<string, string>>>({});
   const [pending, setPending] = useState<string | null>(null);
   const [problem, setProblem] = useState<string | null>(null);

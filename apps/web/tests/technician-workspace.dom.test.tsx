@@ -2,7 +2,15 @@ import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import en from '../src/i18n/messages/en.json';
-import { renderLtr } from './render';
+import {
+  BranchSwitch,
+  OTHER_BRANCH,
+  TEST_BRANCH,
+  TEST_COMPANY,
+  branchSnapshot,
+  inBranch,
+  renderLtr,
+} from './render';
 
 /**
  * The technician workspace, rendered (P1-29, `W4`).
@@ -26,6 +34,16 @@ const startLaborSession = vi.fn();
 const stopLaborSession = vi.fn();
 const recordWorkLog = vi.fn();
 const correctLaborSession = vi.fn();
+const captureJobEvidence = vi.fn();
+/*
+ * The document categories, controllable per case.
+ *
+ * It was a fixed empty list, which makes the capture form render "no
+ * categories" and never offer a control — so the capture panel was unreachable
+ * from this suite. The DEFAULT is still empty, so every existing case sees
+ * exactly what it saw; a case that needs the form says so.
+ */
+const listDocumentCategories = vi.fn();
 vi.mock('@/features/technicians/api', () => ({
   readMyQueue: (...args: unknown[]) => readMyQueue(...args),
   resolveOwnAssignment: (...args: unknown[]) => resolveOwnAssignment(...args),
@@ -36,10 +54,10 @@ vi.mock('@/features/technicians/api', () => ({
   stopLaborSession: (...args: unknown[]) => stopLaborSession(...args),
   correctLaborSession: (...args: unknown[]) => correctLaborSession(...args),
   recordWorkLog: (...args: unknown[]) => recordWorkLog(...args),
-  captureJobEvidence: vi.fn(),
+  captureJobEvidence: (...args: unknown[]) => captureJobEvidence(...args),
 }));
 vi.mock('@/features/attachments/api', () => ({
-  listDocumentCategories: async () => ({ status: 'ok', correlationId: 'c', data: { items: [] } }),
+  listDocumentCategories: (...args: unknown[]) => listDocumentCategories(...args),
 }));
 vi.mock('@/components/notifications/action-notifications', () => ({
   notifyActionResult: () => false,
@@ -48,8 +66,10 @@ vi.mock('@/components/notifications/action-notifications', () => ({
 const { TechnicianWorkspaceScreen } =
   await import('@/features/technicians/components/TechnicianWorkspaceScreen');
 
-const COMPANY = '11111111-1111-4111-8111-111111111111';
-const BRANCH = '22222222-2222-4222-8222-222222222222';
+// The branch the technician is standing in, chosen once in the header rather
+// than picked from two selects over raw references on this screen.
+const COMPANY = TEST_COMPANY.id;
+const BRANCH = TEST_BRANCH.id;
 const JOB = '77777777-7777-4777-8777-777777777777';
 const ASSIGNMENT = 'aaaaaaaa-0000-4000-8000-000000000001';
 const ME = 'bbbbbbbb-0000-4000-8000-000000000001';
@@ -84,13 +104,7 @@ const ALL = {
 
 function renderScreen(capabilities = ALL) {
   return renderLtr(
-    <TechnicianWorkspaceScreen
-      locale="en"
-      messages={en}
-      companyIds={[COMPANY]}
-      branchIds={[BRANCH]}
-      capabilities={capabilities}
-    />
+    inBranch(<TechnicianWorkspaceScreen locale="en" messages={en} capabilities={capabilities} />)
   );
 }
 
@@ -105,6 +119,8 @@ beforeEach(() => {
     stopLaborSession,
     recordWorkLog,
     correctLaborSession,
+    captureJobEvidence,
+    listDocumentCategories,
   ]) {
     mock.mockReset();
   }
@@ -113,6 +129,9 @@ beforeEach(() => {
   listLaborSessions.mockResolvedValue(page([]));
   listWorkLog.mockResolvedValue(page([]));
   listJobEvidence.mockResolvedValue(ok({ items: [] }));
+  // Empty by default, exactly as the fixed mock was: a case that wants the
+  // capture form says so.
+  listDocumentCategories.mockResolvedValue(ok({ items: [] }));
 });
 
 describe('the queue', () => {
@@ -480,5 +499,155 @@ describe('a refused clock or correction says what is wrong', () => {
         screen.queryByRole('button', { name: EN['technicians.workspace.correctSubmit']! })
       ).toBeNull()
     );
+  });
+});
+
+describe('the technician queue is about ONE branch', () => {
+  it('reads nothing and says which control answers while "all my branches" is chosen', async () => {
+    // A technician stands in one workshop. A queue spanning several would mix
+    // other people jobs into their own list.
+    const user = userEvent.setup();
+    readMyQueue.mockClear();
+    renderLtr(
+      inBranch(
+        <>
+          <BranchSwitch to="all" label="use all" />
+          <TechnicianWorkspaceScreen locale="en" messages={en} capabilities={ALL} />
+        </>,
+        { snapshot: branchSnapshot([TEST_BRANCH, OTHER_BRANCH]) }
+      )
+    );
+    await user.click(screen.getByRole('button', { name: 'use all' }));
+    expect(await screen.findByTestId('requires-concrete-branch')).toHaveTextContent(
+      en['workingContext.needsOneBranch']
+    );
+    expect(readMyQueue).not.toHaveBeenCalled();
+  });
+});
+
+describe('the unsaved-work guard stands down once the work is recorded', () => {
+  /**
+   * A guard that never stands down is worse than no guard.
+   *
+   * The correction reason and the evidence category were left in state after a
+   * SUCCESSFUL submit — the reason because nothing cleared it, the category
+   * because it was cleared one field short — so the shell went on asking
+   * "discard your unsaved work?" on every branch switch for the rest of the
+   * session, about work that had been accepted minutes earlier. An operator
+   * meeting that question repeatedly learns to dismiss it without reading it,
+   * which is exactly when it matters.
+   */
+  function renderWorkspace() {
+    return renderLtr(
+      inBranch(
+        <>
+          <BranchSwitch to={TEST_BRANCH.id} label="use main" />
+          <BranchSwitch to={OTHER_BRANCH.id} label="use second" />
+          <TechnicianWorkspaceScreen
+            locale="en"
+            messages={en}
+            // Both write surfaces this section is about: the correction form
+            // and the evidence capture beside it.
+            capabilities={{ ...ALL, canCorrectLabor: true, canCaptureDocuments: true }}
+          />
+        </>,
+        { snapshot: branchSnapshot([TEST_BRANCH, OTHER_BRANCH]) }
+      )
+    );
+  }
+
+  const stoppedSession = {
+    id: 'mine-stopped',
+    technicianProfileId: ME,
+    jobId: JOB,
+    startedAt: '2026-07-26T08:00:00.000Z',
+    endedAt: '2026-07-26T10:00:00.000Z',
+    source: 'manual',
+    correctionOfId: null,
+    recordVersion: 3,
+  };
+
+  it('asks while an evidence category is chosen, and NOT after it is stored', async () => {
+    /*
+     * The category was the field the clearing missed.
+     *
+     * A successful capture cleared the type and the note and left the CATEGORY
+     * in state, so the guard read as dirty for the rest of the session and the
+     * shell asked about every later branch switch for evidence that had been
+     * stored. It is the hardest of the three to notice by hand, because the
+     * select still shows the choice — correctly, it is what was captured — and
+     * only the question gives it away.
+     */
+    listDocumentCategories.mockResolvedValue(
+      ok({ items: [{ categoryCode: 'inspection_photo', name: 'Inspection photo' }] })
+    );
+    captureJobEvidence.mockResolvedValue({ status: 'success', attempt: 1 });
+    const user = userEvent.setup();
+    renderWorkspace();
+    await user.click(screen.getByRole('button', { name: 'use main' }));
+    await user.click(
+      await screen.findByRole('button', { name: EN['technicians.workspace.open']! })
+    );
+
+    const category = await screen.findByLabelText(
+      new RegExp(`^${EN['technicians.workspace.evidenceCategory']!}`)
+    );
+    await user.selectOptions(category, 'inspection_photo');
+    await user.type(
+      screen.getByLabelText(new RegExp(`^${EN['technicians.workspace.evidenceType']!}`)),
+      'photo'
+    );
+
+    // Chosen and unsent: the switch asks.
+    await user.click(screen.getByRole('button', { name: 'use second' }));
+    expect(await screen.findByRole('alertdialog')).toBeInTheDocument();
+    await user.click(
+      within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Cancel' })
+    );
+
+    await user.click(screen.getByRole('button', { name: EN['technicians.workspace.attach']! }));
+    await waitFor(() => expect(captureJobEvidence).toHaveBeenCalled());
+
+    // Stored. The switch goes through without a question.
+    await user.click(screen.getByRole('button', { name: 'use main' }));
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+  });
+
+  it('asks while a correction reason is typed, and NOT after it is accepted', async () => {
+    listLaborSessions.mockResolvedValue(page([stoppedSession]));
+    correctLaborSession.mockResolvedValue({ status: 'success', attempt: 1 });
+    const user = userEvent.setup();
+    renderWorkspace();
+    await user.click(screen.getByRole('button', { name: 'use main' }));
+    await user.click(
+      await screen.findByRole('button', { name: EN['technicians.workspace.open']! })
+    );
+    await user.click(
+      await screen.findByRole('button', { name: EN['technicians.workspace.correctHeading']! })
+    );
+    await user.type(
+      screen.getByLabelText(new RegExp(`^${EN['technicians.workspace.correctReason']!}`)),
+      'Clocked in late by mistake'
+    );
+
+    // Typed and unsent: the switch asks.
+    await user.click(screen.getByRole('button', { name: 'use second' }));
+    expect(await screen.findByRole('alertdialog')).toBeInTheDocument();
+    await user.click(
+      within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Cancel' })
+    );
+
+    await user.click(
+      screen.getByRole('button', { name: EN['technicians.workspace.correctSubmit']! })
+    );
+    await waitFor(() =>
+      expect(
+        screen.queryByRole('button', { name: EN['technicians.workspace.correctSubmit']! })
+      ).toBeNull()
+    );
+
+    // Recorded. The switch goes through without a question.
+    await user.click(screen.getByRole('button', { name: 'use main' }));
+    expect(screen.queryByRole('alertdialog')).toBeNull();
   });
 });

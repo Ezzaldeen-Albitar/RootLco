@@ -296,3 +296,52 @@ describe('both directions', () => {
     expect(await screen.findByText('Nadia Khoury')).toBeInTheDocument();
   });
 });
+
+describe('paging the search, end to end', () => {
+  /**
+   * The screen changed hooks in P1-32 — `useServerTable` out, `useSearchRequest`
+   * in — and the one thing that had to survive unchanged is the walk: the pager
+   * spends the cursor the previous page returned, and a new question starts at
+   * page one with no cursor at all.
+   */
+  it('spends the cursor page one returned when the operator asks for the next page', async () => {
+    const user = userEvent.setup();
+    searchCustomers.mockImplementation(async (_request: unknown, cursor: string | null) =>
+      cursor === null
+        ? page({ nextCursor: 'cursor-2', hasMore: true })
+        : page({ rows: [{ ...HIT, id: 'second-page-row', displayName: 'Omar Haddad' }] })
+    );
+    renderScreen();
+    await user.type(screen.getByLabelText(en['crm.customers.search.q']), 'Nadia{Enter}');
+    await waitFor(() => expect(searchCustomers).toHaveBeenCalledTimes(1));
+    expect(searchCustomers.mock.calls[0]?.[1]).toBeNull();
+
+    await user.click(screen.getByRole('button', { name: en['table.nextPage'] }));
+    await waitFor(() => expect(searchCustomers).toHaveBeenCalledTimes(2));
+    expect(searchCustomers.mock.calls[1]?.[1]).toBe('cursor-2');
+    expect(await screen.findByText('Omar Haddad')).toBeInTheDocument();
+  });
+
+  it('starts a NEW question at page one, with no cursor', async () => {
+    // A cursor is issued against an ordering contract. Spending page two of the
+    // previous search on a new one returns a window of a set that no longer
+    // exists, and the rows look entirely plausible.
+    const user = userEvent.setup();
+    searchCustomers.mockImplementation(async (_request: unknown, cursor: string | null) =>
+      cursor === null ? page({ nextCursor: 'cursor-2', hasMore: true }) : page()
+    );
+    renderScreen();
+    const box = screen.getByLabelText(en['crm.customers.search.q']);
+    await user.type(box, 'Nadia{Enter}');
+    await waitFor(() => expect(searchCustomers).toHaveBeenCalledTimes(1));
+    await user.click(screen.getByRole('button', { name: en['table.nextPage'] }));
+    await waitFor(() => expect(searchCustomers).toHaveBeenCalledTimes(2));
+
+    searchCustomers.mockClear();
+    await user.clear(box);
+    await user.type(box, 'Omar{Enter}');
+    await waitFor(() => expect(searchCustomers).toHaveBeenCalled());
+    expect(searchCustomers.mock.calls[0]?.[1]).toBeNull();
+    expect(searchCustomers.mock.calls[0]?.[2]).toEqual({ q: 'Omar' });
+  });
+});

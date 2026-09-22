@@ -25,6 +25,12 @@ import {
   PermissionDeniedState,
   SessionExpiredState,
 } from '@/components/states/States';
+import {
+  RequiresConcreteBranch,
+  WorkingBranchField,
+} from '@/features/working-context/components/WorkingBranchField';
+import { useBranchTarget } from '@/features/working-context/use-branch-target';
+import { useUnsavedGuard } from '@/features/working-context/WorkingContextProvider';
 import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic, translateWithValues } from '@/i18n/get-messages';
@@ -244,9 +250,6 @@ interface Props {
   readonly messages: Messages;
   readonly sessionUserId: string;
   readonly sessionUserName: string;
-  /** The session's resolved scope. Empty means unrestricted within the tenant. */
-  readonly companyIds: readonly string[];
-  readonly branchIds: readonly string[];
   /** `rec.reception.manage` — may this operator open a visit at all. */
   readonly canCreate: boolean;
   /** `apt.appointment.read` — may the appointment picker read the calendar. */
@@ -276,8 +279,6 @@ export function CheckInStartScreen({
   messages,
   sessionUserId,
   sessionUserName,
-  companyIds,
-  branchIds,
   canCreate,
   canListAppointments,
   canPickEmployee,
@@ -287,9 +288,20 @@ export function CheckInStartScreen({
 }: Props) {
   /* --- the branch the visit is FOR --------------------------------------- */
 
-  const [companyId, setCompanyId] = useState(companyIds.length === 1 ? (companyIds[0] ?? '') : '');
-  const [branchId, setBranchId] = useState(branchIds.length === 1 ? (branchIds[0] ?? '') : '');
-  const targetReady = companyId !== '' && branchId !== '';
+  /*
+   * The branch is the working context's NAMED selection, chosen once in the
+   * header, not a pair typed or picked here.
+   *
+   * It used to be two controls on this form: a select over raw references, or —
+   * for the operator whose grant is not narrowed, whose session resolves to
+   * EMPTY lists — two free-text boxes asking them to type one. A check-in is
+   * the moment custody of a vehicle is recorded, so the branch it is recorded
+   * against is exactly the fact that must not be a typing exercise.
+   */
+  const branchTarget = useBranchTarget();
+  const companyId = branchTarget.kind === 'ready' ? branchTarget.target.companyId : '';
+  const branchId = branchTarget.kind === 'ready' ? branchTarget.target.branchId : '';
+  const targetReady = branchTarget.kind === 'ready';
 
   /* --- origin ------------------------------------------------------------- */
 
@@ -527,6 +539,30 @@ export function CheckInStartScreen({
   const [created, setCreated] = useState<ReceptionCreated | null>(null);
   const [pending, startTransition] = useTransition();
 
+  /*
+   * Unsaved work, declared to the shell.
+   *
+   * A check-in is assembled over several panels before anything is sent, and a
+   * branch changed halfway through would re-address the custody record itself.
+   * Anything the operator has chosen or typed counts, and it stops counting the
+   * moment the visit exists.
+   *
+   * The receiving employee is deliberately NOT in the list. This screen
+   * DEFAULTS it to the signed-in operator where they are eligible, so including
+   * it would make the form dirty on arrival — and a guard that is always dirty
+   * asks about every switch, which teaches the operator to dismiss the question
+   * without reading it. Only what a person actually entered counts.
+   */
+  useUnsavedGuard(
+    created === null &&
+      (appointment !== null ||
+        requester !== null ||
+        walkInVehicle !== null ||
+        fuelLevelId.length > 0 ||
+        evSocPercent.length > 0 ||
+        origin !== INITIAL_ORIGIN)
+  );
+
   const submit = () => {
     const draft = buildCreateInput({
       companyId,
@@ -651,19 +687,9 @@ export function CheckInStartScreen({
           {translate(messages, 'receptions.checkIn.targetHint')}
         </p>
         <div className="grid gap-3 sm:grid-cols-2">
-          <ScopeControl
-            messages={messages}
-            label={translate(messages, 'receptions.checkIn.company')}
-            options={companyIds}
-            value={companyId}
-            onChange={setCompanyId}
-          />
-          <ScopeControl
+          <WorkingBranchField
             messages={messages}
             label={translate(messages, 'receptions.checkIn.branch')}
-            options={branchIds}
-            value={branchId}
-            onChange={setBranchId}
           />
         </div>
         {refusalFor('branchId')}
@@ -977,10 +1003,24 @@ export function CheckInStartScreen({
         </p>
       ) : null}
 
+      {/*
+        A visit is recorded against ONE branch, and the route demands both
+        halves of the pair. "All my branches" is not a target it can take, and
+        choosing one on the operator's behalf would put a vehicle into custody
+        at a workshop nobody named — on the screen where that matters most.
+      */}
+      {targetReady ? null : (
+        <RequiresConcreteBranch
+          messages={messages}
+          state={branchTarget}
+          testId="submit-needs-branch"
+        />
+      )}
+
       <div>
         <button
           type="submit"
-          disabled={pending}
+          disabled={pending || !targetReady}
           className="rounded-md bg-primary px-4 py-2 text-body font-medium text-on-primary disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
         >
           {pending
@@ -995,51 +1035,6 @@ export function CheckInStartScreen({
 /* ---------------------------------------------------------------------- *
  * Pieces
  * ---------------------------------------------------------------------- */
-
-/**
- * One scope identifier: a select over the session's resolved ids, or a plain
- * identifier input when the session is UNRESTRICTED (an empty array means
- * "everything in the tenant", and the platform publishes no company/branch
- * directory read this screen could turn into names — rendering the identifier
- * is what the approval-limits precedent does, and inventing labels would be
- * fabricating data).
- */
-function ScopeControl({
-  messages,
-  label,
-  options,
-  value,
-  onChange,
-}: {
-  readonly messages: Messages;
-  readonly label: string;
-  readonly options: readonly string[];
-  readonly value: string;
-  readonly onChange: (next: string) => void;
-}) {
-  if (options.length > 0) {
-    return (
-      <SelectField
-        label={label}
-        required
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-        options={options.map((id) => ({ value: id, label: id }))}
-        placeholder={translate(messages, 'form.select.placeholder')}
-      />
-    );
-  }
-  return (
-    <TextField
-      label={label}
-      description={translate(messages, 'receptions.checkIn.scopeUnrestricted')}
-      required
-      value={value}
-      onChange={(event) => onChange(event.target.value)}
-      dir="ltr"
-    />
-  );
-}
 
 function appointmentLabel(
   messages: Messages,

@@ -230,7 +230,12 @@ describe('the screen searches on intent, not on a keystroke', () => {
   it('the comment stripper actually removed something, so these are not vacuous', () => {
     // Non-vacuity. If `code()` returned an empty string every assertion below
     // would pass while proving nothing.
-    expect(screen).toContain('useServerTable');
+    //
+    // The token moved in P1-32: the screen reads through `useSearchRequest`,
+    // which owns the settling, the explicit submission and the abandoning of a
+    // superseded answer, and hands back the same page contract the table and
+    // its pager already spoke.
+    expect(screen).toContain('useSearchRequest');
     expect(screen.length).toBeGreaterThan(1000);
   });
 
@@ -239,11 +244,23 @@ describe('the screen searches on intent, not on a keystroke', () => {
     expect(screen).toContain('type="submit"');
   });
 
-  it('has no debounce and no timer', () => {
-    // A debounce is still a request per pause. Against 30 per minute, and with
-    // no client-side suggestion source to debounce against, it buys nothing and
-    // costs the operator a 429 mid-sentence.
-    expect(screen).not.toMatch(/setTimeout|debounce|useDeferredValue/);
+  it('starts no timer of its own, and searches on intent', () => {
+    /*
+     * The reason recorded here used to be "a debounce is still a request per
+     * pause", and that conclusion was wrong: measured against what an operator
+     * actually does — type, submit, correct, submit again, none of it
+     * cancelled — a settled and aborted stream sends FEWER requests against the
+     * same limit, not more. `lib/use-debounced-value.ts` carries the
+     * correction.
+     *
+     * What survives is this screen's own shape, and it is the stronger claim:
+     * the criteria handed to the read are the SUBMITTED ones, and the results
+     * are a separately mounted component, so "no request before intent" is
+     * structural here rather than a timer somebody tuned. This file holds no
+     * timer, no deferral and no debounce of its own.
+     */
+    expect(screen).not.toMatch(/setTimeout|useDeferredValue/);
+    expect(screen).not.toMatch(/useDebouncedValue/);
   });
 
   it('declares no sortable column', () => {

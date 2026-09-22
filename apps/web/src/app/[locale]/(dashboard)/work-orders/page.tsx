@@ -67,12 +67,7 @@ export default async function WorkOrderQueuePage({
         crumbs={crumbs}
       />
       <PageBody>
-        <WorkOrderQueueScreen
-          locale={locale}
-          messages={messages}
-          companyIds={session.companyIds}
-          branchIds={session.branchIds}
-        />
+        <WorkOrderQueueScreen locale={locale} messages={messages} />
       </PageBody>
     </>
   );

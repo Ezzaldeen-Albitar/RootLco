@@ -13,7 +13,16 @@ import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import ar from '../src/i18n/messages/ar.json';
 import en from '../src/i18n/messages/en.json';
-import { renderLtr, renderRtl } from './render';
+import {
+  BranchSwitch,
+  OTHER_BRANCH,
+  TEST_BRANCH,
+  TEST_COMPANY,
+  branchSnapshot,
+  inBranch,
+  renderLtr,
+  renderRtl,
+} from './render';
 
 const EN = en as Record<string, string>;
 const t = (key: string): string => EN[key] ?? key;
@@ -82,8 +91,11 @@ const RECORD = '22222222-2222-4222-8222-222222222222';
 const CHECK_A = '33333333-3333-4333-8333-333333333333';
 const CHECK_B = '44444444-4444-4444-8444-444444444444';
 const JOB = '55555555-5555-4555-8555-555555555555';
-const COMPANY = '88888888-8888-4888-8888-888888888888';
-const BRANCH = '99999999-9999-4999-8999-999999999999';
+// The branch the screen is standing in. It is no longer a pair of controls on
+// the queue form — the operator chooses once, in the header — so the test says
+// which branch the operator is working in rather than filling two boxes.
+const COMPANY = TEST_COMPANY.id;
+const BRANCH = TEST_BRANCH.id;
 
 const ok = <T,>(data: T) => ({ status: 'ok' as const, data, correlationId: 'corr' });
 const denied = { status: 'denied' as const, correlationId: 'corr-denied' };
@@ -271,9 +283,7 @@ describe('the QC queue', () => {
     listQcQueue.mockResolvedValue(
       ok({ items: [{ ...record, cursor: 'c1' }], nextCursor: null, hasMore: false })
     );
-    renderLtr(
-      <QualityQueueScreen locale="en" messages={en} companyIds={[COMPANY]} branchIds={[BRANCH]} />
-    );
+    renderLtr(inBranch(<QualityQueueScreen locale="en" messages={en} />));
     const link = await screen.findByRole('link', { name: t('quality.queue.openOrder') });
     expect(link).toHaveAttribute('href', `/en/work-orders/${WORK_ORDER}/closure`);
     expect(listQcQueue).toHaveBeenCalledWith({ companyId: COMPANY, branchId: BRANCH }, {}, null);
@@ -281,9 +291,7 @@ describe('the QC queue', () => {
 
   it('renders a refused queue as the refusal it was', async () => {
     listQcQueue.mockResolvedValue(denied);
-    renderLtr(
-      <QualityQueueScreen locale="en" messages={en} companyIds={[COMPANY]} branchIds={[BRANCH]} />
-    );
+    renderLtr(inBranch(<QualityQueueScreen locale="en" messages={en} />));
     expect(await screen.findByText('corr-denied', { exact: false })).toBeInTheDocument();
   });
 });
@@ -908,5 +916,77 @@ describe('the closure screen says why a command was refused', () => {
 
     expect(await screen.findByText(t('form.violation.invalid'))).toBeVisible();
     expect(document.body.textContent).not.toContain('a_rule_this_screen_never_heard_of');
+  });
+});
+
+describe('the QC queue is about ONE branch', () => {
+  it('reads nothing and says which control answers while "all my branches" is chosen', async () => {
+    // `qms.qc-record-branch-list` takes one branch. A board that guessed would
+    // show an operator somebody else work under a heading naming everybody.
+    const user = userEvent.setup();
+    listQcQueue.mockClear();
+    renderLtr(
+      inBranch(
+        <>
+          <BranchSwitch to="all" label="use all" />
+          <QualityQueueScreen locale="en" messages={en} />
+        </>,
+        { snapshot: branchSnapshot([TEST_BRANCH, OTHER_BRANCH]) }
+      )
+    );
+    await user.click(screen.getByRole('button', { name: 'use all' }));
+    expect(await screen.findByTestId('requires-concrete-branch')).toHaveTextContent(
+      t('workingContext.needsOneBranch')
+    );
+    expect(listQcQueue).not.toHaveBeenCalled();
+  });
+});
+
+describe('the unsaved-work guard stands down once a check is recorded', () => {
+  it('asks while a result is chosen and NOT after it is recorded', async () => {
+    /*
+     * The chosen result is deliberately RETAINED after a successful submit: it
+     * seeds the `defaultValue` of a select React remounts, and blanking it
+     * would show a placeholder for a check the operator has just recorded. So
+     * "the draft is non-empty" was the wrong question — it left the guard
+     * permanently dirty, and the shell asked about every later branch switch
+     * for work that was saved. "Different from what was recorded" is the right
+     * one, and this case is the difference between them.
+     */
+    writeQcCheckResult.mockResolvedValue({ status: 'success', correlationId: 'c', attempt: 1 });
+    const user = userEvent.setup();
+    renderLtr(
+      inBranch(
+        <>
+          <BranchSwitch to={TEST_BRANCH.id} label="use main" />
+          <BranchSwitch to={OTHER_BRANCH.id} label="use second" />
+          <WorkOrderClosureScreen
+            locale="en"
+            messages={en}
+            workOrderId={WORK_ORDER}
+            capabilities={everything}
+          />
+        </>,
+        { snapshot: branchSnapshot([TEST_BRANCH, OTHER_BRANCH]) }
+      )
+    );
+    await user.click(screen.getByRole('button', { name: 'use main' }));
+    await user.click(await screen.findByRole('button', { name: t('quality.closure.openRecord') }));
+    const road = (await screen.findByText('Road safety')).closest('li') as HTMLElement;
+    await user.selectOptions(within(road).getByRole('combobox'), 'pass');
+
+    // Chosen and unsent: the switch asks.
+    await user.click(screen.getByRole('button', { name: 'use second' }));
+    expect(await screen.findByRole('alertdialog')).toBeInTheDocument();
+    await user.click(
+      within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Cancel' })
+    );
+
+    await user.click(within(road).getByRole('button', { name: t('quality.closure.record') }));
+    await waitFor(() => expect(writeQcCheckResult).toHaveBeenCalled());
+
+    // Recorded, and the result is still on screen because it is what was saved.
+    await user.click(screen.getByRole('button', { name: 'use main' }));
+    expect(screen.queryByRole('alertdialog')).toBeNull();
   });
 });

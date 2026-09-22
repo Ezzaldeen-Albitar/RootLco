@@ -57,13 +57,29 @@ import {
  * rather than a second search invented here. Same move, same reason, as
  * `RecordForm` and `lib/api/read-operation.ts`.
  *
- * ## It searches on intent, never on a keystroke
+ * ## It searches on intent, never on a bare keystroke
  *
  * `GET /api/v1/customers` is `expensive-read`: 30 requests per 60 seconds, keyed
- * by operation, tenant and user. A search-as-you-type selector spends that
- * budget in under three seconds of typing and then rate-limits the operator out
- * of the form they are trying to submit. Typing changes a draft; only Search
- * submits it.
+ * by operation, workspace and user. A selector that sent a request per
+ * CHARACTER spends that budget in under three seconds of typing and then rate-
+ * limits the operator out of the form they are trying to submit. Typing changes
+ * a draft; only Search submits it.
+ *
+ * ## The reasoning that used to end this paragraph was wrong, and is corrected
+ *
+ * It said that a debounce is ruled out "because a debounce is still a request
+ * per pause". True, and it does not follow. The honest comparison is not
+ * "debounced typing versus nothing" but "debounced typing versus what an
+ * operator actually does", which is: type a few characters, press Search, read,
+ * correct the spelling, press Search again. That is one request per attempt,
+ * uncancelled and unbounded. A 300 ms debounce that ABORTS the previous request
+ * sends one per pause and abandons the rest, which is fewer.
+ *
+ * So the rate limit argues FOR a debounced, cancelled stream rather than
+ * against it. `lib/use-debounced-value.ts` and `lib/api/use-search-request.ts`
+ * are that mechanism. This component still submits on intent because it sits
+ * inside somebody else's form, where a request the operator did not ask for is
+ * a different kind of surprise — not because the debounce would cost more.
  *
  * ## It is not a `<form>`
  *
