@@ -22,6 +22,7 @@ import { inventoryModule, type OpenInventoryCommitments } from '@/modules/invent
 // reception's port. The same shape as the inventory import above, and for the
 // same reason — the owning module answers for its own tables.
 import { receptionModule } from '@/modules/reception';
+import { iamDirectory } from '@/modules/iam';
 import {
   JOB_HISTORY_ORDER,
   WORK_ORDER_HISTORY_ORDER,
@@ -91,6 +92,55 @@ export interface ClosureEligibility {
  * this", which a board or a list has no need for, and the history view is where
  * it belongs — beside the actors of the transitions it can be compared against.
  */
+/**
+ * The branch board's row (Owner directive, P1-32-PRE-OD-UX).
+ *
+ * A `WorkOrderSummary` plus the four facts a board shows and a report does not.
+ * Separate, rather than four more fields on the summary, because the report
+ * engine's status summary returns the same summary type from a statement that
+ * does not compute any of them — and publishing `null` for a work order that is
+ * in fact assigned, finished and passed would be a false statement rather than a
+ * missing one.
+ *
+ * ## What is deliberately ABSENT
+ *
+ * `dueAt` — `wo.work_orders` has no promised or due timestamp, and neither does
+ * any table beneath it. There is nothing to publish.
+ *
+ * `approvalState` — approval is recorded per ADDITIONAL-WORK REQUEST
+ * (`wo.additional_work_requests.state`), not per work order. A work-order-level
+ * approval state would be a concept this domain does not have; the `awaitingApproval`
+ * FILTER is backed by the real per-request state instead.
+ *
+ * `deliveryReadiness` — nothing records it. It is computed from the state
+ * catalogue by the delivery-readiness queue, and a stored-looking field would
+ * invite a consumer to treat a derivation as a fact. The `readyForDelivery`
+ * filter runs the same derivation the queue does.
+ */
+export interface WorkOrderBoardSummary extends WorkOrderSummary {
+  /**
+   * Who is currently on the car, or null when no job carries a live assignment.
+   *
+   * The name is resolved for the WHOLE PAGE in one statement through the iam
+   * module's identity directory, never one lookup per row — the board renders a
+   * technician column, and a per-row lookup is the N+1 this projection exists to
+   * avoid. A caller that may not read the user directory gets the id with a null
+   * name rather than a refusal: the assignment is a work-order fact, the person's
+   * name is not.
+   */
+  readonly assignedTechnician: { readonly id: string; readonly displayName: string | null } | null;
+  /**
+   * When the work order last entered a terminal state, or null while it is open.
+   * Read from the transition ledger, because no column records it.
+   */
+  readonly completedAt: string | null;
+  /**
+   * `pending`, `passed`, `failed`, or null when quality control was never opened.
+   * A recorded column of `qms.quality_control_records`, not a derived label.
+   */
+  readonly qualityState: string | null;
+}
+
 export interface WorkOrderSummary {
   readonly id: string;
   readonly companyId: string;
@@ -617,18 +667,111 @@ export class WorkOrderService extends ApplicationService {
     db: DbHandle,
     filter: WorkOrderListFilter,
     page: PageInput
-  ): Promise<Page<WorkOrderSummary>> {
+  ): Promise<Page<WorkOrderBoardSummary>> {
     // The ordering contract and the cursor decode live behind this surface, not in
     // the route: a handler that imported `@/server/db/pagination` would be reaching
     // into the data layer past its module (boundary rule B4).
+    //
+    // The TERMINAL codes are resolved here, from the live catalogue, and passed
+    // down — the repository must not join `wo.work_order_states`, because that
+    // would put the platform/tenant precedence in a second place. Same rule as
+    // `listClosedNonCancelled`'s state set.
+    const catalogue = await this.catalog.workOrderStates(db);
     const rows = await this.repository.listWorkOrders(
       db,
-      filter,
+      {
+        ...filter,
+        terminalStates: catalogue.filter((state) => state.isTerminal).map((state) => state.code),
+      },
       pageRequest(WORK_ORDER_LIST_ORDER, page)
     );
-    // The page is already the FILTERED, complete page — `customerId` was applied
-    // in SQL before the keyset window, so enriching here cannot shorten it.
-    return { ...rows, items: await withPartyContext(db, rows.items) };
+    // The page is already the FILTERED, complete page — `customerId` and every
+    // board flag were applied in SQL before the keyset window, so enriching here
+    // cannot shorten it.
+    const summaries = await withPartyContext(db, rows.items);
+    // ONE statement for the whole page, never one per row: the board renders a
+    // technician column and a per-row lookup is the N+1 this avoids.
+    const names = await iamDirectory().directory.resolveDisplayIdentities(db, [
+      ...new Set(
+        rows.items.flatMap((row) =>
+          row.assignedTechnicianUserId === null ? [] : [row.assignedTechnicianUserId]
+        )
+      ),
+    ]);
+    const boardFacts = new Map(rows.items.map((row) => [row.id, row]));
+    const items: WorkOrderBoardSummary[] = summaries.map((summary) => {
+      const facts = boardFacts.get(summary.id);
+      const profileId = facts?.assignedTechnicianProfileId ?? null;
+      return {
+        ...summary,
+        assignedTechnician:
+          profileId === null
+            ? null
+            : {
+                id: profileId,
+                // Null rather than a refusal when the caller may not read the
+                // user directory: the assignment is a work-order fact, the
+                // person's name is the iam module's to withhold.
+                displayName:
+                  facts?.assignedTechnicianUserId === null ||
+                  facts?.assignedTechnicianUserId === undefined
+                    ? null
+                    : (names.get(facts.assignedTechnicianUserId)?.displayName ?? null),
+              },
+        completedAt: facts?.completedAt?.toISOString() ?? null,
+        qualityState: facts?.qualityState ?? null,
+      };
+    });
+    return { ...rows, items };
+  }
+
+  /**
+   * Resolves the board flags a caller sent into the code sets and ids the
+   * repository compares against (Owner directive, P1-32-PRE-OD-UX).
+   *
+   * Lives here rather than in the route because every one of them is a question
+   * about the tenant's own catalogue or its own technician register, and a route
+   * that answered them would be re-implementing the module.
+   */
+  async resolveBoardFilters(
+    db: DbHandle,
+    asked: {
+      readonly assignedToMe?: boolean | undefined;
+      readonly readyForDelivery?: boolean | undefined;
+    }
+  ): Promise<{
+    readonly assignedTechnicianProfileId?: string | undefined;
+    readonly matchNothing?: boolean | undefined;
+    readonly readyStates?: readonly string[] | undefined;
+  }> {
+    const resolved: {
+      assignedTechnicianProfileId?: string;
+      matchNothing?: boolean;
+      readyStates?: readonly string[];
+    } = {};
+
+    if (asked.assignedToMe === true) {
+      const profileId = await this.repository.findTechnicianProfileForCaller(db);
+      if (profileId === null) {
+        // The caller asked for their own work and has no technician record, so
+        // the honest answer is an empty page. Leaving the filter off instead
+        // would answer "my work" with "everyone's".
+        resolved.matchNothing = true;
+      } else {
+        resolved.assignedTechnicianProfileId = profileId;
+      }
+    }
+
+    if (asked.readyForDelivery === true) {
+      // The same derivation the delivery-readiness queue runs, from the LIVE
+      // catalogue: `is_closed` is true for a cancellation too, so a queue built
+      // on it alone would offer every abandoned job for handover.
+      resolved.readyStates = (await this.catalog.workOrderStates(db))
+        .filter((state) => state.isClosed && !state.isCancellation)
+        .map((state) => state.code);
+    }
+
+    return resolved;
   }
 
   /**

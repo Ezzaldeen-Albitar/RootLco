@@ -34,7 +34,9 @@ import {
   BRANCH_A1,
   COMPANY_A1,
   SUBJECT_UNPERMITTED,
+  TENANT_A,
   TENANT_B,
+  USER_A,
   adminPool,
   cleanBackendFixtures,
   ensureBackendFixtures,
@@ -46,6 +48,7 @@ import {
   BRANCH_B1,
   COMPANY_A2,
   COMPANY_B1,
+  TECH_A1,
   FULL,
   PERMISSION_ELSEWHERE,
   READER,
@@ -586,5 +589,193 @@ describe('wo.work-order-list — the branch-optional board', () => {
     // the second company has no work orders, which is not its to learn.
     expect(other.status).toBe(403);
     expect(((await other.json()) as { code: string }).code).toBe('ERR-IAM-001');
+  });
+});
+
+// ===========================================================================
+// The enriched board row and its flags (Owner directive, P1-32-PRE-OD-UX)
+//
+// Every field and every filter here is backed by a column or a row the schema
+// really keeps. Three that were asked for are ABSENT, and the first case asserts
+// their absence rather than leaving it to a reader: `dueAt` (no promised or due
+// timestamp exists on `wo.work_orders` or anywhere beneath it), `approvalState`
+// (approval is recorded per additional-work request, not per work order) and
+// `deliveryReadiness` (nothing records it — it is derived from the state
+// catalogue). A key-set assertion is what catches one being added back later
+// without the schema to support it.
+// ===========================================================================
+describe('wo.work-order-list — the enriched board', () => {
+  /** One board row by id, as the current caller. */
+  async function boardRow(workOrderId: string): Promise<Record<string, unknown>> {
+    const response = await list({ companyId: COMPANY_A1, branchId: BRANCH_A1, limit: '100' });
+    expect(response.status).toBe(200);
+    const row = (await page(response)).items.find((item) => item.id === workOrderId);
+    expect(row, workOrderId).toBeDefined();
+    return row as unknown as Record<string, unknown>;
+  }
+
+  it('publishes the three recorded board fields and none of the three the schema cannot support', async () => {
+    const created = await createWorkOrder();
+
+    authAs(READER);
+    const row = await boardRow(created.workOrderId);
+    const keys = Object.keys(row);
+
+    // Present, because the schema records them.
+    expect(keys).toEqual(
+      expect.arrayContaining(['assignedTechnician', 'completedAt', 'qualityState'])
+    );
+    // Absent, because it does not. Asserted, not assumed.
+    expect(keys).not.toContain('dueAt');
+    expect(keys).not.toContain('approvalState');
+    expect(keys).not.toContain('deliveryReadiness');
+
+    // A freshly converted work order: nobody assigned, nothing finished, no QC.
+    expect(row.assignedTechnician).toBeNull();
+    expect(row.completedAt).toBeNull();
+    expect(row.qualityState).toBeNull();
+  });
+
+  it('names the technician holding the LIVE assignment and forgets them once it is closed', async () => {
+    const seeded = await createOpenWorkOrder();
+    const jobId = await admin
+      .query<{ id: string }>(
+        `INSERT INTO wo.jobs (tenant_id, company_id, branch_id, work_order_id, title, created_by)
+         VALUES ($1,$2,$3,$4,'Board fixture job',$5) RETURNING id`,
+        [TENANT_A, COMPANY_A1, BRANCH_A1, seeded.workOrderId, USER_A]
+      )
+      .then((result) => result.rows[0]?.id ?? '');
+    const assignmentId = await admin
+      .query<{ id: string }>(
+        `INSERT INTO wo.job_assignments
+           (tenant_id, company_id, branch_id, job_id, technician_profile_id, created_by)
+         VALUES ($1,$2,$3,$4,$5,$6) RETURNING id`,
+        [TENANT_A, COMPANY_A1, BRANCH_A1, jobId, TECH_A1, USER_A]
+      )
+      .then((result) => result.rows[0]?.id ?? '');
+
+    authAs(READER);
+    const assigned = (await boardRow(seeded.workOrderId)).assignedTechnician as {
+      id: string;
+      displayName: string | null;
+    } | null;
+    expect(assigned?.id).toBe(TECH_A1);
+    // The name is resolved through the iam directory for the whole page in one
+    // statement. READER may read the user directory, so it is a name and not a
+    // bare id — the field existing but always null would be the silent failure.
+    expect(assigned?.displayName).toBe('Fixture Technician');
+
+    // `wo.job_assignments` is append-then-close: ending an assignment stamps
+    // `valid_to` and the ROW SURVIVES, so "currently assigned" has to follow the
+    // stamp rather than the row's existence.
+    await admin.query(
+      `UPDATE wo.job_assignments SET valid_to = now(), reason = 'board fixture' WHERE id = $1`,
+      [assignmentId]
+    );
+    authAs(READER);
+    expect((await boardRow(seeded.workOrderId)).assignedTechnician).toBeNull();
+  });
+
+  it('assignedToMe answers an EMPTY page for a caller who is not a technician', async () => {
+    await createWorkOrder();
+
+    authAs(READER);
+    // READER holds `wo.work_order.read` and has no technician profile. The answer
+    // is an empty page and never the whole board: "my work" must not widen to
+    // "everyone's" because the caller has no technician record.
+    const none = await list({
+      companyId: COMPANY_A1,
+      branchId: BRANCH_A1,
+      assignedToMe: 'true',
+      limit: '100',
+    });
+    expect(none.status).toBe(200);
+    expect((await page(none)).items).toEqual([]);
+
+    // The same caller without the flag still sees a board, so the empty page
+    // above is the filter working and not the read being broken.
+    authAs(READER);
+    const unfiltered = await list({ companyId: COMPANY_A1, branchId: BRANCH_A1, limit: '100' });
+    expect((await page(unfiltered)).items.length).toBeGreaterThan(0);
+  });
+
+  it('awaitingParts follows parts_forward_state and nothing else', async () => {
+    const waiting = await createWorkOrder();
+    const settled = await createWorkOrder();
+    await admin.query(`UPDATE wo.work_orders SET parts_forward_state = 'requested' WHERE id = $1`, [
+      waiting.workOrderId,
+    ]);
+
+    authAs(READER);
+    const response = await list({
+      companyId: COMPANY_A1,
+      branchId: BRANCH_A1,
+      awaitingParts: 'true',
+      limit: '100',
+    });
+    expect(response.status).toBe(200);
+    const ids = (await page(response)).items.map((item) => item.id);
+    expect(ids).toContain(waiting.workOrderId);
+    expect(ids).not.toContain(settled.workOrderId);
+  });
+
+  it('awaitingQuality follows a pending quality-control record', async () => {
+    const checking = await createWorkOrder();
+    const untouched = await createWorkOrder();
+    await admin.query(
+      `INSERT INTO qms.quality_control_records
+         (tenant_id, company_id, branch_id, work_order_id, overall_result, created_by)
+       VALUES ($1,$2,$3,$4,'pending',$5)`,
+      [TENANT_A, COMPANY_A1, BRANCH_A1, checking.workOrderId, USER_A]
+    );
+
+    authAs(READER);
+    const response = await list({
+      companyId: COMPANY_A1,
+      branchId: BRANCH_A1,
+      awaitingQuality: 'true',
+      limit: '100',
+    });
+    expect(response.status).toBe(200);
+    const ids = (await page(response)).items.map((item) => item.id);
+    expect(ids).toContain(checking.workOrderId);
+    expect(ids).not.toContain(untouched.workOrderId);
+
+    // The recorded result also reaches the row, rather than only the filter.
+    authAs(READER);
+    expect((await boardRow(checking.workOrderId)).qualityState).toBe('pending');
+  });
+
+  it('a flag sent as false does not behave as true', async () => {
+    const waiting = await createWorkOrder();
+    const settled = await createWorkOrder();
+    await admin.query(`UPDATE wo.work_orders SET parts_forward_state = 'requested' WHERE id = $1`, [
+      waiting.workOrderId,
+    ]);
+
+    authAs(READER);
+    // The literal-boolean schema exists for exactly this: `z.coerce.boolean()`
+    // makes every non-empty string true, so `awaitingParts=false` would silently
+    // turn the filter ON and hide the settled row.
+    const off = await list({
+      companyId: COMPANY_A1,
+      branchId: BRANCH_A1,
+      awaitingParts: 'false',
+      limit: '100',
+    });
+    expect(off.status).toBe(200);
+    const ids = (await page(off)).items.map((item) => item.id);
+    expect(ids).toContain(waiting.workOrderId);
+    expect(ids).toContain(settled.workOrderId);
+  });
+
+  it('an unknown flag value and an unknown flag are both refused', async () => {
+    authAs(READER);
+    expect(
+      (await list({ companyId: COMPANY_A1, branchId: BRANCH_A1, awaitingParts: 'yes' })).status
+    ).toBe(422);
+    expect(
+      (await list({ companyId: COMPANY_A1, branchId: BRANCH_A1, awaitingDelivery: 'true' })).status
+    ).toBe(422);
   });
 });

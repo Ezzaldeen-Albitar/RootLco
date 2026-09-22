@@ -52,6 +52,18 @@ export const dynamic = 'force-dynamic';
  * defined. `kind` IS a closed vocabulary — `ck_work_orders_kind` allows exactly
  * two values — so it is validated here.
  */
+/**
+ * A query-string boolean, read as a literal.
+ *
+ * `z.coerce.boolean()` would make `?assignedToMe=false` TRUE, because coercion
+ * only asks whether the string is non-empty — so the flag that narrows a board
+ * would widen it on the one value a caller uses to turn it off.
+ */
+const BooleanFlag = z
+  .enum(['true', 'false'])
+  .transform((value) => value === 'true')
+  .optional();
+
 const Query = z
   .object({
     companyId: schemas.uuid,
@@ -98,6 +110,33 @@ const Query = z
       .min(MIN_WORK_ORDER_SEARCH_FRAGMENT)
       .max(MAX_WORK_ORDER_SEARCH_FRAGMENT)
       .optional(),
+    /**
+     * The board flags (Owner directive, P1-32-PRE-OD-UX). Each is backed by a
+     * state or a column the schema really keeps:
+     *
+     *   assignedToMe      a LIVE row in `wo.job_assignments` for the caller's own
+     *                     technician profile — and an EMPTY page, never the whole
+     *                     board, when the caller has no such profile;
+     *   awaitingParts     `wo.work_orders.parts_forward_state` is not `none`;
+     *   awaitingApproval  an additional-work request is still `pending`;
+     *   awaitingQuality   a quality-control record's `overall_result` is `pending`;
+     *   readyForDelivery  the state is closed and not a cancellation, resolved
+     *                     from the LIVE catalogue exactly as the delivery
+     *                     readiness queue resolves it.
+     *
+     * `dueAt`, `approvalState` and `deliveryReadiness` were asked for and are
+     * ABSENT: see `WorkOrderBoardSummary` for what the schema does and does not
+     * record.
+     *
+     * `z.enum(['true','false'])` rather than `z.coerce.boolean()`: coercion makes
+     * every non-empty string true, so `?assignedToMe=false` would silently mean
+     * true. `.strict()` keeps an unknown flag a 422.
+     */
+    assignedToMe: BooleanFlag,
+    awaitingParts: BooleanFlag,
+    awaitingApproval: BooleanFlag,
+    awaitingQuality: BooleanFlag,
+    readyForDelivery: BooleanFlag,
     cursor: schemas.cursor.optional(),
     limit: schemas.limit.optional(),
   })
@@ -142,6 +181,16 @@ export async function GET(request: Request): Promise<Response> {
             customerId: query.customerId,
             number: query.number,
             q: query.q,
+            awaitingParts: query.awaitingParts,
+            awaitingApproval: query.awaitingApproval,
+            awaitingQuality: query.awaitingQuality,
+            // Resolved INSIDE the module: both flags are questions about the
+            // tenant's own catalogue and its own technician register, and a route
+            // that answered them would re-implement the module.
+            ...(await workOrderModule().workOrders.resolveBoardFilters(db, {
+              assignedToMe: query.assignedToMe,
+              readyForDelivery: query.readyForDelivery,
+            })),
           },
           { cursor: query.cursor, limit: query.limit }
         ),

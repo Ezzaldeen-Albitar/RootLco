@@ -44,6 +44,7 @@ export type {
   WorkOrderDetail,
   WorkOrderHistoryEntry,
   WorkOrderHistoryView,
+  WorkOrderBoardSummary,
   WorkOrderSummary,
 } from './application/work-order-service';
 import { WorkOrderRepository } from './data/work-order-repository';
