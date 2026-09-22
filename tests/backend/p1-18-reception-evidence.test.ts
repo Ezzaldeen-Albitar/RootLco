@@ -1590,6 +1590,12 @@ describe('rec.reception-refusal', () => {
     const problem = await json(refused);
     expect(problem.code).toBe('ERR-VAL-001');
     expect(problem.violations?.[0]?.path).toBe('body.refusingPartnerId');
+    // The TOKEN is asserted, not only the path: the sentence the receptionist
+    // reads is chosen by it, and nothing entered here is wrong — an entry the
+    // form did not ask for is missing. Published as `invalid_value` this read
+    // "check the choices, the length and the range", which sends the reader to
+    // re-read correct entries.
+    expect(problem.violations?.[0]?.rule).toBe('companion_field_required');
     expect(await refusals(visit)).toBe(0);
   });
 

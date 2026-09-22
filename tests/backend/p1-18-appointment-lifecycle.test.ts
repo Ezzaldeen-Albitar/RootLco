@@ -830,6 +830,63 @@ describe('apt.appointment-create', () => {
     ).toBe(0);
   });
 
+  /**
+   * The window rules name themselves on the wire.
+   *
+   * All three used to arrive as `invalid_value`, one sentence telling the
+   * receptionist to check the choices, the length and the range of what they
+   * typed. None of the three is a choice, a length or a range, and the middle
+   * one is not visible in the entry at all — a time with no zone looks exactly
+   * like a time with one — so that sentence sent somebody to re-read a correct
+   * entry. The case above proves each window is refused; this one proves the
+   * caller is told WHICH rule refused, which is what picks the sentence.
+   */
+  it('names which window rule refused: unreadable, zone-less or backwards', async () => {
+    authAs(SUBJ_FULL_A);
+    const vehicle = await newVehicle();
+
+    // Carries `Z`, so the offset guard passes and the parse is what fails.
+    const unreadable = await create(
+      bookingFor(vehicle, {
+        requestedFrom: '2026-13-01T09:00:00Z',
+        requestedTo: '2026-13-01T10:00:00Z',
+      })
+    );
+    expect(unreadable.status).toBe(422);
+    const unreadableProblem = (await unreadable.json()) as Body;
+    expect(unreadableProblem.code).toBe('ERR-VAL-001');
+    expect(unreadableProblem.violations?.[0]?.path).toBe('body');
+    expect(unreadableProblem.violations?.[0]?.rule).toBe('appointment_time_unreadable');
+
+    const naive = await create(
+      bookingFor(vehicle, {
+        requestedFrom: '2026-09-01T09:00:00',
+        requestedTo: '2026-09-01T10:00:00',
+      })
+    );
+    expect(naive.status).toBe(422);
+    expect(((await naive.json()) as Body).violations?.[0]?.rule).toBe(
+      'appointment_time_zone_missing'
+    );
+
+    const inverted = await create(
+      bookingFor(vehicle, {
+        requestedFrom: '2026-09-01T10:00:00Z',
+        requestedTo: '2026-09-01T09:00:00Z',
+      })
+    );
+    expect(inverted.status).toBe(422);
+    expect(((await inverted.json()) as Body).violations?.[0]?.rule).toBe(
+      'appointment_window_backwards'
+    );
+
+    expect(
+      await countWhere(`SELECT count(*)::text AS n FROM apt.appointments WHERE vehicle_id = $1`, [
+        vehicle,
+      ])
+    ).toBe(0);
+  });
+
   // V8 parses an offset hour anywhere in 00–23, so `+16:00` satisfies `Date.parse`
   // and every application guard and is refused only by PostgreSQL, whose
   // `timestamptz` displacement limit is ±15:59:59. That refusal is SQLSTATE 22009,
