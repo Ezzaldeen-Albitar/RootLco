@@ -676,8 +676,8 @@ describe('after a refusal the cursor lands on the first thing to fix', () => {
     // Both fields are refused and the error map is deliberately written with
     // the SECOND field first, so a hook that trusted key order would focus the
     // wrong control and this case would catch it.
-    const action = vi.fn(
-      async (): Promise<ActionState> => refusal({ severity: 'field.required', reason: 'field.required' })
+    const action = vi.fn(async (): Promise<ActionState> =>
+      refusal({ severity: 'field.required', reason: 'field.required' })
     );
     const user = userEvent.setup();
     renderForm(action);
@@ -729,8 +729,8 @@ describe('after a refusal the cursor lands on the first thing to fix', () => {
 
 describe('a corrected field stops complaining before the next submission', () => {
   it('clears the error for the field the operator edits, and only that one', async () => {
-    const action = vi.fn(
-      async (): Promise<ActionState> => refusal({ reason: 'field.required', severity: 'field.required' })
+    const action = vi.fn(async (): Promise<ActionState> =>
+      refusal({ reason: 'field.required', severity: 'field.required' })
     );
     const user = userEvent.setup();
     renderForm(action);
@@ -744,10 +744,9 @@ describe('a corrected field stops complaining before the next submission', () =>
     await waitFor(() => expect(reason).not.toHaveAttribute('aria-invalid'));
     // The one the operator has NOT touched still says so: a correction must
     // never quieten a complaint about a different field.
-    expect(screen.getByLabelText(en['crm.customers.alerts.severity'], { exact: false })).toHaveAttribute(
-      'aria-invalid',
-      'true'
-    );
+    expect(
+      screen.getByLabelText(en['crm.customers.alerts.severity'], { exact: false })
+    ).toHaveAttribute('aria-invalid', 'true');
   });
 
   it('brings the complaint BACK when the next attempt refuses the same field', async () => {
@@ -767,18 +766,17 @@ describe('a corrected field stops complaining before the next submission', () =>
     await waitFor(() => expect(action).toHaveBeenCalledTimes(1));
     await user.type(screen.getByLabelText(en['crm.customers.notes.body'], { exact: false }), 'x');
     await waitFor(() =>
-      expect(screen.getByLabelText(en['crm.customers.notes.body'], { exact: false })).not.toHaveAttribute(
-        'aria-invalid'
-      )
+      expect(
+        screen.getByLabelText(en['crm.customers.notes.body'], { exact: false })
+      ).not.toHaveAttribute('aria-invalid')
     );
 
     await user.click(submit);
     await waitFor(() => expect(action).toHaveBeenCalledTimes(2));
     await waitFor(() =>
-      expect(screen.getByLabelText(en['crm.customers.notes.body'], { exact: false })).toHaveAttribute(
-        'aria-invalid',
-        'true'
-      )
+      expect(
+        screen.getByLabelText(en['crm.customers.notes.body'], { exact: false })
+      ).toHaveAttribute('aria-invalid', 'true')
     );
   });
 });

@@ -250,7 +250,7 @@ describe('a search box', () => {
     );
   }
 
-  it("is one labelled control, with the page own example shown beside it", () => {
+  it('is one labelled control, with the page own example shown beside it', () => {
     box({ example: 'For example 4 digits, or part of a name', placeholder: 'Name or number' });
     const input = screen.getByLabelText('Find a record');
     expect(input).toHaveAttribute('placeholder', 'Name or number');
@@ -280,7 +280,13 @@ describe('a search box', () => {
     const outerSubmit = vi.fn((event: { preventDefault: () => void }) => event.preventDefault());
     renderLtr(
       <form onSubmit={outerSubmit}>
-        <SearchBox messages={en} label="Find a record" value="abc" onChange={vi.fn()} onSubmit={onSubmit} />
+        <SearchBox
+          messages={en}
+          label="Find a record"
+          value="abc"
+          onChange={vi.fn()}
+          onSubmit={onSubmit}
+        />
       </form>
     );
     await user.type(screen.getByLabelText('Find a record'), '{Enter}');
@@ -431,7 +437,7 @@ describe('the states a search can be in', () => {
     expect(screen.queryByRole('button', { name: 'Try again' })).toBeNull();
   });
 
-  it("shows the page own idle line before anything has been asked", () => {
+  it('shows the page own idle line before anything has been asked', () => {
     renderLtr(
       <SearchStates messages={en} phase="idle" idle={<p>Type a name or a number to begin</p>} />
     );

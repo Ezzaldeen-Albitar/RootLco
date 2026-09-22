@@ -63,9 +63,8 @@ vi.mock('next/navigation', () => ({
 
 const { requireSession, readSession } = await import('@/features/authentication/api/session');
 const { loadWorkingContext } = await import('@/features/working-context/api');
-const { WORKING_CONTEXT_PATH, isWorkingContextShape, preferenceKeyFor } = await import(
-  '@/features/working-context/working-context-contract'
-);
+const { WORKING_CONTEXT_PATH, isWorkingContextShape, preferenceKeyFor } =
+  await import('@/features/working-context/working-context-contract');
 const { GET } = await import('@/app/[locale]/(auth)/session-ended/route');
 
 const SESSION = {

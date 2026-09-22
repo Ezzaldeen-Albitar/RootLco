@@ -203,7 +203,8 @@ export function WorkingContextProvider({
     if (stored === ALL_BRANCHES) {
       const spans = new Set(branches.map((branch) => branch.companyId));
       return {
-        companyId: spans.size === 1 ? ((branches[0] as WorkingContextBranch).companyId ?? null) : null,
+        companyId:
+          spans.size === 1 ? ((branches[0] as WorkingContextBranch).companyId ?? null) : null,
         branchId: null,
         allBranches: true,
       };

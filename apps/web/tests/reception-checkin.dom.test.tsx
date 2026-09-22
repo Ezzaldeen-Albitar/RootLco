@@ -565,7 +565,9 @@ describe('the start screen — origin XOR', () => {
         });
 
         const user = userEvent.setup();
-        renderLtr(inBranch(<CheckInStartScreen {...startProps()} />, { snapshot: CHECKIN_CONTEXT }));
+        renderLtr(
+          inBranch(<CheckInStartScreen {...startProps()} />, { snapshot: CHECKIN_CONTEXT })
+        );
 
         // The lookup asks only once a vehicle is chosen.
         await user.click(screen.getByRole('radio', { name: /Appointment/ }));
@@ -1756,10 +1758,10 @@ describe('F1 — the three states a paged read can report', () => {
        */
       listCustomerVehicles.mockResolvedValue(truncated([OTHER_LINK]));
       renderLtr(
-      inBranch(<CheckInStartScreen {...startProps({ walkInHandoff: handoff })} />, {
-        snapshot: CHECKIN_CONTEXT,
-      })
-    );
+        inBranch(<CheckInStartScreen {...startProps({ walkInHandoff: handoff })} />, {
+          snapshot: CHECKIN_CONTEXT,
+        })
+      );
 
       await waitFor(() =>
         expect(screen.getByTestId('walk-in-handoff-notice')).toHaveTextContent(
@@ -1774,10 +1776,10 @@ describe('F1 — the three states a paged read can report', () => {
     it('says nothing was learned when the vehicle list could not be read', async () => {
       listCustomerVehicles.mockResolvedValue(unreadable());
       renderLtr(
-      inBranch(<CheckInStartScreen {...startProps({ walkInHandoff: handoff })} />, {
-        snapshot: CHECKIN_CONTEXT,
-      })
-    );
+        inBranch(<CheckInStartScreen {...startProps({ walkInHandoff: handoff })} />, {
+          snapshot: CHECKIN_CONTEXT,
+        })
+      );
 
       await waitFor(() =>
         expect(screen.getByTestId('walk-in-handoff-notice')).toHaveTextContent(
@@ -1790,10 +1792,10 @@ describe('F1 — the three states a paged read can report', () => {
       listCustomerVehicles.mockResolvedValue(truncated([OTHER_LINK]));
       const user = userEvent.setup();
       renderLtr(
-      inBranch(<CheckInStartScreen {...startProps({ walkInHandoff: handoff })} />, {
-        snapshot: CHECKIN_CONTEXT,
-      })
-    );
+        inBranch(<CheckInStartScreen {...startProps({ walkInHandoff: handoff })} />, {
+          snapshot: CHECKIN_CONTEXT,
+        })
+      );
       await screen.findByTestId('walk-in-handoff-notice');
 
       const pager = await screen.findByRole('navigation', {
@@ -1813,10 +1815,10 @@ describe('F1 — the three states a paged read can report', () => {
     it('states truncation beside the picker rather than presenting one page as the list', async () => {
       listCustomerVehicles.mockResolvedValue(truncated([OTHER_LINK]));
       renderLtr(
-      inBranch(<CheckInStartScreen {...startProps({ walkInHandoff: handoff })} />, {
-        snapshot: CHECKIN_CONTEXT,
-      })
-    );
+        inBranch(<CheckInStartScreen {...startProps({ walkInHandoff: handoff })} />, {
+          snapshot: CHECKIN_CONTEXT,
+        })
+      );
 
       expect(await screen.findByTestId('checkin-vehicles-truncated')).toHaveTextContent(
         EN['receptions.checkIn.vehiclesTruncated']!
@@ -1842,10 +1844,10 @@ describe('F1 — the three states a paged read can report', () => {
       );
       const user = userEvent.setup();
       renderLtr(
-      inBranch(<CheckInStartScreen {...startProps({ walkInHandoff: handoff })} />, {
-        snapshot: CHECKIN_CONTEXT,
-      })
-    );
+        inBranch(<CheckInStartScreen {...startProps({ walkInHandoff: handoff })} />, {
+          snapshot: CHECKIN_CONTEXT,
+        })
+      );
 
       await waitFor(() =>
         expect(screen.getByTestId('walk-in-handoff-notice')).toHaveTextContent(
@@ -1877,10 +1879,10 @@ describe('F1 — the three states a paged read can report', () => {
       );
       const user = userEvent.setup();
       renderLtr(
-      inBranch(<CheckInStartScreen {...startProps({ walkInHandoff: handoff })} />, {
-        snapshot: CHECKIN_CONTEXT,
-      })
-    );
+        inBranch(<CheckInStartScreen {...startProps({ walkInHandoff: handoff })} />, {
+          snapshot: CHECKIN_CONTEXT,
+        })
+      );
       await screen.findByTestId('checkin-vehicles-truncated');
 
       const pager = await screen.findByRole('navigation', {
@@ -1907,10 +1909,10 @@ describe('F1 — the three states a paged read can report', () => {
     it('says nothing about truncation when the read covered the set', async () => {
       listCustomerVehicles.mockResolvedValue(page([MATCHING_LINK]));
       renderLtr(
-      inBranch(<CheckInStartScreen {...startProps({ walkInHandoff: handoff })} />, {
-        snapshot: CHECKIN_CONTEXT,
-      })
-    );
+        inBranch(<CheckInStartScreen {...startProps({ walkInHandoff: handoff })} />, {
+          snapshot: CHECKIN_CONTEXT,
+        })
+      );
       await screen.findByTestId('walk-in-handoff-notice');
 
       expect(screen.queryByTestId('checkin-vehicles-truncated')).not.toBeInTheDocument();
@@ -1919,10 +1921,10 @@ describe('F1 — the three states a paged read can report', () => {
     it('renders both new sentences in Arabic, not as keys', async () => {
       listCustomerVehicles.mockResolvedValue(truncated([OTHER_LINK]));
       renderRtl(
-        inBranch(
-          <CheckInStartScreen {...startProps({ walkInHandoff: handoff, messages: AR })} />,
-          { snapshot: CHECKIN_CONTEXT, locale: 'ar' }
-        )
+        inBranch(<CheckInStartScreen {...startProps({ walkInHandoff: handoff, messages: AR })} />, {
+          snapshot: CHECKIN_CONTEXT,
+          locale: 'ar',
+        })
       );
 
       await waitFor(() =>

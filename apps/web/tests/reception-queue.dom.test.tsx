@@ -54,10 +54,7 @@ function page(rows: readonly unknown[], hasMore = false) {
   };
 }
 
-function renderQueue(
-  over: Record<string, unknown> = {},
-  snapshot = branchSnapshot()
-) {
+function renderQueue(over: Record<string, unknown> = {}, snapshot = branchSnapshot()) {
   // The branch is no longer a control on this form. It is the working context's
   // own named selection, so a test states it by standing the screen in a branch.
   return renderLtr(

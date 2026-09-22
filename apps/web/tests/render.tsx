@@ -90,7 +90,7 @@ export function branchSnapshot(
     unrestricted: false,
     companies: [TEST_COMPANY],
     branches,
-    };
+  };
 }
 
 /** Wraps a screen in a working context. Pass the snapshot to vary the case. */

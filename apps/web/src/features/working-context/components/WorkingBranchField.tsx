@@ -2,7 +2,11 @@
 
 import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic } from '@/i18n/get-messages';
-import { branchBlockMessageKey, useBranchTarget, type BranchTargetState } from '../use-branch-target';
+import {
+  branchBlockMessageKey,
+  useBranchTarget,
+  type BranchTargetState,
+} from '../use-branch-target';
 import { useWorkingContext } from '../WorkingContextProvider';
 
 /**

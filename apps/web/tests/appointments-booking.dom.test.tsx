@@ -126,12 +126,7 @@ function renderScreen({ types = TYPES, channels = CHANNELS } = {}) {
   // not a pair of controls on the booking form.
   return renderLtr(
     inBranch(
-      <AppointmentBookingScreen
-        locale="en"
-        messages={en}
-        types={types}
-        channels={channels}
-      />
+      <AppointmentBookingScreen locale="en" messages={en} types={types} channels={channels} />
     )
   );
 }
@@ -301,12 +296,7 @@ describe('both directions', () => {
   it('renders in Arabic, right to left', () => {
     renderRtl(
       inBranch(
-        <AppointmentBookingScreen
-          locale="ar"
-          messages={ar}
-          types={TYPES}
-          channels={CHANNELS}
-        />,
+        <AppointmentBookingScreen locale="ar" messages={ar} types={TYPES} channels={CHANNELS} />,
         { locale: 'ar' }
       )
     );
@@ -402,12 +392,7 @@ describe('F1 — one page of ten was every vehicle this picker could offer', () 
     const user = userEvent.setup();
     renderRtl(
       inBranch(
-        <AppointmentBookingScreen
-          locale="ar"
-          messages={ar}
-          types={TYPES}
-          channels={CHANNELS}
-        />,
+        <AppointmentBookingScreen locale="ar" messages={ar} types={TYPES} channels={CHANNELS} />,
         { locale: 'ar' }
       )
     );

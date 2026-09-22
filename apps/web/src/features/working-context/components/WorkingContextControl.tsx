@@ -91,7 +91,10 @@ export function WorkingContextControl({ messages }: { readonly messages: Message
   if (single !== undefined) {
     const company = context.companyOf(single.id);
     return (
-      <span data-testid="working-context-single" className="truncate text-supporting text-text-primary">
+      <span
+        data-testid="working-context-single"
+        className="truncate text-supporting text-text-primary"
+      >
         {/*
           A middle dot rather than a dash or a slash: it reads as a separator in
           both scripts and is not mistaken for a range or a path. The branch
@@ -103,7 +106,12 @@ export function WorkingContextControl({ messages }: { readonly messages: Message
     );
   }
 
-  const value = context.selection === null ? '' : (context.selection.allBranches ? ALL_BRANCHES : context.selection.branchId);
+  const value =
+    context.selection === null
+      ? ''
+      : context.selection.allBranches
+        ? ALL_BRANCHES
+        : context.selection.branchId;
 
   return (
     <div className="flex min-w-0 items-center gap-2">

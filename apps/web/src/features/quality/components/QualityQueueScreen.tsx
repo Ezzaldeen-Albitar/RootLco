@@ -106,10 +106,7 @@ export function QualityQueueScreen({
 
   return (
     <div className="flex min-h-0 flex-col gap-6">
-      <WorkingBranchField
-        messages={messages}
-        label={translate(messages, 'quality.queue.branch')}
-      />
+      <WorkingBranchField messages={messages} label={translate(messages, 'quality.queue.branch')} />
 
       {target === null ? null : (
         <section

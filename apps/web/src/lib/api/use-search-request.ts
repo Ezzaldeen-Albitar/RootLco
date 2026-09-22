@@ -116,10 +116,7 @@ export function useSearchRequest<Row, Criteria>(options: {
    * something every screen has to remember.
    */
   readonly criteria: Criteria | null;
-  readonly load: (
-    criteria: Criteria,
-    signal: AbortSignal
-  ) => Promise<ReadState<CursorPage<Row>>>;
+  readonly load: (criteria: Criteria, signal: AbortSignal) => Promise<ReadState<CursorPage<Row>>>;
   /**
    * Anything outside the criteria that changes what the answer means — the
    * working-context version above all. A branch change must abandon the read in

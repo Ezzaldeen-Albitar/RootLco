@@ -56,8 +56,7 @@ export function useClearOnCorrect(state: ActionState): ClearOnCorrect {
   const standing = Object.keys(fieldErrors ?? {}).filter((name) => !edited.includes(name));
 
   return {
-    errorFor: (field) =>
-      edited.includes(field) ? undefined : (fieldErrors?.[field] ?? undefined),
+    errorFor: (field) => (edited.includes(field) ? undefined : (fieldErrors?.[field] ?? undefined)),
     noteEdited: (field) =>
       setEdited((current) => (current.includes(field) ? current : [...current, field])),
     hasStandingErrors: standing.length > 0,

@@ -218,8 +218,7 @@ describe('the work-order board searches by number and free text (P1-32)', () => 
     listWorkOrders.mockResolvedValue({ ...EMPTY_PAGE, rows: [ROW] });
   });
 
-  const render = () =>
-    renderLtr(inBranch(<WorkOrderQueueScreen locale="en" messages={en} />));
+  const render = () => renderLtr(inBranch(<WorkOrderQueueScreen locale="en" messages={en} />));
 
   it('issues no request while typing', async () => {
     const user = userEvent.setup();

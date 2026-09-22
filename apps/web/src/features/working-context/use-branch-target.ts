@@ -40,7 +40,10 @@ export function useBranchTarget(): BranchTargetState {
   const selection = context.selection;
   if (selection === null) return { kind: 'unchosen' };
   if (selection.allBranches) return { kind: 'all' };
-  return { kind: 'ready', target: { companyId: selection.companyId, branchId: selection.branchId } };
+  return {
+    kind: 'ready',
+    target: { companyId: selection.companyId, branchId: selection.branchId },
+  };
 }
 
 /** The message a non-`ready` state should say, in the operator's own words. */

@@ -3,7 +3,14 @@ import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import en from '../src/i18n/messages/en.json';
 import ar from '../src/i18n/messages/ar.json';
-import { TEST_BRANCH, TEST_COMPANY, branchSnapshot, inBranch, renderLtr, renderRtl } from './render';
+import {
+  TEST_BRANCH,
+  TEST_COMPANY,
+  branchSnapshot,
+  inBranch,
+  renderLtr,
+  renderRtl,
+} from './render';
 
 /**
  * The shared pieces the appointment and reception screens are built out of
