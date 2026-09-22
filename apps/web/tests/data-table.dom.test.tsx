@@ -193,10 +193,14 @@ describe('a denial replaces the table', () => {
  * things that have to be true for that to be safe are asserted here: the term
  * settles, the previous request is abandoned, and a late answer cannot win.
  */
-function okPage<T>(items: readonly T[], correlationId = 'corr-search') {
+function okPage<T>(
+  items: readonly T[],
+  correlationId = 'corr-search',
+  nextCursor: string | null = null
+) {
   return {
     status: 'ok' as const,
-    data: { items, nextCursor: null, hasMore: false },
+    data: { items, nextCursor, hasMore: nextCursor !== null },
     correlationId,
   };
 }
@@ -215,7 +219,11 @@ function SearchHarness({
   version = 0,
 }: {
   readonly term: string;
-  readonly load: (criteria: { q: string }, signal: AbortSignal) => Promise<unknown>;
+  readonly load: (
+    criteria: { q: string },
+    cursor: string | null,
+    signal: AbortSignal
+  ) => Promise<unknown>;
   readonly version?: number;
 }) {
   const settled = useDebouncedValue(term, 20);
@@ -233,8 +241,16 @@ function SearchHarness({
       <p data-testid="rows">{outcome.rows.map((row) => row.id).join(',')}</p>
       <p data-testid="error">{outcome.error ?? ''}</p>
       <p data-testid="paged">{outcome.page === null ? 'none' : String(outcome.page.hasMore)}</p>
+      <p data-testid="page">{outcome.pageNumber}</p>
+      <p data-testid="more">{String(outcome.hasMore)}</p>
       <button type="button" onClick={outcome.submit}>
         ask now
+      </button>
+      <button type="button" onClick={outcome.next}>
+        next page
+      </button>
+      <button type="button" onClick={outcome.previous}>
+        previous page
       </button>
     </div>
   );
@@ -344,16 +360,18 @@ describe('a search request', () => {
     // only inside a callback to `never` at the later call site, and the point
     // of this case is that the call happens LATE.
     const gate: { release: ((value: unknown) => void) | null } = { release: null };
-    const load = vi.fn(async (criteria: { q: string }, signal: AbortSignal) => {
-      seen.push(signal);
-      if (criteria.q === 'slow') {
-        await new Promise((resolve) => {
-          gate.release = resolve;
-        });
-        return okPage([{ id: 'stale' }]);
+    const load = vi.fn(
+      async (criteria: { q: string }, _cursor: string | null, signal: AbortSignal) => {
+        seen.push(signal);
+        if (criteria.q === 'slow') {
+          await new Promise((resolve) => {
+            gate.release = resolve;
+          });
+          return okPage([{ id: 'stale' }]);
+        }
+        return okPage([{ id: 'fresh' }]);
       }
-      return okPage([{ id: 'fresh' }]);
-    });
+    );
 
     const { rerender } = renderLtr(<SearchHarness term="slow" load={load} />);
     await waitFor(() => expect(load).toHaveBeenCalledTimes(1));
@@ -491,5 +509,105 @@ describe('the states a search can be in', () => {
     expect(screen.getByText('Type a name or a number to begin')).toBeInTheDocument();
     // Not an empty state: nothing has been asked, so there is nothing absent.
     expect(screen.queryByText(en['state.noResults.title'])).toBeNull();
+  });
+});
+
+describe('a search that pages', () => {
+  /**
+   * The cursor is the backend's, and the walk is the operator's.
+   *
+   * These operations publish `{ items, nextCursor, hasMore }` and no count, so
+   * page two is reachable only by spending the cursor page one returned — and
+   * the cursor is issued against an ordering contract. Change the criteria, the
+   * branch, or submit again, and every held cursor is for a set that no longer
+   * exists. The three cases below are exactly those three resets.
+   */
+  function pagedLoader() {
+    return vi.fn(async (criteria: { q: string }, cursor: string | null) => {
+      if (cursor === null) return okPage([{ id: `${criteria.q}-p1` }], 'corr-1', 'cursor-2');
+      return okPage([{ id: `${criteria.q}-p2` }], 'corr-2');
+    });
+  }
+
+  it('sends the CURSOR page one returned when the operator goes forward', async () => {
+    const user = userEvent.setup();
+    const load = pagedLoader();
+    renderLtr(<SearchHarness term="abc" load={load} />);
+    await waitFor(() => expect(screen.getByTestId('rows')).toHaveTextContent('abc-p1'));
+    expect(screen.getByTestId('page')).toHaveTextContent('1');
+    expect(screen.getByTestId('more')).toHaveTextContent('true');
+
+    await user.click(screen.getByRole('button', { name: 'next page' }));
+    await waitFor(() => expect(screen.getByTestId('rows')).toHaveTextContent('abc-p2'));
+    expect(load.mock.calls[1]?.[1]).toBe('cursor-2');
+    expect(screen.getByTestId('page')).toHaveTextContent('2');
+    // No further page, and the honest signal for it is the server's own.
+    expect(screen.getByTestId('more')).toHaveTextContent('false');
+  });
+
+  it('goes BACK with the cursor that opened the page, not by walking from the start', async () => {
+    const user = userEvent.setup();
+    const load = pagedLoader();
+    renderLtr(<SearchHarness term="abc" load={load} />);
+    await waitFor(() => expect(load).toHaveBeenCalledTimes(1));
+    await user.click(screen.getByRole('button', { name: 'next page' }));
+    await waitFor(() => expect(load).toHaveBeenCalledTimes(2));
+
+    await user.click(screen.getByRole('button', { name: 'previous page' }));
+    await waitFor(() => expect(screen.getByTestId('page')).toHaveTextContent('1'));
+    // One request, with page one's own cursor — not a re-walk.
+    expect(load).toHaveBeenCalledTimes(3);
+    expect(load.mock.calls[2]?.[1]).toBeNull();
+  });
+
+  it('RESTARTS at page one when the criteria change after page two', async () => {
+    /*
+     * The failure this closes: a cursor issued for one set spent against
+     * another returns a window of rows that look entirely plausible. The stack
+     * and the page number must move together — `use-server-table.ts` records
+     * what happens when only one of them does.
+     */
+    const user = userEvent.setup();
+    const load = pagedLoader();
+    const { rerender } = renderLtr(<SearchHarness term="abc" load={load} />);
+    await waitFor(() => expect(load).toHaveBeenCalledTimes(1));
+    await user.click(screen.getByRole('button', { name: 'next page' }));
+    await waitFor(() => expect(screen.getByTestId('page')).toHaveTextContent('2'));
+
+    load.mockClear();
+    rerender(<SearchHarness term="xyz" load={load} />);
+    await waitFor(() => expect(screen.getByTestId('rows')).toHaveTextContent('xyz-p1'));
+    expect(screen.getByTestId('page')).toHaveTextContent('1');
+    expect(load.mock.calls[0]?.[1]).toBeNull();
+  });
+
+  it('RESTARTS at page one when the working branch changes', async () => {
+    const user = userEvent.setup();
+    const load = pagedLoader();
+    const { rerender } = renderLtr(<SearchHarness term="abc" load={load} version={0} />);
+    await waitFor(() => expect(load).toHaveBeenCalledTimes(1));
+    await user.click(screen.getByRole('button', { name: 'next page' }));
+    await waitFor(() => expect(screen.getByTestId('page')).toHaveTextContent('2'));
+
+    load.mockClear();
+    rerender(<SearchHarness term="abc" load={load} version={1} />);
+    await waitFor(() => expect(screen.getByTestId('page')).toHaveTextContent('1'));
+    // The branch changed, so page two of the previous branch is not a page of
+    // this one, and its cursor names nothing here.
+    expect(load.mock.calls[0]?.[1]).toBeNull();
+  });
+
+  it('RESTARTS at page one on an explicit submission', async () => {
+    const user = userEvent.setup();
+    const load = pagedLoader();
+    renderLtr(<SearchHarness term="abc" load={load} />);
+    await waitFor(() => expect(load).toHaveBeenCalledTimes(1));
+    await user.click(screen.getByRole('button', { name: 'next page' }));
+    await waitFor(() => expect(screen.getByTestId('page')).toHaveTextContent('2'));
+
+    load.mockClear();
+    await user.click(screen.getByRole('button', { name: 'ask now' }));
+    await waitFor(() => expect(screen.getByTestId('page')).toHaveTextContent('1'));
+    expect(load.mock.calls[0]?.[1]).toBeNull();
   });
 });

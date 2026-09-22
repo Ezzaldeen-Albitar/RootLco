@@ -3,10 +3,12 @@
 import { useCallback, useId, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { DataTable, type Column } from '@/components/data-table/DataTable';
-import { INITIAL_REQUEST, type TableRequest } from '@/components/data-table/table-state';
-import { useServerTable } from '@/components/data-table/use-server-table';
+import { INITIAL_REQUEST } from '@/components/data-table/table-state';
 import { DigitsEcho } from '@/components/forms/DigitsEcho';
 import { SearchBox } from '@/components/search/SearchBox';
+import { useWorkingContext } from '@/features/working-context/WorkingContextProvider';
+import { useSearchRequest } from '@/lib/api/use-search-request';
+import type { CursorPage, ReadState } from '@/lib/api/read-operation';
 import { EmptyState } from '@/components/states/States';
 import type { Messages } from '@/i18n/get-messages';
 import { translate } from '@/i18n/get-messages';
@@ -172,12 +174,39 @@ function CustomerSearchResults({
   readonly criteria: CustomerSearchCriteria;
   readonly canCreate: boolean;
 }) {
+  const { version: workingContextVersion } = useWorkingContext();
+
   const load = useCallback(
-    (request: TableRequest, cursor: string | null) => searchCustomers(request, cursor, criteria),
-    [criteria]
+    async (
+      asked: CustomerSearchCriteria,
+      cursor: string | null
+    ): Promise<ReadState<CursorPage<CustomerSearchHit>>> => {
+      const page = await searchCustomers(INITIAL_REQUEST, cursor, asked);
+      if (page.status !== 'ok') return { status: page.status, correlationId: page.correlationId };
+      return {
+        status: 'ok',
+        data: { items: page.rows, nextCursor: page.nextCursor, hasMore: page.hasMore },
+        correlationId: page.correlationId,
+      };
+    },
+    []
   );
 
-  const table = useServerTable<CustomerSearchHit>(load, { initial: INITIAL_REQUEST });
+  /*
+   * The search, not a table read (P1-32).
+   *
+   * `useServerTable` reads whenever its key moves and has no notion of a term
+   * settling, a submission, or an answer being superseded. `useSearchRequest`
+   * owns those three and hands back the same page contract, so the table and
+   * its pager below are unchanged — Previous and Next still walk the cursor
+   * stack, and a criteria or branch change still restarts at page one.
+   */
+  const search = useSearchRequest<CustomerSearchHit, CustomerSearchCriteria>({
+    criteria,
+    load,
+    version: workingContextVersion,
+  });
+  const table = search.table;
 
   const columns = useMemo<readonly Column<CustomerSearchHit>[]>(
     () => [
@@ -241,7 +270,16 @@ function CustomerSearchResults({
     [messages]
   );
 
-  const noResults = table.status === 'idle' && table.response?.rows.length === 0;
+  /*
+   * "No matches" is the PHASE, not a row count.
+   *
+   * `table.status === 'idle' && rows.length === 0` was true of an answered read
+   * with no rows — and also, for one render, of a table that had not been asked
+   * anything yet. `empty` is reachable only from a COMPLETED read that returned
+   * nothing, so the sentence cannot appear before there is an answer to base it
+   * on.
+   */
+  const noResults = search.phase === 'empty';
 
   return (
     <>

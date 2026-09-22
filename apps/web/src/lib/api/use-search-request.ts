@@ -1,6 +1,10 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type { TableStatus } from '@/components/data-table/DataTable';
+import { INITIAL_REQUEST, withPage, type TableRequest } from '@/components/data-table/table-state';
+import { useCursorPages, type CursorPages } from '@/components/data-table/use-cursor-pages';
+import type { ServerTable } from '@/components/data-table/use-server-table';
 import { SEARCH_DEBOUNCE_MS, useDebouncedValue } from '../use-debounced-value';
 import type { CursorPage, ReadState } from './read-operation';
 
@@ -22,6 +26,26 @@ import type { CursorPage, ReadState } from './read-operation';
  * 3. **"No results" shown before there is an answer.** `empty` is reached only
  *    from a COMPLETED read that returned no rows. There is no state in which an
  *    in-flight request renders as an absence.
+ *
+ * ## Paging is the backend's, not this hook's
+ *
+ * The operations behind these screens paginate by CURSOR and publish no count.
+ * An operator still thinks in pages and still presses Previous, so the cursor
+ * that OPENED each visited page is kept — page one's is `null`, page N's is the
+ * `nextCursor` page N−1 returned — and going back is one request with a cursor
+ * already in hand rather than a walk from the start.
+ *
+ * `useCursorPages` already owns that bookkeeping for `useServerTable`, and it
+ * is reused rather than reimplemented: two copies of cursor arithmetic is two
+ * chances to get the off-by-one wrong in different ways.
+ *
+ * The stack is thrown away whenever the CRITERIA, an explicit submission or the
+ * working-branch version changes, and the page returns to one. A cursor is
+ * issued against an ordering contract; spending one from a previous contract
+ * returns a window of a set that no longer exists, and those rows look entirely
+ * plausible. The same key that resets the stack is part of what a held answer
+ * is filed under, so a late response for an older criteria-and-cursor pair
+ * cannot be committed even if it arrives after the reset.
  *
  * ## What `signal` can and cannot do here
  *
@@ -62,6 +86,23 @@ export interface SearchOutcome<Row> {
 }
 
 export interface SearchResult<Row> extends SearchOutcome<Row> {
+  /** The page in hand, counting from one. */
+  readonly pageNumber: number;
+  /** The server's own end-of-set signal. False until a read has answered. */
+  readonly hasMore: boolean;
+  /** Moves forward one page. Does nothing when the server says there is none. */
+  readonly next: () => void;
+  /** Moves back one page, using the cursor that opened it. */
+  readonly previous: () => void;
+  /**
+   * The same read, in the shape `DataTable` and `CursorPager` already speak.
+   *
+   * Offered so a screen can swap `useServerTable` for this hook without
+   * rewriting its table, its pager or its assertions — the two differ in how
+   * the request is DECIDED (settled, submitted, abandoned) and not at all in
+   * what a page of rows is.
+   */
+  readonly table: ServerTable<Row>;
   /**
    * Ask NOW, without waiting for the term to settle.
    *
@@ -128,7 +169,18 @@ export function useSearchRequest<Row, Criteria>(options: {
    * something every screen has to remember.
    */
   readonly criteria: Criteria | null;
-  readonly load: (criteria: Criteria, signal: AbortSignal) => Promise<ReadState<CursorPage<Row>>>;
+  /**
+   * One page of the read.
+   *
+   * `cursor` is `null` for the first page and otherwise the `nextCursor` the
+   * previous page returned — the same contract `useServerTable` hands its
+   * loader, so an adapter written for one works unchanged with the other.
+   */
+  readonly load: (
+    criteria: Criteria,
+    cursor: string | null,
+    signal: AbortSignal
+  ) => Promise<ReadState<CursorPage<Row>>>;
   /**
    * Anything outside the criteria that changes what the answer means — the
    * working-context version above all. A branch change must abandon the read in
@@ -193,7 +245,8 @@ export function useSearchRequest<Row, Criteria>(options: {
   const box = useRef<{
     load: typeof load;
     seen: Map<string, Criteria>;
-  }>({ load, seen: new Map() });
+    cursors: CursorPages | null;
+  }>({ load, seen: new Map(), cursors: null });
   useEffect(() => {
     box.current.load = load;
     if (key === null || criteria === null) return;
@@ -206,6 +259,50 @@ export function useSearchRequest<Row, Criteria>(options: {
     }
   });
 
+  /*
+   * The ordering contract: everything that invalidates every held cursor.
+   *
+   * The criteria, the working-branch version and the submission nonce. A page
+   * number is NOT part of it — walking to page two must not throw away the
+   * cursor that got there.
+   */
+  const ordering = `${activeKey ?? ''}#${version}#${submitted ? forced.nonce : 0}`;
+  const cursors = useCursorPages(ordering);
+  /*
+   * The cursor stack joins the box for the same reason the loader did.
+   *
+   * Its identity changes every time a cursor is remembered — which happens as a
+   * RESULT of the read below — so listing it as a dependency re-runs the read
+   * that produced it, for ever. `use-server-table.ts` reaches the same place and
+   * silences the rule; carrying it through the box that already exists here
+   * states the same thing without a suppression. The refreshing effect is
+   * declared FIRST, and React runs effects in declaration order after a commit,
+   * so the read always sees the stack belonging to its own render.
+   */
+  useEffect(() => {
+    box.current.cursors = cursors;
+  });
+
+  const [pageNumber, setPageNumber] = useState(1);
+  const [lastOrdering, setLastOrdering] = useState(ordering);
+  /*
+   * Back to page one when the contract changes, adjusted DURING render.
+   *
+   * `useCursorPages` resets its own stack on the same key, and this is the
+   * other half of that reset: `use-server-table.ts` records what happens when
+   * only one of the two moves — the stack goes back to `[null]` while the page
+   * number stays where it was, so `cursorFor(2)` returns null, page two is read
+   * with the START cursor, and the pager is permanently out by one for that
+   * filter. Both halves, or neither.
+   */
+  if (ordering !== lastOrdering) {
+    setLastOrdering(ordering);
+    if (pageNumber !== 1) setPageNumber(1);
+  }
+
+  const wantedPage = ordering === lastOrdering ? pageNumber : 1;
+  const wantedKey = wanted === null ? null : `${wanted}#${wantedPage}`;
+
   const sequence = useRef(0);
   const [held, setHeld] = useState<{
     readonly key: string;
@@ -213,31 +310,99 @@ export function useSearchRequest<Row, Criteria>(options: {
   } | null>(null);
 
   useEffect(() => {
-    if (wanted === null || activeKey === null) return undefined;
+    if (wantedKey === null || activeKey === null) return undefined;
     const asked = box.current.seen.get(activeKey);
     if (asked === undefined) return undefined;
+    const stack = box.current.cursors;
+    if (stack === null) return undefined;
+    const cursor = stack.cursorFor(wantedPage);
     const controller = new AbortController();
     sequence.current += 1;
     const mine = sequence.current;
     void (async () => {
       // Awaited before any state write, so nothing here is a synchronous
       // setState inside an effect body.
-      const state = await box.current.load(asked, controller.signal);
+      const state = await box.current.load(asked, cursor, controller.signal);
       // Two guards, not one. The abort covers this effect being cleaned up; the
       // sequence covers a slower SIBLING request that was started earlier and is
-      // still in flight.
+      // still in flight. The key carries the criteria AND the page, so a late
+      // answer for an older pair cannot be shown under a newer one.
       if (controller.signal.aborted || mine !== sequence.current) return;
-      setHeld({ key: wanted, outcome: outcomeOf(state) });
+      const outcome = outcomeOf(state);
+      setHeld({ key: wantedKey, outcome });
+      if (outcome.page !== null) stack.remember(wantedPage, outcome.page.nextCursor);
     })();
     return () => controller.abort();
-  }, [wanted, activeKey]);
+  }, [wantedKey, activeKey, wantedPage]);
 
-  if (wanted === null) return { ...(IDLE as SearchOutcome<Row>), submit };
-  // Loading is DERIVED — "what I am holding is not what I want" — rather than
-  // written at the top of the effect, which would cascade a render on every
-  // keystroke and is what `react-hooks/set-state-in-effect` exists to catch.
-  if (held === null || held.key !== wanted) {
-    return { phase: 'loading', rows: [], page: null, error: null, correlationId: null, submit };
-  }
-  return { ...held.outcome, submit };
+  const outcome = useMemo<SearchOutcome<Row>>(() => {
+    if (wantedKey === null) return IDLE as SearchOutcome<Row>;
+    // Loading is DERIVED — "what I am holding is not what I want" — rather than
+    // written at the top of the effect, which would cascade a render on every
+    // keystroke and is what `react-hooks/set-state-in-effect` exists to catch.
+    if (held === null || held.key !== wantedKey) {
+      return { phase: 'loading', rows: [], page: null, error: null, correlationId: null };
+    }
+    return held.outcome;
+  }, [wantedKey, held]);
+
+  const hasMore = outcome.page?.hasMore ?? false;
+
+  const next = useCallback(() => {
+    setPageNumber((current) => current + 1);
+  }, []);
+  const previous = useCallback(() => {
+    setPageNumber((current) => (current > 1 ? current - 1 : current));
+  }, []);
+
+  /*
+   * `TableStatus` and `SearchPhase` say the same six things in different words.
+   *
+   * `idle` and `empty` both map to the table's `idle` — an answered read — and
+   * the ZERO-ROW case is the table's to render or the screen's to suppress,
+   * exactly as it was under `useServerTable`.
+   */
+  const status: TableStatus =
+    outcome.phase === 'idle' || outcome.phase === 'loading'
+      ? 'loading'
+      : outcome.phase === 'refused'
+        ? 'denied'
+        : outcome.phase === 'unavailable'
+          ? 'unavailable'
+          : outcome.phase === 'failed'
+            ? outcome.error === 'state.expired.message'
+              ? 'expired'
+              : outcome.error === 'state.notFound.title'
+                ? 'not-found'
+                : 'error'
+            : 'idle';
+
+  const request: TableRequest = useMemo(() => withPage(INITIAL_REQUEST, wantedPage), [wantedPage]);
+
+  const table: ServerTable<Row> = useMemo(
+    () => ({
+      request,
+      // Only the PAGE is a request parameter here. Sorting and filtering are the
+      // screen's own criteria, and a table control that changed them behind the
+      // screen's back would put the two out of step.
+      setRequest: (nextRequest) => setPageNumber(Math.max(1, nextRequest.page)),
+      response:
+        outcome.phase === 'ready' || outcome.phase === 'empty'
+          ? {
+              rows: outcome.rows,
+              // Never invented. These operations publish `hasMore` and no count.
+              total: null,
+              page: wantedPage,
+              pageSize: request.pageSize,
+              hasMore,
+            }
+          : null,
+      status,
+      correlationId: outcome.correlationId ?? undefined,
+      refresh: submit,
+    }),
+    [request, outcome, wantedPage, hasMore, status, submit]
+  );
+
+  return { ...outcome, submit, pageNumber: wantedPage, hasMore, next, previous, table };
 }

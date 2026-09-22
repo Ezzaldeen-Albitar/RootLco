@@ -5,8 +5,10 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { DataTable, type Column } from '@/components/data-table/DataTable';
 import { SearchBox } from '@/components/search/SearchBox';
-import { INITIAL_REQUEST, type TableRequest } from '@/components/data-table/table-state';
-import { useServerTable } from '@/components/data-table/use-server-table';
+import { useWorkingContext } from '@/features/working-context/WorkingContextProvider';
+import { useSearchRequest } from '@/lib/api/use-search-request';
+import type { CursorPage, ReadState } from '@/lib/api/read-operation';
+import { INITIAL_REQUEST } from '@/components/data-table/table-state';
 import { DigitsEcho } from '@/components/forms/DigitsEcho';
 import { EmptyState } from '@/components/states/States';
 import type { Messages } from '@/i18n/get-messages';
@@ -305,11 +307,49 @@ function VehicleSearchResults({
   readonly criteria: VehicleSearchCriteria;
   readonly makes: CatalogueResult;
 }) {
+  const { version: workingContextVersion } = useWorkingContext();
+
+  /*
+   * One page of the search, renamed into the shape `useSearchRequest` reads.
+   *
+   * The feature adapter answers with `ServerPage` — the shape `useServerTable`
+   * consumes — and the hook reads `ReadState<CursorPage>`. The two carry the
+   * same facts under different names: `rows` is `items`, and the six status
+   * words are the same six. Writing the translation here rather than widening
+   * either contract keeps it visible at the one place they meet.
+   */
   const load = useCallback(
-    (request: TableRequest, cursor: string | null) => searchVehicles(criteria, request, cursor),
-    [criteria]
+    async (
+      asked: VehicleSearchCriteria,
+      cursor: string | null
+    ): Promise<ReadState<CursorPage<VehicleSearchHit>>> => {
+      const page = await searchVehicles(asked, INITIAL_REQUEST, cursor);
+      if (page.status !== 'ok') return { status: page.status, correlationId: page.correlationId };
+      return {
+        status: 'ok',
+        data: { items: page.rows, nextCursor: page.nextCursor, hasMore: page.hasMore },
+        correlationId: page.correlationId,
+      };
+    },
+    []
   );
-  const table = useServerTable<VehicleSearchHit>(load, { initial: INITIAL_REQUEST });
+
+  /*
+   * The search, not a table read (P1-32).
+   *
+   * `useServerTable` reads whenever its key moves and has no notion of a term
+   * settling, of an explicit submission, or of an answer being superseded.
+   * `useSearchRequest` owns those three and hands back the same page contract,
+   * so the table and its pager below are unchanged — Previous and Next still
+   * walk the cursor stack, and a criteria or branch change still restarts at
+   * page one.
+   */
+  const search = useSearchRequest<VehicleSearchHit, VehicleSearchCriteria>({
+    criteria,
+    load,
+    version: workingContextVersion,
+  });
+  const table = search.table;
   const router = useRouter();
 
   const makeById = useMemo(
@@ -590,7 +630,12 @@ function VehicleSearchResults({
         step, and it is offered only to an operator who may create one — a
         control whose only possible outcome is a 403 is worse than no control.
       */}
-      {table.response && table.response.rows.length === 0 ? (
+      {/*
+        "No matches" is the PHASE, not a row count. `empty` is reachable only
+        from a COMPLETED read that returned nothing, so the sentence cannot
+        appear before there is an answer to base it on.
+      */}
+      {search.phase === 'empty' ? (
         <div className="flex flex-col items-center gap-3 py-8 text-center">
           <p className="text-body text-text-secondary" lang={locale}>
             {translate(messages, 'vehicles.search.noMatch')}
