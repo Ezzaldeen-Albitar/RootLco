@@ -5881,5 +5881,14 @@
   "warranty.filter.oneVehicleOnly": "تُعرض ضمانات مركبة واحدة فقط.",
   "warranty.filter.showAllVehicles": "اعرض كل المركبات",
   "warranty.list.columnBranch": "الفرع",
-  "warranty.policies.noCompanies": "لا تعمل في أي شركة بعد، لذلك لا مكان لإضافة خطة فيه."
+  "warranty.policies.noCompanies": "لا تعمل في أي شركة بعد، لذلك لا مكان لإضافة خطة فيه.",
+  "inventory.common.branchesNotOffered": "لا يتوفر لك أي فرع هنا. اختر فرعًا من أعلى الصفحة، أو اطلب صلاحية الوصول إلى فرع.",
+  "inventory.prices.set.companyField": "الشركة",
+  "inventory.prices.set.branchField": "الفرع",
+  "inventory.prices.set.everyCompany": "كل الشركات",
+  "inventory.prices.set.everyBranch": "كل فروع تلك الشركة",
+  "inventory.items.searchPlaceholder": "رمز الصنف أو الاسم",
+  "inventory.specifications.create.noMakes": "لا تتوفر لك أي ماركة مركبة، والمواصفة يجب أن تكون لماركة. اطلب صلاحية الوصول إلى دليل المركبات.",
+  "inventory.specifications.create.itemCategory": "فئة القطعة",
+  "inventory.specifications.create.anyCategory": "بدون فئة"
 }

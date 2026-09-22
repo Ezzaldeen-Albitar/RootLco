@@ -3,7 +3,23 @@ import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import ar from '../src/i18n/messages/ar.json';
 import en from '../src/i18n/messages/en.json';
-import { renderLtr, renderRtl } from './render';
+import type { ReactElement } from 'react';
+import { inBranch, renderLtr as renderInLtr, renderRtl as renderInRtl } from './render';
+
+/*
+ * Every screen in this file is addressed by the WORKING CONTEXT: the branch it
+ * reads is the header's own named selection, not a pair typed into the screen
+ * (Owner directive, `P1-32-PRE-OD-UX`). So each render goes inside a provider.
+ *
+ * The two names are shadowed rather than changed at every call site, which
+ * keeps the default snapshot — one authorized branch, selected for the operator
+ * — true for every case below. A case that needs a different snapshot builds
+ * one and renders it explicitly.
+ */
+const renderLtr = (ui: ReactElement, options?: Parameters<typeof renderInLtr>[1]) =>
+  renderInLtr(inBranch(ui), options);
+const renderRtl = (ui: ReactElement, options?: Parameters<typeof renderInRtl>[1]) =>
+  renderInRtl(inBranch(ui, { locale: 'ar' }), options);
 import {
   BRANCH_ID,
   COMPANY_ID,
@@ -108,7 +124,6 @@ function adjustment(over: Record<string, unknown> = {}) {
 }
 
 const TARGET_FORM = 'inventory.adjustments.targetLabel';
-const TARGET_SUBMIT = 'inventory.adjustments.chooseBranch';
 const listRegion = () =>
   screen.getByRole('region', { name: EN['inventory.adjustments.list.heading'] as string });
 
@@ -144,7 +159,7 @@ describe('the adjustments of a branch', () => {
   it('lists the pending requests of the branch first, and reads again for another status', async () => {
     const user = userEvent.setup();
     renderScreen();
-    await chooseBranch(user, TARGET_FORM, TARGET_SUBMIT);
+    await chooseBranch(TARGET_FORM);
     await waitFor(() => expect(listAdjustments).toHaveBeenCalledTimes(1));
     expect(listAdjustments.mock.calls[0]).toEqual([
       { companyId: COMPANY_ID, branchId: BRANCH_ID },
@@ -160,9 +175,8 @@ describe('the adjustments of a branch', () => {
   });
 
   it('offers the decision on someone else’s request and says why not on your own', async () => {
-    const user = userEvent.setup();
     renderScreen();
-    await chooseBranch(user, TARGET_FORM, TARGET_SUBMIT);
+    await chooseBranch(TARGET_FORM);
     const table = await within(listRegion()).findByRole('table');
     const rows = within(table).getAllByRole('row').slice(1);
     const theirs = rows[0] as HTMLElement;
@@ -183,7 +197,7 @@ describe('the adjustments of a branch', () => {
       succeeded('inventory.adjustments.decide.approved', adjustment({ status: 'approved' }))
     );
     renderScreen();
-    await chooseBranch(user, TARGET_FORM, TARGET_SUBMIT);
+    await chooseBranch(TARGET_FORM);
     const table = await within(listRegion()).findByRole('table');
     await user.click(
       within(table).getByRole('button', {
@@ -220,7 +234,7 @@ describe('the adjustments of a branch', () => {
       succeeded('inventory.adjustments.decide.rejected', adjustment({ status: 'rejected' }))
     );
     renderScreen();
-    await chooseBranch(user, TARGET_FORM, TARGET_SUBMIT);
+    await chooseBranch(TARGET_FORM);
     const table = await within(listRegion()).findByRole('table');
     await user.click(
       within(table).getByRole('button', {
@@ -253,7 +267,7 @@ describe('the adjustments of a branch', () => {
     const user = userEvent.setup();
     decideAdjustment.mockResolvedValue(refusedWith('inventory.adjustments.decide.refused'));
     renderScreen();
-    await chooseBranch(user, TARGET_FORM, TARGET_SUBMIT);
+    await chooseBranch(TARGET_FORM);
     const table = await within(listRegion()).findByRole('table');
     await user.click(
       within(table).getByRole('button', {
@@ -285,7 +299,7 @@ describe('the adjustments of a branch', () => {
       const user = userEvent.setup();
       decideAdjustment.mockResolvedValue(refusedWith(`form.violation.${rule}`));
       renderScreen();
-      await chooseBranch(user, TARGET_FORM, TARGET_SUBMIT);
+      await chooseBranch(TARGET_FORM);
       const table = await within(listRegion()).findByRole('table');
       await user.click(
         within(table).getByRole('button', {
@@ -313,7 +327,7 @@ describe('the adjustments of a branch', () => {
       succeeded('inventory.adjustments.create.success', adjustment())
     );
     renderScreen();
-    await chooseBranch(user, TARGET_FORM, TARGET_SUBMIT);
+    await chooseBranch(TARGET_FORM);
     const form = screen.getByRole('form', {
       name: EN['inventory.adjustments.create.heading'] as string,
     });
@@ -358,9 +372,8 @@ describe('the adjustments of a branch', () => {
 
 describe('permission decides what is offered', () => {
   it('without the approval permission no decision is offered, and the row says why', async () => {
-    const user = userEvent.setup();
     renderScreen({ canApprove: false, canOperate: false });
-    await chooseBranch(user, TARGET_FORM, TARGET_SUBMIT);
+    await chooseBranch(TARGET_FORM);
     const table = await within(listRegion()).findByRole('table');
     expect(within(table).queryAllByRole('button')).toHaveLength(0);
     expect(
@@ -384,10 +397,9 @@ describe('the /inventory/adjustments route page decides before it reads', () => 
   });
 
   it('binds the signed-in person and the approval permission', async () => {
-    const user = userEvent.setup();
     PERMISSIONS = ['inv.stock.read', 'inv.adjustment.approve', 'org.branch.read'];
     await renderPage();
-    await chooseBranch(user, TARGET_FORM, TARGET_SUBMIT);
+    await chooseBranch(TARGET_FORM);
     const table = await within(listRegion()).findByRole('table');
     // The session's person requested the second row, so only the first is decidable.
     expect(within(table).getAllByRole('button')).toHaveLength(1);
@@ -398,14 +410,13 @@ describe('the /inventory/adjustments route page decides before it reads', () => 
 
 describe('accessibility and Arabic', () => {
   it('the listed branch has no serious or critical accessibility finding', async () => {
-    const user = userEvent.setup();
     const { container } = renderScreen();
-    await chooseBranch(user, TARGET_FORM, TARGET_SUBMIT);
+    await chooseBranch(TARGET_FORM);
     await within(listRegion()).findByRole('table');
     expect(await seriousViolations(container)).toEqual([]);
   });
 
-  it('renders in Arabic, right to left', () => {
+  it('renders in Arabic, right to left, and reads its branch there too', async () => {
     renderRtl(
       <AdjustmentsScreen
         locale="ar"
@@ -413,10 +424,12 @@ describe('accessibility and Arabic', () => {
         currentUserId={USER_ID}
         canOperate={true}
         canApprove={true}
-        canReadBranches={false}
       />
     );
     expect(screen.getByText(AR['inventory.adjustments.explain'] as string)).toBeVisible();
-    expect(listAdjustments).not.toHaveBeenCalled();
+    expect(document.documentElement.dir).toBe('rtl');
+    // Addressed on arrival in Arabic exactly as in English: the branch is the
+    // header's own named selection, not a pair typed on this screen.
+    await waitFor(() => expect(listAdjustments).toHaveBeenCalled());
   });
 });

@@ -3,7 +3,23 @@ import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import ar from '../src/i18n/messages/ar.json';
 import en from '../src/i18n/messages/en.json';
-import { renderLtr, renderRtl } from './render';
+import type { ReactElement } from 'react';
+import { inBranch, renderLtr as renderInLtr, renderRtl as renderInRtl } from './render';
+
+/*
+ * Every screen in this file is addressed by the WORKING CONTEXT: the branch it
+ * reads is the header's own named selection, not a pair typed into the screen
+ * (Owner directive, `P1-32-PRE-OD-UX`). So each render goes inside a provider.
+ *
+ * The two names are shadowed rather than changed at every call site, which
+ * keeps the default snapshot — one authorized branch, selected for the operator
+ * — true for every case below. A case that needs a different snapshot builds
+ * one and renders it explicitly.
+ */
+const renderLtr = (ui: ReactElement, options?: Parameters<typeof renderInLtr>[1]) =>
+  renderInLtr(inBranch(ui), options);
+const renderRtl = (ui: ReactElement, options?: Parameters<typeof renderInRtl>[1]) =>
+  renderInRtl(inBranch(ui, { locale: 'ar' }), options);
 import {
   BRANCH_ID,
   COMPANY_ID,
@@ -221,11 +237,7 @@ const screenAt = () => (
 
 /** Choose the branch, the buyer, and one scanned line. */
 async function buildOneLine(user: ReturnType<typeof userEvent.setup>) {
-  await chooseBranch(
-    user,
-    'inventory.counterSales.targetLabel',
-    'inventory.counterSales.chooseBranch'
-  );
+  await chooseBranch('inventory.counterSales.targetLabel');
   await user.type(
     await screen.findByLabelText(labelled('inventory.counterSales.buyer.term')),
     'garage'
@@ -255,11 +267,7 @@ describe('building a sale', () => {
   it('resolves a scan to the item and shows what is on the shelf, writing nothing', async () => {
     const user = userEvent.setup();
     renderLtr(screenAt());
-    await chooseBranch(
-      user,
-      'inventory.counterSales.targetLabel',
-      'inventory.counterSales.chooseBranch'
-    );
+    await chooseBranch('inventory.counterSales.targetLabel');
     const box = await screen.findByLabelText(labelled('inventory.scan.label'));
     await user.click(box);
     await user.keyboard(`${CODE}{Enter}`);
@@ -276,11 +284,7 @@ describe('building a sale', () => {
   it('IGNORES a doubled scanner frame of the same code', async () => {
     const user = userEvent.setup();
     renderLtr(screenAt());
-    await chooseBranch(
-      user,
-      'inventory.counterSales.targetLabel',
-      'inventory.counterSales.chooseBranch'
-    );
+    await chooseBranch('inventory.counterSales.targetLabel');
     const box = await screen.findByLabelText(labelled('inventory.scan.label'));
     await user.click(box);
     await user.keyboard(`${CODE}{Enter}`);
@@ -295,11 +299,7 @@ describe('building a sale', () => {
   it('refuses to make a sale with no buyer', async () => {
     const user = userEvent.setup();
     renderLtr(screenAt());
-    await chooseBranch(
-      user,
-      'inventory.counterSales.targetLabel',
-      'inventory.counterSales.chooseBranch'
-    );
+    await chooseBranch('inventory.counterSales.targetLabel');
     await user.click(
       await screen.findByRole('button', {
         name: EN['inventory.counterSales.create.submit'] as string,
@@ -550,11 +550,7 @@ describe('the buyer search', () => {
   it('searches by name, and by customer number when asked to', async () => {
     const user = userEvent.setup();
     renderLtr(screenAt());
-    await chooseBranch(
-      user,
-      'inventory.counterSales.targetLabel',
-      'inventory.counterSales.chooseBranch'
-    );
+    await chooseBranch('inventory.counterSales.targetLabel');
     await user.selectOptions(
       await screen.findByLabelText(labelled('inventory.counterSales.buyer.searchBy')),
       'customerNumber'
@@ -577,11 +573,7 @@ describe('the buyer search', () => {
      */
     const user = userEvent.setup();
     renderLtr(screenAt());
-    await chooseBranch(
-      user,
-      'inventory.counterSales.targetLabel',
-      'inventory.counterSales.chooseBranch'
-    );
+    await chooseBranch('inventory.counterSales.targetLabel');
     await user.selectOptions(
       await screen.findByLabelText(labelled('inventory.counterSales.buyer.searchBy')),
       'phone'
@@ -598,13 +590,8 @@ describe('the buyer search', () => {
   });
 
   it('offers the telephone number as a search field rather than refusing it', async () => {
-    const user = userEvent.setup();
     renderLtr(screenAt());
-    await chooseBranch(
-      user,
-      'inventory.counterSales.targetLabel',
-      'inventory.counterSales.chooseBranch'
-    );
+    await chooseBranch('inventory.counterSales.targetLabel');
     const chooser = await screen.findByLabelText(labelled('inventory.counterSales.buyer.searchBy'));
     expect(
       [...chooser.querySelectorAll('option')].map((option) => option.getAttribute('value'))
@@ -612,7 +599,6 @@ describe('the buyer search', () => {
   });
 
   it('offers no buyer search without the customer permission, and says so', async () => {
-    const user = userEvent.setup();
     renderLtr(
       <CounterSalesScreen
         locale="en"
@@ -623,11 +609,7 @@ describe('the buyer search', () => {
         canReadBranches
       />
     );
-    await chooseBranch(
-      user,
-      'inventory.counterSales.targetLabel',
-      'inventory.counterSales.chooseBranch'
-    );
+    await chooseBranch('inventory.counterSales.targetLabel');
     expect(
       await screen.findByText(EN['inventory.counterSales.buyer.needsRead'] as string)
     ).toBeTruthy();
@@ -649,13 +631,8 @@ describe('the sales started here and not finished', () => {
   });
 
   it('asks only for the drafts of the chosen branch', async () => {
-    const user = userEvent.setup();
     renderLtr(screenAt());
-    await chooseBranch(
-      user,
-      'inventory.counterSales.targetLabel',
-      'inventory.counterSales.chooseBranch'
-    );
+    await chooseBranch('inventory.counterSales.targetLabel');
     await waitFor(() => expect(listCounterSales).toHaveBeenCalled());
     expect(listCounterSales.mock.calls[0]).toEqual([
       { companyId: COMPANY_ID, branchId: BRANCH_ID },
@@ -664,13 +641,8 @@ describe('the sales started here and not finished', () => {
   });
 
   it('says so plainly when every sale started here was finished', async () => {
-    const user = userEvent.setup();
     renderLtr(screenAt());
-    await chooseBranch(
-      user,
-      'inventory.counterSales.targetLabel',
-      'inventory.counterSales.chooseBranch'
-    );
+    await chooseBranch('inventory.counterSales.targetLabel');
     expect(
       await screen.findByText(EN['inventory.counterSales.drafts.none'] as string)
     ).toBeTruthy();
@@ -683,11 +655,7 @@ describe('the sales started here and not finished', () => {
     readInvoice.mockResolvedValue(okRead({ invoice: stranded, lines: [], recordVersion: 1 }));
     const user = userEvent.setup();
     renderLtr(screenAt());
-    await chooseBranch(
-      user,
-      'inventory.counterSales.targetLabel',
-      'inventory.counterSales.chooseBranch'
-    );
+    await chooseBranch('inventory.counterSales.targetLabel');
     await user.click(
       await screen.findByRole('button', {
         name: EN['inventory.counterSales.drafts.reopen'] as string,
@@ -715,13 +683,8 @@ describe('the sales started here and not finished', () => {
 
   it('says a refusal is a refusal rather than showing an empty list', async () => {
     listCounterSales.mockResolvedValue({ status: 'denied' as const, correlationId: 'corr' });
-    const user = userEvent.setup();
     renderLtr(screenAt());
-    await chooseBranch(
-      user,
-      'inventory.counterSales.targetLabel',
-      'inventory.counterSales.chooseBranch'
-    );
+    await chooseBranch('inventory.counterSales.targetLabel');
     expect(
       await screen.findByText(EN['inventory.counterSales.drafts.refused'] as string)
     ).toBeTruthy();
@@ -740,15 +703,10 @@ describe('the route page', () => {
 
   it('withholds the sale from a caller who may not see amounts', async () => {
     PERMISSIONS = ['sal.invoice.manage', 'org.branch.read'];
-    const user = userEvent.setup();
     renderLtr(
       (await CounterSalesPage({ params: Promise.resolve({ locale: 'en' }) })) as React.ReactElement
     );
-    await chooseBranch(
-      user,
-      'inventory.counterSales.targetLabel',
-      'inventory.counterSales.chooseBranch'
-    );
+    await chooseBranch('inventory.counterSales.targetLabel');
     expect(
       await screen.findByText(EN['inventory.counterSales.needsManage'] as string)
     ).toBeTruthy();

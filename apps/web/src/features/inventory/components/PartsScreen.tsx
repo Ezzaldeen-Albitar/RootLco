@@ -13,6 +13,7 @@ import {
   workOrderStateMessageKey,
   type WorkOrderListEntry,
 } from '@/features/work-orders/work-orders-contract';
+import { useBranchTarget } from '@/features/working-context/use-branch-target';
 import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic } from '@/i18n/get-messages';
@@ -142,8 +143,13 @@ export function PartsScreen({
   readonly canOperate: boolean;
   /** `wo.work_order.read` — the required parts list is requested only with it. */
   readonly canReadWorkOrder: boolean;
-  /** `org.branch.read` — whether a branch list is requested when the order's branch is unknown. */
-  readonly canReadBranches: boolean;
+  /**
+   * `org.branch.read`. Accepted so the route did not have to change, and no
+   * longer read: the branch is the working context's own named selection, and
+   * that read is gated on `iam.user.read` rather than on an administration
+   * code.
+   */
+  readonly canReadBranches?: boolean;
   /** The signed-in person, so the panel can say why they cannot decide their own request. */
   readonly currentUserId: string;
   /** `inv.material.request` — asking for a requirement, re-checking, withdrawing. */
@@ -340,7 +346,7 @@ export function PartsScreen({
           workOrderId={workOrderId}
           requirement={requirement}
           target={target}
-          canReadBranches={canReadBranches}
+          canReadBranches={canReadBranches ?? false}
           onReserved={(echo) => {
             setDrawing(null);
             setMaterialRequestId(echo.materialRequestId);
@@ -359,7 +365,7 @@ export function PartsScreen({
           workOrderId={workOrderId}
           requirement={requirement}
           target={target}
-          canReadBranches={canReadBranches}
+          canReadBranches={canReadBranches ?? false}
           prefill={prefill}
           onIssued={(echo) => {
             setDrawing(null);
@@ -655,16 +661,33 @@ function IssueForm({
   readonly prefill: IssuePrefill | null;
   readonly onIssued: (echo: IssueEcho) => void;
 }) {
-  const branches = useBranches(canReadBranches && target === null);
-  const [pair, setPair] = useState<BranchPair>(EMPTY_PAIR);
-  const typedCompanyId = pair.companyId.trim();
-  const typedBranchId = pair.branchId.trim();
-  const typedIsValid = UUID.test(typedCompanyId) && UUID.test(typedBranchId);
+  const branches = useBranches((canReadBranches ?? false) && target === null);
+  /*
+   * The work order's own branch, or the one the operator is working in.
+   *
+   * The fallback used to start EMPTY and wait to be filled in — by hand, from
+   * two free-text boxes. It starts at the working context's named selection
+   * now, so a draw against a work order whose read was refused is still
+   * addressed the moment the form opens, and the picker beside it is there to
+   * CHANGE that choice rather than to make it (Owner directive,
+   * `P1-32-PRE-OD-UX`).
+   */
+  const working = useBranchTarget();
+  const [pair, setPair] = useState<BranchPair>(() =>
+    working.kind === 'ready'
+      ? { companyId: working.target.companyId, branchId: working.target.branchId }
+      : EMPTY_PAIR
+  );
+  const pickedCompanyId = pair.companyId.trim();
+  const pickedBranchId = pair.branchId.trim();
+  const pickedIsComplete = pickedCompanyId.length > 0 && pickedBranchId.length > 0;
   // Memoised on the VALUES: a fresh object per render would re-key every
   // effect that reads it and re-read the locations without end.
   const chosen = useMemo<StockTarget | null>(
-    () => target ?? (typedIsValid ? { companyId: typedCompanyId, branchId: typedBranchId } : null),
-    [target, typedIsValid, typedCompanyId, typedBranchId]
+    () =>
+      target ??
+      (pickedIsComplete ? { companyId: pickedCompanyId, branchId: pickedBranchId } : null),
+    [target, pickedIsComplete, pickedCompanyId, pickedBranchId]
   );
   const locations = useLocations(chosen);
   const [reservations, setReservations] = useState<readonly StockReservation[] | null>(null);
@@ -882,7 +905,7 @@ function IssueForm({
            * submit, not a branch submit, and the picker is mounted only while
            * the target is unknown. Writing the condition out keeps the guard
            * about the pair by construction rather than by an accident of the
-           * conjunction `useBranches(canReadBranches && target === null)`, so a
+           * conjunction `useBranches((canReadBranches ?? false) && target === null)`, so a
            * permitted operator whose branch list came back EMPTY can still
            * issue a part.
            */
@@ -976,7 +999,7 @@ function ReserveForm({
   readonly canReadBranches: boolean;
   readonly onReserved: (echo: ReservationEcho) => void;
 }) {
-  const branches = useBranches(canReadBranches && target === null);
+  const branches = useBranches((canReadBranches ?? false) && target === null);
   const [pair, setPair] = useState<BranchPair>(EMPTY_PAIR);
   const typedCompanyId = pair.companyId.trim();
   const typedBranchId = pair.branchId.trim();

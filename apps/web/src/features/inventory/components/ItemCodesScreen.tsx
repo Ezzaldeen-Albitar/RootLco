@@ -33,6 +33,7 @@ import { useCallback, useEffect, useState } from 'react';
 
 import { SelectField, TextField } from '@/components/forms/Field';
 import { notifyActionResult } from '@/components/notifications/action-notifications';
+import { useWorkingContext } from '@/features/working-context/WorkingContextProvider';
 import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic } from '@/i18n/get-messages';
@@ -675,12 +676,25 @@ function SetPriceForm({
   readonly itemId: string;
   readonly onSet: () => void;
 }) {
+  /*
+   * A sale price may be scoped to the whole workspace, to one company, or to
+   * one branch of it, and the two narrower forms used to be TYPED — two boxes
+   * asking for references nobody can look up. Both are now chosen from the
+   * named lists the working context publishes for this caller (Owner directive,
+   * `P1-32-PRE-OD-UX`), and "every company" and "every branch" stay as the
+   * explicit first option each control carries, because they are real choices
+   * rather than the absence of one.
+   */
+  const context = useWorkingContext();
   const [form, setForm] = useState({
     companyId: '',
     branchId: '',
     currencyCode: '',
     unitPrice: '',
   });
+  const branchesOfCompany = context.branches.filter(
+    (branch) => branch.companyId === form.companyId
+  );
   const [errors, setErrors] = useState<Readonly<Record<string, string>>>({});
   const [busy, setBusy] = useState(false);
   const [outcome, setOutcome] = useState<ActionState | null>(null);
@@ -692,8 +706,9 @@ function SetPriceForm({
     const found: Record<string, string> = {};
     const companyId = form.companyId.trim();
     const branchId = form.branchId.trim();
-    if (companyId !== '' && !UUID.test(companyId)) found['companyId'] = 'inventory.common.idFormat';
-    if (branchId !== '' && !UUID.test(branchId)) found['branchId'] = 'inventory.common.idFormat';
+    // Both are picked from the platform's own named lists now, so the only rule
+    // left is the one the route states: a branch is meaningless without its
+    // company.
     if (branchId !== '' && companyId === '')
       found['companyId'] = 'inventory.prices.branchNeedsCompany';
     const currencyCode = form.currencyCode.trim().toUpperCase();
@@ -736,20 +751,33 @@ function SetPriceForm({
       <p className="text-caption text-text-muted sm:col-span-2">
         {translate(messages, 'inventory.prices.set.explain')}
       </p>
-      <TextField
-        label={translate(messages, 'inventory.common.companyIdField')}
+      <SelectField
+        label={translate(messages, 'inventory.prices.set.companyField')}
         description={translate(messages, 'inventory.prices.set.companyHelp')}
-        dir="ltr"
         value={form.companyId}
-        onChange={(event) => setForm((f) => ({ ...f, companyId: event.target.value }))}
+        onChange={(event) =>
+          // The branch belongs to the company, so changing one discards the
+          // other. Keeping it would send a pair the route refuses.
+          setForm((f) => ({ ...f, companyId: event.target.value, branchId: '' }))
+        }
+        options={context.companies.map((company) => ({
+          value: company.id,
+          label: company.name,
+        }))}
+        placeholder={translate(messages, 'inventory.prices.set.everyCompany')}
         error={errorFor('companyId')}
       />
-      <TextField
-        label={translate(messages, 'inventory.common.branchIdField')}
+      <SelectField
+        label={translate(messages, 'inventory.prices.set.branchField')}
         description={translate(messages, 'inventory.prices.set.branchHelp')}
-        dir="ltr"
+        disabled={form.companyId === ''}
         value={form.branchId}
         onChange={(event) => setForm((f) => ({ ...f, branchId: event.target.value }))}
+        options={branchesOfCompany.map((branch) => ({
+          value: branch.id,
+          label: `${branch.code} — ${branch.name}`,
+        }))}
+        placeholder={translate(messages, 'inventory.prices.set.everyBranch')}
         error={errorFor('branchId')}
       />
       {/*

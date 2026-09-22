@@ -3,7 +3,23 @@ import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import en from '../src/i18n/messages/en.json';
 import ar from '../src/i18n/messages/ar.json';
-import { renderLtr, renderRtl } from './render';
+import type { ReactElement } from 'react';
+import { inBranch, renderLtr as renderInLtr, renderRtl as renderInRtl } from './render';
+
+/*
+ * Every screen in this file is addressed by the WORKING CONTEXT: the branch it
+ * reads is the header's own named selection, not a pair typed into the screen
+ * (Owner directive, `P1-32-PRE-OD-UX`). So each render goes inside a provider.
+ *
+ * The two names are shadowed rather than changed at every call site, which
+ * keeps the default snapshot — one authorized branch, selected for the operator
+ * — true for every case below. A case that needs a different snapshot builds
+ * one and renders it explicitly.
+ */
+const renderLtr = (ui: ReactElement, options?: Parameters<typeof renderInLtr>[1]) =>
+  renderInLtr(inBranch(ui), options);
+const renderRtl = (ui: ReactElement, options?: Parameters<typeof renderInRtl>[1]) =>
+  renderInRtl(inBranch(ui, { locale: 'ar' }), options);
 import { PLATFORM_WORK_ORDER_STATES } from '@/features/work-orders/work-orders-contract';
 
 /**
@@ -608,36 +624,40 @@ describe('FE-011 — issuing', () => {
     expect(screen.queryByRole('status')).toBeNull();
   });
 
-  it('when the work order cannot be read, takes the branch as identifiers and requests no list', async () => {
+  it('when the work order cannot be read, names the working branch instead of asking for one', async () => {
+    /*
+     * The work order's own branch is what a draw is addressed to. When that
+     * read is refused the screen falls back — and the fallback used to be two
+     * free-text boxes asking for a company reference and a branch reference,
+     * offered to the operator whose read had just been refused.
+     *
+     * It is the working context's named branch now (Owner directive,
+     * `P1-32-PRE-OD-UX`): a list, never a box, and the locations of that branch
+     * are read ONCE without anything being typed at all.
+     */
     const user = userEvent.setup();
     renderScreen({
       canOperate: true,
       canReadWorkOrder: false,
       workOrder: null,
-      canReadBranches: false,
     });
     await user.click(screen.getByRole('button', { name: EN['inventory.issue.open'] as string }));
     const form = await issueForm();
     expect(within(form).getByText(EN['inventory.issue.branchUnknown'] as string)).toBeVisible();
+    // The shell already holds the named branches, so no directory is requested.
     expect(listBranches).not.toHaveBeenCalled();
-    expect(listLocations).not.toHaveBeenCalled();
-    await user.type(
-      within(form).getByLabelText(labelled('inventory.common.companyIdField')),
-      COMPANY_ID
-    );
-    await user.type(
-      within(form).getByLabelText(labelled('inventory.common.branchIdField')),
-      BRANCH_ID
+    // Nothing to type: the branch is chosen, so the locations read themselves.
+    expect(within(form).queryAllByRole('textbox')).not.toContain(
+      within(form).queryByLabelText(labelled('inventory.common.companyIdField'))
     );
     await waitFor(() =>
       expect(listLocations).toHaveBeenCalledWith({ companyId: COMPANY_ID, branchId: BRANCH_ID })
     );
     await within(form).findByRole('option', { name: 'WH-1 — Main warehouse' });
     await waitFor(() => expect(listReservations).toHaveBeenCalledTimes(1));
-    // Once the pair is complete the locations are read ONCE — not on every
-    // render the answer itself causes, and not again when another field changes.
+    // Read ONCE — not on every render the answer itself causes, and not again
+    // when another field changes.
     expect(listLocations).toHaveBeenCalledTimes(1);
-    await user.type(within(form).getByLabelText(labelled('inventory.issue.itemId')), ITEM_ID);
     await user.type(within(form).getByLabelText(labelled('inventory.issue.quantity')), '1');
     await new Promise((resolve) => setTimeout(resolve, 50));
     expect(listLocations).toHaveBeenCalledTimes(1);

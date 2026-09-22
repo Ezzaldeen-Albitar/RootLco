@@ -3,7 +3,25 @@ import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import ar from '../src/i18n/messages/ar.json';
 import en from '../src/i18n/messages/en.json';
-import { renderLtr, renderRtl } from './render';
+import type { ReactElement } from 'react';
+import {
+  TEST_BRANCH,
+  TEST_COMPANY,
+  inBranch,
+  renderLtr as renderInLtr,
+  renderRtl as renderInRtl,
+} from './render';
+
+/*
+ * The sale-price form scopes a price to a company and a branch, and both are
+ * chosen from the NAMED lists the working context publishes (Owner directive,
+ * `P1-32-PRE-OD-UX`). They used to be typed as references. So every render
+ * here goes inside a provider.
+ */
+const renderLtr = (ui: ReactElement, options?: Parameters<typeof renderInLtr>[1]) =>
+  renderInLtr(inBranch(ui), options);
+const renderRtl = (ui: ReactElement, options?: Parameters<typeof renderInRtl>[1]) =>
+  renderInRtl(inBranch(ui, { locale: 'ar' }), options);
 import {
   BRANCH_ID,
   COMPANY_ID,
@@ -364,20 +382,52 @@ describe('the prices panel', () => {
     expect(body).not.toHaveProperty('branchId');
   });
 
-  it('refuses a branch without a company before anything is sent', async () => {
+  it('cannot be given a branch without a company, because the control will not offer one', async () => {
+    /*
+     * The rule has not changed — the route refuses a branch with no company —
+     * but it is now enforced by the SHAPE of the controls rather than by a
+     * sentence after a rejected submission. Both were typed references; the
+     * company is a named list and the branch is the branches of THAT company,
+     * so the invalid pair is not expressible.
+     */
     const user = userEvent.setup();
     renderLtr(manage());
-    await user.type(
-      await screen.findByLabelText(labelled('inventory.common.branchIdField')),
-      BRANCH_ID
+    const branch = await screen.findByLabelText(
+      labelled('inventory.prices.set.branchField')
     );
+    expect(branch).toBeDisabled();
+
+    await user.selectOptions(
+      screen.getByLabelText(labelled('inventory.prices.set.companyField')),
+      TEST_COMPANY.id
+    );
+    expect(branch).toBeEnabled();
+    await user.selectOptions(branch, TEST_BRANCH.id);
+
     await user.type(screen.getByLabelText(labelled('inventory.prices.set.currency')), 'JOD');
     await user.type(screen.getByLabelText(labelled('inventory.prices.set.price')), '12.5000');
     await user.click(
       screen.getByRole('button', { name: EN['inventory.prices.set.submit'] as string })
     );
-    expect(screen.getByText(EN['inventory.prices.branchNeedsCompany'] as string)).toBeTruthy();
-    expect(setSalePrice).not.toHaveBeenCalled();
+    await waitFor(() => expect(setSalePrice).toHaveBeenCalled());
+    expect(setSalePrice.mock.calls[0]?.[1]).toEqual({
+      companyId: TEST_COMPANY.id,
+      branchId: TEST_BRANCH.id,
+      currencyCode: 'JOD',
+      unitPrice: '12.5000',
+    });
+  });
+
+  it('names the company and the branch, and shows neither as a reference', async () => {
+    renderLtr(manage());
+    const company = await screen.findByLabelText(labelled('inventory.prices.set.companyField'));
+    const labels = Array.from(company.querySelectorAll('option'))
+      .map((option) => option.textContent ?? '')
+      .filter((text) => text.length > 0);
+    expect(labels).toContain(TEST_COMPANY.name);
+    expect(labels).not.toContain(TEST_COMPANY.id);
+    // "Every company" is a real choice this operation publishes, not an absence.
+    expect(labels).toContain(EN['inventory.prices.set.everyCompany'] as string);
   });
 
   /**

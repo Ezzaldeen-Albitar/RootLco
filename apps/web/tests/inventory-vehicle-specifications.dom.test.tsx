@@ -27,12 +27,16 @@ const createVehicleSpecification = vi.fn();
 const confirmVehicleSpecification = vi.fn();
 const retireVehicleSpecification = vi.fn();
 const listUnitsOfMeasure = vi.fn();
+const listItemCategories = vi.fn();
 vi.mock('@/features/inventory/api', () => ({
   listVehicleSpecifications: (...args: unknown[]) => listVehicleSpecifications(...args),
   createVehicleSpecification: (...args: unknown[]) => createVehicleSpecification(...args),
   confirmVehicleSpecification: (...args: unknown[]) => confirmVehicleSpecification(...args),
   retireVehicleSpecification: (...args: unknown[]) => retireVehicleSpecification(...args),
   listUnitsOfMeasure: (...args: unknown[]) => listUnitsOfMeasure(...args),
+  // The part category is chosen by NAME now, from the catalogue the platform
+  // publishes, so the screen reads it.
+  listItemCategories: (...args: unknown[]) => listItemCategories(...args),
 }));
 
 const listMakes = vi.fn();
@@ -120,6 +124,9 @@ beforeEach(() => {
   vi.clearAllMocks();
   PERMISSIONS = [];
   listVehicleSpecifications.mockImplementation(async () => listing([specification()]));
+  listItemCategories.mockResolvedValue(
+    okRead({ items: [], nextCursor: null, hasMore: false })
+  );
   listUnitsOfMeasure.mockImplementation(async () =>
     okRead({
       items: [{ id: UOM_ID, scope: 'platform', code: 'L', name: 'Litre', dimension: 'volume' }],
@@ -299,7 +306,7 @@ describe('recording a capacity', () => {
     const form = await createForm();
     expect(listMakes).not.toHaveBeenCalled();
     expect(
-      within(form).getByText(EN['inventory.specifications.create.makeIdHelp'] as string)
+      within(form).getByText(EN['inventory.specifications.create.noMakes'] as string)
     ).toBeVisible();
   });
 });

@@ -55,7 +55,14 @@ import {
   type VehicleSpecification,
   type VehicleSpecificationState,
 } from '../inventory-contract';
-import { OutcomeNote, PRIMARY_BUTTON, Qty, SECONDARY_BUTTON, UUID } from './shared';
+import {
+  CategoryPicker,
+  OutcomeNote,
+  PRIMARY_BUTTON,
+  Qty,
+  SECONDARY_BUTTON,
+  useItemCategories,
+} from './shared';
 import { DANGER_BUTTON, PANEL } from './stock-operations';
 
 type Listing =
@@ -357,6 +364,7 @@ function SpecificationForm({
     readonly makeId: string;
     readonly options: readonly CatalogueOption[];
   } | null>(null);
+  const categories = useItemCategories();
   const [form, setForm] = useState({
     makeId: '',
     modelId: '',
@@ -396,7 +404,7 @@ function SpecificationForm({
 
   const chosenMake = form.makeId;
   useEffect(() => {
-    if (!canReadCatalogue || !UUID.test(chosenMake)) return;
+    if (!canReadCatalogue || chosenMake.length === 0) return;
     let live = true;
     void listModels(chosenMake).then((result) => {
       if (live && result.status === 'ok') {
@@ -418,14 +426,14 @@ function SpecificationForm({
 
   const submit = async () => {
     const found: Record<string, string> = {};
+    /*
+     * All three are chosen from lists the platform published, so the only rule
+     * left is the one the operation states: a specification names a make.
+     */
     const makeId = form.makeId.trim();
-    if (!UUID.test(makeId)) found['makeId'] = 'inventory.common.idFormat';
+    if (makeId.length === 0) found['makeId'] = 'field.required';
     const modelId = form.modelId.trim();
-    if (modelId.length > 0 && !UUID.test(modelId)) found['modelId'] = 'inventory.common.idFormat';
     const itemCategoryId = form.itemCategoryId.trim();
-    if (itemCategoryId.length > 0 && !UUID.test(itemCategoryId)) {
-      found['itemCategoryId'] = 'inventory.common.idFormat';
-    }
     const rawFrom = form.yearFrom.trim();
     const rawTo = form.yearTo.trim();
     if (rawFrom.length > 0 && !MODEL_YEAR.test(rawFrom)) {
@@ -521,27 +529,22 @@ function SpecificationForm({
           />
         </>
       ) : (
-        <>
-          <TextField
-            label={translate(messages, 'inventory.specifications.create.makeId')}
-            description={translate(messages, 'inventory.specifications.create.makeIdHelp')}
-            required
-            spellCheck={false}
-            dir="ltr"
-            value={form.makeId}
-            onChange={(event) => setForm((f) => ({ ...f, makeId: event.target.value }))}
-            error={errorFor('makeId')}
-          />
-          <TextField
-            label={translate(messages, 'inventory.specifications.create.modelId')}
-            description={translate(messages, 'inventory.specifications.create.modelHelp')}
-            spellCheck={false}
-            dir="ltr"
-            value={form.modelId}
-            onChange={(event) => setForm((f) => ({ ...f, modelId: event.target.value }))}
-            error={errorFor('modelId')}
-          />
-        </>
+        /*
+         * No make catalogue, so no make to choose.
+         *
+         * This used to be two boxes asking for a make reference and a model
+         * reference — strings nobody can look up, offered to the operator whose
+         * catalogue read had just been refused. A specification is ABOUT a
+         * make, so without one there is nothing to record, and saying so is the
+         * only honest answer available (Owner directive, `P1-32-PRE-OD-UX`).
+         */
+        <p
+          role="status"
+          data-testid="specification-no-makes"
+          className="text-supporting text-text-secondary sm:col-span-2"
+        >
+          {translate(messages, 'inventory.specifications.create.noMakes')}
+        </p>
       )}
 
       <TextField
@@ -577,14 +580,21 @@ function SpecificationForm({
         onChange={(event) => setForm((f) => ({ ...f, serviceCondition: event.target.value }))}
         error={errorFor('serviceCondition')}
       />
-      <TextField
-        label={translate(messages, 'inventory.specifications.create.itemCategoryId')}
-        description={translate(messages, 'inventory.specifications.create.itemCategoryHelp')}
-        spellCheck={false}
-        dir="ltr"
+      {/*
+        The category by NAME, from the catalogue the platform publishes, and
+        optional: a specification may name a category or none at all.
+      */}
+      <CategoryPicker
+        messages={messages}
+        categories={categories}
+        label={translate(messages, 'inventory.specifications.create.itemCategory')}
+        placeholder={translate(messages, 'inventory.specifications.create.anyCategory')}
+        help={translate(messages, 'inventory.specifications.create.itemCategoryHelp')}
         value={form.itemCategoryId}
-        onChange={(event) => setForm((f) => ({ ...f, itemCategoryId: event.target.value }))}
-        error={errorFor('itemCategoryId')}
+        onChange={(next) => setForm((f) => ({ ...f, itemCategoryId: next }))}
+        {...(errorFor('itemCategoryId') === undefined
+          ? {}
+          : { error: errorFor('itemCategoryId') as string })}
       />
       <TextField
         label={translate(messages, 'inventory.specifications.create.capacity')}

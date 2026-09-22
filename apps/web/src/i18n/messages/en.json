@@ -5881,5 +5881,14 @@
   "warranty.filter.oneVehicleOnly": "Showing the warranties of one vehicle only.",
   "warranty.filter.showAllVehicles": "Show every vehicle",
   "warranty.list.columnBranch": "Branch",
-  "warranty.policies.noCompanies": "You are not working in any company yet, so there is nowhere to add a plan."
+  "warranty.policies.noCompanies": "You are not working in any company yet, so there is nowhere to add a plan.",
+  "inventory.common.branchesNotOffered": "No branch is available to you here. Choose one at the top of the page, or ask for access to a branch.",
+  "inventory.prices.set.companyField": "Company",
+  "inventory.prices.set.branchField": "Branch",
+  "inventory.prices.set.everyCompany": "Every company",
+  "inventory.prices.set.everyBranch": "Every branch of that company",
+  "inventory.items.searchPlaceholder": "Stock code or name",
+  "inventory.specifications.create.noMakes": "No vehicle make is available to you, and a specification has to be about a make. Ask for access to the vehicle catalogue.",
+  "inventory.specifications.create.itemCategory": "Part category",
+  "inventory.specifications.create.anyCategory": "No category"
 }

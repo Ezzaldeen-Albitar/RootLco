@@ -51,11 +51,12 @@ import {
 import {
   CONVERSION_FACTOR,
   MAX_SOURCE_REFERENCE,
+  type InventoryItem,
   type UnitConversion,
   type UnitOfMeasureOption,
 } from '../inventory-contract';
-import { OutcomeNote, PRIMARY_BUTTON, SECONDARY_BUTTON, UUID } from './shared';
-import { DANGER_BUTTON, PANEL } from './stock-operations';
+import { OutcomeNote, PRIMARY_BUTTON, SECONDARY_BUTTON } from './shared';
+import { DANGER_BUTTON, ItemFinder, PANEL } from './stock-operations';
 
 type Listing =
   | { readonly phase: 'loading' }
@@ -76,7 +77,7 @@ export function UnitConversionsScreen({
   /** `inv.unit_conversion.manage`, held tenant-wide — stating and retiring. */
   readonly canManage: boolean;
 }) {
-  const [itemFilter, setItemFilter] = useState('');
+  const [itemFilter, setItemFilter] = useState<InventoryItem | null>(null);
   const [appliedItem, setAppliedItem] = useState<string | null>(null);
   const [includeRetired, setIncludeRetired] = useState(false);
   const [filterError, setFilterError] = useState<string | undefined>(undefined);
@@ -123,26 +124,22 @@ export function UnitConversionsScreen({
         <form
           onSubmit={(event) => {
             event.preventDefault();
-            const value = itemFilter.trim();
-            if (value.length > 0 && !UUID.test(value)) {
-              setFilterError(translate(messages, 'inventory.common.idFormat'));
-              return;
-            }
+            // Nothing to validate: the item is chosen from the platform's own
+            // list, so there is no malformed reference left to refuse.
             setFilterError(undefined);
-            setAppliedItem(value.length > 0 ? value : null);
+            setAppliedItem(itemFilter === null ? null : itemFilter.id);
           }}
           noValidate
           aria-label={translate(messages, 'inventory.conversions.filter.heading')}
           className="grid gap-3 sm:grid-cols-2"
         >
-          <TextField
-            label={translate(messages, 'inventory.conversions.filter.itemId')}
-            description={translate(messages, 'inventory.conversions.filter.itemHelp')}
-            spellCheck={false}
-            dir="ltr"
+          <ItemFinder
+            messages={messages}
+            idPrefix="conversion-filter"
+            required={false}
             value={itemFilter}
-            onChange={(event) => setItemFilter(event.target.value)}
-            error={filterError}
+            onChange={setItemFilter}
+            {...(filterError === undefined ? {} : { error: filterError })}
           />
           <div className="flex items-end gap-3">
             <button type="submit" className={SECONDARY_BUTTON}>
@@ -344,8 +341,8 @@ function ConversionForm({
     };
   }, []);
 
+  const [item, setItem] = useState<InventoryItem | null>(null);
   const [form, setForm] = useState({
-    itemId: '',
     fromUomId: '',
     toUomId: '',
     factor: '',
@@ -362,8 +359,9 @@ function ConversionForm({
 
   const submit = async () => {
     const found: Record<string, string> = {};
-    const itemId = form.itemId.trim();
-    if (itemId.length > 0 && !UUID.test(itemId)) found['itemId'] = 'inventory.common.idFormat';
+    // The item is chosen from the platform's own list, so an absent one is the
+    // documented "every item" case and a malformed one cannot arise.
+    const itemId = item?.id ?? '';
     if (!form.fromUomId) found['fromUomId'] = 'field.required';
     if (!form.toUomId) found['toUomId'] = 'field.required';
     if (form.fromUomId && form.fromUomId === form.toUomId) {
@@ -447,14 +445,18 @@ function ConversionForm({
         onChange={(event) => setForm((f) => ({ ...f, factor: event.target.value }))}
         error={errorFor('factor')}
       />
-      <TextField
-        label={translate(messages, 'inventory.conversions.set.itemId')}
-        description={translate(messages, 'inventory.conversions.set.itemHelp')}
-        spellCheck={false}
-        dir="ltr"
-        value={form.itemId}
-        onChange={(event) => setForm((f) => ({ ...f, itemId: event.target.value }))}
-        error={errorFor('itemId')}
+      {/*
+        A named item, chosen from the catalogue, and OPTIONAL: a conversion with
+        no item is the tenant-wide default the operation documents, which is a
+        real choice rather than a field left blank by accident.
+      */}
+      <ItemFinder
+        messages={messages}
+        idPrefix="conversion-set"
+        required={false}
+        value={item}
+        onChange={setItem}
+        {...(errorFor('itemId') === undefined ? {} : { error: errorFor('itemId') as string })}
       />
       <TextField
         label={translate(messages, 'inventory.conversions.set.sourceReference')}

@@ -3,7 +3,23 @@ import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import en from '../src/i18n/messages/en.json';
 import ar from '../src/i18n/messages/ar.json';
-import { renderLtr, renderRtl } from './render';
+import type { ReactElement } from 'react';
+import { inBranch, renderLtr as renderInLtr, renderRtl as renderInRtl } from './render';
+
+/*
+ * Every screen in this file is addressed by the WORKING CONTEXT: the branch it
+ * reads is the header's own named selection, not a pair typed into the screen
+ * (Owner directive, `P1-32-PRE-OD-UX`). So each render goes inside a provider.
+ *
+ * The two names are shadowed rather than changed at every call site, which
+ * keeps the default snapshot — one authorized branch, selected for the operator
+ * — true for every case below. A case that needs a different snapshot builds
+ * one and renders it explicitly.
+ */
+const renderLtr = (ui: ReactElement, options?: Parameters<typeof renderInLtr>[1]) =>
+  renderInLtr(inBranch(ui), options);
+const renderRtl = (ui: ReactElement, options?: Parameters<typeof renderInRtl>[1]) =>
+  renderInRtl(inBranch(ui, { locale: 'ar' }), options);
 import {
   DIRECTIONS,
   MOVEMENT_TYPES,
@@ -131,18 +147,19 @@ async function renderPage(params: Record<string, string>, search: Record<string,
 }
 
 const targetForm = () =>
-  screen.getByRole('form', { name: EN['inventory.target.formLabel'] as string });
+  screen.getByRole('region', { name: EN['inventory.target.formLabel'] as string });
 const ledger = () =>
   screen.getByRole('region', { name: EN['inventory.movements.heading'] as string });
 
-async function chooseBranch(user: ReturnType<typeof userEvent.setup>) {
-  const select = await within(targetForm()).findByRole('combobox');
-  await user.selectOptions(select, BRANCH_ID);
-  await user.click(
-    within(targetForm()).getByRole('button', {
-      name: EN['inventory.movements.chooseBranch'] as string,
-    })
-  );
+/**
+ * Wait for the branch this screen is addressed to.
+ *
+ * It used to choose one from a select and press a submit. Both are gone (Owner
+ * directive, `P1-32-PRE-OD-UX`): the branch is the working context own named
+ * selection, so the screen is addressed the moment it mounts and what is left
+ * to do is wait for what follows.
+ */
+async function chooseBranch() {
   await screen.findByRole('region', { name: EN['inventory.movements.heading'] as string });
 }
 
@@ -173,12 +190,12 @@ beforeEach(() => {
 });
 
 describe('the ledger is read only when asked', () => {
-  it('reads nothing on first paint, nothing on naming a branch, and only on Show movements', async () => {
+  it('reads nothing on first paint, and only on Show movements', async () => {
     const user = userEvent.setup();
     renderScreen();
-    await waitFor(() => expect(listBranches).toHaveBeenCalled());
-    expect(listMovements).not.toHaveBeenCalled();
-    await chooseBranch(user);
+    await chooseBranch();
+    // The shell holds the named branches, so no directory is requested.
+    expect(listBranches).not.toHaveBeenCalled();
     expect(listMovements).not.toHaveBeenCalled();
     expect(within(ledger()).getByText(EN['inventory.movements.notAsked'] as string)).toBeVisible();
     expect(within(ledger()).getByText(EN['inventory.movements.audited'] as string)).toBeVisible();
@@ -194,7 +211,7 @@ describe('the ledger is read only when asked', () => {
   it('asking again with the same filters reads again — each read is the operator’s own act', async () => {
     const user = userEvent.setup();
     renderScreen();
-    await chooseBranch(user);
+    await chooseBranch();
     await user.click(showButton());
     await waitFor(() => expect(listMovements).toHaveBeenCalledTimes(1));
     await user.click(showButton());
@@ -204,7 +221,7 @@ describe('the ledger is read only when asked', () => {
   it('renders the rows in the order served with the server’s strings, and names the location by identifier', async () => {
     const user = userEvent.setup();
     renderScreen();
-    await chooseBranch(user);
+    await chooseBranch();
     await user.click(showButton());
     const table = await within(ledger()).findByRole('table');
     const rows = within(table).getAllByRole('row').slice(1);
@@ -226,7 +243,7 @@ describe('the ledger is read only when asked', () => {
   it('sends the filters, with instants as full ISO strings', async () => {
     const user = userEvent.setup();
     renderScreen({ initialWorkOrderId: WORK_ORDER_ID });
-    await chooseBranch(user);
+    await chooseBranch();
     const panel = ledger();
     expect(within(panel).getByLabelText(labelled('inventory.movements.workOrderId'))).toHaveValue(
       WORK_ORDER_ID
@@ -269,7 +286,7 @@ describe('the ledger is read only when asked', () => {
   it('refuses a malformed identifier before asking', async () => {
     const user = userEvent.setup();
     renderScreen();
-    await chooseBranch(user);
+    await chooseBranch();
     await user.type(
       within(ledger()).getByLabelText(labelled('inventory.movements.itemId')),
       'nope'
@@ -291,7 +308,7 @@ describe('the ledger is read only when asked', () => {
       correlationId: 'corr',
     });
     renderScreen();
-    await chooseBranch(user);
+    await chooseBranch();
     await user.click(showButton());
     expect(await within(ledger()).findByText(EN['state.denied.title'] as string)).toBeVisible();
     expect(within(ledger()).queryByText(EN['inventory.movements.none'] as string)).toBeNull();
@@ -301,7 +318,7 @@ describe('the ledger is read only when asked', () => {
     const user = userEvent.setup();
     listMovements.mockResolvedValue(page([]));
     renderScreen();
-    await chooseBranch(user);
+    await chooseBranch();
     await user.click(showButton());
     expect(
       await within(ledger()).findByText(EN['inventory.movements.none'] as string)
@@ -326,12 +343,11 @@ describe('the /inventory/movements route page decides before it reads', () => {
     expect(listMovements).not.toHaveBeenCalled();
   });
 
-  it('with org.branch.read, lists branches; a well-formed work order in the address prefills the filter', async () => {
-    const user = userEvent.setup();
+  it('a well-formed work order in the address prefills the filter, and no directory is read', async () => {
     PERMISSIONS = ['inv.stock.read', 'org.branch.read'];
     await renderPage({ locale: 'en' }, { workOrderId: WORK_ORDER_ID });
-    await waitFor(() => expect(listBranches).toHaveBeenCalled());
-    await chooseBranch(user);
+    await chooseBranch();
+    expect(listBranches).not.toHaveBeenCalled();
     expect(
       within(ledger()).getByLabelText(labelled('inventory.movements.workOrderId'))
     ).toHaveValue(WORK_ORDER_ID);
@@ -387,7 +403,7 @@ describe('every movement vocabulary value has a label in both languages', () => 
       ])
     );
     renderScreen();
-    await chooseBranch(user);
+    await chooseBranch();
     await user.click(showButton());
     const table = await within(ledger()).findByRole('table');
     expect(within(table).getByText(EN['inventory.movementType.sale'] as string)).toBeVisible();
@@ -399,9 +415,8 @@ describe('every movement vocabulary value has a label in both languages', () => 
   });
 
   it('offers every vocabulary value as a filter choice', async () => {
-    const user = userEvent.setup();
     renderScreen();
-    await chooseBranch(user);
+    await chooseBranch();
     const panel = ledger();
     const types = within(panel).getByRole('combobox', {
       name: labelled('inventory.movements.type'),
@@ -431,7 +446,7 @@ describe('Arabic, right to left', () => {
       screen.getByText(AR['inventory.movements.explain'] as string, { exact: false })
     ).toBeVisible();
     expect(
-      screen.getByRole('form', { name: AR['inventory.target.formLabel'] as string })
+      screen.getByRole('region', { name: AR['inventory.target.formLabel'] as string })
     ).toBeVisible();
     expect(listMovements).not.toHaveBeenCalled();
   });

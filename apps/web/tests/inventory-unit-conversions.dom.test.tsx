@@ -26,11 +26,15 @@ const listUnitConversions = vi.fn();
 const setUnitConversion = vi.fn();
 const retireUnitConversion = vi.fn();
 const listUnitsOfMeasure = vi.fn();
+const listItems = vi.fn();
 vi.mock('@/features/inventory/api', () => ({
   listUnitConversions: (...args: unknown[]) => listUnitConversions(...args),
   setUnitConversion: (...args: unknown[]) => setUnitConversion(...args),
   retireUnitConversion: (...args: unknown[]) => retireUnitConversion(...args),
   listUnitsOfMeasure: (...args: unknown[]) => listUnitsOfMeasure(...args),
+  // The item is chosen by NAME from the catalogue now, not typed as a
+  // reference, so the finder reads it.
+  listItems: (...args: unknown[]) => listItems(...args),
 }));
 
 const notifyActionResult = vi.fn((..._args: unknown[]): boolean => true);
@@ -97,6 +101,13 @@ beforeEach(() => {
   vi.clearAllMocks();
   PERMISSIONS = [];
   listUnitConversions.mockImplementation(async () => listing([conversion()]));
+  listItems.mockResolvedValue({
+    status: 'ok' as const,
+    rows: [{ id: ITEM_ID, sku: 'BRK-001', name: 'Front brake pads' }],
+    nextCursor: null,
+    hasMore: false,
+    correlationId: 'corr',
+  });
   listUnitsOfMeasure.mockImplementation(async () =>
     okRead({
       items: [
@@ -195,8 +206,14 @@ describe('stating a conversion', () => {
       within(form).getByLabelText(labelled('inventory.conversions.set.factor')),
       '4.500'
     );
-    await user.type(
-      within(form).getByLabelText(labelled('inventory.conversions.set.itemId')),
+    // The item is FOUND and chosen, never typed: the finder searches the
+    // catalogue and the option carries the code and the name.
+    await user.click(
+      within(form).getByRole('button', { name: EN['inventory.stockOps.item.search'] as string })
+    );
+    await within(form).findByRole('option', { name: 'BRK-001 — Front brake pads' });
+    await user.selectOptions(
+      within(form).getByLabelText(labelled('inventory.stockOps.item.label')),
       ITEM_ID
     );
     await user.type(

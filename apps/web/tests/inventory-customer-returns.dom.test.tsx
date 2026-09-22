@@ -3,7 +3,23 @@ import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import ar from '../src/i18n/messages/ar.json';
 import en from '../src/i18n/messages/en.json';
-import { renderLtr, renderRtl } from './render';
+import type { ReactElement } from 'react';
+import { inBranch, renderLtr as renderInLtr, renderRtl as renderInRtl } from './render';
+
+/*
+ * Every screen in this file is addressed by the WORKING CONTEXT: the branch it
+ * reads is the header's own named selection, not a pair typed into the screen
+ * (Owner directive, `P1-32-PRE-OD-UX`). So each render goes inside a provider.
+ *
+ * The two names are shadowed rather than changed at every call site, which
+ * keeps the default snapshot — one authorized branch, selected for the operator
+ * — true for every case below. A case that needs a different snapshot builds
+ * one and renders it explicitly.
+ */
+const renderLtr = (ui: ReactElement, options?: Parameters<typeof renderInLtr>[1]) =>
+  renderInLtr(inBranch(ui), options);
+const renderRtl = (ui: ReactElement, options?: Parameters<typeof renderInRtl>[1]) =>
+  renderInRtl(inBranch(ui, { locale: 'ar' }), options);
 import {
   BRANCH_ID,
   COMPANY_ID,
@@ -197,8 +213,8 @@ const operable = () => (
   <CustomerReturnsScreen locale="en" messages={en} canOperate canReadBranches />
 );
 
-async function openBranch(user: ReturnType<typeof userEvent.setup>) {
-  await chooseBranch(user, 'inventory.returns.targetLabel', 'inventory.returns.chooseBranch');
+async function openBranch() {
+  await chooseBranch('inventory.returns.targetLabel');
 }
 
 /**
@@ -223,7 +239,7 @@ describe('what may still come back', () => {
   it('reads the source and shows all three figures, not just the remainder', async () => {
     const user = userEvent.setup();
     renderLtr(operable());
-    await openBranch(user);
+    await openBranch();
     await lookUpSource(user);
     expect(readReturnable).toHaveBeenCalledWith('invoice_line', SOURCE_ID);
     await waitFor(() => expect(screen.getByText('5.000')).toBeTruthy());
@@ -237,7 +253,7 @@ describe('what may still come back', () => {
     listCounterSales.mockResolvedValue({ status: 'denied', correlationId: 'corr' });
     const user = userEvent.setup();
     renderLtr(operable());
-    await openBranch(user);
+    await openBranch();
     await user.type(
       await screen.findByLabelText(labelled('inventory.returns.source.id')),
       'not-a-reference'
@@ -253,7 +269,7 @@ describe('what may still come back', () => {
     const user = userEvent.setup();
     readReturnable.mockResolvedValue({ status: 'not-found', correlationId: 'corr' });
     renderLtr(operable());
-    await openBranch(user);
+    await openBranch();
     await lookUpSource(user);
     await waitFor(() =>
       expect(screen.getByText(EN['inventory.returns.source.missing'] as string)).toBeTruthy()
@@ -265,7 +281,7 @@ describe('the cap on the quantity', () => {
   it('REFUSES more than what may still come back, before anything is sent', async () => {
     const user = userEvent.setup();
     renderLtr(operable());
-    await openBranch(user);
+    await openBranch();
     await lookUpSource(user);
     await user.type(screen.getByLabelText(labelled('inventory.returns.create.quantity')), '3.001');
     await user.selectOptions(
@@ -282,7 +298,7 @@ describe('the cap on the quantity', () => {
   it('accepts exactly the remainder', async () => {
     const user = userEvent.setup();
     renderLtr(operable());
-    await openBranch(user);
+    await openBranch();
     await lookUpSource(user);
     await user.type(screen.getByLabelText(labelled('inventory.returns.create.quantity')), '3.000');
     await user.selectOptions(
@@ -301,7 +317,7 @@ describe('the cap on the quantity', () => {
     const user = userEvent.setup();
     readReturnable.mockResolvedValue(returnable({ remainingQuantity: '10.000' }));
     renderLtr(operable());
-    await openBranch(user);
+    await openBranch();
     await lookUpSource(user);
     // `9.5` against `10.000`: a textual comparison would call this too much.
     await user.type(screen.getByLabelText(labelled('inventory.returns.create.quantity')), '9.5');
@@ -316,9 +332,8 @@ describe('the cap on the quantity', () => {
   });
 
   it('says the ceiling is checked again when it is saved', async () => {
-    const user = userEvent.setup();
     renderLtr(operable());
-    await openBranch(user);
+    await openBranch();
     expect(await screen.findByText(EN['inventory.returns.create.explain'] as string)).toBeTruthy();
   });
 
@@ -326,7 +341,7 @@ describe('the cap on the quantity', () => {
     const user = userEvent.setup();
     createSalesReturn.mockResolvedValue(refusedWith('inventory.returns.create.refused'));
     renderLtr(operable());
-    await openBranch(user);
+    await openBranch();
     await lookUpSource(user);
     await user.type(screen.getByLabelText(labelled('inventory.returns.create.quantity')), '1');
     await user.selectOptions(
@@ -346,7 +361,7 @@ describe('the condition decides the shelf', () => {
   it('asks for nowhere to hold a good part apart', async () => {
     const user = userEvent.setup();
     renderLtr(operable());
-    await openBranch(user);
+    await openBranch();
     await lookUpSource(user);
     expect(
       screen.queryByLabelText(labelled('inventory.returns.create.quarantineLocation'))
@@ -356,7 +371,7 @@ describe('the condition decides the shelf', () => {
   it('DEMANDS a place to hold a damaged part apart, and refuses without one', async () => {
     const user = userEvent.setup();
     renderLtr(operable());
-    await openBranch(user);
+    await openBranch();
     await lookUpSource(user);
     await user.selectOptions(
       screen.getByLabelText(labelled('inventory.returns.create.condition')),
@@ -377,7 +392,7 @@ describe('the condition decides the shelf', () => {
   it('states honestly that a damaged part does not go back on the shelf', async () => {
     const user = userEvent.setup();
     renderLtr(operable());
-    await openBranch(user);
+    await openBranch();
     await lookUpSource(user);
     await user.selectOptions(
       screen.getByLabelText(labelled('inventory.returns.create.condition')),
@@ -389,7 +404,7 @@ describe('the condition decides the shelf', () => {
   it('sends the quarantine place with a damaged return, and none with a good one', async () => {
     const user = userEvent.setup();
     renderLtr(operable());
-    await openBranch(user);
+    await openBranch();
     await lookUpSource(user);
     await user.selectOptions(
       screen.getByLabelText(labelled('inventory.returns.create.condition')),
@@ -425,7 +440,7 @@ describe('the credit note', () => {
       )
     );
     renderLtr(operable());
-    await openBranch(user);
+    await openBranch();
     await lookUpSource(user);
     await user.type(screen.getByLabelText(labelled('inventory.returns.create.quantity')), '1');
     await user.selectOptions(
@@ -441,12 +456,11 @@ describe('the credit note', () => {
   });
 
   it('marks a returned row that raised a credit note as waiting for approval', async () => {
-    const user = userEvent.setup();
     listSalesReturns.mockResolvedValue(
       okPage([received({ creditNoteId: CREDIT_NOTE_ID, status: 'credited' })])
     );
     renderLtr(operable());
-    await openBranch(user);
+    await openBranch();
     await waitFor(() =>
       expect(screen.getByText(EN['inventory.returns.creditPending'] as string)).toBeTruthy()
     );
@@ -454,12 +468,11 @@ describe('the credit note', () => {
   });
 
   it('marks a damaged row as held apart in the list', async () => {
-    const user = userEvent.setup();
     listSalesReturns.mockResolvedValue(
       okPage([received({ condition: 'damaged', quarantineLocationId: OTHER_LOCATION_ID })])
     );
     renderLtr(operable());
-    await openBranch(user);
+    await openBranch();
     await waitFor(() =>
       expect(screen.getByText(EN['inventory.returns.quarantined'] as string)).toBeTruthy()
     );
@@ -475,9 +488,8 @@ describe('the credit note', () => {
  */
 describe('naming the sale instead of typing its reference', () => {
   it('offers the branch ISSUED sales, because a draft has taken nothing off the shelf', async () => {
-    const user = userEvent.setup();
     renderLtr(operable());
-    await openBranch(user);
+    await openBranch();
     await waitFor(() => expect(listCounterSales).toHaveBeenCalled());
     expect(listCounterSales.mock.calls[0]).toEqual([
       { companyId: COMPANY_ID, branchId: BRANCH_ID },
@@ -490,7 +502,7 @@ describe('naming the sale instead of typing its reference', () => {
   it('reads the chosen sale lines and asks the server what is left of the chosen one', async () => {
     const user = userEvent.setup();
     renderLtr(operable());
-    await openBranch(user);
+    await openBranch();
     await user.selectOptions(
       await screen.findByLabelText(labelled('inventory.returns.sale.label')),
       SALE_ID
@@ -510,7 +522,7 @@ describe('naming the sale instead of typing its reference', () => {
   it('sends the line the operator picked, with the quantity as the string it typed', async () => {
     const user = userEvent.setup();
     renderLtr(operable());
-    await openBranch(user);
+    await openBranch();
     await lookUpSource(user);
     await user.type(screen.getByLabelText(labelled('inventory.returns.create.quantity')), '1.000');
     await user.selectOptions(
@@ -529,9 +541,8 @@ describe('naming the sale instead of typing its reference', () => {
 
   it('falls back to the typed reference when the sales cannot be read, and says why', async () => {
     listCounterSales.mockResolvedValue({ status: 'error', correlationId: 'corr' });
-    const user = userEvent.setup();
     renderLtr(operable());
-    await openBranch(user);
+    await openBranch();
     expect(
       await screen.findByText(EN['inventory.returns.sale.unavailable'] as string)
     ).toBeTruthy();
@@ -546,9 +557,8 @@ describe('naming the sale instead of typing its reference', () => {
    */
   it('says the list is partial and keeps the typed reference when the page is truncated', async () => {
     listCounterSales.mockResolvedValue(okPage([sale], true));
-    const user = userEvent.setup();
     renderLtr(operable());
-    await openBranch(user);
+    await openBranch();
     expect(await screen.findByText(EN['inventory.returns.sale.truncated'] as string)).toBeTruthy();
     // Both controls, together: choose it if it is listed, name it if it is not.
     expect(screen.getByLabelText(labelled('inventory.returns.sale.label'))).toBeTruthy();
@@ -556,9 +566,8 @@ describe('naming the sale instead of typing its reference', () => {
   });
 
   it('says nothing about truncation, and offers no identifier field, on a whole page', async () => {
-    const user = userEvent.setup();
     renderLtr(operable());
-    await openBranch(user);
+    await openBranch();
     expect(await screen.findByLabelText(labelled('inventory.returns.sale.label'))).toBeTruthy();
     expect(screen.queryByText(EN['inventory.returns.sale.truncated'] as string)).toBeNull();
     expect(screen.queryByLabelText(labelled('inventory.returns.source.id'))).toBeNull();
@@ -567,7 +576,7 @@ describe('naming the sale instead of typing its reference', () => {
   it('keeps the typed reference for parts handed to a job, which no branch list covers', async () => {
     const user = userEvent.setup();
     renderLtr(operable());
-    await openBranch(user);
+    await openBranch();
     await user.selectOptions(
       await screen.findByLabelText(labelled('inventory.returns.source.kind')),
       'part_issue'
@@ -584,12 +593,11 @@ describe('naming the sale instead of typing its reference', () => {
  */
 describe('reaching the credit a return raised', () => {
   it('links the waiting credit to the screen that shows it', async () => {
-    const user = userEvent.setup();
     listSalesReturns.mockResolvedValue(
       okPage([received({ creditNoteId: CREDIT_NOTE_ID, status: 'credited' })])
     );
     renderLtr(operable());
-    await openBranch(user);
+    await openBranch();
     const link = await screen.findByRole('link', {
       name: EN['inventory.returns.openCredit'] as string,
     });
@@ -597,9 +605,8 @@ describe('reaching the credit a return raised', () => {
   });
 
   it('offers no such link where no credit was raised', async () => {
-    const user = userEvent.setup();
     renderLtr(operable());
-    await openBranch(user);
+    await openBranch();
     await waitFor(() =>
       expect(screen.getByText(EN['inventory.returnStatus.received'] as string)).toBeTruthy()
     );
@@ -611,11 +618,10 @@ describe('reaching the credit a return raised', () => {
 
 describe('permissions and the route page', () => {
   it('offers no form without the permission to take a part back', async () => {
-    const user = userEvent.setup();
     renderLtr(
       <CustomerReturnsScreen locale="en" messages={en} canOperate={false} canReadBranches />
     );
-    await openBranch(user);
+    await openBranch();
     expect(await screen.findByText(EN['inventory.returns.needsOperate'] as string)).toBeTruthy();
     expect(
       screen.queryByRole('button', { name: EN['inventory.returns.create.submit'] as string })
@@ -635,13 +641,12 @@ describe('permissions and the route page', () => {
 
   it('withholds the form from a caller who may not see amounts', async () => {
     PERMISSIONS = ['inv.stock.read', 'inv.stock.operate', 'org.branch.read'];
-    const user = userEvent.setup();
     renderLtr(
       (await CustomerReturnsPage({
         params: Promise.resolve({ locale: 'en' }),
       })) as React.ReactElement
     );
-    await openBranch(user);
+    await openBranch();
     expect(await screen.findByText(EN['inventory.returns.needsOperate'] as string)).toBeTruthy();
   });
 });
@@ -650,7 +655,7 @@ describe('accessibility and Arabic', () => {
   it('has no serious or critical accessibility finding', async () => {
     const user = userEvent.setup();
     const { container } = renderLtr(operable());
-    await openBranch(user);
+    await openBranch();
     await lookUpSource(user);
     expect(await seriousViolations(container)).toEqual([]);
   });

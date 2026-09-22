@@ -79,16 +79,19 @@ export const refusedWith = (messageKey: string) => ({
   created: null,
 });
 
-/** Name the branch through the list and submit the target form named by `formLabelKey`. */
-export async function chooseBranch(
-  user: ReturnType<typeof userEvent.setup>,
-  formLabelKey: string,
-  submitKey: string
-) {
-  const form = screen.getByRole('form', { name: EN[formLabelKey] as string });
-  const select = await within(form).findByRole('combobox');
-  await user.selectOptions(select, BRANCH_ID);
-  await user.click(within(form).getByRole('button', { name: EN[submitKey] as string }));
+/**
+ * Wait for the branch section the screen states its target in.
+ *
+ * This used to choose a branch from a select and press a submit. Both are gone
+ * (Owner directive, `P1-32-PRE-OD-UX`): the branch is the working context own
+ * named selection, so a screen rendered inside a provider is addressed the
+ * moment it mounts and there is nothing left to submit. The two unused
+ * parameters stay so the thirty-odd call sites did not have to change, and the
+ * section is still WAITED for, which is what the call sites were really doing.
+ * The two arguments that named the control and the submit went with them.
+ */
+export async function chooseBranch(formLabelKey: string) {
+  await screen.findByRole('region', { name: EN[formLabelKey] as string });
 }
 
 /** Search the catalogue and choose the fixture item inside `scope`. */

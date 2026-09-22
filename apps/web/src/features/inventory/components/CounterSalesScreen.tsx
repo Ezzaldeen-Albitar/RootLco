@@ -107,7 +107,6 @@ export function CounterSalesScreen({
   canSell,
   canIssue,
   canReadCustomers,
-  canReadBranches,
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
@@ -117,8 +116,13 @@ export function CounterSalesScreen({
   readonly canIssue: boolean;
   /** `crm.customer.read` — whether the buyer search is offered. */
   readonly canReadCustomers: boolean;
-  /** `org.branch.read` — whether a branch list is requested for the picker. */
-  readonly canReadBranches: boolean;
+  /**
+   * `org.branch.read`. Accepted so the route did not have to change, and no
+   * longer read: the branch is the working context's own named selection, and
+   * that read is gated on `iam.user.read` rather than on an administration
+   * code.
+   */
+  readonly canReadBranches?: boolean;
 }) {
   const [target, setTarget] = useState<StockTarget | null>(null);
   return (
@@ -129,7 +133,6 @@ export function CounterSalesScreen({
       </p>
       <BranchTargetForm
         messages={messages}
-        canReadBranches={canReadBranches}
         formLabelKey="inventory.counterSales.targetLabel"
         explainKey="inventory.target.explain"
         submitKey="inventory.counterSales.chooseBranch"
