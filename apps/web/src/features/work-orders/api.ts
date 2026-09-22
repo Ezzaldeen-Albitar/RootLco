@@ -71,9 +71,12 @@ export async function listWorkOrders(
     '/api/v1/work-orders' +
     branchTargetQuery(target, {
       state: criteria.state,
+      stateGroup: criteria.stateGroup,
       kind: criteria.kind,
       openedFrom: criteria.openedFrom,
       openedTo: criteria.openedTo,
+      completedFrom: criteria.completedFrom,
+      completedTo: criteria.completedTo,
       customerId: criteria.customerId,
       number: criteria.number,
       q: criteria.q,

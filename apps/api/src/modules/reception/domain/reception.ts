@@ -40,6 +40,31 @@ export const TERMINAL_RECEPTION_STATUSES: readonly ReceptionStatus[] = [
   'refused',
 ];
 
+/**
+ * The two groups a reception board may narrow to (Owner directive,
+ * P1-32-PRE-OD-UX).
+ *
+ * `open` is every status `TERMINAL_RECEPTION_STATUSES` does not name, and
+ * `finished` is exactly that list — derived from it rather than transcribed
+ * beside it, so the day the frozen graph gains a status the two groups still
+ * partition the vocabulary instead of quietly losing a row from both.
+ *
+ * "finished" rather than "closed": `converted` is terminal for the VISIT and is
+ * the opposite of abandoned — the car went on to a work order — so a label
+ * implying closure would describe the three exits by the least common one.
+ */
+export const RECEPTION_STATUS_GROUPS = ['open', 'finished'] as const;
+export type ReceptionStatusGroup = (typeof RECEPTION_STATUS_GROUPS)[number];
+
+/** The statuses one group covers, derived from the terminal list. */
+export function receptionStatusesInGroup(group: ReceptionStatusGroup): readonly ReceptionStatus[] {
+  return RECEPTION_STATUSES.filter((status) =>
+    group === 'finished'
+      ? TERMINAL_RECEPTION_STATUSES.includes(status)
+      : !TERMINAL_RECEPTION_STATUSES.includes(status)
+  );
+}
+
 /** Frozen `ck_reception_party_roles_role` vocabulary (7 roles). */
 export const RECEPTION_PARTY_ROLES = [
   'service_requester',
