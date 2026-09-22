@@ -297,6 +297,42 @@ export const MAX_WORK_ORDER_SEARCH = 80;
 /** `MIN_WORK_ORDER_SEARCH_FRAGMENT` in the domain: the free-text box only. */
 export const MIN_WORK_ORDER_SEARCH = 2;
 
+/**
+ * The board's quick views — exactly the requests the list operation can be sent.
+ *
+ * Here rather than inside the board because a SECOND screen now names one: the
+ * dashboard links a figure to the view that shows the rows behind it, and a
+ * link built from a name the board does not recognise lands on the unfiltered
+ * list while looking like it worked. One declaration, and both sides of the
+ * link are checked against it.
+ */
+export const WORK_ORDER_BOARD_VIEWS = [
+  'all',
+  'openedToday',
+  'mine',
+  'awaitingApproval',
+  'awaitingParts',
+  'awaitingQuality',
+  'readyForDelivery',
+] as const;
+
+export type WorkOrderBoardView = (typeof WORK_ORDER_BOARD_VIEWS)[number];
+
+/** Whether an arriving name is one of the seven. Anything else is discarded. */
+export function isWorkOrderBoardView(value: string): value is WorkOrderBoardView {
+  return (WORK_ORDER_BOARD_VIEWS as readonly string[]).includes(value);
+}
+
+/**
+ * The shape a state code may take, mirrored from the list operation's own
+ * schema (`^[a-z][a-z0-9_]{1,62}$`).
+ *
+ * A code is a declared vocabulary term, not something an operator types, so it
+ * is the one filter value that may travel in an address. This pattern is what a
+ * value arriving from one has to satisfy before it is believed.
+ */
+export const WORK_ORDER_STATE_CODE_PATTERN = /^[a-z][a-z0-9_]{1,62}$/;
+
 /* ------------------------------------------------------------------ *
  * W3 — the work-order detail
  * ------------------------------------------------------------------ */

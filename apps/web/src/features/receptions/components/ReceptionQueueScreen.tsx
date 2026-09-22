@@ -34,9 +34,11 @@ import { listReceptions } from '../api';
 import {
   MAX_RECEPTION_SEARCH,
   MIN_RECEPTION_SEARCH,
+  RECEPTION_BOARD_PERIODS,
   TERMINAL_RECEPTION_STATUSES,
   UNFINISHED_RECEPTION_STATUSES,
   isFinishedReception,
+  type ReceptionBoardPeriod,
   type ReceptionListCriteria,
   type ReceptionListEntry,
   type ReceptionStatus,
@@ -110,19 +112,20 @@ import {
  * ordering being spent against another.
  */
 
-/** The periods the board offers. Each resolves to instants in the branch zone. */
-type PeriodKind = 'today' | 'yesterday' | 'last7' | 'beforeToday' | 'custom';
+/**
+ * The periods the board offers. Each resolves to instants in the branch zone.
+ *
+ * Declared in the contract since the dashboard began linking here carrying the
+ * period a figure was counted over: a figure labelled "today" that opens a list
+ * of the last seven days is a worse answer than no link at all, and one
+ * declaration is what keeps the two sides naming the same five periods.
+ */
+type PeriodKind = ReceptionBoardPeriod;
 
-const PERIOD_KINDS: readonly PeriodKind[] = [
-  'today',
-  'yesterday',
-  'last7',
-  'beforeToday',
-  'custom',
-];
+const PERIOD_KINDS: readonly PeriodKind[] = RECEPTION_BOARD_PERIODS;
 
 /** The period in force, plus the two days a custom one was applied with. */
-interface AppliedPeriod {
+export interface AppliedPeriod {
   readonly kind: PeriodKind;
   readonly from: string;
   readonly to: string;
@@ -171,6 +174,7 @@ export function ReceptionQueueScreen({
   messages,
   canCreate,
   canReachIntake = false,
+  initialPeriod,
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
@@ -190,13 +194,28 @@ export function ReceptionQueueScreen({
    * invent a second, softer rule for who may receive a new customer.
    */
   readonly canReachIntake?: boolean;
+  /**
+   * The period this board opens on, when it was reached from a figure counted
+   * over one.
+   *
+   * Validated by the ROUTE against `RECEPTION_BOARD_PERIODS` and, for a chosen
+   * range, against the calendar-day shape — so an unrecognised period never
+   * reaches this component and the board simply opens on today, which is what
+   * the address without it means.
+   */
+  readonly initialPeriod?: AppliedPeriod | undefined;
 }) {
   const context = useWorkingContext();
   const branch = useBranchTarget();
 
-  const [period, setPeriod] = useState<AppliedPeriod>(TODAY_PERIOD);
-  const [draftFrom, setDraftFrom] = useState('');
-  const [draftTo, setDraftTo] = useState('');
+  const [period, setPeriod] = useState<AppliedPeriod>(initialPeriod ?? TODAY_PERIOD);
+  /*
+   * The two boxes start filled when a chosen range arrived with the address, so
+   * the range the reader is looking at is the range the form shows. An empty
+   * pair would invite them to "apply" a period they never asked for.
+   */
+  const [draftFrom, setDraftFrom] = useState(initialPeriod?.from ?? '');
+  const [draftTo, setDraftTo] = useState(initialPeriod?.to ?? '');
   const [status, setStatus] = useState<'' | ReceptionStatus>('');
   const [term, setTerm] = useState('');
   /**

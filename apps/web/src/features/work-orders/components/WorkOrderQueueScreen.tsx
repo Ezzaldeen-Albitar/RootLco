@@ -30,10 +30,12 @@ import { listWorkOrders, readWorkOrderCatalogue } from '../api';
 import {
   MAX_WORK_ORDER_SEARCH,
   MIN_WORK_ORDER_SEARCH,
+  WORK_ORDER_BOARD_VIEWS,
   WORK_ORDER_KINDS,
   finishedStates,
   openStates,
   workOrderStateLabel,
+  type WorkOrderBoardView,
   type WorkOrderKind,
   type WorkOrderListCriteria,
   type WorkOrderListEntry,
@@ -98,25 +100,17 @@ import {
  * "overdue", "due today" or "late", and no control offers to sort by one.
  */
 
-/** The views the operation can actually be sent. See the docblock. */
-type ViewKind =
-  | 'all'
-  | 'openedToday'
-  | 'mine'
-  | 'awaitingApproval'
-  | 'awaitingParts'
-  | 'awaitingQuality'
-  | 'readyForDelivery';
+/**
+ * The views the operation can actually be sent. See the docblock.
+ *
+ * Declared in the contract rather than here since the dashboard began linking
+ * to them: a link built from a name this board does not recognise lands on the
+ * unfiltered list while looking as though it worked, and one declaration is
+ * what stops the two sides drifting apart.
+ */
+type ViewKind = WorkOrderBoardView;
 
-const VIEW_KINDS: readonly ViewKind[] = [
-  'all',
-  'openedToday',
-  'mine',
-  'awaitingApproval',
-  'awaitingParts',
-  'awaitingQuality',
-  'readyForDelivery',
-];
+const VIEW_KINDS: readonly ViewKind[] = WORK_ORDER_BOARD_VIEWS;
 
 /** What the read is asked for: the scope it is addressed to and the filters. */
 interface Asked {
@@ -146,6 +140,8 @@ function flagsOf(view: ViewKind): WorkOrderListCriteria {
 export function WorkOrderQueueScreen({
   locale,
   messages,
+  initialView = 'all',
+  initialState = '',
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
@@ -155,12 +151,32 @@ export function WorkOrderQueueScreen({
    */
   readonly companyIds?: readonly string[];
   readonly branchIds?: readonly string[];
+  /**
+   * The view this board opens on, when it was reached from a figure elsewhere.
+   *
+   * Validated by the ROUTE against `WORK_ORDER_BOARD_VIEWS` before it arrives,
+   * so an unrecognised name never reaches this component: it becomes the
+   * unfiltered board, which is what the address without it means.
+   */
+  readonly initialView?: WorkOrderBoardView | undefined;
+  /**
+   * The state code this board opens filtered to, likewise validated by the
+   * route against the shape the operation accepts. A code is vocabulary and not
+   * something anybody typed, which is why it is the one filter value allowed to
+   * travel in an address at all.
+   */
+  readonly initialState?: string | undefined;
 }) {
   const context = useWorkingContext();
   const branch = useBranchTarget();
 
-  const [view, setView] = useState<ViewKind>('all');
-  const [state, setState] = useState('');
+  /*
+   * The arriving view and state are the board's STARTING position and nothing
+   * more. Once here, the strip and the picker own them — a reader who presses
+   * another view is not fighting the address they came from.
+   */
+  const [view, setView] = useState<ViewKind>(initialView);
+  const [state, setState] = useState(initialState);
   const [kind, setKind] = useState<'' | WorkOrderKind>('');
   const [term, setTerm] = useState('');
   const [draftFrom, setDraftFrom] = useState('');
