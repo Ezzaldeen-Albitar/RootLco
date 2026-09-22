@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 /**
@@ -172,6 +174,109 @@ describe('the record read names its warranty in the path', () => {
     get.mockResolvedValue(ok({ items: [] }));
     await listBranches();
     expect(requested()).toBe('/api/v1/org/branches');
+  });
+});
+
+describe('the car and the customer arrive named', () => {
+  /**
+   * One published list row (Owner directive, P1-32-PRE-OD-UX).
+   *
+   * Every field is one the backend really returns, and the two display blocks are
+   * spelled as the service spells them - the mirror gate at the foot of this file
+   * is what keeps that sentence true.
+   */
+  const ROW = {
+    id: WARRANTY_ID,
+    companyId: COMPANY_ID,
+    branchId: BRANCH_ID,
+    vehicleId: VEHICLE_ID,
+    workOrderId: '44444444-4444-4444-8444-444444444444',
+    deliveryRecordId: DELIVERY_ID,
+    status: 'issued',
+    startDate: '2026-09-01',
+    expiryDate: '2027-09-01',
+    odometerAtIssue: '48210',
+    odometerLimit: '68210',
+    policy: { id: POLICY_ID, policyCode: 'standard_cover', name: 'Standard', status: 'active' },
+    vehicle: {
+      id: VEHICLE_ID,
+      plate: 'AB 1234',
+      vin: 'WDB1234567A123456',
+      makeModel: 'A make A model',
+      displayNumber: 'V-9',
+    },
+    customer: { id: '66666666-6666-4666-8666-666666666666', displayName: 'A registered partner' },
+    recordVersion: 1,
+  } as const;
+
+  it('carries both blocks off a list page unchanged', async () => {
+    get.mockResolvedValue(ok({ items: [ROW], nextCursor: null, hasMore: false }));
+
+    const state = await listWarranties(TARGET, null, null);
+
+    expect(state.status).toBe('ok');
+    // Field by field rather than a reference comparison: an identity check on the
+    // same object would pass even if the adapter rebuilt the row and dropped half
+    // of it, because it would be comparing the fixture to itself.
+    expect(state.rows[0]).toEqual(ROW);
+    expect(state.rows[0]?.vehicle.plate).toBe('AB 1234');
+    expect(state.rows[0]?.vehicle.vin).toBe('WDB1234567A123456');
+    expect(state.rows[0]?.customer?.displayName).toBe('A registered partner');
+    // The identifier is still published beside the block, because links navigate
+    // by it. It is never what a screen prints.
+    expect(state.rows[0]?.vehicleId).toBe(VEHICLE_ID);
+  });
+
+  it('carries a withheld registration, a withheld name and an absent customer as null', async () => {
+    // Four REAL states of the data, not error cases: a caller without
+    // `veh.vehicle.read` is told the car and not its registration; a caller
+    // without `crm.customer.read` is told there is a customer and not who; a visit
+    // may have named no service requester at all; a vehicle may cite no catalogue
+    // row.
+    get.mockResolvedValue(
+      ok({
+        items: [
+          { ...ROW, vehicle: { ...ROW.vehicle, plate: null, vin: null } },
+          { ...ROW, id: 'w-2', customer: { id: ROW.customer.id, displayName: null } },
+          {
+            ...ROW,
+            id: 'w-3',
+            customer: null,
+            vehicle: {
+              id: VEHICLE_ID,
+              plate: null,
+              vin: null,
+              makeModel: null,
+              displayNumber: null,
+            },
+          },
+        ],
+        nextCursor: null,
+        hasMore: false,
+      })
+    );
+
+    const state = await listWarranties(TARGET, null, null);
+
+    expect(state.rows[0]?.vehicle.plate).toBeNull();
+    expect(state.rows[0]?.vehicle.vin).toBeNull();
+    // Withheld is not the absence of a car: the rest of the block still names it.
+    expect(state.rows[0]?.vehicle.makeModel).toBe('A make A model');
+    expect(state.rows[1]?.customer).toEqual({ id: ROW.customer.id, displayName: null });
+    expect(state.rows[2]?.customer).toBeNull();
+    expect(state.rows[2]?.vehicle.makeModel).toBeNull();
+  });
+
+  it('carries both blocks off the detail read too', async () => {
+    // The same two blocks on the record screen as on the row, so a screen that
+    // lists warranties and then opens one handles ONE shape.
+    get.mockResolvedValue(ok({ ...ROW, coverage: { id: 'c-1' }, items: [], replayed: false }));
+
+    const state = await readWarranty(WARRANTY_ID);
+
+    expect(state.status).toBe('ok');
+    expect(state.data?.vehicle).toEqual(ROW.vehicle);
+    expect(state.data?.customer).toEqual(ROW.customer);
   });
 });
 
@@ -532,5 +637,61 @@ describe('a refused plan write says which of one code meanings it was', () => {
     });
     expect(state.status).toBe('expired');
     expect(send).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * The mirror gate for the two display blocks (Owner directive, P1-32-PRE-OD-UX).
+ *
+ * Held against the backend source as TEXT, for the reason every vocabulary mirror
+ * in this workspace is: `apps/web` may never import `apps/api`, and a shape copied
+ * by hand is only a mirror while something checks it. A field renamed, added or
+ * dropped on the service turns this red instead of turning a column blank.
+ */
+describe('the display blocks mirror the shapes the warranty service publishes', () => {
+  const SERVICE = readFileSync(
+    join(
+      process.cwd(),
+      '..',
+      'api',
+      'src',
+      'modules',
+      'warranty',
+      'application',
+      'warranty-service.ts'
+    ),
+    'utf8'
+  );
+
+  /** The field names of one published interface, in declaration order. */
+  const fieldsOf = (name: string): readonly string[] => {
+    const declaration = new RegExp(`export interface ${name}[^{]*\\{([^}]*)\\}`).exec(SERVICE);
+    expect(declaration, `${name} was renamed, moved or reshaped`).not.toBeNull();
+    return [...declaration![1]!.matchAll(/readonly (\w+)\??:/g)].map((match) => match[1]!);
+  };
+
+  it('states exactly the vehicle fields the service publishes', () => {
+    const fields = fieldsOf('WarrantyVehicleView');
+    // Anti-vacuity: an expression matching an empty body would compare two empty
+    // lists and report clean.
+    expect(fields.length, 'no field was read out of the backend interface').toBe(5);
+    expect(fields).toEqual(['id', 'plate', 'vin', 'makeModel', 'displayNumber']);
+  });
+
+  it('states exactly the customer fields the service publishes', () => {
+    const fields = fieldsOf('WarrantyCustomerView');
+    expect(fields.length, 'no field was read out of the backend interface').toBe(2);
+    expect(fields).toEqual(['id', 'displayName']);
+  });
+
+  it('keeps both blocks on the list row and on the detail view, and off the generation', () => {
+    // The two READS publish the blocks; the generation response deliberately does
+    // not, which is why `WarrantyRecordDetail` exists on this side as a type of
+    // its own rather than as two more fields on `WarrantyRecord`.
+    expect(fieldsOf('WarrantyRecordListView')).toEqual(
+      expect.arrayContaining(['vehicle', 'customer'])
+    );
+    expect(fieldsOf('WarrantyDetailView')).toEqual(['vehicle', 'customer']);
+    expect(fieldsOf('WarrantyView')).not.toEqual(expect.arrayContaining(['vehicle', 'customer']));
   });
 });
