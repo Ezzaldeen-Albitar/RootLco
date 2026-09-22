@@ -732,11 +732,26 @@ export class WorkOrderService extends ApplicationService {
     // would put the platform/tenant precedence in a second place. Same rule as
     // `listClosedNonCancelled`'s state set.
     const catalogue = await this.catalog.workOrderStates(db);
+    // A COMPLETION WINDOW narrows to finished work, and finished excludes
+    // abandoned — the same set `stateGroup: 'terminal'` resolves, not the wider
+    // `terminalStates` that dates `completedAt`. A cancellation is a terminal
+    // transition and therefore carries a dated instant, so without this a board
+    // asked what it finished in a period would answer with what it gave up on.
+    // Resolved only when a bound was actually sent: otherwise it would narrow a
+    // board nobody asked to narrow.
+    const windowed = filter.completedFrom !== undefined || filter.completedTo !== undefined;
     const rows = await this.repository.listWorkOrders(
       db,
       {
         ...filter,
         terminalStates: catalogue.filter((state) => state.isTerminal).map((state) => state.code),
+        ...(windowed
+          ? {
+              completionStates: catalogue
+                .filter((state) => state.isTerminal && !state.isCancellation)
+                .map((state) => state.code),
+            }
+          : {}),
       },
       pageRequest(WORK_ORDER_LIST_ORDER, page)
     );

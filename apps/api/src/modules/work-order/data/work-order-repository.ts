@@ -298,6 +298,22 @@ export interface WorkOrderListFilter {
   readonly completedFrom?: Date | undefined;
   /** Inclusive upper bound on the completion instant. */
   readonly completedTo?: Date | undefined;
+  /**
+   * The codes a work order must be in for a COMPLETION WINDOW to return it,
+   * resolved by the service when either bound was sent.
+   *
+   * The same predicate `stateGroup: 'terminal'` uses — terminal AND NOT a
+   * cancellation — and NOT `terminalStates`, which is the wider set that dates
+   * `completedAt`. The two sets are deliberately different and the difference is
+   * the point: a cancellation is a terminal transition, so it HAS a dated
+   * instant and a row may honestly publish it, but "what was finished in
+   * September" must not answer with the cars that were abandoned in September.
+   * A window whose group disagreed with `stateGroup: 'terminal'` would give two
+   * controls on one board two different meanings for the same word.
+   *
+   * `undefined` when no bound was sent, which leaves the board unnarrowed.
+   */
+  readonly completionStates?: readonly string[] | undefined;
 }
 
 /**
@@ -808,6 +824,7 @@ export class WorkOrderRepository extends Repository {
       filter.groupStates === undefined ? null : [...filter.groupStates],
       filter.completedFrom ?? null,
       filter.completedTo ?? null,
+      filter.completionStates === undefined ? null : [...filter.completionStates],
     ];
     const keyset = keysetFragment(
       page,
@@ -1017,6 +1034,15 @@ export class WorkOrderRepository extends Repository {
           -- which is the intended narrowing rather than an accident of NULL
           -- comparison: a window over completions cannot contain a work order
           -- that has not been completed.
+          --
+          -- $25 is the second half of that narrowing and is NOT redundant. It is
+          -- the closed-and-not-cancelled set, resolved by the service whenever a
+          -- bound was sent, and it is what keeps an ABANDONED job out of a
+          -- window that asks what was finished — a cancellation is a terminal
+          -- transition, so it has a dated instant and would otherwise sit inside
+          -- the window. It is exactly the set stateGroup = terminal resolves,
+          -- so the two controls agree about the word.
+          AND ($25::text[] IS NULL OR state = ANY($25::text[]))
           AND ($23::timestamptz IS NULL OR completion.at >= $23)
           AND ($24::timestamptz IS NULL OR completion.at <= $24)
           ${keyset.predicate}

@@ -1365,13 +1365,16 @@ describe('the reception status group and the row facts', () => {
     // 422 and not an empty page: the intersection of a group and one of its own
     // members is that member, and of a group and a foreign member is nothing —
     // and nothing on a board reads as a branch with no cars in it.
-    expect(
-      (
-        await listReceptions(
-          `?companyId=${COMPANY_A1}&branchId=${BRANCH_A1}&status=opened&statusGroup=open`
-        )
-      ).status
-    ).toBe(422);
+    const both = await listReceptions(
+      `?companyId=${COMPANY_A1}&branchId=${BRANCH_A1}&status=opened&statusGroup=open`
+    );
+    expect(both.status).toBe(422);
+    // And the refusal names a CATALOGUED rule token rather than a Zod issue
+    // code: a refinement can only report `custom`, which reaches the operator as
+    // the generic "this value was not accepted".
+    expect(((await both.json()) as { violations?: readonly unknown[] }).violations).toEqual([
+      { path: 'query.statusGroup', rule: 'status_and_group_exclusive' },
+    ]);
     authAs(SUBJ_FULL);
     expect(
       (await listReceptions(`?companyId=${COMPANY_A1}&branchId=${BRANCH_A1}&statusGroup=closed`))

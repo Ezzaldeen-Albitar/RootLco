@@ -28,6 +28,7 @@
  */
 import { z } from 'zod';
 import { defineOperation } from '@/server/auth/operation-registry';
+import { AppFailure } from '@/server/errors/app-failure';
 import { handleOperation } from '@/server/http/route-handler';
 import {
   parseOrFail,
@@ -173,36 +174,51 @@ const Query = z
     cursor: schemas.cursor.optional(),
     limit: schemas.limit.optional(),
   })
-  .strict()
-  .superRefine((query, context) => {
-    if (query.state !== undefined && query.stateGroup !== undefined) {
-      // Refused rather than ANDed. See `stateGroup` above: the intersection is
-      // either the state itself or nothing, and "nothing" reaching a board as an
-      // empty page is indistinguishable from a branch with no work in it.
-      context.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['stateGroup'],
-        message: 'stateGroup and state may not both be sent',
-      });
-    }
-    if (
-      query.completedFrom !== undefined &&
-      query.completedTo !== undefined &&
-      Date.parse(query.completedTo) < Date.parse(query.completedFrom)
-    ) {
-      // An inverted window matches nothing by construction, so answering it with
-      // an empty page would read as "nothing was finished" rather than "bad
-      // request" — the rule `rec.reception-list` and `apt.appointment-list`
-      // already apply to their own windows. Compared as INSTANTS: both values
-      // carry an explicit offset, and a lexical comparison of offset-bearing ISO
-      // strings is wrong in both directions.
-      context.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['completedTo'],
-        message: 'completedTo must not be earlier than completedFrom',
-      });
-    }
+  .strict();
+
+/**
+ * The two cross-field refusals this query carries, as CATALOGUED rule tokens.
+ *
+ * Asserted here rather than in a `superRefine`, and the difference is what the
+ * caller receives. `toViolations` publishes `issue.code` as the rule, and every
+ * Zod refinement issue carries the code `custom` — so a refinement can state its
+ * reason only in an English `message` that the problem document does not even
+ * publish, and the browser maps `custom` to a generic sentence. A token the
+ * catalogue carries is what turns the refusal into words an operator can act on,
+ * in their own language.
+ *
+ * The shape is the ordinary one — `{ path, rule }` under `ERR-VAL-001` — so this
+ * is indistinguishable from a schema violation to every consumer.
+ */
+function assertQueryCoherent(query: z.infer<typeof Query>): void {
+  const violations: { readonly path: string; readonly rule: string }[] = [];
+  if (query.state !== undefined && query.stateGroup !== undefined) {
+    // Refused rather than ANDed. See `stateGroup` above: the intersection is
+    // either the state itself or nothing, and "nothing" reaching a board as an
+    // empty page is indistinguishable from a branch with no work in it.
+    violations.push({ path: 'query.stateGroup', rule: 'state_and_group_exclusive' });
+  }
+  if (
+    query.completedFrom !== undefined &&
+    query.completedTo !== undefined &&
+    Date.parse(query.completedTo) < Date.parse(query.completedFrom)
+  ) {
+    // An inverted window matches nothing by construction, so answering it with
+    // an empty page would read as "nothing was finished" rather than "bad
+    // request" — the rule `rec.reception-list` and `apt.appointment-list`
+    // already apply to their own windows. Compared as INSTANTS: both values
+    // carry an explicit offset, and a lexical comparison of offset-bearing ISO
+    // strings is wrong in both directions.
+    violations.push({ path: 'query.completedTo', rule: 'completion_window_inverted' });
+  }
+  if (violations.length === 0) return;
+  throw new AppFailure('ERR-VAL-001', {
+    // Not published: `problemFor` renders the catalogue title and the
+    // violations, never this string. It exists for the log line.
+    message: 'The board query asks for two things that cannot both be true',
+    safeDetails: { violations },
   });
+}
 
 export const WORK_ORDER_LIST_OPERATION = defineOperation({
   id: 'wo.work-order-list',
@@ -229,6 +245,7 @@ export async function GET(request: Request): Promise<Response> {
       // `AppFailure` escape the route function entirely, and the caller would see
       // an unhandled 500 instead of a 422 naming the field.
       const query = parseOrFail(Query, raw, 'query');
+      assertQueryCoherent(query);
       const branchIds =
         query.branchId === undefined ? await authorizedBranches(query.companyId) : [query.branchId];
       return {

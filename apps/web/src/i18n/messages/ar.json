@@ -5766,5 +5766,8 @@
   "quality.closure.originatingJobHint": "المهمة التي اكتُشف فيها هذا العمل الإضافي. يُسجَّل العمل الإضافي دائمًا على المهمة التي نشأ عنها.",
   "quality.closure.originatingJobNone": "لا توجد مهام بعد على أمر العمل هذا، فلا شيء يُسجَّل عليه العمل الإضافي. أضف مهمة إلى أمر العمل أولًا.",
   "quality.closure.originatingJobPlaceholder": "اختر مهمة",
-  "quality.closure.originatingJobUnknown": "لم تُقرأ بعد المهام المسجّلة على أمر العمل هذا. ستظهر هنا فور قراءة أمر العمل."
+  "quality.closure.originatingJobUnknown": "لم تُقرأ بعد المهام المسجّلة على أمر العمل هذا. ستظهر هنا فور قراءة أمر العمل.",
+  "form.violation.state_and_group_exclusive": "اختر مرحلة واحدة أو مجموعة مراحل، لا الاثنتين معًا. امسح إحداهما ثم أعد البحث.",
+  "form.violation.status_and_group_exclusive": "اختر حالة واحدة أو مجموعة حالات، لا الاثنتين معًا. امسح إحداهما ثم أعد البحث.",
+  "form.violation.completion_window_inverted": "تاريخا الانتهاء معكوسان. يأتي التاريخ الأسبق أولًا ثم التاريخ الأحدث."
 }

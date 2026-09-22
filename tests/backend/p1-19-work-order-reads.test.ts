@@ -115,6 +115,16 @@ async function page(response: Response): Promise<PageBody> {
   return (await response.json()) as PageBody;
 }
 
+/** The field-level violations of a problem document, in wire order. */
+async function violations(
+  response: Response
+): Promise<readonly { readonly path: string; readonly rule: string }[]> {
+  const body = (await response.json()) as {
+    readonly violations?: readonly { readonly path: string; readonly rule: string }[];
+  };
+  return body.violations ?? [];
+}
+
 beforeAll(async () => {
   admin = adminPool();
   await ensureTestLogins(admin);
@@ -1076,7 +1086,16 @@ describe('wo.work-order-list — the approval, delivery, group and window filter
     expect(cancelled).not.toContain(fresh.workOrderId);
   });
 
-  it('completedFrom/completedTo bound the board by the published completion instant', async () => {
+  it('the completion window returns FINISHED work and never an abandoned job', async () => {
+    // Finished: closed, and not a cancellation — the same set `stateGroup`
+    // resolves for `terminal`. Driven through the real closure operation,
+    // because `closed` is reachable through no other path.
+    const finished = await createWorkOrder();
+    await driveToClosed(finished.workOrderId);
+    // Abandoned: `cancelled` is terminal too, so it HAS a dated completion
+    // instant and the row honestly publishes one. It must still stay out of a
+    // window that asks what was FINISHED, or the two controls on one board
+    // would mean two different things by the same word.
     const abandoned = await createWorkOrder();
     await advance(abandoned.workOrderId, [
       { toState: 'cancelled', reason: 'review fixture completion window' },
@@ -1084,33 +1103,49 @@ describe('wo.work-order-list — the approval, delivery, group and window filter
     const stillOpen = await createWorkOrder();
 
     authAs(READER);
-    const completedAt = (await row(abandoned.workOrderId)).completedAt as string;
-    expect(completedAt).not.toBeNull();
-    const at = Date.parse(completedAt);
+    const finishedAt = (await row(finished.workOrderId)).completedAt as string;
+    expect(finishedAt).not.toBeNull();
+    authAs(READER);
+    const abandonedAt = (await row(abandoned.workOrderId)).completedAt as string;
+    // The premise of the exclusion, asserted rather than assumed: the cancelled
+    // order really does carry an instant inside the window below, so leaving it
+    // out is the predicate working and not the data being silent.
+    expect(abandonedAt).not.toBeNull();
+    const at = Date.parse(finishedAt);
+    const wide = {
+      completedFrom: new Date(at - 86_400_000).toISOString(),
+      completedTo: new Date(at + 86_400_000).toISOString(),
+    };
+    expect(Date.parse(abandonedAt)).toBeGreaterThan(Date.parse(wide.completedFrom));
+    expect(Date.parse(abandonedAt)).toBeLessThan(Date.parse(wide.completedTo));
 
-    // A window that straddles the recorded instant holds it, and the open order
-    // has no completion instant at all so no window can contain it.
-    const around = await idsFor({
-      completedFrom: new Date(at - 60_000).toISOString(),
-      completedTo: new Date(at + 60_000).toISOString(),
-    });
-    expect(around).toContain(abandoned.workOrderId);
-    expect(around).not.toContain(stillOpen.workOrderId);
+    const inside = await idsFor(wide);
+    expect(inside).toContain(finished.workOrderId);
+    expect(inside).not.toContain(abandoned.workOrderId);
+    // An open order has no completion instant at all, so no window holds it.
+    expect(inside).not.toContain(stillOpen.workOrderId);
 
-    // A window that ends before it does not. Asserted in both directions,
-    // because a filter that always returned nothing would satisfy the second
-    // half of the first case on its own.
+    // A window that ends before the completion does not hold it. Asserted in
+    // both directions, because a filter that always returned nothing would
+    // satisfy the exclusions above on its own.
     const before = await idsFor({
       completedFrom: new Date(at - 86_400_000).toISOString(),
       completedTo: new Date(at - 60_000).toISOString(),
     });
-    expect(before).not.toContain(abandoned.workOrderId);
+    expect(before).not.toContain(finished.workOrderId);
 
-    // A lower bound on its own still narrows to finished work: `completedAt` is
-    // null for the open order, and NULL >= anything is never true.
+    // A lower bound on its own still narrows to finished work, and still
+    // excludes the abandoned job.
     const since = await idsFor({ completedFrom: new Date(at - 60_000).toISOString() });
-    expect(since).toContain(abandoned.workOrderId);
+    expect(since).toContain(finished.workOrderId);
+    expect(since).not.toContain(abandoned.workOrderId);
     expect(since).not.toContain(stillOpen.workOrderId);
+
+    // And the window agrees with the group control about the word "terminal":
+    // everything the window returned is in the group, on the same board.
+    const terminal = await idsFor({ stateGroup: 'terminal' });
+    expect(terminal).toContain(finished.workOrderId);
+    expect(terminal).not.toContain(abandoned.workOrderId);
   });
 
   it('refuses state beside stateGroup, an unknown group and an inverted window', async () => {
@@ -1124,6 +1159,13 @@ describe('wo.work-order-list — the approval, delivery, group and window filter
     // 422 and not an empty page: the intersection is always either the state on
     // its own or nothing, and nothing on a board reads as an empty branch.
     expect(both.status).toBe(422);
+    // And the refusal names a CATALOGUED rule token, not a Zod issue code. A
+    // refinement can only ever report `custom`, which the browser renders as the
+    // generic "this value was not accepted" — so the token is the difference
+    // between a sentence the operator can act on and one they cannot.
+    expect(await violations(both)).toEqual([
+      { path: 'query.stateGroup', rule: 'state_and_group_exclusive' },
+    ]);
 
     authAs(READER);
     const unknown = await list({
@@ -1144,6 +1186,9 @@ describe('wo.work-order-list — the approval, delivery, group and window filter
       completedTo: '2026-01-01T00:00:00.000Z',
     });
     expect(inverted.status).toBe(422);
+    expect(await violations(inverted)).toEqual([
+      { path: 'query.completedTo', rule: 'completion_window_inverted' },
+    ]);
   });
 });
 
