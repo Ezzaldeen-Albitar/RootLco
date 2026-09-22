@@ -489,17 +489,27 @@ export interface AppointmentCancelInput {
 }
 
 /**
- * The `.strict()` list query, minus the mandatory branch target (which travels
- * through `BranchTarget` — see the module note). `from`/`to` are inclusive
- * bounds the EFFECTIVE window must overlap; an inverted range is a 422, not an
- * empty page.
+ * The `.strict()` list query, minus the branch scope (which travels through
+ * `BranchScope` — see the module note). `from`/`to` are inclusive bounds the
+ * EFFECTIVE window must overlap; an inverted range is a 422, not an empty page.
  */
 export interface AppointmentListCriteria {
   readonly status?: AppointmentStatus;
   readonly vehicleId?: string;
   readonly from?: string;
   readonly to?: string;
+  /**
+   * One free-text box: part of the requester's name, the tail of their phone
+   * number, part of any plate the vehicle has carried, part of its VIN, or part
+   * of the appointment number. Two characters at least.
+   */
+  readonly q?: string;
 }
+
+/** `MIN_SEARCH_FRAGMENT` in `shared/text/search-terms.ts`. */
+export const MIN_APPOINTMENT_SEARCH = 2;
+/** `MAX_SEARCH_FRAGMENT` in `shared/text/search-terms.ts`. */
+export const MAX_APPOINTMENT_SEARCH = 80;
 
 /* ------------------------------------------------------------------ *
  * Responses, exactly as the services publish them
@@ -531,6 +541,14 @@ export interface AppointmentListEntry {
   readonly id: string;
   readonly displayNumber: string | null;
   readonly lifecycleStatus: AppointmentStatus;
+  /**
+   * Which branch the row belongs to.
+   *
+   * Published since the branch became an optional filter: a calendar that may
+   * span every authorized branch has to be able to name which one each row sits
+   * in, and a board that could not would be quietly mixing two workshops.
+   */
+  readonly branchId: string;
   readonly vehicleId: string;
   readonly vehicleDisplayNumber: string | null;
   readonly requesterPartnerId: string;

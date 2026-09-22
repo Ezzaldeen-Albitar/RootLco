@@ -748,14 +748,15 @@ test.describe('the P1-28 modules are reachable from the sidebar', () => {
  * ================================================================== */
 
 test.describe('the appointment calendar reads only for a named branch', () => {
-  test('it shows the idle state and issues no read until a target is submitted', async ({
+  test('it issues no read while no branch is chosen, and reads as soon as one is', async ({
     page,
   }) => {
     /*
-     * `GET /appointments` REQUIRES `companyId` and `branchId` and the server
-     * refuses to guess (`P1-18-A-01`), so the results table is a separately
-     * MOUNTED component: before a target is submitted the component that would
-     * issue the read does not exist.
+     * `GET /appointments` requires a COMPANY and the server refuses to guess
+     * which one (`P1-18-A-01`), so nothing is asked for until the working
+     * context resolves a scope. What has changed is that the branch is no
+     * longer typed: once it is chosen, arriving IS the request, and the read is
+     * bounded to that branch own day.
      *
      * OBSERVED ON THE CHANNEL THE BROWSER ACTUALLY USES. The read is a Server
      * Action, which reaches the network as a POST to the WEB origin — every API
@@ -774,21 +775,13 @@ test.describe('the appointment calendar reads only for a named branch', () => {
     await page.goto('/en/appointments');
     await segmentRendered(page, '/en/appointments');
 
-    // Idle: the screen states that nothing is loaded, rather than showing an
-    // empty table that would read as "this branch has no appointments".
+    // The filter form is there, with the period it opened on named.
     await expect(page.getByRole('main')).toContainText(
-      say('en', 'appointments.calendar.idleTitle')
+      say('en', 'appointments.calendar.periodLabel')
     );
-    await expect(page.getByRole('main')).toContainText(say('en', 'appointments.calendar.idleBody'));
 
     /*
-     * No request before intent — restated for the control that now decides it.
-     *
-     * This used to press Show with the pair empty and expect two "required"
-     * messages. There is no pair on the screen to leave empty. What takes its
-     * place is the same claim one level up: while the operator has not chosen a
-     * branch, the screen says which control answers and its Show is refused,
-     * and no read is issued either way.
+     * No request for a branch nobody chose.
      *
      * Conditional on the chooser existing, because an operator with exactly one
      * authorized branch has it selected for them and has nothing to withhold.
@@ -797,8 +790,7 @@ test.describe('the appointment calendar reads only for a named branch', () => {
      */
     const before = posts.length;
     if ((await page.getByTestId('working-context-select').count()) > 0) {
-      await expect(page.getByTestId('requires-concrete-branch').first()).toBeVisible();
-      await page.getByRole('button', { name: say('en', 'appointments.calendar.show') }).click();
+      await expect(page.getByTestId('appointment-calendar-blocked')).toBeVisible();
       expect(posts.length - before, 'a branch nobody chose must not issue a read').toBe(0);
     }
 
@@ -806,7 +798,6 @@ test.describe('the appointment calendar reads only for a named branch', () => {
     // chosen branch really does issue the read. Without this the assertion
     // above would also pass on a page that made no requests at all.
     await workInBranch(page, BRANCH_A);
-    await page.getByRole('button', { name: say('en', 'appointments.calendar.show') }).click();
 
     await expect
       .poll(() => posts.length - before, {
@@ -817,15 +808,12 @@ test.describe('the appointment calendar reads only for a named branch', () => {
 
     /*
      * And the answer is a STATE, not a blank region. The database is empty of
-     * business data by policy, so "no appointments in this range" is the correct
-     * outcome — and the screen says exactly that, rather than the table's
-     * generic empty state, which would make a claim about the whole branch on
-     * the evidence of one range.
+     * business data by policy, so "no matches" is the correct outcome — said
+     * about the filters in force, with a control that widens them again.
      */
-    await expect(page.getByRole('main')).toContainText(
-      say('en', 'appointments.calendar.noneInRange'),
-      { timeout: 20_000 }
-    );
+    await expect(page.getByRole('main')).toContainText(say('en', 'state.noResults.title'), {
+      timeout: 20_000,
+    });
   });
 
   test('an inverted range is refused beside the field, not relayed from the server', async ({
@@ -838,9 +826,12 @@ test.describe('the appointment calendar reads only for a named branch', () => {
     await segmentRendered(page, '/en/appointments');
 
     await workInBranch(page, BRANCH_A);
+    await page
+      .getByRole('button', { name: say('en', 'appointments.calendar.period.custom') })
+      .click();
     await page.getByLabel(say('en', 'appointments.calendar.fromDay')).fill('2026-08-20');
     await page.getByLabel(say('en', 'appointments.calendar.toDay')).fill('2026-08-10');
-    await page.getByRole('button', { name: say('en', 'appointments.calendar.show') }).click();
+    await page.getByRole('button', { name: say('en', 'appointments.calendar.applyPeriod') }).click();
 
     await expect(page.getByRole('main')).toContainText(
       say('en', 'appointments.calendar.rangeInverted')
@@ -1284,11 +1275,9 @@ test.describe('nothing this phase reads reaches the address bar', () => {
     await page.goto('/en/appointments');
     await segmentRendered(page, '/en/appointments');
     await workInBranch(page, BRANCH_A);
-    await page.getByRole('button', { name: say('en', 'appointments.calendar.show') }).click();
-    await expect(page.getByRole('main')).toContainText(
-      say('en', 'appointments.calendar.noneInRange'),
-      { timeout: 20_000 }
-    );
+    await expect(page.getByRole('main')).toContainText(say('en', 'state.noResults.title'), {
+      timeout: 20_000,
+    });
     expect(page.url(), 'the calendar put its branch target into the address bar').not.toContain(
       BRANCH_A
     );
@@ -1374,8 +1363,10 @@ test.describe('a read-only operator meets a denial, not an empty screen', () => 
       page.getByRole('main'),
       'the reader was denied a screen its read permission covers'
     ).not.toContainText(say('en', 'state.denied.title'));
+    // The calendar reads on arrival, so what proves the reader reached it is the
+    // period control rather than an idle state the screen no longer has.
     await expect(page.getByRole('main')).toContainText(
-      say('en', 'appointments.calendar.idleTitle')
+      say('en', 'appointments.calendar.periodLabel')
     );
 
     await page.goto('/en/receptions');

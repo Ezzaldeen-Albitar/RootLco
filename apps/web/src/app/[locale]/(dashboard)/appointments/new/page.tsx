@@ -60,8 +60,6 @@ export default async function AppointmentBookingPage({
     <AppointmentBookingScreen
       locale={locale}
       messages={messages}
-      companyIds={session.companyIds}
-      branchIds={session.branchIds}
       types={types}
       channels={channels}
     />

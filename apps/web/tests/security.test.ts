@@ -774,7 +774,8 @@ describe('a resource scope reaches the wire through exactly two named doors', ()
 
   it('permits an optionally unnamed branch at exactly the reads whose route allows one', () => {
     expect(callSites(/branchScopeQuery\s*\(/)).toEqual([
-      // The three operations whose route schema made the branch optional.
+      // The operations whose route schema made the branch optional.
+      'features/appointments/api.ts',
       'features/overview/api.ts',
       'features/receptions/api.ts',
       'features/work-orders/api.ts',
