@@ -62,6 +62,10 @@ vi.mock('next/navigation', () => ({
 }));
 
 const { requireSession, readSession } = await import('@/features/authentication/api/session');
+const { loadWorkingContext } = await import('@/features/working-context/api');
+const { WORKING_CONTEXT_PATH, isWorkingContextShape, storageKeyFor } = await import(
+  '@/features/working-context/working-context-contract'
+);
 const { GET } = await import('@/app/[locale]/(auth)/session-ended/route');
 
 const SESSION = {
@@ -281,5 +285,99 @@ describe('a valid session', () => {
     answerSessionWith(200, SESSION);
     await expect(requireSession('en')).resolves.toMatchObject({ email: SESSION.email });
     expect(jar.deleted).toEqual([]);
+  });
+});
+
+/**
+ * The working-context read (`iam.working-context-read`).
+ *
+ * It sits beside the session read on purpose: the two are the same kind of
+ * call, made in the same layout, against the same cookie, and the interesting
+ * cases are the same ones. What the session read publishes is bare references
+ * with an empty list standing for "unrestricted"; what this one publishes is
+ * named, active entities plus an explicit `unrestricted`, which is the whole
+ * reason the branch pickers could stop asking for a typed reference.
+ */
+const CONTEXT_BODY = {
+  tenantId: '2f1c5b3e-6a4d-4b21-9c8e-1f2a3b4c5d6e',
+  unrestricted: false,
+  companies: [{ id: 'c-1', name: 'Northern Operations', code: 'NORTH' }],
+  branches: [
+    {
+      id: 'b-1',
+      companyId: 'c-1',
+      code: 'B1',
+      name: 'Main workshop',
+      city: null,
+      timezone: 'Asia/Riyadh',
+      status: 'active',
+    },
+  ],
+};
+
+describe('the working-context read', () => {
+  it('calls the published path and returns a ready snapshot', async () => {
+    const calls: string[] = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        calls.push(new URL(url).pathname);
+        return respond(200, CONTEXT_BODY);
+      })
+    );
+    const snapshot = await loadWorkingContext('user-1');
+    expect(calls).toEqual([WORKING_CONTEXT_PATH]);
+    expect(snapshot.status).toBe('ready');
+    expect(snapshot.tenantId).toBe(CONTEXT_BODY.tenantId);
+    expect(snapshot.accountId).toBe('user-1');
+    expect(snapshot.branches).toHaveLength(1);
+  });
+
+  it('reports NO branch as its own state, not as a failure', async () => {
+    // An operator with no branch has nothing to choose and nothing broken.
+    // Collapsing this into `unavailable` would offer them a retry that can
+    // never change the answer.
+    answerSessionWith(200, { ...CONTEXT_BODY, branches: [] });
+    const snapshot = await loadWorkingContext('user-1');
+    expect(snapshot.status).toBe('none');
+  });
+
+  it('treats a 200 of the wrong shape as unreadable rather than as an empty workshop', async () => {
+    // The failure this closes: a 200 carrying an error envelope would otherwise
+    // publish `branches: undefined` and every screen would decide for itself
+    // what that meant.
+    answerSessionWith(200, { tenantId: 'x' });
+    expect((await loadWorkingContext('user-1')).status).toBe('unavailable');
+  });
+
+  it('never throws, whatever the backend answers', async () => {
+    for (const status of [401, 403, 429, 500, 503]) {
+      answerSessionWith(status);
+      const snapshot = await loadWorkingContext('user-1');
+      expect(snapshot.status, String(status)).toBe('unavailable');
+      expect(snapshot.branches).toEqual([]);
+    }
+  });
+
+  it('reports no session as unreadable rather than as an error page', async () => {
+    jar.token = null;
+    expect((await loadWorkingContext('user-1')).status).toBe('unavailable');
+  });
+
+  it('refuses a body whose branch entries are not the published shape', () => {
+    expect(isWorkingContextShape(CONTEXT_BODY)).toBe(true);
+    expect(isWorkingContextShape({ ...CONTEXT_BODY, unrestricted: 'yes' })).toBe(false);
+    expect(
+      isWorkingContextShape({ ...CONTEXT_BODY, branches: [{ id: 'b-1', companyId: 'c-1' }] })
+    ).toBe(false);
+    expect(isWorkingContextShape(null)).toBe(false);
+  });
+
+  it('keys the remembered choice to the workspace AND the account', () => {
+    // A shared office machine is ordinary. Two operators signing in one after
+    // the other must not inherit each other's branch.
+    expect(storageKeyFor('t-1', 'u-1')).toBe('rootlco.working-context.t-1.u-1');
+    expect(storageKeyFor('t-1', 'u-1')).not.toBe(storageKeyFor('t-1', 'u-2'));
+    expect(storageKeyFor('t-1', 'u-1')).not.toBe(storageKeyFor('t-2', 'u-1'));
   });
 });
