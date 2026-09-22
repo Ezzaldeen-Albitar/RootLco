@@ -393,7 +393,7 @@ describe('every non-answer reads as itself', () => {
     ).toBeVisible();
   });
 
-  it('invents no total and offers Next only while the server says more exists', async () => {
+  it('invents no total, and offers Next only while the server says more exists', async () => {
     renderQueue();
     await screen.findByText('R-0001');
     expect(screen.getByRole('button', { name: EN['table.nextPage'] as string })).toBeDisabled();
@@ -427,6 +427,30 @@ describe('the next action names what can be done where it lands', () => {
     expect(
       screen.queryByRole('link', { name: EN['receptions.queue.continueCheckIn'] as string })
     ).toBeNull();
+  });
+
+  it('leads to the visit rather than closing from the board', async () => {
+    /*
+     * QA-004, and the claim outlived the control that carried it.
+     *
+     * It used to be asserted on a link labelled "Open the visit to end it",
+     * which the terminal-exit affordance rendered per row. That affordance is
+     * gone with the Show button, and the rule it stood for is not: a board
+     * row's `recordVersion` is a snapshot of whenever the page was fetched, and
+     * committing an `If-Match` write against it would answer 409 for any
+     * operator who left the board open. So the next action NAVIGATES — to the
+     * visit, whose own read supplies the version the guarded command needs —
+     * and no reception write is reachable from this board at all.
+     */
+    listReceptions.mockResolvedValue(page([row({ receptionStatus: 'authorized' })]));
+    renderQueue();
+    const next = await screen.findByRole('link', {
+      name: EN['receptions.queue.continueCheckIn'] as string,
+    });
+    expect(next).toHaveAttribute('href', '/en/receptions/check-in/rv-1');
+    // Nothing on the board commits anything: every row action is a link.
+    const table = screen.getByRole('table');
+    expect(within(table).queryAllByRole('button')).toEqual([]);
   });
 
   it('links every row to its acknowledgement', async () => {

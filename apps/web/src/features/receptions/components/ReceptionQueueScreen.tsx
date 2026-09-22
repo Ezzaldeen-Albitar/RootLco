@@ -7,7 +7,10 @@ import { INITIAL_REQUEST } from '@/components/data-table/table-state';
 import { SelectField, TextField } from '@/components/forms/Field';
 import { SearchBox } from '@/components/search/SearchBox';
 import { SearchStates } from '@/components/search/SearchStates';
-import { RequiresConcreteBranch } from '@/features/working-context/components/WorkingBranchField';
+import {
+  RequiresConcreteBranch,
+  WorkingBranchField,
+} from '@/features/working-context/components/WorkingBranchField';
 import { useBranchTarget } from '@/features/working-context/use-branch-target';
 import { useWorkingContext } from '@/features/working-context/WorkingContextProvider';
 import type { BranchScope, CursorPage, ReadState } from '@/lib/api/read-operation';
@@ -513,6 +516,17 @@ export function ReceptionQueueScreen({
         ) : null}
 
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {/*
+            The branch is STATED, not asked. It is the header's own selection and
+            there is exactly one place it can be changed; a second editable
+            control here would be a second authority for the same fact. A board
+            that did not name it would leave the operator to remember which
+            branch they are reading.
+          */}
+          <WorkingBranchField
+            messages={messages}
+            label={translate(messages, 'receptions.checkIn.branch')}
+          />
           <SelectField
             label={translate(messages, 'receptions.queue.statusFilter')}
             value={status}
@@ -559,7 +573,15 @@ export function ReceptionQueueScreen({
       </form>
 
       {blocked ? (
-        <RequiresConcreteBranch messages={messages} state={branch} />
+        // Named apart from the one the branch field renders above it. The
+        // second is not duplication — it is the answer arriving where the
+        // question was asked, beside the list that cannot be read — and giving
+        // them one name is what would make a test unable to say which it means.
+        <RequiresConcreteBranch
+          messages={messages}
+          state={branch}
+          testId="reception-queue-blocked"
+        />
       ) : spansCompanies ? (
         <p
           role="status"

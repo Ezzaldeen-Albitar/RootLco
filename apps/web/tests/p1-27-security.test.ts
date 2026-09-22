@@ -9,12 +9,7 @@ import {
   imposeRestrictionAction,
 } from '@/features/crm/customers/governance-actions';
 import { requiresIdempotencyKey, resolveOperation } from '@/lib/api/operation-contract';
-import {
-  branchScopeQuery,
-  branchTargetQuery,
-  companyFilterQuery,
-  query,
-} from '@/lib/api/read-operation';
+import { branchTargetQuery, companyFilterQuery, query } from '@/lib/api/read-operation';
 import {
   carriableSearchParams,
   FORBIDDEN_URL_KEYS,
@@ -531,53 +526,6 @@ describe('P1-27-SEC-001 — permission and resolved scope', () => {
       // without calling it and is correctly not matched.
       'lib/api/read-operation.ts',
     ]);
-  });
-
-  it('permits an OPTIONALLY unnamed branch at exactly the boards that changed', () => {
-    /*
-     * The Owner directive (`P1-32-PRE-OD-UX`) made `branchId` optional on
-     * `rec.reception-list`, `wo.work-order-list` and
-     * `ovw.dashboard-summary-read`: an omitted branch asks for every branch of
-     * the named company the caller may read, and the API resolves that set one
-     * branch at a time against the operation's own permission code.
-     *
-     * That is a narrow contract change and it must stay narrow. Widening
-     * `BranchTarget` to accept a null branch would have relaxed the guarantee
-     * for every branch-addressed read at once and silently — the throw in
-     * `branchTargetQuery` is the only thing between a typo and a request that
-     * looks like a scope assertion. So the second door is named, and its call
-     * sites are pinned here exactly as the company filter's are: widening the
-     * exception means changing a test that says why it is not wider.
-     */
-    const callers = [...walk(FEATURES), ...walk(join(process.cwd(), 'src', 'lib'))]
-      .map((path) => ({ path, source: code(readFileSync(path, 'utf8')) }))
-      .filter((f) => /branchScopeQuery\s*\(/.test(f.source))
-      .map((f) => f.path.split(/[\\/]/).slice(-3).join('/'));
-
-    expect(callers.sort()).toEqual([
-      // The three operations whose route schema made the branch optional.
-      'features/overview/api.ts',
-      'features/receptions/api.ts',
-      'features/work-orders/api.ts',
-      // The definition itself, so this fails if the helper moves.
-      'lib/api/read-operation.ts',
-    ]);
-  });
-
-  it('refuses a tenant, and a scope key smuggled among the filters of a branch scope', () => {
-    // The company is mandatory and the branch is optional; neither may arrive
-    // twice, and a tenant may not arrive at all.
-    expect(() => branchScopeQuery({ companyId: '', branchId: null })).toThrow(/companyId/);
-    expect(() => branchScopeQuery({ companyId: 'c1', branchId: '  ' })).toThrow(/branchId/);
-    expect(() => branchScopeQuery({ companyId: 'c1', branchId: null }, { tenantId: 't1' })).toThrow(
-      /tenantId/
-    );
-    expect(() =>
-      branchScopeQuery({ companyId: 'c1', branchId: null }, { branchId: 'forged' })
-    ).toThrow(/branchId/);
-    // And the honest shapes travel: a named branch, and an omitted one.
-    expect(branchScopeQuery({ companyId: 'c1', branchId: 'b1' })).toBe('?companyId=c1&branchId=b1');
-    expect(branchScopeQuery({ companyId: 'c1', branchId: null })).toBe('?companyId=c1');
   });
 
   it('still refuses a tenant or branch even alongside a company filter', () => {

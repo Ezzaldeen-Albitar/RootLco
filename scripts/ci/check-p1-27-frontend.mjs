@@ -375,6 +375,14 @@ export const MODULE_DISPOSITION = Object.freeze({
   'apps/web/src/components/print': 'in-surface',
   /** `Icon`, rendered inside P1-27 controls. */
   'apps/web/src/components/primitives': 'in-surface',
+  /**
+   * `SearchBox` and `SearchStates` — the one box a screen asks its question in,
+   * and the six things a search can be other than an answer. Newly visible when
+   * the customer chooser adopted them under the Owner directive
+   * (`P1-32-PRE-OD-UX`); they render the label, the example and every refusal an
+   * operator reads, so `in-surface` rather than transport.
+   */
+  'apps/web/src/components/search': 'in-surface',
   /** `PageHeader`, and the locale switcher that carries table state across it. */
   'apps/web/src/components/shell': 'in-surface',
   /** `States` — every denial, error and empty state these screens render. */
@@ -394,6 +402,14 @@ export const MODULE_DISPOSITION = Object.freeze({
    * module is what made it a newly imported dependency of a scanned tree.
    */
   'apps/web/src/lib/format': 'in-surface',
+  /*
+   * Calendar days and day boundaries measured on a BRANCH's clock, which
+   * `lib/format` deliberately refuses to decide. `in-surface` for the same
+   * reason `lib/format` is: it decides operator-visible text — the period a
+   * board is headed with and the time each row is stamped — and the alternative
+   * was every board computing its own boundary from the reader's laptop.
+   */
+  'apps/web/src/lib/branch-time': 'in-surface',
   /** The structured logger the console rule points at. Excluded, measured. */
   'apps/web/src/lib/observability': 'platform-transport',
   'apps/web/src/lib/page-metadata': 'in-surface',
