@@ -537,6 +537,8 @@ import '@/app/api/v1/platform/organizations/[tenantId]/charges/[chargeId]/void/r
 import '@/app/api/v1/platform/organizations/[tenantId]/receipts/route';
 import '@/app/api/v1/platform/statistics/route';
 import '@/app/api/v1/platform/audit-events/route';
+// Owner directive — the tenant operations overview.
+import '@/app/api/v1/dashboard/summary/route';
 
 const DOCUMENT_PATH = join(process.cwd(), 'docs', 'api', 'openapi.v1.json');
 
