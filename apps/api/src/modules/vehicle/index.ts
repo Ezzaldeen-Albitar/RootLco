@@ -36,7 +36,7 @@ import { VehicleCatalogueRepository } from './data/vehicle-catalogue-repository'
 import { VehicleCatalogueService } from './application/vehicle-catalogue-service';
 
 export type { VehicleSearchHit, VehicleSearchInput } from './application/vehicle-search-service';
-export type { VehicleDetailRow } from './application/vehicle-read-service';
+export type { VehicleDetailRow, VehicleDisplayIdentity } from './application/vehicle-read-service';
 export type { CreatedVehicle, UpdatedVehicle } from './application/vehicle-write-service';
 export type { MergeResult, ScanResult, ReviewResult } from './application/vehicle-identity-service';
 export type {
