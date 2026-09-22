@@ -39,6 +39,7 @@ import {
   scopeTargetOption,
   searchParamsToObject,
 } from '@/server/http/validation';
+import { MAX_SEARCH_FRAGMENT, MIN_SEARCH_FRAGMENT } from '@/shared/text/search-terms';
 import { DELIVERY_STATUSES, deliveryModule } from '@/modules/delivery';
 
 export const runtime = 'nodejs';
@@ -128,6 +129,13 @@ const ListQuery = z
     status: z.enum(DELIVERY_STATUSES).optional(),
     workOrderId: schemas.uuid.optional(),
     vehicleId: schemas.uuid.optional(),
+    /**
+     * One free-text box (Owner directive, P1-32-PRE-OD-UX): part of a party's
+     * name on the originating visit, the tail of their phone number, part of any
+     * plate the vehicle has carried, part of its VIN, or part of the work-order
+     * number the delivery belongs to.
+     */
+    q: z.string().min(MIN_SEARCH_FRAGMENT).max(MAX_SEARCH_FRAGMENT).optional(),
     cursor: schemas.cursor.optional(),
     limit: schemas.limit.optional(),
   })
@@ -167,6 +175,7 @@ export async function GET(request: Request): Promise<Response> {
             ...(query.status === undefined ? {} : { status: query.status }),
             ...(query.workOrderId === undefined ? {} : { workOrderId: query.workOrderId }),
             ...(query.vehicleId === undefined ? {} : { vehicleId: query.vehicleId }),
+            ...(query.q === undefined ? {} : { q: query.q }),
           },
           {
             ...(query.cursor === undefined ? {} : { cursor: query.cursor }),

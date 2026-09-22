@@ -18,6 +18,7 @@
 import { ApplicationService } from '@/server/layering';
 import { AppFailure } from '@/server/errors/app-failure';
 import type { DbHandle } from '@/server/db/transaction';
+import { toEntitySearchTerms } from '@/shared/text/search-terms';
 import type { ScopeAuthorizer } from '@/server/auth/authorization';
 import { pageRequest, type Page } from '@/server/db/pagination';
 import {
@@ -74,6 +75,11 @@ export class ReceptionReadService extends ApplicationService {
       readonly branchIds?: readonly string[] | undefined;
       readonly status?: string | undefined;
       readonly vehicleId?: string | undefined;
+      /** Inclusive bounds on the instant custody was accepted. */
+      readonly from?: string | undefined;
+      readonly to?: string | undefined;
+      /** The raw free-text box; reduced here, once, by the shared rule. */
+      readonly q?: string | undefined;
     } & PageQuery
   ): Promise<Page<ReceptionListEntry>> {
     return this.reads.listReceptions(
@@ -83,6 +89,11 @@ export class ReceptionReadService extends ApplicationService {
         branchIds: query.branchIds,
         status: query.status,
         vehicleId: query.vehicleId,
+        from: query.from,
+        to: query.to,
+        // Reduced in the APPLICATION layer rather than in the route, so every
+        // caller of this service folds the box the same way.
+        search: toEntitySearchTerms(query.q),
       },
       pageRequest(RECEPTION_LIST_ORDERING, query)
     );

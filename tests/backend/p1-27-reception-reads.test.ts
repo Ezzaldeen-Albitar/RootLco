@@ -270,10 +270,16 @@ async function openReception(
     readonly fuelLevelId?: string;
     /** Which branch to receive into. Defaults to BRANCH_A1. */
     readonly branchId?: string;
+    /** Which partner requested the service. Defaults to PARTNER_A. */
+    readonly serviceRequesterPartnerId?: string;
   } = {}
 ): Promise<{ id: string; vehicleId: string }> {
   const vehicleId = await newVehicle();
-  const { branchId: intoBranch = BRANCH_A1, ...rest } = overrides;
+  const {
+    branchId: intoBranch = BRANCH_A1,
+    serviceRequesterPartnerId = PARTNER_A,
+    ...rest
+  } = overrides;
   const response = await CREATE_RECEPTION(
     new Request(R, {
       method: 'POST',
@@ -283,7 +289,7 @@ async function openReception(
         branchId: intoBranch,
         vehicleId,
         receivingEmployeeId: USER_FULL,
-        serviceRequesterPartnerId: PARTNER_A,
+        serviceRequesterPartnerId,
         origin: { kind: 'walk_in' },
         ...rest,
       }),
@@ -1257,5 +1263,173 @@ describe('the branch-optional board', () => {
     // second company has no visits, which is a fact this caller may not learn.
     expect(other.status).toBe(403);
     expect(((await other.json()) as PageBody).code).toBe('ERR-IAM-001');
+  });
+});
+
+// ===========================================================================
+// The free-text box and the date window (Owner directive, P1-32-PRE-OD-UX)
+//
+// Five arms, one box. Each case below types what a person at a counter actually
+// types — a name, a phone number off an Arabic keypad, a plate written with
+// spaces, a plate written in Arabic letters, a VIN in lower case — and asserts
+// the same visit comes back, because the fragment is folded by exactly the rule
+// the stored column was folded by.
+//
+// The negative cases matter as much: a fragment that matches nothing returns an
+// empty page rather than the branch, and a one-character fragment is refused at
+// the edge rather than answered with a page that says nothing.
+// ===========================================================================
+describe('the reception search box', () => {
+  const SEARCH_PARTNER = 'c1150000-0000-4000-8000-0000000000e1';
+  const SEARCH_PARTNER_NAME = 'Munira Al-Khatib';
+  /** Stored as ASCII digits; the TAIL is what a person quotes. */
+  const SEARCH_PHONE = '962790112233';
+  /** A Latin plate, stored with a space the normaliser strips. */
+  const PLATE_LATIN = 'AB 1234';
+  /** An Arabic-letter plate with Arabic-Indic digits: both survive the fold. */
+  const PLATE_ARABIC = 'ا ب ٥٦٧٨';
+
+  let namedVisitId = '';
+  let namedVehicleId = '';
+  let arabicPlateVisitId = '';
+  let decoyVisitId = '';
+
+  beforeAll(async () => {
+    await asAdminTx(TENANT_A, async (client) => {
+      await client.query(
+        `INSERT INTO crm.business_partners (id, tenant_id, party_type, display_name, lifecycle_status, created_by)
+         VALUES ($1,$2,'individual',$3,'active',$4) ON CONFLICT (id) DO NOTHING`,
+        [SEARCH_PARTNER, TENANT_A, SEARCH_PARTNER_NAME, USER_A]
+      );
+      await client.query(
+        `INSERT INTO crm.contact_points
+           (tenant_id, partner_id, channel, normalized_value, raw_value, is_primary, created_by)
+         VALUES ($1,$2,'mobile',$3,$3,true,$4)`,
+        [TENANT_A, SEARCH_PARTNER, SEARCH_PHONE, USER_A]
+      );
+    });
+
+    authAs(SUBJ_FULL);
+    const named = await openReception({ serviceRequesterPartnerId: SEARCH_PARTNER });
+    namedVisitId = named.id;
+    namedVehicleId = named.vehicleId;
+    const arabic = await openReception();
+    arabicPlateVisitId = arabic.id;
+    // The visit no arm may reach: a different party, a different vehicle, no plate.
+    decoyVisitId = (await openReception()).id;
+
+    await asAdminTx(TENANT_A, async (client) => {
+      await client.query(
+        `INSERT INTO veh.plate_history
+           (tenant_id, vehicle_id, country_code, plate_raw, valid_from, created_by)
+         VALUES ($1,$2,'JO',$3,current_date,$5), ($1,$4,'JO',$6,current_date,$5)`,
+        [TENANT_A, namedVehicleId, PLATE_LATIN, arabic.vehicleId, USER_A, PLATE_ARABIC]
+      );
+    });
+  });
+
+  /** The ids on the page for one box, as the full-permission caller. */
+  async function search(box: string): Promise<readonly unknown[]> {
+    authAs(SUBJ_FULL);
+    const response = await listReceptions(
+      `?companyId=${COMPANY_A1}&branchId=${BRANCH_A1}&limit=100&q=${encodeURIComponent(box)}`
+    );
+    expect(response.status).toBe(200);
+    return (((await response.json()) as PageBody).items ?? []).map((item) => item.id);
+  }
+
+  it('finds the visit by part of the customer name, folded', async () => {
+    const ids = await search('khatib');
+    expect(ids).toContain(namedVisitId);
+    expect(ids).not.toContain(decoyVisitId);
+  });
+
+  it('finds the visit by a phone tail typed in Arabic-Indic digits', async () => {
+    // The last seven digits of SEARCH_PHONE in Arabic-Indic numerals.
+    // `normalizePhoneDigits` folds them to ASCII before the suffix comparison,
+    // so a number read off an Arabic keypad reaches the same contact point.
+    const ids = await search('٠١١٢٢٣٣');
+    expect(ids).toContain(namedVisitId);
+    expect(ids).not.toContain(decoyVisitId);
+  });
+
+  it('finds the visit by a Latin plate however the spaces and case fall', async () => {
+    for (const typed of ['ab1234', 'AB  1234', 'ab-1234']) {
+      const ids = await search(typed);
+      expect(ids, typed).toContain(namedVisitId);
+      expect(ids, typed).not.toContain(decoyVisitId);
+    }
+  });
+
+  it('finds the visit by an Arabic-letter plate whose digits were typed either way', async () => {
+    // `veh.normalize_plate` folds the digits and strips the separators and leaves
+    // every other character alone, so an Arabic plate is matched by an Arabic
+    // fragment — with the digits in either numeral system.
+    for (const typed of ['ا ب ٥٦٧٨', 'اب5678']) {
+      const ids = await search(typed);
+      expect(ids, typed).toContain(arabicPlateVisitId);
+      expect(ids, typed).not.toContain(decoyVisitId);
+    }
+  });
+
+  it('finds the visit by a VIN fragment in lower case', async () => {
+    const vin = await scalar(`SELECT vin_normalized AS value FROM veh.vehicles WHERE id = $1`, [
+      namedVehicleId,
+    ]);
+    expect(vin).not.toBeNull();
+    const ids = await search((vin as string).slice(-8).toLowerCase());
+    expect(ids).toContain(namedVisitId);
+    expect(ids).not.toContain(decoyVisitId);
+  });
+
+  it('finds the visit by part of its reception number', async () => {
+    const number = await scalar(
+      `SELECT display_number AS value FROM rec.reception_visits WHERE id = $1`,
+      [namedVisitId]
+    );
+    // Asserted rather than skipped when absent: an arm that silently stops being
+    // exercised is the shape of evidence this repository keeps finding hollow.
+    expect(number).not.toBeNull();
+    const ids = await search((number as string).slice(-4));
+    expect(ids).toContain(namedVisitId);
+  });
+
+  it('returns an empty page for a box nothing matches', async () => {
+    expect(await search('zzzznosuchcustomer')).toEqual([]);
+  });
+
+  it('refuses a one-character box at the edge (422), never an empty page', async () => {
+    authAs(SUBJ_FULL);
+    const tooShort = await listReceptions(`?companyId=${COMPANY_A1}&branchId=${BRANCH_A1}&q=a`);
+    expect(tooShort.status).toBe(422);
+    const tooLong = await listReceptions(
+      `?companyId=${COMPANY_A1}&branchId=${BRANCH_A1}&q=${'a'.repeat(81)}`
+    );
+    expect(tooLong.status).toBe(422);
+  });
+
+  it('bounds the board by the custody instant and refuses an inverted window', async () => {
+    authAs(SUBJ_FULL);
+    const wide = await listReceptions(
+      `?companyId=${COMPANY_A1}&branchId=${BRANCH_A1}&limit=100` +
+        `&from=2000-01-01T00:00:00.000Z&to=2999-01-01T00:00:00.000Z`
+    );
+    expect(wide.status).toBe(200);
+    expect((((await wide.json()) as PageBody).items ?? []).length).toBeGreaterThan(0);
+
+    // A window that closed long before this run holds none of its visits.
+    const past = await listReceptions(
+      `?companyId=${COMPANY_A1}&branchId=${BRANCH_A1}&limit=100` +
+        `&from=2000-01-01T00:00:00.000Z&to=2000-01-02T00:00:00.000Z`
+    );
+    expect(past.status).toBe(200);
+    expect(((await past.json()) as PageBody).items ?? []).toEqual([]);
+
+    // Inverted: refused, because an empty page would read as "no visits".
+    const inverted = await listReceptions(
+      `?companyId=${COMPANY_A1}&branchId=${BRANCH_A1}` +
+        `&from=2026-02-01T00:00:00.000Z&to=2026-01-01T00:00:00.000Z`
+    );
+    expect(inverted.status).toBe(422);
   });
 });

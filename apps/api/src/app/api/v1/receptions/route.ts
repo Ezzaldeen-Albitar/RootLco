@@ -38,6 +38,7 @@ import {
   scopeTargetOption,
   searchParamsToObject,
 } from '@/server/http/validation';
+import { MAX_SEARCH_FRAGMENT, MIN_SEARCH_FRAGMENT } from '@/shared/text/search-terms';
 import {
   MAX_SOC_PERCENT,
   MAX_WALK_IN_NOTE,
@@ -145,10 +146,42 @@ const ListQuery = z
     branchId: schemas.uuid.optional(),
     status: z.enum(RECEPTION_STATUSES).optional(),
     vehicleId: schemas.uuid.optional(),
+    /**
+     * Inclusive bounds on the instant custody was accepted (Owner directive,
+     * P1-32-PRE-OD-UX) — the column the board already orders on, so the filter
+     * and the ordering date the same business fact.
+     */
+    from: z.string().datetime({ offset: true }).optional(),
+    to: z.string().datetime({ offset: true }).optional(),
+    /**
+     * One free-text box (Owner directive, P1-32-PRE-OD-UX): part of a party's
+     * name, the tail of their phone number, part of any plate the vehicle has
+     * carried, part of its VIN, or part of the reception number. It narrows a
+     * board the caller is already entitled to and never widens one.
+     */
+    q: z.string().min(MIN_SEARCH_FRAGMENT).max(MAX_SEARCH_FRAGMENT).optional(),
     cursor: schemas.cursor.optional(),
     limit: schemas.limit.optional(),
   })
-  .strict();
+  .strict()
+  .superRefine((query, context) => {
+    if (
+      query.from !== undefined &&
+      query.to !== undefined &&
+      Date.parse(query.to) < Date.parse(query.from)
+    ) {
+      // An inverted range matches nothing by construction, so answering it with
+      // an empty page would read as "no visits" rather than "bad request" — the
+      // rule `apt.appointment-list` already applies to its own window. Compared
+      // as INSTANTS: both values carry an explicit offset, and a lexical
+      // comparison of offset-bearing ISO strings is wrong in both directions.
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['to'],
+        message: 'to must not be earlier than from',
+      });
+    }
+  });
 
 export const RECEPTION_LIST_OPERATION = defineOperation({
   id: 'rec.reception-list',
@@ -183,6 +216,9 @@ export async function GET(request: Request): Promise<Response> {
           branchIds,
           status: query.status,
           vehicleId: query.vehicleId,
+          from: query.from,
+          to: query.to,
+          q: query.q,
           cursor: query.cursor,
           limit: query.limit,
         }),

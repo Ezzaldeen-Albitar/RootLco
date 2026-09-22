@@ -26,6 +26,7 @@ import {
   scopeTargetOption,
   searchParamsToObject,
 } from '@/server/http/validation';
+import { MAX_SEARCH_FRAGMENT, MIN_SEARCH_FRAGMENT } from '@/shared/text/search-terms';
 import { APPOINTMENT_STATUSES, receptionModule } from '@/modules/reception';
 
 export const runtime = 'nodejs';
@@ -126,6 +127,12 @@ const ListQuery = z
     /** Inclusive range bounds; the effective window must OVERLAP [from, to]. */
     from: z.string().datetime({ offset: true }).optional(),
     to: z.string().datetime({ offset: true }).optional(),
+    /**
+     * One free-text box (Owner directive, P1-32-PRE-OD-UX): part of the
+     * requester's name, the tail of their phone number, part of any plate the
+     * vehicle has carried, part of its VIN, or part of the appointment number.
+     */
+    q: z.string().min(MIN_SEARCH_FRAGMENT).max(MAX_SEARCH_FRAGMENT).optional(),
     cursor: schemas.cursor.optional(),
     limit: schemas.limit.optional(),
   })
@@ -186,6 +193,7 @@ export async function GET(request: Request): Promise<Response> {
           vehicleId: query.vehicleId,
           from: query.from,
           to: query.to,
+          q: query.q,
           cursor: query.cursor,
           limit: query.limit,
         }),

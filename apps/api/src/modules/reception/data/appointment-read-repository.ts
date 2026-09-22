@@ -32,6 +32,8 @@ import {
   type Page,
   type PageRequest,
 } from '@/server/db/pagination';
+import { searchFragment } from '@/server/db/search-predicate';
+import { NO_SEARCH_TERMS, type EntitySearchTerms } from '@/shared/text/search-terms';
 import type { AppointmentStatus } from '../domain/appointment';
 
 const iso = (value: Date | null): string | null => (value ? value.toISOString() : null);
@@ -121,6 +123,8 @@ export interface AppointmentListFilter {
   readonly from?: string | undefined;
   /** Inclusive upper bound: the effective window must START at or before this. */
   readonly to?: string | undefined;
+  /** One free-text box, already reduced by `toEntitySearchTerms`. */
+  readonly search?: EntitySearchTerms | undefined;
 }
 
 export class AppointmentReadRepository extends Repository {
@@ -232,11 +236,23 @@ export class AppointmentReadRepository extends Repository {
       filter.from ?? null,
       filter.to ?? null,
     ];
+    const search = searchFragment(
+      filter.search ?? NO_SEARCH_TERMS,
+      {
+        tenant: 'a.tenant_id',
+        vehicleId: 'a.vehicle_id',
+        // An appointment names exactly ONE party — the requester — so the source
+        // is a single value rather than the visit's role table.
+        partnerIds: 'SELECT a.requester_partner_id',
+        reference: 'a.display_number',
+      },
+      values.length + 1
+    );
     const keyset = keysetFragment(
       page,
       { sort: EFFECTIVE_FROM, id: 'a.id' },
       APPOINTMENT_LIST_ORDERING,
-      values.length + 1
+      values.length + search.values.length + 1
     );
     const result = await this.run<{
       id: string;
@@ -278,10 +294,11 @@ export class AppointmentReadRepository extends Repository {
           AND ($5::uuid IS NULL OR a.vehicle_id = $5)
           AND ($6::timestamptz IS NULL OR COALESCE(a.confirmed_to, a.requested_to) >= $6)
           AND ($7::timestamptz IS NULL OR COALESCE(a.confirmed_from, a.requested_from) <= $7)
+          ${search.predicate}
           ${keyset.predicate}
         ${keyset.order}
         ${keyset.limitClause}`,
-      [...values, ...keyset.values]
+      [...values, ...search.values, ...keyset.values]
     );
     return buildPageWithCursors(
       result.rows.map((row) => ({

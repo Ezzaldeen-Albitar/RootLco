@@ -45,6 +45,8 @@ import {
   type Page,
   type PageRequest,
 } from '@/server/db/pagination';
+import { searchFragment } from '@/server/db/search-predicate';
+import { NO_SEARCH_TERMS, type EntitySearchTerms } from '@/shared/text/search-terms';
 import type { DbHandle } from '@/server/db/transaction';
 
 /**
@@ -1109,6 +1111,8 @@ export class WarrantyRepository extends Repository {
        */
       readonly branchIds?: readonly string[] | undefined;
       readonly vehicleId?: string | undefined;
+      /** One free-text box, already reduced by `toEntitySearchTerms`. */
+      readonly search?: EntitySearchTerms | undefined;
     },
     request: PageRequest
   ): Promise<Page<WarrantyRecordRow>> {
@@ -1119,11 +1123,35 @@ export class WarrantyRepository extends Repository {
       filter.branchIds === undefined ? null : [...filter.branchIds],
       filter.vehicleId ?? null,
     ];
+    const search = searchFragment(
+      filter.search ?? NO_SEARCH_TERMS,
+      {
+        tenant: 'wty.warranty_records.tenant_id',
+        vehicleId: 'wty.warranty_records.vehicle_id',
+        // A warranty record names no party of its own, so the customer is
+        // reached through its work order's reception visit — one hop further
+        // than the delivery list, and the same set of roles at the end of it.
+        partnerIds: `SELECT r.partner_id
+                       FROM wo.work_orders w
+                       JOIN rec.reception_party_roles r
+                         ON r.tenant_id = w.tenant_id
+                        AND r.reception_visit_id = w.reception_visit_id
+                        AND r.deleted_at IS NULL
+                      WHERE w.tenant_id = wty.warranty_records.tenant_id
+                        AND w.id = wty.warranty_records.work_order_id`,
+        // No number of its own either; the paperwork number is the work order's.
+        reference: `SELECT w.display_number
+                      FROM wo.work_orders w
+                     WHERE w.tenant_id = wty.warranty_records.tenant_id
+                       AND w.id = wty.warranty_records.work_order_id`,
+      },
+      values.length + 1
+    );
     const keyset = keysetFragment(
       request,
       { sort: 'start_date', id: 'id' },
       WARRANTY_ORDER,
-      values.length + 1
+      values.length + search.values.length + 1
     );
     const result = await this.run<RecordSql>(
       db,
@@ -1135,10 +1163,11 @@ export class WarrantyRepository extends Repository {
           AND ($3::uuid[] IS NULL OR branch_id = ANY($3::uuid[]))
           AND deleted_at IS NULL
           AND ($4::uuid IS NULL OR vehicle_id = $4)
+          ${search.predicate}
           ${keyset.predicate}
         ${keyset.order}
         ${keyset.limitClause}`,
-      [...values, ...keyset.values]
+      [...values, ...search.values, ...keyset.values]
     );
     return buildPageWithCursors(
       result.rows.map((row) => {

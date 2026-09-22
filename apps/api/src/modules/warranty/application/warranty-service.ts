@@ -56,6 +56,7 @@ import { appendAudit } from '@/server/audit/audit';
 import { publishEvent } from '@/server/events/publisher';
 import { isSqlState, sqlState, SQLSTATE } from '@/server/db/repository';
 import type { DbHandle } from '@/server/db/transaction';
+import { toEntitySearchTerms } from '@/shared/text/search-terms';
 import type { ScopeAuthorizer } from '@/server/auth/authorization';
 import { deliveryModule } from '@/modules/delivery';
 import { workOrderModule, type LineRow } from '@/modules/work-order';
@@ -703,6 +704,8 @@ export class WarrantyService {
       /** The branches the page may cover. `undefined` means every branch of the company. */
       readonly branchIds?: readonly string[] | undefined;
       readonly vehicleId?: string | undefined;
+      /** The raw free-text box; reduced here, once, by the shared rule. */
+      readonly q?: string | undefined;
     },
     page: { readonly cursor?: string | undefined; readonly limit?: number | undefined },
     authorizeScope: ScopeAuthorizer
@@ -715,7 +718,11 @@ export class WarrantyService {
     }
 
     const request: PageRequest = pageRequest(WARRANTY_ORDER, page);
-    const result = await this.repository.listWarranties(db, filter, request);
+    const result = await this.repository.listWarranties(
+      db,
+      { ...filter, search: toEntitySearchTerms(filter.q) },
+      request
+    );
     const policies = new Map<string, WarrantyPolicyRow>(
       (
         await this.repository.findPolicies(db, filter.companyId, [

@@ -42,6 +42,7 @@
  */
 import { AppFailure } from '@/server/errors/app-failure';
 import type { DbHandle } from '@/server/db/transaction';
+import { toEntitySearchTerms } from '@/shared/text/search-terms';
 import type { ScopeAuthorizer } from '@/server/auth/authorization';
 import { billingModule } from '@/modules/billing';
 import { inventoryModule } from '@/modules/inventory';
@@ -509,6 +510,8 @@ export class DeliveryReadService {
       readonly status?: string | undefined;
       readonly workOrderId?: string | undefined;
       readonly vehicleId?: string | undefined;
+      /** The raw free-text box; reduced here, once, by the shared rule. */
+      readonly q?: string | undefined;
     },
     page: { readonly cursor?: string | undefined; readonly limit?: number | undefined },
     authorizeScope: ScopeAuthorizer
@@ -521,7 +524,11 @@ export class DeliveryReadService {
       await authorizeScope({ companyId: filter.companyId, branchId: filter.branchId });
     }
     const request: PageRequest = pageRequest(DELIVERY_RECORD_ORDER, page);
-    const result = await this.repository.listDeliveries(db, filter, request);
+    const result = await this.repository.listDeliveries(
+      db,
+      { ...filter, search: toEntitySearchTerms(filter.q) },
+      request
+    );
     return { ...result, items: result.items.map(toDeliveryView) };
   }
 

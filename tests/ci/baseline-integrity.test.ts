@@ -534,7 +534,12 @@ describe('the coverage include lists are pinned, because they are the denominato
     // that tells an unrestricted caller from a grant-less one). The baseline's
     // percentage floors are untouched: re-establishing them needs a hosted
     // measurement run, which this slice did not perform and does not claim.
-    expect(files.length).toBe(312);
+    // 313 with the Owner directive unified search box: ONE more measured file,
+    // `server/db/search-predicate.ts`, the single place the five-arm disjunction
+    // is written. (`shared/text/search-terms.ts` sits under `src/shared`, which
+    // this include list does not admit, so it moves the count by nothing.) The
+    // floors stay untouched for the reason above.
+    expect(files.length).toBe(313);
     expect(backendCoverage?.exclude).toContain(`${API_SRC_PATH}/server/openapi/**`);
     const instrumented = files.filter(
       (file) => !file.startsWith(`${API_SRC_PATH}/server/openapi/`)
@@ -636,6 +641,6 @@ describe('the coverage include lists are pinned, because they are the denominato
     // `server/openapi/`, so it is instrumented as well as measured.
     // 311 with the Owner directive working-context read: neither added file is
     // under `server/openapi/`, so both are instrumented as well as measured.
-    expect(instrumented.length).toBe(311);
+    expect(instrumented.length).toBe(312);
   });
 });

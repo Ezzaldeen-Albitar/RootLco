@@ -12,6 +12,7 @@
 import { ApplicationService } from '@/server/layering';
 import { AppFailure } from '@/server/errors/app-failure';
 import type { DbHandle } from '@/server/db/transaction';
+import { toEntitySearchTerms } from '@/shared/text/search-terms';
 import type { ScopeAuthorizer } from '@/server/auth/authorization';
 import { pageRequest, type Page } from '@/server/db/pagination';
 import {
@@ -53,6 +54,8 @@ export class AppointmentReadService extends ApplicationService {
       readonly vehicleId?: string | undefined;
       readonly from?: string | undefined;
       readonly to?: string | undefined;
+      /** The raw free-text box; reduced here, once, by the shared rule. */
+      readonly q?: string | undefined;
       readonly cursor?: string | undefined;
       readonly limit?: number | undefined;
     }
@@ -66,6 +69,7 @@ export class AppointmentReadService extends ApplicationService {
         vehicleId: query.vehicleId,
         from: query.from,
         to: query.to,
+        search: toEntitySearchTerms(query.q),
       },
       pageRequest(APPOINTMENT_LIST_ORDERING, query)
     );
