@@ -798,6 +798,28 @@ describe('apt.appointment-create', () => {
     expect(naive.status).toBe(422);
     expect(((await naive.json()) as Body).code).toBe('ERR-VAL-001');
 
+    /*
+     * An entry that DOES end in something offset-shaped, but not in an offset.
+     * `+09` is what a caller writes who half-remembers the shape, and it used to
+     * answer with the same token as the naive case above — telling them to
+     * supply the offset their entry already ends in.
+     *
+     * The date's own hyphens are what makes this hard to tell apart: a detector
+     * anchored on a trailing sign alone reads the `-` in `2026-09-01` as the
+     * start of a displacement and calls the zone-less case above malformed. The
+     * two cases are asserted together so neither can be satisfied alone.
+     */
+    const mistyped = await create(
+      bookingFor(vehicle, {
+        requestedFrom: '2026-09-01T09:00:00+09',
+        requestedTo: '2026-09-01T10:00:00+09',
+      })
+    );
+    expect(mistyped.status).toBe(422);
+    expect(((await mistyped.json()) as Body).violations?.[0]?.rule).toBe(
+      'appointment_time_zone_unreadable'
+    );
+
     const inverted = await create(
       bookingFor(vehicle, {
         requestedFrom: '2026-09-01T10:00:00Z',
@@ -841,7 +863,7 @@ describe('apt.appointment-create', () => {
    * entry. The case above proves each window is refused; this one proves the
    * caller is told WHICH rule refused, which is what picks the sentence.
    */
-  it('names which window rule refused: unreadable, zone-less or backwards', async () => {
+  it('names which window rule refused: unreadable, zone-less, mistyped or backwards', async () => {
     authAs(SUBJ_FULL_A);
     const vehicle = await newVehicle();
 
@@ -890,11 +912,14 @@ describe('apt.appointment-create', () => {
   // V8 parses an offset hour anywhere in 00–23, so `+16:00` satisfies `Date.parse`
   // and every application guard and is refused only by PostgreSQL, whose
   // `timestamptz` displacement limit is ±15:59:59. That refusal is SQLSTATE 22009,
-  // which nothing maps — so before the domain capped the offset, this booking was a
-  // 500 and an exception-monitor incident that any authenticated caller could
-  // manufacture at will. The +14:00 half is the control that stops the cap being
-  // over-tightened into a real outage: Kiribati is genuinely +14:00.
-  it('refuses an offset wider than PostgreSQL allows and still accepts +14:00', async () => {
+  // which nothing maps — so before the domain bounded the offset, this booking was
+  // a 500 and an exception-monitor incident that any authenticated caller could
+  // manufacture at will. The bound the domain publishes is the civil range,
+  // -12:00 to +14:00, which is the one a refusal sentence can name; everything
+  // PostgreSQL would have refused is still refused, earlier. The +14:00 half is the
+  // control that stops the bound being over-tightened into a real outage: Kiribati
+  // is genuinely +14:00.
+  it('refuses an offset outside the civil range and still accepts +14:00', async () => {
     authAs(SUBJ_FULL_A);
     const vehicle = await newVehicle();
 
@@ -905,7 +930,12 @@ describe('apt.appointment-create', () => {
       })
     );
     expect(tooWide.status).toBe(422);
-    expect(((await tooWide.json()) as Body).code).toBe('ERR-VAL-001');
+    const tooWideProblem = (await tooWide.json()) as Body;
+    expect(tooWideProblem.code).toBe('ERR-VAL-001');
+    // The TOKEN, not only the code: it is what picks the sentence, and this
+    // entry already carries an offset, so the zone-less sentence would tell the
+    // caller to add what they have already written.
+    expect(tooWideProblem.violations?.[0]?.rule).toBe('appointment_time_zone_out_of_range');
     expect(
       await countWhere(`SELECT count(*)::text AS n FROM apt.appointments WHERE vehicle_id = $1`, [
         vehicle,
