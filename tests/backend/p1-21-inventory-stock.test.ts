@@ -1282,6 +1282,10 @@ describe('H3 — a return publishes its movement too', () => {
  * Each case asserts the four things a screen depends on: the status, the
  * catalogue code, the violation PATH — which is what decides the control the
  * sentence appears beside — and the RULE, which is what selects the sentence.
+ *
+ * Seventeen of the eighteen are pinned here and in the two sibling suites. The
+ * eighteenth, `stock_location_not_active`, is UNREACHABLE: see the note where it
+ * would have gone, below.
  */
 describe('the stock refusal tokens, on the wire', () => {
   it('names the quarantine location that may not be reserved from', async () => {
@@ -1325,29 +1329,15 @@ describe('the stock refusal tokens, on the wire', () => {
     expect(problem.violations?.[0]?.rule).toBe('stock_location_transit');
   });
 
-  it('names the inactive location that may not be reserved from', async () => {
-    // No operation deactivates a location: the 118-code catalogue mints no
-    // location-status authority, so `inv.stock-location-create` is the only write
-    // and it always lands `active`. The status column and its CHECK are real and
-    // the refusal is real, so the cell is stood up as reference data the way
-    // `freshLocation` stands up every other one, and the REQUEST is real.
-    const dormant = await freshLocation();
-    await seedStock({ itemId: ITEM_A, locationId: dormant, quantity: '3.000' });
-    await admin.query(`UPDATE inv.stock_locations SET status = 'inactive' WHERE id = $1`, [
-      dormant,
-    ]);
-    authAs(INV_FULL);
-    const response = await post(RESERVE, '/api/v1/stock-reservations', {
-      itemId: ITEM_A,
-      locationId: dormant,
-      quantity: '1.000',
-    });
-    expect(response.status).toBe(409);
-    const problem = (await response.json()) as Problem;
-    expect(problem.code).toBe('ERR-TRN-001');
-    expect(problem.violations?.[0]?.path).toBe('body.locationId');
-    expect(problem.violations?.[0]?.rule).toBe('stock_location_not_active');
-  });
+  // `stock_location_not_active` HAS NO CASE HERE, and it is the one refusal in
+  // this family that cannot get one. `inv.stock-location-create` is the only
+  // operation that writes `inv.stock_locations` and it always lands `active`; the
+  // catalogue mints no location-status authority, so no sequence of real requests
+  // puts a cell into the state the refusal is about. The only way to a green
+  // assertion is an admin UPDATE behind the operations, which would pin a state
+  // the product cannot produce and prove nothing about what a caller can reach.
+  // The refusal stays in the service because the column and its CHECK are real
+  // and an operator may yet deactivate a cell in the database.
 
   it('names the archived item that takes no stock movement', async () => {
     authAs(INV_FULL);

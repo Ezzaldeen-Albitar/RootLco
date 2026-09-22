@@ -57,6 +57,7 @@ import {
   ITEM_A,
   ITEM_A_ALT,
   ITEM_A_ARCHIVED,
+  ITEM_A_UNTRACKED,
   QUARANTINE_A1,
   STORAGE_A1,
   WAREHOUSE_A1,
@@ -969,28 +970,30 @@ describe('the intake refusal tokens, on the wire', () => {
     expect(problem.violations?.[0]?.rule).toBe('stock_location_quarantine');
   });
 
-  it('names an opening line counted into an inactive cell', async () => {
-    // No operation deactivates a location — `inv.stock-location-create` is the only
-    // write and it always lands `active`, and the catalogue mints no location-status
-    // authority. The status column and its CHECK are real, so the cell is stood up
-    // as reference data the way every other fixture cell is, and the REQUEST is real.
-    const dormant = await freshLocation();
-    await admin.query(`UPDATE inv.stock_locations SET status = 'inactive' WHERE id = $1`, [
-      dormant,
-    ]);
+  // No case for `stock_location_not_active`: no operation deactivates a cell —
+  // `inv.stock-location-create` is the only write to `inv.stock_locations` and it
+  // always lands `active` — so the precondition is unreachable through the API and
+  // a case for it would have to be manufactured with an admin UPDATE behind the
+  // operations. It is listed as unreachable rather than contrived.
+
+  // The two item refusals are separate cases because they are separate causes and
+  // the sentences differ: one says the part is retired, the other says stock is
+  // not counted for it and asks for counting to be turned on. Said of a retired
+  // part the second is an instruction that fixes nothing.
+  it('names an opening line for a retired item', async () => {
     authAs(INV_FULL);
     const batch = await newBatch();
     authAs(INV_FULL);
     const response = await lineCall(batch, {
-      itemId: ITEM_A,
-      locationId: dormant,
+      itemId: ITEM_A_ARCHIVED,
+      locationId: WAREHOUSE_A1,
       quantity: '1.000',
     });
     expect(response.status).toBe(409);
     const problem = await bodyOf<Problem>(response);
     expect(problem.code).toBe('ERR-TRN-001');
-    expect(problem.violations?.[0]?.path).toBe('body.locationId');
-    expect(problem.violations?.[0]?.rule).toBe('stock_location_not_active');
+    expect(problem.violations?.[0]?.path).toBe('body.itemId');
+    expect(problem.violations?.[0]?.rule).toBe('stock_item_archived');
   });
 
   it('names an opening line for an item stock is not kept for', async () => {
@@ -998,7 +1001,7 @@ describe('the intake refusal tokens, on the wire', () => {
     const batch = await newBatch();
     authAs(INV_FULL);
     const response = await lineCall(batch, {
-      itemId: ITEM_A_ARCHIVED,
+      itemId: ITEM_A_UNTRACKED,
       locationId: WAREHOUSE_A1,
       quantity: '1.000',
     });
