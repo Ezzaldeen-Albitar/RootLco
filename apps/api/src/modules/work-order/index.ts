@@ -26,6 +26,7 @@
  */
 import { composeModule } from '@/server/layering';
 import { WorkOrderCatalogRepository } from './data/work-order-catalog-repository';
+import { WorkOrderOverviewPort } from './application/work-order-overview-port';
 export type {
   JobRow,
   StatusHistoryRow,
@@ -77,6 +78,19 @@ export type {
   WorkOrderStateCount,
   WorkOrderStatusSummary,
 } from './application/work-order-report-port';
+/**
+ * The OVERVIEW port's result types (Owner directive — the tenant dashboard).
+ *
+ * Published because the overview module composes them into the dashboard
+ * response; the repository stays internal, so no caller can run this module's
+ * SQL under its own identity.
+ */
+export type {
+  OverviewScope,
+  TechnicianAssignmentLoad,
+  WorkOrderBoardCounts,
+  WorkOrderStateBucket,
+} from './application/work-order-overview-port';
 export type {
   AdditionalWorkDecisionResult,
   AdditionalWorkDetailView,
@@ -187,6 +201,13 @@ export const workOrderModule = composeModule({
       // added `workOrdersForJobs`, because `tech.labor_sessions` carries a job id
       // and `wo.jobs` is this module's to answer for.
       reportPort: new WorkOrderReportPort(repository, catalog),
+      // Owner directive — the tenant dashboard. The port the OVERVIEW module
+      // consumes, sharing the same repository and state catalogue rather than
+      // constructing second copies of either: the dashboard's per-state counts
+      // and the board's own reads must resolve the platform/tenant catalogue
+      // precedence exactly once, or a state a tenant shadowed would be labelled
+      // one way on the board and another on the dashboard.
+      overviewPort: new WorkOrderOverviewPort(repository, catalog),
     };
   },
 });

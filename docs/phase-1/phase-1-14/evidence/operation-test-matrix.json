@@ -1,10 +1,10 @@
 {
   "generatedFrom": "scripts/check-operation-test-coverage.mjs",
   "counts": {
-    "registered": 496,
-    "publicApi": 496,
+    "registered": 497,
+    "publicApi": 497,
     "internal": 0,
-    "withRequiredEvidence": 496,
+    "withRequiredEvidence": 497,
     "invocationOnly": 0,
     "p1_15": {
       "registered": 28,
@@ -7296,6 +7296,38 @@
         "route",
         "service",
         "stale-version",
+        "success"
+      ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "ovw.dashboard-summary-read",
+      "surface": "public-api",
+      "method": "GET",
+      "path": "/dashboard/summary",
+      "public": false,
+      "files": ["tests/backend/p1-31-report-engine-work-orders.test.ts"],
+      "referenced": true,
+      "derived": ["route", "service", "success", "authorization", "isolation"],
+      "declared": ["success", "denial", "cross-tenant", "isolation"],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "isolation",
+        "denial",
+        "cross-tenant"
+      ],
+      "provided": [
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "isolation",
+        "route",
+        "service",
         "success"
       ],
       "missing": [],

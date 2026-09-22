@@ -303,9 +303,12 @@ describe('the API application lives in the workspace', () => {
     // modules, the `/credit-notes` collection and `/credit-notes/{creditNoteId}`,
     // carrying one operation each — the approval module beneath the second path
     // already existed and is unchanged.
-    // 388 with the Owner directive working-context read: one new route module,
-    // `auth/working-context`, carrying one operation.
-    expect(routeFiles.length).toBe(388);
+    // 388 with the Owner directive tenant dashboard: one new route module,
+    // `dashboard/summary`, carrying one operation.
+    // 389 with the Owner directive working-context read: one new route module,
+    // `auth/working-context`, carrying one operation. The two lines land on
+    // disjoint paths, so the counts add rather than collide.
+    expect(routeFiles.length).toBe(389);
 
     // Non-vacuity. A discovery assertion that only checks a count would pass
     // against a set with one route swapped for another, so the comparison that
@@ -326,7 +329,7 @@ describe('the API application lives in the workspace', () => {
     }
   });
 
-  it('discovers the same 495 operations from the root, apps/api and apps/web', () => {
+  it('discovers the same 496 operations from the root, apps/api and apps/web', () => {
     // The decisive cwd proof, run against a REAL validator rather than the
     // helper alone: `check-authorization-coverage.mjs` derived the repository
     // from `process.cwd()` until this migration, so its answer used to depend on
@@ -412,9 +415,11 @@ describe('the API application lives in the workspace', () => {
     // over one new route module.
     // 495 with the Owner directive credit-note reads (DEF-T-07): two operations
     // over two new route modules, the credit-note list and the credit-note detail.
-    // 496 with the Owner directive working-context read: one operation over one
-    // new route module.
-    expect(report.operations).toHaveLength(496);
+    // 496 with the Owner directive tenant dashboard: one operation over one new
+    // route module, for the reason stated above the route-module count.
+    // 497 with the Owner directive working-context read: one operation over one
+    // new route module, for the same reason.
+    expect(report.operations).toHaveLength(497);
 
     // Three node processes, each loading the whole route surface, so the cost
     // grows with the surface. The budget was 30 s and began timing out inside the

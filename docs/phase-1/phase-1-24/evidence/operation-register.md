@@ -9,10 +9,10 @@ Regenerate with `node scripts/p1-24-operation-register.mjs`; CI runs it with `--
 
 | Measure                  | Value |
 | ------------------------ | ----- |
-| Public operations        | 496   |
-| Domains (modules)        | 20    |
-| OpenAPI paths            | 388   |
-| OpenAPI operations       | 496   |
+| Public operations        | 497   |
+| Domains (modules)        | 21    |
+| OpenAPI paths            | 389   |
+| OpenAPI operations       | 497   |
 | OpenAPI schemas          | 3     |
 | OpenAPI security schemes | 1     |
 | Permission codes seeded  | 132   |
@@ -24,7 +24,7 @@ Regenerate with `node scripts/p1-24-operation-register.mjs`; CI runs it with `--
 
 | Classification    | Operations |
 | ----------------- | ---------- |
-| Covered           | 496        |
+| Covered           | 497        |
 | Partially covered | 0          |
 | Uncovered         | 0          |
 | Not applicable    | 0          |
@@ -41,6 +41,7 @@ Regenerate with `node scripts/p1-24-operation-register.mjs`; CI runs it with `--
 | iam             | 56         | 56      | 34     | 32      | 15         | 10              |
 | inventory       | 81         | 81      | 46     | 47      | 42         | 3               |
 | meta            | 1          | 1       | 0      | 0       | 0          | 0               |
+| overview        | 1          | 1       | 0      | 0       | 0          | 0               |
 | payments        | 5          | 5       | 2      | 2       | 2          | 0               |
 | platform        | 19         | 19      | 12     | 12      | 11         | 1               |
 | pricing         | 9          | 9       | 5      | 5       | 5          | 2               |
@@ -270,6 +271,7 @@ Regenerate with `node scripts/p1-24-operation-register.mjs`; CI runs it with `--
 | `org.employee-detail`                               | GET    | `/api/v1/org/employees/{employeeId}`                                                    | branch  | `org.employee.read`                                                  | —                                              | —    | —   | authorization cross-tenant denial isolation route service success                                                             | Covered |
 | `org.employee-list`                                 | GET    | `/api/v1/org/employees`                                                                 | branch  | `org.employee.read`                                                  | —                                              | —    | —   | authorization denial isolation route service success                                                                          | Covered |
 | `org.employee-status-set`                           | POST   | `/api/v1/org/employees/{employeeId}/status`                                             | branch  | `org.employee.manage`                                                | org.employee.status_changed                    | —    | yes | audit authorization cross-tenant denial isolation route service stale-version success                                         | Covered |
+| `ovw.dashboard-summary-read`                        | GET    | `/api/v1/dashboard/summary`                                                             | branch  | `wo.work_order.read`                                                 | —                                              | —    | —   | authorization cross-tenant denial isolation route service success                                                             | Covered |
 | `platform.audit-search`                             | GET    | `/api/v1/platform/audit-events`                                                         | tenant  | `platform.audit.read`                                                | —                                              | —    | —   | authorization denial route service success                                                                                    | Covered |
 | `platform.charge-list`                              | GET    | `/api/v1/platform/organizations/{tenantId}/charges`                                     | tenant  | `platform.billing.read`                                              | —                                              | —    | —   | authorization cross-tenant denial route service success                                                                       | Covered |
 | `platform.charge-record`                            | POST   | `/api/v1/platform/organizations/{tenantId}/charges`                                     | tenant  | `platform.billing.manage`                                            | org.subscription_charge.recorded               | yes  | —   | audit authorization cross-tenant denial idempotency route service success                                                     | Covered |

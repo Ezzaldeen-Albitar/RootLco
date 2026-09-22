@@ -91,9 +91,11 @@ describe('every operation publishes the success status it returns', () => {
     // over one new route module.
     // 495 with the Owner directive credit-note reads (DEF-T-07): the credit-note
     // list and the credit-note detail, two reads that both answer 200.
-    // 496 with the Owner directive working-context read: one operation over one
+    // 496 with the Owner directive tenant dashboard: one operation over one new
+    // route module, the overview summary.
+    // 497 with the Owner directive working-context read: one operation over one
     // new route module.
-    expect(actual.size).toBe(496);
+    expect(actual.size).toBe(497);
   });
 
   it('agrees with the committed contract for every operation', () => {
@@ -226,9 +228,10 @@ describe('every operation publishes the success status it returns', () => {
     // 201 and neither declares it.
     // 354 -> 356 with the Owner directive credit-note reads (DEF-T-07). Both are
     // GETs, so both publish 200 and neither moves the 201 count.
-    // 356 -> 357 with the Owner directive working-context read. A GET, so it
+    // 356 -> 357 with the Owner directive tenant dashboard, and 357 -> 358 with
+    // the Owner directive working-context read. Both are GETs, so each
     // publishes 200 and does not move the 201 count.
-    expect(counts[200]).toBe(357);
+    expect(counts[200]).toBe(358);
   });
 
   it('reads the handler, not the declaration', () => {

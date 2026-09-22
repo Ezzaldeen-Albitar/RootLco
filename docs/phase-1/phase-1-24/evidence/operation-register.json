@@ -1,9 +1,9 @@
 {
   "generatedBy": "scripts/p1-24-operation-register.mjs",
   "totals": {
-    "operations": 496,
-    "openapiPaths": 388,
-    "openapiOperations": 496,
+    "operations": 497,
+    "openapiPaths": 389,
+    "openapiOperations": 497,
     "openapiSchemas": 3,
     "events": 50,
     "eventsProduced": 47,
@@ -14,7 +14,7 @@
     "auditActions": 284
   },
   "counts": {
-    "Covered": 496
+    "Covered": 497
   },
   "operations": [
     {
@@ -8303,6 +8303,44 @@
       ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/org/employees/[employeeId]/status/route.ts"
+    },
+    {
+      "id": "ovw.dashboard-summary-read",
+      "domain": "overview",
+      "method": "GET",
+      "route": "/api/v1/dashboard/summary",
+      "permissions": ["wo.work_order.read"],
+      "public": false,
+      "scope": "branch",
+      "transaction": "read (no business mutation)",
+      "auditClass": "none",
+      "auditAction": null,
+      "idempotent": false,
+      "versionGuarded": false,
+      "openapi": "GET /api/v1/dashboard/summary",
+      "documentedResponses": ["200", "401", "403", "422", "429", "500"],
+      "requiredEvidence": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "isolation",
+        "denial",
+        "cross-tenant"
+      ],
+      "providedEvidence": [
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "isolation",
+        "route",
+        "service",
+        "success"
+      ],
+      "missingEvidence": [],
+      "tests": ["tests/backend/p1-31-report-engine-work-orders.test.ts"],
+      "classification": "Covered",
+      "file": "apps/api/src/app/api/v1/dashboard/summary/route.ts"
     },
     {
       "id": "platform.audit-search",
