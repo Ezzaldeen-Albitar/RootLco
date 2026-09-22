@@ -221,6 +221,22 @@ export const P1_24_PREFIXES = ['iam.', 'meta.'];
  */
 export const PRE_P1_29_PREFIXES = ['platform.', 'org.'];
 
+/**
+ * The Owner directive's tenant OVERVIEW — `ovw.`, the dashboard namespace.
+ *
+ * BOTH hooks, as every note above insists, and this namespace is the one that
+ * would have failed silently in both directions at once had only one moved: the
+ * `parseProvidedFlags` alternation above and this array. Absent from the
+ * alternation, a COVERAGE-EVIDENCE line for `ovw.` parses to nothing, so PROVIDED
+ * evidence is empty; absent from here, `derivedRequirements` returns `[]`, so
+ * REQUIRED evidence is empty too — and empty against empty is a PASS.
+ *
+ * It is added WITH its first operation and not before, on the rule the P1-22 note
+ * records for `rpt.`: a prefix listed with nothing behind it reports a vacuous
+ * 0/0 block that reads like passing coverage.
+ */
+export const OWNER_DIRECTIVE_OVERVIEW_PREFIXES = ['ovw.'];
+
 /*
  * `org.` joins in Wave C (the Company RBAC Backend), and it is the FIRST
  * namespace to have been missing from BOTH hooks at once. That combination is
@@ -251,6 +267,7 @@ const DERIVED_PREFIXES = [
   ...P1_23_PREFIXES,
   ...P1_24_PREFIXES,
   ...PRE_P1_29_PREFIXES,
+  ...OWNER_DIRECTIVE_OVERVIEW_PREFIXES,
 ];
 /** True when an operation id belongs to a derived-evidence namespace. */
 export const isDerivedId = (id) =>
@@ -3497,6 +3514,11 @@ export const MANIFEST = {
     required: ['success', 'denial', 'cross-tenant', 'isolation'],
     note: 'reported past the age asked about and silent inside it; the remaining quantity is the schema generated outstanding figure and both branches travel with the finding; a caller holding every inventory permission in another tenant is refused this branch',
   },
+  'ovw.dashboard-summary-read': {
+    files: ['tests/backend/p1-31-report-engine-work-orders.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'isolation'],
+    note: 'one branch, its sibling and both together agree with the rows inserted, and the per-branch facts stay on their own branch; the live board is a snapshot and does not move with the period while the intake series does; a zero is a computed figure and every catalogue state is published with its own terminal flag, so no client has to recognise a state name; the caller one permission short of inv.stock.read is answered with every other section and that one withheld, which is what separates a withheld section from a refused request; overdue is unavailable with the reason in words because no work order carries a promised instant; an inverted custom range and an unpublished query field are both refused before a row is read; a caller whose grant reaches the first branch and authorizes only the sibling is refused the first and answered for the sibling, and with no branch named resolves to the sibling alone; a caller from another tenant is refused outright and the answer for this tenant is unchanged',
+  },
   'org.capacity-alert-read': {
     files: ['tests/backend/od-organization-administration.test.ts'],
     required: ['success', 'denial', 'cross-tenant'],
@@ -3772,7 +3794,7 @@ export function parseProvidedFlags(source) {
     // namespace here makes EVERY declaration for it invisible, so a new phase must
     // extend this alternation in the same commit that registers its operations.
     const m =
-      /^\s*\*?\s*((?:iam|meta|shared|crm|veh|apt|rec|wo|tech|dia|qms|svc|quo|inv|sal|wty|rpt|platform|org)\.[a-z0-9-]+)\s*:\s*([a-z0-9 \-]+?)\s*$/.exec(
+      /^\s*\*?\s*((?:iam|meta|shared|crm|veh|apt|rec|wo|tech|dia|qms|svc|quo|inv|sal|wty|rpt|platform|org|ovw)\.[a-z0-9-]+)\s*:\s*([a-z0-9 \-]+?)\s*$/.exec(
         line
       );
     if (m) {

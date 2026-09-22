@@ -50,9 +50,20 @@
  *   rpt.report-catalogue: route service success cross-tenant
  *   rpt.report-read: route service success denial cross-tenant
  *   rpt.report-export: route service authorization success denial cross-tenant isolation audit
+ *   ovw.dashboard-summary-read: route service authorization success denial cross-tenant isolation
  *
  * The three GETs declare `auditClass: 'none'`; only report export declares an
  * audit witness. None declares idempotency or stale-version evidence.
+ *
+ * ## Why the dashboard is exercised HERE
+ *
+ * Owner directive — the tenant operations overview. It is the same question this
+ * file already builds an environment for: calendar periods cut in a branch's own
+ * timezone, two sibling branches in one company, a principal whose grant reaches
+ * one branch and authorizes the other, and a second tenant. Its fixtures are its
+ * OWN company and branches (`COMPANY_D`) so the counts it asserts are exactly the
+ * rows it inserted and cannot move when this file's report fixtures change; what
+ * it reuses is the harness, the principal seeding and the visit primitive.
  */
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import type { Pool } from 'pg';
@@ -90,6 +101,7 @@ import {
   POST as EXPORT_REPORT,
 } from '@/app/api/v1/reports/[reportCode]/route';
 import type { ReportExportView } from '@/modules/reporting';
+import { GET as DASHBOARD_SUMMARY } from '@/app/api/v1/dashboard/summary/route';
 
 let admin: Pool;
 let runtime: Pool;
@@ -590,6 +602,421 @@ let excludedAfter = '';
 let otherBranchOrder = '';
 let middleVehicleId = '';
 let middlePartnerId = '';
+
+// ---------------------------------------------------------------------------
+// ovw.dashboard-summary-read — the tenant operations overview
+// ---------------------------------------------------------------------------
+
+/** This block's OWN company, so every count is exactly the rows it inserted. */
+const COMPANY_D = 'f1310000-0000-4000-8000-0000000000d0';
+/** The first branch, by name. Same zone as the report branches above. */
+const BRANCH_D1 = 'f1310000-0000-4000-8000-0000000000d1';
+/** The sibling branch. Same company, same zone. */
+const BRANCH_D2 = 'f1310000-0000-4000-8000-0000000000d2';
+
+const RECEPTION_READ = 'rec.reception.read';
+const DELIVERY_VIEW = 'sal.delivery.view';
+const TECHNICIAN_READ = 'tech.technician.read';
+const STOCK_READ = 'inv.stock.read';
+
+/** Tenant A, unrestricted, holding every code the dashboard's sections ask for. */
+const OVW_FULL: Principal = {
+  roleId: 'f1310000-0000-4000-8000-000000000201',
+  userId: 'f1310000-0000-4000-8000-000000000202',
+  subject: 'fx_ovw_full',
+  tenantId: TENANT_A,
+  permissions: [WORK_ORDER_READ, RECEPTION_READ, DELIVERY_VIEW, TECHNICIAN_READ, STOCK_READ],
+};
+
+/**
+ * `OVW_FULL` minus `inv.stock.read`, and identical in every other respect.
+ *
+ * The counterfactual that makes the per-section gate testable: same tenant, same
+ * unrestricted scope, one permission apart. Collapse the section gate into the
+ * operation's entitlement and this principal is refused the whole response
+ * instead of one section of it, so the case goes red rather than quiet.
+ */
+const OVW_NO_STOCK: Principal = {
+  ...OVW_FULL,
+  roleId: 'f1310000-0000-4000-8000-000000000211',
+  userId: 'f1310000-0000-4000-8000-000000000212',
+  subject: 'fx_ovw_no_stock',
+  permissions: [WORK_ORDER_READ, RECEPTION_READ, DELIVERY_VIEW, TECHNICIAN_READ],
+};
+
+/**
+ * Work-order authority in `BRANCH_D2` only, with `BRANCH_D1` inside its
+ * permission-BLIND `iam.allowed_branch_ids()` union through the reach grant below.
+ *
+ * The decisive isolation principal, on the same argument the report's
+ * `RPT_SCOPED_R2` is built for: `BRANCH_D1`'s rows ARE visible to RLS for this
+ * caller, so the only thing that can refuse a `BRANCH_D1` dashboard is the scoped
+ * permission evaluation (P1-18-A-01). Without the reach grant the case would pass
+ * because RLS returned nothing, which proves the wrong control.
+ */
+const OVW_SCOPED_D2: Principal = {
+  roleId: 'f1310000-0000-4000-8000-000000000221',
+  userId: 'f1310000-0000-4000-8000-000000000222',
+  subject: 'fx_ovw_scoped_d2',
+  tenantId: TENANT_A,
+  permissions: [WORK_ORDER_READ, RECEPTION_READ, DELIVERY_VIEW, TECHNICIAN_READ, STOCK_READ],
+  scope: { companyId: COMPANY_D, branchId: BRANCH_D2 },
+  grantId: 'f1310000-0000-4000-8000-0000000002f1',
+};
+
+const OVW_REACH_ROLE = 'f1310000-0000-4000-8000-000000000231';
+const OVW_REACH_GRANT = 'f1310000-0000-4000-8000-000000000232';
+
+/** A section, as the wire carries it. */
+type Section<T> =
+  | { readonly status: 'ok'; readonly value: T }
+  | { readonly status: 'unauthorized' }
+  | { readonly status: 'unavailable'; readonly reason: string };
+
+interface StateBucket {
+  readonly state: string;
+  readonly label: string;
+  readonly count: number;
+  readonly isTerminal: boolean;
+}
+interface TrendPoint {
+  readonly date: string;
+  readonly opened: number;
+  readonly completed: number;
+}
+interface SummaryBody {
+  readonly period: {
+    readonly kind: string;
+    readonly from: string;
+    readonly to: string;
+    readonly timezone: string;
+  };
+  readonly generatedAt: string;
+  readonly branchIds: readonly string[];
+  readonly sections: {
+    readonly receptionsOpened: Section<number>;
+    readonly activeWorkOrders: Section<number>;
+    readonly awaitingApproval: Section<number>;
+    readonly awaitingParts: Section<number>;
+    readonly readyForDelivery: Section<number>;
+    readonly completedInPeriod: Section<number>;
+    readonly workOrdersByState: Section<readonly StateBucket[]>;
+    readonly intakeCompletionTrend: Section<readonly TrendPoint[]>;
+    readonly technicianWorkload: Section<readonly { readonly technicianId: string }[]>;
+    readonly lowStock: Section<number>;
+    readonly pendingApprovalsCount: Section<number>;
+    readonly overdue: Section<number>;
+  };
+}
+
+function dashboard(query: Record<string, string>): Promise<Response> {
+  const url = new URL('http://localhost/api/v1/dashboard/summary');
+  for (const [key, entry] of Object.entries(query)) url.searchParams.set(key, entry);
+  return DASHBOARD_SUMMARY(new Request(url));
+}
+
+const summaryBody = async (response: Response): Promise<SummaryBody> =>
+  (await response.json()) as SummaryBody;
+
+/** The `ok` value of a section, or a failure naming the state it was in instead. */
+function sectionValue<T>(section: Section<T>): T {
+  if (section.status !== 'ok') throw new Error(`expected an ok section, got ${section.status}`);
+  return section.value;
+}
+
+/** Every live work order in scope, summed across the catalogue's own states. */
+const liveTotal = (view: SummaryBody): number =>
+  sectionValue(view.sections.workOrdersByState).reduce((total, bucket) => total + bucket.count, 0);
+
+/** The single trend point for a one-day period. */
+function onlyPoint(view: SummaryBody): TrendPoint {
+  const points = sectionValue(view.sections.intakeCompletionTrend);
+  expect(points).toHaveLength(1);
+  const point = points[0];
+  if (point === undefined) throw new Error('the trend carried no point');
+  return point;
+}
+
+describe('ovw.dashboard-summary-read — the tenant operations overview', () => {
+  /** Local today and yesterday in `BRANCH_TIMEZONE`, read from the database. */
+  let localToday = '';
+  let localYesterday = '';
+  let dashboardOrderD1 = '';
+
+  beforeAll(async () => {
+    await admin.query(
+      `INSERT INTO org.legal_companies
+         (id, tenant_id, company_code, legal_name, base_currency_code, created_by)
+       VALUES ($1,$2,'fx_ovw_dashboard','Dashboard Company','USD',$3)
+       ON CONFLICT (id) DO NOTHING`,
+      [COMPANY_D, TENANT_A, USER_A]
+    );
+    for (const [id, code, name] of [
+      [BRANCH_D1, 'fx_ovw_branch_d1', 'Dashboard Branch A'],
+      [BRANCH_D2, 'fx_ovw_branch_d2', 'Dashboard Branch B'],
+    ]) {
+      await admin.query(
+        `INSERT INTO org.branches
+           (id, tenant_id, company_id, branch_code, name, timezone_name, created_by)
+         VALUES ($1,$2,$3,$4,$5,$6,$7) ON CONFLICT (id) DO NOTHING`,
+        [id, TENANT_A, COMPANY_D, code, name, BRANCH_TIMEZONE, USER_A]
+      );
+    }
+
+    for (const principal of [OVW_FULL, OVW_NO_STOCK, OVW_SCOPED_D2]) {
+      await seedPrincipal(principal);
+    }
+
+    await admin.query(
+      `INSERT INTO iam.roles (id, tenant_id, role_code, name, created_by)
+       VALUES ($1,$2,'fx_ovw_reach','Dashboard reach only',$3) ON CONFLICT (id) DO NOTHING`,
+      [OVW_REACH_ROLE, TENANT_A, USER_A]
+    );
+    await admin.query(
+      `INSERT INTO iam.role_permissions (tenant_id, role_id, permission_id, effect, created_by)
+       SELECT $1::uuid,$2::uuid,p.id,'allow',$3::uuid FROM iam.permissions p
+        WHERE p.permission_code = $4
+       ON CONFLICT (tenant_id, role_id, permission_id) DO NOTHING`,
+      [TENANT_A, OVW_REACH_ROLE, USER_A, REACH_ONLY]
+    );
+    const reach = await admin.connect();
+    try {
+      await reach.query('BEGIN');
+      await reach.query(
+        `INSERT INTO iam.role_grants (id, tenant_id, user_id, role_id, scope_mode, granted_by, created_by)
+         VALUES ($1,$2,$3,$4,'scoped',$5,$5)`,
+        [OVW_REACH_GRANT, TENANT_A, OVW_SCOPED_D2.userId, OVW_REACH_ROLE, USER_A]
+      );
+      await reach.query(
+        `INSERT INTO iam.grant_scopes (tenant_id, grant_id, scope_type, company_id, branch_id, created_by)
+         VALUES ($1,$2,'branch',$3,$4,$5)`,
+        [TENANT_A, OVW_REACH_GRANT, COMPANY_D, BRANCH_D1, USER_A]
+      );
+      await reach.query('COMMIT');
+    } catch (error) {
+      await reach.query('ROLLBACK');
+      throw error;
+    } finally {
+      reach.release();
+    }
+
+    // TWO work orders in the first branch and ONE in the sibling. Opened at the
+    // frozen `now()` default, because every period this block asserts on is
+    // resolved against the local day the database is currently in.
+    const seedDashboardOrder = async (branchId: string): Promise<string> => {
+      const visit = await seedAuthorizedVisit({ companyId: COMPANY_D, branchId });
+      const inserted = await admin.query<{ id: string }>(
+        `INSERT INTO wo.work_orders
+           (tenant_id, company_id, branch_id, reception_visit_id, vehicle_id, created_by)
+         VALUES ($1,$2,$3,$4,$5,$6) RETURNING id`,
+        [TENANT_A, COMPANY_D, branchId, visit.visitId, visit.vehicleId, USER_A]
+      );
+      return inserted.rows[0]?.id ?? '';
+    };
+    dashboardOrderD1 = await seedDashboardOrder(BRANCH_D1);
+    await seedDashboardOrder(BRANCH_D1);
+    await seedDashboardOrder(BRANCH_D2);
+
+    // One order in the first branch is waiting on parts, and one carries an
+    // additional-work request nobody has decided yet. Both are per-branch facts,
+    // so the sibling's figures must stay at zero.
+    await admin.query(`UPDATE wo.work_orders SET parts_forward_state = 'requested' WHERE id = $1`, [
+      dashboardOrderD1,
+    ]);
+    await admin.query(
+      `INSERT INTO wo.additional_work_requests
+         (tenant_id, company_id, branch_id, work_order_id, summary, created_by)
+       VALUES ($1,$2,$3,$4,'Dashboard fixture request',$5)`,
+      [TENANT_A, COMPANY_D, BRANCH_D1, dashboardOrderD1, USER_A]
+    );
+
+    const days = await admin.query<{ today: string; yesterday: string }>(
+      `SELECT to_char((now() AT TIME ZONE $1)::date, 'YYYY-MM-DD')     AS today,
+              to_char((now() AT TIME ZONE $1)::date - 1, 'YYYY-MM-DD') AS yesterday`,
+      [BRANCH_TIMEZONE]
+    );
+    localToday = days.rows[0]?.today ?? '';
+    localYesterday = days.rows[0]?.yesterday ?? '';
+  });
+
+  it('counts one branch, the sibling, and both together, from the rows inserted', async () => {
+    authAs(OVW_FULL);
+    const first = await summaryBody(
+      await dashboard({ companyId: COMPANY_D, branchId: BRANCH_D1, period: 'today' })
+    );
+    expect(first.branchIds).toEqual([BRANCH_D1]);
+    expect(first.sections.receptionsOpened).toEqual({ status: 'ok', value: 2 });
+    expect(liveTotal(first)).toBe(2);
+    expect(onlyPoint(first)).toEqual({ date: localToday, opened: 2, completed: 0 });
+    expect(first.sections.awaitingParts).toEqual({ status: 'ok', value: 1 });
+    expect(first.sections.pendingApprovalsCount).toEqual({ status: 'ok', value: 1 });
+    expect(first.sections.awaitingApproval).toEqual({ status: 'ok', value: 1 });
+
+    authAs(OVW_FULL);
+    const sibling = await summaryBody(
+      await dashboard({ companyId: COMPANY_D, branchId: BRANCH_D2, period: 'today' })
+    );
+    expect(sibling.branchIds).toEqual([BRANCH_D2]);
+    expect(sibling.sections.receptionsOpened).toEqual({ status: 'ok', value: 1 });
+    expect(liveTotal(sibling)).toBe(1);
+    expect(onlyPoint(sibling)).toEqual({ date: localToday, opened: 1, completed: 0 });
+    // Per-branch facts, and the sibling holds neither.
+    expect(sibling.sections.awaitingParts).toEqual({ status: 'ok', value: 0 });
+    expect(sibling.sections.pendingApprovalsCount).toEqual({ status: 'ok', value: 0 });
+
+    authAs(OVW_FULL);
+    const both = await summaryBody(await dashboard({ companyId: COMPANY_D, period: 'today' }));
+    expect(both.branchIds).toEqual([BRANCH_D1, BRANCH_D2]);
+    expect(both.sections.receptionsOpened).toEqual({ status: 'ok', value: 3 });
+    expect(liveTotal(both)).toBe(3);
+    expect(onlyPoint(both)).toEqual({ date: localToday, opened: 3, completed: 0 });
+    expect(both.sections.awaitingParts).toEqual({ status: 'ok', value: 1 });
+  });
+
+  it('answers a zero as a computed figure and names the zone the days were cut in', async () => {
+    authAs(OVW_FULL);
+    const view = await summaryBody(
+      await dashboard({ companyId: COMPANY_D, branchId: BRANCH_D1, period: 'today' })
+    );
+    expect(view.period).toEqual({
+      kind: 'today',
+      from: localToday,
+      to: localToday,
+      timezone: BRANCH_TIMEZONE,
+    });
+    expect(Number.isNaN(Date.parse(view.generatedAt))).toBe(false);
+    // A zero is an `ok` carrying 0, never an absence: "nothing was finished
+    // today" is an answer about the workshop.
+    expect(view.sections.completedInPeriod).toEqual({ status: 'ok', value: 0 });
+    expect(view.sections.lowStock).toEqual({ status: 'ok', value: 0 });
+    expect(view.sections.technicianWorkload).toEqual({ status: 'ok', value: [] });
+    // Every catalogue state is published, including the empty ones, and each
+    // carries the catalogue's own terminal flag rather than a name a client
+    // would have to recognise.
+    const buckets = sectionValue(view.sections.workOrdersByState);
+    expect(buckets.length).toBeGreaterThan(1);
+    expect(buckets.some((bucket) => bucket.count === 0)).toBe(true);
+    expect(buckets.every((bucket) => typeof bucket.label === 'string')).toBe(true);
+    expect(buckets.some((bucket) => bucket.isTerminal)).toBe(true);
+  });
+
+  it('reports overdue as unavailable, because no work order carries a due instant', async () => {
+    authAs(OVW_FULL);
+    const view = await summaryBody(
+      await dashboard({ companyId: COMPANY_D, branchId: BRANCH_D1, period: 'today' })
+    );
+    expect(view.sections.overdue.status).toBe('unavailable');
+    if (view.sections.overdue.status !== 'unavailable') throw new Error('unreachable');
+    expect(view.sections.overdue.reason.length).toBeGreaterThan(20);
+  });
+
+  it('withholds only the section whose module code the caller lacks', async () => {
+    authAs(OVW_NO_STOCK);
+    const view = await summaryBody(
+      await dashboard({ companyId: COMPANY_D, branchId: BRANCH_D1, period: 'today' })
+    );
+    expect(view.sections.lowStock).toEqual({ status: 'unauthorized' });
+    // Everything the caller does hold a code for still answers, which is what
+    // separates a withheld section from a refused request.
+    expect(view.sections.receptionsOpened).toEqual({ status: 'ok', value: 2 });
+    expect(view.sections.readyForDelivery.status).toBe('ok');
+    expect(view.sections.technicianWorkload.status).toBe('ok');
+    expect(view.sections.activeWorkOrders.status).toBe('ok');
+  });
+
+  it('excludes today from yesterday', async () => {
+    authAs(OVW_FULL);
+    const view = await summaryBody(
+      await dashboard({ companyId: COMPANY_D, branchId: BRANCH_D1, period: 'yesterday' })
+    );
+    expect(view.period).toMatchObject({
+      kind: 'yesterday',
+      from: localYesterday,
+      to: localYesterday,
+    });
+    expect(view.sections.receptionsOpened).toEqual({ status: 'ok', value: 0 });
+    expect(onlyPoint(view)).toEqual({ date: localYesterday, opened: 0, completed: 0 });
+    // The live board is a SNAPSHOT and is not bounded by the period, so the same
+    // two orders are still there. A figure that moved with the period would mean
+    // the board had quietly become a historical count.
+    expect(liveTotal(view)).toBe(2);
+  });
+
+  it('refuses an inverted custom range without reading a row', async () => {
+    authAs(OVW_FULL);
+    const response = await dashboard({
+      companyId: COMPANY_D,
+      branchId: BRANCH_D1,
+      period: 'custom',
+      from: '2027-03-10',
+      to: '2027-03-01',
+    });
+    expect(response.status).toBe(422);
+    expect(await response.json()).toMatchObject({ code: 'ERR-VAL-001' });
+  });
+
+  it('refuses a branch the caller has RLS reach into but no work-order authority in', async () => {
+    authAs(OVW_SCOPED_D2);
+    const refused = await dashboard({
+      companyId: COMPANY_D,
+      branchId: BRANCH_D1,
+      period: 'today',
+    });
+    expect(refused.status).toBe(403);
+    expect(await refused.json()).toMatchObject({ code: 'ERR-IAM-001' });
+
+    // The same caller, on the branch it is actually granted in, is answered —
+    // so the refusal above is the scope decision and not a broken fixture.
+    authAs(OVW_SCOPED_D2);
+    const allowed = await dashboard({
+      companyId: COMPANY_D,
+      branchId: BRANCH_D2,
+      period: 'today',
+    });
+    expect(allowed.status).toBe(200);
+    expect((await summaryBody(allowed)).branchIds).toEqual([BRANCH_D2]);
+
+    // And with no branch named, the resolved set is the ONE branch it may read —
+    // never the company's whole reachable union.
+    authAs(OVW_SCOPED_D2);
+    const resolved = await summaryBody(await dashboard({ companyId: COMPANY_D, period: 'today' }));
+    expect(resolved.branchIds).toEqual([BRANCH_D2]);
+    expect(resolved.sections.receptionsOpened).toEqual({ status: 'ok', value: 1 });
+  });
+
+  it('never counts another tenant, and never answers one', async () => {
+    authAs(RPT_TENANT_B);
+    const response = await dashboard({ companyId: COMPANY_D, period: 'today' });
+    expect(response.status).toBe(403);
+    expect(await response.json()).toMatchObject({ code: 'ERR-IAM-001' });
+
+    // The same company read by a tenant-A caller still reports exactly the rows
+    // this block inserted, so the refusal above removed nothing from the answer.
+    authAs(OVW_FULL);
+    const mine = await summaryBody(await dashboard({ companyId: COMPANY_D, period: 'today' }));
+    expect(mine.sections.receptionsOpened).toEqual({ status: 'ok', value: 3 });
+  });
+
+  it('does not count a sibling company of the same tenant', async () => {
+    authAs(OVW_FULL);
+    const view = await summaryBody(await dashboard({ companyId: COMPANY_D, period: 'today' }));
+    // `COMPANY_R` above holds six work orders of its own in the same tenant and
+    // the same timezone. None of them may reach this answer.
+    expect(liveTotal(view)).toBe(3);
+    expect(view.branchIds).toEqual([BRANCH_D1, BRANCH_D2]);
+  });
+
+  it('refuses a query field it does not publish', async () => {
+    authAs(OVW_FULL);
+    const response = await dashboard({
+      companyId: COMPANY_D,
+      period: 'today',
+      departmentId: BRANCH_D1,
+    });
+    expect(response.status).toBe(422);
+    expect(await response.json()).toMatchObject({ code: 'ERR-VAL-001' });
+  });
+});
 
 beforeAll(async () => {
   admin = adminPool();
