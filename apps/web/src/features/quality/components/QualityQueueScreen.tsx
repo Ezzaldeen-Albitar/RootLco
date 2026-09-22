@@ -42,12 +42,6 @@ export function QualityQueueScreen({
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
-  /**
-   * The session's bare references. Accepted so the page did not have to change,
-   * and no longer read: the branch is the working context's named selection.
-   */
-  readonly companyIds?: readonly string[];
-  readonly branchIds?: readonly string[];
 }) {
   const branch = useBranchTarget();
   const selected = branch.kind === 'ready' ? branch.target : null;

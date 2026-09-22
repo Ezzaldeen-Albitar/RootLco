@@ -115,12 +115,6 @@ export function AppointmentCalendarScreen({
   readonly locale: Locale;
   readonly messages: Messages;
   /** The session's resolved scope — server-resolved, never asserted back. */
-  /**
-   * The session's bare references. Accepted so the page did not have to change,
-   * and no longer read: the branch is the working context's named selection.
-   */
-  readonly companyIds?: readonly string[];
-  readonly branchIds?: readonly string[];
   /** `apt.appointment.manage` — gates the offer to book. */
   readonly canManage: boolean;
   /** `rec.reception.manage` — gates the day queue's arrival affordance. */

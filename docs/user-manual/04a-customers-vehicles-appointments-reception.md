@@ -77,18 +77,18 @@ name, the active branches your account may act in, grouped by company.
 
 Every branch-scoped screen — appointments, the reception queue, check-in, the work-order board, the
 quality queue, the technician workspace — shows the branch it is addressed to as **text**, with the
-line "To work somewhere else, change your branch at the top of the page."
-<!-- workingContext.changeInHeader --> . None of them asks you to type or pick a reference; the
-
-header is the only place the answer changes.
+line "To work somewhere else, change your branch at the top of the
+page." <!-- workingContext.changeInHeader --> . None of them asks you to type or pick a reference;
+the header is the only place the answer changes.
 
 Changing branch while a form holds something you have not saved asks first: "Leave this unsaved
 work?" <!-- workingContext.discard.title --> . Lists re-read for the new branch as soon as you
 switch, so what is on screen always belongs to the branch named above it.
 
-**Practical consequence.** Keep the branch references for Al-Noor Auto Services (example) written
-down at the front desk. You will type them several times a day, and no screen will look them up for
-you.
+**Practical consequence.** There is nothing to write down and nothing to keep at the front desk.
+You set your branch once when you sign in — or it is set for you, if you have only one — and every
+screen follows it for the rest of the session. Check the name in the header before you record
+anything; it is the one place that says where the work is going.
 
 **Related — there is no company, branch, department or employee screen. Label: OPERATOR PROCEDURE.**
 Companies, branches, departments and employee records are created by runbook acts and backend

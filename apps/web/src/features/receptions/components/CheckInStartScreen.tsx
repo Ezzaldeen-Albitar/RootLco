@@ -250,12 +250,6 @@ interface Props {
   readonly messages: Messages;
   readonly sessionUserId: string;
   readonly sessionUserName: string;
-  /**
-   * The session's bare references. Accepted so the page did not have to change,
-   * and no longer read: the branch is the working context's named selection.
-   */
-  readonly companyIds?: readonly string[];
-  readonly branchIds?: readonly string[];
   /** `rec.reception.manage` — may this operator open a visit at all. */
   readonly canCreate: boolean;
   /** `apt.appointment.read` — may the appointment picker read the calendar. */

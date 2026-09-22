@@ -913,10 +913,27 @@ test.describe('the reception queue is a board for one named branch', () => {
     await segmentRendered(page, '/en/receptions');
     await expect(page.getByRole('main')).toContainText(say('en', 'receptions.queue.idleTitle'));
 
+    /*
+     * No request before intent, restated for the control that decides it — the
+     * same rewrite the calendar block above carries, and for the same reason.
+     *
+     * This pressed Show with the pair empty and waited for "required". There is
+     * no pair on this screen to leave empty, and the button is unavailable while
+     * the branch is not a single chosen one, so the old wait could only ever
+     * time out. What replaces it is the claim one level up: the screen says
+     * which control answers, and nothing is read.
+     *
+     * Conditional on the chooser existing. An operator with exactly one
+     * authorized branch has it chosen for them and has nothing to withhold, so
+     * asserting the unchosen state unconditionally would fail on a stack that
+     * is perfectly correct.
+     */
     const before = posts.length;
-    await page.getByRole('button', { name: say('en', 'receptions.queue.show') }).click();
-    await expect(page.getByText(say('en', 'field.required')).first()).toBeVisible();
-    expect(posts.length - before, 'an incomplete branch target must not issue a read').toBe(0);
+    if ((await page.getByTestId('working-context-select').count()) > 0) {
+      await expect(page.getByTestId('requires-concrete-branch').first()).toBeVisible();
+      await page.getByRole('button', { name: say('en', 'receptions.queue.show') }).click();
+      expect(posts.length - before, 'a branch nobody chose must not issue a read').toBe(0);
+    }
 
     await workInBranch(page, BRANCH_A);
     await page.getByRole('button', { name: say('en', 'receptions.queue.show') }).click();
@@ -1939,6 +1956,8 @@ test.describe('the P1-28 surface discloses nothing of another workspace', () => 
   const COMPANY_B = 'c1000000-0000-4000-8000-00000000000b';
   const BRANCH_B = 'c1100000-0000-4000-8000-00000000000b';
   const TENANT_B_NAME = 'CRM Isolation Tenant B';
+  /** Lower-cased, because every check against it reads rendered text. */
+  const TENANT_B_BRANCH_NAME = 'isolation branch b';
 
   /**
    * Renders a route and proves it really rendered FOR TENANT A before any
@@ -2035,11 +2054,39 @@ test.describe('the P1-28 surface discloses nothing of another workspace', () => 
         chooser.locator(`option[value="${COMPANY_B}"]`),
         'the header offered a company of another workspace'
       ).toHaveCount(0);
+      expect(
+        (await chooser.innerText()).toLowerCase(),
+        'the branch list named another workspace'
+      ).not.toContain(TENANT_B_BRANCH_NAME);
+    } else {
+      /*
+       * A single-branch principal has no list, and an assertion that only runs
+       * against a list would be VACUOUS for them — the one shape where "the
+       * header offered nothing foreign" is trivially true because the header
+       * offers nothing at all.
+       *
+       * So the claim is made positively instead: the header names a branch, it
+       * is the principal's own, and it is not Tenant B's. That is the same
+       * isolation statement carried by the element that actually exists.
+       */
+      const named = page.getByTestId('working-context-single');
+      await expect(named, 'the header named no branch at all').toBeVisible();
+      const headerText = (await named.innerText()).trim();
+      expect(headerText.length, 'the header named a branch with no name').toBeGreaterThan(0);
+      expect(
+        headerText.toLowerCase(),
+        'the header named a branch of another workspace'
+      ).not.toContain(TENANT_B_BRANCH_NAME);
+      // And the screen below it agrees with the header, by name rather than by
+      // reference — the two must not be able to disagree about where we are.
+      const onPage = page.locator(BRANCH_ON_PAGE).first();
+      if ((await onPage.count()) > 0) {
+        expect(
+          (await onPage.innerText()).toLowerCase(),
+          'the screen named a branch the header did not'
+        ).toContain(headerText.split(' · ')[0]?.toLowerCase() ?? headerText.toLowerCase());
+      }
     }
-    const chooserText = (await chooser.count()) > 0 ? await chooser.innerText() : '';
-    expect(chooserText.toLowerCase(), 'the branch list named another workspace').not.toContain(
-      'isolation branch b'
-    );
 
     await workInBranch(page, BRANCH_A);
     await page.getByRole('button', { name: say('en', 'receptions.queue.show') }).click();
@@ -2054,7 +2101,7 @@ test.describe('the P1-28 surface discloses nothing of another workspace', () => 
       .toBeGreaterThan(40);
     const body = await bodyText(page);
     expect(body, 'the queue disclosed Tenant B').not.toContain(TENANT_B_NAME.toLowerCase());
-    expect(body, 'the queue named the Tenant B branch').not.toContain('isolation branch b');
+    expect(body, 'the queue named the Tenant B branch').not.toContain(TENANT_B_BRANCH_NAME);
   });
 
   const BOARDS_FOR_B = [
@@ -2483,7 +2530,22 @@ test.describe('the configured workspace: the four catalogue-blocked capabilities
       'a configured catalogue still reported itself unconfigured'
     ).not.toContainText(say('en', 'appointments.book.noTypes'));
     const submit = page.getByRole('button', { name: say('en', 'appointments.book.submit') });
-    await expect(submit, 'a configured catalogue left the booking control disabled').toBeEnabled();
+
+    /*
+     * The BRANCH first, and this order is load-bearing.
+     *
+     * A booking is addressed to one branch — the route names both halves of the
+     * pair as mandatory — so the control is unavailable until one is chosen.
+     * Clicking it before that would do nothing at all, and the validation
+     * assertions below would time out against a form that was never submitted.
+     * Choosing first makes the state deterministic for both bootstraps, and
+     * what is then asserted is the form's own local refusals.
+     */
+    await workInBranch(page, manifest.branchId);
+    await expect(
+      submit,
+      'a configured catalogue and a chosen branch still left the booking control disabled'
+    ).toBeEnabled();
 
     /*
      * Validation, which could not be observed while submit was disabled: an
@@ -2500,8 +2562,6 @@ test.describe('the configured workspace: the four catalogue-blocked capabilities
     await expect(page.getByText(say('en', 'field.required')).first()).toBeVisible();
     await expect(main).toContainText(say('en', 'appointments.book.requesterRequired'));
     expect(posts.length, 'an incomplete booking was sent to the server').toBe(0);
-
-    await workInBranch(page, manifest.branchId);
 
     // The customer, by NAME — the whole reason `CustomerSelector` exists.
     const selector = page.getByTestId('customer-selector');
