@@ -1219,11 +1219,13 @@ async function searchTermsFor(db: DbHandle, q: string | undefined) {
  *
  * Fewer when there is less to ask: the CRM read makes no second statement for a
  * caller without the code, and none at all when no row names a partner. The
- * first two and the third do not depend on one another, so they are issued
- * together; they share this request's one transaction connection, which runs
- * them one after another, so what that buys is not waiting on each result before
- * sending the next rather than parallel execution. The last pair cannot start
- * until the third has said which partners there are.
+ * vehicle read and the partner-id lookup do not depend on one another, so they
+ * are started together with `Promise.all`; but they share this request's one
+ * transaction connection, and the `pg` client sends each statement only after
+ * the previous one has returned its result, so nothing is pipelined and nothing
+ * runs in parallel. Inside the vehicle module the capability check and the
+ * identity lookup also run one after the other. The last pair cannot start until
+ * the partner-id lookup has said which partners there are.
  *
  * Every hop goes through a PUBLIC module surface or through this module's own
  * repository, and the division is the point:

@@ -56,7 +56,7 @@
  *    tenant-B caller holding all thirteen codes addresses tenant A's REAL rows. The
  *    pinned refusal is the one the platform already standardises, and which is: an
  *    operation addressed by a resource id answers 404 `ERR-RES-001`, the answer
- *    `p1-31-delivery-read-seam.test.ts:705-718` and `p1-31-warranty-read-seam.test.ts:891-911`
+ *    `p1-31-delivery-read-seam.test.ts:705-718` and `p1-31-warranty-read-seam.test.ts:1608-1628`
  *    already pin; an operation that NAMES the scope it acts in answers 403
  *    `ERR-IAM-001`, from `requireScopeTargetInTenant` when the name arrives in the
  *    query (CC-14) and from `requireScopeClaimInTenant` when it arrives in the body
