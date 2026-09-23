@@ -88,8 +88,10 @@
  * printed as its SMTP status code, its enhanced status code and a fixed
  * classification — never the relay's own words, which can echo a challenge.
  * Every other relay reply that is printed first has any base64-looking token
- * (16 or more characters of `[A-Za-z0-9+/=]`) and any occurrence of the
- * configured user or password replaced by `[redacted]`. The AUTH mechanisms
+ * (16 or more characters of `[A-Za-z0-9+/=]`), any occurrence of the
+ * configured password (exactly as written, or base64-encoded) and any
+ * occurrence of the login, the sender or the recipient mailbox (in any letter
+ * case) replaced by `[redacted]`. The AUTH mechanisms
  * a relay offers are printed only when they are names on a fixed allow-list of
  * SASL mechanisms; any other token is counted, never printed. The sender and
  * recipient mailboxes are printed masked — the first character of the local
@@ -99,8 +101,10 @@
  *
  * Every read from the relay ends: a reply, the relay closing the connection, a
  * socket error, or no reply within the per-read limit (20 seconds, changed with
- * `--read-timeout <seconds>`). Each of the last three fails the stage that was
- * running, on its own stage line, with a non-zero exit.
+ * `--read-timeout <seconds>`, from 1 to 3600). Each of the last three fails the
+ * stage that was running, on its own stage line, with a non-zero exit. The
+ * 30-second limit on opening the connection and on the TLS upgrade covers
+ * those steps only, and is disarmed as soon as each completes or fails.
  *
  * ## Configuration, read exactly as the pinned Supabase CLI reads it
  *
@@ -135,7 +139,8 @@
  *   node scripts/dev/check-smtp.mjs --authenticate
  *   node scripts/dev/check-smtp.mjs --send --to <authorized-test-recipient>
  *
- * Any mode that opens a socket also accepts `--read-timeout <seconds>`.
+ * Any mode that opens a socket also accepts `--read-timeout <seconds>`, a
+ * number of seconds from 1 to 3600.
  *
  * Exit code 0 means the chosen stage passed. Any other code means it did not.
  */
@@ -205,6 +210,10 @@ const CONNECT_TIMEOUT_MS = 30_000;
 
 /** How long one read waits for a reply before the stage fails. */
 export const DEFAULT_READ_TIMEOUT_MS = 20_000;
+
+/** The smallest and largest `--read-timeout` accepted, in seconds. */
+export const MIN_READ_TIMEOUT_SECONDS = 1;
+export const MAX_READ_TIMEOUT_SECONDS = 3600;
 
 /**
  * The SASL mechanism names this script will print when a relay offers them.
@@ -564,16 +573,37 @@ export function readConfigSmtpPort(configText) {
 const BASE64_LOOKING = /[A-Za-z0-9+/=]{16,}/g;
 
 /**
- * Relay text made safe to print: any base64-looking token and any occurrence of
- * a configured secret (as written, or base64-encoded) becomes `[redacted]`.
+ * Mark a mailbox address for redaction in any letter case. A relay is free to
+ * echo an address upper-cased, and an exact match would let that copy print.
+ * A password is never passed through this: it is case-sensitive, so it is
+ * matched exactly.
+ */
+export function mailboxSecret(address) {
+  return { mailbox: address };
+}
+
+function escapeRegExp(text) {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
+ * Relay text made safe to print: any base64-looking token, any occurrence of a
+ * configured secret (exactly as written, or base64-encoded), and any occurrence
+ * of a mailbox marked by `mailboxSecret` (in any letter case, or as its
+ * base64 encoding) becomes `[redacted]`.
  */
 export function redactRelayText(text, secrets = []) {
   let safe = String(text);
   for (const secret of secrets) {
-    if (typeof secret !== 'string' || secret.length === 0) continue;
-    for (const form of [secret, Buffer.from(secret, 'utf8').toString('base64')]) {
-      safe = safe.split(form).join('[redacted]');
+    const isMailbox = secret !== null && typeof secret === 'object';
+    const value = isMailbox ? secret.mailbox : secret;
+    if (typeof value !== 'string' || value.length === 0) continue;
+    if (isMailbox) {
+      safe = safe.replace(new RegExp(escapeRegExp(value), 'gi'), '[redacted]');
+    } else {
+      safe = safe.split(value).join('[redacted]');
     }
+    safe = safe.split(Buffer.from(value, 'utf8').toString('base64')).join('[redacted]');
   }
   return safe.replace(BASE64_LOOKING, '[redacted]');
 }
@@ -667,6 +697,43 @@ export function tlsModeForPort(port) {
 }
 
 /**
+ * Arm the limit on opening a connection (or on a TLS upgrade) and return the
+ * function that disarms it. The limit covers that one step: left armed, it
+ * would stay live as an idle timeout for the whole session, destroy the socket
+ * after 30 s of quiet, and cap every `--read-timeout` above 30 s with a
+ * connection error instead of the per-read verdict.
+ */
+export function armConnectTimeout(socket, timeoutMs = CONNECT_TIMEOUT_MS) {
+  const onTimeout = () => socket.destroy(new Error('timed out'));
+  socket.setTimeout(timeoutMs);
+  socket.on('timeout', onTimeout);
+  return () => {
+    socket.setTimeout(0);
+    socket.removeListener('timeout', onTimeout);
+  };
+}
+
+/**
+ * Open a socket with `open(onConnected)` and settle when it connects or fails,
+ * with the connect limit armed for exactly that interval: it is disarmed on
+ * connect, on error, and when it fires.
+ */
+export function whenConnected(open, timeoutMs = CONNECT_TIMEOUT_MS) {
+  return new Promise((resolve, reject) => {
+    let disarm = () => {};
+    const socket = open(() => {
+      disarm();
+      resolve(socket);
+    });
+    disarm = armConnectTimeout(socket, timeoutMs);
+    socket.once('error', (error) => {
+      disarm();
+      reject(error);
+    });
+  });
+}
+
+/**
  * The real sockets. Every function that speaks SMTP takes this object rather
  * than importing `node:tls` itself, so the protocol sequence can be exercised
  * by a suite against a local server without weakening anything here: there is
@@ -675,23 +742,11 @@ export function tlsModeForPort(port) {
  */
 export const nodeTransport = {
   connectSecure: ({ host, port }) =>
-    new Promise((resolve, reject) => {
-      const socket = connectTls({ host, port, servername: host }, () => resolve(socket));
-      socket.setTimeout(CONNECT_TIMEOUT_MS, () => socket.destroy(new Error('timed out')));
-      socket.once('error', reject);
-    }),
+    whenConnected((onConnected) => connectTls({ host, port, servername: host }, onConnected)),
   connectPlain: ({ host, port }) =>
-    new Promise((resolve, reject) => {
-      const socket = connectTcp({ host, port }, () => resolve(socket));
-      socket.setTimeout(CONNECT_TIMEOUT_MS, () => socket.destroy(new Error('timed out')));
-      socket.once('error', reject);
-    }),
+    whenConnected((onConnected) => connectTcp({ host, port }, onConnected)),
   upgrade: ({ socket, host }) =>
-    new Promise((resolve, reject) => {
-      const secure = connectTls({ socket, servername: host }, () => resolve(secure));
-      secure.setTimeout(CONNECT_TIMEOUT_MS, () => secure.destroy(new Error('timed out')));
-      secure.once('error', reject);
-    }),
+    whenConnected((onConnected) => connectTls({ socket, servername: host }, onConnected)),
 };
 
 /**
@@ -1005,8 +1060,8 @@ export async function sendMessage(session, { from, to, senderName, write, secret
 /**
  * Read the single mode flag, the optional recipient and the optional per-read
  * limit off the command line. A recipient that begins with `--` is refused
- * rather than accepted, and so is a read limit that is not a positive number of
- * seconds.
+ * rather than accepted, and so is a read limit that is not a number of seconds
+ * from `MIN_READ_TIMEOUT_SECONDS` to `MAX_READ_TIMEOUT_SECONDS`.
  */
 export function parseArguments(argv) {
   const modes = [];
@@ -1019,7 +1074,11 @@ export function parseArguments(argv) {
       typeof candidate === 'string' && /^\d+(\.\d+)?$/.test(candidate)
         ? Number(candidate)
         : Number.NaN;
-    if (!Number.isFinite(seconds) || seconds <= 0) {
+    if (
+      !Number.isFinite(seconds) ||
+      seconds < MIN_READ_TIMEOUT_SECONDS ||
+      seconds > MAX_READ_TIMEOUT_SECONDS
+    ) {
       readTimeoutRefused = true;
       return;
     }
@@ -1067,7 +1126,7 @@ const USAGE = [
   'Choose exactly one mode. Each flag reaches one stage:',
   ...STAGES.map((stage) => `  ${stage.flag.padEnd(28)}stage ${stage.number}: ${stage.label}`),
   '',
-  'Any mode that opens a socket also accepts --read-timeout <seconds> (default 20).',
+  `Any mode that opens a socket also accepts --read-timeout <seconds> (default 20, from ${MIN_READ_TIMEOUT_SECONDS} to ${MAX_READ_TIMEOUT_SECONDS}).`,
   '',
   ...NOT_PROVEN_LINES,
   '',
@@ -1190,7 +1249,10 @@ export async function run({
     return 2;
   }
   if (readTimeoutRefused) {
-    err('--read-timeout needs a positive number of seconds.\n');
+    err(
+      `--read-timeout needs a number of seconds from ${MIN_READ_TIMEOUT_SECONDS} to ` +
+        `${MAX_READ_TIMEOUT_SECONDS}.\n`
+    );
     return 2;
   }
   if (modes.length !== 1) {
@@ -1243,8 +1305,12 @@ export async function run({
   // present as the sender, so it is the address whose acceptance is measured.
   const loginUser = environment.SMTP_USER;
   const sender = environment.SMTP_ADMIN_EMAIL;
-  // Relay text that echoes a mailbox has it redacted, like any credential.
-  const secrets = [environment.SMTP_PASS, loginUser, sender, recipient];
+  // Relay text that echoes a mailbox has it redacted, like any credential. A
+  // mailbox is matched in any letter case; the password only exactly.
+  const secrets = [
+    environment.SMTP_PASS,
+    ...[loginUser, sender, recipient].map((address) => mailboxSecret(address)),
+  ];
   const target = STAGES[STAGE_OF_MODE[mode] - 1];
 
   out(`Relay    : ${host}:${port}\n`);

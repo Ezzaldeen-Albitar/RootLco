@@ -542,7 +542,8 @@ value out of it into a commit, a document, a test fixture, an issue or a pasted 
 otherwise from the first of `supabase/.env.development.local`, `supabase/.env.local`,
 `supabase/.env.development`, `supabase/.env`, and then the same four names at the checkout root,
 that defines it (`development` is replaced by `SUPABASE_ENV` when that is set). Each file is parsed
-by godotenv rules: an unquoted value is trimmed, cut at the last ` #`, and has `$NAME` and `${NAME}`
+by godotenv rules: an unquoted value is cut at the last `#` that is preceded by a space or a tab
+(that `#` and everything after it are dropped), then trimmed, and has `$NAME` and `${NAME}`
 expanded; a double-quoted value has its backslash escapes processed and `$NAME` expanded; a
 single-quoted value is taken literally; anything after a closing quote on the same line is
 discarded. `scripts/dev/check-smtp.mjs` applies the same rules, so every stage it runs uses exactly
@@ -723,7 +724,14 @@ node scripts/dev/check-smtp.mjs --send --to <authorized-test-recipient>
   anywhere, and it opens no socket.
 - `--probe` is **stage 2**: it opens the connection, negotiates encryption and prints the AUTH
   mechanisms the relay advertises, then quits. No credential is transmitted, so it is the safe first
-  contact with a relay whose lockout policy is unknown.
+  contact with a relay whose lockout policy is unknown. It prints a mechanism only when its name is
+  on a fixed allow-list of SASL mechanism names (such as `LOGIN`, `PLAIN`, `CRAM-MD5`, `XOAUTH2`);
+  every other token on the relay's AUTH line is counted, and only the count is printed, as
+  `(N unrecognised tokens not shown)`. `(none advertised)` means the relay offered no AUTH line at
+  all. `(no recognised mechanism)` means it offered tokens but none of them is on the allow-list.
+  For the operator, both mean the same thing: authentication cannot be attempted with this script
+  (it signs in with `AUTH LOGIN` only), so do not run `--authenticate` or `--send`; stop and report
+  the probe output as it was printed.
 - `--authenticate` is **stage 3**: stage 2, then AUTH, then QUIT without an envelope. AUTH is a
   session command and a session that ends after it is complete and legal, so this reaches a verdict
   on the credential without sending anything to anyone.
@@ -744,8 +752,21 @@ to authenticate over a connection that is not encrypted**, and there is no flag 
 relay on 587 that does not advertise STARTTLS ends the run before AUTH is reached. The password is
 never printed, and neither is the AUTH exchange. An AUTH refusal is reported only as its SMTP status
 code, its enhanced status code and a fixed classification such as "credentials rejected" — never in
-the relay's own words. Any other relay text that is printed has base64-looking tokens and the
-configured user and password replaced by `[redacted]`. Those properties are asserted by
+the relay's own words. Any other relay text is redacted before it is printed: base64-looking tokens,
+the configured password (exactly as written, or base64-encoded) and the login, sender and recipient
+mailboxes (in any letter case, so an upper-cased echo is caught too) are replaced by `[redacted]`.
+The sender, recipient and login mailboxes are never printed in clear in any output of any mode:
+where the script names one itself it prints it masked, as the first character of the local part and
+the domain (`n***@example.com`).
+
+Every read from the relay ends: with a reply, with the relay closing the connection, with a socket
+error, or with no reply within the per-read limit, which fails the running stage with
+`no reply from the relay within N s`. The limit is 20 seconds by default and is set with
+`--read-timeout <seconds>` on any mode that opens a socket; it accepts a number of seconds from 1 to
+3600, and any other value is refused with exit code 2 before a socket is opened. Opening the
+connection and the TLS upgrade have their own 30-second limit, which covers those two steps only.
+
+Those properties are asserted by
 `tests/ci/owner-acceptance-password.test.ts`, which drives every mode against a local server.
 
 ### 17.7 What the Owner types locally, and in what order
@@ -788,7 +809,9 @@ node scripts/dev/check-smtp.mjs --send --to <authorized-test-recipient>
 authorised to receive a test message. The script has no default and will not choose one.
 
 The first is **stage 1** and must end with `Ready to activate: true` and no `WARNING` line. The
-second is **stage 2** and must list at least one AUTH mechanism. The third is **stage 3**; a refusal
+second is **stage 2** and must list `LOGIN` among the recognised AUTH mechanism names it prints; if
+it prints `(none advertised)` or `(no recognised mechanism)`, stop and report it, because the script
+cannot attempt authentication against that relay (17.6). The third is **stage 3**; a refusal
 there is reported as the relay's status codes and a fixed classification. The fourth is **stage
 4**. Then confirm **inbox receipt** by looking in the recipient mailbox, which no command can do.
 Only after that holds is activation worth attempting: set `enabled = true` on

@@ -29,7 +29,7 @@ import { EventEmitter, once } from 'node:events';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, unlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   PASSWORD_ALPHABET,
   PASSWORD_GROUPS,
@@ -42,17 +42,21 @@ import {
   DEFAULT_READ_TIMEOUT_MS,
   IMPLICIT_TLS_PORT,
   LocalRefusal,
+  MAX_READ_TIMEOUT_SECONDS,
+  MIN_READ_TIMEOUT_SECONDS,
   NOT_PROVEN_LINES,
   RelayConnectionError,
   STAGES,
   STARTTLS_PORT,
   SmtpSession,
   advertisesStartTls,
+  armConnectTimeout,
   authenticate,
   defaultEnvFiles,
   describeAuthMechanisms,
   envFileNames,
   loadEnvironment,
+  mailboxSecret,
   maskMailbox,
   openRelay,
   parseArguments,
@@ -63,6 +67,7 @@ import {
   requiredNamesFor,
   run,
   tlsModeForPort,
+  whenConnected,
 } from '../../scripts/dev/check-smtp.mjs';
 
 const VALID = 'ABCDE-fghij-23456-KLMNP';
@@ -1426,7 +1431,7 @@ describe('check-smtp never waits forever on the relay', () => {
     let code: number;
     try {
       code = await run({
-        argv: ['--probe', '--read-timeout', '0.2'],
+        argv: ['--probe', '--read-timeout', '1'],
         env: PROBE_ONLY_ENVIRONMENT,
         envFile: NO_ENV_FILE,
         transport: transportFor(relay, { called: false }),
@@ -1438,9 +1443,9 @@ describe('check-smtp never waits forever on the relay', () => {
     }
     expect(code).toBe(1);
     expect(Date.now() - started).toBeLessThan(5_000);
-    expect(err.text()).toContain('FAILED - no reply from the relay within 0.2 s');
+    expect(err.text()).toContain('FAILED - no reply from the relay within 1 s');
     expect(out.text()).toMatch(
-      /Stage 2 {2}relay connection \(TCP and TLS\)\s+: FAIL \(no reply from the relay within 0\.2 s\)/
+      /Stage 2 {2}relay connection \(TCP and TLS\)\s+: FAIL \(no reply from the relay within 1 s\)/
     );
   });
 
@@ -1568,25 +1573,270 @@ describe('check-smtp argument validation', () => {
     }
   });
 
-  it('accepts a positive --read-timeout in seconds and refuses anything else', async () => {
+  it('accepts a --read-timeout from 1 to 3600 seconds and refuses anything else', async () => {
     expect(parseArguments(['--probe']).readTimeoutMs).toBe(DEFAULT_READ_TIMEOUT_MS);
     expect(DEFAULT_READ_TIMEOUT_MS).toBe(20_000);
-    expect(parseArguments(['--probe', '--read-timeout', '5']).readTimeoutMs).toBe(5_000);
-    expect(parseArguments(['--probe', '--read-timeout=1.5']).readTimeoutMs).toBe(1_500);
-    for (const value of ['0', '-1', 'abc', '--probe', '']) {
+    expect(MIN_READ_TIMEOUT_SECONDS).toBe(1);
+    expect(MAX_READ_TIMEOUT_SECONDS).toBe(3600);
+    for (const [value, milliseconds] of [
+      ['1', 1_000],
+      ['1.5', 1_500],
+      ['5', 5_000],
+      ['45', 45_000],
+      ['3600', 3_600_000],
+    ] as const) {
+      const parsed = parseArguments(['--probe', '--read-timeout', value]);
+      expect(parsed.readTimeoutRefused, value).toBe(false);
+      expect(parsed.readTimeoutMs, value).toBe(milliseconds);
+    }
+    expect(parseArguments(['--probe', '--read-timeout=3600']).readTimeoutMs).toBe(3_600_000);
+    for (const value of [
+      '0',
+      '0.5',
+      '0.999',
+      '3600.5',
+      '3601',
+      '-1',
+      'abc',
+      'Infinity',
+      'NaN',
+      '1e3',
+      '--probe',
+      '',
+    ]) {
       expect(parseArguments(['--probe', '--read-timeout', value]).readTimeoutRefused, value).toBe(
         true
       );
     }
-    const err = collector();
-    const code = await run({
-      argv: ['--probe', '--read-timeout', '0'],
-      env: PROBE_ONLY_ENVIRONMENT,
-      envFile: NO_ENV_FILE,
-      stdout: collector().write,
-      stderr: err.write,
+    expect(parseArguments(['--probe', '--read-timeout=3601']).readTimeoutRefused).toBe(true);
+    for (const value of ['0', '3601']) {
+      const out = collector();
+      const err = collector();
+      const code = await run({
+        argv: ['--probe', '--read-timeout', value],
+        env: PROBE_ONLY_ENVIRONMENT,
+        envFile: NO_ENV_FILE,
+        transport: {
+          connectPlain: () => Promise.reject(new Error('no socket may be opened')),
+          connectSecure: () => Promise.reject(new Error('no socket may be opened')),
+          upgrade: () => Promise.reject(new Error('no socket may be opened')),
+        },
+        stdout: out.write,
+        stderr: err.write,
+      });
+      expect(code, value).toBe(2);
+      expect(err.text(), value).toContain(
+        '--read-timeout needs a number of seconds from 1 to 3600.'
+      );
+      expect(out.text(), value).toBe('');
+    }
+  });
+});
+
+/**
+ * A socket whose idle timeout is a real timer, so fake timers can show whether
+ * the connect limit is still live after the connection has opened.
+ */
+class FakeTimedSocket extends EventEmitter {
+  idleTimeouts: number[] = [];
+  destroyed = false;
+  #timer: ReturnType<typeof setTimeout> | undefined;
+  setTimeout(milliseconds: number) {
+    this.idleTimeouts.push(milliseconds);
+    if (this.#timer !== undefined) clearTimeout(this.#timer);
+    this.#timer =
+      milliseconds > 0 ? setTimeout(() => this.emit('timeout'), milliseconds) : undefined;
+    return this;
+  }
+  setEncoding() {
+    return this;
+  }
+  write() {
+    return true;
+  }
+  destroy(error?: Error) {
+    this.destroyed = true;
+    if (this.#timer !== undefined) clearTimeout(this.#timer);
+    if (error !== undefined) this.emit('error', error);
+    this.emit('close');
+    return this;
+  }
+}
+
+describe('check-smtp limits only the connect and the TLS upgrade to 30 s', () => {
+  it('disarms the connect limit once connected, so a read limit above 30 s is honoured', async () => {
+    vi.useFakeTimers();
+    try {
+      const socket = new FakeTimedSocket();
+      let connected = () => {};
+      const opening = whenConnected((onConnected: () => void) => {
+        connected = onConnected;
+        return socket as unknown as Socket;
+      });
+      expect(socket.idleTimeouts).toEqual([30_000]);
+      expect(socket.listenerCount('timeout')).toBe(1);
+      connected();
+      await expect(opening).resolves.toBe(socket);
+      expect(socket.idleTimeouts).toEqual([30_000, 0]);
+      expect(socket.listenerCount('timeout')).toBe(0);
+
+      const session = new SmtpSession(socket as unknown as Socket, {
+        encrypted: true,
+        readTimeoutMs: 45_000,
+      });
+      let settled = false;
+      const outcome = session.read().then(
+        () => null,
+        (error: unknown) => error
+      );
+      void outcome.then(() => {
+        settled = true;
+      });
+      await vi.advanceTimersByTimeAsync(31_000);
+      expect(settled).toBe(false);
+      expect(socket.destroyed).toBe(false);
+      await vi.advanceTimersByTimeAsync(14_000);
+      const failure = await outcome;
+      expect(failure).toBeInstanceOf(RelayConnectionError);
+      expect((failure as RelayConnectionError).reason).toBe('no reply from the relay within 45 s');
+      expect(socket.destroyed).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('disarms the connect limit when the connection fails before it opens', async () => {
+    vi.useFakeTimers();
+    try {
+      const socket = new FakeTimedSocket();
+      const opening = whenConnected(() => socket as unknown as Socket);
+      socket.emit('error', Object.assign(new Error('refused'), { code: 'ECONNREFUSED' }));
+      await expect(opening).rejects.toThrow('refused');
+      expect(socket.idleTimeouts).toEqual([30_000, 0]);
+      expect(socket.listenerCount('timeout')).toBe(0);
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('fails the connect at 30 s, and leaves nothing armed after it fires', async () => {
+    vi.useFakeTimers();
+    try {
+      const socket = new FakeTimedSocket();
+      const outcome = whenConnected(() => socket as unknown as Socket).then(
+        () => null,
+        (error: unknown) => error
+      );
+      await vi.advanceTimersByTimeAsync(29_999);
+      expect(socket.destroyed).toBe(false);
+      await vi.advanceTimersByTimeAsync(1);
+      const failure = await outcome;
+      expect((failure as Error).message).toBe('timed out');
+      expect(socket.destroyed).toBe(true);
+      expect(socket.idleTimeouts.at(-1)).toBe(0);
+      expect(socket.listenerCount('timeout')).toBe(0);
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('returns a disarm that removes both the idle timeout and its listener', () => {
+    vi.useFakeTimers();
+    try {
+      const socket = new FakeTimedSocket();
+      const disarm = armConnectTimeout(socket as unknown as Socket, 30_000);
+      expect(vi.getTimerCount()).toBe(1);
+      disarm();
+      expect(socket.idleTimeouts).toEqual([30_000, 0]);
+      expect(socket.listenerCount('timeout')).toBe(0);
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+describe('check-smtp redacts an echoed mailbox in any letter case', () => {
+  it('matches a mailbox case-insensitively and literally, and a password exactly', () => {
+    const mailbox = 'noreply@example.com';
+    expect(
+      redactRelayText('250 2.1.0 <NOREPLY@EXAMPLE.COM> sender ok', [mailboxSecret(mailbox)])
+    ).toBe('250 2.1.0 <[redacted]> sender ok');
+    expect(redactRelayText('No-Reply is noreply@Example.Com', [mailboxSecret(mailbox)])).toBe(
+      'No-Reply is [redacted]'
+    );
+    // Regular-expression metacharacters in an address are literal.
+    expect(
+      redactRelayText('A+B@EXAMPLE.COM aab@exampleXcom', [mailboxSecret('a+b@example.com')])
+    ).toBe('[redacted] aab@exampleXcom');
+    // A password is case-sensitive: only the exact spelling, and its base64, are redacted.
+    expect(redactRelayText('pw Pw PW cHc=', ['pw'])).toBe('[redacted] Pw PW [redacted]');
+  });
+
+  it('prints no upper-cased echo of the login, the sender or the recipient during --send', async () => {
+    const recipient = 'recipient@example.com';
+    let authStep = 0;
+    let inData = false;
+    const relay = await startScriptedRelay((line, socket) => {
+      if (inData) {
+        if (line === '.') {
+          inData = false;
+          socket.write(`250 2.0.0 queued for ${recipient.toUpperCase()}\r\n`);
+        }
+        return;
+      }
+      if (authStep === 1) {
+        authStep = 2;
+        socket.write('334 UGFzc3dvcmQ6\r\n');
+        return;
+      }
+      if (authStep === 2) {
+        authStep = 0;
+        socket.write('235 2.7.0 Accepted\r\n');
+        return;
+      }
+      const upper = line.toUpperCase();
+      if (upper.startsWith('EHLO')) socket.write('250-scripted relay\r\n250 AUTH LOGIN\r\n');
+      else if (upper.startsWith('AUTH LOGIN')) {
+        authStep = 1;
+        socket.write('334 VXNlcm5hbWU6\r\n');
+      } else if (upper.startsWith('MAIL FROM')) {
+        socket.write(
+          `250 2.1.0 <${RELAY_SENDER.toUpperCase()}> sender ok for ${RELAY_LOGIN.toUpperCase()}\r\n`
+        );
+      } else if (upper.startsWith('RCPT TO')) {
+        socket.write(`250 2.1.5 <${recipient.toUpperCase()}> recipient ok\r\n`);
+      } else if (upper === 'DATA') {
+        inData = true;
+        socket.write('354 go ahead\r\n');
+      } else if (upper === 'QUIT') {
+        socket.write('221 2.0.0 Bye\r\n');
+        socket.end();
+      }
     });
-    expect(code).toBe(2);
-    expect(err.text()).toMatch(/--read-timeout needs a positive number of seconds/);
+    const out = collector();
+    const err = collector();
+    try {
+      const code = await run({
+        argv: ['--send', '--to', recipient],
+        env: { ...RELAY_ENVIRONMENT, SMTP_PORT: String(IMPLICIT_TLS_PORT) },
+        envFile: NO_ENV_FILE,
+        transport: transportFor(relay, { called: false }),
+        stdout: out.write,
+        stderr: err.write,
+      });
+      expect(code).toBe(0);
+    } finally {
+      await relay.close();
+    }
+    const printed = (out.text() + err.text()).toLowerCase();
+    for (const address of [RELAY_SENDER, RELAY_LOGIN, recipient]) {
+      expect(printed, address).not.toContain(address.toLowerCase());
+    }
+    expect(out.text()).toContain('MAIL FROM: 250 2.1.0 <[redacted]> sender ok for [redacted]');
+    expect(out.text()).toContain('RCPT TO  : 250 2.1.5 <[redacted]> recipient ok');
+    expect(out.text()).toContain('ACCEPTED : 250 2.0.0 queued for [redacted]');
   });
 });
