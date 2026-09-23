@@ -56,11 +56,18 @@ export class VehicleReadService extends ApplicationService {
    * caller who does not hold the vehicle code: `plate` and `vin` come back null
    * and the statement does not read them at all.
    *
-   * Both fields move TOGETHER and on that one code, because that is the rule
-   * `veh.vehicle-search` already applies — it publishes `activePlate` and the
-   * normalised `vin` side by side to every holder of `veh.vehicle.read`, with no
-   * further narrowing between them. Splitting them here would give one tenant two
-   * different answers about the same car on two screens.
+   * Both fields move TOGETHER and on that one code, because that is the rule the
+   * vehicle module's own reads apply — `veh.vehicle-search` publishes
+   * `activePlate` and the normalised `vin` side by side to every holder of
+   * `veh.vehicle.read`, with no further narrowing between them — and this read
+   * follows the owning module rather than inventing a split of its own.
+   *
+   * That is not a claim that every screen in the product agrees. The reception
+   * board (`rec.reception-list`, see `ReceptionReadRepository.listReceptions`)
+   * already shows a visit's plate to its readers without asking for
+   * `veh.vehicle.read`, and this read does not change that board. The two answers
+   * differ today; this one takes the stricter rule, the vehicle module's, for a
+   * caller whose operation is not a reception one.
    *
    * `makeModel` and `displayNumber` are NOT withheld, and that is a decision
    * rather than an omission. Neither is a registered identifier: the display

@@ -69,13 +69,22 @@ import {
   TENANT_A,
   TENANT_B,
   USER_A,
+  USER_B,
   adminPool,
   cleanBackendFixtures,
   ensureBackendFixtures,
   ensureTestLogins,
   runtimeAppPool,
 } from './helpers';
-import { BRANCH_A2, PARTNER_A, establishP1_19Fixtures, type Principal } from './p1-19-helpers';
+import {
+  BRANCH_A2,
+  BRANCH_B1,
+  COMPANY_B1,
+  PARTNER_A,
+  createWorkOrder,
+  establishP1_19Fixtures,
+  type Principal,
+} from './p1-19-helpers';
 import {
   BRANCH_A9,
   COMPANY_A9,
@@ -100,6 +109,8 @@ import { __resetAuthenticatorForTests } from '@/server/context/principal';
 import { __resetRateLimitForTests } from '@/server/http/rate-limit';
 import { TENANT_ADMINISTRATOR_ROLE } from '@/modules/iam';
 import { vehicleModule } from '@/modules/vehicle';
+import { SERVICE_REQUESTER } from '@/modules/reception';
+import { WarrantyRepository } from '@/modules/warranty/data/warranty-repository';
 import { buildRequestContext } from '@/server/context/request-context';
 import { withReadOnlyTransaction } from '@/server/db/transaction';
 import { POST as GENERATE_WARRANTY } from '@/app/api/v1/deliveries/[deliveryId]/warranties/route';
@@ -153,6 +164,10 @@ let OD_VIN = '';
  * is unique on (visit, partner, role), so two partners legitimately holding the
  * role at once is a state the read has to answer deterministically — and it names
  * the earliest `valid_from`, which is this one.
+ *
+ * This visit cannot PROVE that rule on its own: the check-in row is also the one
+ * recorded first and the one with the lower partner id, so three different rules
+ * agree on it. `OD_TIEBREAK` below is the fixture that tells them apart.
  */
 const OD_CHECKIN_PARTNER_NAME = 'Reception Requester';
 
@@ -172,6 +187,31 @@ let OD_NO_VEHICLE: ArrangedWarranty;
 let OD_NO_PARTY: ArrangedWarranty;
 /** That partner's id, named so every assertion says which one it means. */
 const OD_PARTNER_EXPECTED = PARTNER_A;
+
+/**
+ * The tie-break fixture (Owner directive, P1-32-PRE-OD-UX).
+ *
+ * One warranty whose visit ends up with THREE open `service_requester` roles,
+ * arranged so that the rule the read claims — earliest `valid_from` wins — is
+ * the only rule that picks `OD_TIE_EARLIEST`:
+ *
+ *   | partner            | recorded | partner id | valid_from       |
+ *   | check-in (A)       | first    | lowest     | check-in instant |
+ *   | `OD_TIE_EARLIEST`  | second   | middle     | two days before  |
+ *   | `OD_TIE_HIGHEST`   | last     | highest    | one day before   |
+ *
+ * "first recorded" and "lowest id" pick the check-in partner, "last recorded"
+ * and "highest id" pick `OD_TIE_HIGHEST`, "latest valid_from" picks the check-in
+ * partner again. Only the ordering the repository states picks the middle row.
+ */
+let OD_TIEBREAK: ArrangedWarranty;
+const OD_TIE_EARLIEST = 'f1320000-0000-4000-8000-000000000831';
+const OD_TIE_EARLIEST_NAME = 'Fixture Earliest Requester';
+const OD_TIE_HIGHEST = 'f1320000-0000-4000-8000-000000000839';
+const OD_TIE_HIGHEST_NAME = 'Fixture Highest Requester';
+
+/** A work order in the OTHER tenant whose visit names a service requester. */
+let OD_TENANT_B_WORK_ORDER = '';
 
 /** The code this slice mints. Written once, used by every assertion below. */
 const WARRANTY_READ = 'wty.warranty.read';
@@ -263,6 +303,126 @@ interface ProblemBody {
 const bodyOf = async <T>(response: Response): Promise<T> => (await response.json()) as T;
 
 const problemOf = (response: Response): Promise<ProblemBody> => bodyOf<ProblemBody>(response);
+
+// ---------------------------------------------------------------------------
+// Statement counting (Owner directive, P1-32-PRE-OD-UX)
+//
+// The display blocks are documented as a CONSTANT number of statements per page.
+// A docblock cannot fail, so the claim is measured: the runtime pool is wrapped
+// at its connection boundary, below the route, the service, the repositories and
+// the transaction helper, so every statement PostgreSQL is asked is recorded —
+// the same technique `p1-24-read-path-shape.test.ts` uses. Counting is off
+// unless a case turns it on, so every other case in this file runs unobserved.
+// ---------------------------------------------------------------------------
+
+let statements: string[] = [];
+let counting = false;
+/** Clients are pooled and reused, so each is wrapped at most once. */
+const wrapped = new WeakSet<PoolClient>();
+
+function wrapClient(client: PoolClient): void {
+  if (wrapped.has(client)) return;
+  wrapped.add(client);
+  // Forwarded verbatim and typed through `unknown`: the wrapper interprets
+  // nothing, it only records the statement text.
+  const query = client.query.bind(client) as (...args: readonly unknown[]) => unknown;
+  const counted = (...args: readonly unknown[]): unknown => {
+    if (counting) {
+      const first = args[0];
+      statements.push(
+        typeof first === 'string'
+          ? first
+          : String((first as { text?: string } | undefined)?.text ?? '<config>')
+      );
+    }
+    return query(...args);
+  };
+  (client as unknown as { query: unknown }).query = counted;
+}
+
+/**
+ * Wraps every client the pool hands out, in both of `pg`'s calling styles:
+ * the promise form the transaction helper uses, and the callback form
+ * `Pool.query` uses internally.
+ */
+function instrument(pool: Pool): void {
+  const connect = pool.connect.bind(pool) as (...args: readonly unknown[]) => unknown;
+  const patched = (...args: readonly unknown[]): unknown => {
+    const callback = args[0];
+    if (typeof callback === 'function') {
+      return connect((error: unknown, client: PoolClient | undefined, release: unknown) => {
+        if (client !== undefined) wrapClient(client);
+        (callback as (...values: readonly unknown[]) => void)(error, client, release);
+      });
+    }
+    return (connect() as Promise<PoolClient>).then((client) => {
+      wrapClient(client);
+      return client;
+    });
+  };
+  (pool as unknown as { connect: unknown }).connect = patched;
+}
+
+interface Measured {
+  readonly status: number;
+  readonly text: string;
+  readonly statements: readonly string[];
+}
+
+/** Runs one request with counting on, and returns every statement it sent. */
+async function measure(run: () => Promise<Response>): Promise<Measured> {
+  statements = [];
+  counting = true;
+  try {
+    const response = await run();
+    const text = await response.text();
+    return { status: response.status, text, statements: [...statements] };
+  } finally {
+    counting = false;
+  }
+}
+
+/**
+ * The five statements the display assembly may send, recognised by their text.
+ *
+ * Each pattern names a statement only the display path issues on these reads:
+ * the two capability questions are spelled with a LITERAL code (the search box's
+ * capability question binds its code as a parameter, so it cannot match), and
+ * the other three are the three batched lookups. The case that measures a caller
+ * holding both codes asserts every kind appears exactly once, which is what keeps
+ * a pattern that stopped matching from reporting a clean zero.
+ */
+const DISPLAY_STATEMENT_KINDS = Object.freeze({
+  vehicleCapability: /iam\.has_permission\('veh\.vehicle\.read'\)/,
+  vehicleIdentities: /FROM veh\.vehicles v\s+LEFT JOIN veh\.makes/,
+  partnerIds: /SELECT w\.id AS work_order_id, r\.partner_id/,
+  customerCapability: /iam\.has_permission\('crm\.customer\.read'\)/,
+  customerNames: /FROM crm\.business_partners\s+WHERE tenant_id = \$1 AND id = ANY/,
+});
+
+type DisplayStatementKind = keyof typeof DISPLAY_STATEMENT_KINDS;
+
+/** How many statements of each display kind a measured request sent. */
+function displayStatementCounts(
+  sent: readonly string[]
+): Readonly<Record<DisplayStatementKind, number>> {
+  const counts: Record<DisplayStatementKind, number> = {
+    vehicleCapability: 0,
+    vehicleIdentities: 0,
+    partnerIds: 0,
+    customerCapability: 0,
+    customerNames: 0,
+  };
+  for (const text of sent) {
+    for (const [kind, pattern] of Object.entries(DISPLAY_STATEMENT_KINDS)) {
+      if (pattern.test(text)) counts[kind as DisplayStatementKind] += 1;
+    }
+  }
+  return counts;
+}
+
+const totalOf = (counts: Readonly<Record<DisplayStatementKind, number>>): number =>
+  Object.values(counts).reduce((sum, count) => sum + count, 0);
 
 // ---------------------------------------------------------------------------
 // Route invocation
@@ -869,6 +1029,8 @@ beforeAll(async () => {
   await ensureBackendFixtures(admin);
   await establishP1_19Fixtures(admin);
   runtime = runtimeAppPool(6);
+  // Counting is OFF until a case turns it on; see "Statement counting" above.
+  instrument(runtime);
   __setPrimaryPoolForTests(runtime);
   await establishP1_22Fixtures(admin);
   for (const principal of LOCAL_PRINCIPALS) await seedLocalPrincipal(principal);
@@ -1006,7 +1168,9 @@ beforeAll(async () => {
     `INSERT INTO veh.vehicles
        (id, tenant_id, vin_raw, display_number, powertrain_category, lifecycle_status, created_by)
      VALUES ($1,$2,$3,$4,'ice','active',$5) ON CONFLICT (id) DO NOTHING`,
-    [OD_TENANT_B_VEHICLE, TENANT_B, OD_TENANT_B_VIN, OD_TENANT_B_NUMBER, USER_A]
+    // Attributed to tenant B's own user: a tenant-A actor creating a tenant-B row
+    // is a state the product cannot produce, and a fixture must not rely on one.
+    [OD_TENANT_B_VEHICLE, TENANT_B, OD_TENANT_B_VIN, OD_TENANT_B_NUMBER, USER_B]
   );
 
   // A warranty whose car is then soft-deleted. Issued through the real route
@@ -1043,6 +1207,56 @@ beforeAll(async () => {
       [TENANT_A, OD_NO_PARTY.delivery.visitId, 'service_requester']
     )
   );
+
+  // The tie-break fixture; see `OD_TIEBREAK`. The two extra roles are recorded
+  // AFTER the check-in's own row, in separate statements so `created_at` orders
+  // them, and each is back-dated against the check-in's `valid_from`.
+  // Back-dating is the only way to arrange it: `tg_reception_party_roles_immutable`
+  // freezes `valid_from` once written, so a role recorded late with an earlier
+  // start is what a late correction to a visit looks like.
+  OD_TIEBREAK = await arrangeWarranty('p131_wty_od_tiebreak');
+  for (const [partnerId, name] of [
+    [OD_TIE_EARLIEST, OD_TIE_EARLIEST_NAME],
+    [OD_TIE_HIGHEST, OD_TIE_HIGHEST_NAME],
+  ] as const) {
+    await admin.query(
+      `INSERT INTO crm.business_partners (id, tenant_id, party_type, display_name, lifecycle_status, created_by)
+       VALUES ($1,$2,'individual',$3,'active',$4) ON CONFLICT (id) DO NOTHING`,
+      [partnerId, TENANT_A, name, USER_A]
+    );
+  }
+  for (const [partnerId, backdate] of [
+    [OD_TIE_EARLIEST, '2 days'],
+    [OD_TIE_HIGHEST, '1 day'],
+  ] as const) {
+    const recorded = await admin.query(
+      `INSERT INTO rec.reception_party_roles
+         (tenant_id, company_id, branch_id, reception_visit_id, partner_id, relationship_role,
+          valid_from, created_by)
+       SELECT r.tenant_id, r.company_id, r.branch_id, r.reception_visit_id, $3,
+              r.relationship_role, r.valid_from - $4::interval, $5
+         FROM rec.reception_party_roles r
+        WHERE r.tenant_id = $1 AND r.reception_visit_id = $2 AND r.partner_id = $6
+          AND r.relationship_role = 'service_requester'
+          AND r.valid_to IS NULL AND r.deleted_at IS NULL`,
+      [TENANT_A, OD_TIEBREAK.delivery.visitId, partnerId, backdate, USER_A, PARTNER_A]
+    );
+    if (recorded.rowCount !== 1) {
+      throw new Error(`tie-break role for ${partnerId} was not recorded`);
+    }
+  }
+
+  // A work order in tenant B, made through the same conversion route the tenant-A
+  // ones are, so its visit carries the service requester `rec.accept_check_in`
+  // wrote. The partner-id lookup's tenant case needs a row that would answer if
+  // the predicate were missing.
+  const tenantBOrder = await createWorkOrder({
+    tenantId: TENANT_B,
+    companyId: COMPANY_B1,
+    branchId: BRANCH_B1,
+  });
+  __resetAuthenticatorForTests();
+  OD_TENANT_B_WORK_ORDER = tenantBOrder.workOrderId;
 }, 240_000);
 
 afterEach(() => {
@@ -1997,9 +2211,10 @@ describe('the warranty row names the car and the customer', () => {
       // breaks and nothing has to be reconstructed from a label.
       expect(body.vehicleId).toBe(body.vehicle.id);
 
-      // The visit's earliest service requester, named. Two partners hold that
-      // role on this visit, so this also pins the tie-break: the read answers
-      // with the earliest `valid_from` rather than an arbitrary one of the two.
+      // The visit's earliest service requester, named, WITH its partner id: this
+      // caller holds `crm.customer.read`. Two partners hold the role on this
+      // visit, but here every plausible rule agrees on the answer, so the
+      // tie-break itself is proved by the `OD_TIEBREAK` case below.
       expect(body.customer?.id).toBe(OD_PARTNER_EXPECTED);
       expect(body.customer?.displayName).toBe(OD_CHECKIN_PARTNER_NAME);
     }
@@ -2017,22 +2232,26 @@ describe('the warranty row names the car and the customer', () => {
       expect(body.vehicle.vin).toBeNull();
       expect(body.vehicle.makeModel).toBe(OD_MAKE_MODEL);
       expect(body.vehicle.displayNumber).toBe(OD_VEHICLE_NUMBER);
-      // The narrowing is on the registration and nothing else: the name still
-      // arrives, because this caller holds the CRM code.
+      // The narrowing is on the registration and nothing else: the name and the
+      // partner id still arrive, because this caller holds the CRM code.
       expect(body.customer?.displayName).toBe(OD_CHECKIN_PARTNER_NAME);
+      expect(body.customer?.id).toBe(OD_PARTNER_EXPECTED);
     }
   });
 
-  it('withholds the name from a caller without crm.customer.read but keeps the link', async () => {
+  it('withholds the name AND the partner id from a caller without crm.customer.read', async () => {
     for (const body of [
       await rowFor(WTY_READ_WITH_VEHICLE),
       await detailFor(WTY_READ_WITH_VEHICLE),
     ]) {
       // The warranty HAS a customer and this caller is told so — the block is
-      // published with its id and without the name. Dropping the block would
-      // report that the warranty was issued to nobody.
-      expect(body.customer?.id).toBe(OD_PARTNER_EXPECTED);
-      expect(body.customer?.displayName).toBeNull();
+      // published — but with neither the name nor the partner id. The id is a
+      // CRM identifier exactly as the name is: published to a caller who may
+      // not read customers it would let them correlate one customer's
+      // warranties. Dropping the block instead would report that the warranty
+      // was issued to nobody.
+      expect(body.customer).not.toBeNull();
+      expect(body.customer).toEqual({ id: null, displayName: null });
       // And the registration still arrives, because this caller holds the vehicle
       // code. The two narrowings are independent.
       expect(body.vehicle.plate).toBe(OD_SEARCH_PLATE);
@@ -2044,7 +2263,7 @@ describe('the warranty row names the car and the customer', () => {
     for (const body of [await rowFor(WTY_READ_ONLY), await detailFor(WTY_READ_ONLY)]) {
       expect(body.vehicle.plate).toBeNull();
       expect(body.vehicle.vin).toBeNull();
-      expect(body.customer?.displayName).toBeNull();
+      expect(body.customer).toEqual({ id: null, displayName: null });
       // Everything the warranty itself says is still published: the blocks narrow,
       // they never turn the read into a partial one.
       expect(body.vehicle.makeModel).toBe(OD_MAKE_MODEL);
@@ -2067,14 +2286,31 @@ describe('the warranty row names the car and the customer', () => {
     // that never reaches them cannot exercise them, and calling this an
     // isolation test would be claiming a guarantee from the wrong evidence. The
     // case below tests that predicate directly.
+    //
+    // "Before" is measured, not inferred: every statement the refused request
+    // sends is recorded, and none of them may be one of the five display
+    // statements.
     authAs(WTY_DISPLAY_TENANT_B);
-    const detail = await readWarranty(OD_SEARCHABLE.warrantyId);
+    const detail = await measure(() => readWarranty(OD_SEARCHABLE.warrantyId));
     expect(detail.status).toBe(404);
-    const text = await detail.text();
+    const text = detail.text;
     expect(JSON.parse(text).code).toBe('ERR-RES-001');
     for (const secret of [OD_SEARCH_PLATE, OD_VIN, OD_CHECKIN_PARTNER_NAME, OD_VEHICLE_NUMBER]) {
       expect(text, secret).not.toContain(secret);
     }
+    // The refused request did reach the database — a zero from a request that
+    // sent nothing at all would prove nothing — and sent no display statement.
+    expect(detail.statements.length).toBeGreaterThan(0);
+    expect(totalOf(displayStatementCounts(detail.statements))).toBe(0);
+    __resetAuthenticatorForTests();
+
+    // The positive control for the counter: the same read, by a tenant-A caller
+    // holding the same three codes, sends all five. Without it a pattern that had
+    // stopped matching would make the zero above pass while proving nothing.
+    authAs(WTY_READ_WITH_DISPLAY);
+    const allowed = await measure(() => readWarranty(OD_SEARCHABLE.warrantyId));
+    expect(allowed.status).toBe(200);
+    expect(totalOf(displayStatementCounts(allowed.statements))).toBe(5);
     __resetAuthenticatorForTests();
 
     // The list side of the same boundary: a company in tenant A is refused rather
@@ -2169,10 +2405,10 @@ describe('the warranty row names the car and the customer', () => {
   });
 
   it('publishes no customer at all when the visit names no service requester', async () => {
-    // The whole block is null, not a block with a null name. The two mean
-    // different things and a screen says different words for them: a null NAME
-    // is "there is a customer and you may not be told who", a null BLOCK is
-    // "this warranty names nobody".
+    // The whole block is null, not a block with null fields. The two mean
+    // different things and a screen says different words for them: a block
+    // whose id and name are both null is "there is a customer and you may not
+    // be told who", a null BLOCK is "this warranty names nobody".
     for (const body of [
       await rowFor(WTY_READ_WITH_DISPLAY, OD_NO_PARTY),
       await detailFor(WTY_READ_WITH_DISPLAY, OD_NO_PARTY),
@@ -2198,5 +2434,237 @@ describe('the warranty row names the car and the customer', () => {
     expect(roles.rows[0]?.open).toBe('0');
     expect(roles.rows[0]?.closed).toBe('1');
     expect((await rowFor(WTY_READ_WITH_DISPLAY)).customer?.id).toBe(OD_PARTNER_EXPECTED);
+  });
+});
+
+describe('the customer block names the earliest requester, by that rule alone', () => {
+  it('picks the earliest valid_from even when it was neither recorded first nor has the lowest id', async () => {
+    // Anti-vacuity FIRST: the fixture really separates the candidate rules. If
+    // the earliest `valid_from` were also the first recorded or the lowest id,
+    // an unordered or id-ordered read would pass this case by accident — which
+    // is exactly what the `OD_SEARCHABLE` visit could not rule out.
+    const roles = await admin.query<{
+      partner_id: string;
+      by_valid_from: string;
+      by_recorded: string;
+      by_id: string;
+    }>(
+      `SELECT partner_id::text,
+              row_number() OVER (ORDER BY valid_from ASC)::text AS by_valid_from,
+              row_number() OVER (ORDER BY created_at ASC)::text AS by_recorded,
+              row_number() OVER (ORDER BY partner_id ASC)::text AS by_id
+         FROM rec.reception_party_roles
+        WHERE tenant_id = $1 AND reception_visit_id = $2 AND relationship_role = $3
+          AND valid_to IS NULL AND deleted_at IS NULL`,
+      [TENANT_A, OD_TIEBREAK.delivery.visitId, SERVICE_REQUESTER]
+    );
+    expect(roles.rowCount).toBe(3);
+    const earliest = roles.rows.find((row) => row.by_valid_from === '1');
+    expect(earliest?.partner_id).toBe(OD_TIE_EARLIEST);
+    // Neither the first nor the last recorded, neither the lowest nor the highest id.
+    expect(earliest?.by_recorded).toBe('2');
+    expect(earliest?.by_id).toBe('2');
+
+    authAs(WTY_READ_WITH_DISPLAY);
+    const list = await listWarranties({
+      companyId: COMPANY_A1,
+      branchId: OD_TIEBREAK.delivery.branchId,
+      limit: 100,
+    });
+    expect(list.status).toBe(200);
+    const row = (await bodyOf<WarrantyListBody>(list)).items.find(
+      (item) => item.id === OD_TIEBREAK.warrantyId
+    );
+    __resetAuthenticatorForTests();
+    authAs(WTY_READ_WITH_DISPLAY);
+    const detail = await readWarranty(OD_TIEBREAK.warrantyId);
+    expect(detail.status).toBe(200);
+    const body = await bodyOf<WarrantyDetailBody>(detail);
+
+    for (const answer of [row, body]) {
+      expect(answer?.customer).toEqual({ id: OD_TIE_EARLIEST, displayName: OD_TIE_EARLIEST_NAME });
+    }
+  });
+});
+
+describe('the partner-id lookup behind the customer block', () => {
+  const repository = new WarrantyRepository();
+
+  /**
+   * `findCustomerPartnerIds` run directly, on the runtime pool, as one principal.
+   *
+   * Under a real read-only transaction, so the session settings and row-level
+   * security are the ones production runs with, exactly as the vehicle lookup's
+   * tenant case above runs its own read.
+   *
+   * `scope` is the company and branch set the request context carries into
+   * `app.company_ids` / `app.branch_ids`, which is what `iam.allowed_branch_ids()`
+   * reads. It is omitted for an unrestricted caller, and for a scoped one it is
+   * the set that caller's single scoped grant resolves to.
+   */
+  function lookUp(
+    principal: Principal,
+    workOrderIds: readonly string[],
+    scope?: { readonly companyIds: readonly string[]; readonly branchIds: readonly string[] }
+  ): Promise<ReadonlyMap<string, string>> {
+    const context = buildRequestContext({
+      correlationId: randomUUID(),
+      principal: { userId: principal.userId, tenantId: principal.tenantId },
+      ...(scope === undefined ? {} : { companyIds: scope.companyIds, branchIds: scope.branchIds }),
+      operation: WARRANTY_LIST_OPERATION.id,
+      module: 'warranty',
+    });
+    return withReadOnlyTransaction(context, (db) =>
+      repository.findCustomerPartnerIds(db, workOrderIds, SERVICE_REQUESTER)
+    );
+  }
+
+  it('never answers for another tenant, and each tenant still answers for its own', async () => {
+    // Anti-vacuity: the tenant-B work order's visit really names a requester, so
+    // its absence below is the predicate and not an empty visit.
+    const other = await admin.query<{ partner_id: string }>(
+      `SELECT r.partner_id::text
+         FROM wo.work_orders w
+         JOIN rec.reception_party_roles r
+           ON r.tenant_id = w.tenant_id AND r.reception_visit_id = w.reception_visit_id
+        WHERE w.tenant_id = $1 AND w.id = $2 AND r.relationship_role = $3
+          AND r.valid_to IS NULL AND r.deleted_at IS NULL`,
+      [TENANT_B, OD_TENANT_B_WORK_ORDER, SERVICE_REQUESTER]
+    );
+    expect(other.rowCount).toBeGreaterThan(0);
+
+    const both = [OD_SEARCHABLE.delivery.workOrderId, OD_TENANT_B_WORK_ORDER];
+
+    // Tenant A: its own work order answers (the positive control), tenant B's
+    // does not.
+    const fromA = await lookUp(WTY_READ_WITH_DISPLAY, both);
+    expect(fromA.get(OD_SEARCHABLE.delivery.workOrderId)).toBe(OD_PARTNER_EXPECTED);
+    expect(fromA.has(OD_TENANT_B_WORK_ORDER)).toBe(false);
+    expect(fromA.size).toBe(1);
+
+    // And the mirror image, so the tenant-B row is shown to be resolvable at all:
+    // the same call under tenant B answers for its own work order and not A's.
+    const fromB = await lookUp(WTY_DISPLAY_TENANT_B, both);
+    expect(fromB.get(OD_TENANT_B_WORK_ORDER)).toBe(other.rows[0]?.partner_id);
+    expect(fromB.has(OD_SEARCHABLE.delivery.workOrderId)).toBe(false);
+    expect(fromB.size).toBe(1);
+  });
+
+  it('never answers for a branch row-level security hides from a branch-narrowed caller', async () => {
+    const both = [FIRST.delivery.workOrderId, OD_IN_A2.delivery.workOrderId];
+
+    // The positive control: an unrestricted caller in the same tenant is told
+    // the requester of both, so both work orders do name one.
+    const unrestricted = await lookUp(WTY_READ_WITH_DISPLAY, both);
+    expect(unrestricted.has(FIRST.delivery.workOrderId)).toBe(true);
+    expect(unrestricted.has(OD_IN_A2.delivery.workOrderId)).toBe(true);
+
+    // Scoped to BRANCH_A2 alone: the A2 work order answers, the A1 one does not.
+    // The method takes no branch argument, so this is row-level security doing
+    // the narrowing, and the case fails if the statement ever stops running
+    // under it (a table owner or a bypassing role would answer for both).
+    const narrowed = await lookUp(WTY_READ_SCOPED_A2, both, {
+      companyIds: [COMPANY_A1],
+      branchIds: [BRANCH_A2],
+    });
+    expect(narrowed.has(OD_IN_A2.delivery.workOrderId)).toBe(true);
+    expect(narrowed.has(FIRST.delivery.workOrderId)).toBe(false);
+    expect(narrowed.size).toBe(1);
+  });
+});
+
+describe('the display blocks cost the same few statements for one row as for a page', () => {
+  /** One branch list page, measured, as one principal. */
+  async function measuredPage(principal: Principal, limit: number): Promise<Measured> {
+    // The list carries the `expensive-read` bucket; this case makes several
+    // calls in a row and must not be measuring a 429.
+    __resetRateLimitForTests();
+    authAs(principal);
+    try {
+      return await measure(() =>
+        listWarranties({ companyId: COMPANY_A1, branchId: BRANCH_A1, limit })
+      );
+    } finally {
+      __resetAuthenticatorForTests();
+    }
+  }
+
+  const rowsOf = (measured: Measured): readonly WarrantyListRow[] =>
+    (JSON.parse(measured.text) as WarrantyListBody).items;
+
+  it('sends at most five display statements for a page of one and a page of many, and the same number for both', async () => {
+    for (const [principal, expected] of [
+      // Both codes: every one of the five, exactly once.
+      [
+        WTY_READ_WITH_DISPLAY,
+        {
+          vehicleCapability: 1,
+          vehicleIdentities: 1,
+          partnerIds: 1,
+          customerCapability: 1,
+          customerNames: 1,
+        },
+      ],
+      // The warranty code alone: the CRM read stops after its capability question.
+      [
+        WTY_READ_ONLY,
+        {
+          vehicleCapability: 1,
+          vehicleIdentities: 1,
+          partnerIds: 1,
+          customerCapability: 1,
+          customerNames: 0,
+        },
+      ],
+    ] as const) {
+      // Warm first, so both measurements are of reused connections: a cold pool
+      // client sends set-up statements a warm one does not, which would read as
+      // a page that got cheaper as it grew.
+      await measuredPage(principal, 1);
+      await measuredPage(principal, 100);
+
+      const one = await measuredPage(principal, 1);
+      const many = await measuredPage(principal, 100);
+      expect(one.status, principal.subject).toBe(200);
+      expect(many.status, principal.subject).toBe(200);
+
+      // Anti-vacuity: the large page really is large and really is varied — one
+      // car per arranged warranty and, for the caller who may be told them, more
+      // than one customer — so a per-row lookup would have shown up.
+      const oneRows = rowsOf(one);
+      const manyRows = rowsOf(many);
+      expect(oneRows).toHaveLength(1);
+      expect(manyRows.length).toBeGreaterThanOrEqual(8);
+      expect(new Set(manyRows.map((row) => row.vehicle.id)).size).toBeGreaterThanOrEqual(8);
+      if (principal === WTY_READ_WITH_DISPLAY) {
+        const customers = new Set(
+          manyRows.map((row) => row.customer?.id).filter((id) => typeof id === 'string')
+        );
+        expect(customers.size).toBeGreaterThanOrEqual(2);
+      }
+
+      const oneCounts = displayStatementCounts(one.statements);
+      const manyCounts = displayStatementCounts(many.statements);
+      expect(oneCounts, principal.subject).toEqual(expected);
+      expect(manyCounts, principal.subject).toEqual(expected);
+      expect(totalOf(manyCounts)).toBeLessThanOrEqual(5);
+      // And the whole request, not only the display part, costs the same for
+      // one row as for many: an N+1 anywhere on the page fails here.
+      expect(many.statements.length, principal.subject).toBe(one.statements.length);
+    }
+  });
+
+  it('the detail read uses the same bounded assembly', async () => {
+    authAs(WTY_READ_WITH_DISPLAY);
+    const detail = await measure(() => readWarranty(OD_SEARCHABLE.warrantyId));
+    __resetAuthenticatorForTests();
+    expect(detail.status).toBe(200);
+    expect(displayStatementCounts(detail.statements)).toEqual({
+      vehicleCapability: 1,
+      vehicleIdentities: 1,
+      partnerIds: 1,
+      customerCapability: 1,
+      customerNames: 1,
+    });
   });
 });

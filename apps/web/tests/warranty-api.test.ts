@@ -230,14 +230,15 @@ describe('the car and the customer arrive named', () => {
   it('carries a withheld registration, a withheld name and an absent customer as null', async () => {
     // Four REAL states of the data, not error cases: a caller without
     // `veh.vehicle.read` is told the car and not its registration; a caller
-    // without `crm.customer.read` is told there is a customer and not who; a visit
+    // without `crm.customer.read` is told there is a customer and neither who nor
+    // which partner record it is - the id is withheld with the name; a visit
     // may have named no service requester at all; a vehicle may cite no catalogue
     // row.
     get.mockResolvedValue(
       ok({
         items: [
           { ...ROW, vehicle: { ...ROW.vehicle, plate: null, vin: null } },
-          { ...ROW, id: 'w-2', customer: { id: ROW.customer.id, displayName: null } },
+          { ...ROW, id: 'w-2', customer: { id: null, displayName: null } },
           {
             ...ROW,
             id: 'w-3',
@@ -262,7 +263,10 @@ describe('the car and the customer arrive named', () => {
     expect(state.rows[0]?.vehicle.vin).toBeNull();
     // Withheld is not the absence of a car: the rest of the block still names it.
     expect(state.rows[0]?.vehicle.makeModel).toBe('A make A model');
-    expect(state.rows[1]?.customer).toEqual({ id: ROW.customer.id, displayName: null });
+    // Both fields null together: a withheld customer carries no partner id to
+    // link to, so the adapter must pass the null through rather than keep a stale
+    // identifier from anywhere else.
+    expect(state.rows[1]?.customer).toEqual({ id: null, displayName: null });
     expect(state.rows[2]?.customer).toBeNull();
     expect(state.rows[2]?.vehicle.makeModel).toBeNull();
   });

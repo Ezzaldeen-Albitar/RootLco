@@ -354,12 +354,16 @@ export interface WarrantyVehicleDisplay {
  * from.
  *
  * The WHOLE block is null when the originating visit names no service requester,
- * which is a real state of the data and not an error. `displayName` is null on its
- * own when the caller may not read customers — so a row can legitimately arrive
- * with a customer that has no name, and that case is words rather than a uuid.
+ * which is a real state of the data and not an error. `id` and `displayName` are
+ * null TOGETHER when the caller may not read customers, or when the backend could
+ * not resolve the partner for them — so a row can legitimately arrive with a
+ * customer that has neither a name nor an identifier, and that case is words
+ * rather than a uuid. A screen may link to the customer only when `id` is a
+ * string; a null `id` is never a link.
  */
 export interface WarrantyCustomerDisplay {
-  readonly id: string;
+  /** The partner id, or null when the backend withheld it with the name. */
+  readonly id: string | null;
   readonly displayName: string | null;
 }
 

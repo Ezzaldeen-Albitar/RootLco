@@ -207,19 +207,26 @@ export interface WarrantyVehicleView {
  * on the reception visit its work order came from — the party who brought the car
  * and asked for the work, which is the party a claim would come back from.
  *
- * `displayName` is null ON ITS OWN for a caller that does not hold
- * `crm.customer.read`: the link is a reception fact and the person's name is the
- * CRM module's to withhold, so the block is published either way and only the name
- * is missing. Resolved through `crmModule().customerRead.resolveDisplayIdentities`,
- * which checks that capability for itself — this module never joins
- * `crm.business_partners`.
+ * `id` and `displayName` are published TOGETHER or not at all. Both are null for
+ * a caller that does not hold `crm.customer.read`: the partner id is a CRM
+ * identifier exactly as the name is, and a `wty.warranty.read` holder who may not
+ * read customers has no use for one — it would only let them correlate one
+ * customer's warranties, and every other screen they could follow it to refuses
+ * them. So the block says that there IS a customer and nothing about who. Both are
+ * null again when the CRM module cannot resolve the partner for this caller
+ * (merged away, soft-deleted, or outside what row-level security lets them see);
+ * the two cases are deliberately indistinguishable, as `plate` and `vin` are on
+ * the vehicle block. Resolved through
+ * `crmModule().customerRead.resolveDisplayIdentities`, which checks that
+ * capability for itself — this module never joins `crm.business_partners`.
  *
  * The WHOLE block is null when the originating visit names no service requester,
  * which is a real state rather than an error: `rec.reception_party_roles` requires
  * the role only before a visit is activated.
  */
 export interface WarrantyCustomerView {
-  readonly id: string;
+  /** The partner id, or null when the name is withheld or unresolvable. */
+  readonly id: string | null;
   readonly displayName: string | null;
 }
 
@@ -1205,12 +1212,18 @@ async function searchTermsFor(db: DbHandle, q: string | undefined) {
  * rather than per row, which is the property that matters; it is written as five
  * rather than three because two of them are capability questions the composed
  * reads ask for themselves, and a docblock that counted only the visible calls
- * would understate what a page costs.
+ * would understate what a page costs. The bound is MEASURED rather than only
+ * stated: `tests/backend/p1-31-warranty-read-seam.test.ts` counts the statements
+ * a one-row page and a many-row page send, and fails if either exceeds five or if
+ * the two differ.
  *
  * Fewer when there is less to ask: the CRM read makes no second statement for a
  * caller without the code, and none at all when no row names a partner. The
- * first two and the third are independent and run together; the last pair cannot
- * start until the third has said which partners there are.
+ * first two and the third do not depend on one another, so they are issued
+ * together; they share this request's one transaction connection, which runs
+ * them one after another, so what that buys is not waiting on each result before
+ * sending the next rather than parallel execution. The last pair cannot start
+ * until the third has said which partners there are.
  *
  * Every hop goes through a PUBLIC module surface or through this module's own
  * repository, and the division is the point:
@@ -1218,7 +1231,8 @@ async function searchTermsFor(db: DbHandle, q: string | undefined) {
  *  - `@/modules/vehicle` decides whether this caller may be told a plate or a VIN.
  *    This module does not re-implement that rule and does not touch `veh.*`.
  *  - `@/modules/crm` decides whether this caller may be told a name, and answers
- *    an unentitled caller with an empty map. This module does not touch `crm.*`.
+ *    an unentitled caller with an empty map. This module does not touch `crm.*`,
+ *    and it publishes the partner id only beside a name that read returned.
  *  - the LINK — which partner is the service requester on the visit this record's
  *    work order came from — is a `rec`/`wo` fact that this repository already
  *    walks for the list's search box, so it stays here.
@@ -1255,13 +1269,32 @@ async function resolveDisplayBlocks(
     customers: new Map(
       [...partnerByWorkOrder].map(([workOrderId, partnerId]) => [
         workOrderId,
-        // The id is published even when the name is withheld or unresolvable: the
-        // link is this module's fact, and dropping the block would report that the
-        // warranty has no customer.
-        { id: partnerId, displayName: identities.get(partnerId)?.displayName ?? null },
+        // The block is kept even when the CRM read returned nothing for this
+        // partner — dropping it would report that the warranty has no customer —
+        // but the id travels WITH the name: a caller without `crm.customer.read`
+        // is told there is a customer and not which partner it is.
+        customerBlockFor(partnerId, identities),
       ])
     ),
   };
+}
+
+/**
+ * The customer block for one work order's service requester.
+ *
+ * Least privilege: the partner id is published only when the CRM module's own
+ * capability-checked read resolved that partner for this caller, which it never
+ * does for a caller without `crm.customer.read`. Otherwise both fields are null,
+ * so a withheld customer and an unresolvable one read the same.
+ */
+function customerBlockFor(
+  partnerId: string,
+  identities: ReadonlyMap<string, { readonly displayName: string }>
+): WarrantyCustomerView {
+  const identity = identities.get(partnerId);
+  return identity === undefined
+    ? { id: null, displayName: null }
+    : { id: partnerId, displayName: identity.displayName };
 }
 
 /**
