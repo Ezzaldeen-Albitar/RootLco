@@ -151,8 +151,13 @@ const Query = z
      *   assignedToMe      a LIVE row in `wo.job_assignments` for the caller's own
      *                     technician profile — and an EMPTY page, never the whole
      *                     board, when the caller has no such profile;
-     *   awaitingParts     `wo.work_orders.parts_forward_state` is not `none`;
-     *   awaitingApproval  an additional-work request is still `pending`;
+     *   awaitingParts     `wo.work_orders.parts_forward_state` is `requested` or
+     *                     `reserved_elsewhere` (parts not yet in hand) AND the
+     *                     order is not in a terminal state — the predicate the
+     *                     dashboard's "waiting for parts" figure counts with;
+     *   awaitingApproval  a live, undeleted additional-work request is still
+     *                     `pending` — the predicate the dashboard's "waiting for
+     *                     the customer to agree" figure counts with;
      *   awaitingQuality   a quality-control record's `overall_result` is `pending`;
      *   readyForDelivery  the state is closed and not a cancellation, resolved
      *                     from the LIVE catalogue exactly as the delivery

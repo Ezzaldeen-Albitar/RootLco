@@ -64,6 +64,15 @@
  * OWN company and branches (`COMPANY_D`) so the counts it asserts are exactly the
  * rows it inserted and cannot move when this file's report fixtures change; what
  * it reuses is the harness, the principal seeding and the visit primitive.
+ *
+ * ## Every linked figure equals the list it links to
+ *
+ * The last block holds the Owner rule — a dashboard figure offered as "the list"
+ * counts exactly the set that list shows — against the board route itself, in a
+ * third company of its own (`COMPANY_E`) whose fixtures are the edge cases that
+ * separated the two definitions before they were shared: a FINISHED order with
+ * parts requested, parts `reserved_elsewhere`, a RETIRED work order holding a
+ * pending request, and one order holding TWO pending requests.
  */
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import type { Pool } from 'pg';
@@ -105,6 +114,8 @@ import { GET as DASHBOARD_SUMMARY } from '@/app/api/v1/dashboard/summary/route';
 import { POST as CLOSE_WORK_ORDER } from '@/app/api/v1/work-orders/[workOrderId]/closure/route';
 import { POST as CREATE_JOB } from '@/app/api/v1/work-orders/[workOrderId]/jobs/route';
 import { POST as TRANSITION_JOB } from '@/app/api/v1/jobs/[jobId]/transition/route';
+import { GET as LIST_WORK_ORDERS } from '@/app/api/v1/work-orders/route';
+import { __resetRateLimitForTests } from '@/server/http/rate-limit';
 
 let admin: Pool;
 let runtime: Pool;
@@ -2156,5 +2167,248 @@ describe('tenant report restrictions remain visible to a read-only report caller
         ).toEqual([otherBranchOrder]);
       }
     );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// ovw.dashboard-summary-read — every linked figure counts the list it links to
+// (Owner directive, P1-32-PRE-OD-UX)
+// ---------------------------------------------------------------------------
+
+/** This block's OWN company, so nothing another block inserts can move a count. */
+const COMPANY_E = 'f1310000-0000-4000-8000-0000000000e0';
+const BRANCH_E1 = 'f1310000-0000-4000-8000-0000000000e1';
+const BRANCH_E2 = 'f1310000-0000-4000-8000-0000000000e2';
+
+/** Unrestricted, holding every code the dashboard's sections and the board ask for. */
+const OVW_LINKS: Principal = {
+  roleId: 'f1310000-0000-4000-8000-000000000301',
+  userId: 'f1310000-0000-4000-8000-000000000302',
+  subject: 'fx_ovw_links',
+  tenantId: TENANT_A,
+  permissions: [...DASHBOARD_CODES],
+};
+
+describe('ovw.dashboard-summary-read — every linked figure counts the list it links to', () => {
+  /** Unfinished, parts requested: waiting for parts. */
+  let partsRequested = '';
+  /** Unfinished, parts reserved in another system and never issued: waiting. */
+  let partsReservedElsewhere = '';
+  /** Parts requested and then CLOSED: a finished order is not waiting. */
+  let finishedWithParts = '';
+  /** Parts requested and a pending request, then RETIRED: counted by nothing. */
+  let retiredWithRequest = '';
+  /** Two pending requests on ONE order: one work order, two requests. */
+  let twoRequests = '';
+
+  async function seedLinkOrder(branchId: string): Promise<string> {
+    const visit = await seedAuthorizedVisit({ companyId: COMPANY_E, branchId });
+    const inserted = await admin.query<{ id: string }>(
+      `INSERT INTO wo.work_orders
+         (tenant_id, company_id, branch_id, reception_visit_id, vehicle_id, created_by)
+       VALUES ($1,$2,$3,$4,$5,$6) RETURNING id`,
+      [TENANT_A, COMPANY_E, branchId, visit.visitId, visit.vehicleId, USER_A]
+    );
+    return inserted.rows[0]?.id ?? '';
+  }
+
+  async function setParts(workOrderId: string, value: string): Promise<void> {
+    await admin.query(`UPDATE wo.work_orders SET parts_forward_state = $2 WHERE id = $1`, [
+      workOrderId,
+      value,
+    ]);
+  }
+
+  async function pendingRequest(workOrderId: string, branchId: string): Promise<void> {
+    await admin.query(
+      `INSERT INTO wo.additional_work_requests
+         (tenant_id, company_id, branch_id, work_order_id, summary, state, is_required, created_by)
+       VALUES ($1,$2,$3,$4,'Dashboard link fixture request','pending',false,$5)`,
+      [TENANT_A, COMPANY_E, branchId, workOrderId, USER_A]
+    );
+  }
+
+  /** Drives an order to `closed` through the shipped transition and closure routes. */
+  async function closeLinkOrder(workOrderId: string): Promise<void> {
+    const version = await advance(workOrderId, [...OVW_CLOSURE_PATH], FULL);
+    authAs(FULL);
+    const response = await CLOSE_WORK_ORDER(
+      new Request(`http://localhost/api/v1/work-orders/${workOrderId}/closure`, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'idempotency-key': randomUUID(),
+          'if-match': String(version),
+        },
+        body: JSON.stringify({ toState: 'closed' }),
+      }),
+      { params: Promise.resolve({ workOrderId }) }
+    );
+    if (response.status !== 200) {
+      throw new Error(`fixture closure failed with ${response.status}: ${await response.text()}`);
+    }
+  }
+
+  /**
+   * Every work-order id the BOARD returns for one query, walking every page.
+   *
+   * The figure is compared with the list's own answer rather than with a count
+   * written here, so the case fails the moment the two definitions part —
+   * whichever side moves.
+   */
+  async function boardIds(query: Record<string, string>): Promise<readonly string[]> {
+    const ids: string[] = [];
+    let cursor: string | null = null;
+    do {
+      __resetRateLimitForTests();
+      authAs(OVW_LINKS);
+      const url = new URL('http://localhost/api/v1/work-orders');
+      for (const [key, value] of Object.entries(query)) url.searchParams.set(key, value);
+      url.searchParams.set('limit', '100');
+      if (cursor !== null) url.searchParams.set('cursor', cursor);
+      const response = await LIST_WORK_ORDERS(new Request(url));
+      if (response.status !== 200) {
+        throw new Error(`board read failed with ${response.status}: ${await response.text()}`);
+      }
+      const body = (await response.json()) as {
+        items: readonly { id: string }[];
+        nextCursor: string | null;
+        hasMore: boolean;
+      };
+      ids.push(...body.items.map((item) => item.id));
+      cursor = body.hasMore ? body.nextCursor : null;
+    } while (cursor !== null);
+    return ids;
+  }
+
+  beforeAll(async () => {
+    await admin.query(
+      `INSERT INTO org.legal_companies
+         (id, tenant_id, company_code, legal_name, base_currency_code, created_by)
+       VALUES ($1,$2,'fx_ovw_links','Dashboard Links Company','USD',$3)
+       ON CONFLICT (id) DO NOTHING`,
+      [COMPANY_E, TENANT_A, USER_A]
+    );
+    for (const [id, code, name] of [
+      [BRANCH_E1, 'fx_ovw_branch_e1', 'Dashboard Links Branch A'],
+      [BRANCH_E2, 'fx_ovw_branch_e2', 'Dashboard Links Branch B'],
+    ]) {
+      await admin.query(
+        `INSERT INTO org.branches
+           (id, tenant_id, company_id, branch_code, name, timezone_name, created_by)
+         VALUES ($1,$2,$3,$4,$5,$6,$7) ON CONFLICT (id) DO NOTHING`,
+        [id, TENANT_A, COMPANY_E, code, name, BRANCH_TIMEZONE, USER_A]
+      );
+    }
+    await seedPrincipal(OVW_LINKS);
+
+    partsRequested = await seedLinkOrder(BRANCH_E1);
+    await setParts(partsRequested, 'requested');
+
+    partsReservedElsewhere = await seedLinkOrder(BRANCH_E1);
+    await setParts(partsReservedElsewhere, 'reserved_elsewhere');
+    await pendingRequest(partsReservedElsewhere, BRANCH_E1);
+
+    finishedWithParts = await seedLinkOrder(BRANCH_E1);
+    await setParts(finishedWithParts, 'requested');
+    await closeLinkOrder(finishedWithParts);
+
+    retiredWithRequest = await seedLinkOrder(BRANCH_E1);
+    await setParts(retiredWithRequest, 'requested');
+    await pendingRequest(retiredWithRequest, BRANCH_E1);
+    await admin.query(
+      `UPDATE wo.work_orders SET deleted_at = now(), deleted_by = $2 WHERE id = $1`,
+      [retiredWithRequest, USER_A]
+    );
+
+    twoRequests = await seedLinkOrder(BRANCH_E1);
+    await pendingRequest(twoRequests, BRANCH_E1);
+    await pendingRequest(twoRequests, BRANCH_E1);
+
+    // An untouched order, so no view is trivially "every order".
+    await seedLinkOrder(BRANCH_E1);
+
+    // The sibling branch: one order waiting on both, so the branch scope and the
+    // all-branches scope are each tested against a set that differs.
+    const sibling = await seedLinkOrder(BRANCH_E2);
+    await setParts(sibling, 'requested');
+    await pendingRequest(sibling, BRANCH_E2);
+
+    __resetAuthenticatorForTests();
+  });
+
+  /** The three scopes a dashboard can be asked for, and the board query for each. */
+  const SCOPES = [
+    { name: 'the first branch', branchId: BRANCH_E1 },
+    { name: 'the sibling branch', branchId: BRANCH_E2 },
+    { name: 'every authorized branch', branchId: null },
+  ] as const;
+
+  for (const scope of SCOPES) {
+    it(`matches every linked figure to its board view for ${scope.name}`, async () => {
+      const where: Record<string, string> =
+        scope.branchId === null
+          ? { companyId: COMPANY_E }
+          : { companyId: COMPANY_E, branchId: scope.branchId };
+      const view = await dashboardAs(OVW_LINKS, { ...where, period: 'today' });
+
+      // Each pair is the card's figure and the board view its link opens. A
+      // snapshot figure is not bounded by the period, and neither is the view.
+      const pairs = [
+        { card: view.sections.awaitingParts, query: { awaitingParts: 'true' } },
+        { card: view.sections.awaitingApproval, query: { awaitingApproval: 'true' } },
+        { card: view.sections.activeWorkOrders, query: { stateGroup: 'active' } },
+        { card: view.sections.readyForDelivery, query: { readyForDelivery: 'true' } },
+      ] as const;
+      for (const pair of pairs) {
+        const ids = await boardIds({ ...where, ...pair.query });
+        expect(sectionValue(pair.card), JSON.stringify(pair.query)).toBe(ids.length);
+      }
+    });
+  }
+
+  it('counts parts not in hand on unfinished orders, and nothing retired or finished', async () => {
+    const view = await dashboardAs(OVW_LINKS, {
+      companyId: COMPANY_E,
+      branchId: BRANCH_E1,
+      period: 'today',
+    });
+    expect(view.sections.awaitingParts).toEqual({ status: 'ok', value: 2 });
+
+    const ids = await boardIds({
+      companyId: COMPANY_E,
+      branchId: BRANCH_E1,
+      awaitingParts: 'true',
+    });
+    expect([...ids].sort()).toEqual([partsRequested, partsReservedElsewhere].sort());
+    expect(ids).not.toContain(finishedWithParts);
+    expect(ids).not.toContain(retiredWithRequest);
+
+    const everywhere = await dashboardAs(OVW_LINKS, { companyId: COMPANY_E, period: 'today' });
+    expect(everywhere.sections.awaitingParts).toEqual({ status: 'ok', value: 3 });
+  });
+
+  it('counts work orders waiting on a decision once each, and requests separately', async () => {
+    const view = await dashboardAs(OVW_LINKS, {
+      companyId: COMPANY_E,
+      branchId: BRANCH_E1,
+      period: 'today',
+    });
+    // Two ORDERS: the reserved one and the one holding two requests. The retired
+    // order's request is still a live row and is counted by neither figure.
+    expect(view.sections.awaitingApproval).toEqual({ status: 'ok', value: 2 });
+    expect(view.sections.pendingApprovalsCount).toEqual({ status: 'ok', value: 3 });
+
+    const ids = await boardIds({
+      companyId: COMPANY_E,
+      branchId: BRANCH_E1,
+      awaitingApproval: 'true',
+    });
+    expect([...ids].sort()).toEqual([partsReservedElsewhere, twoRequests].sort());
+    expect(ids).not.toContain(retiredWithRequest);
+
+    const everywhere = await dashboardAs(OVW_LINKS, { companyId: COMPANY_E, period: 'today' });
+    expect(everywhere.sections.awaitingApproval).toEqual({ status: 'ok', value: 3 });
+    expect(everywhere.sections.pendingApprovalsCount).toEqual({ status: 'ok', value: 4 });
   });
 });

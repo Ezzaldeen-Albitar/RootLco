@@ -77,6 +77,31 @@ export type WorkOrderStateGroup = (typeof WORK_ORDER_STATE_GROUPS)[number];
 export const PARTS_FORWARD_STATES = ['none', 'requested', 'reserved_elsewhere'] as const;
 export type PartsForwardState = (typeof PARTS_FORWARD_STATES)[number];
 
+/**
+ * The `parts_forward_state` values that mean the parts are NOT YET IN HAND for
+ * the job (Owner directive, P1-32-PRE-OD-UX — "waiting for parts").
+ *
+ * Both non-`none` values qualify, and each for a stated reason:
+ *
+ *   `requested`           somebody asked for the parts and nothing has been
+ *                         reserved yet;
+ *   `reserved_elsewhere`  the parts were reserved in a system this phase does not
+ *                         own. A reservation is not an issue: the vocabulary has
+ *                         no `issued` value because handing stock to a job is not
+ *                         a fact this schema can record (see
+ *                         `DEFERRED_CLOSURE_BLOCKERS`), so the column never says
+ *                         the parts arrived.
+ *
+ * Listed explicitly rather than written as "anything but `none`", so a value
+ * added later — an `issued`, say — does not silently join the set. This is the
+ * ONE definition the overview count and the board's `awaitingParts` view share;
+ * the repository builds its SQL fragment from it.
+ */
+export const PARTS_NOT_IN_HAND_STATES = [
+  'requested',
+  'reserved_elsewhere',
+] as const satisfies readonly PartsForwardState[];
+
 // Deliberately NOT here: the quality-control result vocabulary, the diagnostic
 // report status vocabulary and the labor-session source vocabulary. Each of those
 // belongs to the module that owns its table — `quality`, `diagnostics` and
