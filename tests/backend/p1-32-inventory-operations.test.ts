@@ -36,11 +36,11 @@
  *   inv.stock-count-line-record: route service authorization success denial cross-tenant stale-version audit idempotency isolation
  *   inv.stock-count-reconcile: route service authorization success denial cross-tenant audit idempotency isolation
  *   inv.stock-count-cancel: route service authorization success denial cross-tenant audit idempotency isolation
- *   inv.part-issue-list: route service authorization success denial cross-tenant isolation
+ *   inv.part-issue-list: route service authorization success denial cross-tenant isolation pagination
  */
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { Pool, PoolClient } from 'pg';
-import { randomUUID } from 'node:crypto';
+import { randomInt, randomUUID } from 'node:crypto';
 import { Quantity } from '@/modules/inventory';
 import {
   adminPool,
@@ -51,10 +51,13 @@ import {
   COMPANY_A1,
   TENANT_A,
   TENANT_B,
+  USER_A,
 } from './helpers';
 import { BRANCH_A2, FULL, createOpenWorkOrder, establishP1_19Fixtures } from './p1-19-helpers';
 import {
+  CATEGORY_A,
   INV_APPROVER,
+  INV_COUNTER,
   INV_FULL,
   INV_NO_COST,
   INV_PERMISSION_ELSEWHERE,
@@ -66,6 +69,7 @@ import {
   ITEM_A_ALT,
   ITEM_A_WILDCARD,
   QUARANTINE_A1,
+  UOM_EACH,
   WAREHOUSE_A1,
   WAREHOUSE_A2,
   auditCountFor,
@@ -99,6 +103,10 @@ import { GET as AVAILABILITY } from '@/app/api/v1/stock-availability/route';
 import { POST as ISSUE } from '@/app/api/v1/stock-issues/route';
 import { POST as RETURN } from '@/app/api/v1/stock-returns/route';
 import { PART_ISSUE_LIST_OPERATION, GET as PART_ISSUE_LIST } from '@/app/api/v1/part-issues/route';
+import { GET as WORK_ORDER_PART_ISSUES } from '@/app/api/v1/work-orders/[workOrderId]/part-issues/route';
+import { POST as SALES_RETURN_CREATE } from '@/app/api/v1/sales-returns/route';
+import { GET as RETURNABLE } from '@/app/api/v1/returnable-quantities/route';
+import { GET as LIST_WORK_ORDERS } from '@/app/api/v1/work-orders/route';
 import { primaryPool } from '@/server/db/pool';
 import { withReadOnlyTransaction } from '@/server/db/transaction';
 import { buildRequestContext } from '@/server/context/request-context';
@@ -1567,7 +1575,7 @@ async function issuePart(
     readonly itemId?: string;
     readonly quantity?: string;
   } = {}
-): Promise<{ id: string; workOrderId: string }> {
+): Promise<{ id: string; workOrderId: string; vehicleId: string; visitId: string }> {
   const branchId = options.branchId ?? BRANCH_A1;
   const locationId = options.locationId ?? WAREHOUSE_A1;
   const itemId = options.itemId ?? ITEM_A;
@@ -1587,7 +1595,31 @@ async function issuePart(
   });
   expect(response.status).toBe(201);
   const issued = await bodyOf<{ id: string }>(response);
-  return { id: issued.id, workOrderId: order.workOrderId };
+  return {
+    id: issued.id,
+    workOrderId: order.workOrderId,
+    vehicleId: order.vehicleId,
+    visitId: order.visitId,
+  };
+}
+
+/** Runs fixture SQL as tenant A, so every trigger that stamps an actor finds one. */
+async function asTenantA(work: (client: PoolClient) => Promise<unknown>): Promise<void> {
+  const client = await admin.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query(
+      `SELECT set_config('app.user_id', $1, true), set_config('app.tenant_id', $2, true)`,
+      [USER_A, TENANT_A]
+    );
+    await work(client);
+    await client.query('COMMIT');
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
 }
 
 /** An instant a shade before now, as the inclusive lower bound of a page. */
@@ -1826,6 +1858,226 @@ describe('inv.part-issue-list', () => {
     expect(after?.quantity).toBe('4.000');
     expect(after?.returnedQuantity).toBe('1.500');
     expect(after?.returnableQuantity).toBe('2.500');
+  });
+
+  it('counts BOTH return paths on both issue reads, exactly as the ceiling does', async () => {
+    const since = justBefore();
+    const issued = await issuePart({ quantity: '5.000' });
+    const window = `companyId=${COMPANY_A1}&branchId=${BRANCH_A1}&issuedFrom=${encodeURIComponent(
+      since
+    )}&limit=100`;
+
+    // One unit back through the legacy stock-return path, two through the
+    // sales-return path. The schema allows both against one issue line and bounds
+    // them by ONE ceiling over both tables.
+    authAs(INV_FULL);
+    const legacy = await post(RETURN, '/api/v1/stock-returns', {
+      partIssueId: issued.id,
+      quantity: '1.000',
+      reason: 'not needed',
+    });
+    expect(legacy.status).toBe(201);
+    authAs(INV_COUNTER);
+    const received = await post(SALES_RETURN_CREATE, '/api/v1/sales-returns', {
+      sourceKind: 'part_issue',
+      sourceId: issued.id,
+      quantity: '2.000',
+      condition: 'restockable',
+      receivedLocationId: WAREHOUSE_A1,
+    });
+    expect(received.status).toBe(201);
+
+    // The figure the database binds a return against.
+    authAs(INV_READER);
+    const ceiling = await bodyOf<{
+      sourceQuantity: string;
+      returnedQuantity: string;
+      remainingQuantity: string;
+    }>(
+      await get(
+        RETURNABLE,
+        `/api/v1/returnable-quantities?sourceKind=part_issue&sourceId=${issued.id}`
+      )
+    );
+    expect(ceiling).toMatchObject({
+      sourceQuantity: '5.000',
+      returnedQuantity: '3.000',
+      remainingQuantity: '2.000',
+    });
+
+    // The branch-wide read agrees with it.
+    const branchRow = (await rowsOf(await listIssuedParts(window))).find(
+      (row) => row.id === issued.id
+    );
+    expect(branchRow?.returnedQuantity).toBe(ceiling.returnedQuantity);
+    expect(branchRow?.returnableQuantity).toBe(ceiling.remainingQuantity);
+
+    // And so does the per-work-order read of the same line.
+    const perOrder = await getAt(
+      WORK_ORDER_PART_ISSUES,
+      `/api/v1/work-orders/${issued.workOrderId}/part-issues`,
+      { workOrderId: issued.workOrderId }
+    );
+    expect(perOrder.status).toBe(200);
+    const orderRow = (
+      await bodyOf<{ items: { id: string; quantity: string; returnedQty: string }[] }>(perOrder)
+    ).items.find((row) => row.id === issued.id);
+    expect(orderRow?.quantity).toBe('5.000');
+    expect(orderRow?.returnedQty).toBe(ceiling.returnedQuantity);
+
+    // The legacy return's own pre-check reads the same figure: 2.5 more fits a
+    // count of the stock-return table alone (1 + 2.5 <= 5) and does not fit the
+    // ceiling (3 + 2.5 > 5), so it is refused by the named rule before any insert.
+    authAs(INV_FULL);
+    const excess = await post(RETURN, '/api/v1/stock-returns', {
+      partIssueId: issued.id,
+      quantity: '2.500',
+    });
+    expect(excess.status).toBe(409);
+    expect((await bodyOf<ProblemViolations>(excess)).violations).toEqual([
+      { path: 'body.quantity', rule: 'stock_return_exceeds_issue' },
+    ]);
+  });
+
+  it('finds an issue of a retired catalogue item by the name and code it is listed under', async () => {
+    const since = justBefore();
+    const suffix = String(randomInt(100000, 999999));
+    const itemId = randomUUID();
+    const sku = `FX-RET-${suffix}`;
+    const name = `Fixture retired gasket ${suffix}`;
+    await admin.query(
+      `INSERT INTO inv.item_master
+         (id, tenant_id, item_category_id, sku, name, uom_id, is_stock_tracked,
+          lifecycle_status, created_by)
+       VALUES ($1,$2,$3,$4,$5,$6,true,'active',$7)`,
+      [itemId, TENANT_A, CATEGORY_A, sku, name, UOM_EACH, USER_A]
+    );
+    const retired = await issuePart({ itemId });
+    const other = await issuePart({ itemId: ITEM_A });
+    await asTenantA((client) =>
+      client.query(
+        `UPDATE inv.item_master SET deleted_at = now(), deleted_by = $3
+          WHERE tenant_id = $1 AND id = $2`,
+        [TENANT_A, itemId, USER_A]
+      )
+    );
+    const window = `companyId=${COMPANY_A1}&branchId=${BRANCH_A1}&issuedFrom=${encodeURIComponent(
+      since
+    )}&limit=100`;
+
+    authAs(INV_READER);
+    // The list still shows the line, under the retired entry's name and code...
+    const shown = (await rowsOf(await listIssuedParts(window))).find(
+      (row) => row.id === retired.id
+    );
+    expect(shown?.item.name).toBe(name);
+    expect(shown?.item.code).toBe(sku);
+
+    // ...so the box has to reach it by exactly those.
+    const byName = await idsOf(
+      await listIssuedParts(`${window}&q=${encodeURIComponent(`retired gasket ${suffix}`)}`)
+    );
+    expect(byName).toContain(retired.id);
+    expect(byName).not.toContain(other.id);
+    const byCode = await idsOf(await listIssuedParts(`${window}&q=${encodeURIComponent(sku)}`));
+    expect(byCode).toContain(retired.id);
+    expect(byCode).not.toContain(other.id);
+  });
+
+  it('matches the plate and the VIN, and never the customer name or phone', async () => {
+    const since = justBefore();
+    const target = await issuePart();
+    const other = await issuePart();
+    const plate = `PIQ ${randomInt(10000, 99999)}`;
+    const nameTerm = `qarnawi${randomInt(1000, 9999)}`;
+    const phone = `9627${randomInt(10000000, 99999999)}`;
+    const partnerId = randomUUID();
+    await asTenantA(async (client) => {
+      await client.query(
+        `INSERT INTO veh.plate_history
+           (tenant_id, vehicle_id, country_code, plate_raw, valid_from, created_by)
+         VALUES ($1,$2,'JO',$3,current_date,$4)`,
+        [TENANT_A, target.vehicleId, plate, USER_A]
+      );
+      // A customer on the target's visit whose name and phone are the search
+      // terms below, and whose terms appear in no field of either issue line.
+      await client.query(
+        `INSERT INTO crm.business_partners
+           (id, tenant_id, party_type, display_name, lifecycle_status, created_by)
+         VALUES ($1,$2,'individual',$3,'active',$4)`,
+        [partnerId, TENANT_A, `Zubaydah ${nameTerm}`, USER_A]
+      );
+      await client.query(
+        `INSERT INTO crm.contact_points
+           (tenant_id, partner_id, channel, normalized_value, raw_value, is_primary, created_by)
+         VALUES ($1,$2,'mobile',$3,$3,true,$4)`,
+        [TENANT_A, partnerId, phone, USER_A]
+      );
+      await client.query(
+        `INSERT INTO rec.reception_party_roles
+           (tenant_id, company_id, branch_id, reception_visit_id, partner_id, relationship_role,
+            valid_from, created_by)
+         VALUES ($1,$2,$3,$4,$5,'service_requester',now(),$6)`,
+        [TENANT_A, COMPANY_A1, BRANCH_A1, target.visitId, partnerId, USER_A]
+      );
+    });
+    const vin =
+      (
+        await admin.query<{ vin_normalized: string }>(
+          `SELECT vin_normalized FROM veh.vehicles WHERE id = $1`,
+          [target.vehicleId]
+        )
+      ).rows[0]?.vin_normalized ?? '';
+    expect(vin.length).toBeGreaterThan(6);
+    const window = `companyId=${COMPANY_A1}&branchId=${BRANCH_A1}&issuedFrom=${encodeURIComponent(
+      since
+    )}&limit=100`;
+
+    authAs(INV_READER);
+    const byPlate = await idsOf(await listIssuedParts(`${window}&q=${encodeURIComponent(plate)}`));
+    expect(byPlate).toContain(target.id);
+    expect(byPlate).not.toContain(other.id);
+    const byVin = await idsOf(await listIssuedParts(`${window}&q=${encodeURIComponent(vin)}`));
+    expect(byVin).toContain(target.id);
+    expect(byVin).not.toContain(other.id);
+
+    // Positive controls: the customer really is connected to the target's job.
+    // The work-order board searches a party's NAME on its visit and finds it; it
+    // has no phone arm, so the phone half is proved on the rows the shared phone
+    // arm reads — a live role on the visit naming a partner whose stored mobile
+    // number is exactly the digits typed.
+    authAs(FULL);
+    const board = await LIST_WORK_ORDERS(
+      new Request(
+        `http://localhost/api/v1/work-orders?companyId=${COMPANY_A1}&branchId=${BRANCH_A1}` +
+          `&q=${encodeURIComponent(nameTerm)}`
+      )
+    );
+    expect(board.status).toBe(200);
+    expect((await bodyOf<{ items: { id: string }[] }>(board)).items.map((row) => row.id)).toContain(
+      target.workOrderId
+    );
+    expect(
+      await countRowsOf(
+        `SELECT count(*)::text AS n
+           FROM rec.reception_party_roles r
+           JOIN crm.contact_points cp
+             ON cp.tenant_id = r.tenant_id AND cp.partner_id = r.partner_id
+          WHERE r.tenant_id = $1 AND r.reception_visit_id = $2 AND r.deleted_at IS NULL
+            AND r.valid_to IS NULL AND cp.deleted_at IS NULL
+            AND cp.channel = 'mobile' AND cp.normalized_value = $3`,
+        [TENANT_A, target.visitId, phone]
+      )
+    ).toBe(1);
+
+    // The issued-parts box never reaches the customer: both answer 200 and
+    // without the target line.
+    authAs(INV_READER);
+    for (const term of [nameTerm, phone]) {
+      const response = await listIssuedParts(`${window}&q=${encodeURIComponent(term)}`);
+      expect(response.status, term).toBe(200);
+      expect(await idsOf(response), term).not.toContain(target.id);
+    }
   });
 
   it('names who issued the part only to a caller holding iam.user.read', async () => {

@@ -765,9 +765,10 @@ export class InventoryReadService {
       },
       pageRequest(PART_ISSUE_ORDER, page)
     );
-    // ONE additional statement for the whole page, and only when the page has
-    // rows: a per-row lookup would be a read amplification on a picker that is
-    // opened on every return.
+    // A fixed cost for the whole page, never one per row: an empty page issues
+    // no statement at all, and a page with rows issues at most two — the
+    // capability check, then, only for an entitled caller, the names. A per-row
+    // lookup would be a read amplification on a picker opened on every return.
     const identities = await iamDirectory().directory.resolveDisplayIdentities(
       db,
       result.items.map((row) => row.issuedBy)

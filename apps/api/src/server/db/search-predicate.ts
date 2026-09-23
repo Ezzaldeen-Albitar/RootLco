@@ -149,13 +149,17 @@ export function searchFragment(
     // `inv.item_master` twice for every candidate. Each half keeps its own
     // `<> ''` guard for the reason every other arm does: an empty fragment would
     // become `LIKE '%%'` and match the whole catalogue.
+    //
+    // No `deleted_at` test on the item: the arm searches the item the row
+    // DISPLAYS, and the list joins its item without one — a part issued before
+    // its catalogue entry was retired is still listed under that entry's name and
+    // code, so it has to be findable by them too.
     arms.push(
       `EXISTS (
           SELECT 1
             FROM inv.item_master im
            WHERE im.tenant_id = ${anchors.tenant}
              AND im.id = ${anchors.itemId}
-             AND im.deleted_at IS NULL
              AND ((${name}::text <> ''
                    AND shared.fold_search_text(im.name) LIKE '%' || ${name}::text || '%' ESCAPE '\\')
                OR (${reference}::text <> ''

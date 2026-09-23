@@ -5232,7 +5232,7 @@
       "files": ["tests/backend/p1-32-inventory-operations.test.ts"],
       "referenced": true,
       "derived": ["route", "service", "success", "authorization", "isolation"],
-      "declared": ["success", "authorization", "denial", "cross-tenant", "isolation"],
+      "declared": ["success", "authorization", "denial", "cross-tenant", "isolation", "pagination"],
       "required": [
         "route",
         "service",
@@ -5240,13 +5240,15 @@
         "authorization",
         "isolation",
         "denial",
-        "cross-tenant"
+        "cross-tenant",
+        "pagination"
       ],
       "provided": [
         "authorization",
         "cross-tenant",
         "denial",
         "isolation",
+        "pagination",
         "route",
         "service",
         "success"

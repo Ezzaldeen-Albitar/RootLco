@@ -2574,15 +2574,27 @@ describe('the partner-id lookup behind the customer block', () => {
 });
 
 describe('the display blocks cost the same few statements for one row as for a page', () => {
-  /** One branch list page, measured, as one principal. */
-  async function measuredPage(principal: Principal, limit: number): Promise<Measured> {
+  /**
+   * One branch list page, measured, as one principal.
+   *
+   * `vehicleId` narrows the page to one car's warranties. The one-row page is
+   * narrowed to `OD_SEARCHABLE`'s car rather than left to the ordering: every
+   * fixture is issued today, so the unfiltered first row is whichever warranty
+   * drew the highest random id — sometimes `OD_NO_PARTY`, whose requester is
+   * dated out, and then the customer statements the case expects never run.
+   */
+  async function measuredPage(
+    principal: Principal,
+    limit: number,
+    vehicleId?: string
+  ): Promise<Measured> {
     // The list carries the `expensive-read` bucket; this case makes several
     // calls in a row and must not be measuring a 429.
     __resetRateLimitForTests();
     authAs(principal);
     try {
       return await measure(() =>
-        listWarranties({ companyId: COMPANY_A1, branchId: BRANCH_A1, limit })
+        listWarranties({ companyId: COMPANY_A1, branchId: BRANCH_A1, limit, vehicleId })
       );
     } finally {
       __resetAuthenticatorForTests();
@@ -2620,10 +2632,11 @@ describe('the display blocks cost the same few statements for one row as for a p
       // Warm first, so both measurements are of reused connections: a cold pool
       // client sends set-up statements a warm one does not, which would read as
       // a page that got cheaper as it grew.
-      await measuredPage(principal, 1);
+      const oneCar = OD_SEARCHABLE.delivery.vehicleId;
+      await measuredPage(principal, 1, oneCar);
       await measuredPage(principal, 100);
 
-      const one = await measuredPage(principal, 1);
+      const one = await measuredPage(principal, 1, oneCar);
       const many = await measuredPage(principal, 100);
       expect(one.status, principal.subject).toBe(200);
       expect(many.status, principal.subject).toBe(200);
@@ -2634,6 +2647,12 @@ describe('the display blocks cost the same few statements for one row as for a p
       const oneRows = rowsOf(one);
       const manyRows = rowsOf(many);
       expect(oneRows).toHaveLength(1);
+      // Fixture precondition: the one row is the warranty known to name a
+      // customer, so the customer statements it expects have a party to ask about.
+      expect(oneRows[0]?.id, principal.subject).toBe(OD_SEARCHABLE.warrantyId);
+      if (principal === WTY_READ_WITH_DISPLAY) {
+        expect(oneRows[0]?.customer?.id, principal.subject).toEqual(expect.any(String));
+      }
       expect(manyRows.length).toBeGreaterThanOrEqual(8);
       expect(new Set(manyRows.map((row) => row.vehicle.id)).size).toBeGreaterThanOrEqual(8);
       if (principal === WTY_READ_WITH_DISPLAY) {

@@ -103,6 +103,21 @@ export const PART_ISSUE_ORDER: OrderingContract = Object.freeze({
 });
 
 /**
+ * Everything already returned against the part issue aliased `pi`, as the
+ * database's own ceiling counts it.
+ *
+ * A part issue has two ways back — `inv.part_returns` (`POST /stock-returns`)
+ * and `inv.sales_returns` with `source_kind = 'part_issue'` — and ONE ceiling:
+ * `inv.guard_part_return_ceiling` and `inv.guard_sales_return_ceiling` both
+ * refuse a return once the sum over BOTH tables would pass the issued quantity,
+ * and the latter computes that sum with `inv.returned_quantity`. Every read that
+ * reports a returned figure for an issue line uses this one expression, so the
+ * per-work-order list, the branch-wide list and the pre-check a return runs
+ * cannot disagree with each other or with the ceiling.
+ */
+const PART_ISSUE_RETURNED_SQL = `inv.returned_quantity(pi.tenant_id, 'part_issue', pi.id)`;
+
+/**
  * Stock locations are listed by `location_code` (Phase 1-30 A2, S-16).
  *
  * `uq_stock_locations_code` makes the code unique within a branch, so it is a
@@ -732,8 +747,8 @@ export interface ReservationListRow extends ReservationRow {
  * One part issue as the per-work-order list renders it (Phase 1-30 A2, S-15).
  *
  * `PartIssueRow` — including the `returned_qty` sum `readPartIssue` already
- * computes in SQL — plus the SKU and location code, and `createdAt` for the same
- * reason as above. `quantity` and `returnedQty` are `numeric(12,3)` and stay
+ * computes in SQL over both return tables — plus the SKU and location code, and
+ * `createdAt` for the same reason as above. `quantity` and `returnedQty` are `numeric(12,3)` and stay
  * decimal STRINGS; the OUTSTANDING amount is deliberately NOT computed here,
  * because subtracting two decimals in JavaScript is exactly the arithmetic the
  * server-owned-money rule forbids. The consumer has both exact strings.
@@ -2412,9 +2427,10 @@ export class InventoryRepository extends Repository {
    * `GET /stock-issues?workOrderId=...` would name no parent and leave the
    * declared `scope: 'branch'` inert (P1-18-A-01).
    *
-   * `returned_qty` is the SAME correlated sum `readPartIssue` computes, in SQL,
-   * over `inv.part_returns`. Both quantities cross as decimal STRINGS and neither
-   * is netted here: `numeric(12,3)` subtraction in JavaScript is precisely the
+   * `returned_qty` is `PART_ISSUE_RETURNED_SQL` — the same expression
+   * `readPartIssue` and `listIssuedParts` use, and the same sum over BOTH return
+   * tables the ceiling enforces. Both quantities cross as decimal STRINGS and
+   * neither is netted here: `numeric(12,3)` subtraction in JavaScript is precisely the
    * arithmetic the server-owned-amount rule forbids.
    */
   public async listPartIssuesForWorkOrder(
@@ -2448,9 +2464,7 @@ export class InventoryRepository extends Repository {
       db,
       `SELECT pi.id, pi.company_id, pi.branch_id, pi.work_order_id, pi.item_id, i.sku,
               pi.location_id, l.location_code, pi.reservation_id, pi.quantity,
-              COALESCE((SELECT sum(pr.quantity) FROM inv.part_returns pr
-                         WHERE pr.tenant_id = pi.tenant_id
-                           AND pr.part_issue_id = pi.id), 0)::numeric(12,3)::text AS returned_qty,
+              ${PART_ISSUE_RETURNED_SQL}::numeric(12,3)::text AS returned_qty,
               pi.created_at,
               ${cursorTimestamp('pi.created_at')} AS sort_value
          FROM inv.part_issues pi
@@ -2509,7 +2523,8 @@ export class InventoryRepository extends Repository {
    *
    * ## `returnableQuantity` is subtracted by the DATABASE
    *
-   * `inv.returned_quantity` is the same function `inv.guard_sales_return_ceiling`
+   * `inv.returned_quantity` (`PART_ISSUE_RETURNED_SQL`, shared with the
+   * per-work-order read) is the same function `inv.guard_sales_return_ceiling`
    * enforces the ceiling with, so the remainder shown and the remainder allowed
    * are one statement rather than two that can drift; it counts BOTH return
    * tables, so a part returned through the legacy `POST /stock-returns` path is
@@ -2608,10 +2623,8 @@ export class InventoryRepository extends Repository {
       db,
       `SELECT pi.id, pi.company_id, pi.branch_id, pi.work_order_id, w.display_number,
               pi.item_id, i.sku, i.name AS item_name, u.code AS unit_code, pi.quantity,
-              inv.returned_quantity(pi.tenant_id, 'part_issue', pi.id)::numeric(12,3)::text
-                AS returned_quantity,
-              (pi.quantity - inv.returned_quantity(pi.tenant_id, 'part_issue', pi.id))
-                ::numeric(12,3)::text AS returnable_quantity,
+              ${PART_ISSUE_RETURNED_SQL}::numeric(12,3)::text AS returned_quantity,
+              (pi.quantity - ${PART_ISSUE_RETURNED_SQL})::numeric(12,3)::text AS returnable_quantity,
               pi.created_by, pi.created_at,
               ${cursorTimestamp('pi.created_at')} AS sort_value
          FROM inv.part_issues pi
@@ -3478,9 +3491,7 @@ export class InventoryRepository extends Repository {
       db,
       `SELECT pi.id, pi.company_id, pi.branch_id, pi.work_order_id, pi.item_id,
               pi.location_id, pi.reservation_id, pi.quantity,
-              COALESCE((SELECT sum(pr.quantity) FROM inv.part_returns pr
-                         WHERE pr.tenant_id = pi.tenant_id
-                           AND pr.part_issue_id = pi.id), 0)::numeric(12,3)::text AS returned_qty
+              ${PART_ISSUE_RETURNED_SQL}::numeric(12,3)::text AS returned_qty
          FROM inv.part_issues pi
         WHERE pi.tenant_id = $1 AND pi.id = $2 AND pi.deleted_at IS NULL`,
       [context.principal.tenantId, partIssueId]
