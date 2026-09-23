@@ -296,7 +296,12 @@ describe('the work-order board reads on arrival and narrows honestly', () => {
     window.localStorage.clear();
   });
 
-  const render = () => renderLtr(inBranch(<WorkOrderQueueScreen locale="en" messages={en} />));
+  const render = (canReachDelivery = false) =>
+    renderLtr(
+      inBranch(
+        <WorkOrderQueueScreen locale="en" messages={en} canReachDelivery={canReachDelivery} />
+      )
+    );
 
   it('opens on the work that is still the problem of the workshop', async () => {
     /*
@@ -672,9 +677,42 @@ describe('the work-order board reads on arrival and narrows honestly', () => {
     expect(
       await screen.findByRole('link', { name: en['workOrders.queue.openForDelivery'] })
     ).toHaveAttribute('href', `/en/work-orders/${ROW.id}`);
+  });
+
+  /*
+   * THE OFFER IS MADE ON THE DESTINATION'S OWN RULE.
+   *
+   * `/delivery` refuses an operator who is missing any of `sal.delivery.view`,
+   * `wo.work_order.read` or `sal.finance.view` — its page decides before it
+   * reads anything. A link offered to everyone on the ready-for-delivery view
+   * therefore sent a receptionist holding only the work-order code to a page
+   * that could tell them nothing but "you may not see this". The board takes
+   * the whole set as one answer from the route that resolved the session, and
+   * the two cases below are the two sides of it.
+   */
+  it('offers the delivery queue on the ready view when the operator may reach it', async () => {
+    const user = userEvent.setup();
+    render(true);
+    await user.click(
+      screen.getByRole('button', { name: en['workOrders.queue.view.readyForDelivery'] })
+    );
     expect(
-      screen.getByRole('link', { name: en['workOrders.queue.deliveryQueue'] })
+      await screen.findByRole('link', { name: en['workOrders.queue.deliveryQueue'] })
     ).toHaveAttribute('href', '/en/delivery');
+  });
+
+  it('offers no delivery link at all without the three codes that page requires', async () => {
+    const user = userEvent.setup();
+    render(false);
+    await user.click(
+      screen.getByRole('button', { name: en['workOrders.queue.view.readyForDelivery'] })
+    );
+    // The view itself still works: the rows are there, and only the way through
+    // to a page that would refuse them is gone.
+    expect(
+      await screen.findByRole('link', { name: en['workOrders.queue.openForDelivery'] })
+    ).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: en['workOrders.queue.deliveryQueue'] })).toBeNull();
   });
 
   it('re-targets the board when the branch changes, keeping the filters', async () => {

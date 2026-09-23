@@ -153,7 +153,6 @@ describe('listWorkOrders maps a published page onto table rows', () => {
     // `.strict()` at the backend means an empty-but-present parameter is a 422,
     // not a silent ignore, so "not sent" has to mean not sent.
     expect(path).not.toContain('customerId=');
-    expect(path).not.toContain('number=');
     expect(path).not.toContain('q=');
     expect(path).not.toContain('stateGroup=');
     expect(path).not.toContain('completedFrom=');
@@ -184,17 +183,18 @@ describe('listWorkOrders maps a published page onto table rows', () => {
     expect(url.searchParams.get('state')).toBeNull();
   });
 
-  it('sends the P1-32 number and free-text criteria as typed, beside the target', async () => {
+  it('sends the P1-32 free-text criterion as typed, beside the target', async () => {
     get.mockResolvedValue(ok({ items: [], nextCursor: null, hasMore: false }));
 
-    await listWorkOrders(TARGET, { number: '١٢٣', q: 'Nadia' }, REQUEST, null);
+    await listWorkOrders(TARGET, { q: '١٢٣' }, REQUEST, null);
 
     const url = new URL(`https://api.invalid${String(get.mock.calls[0]?.[0])}`);
     expect(url.searchParams.get('companyId')).toBe(TARGET.companyId);
     expect(url.searchParams.get('branchId')).toBe(TARGET.branchId);
-    // Not folded here: the backend folds Arabic-Indic digits itself.
-    expect(url.searchParams.get('number')).toBe('١٢٣');
-    expect(url.searchParams.get('q')).toBe('Nadia');
+    // Sent exactly as the operator typed it: the backend folds Arabic-Indic
+    // digits itself, and folding them here as well would be two rules for one
+    // question with only one of them written down at the backend.
+    expect(url.searchParams.get('q')).toBe('١٢٣');
   });
 
   it('a REFUSAL is a refusal, never an empty board', async () => {

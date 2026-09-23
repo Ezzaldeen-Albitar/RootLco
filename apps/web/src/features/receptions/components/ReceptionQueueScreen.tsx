@@ -189,12 +189,6 @@ export function ReceptionQueueScreen({
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
-  /**
-   * The session's bare references. Accepted so the page did not have to change,
-   * and no longer read: the branch is the working context's named selection.
-   */
-  readonly companyIds?: readonly string[];
-  readonly branchIds?: readonly string[];
   /** `rec.reception.manage` — gates the offer to open a new visit. */
   readonly canCreate: boolean;
   /**
@@ -376,6 +370,26 @@ export function ReceptionQueueScreen({
     setStatus('');
     setTerm('');
   };
+
+  /**
+   * Is there anything for Clear to clear?
+   *
+   * Every input `clearFilters` resets, compared against the value it resets to
+   * — so the offer appears exactly when pressing it would change the question.
+   * It used to be made only for a SEARCHABLE term, which left the commonest
+   * empty board of all (a status or a period that matches nothing today) with
+   * no way out but to undo each control by hand.
+   *
+   * The draft days count even when the period is not custom: they are typed
+   * text the operator can see, and a Clear that left them sitting there would
+   * be a Clear that did not.
+   */
+  const filtersApplied =
+    period.kind !== TODAY_PERIOD.kind ||
+    draftFrom !== '' ||
+    draftTo !== '' ||
+    status !== '' ||
+    trimmed !== '';
 
   /*
    * The two groups first, as whole answers, then the six codes underneath them
@@ -573,8 +587,24 @@ export function ReceptionQueueScreen({
         aria-label={translate(messages, 'receptions.queue.formLabel')}
         className="flex flex-col gap-3 rounded-lg border border-border bg-surface p-4"
       >
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="text-label font-medium text-text-primary">
+        {/*
+          A GROUP, named by the label already beside it.
+
+          The buttons are one control with one answer, and without the role a
+          screen reader announces six unrelated toggles whose shared heading is
+          a stray line of text. `aria-labelledby` rather than a second
+          `aria-label` so the name a reader hears and the word on the screen
+          cannot drift apart. The work-order board's view chips do the same.
+        */}
+        <div
+          role="group"
+          aria-labelledby="reception-queue-period-label"
+          className="flex flex-wrap items-center gap-2"
+        >
+          <span
+            id="reception-queue-period-label"
+            className="text-label font-medium text-text-primary"
+          >
             {translate(messages, 'receptions.queue.periodLabel')}
           </span>
           {PERIOD_KINDS.map((kind) => (
@@ -736,7 +766,7 @@ export function ReceptionQueueScreen({
                 {translate(messages, 'receptions.queue.chooseBothDays')}
               </p>
             }
-            {...(search.phase === 'empty' && termIsSearchable
+            {...(search.phase === 'empty' && filtersApplied
               ? {
                   onClearFilters: (
                     <button

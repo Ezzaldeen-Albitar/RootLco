@@ -206,15 +206,23 @@ function criteriaOf(view: ViewKind, zone: string): WorkOrderListCriteria {
 export function WorkOrderQueueScreen({
   locale,
   messages,
+  canReachDelivery = false,
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
   /**
-   * The session's bare references. Accepted so the page did not have to change,
-   * and no longer read: the branch is the working context's named selection.
+   * All three codes the delivery queue's own page requires —
+   * `sal.delivery.view`, `wo.work_order.read` and `sal.finance.view`, the set
+   * `DELIVERY_READINESS_PERMISSIONS` names.
+   *
+   * Gating the LINK on the destination's own rule is the point, and the rule is
+   * the whole set rather than the one code the navigation entry carries: the
+   * delivery page refuses an operator missing ANY of the three, so an offer made
+   * on the strength of one of them lands on a refusal. Defaulting to `false`
+   * means a caller that has not decided offers nothing, which is the direction
+   * a mistake here should fail in.
    */
-  readonly companyIds?: readonly string[];
-  readonly branchIds?: readonly string[];
+  readonly canReachDelivery?: boolean;
 }) {
   const context = useWorkingContext();
   const branch = useBranchTarget();
@@ -996,7 +1004,7 @@ export function WorkOrderQueueScreen({
               <p className="px-2 pb-2 text-caption text-text-muted" lang={locale}>
                 {translate(messages, 'workOrders.queue.orderingNote')}
               </p>
-              {view === 'readyForDelivery' ? (
+              {view === 'readyForDelivery' && canReachDelivery ? (
                 <Link
                   href={`/${locale}/delivery`}
                   className="px-2 text-body text-primary underline-offset-2 hover:underline focus-visible:outline focus-visible:outline-2"

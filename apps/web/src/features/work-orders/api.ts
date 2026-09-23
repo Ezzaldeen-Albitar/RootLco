@@ -102,7 +102,6 @@ export async function listWorkOrders(
       completedFrom: criteria.completedFrom,
       completedTo: criteria.completedTo,
       customerId: criteria.customerId,
-      number: criteria.number,
       q: criteria.q,
       // Written as the literal the route's `z.enum(['true','false'])` takes.
       // `String(false)` is `'false'`, which the route reads as OFF; leaving the

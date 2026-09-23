@@ -230,8 +230,6 @@ export interface WorkOrderListCriteria {
   readonly openedFrom?: string;
   readonly openedTo?: string;
   readonly customerId?: string;
-  /** P1-32. Exact work-order number; the backend folds Arabic-Indic digits. */
-  readonly number?: string;
   /**
    * P1-32. One box: part of the number, of a party name, of any plate the
    * vehicle carried, or of its VIN. Two characters at least.

@@ -527,6 +527,63 @@ describe('every non-answer reads as itself', () => {
     ).toBeVisible();
   });
 
+  it('offers the way back for a PERIOD that matched nothing, with no term typed', async () => {
+    /*
+     * The offer used to be made only for a searchable term, which left the
+     * commonest empty board of all with no way out: a period or a status that
+     * happens to match nothing today is not something the operator typed, and
+     * undoing it by hand means remembering which of four controls they moved.
+     * Clear is offered whenever pressing it would change the question.
+     */
+    const user = userEvent.setup();
+    listReceptions.mockResolvedValue(page([]));
+    renderQueue();
+    expect(await screen.findByText(EN['state.noResults.title'] as string)).toBeVisible();
+    expect(
+      screen.queryByRole('button', { name: EN['receptions.queue.clearFilters'] as string })
+    ).toBeNull();
+
+    await user.click(
+      screen.getByRole('button', { name: EN['receptions.queue.period.yesterday'] as string })
+    );
+    const clear = await screen.findByRole('button', {
+      name: EN['receptions.queue.clearFilters'] as string,
+    });
+    expect(clear).toBeVisible();
+
+    // And pressing it really does put every control back, so the offer is not
+    // a button that says the board is already clear.
+    await user.click(clear);
+    await waitFor(() =>
+      expect(
+        screen.getByRole('button', { name: EN['receptions.queue.period.today'] as string })
+      ).toHaveAttribute('aria-pressed', 'true')
+    );
+    expect(
+      screen.queryByRole('button', { name: EN['receptions.queue.clearFilters'] as string })
+    ).toBeNull();
+  });
+
+  it('names the period buttons as one group rather than six loose toggles', () => {
+    /*
+     * Without the role a screen reader announces six unrelated toggles and the
+     * word beside them as a stray line of text, so the operator hears "Today,
+     * pressed" with nothing saying today WHAT. The name comes from that same
+     * visible word, which is what stops the two drifting apart.
+     */
+    renderQueue();
+    const group = screen.getByRole('group', {
+      name: EN['receptions.queue.periodLabel'] as string,
+    });
+    for (const kind of ['today', 'yesterday', 'last7', 'beforeToday', 'custom']) {
+      expect(
+        within(group).getByRole('button', {
+          name: EN[`receptions.queue.period.${kind}`] as string,
+        })
+      ).toBeVisible();
+    }
+  });
+
   it('invents no total, and offers Next only while the server says more exists', async () => {
     renderQueue();
     await screen.findByText('R-0001');
