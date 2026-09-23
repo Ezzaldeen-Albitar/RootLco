@@ -42,9 +42,6 @@ export const EXTERNAL_PURCHASE_RECORD = 'inv.external_purchase.record';
 export const AUDIT_READ = 'inv.audit.read';
 /** Needed to create the work orders stock is issued to. */
 export const WORK_ORDER_READ = 'wo.work_order.read';
-
-/** The identity-directory code an actor name is resolved behind. */
-export const USER_READ = 'iam.user.read';
 /** P1-32 preparatory slice 2: the catalogue authority identifier writes require. */
 export const ITEM_MANAGE = 'inv.item.manage';
 /**
@@ -350,6 +347,9 @@ export const INV_MATERIAL_NO_STOCK_READ: Principal = {
   tenantId: TENANT_A,
   permissions: ALL_MATERIAL.filter((code) => code !== STOCK_READ),
 };
+
+/** The identity-directory code an actor name is resolved behind. */
+export const USER_READ = 'iam.user.read';
 
 /**
  * Stock reads PLUS the identity-directory code (Owner directive,
