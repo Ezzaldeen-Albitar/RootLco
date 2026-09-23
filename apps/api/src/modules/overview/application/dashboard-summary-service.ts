@@ -53,25 +53,35 @@
  * omitting it means "every branch of that company I am authorized in", which is
  * resolved rather than assumed:
  *
- *  1. the set is the one the work-order BOARD resolves for the same request,
- *     through the same two steps, so an "all my branches" figure and the list
- *     it links to cover the same branches (Owner directive, P1-32-PRE-OD-UX):
- *     the pipeline's `authorizedBranches` seam (`resolveAuthorizedBranches`,
- *     bound to this operation, whose only code is the board's
- *     `wo.work_order.read`) decides it, one branch at a time, for a
- *     branch-narrowed caller; and for a caller with no branch narrowing it
- *     answers "the company", which both sides read as every LIVE branch of it
- *     from `iamOrganizationContext().branches.listBranchesForCompany`;
- *  2. a RETIRED branch is in neither set. The resolver's narrowed arm already
- *     drops it (`deleted_at IS NULL`), and the company arm is read through the
- *     same live-branch list on both sides, so an order still standing in a
- *     retired branch is counted by neither the figure nor the list;
- *  3. a NAMED `branchId` goes through `authorizeScope`, which raises the uniform
+ *  1. the set is EXACTLY the one every list the figures link to resolves for
+ *     the same request (Owner directive, P1-32-PRE-OD-UX): the route calls the
+ *     pipeline's `authorizedBranches` seam (`resolveAuthorizedBranches`, bound
+ *     to this operation, whose only code is the board's `wo.work_order.read`)
+ *     and hands its answer here as `branchIds`, just as the reception,
+ *     appointment, work-order, delivery, warranty and part-issue lists hand it
+ *     to their reads. No filter of this service's own is laid over it;
+ *  2. a branch-narrowed caller gets the seam's list — the branches it holds the
+ *     read in, decided one at a time, which already leaves out a RETIRED branch
+ *     (`deleted_at IS NULL`); the seam refuses such a caller holding none;
+ *  3. a caller with no branch narrowing gets `undefined` from the seam, which
+ *     every list reads as "the company" and filters on the company alone — so
+ *     a retired branch's rows are on those lists, and here the set is every
+ *     branch of the company, retired ones included
+ *     (`listBranchesForCompany(…, { includeRetired: true })`). An order still
+ *     standing in a retired branch is therefore counted by the figure exactly
+ *     when the list it links to shows it, and no history disappears;
+ *  4. a company with NO branch at all, asked by a caller with no branch
+ *     narrowing, is answered — every figure a computed zero, cut in UTC —
+ *     because each list answers the same request with an empty page rather than
+ *     a refusal. The section gates hold vacuously over an empty set; that
+ *     discloses nothing, since a company with no branch holds no visit, order or
+ *     stock row for a section to withhold. A company the caller cannot SEE —
+ *     another tenant's, or one that exists nowhere — is still refused with the
+ *     uniform `ERR-IAM-001`, as it always was here: an empty branch list is the
+ *     same answer for both, and only the visibility read tells them apart;
+ *  5. a NAMED `branchId` goes through `authorizeScope`, which raises the uniform
  *     `ERR-IAM-001` — so an unauthorized branch is refused rather than quietly
- *     dropped, and the refusal never says whether the branch exists;
- *  4. an empty resolved set is refused with the same `ERR-IAM-001`. Answering it
- *     with zeros would tell a caller with no authority anywhere that the company
- *     had no work, which is a statement about the tenant's data.
+ *     dropped, and the refusal never says whether the branch exists.
  *
  * ## The period is a calendar period in ONE zone
  *
@@ -92,11 +102,7 @@
 import { ApplicationService } from '@/server/layering';
 import { AppFailure } from '@/server/errors/app-failure';
 import type { DbHandle } from '@/server/db/transaction';
-import {
-  callerHoldsPermission,
-  type BranchScopeResolver,
-  type ScopeAuthorizer,
-} from '@/server/auth/authorization';
+import { callerHoldsPermission, type ScopeAuthorizer } from '@/server/auth/authorization';
 import type { LocalDayPeriod } from '@/server/db/period';
 import { iamOrganizationContext, type BranchContextRow } from '@/modules/iam';
 import { workOrderModule } from '@/modules/work-order';
@@ -122,6 +128,12 @@ const STOCK_READ = 'inv.stock.read';
 export interface DashboardSummaryQuery {
   readonly companyId: string;
   readonly branchId?: string | undefined;
+  /**
+   * The route's `authorizedBranches` answer, exactly as the linked lists receive
+   * it: the authorized branches of a branch-narrowed caller, or `undefined` for
+   * "the company". Only read when no `branchId` is named.
+   */
+  readonly branchIds: readonly string[] | undefined;
   readonly period: DashboardPeriodKind;
   readonly from?: string | undefined;
   readonly to?: string | undefined;
@@ -237,25 +249,22 @@ export class DashboardSummaryService extends ApplicationService {
    * transaction. It is used for the named-branch case rather than a bare
    * `callerHoldsPermission`, so the refusal carries the operation's declared
    * codes and is raised inside the transaction that would have read the rows.
-   *
-   * `authorizedBranches` is the same pipeline's `resolveAuthorizedBranches`,
-   * bound to this operation — the seam the work-order board resolves its own
-   * all-branches set with — and is used when no branch is named.
    */
   async summary(
     db: DbHandle,
     query: DashboardSummaryQuery,
-    authorizeScope: ScopeAuthorizer,
-    authorizedBranches: BranchScopeResolver
+    authorizeScope: ScopeAuthorizer
   ): Promise<DashboardSummaryView> {
-    const branches = await this.resolveBranches(db, query, authorizeScope, authorizedBranches);
+    const branches = await this.resolveBranches(db, query, authorizeScope);
     const branchIds = branches.map((branch) => branch.branchId);
     const scope = { companyId: query.companyId, branchIds };
 
     // The first branch of the resolved set decides the zone, and the response
-    // says which zone that was. `listBranchesForCompany` orders by name then id,
-    // so "first" is stable across calls rather than whatever the planner
-    // returned.
+    // says which zone that was. `listBranchesForCompany` orders live branches
+    // before retired ones and then by name then id, so "first" is a live branch
+    // whenever one is counted and is stable across calls rather than whatever
+    // the planner returned. An empty set (a company with no branch) is cut in
+    // UTC, and the response says so.
     const timezoneName = branches[0]?.timezoneName ?? 'UTC';
     const clock = await this.clock.reading(db, timezoneName);
     const period = resolveDashboardPeriod({
@@ -342,8 +351,7 @@ export class DashboardSummaryService extends ApplicationService {
   private async resolveBranches(
     db: DbHandle,
     query: DashboardSummaryQuery,
-    authorizeScope: ScopeAuthorizer,
-    authorizedBranches: BranchScopeResolver
+    authorizeScope: ScopeAuthorizer
   ): Promise<readonly BranchContextRow[]> {
     // `iamOrganizationContext` and NOT `iamModule`: the organizational root is
     // provider-free, so reading a branch's timezone cannot make this read depend
@@ -368,16 +376,31 @@ export class DashboardSummaryService extends ApplicationService {
       return [branch];
     }
 
-    // The board's own resolution, step for step (see the module note): the
-    // seam decides a narrowed caller's branches and refuses one holding none;
-    // `undefined` means the company, read as its LIVE branches — the list the
-    // board reads for the same answer. The live list is read either way because
-    // it carries the zone and the stable name order the figures are cut in.
-    const narrowed = await authorizedBranches(query.companyId);
-    const live = await branches.listBranchesForCompany(db, query.companyId);
-    const authorized =
-      narrowed === undefined ? live : live.filter((branch) => narrowed.includes(branch.branchId));
+    // The lists' own branch set, with nothing laid over it (see the module
+    // note). The company's branches are read either way — retired ones
+    // included — because they carry the zone and the stable order the figures
+    // are cut in; `undefined` keeps every one of them, as a list filtering on
+    // the company alone does, and a narrowed answer keeps exactly its members.
+    const narrowed = query.branchIds;
+    const company = await branches.listBranchesForCompany(db, query.companyId, {
+      includeRetired: true,
+    });
+    if (narrowed === undefined) {
+      if (company.length > 0 || (await branches.companyVisible(db, query.companyId))) {
+        return company;
+      }
+      // The same refusal, for the same reason, as a named branch the caller
+      // cannot see: it never says whether the company exists.
+      throw new AppFailure('ERR-IAM-001', {
+        safeDetails: { requiredPermissions: [WORK_ORDER_READ] },
+        message: 'Denied ovw.dashboard-summary-read: the named company is not visible',
+      });
+    }
+    const authorized = company.filter((branch) => narrowed.includes(branch.branchId));
     if (authorized.length === 0) {
+      // Not reachable through the route, whose seam refuses a narrowed caller
+      // holding no branch before this runs. Kept so the service fails closed on
+      // its own rather than answering an empty narrowed set with zeros.
       throw new AppFailure('ERR-IAM-001', {
         safeDetails: { requiredPermissions: [WORK_ORDER_READ] },
         message: 'Denied ovw.dashboard-summary-read: no branch of that company is authorized',

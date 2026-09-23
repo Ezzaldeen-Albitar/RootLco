@@ -1685,6 +1685,11 @@ describe('no caller-supplied scope narrowing on the ten P1-22 isolation operatio
     'src/app/api/v1/work-orders/route.ts',
     'src/app/api/v1/warranties/route.ts',
     'src/app/api/v1/part-issues/route.ts',
+    // The dashboard summary takes a company without a branch through the same
+    // seam, so that every "all my branches" figure covers exactly the branches
+    // of the list it links to (Owner directive, P1-32-PRE-OD-UX). It declares
+    // the exemption and is held to the same clauses.
+    'src/app/api/v1/dashboard/summary/route.ts',
   ];
 
   const OPERATION_IDS = [
@@ -1834,7 +1839,7 @@ describe('no caller-supplied scope narrowing on the ten P1-22 isolation operatio
   });
 
   /**
-   * The six reads that carry the exemption, named by OPERATION rather than
+   * The seven reads that carry the exemption, named by OPERATION rather than
    * discovered by a suffix.
    *
    * `find((id) => id.endsWith('-list'))` was the earlier spelling, and it picks
@@ -1846,6 +1851,10 @@ describe('no caller-supplied scope narrowing on the ten P1-22 isolation operatio
    * the two commercial lists: the returns counter reads issued parts across the
    * branches its clerk works in, so it takes the exemption for the same reason
    * and is held to the same seven clauses.
+   *
+   * `ovw.dashboard-summary-read` is the seventh: its all-branches figures must
+   * cover exactly the branches of the lists they link to, so it resolves an
+   * omitted branch through the same seam and hands the answer to its read.
    */
   const BRANCH_NARROWING_READS = [
     { route: 'src/app/api/v1/receptions/route.ts', operation: 'rec.reception-list' },
@@ -1854,6 +1863,7 @@ describe('no caller-supplied scope narrowing on the ten P1-22 isolation operatio
     { route: 'src/app/api/v1/deliveries/route.ts', operation: 'sal.delivery-list' },
     { route: 'src/app/api/v1/warranties/route.ts', operation: 'wty.warranty-list' },
     { route: 'src/app/api/v1/part-issues/route.ts', operation: 'inv.part-issue-list' },
+    { route: 'src/app/api/v1/dashboard/summary/route.ts', operation: 'ovw.dashboard-summary-read' },
   ] as const;
 
   /** A synthetic module wrapped around one handler body. */

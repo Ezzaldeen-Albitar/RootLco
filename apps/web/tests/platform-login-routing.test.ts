@@ -373,9 +373,10 @@ describe('where a signed-in tenant session lands', () => {
   });
 
   it('lands on the first screen it can open when it cannot open the dashboard', () => {
-    // Walk-in intake is the first entry after the dashboard and the Attention
-    // area that `crm.customer.read` opens — so that is where this session goes,
-    // rather than to a page that could only refuse it.
+    // The dashboard needs `wo.work_order.read` and the Attention area after it
+    // needs `inv.stock.read`, and this session holds neither. Walk-in intake is
+    // the next entry, and the first that `crm.customer.read` opens — so that is
+    // where this session goes, rather than to a page that could only refuse it.
     const route = landingRoute({ permissions: ['crm.customer.read'] });
     expect(route?.key).toBe('walk-in');
     expect(route === null ? null : hrefFor('ar', route)).toBe('/ar/reception/walk-in');
