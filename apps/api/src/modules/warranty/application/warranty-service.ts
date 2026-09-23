@@ -1198,10 +1198,19 @@ async function searchTermsFor(db: DbHandle, q: string | undefined) {
  * Names the car and the customer of a whole set of warranty records (Owner
  * directive, P1-32-PRE-OD-UX).
  *
- * Three statements for any number of records, never three per record: the vehicle
- * identities, the partner ids, and then the partners' names. The first two are
- * independent and run together; the third cannot start until the second has said
- * which partners there are.
+ * Up to FIVE statements for any number of records, and the same five for one:
+ * the vehicle capability and the vehicle identities (both inside the vehicle
+ * module's read), the partner ids, then the customer capability and the
+ * partners' names (both inside the CRM module's). The cost is constant per page
+ * rather than per row, which is the property that matters; it is written as five
+ * rather than three because two of them are capability questions the composed
+ * reads ask for themselves, and a docblock that counted only the visible calls
+ * would understate what a page costs.
+ *
+ * Fewer when there is less to ask: the CRM read makes no second statement for a
+ * caller without the code, and none at all when no row names a partner. The
+ * first two and the third are independent and run together; the last pair cannot
+ * start until the third has said which partners there are.
  *
  * Every hop goes through a PUBLIC module surface or through this module's own
  * repository, and the division is the point:
