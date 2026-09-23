@@ -482,16 +482,19 @@ produces — confirmation, recovery, invitation — is captured by the local mai
 is what every acceptance run so far has measured, and it is still true after this section.
 
 What is new is that the alternative is now written down rather than absent.
-`supabase/config.toml:324` carries an `[auth.email.smtp]` block with `enabled = false`
-(`supabase/config.toml:326`). Setting that one flag to `true` and restarting the stack is the whole
+`supabase/config.toml:365` carries an `[auth.email.smtp]` block with `enabled = false`
+(`supabase/config.toml:367`). Setting that one flag to `true` and restarting the stack is the whole
 of activation; setting it back to `false` and restarting is the whole of the way back. Both steps
 are spelled out below, because that restart has two consequences that are easy to forget: which of
 the two stop commands is safe to use, and a signing-key finding that returns every time.
 
-This section is **provider-neutral**. Nothing in the repository knows which company operates the
-relay, and nothing should: a provider that requires a specially generated password and a provider
-that takes the mailbox's ordinary one are the same case to every file here. Where a worked example
-is needed, the one below is used, and it is an example rather than a rule.
+**The Owner has selected the relay** — the mail service on the `rootlco.com` hosting account,
+recorded 2026-09-23 and written out in 17.3. That selection lives in prose and in the comments
+beside the block; it does not live in a value. **The code stays provider-neutral**: no hostname, no
+port default, no username convention and no provider name appears in `scripts/dev/check-smtp.mjs`,
+and `supabase/config.toml` names the provider only in a comment. A provider that requires a
+specially generated password and a provider that takes the mailbox's ordinary one are the same case
+to every file here, so a later change of provider costs the repository one `.env` edit and no code.
 
 The five string values are `env(...)` references, so the account and its password are not in this
 repository and cannot be. The Supabase CLI expands them from an **untracked `.env`**, matched by the
@@ -514,16 +517,16 @@ knowing before the flag is flipped.
 
 | Name               | Config key                        | Read by                                                              | Secret |
 | ------------------ | --------------------------------- | -------------------------------------------------------------------- | ------ |
-| `SMTP_HOST`        | `auth.email.smtp.host:328`        | the auth service, and the relay check                                | no     |
+| `SMTP_HOST`        | `auth.email.smtp.host:370`        | the auth service, and the relay check                                | no     |
 | `SMTP_PORT`        | not referenced by the config      | the relay check ONLY — the config is a literal                       | no     |
-| `SMTP_USER`        | `auth.email.smtp.user:333`        | the auth service, and the relay check                                | no     |
-| `SMTP_PASS`        | `auth.email.smtp.pass:335`        | the auth service, and the relay check                                | YES    |
-| `SMTP_ADMIN_EMAIL` | `auth.email.smtp.admin_email:339` | the auth service, and the relay check's send mode, which sends AS it | no     |
-| `SMTP_SENDER_NAME` | `auth.email.smtp.sender_name:341` | the auth service, and the relay check's send mode                    | no     |
+| `SMTP_USER`        | `auth.email.smtp.user:380`        | the auth service, and the relay check                                | no     |
+| `SMTP_PASS`        | `auth.email.smtp.pass:384`        | the auth service, and the relay check                                | YES    |
+| `SMTP_ADMIN_EMAIL` | `auth.email.smtp.admin_email:388` | the auth service, and the relay check's send mode, which sends AS it | no     |
+| `SMTP_SENDER_NAME` | `auth.email.smtp.sender_name:390` | the auth service, and the relay check's send mode                    | no     |
 
 Six names, not five. **`SMTP_PASS` is the only secret**; the other five are ordinary settings and
 may appear in a run log. Five of the six are read by the configuration; `SMTP_PORT` is read only by
-the relay check, and the port the auth service uses is the literal on `supabase/config.toml:331`.
+the relay check, and the port the auth service uses is the literal on `supabase/config.toml:377`.
 Keep the two equal, because nothing compares them.
 
 **Where the values live, and what does not protect them.** The file is the untracked `.env` at the
@@ -533,11 +536,6 @@ the reach of `npm run security:all`: the tracked-secret scanner enumerates files
 `git ls-files`, so an ignored file is never read and never flagged. Its protection is the ignore
 rule and the filesystem, and nothing else. Never copy a value out of it into a commit, a document, a
 test fixture, an issue or a pasted terminal transcript.
-
-**The application's own notification module is a separate capability.** Everything in this section
-concerns the messages the identity service sends about an account — confirmation, recovery,
-invitation. Whether and how the product sends a business notification is a different subsystem with
-its own configuration, and turning this flag on does not give it an outbound path.
 
 ### 17.2 What the auth service actually receives
 
@@ -563,26 +561,34 @@ a port and no variable that names a transport, this repository contains no state
 mailer's TLS behaviour, and the CLI's own strings describe none. So the committed value stays at
 `465`, implicit TLS, which is the one the relay check is proven against. Choosing 587 for the auth
 service is possible — see the activation path — but it means editing the literal on
-`supabase/config.toml:331`, and it would be a change whose outcome is observed rather than
-predicted.
+`supabase/config.toml:377`, and it would be a change whose outcome is observed rather than
+predicted. Port 587 is offered as an option below on exactly that footing: the relay check speaks
+it, and the auth container's support for it is unknown rather than denied.
 
-### 17.3 A worked example, to be confirmed before it is used
+**What was measured, and what it is not evidence for.** `node scripts/dev/check-smtp.mjs --probe`
+reached the selected relay on both ports on 2026-09-23: on `465` it reported `implicit TLS,
+encrypted: true`, and on `587` it reported `STARTTLS, encrypted: true`, advertising `PLAIN LOGIN` on
+each. No credential was transmitted in either run. That is a measurement of **the relay**, made by
+this script. It says nothing about the auth container, which is a different SMTP client whose TLS
+behaviour on 587 remains unestablished, so the paragraph above is unchanged by it.
 
-The intended relay for this deployment is the mail service on the `rootlco.com` hosting account. Its
+### 17.3 The selected relay
+
+The Owner selected the mail service on the `rootlco.com` hosting account, recorded 2026-09-23. Its
 settings take this shape:
 
-| Setting     | Value                                                                    |
-| ----------- | ------------------------------------------------------------------------ |
-| host        | `smtp.hostinger.com`                                                     |
-| port        | `465` implicit TLS — or `587` STARTTLS if that is selected and supported |
-| username    | the **complete mailbox address**, not the local part                     |
-| password    | that mailbox's own password, entered locally by the Owner                |
-| admin_email | an address the mailbox is authorised to send as                          |
-| sender_name | `RootLco`                                                                |
+| Setting     | Value                                                                                |
+| ----------- | ------------------------------------------------------------------------------------ |
+| host        | `smtp.hostinger.com`                                                                 |
+| port        | `465` implicit TLS — or `587` STARTTLS if the mailbox product supports it (see 17.2) |
+| username    | the **complete mailbox address**, not the local part                                 |
+| password    | that mailbox's own password, typed locally by the Owner                              |
+| admin_email | an address the mailbox is authorised to send as                                      |
+| sender_name | `RootLco`                                                                            |
 
-Three things about it, all of which matter more than the table.
+Four things about it, all of which matter more than the table.
 
-- **The Owner must confirm the product and the connection details before activation.** Hosting a
+- **The Owner must confirm the mailbox and the connection details before activation.** Hosting a
   domain does not establish that a mailbox exists on it, which email product the account carries, or
   what host and port that product publishes. The authority is the account's own email section, read
   by the Owner; the values above are what to expect there, not a substitute for looking.
@@ -594,23 +600,98 @@ Three things about it, all of which matter more than the table.
   value whose own edges are spaces is written down legibly. `tests/ci/owner-acceptance-password.test.ts`
   asserts both forms against a real file on disk, because the parser — not the caller — is where a
   well-meaning "tidy the input" line would otherwise live.
+- **The login and the sender are two identities.** `SMTP_USER` logs in; `SMTP_ADMIN_EMAIL` is the
+  address the auth service presents as the sender (17.2). A relay that accepts the login and refuses
+  that sender address is a real failure mode, so `SMTP_ADMIN_EMAIL` must be an address the mailbox
+  is authorised to send as — which, on most mail products, means the mailbox's own address unless an
+  alias has been configured for it.
 - **The Platform Owner login is unchanged.** It remains `owner@rootlco.com`. Nothing about the relay
   alters which account signs in.
 
-### 17.4 The relay check
+### 17.4 Two email systems, and which one these settings affect
+
+These are different questions with different owners, and conflating them is how a configured relay
+gets read as a working notification capability.
+
+| System                                 | What it sends                                                           | Configured by                                                       | State                                             |
+| -------------------------------------- | ----------------------------------------------------------------------- | ------------------------------------------------------------------- | ------------------------------------------------- |
+| **(a) Authentication email**           | The identity service's account mail: confirmation, recovery, invitation | `[auth.email.smtp]` and the six `SMTP_*` names in this section      | Prepared, not in force. `enabled = false`         |
+| **(b) Application notification email** | The product's own notifications                                         | `NOTIFICATION_PROVIDER` and the `MessageProvider` port (section 11) | No production adapter exists. The default refuses |
+
+**Every setting in this section affects (a) and only (a).** Activating the relay gives (b) no
+outbound path, and a green relay check is not evidence about (b).
+
+System (b) is governed by the P1-15 owner gate, which states the position in terms this section must
+not overstate: where no production provider is approved the phase "delivers a provider-neutral port
+plus a deterministic fake and, where appropriate, a local/development adapter only — and claims no
+production delivery" (`docs/phase-1/phase-1-15/phase-1-15-owner-gate.md:343-346`, repeated at
+`:385-390`). In code that is exactly what exists:
+
+- `MessageProvider` in `apps/api/src/modules/shared-services/provider/message-provider.ts` is the
+  port. Its `DeliveryRequest` carries **no recipient address field** — an opaque `recipientRef`
+  only — because the platform deliberately never holds a plaintext destination.
+- `UnconfiguredMessageProvider` is the default and **refuses to deliver** rather than pretending,
+  throwing an `outage` failure with the summary `provider_unconfigured`.
+- `LocalMessageProvider` is the deterministic in-process fake. It reaches no network, and exists so
+  the retry, timeout, outage and dead-letter paths are exercised by real code.
+- `NOTIFICATION_PROVIDER` defaults to `unconfigured` in `apps/api/src/server/config/backend-config.ts`
+  and selects an adapter in `buildMessageProvider()` in
+  `apps/api/src/modules/shared-services/index.ts`, which today knows `local_fake` and nothing else.
+- **Enqueue is not blocked.** A successful queue call durably writes one `shared.outbound_messages`
+  row in `pending`; the provider is contacted only by the worker. So business modules integrate
+  against notifications today, and what nobody can claim is that a message reached anyone.
+
+Choosing a production provider for (b) is the open Owner decision **OD-02** in
+`docs/phase-1/phase-1-15/open-decisions.md`, which names what has to be decided: the service per
+channel, the sending identity and domain, how a recipient reference resolves to an address inside
+the adapter, the commercial plan and its throughput ceiling, and the retention position for
+provider-side logs. **Nothing in this change implements an adapter, and none may be written before
+that decision is recorded.** For the reader who will do the work afterwards, what remains is: one
+adapter class implementing `MessageProvider` with a `code` that satisfies
+`ck_delivery_attempts_provider_format`, resolving `recipientRef` to an address inside itself against
+its own configuration; a branch for it in `buildMessageProvider()` keyed on `NOTIFICATION_PROVIDER`;
+its credential and endpoint settings added to the backend config schema and to both `.env.example`
+contracts; and its own suite. The relay configured in this section is not that adapter and cannot
+be used as one — an SMTP relay for the identity container is not reachable from API source, which
+holds no SMTP client.
+
+### 17.5 The four stages of proof
+
+Outbound mail is proven in four stages. They are separate because a pass at one is no evidence at
+all for the next, and reporting them as a single result is how "the relay accepted it" becomes "the
+mail arrived".
+
+| Stage | What it establishes                                                 | How it is measured                                                      |
+| ----- | ------------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| **1** | **SMTP authentication** — the relay accepts the credential          | `node scripts/dev/check-smtp.mjs --authenticate`                        |
+| **2** | **Relay acceptance** — the relay accepts one message for delivery   | `node scripts/dev/check-smtp.mjs --send --to <address>`                 |
+| **3** | **Inbox receipt** — that message is seen in the destination mailbox | A person looks in the mailbox. No command, and no IMAP client exists    |
+| **4** | **Application flows** — recovery and invitation complete end to end | With `enabled = true` and the stack restarted, run both flows in the UI |
+
+Stage 3 has no automated form on purpose: reading a mailbox is not needed in order to send mail, so
+no IMAP capability is built here. Stage 4 is the only stage that involves the application at all;
+stages 1 to 3 are statements about a relay and a mailbox and would hold identically with the flag
+off.
+
+Two modes of the relay check reach **no stage**. `--settings` opens no socket, so it is a statement
+about this machine; `--probe` transmits no credential, so the mechanisms it lists are what the relay
+offers rather than a verdict on the password. Both are preconditions, and neither may be recorded as
+a stage result.
+
+### 17.6 The relay check
 
 `scripts/dev/check-smtp.mjs` speaks SMTP to the relay directly. It needs no container, no running
 stack and no database, which is what makes it usable while an acceptance campaign is in progress —
 the check itself touches nothing. **Activation is a different matter**: it restarts the stack, and
-17.5 says what that costs and which stop command must not be used. It has four modes, graded by what
+17.8 says what that costs and which stop command must not be used. It has four modes, graded by what
 each risks, and exactly one must be named:
 
-| Mode                    | Opens a socket | Sends the password | Sends mail |
-| ----------------------- | -------------- | ------------------ | ---------- |
-| `--settings`            | no             | no                 | no         |
-| `--probe`               | yes            | no                 | no         |
-| `--authenticate`        | yes            | yes                | no         |
-| `--send --to <address>` | yes            | yes                | yes        |
+| Mode                    | Stage reached | Opens a socket | Sends the password | Sends mail |
+| ----------------------- | ------------- | -------------- | ------------------ | ---------- |
+| `--settings`            | none          | no             | no                 | no         |
+| `--probe`               | none          | yes            | no                 | no         |
+| `--authenticate`        | 1             | yes            | yes                | no         |
+| `--send --to <address>` | 2             | yes            | yes                | yes        |
 
 ```
 node scripts/dev/check-smtp.mjs --settings
@@ -623,19 +704,23 @@ node scripts/dev/check-smtp.mjs --send --to someone@example.com
   unset variable. It reports, as names and booleans only, whether each of the six is present and
   non-empty, whether `SMTP_USER` is a complete mailbox address, whether `SMTP_ADMIN_EMAIL` is set,
   and whether the port is one the transport rules recognise. It prints no value of any kind, secret
-  or not, so its output is safe to paste anywhere.
+  or not, so its output is safe to paste anywhere. It opens no socket and reaches no stage.
 - `--probe` negotiates the connection and prints the AUTH mechanisms the relay advertises, then
   quits. No credential is transmitted, so it is the safe first contact with a relay whose lockout
-  policy is unknown.
-- `--authenticate` proves the password and quits without an envelope. AUTH is a session command and
-  a session that ends after it is complete and legal, so this reaches a verdict on the credential
-  without sending anything to anyone.
-- `--send` adds one real message to one real recipient. **There is no default recipient**: the
-  address must be given on the command line, so the script never chooses whose mailbox to write to,
-  and a `--to` value that begins with `--` is refused rather than treated as an address. It sends
-  **as `SMTP_ADMIN_EMAIL`**, which is the identity the auth service presents (17.2), rather than as
-  `SMTP_USER`, which only logs in. That distinction matters: a relay that accepts the login and
-  refuses that sender address is a failure this mode meets and a login-addressed message would not.
+  policy is unknown — and, for the same reason, it reaches no stage.
+- `--authenticate` is **stage 1**: it proves the password and quits without an envelope. AUTH is a
+  session command and a session that ends after it is complete and legal, so this reaches a verdict
+  on the credential without sending anything to anyone.
+- `--send` is **stage 2**: it adds one real message to one real recipient. **There is no default
+  recipient**: the address must be given on the command line, so the script never chooses whose
+  mailbox to write to, and a `--to` value that begins with `--` is refused rather than treated as an
+  address. It sends **as `SMTP_ADMIN_EMAIL`**, which is the identity the auth service presents
+  (17.2), rather than as `SMTP_USER`, which only logs in. That distinction matters: a relay that
+  accepts the login and refuses that sender address is a failure this mode meets and a
+  login-addressed message would not.
+
+Each mode prints the stage it reaches and names the stages it leaves unproven, so a transcript
+cannot be read as more than it is.
 
 The transport follows the port: `465` is implicit TLS, `587` is STARTTLS (EHLO, STARTTLS, upgrade,
 EHLO again), and any other port is refused rather than guessed. In both cases the session **refuses
@@ -644,18 +729,60 @@ relay on 587 that does not advertise STARTTLS ends the run before AUTH is reache
 never printed, and neither is the AUTH exchange. Those properties are asserted by
 `tests/ci/owner-acceptance-password.test.ts`, which drives every mode against a local server.
 
-### 17.5 Activation, and the way back
+### 17.7 What the Owner types locally, and in what order
+
+Open `C:/Users/Ezzaldeen/wt-od-harness/.env` in a plain-text editor and write these six lines, one
+per line, each as `NAME=value` with no quotes needed and no spaces around the `=`: `SMTP_HOST`
+takes the relay hostname from the hosting account's email section, expected to be
+`smtp.hostinger.com`; `SMTP_PORT` takes `465`; `SMTP_USER` takes the **complete mailbox address**
+including the `@` and the domain, not the part before it; `SMTP_PASS` takes that mailbox's own
+password exactly as the account screen shows it, with no trimming and no quotes unless the value
+itself begins or ends with a space, in which case wrap the whole value in one pair of double quotes;
+`SMTP_ADMIN_EMAIL` takes an address the mailbox is authorised to send as, which is normally the same
+address as `SMTP_USER`; and `SMTP_SENDER_NAME` takes `RootLco`. Save the file, do not commit it —
+it is git-ignored and must stay that way — and never paste any of its lines into a document, an
+issue or a terminal transcript. Then, from `C:/Users/Ezzaldeen/wt-od-harness`, run the four stages
+in order and stop at the first refusal:
+
+```
+node scripts/dev/check-smtp.mjs --settings
+node scripts/dev/check-smtp.mjs --probe
+node scripts/dev/check-smtp.mjs --authenticate
+node scripts/dev/check-smtp.mjs --send --to owner@rootlco.com
+```
+
+The first must print `true` on every line. The second must list at least one AUTH mechanism. The
+third is **stage 1** and its refusal, if any, is the relay's own verdict on the credential, printed
+in the relay's own words. The fourth is **stage 2**. **Stage 3** is then confirming that the message
+arrived in the destination mailbox, which no command can do. Only after stage 3 holds is activation
+worth attempting: set `enabled = true` on `supabase/config.toml:367`, then
+
+```
+npx supabase stop
+npm run supabase:start
+node scripts/dev/owner-acceptance/align-local-jwt.mjs
+```
+
+— **never `npm run supabase:stop`**, for the reason 17.8 gives — and then run a password recovery
+and an invitation from the application and confirm both mails arrive and both links complete. That
+last step is **stage 4**, and it is the only one that says anything about the product.
+
+### 17.8 Activation, and the way back
 
 Nothing below needs the network until step 2, and nothing sends mail until step 4.
 
 1. Write the six names into the untracked `.env` and run `node scripts/dev/check-smtp.mjs
---settings`. Every line must read `true`.
-2. `node scripts/dev/check-smtp.mjs --probe`, then `--authenticate`. A refusal here is the relay's
-   verdict on the credential and is printed in the relay's own words.
-3. Set `enabled = true` on `supabase/config.toml:326`. If — and only if — the auth service is to use
-   587, change the literal `port` on `supabase/config.toml:331` at the same time, with the caveat in
+--settings`. Every line must read `true`. No stage is reached.
+2. `node scripts/dev/check-smtp.mjs --probe`, then `--authenticate`. The probe reaches no stage; the
+   second is **stage 1**, and a refusal here is the relay's verdict on the credential and is printed
+   in the relay's own words.
+3. `node scripts/dev/check-smtp.mjs --send --to <address>` is **stage 2**, and confirming that
+   message in the destination mailbox is **stage 3**. Both are worth having before the flag moves,
+   because a failure found here is a failure with no restart attached to it.
+4. Set `enabled = true` on `supabase/config.toml:367`. If — and only if — the auth service is to use
+   587, change the literal `port` on `supabase/config.toml:377` at the same time, with the caveat in
    17.2 in mind.
-4. Restart the stack **from the root of the checkout**, so the `env(...)` references resolve. Use
+5. Restart the stack **from the root of the checkout**, so the `env(...)` references resolve. Use
    the CLI's own stop, not the repository's script:
 
    ```
@@ -678,20 +805,26 @@ Nothing below needs the network until step 2, and nothing sends mail until step 
    and `npm run acceptance:provision-fixtures`. Anything a campaign had produced and not yet
    recorded is gone, and a campaign that was mid-run restarts from the beginning.
 
-5. **Re-apply `node scripts/dev/owner-acceptance/align-local-jwt.mjs`.** Finding `P1-26-F-045`
+6. **Re-apply `node scripts/dev/owner-acceptance/align-local-jwt.mjs`.** Finding `P1-26-F-045`
    returns after every restart: `supabase start` recreates the auth container with a freshly
    generated asymmetric signing key, the API verifies HMAC only, and sign-in then returns a token
    that the very next request rejects with `ERR-IAM-002`. The symptom is not "mail is broken" — it
    is that nobody can stay signed in — so it is easy to attribute to the wrong change.
-6. Confirm arrival in the recipient mailbox. A relay accepting a message is not a mailbox receiving
-   one.
+7. Run a password recovery and an invitation from the application, confirm both mails arrive, and
+   confirm both links complete. That is **stage 4**, and it is the only step that measures the
+   product rather than the relay.
 
 The way back is the same shape: set `enabled = false` (and restore `port = 465` if it was moved),
 `npx supabase stop` and `npm run supabase:start` from the checkout root — the same non-destructive
 pair, for the same reason — and re-apply `align-local-jwt.mjs`. Local-only mail resumes with no
 other edit.
 
-### 17.6 The open question this does not settle
+### 17.9 What this does not settle
+
+**All four stages are unproven as this is written.** The configuration is committed with
+`enabled = false` and no mailbox password exists on this machine, so stage 1 has never been
+attempted, and stages 2, 3 and 4 depend on it. Nothing in this repository should be read as
+evidence that mail leaves this machine.
 
 The Platform Owner account keeps the address it already has — that is decided, and nothing in this
 change alters it. What is **not** established is whether that address can receive mail.
