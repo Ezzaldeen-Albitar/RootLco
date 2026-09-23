@@ -8,10 +8,10 @@ import { fromFailure, invalid, type ActionState } from '@/lib/forms/action-resul
 import { fieldErrorsFrom } from '@/lib/forms/field-errors';
 import {
   STATUS_BY_KIND,
-  branchTargetQuery,
+  branchScopeQuery,
   query,
   readOperation,
-  type BranchTarget,
+  type BranchScope,
   type CursorPage,
   type ReadState,
 } from '@/lib/api/read-operation';
@@ -89,9 +89,9 @@ import {
 /**
  * Reception adapters (P1-28, Wave A).
  *
- * Reads follow the vehicle precedent; the board list carries its mandatory
- * `companyId`/`branchId` pair through `branchTargetQuery` (a resource
- * selector, `P1-18-A-01`), and the per-visit reads take only what each
+ * Reads follow the vehicle precedent; the board list carries its company and,
+ * when the operator is working in one, its branch through `branchScopeQuery` (a
+ * resource selector, `P1-18-A-01`), and the per-visit reads take only what each
  * `.strict()` schema names. Writes follow the P1-27 order — validate, session,
  * send, map — set no `Idempotency-Key` of their own, and the four guarded
  * commands (`approve`, `convert-to-work-order`, `close-without-work`,
@@ -299,11 +299,26 @@ const closeSchema = z.object({ reason: z.string().trim().min(1).max(MAX_CLOSURE_
  * ------------------------------------------------------------------ */
 
 /**
- * The branch reception board (`rec.reception-list`), most recently received
- * first. `retries: 0` — `expensive-read`, and the table offers Retry.
+ * The reception board (`rec.reception-list`), most recently received first.
+ * `retries: 0` — `expensive-read`, and the table offers Retry.
+ *
+ * ## The branch may now be left unnamed, and that is a REQUEST rather than a gap
+ *
+ * The scope travels through `branchScopeQuery`: the company is always named, and
+ * the branch is named when the operator is working in one and omitted when they
+ * have chosen "all my branches". An omitted branch asks the API for every branch
+ * of that company the caller may read, and the API resolves that set one branch
+ * at a time against `rec.reception.read`, refusing a caller that holds none — so
+ * the omission never widens what this operator is entitled to see. Every row
+ * carries its own `branchId` back, which is what lets the board say where each
+ * car is.
+ *
+ * Every criterion is named explicitly rather than spread. A spread would put an
+ * arbitrary caller-supplied key into the query builder, and the builder's throw
+ * on a scope name is the last line of defence rather than the first.
  */
 export async function listReceptions(
-  target: BranchTarget,
+  scope: BranchScope,
   criteria: ReceptionListCriteria,
   request: TableRequest,
   cursor: string | null
@@ -313,10 +328,14 @@ export async function listReceptions(
 
   const path =
     '/api/v1/receptions' +
-    branchTargetQuery(target, {
+    branchScopeQuery(scope, {
       status: criteria.status,
+      // Never both: the route refuses the pair rather than intersecting it.
       statusGroup: criteria.statusGroup,
       vehicleId: criteria.vehicleId,
+      from: criteria.from,
+      to: criteria.to,
+      q: criteria.q,
       cursor,
       limit: request.pageSize,
     });

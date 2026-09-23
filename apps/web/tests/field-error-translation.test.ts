@@ -13,7 +13,11 @@ import {
 import { fieldErrorsFrom } from '@/features/crm/customers/action-support';
 import { COMMAND_REFUSAL_KEYS } from '@/features/receptions/check-in/closure';
 import { APPOINTMENT_REFUSAL_KEYS } from '@/features/appointments/appointments-contract';
-import { WORK_ORDER_REFUSAL_KEYS } from '@/features/work-orders/work-orders-contract';
+import {
+  WORK_ORDER_QUERY_REFUSAL_KEYS,
+  WORK_ORDER_REFUSAL_KEYS,
+} from '@/features/work-orders/work-orders-contract';
+import { RECEPTION_QUERY_REFUSAL_KEYS } from '@/features/receptions/receptions-contract';
 import { DELIVERY_REFUSAL_KEYS } from '@/features/delivery/delivery-contract';
 import { PLATFORM_REFUSAL_KEYS } from '@/features/platform/types';
 import { MAX_PERSON_NAME } from '@/features/crm/customers/creation-contract';
@@ -395,6 +399,11 @@ describe('refusal reason catalogue', () => {
     'work order': WORK_ORDER_REFUSAL_KEYS,
     delivery: DELIVERY_REFUSAL_KEYS,
     platform: PLATFORM_REFUSAL_KEYS,
+    // The two boards' QUERY refusals (Owner directive, P1-32-PRE-OD-UX). Listed
+    // here for the same reason every other family is: a token with no wording
+    // reaches a screen as the generic fallback and every other test stays green.
+    'work-order board': WORK_ORDER_QUERY_REFUSAL_KEYS,
+    'reception board': RECEPTION_QUERY_REFUSAL_KEYS,
   };
 
   it('lists a token for every family, so the loops below are not vacuous', () => {

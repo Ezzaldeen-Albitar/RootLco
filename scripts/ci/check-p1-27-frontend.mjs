@@ -377,7 +377,8 @@ export const MODULE_DISPOSITION = Object.freeze({
   'apps/web/src/components/primitives': 'in-surface',
   /*
    * `SearchBox` — the one control the customer and vehicle searches ask
-   * through (P1-32).
+   * through (P1-32) — and `SearchStates` beside it, which renders the six
+   * things a search can be other than an answer.
    *
    * `in-surface` rather than excluded, and the reason is this gate's own
    * subject matter: the box is where an operator types a name, a phone number,
@@ -407,6 +408,14 @@ export const MODULE_DISPOSITION = Object.freeze({
    * module is what made it a newly imported dependency of a scanned tree.
    */
   'apps/web/src/lib/format': 'in-surface',
+  /*
+   * Calendar days and day boundaries measured on a BRANCH's clock, which
+   * `lib/format` deliberately refuses to decide. `in-surface` for the same
+   * reason `lib/format` is: it decides operator-visible text — the period a
+   * board is headed with and the time each row is stamped — and the alternative
+   * was every board computing its own boundary from the reader's laptop.
+   */
+  'apps/web/src/lib/branch-time': 'in-surface',
   /** The structured logger the console rule points at. Excluded, measured. */
   'apps/web/src/lib/observability': 'platform-transport',
   'apps/web/src/lib/page-metadata': 'in-surface',

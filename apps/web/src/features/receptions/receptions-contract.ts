@@ -1104,19 +1104,68 @@ export interface CloseReceptionInput {
   readonly reason: string;
 }
 
-/** The `.strict()` list query, minus the mandatory branch target. */
+/**
+ * The `.strict()` list query, minus the branch scope it travels beside.
+ *
+ * `companyId` and `branchId` are NOT here. The company is the resource
+ * selector and the branch is the authorization target; since the Owner
+ * directive (`P1-32-PRE-OD-UX`) the branch may also be left unnamed, which asks
+ * for every branch of that company the caller may read. Both travel as a
+ * `BranchScope`, so nothing in this type can be mistaken for something an
+ * operator chose from a filter.
+ */
 export interface ReceptionListCriteria {
   readonly status?: ReceptionStatus;
   /**
-   * A status GROUP (Owner directive, P1-32-PRE-OD-UX) — `open` for the visits
+   * A status GROUP (Owner directive, `P1-32-PRE-OD-UX`) — `open` for the visits
    * still in play, `finished` for the three terminal exits.
    *
-   * May not be sent beside `status`: the backend answers 422 rather than
-   * intersecting them, so a screen offering both controls clears one when the
-   * other is chosen.
+   * This is what "every unfinished visit" finally became a request the platform
+   * can be SENT. It may not travel beside `status`: the backend answers 422
+   * with `status_and_group_exclusive` rather than intersecting them, so a
+   * screen offering both controls clears one when the other is chosen.
    */
   readonly statusGroup?: ReceptionStatusGroup;
   readonly vehicleId?: string;
+  /**
+   * Inclusive bounds on the instant custody was accepted — the same column the
+   * board orders on, so the filter and the ordering date the same fact.
+   *
+   * ISO instants with an explicit offset. They are computed from a CALENDAR day
+   * in the branch's own zone (`lib/branch-time.ts`), never from the reader's
+   * laptop clock: a period boundary is a business date and the platform's is the
+   * branch's. An inverted pair is a 422, so the screen refuses one first.
+   */
+  readonly from?: string;
+  readonly to?: string;
+  /**
+   * One free-text box: part of a party's name, the tail of their phone number,
+   * part of any plate the vehicle has carried, part of its VIN, or part of the
+   * reception number. Two characters at least.
+   */
+  readonly q?: string;
+}
+
+/** `MIN_SEARCH_FRAGMENT` in `shared/text/search-terms.ts`. */
+export const MIN_RECEPTION_SEARCH = 2;
+/** `MAX_SEARCH_FRAGMENT` in `shared/text/search-terms.ts`. */
+export const MAX_RECEPTION_SEARCH = 80;
+
+/**
+ * The statuses a visit can still move out of — the frozen graph's non-terminal
+ * half, DERIVED rather than listed.
+ *
+ * A second hand-written list of three codes is a second thing to forget when the
+ * graph changes. `TERMINAL_RECEPTION_STATUSES` is the one fact, and this is its
+ * complement.
+ */
+export const UNFINISHED_RECEPTION_STATUSES: readonly ReceptionStatus[] = RECEPTION_STATUSES.filter(
+  (status) => !TERMINAL_RECEPTION_STATUSES.includes(status)
+);
+
+/** Whether a visit has reached one of the graph's three exits. */
+export function isFinishedReception(status: ReceptionStatus): boolean {
+  return TERMINAL_RECEPTION_STATUSES.includes(status);
 }
 
 /**
@@ -1129,6 +1178,19 @@ export interface ReceptionListCriteria {
  */
 export const RECEPTION_STATUS_GROUPS = ['open', 'finished'] as const;
 export type ReceptionStatusGroup = (typeof RECEPTION_STATUS_GROUPS)[number];
+
+/**
+ * What the board's own QUERY can be refused for (Owner directive,
+ * `P1-32-PRE-OD-UX`) — a status code sent beside a status group.
+ *
+ * Unreachable from the board, which offers both answers through ONE control and
+ * therefore cannot hold both at once, and catalogued anyway: a refusal that
+ * reaches an operator as a raw token is the failure the catalogue exists to
+ * prevent, and "it cannot happen" is true only until a screen changes.
+ */
+export const RECEPTION_QUERY_REFUSAL_KEYS: readonly string[] = Object.freeze([
+  'form.violation.status_and_group_exclusive',
+]);
 
 /* ------------------------------------------------------------------ *
  * Responses, exactly as the services publish them
@@ -1204,6 +1266,14 @@ export interface ReceptionClosed {
 /** One row of the branch reception board, most recently received first. */
 export interface ReceptionListEntry {
   readonly id: string;
+  /**
+   * The branch the visit was received in (Owner directive, `P1-32-PRE-OD-UX`).
+   *
+   * Published since the branch became an optional filter: a page that can span
+   * several branches has to say which one each row belongs to, or the board
+   * reads as one branch's day with another branch's cars in it.
+   */
+  readonly branchId: string;
   readonly displayNumber: string | null;
   readonly receptionStatus: ReceptionStatus;
   readonly origin: 'appointment' | 'walk_in';
@@ -1215,7 +1285,7 @@ export interface ReceptionListEntry {
   readonly recordVersion: number;
   /**
    * The party who brought the car, or null when the visit names none (Owner
-   * directive, P1-32-PRE-OD-UX).
+   * directive, `P1-32-PRE-OD-UX`).
    *
    * **The null case is real** — a visit can legitimately exist before a service
    * requester is recorded, so the screen renders the absence.

@@ -152,6 +152,87 @@ export interface BranchTarget {
 }
 
 /**
+ * The scope of a board whose `branchId` the route now declares OPTIONAL.
+ *
+ * ## Why this is a second type and not a nullable `BranchTarget`
+ *
+ * Two operations — `rec.reception-list` and `wo.work-order-list` — changed
+ * under the Owner directive (`P1-32-PRE-OD-UX`): an omitted `branchId` asks for
+ * every branch of the named company the caller may read, and the API resolves
+ * that set one branch at a time against the operation's own permission code,
+ * refusing a caller that holds none. Every other branch-addressed read still
+ * demands both halves and `BranchTarget` still refuses a half-built one.
+ *
+ * Widening `BranchTarget` to `string | null` would have relaxed the guarantee
+ * for ALL of them at once, silently, and the throw in `branchTargetQuery` is the
+ * only thing standing between a typo and a request that looks like a scope
+ * assertion. So the two shapes are named apart: `null` here is a request the
+ * route documents, not an absence somebody forgot to fill in.
+ *
+ * A `BranchTarget` is assignable to this, which is what lets a caller that has
+ * resolved one branch pass it through unchanged.
+ */
+export interface BranchScope {
+  readonly companyId: string;
+  /** `null` asks for every branch of this company the caller may read. */
+  readonly branchId: string | null;
+}
+
+/**
+ * A query string for a board whose branch may legitimately be left unnamed.
+ *
+ * `companyId` is mandatory and is a RESOURCE selector — "show me this company's
+ * boards" — exactly as it is in `companyFilterQuery`; it is never a claim about
+ * where the caller is. `branchId` is written when it is named and omitted when
+ * it is `null`, and it is never written blank: a blank value would be parsed as
+ * a malformed uuid and answered 422 far from the mistake, while an omitted one
+ * is the documented request for the authorized union.
+ *
+ * `apps/web/tests/security.test.ts` pins the call sites of this helper to
+ * exactly the three adapters whose operations changed, for the same reason
+ * `p1-27-security.test.ts` pins `companyFilterQuery`: the narrow exception has
+ * to be visible in a diff. It is pinned THERE rather than beside that one
+ * because the P1-27 suite sits in a sealed evidence package whose case count is
+ * digested and whose line ranges are cited.
+ */
+export function branchScopeQuery(
+  scope: BranchScope,
+  params: Record<string, string | number | undefined | null> = {}
+): string {
+  const search = new URLSearchParams();
+  if (typeof scope?.companyId !== 'string' || scope.companyId.trim().length === 0) {
+    throw new Error(
+      'companyId is mandatory on a branch-scoped read. The route schema names it; ' +
+        'a missing or blank one is a coding error, not a request to send.'
+    );
+  }
+  search.set('companyId', scope.companyId);
+  if (typeof scope.branchId === 'string') {
+    if (scope.branchId.trim().length === 0) {
+      throw new Error(
+        'branchId must be a named branch or null. A blank one asserts nothing and is a coding error.'
+      );
+    }
+    search.set('branchId', scope.branchId);
+  }
+  for (const [key, value] of Object.entries(params)) {
+    if (SCOPE_KEYS.has(key)) {
+      // Includes both halves of the scope: the scope parameter is the only
+      // door, so a duplicate among the filters is a coding error worth hearing
+      // about rather than a value to silently prefer one of.
+      throw new Error(
+        `${key} must arrive through the BranchScope parameter, never among the filters.`
+      );
+    }
+    if (value === undefined || value === null) continue;
+    const text = String(value);
+    if (text.length === 0) continue;
+    search.set(key, text);
+  }
+  return `?${search.toString()}`;
+}
+
+/**
  * A query string for an operation addressed to ONE branch's calendar or board.
  *
  * The same distinction `companyFilterQuery` records, one resource wider:

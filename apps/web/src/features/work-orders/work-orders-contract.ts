@@ -57,6 +57,10 @@ export type WorkOrderKind = (typeof WORK_ORDER_KINDS)[number];
  * Mirrored rather than imported for the reason the kinds are: `apps/web` may not
  * import from `apps/api`, and the contract test holds this array against the
  * backend source so a fourth group fails a test rather than a reviewer.
+ *
+ * The three PARTITION the catalogue — `terminal` excludes the cancellations
+ * rather than containing them — so no work order is returned by two groups, and
+ * `active` is exactly the set the overview aggregate calls active.
  */
 export const WORK_ORDER_STATE_GROUPS = ['active', 'terminal', 'cancelled'] as const;
 export type WorkOrderStateGroup = (typeof WORK_ORDER_STATE_GROUPS)[number];
@@ -201,22 +205,24 @@ export interface WorkOrderListCriteria {
   /** An opaque catalogue code. An unknown one returns an empty page, not a 422. */
   readonly state?: string;
   /**
-   * A state GROUP (Owner directive, P1-32-PRE-OD-UX), resolved by the backend
+   * A state GROUP (Owner directive, `P1-32-PRE-OD-UX`), resolved by the backend
    * from the tenant catalogue's terminal and cancellation flags.
    *
    * A CLOSED vocabulary where `state` is open, and the two may not be sent
-   * together — the backend answers 422 rather than intersecting them, so a
-   * screen offering both controls must clear one when the other is chosen.
+   * together — the backend answers 422 with `state_and_group_exclusive` rather
+   * than intersecting them, so a screen offering both controls must clear one
+   * when the other is chosen.
    *
    * The three partition the catalogue: `terminal` excludes the cancellations
    * rather than containing them, so no work order is returned by two groups.
    */
   readonly stateGroup?: WorkOrderStateGroup;
   /**
-   * Inclusive bounds on the completion instant — the same value a row publishes
-   * as `completedAt`. Either bound narrows the board to finished work, because
-   * an unfinished work order has no completion instant. An inverted window is a
-   * 422, never an empty page.
+   * Inclusive bounds on the COMPLETION instant — the same value a row publishes
+   * as `completedAt`. Either bound narrows the board to finished work by
+   * construction, because an unfinished work order has no completion instant.
+   * An inverted window is a 422 (`completion_window_inverted`), never an empty
+   * page.
    */
   readonly completedFrom?: string;
   readonly completedTo?: string;
@@ -224,14 +230,124 @@ export interface WorkOrderListCriteria {
   readonly openedFrom?: string;
   readonly openedTo?: string;
   readonly customerId?: string;
-  /** P1-32. Exact work-order number; the backend folds Arabic-Indic digits. */
-  readonly number?: string;
   /**
    * P1-32. One box: part of the number, of a party name, of any plate the
    * vehicle carried, or of its VIN. Two characters at least.
    */
   readonly q?: string;
+  /**
+   * The board flags (Owner directive, `P1-32-PRE-OD-UX`). Each is backed by a
+   * state or a column the schema really keeps, and each travels as the literal
+   * `'true'`/`'false'` the route's `z.enum` accepts — never as a coerced
+   * boolean, because coercion makes every non-empty string true and
+   * `?assignedToMe=false` would then silently widen the board.
+   *
+   *   `assignedToMe`      a live job assignment for the caller's own technician
+   *                       profile; a caller with no profile is answered an EMPTY
+   *                       page rather than the whole board;
+   *   `awaitingParts`     `parts_forward_state` is anything but `none`;
+   *   `awaitingApproval`  an additional-work request is still `pending`;
+   *   `awaitingQuality`   a quality record's `overall_result` is `pending`;
+   *   `readyForDelivery`  the state is closed and not a cancellation, resolved
+   *                       from the live catalogue.
+   *
+   * There is deliberately no `dueAt`, no `approvalState` and no
+   * `deliveryReadiness`: the platform records no due date on a work order, so
+   * nothing here may compute one.
+   */
+  readonly assignedToMe?: boolean;
+  readonly awaitingParts?: boolean;
+  readonly awaitingApproval?: boolean;
+  readonly awaitingQuality?: boolean;
+  readonly readyForDelivery?: boolean;
 }
+
+/**
+ * The work-order state catalogue, as `wo.work-order-catalogue` publishes it.
+ *
+ * `GET /work-order-catalogue` is `scope: 'tenant'`, takes `wo.work_order.read`
+ * and accepts no parameters at all. It exists precisely so a screen never has to
+ * hard-code a state code: `wo.work_order_states` is tenant-extensible, so a
+ * board that decided "which states mean the car is still with us" from a list in
+ * this file would be confidently wrong for any workshop that configured its own.
+ *
+ * Only the fields a board actually reads are mirrored. `closureEligible` is
+ * deliberately absent from the work-order half — it is a JOB flag, it is
+ * enforced by nothing, and closure readiness comes from
+ * `GET /work-orders/{id}/closure-eligibility` and from nowhere else.
+ */
+export interface WorkOrderStateCatalogueEntry {
+  readonly code: string;
+  /** The tenant's own name for the state. Rendered when the platform has none. */
+  readonly name: string;
+  readonly isTerminal: boolean;
+  readonly isClosed: boolean;
+  readonly isCancellation: boolean;
+}
+
+/** The published body of `wo.work-order-catalogue`, narrowed to what is read. */
+export interface WorkOrderCatalogue {
+  readonly workOrderStates: readonly WorkOrderStateCatalogueEntry[];
+}
+
+/**
+ * The states that mean the car is still the workshop's problem.
+ *
+ * DERIVED from the catalogue's own `isTerminal`, never from a list of codes. A
+ * tenant that adds `awaiting_insurer` gets it counted as open on the day they
+ * add it, and this file never has to hear about it.
+ */
+export function openStates(
+  catalogue: readonly WorkOrderStateCatalogueEntry[]
+): readonly WorkOrderStateCatalogueEntry[] {
+  return catalogue.filter((state) => !state.isTerminal);
+}
+
+/** The complement: finished, whether completed or abandoned. */
+export function finishedStates(
+  catalogue: readonly WorkOrderStateCatalogueEntry[]
+): readonly WorkOrderStateCatalogueEntry[] {
+  return catalogue.filter((state) => state.isTerminal);
+}
+
+/**
+ * How a state code should read on screen.
+ *
+ * The platform's own nine codes get the operator's language. Anything else is
+ * the tenant's, and the tenant's own `name` from the catalogue is used — which
+ * is a fact they wrote, not a guess this repository made. With neither, the code
+ * is rendered as the opaque token it is.
+ */
+export function workOrderStateLabel(
+  code: string,
+  catalogue: readonly WorkOrderStateCatalogueEntry[],
+  translateKey: (key: string) => string
+): string {
+  const key = workOrderStateMessageKey(code);
+  if (key !== null) return translateKey(key);
+  const entry = catalogue.find((state) => state.code === code);
+  return entry?.name ?? code;
+}
+
+/**
+ * What the board's own QUERY can be refused for (Owner directive,
+ * `P1-32-PRE-OD-UX`).
+ *
+ * A separate list from `WORK_ORDER_REFUSAL_KEYS`, which names the STATE
+ * refusals a command answers — "this order is closed to new work" and its
+ * siblings. These two are about the REQUEST: a state code sent beside a state
+ * group, and a completion window whose end precedes its start.
+ *
+ * Both are unreachable from the board as it is built — the controls cannot hold
+ * a code and a group at once, and an inverted window is refused at the field —
+ * and they are catalogued anyway. A refusal that reaches an operator as a raw
+ * token is the failure the catalogue exists to prevent, and "it cannot happen"
+ * is the sentence that is true right up until a screen changes.
+ */
+export const WORK_ORDER_QUERY_REFUSAL_KEYS: readonly string[] = Object.freeze([
+  'form.violation.state_and_group_exclusive',
+  'form.violation.completion_window_inverted',
+]);
 
 /** `MAX_WORK_ORDER_SEARCH_FRAGMENT` in the domain. */
 export const MAX_WORK_ORDER_SEARCH = 80;
