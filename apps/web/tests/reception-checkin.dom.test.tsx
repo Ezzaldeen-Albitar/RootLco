@@ -407,6 +407,79 @@ describe('the start screen — origin XOR', () => {
     ).toBe(true);
   });
 
+  it('marks a refusal with the shape every other refused field carries', async () => {
+    /*
+     * Colour alone is not a cue: a reader who cannot see it, and a colour-blind
+     * reader who can, both get nothing. Every refused field in this product
+     * carries a bordered exclamation beside the sentence, and these three said
+     * their piece in red text and nothing else.
+     */
+    createReception.mockResolvedValue({
+      status: 'invalid',
+      messageKey: 'form.formError',
+      fieldErrors: { receivingEmployeeId: 'form.violation.ineligible_reference' },
+      correlationId: 'corr-422',
+      attempt: 1,
+    });
+    const user = userEvent.setup();
+    renderLtr(inBranch(<CheckInStartScreen {...startProps()} />, { snapshot: CHECKIN_CONTEXT }));
+
+    await user.click(screen.getByRole('radio', { name: /Appointment/ }));
+    await user.click(screen.getByText(EN['receptions.checkIn.loadAppointments']!));
+    await user.click(await screen.findByText(/Layla Haddad/));
+    await user.click(screen.getByRole('button', { name: EN['receptions.checkIn.submit']! }));
+
+    const refusal = await screen.findByTestId('check-in-refusal-receivingEmployeeId');
+    expect(refusal).toHaveAttribute('role', 'alert');
+    expect(refusal.textContent).toContain('!');
+    expect(refusal.textContent).toContain(EN['form.violation.ineligible_reference']!);
+  });
+
+  it('retires a refusal when the operator changes the value it was about', async () => {
+    /*
+     * A complaint about a value that is no longer there is a false statement,
+     * and leaving it up makes the operator submit again to find out which of
+     * the complaints still stand — which is the opposite of what the mark is
+     * for. `useClearOnCorrect` is the shared rule and this is it, applied to a
+     * panel-level refusal rather than to a text box.
+     */
+    createReception.mockResolvedValue({
+      status: 'invalid',
+      messageKey: 'form.formError',
+      fieldErrors: { receivingEmployeeId: 'form.violation.ineligible_reference' },
+      correlationId: 'corr-422',
+      attempt: 1,
+    });
+    listReceivingEmployeeCandidates.mockResolvedValue(
+      page([
+        { id: 'user-1', displayName: 'Front Desk' },
+        { id: 'user-2', displayName: 'Second Desk' },
+      ])
+    );
+    const user = userEvent.setup();
+    renderLtr(
+      inBranch(<CheckInStartScreen {...startProps({ canPickEmployee: true })} />, {
+        snapshot: CHECKIN_CONTEXT,
+      })
+    );
+
+    await user.click(screen.getByRole('radio', { name: /Appointment/ }));
+    await user.click(screen.getByText(EN['receptions.checkIn.loadAppointments']!));
+    await user.click(await screen.findByText(/Layla Haddad/));
+    await user.click(screen.getByRole('button', { name: EN['receptions.checkIn.submit']! }));
+    await screen.findByTestId('check-in-refusal-receivingEmployeeId');
+
+    // Choosing somebody else IS the correction.
+    await user.click(
+      screen.getByRole('button', { name: EN['receptions.checkIn.employeeChoose']! })
+    );
+    await user.click(await screen.findByText('Second Desk'));
+
+    await waitFor(() =>
+      expect(screen.queryByTestId('check-in-refusal-receivingEmployeeId')).toBeNull()
+    );
+  });
+
   it('states the refused receiving employee in Arabic, in the same panel', async () => {
     createReception.mockResolvedValue({
       status: 'invalid',

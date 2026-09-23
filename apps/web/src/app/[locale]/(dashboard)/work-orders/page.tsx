@@ -3,6 +3,7 @@ import { PageBody, PageHeader } from '@/components/shell/PageHeader';
 import { PermissionDeniedState } from '@/components/states/States';
 import { requireSession } from '@/features/authentication/api/session';
 import { holds } from '@/features/crm/permissions';
+import { DELIVERY_READINESS_PERMISSIONS } from '@/features/delivery/readiness-contract';
 import { WorkOrderQueueScreen } from '@/features/work-orders/components/WorkOrderQueueScreen';
 import { WORK_ORDER_PERMISSIONS } from '@/features/work-orders/work-orders-contract';
 import { isLocale } from '@/i18n/config';
@@ -17,6 +18,12 @@ import { pageMetadata } from '@/lib/page-metadata';
  * board can do beyond reading (transitions, jobs, assignment, closure) belongs
  * to later P1-29 items and is not offered here, so there is no second permission
  * to soften the denial into a missing button.
+ *
+ * One permission is read beyond that, and it gates a LINK rather than anything
+ * on this page: the board offers a way through to the ready-for-delivery queue,
+ * and that queue's own page refuses an operator missing any of the three codes
+ * `DELIVERY_READINESS_PERMISSIONS` names. The offer is made here on exactly
+ * those three, so it never lands on a refusal.
  *
  * The check is placed BEFORE any read is issued. `requireSession` runs first and
  * must: it is what produces the permissions being tested. Nothing else is
@@ -67,7 +74,15 @@ export default async function WorkOrderQueuePage({
         crumbs={crumbs}
       />
       <PageBody>
-        <WorkOrderQueueScreen locale={locale} messages={messages} />
+        <WorkOrderQueueScreen
+          locale={locale}
+          messages={messages}
+          canReachDelivery={
+            holds(session.permissions, DELIVERY_READINESS_PERMISSIONS.view) &&
+            holds(session.permissions, DELIVERY_READINESS_PERMISSIONS.workOrderRead) &&
+            holds(session.permissions, DELIVERY_READINESS_PERMISSIONS.financeView)
+          }
+        />
       </PageBody>
     </>
   );

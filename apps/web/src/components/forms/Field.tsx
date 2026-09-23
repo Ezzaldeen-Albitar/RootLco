@@ -373,18 +373,39 @@ export interface SelectOption {
   readonly label: string;
 }
 
+/**
+ * Options under a heading that is not itself a choice.
+ *
+ * A closed vocabulary that divides into two meaningful halves — the reception
+ * statuses a visit can still move out of and the three exits, the work-order
+ * states that mean the car is still here and the ones that mean it is not —
+ * reads as six or nine unrelated words in a flat list. `<optgroup>` is the
+ * native control for that: the heading is announced by a screen reader as the
+ * group's name, it cannot be chosen by mistake, and it needs no JavaScript.
+ *
+ * The groups are always DERIVED from the same fact the rest of the screen uses
+ * (a terminal flag, a catalogue), never hand-listed beside it.
+ */
+export interface SelectOptionGroup {
+  readonly label: string;
+  readonly options: readonly SelectOption[];
+}
+
 export function SelectField({
   label,
   description,
   error,
   required,
   optionalHint,
-  options,
+  options = [],
+  groups = [],
   placeholder,
   ...select
 }: BaseFieldProps &
   Omit<SelectHTMLAttributes<HTMLSelectElement>, 'id' | 'required'> & {
-    readonly options: readonly SelectOption[];
+    readonly options?: readonly SelectOption[];
+    /** Rendered after `options`, each as an `<optgroup>`. */
+    readonly groups?: readonly SelectOptionGroup[];
     readonly placeholder?: string | undefined;
   }) {
   return (
@@ -410,6 +431,15 @@ export function SelectField({
             <option key={option.value} value={option.value}>
               {option.label}
             </option>
+          ))}
+          {groups.map((group) => (
+            <optgroup key={group.label} label={group.label}>
+              {group.options.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </optgroup>
           ))}
         </select>
       )}

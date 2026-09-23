@@ -716,3 +716,95 @@ describe('the client bundle carries no server secret', () => {
     expect(offenders).toEqual([]);
   });
 });
+
+/**
+ * The two doors a client may legitimately name a resource SCOPE through.
+ *
+ * ## The distinction, and why it needs a pin rather than a convention
+ *
+ * Two different sentences share the same words:
+ *
+ *   "I am in company X"              — a claim about the CALLER. Never sent;
+ *                                      the server resolves it from the session
+ *                                      on every request, and `query()` throws on
+ *                                      the names rather than dropping them.
+ *   "show me company X's work"       — a claim about the RESOURCE, demanded by
+ *                                      the route schema and authorized
+ *                                      server-side exactly like any parameter.
+ *
+ * `companyFilterQuery` is the first exception and `p1-27-security.test.ts` pins
+ * its call sites to the one operation that has that shape.
+ * `branchScopeQuery` is the second, opened by the Owner directive
+ * (`P1-32-PRE-OD-UX`) when `branchId` became OPTIONAL on the reception board,
+ * the work-order board and the overview aggregate: an omitted branch asks for
+ * every branch of the named company the caller may read, and the API resolves
+ * that set one branch at a time against the operation's own permission code.
+ *
+ * Widening `BranchTarget` to accept a null branch would have relaxed the
+ * guarantee for every branch-addressed read at once, silently — the throw in
+ * `branchTargetQuery` is the only thing between a typo and a request that looks
+ * like a scope assertion. So the second door is a separate helper, and its call
+ * sites are pinned here for the same reason the first one's are: widening the
+ * exception has to mean changing a test that says why it is not wider.
+ *
+ * ## Why this lives here and not beside the pin it mirrors
+ *
+ * `p1-27-security.test.ts` is inside a SEALED evidence package: the P1-27
+ * record states its case count and digests the documents that state it, and the
+ * matrix cites line ranges of it that were correct when they were written.
+ * Adding two cases there moves a number in a sealed document and every citation
+ * below the insertion point. The rule being pinned is not P1-27's, so it does
+ * not have to be paid for in P1-27's record.
+ */
+describe('a resource scope reaches the wire through exactly two named doors', () => {
+  /** Comments stripped, so a helper NAMED in a docblock is not a call site. */
+  const callSites = (pattern: RegExp): string[] => {
+    const roots = [join(WEB_SRC, 'features'), join(WEB_SRC, 'lib')];
+    const found: string[] = [];
+    for (const root of roots) {
+      for (const file of walkSource(root)) {
+        const code = readFileSync(file, 'utf8')
+          .replace(/\/\*[\s\S]*?\*\//g, '')
+          .replace(/(^|[^:])\/\/.*$/gm, '$1');
+        if (pattern.test(code)) found.push(file.split(/[\\/]/).slice(-3).join('/'));
+      }
+    }
+    return found.sort();
+  };
+
+  it('permits an optionally unnamed branch at exactly the reads whose route allows one', () => {
+    expect(callSites(/branchScopeQuery\s*\(/)).toEqual([
+      // The three operations whose route schema made the branch optional.
+      'features/overview/api.ts',
+      'features/receptions/api.ts',
+      'features/work-orders/api.ts',
+      // The definition itself, so this fails if the helper moves.
+      'lib/api/read-operation.ts',
+    ]);
+  });
+
+  it('still demands BOTH halves everywhere else', async () => {
+    const { branchTargetQuery } = await import('@/lib/api/read-operation');
+    // Unchanged by the directive: a half-built target is a coding error said at
+    // the call site, never a blank value serialised into a URL.
+    expect(() => branchTargetQuery({ companyId: 'c1' } as never)).toThrow(/branchId/);
+    expect(() => branchTargetQuery({ branchId: 'b1' } as never)).toThrow(/companyId/);
+  });
+
+  it('refuses a tenant, and a scope key smuggled among the filters of a branch scope', async () => {
+    const { branchScopeQuery } = await import('@/lib/api/read-operation');
+    // The company is mandatory and the branch is optional; neither may arrive
+    // twice, and a tenant may not arrive at all.
+    expect(() => branchScopeQuery({ companyId: '', branchId: null })).toThrow(/companyId/);
+    expect(() => branchScopeQuery({ companyId: 'c1', branchId: '  ' })).toThrow(/branchId/);
+    expect(() => branchScopeQuery({ companyId: 'c1', branchId: null }, { tenantId: 't1' })).toThrow(
+      /tenantId/
+    );
+    expect(() =>
+      branchScopeQuery({ companyId: 'c1', branchId: null }, { branchId: 'forged' })
+    ).toThrow(/branchId/);
+    // And the honest shapes travel: a named branch, and an omitted one.
+    expect(branchScopeQuery({ companyId: 'c1', branchId: 'b1' })).toBe('?companyId=c1&branchId=b1');
+    expect(branchScopeQuery({ companyId: 'c1', branchId: null })).toBe('?companyId=c1');
+  });
+});
