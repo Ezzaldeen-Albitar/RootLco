@@ -9,7 +9,7 @@ import { SelectField, TextField } from '@/components/forms/Field';
 import { SearchBox } from '@/components/search/SearchBox';
 import { SearchStates } from '@/components/search/SearchStates';
 import { readDashboardSummary } from '@/features/overview/api';
-import { figureOf, type DashboardSummary } from '@/features/overview/overview-contract';
+import { figureStateOf, type DashboardSummary } from '@/features/overview/overview-contract';
 import {
   RequiresConcreteBranch,
   WorkingBranchField,
@@ -30,6 +30,7 @@ import { listWorkOrders, readWorkOrderCatalogue } from '../api';
 import {
   MAX_WORK_ORDER_SEARCH,
   MIN_WORK_ORDER_SEARCH,
+  WORK_ORDER_BOARD_DEFAULT_VIEW,
   WORK_ORDER_BOARD_VIEWS,
   WORK_ORDER_KINDS,
   finishedStates,
@@ -57,34 +58,64 @@ import {
  *
  * ## The quick views are exactly the ones the operation can be SENT
  *
- * Five board flags exist on the wire and each is backed by a row the schema
- * really keeps: a live job assignment for the caller, a non-`none` parts
- * forward state, a pending additional-work request, a pending quality result,
- * and a closed non-cancellation state. Those five, plus "opened today" over the
- * `openedFrom`/`openedTo` window and the unfiltered board, are the seven views
- * offered here.
+ * NINE, and each is one request the route already accepts:
  *
- * **Two views that were asked for are not offered, because the operation cannot
- * express them.** `state` on the wire is ONE catalogue code
- * (`z.string().regex(...).optional()`), so "every non-terminal state" is not a
- * request that can be sent; and there is no `completedFrom`/`completedTo`
- * window, so "completed today" is not one either. Filtering a fetched page in
- * the browser would produce short pages and a `hasMore` that lies, which is the
- * failure the backend's own query-time filtering exists to avoid. Both FIGURES
- * are published by `ovw.dashboard-summary-read` and are shown as figures — see
- * below — because a count the platform computed is honest even where a filter
- * does not exist.
+ *   - **Still with us** — `stateGroup: 'active'`, and the DEFAULT. The backend
+ *     resolves the group from the tenant catalogue's own terminal and
+ *     cancellation flags, so a workshop that defines its own state is covered
+ *     on the day it defines it. Any age: the question is "what is still ours",
+ *     not "what arrived recently".
+ *   - **All** — no narrowing at all.
+ *   - **Created today** — `openedFrom`/`openedTo` over the branch's day.
+ *   - **Finished today** — `completedFrom`/`completedTo` over the same day. A
+ *     different question from the one above it, and the platform records it
+ *     separately; either bound narrows the board to finished work by
+ *     construction, because an unfinished order has no completion instant.
+ *   - the five board FLAGS, each backed by a row the schema really keeps: a live
+ *     job assignment for the caller, a non-`none` parts forward state, a pending
+ *     additional-work request, a pending quality result, and a closed
+ *     non-cancellation state.
+ *
+ * Two of these could not be asked for at all one wave ago — `state` took a
+ * single catalogue code and there was no completion window — and this screen
+ * reported them as gaps rather than filtering a fetched page in the browser,
+ * which produces short pages and a `hasMore` that lies. The board-list
+ * contracts closed both.
+ *
+ * A state CODE and a state GROUP may not travel together: the route answers 422
+ * `state_and_group_exclusive` rather than intersecting them. The exclusion is
+ * structural here — choosing a state moves the view off **Still with us**, and
+ * choosing that view clears the state — so the refusal is unreachable and the
+ * screen never has to explain it.
  *
  * ## Counts come from the aggregate, never from the page
  *
  * A board holds one page. Counting its rows answers "how many are on this page"
- * and printing that beside a view called "Awaiting parts" states something else
- * entirely. `ovw.dashboard-summary-read` computes each figure as a SQL aggregate
- * over the whole scoped selection inside the RLS-bound transaction; this screen
- * reads it through `features/overview`, which the dashboard wave reuses. A
- * section the caller may not see comes back `unauthorized` and NO figure is
- * rendered — a zero would be a false statement about the workshop instead of a
- * true one about the caller.
+ * and printing that beside a view called "Waiting for parts" states something
+ * else entirely. `ovw.dashboard-summary-read` computes each figure as a SQL
+ * aggregate over the whole scoped selection inside the RLS-bound transaction;
+ * this screen reads it through `features/overview`, which the dashboard wave
+ * reuses.
+ *
+ * ## A figure sits on a chip only where the two count the same SET
+ *
+ * Two of the nine views qualify, and each is an identity rather than a
+ * resemblance — `chipFigure` below carries the proof for each, and the reason
+ * every other view carries no number. The rest of the published figures live in
+ * the strip, labelled with the set the AGGREGATE counts, and the strip says
+ * plainly that it is about the branch's day rather than about the list.
+ *
+ * The pairing is checked, not assumed. "Awaiting parts" is the case that taught
+ * it: the aggregate counts NON-TERMINAL orders whose `parts_forward_state` is
+ * `requested`, the list filter is a bare `parts_forward_state` other than
+ * `none` in any state at all, and the two sat beside each other as one claim.
+ *
+ * Each figure carries its own state and all three are rendered apart: computed,
+ * withheld for want of the section's own read code, or unanswerable. A withheld
+ * figure reads "not available to you" rather than nought, because nought would
+ * be a false statement about the workshop instead of a true one about the
+ * caller. The `reason` an unanswerable section carries is server-authored PROSE
+ * and never reaches the screen; the catalogue's own sentence is rendered.
  *
  * ## The state label is the tenant's, or the platform's, and never a guess
  *
@@ -112,15 +143,42 @@ type ViewKind = WorkOrderBoardView;
 
 const VIEW_KINDS: readonly ViewKind[] = WORK_ORDER_BOARD_VIEWS;
 
+/** The board opens on the work that is still the workshop's problem. */
+const DEFAULT_VIEW: ViewKind = WORK_ORDER_BOARD_DEFAULT_VIEW;
+
 /** What the read is asked for: the scope it is addressed to and the filters. */
 interface Asked {
   readonly scope: BranchScope;
   readonly filters: WorkOrderListCriteria;
 }
 
-/** The flags one view turns on. Everything absent is "did not ask". */
-function flagsOf(view: ViewKind): WorkOrderListCriteria {
+/**
+ * What one view asks for. Everything absent is "did not ask".
+ *
+ * Two of them are windows rather than flags, and both are measured on the
+ * BRANCH's clock: "created today" over the opened instant and "completed today"
+ * over the completion instant. Either completion bound narrows the board to
+ * finished work by construction, because an unfinished work order has no
+ * completion instant at all.
+ */
+function criteriaOf(view: ViewKind, zone: string): WorkOrderListCriteria {
+  const today = dayIn(zone);
   switch (view) {
+    case 'active': {
+      // The GROUP, not a state code. The backend resolves it from the tenant
+      // catalogue's own flags, so a workshop that defines its own state is
+      // covered on the day it defines it — and it is exactly the set the
+      // overview aggregate calls active.
+      return { stateGroup: 'active' };
+    }
+    case 'openedToday': {
+      const window = rangeOfDays(zone, today, today);
+      return { openedFrom: window.from, openedTo: window.to };
+    }
+    case 'completedToday': {
+      const window = rangeOfDays(zone, today, today);
+      return { completedFrom: window.from, completedTo: window.to };
+    }
     case 'mine':
       return { assignedToMe: true };
     case 'awaitingApproval':
@@ -132,7 +190,6 @@ function flagsOf(view: ViewKind): WorkOrderListCriteria {
     case 'readyForDelivery':
       return { readyForDelivery: true };
     case 'all':
-    case 'openedToday':
       return {};
   }
 }
@@ -140,23 +197,31 @@ function flagsOf(view: ViewKind): WorkOrderListCriteria {
 export function WorkOrderQueueScreen({
   locale,
   messages,
-  initialView = 'all',
+  initialView = DEFAULT_VIEW,
   initialState = '',
+  canReachDelivery = false,
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
   /**
-   * The session's bare references. Accepted so the page did not have to change,
-   * and no longer read: the branch is the working context's named selection.
+   * All three codes the delivery queue's own page requires —
+   * `sal.delivery.view`, `wo.work_order.read` and `sal.finance.view`, the set
+   * `DELIVERY_READINESS_PERMISSIONS` names.
+   *
+   * Gating the LINK on the destination's own rule is the point, and the rule is
+   * the whole set rather than the one code the navigation entry carries: the
+   * delivery page refuses an operator missing ANY of the three, so an offer made
+   * on the strength of one of them lands on a refusal. Defaulting to `false`
+   * means a caller that has not decided offers nothing, which is the direction
+   * a mistake here should fail in.
    */
-  readonly companyIds?: readonly string[];
-  readonly branchIds?: readonly string[];
+  readonly canReachDelivery?: boolean;
   /**
    * The view this board opens on, when it was reached from a figure elsewhere.
    *
    * Validated by the ROUTE against `WORK_ORDER_BOARD_VIEWS` before it arrives,
    * so an unrecognised name never reaches this component: it becomes the
-   * unfiltered board, which is what the address without it means.
+   * default view, which is what the address without it means.
    */
   readonly initialView?: WorkOrderBoardView | undefined;
   /**
@@ -178,12 +243,18 @@ export function WorkOrderQueueScreen({
    * more. Once here, the strip and the picker own them — a reader who presses
    * another view is not fighting the address they came from.
    *
-   * The view is one of seven this repository declares, so it is believed on
+   * The view is one of nine this repository declares, so it is believed on
    * sight. The state is a code out of the WORKSHOP's own vocabulary, which this
    * repository does not hold: it is left out of the filter until the catalogue
    * has been read and says the workshop keeps it. See the arrival note below.
    */
-  const [view, setView] = useState<ViewKind>(initialView);
+  //
+  // A state that arrives with the default view starts on `all` instead: the
+  // default sends a state GROUP, the list operation refuses a code and a group
+  // together, and a refused code must leave the board showing everything.
+  const [view, setView] = useState<ViewKind>(
+    initialState.trim() !== '' && initialView === 'active' ? 'all' : initialView
+  );
   const [state, setState] = useState('');
   const [kind, setKind] = useState<'' | WorkOrderKind>('');
   const [term, setTerm] = useState('');
@@ -257,7 +328,12 @@ export function WorkOrderQueueScreen({
         const known = states.some((entry) => entry.code === requestedState);
         arrivalRef.current = known ? 'accepted' : 'refused';
         setArrival(arrivalRef.current);
-        if (known) setState(requestedState);
+        if (known) {
+          setState(requestedState);
+          // The same exclusion `chooseState` keeps: a state code never travels
+          // with the `active` group, so an accepted code moves the view off it.
+          setView((current) => (current === 'active' ? 'all' : current));
+        }
       }
     });
     return () => {
@@ -269,8 +345,12 @@ export function WorkOrderQueueScreen({
    * The figures, read once per scope and period.
    *
    * `period: 'today'` because the two figures this board shows — how much work
-   * is open, and how much finished — are the day's questions. The response
-   * carries the zone the day was measured in, and the strip says so.
+   * is open, and how much finished — are the day's questions.
+   *
+   * The response names the zone those days were counted in, and the strip
+   * RENDERS it rather than merely receiving it: the aggregate resolves the day
+   * on the database clock in the branch's own zone, and a figure headed
+   * "finished today" is a claim about a day boundary the reader cannot see.
    */
   const summaryKey =
     companyId === null ? null : `${companyId}:${branchId ?? ''}:${context.version}`;
@@ -307,13 +387,14 @@ export function WorkOrderQueueScreen({
   const termIsSearchable = trimmed.length >= MIN_WORK_ORDER_SEARCH;
   const termTooShort = trimmed.length > 0 && !termIsSearchable;
 
-  const today = dayIn(zone);
+  /*
+   * The operator's own opened-date range, which is a SEPARATE control from the
+   * "created today" view and overrides it when both are set: the explicit dates
+   * are the more specific ask, and sending two windows over one column would be
+   * the screen arguing with itself.
+   */
   const openedWindow =
-    view === 'openedToday'
-      ? rangeOfDays(zone, today, today)
-      : openedRange === null
-        ? null
-        : rangeOfDays(zone, openedRange.from, openedRange.to);
+    openedRange === null ? null : rangeOfDays(zone, openedRange.from, openedRange.to);
 
   /*
    * Built inline on every render — `useSearchRequest` keys on the SERIALISED
@@ -322,6 +403,12 @@ export function WorkOrderQueueScreen({
    * which here means no resolvable scope.
    */
   /*
+   * Built inline, and that is also what makes a branch change safe: the scope
+   * and the zone are derived from the working context on every render, so
+   * nothing local holds a stale copy of either. The version change and the new
+   * criteria arrive in the same render, and `useSearchRequest` treats the
+   * version change as a submission of exactly these criteria.
+   *
    * Nothing is asked for while a code that arrived in the address is still
    * unresolved. A board that read first and narrowed second would show the
    * whole branch for a frame under a heading the address promised was filtered.
@@ -332,7 +419,15 @@ export function WorkOrderQueueScreen({
       : {
           scope,
           filters: {
-            ...flagsOf(view),
+            ...criteriaOf(view, zone),
+            /*
+             * A state CODE and a state GROUP may not travel together: the route
+             * answers 422 `state_and_group_exclusive` rather than intersecting
+             * them. The exclusion is structural here rather than validated —
+             * choosing a state moves the view off `active`, and choosing
+             * `active` clears the state — so the refusal is unreachable and the
+             * screen never has to explain it.
+             */
             ...(state.trim() === '' ? {} : { state: state.trim() }),
             ...(kind === '' ? {} : { kind }),
             ...(openedWindow === null
@@ -393,8 +488,23 @@ export function WorkOrderQueueScreen({
     setOpenedRange(null);
   };
 
+  /*
+   * Choosing a state moves the view off the one that sends a group, and
+   * choosing that view clears the state. See the criteria above: the backend
+   * refuses the pair, and the honest fix is a screen that cannot send it.
+   */
+  const chooseState = (next: string) => {
+    setState(next);
+    if (next !== '' && view === 'active') setView('all');
+  };
+
+  const chooseView = (next: ViewKind) => {
+    setView(next);
+    if (next === 'active') setState('');
+  };
+
   const clearFilters = () => {
-    setView('all');
+    setView(DEFAULT_VIEW);
     setState('');
     setKind('');
     setTerm('');
@@ -440,26 +550,6 @@ export function WorkOrderQueueScreen({
       })),
     [messages]
   );
-
-  /**
-   * The figure beside a view's name, or `null` for "no figure exists".
-   *
-   * Three of the seven views have a matching aggregate; the other four do not,
-   * and they show no number rather than a zero or a dash that reads as one.
-   */
-  const countFor = (kindOfView: ViewKind): number | null => {
-    if (sections === null) return null;
-    switch (kindOfView) {
-      case 'awaitingApproval':
-        return figureOf(sections.awaitingApproval);
-      case 'awaitingParts':
-        return figureOf(sections.awaitingParts);
-      case 'readyForDelivery':
-        return figureOf(sections.readyForDelivery);
-      default:
-        return null;
-    }
-  };
 
   const columns = useMemo<readonly Column<WorkOrderListEntry>[]>(
     () => [
@@ -580,7 +670,12 @@ export function WorkOrderQueueScreen({
       {
         id: 'branch',
         headerKey: 'workOrders.queue.column.branch',
-        cell: (row) => <bdi>{context.branchName(row.branchId) ?? ''}</bdi>,
+        // The name, or an absence rendered as one — never an empty cell, which
+        // reads as a rendering fault rather than as "there is nothing to name".
+        cell: (row) => {
+          const name = context.branchName(row.branchId);
+          return name === null ? <span className="text-text-muted">—</span> : <bdi>{name}</bdi>;
+        },
       },
     ],
     [catalogue, context, locale, messages, zone]
@@ -590,8 +685,100 @@ export function WorkOrderQueueScreen({
     branch.kind === 'unchosen' || branch.kind === 'none' || branch.kind === 'unavailable';
   const spansCompanies = branch.kind === 'all' && scope === null;
 
-  const activeFigure = sections === null ? null : figureOf(sections.activeWorkOrders);
-  const completedFigure = sections === null ? null : figureOf(sections.completedInPeriod);
+  /*
+   * Every figure the aggregate publishes for this board, in the aggregate's own
+   * terms.
+   *
+   * The label of each one states the SET it counts — "open orders with parts
+   * requested", not "waiting for parts" — because that is the only way a figure
+   * and a list filter of a different shape can sit on one screen without
+   * appearing to disagree.
+   */
+  const FIGURES = [
+    {
+      id: 'active',
+      labelKey: 'workOrders.queue.figure.active',
+      section: sections?.activeWorkOrders,
+    },
+    {
+      id: 'completed',
+      labelKey: 'workOrders.queue.figure.completedToday',
+      section: sections?.completedInPeriod,
+    },
+    {
+      id: 'awaitingApproval',
+      labelKey: 'workOrders.queue.figure.awaitingApproval',
+      section: sections?.awaitingApproval,
+    },
+    {
+      id: 'awaitingParts',
+      labelKey: 'workOrders.queue.figure.awaitingParts',
+      section: sections?.awaitingParts,
+    },
+    {
+      id: 'readyForDelivery',
+      labelKey: 'workOrders.queue.figure.readyForDelivery',
+      section: sections?.readyForDelivery,
+    },
+  ] as const;
+  const figures = FIGURES.map((entry) => ({ ...entry, state: figureStateOf(entry.section) }));
+
+  /**
+   * The figure a view's chip may carry, or `null` where the two still count
+   * different sets.
+   *
+   * TWO of the nine agree EXACTLY, and each agreement is a fact about the
+   * database rather than a resemblance:
+   *
+   *   - `active` — the route resolves the group as
+   *     `!isTerminal && !isCancellation` and the aggregate as `!isTerminal`.
+   *     `ck_work_order_states_cancellation` makes a cancellation terminal, so
+   *     the second conjunct is implied and the sets are identical.
+   *   - `readyForDelivery` — both resolve `isClosed && !isCancellation` from
+   *     the live catalogue.
+   *
+   * The other seven carry no figure, and each for a stated reason:
+   *
+   *   - `all` and `mine` — the aggregate publishes no such total.
+   *   - `openedToday` — the aggregate's per-day opened counts sit inside a
+   *     trend array under their own definition, which has not been held against
+   *     this window.
+   *   - `completedToday` — the aggregate counts ENTRIES into a finished state
+   *     during the day; the list requires the order to be finished NOW. They
+   *     disagree about a job completed this morning and reopened this
+   *     afternoon.
+   *   - `awaitingParts` — the aggregate counts non-terminal orders whose parts
+   *     are `requested`; the list filter is any state whose parts are not
+   *     `none`.
+   *   - `awaitingQuality` — the aggregate publishes no section for it.
+   *   - `awaitingApproval` — CLOSE, and not the same set. Both sides count a
+   *     `pending`, undeleted additional-work request, but the LIST reaches the
+   *     request through its work order and the aggregate reaches it through the
+   *     branch: the aggregate's statement selects from
+   *     `wo.additional_work_requests` on the scope columns alone and never
+   *     joins the parent, so a request whose work order has been soft-deleted is
+   *     still counted while the list — which walks from the work order — cannot
+   *     return it. The gap is small and it is real, and a number that is
+   *     occasionally one larger than the list beneath it is exactly the quiet
+   *     disagreement this whole arrangement exists to prevent. The figure stays
+   *     in the strip, where it is labelled as the branch's count rather than as
+   *     this view's, and a backend follow-up adding the parent join is what
+   *     would bring it onto the chip.
+   */
+  const chipFigure = (kindOfView: ViewKind): number | null => {
+    if (sections === null) return null;
+    const section =
+      kindOfView === 'active'
+        ? sections.activeWorkOrders
+        : kindOfView === 'readyForDelivery'
+          ? sections.readyForDelivery
+          : undefined;
+    const resolved = figureStateOf(section);
+    return resolved.kind === 'figure' ? resolved.value : null;
+  };
+  const anyFigure = figures.some((entry) => entry.state.kind !== 'absent');
+  const figureZone =
+    summary !== null && summary.read.status === 'ok' ? summary.read.data.period.timezone : null;
 
   return (
     <div className="flex min-h-0 flex-col gap-4">
@@ -610,14 +797,27 @@ export function WorkOrderQueueScreen({
           aria-label={translate(messages, 'workOrders.queue.viewLabel')}
           className="flex flex-wrap items-center gap-2"
         >
+          {/*
+            A FIGURE ONLY WHERE THE TWO PREDICATES ARE THE SAME SET.
+
+            A number beside a view is read as "this is how many the list below
+            will show", so it may only appear where that is true. `chipFigure`
+            carries the two that agree and the reason each of the other seven
+            does not; the strip below carries every published figure, labelled
+            by what the AGGREGATE counts, for the ones a chip cannot claim.
+
+            The figures are still branch-wide: a chip's number is the view's own
+            predicate over the whole branch, and the list additionally honours
+            whatever else the operator has set here. The strip says so.
+          */}
           {VIEW_KINDS.map((kindOfView) => {
-            const count = countFor(kindOfView);
+            const figure = chipFigure(kindOfView);
             return (
               <button
                 key={kindOfView}
                 type="button"
                 aria-pressed={view === kindOfView}
-                onClick={() => setView(kindOfView)}
+                onClick={() => chooseView(kindOfView)}
                 className={
                   view === kindOfView
                     ? 'rounded-md border border-border bg-primary px-3 py-1.5 text-body text-on-primary transition-colors duration-fast ease-standard focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring'
@@ -625,8 +825,8 @@ export function WorkOrderQueueScreen({
                 }
               >
                 {translateDynamic(messages, `workOrders.queue.view.${kindOfView}`)}
-                {count === null ? null : (
-                  <span className="ms-2 text-caption">{formatInteger(count, locale)}</span>
+                {figure === null ? null : (
+                  <span className="ms-2 text-caption">{formatInteger(figure, locale)}</span>
                 )}
               </button>
             );
@@ -648,7 +848,7 @@ export function WorkOrderQueueScreen({
             label={translate(messages, 'workOrders.queue.stateFilter')}
             description={translate(messages, 'workOrders.queue.stateFilterHelp')}
             value={state}
-            onChange={(event) => setState(event.target.value)}
+            onChange={(event) => chooseState(event.target.value)}
             groups={stateGroups}
             placeholder={translate(messages, 'workOrders.queue.anyState')}
           />
@@ -721,31 +921,56 @@ export function WorkOrderQueueScreen({
       </form>
 
       {/*
-        The day's two figures, from the aggregate.
+        The branch's day, from the aggregate — never from the page.
 
-        Shown as figures and not as views, because the operation has no filter
-        that could reach either set: `state` is one code and there is no
-        completed-date window. A figure the platform computed is honest; a chip
-        that pretended to filter would not be.
+        A board holds one page, so counting its rows answers "how many are on
+        this page". Every figure here is a SQL aggregate over the whole scoped
+        selection, computed inside the read's own transaction, and each is
+        labelled with the set it counts so it cannot be read as a preview of the
+        list below.
       */}
-      {activeFigure === null && completedFigure === null ? null : (
-        <p
+      {!anyFigure ? null : (
+        <div
           data-testid="work-order-summary-strip"
-          className="flex flex-wrap items-center gap-3 rounded-md border border-border bg-surface-subtle px-3 py-2 text-supporting text-text-secondary"
+          className="flex flex-col gap-1 rounded-md border border-border bg-surface-subtle px-3 py-2 text-supporting text-text-secondary"
         >
-          {activeFigure === null ? null : (
-            <span data-testid="figure-active">
-              {translate(messages, 'workOrders.queue.figure.active')}{' '}
-              <bdi>{formatInteger(activeFigure, locale)}</bdi>
-            </span>
-          )}
-          {completedFigure === null ? null : (
-            <span data-testid="figure-completed">
-              {translate(messages, 'workOrders.queue.figure.completedToday')}{' '}
-              <bdi>{formatInteger(completedFigure, locale)}</bdi>
-            </span>
-          )}
-        </p>
+          <p className="flex flex-wrap items-center gap-3">
+            {figures.map((entry) =>
+              entry.state.kind === 'absent' ? null : (
+                <span key={entry.id} data-testid={`figure-${entry.id}`}>
+                  {translateDynamic(messages, entry.labelKey)}{' '}
+                  {entry.state.kind === 'figure' ? (
+                    <bdi>{formatInteger(entry.state.value, locale)}</bdi>
+                  ) : entry.state.kind === 'withheld' ? (
+                    // A permission answer, not a business one. A zero would say
+                    // the workshop has none of these.
+                    <span className="text-text-muted">
+                      {translate(messages, 'workOrders.queue.figure.withheld')}
+                    </span>
+                  ) : (
+                    // The platform holds nothing the question could be asked of,
+                    // and no permission would change that. The operation sends a
+                    // sentence explaining which; it is server prose, so the
+                    // catalogue's own sentence is rendered instead.
+                    <span className="text-text-muted">
+                      {translate(messages, 'workOrders.queue.figure.unavailable')}
+                    </span>
+                  )}
+                </span>
+              )
+            )}
+          </p>
+          <p className="text-caption text-text-muted" lang={locale}>
+            {translate(messages, 'workOrders.queue.figure.note')}
+            {figureZone === null ? null : (
+              <>
+                {' '}
+                {translate(messages, 'workOrders.queue.figure.zone')}{' '}
+                <bdi data-testid="figure-zone">{figureZone}</bdi>
+              </>
+            )}
+          </p>
+        </div>
       )}
 
       {blocked ? (
@@ -789,6 +1014,7 @@ export function WorkOrderQueueScreen({
 
           <SearchStates
             messages={messages}
+            locale={locale}
             phase={search.phase}
             correlationId={search.correlationId}
             {...(search.phase === 'empty'
@@ -866,7 +1092,7 @@ export function WorkOrderQueueScreen({
               <p className="px-2 pb-2 text-caption text-text-muted" lang={locale}>
                 {translate(messages, 'workOrders.queue.orderingNote')}
               </p>
-              {view === 'readyForDelivery' ? (
+              {view === 'readyForDelivery' && canReachDelivery ? (
                 <Link
                   href={`/${locale}/delivery`}
                   className="px-2 text-body text-primary underline-offset-2 hover:underline focus-visible:outline focus-visible:outline-2"

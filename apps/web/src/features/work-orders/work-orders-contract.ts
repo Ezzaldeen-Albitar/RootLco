@@ -57,6 +57,10 @@ export type WorkOrderKind = (typeof WORK_ORDER_KINDS)[number];
  * Mirrored rather than imported for the reason the kinds are: `apps/web` may not
  * import from `apps/api`, and the contract test holds this array against the
  * backend source so a fourth group fails a test rather than a reviewer.
+ *
+ * The three PARTITION the catalogue — `terminal` excludes the cancellations
+ * rather than containing them — so no work order is returned by two groups, and
+ * `active` is exactly the set the overview aggregate calls active.
  */
 export const WORK_ORDER_STATE_GROUPS = ['active', 'terminal', 'cancelled'] as const;
 export type WorkOrderStateGroup = (typeof WORK_ORDER_STATE_GROUPS)[number];
@@ -201,22 +205,24 @@ export interface WorkOrderListCriteria {
   /** An opaque catalogue code. An unknown one returns an empty page, not a 422. */
   readonly state?: string;
   /**
-   * A state GROUP (Owner directive, P1-32-PRE-OD-UX), resolved by the backend
+   * A state GROUP (Owner directive, `P1-32-PRE-OD-UX`), resolved by the backend
    * from the tenant catalogue's terminal and cancellation flags.
    *
    * A CLOSED vocabulary where `state` is open, and the two may not be sent
-   * together — the backend answers 422 rather than intersecting them, so a
-   * screen offering both controls must clear one when the other is chosen.
+   * together — the backend answers 422 with `state_and_group_exclusive` rather
+   * than intersecting them, so a screen offering both controls must clear one
+   * when the other is chosen.
    *
    * The three partition the catalogue: `terminal` excludes the cancellations
    * rather than containing them, so no work order is returned by two groups.
    */
   readonly stateGroup?: WorkOrderStateGroup;
   /**
-   * Inclusive bounds on the completion instant — the same value a row publishes
-   * as `completedAt`. Either bound narrows the board to finished work, because
-   * an unfinished work order has no completion instant. An inverted window is a
-   * 422, never an empty page.
+   * Inclusive bounds on the COMPLETION instant — the same value a row publishes
+   * as `completedAt`. Either bound narrows the board to finished work by
+   * construction, because an unfinished work order has no completion instant.
+   * An inverted window is a 422 (`completion_window_inverted`), never an empty
+   * page.
    */
   readonly completedFrom?: string;
   readonly completedTo?: string;
@@ -224,8 +230,6 @@ export interface WorkOrderListCriteria {
   readonly openedFrom?: string;
   readonly openedTo?: string;
   readonly customerId?: string;
-  /** P1-32. Exact work-order number; the backend folds Arabic-Indic digits. */
-  readonly number?: string;
   /**
    * P1-32. One box: part of the number, of a party name, of any plate the
    * vehicle carried, or of its VIN. Two characters at least.
@@ -325,6 +329,26 @@ export function workOrderStateLabel(
   return entry?.name ?? code;
 }
 
+/**
+ * What the board's own QUERY can be refused for (Owner directive,
+ * `P1-32-PRE-OD-UX`).
+ *
+ * A separate list from `WORK_ORDER_REFUSAL_KEYS`, which names the STATE
+ * refusals a command answers — "this order is closed to new work" and its
+ * siblings. These two are about the REQUEST: a state code sent beside a state
+ * group, and a completion window whose end precedes its start.
+ *
+ * Both are unreachable from the board as it is built — the controls cannot hold
+ * a code and a group at once, and an inverted window is refused at the field —
+ * and they are catalogued anyway. A refusal that reaches an operator as a raw
+ * token is the failure the catalogue exists to prevent, and "it cannot happen"
+ * is the sentence that is true right up until a screen changes.
+ */
+export const WORK_ORDER_QUERY_REFUSAL_KEYS: readonly string[] = Object.freeze([
+  'form.violation.state_and_group_exclusive',
+  'form.violation.completion_window_inverted',
+]);
+
 /** `MAX_WORK_ORDER_SEARCH_FRAGMENT` in the domain. */
 export const MAX_WORK_ORDER_SEARCH = 80;
 /** `MIN_WORK_ORDER_SEARCH_FRAGMENT` in the domain: the free-text box only. */
@@ -340,8 +364,10 @@ export const MIN_WORK_ORDER_SEARCH = 2;
  * link are checked against it.
  */
 export const WORK_ORDER_BOARD_VIEWS = [
+  'active',
   'all',
   'openedToday',
+  'completedToday',
   'mine',
   'awaitingApproval',
   'awaitingParts',
@@ -351,7 +377,14 @@ export const WORK_ORDER_BOARD_VIEWS = [
 
 export type WorkOrderBoardView = (typeof WORK_ORDER_BOARD_VIEWS)[number];
 
-/** Whether an arriving name is one of the seven. Anything else is discarded. */
+/**
+ * The view the board opens on when nothing else is asked for: the work that is
+ * still the workshop's problem. An address that names no view means this one,
+ * which is why a link to it says nothing.
+ */
+export const WORK_ORDER_BOARD_DEFAULT_VIEW: WorkOrderBoardView = 'active';
+
+/** Whether an arriving name is one of the nine. Anything else is discarded. */
 export function isWorkOrderBoardView(value: string): value is WorkOrderBoardView {
   return (WORK_ORDER_BOARD_VIEWS as readonly string[]).includes(value);
 }

@@ -188,9 +188,12 @@ export interface BranchScope {
  * a malformed uuid and answered 422 far from the mistake, while an omitted one
  * is the documented request for the authorized union.
  *
- * `apps/web/tests/p1-27-security.test.ts` pins the call sites of this helper to
- * exactly the two adapters whose operations changed, for the same reason it pins
- * `companyFilterQuery`: the narrow exception has to be visible in a diff.
+ * `apps/web/tests/security.test.ts` pins the call sites of this helper to
+ * exactly the three adapters whose operations changed, for the same reason
+ * `p1-27-security.test.ts` pins `companyFilterQuery`: the narrow exception has
+ * to be visible in a diff. It is pinned THERE rather than beside that one
+ * because the P1-27 suite sits in a sealed evidence package whose case count is
+ * digested and whose line ranges are cited.
  */
 export function branchScopeQuery(
   scope: BranchScope,

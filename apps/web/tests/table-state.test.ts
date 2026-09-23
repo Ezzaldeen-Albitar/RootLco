@@ -241,10 +241,12 @@ describe('reading state back from a URL', () => {
  * -------------------------------------------------------------------------- */
 
 describe('the names a board will answer to', () => {
-  it('accepts exactly the seven views the work-order board offers', () => {
+  it('accepts exactly the nine views the work-order board offers', () => {
     expect([...WORK_ORDER_BOARD_VIEWS].sort()).toEqual(
       [
+        'active',
         'all',
+        'completedToday',
         'awaitingApproval',
         'awaitingParts',
         'awaitingQuality',
@@ -257,10 +259,10 @@ describe('the names a board will answer to', () => {
   });
 
   it('refuses a view name that reads plausibly and is not one of them', () => {
-    // `completedToday` is the view somebody will try to link to first: the
-    // dashboard publishes the FIGURE and the operation has no window to filter
-    // it by, which is exactly why it must not become a silent no-op.
-    for (const name of ['completedToday', 'openStates', 'ALL', 'awaitingapproval', '', ' all']) {
+    // `completedInPeriod` is the name somebody will try to link to first: the
+    // dashboard publishes that FIGURE and the board has no view counting it the
+    // same way, which is exactly why it must not become a silent no-op.
+    for (const name of ['completedInPeriod', 'openStates', 'ALL', 'awaitingapproval', '', ' all']) {
       expect(isWorkOrderBoardView(name), name).toBe(false);
     }
   });

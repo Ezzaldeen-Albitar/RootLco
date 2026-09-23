@@ -105,12 +105,21 @@
  * are the same column name in two tables and the wrong one is a silently wrong
  * warranty, so the two are labelled apart on screen as well as in these types.
  *
- * ## Identifiers stay identifiers
+ * ## The car and the customer are NAMED, and the rest stay identifiers
  *
- * The vehicle, the work order and the delivery are bare references: no warranty read
- * resolves any of them to a name and nothing here invents a lookup. The policy is
- * the exception, and deliberately so — the detail and list reads both carry the
- * policy's own code and name, so it is rendered as the named thing the backend sent.
+ * Both reads carry a `vehicle` block and a `customer` block (Owner directive,
+ * P1-32-PRE-OD-UX). Every value in them is the backend's — resolved there through
+ * the vehicle and CRM modules' own capability-checked reads — and nothing on this
+ * side looks anything up, composes a label out of parts, or falls back to an
+ * identifier when a name is withheld. A withheld name and an absent one are
+ * deliberately indistinguishable on the wire, so a screen says the same words for
+ * both.
+ *
+ * The work order and the delivery remain bare references: no warranty read resolves
+ * either, and inventing a lookup for them here would be this side deciding what the
+ * server publishes. The policy has always been the third named thing — both reads
+ * carry its own code and name — so it is rendered as the named thing the backend
+ * sent.
  */
 
 /** The permissions the warranty screens consult, as the backend registers them. */
@@ -309,6 +318,55 @@ export interface WarrantyCoverage {
   readonly status: string;
 }
 
+/**
+ * `WarrantyVehicleView` — the car a warranty covers, named rather than referenced
+ * (Owner directive, P1-32-PRE-OD-UX).
+ *
+ * Carried by BOTH reads, spelled identically in each, so a screen that lists
+ * warranties and then opens one handles ONE shape.
+ *
+ * **Every field but `id` can be absent, and the screen must say so in words.**
+ * `plate` and `vin` are null when the caller may not read vehicles AND when the
+ * car simply has neither — the backend makes those two cases indistinguishable on
+ * purpose, because a field reporting that a VIN exists while refusing to show it
+ * tells the reader exactly what is being withheld. So there is no "hidden" state to
+ * render differently, and no place to put a lock icon: an absent value is one
+ * sentence, always the same one.
+ *
+ * Never fall back to `vehicleId`. The identifier is still published beside this
+ * block for navigation, and printing it under a column headed with a car's name is
+ * the defect this block exists to remove.
+ */
+export interface WarrantyVehicleDisplay {
+  readonly id: string;
+  readonly plate: string | null;
+  readonly vin: string | null;
+  readonly makeModel: string | null;
+  readonly displayNumber: string | null;
+}
+
+/**
+ * `WarrantyCustomerView` — the party the warranty was issued to (Owner directive,
+ * P1-32-PRE-OD-UX).
+ *
+ * The service requester on the reception visit the warranty's work order came
+ * from: the party who brought the car in, and the party a claim would come back
+ * from.
+ *
+ * The WHOLE block is null when the originating visit names no service requester,
+ * which is a real state of the data and not an error. `id` and `displayName` are
+ * null TOGETHER when the caller may not read customers, or when the backend could
+ * not resolve the partner for them — so a row can legitimately arrive with a
+ * customer that has neither a name nor an identifier, and that case is words
+ * rather than a uuid. A screen may link to the customer only when `id` is a
+ * string; a null `id` is never a link.
+ */
+export interface WarrantyCustomerDisplay {
+  /** The partner id, or null when the backend withheld it with the name. */
+  readonly id: string | null;
+  readonly displayName: string | null;
+}
+
 /** `WarrantyItemView` — one covered job or part. */
 export interface WarrantyItem {
   readonly id: string;
@@ -369,7 +427,26 @@ export interface WarrantyListRow {
   readonly odometerAtIssue: string;
   readonly odometerLimit: string | null;
   readonly policy: WarrantyPolicy;
+  /** The car, named. `vehicleId` above stays, and is still what links navigate by. */
+  readonly vehicle: WarrantyVehicleDisplay;
+  /** The party who brought it in, or absent when the visit named none. */
+  readonly customer: WarrantyCustomerDisplay | null;
   readonly recordVersion: number;
+}
+
+/**
+ * `WarrantyDetailView` — what `wty.warranty-detail` answers with.
+ *
+ * A superset of `WarrantyRecord`: the same record, plus the two display blocks a
+ * list row carries. It is a separate type because `WarrantyRecord` is also what
+ * `wty.warranty-generate` answers with, and the generation response does NOT carry
+ * them — the backend keeps two `veh`/`crm` reads off a write path whose job is to
+ * issue a warranty. Collapsing the two types here would make this side expect
+ * fields a generation never sends.
+ */
+export interface WarrantyRecordDetail extends WarrantyRecord {
+  readonly vehicle: WarrantyVehicleDisplay;
+  readonly customer: WarrantyCustomerDisplay | null;
 }
 
 /**

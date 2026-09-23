@@ -928,31 +928,54 @@ test.describe('the reception queue is a board for one named branch', () => {
     await expect(page.getByRole('main')).toContainText(say('en', 'receptions.queue.periodLabel'));
 
     /*
-     * No request before intent, restated for the control that decides it — the
-     * same rewrite the calendar block above carries, and for the same reason.
+     * WHICH READ IS BEING COUNTED, and why the two bootstraps cannot share one
+     * counter.
      *
-     * This pressed Show with the pair empty and waited for "required". There is
-     * no pair on this screen to leave empty and no Show button left to press:
-     * the board reads on arrival ONCE a branch is named. So the claim is made
-     * without a control — while the branch is unchosen the screen states the
-     * block and issues nothing, which is the property the button used to prove.
+     * This sampled `before = posts.length` AFTER the navigation and then polled
+     * the DELTA for a read. That is the arrangement the old screen needed — the
+     * read could only follow a Show press — and it is exactly wrong for a board
+     * that reads on ARRIVAL: the read is already counted by the time the
+     * baseline is taken, so the delta never moves and the assertion fails
+     * because the behaviour it is checking is working. It duly failed in all
+     * three projects with "the board issued no read at all, Received 0".
      *
-     * Conditional on the chooser existing. An operator with exactly one
-     * authorized branch has it chosen for them and has nothing to withhold, so
-     * asserting the unchosen state unconditionally would fail on a stack that
-     * is perfectly correct.
+     * The honest counter depends on what the acceptance principal is granted,
+     * which this file cannot know and must not assume:
+     *
+     *   - SEVERAL authorized branches — none is chosen for them, so the board
+     *     is not addressed, says which control answers, and reads nothing. The
+     *     baseline is meaningful here, and choosing a branch must move it.
+     *   - EXACTLY ONE — it is chosen for them by the shell, so the board is
+     *     addressed on arrival and has already read before any of this runs.
+     *     There is no delta to wait for; the claim is that a read happened at
+     *     all, and `workInBranch` asserts the branch is stated read-only rather
+     *     than asked for.
+     *
+     * Both are the same promise — the board reads for the branch it is
+     * addressed to, without being asked twice — measured where each bootstrap
+     * actually puts the read.
      */
-    const before = posts.length;
     if ((await page.getByTestId('working-context-select').count()) > 0) {
-      await expect(page.getByTestId('reception-queue-blocked').first()).toBeVisible();
+      // The claim develop's block made, kept — minus the button it pressed to
+      // make it. There is no Show control on this screen any more, so the
+      // assertion is that an unchosen branch leaves the board silent and says
+      // which control answers.
+      const before = posts.length;
+      await expect(page.getByTestId('requires-concrete-branch').first()).toBeVisible();
       expect(posts.length - before, 'a branch nobody chose must not issue a read').toBe(0);
+
+      await workInBranch(page, BRANCH_A);
+      await expect
+        .poll(() => posts.length - before, {
+          message: 'naming a branch issued no read at all',
+        })
+        .toBeGreaterThan(0);
+    } else {
+      await workInBranch(page, BRANCH_A);
+      await expect
+        .poll(() => posts.length, { message: 'the board issued no read on arrival' })
+        .toBeGreaterThan(0);
     }
-
-    await workInBranch(page, BRANCH_A);
-
-    await expect
-      .poll(() => posts.length - before, { message: 'the board issued no read at all' })
-      .toBeGreaterThan(0);
     expect(observed.length, 'the listener saw no requests at all').toBeGreaterThan(0);
 
     // An answered read that returned nothing. "No matches" is a statement about

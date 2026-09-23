@@ -14,7 +14,12 @@
  * So the SHAPE is written once here, beside `keysetFragment`, which is the other
  * piece of SQL this foundation composes for every list. What each list supplies
  * is only what is genuinely different about it: where its partners come from,
- * which vehicle it is about, and what its paperwork number is.
+ * which vehicle it is about, what its paperwork number is, and — since the
+ * issued-parts read — which catalogue item it is about.
+ *
+ * An anchor a list does not supply is an arm that is not built at all, so the
+ * four boards that shipped with this builder emit exactly the SQL they emitted
+ * before: `partnerIds` is theirs and `itemId` is not.
  *
  * ## Every arm is a correlated EXISTS, never a join
  *
@@ -68,6 +73,23 @@ export interface SearchAnchors {
    * order's.
    */
   readonly reference: string | null;
+  /**
+   * A scalar SQL expression naming the catalogue item the row is about, or
+   * `null`/absent when the row is about no item (Owner directive,
+   * P1-32-PRE-OD-UX).
+   *
+   * Only `inv.part-issue-list` supplies one today. A clerk taking a part back
+   * over the counter holds the PART, not the customer's phone number, so the box
+   * on that screen has to reach the item's name and its code — and the four
+   * boards that had the box first have no item to reach.
+   *
+   * The arm is built from the SAME two fragments the other arms use: the folded
+   * name fragment is compared against `shared.fold_search_text(name)`, the SQL
+   * twin of `foldSearchText`, and the reference fragment — digits folded, which
+   * leaves a letter alone — is compared against the code. No third fragment, and
+   * no normalisation re-derived here.
+   */
+  readonly itemId?: string | null;
 }
 
 export interface SearchFragment {
@@ -91,11 +113,27 @@ export function searchFragment(
 ): SearchFragment {
   if (!terms.present) return { predicate: '', values: [] };
 
-  const name = `$${firstIndex}`;
-  const phone = `$${firstIndex + 1}`;
-  const plate = `$${firstIndex + 2}`;
-  const vin = `$${firstIndex + 3}`;
-  const reference = `$${firstIndex + 4}`;
+  const itemArm = anchors.itemId !== undefined && anchors.itemId !== null;
+  const partnerArms = anchors.partnerIds !== null;
+
+  // A fragment is bound ONLY when an arm below references it. PostgreSQL infers
+  // each parameter's type from where it is used, so a value bound and never
+  // referenced fails the whole statement with "could not determine data type of
+  // parameter" — which is what the issued-parts read, the first list with no
+  // customer arms, hit. The order stays name, phone, plate, VIN, reference, and a
+  // list that uses all five (every board before that read) is numbered exactly
+  // as it always was.
+  const values: unknown[] = [];
+  const bind = (used: boolean, value: string): string => {
+    if (!used) return '';
+    values.push(value);
+    return `$${firstIndex + values.length - 1}`;
+  };
+  const name = bind(itemArm || partnerArms, terms.nameFragment);
+  const phone = bind(partnerArms, terms.phoneDigits);
+  const plate = bind(true, terms.plateFragment);
+  const vin = bind(true, terms.vinFragment);
+  const reference = bind(anchors.reference !== null || itemArm, terms.referenceFragment);
 
   const arms: string[] = [];
 
@@ -105,7 +143,31 @@ export function searchFragment(
     );
   }
 
-  if (anchors.partnerIds !== null) {
+  if (itemArm) {
+    // ONE `EXISTS` over two columns rather than two arms, because both are facts
+    // about the same catalogue row and a second correlated subquery would read
+    // `inv.item_master` twice for every candidate. Each half keeps its own
+    // `<> ''` guard for the reason every other arm does: an empty fragment would
+    // become `LIKE '%%'` and match the whole catalogue.
+    //
+    // No `deleted_at` test on the item: the arm searches the item the row
+    // DISPLAYS, and the list joins its item without one — a part issued before
+    // its catalogue entry was retired is still listed under that entry's name and
+    // code, so it has to be findable by them too.
+    arms.push(
+      `EXISTS (
+          SELECT 1
+            FROM inv.item_master im
+           WHERE im.tenant_id = ${anchors.tenant}
+             AND im.id = ${anchors.itemId}
+             AND ((${name}::text <> ''
+                   AND shared.fold_search_text(im.name) LIKE '%' || ${name}::text || '%' ESCAPE '\\')
+               OR (${reference}::text <> ''
+                   AND im.sku ILIKE '%' || ${reference}::text || '%' ESCAPE '\\')))`
+    );
+  }
+
+  if (partnerArms) {
     arms.push(
       `(${name}::text <> '' AND EXISTS (
           SELECT 1
@@ -156,12 +218,6 @@ export function searchFragment(
 
   return {
     predicate: `AND (${arms.join('\n             OR ')})`,
-    values: [
-      terms.nameFragment,
-      terms.phoneDigits,
-      terms.plateFragment,
-      terms.vinFragment,
-      terms.referenceFragment,
-    ],
+    values,
   };
 }

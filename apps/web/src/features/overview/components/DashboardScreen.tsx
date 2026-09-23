@@ -438,7 +438,8 @@ export function DashboardScreen({
         id: 'activeWorkOrders',
         labelKey: 'dashboard.card.activeWorkOrders',
         section: sections.activeWorkOrders,
-        href: workOrdersViewLink(locale, 'all'),
+        // `active` is the board's state GROUP the overview aggregate counts.
+        href: workOrdersViewLink(locale, 'active'),
       },
       {
         id: 'awaitingApproval',
@@ -459,9 +460,11 @@ export function DashboardScreen({
         href: workOrdersViewLink(locale, 'readyForDelivery'),
       },
       {
-        // No link: the board can be sent an OPENED window and no completed one,
-        // so there is no list that is narrowed the way this figure counted.
-        // Linking to the unfiltered board would answer a different question.
+        // No link: the board's one completion view is `completedToday`, and
+        // it lists orders finished NOW while this figure counts ENTRIES into a
+        // finished state over the period — they disagree about a job completed
+        // and then reopened. Linking to a list that counts differently would
+        // answer a different question.
         id: 'completedInPeriod',
         labelKey: 'dashboard.card.completedInPeriod',
         section: sections.completedInPeriod,

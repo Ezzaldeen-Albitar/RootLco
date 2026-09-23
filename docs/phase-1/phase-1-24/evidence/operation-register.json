@@ -1,9 +1,9 @@
 {
   "generatedBy": "scripts/p1-24-operation-register.mjs",
   "totals": {
-    "operations": 497,
-    "openapiPaths": 389,
-    "openapiOperations": 497,
+    "operations": 498,
+    "openapiPaths": 390,
+    "openapiOperations": 498,
     "openapiSchemas": 3,
     "events": 50,
     "eventsProduced": 47,
@@ -14,7 +14,7 @@
     "auditActions": 285
   },
   "counts": {
-    "Covered": 497
+    "Covered": 498
   },
   "operations": [
     {
@@ -5990,6 +5990,50 @@
       "tests": ["tests/backend/p1-30-opening-batch-reads.test.ts"],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/opening-inventory-batches/[batchId]/route.ts"
+    },
+    {
+      "id": "inv.part-issue-list",
+      "domain": "inventory",
+      "method": "GET",
+      "route": "/api/v1/part-issues",
+      "permissions": ["inv.stock.read"],
+      "public": false,
+      "scope": "branch",
+      "transaction": "read (no business mutation)",
+      "auditClass": "none",
+      "auditAction": null,
+      "idempotent": false,
+      "versionGuarded": false,
+      "openapi": "GET /api/v1/part-issues",
+      "documentedResponses": ["200", "401", "403", "422", "429", "500"],
+      "requiredEvidence": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "isolation",
+        "denial",
+        "cross-tenant",
+        "pagination"
+      ],
+      "providedEvidence": [
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "isolation",
+        "pagination",
+        "route",
+        "service",
+        "success"
+      ],
+      "missingEvidence": [],
+      "tests": [
+        "tests/backend/p1-21-helpers.ts",
+        "tests/backend/p1-22-isolation.test.ts",
+        "tests/backend/p1-32-inventory-operations.test.ts"
+      ],
+      "classification": "Covered",
+      "file": "apps/api/src/app/api/v1/part-issues/route.ts"
     },
     {
       "id": "inv.reorder-level-list",

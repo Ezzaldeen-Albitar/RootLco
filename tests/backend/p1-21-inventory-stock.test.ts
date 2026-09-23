@@ -36,6 +36,11 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { Pool } from 'pg';
 import { randomUUID } from 'node:crypto';
 import {
+  BRANCH_A1,
+  COMPANY_A1,
+  IDENTITY_PROVIDER,
+  TENANT_A,
+  USER_A,
   adminPool,
   cleanBackendFixtures,
   ensureBackendFixtures,
@@ -44,12 +49,15 @@ import {
 import {
   BRANCH_A2,
   FULL,
+  type Principal,
   advance,
   createOpenWorkOrder,
   createWorkOrder,
   establishP1_19Fixtures,
 } from './p1-19-helpers';
 import {
+  FINANCE_VIEW,
+  INV_COUNTER,
   INV_FULL,
   INV_PERMISSION_ELSEWHERE,
   INV_READER,
@@ -73,8 +81,10 @@ import {
   reservationStatusOf,
   seedApprovedMaterialRequirement,
   seedStock,
+  WORK_ORDER_READ,
 } from './p1-21-helpers';
 import { Quantity } from '@/modules/inventory';
+import { MAX_READINESS_PAGE_SIZE } from '@/modules/delivery';
 import { POST as RESERVE } from '@/app/api/v1/stock-reservations/route';
 import { POST as RELEASE } from '@/app/api/v1/stock-reservations/[reservationId]/release/route';
 import { POST as ISSUE } from '@/app/api/v1/stock-issues/route';
@@ -84,6 +94,8 @@ import { POST as TRANSFER_CREATE } from '@/app/api/v1/stock-transfers/route';
 import { GET as ELIGIBILITY } from '@/app/api/v1/work-orders/[workOrderId]/closure-eligibility/route';
 import { POST as CLOSURE } from '@/app/api/v1/work-orders/[workOrderId]/closure/route';
 import { POST as TRANSITION } from '@/app/api/v1/work-orders/[workOrderId]/transition/route';
+import { POST as SALES_RETURN_CREATE } from '@/app/api/v1/sales-returns/route';
+import { GET as LIST_READINESS } from '@/app/api/v1/delivery-readiness/route';
 
 /**
  * Every reservation and issue for a work order draws on an APPROVED material
@@ -101,6 +113,55 @@ async function approvedDemandFor(workOrderId: string): Promise<Record<string, st
 }
 
 let admin: Pool;
+
+/**
+ * The delivery-readiness queue's three declared codes and nothing else. The queue's
+ * part fact reads the same `openCommitmentsFor` the closure gate does, so a work
+ * order whose issue has come back must be clear in both places.
+ */
+const READINESS_READER: Principal = {
+  roleId: 'e1000000-0000-4000-8000-0000000003e1',
+  userId: 'e1000000-0000-4000-8000-0000000003e2',
+  subject: 'fx_p1_21_readiness_reader',
+  tenantId: TENANT_A,
+  permissions: ['sal.delivery.view', WORK_ORDER_READ, FINANCE_VIEW],
+};
+
+async function seedReadinessReader(): Promise<void> {
+  const principal = READINESS_READER;
+  await admin.query(
+    `INSERT INTO iam.user_accounts
+       (id, tenant_id, identity_provider, provider_subject, email, display_name, status, created_by)
+     VALUES ($1,$2,$3,$4,$4||'@example.test','P1-21 readiness reader','active',$5)
+     ON CONFLICT (id) DO NOTHING`,
+    [principal.userId, principal.tenantId, IDENTITY_PROVIDER, principal.subject, USER_A]
+  );
+  await admin.query(
+    `INSERT INTO iam.roles (id, tenant_id, role_code, name, created_by)
+     VALUES ($1,$2,$3,'P1-21 readiness fixture',$4) ON CONFLICT (id) DO NOTHING`,
+    [principal.roleId, principal.tenantId, principal.subject, USER_A]
+  );
+  for (const code of principal.permissions) {
+    await admin.query(
+      `INSERT INTO iam.role_permissions (tenant_id, role_id, permission_id, effect, created_by)
+       SELECT $1::uuid,$2::uuid,p.id,'allow',$3::uuid FROM iam.permissions p
+        WHERE p.permission_code = $4
+       ON CONFLICT (tenant_id, role_id, permission_id) DO NOTHING`,
+      [principal.tenantId, principal.roleId, USER_A, code]
+    );
+  }
+  const existing = await admin.query(
+    `SELECT 1 FROM iam.role_grants WHERE tenant_id = $1 AND user_id = $2 AND role_id = $3`,
+    [principal.tenantId, principal.userId, principal.roleId]
+  );
+  if (existing.rowCount === 0) {
+    await admin.query(
+      `INSERT INTO iam.role_grants (tenant_id, user_id, role_id, scope_mode, granted_by, created_by)
+       VALUES ($1,$2,$3,'unrestricted',$4,$4)`,
+      [principal.tenantId, principal.userId, principal.roleId, USER_A]
+    );
+  }
+}
 
 const post = (
   handler: (request: Request) => Promise<Response>,
@@ -153,6 +214,7 @@ beforeAll(async () => {
   await ensureBackendFixtures(admin);
   await establishP1_19Fixtures(admin);
   await establishP1_21Fixtures(admin);
+  await seedReadinessReader();
 }, 180_000);
 
 afterAll(async () => {
@@ -1043,6 +1105,137 @@ describe('work-order closure is blocked while inventory is outstanding', () => {
     expect(clear.inventoryCommitments.openIssues).toBe(0);
     expect(clear.eligible).toBe(true);
     expect((await closeCall(wo.workOrderId, version)).status).toBe(200);
+  });
+
+  /** A part issued to a work order that is then walked to `ready_to_close`. */
+  async function issuedThenReady(
+    quantity: string
+  ): Promise<{ readonly workOrderId: string; readonly issueId: string; readonly version: number }> {
+    const wo = await createOpenWorkOrder();
+    const demand = await approvedDemandFor(wo.workOrderId);
+    await seedStock({ itemId: ITEM_A_ALT, locationId: WAREHOUSE_A1, quantity: '10.000' });
+    authAs(INV_FULL);
+    const issued = await post(ISSUE, '/api/v1/stock-issues', {
+      workOrderId: wo.workOrderId,
+      materialRequirementId: demand[ITEM_A_ALT],
+      itemId: ITEM_A_ALT,
+      locationId: WAREHOUSE_A1,
+      quantity,
+    });
+    expect(issued.status).toBe(201);
+    const issueId = (await bodyOf<{ id: string }>(issued)).id;
+    const version = await advance(wo.workOrderId, [
+      { toState: 'in_progress' },
+      { toState: 'qc_pending' },
+      { toState: 'ready_to_close' },
+    ]);
+    return { workOrderId: wo.workOrderId, issueId, version };
+  }
+
+  /** `POST /sales-returns` against a part issue — the second way a part comes back. */
+  async function salesReturn(issueId: string, quantity: string): Promise<void> {
+    // INV_COUNTER, not INV_FULL: the operation also needs `sal.finance.view`.
+    authAs(INV_COUNTER);
+    const response = await post(SALES_RETURN_CREATE, '/api/v1/sales-returns', {
+      sourceKind: 'part_issue',
+      sourceId: issueId,
+      quantity,
+      condition: 'restockable',
+      receivedLocationId: WAREHOUSE_A1,
+    });
+    expect(response.status).toBe(201);
+  }
+
+  const openIssuesOf = async (
+    workOrderId: string
+  ): Promise<{ eligible: boolean; openIssues: number }> => {
+    authAs(FULL);
+    const body = await bodyOf<{
+      eligible: boolean;
+      inventoryCommitments: { openIssues: number };
+    }>(await eligibility(workOrderId));
+    return { eligible: body.eligible, openIssues: body.inventoryCommitments.openIssues };
+  };
+
+  interface ReadinessRow {
+    readonly workOrder: { readonly id: string };
+    readonly blockers: readonly string[];
+    readonly facts: readonly { readonly blocker: string; readonly established: boolean }[];
+  }
+
+  /** The work order's row in the branch's delivery-readiness queue, walked page by page. */
+  async function readinessRowOf(workOrderId: string): Promise<ReadinessRow> {
+    authAs(READINESS_READER);
+    let cursor: string | null = null;
+    for (;;) {
+      const query = new URLSearchParams({
+        companyId: COMPANY_A1,
+        branchId: BRANCH_A1,
+        limit: String(MAX_READINESS_PAGE_SIZE),
+      });
+      if (cursor !== null) query.set('cursor', cursor);
+      const response = await LIST_READINESS(
+        new Request(`http://localhost/api/v1/delivery-readiness?${query.toString()}`)
+      );
+      expect(response.status).toBe(200);
+      const page = await bodyOf<{
+        items: readonly ReadinessRow[];
+        nextCursor: string | null;
+      }>(response);
+      const row = page.items.find((item) => item.workOrder.id === workOrderId);
+      if (row !== undefined) return row;
+      if (page.nextCursor === null) throw new Error(`${workOrderId} is not in the queue`);
+      cursor = page.nextCursor;
+    }
+  }
+
+  it('clears an issue brought back in full through POST /sales-returns, for closure and for the delivery queue', async () => {
+    const { workOrderId, issueId, version } = await issuedThenReady('3.000');
+    expect(await openIssuesOf(workOrderId)).toEqual({ eligible: false, openIssues: 1 });
+
+    // The whole quantity back through the sales-return path. The stock-return route
+    // is then refused by the shared ceiling, so this is the only way the part comes
+    // back — and it must be enough.
+    await salesReturn(issueId, '3.000');
+
+    expect(await openIssuesOf(workOrderId)).toEqual({ eligible: true, openIssues: 0 });
+    authAs(FULL);
+    expect((await closeCall(workOrderId, version)).status).toBe(200);
+
+    // The delivery queue composes its part fact from the same read: established, and
+    // not raised. No invoice exists, so the financial fact may block; that is not what
+    // this asserts.
+    const row = await readinessRowOf(workOrderId);
+    expect(row.facts.find((fact) => fact.blocker === 'part_obligation_outstanding')).toEqual(
+      expect.objectContaining({ established: true })
+    );
+    expect(row.blockers).not.toContain('part_obligation_outstanding');
+  });
+
+  it('keeps an issue open after a PARTIAL sales return', async () => {
+    const { workOrderId, issueId, version } = await issuedThenReady('3.000');
+    await salesReturn(issueId, '1.000');
+
+    expect(await openIssuesOf(workOrderId)).toEqual({ eligible: false, openIssues: 1 });
+    authAs(FULL);
+    expect((await closeCall(workOrderId, version)).status).toBe(409);
+  });
+
+  it('counts a stock return and a sales return together toward the issued quantity', async () => {
+    const { workOrderId, issueId, version } = await issuedThenReady('3.000');
+    authAs(INV_FULL);
+    expect(
+      (await post(RETURN, '/api/v1/stock-returns', { partIssueId: issueId, quantity: '1.000' }))
+        .status
+    ).toBe(201);
+    // One of three back: still open.
+    expect(await openIssuesOf(workOrderId)).toEqual({ eligible: false, openIssues: 1 });
+
+    await salesReturn(issueId, '2.000');
+
+    expect(await openIssuesOf(workOrderId)).toEqual({ eligible: true, openIssues: 0 });
+    authAs(FULL);
+    expect((await closeCall(workOrderId, version)).status).toBe(200);
   });
 
   it('does not block a CANCELLATION, which abandons work rather than certifying it', async () => {

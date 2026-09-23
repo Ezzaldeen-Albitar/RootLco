@@ -1117,12 +1117,13 @@ export interface CloseReceptionInput {
 export interface ReceptionListCriteria {
   readonly status?: ReceptionStatus;
   /**
-   * A status GROUP (Owner directive, P1-32-PRE-OD-UX) — `open` for the visits
+   * A status GROUP (Owner directive, `P1-32-PRE-OD-UX`) — `open` for the visits
    * still in play, `finished` for the three terminal exits.
    *
-   * May not be sent beside `status`: the backend answers 422 rather than
-   * intersecting them, so a screen offering both controls clears one when the
-   * other is chosen.
+   * This is what "every unfinished visit" finally became a request the platform
+   * can be SENT. It may not travel beside `status`: the backend answers 422
+   * with `status_and_group_exclusive` rather than intersecting them, so a
+   * screen offering both controls clears one when the other is chosen.
    */
   readonly statusGroup?: ReceptionStatusGroup;
   readonly vehicleId?: string;
@@ -1177,6 +1178,19 @@ export function isFinishedReception(status: ReceptionStatus): boolean {
  */
 export const RECEPTION_STATUS_GROUPS = ['open', 'finished'] as const;
 export type ReceptionStatusGroup = (typeof RECEPTION_STATUS_GROUPS)[number];
+
+/**
+ * What the board's own QUERY can be refused for (Owner directive,
+ * `P1-32-PRE-OD-UX`) — a status code sent beside a status group.
+ *
+ * Unreachable from the board, which offers both answers through ONE control and
+ * therefore cannot hold both at once, and catalogued anyway: a refusal that
+ * reaches an operator as a raw token is the failure the catalogue exists to
+ * prevent, and "it cannot happen" is true only until a screen changes.
+ */
+export const RECEPTION_QUERY_REFUSAL_KEYS: readonly string[] = Object.freeze([
+  'form.violation.status_and_group_exclusive',
+]);
 
 /* ------------------------------------------------------------------ *
  * Responses, exactly as the services publish them
@@ -1271,7 +1285,7 @@ export interface ReceptionListEntry {
   readonly recordVersion: number;
   /**
    * The party who brought the car, or null when the visit names none (Owner
-   * directive, P1-32-PRE-OD-UX).
+   * directive, `P1-32-PRE-OD-UX`).
    *
    * **The null case is real** — a visit can legitimately exist before a service
    * requester is recorded, so the screen renders the absence.

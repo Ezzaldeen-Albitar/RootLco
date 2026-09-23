@@ -21,10 +21,10 @@ import { useFocusFirstInvalid } from '@/lib/forms/use-focus-first-invalid';
 import {
   addDays,
   dayIn,
+  endOfDay,
   formatDayInZone,
   formatInZone,
   rangeOfDays,
-  startOfDay,
 } from '@/lib/branch-time';
 import { intlLocale } from '@/lib/format';
 import type { Locale } from '@/i18n/config';
@@ -35,6 +35,7 @@ import {
   MAX_RECEPTION_SEARCH,
   MIN_RECEPTION_SEARCH,
   RECEPTION_BOARD_PERIODS,
+  RECEPTION_STATUS_GROUPS,
   TERMINAL_RECEPTION_STATUSES,
   UNFINISHED_RECEPTION_STATUSES,
   isFinishedReception,
@@ -42,6 +43,7 @@ import {
   type ReceptionListCriteria,
   type ReceptionListEntry,
   type ReceptionStatus,
+  type ReceptionStatusGroup,
 } from '../receptions-contract';
 
 /**
@@ -80,28 +82,32 @@ import {
  * ## What the platform does not publish is not shown
  *
  * There is no due date on a reception visit, anywhere in the schema, so nothing
- * here says "overdue" or "due today". The row carries no customer name and no
- * registration plate either — `ReceptionListEntry` publishes the vehicle's own
- * reference and nothing about its owner — so the board shows the visit, the
- * vehicle reference and the custody fact, and the customer is found on the visit
- * it links to. An empty column headed "Customer" would be a promise the read
- * cannot keep.
+ * here says "overdue" or "due today", and no control offers to sort by one.
  *
- * ## One status at a time, and the reason it is grouped anyway
+ * The customer and the plate ARE published now, and both carry an absence the
+ * board renders as words rather than as a blank: a visit that names no service
+ * requester yet, a customer whose name this caller may not read, and a
+ * registered vehicle carrying no plate are three ordinary states of the data,
+ * not three rendering faults.
  *
- * `status` on the wire is ONE code (`z.enum(...).optional()`), so "every
- * unfinished visit" is not a request this operation can be sent, and a browser
- * that filtered a fetched page to the three would produce short pages and a
- * `hasMore` that lies. What the control CAN do is stop making the operator hold
- * the graph in their head: the six codes are offered in two groups — still with
- * us, and finished — derived from `TERMINAL_RECEPTION_STATUSES` rather than
- * listed here, so a graph change moves the control instead of leaving it
- * confidently wrong.
+ * ## One control, over a whole group or over a single code
  *
- * "What is still here from before today" is therefore two controls used
- * together: the **Before today** period, which sends only an upper bound, and
- * one status from the **Still with us** group. It is not one button, because one
- * button would have to claim a request the operation cannot be sent.
+ * `status` on the wire is ONE frozen code, and for one wave "every unfinished
+ * visit" was simply not a request this operation could be sent — a browser that
+ * filtered a fetched page to the three would produce short pages and a
+ * `hasMore` that lies. `statusGroup` is that request, and it arrived with the
+ * board-list contracts.
+ *
+ * Both answers live in ONE select: the two groups at the top as whole answers,
+ * the six codes beneath them grouped the same way. The route refuses a code and
+ * a group sent together (`status_and_group_exclusive`), and a single control
+ * cannot hold both — so the refusal is unreachable rather than explained. The
+ * grouping is derived from `TERMINAL_RECEPTION_STATUSES`, so a graph change
+ * moves the control instead of leaving it confidently wrong.
+ *
+ * "What is still here from before today" is therefore one button again: the
+ * **Before today** period, which sends only an upper bound, and the `open`
+ * group beside it.
  *
  * ## Everything restarts on a branch change, and paging restarts on a filter
  *
@@ -163,7 +169,16 @@ function windowOf(
       // the person asking. Six back plus today.
       return rangeOfDays(zone, addDays(today, -6), today);
     case 'beforeToday':
-      return { to: startOfDay(zone, today).toISOString() };
+      /*
+       * The LAST instant of yesterday, not the first instant of today.
+       *
+       * The route compares `custody_accepted_at <= to`, closed on both ends. The
+       * start of today satisfies that comparison, so sending it puts every visit
+       * received in the first millisecond of today — midnight arrivals, and any
+       * row the database stamped exactly on the boundary — into a board headed
+       * "before today".
+       */
+      return { to: endOfDay(zone, addDays(today, -1)).toISOString() };
     case 'custom':
       return rangeOfDays(zone, period.from, period.to);
   }
@@ -178,12 +193,6 @@ export function ReceptionQueueScreen({
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
-  /**
-   * The session's bare references. Accepted so the page did not have to change,
-   * and no longer read: the branch is the working context's named selection.
-   */
-  readonly companyIds?: readonly string[];
-  readonly branchIds?: readonly string[];
   /** `rec.reception.manage` — gates the offer to open a new visit. */
   readonly canCreate: boolean;
   /**
@@ -216,7 +225,17 @@ export function ReceptionQueueScreen({
    */
   const [draftFrom, setDraftFrom] = useState(initialPeriod?.from ?? '');
   const [draftTo, setDraftTo] = useState(initialPeriod?.to ?? '');
-  const [status, setStatus] = useState<'' | ReceptionStatus>('');
+  /*
+   * ONE control over two kinds of answer.
+   *
+   * `status` is a single frozen code and `statusGroup` is `open` or `finished`;
+   * the route refuses the pair with `status_and_group_exclusive` rather than
+   * intersecting them. A select whose value is either `group:open` or a code
+   * makes that exclusion structural — there is no state in which both are set —
+   * and it puts the answer an operator actually wants ("everything still with
+   * us") at the top of the same list they were already reading.
+   */
+  const [status, setStatus] = useState<'' | `group:${ReceptionStatusGroup}` | ReceptionStatus>('');
   const [term, setTerm] = useState('');
   /**
    * The filter form's own refusals, in the shape every form on this product
@@ -270,6 +289,15 @@ export function ReceptionQueueScreen({
    * `null` is "there is nothing to ask for yet": no resolvable scope, or a
    * custom period with only one of its two days filled in. The hook makes no
    * request at all in that state.
+   *
+   * Building it inline is also what makes a branch change safe. The scope and
+   * the zone are DERIVED from the working context on every render, so there is
+   * no stored copy of either to reset when the header moves — the criteria are
+   * already the new branch's in the same render the version changes in, and
+   * `useSearchRequest` treats that version change as a submission of exactly
+   * these criteria rather than waiting out a debounce on the previous ones. The
+   * filters below are state, and they SURVIVE a branch change on purpose: they
+   * are what the operator asked for and they are not about the branch.
    */
   const asked: Asked | null =
     scope === null || (period.kind === 'custom' && (period.from === '' || period.to === ''))
@@ -277,7 +305,11 @@ export function ReceptionQueueScreen({
       : {
           scope,
           filters: {
-            ...(status === '' ? {} : { status }),
+            ...(status === ''
+              ? {}
+              : status.startsWith('group:')
+                ? { statusGroup: status.slice('group:'.length) as ReceptionStatusGroup }
+                : { status: status as ReceptionStatus }),
             ...windowOf(period, zone),
             ...(termIsSearchable ? { q: trimmed } : {}),
           },
@@ -335,6 +367,20 @@ export function ReceptionQueueScreen({
     setPeriod({ kind, from: '', to: '' });
   };
 
+  /**
+   * "What is still here from before today", as one button.
+   *
+   * It was two controls used together — the period, then a status from the
+   * "still with us" group — because `status` took one code at a time and the
+   * set of unfinished statuses could not be sent. `statusGroup` is that set,
+   * so the question is one request again and the button asks it.
+   */
+  const olderUnfinished = () => {
+    setRefusal(IDLE);
+    setPeriod({ kind: 'beforeToday', from: '', to: '' });
+    setStatus('group:open');
+  };
+
   const clearFilters = () => {
     setRefusal(IDLE);
     setPeriod(TODAY_PERIOD);
@@ -344,7 +390,42 @@ export function ReceptionQueueScreen({
     setTerm('');
   };
 
+  /**
+   * Is there anything for Clear to clear?
+   *
+   * Every input `clearFilters` resets, compared against the value it resets to
+   * — so the offer appears exactly when pressing it would change the question.
+   * It used to be made only for a SEARCHABLE term, which left the commonest
+   * empty board of all (a status or a period that matches nothing today) with
+   * no way out but to undo each control by hand.
+   *
+   * The draft days count even when the period is not custom: they are typed
+   * text the operator can see, and a Clear that left them sitting there would
+   * be a Clear that did not.
+   */
+  const filtersApplied =
+    period.kind !== TODAY_PERIOD.kind ||
+    draftFrom !== '' ||
+    draftTo !== '' ||
+    status !== '' ||
+    trimmed !== '';
+
+  /*
+   * The two groups first, as whole answers, then the six codes underneath them
+   * grouped the same way. The group entries are what the platform can now be
+   * asked directly; the codes are still one at a time, and the grouping is
+   * derived from `TERMINAL_RECEPTION_STATUSES` rather than listed here.
+   */
   const statusOptions = useMemo(
+    () =>
+      RECEPTION_STATUS_GROUPS.map((group) => ({
+        value: `group:${group}`,
+        label: translateDynamic(messages, `receptions.queue.statusWhole.${group}`),
+      })),
+    [messages]
+  );
+
+  const statusGroups = useMemo(
     () => [
       {
         label: translate(messages, 'receptions.queue.statusGroupOpen'),
@@ -394,18 +475,56 @@ export function ReceptionQueueScreen({
           ),
       },
       {
+        id: 'customer',
+        headerKey: 'receptions.queue.column.customer',
+        /*
+         * Three facts, told apart.
+         *
+         * No customer at all is a visit that names no service requester yet,
+         * which the platform permits. A customer whose `displayName` is null is
+         * a caller who may not read the directory — the visit HAS one, and the
+         * row says so in words rather than falling back to the identifier,
+         * which is the one thing an operator can do nothing with.
+         */
+        cell: (row) =>
+          row.customer === null ? (
+            <span className="text-text-muted">
+              {translate(messages, 'receptions.queue.column.noCustomer')}
+            </span>
+          ) : row.customer.displayName === null ? (
+            <span className="text-text-muted">
+              {translate(messages, 'receptions.queue.column.customerHidden')}
+            </span>
+          ) : (
+            <bdi>{row.customer.displayName}</bdi>
+          ),
+      },
+      {
         id: 'vehicle',
         headerKey: 'receptions.queue.column.vehicle',
-        cell: (row) =>
-          row.vehicleDisplayNumber ? (
-            <code className="font-mono text-caption" dir="ltr">
-              {row.vehicleDisplayNumber}
-            </code>
-          ) : (
-            <span className="text-text-muted">
-              {translate(messages, 'receptions.queue.column.noVehicleReference')}
-            </span>
-          ),
+        /*
+         * The plate first, because that is what a receptionist reads off the
+         * car in front of them, with the vehicle's own reference under it. A
+         * registered but unplated vehicle is ordinary, not a fault.
+         */
+        cell: (row) => (
+          <span className="flex flex-col">
+            {row.plate ? (
+              <code className="font-mono text-caption" dir="ltr">
+                {row.plate}
+              </code>
+            ) : (
+              <span className="text-text-muted">
+                {translate(messages, 'receptions.queue.column.noPlate')}
+              </span>
+            )}
+            {row.vehicleDisplayNumber ? (
+              <code className="font-mono text-caption text-text-muted" dir="ltr">
+                {row.vehicleDisplayNumber}
+              </code>
+            ) : null}
+          </span>
+        ),
       },
       {
         id: 'receptionStatus',
@@ -418,7 +537,19 @@ export function ReceptionQueueScreen({
         // Rendered only while the board spans branches — see `hiddenColumnIds`
         // below. The name, never the identifier: a reference here would be a
         // second thing for the operator to look up.
-        cell: (row) => <bdi>{context.branchName(row.branchId) ?? ''}</bdi>,
+        /*
+         * The name, or an absence rendered AS an absence.
+         *
+         * `branchName` answers null for a branch the directory no longer
+         * publishes — revoked between the read and the render, or simply not in
+         * this operator's list. An empty cell reads as a rendering fault; the
+         * dash is the same mark the technician column uses for "there is
+         * nothing here to name".
+         */
+        cell: (row) => {
+          const name = context.branchName(row.branchId);
+          return name === null ? <span className="text-text-muted">—</span> : <bdi>{name}</bdi>;
+        },
       },
       {
         id: 'custodyAcceptedAt',
@@ -475,8 +606,24 @@ export function ReceptionQueueScreen({
         aria-label={translate(messages, 'receptions.queue.formLabel')}
         className="flex flex-col gap-3 rounded-lg border border-border bg-surface p-4"
       >
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="text-label font-medium text-text-primary">
+        {/*
+          A GROUP, named by the label already beside it.
+
+          The buttons are one control with one answer, and without the role a
+          screen reader announces six unrelated toggles whose shared heading is
+          a stray line of text. `aria-labelledby` rather than a second
+          `aria-label` so the name a reader hears and the word on the screen
+          cannot drift apart. The work-order board's view chips do the same.
+        */}
+        <div
+          role="group"
+          aria-labelledby="reception-queue-period-label"
+          className="flex flex-wrap items-center gap-2"
+        >
+          <span
+            id="reception-queue-period-label"
+            className="text-label font-medium text-text-primary"
+          >
             {translate(messages, 'receptions.queue.periodLabel')}
           </span>
           {PERIOD_KINDS.map((kind) => (
@@ -494,6 +641,16 @@ export function ReceptionQueueScreen({
               {translateDynamic(messages, `receptions.queue.period.${kind}`)}
             </button>
           ))}
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={olderUnfinished}
+            className="rounded-md border border-border px-3 py-1.5 text-body text-text-primary transition-colors duration-fast ease-standard hover:bg-surface-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+          >
+            {translate(messages, 'receptions.queue.olderUnfinished')}
+          </button>
         </div>
 
         <p data-testid="reception-period-label" className="text-supporting text-text-muted">
@@ -549,8 +706,9 @@ export function ReceptionQueueScreen({
           <SelectField
             label={translate(messages, 'receptions.queue.statusFilter')}
             value={status}
-            onChange={(event) => setStatus(event.target.value as '' | ReceptionStatus)}
-            groups={statusOptions}
+            onChange={(event) => setStatus(event.target.value as typeof status)}
+            options={statusOptions}
+            groups={statusGroups}
             placeholder={translate(messages, 'receptions.queue.anyStatus')}
           />
           <div className="sm:col-span-2">
@@ -617,6 +775,7 @@ export function ReceptionQueueScreen({
 
           <SearchStates
             messages={messages}
+            locale={locale}
             phase={search.phase}
             correlationId={search.correlationId}
             idle={
@@ -626,7 +785,7 @@ export function ReceptionQueueScreen({
                 {translate(messages, 'receptions.queue.chooseBothDays')}
               </p>
             }
-            {...(search.phase === 'empty' && termIsSearchable
+            {...(search.phase === 'empty' && filtersApplied
               ? {
                   onClearFilters: (
                     <button

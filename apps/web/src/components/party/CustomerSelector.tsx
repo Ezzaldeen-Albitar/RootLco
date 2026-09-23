@@ -6,7 +6,6 @@ import { TextField, SelectField } from '@/components/forms/Field';
 import { PartyLabel } from '@/components/party/PartyLabel';
 import { SearchBox } from '@/components/search/SearchBox';
 import { SearchStates } from '@/components/search/SearchStates';
-import { SessionExpiredState } from '@/components/states/States';
 import type { CursorPage, ReadState } from '@/lib/api/read-operation';
 import { useSearchRequest, type SearchPhase } from '@/lib/api/use-search-request';
 import type { Messages } from '@/i18n/get-messages';
@@ -73,14 +72,15 @@ import {
  * the wait for somebody who has already decided, and it re-issues after a
  * failure — which is what makes it usable as a retry. Enter does the same.
  *
- * ## The failure states are the shared ones, with one deliberate exception
+ * ## The failure states are the shared ones, and there is no longer an exception
  *
- * `SearchStates` renders the six non-answer phases, so a refusal cannot collapse
- * into "no matches" here any more than it can on a search screen. The exception
- * is an ENDED SESSION: the hook reports it as `failed` carrying
- * `state.expired.message`, and rendering that as "Something went wrong" with a
- * retry would offer a button that cannot work. It is rendered as itself, with no
- * retry, exactly as it was before.
+ * `SearchStates` renders every non-answer phase, so a refusal cannot collapse
+ * into "no matches" here any more than it can on a search screen. This control
+ * used to carry one special case of its own — an ended session, which the hook
+ * reported as `failed` carrying `state.expired.message` and which
+ * `SearchStates` rendered as a generic fault with a retry that could not work.
+ * The hook publishes `expired` as its own phase now and `SearchStates` renders
+ * it as itself, so the special case is gone rather than duplicated.
  *
  * ## It is not a `<form>`
  *
@@ -124,17 +124,17 @@ export function toSelectedCustomer(hit: CustomerSearchHit): SelectedCustomer {
 /** A page of matches, or the reason there is none. */
 function Results({
   messages,
+  locale,
   phase,
-  error,
   rows,
   correlationId,
   onRetry,
   onChoose,
 }: {
   readonly messages: Messages;
+  /** Carried through so the ended-session state can offer the way back. */
+  readonly locale: Locale;
   readonly phase: SearchPhase;
-  /** The failure's own translation key, which is how an ended session is told apart. */
-  readonly error: string | null;
   readonly rows: readonly CustomerSearchHit[];
   readonly correlationId: string | null;
   readonly onRetry: () => void;
@@ -150,17 +150,11 @@ function Results({
     </button>
   );
 
-  if (phase === 'failed' && error === 'state.expired.message') {
-    // No Retry. Re-issuing the same request with the same dead session fails
-    // identically, and offering the button suggests otherwise. `SearchStates`
-    // folds an ended session into the generic fault, which is the one place its
-    // vocabulary is coarser than this control needs.
-    return <SessionExpiredState messages={messages} />;
-  }
   if (phase !== 'ready') {
     return (
       <SearchStates
         messages={messages}
+        locale={locale}
         phase={phase}
         correlationId={correlationId}
         {...(phase === 'unavailable' || phase === 'failed' ? { retry } : {})}
@@ -475,8 +469,8 @@ export function CustomerSelector({
         <div aria-live="polite" className="flex flex-col gap-3">
           <Results
             messages={messages}
+            locale={locale}
             phase={search.phase}
-            error={search.error}
             rows={search.rows}
             correlationId={search.correlationId}
             onRetry={search.submit}

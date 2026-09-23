@@ -77,6 +77,8 @@ function listRow(over: Partial<ReceptionListEntry> = {}): ReceptionListEntry {
     custodyAcceptedAt: '2026-08-13T08:00:00.000Z',
     custodyReleasedAt: null,
     recordVersion: 1,
+    // Published since the board-list contracts: the party who brought the car,
+    // and the plate it carries today. Both nullable, both really null here.
     customer: null,
     plate: null,
     ...over,

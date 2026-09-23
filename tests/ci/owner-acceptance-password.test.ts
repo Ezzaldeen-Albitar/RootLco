@@ -25,11 +25,11 @@ import {
   type Server,
   type Socket,
 } from 'node:net';
-import { once } from 'node:events';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { EventEmitter, once } from 'node:events';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, unlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { dirname, join } from 'node:path';
+import { describe, expect, it, vi } from 'vitest';
 import {
   PASSWORD_ALPHABET,
   PASSWORD_GROUPS,
@@ -39,16 +39,35 @@ import {
   reconstructPassword,
 } from '../../scripts/dev/owner-acceptance/context.mjs';
 import {
+  DEFAULT_READ_TIMEOUT_MS,
   IMPLICIT_TLS_PORT,
   LocalRefusal,
+  MAX_READ_TIMEOUT_SECONDS,
+  MIN_READ_TIMEOUT_SECONDS,
+  NOT_PROVEN_LINES,
+  RelayConnectionError,
+  STAGES,
   STARTTLS_PORT,
   SmtpSession,
   advertisesStartTls,
+  armConnectTimeout,
   authenticate,
+  defaultEnvFiles,
+  describeAuthMechanisms,
+  envFileNames,
+  loadEnvironment,
+  mailboxSecret,
+  maskMailbox,
   openRelay,
+  parseArguments,
   parseAuthMechanisms,
+  parseDotenv,
+  readConfigSmtpPort,
+  redactRelayText,
+  requiredNamesFor,
   run,
   tlsModeForPort,
+  whenConnected,
 } from '../../scripts/dev/check-smtp.mjs';
 
 const VALID = 'ABCDE-fghij-23456-KLMNP';
@@ -179,7 +198,15 @@ interface FakeRelay {
   close(): Promise<void>;
 }
 
-async function startFakeRelay({ offerStartTls }: { offerStartTls: boolean }): Promise<FakeRelay> {
+async function startFakeRelay({
+  offerStartTls,
+  authReply = '235 2.7.0 Accepted',
+  authLine = '250 AUTH LOGIN PLAIN',
+}: {
+  offerStartTls: boolean;
+  authReply?: string;
+  authLine?: string;
+}): Promise<FakeRelay> {
   const lines: string[] = [];
   const sockets = new Set<Socket>();
 
@@ -212,7 +239,7 @@ async function startFakeRelay({ offerStartTls }: { offerStartTls: boolean }): Pr
       }
       if (authStep === 2) {
         authStep = 0;
-        socket.write('235 2.7.0 Accepted\r\n');
+        socket.write(`${authReply}\r\n`);
         return;
       }
 
@@ -220,7 +247,7 @@ async function startFakeRelay({ offerStartTls }: { offerStartTls: boolean }): Pr
       if (upper.startsWith('EHLO')) {
         const reply = ['250-fake relay'];
         if (offerStartTls && !upgraded) reply.push('250-STARTTLS');
-        reply.push('250 AUTH LOGIN PLAIN');
+        reply.push(authLine);
         socket.write(`${reply.join('\r\n')}\r\n`);
         return;
       }
@@ -577,7 +604,7 @@ describe('check-smtp credential handling', () => {
     expect(printed).not.toContain(AWKWARD_MAILBOX_SECRET);
     expect(printed).not.toContain(Buffer.from(AWKWARD_MAILBOX_SECRET, 'utf8').toString('base64'));
     expect(printed).not.toContain('AUTH LOGIN');
-    expect(printed).toContain('AUTH     : accepted');
+    expect(printed).toMatch(/Stage 3 {2}authentication\s+: PASS/);
   });
 
   it('has no default recipient', async () => {
@@ -613,10 +640,13 @@ describe('check-smtp credential handling', () => {
 /**
  * The `.env` path, which is the path the Owner is actually told to use. The
  * cases above supply the six names through the process environment, which is
- * the branch that cannot transform anything; the parser is where a well-meaning
- * `.trim()` would live, so it gets its own cases against a real file on disk.
+ * the branch that cannot transform anything. A file is different: the pinned
+ * Supabase CLI parses it by godotenv rules before the auth container ever sees
+ * a value, and the script must hand the relay exactly that value — not the line
+ * as typed — or every stage it runs measures a password the container will
+ * never send.
  */
-describe('check-smtp reads the untracked .env verbatim', () => {
+describe('check-smtp reads .env by the CLI rules', () => {
   const envFileBody = (passwordLine: string) =>
     [
       '# A comment line, which must be skipped rather than parsed.',
@@ -654,38 +684,96 @@ describe('check-smtp reads the untracked .env verbatim', () => {
     }
   }
 
-  it('keeps the spaces at both ends of an unquoted value', async () => {
-    // The failure this refuses: a parser that trims the line would authenticate
-    // with a password the provider never issued, and the relay's "no" would be
-    // read as a wrong password rather than as a wrong parser.
-    const { lines } = await authenticateFromFile(
-      envFileBody(`SMTP_PASS=${AWKWARD_MAILBOX_SECRET}`)
-    );
-    expect(passwordOnTheWire(lines)).toBe(AWKWARD_MAILBOX_SECRET);
+  it('takes a single-quoted value literally, "#" and "$" included', async () => {
+    const literal = ' p#ss $HOME ${SMTP_USER} \\n end ';
+    const { lines } = await authenticateFromFile(envFileBody(`SMTP_PASS='${literal}'`));
+    expect(passwordOnTheWire(lines)).toBe(literal);
   });
 
-  it('removes one pair of surrounding quotes and nothing else', async () => {
-    // Quoting is how a value whose own edges are spaces is written down
-    // legibly. It must not change the value.
+  it('trims an unquoted value and cuts it at an inline comment, as the CLI does', async () => {
+    const { lines } = await authenticateFromFile(
+      envFileBody('SMTP_PASS=   pa55 word   # the rest is a comment')
+    );
+    expect(passwordOnTheWire(lines)).toBe('pa55 word');
+  });
+
+  it('processes the escapes of a double-quoted value, as the CLI does', async () => {
+    // On disk: SMTP_PASS="a\"b\\c\$D e"  ->  a"b\c$D e
+    const { lines } = await authenticateFromFile(envFileBody('SMTP_PASS="a\\"b\\\\c\\$D e"'));
+    expect(passwordOnTheWire(lines)).toBe('a"b\\c$D e');
+  });
+
+  it('keeps the spaces at both ends of a double-quoted value', async () => {
     const { lines } = await authenticateFromFile(
       envFileBody(`SMTP_PASS="${AWKWARD_MAILBOX_SECRET}"`)
     );
     expect(passwordOnTheWire(lines)).toBe(AWKWARD_MAILBOX_SECRET);
   });
 
-  it('keeps a value that itself contains the comment character', async () => {
-    const withHash = 'pa55 #not-a-comment# word';
-    const { lines } = await authenticateFromFile(envFileBody(`SMTP_PASS=${withHash}`));
-    expect(passwordOnTheWire(lines)).toBe(withHash);
-  });
-
   it('lets an exported value win over the file', async () => {
     const exported = '  exported-value  ';
-    const { lines } = await authenticateFromFile(
-      envFileBody(`SMTP_PASS=${AWKWARD_MAILBOX_SECRET}`),
-      { SMTP_PASS: exported }
-    );
+    const { lines } = await authenticateFromFile(envFileBody(`SMTP_PASS='file-value'`), {
+      SMTP_PASS: exported,
+    });
     expect(passwordOnTheWire(lines)).toBe(exported);
+  });
+
+  it('parses each godotenv case the way the pinned CLI does', () => {
+    const { values } = parseDotenv(
+      [
+        'A=1',
+        "SINGLE='x #y $A ${A}'",
+        'UNQUOTED=   a b   # comment',
+        'EXPANDED=$A-${A}',
+        'DOUBLE="q\\"r\\$A$A"',
+        "TRAILING='kept'discarded",
+        'export EXPORTED=yes',
+        '',
+      ].join('\r\n')
+    );
+    expect(values.SINGLE).toBe('x #y $A ${A}');
+    expect(values.UNQUOTED).toBe('a b');
+    expect(values.EXPANDED).toBe('1-1');
+    expect(values.DOUBLE).toBe('q"r$A1');
+    expect(values.TRAILING).toBe('kept');
+    expect(values.EXPORTED).toBe('yes');
+  });
+
+  it('refuses a file the CLI would refuse, without echoing its text', () => {
+    expect(() => parseDotenv("OK=1\nSMTP_PASS='never closed\n")).toThrow(
+      /^unterminated quoted value on line 2$/
+    );
+    expect(() => parseDotenv('OK=1\nnot a statement\n')).toThrow(
+      /^unexpected character in a variable name on line 2$/
+    );
+  });
+
+  it('warns about an unquoted value the CLI would change, naming it but never printing it', async () => {
+    const unquoted = ' ab#cd $EFG ';
+    const file = withEnvFile(
+      envFileBody(`SMTP_PASS=${unquoted}`).replace(
+        `SMTP_PORT=${STARTTLS_PORT}`,
+        `SMTP_PORT=${IMPLICIT_TLS_PORT}`
+      )
+    );
+    const out = collector();
+    const err = collector();
+    try {
+      await run({
+        argv: ['--settings'],
+        env: {},
+        envFile: file.path,
+        stdout: out.write,
+        stderr: err.write,
+      });
+    } finally {
+      file.remove();
+    }
+    const printed = out.text() + err.text();
+    expect(printed).toMatch(/WARNING: SMTP_PASS .* is unquoted and contains/);
+    expect(printed).toContain('write it in single quotes');
+    expect(printed).not.toContain('ab#cd');
+    expect(printed).not.toContain('$EFG');
   });
 });
 
@@ -764,5 +852,991 @@ describe('check-smtp on port 465', () => {
 
     expect(upgrade.called).toBe(false);
     expect(relay.lines).toEqual(['EHLO localhost', 'QUIT']);
+  });
+});
+
+describe('check-smtp settings compare SMTP_PORT with supabase/config.toml', () => {
+  it('reads the literal port of [auth.email.smtp] and nothing else', () => {
+    const toml = [
+      '[local_smtp]',
+      'port = 54324',
+      '[auth.email.smtp]',
+      'enabled = false',
+      'port = 465 # a trailing comment',
+      '[auth.email.template.invite]',
+      'port = 1',
+    ].join('\n');
+    expect(readConfigSmtpPort(toml)).toBe(465);
+    expect(readConfigSmtpPort('[auth.email.smtp]\nenabled = false\n')).toBeNull();
+    // The committed file is the one the container reads.
+    expect(
+      readConfigSmtpPort(
+        readFileSync(join(__dirname, '..', '..', 'supabase', 'config.toml'), 'utf8')
+      )
+    ).toBe(IMPLICIT_TLS_PORT);
+  });
+
+  it('refuses an SMTP_PORT that differs from the config.toml port', async () => {
+    const out = collector();
+    const err = collector();
+    const code = await run({
+      argv: ['--settings'],
+      // 587 is a port the transport rules recognise, and still NOT ready,
+      // because the committed config gives the container 465.
+      env: { ...RELAY_ENVIRONMENT, SMTP_PORT: String(STARTTLS_PORT) },
+      envFile: NO_ENV_FILE,
+      stdout: out.write,
+      stderr: err.write,
+    });
+    expect(code).toBe(1);
+    expect(out.text()).toMatch(/SMTP_PORT is 465 or 587\s+: true/);
+    expect(out.text()).toMatch(/SMTP_PORT equals the config.toml port\s+: false/);
+    expect(out.text()).toContain('PORT MISMATCH');
+    expect(out.text()).toContain('not SMTP_PORT');
+    expect(out.text()).toContain('Ready to activate: false');
+    expect(out.text()).toMatch(/Stage 1 {2}settings \(local, no network\)\s+: FAIL/);
+  });
+
+  it('refuses a CLI override that would bypass [auth.email.smtp]', async () => {
+    const out = collector();
+    const code = await run({
+      argv: ['--settings'],
+      env: {
+        ...RELAY_ENVIRONMENT,
+        SMTP_PORT: String(IMPLICIT_TLS_PORT),
+        SUPABASE_AUTH_EMAIL_SMTP_PORT: String(STARTTLS_PORT),
+      },
+      envFile: NO_ENV_FILE,
+      stdout: out.write,
+      stderr: collector().write,
+    });
+    expect(code).toBe(1);
+    expect(out.text()).toContain('OVERRIDE: SUPABASE_AUTH_EMAIL_SMTP_PORT is set');
+  });
+});
+
+describe('check-smtp reports the four delivery stages separately', () => {
+  it('numbers and labels the stages 1 to 4, one flag each', () => {
+    expect(STAGES.map((stage) => [stage.number, stage.flag, stage.label])).toEqual([
+      [1, '--settings', 'settings (local, no network)'],
+      [2, '--probe', 'relay connection (TCP and TLS)'],
+      [3, '--authenticate', 'authentication'],
+      [4, '--send --to <address>', 'message acceptance by the relay'],
+    ]);
+  });
+
+  it('prints every stage line and both NOT PROVEN lines in every mode', async () => {
+    expect(NOT_PROVEN_LINES).toHaveLength(2);
+    expect(NOT_PROVEN_LINES[0]).toMatch(/^NOT PROVEN BY THIS TOOL: inbox receipt\./);
+    expect(NOT_PROVEN_LINES[1]).toMatch(
+      /^NOT PROVEN BY THIS TOOL: the application's own recovery and invitation emails through the auth service\./
+    );
+
+    const expectations: Record<string, Record<number, RegExp>> = {
+      '--settings': { 1: /PASS/, 2: /NOT RUN/, 3: /NOT RUN/, 4: /NOT RUN/ },
+      '--probe': { 1: /NOT RUN/, 2: /PASS/, 3: /NOT RUN/, 4: /NOT RUN/ },
+      '--authenticate': { 1: /NOT RUN/, 2: /PASS/, 3: /PASS/, 4: /NOT RUN/ },
+      '--send': { 1: /NOT RUN/, 2: /PASS/, 3: /PASS/, 4: /PASS/ },
+    };
+    for (const [flag, verdicts] of Object.entries(expectations)) {
+      const relay = await startFakeRelay({ offerStartTls: false });
+      const out = collector();
+      const err = collector();
+      try {
+        const code = await run({
+          argv: flag === '--send' ? ['--send', '--to', 'recipient@example.com'] : [flag],
+          env: { ...RELAY_ENVIRONMENT, SMTP_PORT: String(IMPLICIT_TLS_PORT) },
+          envFile: NO_ENV_FILE,
+          transport: transportFor(relay, { called: false }),
+          stdout: out.write,
+          stderr: err.write,
+        });
+        expect(code, flag).toBe(0);
+        expect(err.text(), flag).toBe('');
+      } finally {
+        await relay.close();
+      }
+      for (const stage of STAGES) {
+        const line = out
+          .text()
+          .split('\n')
+          .find((candidate) => candidate.startsWith(`  Stage ${stage.number}  ${stage.label}`));
+        expect(line, `${flag} stage ${stage.number}`).toBeDefined();
+        // A stage with no expectation matches nothing, so it cannot pass silently.
+        expect(line, `${flag} stage ${stage.number}`).toMatch(verdicts[stage.number] ?? /^$/);
+      }
+      for (const notProven of NOT_PROVEN_LINES) expect(out.text(), flag).toContain(notProven);
+    }
+  });
+});
+
+describe('check-smtp never prints what an AUTH refusal says', () => {
+  const TOKEN = Buffer.from('challenge-echo-with-a-secret-in-it', 'utf8').toString('base64');
+
+  it('reports only the status codes and a fixed classification', async () => {
+    const relay = await startFakeRelay({
+      offerStartTls: true,
+      authReply: `535 5.7.8 Error: authentication failed: ${TOKEN} for ${RELAY_LOGIN}`,
+    });
+    const out = collector();
+    const err = collector();
+    let code: number;
+    try {
+      code = await run({
+        argv: ['--send', '--to', 'recipient@example.com'],
+        env: { ...RELAY_ENVIRONMENT, SMTP_PORT: String(STARTTLS_PORT) },
+        envFile: NO_ENV_FILE,
+        transport: transportFor(relay, { called: false }),
+        stdout: out.write,
+        stderr: err.write,
+      });
+    } finally {
+      await relay.close();
+    }
+    expect(code).toBe(1);
+
+    const printed = out.text() + err.text();
+    expect(printed).toContain('credentials rejected');
+    expect(printed).toContain('SMTP 535');
+    expect(printed).toContain('enhanced 5.7.8');
+    expect(printed).not.toContain(TOKEN);
+    expect(printed).not.toContain('authentication failed');
+    expect(printed).not.toContain(RELAY_LOGIN);
+    expect(printed).not.toContain(AWKWARD_MAILBOX_SECRET);
+    expect(printed).toMatch(/Stage 3 {2}authentication\s+: FAIL \(credentials rejected/);
+    expect(printed).toMatch(/Stage 4 {2}message acceptance by the relay\s+: NOT REACHED/);
+    // No envelope follows a refused AUTH.
+    expect(relay.lines.some((line) => line.toUpperCase().startsWith('MAIL FROM'))).toBe(false);
+  });
+
+  it('redacts base64-looking tokens and the configured credentials from relay text', () => {
+    const redacted = redactRelayText(
+      `250 2.0.0 queued as ${TOKEN}; user ${RELAY_LOGIN}; pass${AWKWARD_MAILBOX_SECRET}`,
+      [AWKWARD_MAILBOX_SECRET, RELAY_LOGIN]
+    );
+    expect(redacted).not.toContain(TOKEN);
+    expect(redacted).not.toContain(RELAY_LOGIN);
+    expect(redacted).not.toContain(AWKWARD_MAILBOX_SECRET);
+    expect(redacted).toContain('250 2.0.0 queued as [redacted]');
+  });
+});
+
+describe('the documented relay commands name no real recipient', () => {
+  it('uses a placeholder wherever --to appears in the docs, the config and the script', () => {
+    const root = join(__dirname, '..', '..');
+    const sources = [
+      'docs/platform/environment-configuration.md',
+      'supabase/config.toml',
+      'scripts/dev/check-smtp.mjs',
+    ];
+    let seen = 0;
+    for (const source of sources) {
+      const text = readFileSync(join(root, source), 'utf8');
+      for (const match of text.matchAll(/--send --to[ =](\S+)/g)) {
+        seen += 1;
+        const recipient = (match[1] ?? '').replace(/[`'",.;)]+$/, '');
+        expect(recipient, `${source}: ${match[0]}`).toMatch(/^<[a-z-]+>$/);
+        expect(recipient, `${source}: ${match[0]}`).not.toContain('@');
+      }
+    }
+    expect(seen).toBeGreaterThan(0);
+  });
+});
+
+/**
+ * A throwaway checkout root holding only the `.env` files a case names, so the
+ * CLI's precedence rules can be exercised without reading any real file. Every
+ * value is a fake, and the environment is passed in rather than taken from
+ * `process.env`.
+ */
+function withEnvTree(files: Record<string, string>): { root: string; remove: () => void } {
+  const root = mkdtempSync(join(tmpdir(), 'rootlco-check-smtp-tree-'));
+  for (const [relativePath, body] of Object.entries(files)) {
+    const path = join(root, relativePath);
+    mkdirSync(dirname(path), { recursive: true });
+    writeFileSync(path, body, 'utf8');
+  }
+  return { root, remove: () => rmSync(root, { recursive: true, force: true }) };
+}
+
+describe('check-smtp resolves each name by the CLI precedence', () => {
+  it('consults supabase/ before the root, and each directory in the documented order', () => {
+    expect(envFileNames(undefined)).toEqual([
+      '.env.development.local',
+      '.env.local',
+      '.env.development',
+      '.env',
+    ]);
+    const relativeOrder = [
+      ...envFileNames(undefined).map((name) => join('supabase', name)),
+      ...envFileNames(undefined),
+    ];
+    const tree = withEnvTree(
+      Object.fromEntries(
+        relativeOrder.map((relativePath, index) => [relativePath, `SMTP_HOST=host-${index}\n`])
+      )
+    );
+    try {
+      const files = defaultEnvFiles({ root: tree.root });
+      expect(files).toEqual(relativeOrder.map((relativePath) => join(tree.root, relativePath)));
+      // Remove the winner each time: the next file in the order must take over,
+      // which pins the whole order, supabase/.env.local ahead of the root .env included.
+      for (const [index, file] of files.entries()) {
+        const loaded = loadEnvironment({ env: {}, envFiles: files });
+        expect(loaded.values.SMTP_HOST, relativeOrder[index]).toBe(`host-${index}`);
+        expect(loaded.sources.SMTP_HOST, relativeOrder[index]).toBe(file);
+        unlinkSync(file);
+      }
+      expect(loadEnvironment({ env: {}, envFiles: files }).values.SMTP_HOST).toBeUndefined();
+    } finally {
+      tree.remove();
+    }
+  });
+
+  it('takes supabase/.env.local over the root .env when both define a name', () => {
+    const tree = withEnvTree({
+      'supabase/.env.local': 'SMTP_HOST=from-supabase-local\n',
+      '.env': 'SMTP_HOST=from-root\nSMTP_PORT=465\n',
+    });
+    try {
+      const loaded = loadEnvironment({ env: {}, root: tree.root });
+      expect(loaded.values.SMTP_HOST).toBe('from-supabase-local');
+      expect(loaded.sources.SMTP_HOST).toBe(join(tree.root, 'supabase', '.env.local'));
+      // A name only the later file defines still comes from it.
+      expect(loaded.values.SMTP_PORT).toBe('465');
+    } finally {
+      tree.remove();
+    }
+  });
+
+  it('lets an exported EMPTY value hide the file value, leaving the name unset', () => {
+    const tree = withEnvTree({ '.env': 'SMTP_HOST=from-file\nSMTP_USER=file-user\n' });
+    try {
+      const loaded = loadEnvironment({ env: { SMTP_HOST: '' }, root: tree.root });
+      expect(loaded.values.SMTP_HOST).toBeUndefined();
+      expect(loaded.sources.SMTP_HOST).toBe('process environment');
+      // A name that is not exported at all still falls through to the file.
+      expect(loaded.values.SMTP_USER).toBe('file-user');
+    } finally {
+      tree.remove();
+    }
+  });
+
+  it('reads the SUPABASE_ENV file names instead of the development ones', async () => {
+    expect(envFileNames('production')).toEqual([
+      '.env.production.local',
+      '.env.local',
+      '.env.production',
+      '.env',
+    ]);
+    const tree = withEnvTree({
+      'supabase/.env.production': 'SMTP_HOST=from-production\n',
+      'supabase/.env.development': 'SMTP_HOST=from-development\n',
+    });
+    try {
+      expect(loadEnvironment({ env: {}, root: tree.root }).values.SMTP_HOST).toBe(
+        'from-development'
+      );
+      expect(
+        loadEnvironment({ env: { SUPABASE_ENV: 'production' }, root: tree.root }).values.SMTP_HOST
+      ).toBe('from-production');
+
+      // run() takes SUPABASE_ENV from the environment it is given.
+      const out = collector();
+      await run({
+        argv: ['--settings'],
+        env: { SUPABASE_ENV: 'production' },
+        envRoot: tree.root,
+        stdout: out.write,
+        stderr: collector().write,
+      });
+      expect(out.text()).toMatch(/SMTP_HOST\s+present: true\s+\(from [^)]*\.env\.production\)/);
+      expect(out.text()).not.toContain('from-production');
+    } finally {
+      tree.remove();
+    }
+  });
+
+  it('skips .env.local when SUPABASE_ENV is test, as the script and the CLI do', () => {
+    expect(envFileNames('test')).toEqual(['.env.test.local', '.env.test', '.env']);
+    const tree = withEnvTree({
+      'supabase/.env.local': 'SMTP_HOST=from-local\n',
+      '.env': 'SMTP_HOST=from-root\n',
+    });
+    try {
+      expect(loadEnvironment({ env: {}, root: tree.root }).values.SMTP_HOST).toBe('from-local');
+      expect(
+        loadEnvironment({ env: { SUPABASE_ENV: 'test' }, root: tree.root }).values.SMTP_HOST
+      ).toBe('from-root');
+    } finally {
+      tree.remove();
+    }
+  });
+});
+
+describe('check-smtp parser edge cases, pinned to the ported CLI rules', () => {
+  it('expands a name defined LATER in the file to empty', () => {
+    const { values } = parseDotenv(
+      ['EARLY=$LATER', 'BRACED=a${LATER}b', 'LATER=set', ''].join('\n')
+    );
+    expect(values.EARLY).toBe('');
+    expect(values.BRACED).toBe('ab');
+    expect(values.LATER).toBe('set');
+  });
+
+  it('cuts an unquoted value at a "#" preceded by a tab or a space, and only there', () => {
+    const { values } = parseDotenv(
+      [
+        'TAB=value\t# a comment after a tab',
+        'NOSPACE=a#b',
+        'LAST=a #b #c',
+        'TABLAST=x\t#y\t#z',
+        '',
+      ].join('\n')
+    );
+    expect(values.TAB).toBe('value');
+    expect(values.NOSPACE).toBe('a#b');
+    // The port cuts at the LAST " #" or tab-"#", as the CLI's does.
+    expect(values.LAST).toBe('a #b');
+    expect(values.TABLAST).toBe('x\t#y');
+  });
+
+  it('refuses at stage 1 a SUPABASE_AUTH_EMAIL_SMTP_* override supplied by a FILE', async () => {
+    const overrideValue = 'override-host.example.test';
+    const file = withEnvFile(
+      [
+        'SMTP_HOST=127.0.0.1',
+        `SMTP_PORT=${IMPLICIT_TLS_PORT}`,
+        `SMTP_USER=${RELAY_LOGIN}`,
+        "SMTP_PASS='file-pass'",
+        `SMTP_ADMIN_EMAIL=${RELAY_SENDER}`,
+        'SMTP_SENDER_NAME=RootLco',
+        `SUPABASE_AUTH_EMAIL_SMTP_HOST=${overrideValue}`,
+        '',
+      ].join('\n')
+    );
+    const out = collector();
+    const err = collector();
+    let code: number;
+    try {
+      code = await run({
+        argv: ['--settings'],
+        env: {},
+        envFile: file.path,
+        stdout: out.write,
+        stderr: err.write,
+      });
+    } finally {
+      file.remove();
+    }
+    expect(code).toBe(1);
+    expect(out.text()).toContain('OVERRIDE: SUPABASE_AUTH_EMAIL_SMTP_HOST is set');
+    expect(out.text()).toMatch(/No SUPABASE_AUTH_EMAIL_SMTP_\* override\s+: false/);
+    expect(out.text()).toMatch(/Stage 1 {2}settings \(local, no network\)\s+: FAIL/);
+    expect(out.text() + err.text()).not.toContain(overrideValue);
+  });
+});
+
+describe('check-smtp prints only allow-listed AUTH mechanism names', () => {
+  const TOKEN = Buffer.from('an-echoed-challenge-or-secret', 'utf8').toString('base64');
+
+  it('keeps known SASL names and counts every other token', () => {
+    expect(
+      describeAuthMechanisms(['login', 'PLAIN', 'X-VENDOR-EXTENSION', TOKEN, RELAY_LOGIN])
+    ).toBe('LOGIN PLAIN (3 unrecognised tokens not shown)');
+    expect(describeAuthMechanisms(['XOAUTH2', 'SCRAM-SHA-256', 'CRAM-MD5'])).toBe(
+      'XOAUTH2 SCRAM-SHA-256 CRAM-MD5'
+    );
+    expect(describeAuthMechanisms([])).toBe('(none advertised)');
+    expect(describeAuthMechanisms(['WEIRD'])).toBe(
+      '(no recognised mechanism) (1 unrecognised token not shown)'
+    );
+  });
+
+  it('never echoes an unrecognised token from a live EHLO reply', async () => {
+    const relay = await startFakeRelay({
+      offerStartTls: false,
+      authLine: `250 AUTH LOGIN ${TOKEN} XOAUTH2 ${RELAY_LOGIN}`,
+    });
+    const out = collector();
+    const err = collector();
+    try {
+      const code = await run({
+        argv: ['--probe'],
+        env: { ...RELAY_ENVIRONMENT, SMTP_PORT: String(IMPLICIT_TLS_PORT) },
+        envFile: NO_ENV_FILE,
+        transport: transportFor(relay, { called: false }),
+        stdout: out.write,
+        stderr: err.write,
+      });
+      expect(code).toBe(0);
+    } finally {
+      await relay.close();
+    }
+    expect(out.text()).toContain('AUTH offered: LOGIN XOAUTH2 (2 unrecognised tokens not shown)');
+    const printed = out.text() + err.text();
+    expect(printed).not.toContain(TOKEN);
+    expect(printed).not.toContain(RELAY_LOGIN);
+  });
+});
+
+describe('check-smtp masks mailbox addresses in its output', () => {
+  it('keeps the first character of the local part and the domain', () => {
+    expect(maskMailbox('owner@example.com')).toBe('o***@example.com');
+    expect(maskMailbox('a.b@sub.example.com')).toBe('a***@sub.example.com');
+    expect(maskMailbox('not-a-mailbox')).toBe('n***');
+    expect(maskMailbox('@example.com')).toBe('@***');
+    expect(maskMailbox('')).toBe('(not set)');
+    expect(maskMailbox(undefined)).toBe('(not set)');
+  });
+
+  it('prints neither the sender, the login nor the recipient in clear during --send', async () => {
+    const recipient = 'recipient@example.com';
+    const relay = await startFakeRelay({ offerStartTls: true });
+    const out = collector();
+    const err = collector();
+    try {
+      const code = await run({
+        argv: ['--send', '--to', recipient],
+        env: { ...RELAY_ENVIRONMENT, SMTP_PORT: String(STARTTLS_PORT) },
+        envFile: NO_ENV_FILE,
+        transport: transportFor(relay, { called: false }),
+        stdout: out.write,
+        stderr: err.write,
+      });
+      expect(code).toBe(0);
+    } finally {
+      await relay.close();
+    }
+    const printed = out.text() + err.text();
+    expect(out.text()).toContain('Sender   : n***@example.com');
+    expect(out.text()).toContain('Recipient: r***@example.com');
+    expect(printed).not.toContain(RELAY_SENDER);
+    expect(printed).not.toContain(RELAY_LOGIN);
+    expect(printed).not.toContain(recipient);
+    // The wire still carries the real addresses; only the output is masked.
+    expect(relay.lines).toContain(`MAIL FROM:<${RELAY_SENDER}>`);
+    expect(relay.lines).toContain(`RCPT TO:<${recipient}>`);
+  });
+});
+
+/**
+ * A relay that does whatever `onLine` says with each line it is sent, after a
+ * greeting. Used for the connection that closes or goes silent mid-session.
+ */
+async function startScriptedRelay(
+  onLine: (line: string, socket: Socket) => void
+): Promise<FakeRelay> {
+  const lines: string[] = [];
+  const sockets = new Set<Socket>();
+  const server: Server = createServer((socket) => {
+    sockets.add(socket);
+    socket.on('close', () => sockets.delete(socket));
+    socket.on('error', () => sockets.delete(socket));
+    socket.setEncoding('utf8');
+    let buffer = '';
+    socket.on('data', (chunk: string) => {
+      buffer += chunk;
+      for (let at = buffer.indexOf('\r\n'); at !== -1; at = buffer.indexOf('\r\n')) {
+        const line = buffer.slice(0, at);
+        buffer = buffer.slice(at + 2);
+        lines.push(line);
+        onLine(line, socket);
+      }
+    });
+    socket.write('220 scripted relay ESMTP\r\n');
+  });
+  server.listen(0, '127.0.0.1');
+  await once(server, 'listening');
+  return {
+    port: (server.address() as AddressInfo).port,
+    lines,
+    async close() {
+      for (const socket of sockets) socket.destroy();
+      server.close();
+      await once(server, 'close');
+    },
+  };
+}
+
+/** Only the two names a probe needs. */
+const PROBE_ONLY_ENVIRONMENT = { SMTP_HOST: '127.0.0.1', SMTP_PORT: String(STARTTLS_PORT) };
+
+describe('check-smtp never waits forever on the relay', () => {
+  it('fails stage 2 with a clear line when the relay closes the connection', async () => {
+    const relay = await startScriptedRelay((line, socket) => {
+      if (line.toUpperCase().startsWith('EHLO')) socket.end();
+    });
+    const out = collector();
+    const err = collector();
+    const started = Date.now();
+    let code: number;
+    try {
+      code = await run({
+        argv: ['--probe'],
+        env: PROBE_ONLY_ENVIRONMENT,
+        envFile: NO_ENV_FILE,
+        transport: transportFor(relay, { called: false }),
+        stdout: out.write,
+        stderr: err.write,
+      });
+    } finally {
+      await relay.close();
+    }
+    expect(code).toBe(1);
+    expect(Date.now() - started).toBeLessThan(DEFAULT_READ_TIMEOUT_MS);
+    expect(err.text()).toContain(
+      'Stage 2 relay connection (TCP and TLS): FAILED - connection closed by the relay'
+    );
+    expect(out.text()).toMatch(
+      /Stage 2 {2}relay connection \(TCP and TLS\)\s+: FAIL \(connection closed by the relay\)/
+    );
+  });
+
+  it('fails stage 3, and marks stage 4 not reached, when the relay closes during AUTH', async () => {
+    const relay = await startScriptedRelay((line, socket) => {
+      const upper = line.toUpperCase();
+      if (upper.startsWith('EHLO')) socket.write('250-scripted relay\r\n250 AUTH LOGIN\r\n');
+      else if (upper.startsWith('AUTH')) socket.end();
+    });
+    const out = collector();
+    let code: number;
+    try {
+      code = await run({
+        argv: ['--send', '--to', 'recipient@example.com'],
+        env: { ...RELAY_ENVIRONMENT, SMTP_PORT: String(IMPLICIT_TLS_PORT) },
+        envFile: NO_ENV_FILE,
+        transport: transportFor(relay, { called: false }),
+        stdout: out.write,
+        stderr: collector().write,
+      });
+    } finally {
+      await relay.close();
+    }
+    expect(code).toBe(1);
+    expect(out.text()).toMatch(/Stage 2 {2}relay connection \(TCP and TLS\)\s+: PASS/);
+    expect(out.text()).toMatch(
+      /Stage 3 {2}authentication\s+: FAIL \(connection closed by the relay\)/
+    );
+    expect(out.text()).toMatch(/Stage 4 {2}message acceptance by the relay\s+: NOT REACHED/);
+  });
+
+  it('fails stage 2 when the relay goes silent, after the per-read limit', async () => {
+    const relay = await startScriptedRelay(() => {
+      // Greets, then never answers anything.
+    });
+    const out = collector();
+    const err = collector();
+    const started = Date.now();
+    let code: number;
+    try {
+      code = await run({
+        argv: ['--probe', '--read-timeout', '1'],
+        env: PROBE_ONLY_ENVIRONMENT,
+        envFile: NO_ENV_FILE,
+        transport: transportFor(relay, { called: false }),
+        stdout: out.write,
+        stderr: err.write,
+      });
+    } finally {
+      await relay.close();
+    }
+    expect(code).toBe(1);
+    expect(Date.now() - started).toBeLessThan(5_000);
+    expect(err.text()).toContain('FAILED - no reply from the relay within 1 s');
+    expect(out.text()).toMatch(
+      /Stage 2 {2}relay connection \(TCP and TLS\)\s+: FAIL \(no reply from the relay within 1 s\)/
+    );
+  });
+
+  it('rejects a pending read on socket end, close and error, and every read after', async () => {
+    class FakeSocket extends EventEmitter {
+      written: string[] = [];
+      destroyed = false;
+      setEncoding() {
+        return this;
+      }
+      write(text: string) {
+        this.written.push(text);
+        return true;
+      }
+      destroy() {
+        this.destroyed = true;
+        return this;
+      }
+    }
+
+    for (const [event, argument, reason] of [
+      ['end', undefined, 'connection closed by the relay'],
+      ['close', false, 'connection closed by the relay'],
+      [
+        'error',
+        Object.assign(new Error('reset by peer'), { code: 'ECONNRESET' }),
+        'connection error (ECONNRESET)',
+      ],
+    ] as const) {
+      const socket = new FakeSocket();
+      const session = new SmtpSession(socket as unknown as Socket, { encrypted: true });
+      const pending = session.read();
+      socket.emit(event, argument);
+      const failure = await pending.then(
+        () => null,
+        (error: unknown) => error
+      );
+      expect(failure, event).toBeInstanceOf(RelayConnectionError);
+      expect((failure as RelayConnectionError).reason, event).toBe(reason);
+      // Nothing more can arrive: the next command fails at once, unsent.
+      await expect(session.send('NOOP'), event).rejects.toBeInstanceOf(RelayConnectionError);
+      expect(socket.written, event).toEqual([]);
+      await session.close();
+      expect(socket.destroyed, event).toBe(true);
+    }
+  });
+
+  it('still delivers a complete reply that arrived before the relay closed', async () => {
+    const socket = new EventEmitter() as EventEmitter & {
+      setEncoding: () => void;
+      write: () => boolean;
+      destroy: () => void;
+    };
+    socket.setEncoding = () => {};
+    socket.write = () => true;
+    socket.destroy = () => {};
+    const session = new SmtpSession(socket as unknown as Socket, { encrypted: true });
+    socket.emit('data', '221 2.0.0 Bye\r\n');
+    socket.emit('end');
+    await expect(session.read()).resolves.toEqual({ code: 221, text: '221 2.0.0 Bye' });
+    await expect(session.read()).rejects.toBeInstanceOf(RelayConnectionError);
+  });
+});
+
+describe('check-smtp argument validation', () => {
+  it('requires only the relay address for --probe, and the credential for the rest', () => {
+    expect(requiredNamesFor('probe')).toEqual(['SMTP_HOST', 'SMTP_PORT']);
+    expect(requiredNamesFor('authenticate')).toEqual([
+      'SMTP_HOST',
+      'SMTP_PORT',
+      'SMTP_USER',
+      'SMTP_PASS',
+      'SMTP_ADMIN_EMAIL',
+    ]);
+    expect(requiredNamesFor('send')).toEqual([
+      'SMTP_HOST',
+      'SMTP_PORT',
+      'SMTP_USER',
+      'SMTP_PASS',
+      'SMTP_ADMIN_EMAIL',
+      'SMTP_SENDER_NAME',
+    ]);
+  });
+
+  it('runs --probe with no SMTP_USER and no SMTP_PASS set', async () => {
+    const relay = await startFakeRelay({ offerStartTls: true });
+    const out = collector();
+    const err = collector();
+    try {
+      const code = await run({
+        argv: ['--probe'],
+        env: PROBE_ONLY_ENVIRONMENT,
+        envFile: NO_ENV_FILE,
+        transport: transportFor(relay, { called: false }),
+        stdout: out.write,
+        stderr: err.write,
+      });
+      expect(err.text()).toBe('');
+      expect(code).toBe(0);
+    } finally {
+      await relay.close();
+    }
+    expect(relay.lines.some((line) => line.toUpperCase().startsWith('AUTH'))).toBe(false);
+  });
+
+  it('refuses --authenticate and --send without the credential, before any socket', async () => {
+    for (const argv of [['--authenticate'], ['--send', '--to', 'recipient@example.com']]) {
+      const out = collector();
+      const err = collector();
+      const code = await run({
+        argv,
+        env: PROBE_ONLY_ENVIRONMENT,
+        envFile: NO_ENV_FILE,
+        transport: {
+          connectPlain: () => Promise.reject(new Error('no socket may be opened')),
+          connectSecure: () => Promise.reject(new Error('no socket may be opened')),
+          upgrade: () => Promise.reject(new Error('no socket may be opened')),
+        },
+        stdout: out.write,
+        stderr: err.write,
+      });
+      expect(code, argv[0]).toBe(1);
+      expect(err.text(), argv[0]).toMatch(/Missing: SMTP_USER, SMTP_PASS, SMTP_ADMIN_EMAIL/);
+      expect(out.text(), argv[0]).toBe('');
+    }
+  });
+
+  it('accepts a --read-timeout from 1 to 3600 seconds and refuses anything else', async () => {
+    expect(parseArguments(['--probe']).readTimeoutMs).toBe(DEFAULT_READ_TIMEOUT_MS);
+    expect(DEFAULT_READ_TIMEOUT_MS).toBe(20_000);
+    expect(MIN_READ_TIMEOUT_SECONDS).toBe(1);
+    expect(MAX_READ_TIMEOUT_SECONDS).toBe(3600);
+    for (const [value, milliseconds] of [
+      ['1', 1_000],
+      ['1.5', 1_500],
+      ['5', 5_000],
+      ['45', 45_000],
+      ['3600', 3_600_000],
+    ] as const) {
+      const parsed = parseArguments(['--probe', '--read-timeout', value]);
+      expect(parsed.readTimeoutRefused, value).toBe(false);
+      expect(parsed.readTimeoutMs, value).toBe(milliseconds);
+    }
+    expect(parseArguments(['--probe', '--read-timeout=3600']).readTimeoutMs).toBe(3_600_000);
+    for (const value of [
+      '0',
+      '0.5',
+      '0.999',
+      '3600.5',
+      '3601',
+      '-1',
+      'abc',
+      'Infinity',
+      'NaN',
+      '1e3',
+      '--probe',
+      '',
+    ]) {
+      expect(parseArguments(['--probe', '--read-timeout', value]).readTimeoutRefused, value).toBe(
+        true
+      );
+    }
+    expect(parseArguments(['--probe', '--read-timeout=3601']).readTimeoutRefused).toBe(true);
+    for (const value of ['0', '3601']) {
+      const out = collector();
+      const err = collector();
+      const code = await run({
+        argv: ['--probe', '--read-timeout', value],
+        env: PROBE_ONLY_ENVIRONMENT,
+        envFile: NO_ENV_FILE,
+        transport: {
+          connectPlain: () => Promise.reject(new Error('no socket may be opened')),
+          connectSecure: () => Promise.reject(new Error('no socket may be opened')),
+          upgrade: () => Promise.reject(new Error('no socket may be opened')),
+        },
+        stdout: out.write,
+        stderr: err.write,
+      });
+      expect(code, value).toBe(2);
+      expect(err.text(), value).toContain(
+        '--read-timeout needs a number of seconds from 1 to 3600.'
+      );
+      expect(out.text(), value).toBe('');
+    }
+  });
+});
+
+/**
+ * A socket whose idle timeout is a real timer, so fake timers can show whether
+ * the connect limit is still live after the connection has opened.
+ */
+class FakeTimedSocket extends EventEmitter {
+  idleTimeouts: number[] = [];
+  destroyed = false;
+  #timer: ReturnType<typeof setTimeout> | undefined;
+  setTimeout(milliseconds: number) {
+    this.idleTimeouts.push(milliseconds);
+    if (this.#timer !== undefined) clearTimeout(this.#timer);
+    this.#timer =
+      milliseconds > 0 ? setTimeout(() => this.emit('timeout'), milliseconds) : undefined;
+    return this;
+  }
+  setEncoding() {
+    return this;
+  }
+  write() {
+    return true;
+  }
+  destroy(error?: Error) {
+    this.destroyed = true;
+    if (this.#timer !== undefined) clearTimeout(this.#timer);
+    if (error !== undefined) this.emit('error', error);
+    this.emit('close');
+    return this;
+  }
+}
+
+describe('check-smtp limits only the connect and the TLS upgrade to 30 s', () => {
+  it('disarms the connect limit once connected, so a read limit above 30 s is honoured', async () => {
+    vi.useFakeTimers();
+    try {
+      const socket = new FakeTimedSocket();
+      let connected = () => {};
+      const opening = whenConnected((onConnected: () => void) => {
+        connected = onConnected;
+        return socket as unknown as Socket;
+      });
+      expect(socket.idleTimeouts).toEqual([30_000]);
+      expect(socket.listenerCount('timeout')).toBe(1);
+      connected();
+      await expect(opening).resolves.toBe(socket);
+      expect(socket.idleTimeouts).toEqual([30_000, 0]);
+      expect(socket.listenerCount('timeout')).toBe(0);
+
+      const session = new SmtpSession(socket as unknown as Socket, {
+        encrypted: true,
+        readTimeoutMs: 45_000,
+      });
+      let settled = false;
+      const outcome = session.read().then(
+        () => null,
+        (error: unknown) => error
+      );
+      void outcome.then(() => {
+        settled = true;
+      });
+      await vi.advanceTimersByTimeAsync(31_000);
+      expect(settled).toBe(false);
+      expect(socket.destroyed).toBe(false);
+      await vi.advanceTimersByTimeAsync(14_000);
+      const failure = await outcome;
+      expect(failure).toBeInstanceOf(RelayConnectionError);
+      expect((failure as RelayConnectionError).reason).toBe('no reply from the relay within 45 s');
+      expect(socket.destroyed).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('disarms the connect limit when the connection fails before it opens', async () => {
+    vi.useFakeTimers();
+    try {
+      const socket = new FakeTimedSocket();
+      const opening = whenConnected(() => socket as unknown as Socket);
+      socket.emit('error', Object.assign(new Error('refused'), { code: 'ECONNREFUSED' }));
+      await expect(opening).rejects.toThrow('refused');
+      expect(socket.idleTimeouts).toEqual([30_000, 0]);
+      expect(socket.listenerCount('timeout')).toBe(0);
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('fails the connect at 30 s, and leaves nothing armed after it fires', async () => {
+    vi.useFakeTimers();
+    try {
+      const socket = new FakeTimedSocket();
+      const outcome = whenConnected(() => socket as unknown as Socket).then(
+        () => null,
+        (error: unknown) => error
+      );
+      await vi.advanceTimersByTimeAsync(29_999);
+      expect(socket.destroyed).toBe(false);
+      await vi.advanceTimersByTimeAsync(1);
+      const failure = await outcome;
+      expect((failure as Error).message).toBe('timed out');
+      expect(socket.destroyed).toBe(true);
+      expect(socket.idleTimeouts.at(-1)).toBe(0);
+      expect(socket.listenerCount('timeout')).toBe(0);
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('returns a disarm that removes both the idle timeout and its listener', () => {
+    vi.useFakeTimers();
+    try {
+      const socket = new FakeTimedSocket();
+      const disarm = armConnectTimeout(socket as unknown as Socket, 30_000);
+      expect(vi.getTimerCount()).toBe(1);
+      disarm();
+      expect(socket.idleTimeouts).toEqual([30_000, 0]);
+      expect(socket.listenerCount('timeout')).toBe(0);
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+describe('check-smtp redacts an echoed mailbox in any letter case', () => {
+  it('matches a mailbox case-insensitively and literally, and a password exactly', () => {
+    const mailbox = 'noreply@example.com';
+    expect(
+      redactRelayText('250 2.1.0 <NOREPLY@EXAMPLE.COM> sender ok', [mailboxSecret(mailbox)])
+    ).toBe('250 2.1.0 <[redacted]> sender ok');
+    expect(redactRelayText('No-Reply is noreply@Example.Com', [mailboxSecret(mailbox)])).toBe(
+      'No-Reply is [redacted]'
+    );
+    // Regular-expression metacharacters in an address are literal.
+    expect(
+      redactRelayText('A+B@EXAMPLE.COM aab@exampleXcom', [mailboxSecret('a+b@example.com')])
+    ).toBe('[redacted] aab@exampleXcom');
+    // A password is case-sensitive: only the exact spelling, and its base64, are redacted.
+    expect(redactRelayText('pw Pw PW cHc=', ['pw'])).toBe('[redacted] Pw PW [redacted]');
+  });
+
+  it('prints no upper-cased echo of the login, the sender or the recipient during --send', async () => {
+    const recipient = 'recipient@example.com';
+    let authStep = 0;
+    let inData = false;
+    const relay = await startScriptedRelay((line, socket) => {
+      if (inData) {
+        if (line === '.') {
+          inData = false;
+          socket.write(`250 2.0.0 queued for ${recipient.toUpperCase()}\r\n`);
+        }
+        return;
+      }
+      if (authStep === 1) {
+        authStep = 2;
+        socket.write('334 UGFzc3dvcmQ6\r\n');
+        return;
+      }
+      if (authStep === 2) {
+        authStep = 0;
+        socket.write('235 2.7.0 Accepted\r\n');
+        return;
+      }
+      const upper = line.toUpperCase();
+      if (upper.startsWith('EHLO')) socket.write('250-scripted relay\r\n250 AUTH LOGIN\r\n');
+      else if (upper.startsWith('AUTH LOGIN')) {
+        authStep = 1;
+        socket.write('334 VXNlcm5hbWU6\r\n');
+      } else if (upper.startsWith('MAIL FROM')) {
+        socket.write(
+          `250 2.1.0 <${RELAY_SENDER.toUpperCase()}> sender ok for ${RELAY_LOGIN.toUpperCase()}\r\n`
+        );
+      } else if (upper.startsWith('RCPT TO')) {
+        socket.write(`250 2.1.5 <${recipient.toUpperCase()}> recipient ok\r\n`);
+      } else if (upper === 'DATA') {
+        inData = true;
+        socket.write('354 go ahead\r\n');
+      } else if (upper === 'QUIT') {
+        socket.write('221 2.0.0 Bye\r\n');
+        socket.end();
+      }
+    });
+    const out = collector();
+    const err = collector();
+    try {
+      const code = await run({
+        argv: ['--send', '--to', recipient],
+        env: { ...RELAY_ENVIRONMENT, SMTP_PORT: String(IMPLICIT_TLS_PORT) },
+        envFile: NO_ENV_FILE,
+        transport: transportFor(relay, { called: false }),
+        stdout: out.write,
+        stderr: err.write,
+      });
+      expect(code).toBe(0);
+    } finally {
+      await relay.close();
+    }
+    const printed = (out.text() + err.text()).toLowerCase();
+    for (const address of [RELAY_SENDER, RELAY_LOGIN, recipient]) {
+      expect(printed, address).not.toContain(address.toLowerCase());
+    }
+    expect(out.text()).toContain('MAIL FROM: 250 2.1.0 <[redacted]> sender ok for [redacted]');
+    expect(out.text()).toContain('RCPT TO  : 250 2.1.5 <[redacted]> recipient ok');
+    expect(out.text()).toContain('ACCEPTED : 250 2.0.0 queued for [redacted]');
   });
 });

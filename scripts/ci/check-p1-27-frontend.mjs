@@ -376,10 +376,9 @@ export const MODULE_DISPOSITION = Object.freeze({
   /** `Icon`, rendered inside P1-27 controls. */
   'apps/web/src/components/primitives': 'in-surface',
   /*
-   * `SearchBox` and `SearchStates` — the one control a screen asks its question
-   * through, and the six things a search can be other than an answer. Both
-   * became visible here when the customer chooser and the two boards adopted
-   * them under the Owner directive (`P1-32-PRE-OD-UX`).
+   * `SearchBox` — the one control the customer and vehicle searches ask
+   * through (P1-32) — and `SearchStates` beside it, which renders the six
+   * things a search can be other than an answer.
    *
    * `in-surface` rather than excluded, and the reason is this gate's own
    * subject matter: the box is where an operator types a name, a phone number,

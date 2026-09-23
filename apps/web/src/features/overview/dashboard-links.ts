@@ -1,5 +1,6 @@
 import type { Locale } from '@/i18n/config';
 import {
+  WORK_ORDER_BOARD_DEFAULT_VIEW,
   WORK_ORDER_STATE_CODE_PATTERN,
   type WorkOrderBoardView,
 } from '@/features/work-orders/work-orders-contract';
@@ -21,7 +22,7 @@ import type { DashboardSummaryCriteria } from './overview-contract';
  * `components/data-table/table-state.ts` states the rule this module obeys: an
  * address may carry WHICH filter is applied and never the VALUE somebody typed,
  * because a URL is written to history, to access logs and to the `Referer`
- * header of every outbound request. A view name is drawn from a list of seven
+ * header of every outbound request. A view name is drawn from a list of nine
  * this repository declares; a state code is drawn from the workshop's own
  * vocabulary and is checked against the operation's own pattern before it is
  * believed; a period name is one of four. None of them is free text, none of
@@ -30,15 +31,15 @@ import type { DashboardSummaryCriteria } from './overview-contract';
  *
  * The two boards read these back through their own validators. A name neither
  * side recognises is DROPPED rather than sent, so a hand-edited address opens
- * the unfiltered board instead of asking the backend something it will refuse.
+ * the default board instead of asking the backend something it will refuse.
  */
 
-/** The address of the work-order board, at one of its seven views. */
+/** The address of the work-order board, at one of its nine views. */
 export function workOrdersViewLink(locale: Locale, view: WorkOrderBoardView): string {
-  // `all` is the board's own default, so it is expressed by saying nothing.
-  // An address that carries the default is an address that has to be kept in
-  // step with it, and this one cannot drift.
-  return view === 'all'
+  // The board's own default is expressed by saying nothing. An address that
+  // carries the default is an address that has to be kept in step with it, and
+  // this one cannot drift.
+  return view === WORK_ORDER_BOARD_DEFAULT_VIEW
     ? `/${locale}/work-orders`
     : `/${locale}/work-orders?view=${encodeURIComponent(view)}`;
 }

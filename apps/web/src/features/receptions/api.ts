@@ -330,6 +330,7 @@ export async function listReceptions(
     '/api/v1/receptions' +
     branchScopeQuery(scope, {
       status: criteria.status,
+      // Never both: the route refuses the pair rather than intersecting it.
       statusGroup: criteria.statusGroup,
       vehicleId: criteria.vehicleId,
       from: criteria.from,

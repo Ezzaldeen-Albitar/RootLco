@@ -328,14 +328,93 @@ describe('the work-order board reads on arrival and narrows honestly', () => {
     window.localStorage.clear();
   });
 
-  const render = () => renderLtr(inBranch(<WorkOrderQueueScreen locale="en" messages={en} />));
+  const render = (canReachDelivery = false) =>
+    renderLtr(
+      inBranch(
+        <WorkOrderQueueScreen locale="en" messages={en} canReachDelivery={canReachDelivery} />
+      )
+    );
 
-  it('reads the working branch on arrival, with no filter nobody chose', async () => {
+  it('opens on the work that is still the problem of the workshop', async () => {
+    /*
+     * The GROUP, not a state code and not an unfiltered board. The route
+     * resolves `active` from the tenant catalogue's own flags, so a workshop
+     * that defines its own state is covered on the day it defines it.
+     */
     render();
     await waitFor(() => expect(listWorkOrders).toHaveBeenCalledTimes(1));
     expect(lastCall().scope).toEqual({ companyId: COMPANY, branchId: BRANCH });
-    expect(lastCall().filters).toEqual({});
+    expect(lastCall().filters).toEqual({ stateGroup: 'active' });
     expect(await screen.findByText('WO-000123')).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: new RegExp(en['workOrders.queue.view.active'] as string) })
+    ).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  it('asks for everything only when the operator asks for everything', async () => {
+    const user = userEvent.setup();
+    render();
+    await waitFor(() => expect(listWorkOrders).toHaveBeenCalledTimes(1));
+    await user.click(screen.getByRole('button', { name: en['workOrders.queue.view.all'] }));
+    await waitFor(() => expect(lastCall().filters).toEqual({}));
+  });
+
+  it('bounds "finished today" to the completion instant, not to the opened one', async () => {
+    /*
+     * A different question from "created today", and the platform records it
+     * separately: either completion bound narrows the board to finished work by
+     * construction, because an unfinished work order has no completion instant.
+     */
+    const user = userEvent.setup();
+    render();
+    await waitFor(() => expect(listWorkOrders).toHaveBeenCalledTimes(1));
+
+    await user.click(
+      screen.getByRole('button', {
+        name: new RegExp(en['workOrders.queue.view.completedToday'] as string),
+      })
+    );
+    const today = dayIn(TEST_BRANCH.timezone);
+    const window = rangeOfDays(TEST_BRANCH.timezone, today, today);
+    await waitFor(() =>
+      expect(lastCall().filters).toEqual({
+        completedFrom: window.from,
+        completedTo: window.to,
+      })
+    );
+  });
+
+  it('never sends a state code beside a state group', async () => {
+    /*
+     * The route answers 422 `state_and_group_exclusive` rather than
+     * intersecting them. The exclusion is structural: choosing a state moves the
+     * view off the one that sends a group, and choosing that view clears the
+     * state. So the refusal is unreachable rather than explained.
+     */
+    const user = userEvent.setup();
+    render();
+    await waitFor(() => expect(listWorkOrders).toHaveBeenCalledTimes(1));
+    expect(lastCall().filters).toEqual({ stateGroup: 'active' });
+
+    await user.selectOptions(
+      await screen.findByLabelText(en['workOrders.queue.stateFilter'], { exact: false }),
+      'open'
+    );
+    await waitFor(() => expect(lastCall().filters).toEqual({ state: 'open' }));
+
+    // And back the other way: the view clears the code.
+    await user.click(
+      screen.getByRole('button', { name: new RegExp(en['workOrders.queue.view.active'] as string) })
+    );
+    await waitFor(() => expect(lastCall().filters).toEqual({ stateGroup: 'active' }));
+
+    for (const call of listWorkOrders.mock.calls) {
+      const filters = call[1] as Record<string, unknown>;
+      expect(
+        filters['state'] !== undefined && filters['stateGroup'] !== undefined,
+        'a code and a group travelled together'
+      ).toBe(false);
+    }
   });
 
   it('issues no extra request while the operator is still typing', async () => {
@@ -353,7 +432,9 @@ describe('the work-order board reads on arrival and narrows honestly', () => {
     await waitFor(() => expect(listWorkOrders).toHaveBeenCalledTimes(1));
 
     await user.type(screen.getByLabelText(en['workOrders.queue.searchLabel']), 'ABC{Enter}');
-    await waitFor(() => expect(lastCall().filters).toEqual({ q: 'ABC' }));
+    // Beside the default view's own group: a search NARROWS the board it is
+    // typed into, it does not replace it.
+    await waitFor(() => expect(lastCall().filters).toEqual({ stateGroup: 'active', q: 'ABC' }));
     expect(lastCall().scope).toEqual({ companyId: COMPANY, branchId: BRANCH });
   });
 
@@ -392,7 +473,11 @@ describe('the work-order board reads on arrival and narrows honestly', () => {
       ['awaitingQuality', 'awaitingQuality'],
       ['readyForDelivery', 'readyForDelivery'],
     ] as const) {
-      await user.click(screen.getByRole('button', { name: en[`workOrders.queue.view.${view}`] }));
+      await user.click(
+        screen.getByRole('button', {
+          name: new RegExp(en[`workOrders.queue.view.${view}`] as string),
+        })
+      );
       await waitFor(() => expect(lastCall().filters).toEqual({ [flag]: true }));
     }
   });
@@ -487,44 +572,114 @@ describe('the work-order board reads on arrival and narrows honestly', () => {
     expect(screen.getByText('Foreman on duty')).toBeInTheDocument();
   });
 
-  it('takes its counts from the aggregate, and shows none for a section it may not read', async () => {
-    readDashboardSummary.mockResolvedValue({
-      status: 'ok',
-      correlationId: null,
-      data: {
-        period: { kind: 'today', from: '2026-09-22', to: '2026-09-22', timezone: 'Asia/Riyadh' },
-        generatedAt: '2026-09-22T06:00:00.000Z',
-        branchIds: [BRANCH],
-        sections: {
-          receptionsOpened: { status: 'ok', value: 2 },
-          activeWorkOrders: { status: 'ok', value: 7 },
-          awaitingApproval: { status: 'ok', value: 3 },
-          awaitingParts: { status: 'unauthorized' },
-          readyForDelivery: { status: 'ok', value: 1 },
-          completedInPeriod: { status: 'ok', value: 4 },
-          workOrdersByState: { status: 'unauthorized' },
-          intakeCompletionTrend: { status: 'unauthorized' },
-          technicianWorkload: { status: 'unauthorized' },
-          lowStock: { status: 'unauthorized' },
-          pendingApprovalsCount: { status: 'unauthorized' },
-          overdue: { status: 'unauthorized' },
-        },
+  const summaryWith = (sections: Record<string, unknown>) => ({
+    status: 'ok',
+    correlationId: null,
+    data: {
+      period: { kind: 'today', from: '2026-09-22', to: '2026-09-22', timezone: 'Asia/Riyadh' },
+      generatedAt: '2026-09-22T06:00:00.000Z',
+      branchIds: [BRANCH],
+      sections: {
+        receptionsOpened: { status: 'ok', value: 2 },
+        activeWorkOrders: { status: 'ok', value: 7 },
+        awaitingApproval: { status: 'ok', value: 3 },
+        awaitingParts: { status: 'ok', value: 5 },
+        readyForDelivery: { status: 'ok', value: 1 },
+        completedInPeriod: { status: 'ok', value: 4 },
+        workOrdersByState: { status: 'unauthorized' },
+        intakeCompletionTrend: { status: 'unauthorized' },
+        technicianWorkload: { status: 'unauthorized' },
+        lowStock: { status: 'unauthorized' },
+        pendingApprovalsCount: { status: 'unauthorized' },
+        overdue: { status: 'unavailable', reason: 'nothing to measure lateness against' },
+        ...sections,
       },
-    });
-    render();
-    const approval = await screen.findByRole('button', {
-      name: new RegExp(en['workOrders.queue.view.awaitingApproval']),
-    });
-    expect(approval).toHaveTextContent('3');
-    // Withheld for want of a permission. A zero here would be a false statement
-    // about the workshop instead of a true one about the caller.
-    const parts = screen.getByRole('button', {
-      name: new RegExp(en['workOrders.queue.view.awaitingParts']),
-    });
-    expect(parts.textContent).toBe(en['workOrders.queue.view.awaitingParts']);
+    },
+  });
 
-    expect(screen.getByTestId('figure-active')).toHaveTextContent('7');
+  it('takes every figure from the aggregate, and names the clock the day was counted on', async () => {
+    readDashboardSummary.mockResolvedValue(summaryWith({}));
+    render();
+    expect(await screen.findByTestId('figure-active')).toHaveTextContent('7');
     expect(screen.getByTestId('figure-completed')).toHaveTextContent('4');
+    expect(screen.getByTestId('figure-awaitingApproval')).toHaveTextContent('3');
+    expect(screen.getByTestId('figure-awaitingParts')).toHaveTextContent('5');
+    expect(screen.getByTestId('figure-readyForDelivery')).toHaveTextContent('1');
+    // The aggregate resolves the day on the branch's clock, and a figure headed
+    // "finished today" is a claim about a boundary the reader cannot see.
+    expect(screen.getByTestId('figure-zone')).toHaveTextContent('Asia/Riyadh');
+  });
+
+  it('prints a figure on a chip ONLY where the two count the same set', async () => {
+    /*
+     * The two that agree, and each agreement is a fact rather than a
+     * resemblance: `active` is `!isTerminal` on both sides once
+     * `ck_work_order_states_cancellation` is taken into account, and
+     * `readyForDelivery` is `isClosed && !isCancellation` on both.
+     *
+     * And the seven that do not. `awaitingParts` is the loudest — the aggregate
+     * counts NON-TERMINAL orders whose parts are `requested`, the list filter is
+     * any state whose parts are not `none` — and `awaitingApproval` is the
+     * quietest: both count a pending, undeleted request, but the aggregate
+     * selects from the request table on the scope columns alone while the list
+     * walks from the work order, so a request whose parent was soft-deleted is
+     * counted and not listed. A number one larger than the rows beneath it is
+     * exactly the disagreement a chip figure must not carry.
+     */
+    readDashboardSummary.mockResolvedValue(summaryWith({}));
+    render();
+    await screen.findByTestId('figure-awaitingParts');
+
+    const catalogue = en as Record<string, string>;
+    const label = (view: string) => catalogue[`workOrders.queue.view.${view}`] as string;
+    const chip = (view: string) => screen.getByRole('button', { name: new RegExp(label(view)) });
+
+    expect(chip('active')).toHaveTextContent('7');
+    expect(chip('readyForDelivery')).toHaveTextContent('1');
+
+    for (const view of [
+      'all',
+      'openedToday',
+      'completedToday',
+      'mine',
+      'awaitingApproval',
+      'awaitingParts',
+      'awaitingQuality',
+    ] as const) {
+      expect(chip(view).textContent, view).toBe(label(view));
+    }
+
+    // The strip still carries every published figure, including the ones no
+    // chip may claim, and says plainly what it is about.
+    expect(screen.getByTestId('figure-awaitingParts')).toHaveTextContent('5');
+    expect(screen.getByTestId('work-order-summary-strip')).toHaveTextContent(
+      en['workOrders.queue.figure.note'] as string
+    );
+  });
+
+  it('tells a withheld figure apart from one that cannot be worked out', async () => {
+    readDashboardSummary.mockResolvedValue(
+      summaryWith({
+        // No permission for the section. A zero would be a false statement about
+        // the workshop instead of a true one about the caller.
+        awaitingParts: { status: 'unauthorized' },
+        // Nothing in the platform the question could be asked of; no permission
+        // would change it.
+        readyForDelivery: { status: 'unavailable', reason: 'a sentence the server wrote' },
+      })
+    );
+    render();
+    expect(await screen.findByTestId('figure-awaitingParts')).toHaveTextContent(
+      en['workOrders.queue.figure.withheld'] as string
+    );
+    expect(screen.getByTestId('figure-readyForDelivery')).toHaveTextContent(
+      en['workOrders.queue.figure.unavailable'] as string
+    );
+    // Neither reads as nought, and the server's own sentence never reaches the
+    // screen.
+    const strip = screen.getByTestId('work-order-summary-strip');
+    expect(strip.textContent ?? '').not.toContain('a sentence the server wrote');
+    expect(screen.getByTestId('figure-active')).toHaveTextContent('7');
   });
 
   it('shows no figure strip at all when the aggregate could not be read', async () => {
@@ -554,9 +709,42 @@ describe('the work-order board reads on arrival and narrows honestly', () => {
     expect(
       await screen.findByRole('link', { name: en['workOrders.queue.openForDelivery'] })
     ).toHaveAttribute('href', `/en/work-orders/${ROW.id}`);
+  });
+
+  /*
+   * THE OFFER IS MADE ON THE DESTINATION'S OWN RULE.
+   *
+   * `/delivery` refuses an operator who is missing any of `sal.delivery.view`,
+   * `wo.work_order.read` or `sal.finance.view` — its page decides before it
+   * reads anything. A link offered to everyone on the ready-for-delivery view
+   * therefore sent a receptionist holding only the work-order code to a page
+   * that could tell them nothing but "you may not see this". The board takes
+   * the whole set as one answer from the route that resolved the session, and
+   * the two cases below are the two sides of it.
+   */
+  it('offers the delivery queue on the ready view when the operator may reach it', async () => {
+    const user = userEvent.setup();
+    render(true);
+    await user.click(
+      screen.getByRole('button', { name: en['workOrders.queue.view.readyForDelivery'] })
+    );
     expect(
-      screen.getByRole('link', { name: en['workOrders.queue.deliveryQueue'] })
+      await screen.findByRole('link', { name: en['workOrders.queue.deliveryQueue'] })
     ).toHaveAttribute('href', '/en/delivery');
+  });
+
+  it('offers no delivery link at all without the three codes that page requires', async () => {
+    const user = userEvent.setup();
+    render(false);
+    await user.click(
+      screen.getByRole('button', { name: en['workOrders.queue.view.readyForDelivery'] })
+    );
+    // The view itself still works: the rows are there, and only the way through
+    // to a page that would refuse them is gone.
+    expect(
+      await screen.findByRole('link', { name: en['workOrders.queue.openForDelivery'] })
+    ).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: en['workOrders.queue.deliveryQueue'] })).toBeNull();
   });
 
   it('re-targets the board when the branch changes, keeping the filters', async () => {
@@ -577,7 +765,7 @@ describe('the work-order board reads on arrival and narrows honestly', () => {
     );
     await user.click(screen.getByRole('button', { name: 'use main' }));
     await user.type(screen.getByLabelText(en['workOrders.queue.searchLabel']), 'ABC{Enter}');
-    await waitFor(() => expect(lastCall().filters).toEqual({ q: 'ABC' }));
+    await waitFor(() => expect(lastCall().filters).toEqual({ stateGroup: 'active', q: 'ABC' }));
     expect(await screen.findByText('WO-000123')).toBeInTheDocument();
 
     listWorkOrders.mockResolvedValue({
@@ -593,9 +781,53 @@ describe('the work-order board reads on arrival and narrows honestly', () => {
       })
     );
     // The filter is what the operator asked for and is not about the branch.
-    expect(lastCall().filters).toEqual({ q: 'ABC' });
+    expect(lastCall().filters).toEqual({ stateGroup: 'active', q: 'ABC' });
     expect(await screen.findByText('WO-000999')).toBeInTheDocument();
     expect(screen.queryByText('WO-000123')).toBeNull();
+  });
+
+  it('issues NO read for the branch it just left', async () => {
+    /*
+     * The defect the hook's version handling closes.
+     *
+     * The criteria are derived from the working context during render, so they
+     * are the new branch's the moment the header moves — but the key the hook
+     * FETCHED was the debounced one, and `version` was not debounced. The
+     * request that went out was therefore the previous branch's criteria at the
+     * new version: a whole read issued for the branch the operator had just
+     * left, answered, and rendered under the new branch's heading.
+     *
+     * Asserted over EVERY call rather than over the last one: a read for the old
+     * branch that is later superseded still happened, still spent one of thirty
+     * requests, and still showed rows under the wrong heading for as long as it
+     * was the newest answer.
+     */
+    const user = userEvent.setup();
+    renderLtr(
+      inBranch(
+        <>
+          <BranchSwitch to={TEST_BRANCH.id} label="use main" />
+          <BranchSwitch to={OTHER_BRANCH.id} label="use second" />
+          <WorkOrderQueueScreen locale="en" messages={en} />
+        </>,
+        { snapshot: branchSnapshot([TEST_BRANCH, OTHER_BRANCH]) }
+      )
+    );
+    await user.click(screen.getByRole('button', { name: 'use main' }));
+    await waitFor(() => expect(listWorkOrders).toHaveBeenCalled());
+
+    listWorkOrders.mockClear();
+    await user.click(screen.getByRole('button', { name: 'use second' }));
+    await waitFor(() => expect(listWorkOrders).toHaveBeenCalled());
+    // Waited well past the debounce, so a late read for the old branch would
+    // have landed by now.
+    await new Promise((resolve) => setTimeout(resolve, 400));
+
+    const branches = listWorkOrders.mock.calls.map(
+      (call) => (call[0] as { branchId: string | null }).branchId
+    );
+    expect(branches).not.toContain(TEST_BRANCH.id);
+    expect(branches).toContain(OTHER_BRANCH.id);
   });
 
   it('asks for every branch of the company on "all my branches"', async () => {
@@ -615,6 +847,37 @@ describe('the work-order board reads on arrival and narrows honestly', () => {
     );
   });
 
+  it('says so, and reads nothing, when the branches span more than one company', async () => {
+    /*
+     * `companyId` is mandatory on this operation and "all my branches" across
+     * two companies resolves to none. Picking one would put a board on screen
+     * for a company nobody named, so the screen says which control answers it.
+     */
+    const OTHER_COMPANY_BRANCH = {
+      ...OTHER_BRANCH,
+      id: '66666666-6666-4666-8666-666666666666',
+      companyId: '77777777-7777-4777-8777-777777777777',
+      name: 'Another company branch',
+    };
+    const user = userEvent.setup();
+    renderLtr(
+      inBranch(
+        <>
+          <BranchSwitch to="all" label="use all" />
+          <WorkOrderQueueScreen locale="en" messages={en} />
+        </>,
+        { snapshot: branchSnapshot([TEST_BRANCH, OTHER_COMPANY_BRANCH]) }
+      )
+    );
+    await user.click(screen.getByRole('button', { name: 'use all' }));
+
+    expect(await screen.findByTestId('work-order-queue-spans-companies')).toHaveTextContent(
+      en['workingContext.spansCompanies'] as string
+    );
+    await new Promise((resolve) => setTimeout(resolve, 350));
+    expect(listWorkOrders).not.toHaveBeenCalled();
+  });
+
   it('states an empty result as a statement about the search', async () => {
     listWorkOrders.mockResolvedValue(EMPTY_PAGE);
     const { container } = render();
@@ -626,6 +889,23 @@ describe('the work-order board reads on arrival and narrows honestly', () => {
     listWorkOrders.mockResolvedValue({ ...EMPTY_PAGE, status: 'denied' });
     render();
     expect(await screen.findByText(en['state.denied.title'])).toBeInTheDocument();
+  });
+
+  it('renders an ENDED SESSION as itself, with the way back and no Try-again', async () => {
+    /*
+     * It used to arrive as the generic fault — "Something went wrong" over a
+     * button that re-issued the same request with the same dead session, which
+     * fails identically every time. It is its own phase now.
+     */
+    listWorkOrders.mockResolvedValue({ ...EMPTY_PAGE, status: 'expired' });
+    render();
+    expect(await screen.findByText(en['state.expired.title'])).toBeInTheDocument();
+    expect(screen.queryByText(en['state.error.title'])).toBeNull();
+    expect(screen.queryByRole('button', { name: en['state.retry'] })).toBeNull();
+    expect(screen.getByRole('link', { name: en['auth.backToLogin'] })).toHaveAttribute(
+      'href',
+      '/en/login'
+    );
   });
 });
 
@@ -685,10 +965,11 @@ describe('the work-order board opens where the address says, or says it could no
     expect(props['initialState']).toBe('awaiting_insurer');
   });
 
-  it('drops a view it does not declare, and opens the unfiltered board', async () => {
-    for (const view of ['completedToday', 'ALL', 'nonsense']) {
-      expect((await routeProps({ view }))['initialView']).toBe('all');
+  it('drops a view it does not declare, and opens the default board', async () => {
+    for (const view of ['completedInPeriod', 'ALL', 'nonsense']) {
+      expect((await routeProps({ view }))['initialView']).toBe('active');
     }
+    expect((await routeProps({}))['initialView']).toBe('active');
   });
 
   it('drops a state that is not shaped like a code', async () => {
@@ -752,6 +1033,23 @@ describe('the work-order board opens where the address says, or says it could no
     expect(
       (screen.getByLabelText(en['workOrders.queue.stateFilter']) as HTMLSelectElement).value
     ).toBe('');
+  });
+
+  it('moves an accepted code off the default view, which sends a group', async () => {
+    // The list operation refuses a state code and a state group together, so a
+    // code arriving with `view=active` opens on every state instead.
+    renderLtr(
+      inBranch(
+        <WorkOrderQueueScreen
+          locale="en"
+          messages={en}
+          initialView="active"
+          initialState="awaiting_insurer"
+        />
+      )
+    );
+    await waitFor(() => expect(listWorkOrders).toHaveBeenCalledTimes(1));
+    expect(firstFilters()).toEqual({ state: 'awaiting_insurer' });
   });
 
   it('drops the code when the catalogue itself could not be read', async () => {
