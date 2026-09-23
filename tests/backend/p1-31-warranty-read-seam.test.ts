@@ -60,7 +60,7 @@
  * `stale-version` — they are reads, and none is `idempotent` or `versionGuarded`.
  */
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
-import type { Pool } from 'pg';
+import type { Pool, PoolClient } from 'pg';
 import { randomUUID } from 'node:crypto';
 import {
   BRANCH_A1,
@@ -99,6 +99,9 @@ import { __setPrimaryPoolForTests } from '@/server/db/pool';
 import { __resetAuthenticatorForTests } from '@/server/context/principal';
 import { __resetRateLimitForTests } from '@/server/http/rate-limit';
 import { TENANT_ADMINISTRATOR_ROLE } from '@/modules/iam';
+import { vehicleModule } from '@/modules/vehicle';
+import { buildRequestContext } from '@/server/context/request-context';
+import { withReadOnlyTransaction } from '@/server/db/transaction';
 import { POST as GENERATE_WARRANTY } from '@/app/api/v1/deliveries/[deliveryId]/warranties/route';
 import { WARRANTY_LIST_OPERATION, GET as LIST_WARRANTIES } from '@/app/api/v1/warranties/route';
 import {
@@ -152,6 +155,21 @@ let OD_VIN = '';
  * the earliest `valid_from`, which is this one.
  */
 const OD_CHECKIN_PARTNER_NAME = 'Reception Requester';
+
+/**
+ * A vehicle in the OTHER tenant, with a display number of its own.
+ *
+ * The tenant case further down asks the vehicle module to resolve this id under
+ * a tenant-A session. Without a real row there the empty answer would prove
+ * nothing, so the row is seeded and its existence asserted at the point of use.
+ */
+const OD_TENANT_B_VEHICLE = 'f1320000-0000-4000-8000-000000000821';
+const OD_TENANT_B_VIN = '1P32B00000000001';
+const OD_TENANT_B_NUMBER = 'FX-P132-WTY-VB';
+/** A warranty whose vehicle row is soft-deleted after it is issued. */
+let OD_NO_VEHICLE: ArrangedWarranty;
+/** A warranty whose visit's service requester is dated out after it is issued. */
+let OD_NO_PARTY: ArrangedWarranty;
 /** That partner's id, named so every assertion says which one it means. */
 const OD_PARTNER_EXPECTED = PARTNER_A;
 
@@ -536,6 +554,37 @@ async function seedScopedPrincipal(
     companyId: scope.companyId,
     branchId: scope.branchId,
   });
+}
+
+/**
+ * Runs one fixture statement under the tenant and actor GUCs.
+ *
+ * For ATTRIBUTION, not for permission. `shared.touch_row_metadata` is a BEFORE
+ * UPDATE trigger on both tables the two fixtures below correct, and it stamps
+ * `updated_by` from `iam.current_user_id()`, which reads `app.user_id`. Both
+ * those columns are NULLABLE, so a bare admin UPDATE is not refused — it
+ * succeeds and leaves a correction no actor ever made, which is the worse
+ * outcome of the two because nothing later would flag it. The GUCs name the
+ * same actor the product would have named, exactly as `seedVehicleDisplay`
+ * below sets them for its own UPDATE.
+ */
+async function asTenantActor<T>(fn: (client: PoolClient) => Promise<T>): Promise<T> {
+  const client = await admin.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query(
+      `SELECT set_config('app.user_id',$1,true), set_config('app.tenant_id',$2,true)`,
+      [USER_A, TENANT_A]
+    );
+    const result = await fn(client);
+    await client.query('COMMIT');
+    return result;
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
 }
 
 /**
@@ -949,6 +998,51 @@ beforeAll(async () => {
   // rows, because the platform catalogue ships empty by policy and a fixture must
   // not be the thing that fills it.
   OD_VIN = await seedVehicleDisplay(OD_SEARCHABLE.delivery.vehicleId);
+
+  // A vehicle in tenant B. Nothing in tenant A references it; it exists so the
+  // tenant predicate inside the vehicle module's own read has something real to
+  // decline to resolve.
+  await admin.query(
+    `INSERT INTO veh.vehicles
+       (id, tenant_id, vin_raw, display_number, powertrain_category, lifecycle_status, created_by)
+     VALUES ($1,$2,$3,$4,'ice','active',$5) ON CONFLICT (id) DO NOTHING`,
+    [OD_TENANT_B_VEHICLE, TENANT_B, OD_TENANT_B_VIN, OD_TENANT_B_NUMBER, USER_A]
+  );
+
+  // A warranty whose car is then soft-deleted. Issued through the real route
+  // first, so the record is one the product made and only the vehicle row goes
+  // away underneath it — which is the state `vehicleBlockFor` exists for.
+  //
+  // By SQL because no operation in this repository soft-deletes a vehicle: the
+  // lifecycle routes move `lifecycle_status`, and `deleted_at` has no writer.
+  // That absence is recorded here rather than worked around silently.
+  OD_NO_VEHICLE = await arrangeWarranty('p131_wty_od_novehicle');
+  await asTenantActor((client) =>
+    client.query(
+      `UPDATE veh.vehicles SET deleted_at = now(), deleted_by = $3
+        WHERE tenant_id = $1 AND id = $2 AND deleted_at IS NULL`,
+      [TENANT_A, OD_NO_VEHICLE.delivery.vehicleId, USER_A]
+    )
+  );
+
+  // A warranty whose visit no longer names a service requester. The role is
+  // DATED OUT rather than deleted, which is the only correction the table
+  // allows: `tg_reception_party_roles_immutable` freezes the partner, the role
+  // and `valid_from`, so a correction writes `valid_to` and nothing else.
+  //
+  // The activation check that demands an active service requester fires only on
+  // the transition INTO `authorized`, which this visit passed long before, so
+  // dating the role out afterwards is a state the schema permits and a screen
+  // has to render.
+  OD_NO_PARTY = await arrangeWarranty('p131_wty_od_noparty');
+  await asTenantActor((client) =>
+    client.query(
+      `UPDATE rec.reception_party_roles SET valid_to = now()
+        WHERE tenant_id = $1 AND reception_visit_id = $2
+          AND relationship_role = $3 AND valid_to IS NULL AND deleted_at IS NULL`,
+      [TENANT_A, OD_NO_PARTY.delivery.visitId, 'service_requester']
+    )
+  );
 }, 240_000);
 
 afterEach(() => {
@@ -1828,24 +1922,31 @@ describe('the warranty search box', () => {
 // module's, so each is proved present for a caller holding that module's code and
 // absent for a caller holding only the warranty one.
 //
-// Every case below reads ONE arranged warranty — `OD_SEARCHABLE` — whose car
+// The narrowing cases read ONE arranged warranty — `OD_SEARCHABLE` — whose car
 // carries a plate, a VIN, a catalogue make and model and a vehicle number, and
 // whose originating visit names a service requester. A fixture missing any of them
-// would make an assertion pass by accident.
+// would make an assertion pass by accident, so the fixture is asserted first.
+//
+// Three further warranties carry the states that are NOT a narrowing and must
+// not be reported as one: a car whose row is gone, a visit that names no
+// service requester, and a vehicle belonging to another tenant.
 // ---------------------------------------------------------------------------
 
 describe('the warranty row names the car and the customer', () => {
-  /** `OD_SEARCHABLE`'s row off the branch list, as one principal sees it. */
-  async function rowFor(principal: Principal): Promise<WarrantyListRow> {
+  /** One arranged warranty's row off the branch list, as one principal sees it. */
+  async function rowFor(
+    principal: Principal,
+    warranty: ArrangedWarranty = OD_SEARCHABLE
+  ): Promise<WarrantyListRow> {
     authAs(principal);
     const response = await listWarranties({
       companyId: COMPANY_A1,
-      branchId: OD_SEARCHABLE.delivery.branchId,
+      branchId: warranty.delivery.branchId,
       limit: 100,
     });
     expect(response.status, principal.subject).toBe(200);
     const row = (await bodyOf<WarrantyListBody>(response)).items.find(
-      (item) => item.id === OD_SEARCHABLE.warrantyId
+      (item) => item.id === warranty.warrantyId
     );
     expect(row, `${principal.subject} could not see the arranged warranty`).toBeDefined();
     __resetAuthenticatorForTests();
@@ -1853,9 +1954,12 @@ describe('the warranty row names the car and the customer', () => {
   }
 
   /** The same warranty off the detail read. */
-  async function detailFor(principal: Principal): Promise<WarrantyDetailBody> {
+  async function detailFor(
+    principal: Principal,
+    warranty: ArrangedWarranty = OD_SEARCHABLE
+  ): Promise<WarrantyDetailBody> {
     authAs(principal);
-    const response = await readWarranty(OD_SEARCHABLE.warrantyId);
+    const response = await readWarranty(warranty.warrantyId);
     expect(response.status, principal.subject).toBe(200);
     const body = await bodyOf<WarrantyDetailBody>(response);
     __resetAuthenticatorForTests();
@@ -1950,11 +2054,19 @@ describe('the warranty row names the car and the customer', () => {
     }
   });
 
-  it('tells another tenant nothing about the car or the customer', async () => {
-    // The decisive isolation case. This principal holds the vehicle code AND the
-    // customer code AND the warranty code in tenant B, so nothing but tenancy can
-    // be refusing it — and the refusal is read from the response TEXT, so a plate
-    // or a name leaking into any field of any shape would fail it.
+  it('refuses another tenant the record before either display lookup can run', async () => {
+    // What this proves, stated exactly: the refusal is decided BEFORE the two
+    // blocks are resolved, so no `veh` and no `crm` read happens on behalf of a
+    // caller who may not have the record, and no fragment of either reaches the
+    // response. The principal holds the vehicle code AND the customer code AND
+    // the warranty code in tenant B, so nothing but tenancy can be refusing it,
+    // and the refusal is read from the response TEXT so a leak into a field of
+    // any shape would fail it.
+    //
+    // It is NOT a test of the tenant predicate INSIDE those lookups. A request
+    // that never reaches them cannot exercise them, and calling this an
+    // isolation test would be claiming a guarantee from the wrong evidence. The
+    // case below tests that predicate directly.
     authAs(WTY_DISPLAY_TENANT_B);
     const detail = await readWarranty(OD_SEARCHABLE.warrantyId);
     expect(detail.status).toBe(404);
@@ -1976,5 +2088,115 @@ describe('the warranty row names the car and the customer', () => {
     });
     expect(list.status).toBe(403);
     expect((await problemOf(list)).code).toBe('ERR-IAM-001');
+  });
+
+  it('resolves nothing for a vehicle of another tenant, and the same call resolves this one', async () => {
+    // The tenant predicate inside the display read itself, exercised where it
+    // lives. It is reached through the vehicle module's PUBLIC surface — the
+    // same door the warranty service uses — under a real tenant-A transaction,
+    // so the session GUCs and row-level security are the ones production runs
+    // with rather than a harness approximation.
+    const context = buildRequestContext({
+      correlationId: randomUUID(),
+      principal: { userId: WTY_READ_WITH_DISPLAY.userId, tenantId: TENANT_A },
+      operation: WARRANTY_LIST_OPERATION.id,
+      module: 'warranty',
+    });
+    const resolved = await withReadOnlyTransaction(context, (db) =>
+      vehicleModule().vehicleRead.resolveDisplayIdentities(db, [
+        OD_SEARCHABLE.delivery.vehicleId,
+        OD_TENANT_B_VEHICLE,
+      ])
+    );
+
+    // The positive control FIRST: without it an empty map would prove only that
+    // the call is broken, which is the shape of false green this whole file is
+    // written against.
+    expect(resolved.get(OD_SEARCHABLE.delivery.vehicleId)?.displayNumber).toBe(OD_VEHICLE_NUMBER);
+    expect(resolved.get(OD_SEARCHABLE.delivery.vehicleId)?.plate).toBe(OD_SEARCH_PLATE);
+
+    // And the other tenant's car is absent from the map rather than present and
+    // blanked: an id this session may not resolve is not an id it holds nothing
+    // about, it is an id it does not have.
+    expect(resolved.has(OD_TENANT_B_VEHICLE)).toBe(false);
+
+    // Anti-vacuity: that row really exists, so its absence above is the
+    // predicate and not a fixture that never landed.
+    const other = await admin.query<{ display_number: string | null }>(
+      `SELECT display_number FROM veh.vehicles WHERE id = $1 AND tenant_id = $2`,
+      [OD_TENANT_B_VEHICLE, TENANT_B]
+    );
+    expect(other.rows[0]?.display_number).toBe(OD_TENANT_B_NUMBER);
+  });
+
+  it('publishes an id-only vehicle block when the car row is gone', async () => {
+    // Read by a caller holding EVERY display code, so the nulls below are the
+    // missing row and never a withheld field — the two would be
+    // indistinguishable for a caller holding neither code, which is exactly why
+    // this case uses the one that holds both.
+    //
+    // The block is published rather than dropped: `vehicle_id` is NOT NULL on
+    // the warranty, so the id is always known and only the labels are gone. A
+    // response that omitted the block would say the warranty covers no car.
+    const expected = {
+      id: OD_NO_VEHICLE.delivery.vehicleId,
+      plate: null,
+      vin: null,
+      makeModel: null,
+      displayNumber: null,
+    };
+    for (const body of [
+      await rowFor(WTY_READ_WITH_DISPLAY, OD_NO_VEHICLE),
+      await detailFor(WTY_READ_WITH_DISPLAY, OD_NO_VEHICLE),
+    ]) {
+      expect(body.vehicle).toEqual(expected);
+      // The rest of the record is untouched: an unresolvable car does not make
+      // the row a partial answer.
+      expect(body.id).toBe(OD_NO_VEHICLE.warrantyId);
+      expect(body.vehicleId).toBe(OD_NO_VEHICLE.delivery.vehicleId);
+      expect(body.status).toBe('issued');
+    }
+
+    // Anti-vacuity: the row is soft-deleted rather than absent, and the same
+    // caller resolves a car that is not.
+    const gone = await admin.query<{ deleted_at: Date | null }>(
+      `SELECT deleted_at FROM veh.vehicles WHERE tenant_id = $1 AND id = $2`,
+      [TENANT_A, OD_NO_VEHICLE.delivery.vehicleId]
+    );
+    expect(gone.rowCount).toBe(1);
+    expect(gone.rows[0]?.deleted_at).not.toBeNull();
+    expect((await rowFor(WTY_READ_WITH_DISPLAY)).vehicle.displayNumber).toBe(OD_VEHICLE_NUMBER);
+  });
+
+  it('publishes no customer at all when the visit names no service requester', async () => {
+    // The whole block is null, not a block with a null name. The two mean
+    // different things and a screen says different words for them: a null NAME
+    // is "there is a customer and you may not be told who", a null BLOCK is
+    // "this warranty names nobody".
+    for (const body of [
+      await rowFor(WTY_READ_WITH_DISPLAY, OD_NO_PARTY),
+      await detailFor(WTY_READ_WITH_DISPLAY, OD_NO_PARTY),
+    ]) {
+      expect(body.customer).toBeNull();
+      // The car still arrives, so a missing customer is not a page whose
+      // resolution failed.
+      expect(body.vehicle.id).toBe(OD_NO_PARTY.delivery.vehicleId);
+      expect(body.id).toBe(OD_NO_PARTY.warrantyId);
+    }
+
+    // Anti-vacuity, both halves: the role EXISTED and is dated out, so this is a
+    // corrected visit rather than one the fixture failed to populate — and the
+    // same caller is still told the customer of a visit that has one.
+    const roles = await admin.query<{ open: string; closed: string }>(
+      `SELECT count(*) FILTER (WHERE valid_to IS NULL)::text AS open,
+              count(*) FILTER (WHERE valid_to IS NOT NULL)::text AS closed
+         FROM rec.reception_party_roles
+        WHERE tenant_id = $1 AND reception_visit_id = $2
+          AND relationship_role = $3 AND deleted_at IS NULL`,
+      [TENANT_A, OD_NO_PARTY.delivery.visitId, 'service_requester']
+    );
+    expect(roles.rows[0]?.open).toBe('0');
+    expect(roles.rows[0]?.closed).toBe('1');
+    expect((await rowFor(WTY_READ_WITH_DISPLAY)).customer?.id).toBe(OD_PARTNER_EXPECTED);
   });
 });
