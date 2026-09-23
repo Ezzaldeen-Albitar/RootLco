@@ -34,6 +34,8 @@ import {
   type PageRequest,
 } from '@/server/db/pagination';
 import { halfOpenLocalDayRange } from '@/server/db/period';
+import { searchFragment } from '@/server/db/search-predicate';
+import { NO_SEARCH_TERMS, type EntitySearchTerms } from '@/shared/text/search-terms';
 
 /** Items are listed by SKU — a total order backed by `uq_item_master_sku`. */
 export const ITEM_ORDER: OrderingContract = Object.freeze({ key: 'sku', direction: 'asc' });
@@ -99,6 +101,28 @@ export const PART_ISSUE_ORDER: OrderingContract = Object.freeze({
   key: 'inv.part_issues:created_at_desc',
   direction: 'desc',
 });
+
+/**
+ * Everything already returned against the part issue aliased `pi`, as the
+ * database's own ceiling counts it.
+ *
+ * A part issue has two ways back — `inv.part_returns` (`POST /stock-returns`)
+ * and `inv.sales_returns` with `source_kind = 'part_issue'` — and ONE ceiling:
+ * `inv.guard_part_return_ceiling` and `inv.guard_sales_return_ceiling` both
+ * refuse a return once the sum over BOTH tables would pass the issued quantity,
+ * and the latter computes that sum with `inv.returned_quantity`. Four reads in
+ * this repository use this one expression:
+ *
+ * - `listPartIssuesForWorkOrder` — the per-work-order issue list;
+ * - `listIssuedParts` — the branch-wide issue list and its returnable remainder;
+ * - `readPartIssue` — the issue the `POST /stock-returns` pre-check reads;
+ * - `countOpenCommitments` — an issue is unreturned while its quantity exceeds
+ *   this sum, which is what work-order close and delivery readiness block on.
+ *
+ * So none of them can disagree with another or with the ceiling: an issue brought
+ * back in full through `POST /sales-returns` is no longer open anywhere.
+ */
+const PART_ISSUE_RETURNED_SQL = `inv.returned_quantity(pi.tenant_id, 'part_issue', pi.id)`;
 
 /**
  * Stock locations are listed by `location_code` (Phase 1-30 A2, S-16).
@@ -730,8 +754,8 @@ export interface ReservationListRow extends ReservationRow {
  * One part issue as the per-work-order list renders it (Phase 1-30 A2, S-15).
  *
  * `PartIssueRow` — including the `returned_qty` sum `readPartIssue` already
- * computes in SQL — plus the SKU and location code, and `createdAt` for the same
- * reason as above. `quantity` and `returnedQty` are `numeric(12,3)` and stay
+ * computes in SQL over both return tables — plus the SKU and location code, and
+ * `createdAt` for the same reason as above. `quantity` and `returnedQty` are `numeric(12,3)` and stay
  * decimal STRINGS; the OUTSTANDING amount is deliberately NOT computed here,
  * because subtracting two decimals in JavaScript is exactly the arithmetic the
  * server-owned-money rule forbids. The consumer has both exact strings.
@@ -739,6 +763,47 @@ export interface ReservationListRow extends ReservationRow {
 export interface PartIssueListRow extends PartIssueRow {
   readonly sku: string;
   readonly locationCode: string;
+  readonly createdAt: Date;
+}
+
+/**
+ * One issued part as the BRANCH-wide list renders it (Owner directive,
+ * P1-32-PRE-OD-UX).
+ *
+ * Everything the per-work-order row carries plus what a person needs to
+ * recognise the line without already knowing which job it came from: the item's
+ * name beside its code, the unit the quantity is counted in, the work order's
+ * display number, who issued it, and the remainder.
+ *
+ * `returnableQuantity` is the ONE figure this row publishes that the
+ * per-work-order row deliberately withholds, and the difference is where the
+ * subtraction happens. There it would have been `quantity − returnedQty` in
+ * JavaScript, on two `numeric(12,3)` decimals, which is the arithmetic the
+ * server-owned-amount rule forbids. Here it is computed in SQL by the database's
+ * own `numeric` subtraction over `inv.returned_quantity` — the same function the
+ * return ceiling is enforced with — and crosses as a decimal STRING. All three
+ * exact operands are still published, so a reader can redo the subtraction and
+ * get the same answer.
+ *
+ * `workOrderDisplayNumber` is nullable because `wo.work_orders.display_number`
+ * is: a number is allocated when the job is opened, and an order that has not
+ * reached that point has none. A null is published as a null rather than as the
+ * uuid, which is not a number anyone reads off a job card.
+ */
+export interface IssuedPartListRow {
+  readonly id: string;
+  readonly companyId: string;
+  readonly branchId: string;
+  readonly workOrderId: string;
+  readonly workOrderDisplayNumber: string | null;
+  readonly itemId: string;
+  readonly sku: string;
+  readonly itemName: string;
+  readonly unitCode: string;
+  readonly quantity: string;
+  readonly returnedQuantity: string;
+  readonly returnableQuantity: string;
+  readonly issuedBy: string;
   readonly createdAt: Date;
 }
 
@@ -2369,9 +2434,10 @@ export class InventoryRepository extends Repository {
    * `GET /stock-issues?workOrderId=...` would name no parent and leave the
    * declared `scope: 'branch'` inert (P1-18-A-01).
    *
-   * `returned_qty` is the SAME correlated sum `readPartIssue` computes, in SQL,
-   * over `inv.part_returns`. Both quantities cross as decimal STRINGS and neither
-   * is netted here: `numeric(12,3)` subtraction in JavaScript is precisely the
+   * `returned_qty` is `PART_ISSUE_RETURNED_SQL` — the same expression
+   * `readPartIssue` and `listIssuedParts` use, and the same sum over BOTH return
+   * tables the ceiling enforces. Both quantities cross as decimal STRINGS and
+   * neither is netted here: `numeric(12,3)` subtraction in JavaScript is precisely the
    * arithmetic the server-owned-amount rule forbids.
    */
   public async listPartIssuesForWorkOrder(
@@ -2405,9 +2471,7 @@ export class InventoryRepository extends Repository {
       db,
       `SELECT pi.id, pi.company_id, pi.branch_id, pi.work_order_id, pi.item_id, i.sku,
               pi.location_id, l.location_code, pi.reservation_id, pi.quantity,
-              COALESCE((SELECT sum(pr.quantity) FROM inv.part_returns pr
-                         WHERE pr.tenant_id = pi.tenant_id
-                           AND pr.part_issue_id = pi.id), 0)::numeric(12,3)::text AS returned_qty,
+              ${PART_ISSUE_RETURNED_SQL}::numeric(12,3)::text AS returned_qty,
               pi.created_at,
               ${cursorTimestamp('pi.created_at')} AS sort_value
          FROM inv.part_issues pi
@@ -2433,6 +2497,178 @@ export class InventoryRepository extends Repository {
           reservationId: row.reservation_id,
           quantity: row.quantity,
           returnedQty: row.returned_qty,
+          createdAt: row.created_at,
+        },
+        sortValue: row.sort_value,
+        id: row.id,
+      })),
+      request,
+      PART_ISSUE_ORDER
+    );
+  }
+
+  /**
+   * One BRANCH's issued parts, newest first (Owner directive, P1-32-PRE-OD-UX).
+   *
+   * ## Why this exists beside `listPartIssuesForWorkOrder` rather than replacing it
+   *
+   * The per-work-order read answers "what did this job draw". A clerk at the
+   * returns counter is holding a part and has no job in hand, so the question is
+   * the other way round — "which issued line is this" — and no parent row can be
+   * named before it is answered. That read stays exactly as it is: it is reached
+   * from a work order the caller already opened, and nothing about it changes.
+   *
+   * ## The branch predicate is bound, and `branchIds` is not optional by accident
+   *
+   * `sel_part_issues_scope` narrows to the permission-blind union of every
+   * company and branch the caller holds ANY active grant in, so a caller with
+   * `inv.stock.read` in one branch would otherwise read every branch it is
+   * granted anything in (P1-18-A-01). The set arrives already decided — one
+   * branch the service authorized, or the authorized union the route resolved per
+   * branch against this operation's own codes — and `NULL` means "every branch of
+   * the company", which only a caller RLS imposes no branch narrowing on reaches.
+   *
+   * ## `returnableQuantity` is subtracted by the DATABASE
+   *
+   * `inv.returned_quantity` (`PART_ISSUE_RETURNED_SQL`, shared with the
+   * per-work-order read) is the same function `inv.guard_sales_return_ceiling`
+   * enforces the ceiling with, so the remainder shown and the remainder allowed
+   * are one statement rather than two that can drift; it counts BOTH return
+   * tables, so a part returned through the legacy `POST /stock-returns` path is
+   * not offered a second time. The subtraction is `numeric` arithmetic inside
+   * PostgreSQL and the result crosses as a decimal STRING — netting two
+   * `numeric(12,3)` values in IEEE-754 is precisely what the server-owned-amount
+   * rule forbids. It is ADVISORY, as `inv.returnable_quantity` is: no lock is
+   * taken here, and the binding ceiling is re-checked under the source row lock
+   * when the return is received.
+   *
+   * ## The window is on `created_at`
+   *
+   * `inv.part_issues` has no `issued_at` column; `created_at` IS the instant the
+   * part left the store, written by the statement that posted the movement. Both
+   * bounds are inclusive and are bound as `timestamptz`, so the comparison is
+   * between INSTANTS and never between offset-bearing strings.
+   *
+   * ## No index was added, and that is a decision
+   *
+   * `ix_part_issues_branch` leads on `(tenant_id, company_id, branch_id)` and
+   * serves the narrowing; the ordering is a sort over the already-narrowed set,
+   * and the search arms reuse the trigram indexes P1-32 built for the plate, the
+   * VIN and the work-order number. `inv.item_master` carries no folded-name index
+   * yet, so the item arm is a scan of the items a candidate row names — bounded
+   * by the branch predicate that ran first. `sal.delivery-list` and
+   * `wty.warranty-list` declined a migration on the same reasoning, and a schema
+   * change is a cost this read has not demonstrated.
+   */
+  public async listIssuedParts(
+    db: DbHandle,
+    filter: {
+      readonly companyId: string;
+      /** The branches the page may cover. `undefined` means every branch of the company. */
+      readonly branchIds?: readonly string[] | undefined;
+      readonly workOrderId?: string | undefined;
+      readonly itemId?: string | undefined;
+      readonly issuedFrom?: string | undefined;
+      readonly issuedTo?: string | undefined;
+      /** One free-text box, already reduced by `toEntitySearchTerms`. */
+      readonly search?: EntitySearchTerms | undefined;
+    },
+    request: PageRequest
+  ): Promise<Page<IssuedPartListRow>> {
+    const context = this.assertContext(db);
+    const values: unknown[] = [
+      context.principal.tenantId,
+      filter.companyId,
+      filter.branchIds === undefined ? null : [...filter.branchIds],
+      filter.workOrderId ?? null,
+      filter.itemId ?? null,
+      filter.issuedFrom ?? null,
+      filter.issuedTo ?? null,
+    ];
+    const search = searchFragment(
+      filter.search ?? NO_SEARCH_TERMS,
+      {
+        tenant: 'pi.tenant_id',
+        // The vehicle the job is about, joined once above rather than correlated
+        // per arm — the plate and the VIN are both questions about it.
+        vehicleId: 'w.vehicle_id',
+        // A part issue has no number of its own; the paperwork number a person
+        // reads off a job card is its work order's.
+        reference: 'w.display_number',
+        // The customer arms are OFF on this list, and not by omission: no name,
+        // number or contact point is on the wire here, and a returns clerk
+        // searching by a customer's phone number would be asking a question this
+        // row cannot answer. The arms this box needs are about the PART.
+        partnerIds: null,
+        itemId: 'pi.item_id',
+      },
+      values.length + 1
+    );
+    const keyset = keysetFragment(
+      request,
+      { sort: 'pi.created_at', id: 'pi.id' },
+      PART_ISSUE_ORDER,
+      values.length + search.values.length + 1
+    );
+    const result = await this.run<{
+      id: string;
+      company_id: string;
+      branch_id: string;
+      work_order_id: string;
+      display_number: string | null;
+      item_id: string;
+      sku: string;
+      item_name: string;
+      unit_code: string;
+      quantity: string;
+      returned_quantity: string;
+      returnable_quantity: string;
+      created_by: string;
+      created_at: Date;
+      sort_value: string;
+    }>(
+      db,
+      `SELECT pi.id, pi.company_id, pi.branch_id, pi.work_order_id, w.display_number,
+              pi.item_id, i.sku, i.name AS item_name, u.code AS unit_code, pi.quantity,
+              ${PART_ISSUE_RETURNED_SQL}::numeric(12,3)::text AS returned_quantity,
+              (pi.quantity - ${PART_ISSUE_RETURNED_SQL})::numeric(12,3)::text AS returnable_quantity,
+              pi.created_by, pi.created_at,
+              ${cursorTimestamp('pi.created_at')} AS sort_value
+         FROM inv.part_issues pi
+         JOIN inv.item_master i ON i.tenant_id = pi.tenant_id AND i.id = pi.item_id
+         JOIN inv.units_of_measure u ON u.id = i.uom_id
+         JOIN wo.work_orders w ON w.tenant_id = pi.tenant_id AND w.id = pi.work_order_id
+        WHERE pi.tenant_id = $1 AND pi.company_id = $2
+          -- NULL is "every branch of the company", which only a caller the
+          -- policies impose no branch narrowing on can reach.
+          AND ($3::uuid[] IS NULL OR pi.branch_id = ANY($3::uuid[]))
+          AND pi.deleted_at IS NULL
+          AND ($4::uuid IS NULL OR pi.work_order_id = $4)
+          AND ($5::uuid IS NULL OR pi.item_id = $5)
+          AND ($6::timestamptz IS NULL OR pi.created_at >= $6::timestamptz)
+          AND ($7::timestamptz IS NULL OR pi.created_at <= $7::timestamptz)
+          ${search.predicate}
+          ${keyset.predicate}
+        ${keyset.order}
+        ${keyset.limitClause}`,
+      [...values, ...search.values, ...keyset.values]
+    );
+    return buildPageWithCursors(
+      result.rows.map((row) => ({
+        item: {
+          id: row.id,
+          companyId: row.company_id,
+          branchId: row.branch_id,
+          workOrderId: row.work_order_id,
+          workOrderDisplayNumber: row.display_number,
+          itemId: row.item_id,
+          sku: row.sku,
+          itemName: row.item_name,
+          unitCode: row.unit_code,
+          quantity: row.quantity,
+          returnedQuantity: row.returned_quantity,
+          returnableQuantity: row.returnable_quantity,
+          issuedBy: row.created_by,
           createdAt: row.created_at,
         },
         sortValue: row.sort_value,
@@ -3262,9 +3498,7 @@ export class InventoryRepository extends Repository {
       db,
       `SELECT pi.id, pi.company_id, pi.branch_id, pi.work_order_id, pi.item_id,
               pi.location_id, pi.reservation_id, pi.quantity,
-              COALESCE((SELECT sum(pr.quantity) FROM inv.part_returns pr
-                         WHERE pr.tenant_id = pi.tenant_id
-                           AND pr.part_issue_id = pi.id), 0)::numeric(12,3)::text AS returned_qty
+              ${PART_ISSUE_RETURNED_SQL}::numeric(12,3)::text AS returned_qty
          FROM inv.part_issues pi
         WHERE pi.tenant_id = $1 AND pi.id = $2 AND pi.deleted_at IS NULL`,
       [context.principal.tenantId, partIssueId]
@@ -3654,9 +3888,12 @@ export class InventoryRepository extends Repository {
    *
    * The work-order filter resolves through the reference rather than a column,
    * because `inv.stock_movements` has no `work_order_id`: an issue's work order is
-   * on `inv.part_issues`, and a return's is on the issue its `part_returns` row
-   * points at. Doing it in one `EXISTS` per kind keeps the correlation honest
-   * instead of inventing a denormalised column the schema does not have.
+   * on `inv.part_issues`, a stock return's is on the issue its `part_returns` row
+   * points at, and a sales return's is on the issue its `inv.sales_returns` row
+   * names as `source_kind = 'part_issue'` / `source_id` — a sales return of an
+   * invoice line names no work order and is never matched. Doing it in one
+   * `EXISTS` per kind keeps the correlation honest instead of inventing a
+   * denormalised column the schema does not have.
    */
   public async listMovements(
     db: DbHandle,
@@ -3708,6 +3945,13 @@ export class InventoryRepository extends Repository {
                                      AND pi2.id = pr.part_issue_id
             WHERE pr.tenant_id = m.tenant_id AND pr.id = m.reference_id
               AND pi2.work_order_id = $${p}))
+        OR (m.reference_kind = 'sales_return' AND EXISTS (
+           SELECT 1 FROM inv.sales_returns sr
+             JOIN inv.part_issues pi3 ON pi3.tenant_id = sr.tenant_id
+                                     AND pi3.id = sr.source_id
+            WHERE sr.tenant_id = m.tenant_id AND sr.id = m.reference_id
+              AND sr.source_kind = 'part_issue'
+              AND pi3.work_order_id = $${p}))
       )`);
     }
 
@@ -5015,6 +5259,12 @@ export class InventoryRepository extends Repository {
     };
   }
 
+  /**
+   * Active reservations and unreturned issues of one work order. "Unreturned" is
+   * `quantity > PART_ISSUE_RETURNED_SQL` — both return tables, the same sum the
+   * ceiling enforces — so an issue that can take no further return is never
+   * reported as still out.
+   */
   public async countOpenCommitments(
     db: DbHandle,
     workOrderId: string
@@ -5028,9 +5278,7 @@ export class InventoryRepository extends Repository {
            AS reservations,
          (SELECT count(*)::text FROM inv.part_issues pi
            WHERE pi.tenant_id = $1 AND pi.work_order_id = $2 AND pi.deleted_at IS NULL
-             AND pi.quantity > COALESCE((SELECT sum(pr.quantity) FROM inv.part_returns pr
-                                          WHERE pr.tenant_id = pi.tenant_id
-                                            AND pr.part_issue_id = pi.id), 0))
+             AND pi.quantity > ${PART_ISSUE_RETURNED_SQL})
            AS issues`,
       [context.principal.tenantId, workOrderId]
     );

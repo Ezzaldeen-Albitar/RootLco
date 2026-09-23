@@ -668,8 +668,9 @@ describe('S-15 inv.work-order-part-issue-list', () => {
     const seen = body.items[0];
     expect(typeof seen?.quantity).toBe('string');
     expect(seen?.quantity).toBe('4.000');
-    // The correlated sum over inv.part_returns — the same one readPartIssue computes,
-    // in SQL. Nothing has been returned, so it is an exact zero, not a null.
+    // inv.returned_quantity — part_returns plus part-issue sales_returns, the same
+    // expression readPartIssue and the return ceilings use, in SQL. Nothing has been
+    // returned, so it is an exact zero, not a null.
     expect(typeof seen?.returnedQty).toBe('string');
     expect(Number(seen?.returnedQty)).toBe(0);
     // The outstanding amount is NOT published: netting two exact decimals in

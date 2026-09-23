@@ -348,6 +348,29 @@ export const INV_MATERIAL_NO_STOCK_READ: Principal = {
   permissions: ALL_MATERIAL.filter((code) => code !== STOCK_READ),
 };
 
+/** The identity-directory code an actor name is resolved behind. */
+export const USER_READ = 'iam.user.read';
+
+/**
+ * Stock reads PLUS the identity-directory code (Owner directive,
+ * P1-32-PRE-OD-UX).
+ *
+ * `inv.part-issue-list` names who issued each part through
+ * `iamDirectory().directory`, which checks `iam.user.read` itself and hands back
+ * an EMPTY map to a caller without it. No other P1-21 principal holds that code,
+ * so without this one the read's null branch would be the only branch any case
+ * could reach — and an assertion that the name is absent proves nothing if the
+ * resolution is broken for everybody. This principal is what makes the negative
+ * case falsifiable.
+ */
+export const INV_READER_NAMED: Principal = {
+  roleId: 'e1000000-0000-4000-8000-000000000201',
+  userId: 'e1000000-0000-4000-8000-000000000202',
+  subject: 'fx_p1_21_reader_named',
+  tenantId: TENANT_A,
+  permissions: [ITEM_READ, STOCK_READ, WORK_ORDER_READ, USER_READ],
+};
+
 /** Tenant B with the same authority: a refusal is the tenant boundary. */
 export const INV_TENANT_B_MATERIAL: Principal = {
   roleId: 'e1000000-0000-4000-8000-0000000001e3',
@@ -376,6 +399,7 @@ export const P1_21_PRINCIPALS: readonly Principal[] = [
   INV_MATERIAL_APPROVER,
   INV_MATERIAL_SCOPED_A2,
   INV_MATERIAL_NO_STOCK_READ,
+  INV_READER_NAMED,
   INV_TENANT_B_MATERIAL,
 ];
 

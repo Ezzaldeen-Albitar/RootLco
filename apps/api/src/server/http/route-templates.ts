@@ -233,6 +233,7 @@ export const ROUTE_TEMPLATES = Object.freeze([
   '/org/employees/{employeeId}/status',
   '/org/tenant',
   '/organization/branches/{branchId}/status',
+  '/part-issues',
   '/payment-methods',
   '/payments',
   '/payments/{paymentId}',

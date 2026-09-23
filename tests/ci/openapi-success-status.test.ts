@@ -95,7 +95,9 @@ describe('every operation publishes the success status it returns', () => {
     // route module, the overview summary.
     // 497 with the Owner directive working-context read: one operation over one
     // new route module.
-    expect(actual.size).toBe(497);
+    // 498 with the Owner directive issued-parts read: one operation over one new
+    // route module, a GET that answers 200.
+    expect(actual.size).toBe(498);
   });
 
   it('agrees with the committed contract for every operation', () => {
@@ -231,7 +233,9 @@ describe('every operation publishes the success status it returns', () => {
     // 356 -> 357 with the Owner directive tenant dashboard, and 357 -> 358 with
     // the Owner directive working-context read. Both are GETs, so each
     // publishes 200 and does not move the 201 count.
-    expect(counts[200]).toBe(358);
+    // 358 -> 359 with the Owner directive issued-parts read, a GET returning 200,
+    // so the 201 count does not move either.
+    expect(counts[200]).toBe(359);
   });
 
   it('reads the handler, not the declaration', () => {
