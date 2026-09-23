@@ -1,13 +1,14 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { DataTable, type Column } from '@/components/data-table/DataTable';
 import { INITIAL_REQUEST, type TableRequest } from '@/components/data-table/table-state';
 import { useServerTable } from '@/components/data-table/use-server-table';
 import { SelectField, TextField } from '@/components/forms/Field';
 import { notifyActionResult } from '@/components/notifications/action-notifications';
-import type { BranchOption } from '@/features/services/services-contract';
+import { WorkingBranchField } from '@/features/working-context/components/WorkingBranchField';
+import { useBranchTarget } from '@/features/working-context/use-branch-target';
 import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic } from '@/i18n/get-messages';
@@ -18,7 +19,6 @@ import { formatDateTime } from '@/lib/format';
 
 import {
   allocatePayment,
-  listBranches,
   listPaymentMethods,
   listReceipts,
   readOutstanding,
@@ -116,8 +116,6 @@ interface InvoiceBalance {
   readonly state: ReadState<Outstanding>;
 }
 
-const EMPTY_PAIR: Target = { companyId: '', branchId: '' };
-
 export function PaymentsScreen({
   locale,
   messages,
@@ -125,7 +123,6 @@ export function PaymentsScreen({
   initialInvoiceId,
   canRecord,
   canAllocate,
-  canReadBranches,
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
@@ -137,8 +134,11 @@ export function PaymentsScreen({
   readonly canRecord: boolean;
   /** `sal.payment.allocate` — applying a receipt to an invoice. */
   readonly canAllocate: boolean;
-  /** `org.branch.read` — whether a branch list is requested for the target picker. */
-  readonly canReadBranches: boolean;
+  /**
+   * `org.branch.read`. Accepted so the route did not have to change, and no
+   * longer read: the branch is the working context's own named selection.
+   */
+  readonly canReadBranches?: boolean;
 }) {
   const [target, setTarget] = useState<Target | null>(null);
   const [receiptId, setReceiptId] = useState<string | null>(initialReceiptId);
@@ -159,14 +159,12 @@ export function PaymentsScreen({
     <div className="flex flex-col gap-6">
       <TargetPanel
         messages={messages}
-        canReadBranches={canReadBranches}
-        target={target}
         onChosen={(next) => {
-          // A receipt belongs to one branch: naming a DIFFERENT branch must not
-          // leave the previous branch's receipt open beside the new list. A
-          // receipt named in the address survives the first choice, which sets
-          // the target for reads that were waiting on it.
-          if (target && target.branchId !== next.branchId) setReceiptId(null);
+          // A receipt belongs to one branch: a DIFFERENT branch must not leave
+          // the previous branch's receipt open beside the new list. A receipt
+          // named in the address survives the first report, which sets the
+          // target for reads that were waiting on it.
+          if (target && target.branchId !== next?.branchId) setReceiptId(null);
           setTarget(next);
           setNotice(null);
           setBalance(null);
@@ -278,38 +276,50 @@ export function PaymentsScreen({
  * The target
  * ------------------------------------------------------------------ */
 
+/**
+ * The branch the receipts belong to, STATED rather than asked (Owner directive,
+ * `P1-32-PRE-OD-UX`).
+ *
+ * ## What it replaces
+ *
+ * A form: a branch select when `org.branch-list` answered, two free-text boxes
+ * asking for a company reference and a branch reference when it did not, and a
+ * submit the operator had to press before the receipts of a branch were read at
+ * all. The boxes were offered to exactly the operator whose directory read had
+ * been refused — the person with the least to go on.
+ *
+ * The branch is chosen ONCE, in the header, from the named list
+ * `GET /auth/working-context` publishes for this caller. Nothing about the
+ * request changed: the pair still travels as the authorization target and the
+ * server re-authorizes it on every read and every write.
+ *
+ * ## Reporting upward rather than reading sideways
+ *
+ * The screen keeps the target in its own state — it keys its panels on it and
+ * passes it to every adapter — so the choice is pushed up through `onChosen`.
+ * The effect is guarded by the pair it last reported, so it settles in one pass
+ * and cannot loop, and it reports `null` when the selection stops being a
+ * single branch: a screen left holding the previous branch would go on reading
+ * one workshop's money under another workshop's name.
+ */
 function TargetPanel({
   messages,
-  canReadBranches,
-  target,
   onChosen,
 }: {
   readonly messages: Messages;
-  readonly canReadBranches: boolean;
-  readonly target: Target | null;
-  readonly onChosen: (next: Target) => void;
+  /** `null` while the selection is not a single branch. */
+  readonly onChosen: (next: Target | null) => void;
 }) {
-  const [branches, setBranches] = useState<readonly BranchOption[] | null>(null);
-  const [branchesRefused, setBranchesRefused] = useState(false);
-  const [pair, setPair] = useState<Target>(EMPTY_PAIR);
-  const [errors, setErrors] = useState<Readonly<Record<string, string>>>({});
+  const branch = useBranchTarget();
+  const chosen = branch.kind === 'ready' ? branch.target : null;
+  const reported = useRef<string | null>(null);
 
   useEffect(() => {
-    if (!canReadBranches) return;
-    let live = true;
-    void listBranches().then((state) => {
-      if (!live) return;
-      if (state.status === 'ok') setBranches(state.data.items);
-      else setBranchesRefused(true);
-    });
-    return () => {
-      live = false;
-    };
-  }, [canReadBranches]);
-
-  // An empty list is not a picker: with no branch to choose, the operator gets
-  // the identifier fields rather than a control with nothing in it.
-  const offered = canReadBranches && branches !== null && branches.length > 0;
+    const key = chosen === null ? '' : `${chosen.companyId}:${chosen.branchId}`;
+    if (reported.current === key) return;
+    reported.current = key;
+    onChosen(chosen);
+  }, [chosen, onChosen]);
 
   return (
     <section
@@ -321,75 +331,13 @@ function TargetPanel({
       <p className="mt-1 text-body text-text-secondary">
         {translate(messages, 'payments.target.explain')}
       </p>
-      <form
-        aria-label={translate(messages, 'payments.target.formLabel')}
-        className="mt-3 grid gap-3 sm:grid-cols-2"
-        onSubmit={(event) => {
-          event.preventDefault();
-          const found: Record<string, string> = {};
-          // The company is chosen with the branch when a list is offered, so
-          // only the branch has a control that could show an error.
-          if (!offered && !UUID.test(pair.companyId.trim()))
-            found['companyId'] = 'payments.common.idFormat';
-          if (!UUID.test(pair.branchId.trim())) found['branchId'] = 'payments.common.idFormat';
-          setErrors(found);
-          if (Object.keys(found).length > 0) return;
-          onChosen({ companyId: pair.companyId.trim(), branchId: pair.branchId.trim() });
-        }}
-      >
-        {offered ? (
-          <SelectField
-            label={translate(messages, 'payments.common.branchField')}
-            required
-            value={pair.branchId}
-            onChange={(event) => {
-              const chosen = branches?.find((branch) => branch.id === event.target.value);
-              setPair(chosen ? { companyId: chosen.companyId, branchId: chosen.id } : EMPTY_PAIR);
-            }}
-            options={(branches ?? []).map((branch) => ({
-              value: branch.id,
-              label: `${branch.branchCode} — ${branch.name}`,
-            }))}
-            placeholder={translate(messages, 'payments.common.branchPlaceholder')}
-            error={errors['branchId'] ? translateDynamic(messages, errors['branchId']) : undefined}
-          />
-        ) : (
-          <>
-            <TextField
-              label={translate(messages, 'payments.common.companyIdField')}
-              description={
-                branchesRefused
-                  ? translate(messages, 'payments.common.branchesRefused')
-                  : translate(messages, 'payments.common.identifierHelp')
-              }
-              required
-              spellCheck={false}
-              dir="ltr"
-              value={pair.companyId}
-              onChange={(event) => setPair({ ...pair, companyId: event.target.value })}
-              error={
-                errors['companyId'] ? translateDynamic(messages, errors['companyId']) : undefined
-              }
-            />
-            <TextField
-              label={translate(messages, 'payments.common.branchIdField')}
-              required
-              spellCheck={false}
-              dir="ltr"
-              value={pair.branchId}
-              onChange={(event) => setPair({ ...pair, branchId: event.target.value })}
-              error={
-                errors['branchId'] ? translateDynamic(messages, errors['branchId']) : undefined
-              }
-            />
-          </>
-        )}
-        <div className="sm:col-span-2">
-          <button type="submit" className={PRIMARY_BUTTON}>
-            {translate(messages, target ? 'payments.target.change' : 'payments.target.choose')}
-          </button>
-        </div>
-      </form>
+      <div className="mt-3">
+        <WorkingBranchField
+          messages={messages}
+          label={translate(messages, 'payments.common.branchField')}
+          testId="payments-branch-target"
+        />
+      </div>
     </section>
   );
 }

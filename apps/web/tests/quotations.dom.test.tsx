@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import en from '../src/i18n/messages/en.json';
 import ar from '../src/i18n/messages/ar.json';
-import { renderLtr, renderRtl } from './render';
+import { TEST_BRANCH, inBranch, renderLtr, renderRtl } from './render';
 
 /**
  * The quotations of a work order and the builder, rendered (P1-30, `W3`,
@@ -48,8 +48,10 @@ vi.mock('@/features/services/api', () => ({
 }));
 
 const readWorkOrderDetail = vi.fn();
+const listWorkOrders = vi.fn();
 vi.mock('@/features/work-orders/api', () => ({
   readWorkOrderDetail: (...args: unknown[]) => readWorkOrderDetail(...args),
+  listWorkOrders: (...args: unknown[]) => listWorkOrders(...args),
 }));
 
 const push = vi.fn();
@@ -173,26 +175,71 @@ beforeEach(() => {
 });
 
 describe('reached from a work order', () => {
-  it('without a work order, explains and takes an identifier', async () => {
+  it('without a work order, finds the job on the working branch instead of asking for a reference', async () => {
+    listWorkOrders.mockResolvedValue({
+      status: 'ok',
+      rows: [workOrder],
+      nextCursor: null,
+      hasMore: false,
+      correlationId: 'corr-wo',
+    });
     const user = userEvent.setup();
-    renderScreen({ workOrderId: null, workOrder: null });
+    renderLtr(
+      inBranch(
+        <QuotationsScreen
+          locale="en"
+          messages={en}
+          workOrderId={null}
+          workOrder={null}
+          canManage={false}
+          canReadServices={false}
+          canSearchWorkOrders={true}
+        />
+      )
+    );
     expect(screen.getByText(EN['quotations.choose.explain'] as string)).toBeVisible();
     expect(listQuotations).not.toHaveBeenCalled();
-    await user.type(screen.getByLabelText(labelled('quotations.choose.workOrderId')), 'nope');
+    const box = screen.getByLabelText(EN['quotations.choose.workOrderId'] as string);
+    // Nothing chosen: the box is marked and says why, and nothing is opened.
     await user.click(
       screen.getByRole('button', { name: EN['quotations.choose.submit'] as string })
     );
-    expect(await screen.findByText(EN['quotations.common.idFormat'] as string)).toBeVisible();
+    expect(box).toHaveAttribute('aria-invalid', 'true');
+    expect(screen.getByText(EN['workOrders.picker.required'] as string)).toBeVisible();
     expect(push).not.toHaveBeenCalled();
-    await user.clear(screen.getByLabelText(labelled('quotations.choose.workOrderId')));
-    await user.type(
-      screen.getByLabelText(labelled('quotations.choose.workOrderId')),
-      WORK_ORDER_ID
+    await user.type(box, '12-34{Enter}');
+    await user.click(await screen.findByRole('button', { name: /WO-000042/ }));
+    expect(listWorkOrders).toHaveBeenCalledWith(
+      { companyId: TEST_BRANCH.companyId, branchId: TEST_BRANCH.id },
+      { q: '12-34' },
+      expect.objectContaining({ page: 1 }),
+      null
     );
     await user.click(
       screen.getByRole('button', { name: EN['quotations.choose.submit'] as string })
     );
     expect(push).toHaveBeenCalledWith(`/en/quotations?workOrderId=${WORK_ORDER_ID}`);
+  });
+
+  it('without the work-order code, offers no search and no submit', () => {
+    renderLtr(
+      inBranch(
+        <QuotationsScreen
+          locale="en"
+          messages={en}
+          workOrderId={null}
+          workOrder={null}
+          canManage={false}
+          canReadServices={false}
+          canSearchWorkOrders={false}
+        />
+      )
+    );
+    expect(screen.getByText(EN['workOrders.picker.notPermitted'] as string)).toBeVisible();
+    expect(screen.queryByRole('searchbox')).toBeNull();
+    expect(
+      screen.queryByRole('button', { name: EN['quotations.choose.submit'] as string })
+    ).toBeNull();
   });
 
   it('with a work order, reads on first paint and names the work order and customer', async () => {

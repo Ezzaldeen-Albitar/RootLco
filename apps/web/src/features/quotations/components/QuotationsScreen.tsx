@@ -10,10 +10,12 @@ import { useServerTable } from '@/components/data-table/use-server-table';
 import { TextField } from '@/components/forms/Field';
 import { notifyActionResult } from '@/components/notifications/action-notifications';
 import type { WorkOrderListEntry } from '@/features/work-orders/work-orders-contract';
+import { WorkOrderPicker } from '@/features/work-orders/components/WorkOrderPicker';
 import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic } from '@/i18n/get-messages';
 import type { ActionState } from '@/lib/forms/action-result';
+import { useFocusFirstInvalid } from '@/lib/forms/use-focus-first-invalid';
 
 import { createQuotation, listQuotations } from '../api';
 import { INTERNAL_CODE, type QuotationSummary } from '../quotations-contract';
@@ -38,7 +40,7 @@ import {
  *
  * There is no quotation list wider than a work order — the backend refuses one
  * as scope-inert — so this screen takes the work order's id from its address.
- * Without one it explains that and offers an identifier field; with one it
+ * Without one it explains that and offers a search over the branch's jobs; with one it
  * lists `quo.quotation-list` and, for a manager, offers the builder.
  *
  * ## The builder sends lines; the server prices them
@@ -63,6 +65,7 @@ export function QuotationsScreen({
   workOrder,
   canManage,
   canReadServices,
+  canSearchWorkOrders = false,
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
@@ -74,11 +77,19 @@ export function QuotationsScreen({
   readonly canManage: boolean;
   /** `svc.service.read` — decides whether a service can be found by code. */
   readonly canReadServices: boolean;
+  /** `wo.work_order.read` — decides whether the job can be FOUND when none is named. */
+  readonly canSearchWorkOrders?: boolean;
 }) {
   const [building, setBuilding] = useState(false);
 
   if (workOrderId === null) {
-    return <ChooseWorkOrder locale={locale} messages={messages} />;
+    return (
+      <ChooseWorkOrder
+        locale={locale}
+        messages={messages}
+        canSearchWorkOrders={canSearchWorkOrders}
+      />
+    );
   }
 
   return (
@@ -162,23 +173,47 @@ export function QuotationsScreen({
 function ChooseWorkOrder({
   locale,
   messages,
+  canSearchWorkOrders,
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
+  /** `wo.work_order.read` — whether the jobs of the branch can be searched. */
+  readonly canSearchWorkOrders: boolean;
 }) {
   const router = useRouter();
-  const [value, setValue] = useState('');
-  const [error, setError] = useState<string | undefined>(undefined);
+  /*
+   * The job is FOUND, not typed.
+   *
+   * This form used to take a work-order reference as free text and refuse
+   * anything that was not shaped like one — a 36-character string that appears
+   * on no printed document and on no other screen, so the only way to fill it
+   * in was to copy one out of another page's address bar. `wo.work-order-list`
+   * answers the question the form was really asking (Owner directive,
+   * `P1-32-PRE-OD-UX`).
+   */
+  const [chosen, setChosen] = useState<WorkOrderListEntry | null>(null);
+  // An attempt counter rather than a flag: the focus hook moves the cursor to
+  // the box once per refused attempt, never on a re-render.
+  const [refusal, setRefusal] = useState<ActionState>({ status: 'idle' });
+  const formRef = useFocusFirstInvalid(refusal);
+  const error =
+    refusal.status === 'invalid' && chosen === null
+      ? translate(messages, 'workOrders.picker.required')
+      : undefined;
   return (
     <form
+      ref={formRef}
       onSubmit={(event) => {
         event.preventDefault();
-        const id = value.trim();
-        if (!UUID.test(id)) {
-          setError(translate(messages, 'quotations.common.idFormat'));
+        if (chosen === null) {
+          setRefusal((previous) => ({
+            status: 'invalid',
+            fieldErrors: { workOrderId: 'workOrders.picker.required' },
+            attempt: (previous.attempt ?? 0) + 1,
+          }));
           return;
         }
-        router.push(`/${locale}/quotations?workOrderId=${encodeURIComponent(id)}`);
+        router.push(`/${locale}/quotations?workOrderId=${encodeURIComponent(chosen.id)}`);
       }}
       noValidate
       aria-labelledby="quotations-choose-heading"
@@ -199,20 +234,21 @@ function ChooseWorkOrder({
           {translate(messages, 'quotations.choose.boardLink')}
         </Link>
       </p>
-      <TextField
+      <WorkOrderPicker
+        messages={messages}
         label={translate(messages, 'quotations.choose.workOrderId')}
-        required
-        spellCheck={false}
-        dir="ltr"
-        value={value}
-        onChange={(event) => setValue(event.target.value)}
+        value={chosen}
+        onChange={setChosen}
         error={error}
+        canSearch={canSearchWorkOrders}
       />
-      <div>
-        <button type="submit" className={PRIMARY_BUTTON}>
-          {translate(messages, 'quotations.choose.submit')}
-        </button>
-      </div>
+      {canSearchWorkOrders ? (
+        <div>
+          <button type="submit" className={PRIMARY_BUTTON}>
+            {translate(messages, 'quotations.choose.submit')}
+          </button>
+        </div>
+      ) : null}
     </form>
   );
 }

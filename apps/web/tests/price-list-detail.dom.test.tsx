@@ -2,7 +2,7 @@ import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import en from '../src/i18n/messages/en.json';
-import { renderLtr } from './render';
+import { inBranch, renderLtr } from './render';
 
 /**
  * One price list, rendered (P1-30, `W2`, FE-002).
@@ -152,6 +152,28 @@ function rulesOf(versionId: string, rules: readonly unknown[]) {
     rules,
     truncated: false,
   });
+}
+
+/**
+ * The detail inside a working context holding the `BRANCH` pair. The rule's
+ * branch narrowing is CHOSEN from that named list now; there is no box to type
+ * a company or branch reference into (Owner directive, `P1-32-PRE-OD-UX`).
+ */
+function renderDetailInBranch(over: Record<string, unknown> = {}, list = priceList()) {
+  return renderLtr(
+    inBranch(
+      <PriceListDetailScreen
+        locale="en"
+        messages={en}
+        priceList={list as never}
+        canManage
+        canPublish={false}
+        canReadBranches={false}
+        canReadServices={false}
+        {...over}
+      />
+    )
+  );
 }
 
 function renderDetail(over: Record<string, unknown> = {}, list = priceList()) {
@@ -351,7 +373,7 @@ describe('guarded writes send the LIST version and renew it', () => {
 describe('a rule on a draft carries the canonical amount string', () => {
   it('sends the service, the amount as a string, and the narrowing, then reloads the rules', async () => {
     const user = userEvent.setup();
-    renderDetail();
+    renderDetailInBranch();
     const region = rulesRegion();
     const form = await within(region).findByRole('form', {
       name: EN['pricing.rule.heading'] as string,
@@ -361,10 +383,8 @@ describe('a rule on a draft carries the canonical amount string', () => {
       SERVICE_ID
     );
     await user.type(within(form).getByLabelText(labelled('pricing.rule.amount')), '12.5');
-    await user.type(
-      within(form).getByLabelText(labelled('pricing.common.companyIdField')),
-      COMPANY
-    );
+    // The narrowing is a NAMED branch; choosing it fills its company too.
+    await user.selectOptions(within(form).getByLabelText(labelled('pricing.rule.branch')), BRANCH);
     await user.type(within(form).getByLabelText(labelled('pricing.rule.priority')), '5');
     listPriceRules.mockClear();
     await user.click(
@@ -382,8 +402,8 @@ describe('a rule on a draft carries the canonical amount string', () => {
     expect(typeof body['amount']).toBe('string');
     expect(body['amount']).toMatch(/^12\.5(000)?$/);
     expect(body['companyId']).toBe(COMPANY);
+    expect(body['branchId']).toBe(BRANCH);
     expect(body['priority']).toBe(5);
-    expect(body).not.toHaveProperty('branchId');
     await waitFor(() => expect(listPriceRules).toHaveBeenCalledWith(LIST_ID, DRAFT_ID));
   });
 
@@ -441,7 +461,7 @@ describe('a rule on a draft carries the canonical amount string', () => {
       created: null,
     });
     const user = userEvent.setup();
-    renderDetail();
+    renderDetailInBranch();
     const region = rulesRegion();
     const form = await within(region).findByRole('form', {
       name: EN['pricing.rule.heading'] as string,
@@ -451,10 +471,7 @@ describe('a rule on a draft carries the canonical amount string', () => {
       SERVICE_ID
     );
     await user.type(within(form).getByLabelText(labelled('pricing.rule.amount')), '20');
-    await user.type(
-      within(form).getByLabelText(labelled('pricing.common.companyIdField')),
-      COMPANY
-    );
+    await user.selectOptions(within(form).getByLabelText(labelled('pricing.rule.branch')), BRANCH);
     await user.type(within(form).getByLabelText(labelled('pricing.rule.taxClass')), TAX_CLASS);
     await user.click(
       within(form).getByRole('button', { name: EN['pricing.rule.submit'] as string })
@@ -466,9 +483,9 @@ describe('a rule on a draft carries the canonical amount string', () => {
     expect(within(form).getByLabelText(labelled('pricing.rule.taxClass'))).toHaveValue(TAX_CLASS);
   });
 
-  it('refuses a branch without its company before any request', async () => {
+  it('refuses a tax class with no branch chosen, beside the tax class box, before any request', async () => {
     const user = userEvent.setup();
-    renderDetail();
+    renderDetailInBranch();
     const region = rulesRegion();
     const form = await within(region).findByRole('form', {
       name: EN['pricing.rule.heading'] as string,
@@ -478,13 +495,17 @@ describe('a rule on a draft carries the canonical amount string', () => {
       SERVICE_ID
     );
     await user.type(within(form).getByLabelText(labelled('pricing.rule.amount')), '12.5');
-    await user.type(within(form).getByLabelText(labelled('pricing.common.branchIdField')), BRANCH);
+    await user.type(within(form).getByLabelText(labelled('pricing.rule.taxClass')), TAX_CLASS);
     await user.click(
       within(form).getByRole('button', { name: EN['pricing.rule.submit'] as string })
     );
     expect(
-      await within(form).findByText(EN['pricing.rule.branchNeedsCompany'] as string)
+      await within(form).findByText(EN['pricing.rule.taxNeedsCompany'] as string)
     ).toBeVisible();
+    expect(within(form).getByLabelText(labelled('pricing.rule.taxClass'))).toHaveAttribute(
+      'aria-invalid',
+      'true'
+    );
     expect(recordPriceRule).not.toHaveBeenCalled();
   });
 });

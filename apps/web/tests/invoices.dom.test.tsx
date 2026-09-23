@@ -6,6 +6,7 @@ import ar from '../src/i18n/messages/ar.json';
 import { formatMoney } from '../src/lib/money';
 import type { ReactElement } from 'react';
 import {
+  OTHER_BRANCH,
   TEST_BRANCH,
   branchSnapshot,
   inBranch,
@@ -82,8 +83,10 @@ vi.mock('@/features/inventory/api', () => ({
 }));
 
 const readWorkOrderDetail = vi.fn();
+const listWorkOrders = vi.fn();
 vi.mock('@/features/work-orders/api', () => ({
   readWorkOrderDetail: (...args: unknown[]) => readWorkOrderDetail(...args),
+  listWorkOrders: (...args: unknown[]) => listWorkOrders(...args),
 }));
 
 const push = vi.fn();
@@ -249,6 +252,36 @@ function renderScreen(over: Record<string, unknown> = {}) {
   );
 }
 
+/** The screen with no work order named: the chooser, able to search by default. */
+function chooser(over: Record<string, unknown> = {}) {
+  return (
+    <InvoiceScreen
+      locale="en"
+      messages={en}
+      workOrderId={null}
+      workOrder={null}
+      workOrderRefused={null}
+      initialInvoice={null}
+      canViewFinance={true}
+      canIssue={false}
+      canSearchWorkOrders={true}
+      {...over}
+    />
+  );
+}
+
+function renderChooser(over: Record<string, unknown> = {}) {
+  return renderLtr(chooser(over));
+}
+
+const foundPage = (rows: readonly unknown[]) => ({
+  status: 'ok' as const,
+  rows,
+  nextCursor: null,
+  hasMore: false,
+  correlationId: 'corr-wo',
+});
+
 async function renderPage(params: Record<string, string>, search: Record<string, string> = {}) {
   const tree = await InvoicesPage({
     params: Promise.resolve(params),
@@ -274,14 +307,34 @@ beforeEach(() => {
 });
 
 describe('reached from a work order', () => {
-  it('without a work order, explains and takes an identifier', async () => {
+  it('without a work order, FINDS the job on the working branch and opens it by name', async () => {
+    listWorkOrders.mockResolvedValue(foundPage([workOrder]));
     const user = userEvent.setup();
-    renderScreen({ workOrderId: null, workOrder: null, initialInvoice: null });
+    renderChooser();
     expect(screen.getByText(EN['invoices.choose.explain'] as string)).toBeVisible();
     expect(readInvoicePreview).not.toHaveBeenCalled();
-    await user.type(screen.getByLabelText(labelled('invoices.choose.workOrderId')), WORK_ORDER_ID);
+    // No box asks for a reference: the only text box is the search.
+    expect(screen.getAllByRole('searchbox')).toHaveLength(1);
+    await user.type(
+      screen.getByLabelText(EN['invoices.choose.workOrderId'] as string),
+      'Layla{Enter}'
+    );
+    const match = await screen.findByRole('button', { name: /WO-000042/ });
+    // Server-side, addressed to the branch the header holds, with the term as `q`.
+    expect(listWorkOrders).toHaveBeenCalledWith(
+      { companyId: TEST_BRANCH.companyId, branchId: TEST_BRANCH.id },
+      { q: 'Layla' },
+      expect.objectContaining({ page: 1 }),
+      null
+    );
+    expect(match).toHaveTextContent('12-34567');
+    expect(match).toHaveTextContent('Layla Haddad');
+    await user.click(match);
+    expect(screen.getByTestId('work-order-picker-chosen')).toHaveTextContent('WO-000042');
     await user.click(screen.getByRole('button', { name: EN['invoices.choose.submit'] as string }));
+    // The CHOSEN record travels; the search term never reaches the address.
     expect(push).toHaveBeenCalledWith(`/en/invoices?workOrderId=${WORK_ORDER_ID}`);
+    expect(String(push.mock.calls[0]?.[0])).not.toContain('Layla');
   });
 
   it('names the work order and customer, and says when the order read was refused', () => {
@@ -302,6 +355,87 @@ describe('reached from a work order', () => {
     expect(
       screen.queryByRole('region', { name: EN['invoices.preview.heading'] as string })
     ).toBeNull();
+  });
+});
+
+describe('finding the job when none is named (WorkOrderPicker)', () => {
+  it('submitting with nothing chosen marks the box, says why, and moves the cursor there', async () => {
+    const user = userEvent.setup();
+    renderChooser();
+    await user.click(screen.getByRole('button', { name: EN['invoices.choose.submit'] as string }));
+    const box = screen.getByLabelText(EN['invoices.choose.workOrderId'] as string);
+    expect(box).toHaveAttribute('aria-invalid', 'true');
+    expect(screen.getByRole('alert')).toHaveTextContent(EN['workOrders.picker.required'] as string);
+    await waitFor(() => expect(box).toHaveFocus());
+    expect(push).not.toHaveBeenCalled();
+    expect(listWorkOrders).not.toHaveBeenCalled();
+  });
+
+  it('keeps what was typed after a refusal, and the complaint goes once a job is chosen', async () => {
+    listWorkOrders.mockResolvedValue(foundPage([workOrder]));
+    const user = userEvent.setup();
+    renderChooser();
+    const box = screen.getByLabelText(EN['invoices.choose.workOrderId'] as string);
+    await user.type(box, 'WO-42');
+    await user.click(screen.getByRole('button', { name: EN['invoices.choose.submit'] as string }));
+    expect(box).toHaveValue('WO-42');
+    expect(box).toHaveAttribute('aria-invalid', 'true');
+    await user.click(await screen.findByRole('button', { name: /WO-000042/ }));
+    expect(screen.queryByText(EN['workOrders.picker.required'] as string)).toBeNull();
+  });
+
+  it('a single character is not searched, and says how many are needed', async () => {
+    const user = userEvent.setup();
+    renderChooser();
+    await user.type(screen.getByLabelText(EN['invoices.choose.workOrderId'] as string), 'W{Enter}');
+    expect(screen.getByText(EN['workOrders.picker.tooShort'] as string)).toBeVisible();
+    expect(listWorkOrders).not.toHaveBeenCalled();
+  });
+
+  it('a refused search is a refusal with its reference, never "nothing matched"', async () => {
+    listWorkOrders.mockResolvedValue({
+      status: 'denied',
+      rows: [],
+      nextCursor: null,
+      hasMore: false,
+      correlationId: 'ref-wo-403',
+    });
+    const user = userEvent.setup();
+    renderChooser();
+    await user.type(
+      screen.getByLabelText(EN['invoices.choose.workOrderId'] as string),
+      'WO-42{Enter}'
+    );
+    expect(await screen.findByText('ref-wo-403', { exact: false })).toBeVisible();
+    expect(screen.queryByText(EN['state.noResults.title'] as string)).toBeNull();
+  });
+
+  it('without the work-order code there is no box and no submit, and it says so', () => {
+    renderChooser({ canSearchWorkOrders: false });
+    expect(screen.getByText(EN['workOrders.picker.notPermitted'] as string)).toBeVisible();
+    expect(screen.queryByRole('searchbox')).toBeNull();
+    expect(
+      screen.queryByRole('button', { name: EN['invoices.choose.submit'] as string })
+    ).toBeNull();
+  });
+
+  it('with several branches and none chosen, asks for the branch and reads nothing', () => {
+    renderInLtr(inBranch(chooser(), { snapshot: branchSnapshot([TEST_BRANCH, OTHER_BRANCH]) }));
+    expect(screen.getByText(EN['workingContext.chooseFirst'] as string)).toBeVisible();
+    expect(screen.queryByRole('searchbox')).toBeNull();
+    expect(listWorkOrders).not.toHaveBeenCalled();
+  });
+
+  it('in Arabic, the question, the example and the complaint are Arabic', async () => {
+    const user = userEvent.setup();
+    renderRtl(chooser({ locale: 'ar', messages: ar }));
+    expect(screen.getByText(AR['workOrders.picker.searchExample'] as string)).toBeVisible();
+    await user.click(screen.getByRole('button', { name: AR['invoices.choose.submit'] as string }));
+    expect(screen.getByLabelText(AR['invoices.choose.workOrderId'] as string)).toHaveAttribute(
+      'aria-invalid',
+      'true'
+    );
+    expect(screen.getByRole('alert')).toHaveTextContent(AR['workOrders.picker.required'] as string);
   });
 });
 

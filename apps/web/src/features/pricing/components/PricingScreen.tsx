@@ -9,6 +9,7 @@ import { INITIAL_REQUEST } from '@/components/data-table/table-state';
 import { useServerTable } from '@/components/data-table/use-server-table';
 import { TextAreaField, TextField } from '@/components/forms/Field';
 import { notifyActionResult } from '@/components/notifications/action-notifications';
+import { useBranchTarget } from '@/features/working-context/use-branch-target';
 import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic } from '@/i18n/get-messages';
@@ -330,7 +331,20 @@ export function PriceLookupPanel({
   readonly canReadServices: boolean;
 }) {
   const [serviceId, setServiceId] = useState('');
-  const [pair, setPair] = useState<BranchPair>(EMPTY_PAIR);
+  /*
+   * The branch starts at the one the operator is working in.
+   *
+   * A price is resolved FOR a branch, and the form used to open empty and wait
+   * to be told which — from two free-text boxes. The picker beside it is there
+   * to change that choice rather than to make it (Owner directive,
+   * `P1-32-PRE-OD-UX`).
+   */
+  const working = useBranchTarget();
+  const [pair, setPair] = useState<BranchPair>(() =>
+    working.kind === 'ready'
+      ? { companyId: working.target.companyId, branchId: working.target.branchId }
+      : EMPTY_PAIR
+  );
   const [customerClass, setCustomerClass] = useState('');
   const [asOf, setAsOf] = useState('');
   const [errors, setErrors] = useState<Readonly<Record<string, string>>>({});
@@ -348,8 +362,10 @@ export function PriceLookupPanel({
     if (!UUID.test(service)) found['serviceId'] = 'pricing.common.idFormat';
     const companyId = pair.companyId.trim();
     const branchId = pair.branchId.trim();
-    if (!UUID.test(companyId)) found['companyId'] = 'pricing.common.idFormat';
-    if (!UUID.test(branchId)) found['branchId'] = 'pricing.common.idFormat';
+    // Chosen from the platform's own named list, so the only rule left is that
+    // one was chosen at all.
+    if (companyId.length === 0) found['companyId'] = 'field.required';
+    if (branchId.length === 0) found['branchId'] = 'field.required';
     const klass = customerClass.trim();
     if (klass.length > 0 && !INTERNAL_CODE.test(klass)) {
       found['customerClass'] = 'pricing.common.classFormat';

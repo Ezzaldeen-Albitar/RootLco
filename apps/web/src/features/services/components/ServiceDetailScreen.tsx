@@ -5,6 +5,8 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { SelectField, TextAreaField, TextField } from '@/components/forms/Field';
 import { notifyActionResult } from '@/components/notifications/action-notifications';
+import { useBranchTarget } from '@/features/working-context/use-branch-target';
+import { useWorkingContext } from '@/features/working-context/WorkingContextProvider';
 import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic } from '@/i18n/get-messages';
@@ -28,7 +30,7 @@ import {
   type ServiceDetail,
   type ServiceVersion,
 } from '../services-contract';
-import { LifecycleBadge, OutcomeNote } from './ServiceCatalogueScreen';
+import { LifecycleBadge, OutcomeNote, branchesFromContext } from './ServiceCatalogueScreen';
 
 /**
  * One service (P1-30, `W1`, FE-001) — `svc.service-detail`, with the four
@@ -61,7 +63,6 @@ import { LifecycleBadge, OutcomeNote } from './ServiceCatalogueScreen';
  * draft's list, which is rendered as a count of entries and nothing more.
  */
 
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 const PRIMARY_BUTTON =
@@ -85,7 +86,7 @@ export function ServiceDetailScreen({
   const router = useRouter();
   const retired = service.lifecycleStatus === 'archived';
   const categories = useCategories();
-  const branches = useBranchList(canReadBranches && canManage && !retired);
+  const branches = useBranchList(canReadBranches, canManage && !retired);
   const categoryLabel = useMemo(() => {
     const found = categories.items?.find((category) => category.id === service.categoryId);
     return found ? `${found.code} — ${found.name}` : null;
@@ -228,7 +229,19 @@ const BRANCHES_NOT_OFFERED: BranchList = { phase: 'not-offered' };
 const BRANCHES_LOADING: BranchList = { phase: 'loading' };
 const BRANCHES_NONE: BranchList = { phase: 'none' };
 
-function useBranchList(wanted: boolean): BranchList {
+/**
+ * `active` says whether the panel that needs a branch is shown at all;
+ * `canRead` whether `org.branch-list` may be asked.
+ *
+ * The working context answers FIRST. It publishes the named branches this
+ * caller may act in, so a manager without `org.branch.read` is offered those
+ * rather than told there are none; the directory read is only the fallback
+ * when the shell holds no answer (Owner directive, `P1-32-PRE-OD-UX`).
+ */
+function useBranchList(canRead: boolean, active: boolean): BranchList {
+  const context = useWorkingContext();
+  const fromContext = active ? branchesFromContext(context) : null;
+  const wanted = active && canRead && fromContext === null;
   const [items, setItems] = useState<readonly BranchOption[] | null>(null);
   const [failure, setFailure] = useState<{ key: string; retryable: boolean } | null>(null);
   const [attempt, setAttempt] = useState(0);
@@ -261,6 +274,7 @@ function useBranchList(wanted: boolean): BranchList {
     };
   }, [wanted, attempt]);
 
+  if (fromContext !== null) return { phase: 'listed', items: fromContext };
   if (!wanted) return BRANCHES_NOT_OFFERED;
   if (failure !== null) {
     return { phase: 'failed', messageKey: failure.key, retry: failure.retryable ? retry : null };
@@ -453,8 +467,15 @@ function AvailabilityPanel({
   readonly service: ServiceDetail;
   readonly branches: BranchList;
 }) {
-  const [branchId, setBranchId] = useState('');
-  const [companyId, setCompanyId] = useState('');
+  /*
+   * Starts at the branch the operator is working in, when that is one branch:
+   * availability is set FOR a branch, and the header already says which.
+   */
+  const working = useBranchTarget();
+  const workingContext = useWorkingContext();
+  const [branchId, setBranchId] = useState(() =>
+    working.kind === 'ready' ? working.target.branchId : ''
+  );
   const [offered, setOffered] = useState(true);
   const [errors, setErrors] = useState<Readonly<Record<string, string>>>({});
   const [busy, setBusy] = useState(false);
@@ -468,11 +489,10 @@ function AvailabilityPanel({
   const listed = branches.phase === 'listed';
   const listedItems = branches.phase === 'listed' ? branches.items : null;
   /*
-   * The loading-window corruption path: an identifier typed into the fallback
-   * fields survives in this panel's own state, the list then arrives, and the
-   * select finds no matching option — React blanks the control while `branchId`
-   * still holds, and would still send, the typed value. Cleared only when a
-   * list has arrived that cannot contain it.
+   * A branch held in this panel's own state that the list in hand cannot
+   * contain — the working branch before a narrower list arrived, say. React
+   * blanks the control while `branchId` still holds, and would still send, the
+   * value. Treated as nothing chosen when the list cannot contain it.
    */
   const stale =
     listedItems !== null && branchId !== '' && !listedItems.some((one) => one.id === branchId);
@@ -488,16 +508,15 @@ function AvailabilityPanel({
 
   const submit = async () => {
     const found: Record<string, string> = {};
+    /*
+     * The branch is chosen from the platform's own named list, and the company
+     * comes from that branch's own row. There is no typed half left, so the
+     * only rule is that a branch was chosen at all.
+     */
     const branch = chosen.trim();
     if (branch.length === 0) found['branchId'] = 'field.required';
-    else if (!UUID.test(branch)) found['branchId'] = 'services.catalogue.branchIdFormat';
-    // With a list, the company comes from the chosen branch's own row. Without
-    // one, the operator names both halves — the body requires the pair.
-    const company = listed
-      ? (listedItems?.find((option) => option.id === branch)?.companyId ?? '')
-      : companyId.trim();
+    const company = listedItems?.find((option) => option.id === branch)?.companyId ?? '';
     if (company.length === 0) found['companyId'] = 'field.required';
-    else if (!UUID.test(company)) found['companyId'] = 'services.catalogue.branchIdFormat';
     setErrors(found);
     if (Object.keys(found).length > 0) return;
 
@@ -550,41 +569,46 @@ function AvailabilityPanel({
             label={translate(messages, 'services.availability.branch')}
             required
             value={chosen}
-            onChange={(event) => setBranchId(event.target.value)}
+            onChange={(event) => {
+              setBranchId(event.target.value);
+              // A complaint goes the moment the operator corrects it.
+              setErrors({});
+            }}
             options={(listedItems ?? []).map((branch) => ({
               value: branch.id,
               label: `${branch.branchCode} — ${branch.name}`,
             }))}
             placeholder={translate(messages, 'services.availability.chooseBranch')}
-            error={errorFor('branchId')}
+            // One control for the pair: the company's complaint lands here too.
+            error={errorFor('branchId') ?? errorFor('companyId')}
           />
         ) : (
-          <>
-            <TextField
-              label={translate(messages, 'services.availability.companyIdField')}
-              description={
-                branches.phase === 'failed'
+          /*
+           * No branch to choose, so nothing to say about one.
+           *
+           * All three remaining phases used to render two free-text boxes
+           * asking for a company reference and a branch reference. Availability
+           * is set FOR a branch, so without one there is nothing to record, and
+           * saying so is the only honest answer (Owner directive,
+           * `P1-32-PRE-OD-UX`).
+           */
+          <div className="flex flex-col gap-1.5">
+            <p className="text-label font-medium text-text-primary">
+              {translate(messages, 'services.availability.branch')}
+            </p>
+            <p
+              role="status"
+              data-testid="service-availability-no-branch"
+              className="text-supporting text-text-secondary"
+            >
+              {workingContext.present && workingContext.status === 'unavailable'
+                ? translate(messages, 'workingContext.unavailable')
+                : branches.phase === 'failed'
                   ? translateDynamic(messages, branches.messageKey)
                   : branches.phase === 'none'
                     ? translate(messages, 'services.catalogue.branchesNone')
-                    : translate(messages, 'services.availability.idHelp')
-              }
-              required
-              spellCheck={false}
-              dir="ltr"
-              value={companyId}
-              onChange={(event) => setCompanyId(event.target.value)}
-              error={errorFor('companyId')}
-            />
-            <TextField
-              label={translate(messages, 'services.availability.branchIdField')}
-              required
-              spellCheck={false}
-              dir="ltr"
-              value={branchId}
-              onChange={(event) => setBranchId(event.target.value)}
-              error={errorFor('branchId')}
-            />
+                    : translate(messages, 'services.availability.noBranch')}
+            </p>
             {branches.phase === 'failed' && branches.retry !== null ? (
               <div>
                 {/* `type="button"`: this sits inside a <form> and a bare button submits it. */}
@@ -593,7 +617,7 @@ function AvailabilityPanel({
                 </button>
               </div>
             ) : null}
-          </>
+          </div>
         )}
         <label className="flex items-center gap-2 text-body text-text-primary">
           <input
@@ -606,7 +630,8 @@ function AvailabilityPanel({
         </label>
         <OutcomeNote messages={messages} outcome={outcome} />
         <div>
-          <button type="submit" className={PRIMARY_BUTTON} disabled={busy}>
+          {/* Nothing to submit without a branch to set it for. */}
+          <button type="submit" className={PRIMARY_BUTTON} disabled={busy || !listed}>
             {translate(messages, 'services.availability.submit')}
           </button>
         </div>

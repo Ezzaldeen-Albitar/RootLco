@@ -7,11 +7,13 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { TextField } from '@/components/forms/Field';
 import { notifyActionResult } from '@/components/notifications/action-notifications';
 import type { WorkOrderListEntry } from '@/features/work-orders/work-orders-contract';
+import { WorkOrderPicker } from '@/features/work-orders/components/WorkOrderPicker';
 import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic } from '@/i18n/get-messages';
 import type { ReadState } from '@/lib/api/read-operation';
 import type { ActionState } from '@/lib/forms/action-result';
+import { useFocusFirstInvalid } from '@/lib/forms/use-focus-first-invalid';
 import { formatDateTime } from '@/lib/format';
 
 import {
@@ -87,6 +89,7 @@ export function InvoiceScreen({
   initialInvoice,
   canViewFinance,
   canIssue,
+  canSearchWorkOrders = false,
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
@@ -102,6 +105,8 @@ export function InvoiceScreen({
   readonly canViewFinance: boolean;
   /** `sal.invoice.issue` — allocating the number. */
   readonly canIssue: boolean;
+  /** `wo.work_order.read` — decides whether the job can be FOUND when none is named. */
+  readonly canSearchWorkOrders?: boolean;
 }) {
   const router = useRouter();
   const [invoiceRead, setInvoiceRead] = useState<ReadState<WorkOrderInvoice> | null>(
@@ -111,7 +116,13 @@ export function InvoiceScreen({
   const [notice, setNotice] = useState<WriteNotice | null>(null);
 
   if (workOrderId === null) {
-    return <ChooseWorkOrder locale={locale} messages={messages} />;
+    return (
+      <ChooseWorkOrder
+        locale={locale}
+        messages={messages}
+        canSearchWorkOrders={canSearchWorkOrders}
+      />
+    );
   }
 
   // A write re-reads the order's invoice and remounts the panels; what the
@@ -294,23 +305,47 @@ function ReadRefusal({
 function ChooseWorkOrder({
   locale,
   messages,
+  canSearchWorkOrders,
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
+  /** `wo.work_order.read` — whether the jobs of the branch can be searched. */
+  readonly canSearchWorkOrders: boolean;
 }) {
   const router = useRouter();
-  const [value, setValue] = useState('');
-  const [error, setError] = useState<string | undefined>(undefined);
+  /*
+   * The job is FOUND, not typed.
+   *
+   * This form used to take a work-order reference as free text and refuse
+   * anything that was not shaped like one — a 36-character string that appears
+   * on no printed document and on no other screen, so the only way to fill it
+   * in was to copy one out of another page's address bar. `wo.work-order-list`
+   * answers the question the form was really asking (Owner directive,
+   * `P1-32-PRE-OD-UX`).
+   */
+  const [chosen, setChosen] = useState<WorkOrderListEntry | null>(null);
+  // An attempt counter rather than a flag: the focus hook moves the cursor to
+  // the box once per refused attempt, never on a re-render.
+  const [refusal, setRefusal] = useState<ActionState>({ status: 'idle' });
+  const formRef = useFocusFirstInvalid(refusal);
+  const error =
+    refusal.status === 'invalid' && chosen === null
+      ? translate(messages, 'workOrders.picker.required')
+      : undefined;
   return (
     <form
+      ref={formRef}
       onSubmit={(event) => {
         event.preventDefault();
-        const id = value.trim();
-        if (!UUID.test(id)) {
-          setError(translate(messages, 'invoices.common.idFormat'));
+        if (chosen === null) {
+          setRefusal((previous) => ({
+            status: 'invalid',
+            fieldErrors: { workOrderId: 'workOrders.picker.required' },
+            attempt: (previous.attempt ?? 0) + 1,
+          }));
           return;
         }
-        router.push(`/${locale}/invoices?workOrderId=${encodeURIComponent(id)}`);
+        router.push(`/${locale}/invoices?workOrderId=${encodeURIComponent(chosen.id)}`);
       }}
       noValidate
       aria-labelledby="invoice-choose-heading"
@@ -331,20 +366,21 @@ function ChooseWorkOrder({
           {translate(messages, 'invoices.choose.boardLink')}
         </Link>
       </p>
-      <TextField
+      <WorkOrderPicker
+        messages={messages}
         label={translate(messages, 'invoices.choose.workOrderId')}
-        required
-        spellCheck={false}
-        dir="ltr"
-        value={value}
-        onChange={(event) => setValue(event.target.value)}
+        value={chosen}
+        onChange={setChosen}
         error={error}
+        canSearch={canSearchWorkOrders}
       />
-      <div>
-        <button type="submit" className={PRIMARY_BUTTON}>
-          {translate(messages, 'invoices.choose.submit')}
-        </button>
-      </div>
+      {canSearchWorkOrders ? (
+        <div>
+          <button type="submit" className={PRIMARY_BUTTON}>
+            {translate(messages, 'invoices.choose.submit')}
+          </button>
+        </div>
+      ) : null}
     </form>
   );
 }

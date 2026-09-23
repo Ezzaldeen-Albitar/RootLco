@@ -9,6 +9,8 @@ import { INITIAL_REQUEST, type TableRequest } from '@/components/data-table/tabl
 import { useServerTable } from '@/components/data-table/use-server-table';
 import { SelectField, TextAreaField, TextField } from '@/components/forms/Field';
 import { notifyActionResult } from '@/components/notifications/action-notifications';
+import { SearchBox } from '@/components/search/SearchBox';
+import { useWorkingContext } from '@/features/working-context/WorkingContextProvider';
 import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic } from '@/i18n/get-messages';
@@ -73,7 +75,6 @@ import {
  * No money crosses this screen. There is no price on a catalogue row.
  */
 
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 const PRIMARY_BUTTON =
@@ -122,15 +123,22 @@ export function ServiceCatalogueScreen({
     const key = errors[name];
     return key ? translateDynamic(messages, key) : undefined;
   };
+  // A complaint goes the moment the operator corrects the field it is about.
+  const cleared = (name: string) =>
+    setErrors((current) => {
+      if (!(name in current)) return current;
+      const next = { ...current };
+      delete next[name];
+      return next;
+    });
 
   const submit = () => {
     const found: Record<string, string> = {};
     const search = draft.search.trim();
     if (search.length > MAX_NAME) found['search'] = 'services.catalogue.searchTooLong';
+    // Chosen from the platform's own named list, so there is no malformed
+    // reference left for a guard to refuse.
     const branchId = draft.branchId.trim();
-    if (branchId.length > 0 && !UUID.test(branchId)) {
-      found['branchId'] = 'services.catalogue.branchIdFormat';
-    }
     const effectiveOn = draft.effectiveOn.trim();
     if (effectiveOn.length > 0 && !ISO_DATE.test(effectiveOn)) {
       found['effectiveOn'] = 'services.catalogue.dateFormat';
@@ -167,12 +175,23 @@ export function ServiceCatalogueScreen({
         className="rounded-lg border border-border bg-surface p-4"
       >
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-          <TextField
-            label={translate(messages, 'services.catalogue.search')}
-            value={draft.search}
-            onChange={(event) => setDraft((d) => ({ ...d, search: event.target.value }))}
-            error={errorFor('search')}
-          />
+          <div className="sm:col-span-2 lg:col-span-2">
+            <SearchBox
+              messages={messages}
+              label={translate(messages, 'services.catalogue.search')}
+              placeholder={translate(messages, 'services.catalogue.searchPlaceholder')}
+              example={translate(messages, 'services.catalogue.searchExample')}
+              value={draft.search}
+              onChange={(next) => {
+                setDraft((d) => ({ ...d, search: next }));
+                cleared('search');
+              }}
+              onSubmit={submit}
+              inlineSubmit={false}
+              maxLength={MAX_NAME}
+              error={errorFor('search')}
+            />
+          </div>
           <CategoryPicker
             messages={messages}
             taxonomy={taxonomy}
@@ -208,7 +227,10 @@ export function ServiceCatalogueScreen({
             type="date"
             dir="ltr"
             value={draft.effectiveOn}
-            onChange={(event) => setDraft((d) => ({ ...d, effectiveOn: event.target.value }))}
+            onChange={(event) => {
+              setDraft((d) => ({ ...d, effectiveOn: event.target.value }));
+              cleared('effectiveOn');
+            }}
             error={errorFor('effectiveOn')}
           />
         </div>
@@ -306,13 +328,13 @@ function useTaxonomy(): Taxonomy {
  * session both fail identically the second time.
  */
 type Branches =
-  /** No `org.branch.read`. The identifier field is the DESIGN, not a fallback. */
+  /** No `org.branch.read`, and no working context to answer instead. */
   | { readonly phase: 'not-offered' }
-  /** Permitted, and `org.branch-list` has not answered. The only phase with no field. */
+  /** Permitted, and `org.branch-list` has not answered. */
   | { readonly phase: 'loading' }
-  /** Answered with at least one row. */
+  /** Answered with at least one row. The only phase that offers a choice. */
   | { readonly phase: 'listed'; readonly items: readonly BranchOption[] }
-  /** Answered with no row. The identifier is still offered — the server re-authorizes it. */
+  /** Answered with no row. There is nothing to choose, and the screen says so. */
   | { readonly phase: 'none' }
   /** Did not answer. `retry` is null for a refusal and for a dead session. */
   | {
@@ -325,7 +347,36 @@ const NOT_OFFERED: Branches = { phase: 'not-offered' };
 const LOADING: Branches = { phase: 'loading' };
 const NO_BRANCH: Branches = { phase: 'none' };
 
+/**
+ * The working context, mapped onto the shape this picker already speaks.
+ *
+ * The layout reads `GET /auth/working-context` ONCE per request and publishes
+ * the named, active branches this operator is authorized for. Where that answer
+ * exists there is nothing for a second read of `org.branch-list` to add: same
+ * operator, same workspace, same moment.
+ *
+ * `countryCode` is the one field the working context does not publish. It is
+ * `null` rather than invented; nothing in this picker reads it.
+ */
+export function branchesFromContext(
+  context: ReturnType<typeof useWorkingContext>
+): readonly BranchOption[] | null {
+  if (context.status !== 'ready' || context.branches.length === 0) return null;
+  return context.branches.map((branch) => ({
+    id: branch.id,
+    companyId: branch.companyId,
+    branchCode: branch.code,
+    name: branch.name,
+    city: branch.city,
+    countryCode: null,
+    timezoneName: branch.timezone,
+    status: branch.status,
+  }));
+}
+
 function useBranches(canRead: boolean): Branches {
+  const context = useWorkingContext();
+  const fromContext = branchesFromContext(context);
   const [items, setItems] = useState<readonly BranchOption[] | null>(null);
   const [failure, setFailure] = useState<{ key: string; retryable: boolean } | null>(null);
   const [attempt, setAttempt] = useState(0);
@@ -340,7 +391,8 @@ function useBranches(canRead: boolean): Branches {
   }, []);
 
   useEffect(() => {
-    if (!canRead) return;
+    // Not read at all when the shell already holds the answer.
+    if (!canRead || fromContext !== null) return;
     let live = true;
     void listBranches().then((state) => {
       if (!live) return;
@@ -359,8 +411,19 @@ function useBranches(canRead: boolean): Branches {
     return () => {
       live = false;
     };
-  }, [canRead, attempt]);
+  }, [canRead, attempt, fromContext]);
 
+  /*
+   * The working context comes FIRST, before the permission.
+   *
+   * It used to be absent here entirely, so an operator without
+   * `org.branch.read` was reported as having no branch — and that phase
+   * rendered a box asking them to paste a reference. `GET
+   * /auth/working-context` is gated on `iam.user.read`, which anyone who can
+   * read a session holds, and it publishes what this caller may ACT in;
+   * `org.branch-list` publishes what they may administer.
+   */
+  if (fromContext !== null) return { phase: 'listed', items: fromContext };
   if (!canRead) return NOT_OFFERED;
   if (failure !== null) {
     return { phase: 'failed', messageKey: failure.key, retry: failure.retryable ? retry : null };
@@ -448,6 +511,7 @@ function BranchPicker({
    * option — React blanks the control while the form still holds, and would
    * still send, the typed value.
    */
+  const workingContext = useWorkingContext();
   const listedItems = branches.phase === 'listed' ? branches.items : null;
   const stale =
     listedItems !== null && value !== '' && !listedItems.some((branch) => branch.id === value);
@@ -489,28 +553,36 @@ function BranchPicker({
   }
 
   /*
-   * `not-offered`, `none` and `failed` all take the identifier: in all three the
-   * operator may still be authorised for a branch this screen cannot name, and
-   * the server re-authorizes it on every request regardless.
+   * `not-offered`, `none` and `failed`: there is no branch to filter by, and
+   * the screen says which of the three it is.
+   *
+   * All three used to render a free-text box asking for a branch reference. The
+   * argument was that `org.branch-list` lists what a caller may REACH, that an
+   * empty list says nothing about what they may operate on, and that the server
+   * re-authorizes the value anyway — all true, and none of it made a reference
+   * something an operator could look up. This filter is OPTIONAL, so its
+   * absence narrows nothing: the catalogue is simply read unfiltered (Owner
+   * directive, `P1-32-PRE-OD-UX`).
    */
-  const description =
-    branches.phase === 'failed'
-      ? translateDynamic(messages, branches.messageKey)
-      : branches.phase === 'none'
-        ? translate(messages, 'services.catalogue.branchesNone')
-        : translate(messages, 'services.catalogue.branchIdHelp');
+  const sentence =
+    workingContext.present && workingContext.status === 'unavailable'
+      ? translate(messages, 'workingContext.unavailable')
+      : branches.phase === 'failed'
+        ? translateDynamic(messages, branches.messageKey)
+        : branches.phase === 'none'
+          ? translate(messages, 'services.catalogue.branchesNone')
+          : translate(messages, 'services.catalogue.branchesNotOffered');
 
   return (
-    <>
-      <TextField
-        label={translate(messages, 'services.catalogue.branchIdField')}
-        description={description}
-        spellCheck={false}
-        dir="ltr"
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-        error={error}
-      />
+    <div className="flex flex-col gap-1.5">
+      <p className="text-label font-medium text-text-primary">{label}</p>
+      <p
+        role="status"
+        data-testid="service-branch-filter-absent"
+        className="text-supporting text-text-secondary"
+      >
+        {sentence}
+      </p>
       {branches.phase === 'failed' && branches.retry !== null ? (
         <div>
           {/* `type="button"`: this picker sits inside a <form> and a bare button submits it. */}
@@ -519,7 +591,7 @@ function BranchPicker({
           </button>
         </div>
       ) : null}
-    </>
+    </div>
   );
 }
 

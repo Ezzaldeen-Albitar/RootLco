@@ -55,13 +55,13 @@ export const SECONDARY_BUTTON =
  * suggests otherwise (`components/party/CustomerSelector.tsx`).
  */
 export type Branches =
-  /** No `org.branch.read`. Identifier fields are the DESIGN, not a fallback. */
+  /** No `org.branch.read`, and no working context to fall back on. */
   | { readonly phase: 'not-offered' }
-  /** Permitted, and `org.branch-list` has not answered. The only phase with no field. */
+  /** Permitted, and `org.branch-list` has not answered. */
   | { readonly phase: 'loading' }
-  /** Answered with at least one row. */
+  /** Answered with at least one row. The only phase in which a pair can be named. */
   | { readonly phase: 'listed'; readonly items: readonly BranchOption[] }
-  /** Answered with no row. Identifiers are still offered — the server re-authorizes the pair. */
+  /** Answered with no row. There is nothing to choose, and the screen says so. */
   | { readonly phase: 'none' }
   /** Did not answer. `retry` is null for a refusal and for a dead session. */
   | {
@@ -75,11 +75,15 @@ const LOADING: Branches = { phase: 'loading' };
 const NO_BRANCH: Branches = { phase: 'none' };
 
 /**
- * Whether a pair can be named at all. ONLY `loading` says no: every other phase
- * mounts either the select or the two identifier fields.
+ * Whether a pair can be named at all.
+ *
+ * Only `listed` says yes now. It used to be "anything but `loading`", because
+ * every other phase mounted two boxes to type a reference into; with those gone
+ * there is nothing to submit unless a branch can be chosen, and a submit left
+ * enabled over an absent control is a button whose only outcome is a refusal.
  */
 export function canNameBranch(branches: Branches): boolean {
-  return branches.phase !== 'loading';
+  return branches.phase === 'listed';
 }
 
 /**
@@ -154,13 +158,23 @@ export function useBranches(canRead: boolean): Branches {
     };
   }, [canRead, attempt, fromContext]);
 
-  // Derived last and in this order: permission, then failure, then arrival, then
-  // emptiness. Nothing outside this function can observe the raw fields.
-  if (!canRead) return NOT_OFFERED;
-  // Before the failure branch: the shell's own answer cannot be stale here and
-  // cannot have failed, so a screen mounted during a `org.branch-list` hiccup
-  // still lists names rather than dropping to identifier fields.
+  /*
+   * Derived last and in this order: the working context, then permission, then
+   * failure, then arrival, then emptiness. Nothing outside this function can
+   * observe the raw fields.
+   *
+   * The context comes FIRST. It used to be tested after the permission, so an
+   * operator without `org.branch.read` was reported as `not-offered` even
+   * though the shell was holding their named branches — and with the identifier
+   * boxes gone that would leave a price with nothing to be resolved for. The
+   * directory read is an optimisation on top of the context, never the
+   * authority over it: `GET /auth/working-context` publishes what this caller
+   * may act in, and the server re-authorizes the pair on every request either
+   * way. It is also tested before the failure branch, so a screen mounted during
+   * an `org.branch-list` hiccup still lists names.
+   */
   if (fromContext !== null) return { phase: 'listed', items: fromContext };
+  if (!canRead) return NOT_OFFERED;
   if (failure !== null) {
     return { phase: 'failed', messageKey: failure.key, retry: failure.retryable ? retry : null };
   }
@@ -178,10 +192,9 @@ export interface BranchPair {
 export const EMPTY_PAIR: BranchPair = { companyId: '', branchId: '' };
 
 /**
- * A branch as a list when the operator may read one — choosing a branch fills
- * its company too — and as two identifier fields in every case where this
- * screen has no list to narrow to. A read in flight is a WAIT, not a refusal,
- * and is the one phase with no field to type into.
+ * A branch as a list — choosing a branch fills its company too — and a sentence
+ * saying why in every case where this screen has no list to narrow to. A read
+ * in flight is a WAIT, not a refusal.
  */
 export function BranchPairPicker({
   messages,
@@ -257,97 +270,62 @@ export function BranchPairPicker({
           label: `${branch.branchCode} — ${branch.name}`,
         }))}
         placeholder={placeholder}
-        error={errors?.['branchId']}
+        // EITHER half's complaint lands here: there is one control for the pair,
+        // and a company refusal with no company field would render nowhere.
+        error={errors?.['branchId'] ?? errors?.['companyId']}
       />
     );
   }
 
   /*
-   * The working context could not be read, and this screen is inside one.
+   * Everything that is not a list: `not-offered`, `none`, `failed`, and a
+   * working context that could not be read at all.
    *
-   * The three phases below take the pair as typed references, and the reason
-   * given for that is sound where it applies: `org.branch-list` lists what a
-   * caller may REACH, an empty list is not a statement about what they may
-   * operate on, and the server re-authorizes the pair anyway. None of it
-   * applies here. This is not "the list is empty" — it is "the shell could not
-   * read the directory at all", and answering that with two boxes asking for a
-   * reference nobody can look up is the exact defect this phase removed from
-   * six other screens.
+   * All four used to render two free-text boxes asking the operator to paste a
+   * company reference and a branch reference. The argument was that
+   * `org.branch-list` lists what a caller may REACH, that an empty list says
+   * nothing about what they may operate on, and that the server re-authorizes
+   * the pair anyway — all true, and none of it made a reference something
+   * anybody could look up. The operator most likely to meet those boxes was the
+   * one whose directory read had just been refused (Owner directive,
+   * `P1-32-PRE-OD-UX`).
    *
-   * `present` rather than `status` decides it, because a component rendered
-   * with no provider above it reports `unavailable` too, and that one must keep
-   * behaving as it always did.
+   * `present` rather than `status` decides the context case, because a
+   * component rendered with no provider above it reports `unavailable` too.
    */
-  if (workingContext.present && workingContext.status === 'unavailable') {
-    return (
-      <div className="flex flex-col gap-1.5 sm:col-span-3">
-        <p className="text-label font-medium text-text-primary">{label}</p>
-        <p role="status" className="text-supporting text-text-secondary">
-          {translate(messages, 'workingContext.unavailable')}
-        </p>
-        {branches.phase === 'failed' && branches.retry !== null ? (
-          // `type="button"`: every caller renders this picker inside a form.
-          <div>
-            <button type="button" onClick={branches.retry} className={SECONDARY_BUTTON}>
-              {translate(messages, 'workingContext.retry')}
-            </button>
-          </div>
-        ) : (
-          <p className="text-supporting text-text-muted">
-            {translate(messages, 'workingContext.retryInHeader')}
-          </p>
-        )}
-      </div>
-    );
-  }
-
-  /*
-   * `not-offered`, `none` and `failed` all take the pair as identifiers: in all
-   * three the operator may still be authorised for a branch this screen cannot
-   * name, and the server re-authorizes the pair on every request regardless. An
-   * empty list is a SENTENCE, never a blocked form.
-   */
-  const description =
-    branches.phase === 'failed'
+  const contextFailed = workingContext.present && workingContext.status === 'unavailable';
+  const sentence = contextFailed
+    ? translate(messages, 'workingContext.unavailable')
+    : branches.phase === 'failed'
       ? translateDynamic(messages, branches.messageKey)
       : branches.phase === 'none'
         ? translate(messages, 'pricing.common.branchesNone')
-        : translate(messages, 'pricing.common.identifierHelp');
+        : translate(messages, 'pricing.common.branchesNotOffered');
+  const retry = branches.phase === 'failed' ? branches.retry : null;
 
   return (
-    <>
-      <TextField
-        label={translate(messages, 'pricing.common.companyIdField')}
-        description={description}
-        {...(required ? { required: true } : {})}
-        spellCheck={false}
-        dir="ltr"
-        value={value.companyId}
-        onChange={(event) => onChange({ ...value, companyId: event.target.value })}
-        error={errors?.['companyId']}
-      />
-      <TextField
-        label={translate(messages, 'pricing.common.branchIdField')}
-        {...(required ? { required: true } : {})}
-        spellCheck={false}
-        dir="ltr"
-        value={value.branchId}
-        onChange={(event) => onChange({ ...value, branchId: event.target.value })}
-        error={errors?.['branchId']}
-      />
-      {branches.phase === 'failed' && branches.retry !== null ? (
+    <div className="flex flex-col gap-1.5 sm:col-span-2">
+      <p className="text-label font-medium text-text-primary">{label}</p>
+      <p
+        role="status"
+        data-testid="pricing-branch-unavailable"
+        className="text-supporting text-text-secondary"
+      >
+        {sentence}
+      </p>
+      {retry === null ? (
+        <p className="text-supporting text-text-muted">
+          {translate(messages, 'workingContext.retryInHeader')}
+        </p>
+      ) : (
+        // `type="button"`: every caller renders this picker inside a form.
         <div>
-          {/*
-            `type="button"`: every caller renders this picker inside a <form>, and
-            a bare <button> there submits it. The pair is NOT cleared — a retry
-            that fails again must not cost the operator what they typed.
-          */}
-          <button type="button" onClick={branches.retry} className={SECONDARY_BUTTON}>
+          <button type="button" onClick={retry} className={SECONDARY_BUTTON}>
             {translate(messages, 'state.retry')}
           </button>
         </div>
-      ) : null}
-    </>
+      )}
+    </div>
   );
 }
 
