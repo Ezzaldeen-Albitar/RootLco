@@ -463,6 +463,9 @@ describe('the board adapter sends the criteria and carries the row through', () 
   /** One published row. Every field is one the backend really returns. */
   const ROW: ReceptionListEntry = {
     id: '33333333-3333-4333-8333-333333333333',
+    // Published since the branch became an optional filter: a page that can
+    // span several branches has to say which one each row belongs to.
+    branchId: TARGET.branchId,
     displayNumber: 'R-000123',
     receptionStatus: 'opened',
     origin: 'walk_in',

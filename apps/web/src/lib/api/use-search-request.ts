@@ -72,7 +72,18 @@ export type SearchPhase =
   | 'unavailable'
   /** The caller may not read this. Retrying cannot change it. */
   | 'refused'
-  /** Anything else, including an ended session. */
+  /**
+   * The session ended while the screen was open.
+   *
+   * Its own phase, and that is the point. It used to arrive as `failed`
+   * carrying `state.expired.message`, which every renderer then had to
+   * recognise by comparing an error KEY — one did, and the rest showed
+   * "Something went wrong" with a Try-again button that could only fail again.
+   * A phase is a fact about the read; a key is a sentence about it, and asking
+   * a screen to infer the first from the second is how the two came apart.
+   */
+  | 'expired'
+  /** Anything else. Worth retrying, and the reference is worth reporting. */
   | 'failed';
 
 export interface SearchOutcome<Row> {
@@ -125,9 +136,11 @@ const IDLE: SearchOutcome<never> = {
 /**
  * How a read outcome becomes a phase.
  *
- * `expired` is `failed` rather than `unavailable` on purpose: the two differ in
- * what the operator must do next, and offering "try again" to somebody whose
- * session has ended is offering a button that cannot work.
+ * An ended session is its OWN phase rather than a `failed` carrying a
+ * particular key. The two differ in what the operator must do next — sign in
+ * again, rather than try the same request once more — and a renderer that had
+ * to tell them apart by comparing an error key got it wrong everywhere the
+ * comparison was forgotten.
  */
 function outcomeOf<Row>(state: ReadState<CursorPage<Row>>): SearchOutcome<Row> {
   if (state.status === 'ok') {
@@ -142,9 +155,11 @@ function outcomeOf<Row>(state: ReadState<CursorPage<Row>>): SearchOutcome<Row> {
   const phase: SearchPhase =
     state.status === 'denied'
       ? 'refused'
-      : state.status === 'unavailable'
-        ? 'unavailable'
-        : 'failed';
+      : state.status === 'expired'
+        ? 'expired'
+        : state.status === 'unavailable'
+          ? 'unavailable'
+          : 'failed';
   const error =
     state.status === 'denied'
       ? 'state.denied.title'
@@ -183,8 +198,10 @@ export function useSearchRequest<Row, Criteria>(options: {
   ) => Promise<ReadState<CursorPage<Row>>>;
   /**
    * Anything outside the criteria that changes what the answer means — the
-   * working-context version above all. A branch change must abandon the read in
-   * flight, not let it land under the new branch's name.
+   * working-context version above all. A branch change abandons the read in
+   * flight AND bypasses the debounce, so the first read after a switch is for
+   * the branch that is now selected rather than for the one the settled key
+   * still remembers.
    */
   readonly version?: number;
   readonly debounceMs?: number;
@@ -214,6 +231,49 @@ export function useSearchRequest<Row, Criteria>(options: {
   const [forced, setForced] = useState<{ readonly key: string; readonly nonce: number } | null>(
     null
   );
+
+  /* The held answer, declared here because the version adjustment below drops it. */
+  const [held, setHeld] = useState<{
+    readonly key: string;
+    readonly outcome: SearchOutcome<Row>;
+  } | null>(null);
+
+  /*
+   * A WORKING-CONTEXT CHANGE IS AN EXPLICIT SUBMISSION, and this is the defect
+   * that made it one.
+   *
+   * `version` was part of the request key and `activeKey` was the DEBOUNCED
+   * one, so the two moved on different clocks. A branch changed in the header
+   * produced new criteria immediately — the screens derive their scope during
+   * render — while `settledKey` still held the previous branch's criteria for
+   * up to 300 ms. The key that went out was therefore the OLD branch's criteria
+   * at the NEW version: one whole read issued for the branch the operator had
+   * just left, answered, and rendered under the new branch's heading. Worse
+   * than a stale list, and the exact failure the version was added to prevent.
+   *
+   * A switch is an intent, not a keystroke, so it is treated as a submission of
+   * whatever the criteria are NOW: the debounce is bypassed, the nonce moves so
+   * an identical ask still re-issues, and the held answer is dropped rather
+   * than left to be filtered out by its key.
+   *
+   * The request already IN FLIGHT needs nothing here. The read effect is keyed
+   * on the wanted key, the version is part of it, so the effect is torn down
+   * and its cleanup aborts the previous controller — and the continuation
+   * refuses to commit on an aborted signal. Bumping the sequence as well would
+   * be writing a ref during render for a guarantee the abort already gives.
+   *
+   * Adjusted DURING render — React's documented shape for "reset state when an
+   * input changes". An effect would paint one frame of the previous branch's
+   * request first, which is the thing being fixed.
+   */
+  const [lastVersion, setLastVersion] = useState(version);
+  if (version !== lastVersion) {
+    setLastVersion(version);
+    setHeld(null);
+    if (key === null) setForced(null);
+    else setForced((previous) => ({ key, nonce: (previous?.nonce ?? 0) + 1 }));
+  }
+
   const submitted = forced !== null && forced.key === key;
   const activeKey = submitted ? key : settledKey;
   const wanted =
@@ -304,10 +364,6 @@ export function useSearchRequest<Row, Criteria>(options: {
   const wantedKey = wanted === null ? null : `${wanted}#${wantedPage}`;
 
   const sequence = useRef(0);
-  const [held, setHeld] = useState<{
-    readonly key: string;
-    readonly outcome: SearchOutcome<Row>;
-  } | null>(null);
 
   useEffect(() => {
     if (wantedKey === null || activeKey === null) return undefined;
@@ -356,7 +412,7 @@ export function useSearchRequest<Row, Criteria>(options: {
   }, []);
 
   /*
-   * `TableStatus` and `SearchPhase` say the same six things in different words.
+   * `TableStatus` and `SearchPhase` say the same seven things in different words.
    *
    * `idle` and `empty` both map to the table's `idle` — an answered read — and
    * the ZERO-ROW case is the table's to render or the screen's to suppress,
@@ -367,15 +423,15 @@ export function useSearchRequest<Row, Criteria>(options: {
       ? 'loading'
       : outcome.phase === 'refused'
         ? 'denied'
-        : outcome.phase === 'unavailable'
-          ? 'unavailable'
-          : outcome.phase === 'failed'
-            ? outcome.error === 'state.expired.message'
-              ? 'expired'
-              : outcome.error === 'state.notFound.title'
+        : outcome.phase === 'expired'
+          ? 'expired'
+          : outcome.phase === 'unavailable'
+            ? 'unavailable'
+            : outcome.phase === 'failed'
+              ? outcome.error === 'state.notFound.title'
                 ? 'not-found'
                 : 'error'
-            : 'idle';
+              : 'idle';
 
   const request: TableRequest = useMemo(() => withPage(INITIAL_REQUEST, wantedPage), [wantedPage]);
 

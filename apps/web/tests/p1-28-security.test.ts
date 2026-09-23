@@ -808,8 +808,13 @@ describe('P1-28-SEC-003 — the ONE door, and the abuse cases that try the walls
     const source = webFile('features', 'receptions', 'api.ts');
     expect(source).toContain('status: criteria.status');
     expect(source).toContain('vehicleId: criteria.vehicleId');
+    // The door is `branchScopeQuery` since the branch became optional on this
+    // route; the rule it enforces is unchanged. Named explicitly, because a
+    // negative assertion about a helper the file no longer calls would pass
+    // while proving nothing.
+    expect(source).toContain('branchScopeQuery(scope, {');
     expect(source, 'the criteria object is spread into the query builder').not.toMatch(
-      /branchTargetQuery\(\s*target,\s*\{\s*\.\.\.criteria/
+      /branchScopeQuery\(\s*scope,\s*\{\s*\.\.\.criteria/
     );
   });
 
@@ -861,17 +866,50 @@ describe('P1-28-SEC-003 — the ONE door, and the abuse cases that try the walls
      * table keyed on the submission alone would then page branch A's cursor
      * under branch B's name. The version moves on every change, so it cannot.
      */
+    // The calendar still submits a form and still mounts its results under a
+    // key built from the whole submission.
+    {
+      const source = webFile(
+        'features',
+        'appointments',
+        'components',
+        'AppointmentCalendarScreen.tsx'
+      );
+      expect(source).toContain('JSON.stringify(submitted)');
+      expect(source).toMatch(/key=\{`\$\{[A-Za-z]*[Vv]ersion\}:/);
+      expect(source).toMatch(/target:\s*(\{\s*companyId|branch\.target)/);
+    }
+
+    /*
+     * The two boards reach the same place by a different mechanism, and the
+     * mechanism is now the hook's rather than a remount key.
+     *
+     * They read on arrival (Owner directive `P1-32-PRE-OD-UX`), so there is no
+     * submission to key a remount on. `useSearchRequest` owns the ordering
+     * contract instead: it is the serialised CRITERIA plus the working-context
+     * VERSION, `useCursorPages` is keyed on exactly that string, and page one is
+     * restored in the same render that the contract changes in. So both halves
+     * still hold — a branch change throws the cursor stack away, and so does any
+     * change to the filters.
+     *
+     * What this asserts is that both inputs really reach the hook: the scope
+     * travels INSIDE the criteria, so it is part of the serialised key, and the
+     * version is passed explicitly so a header change abandons the read in
+     * flight rather than letting it land under the new branch's name.
+     */
     for (const relative of [
-      ['features', 'appointments', 'components', 'AppointmentCalendarScreen.tsx'],
       ['features', 'receptions', 'components', 'ReceptionQueueScreen.tsx'],
       ['features', 'work-orders', 'components', 'WorkOrderQueueScreen.tsx'],
     ]) {
       const source = webFile(...relative);
-      expect(source, relative.join('/')).toContain('JSON.stringify(submitted)');
-      expect(source, relative.join('/')).toMatch(/key=\{`\$\{[A-Za-z]*[Vv]ersion\}:/);
-      // And the submission that keys it carries the target, so a branch change
-      // really does change the key.
-      expect(source, relative.join('/')).toMatch(/target:\s*(\{\s*companyId|branch\.target)/);
+      expect(source, relative.join('/')).toContain('useSearchRequest');
+      expect(source, relative.join('/')).toMatch(/version:\s*context\.version/);
+      // The scope is part of what the read is filed under, so a branch change
+      // is a new ordering contract and never a reused cursor.
+      expect(source, relative.join('/')).toMatch(/readonly scope:\s*BranchScope/);
+      expect(source, relative.join('/')).toMatch(/criteria:\s*asked/);
+      // And no screen spends a cursor of its own: the stack is the hook's.
+      expect(source, relative.join('/')).not.toMatch(/atob\(|Buffer\.from\(|JSON\.parse\(cursor/);
     }
   });
 

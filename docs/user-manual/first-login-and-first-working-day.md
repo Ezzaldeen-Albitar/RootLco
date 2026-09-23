@@ -231,20 +231,19 @@ jumps past it. **The groups and the entries inside them:**
 
 ## 6. Choose a branch — you will do this on almost every screen
 
-**Label:** IMPLEMENTED (UI), with an OPERATOR PROCEDURE behind it. **Who:** everyone. **Where:** the
-top of the reception queue, the work-order board, the quality queue, the delivery readiness queue,
-the warranty list, stock screens, payments and every report run. **Steps:** name the **Company** <!-- delivery.queue.company -->
-and the **Branch** <!-- delivery.queue.branch --> , then choose the screen's own show button — for
-example **Show readiness** <!-- delivery.queue.show --> , **Show the queue** <!-- receptions.queue.show -->
-, **Show work orders** <!-- workOrders.queue.show --> . **Result:** the list loads for that one
-branch. **Restrictions:** every one of these lists is single-branch by design. There is no view
-across the whole workspace, and nothing is read until you name a branch — _"A work-order board
-belongs to one branch. Nothing is requested until you name one."_ <!-- workOrders.queue.idleBody -->
-If your account is not restricted to particular branches you must type the reference instead of
-choosing from a list: _"Your access is not restricted to particular branches, so enter the
-identifier of the one you want."_ <!-- workOrders.queue.scopeUnrestricted --> On check-in the fields
-are literally **Company identifier** <!-- receptions.checkIn.company --> and **Branch identifier** <!-- receptions.checkIn.branch -->
-. Your companies and branches are listed **by name** on **Administration** → **Organization**, under
+**Label:** IMPLEMENTED (UI), with an OPERATOR PROCEDURE behind it. **Who:** everyone. **Where:** at
+the top of every page, once. **Steps:** choose your branch there — **Working branch** <!-- workingContext.label -->
+— and every screen reads it. You are not asked again, and you never type a reference: the platform
+lists the branches you are allowed to work in, by name. If you are allowed only one, it is chosen
+for you and you are not asked at all. **Result:** the reception queue and the work-order board load
+themselves for that branch as soon as you open them; the quality queue, the delivery readiness
+queue, the warranty list, stock screens, payments and report runs still have their own show button —
+for example **Show readiness** <!-- delivery.queue.show --> . **Restrictions:** the two boards above
+can also read **all your branches** of one company at once, and then every row says which branch it
+is from; the other lists are one branch at a time. To work somewhere else, change your branch at the
+top of the page: _"To work somewhere else, change your branch at the top of the page."_ <!-- workingContext.changeInHeader -->
+If you have half-finished work on screen the change asks first, so nothing is lost without an
+answer. Your companies and branches are listed **by name** on **Administration** → **Organization**, under
 **Companies and branches**, which is also where you add a branch — Part 2, §2.5. The **settings**
 blocks on the same page still identify a company or a branch by a reference, and still say so:
 _"The service publishes no company or branch directory, so references are shown rather than names."_

@@ -737,7 +737,9 @@ test.describe('the P1-28 modules are reachable from the sidebar', () => {
 
     await nav.getByRole('link', { name: say('en', 'nav.receptions'), exact: true }).click();
     await expect(page).toHaveURL(/\/en\/receptions$/);
-    await expect(page.getByRole('main')).toContainText(say('en', 'receptions.queue.idleTitle'));
+    // The board reads on arrival now, so what proves the route rendered is its
+    // own period control rather than an idle state that no longer exists.
+    await expect(page.getByRole('main')).toContainText(say('en', 'receptions.queue.periodLabel'));
   });
 });
 
@@ -901,7 +903,19 @@ test.describe('the booking screen states the blocked truth rather than offering 
  * ================================================================== */
 
 test.describe('the reception queue is a board for one named branch', () => {
-  test('it reads nothing until a branch is named, then states a real result', async ({ page }) => {
+  test('it reads the working branch on arrival, and states a real result', async ({ page }) => {
+    /*
+     * The property changed with the screen (Owner directive P1-32-PRE-OD-UX).
+     *
+     * This case used to assert that the board read NOTHING until a branch
+     * target was submitted on the form. There is no form target any more and no
+     * Show button: the branch is the header's own named selection, the board
+     * reads on arrival, and the read is BOUNDED to that branch's day. So what is
+     * asserted now is the replacement promise — a read happens without being
+     * asked twice, it is addressed to the branch the header names, and a board
+     * holding nothing says "no matches" rather than making a claim about the
+     * whole branch.
+     */
     const posts: string[] = [];
     const observed: string[] = [];
     page.on('request', (request) => {
@@ -911,46 +925,66 @@ test.describe('the reception queue is a board for one named branch', () => {
 
     await page.goto('/en/receptions');
     await segmentRendered(page, '/en/receptions');
-    await expect(page.getByRole('main')).toContainText(say('en', 'receptions.queue.idleTitle'));
+    await expect(page.getByRole('main')).toContainText(say('en', 'receptions.queue.periodLabel'));
 
     /*
-     * No request before intent, restated for the control that decides it — the
-     * same rewrite the calendar block above carries, and for the same reason.
+     * WHICH READ IS BEING COUNTED, and why the two bootstraps cannot share one
+     * counter.
      *
-     * This pressed Show with the pair empty and waited for "required". There is
-     * no pair on this screen to leave empty, and the button is unavailable while
-     * the branch is not a single chosen one, so the old wait could only ever
-     * time out. What replaces it is the claim one level up: the screen says
-     * which control answers, and nothing is read.
+     * This sampled `before = posts.length` AFTER the navigation and then polled
+     * the DELTA for a read. That is the arrangement the old screen needed — the
+     * read could only follow a Show press — and it is exactly wrong for a board
+     * that reads on ARRIVAL: the read is already counted by the time the
+     * baseline is taken, so the delta never moves and the assertion fails
+     * because the behaviour it is checking is working. It duly failed in all
+     * three projects with "the board issued no read at all, Received 0".
      *
-     * Conditional on the chooser existing. An operator with exactly one
-     * authorized branch has it chosen for them and has nothing to withhold, so
-     * asserting the unchosen state unconditionally would fail on a stack that
-     * is perfectly correct.
+     * The honest counter depends on what the acceptance principal is granted,
+     * which this file cannot know and must not assume:
+     *
+     *   - SEVERAL authorized branches — none is chosen for them, so the board
+     *     is not addressed, says which control answers, and reads nothing. The
+     *     baseline is meaningful here, and choosing a branch must move it.
+     *   - EXACTLY ONE — it is chosen for them by the shell, so the board is
+     *     addressed on arrival and has already read before any of this runs.
+     *     There is no delta to wait for; the claim is that a read happened at
+     *     all, and `workInBranch` asserts the branch is stated read-only rather
+     *     than asked for.
+     *
+     * Both are the same promise — the board reads for the branch it is
+     * addressed to, without being asked twice — measured where each bootstrap
+     * actually puts the read.
      */
-    const before = posts.length;
     if ((await page.getByTestId('working-context-select').count()) > 0) {
+      // The claim develop's block made, kept — minus the button it pressed to
+      // make it. There is no Show control on this screen any more, so the
+      // assertion is that an unchosen branch leaves the board silent and says
+      // which control answers.
+      const before = posts.length;
       await expect(page.getByTestId('requires-concrete-branch').first()).toBeVisible();
-      await page.getByRole('button', { name: say('en', 'receptions.queue.show') }).click();
       expect(posts.length - before, 'a branch nobody chose must not issue a read').toBe(0);
+
+      await workInBranch(page, BRANCH_A);
+      await expect
+        .poll(() => posts.length - before, {
+          message: 'naming a branch issued no read at all',
+        })
+        .toBeGreaterThan(0);
+    } else {
+      await workInBranch(page, BRANCH_A);
+      await expect
+        .poll(() => posts.length, { message: 'the board issued no read on arrival' })
+        .toBeGreaterThan(0);
     }
-
-    await workInBranch(page, BRANCH_A);
-    await page.getByRole('button', { name: say('en', 'receptions.queue.show') }).click();
-
-    await expect
-      .poll(() => posts.length - before, { message: 'naming a branch issued no read at all' })
-      .toBeGreaterThan(0);
     expect(observed.length, 'the listener saw no requests at all').toBeGreaterThan(0);
 
-    // The board's own honest sentence for zero rows — never the table's generic
-    // empty state, which would claim something about the whole branch.
-    await expect(page.getByRole('main')).toContainText(say('en', 'receptions.queue.noneMatching'), {
+    // An answered read that returned nothing. "No matches" is a statement about
+    // the search; the table's generic "nothing here yet" would be a claim about
+    // the whole branch on the evidence of one day.
+    await expect(page.getByRole('main')).toContainText(say('en', 'state.noResults.title'), {
       timeout: 20_000,
     });
-    // And the ordering is STATED, because the operation publishes no total and
-    // the board must not imply one.
-    await expect(page.getByRole('main')).toContainText(say('en', 'receptions.queue.orderingNote'));
+    await expect(page.getByRole('main')).not.toContainText(say('en', 'state.empty.title'));
   });
 
   test('the status vocabulary renders as labels, and an empty board offers no close', async ({
@@ -978,6 +1012,8 @@ test.describe('the reception queue is a board for one named branch', () => {
     await page.goto('/en/receptions');
     await segmentRendered(page, '/en/receptions');
 
+    // Grouped into "still with us" and "finished" since the Owner directive, so
+    // the options sit inside optgroups — still options, still labelled.
     const filter = page.getByLabel(say('en', 'receptions.queue.statusFilter'));
     const options = (await filter.locator('option').allInnerTexts()).map((text) => text.trim());
     for (const status of [
@@ -993,15 +1029,18 @@ test.describe('the reception queue is a board for one named branch', () => {
     }
 
     await workInBranch(page, BRANCH_A);
-    await page.getByRole('button', { name: say('en', 'receptions.queue.show') }).click();
-    await expect(page.getByRole('main')).toContainText(say('en', 'receptions.queue.noneMatching'), {
+    await expect(page.getByRole('main')).toContainText(say('en', 'state.noResults.title'), {
       timeout: 20_000,
     });
 
-    await expect(
-      page.getByRole('link', { name: say('en', 'receptions.queue.releaseVehicle') }),
-      'a board holding no visit rendered a custody-release affordance'
-    ).toHaveCount(0);
+    // The next action is a ROW action. A page holding no visit must offer none
+    // at all — one rendered without a row would name a visit that is not there.
+    for (const key of ['receptions.queue.continueCheckIn', 'receptions.queue.open'] as const) {
+      await expect(
+        page.getByRole('link', { name: say('en', key) }),
+        'a board holding no visit rendered a row action'
+      ).toHaveCount(0);
+    }
   });
 });
 
@@ -1274,8 +1313,7 @@ test.describe('nothing this phase reads reaches the address bar', () => {
     await page.goto('/en/receptions');
     await segmentRendered(page, '/en/receptions');
     await workInBranch(page, BRANCH_A);
-    await page.getByRole('button', { name: say('en', 'receptions.queue.show') }).click();
-    await expect(page.getByRole('main')).toContainText(say('en', 'receptions.queue.noneMatching'), {
+    await expect(page.getByRole('main')).toContainText(say('en', 'state.noResults.title'), {
       timeout: 20_000,
     });
 
@@ -1389,7 +1427,9 @@ test.describe('a read-only operator meets a denial, not an empty screen', () => 
       page.getByRole('main'),
       'the reader was denied the queue its read permission covers'
     ).not.toContainText(say('en', 'state.denied.title'));
-    await expect(page.getByRole('main')).toContainText(say('en', 'receptions.queue.idleTitle'));
+    // The board reads on arrival, so what proves the reader reached it is the
+    // board's own control rather than an idle state the screen no longer has.
+    await expect(page.getByRole('main')).toContainText(say('en', 'receptions.queue.periodLabel'));
   });
 
   test('every write affordance is absent for the reader, and the wizard says why', async ({
@@ -2121,7 +2161,6 @@ test.describe('the P1-28 surface discloses nothing of another workspace', () => 
     }
 
     await workInBranch(page, BRANCH_A);
-    await page.getByRole('button', { name: say('en', 'receptions.queue.show') }).click();
 
     const main = page.getByRole('main');
     // Whatever the answer is, it is not Tenant B's data. The board may state a

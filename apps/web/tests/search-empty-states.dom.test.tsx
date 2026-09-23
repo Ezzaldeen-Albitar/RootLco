@@ -1,4 +1,4 @@
-import { screen, waitFor } from '@testing-library/react';
+import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import en from '../src/i18n/messages/en.json';
@@ -14,6 +14,7 @@ import {
   renderRtl,
 } from './render';
 import type { CatalogueResult } from '@/features/vehicles/catalogue-api';
+import { dayIn, rangeOfDays } from '@/lib/branch-time';
 
 /** A healthy make catalogue — see the note in `vehicle-screens.dom.test.tsx`. */
 const CATALOGUE_OK: CatalogueResult = {
@@ -62,6 +63,8 @@ const CATALOGUE_OK: CatalogueResult = {
 const searchCustomers = vi.fn();
 const searchVehicles = vi.fn();
 const listWorkOrders = vi.fn();
+const readWorkOrderCatalogue = vi.fn();
+const readDashboardSummary = vi.fn();
 
 vi.mock('@/features/crm/customers/api', () => ({
   searchCustomers: (...a: unknown[]) => searchCustomers(...a),
@@ -71,7 +74,42 @@ vi.mock('@/features/vehicles/api', () => ({
 }));
 vi.mock('@/features/work-orders/api', () => ({
   listWorkOrders: (...a: unknown[]) => listWorkOrders(...a),
+  readWorkOrderCatalogue: (...a: unknown[]) => readWorkOrderCatalogue(...a),
 }));
+vi.mock('@/features/overview/api', () => ({
+  readDashboardSummary: (...a: unknown[]) => readDashboardSummary(...a),
+}));
+
+/**
+ * A tenant catalogue with a state this repository has never heard of.
+ *
+ * `awaiting_insurer` is the whole point: it is not one of the nine the platform
+ * seeds, so a board that translated states from a list of its own would render
+ * the code — or a message key — instead of the name the workshop gave it.
+ */
+const CATALOGUE_STATES = [
+  {
+    code: 'open',
+    name: 'Open',
+    isTerminal: false,
+    isClosed: false,
+    isCancellation: false,
+  },
+  {
+    code: 'awaiting_insurer',
+    name: 'Waiting for the insurer',
+    isTerminal: false,
+    isClosed: false,
+    isCancellation: false,
+  },
+  {
+    code: 'closed',
+    name: 'Closed',
+    isTerminal: true,
+    isClosed: true,
+    isCancellation: false,
+  },
+];
 
 const push = vi.fn();
 vi.mock('next/navigation', () => ({ useRouter: () => ({ push }) }));
@@ -202,8 +240,14 @@ describe('the vehicle search distinguishes them as well', () => {
   });
 });
 
-describe('the work-order board searches by number and free text (P1-32)', () => {
-  // The branch the board is addressed to, chosen once in the header.
+describe('the work-order board reads on arrival and narrows honestly', () => {
+  /*
+   * The board changed under the Owner directive (`P1-32-PRE-OD-UX`): the Show
+   * button is gone, it reads the working branch on mount, the two search boxes
+   * became one, and the quick views send exactly the flags the operation
+   * publishes. The empty-state claims this file exists for are unchanged and
+   * are asserted on the new shape.
+   */
   const COMPANY = TEST_COMPANY.id;
   const BRANCH = TEST_BRANCH.id;
   const ROW = {
@@ -219,62 +263,462 @@ describe('the work-order board searches by number and free text (P1-32)', () => 
     openedAt: '2026-09-01T09:30:00.000Z',
     recordVersion: 1,
     customer: null,
-    vehicle: { registrationPlate: 'ABC-1234', makeModel: null },
+    vehicle: {
+      vehicleId: '55555555-5555-4555-8555-555555555555',
+      registrationPlate: 'ABC-1234',
+      makeModel: null,
+    },
+    assignedTechnician: null,
+    completedAt: null,
+    qualityState: null,
+  };
+
+  /** The scope and filters of the most recent read. */
+  const lastCall = () => {
+    const call = listWorkOrders.mock.calls.at(-1) as [
+      Record<string, unknown>,
+      Record<string, unknown>,
+    ];
+    return { scope: call[0], filters: call[1] };
   };
 
   beforeEach(() => {
     listWorkOrders.mockReset();
     listWorkOrders.mockResolvedValue({ ...EMPTY_PAGE, rows: [ROW] });
+    readWorkOrderCatalogue.mockReset();
+    readWorkOrderCatalogue.mockResolvedValue({
+      status: 'ok',
+      data: { workOrderStates: CATALOGUE_STATES },
+      correlationId: null,
+    });
+    readDashboardSummary.mockReset();
+    readDashboardSummary.mockResolvedValue({ status: 'unavailable', correlationId: null });
+    window.localStorage.clear();
   });
 
-  const render = () => renderLtr(inBranch(<WorkOrderQueueScreen locale="en" messages={en} />));
+  const render = (canReachDelivery = false) =>
+    renderLtr(
+      inBranch(
+        <WorkOrderQueueScreen locale="en" messages={en} canReachDelivery={canReachDelivery} />
+      )
+    );
 
-  it('issues no request while typing', async () => {
-    const user = userEvent.setup();
+  it('opens on the work that is still the problem of the workshop', async () => {
+    /*
+     * The GROUP, not a state code and not an unfiltered board. The route
+     * resolves `active` from the tenant catalogue's own flags, so a workshop
+     * that defines its own state is covered on the day it defines it.
+     */
     render();
-    await user.type(screen.getByLabelText(en['workOrders.queue.searchFilter']), 'Nadia');
-    expect(listWorkOrders).not.toHaveBeenCalled();
-  });
-
-  it('submits number and search on Enter, as typed, beside the branch target', async () => {
-    const user = userEvent.setup();
-    render();
-    await user.type(screen.getByLabelText(en['workOrders.queue.numberFilter']), 'WO-000123');
-    await user.type(screen.getByLabelText(en['workOrders.queue.searchFilter']), 'ABC{Enter}');
-
     await waitFor(() => expect(listWorkOrders).toHaveBeenCalledTimes(1));
-    const [target, criteria] = listWorkOrders.mock.calls[0] as [unknown, unknown];
-    expect(target).toEqual({ companyId: COMPANY, branchId: BRANCH });
-    expect(criteria).toEqual({ number: 'WO-000123', q: 'ABC' });
+    expect(lastCall().scope).toEqual({ companyId: COMPANY, branchId: BRANCH });
+    expect(lastCall().filters).toEqual({ stateGroup: 'active' });
     expect(await screen.findByText('WO-000123')).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: new RegExp(en['workOrders.queue.view.active'] as string) })
+    ).toHaveAttribute('aria-pressed', 'true');
   });
 
-  it('refuses a one-character search and says why, without a request', async () => {
+  it('asks for everything only when the operator asks for everything', async () => {
     const user = userEvent.setup();
     render();
-    await user.type(screen.getByLabelText(en['workOrders.queue.searchFilter']), 'A{Enter}');
-    expect(await screen.findByText(en['workOrders.queue.searchTooShort'])).toBeInTheDocument();
-    expect(listWorkOrders).not.toHaveBeenCalled();
+    await waitFor(() => expect(listWorkOrders).toHaveBeenCalledTimes(1));
+    await user.click(screen.getByRole('button', { name: en['workOrders.queue.view.all'] }));
+    await waitFor(() => expect(lastCall().filters).toEqual({}));
   });
 
-  it('echoes Arabic-Indic digits for reading and sends the number as typed', async () => {
+  it('bounds "finished today" to the completion instant, not to the opened one', async () => {
+    /*
+     * A different question from "created today", and the platform records it
+     * separately: either completion bound narrows the board to finished work by
+     * construction, because an unfinished work order has no completion instant.
+     */
+    const user = userEvent.setup();
+    render();
+    await waitFor(() => expect(listWorkOrders).toHaveBeenCalledTimes(1));
+
+    await user.click(
+      screen.getByRole('button', {
+        name: new RegExp(en['workOrders.queue.view.completedToday'] as string),
+      })
+    );
+    const today = dayIn(TEST_BRANCH.timezone);
+    const window = rangeOfDays(TEST_BRANCH.timezone, today, today);
+    await waitFor(() =>
+      expect(lastCall().filters).toEqual({
+        completedFrom: window.from,
+        completedTo: window.to,
+      })
+    );
+  });
+
+  it('never sends a state code beside a state group', async () => {
+    /*
+     * The route answers 422 `state_and_group_exclusive` rather than
+     * intersecting them. The exclusion is structural: choosing a state moves the
+     * view off the one that sends a group, and choosing that view clears the
+     * state. So the refusal is unreachable rather than explained.
+     */
+    const user = userEvent.setup();
+    render();
+    await waitFor(() => expect(listWorkOrders).toHaveBeenCalledTimes(1));
+    expect(lastCall().filters).toEqual({ stateGroup: 'active' });
+
+    await user.selectOptions(
+      await screen.findByLabelText(en['workOrders.queue.stateFilter'], { exact: false }),
+      'open'
+    );
+    await waitFor(() => expect(lastCall().filters).toEqual({ state: 'open' }));
+
+    // And back the other way: the view clears the code.
+    await user.click(
+      screen.getByRole('button', { name: new RegExp(en['workOrders.queue.view.active'] as string) })
+    );
+    await waitFor(() => expect(lastCall().filters).toEqual({ stateGroup: 'active' }));
+
+    for (const call of listWorkOrders.mock.calls) {
+      const filters = call[1] as Record<string, unknown>;
+      expect(
+        filters['state'] !== undefined && filters['stateGroup'] !== undefined,
+        'a code and a group travelled together'
+      ).toBe(false);
+    }
+  });
+
+  it('issues no extra request while the operator is still typing', async () => {
+    const user = userEvent.setup();
+    render();
+    await waitFor(() => expect(listWorkOrders).toHaveBeenCalledTimes(1));
+    await user.type(screen.getByLabelText(en['workOrders.queue.searchLabel']), 'ABC');
+    // The mount read, and nothing per keystroke.
+    expect(listWorkOrders).toHaveBeenCalledTimes(1);
+  });
+
+  it('submits the term as typed on Enter, beside the branch scope', async () => {
+    const user = userEvent.setup();
+    render();
+    await waitFor(() => expect(listWorkOrders).toHaveBeenCalledTimes(1));
+
+    await user.type(screen.getByLabelText(en['workOrders.queue.searchLabel']), 'ABC{Enter}');
+    // Beside the default view's own group: a search NARROWS the board it is
+    // typed into, it does not replace it.
+    await waitFor(() => expect(lastCall().filters).toEqual({ stateGroup: 'active', q: 'ABC' }));
+    expect(lastCall().scope).toEqual({ companyId: COMPANY, branchId: BRANCH });
+  });
+
+  it('refuses a one-character term at the box and never sends it', async () => {
+    const user = userEvent.setup();
+    render();
+    await waitFor(() => expect(listWorkOrders).toHaveBeenCalledTimes(1));
+    await user.type(screen.getByLabelText(en['workOrders.queue.searchLabel']), 'A{Enter}');
+    expect(await screen.findByText(en['workOrders.queue.searchTooShort'])).toBeInTheDocument();
+    await new Promise((resolve) => setTimeout(resolve, 350));
+    for (const call of listWorkOrders.mock.calls) {
+      expect((call[1] as Record<string, unknown>)['q']).toBeUndefined();
+    }
+  });
+
+  it('echoes digits typed on an Arabic keyboard and sends them as typed', async () => {
     const user = userEvent.setup();
     renderRtl(inBranch(<WorkOrderQueueScreen locale="ar" messages={ar} />, { locale: 'ar' }));
-    const box = screen.getByLabelText(ar['workOrders.queue.numberFilter']);
+    await waitFor(() => expect(listWorkOrders).toHaveBeenCalledTimes(1));
+    const box = screen.getByLabelText(ar['workOrders.queue.searchLabel']);
     await user.type(box, '١٢٣');
     expect(screen.getByTestId('digits-echo')).toHaveTextContent('123');
     await user.type(box, '{Enter}');
+    await waitFor(() => expect(lastCall().filters['q']).toBe('١٢٣'));
+  });
+
+  it('sends exactly the flag a quick view names, and nothing else', async () => {
+    const user = userEvent.setup();
+    render();
     await waitFor(() => expect(listWorkOrders).toHaveBeenCalledTimes(1));
-    const [, criteria] = listWorkOrders.mock.calls[0] as [unknown, { number?: string }];
-    expect(criteria.number).toBe('١٢٣');
+
+    for (const [view, flag] of [
+      ['mine', 'assignedToMe'],
+      ['awaitingApproval', 'awaitingApproval'],
+      ['awaitingParts', 'awaitingParts'],
+      ['awaitingQuality', 'awaitingQuality'],
+      ['readyForDelivery', 'readyForDelivery'],
+    ] as const) {
+      await user.click(
+        screen.getByRole('button', {
+          name: new RegExp(en[`workOrders.queue.view.${view}`] as string),
+        })
+      );
+      await waitFor(() => expect(lastCall().filters).toEqual({ [flag]: true }));
+    }
+  });
+
+  it('bounds "created today" to the branch day rather than to the reader"s', async () => {
+    const user = userEvent.setup();
+    render();
+    await waitFor(() => expect(listWorkOrders).toHaveBeenCalledTimes(1));
+
+    await user.click(screen.getByRole('button', { name: en['workOrders.queue.view.openedToday'] }));
+    const today = dayIn(TEST_BRANCH.timezone);
+    const window = rangeOfDays(TEST_BRANCH.timezone, today, today);
+    await waitFor(() =>
+      expect(lastCall().filters).toEqual({ openedFrom: window.from, openedTo: window.to })
+    );
+  });
+
+  it('refuses an inverted opened range at the field and issues no read for it', async () => {
+    const user = userEvent.setup();
+    render();
+    await waitFor(() => expect(listWorkOrders).toHaveBeenCalledTimes(1));
+    const calls = listWorkOrders.mock.calls.length;
+
+    const from = screen.getByLabelText(en['workOrders.queue.openedFrom'], { exact: false });
+    const to = screen.getByLabelText(en['workOrders.queue.openedTo'], { exact: false });
+    await user.type(from, '2026-09-10');
+    await user.type(to, '2026-09-01');
+    await user.click(screen.getByRole('button', { name: en['workOrders.queue.applyOpenedRange'] }));
+
+    expect(await screen.findByText(en['workOrders.queue.invertedRange'])).toBeInTheDocument();
+    expect(to).toHaveAttribute('aria-invalid', 'true');
+    await new Promise((resolve) => setTimeout(resolve, 350));
+    expect(listWorkOrders.mock.calls.length).toBe(calls);
+  });
+
+  it('labels a state from the live catalogue rather than from a list in the repository', async () => {
+    listWorkOrders.mockResolvedValue({
+      ...EMPTY_PAGE,
+      rows: [{ ...ROW, state: 'awaiting_insurer' }],
+    });
+    render();
+    // A code the platform does not define, named by the workshop that defined
+    // it. A hard-coded table would have rendered the code, or a key. Scoped to
+    // the table: the same name is also an option of the filter above it.
+    const table = await screen.findByRole('table');
+    expect(within(table).getByText('Waiting for the insurer')).toBeInTheDocument();
+    expect(within(table).queryByText('awaiting_insurer')).toBeNull();
+  });
+
+  it('groups the state filter by the catalogue"s own terminal flag', async () => {
+    render();
+    await waitFor(() => expect(listWorkOrders).toHaveBeenCalled());
+    const select = await screen.findByLabelText(en['workOrders.queue.stateFilter'], {
+      exact: false,
+    });
+    await waitFor(() => expect(within(select).getAllByRole('group').length).toBe(2));
+    const groups = within(select).getAllByRole('group');
+    expect(
+      within(groups[0] as HTMLElement)
+        .getAllByRole('option')
+        .map((option) => (option as HTMLOptionElement).value)
+    ).toEqual(['open', 'awaiting_insurer']);
+    expect(
+      within(groups[1] as HTMLElement)
+        .getAllByRole('option')
+        .map((option) => (option as HTMLOptionElement).value)
+    ).toEqual(['closed']);
+  });
+
+  it('tells three different facts about who is on the car', async () => {
+    listWorkOrders.mockResolvedValue({
+      ...EMPTY_PAGE,
+      rows: [
+        { ...ROW, id: 'a', displayNumber: 'WO-1', assignedTechnician: null },
+        {
+          ...ROW,
+          id: 'b',
+          displayNumber: 'WO-2',
+          assignedTechnician: { id: 't1', displayName: null },
+        },
+        {
+          ...ROW,
+          id: 'c',
+          displayNumber: 'WO-3',
+          assignedTechnician: { id: 't2', displayName: 'Foreman on duty' },
+        },
+      ],
+    });
+    render();
+    expect(await screen.findByText(en['workOrders.queue.column.unassigned'])).toBeInTheDocument();
+    expect(screen.getByText(en['workOrders.queue.column.technicianHidden'])).toBeInTheDocument();
+    expect(screen.getByText('Foreman on duty')).toBeInTheDocument();
+  });
+
+  const summaryWith = (sections: Record<string, unknown>) => ({
+    status: 'ok',
+    correlationId: null,
+    data: {
+      period: { kind: 'today', from: '2026-09-22', to: '2026-09-22', timezone: 'Asia/Riyadh' },
+      generatedAt: '2026-09-22T06:00:00.000Z',
+      branchIds: [BRANCH],
+      sections: {
+        receptionsOpened: { status: 'ok', value: 2 },
+        activeWorkOrders: { status: 'ok', value: 7 },
+        awaitingApproval: { status: 'ok', value: 3 },
+        awaitingParts: { status: 'ok', value: 5 },
+        readyForDelivery: { status: 'ok', value: 1 },
+        completedInPeriod: { status: 'ok', value: 4 },
+        workOrdersByState: { status: 'unauthorized' },
+        intakeCompletionTrend: { status: 'unauthorized' },
+        technicianWorkload: { status: 'unauthorized' },
+        lowStock: { status: 'unauthorized' },
+        pendingApprovalsCount: { status: 'unauthorized' },
+        overdue: { status: 'unavailable', reason: 'nothing to measure lateness against' },
+        ...sections,
+      },
+    },
+  });
+
+  it('takes every figure from the aggregate, and names the clock the day was counted on', async () => {
+    readDashboardSummary.mockResolvedValue(summaryWith({}));
+    render();
+    expect(await screen.findByTestId('figure-active')).toHaveTextContent('7');
+    expect(screen.getByTestId('figure-completed')).toHaveTextContent('4');
+    expect(screen.getByTestId('figure-awaitingApproval')).toHaveTextContent('3');
+    expect(screen.getByTestId('figure-awaitingParts')).toHaveTextContent('5');
+    expect(screen.getByTestId('figure-readyForDelivery')).toHaveTextContent('1');
+    // The aggregate resolves the day on the branch's clock, and a figure headed
+    // "finished today" is a claim about a boundary the reader cannot see.
+    expect(screen.getByTestId('figure-zone')).toHaveTextContent('Asia/Riyadh');
+  });
+
+  it('prints a figure on a chip ONLY where the two count the same set', async () => {
+    /*
+     * The two that agree, and each agreement is a fact rather than a
+     * resemblance: `active` is `!isTerminal` on both sides once
+     * `ck_work_order_states_cancellation` is taken into account, and
+     * `readyForDelivery` is `isClosed && !isCancellation` on both.
+     *
+     * And the seven that do not. `awaitingParts` is the loudest — the aggregate
+     * counts NON-TERMINAL orders whose parts are `requested`, the list filter is
+     * any state whose parts are not `none` — and `awaitingApproval` is the
+     * quietest: both count a pending, undeleted request, but the aggregate
+     * selects from the request table on the scope columns alone while the list
+     * walks from the work order, so a request whose parent was soft-deleted is
+     * counted and not listed. A number one larger than the rows beneath it is
+     * exactly the disagreement a chip figure must not carry.
+     */
+    readDashboardSummary.mockResolvedValue(summaryWith({}));
+    render();
+    await screen.findByTestId('figure-awaitingParts');
+
+    const catalogue = en as Record<string, string>;
+    const label = (view: string) => catalogue[`workOrders.queue.view.${view}`] as string;
+    const chip = (view: string) => screen.getByRole('button', { name: new RegExp(label(view)) });
+
+    expect(chip('active')).toHaveTextContent('7');
+    expect(chip('readyForDelivery')).toHaveTextContent('1');
+
+    for (const view of [
+      'all',
+      'openedToday',
+      'completedToday',
+      'mine',
+      'awaitingApproval',
+      'awaitingParts',
+      'awaitingQuality',
+    ] as const) {
+      expect(chip(view).textContent, view).toBe(label(view));
+    }
+
+    // The strip still carries every published figure, including the ones no
+    // chip may claim, and says plainly what it is about.
+    expect(screen.getByTestId('figure-awaitingParts')).toHaveTextContent('5');
+    expect(screen.getByTestId('work-order-summary-strip')).toHaveTextContent(
+      en['workOrders.queue.figure.note'] as string
+    );
+  });
+
+  it('tells a withheld figure apart from one that cannot be worked out', async () => {
+    readDashboardSummary.mockResolvedValue(
+      summaryWith({
+        // No permission for the section. A zero would be a false statement about
+        // the workshop instead of a true one about the caller.
+        awaitingParts: { status: 'unauthorized' },
+        // Nothing in the platform the question could be asked of; no permission
+        // would change it.
+        readyForDelivery: { status: 'unavailable', reason: 'a sentence the server wrote' },
+      })
+    );
+    render();
+    expect(await screen.findByTestId('figure-awaitingParts')).toHaveTextContent(
+      en['workOrders.queue.figure.withheld'] as string
+    );
+    expect(screen.getByTestId('figure-readyForDelivery')).toHaveTextContent(
+      en['workOrders.queue.figure.unavailable'] as string
+    );
+    // Neither reads as nought, and the server's own sentence never reaches the
+    // screen.
+    const strip = screen.getByTestId('work-order-summary-strip');
+    expect(strip.textContent ?? '').not.toContain('a sentence the server wrote');
+    expect(screen.getByTestId('figure-active')).toHaveTextContent('7');
+  });
+
+  it('shows no figure strip at all when the aggregate could not be read', async () => {
+    render();
+    await waitFor(() => expect(listWorkOrders).toHaveBeenCalled());
+    expect(screen.queryByTestId('work-order-summary-strip')).toBeNull();
+  });
+
+  it('names what can be done where the next action lands, per view', async () => {
+    const user = userEvent.setup();
+    render();
+    expect(await screen.findByRole('link', { name: en['workOrders.queue.open'] })).toHaveAttribute(
+      'href',
+      `/en/work-orders/${ROW.id}`
+    );
+
+    await user.click(
+      screen.getByRole('button', { name: en['workOrders.queue.view.awaitingApproval'] })
+    );
+    expect(
+      await screen.findByRole('link', { name: en['workOrders.queue.openForApproval'] })
+    ).toHaveAttribute('href', `/en/work-orders/${ROW.id}`);
+
+    await user.click(
+      screen.getByRole('button', { name: en['workOrders.queue.view.readyForDelivery'] })
+    );
+    expect(
+      await screen.findByRole('link', { name: en['workOrders.queue.openForDelivery'] })
+    ).toHaveAttribute('href', `/en/work-orders/${ROW.id}`);
+  });
+
+  /*
+   * THE OFFER IS MADE ON THE DESTINATION'S OWN RULE.
+   *
+   * `/delivery` refuses an operator who is missing any of `sal.delivery.view`,
+   * `wo.work_order.read` or `sal.finance.view` — its page decides before it
+   * reads anything. A link offered to everyone on the ready-for-delivery view
+   * therefore sent a receptionist holding only the work-order code to a page
+   * that could tell them nothing but "you may not see this". The board takes
+   * the whole set as one answer from the route that resolved the session, and
+   * the two cases below are the two sides of it.
+   */
+  it('offers the delivery queue on the ready view when the operator may reach it', async () => {
+    const user = userEvent.setup();
+    render(true);
+    await user.click(
+      screen.getByRole('button', { name: en['workOrders.queue.view.readyForDelivery'] })
+    );
+    expect(
+      await screen.findByRole('link', { name: en['workOrders.queue.deliveryQueue'] })
+    ).toHaveAttribute('href', '/en/delivery');
+  });
+
+  it('offers no delivery link at all without the three codes that page requires', async () => {
+    const user = userEvent.setup();
+    render(false);
+    await user.click(
+      screen.getByRole('button', { name: en['workOrders.queue.view.readyForDelivery'] })
+    );
+    // The view itself still works: the rows are there, and only the way through
+    // to a page that would refuse them is gone.
+    expect(
+      await screen.findByRole('link', { name: en['workOrders.queue.openForDelivery'] })
+    ).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: en['workOrders.queue.deliveryQueue'] })).toBeNull();
   });
 
   it('re-targets the board when the branch changes, keeping the filters', async () => {
     /*
-     * The stale-branch defect, on the board. The key carried the context
-     * version so the table remounted — but `submitted` still held the branch
-     * that was current when Show was pressed, so the remount re-read the OLD
-     * branch under the NEW branch name.
+     * The stale-branch defect, on the board: one branch's work must never be
+     * rendered under another branch's name.
      */
     const user = userEvent.setup();
     renderLtr(
@@ -288,41 +732,148 @@ describe('the work-order board searches by number and free text (P1-32)', () => 
       )
     );
     await user.click(screen.getByRole('button', { name: 'use main' }));
-    await user.type(screen.getByLabelText(en['workOrders.queue.searchFilter']), 'ABC{Enter}');
-    await waitFor(() => expect(listWorkOrders).toHaveBeenCalledTimes(1));
+    await user.type(screen.getByLabelText(en['workOrders.queue.searchLabel']), 'ABC{Enter}');
+    await waitFor(() => expect(lastCall().filters).toEqual({ stateGroup: 'active', q: 'ABC' }));
     expect(await screen.findByText('WO-000123')).toBeInTheDocument();
 
-    listWorkOrders.mockClear();
     listWorkOrders.mockResolvedValue({
       ...EMPTY_PAGE,
       rows: [{ ...ROW, id: 'other-row', displayNumber: 'WO-000999', branchId: OTHER_BRANCH.id }],
     });
     await user.click(screen.getByRole('button', { name: 'use second' }));
 
-    await waitFor(() => expect(listWorkOrders).toHaveBeenCalled());
-    const [target, criteria] = listWorkOrders.mock.calls[0] as [unknown, unknown];
-    expect(target).toEqual({ companyId: OTHER_BRANCH.companyId, branchId: OTHER_BRANCH.id });
+    await waitFor(() =>
+      expect(lastCall().scope).toEqual({
+        companyId: OTHER_BRANCH.companyId,
+        branchId: OTHER_BRANCH.id,
+      })
+    );
     // The filter is what the operator asked for and is not about the branch.
-    expect(criteria).toEqual({ q: 'ABC' });
+    expect(lastCall().filters).toEqual({ stateGroup: 'active', q: 'ABC' });
     expect(await screen.findByText('WO-000999')).toBeInTheDocument();
     expect(screen.queryByText('WO-000123')).toBeNull();
   });
 
+  it('issues NO read for the branch it just left', async () => {
+    /*
+     * The defect the hook's version handling closes.
+     *
+     * The criteria are derived from the working context during render, so they
+     * are the new branch's the moment the header moves — but the key the hook
+     * FETCHED was the debounced one, and `version` was not debounced. The
+     * request that went out was therefore the previous branch's criteria at the
+     * new version: a whole read issued for the branch the operator had just
+     * left, answered, and rendered under the new branch's heading.
+     *
+     * Asserted over EVERY call rather than over the last one: a read for the old
+     * branch that is later superseded still happened, still spent one of thirty
+     * requests, and still showed rows under the wrong heading for as long as it
+     * was the newest answer.
+     */
+    const user = userEvent.setup();
+    renderLtr(
+      inBranch(
+        <>
+          <BranchSwitch to={TEST_BRANCH.id} label="use main" />
+          <BranchSwitch to={OTHER_BRANCH.id} label="use second" />
+          <WorkOrderQueueScreen locale="en" messages={en} />
+        </>,
+        { snapshot: branchSnapshot([TEST_BRANCH, OTHER_BRANCH]) }
+      )
+    );
+    await user.click(screen.getByRole('button', { name: 'use main' }));
+    await waitFor(() => expect(listWorkOrders).toHaveBeenCalled());
+
+    listWorkOrders.mockClear();
+    await user.click(screen.getByRole('button', { name: 'use second' }));
+    await waitFor(() => expect(listWorkOrders).toHaveBeenCalled());
+    // Waited well past the debounce, so a late read for the old branch would
+    // have landed by now.
+    await new Promise((resolve) => setTimeout(resolve, 400));
+
+    const branches = listWorkOrders.mock.calls.map(
+      (call) => (call[0] as { branchId: string | null }).branchId
+    );
+    expect(branches).not.toContain(TEST_BRANCH.id);
+    expect(branches).toContain(OTHER_BRANCH.id);
+  });
+
+  it('asks for every branch of the company on "all my branches"', async () => {
+    const user = userEvent.setup();
+    renderLtr(
+      inBranch(
+        <>
+          <BranchSwitch to="all" label="use all" />
+          <WorkOrderQueueScreen locale="en" messages={en} />
+        </>,
+        { snapshot: branchSnapshot([TEST_BRANCH, OTHER_BRANCH]) }
+      )
+    );
+    await user.click(screen.getByRole('button', { name: 'use all' }));
+    await waitFor(() =>
+      expect(lastCall().scope).toEqual({ companyId: TEST_COMPANY.id, branchId: null })
+    );
+  });
+
+  it('says so, and reads nothing, when the branches span more than one company', async () => {
+    /*
+     * `companyId` is mandatory on this operation and "all my branches" across
+     * two companies resolves to none. Picking one would put a board on screen
+     * for a company nobody named, so the screen says which control answers it.
+     */
+    const OTHER_COMPANY_BRANCH = {
+      ...OTHER_BRANCH,
+      id: '66666666-6666-4666-8666-666666666666',
+      companyId: '77777777-7777-4777-8777-777777777777',
+      name: 'Another company branch',
+    };
+    const user = userEvent.setup();
+    renderLtr(
+      inBranch(
+        <>
+          <BranchSwitch to="all" label="use all" />
+          <WorkOrderQueueScreen locale="en" messages={en} />
+        </>,
+        { snapshot: branchSnapshot([TEST_BRANCH, OTHER_COMPANY_BRANCH]) }
+      )
+    );
+    await user.click(screen.getByRole('button', { name: 'use all' }));
+
+    expect(await screen.findByTestId('work-order-queue-spans-companies')).toHaveTextContent(
+      en['workingContext.spansCompanies'] as string
+    );
+    await new Promise((resolve) => setTimeout(resolve, 350));
+    expect(listWorkOrders).not.toHaveBeenCalled();
+  });
+
   it('states an empty result as a statement about the search', async () => {
     listWorkOrders.mockResolvedValue(EMPTY_PAGE);
-    const user = userEvent.setup();
     const { container } = render();
-    await user.type(screen.getByLabelText(en['workOrders.queue.searchFilter']), 'zz{Enter}');
-    expect(await screen.findByText(en['workOrders.queue.noneMatching'])).toBeInTheDocument();
+    expect(await screen.findByText(en['state.noResults.title'])).toBeInTheDocument();
     expect(container.textContent ?? '').not.toContain(en['state.empty.title']);
   });
 
   it('renders a denial as a denial, not as an empty board', async () => {
     listWorkOrders.mockResolvedValue({ ...EMPTY_PAGE, status: 'denied' });
-    const user = userEvent.setup();
     render();
-    await user.type(screen.getByLabelText(en['workOrders.queue.searchFilter']), 'zz{Enter}');
     expect(await screen.findByText(en['state.denied.title'])).toBeInTheDocument();
+  });
+
+  it('renders an ENDED SESSION as itself, with the way back and no Try-again', async () => {
+    /*
+     * It used to arrive as the generic fault — "Something went wrong" over a
+     * button that re-issued the same request with the same dead session, which
+     * fails identically every time. It is its own phase now.
+     */
+    listWorkOrders.mockResolvedValue({ ...EMPTY_PAGE, status: 'expired' });
+    render();
+    expect(await screen.findByText(en['state.expired.title'])).toBeInTheDocument();
+    expect(screen.queryByText(en['state.error.title'])).toBeNull();
+    expect(screen.queryByRole('button', { name: en['state.retry'] })).toBeNull();
+    expect(screen.getByRole('link', { name: en['auth.backToLogin'] })).toHaveAttribute(
+      'href',
+      '/en/login'
+    );
   });
 });
 

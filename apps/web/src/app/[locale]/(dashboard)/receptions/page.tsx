@@ -2,7 +2,7 @@ import { notFound } from 'next/navigation';
 import { PageBody, PageHeader } from '@/components/shell/PageHeader';
 import { PermissionDeniedState } from '@/components/states/States';
 import { requireSession } from '@/features/authentication/api/session';
-import { holds } from '@/features/crm/permissions';
+import { CRM_PERMISSIONS, holds } from '@/features/crm/permissions';
 import { ReceptionQueueScreen } from '@/features/receptions/components/ReceptionQueueScreen';
 import { RECEPTION_PERMISSIONS } from '@/features/receptions/receptions-contract';
 import { isLocale } from '@/i18n/config';
@@ -20,12 +20,14 @@ import { pageMetadata } from '@/lib/page-metadata';
  * The board is the module's landing screen, which is why the navigation entry
  * now points here rather than straight at the check-in wizard.
  *
- * No read is issued by this route: the list REQUIRES a branch target and the
- * server refuses to guess which of a multi-grant operator's branches a board is
- * for, so the screen mounts its results only once the operator names one. What
- * this route passes down is the session's own RESOLVED scope — the identifiers
- * the server already decided this account may act within, never a scope the
- * browser asserts.
+ * No read is issued by this route. The board reads on arrival in the browser,
+ * bounded to the working branch's own day, and the branch is the working
+ * context's named selection rather than anything this route resolves.
+ *
+ * `crm.customer.read` gates the offer to receive a NEW customer, because that is
+ * the code the walk-in desk's own route gates on. An offer that lands on a
+ * refusal is worse than no offer, and this page must not invent a second,
+ * softer rule for who may open that screen.
  */
 export default async function ReceptionQueuePage({
   params,
@@ -70,6 +72,7 @@ export default async function ReceptionQueuePage({
           locale={locale}
           messages={messages}
           canCreate={holds(session.permissions, RECEPTION_PERMISSIONS.manage)}
+          canReachIntake={holds(session.permissions, CRM_PERMISSIONS.customerRead)}
         />
       </PageBody>
     </>
