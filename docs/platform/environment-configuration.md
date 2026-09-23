@@ -324,9 +324,9 @@ inputs to a command you run by hand or that CI runs for you.
 | ---------------------------------------------------------------------------- | ------------------------------ | -------------------------------------------------------------------------------------------------------------- |
 | `SUPABASE_INTERNAL_URL`                                                      | `docker-compose.yml:53`        | **Dead.** Substituted into the container's environment; **no source file reads it**. Compose-level only.       |
 | `OPENAI_API_KEY`                                                             | `supabase/config.toml:110`     | Supabase Studio's assistant feature. Not the application's, and the feature is not used.                       |
-| `SUPABASE_AUTH_SMS_TWILIO_AUTH_TOKEN`, `SUPABASE_AUTH_EXTERNAL_APPLE_SECRET` | `supabase/config.toml:427,459` | Supabase features that are **not enabled**. No code path reaches either of them.                               |
-| `S3_HOST`, `S3_REGION`, `S3_ACCESS_KEY`, `S3_SECRET_KEY`                     | `supabase/config.toml:413-419` | The Supabase CLI's own storage settings, not the application's. The app's names are the `STORAGE_S3_*` family. |
-| `SECRET_VALUE`                                                               | `supabase/config.toml:57,395`  | An illustrative `env()` reference in the CLI's own documentation comments.                                     |
+| `SUPABASE_AUTH_SMS_TWILIO_AUTH_TOKEN`, `SUPABASE_AUTH_EXTERNAL_APPLE_SECRET` | `supabase/config.toml:476,508` | Supabase features that are **not enabled**. No code path reaches either of them.                               |
+| `S3_HOST`, `S3_REGION`, `S3_ACCESS_KEY`, `S3_SECRET_KEY`                     | `supabase/config.toml:586-592` | The Supabase CLI's own storage settings, not the application's. The app's names are the `STORAGE_S3_*` family. |
+| `SECRET_VALUE`                                                               | `supabase/config.toml:57,568`  | An illustrative `env()` reference in the CLI's own documentation comments.                                     |
 
 ---
 
@@ -861,12 +861,10 @@ other edit.
 ### 17.9 What this does not settle
 
 **None of the four stages, and neither check after them, is recorded as passed in this
-repository.** The configuration is committed with `enabled = false`. The tracked repository holds no
-mail credentials; the git-ignored local `.env` is the only place they are entered. As of this
-commit no Hostinger credentials have been entered — the local file still carries earlier,
-non-Hostinger values, which the Owner is to replace — and no authentication or send stage has been
-run against Hostinger. Nothing in this repository should be read as evidence that mail leaves this
-machine.
+repository.** The configuration is committed with `enabled = false`. The repository holds no mail
+credentials: they are entered only in the process environment or in the local, git-ignored `.env`
+files the CLI reads (17.1). No Hostinger stage result is recorded in the repository. Nothing in this
+repository should be read as evidence that mail leaves this machine.
 
 The Platform Owner account keeps the address it already has — that is decided, and nothing in this
 change alters it. What is **not** established is whether that address can receive mail.

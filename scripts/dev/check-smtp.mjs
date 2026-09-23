@@ -51,7 +51,9 @@
  *   Stage 2  RELAY CONNECTION    --probe         TCP and TLS: implicit TLS on
  *                                                465, STARTTLS on 587. Lists the
  *                                                AUTH mechanisms offered. No
- *                                                credential is transmitted.
+ *                                                credential is transmitted, so
+ *                                                only SMTP_HOST and SMTP_PORT
+ *                                                are required.
  *   Stage 3  AUTHENTICATION      --authenticate  stage 2, then AUTH, then QUIT
  *                                                without an envelope.
  *   Stage 4  MESSAGE ACCEPTANCE  --send --to <address>
@@ -87,7 +89,18 @@
  * classification — never the relay's own words, which can echo a challenge.
  * Every other relay reply that is printed first has any base64-looking token
  * (16 or more characters of `[A-Za-z0-9+/=]`) and any occurrence of the
- * configured user or password replaced by `[redacted]`.
+ * configured user or password replaced by `[redacted]`. The AUTH mechanisms
+ * a relay offers are printed only when they are names on a fixed allow-list of
+ * SASL mechanisms; any other token is counted, never printed. The sender and
+ * recipient mailboxes are printed masked — the first character of the local
+ * part and the domain, as `n***@example.com`.
+ *
+ * ## It never waits forever
+ *
+ * Every read from the relay ends: a reply, the relay closing the connection, a
+ * socket error, or no reply within the per-read limit (20 seconds, changed with
+ * `--read-timeout <seconds>`). Each of the last three fails the stage that was
+ * running, on its own stage line, with a non-zero exit.
  *
  * ## Configuration, read exactly as the pinned Supabase CLI reads it
  *
@@ -121,6 +134,8 @@
  *   node scripts/dev/check-smtp.mjs --probe
  *   node scripts/dev/check-smtp.mjs --authenticate
  *   node scripts/dev/check-smtp.mjs --send --to <authorized-test-recipient>
+ *
+ * Any mode that opens a socket also accepts `--read-timeout <seconds>`.
  *
  * Exit code 0 means the chosen stage passed. Any other code means it did not.
  */
@@ -188,6 +203,30 @@ const STAGE_OF_MODE = { settings: 1, probe: 2, authenticate: 3, send: 4 };
 
 const CONNECT_TIMEOUT_MS = 30_000;
 
+/** How long one read waits for a reply before the stage fails. */
+export const DEFAULT_READ_TIMEOUT_MS = 20_000;
+
+/**
+ * The SASL mechanism names this script will print when a relay offers them.
+ * Anything else in the relay's AUTH line is counted and never echoed.
+ */
+export const KNOWN_SASL_MECHANISMS = [
+  'PLAIN',
+  'LOGIN',
+  'CRAM-MD5',
+  'DIGEST-MD5',
+  'NTLM',
+  'GSSAPI',
+  'XOAUTH2',
+  'OAUTHBEARER',
+  'EXTERNAL',
+  'ANONYMOUS',
+  'SCRAM-SHA-1',
+  'SCRAM-SHA-1-PLUS',
+  'SCRAM-SHA-256',
+  'SCRAM-SHA-256-PLUS',
+];
+
 /**
  * A refusal this script makes about itself, as opposed to one the server made.
  * The second kind is always a safety stop.
@@ -210,6 +249,17 @@ export class SmtpRejection extends Error {
     this.code = code;
     this.enhanced = enhanced;
     this.classification = classification;
+  }
+}
+
+/**
+ * The connection to the relay ended without a reply: it was closed, it failed,
+ * or nothing arrived in time. `reason` is a fixed phrase, never relay text.
+ */
+export class RelayConnectionError extends Error {
+  constructor(reason) {
+    super(reason);
+    this.reason = reason;
   }
 }
 
@@ -414,7 +464,8 @@ export function defaultEnvFiles({ root = REPOSITORY_ROOT, supabaseEnv } = {}) {
  */
 export function loadEnvironment({
   env = process.env,
-  envFiles = defaultEnvFiles({ supabaseEnv: env.SUPABASE_ENV }),
+  root = REPOSITORY_ROOT,
+  envFiles = defaultEnvFiles({ root, supabaseEnv: env.SUPABASE_ENV }),
 } = {}) {
   const fromFiles = {};
   const sourceOf = {};
@@ -527,6 +578,44 @@ export function redactRelayText(text, secrets = []) {
   return safe.replace(BASE64_LOOKING, '[redacted]');
 }
 
+/**
+ * The line to print for the mechanisms a relay offers: only names on the
+ * allow-list, in the relay's order, plus a count of every other token. The
+ * line is redacted like any other relay text.
+ */
+export function describeAuthMechanisms(mechanisms, secrets = []) {
+  const known = [];
+  let unrecognised = 0;
+  for (const mechanism of mechanisms) {
+    const upper = String(mechanism).toUpperCase();
+    if (KNOWN_SASL_MECHANISMS.includes(upper)) {
+      if (!known.includes(upper)) known.push(upper);
+    } else {
+      unrecognised += 1;
+    }
+  }
+  const parts = [];
+  if (known.length > 0) parts.push(known.join(' '));
+  else if (unrecognised === 0) parts.push('(none advertised)');
+  else parts.push('(no recognised mechanism)');
+  if (unrecognised > 0) {
+    parts.push(`(${unrecognised} unrecognised token${unrecognised === 1 ? '' : 's'} not shown)`);
+  }
+  return redactRelayText(parts.join(' '), secrets);
+}
+
+/**
+ * A mailbox address fit to print: the first character of the local part, then
+ * `***`, then the domain. A value with no usable `@` keeps only its first
+ * character.
+ */
+export function maskMailbox(address) {
+  if (typeof address !== 'string' || address.length === 0) return '(not set)';
+  const at = address.lastIndexOf('@');
+  if (at <= 0 || at === address.length - 1) return `${address[0]}***`;
+  return `${address[0]}***${address.slice(at)}`;
+}
+
 /** The RFC 3463 enhanced status code at the head of a reply, if present. */
 export function enhancedStatusOf(replyText) {
   const match = /^\d{3}[ -](\d\.\d{1,3}\.\d{1,3})\b/.exec(String(replyText).trim());
@@ -600,6 +689,7 @@ export const nodeTransport = {
   upgrade: ({ socket, host }) =>
     new Promise((resolve, reject) => {
       const secure = connectTls({ socket, servername: host }, () => resolve(secure));
+      secure.setTimeout(CONNECT_TIMEOUT_MS, () => secure.destroy(new Error('timed out')));
       secure.once('error', reject);
     }),
 };
@@ -608,16 +698,28 @@ export const nodeTransport = {
  * A minimal SMTP client over whichever socket it is handed. The `encrypted`
  * flag — not the port, not the configuration — is what `authenticate`
  * consults.
+ *
+ * Every `read()` settles: with a reply, or by rejecting with
+ * `RelayConnectionError` when the socket closes, ends or fails, or when no
+ * reply arrives within `readTimeoutMs`. Once the connection has gone, every
+ * later read rejects at once rather than waiting for bytes that cannot come.
  */
 export class SmtpSession {
   #socket = null;
-  #onData = null;
+  #listeners = null;
   #buffer = '';
   #pending = null;
   #encrypted = false;
+  #readTimeoutMs = DEFAULT_READ_TIMEOUT_MS;
+  #lost = null;
 
-  constructor(socket, { encrypted }) {
+  /**
+   * @param {import('node:net').Socket} socket
+   * @param {{ encrypted?: boolean, readTimeoutMs?: number }} [options]
+   */
+  constructor(socket, { encrypted, readTimeoutMs = DEFAULT_READ_TIMEOUT_MS } = {}) {
     this.#encrypted = encrypted === true;
+    this.#readTimeoutMs = readTimeoutMs;
     this.#attach(socket);
   }
 
@@ -633,28 +735,65 @@ export class SmtpSession {
 
   #attach(socket) {
     this.#socket = socket;
-    socket.setEncoding('utf8');
-    this.#onData = (chunk) => {
-      this.#buffer += chunk;
-      this.#drain();
+    this.#lost = null;
+    if (typeof socket.setEncoding === 'function') socket.setEncoding('utf8');
+    const listeners = {
+      data: (chunk) => {
+        this.#buffer += String(chunk);
+        this.#drain();
+      },
+      end: () => this.#lose('connection closed by the relay'),
+      close: () => this.#lose('connection closed by the relay'),
+      error: (error) => {
+        const code = error !== null && typeof error === 'object' ? error.code : undefined;
+        this.#lose(
+          typeof code === 'string' && /^[A-Z0-9_]+$/.test(code)
+            ? `connection error (${code})`
+            : 'connection error'
+        );
+      },
     };
-    socket.on('data', this.#onData);
+    for (const [event, listener] of Object.entries(listeners)) socket.on(event, listener);
+    this.#listeners = listeners;
+  }
+
+  #detach() {
+    if (this.#socket === null || this.#listeners === null) return;
+    for (const [event, listener] of Object.entries(this.#listeners)) {
+      this.#socket.removeListener(event, listener);
+    }
+    // A failure on the discarded transport must still have a listener, or
+    // Node treats it as unhandled.
+    this.#socket.on('error', () => {});
+    this.#listeners = null;
   }
 
   /**
    * Continue the session on a different socket — the STARTTLS upgrade, and
-   * nothing else. The old listener is removed first so that two objects never
+   * nothing else. The old listeners are removed first so that two objects never
    * read the same stream, and the buffer is cleared because anything a server
    * sent between `220` and the handshake belongs to the discarded transport.
    */
   adopt(socket, { encrypted }) {
-    if (this.#socket !== null && this.#onData !== null) {
-      this.#socket.removeListener('data', this.#onData);
-    }
+    this.#detach();
     this.#buffer = '';
     this.#pending = null;
     this.#encrypted = encrypted === true;
     this.#attach(socket);
+  }
+
+  #lose(reason) {
+    if (this.#lost === null) this.#lost = reason;
+    this.#drain();
+    if (this.#pending === null) return;
+    const { reject } = this.#pending;
+    this.#settle();
+    reject(new RelayConnectionError(this.#lost));
+  }
+
+  #settle() {
+    if (this.#pending !== null) clearTimeout(this.#pending.timer);
+    this.#pending = null;
   }
 
   #drain() {
@@ -665,21 +804,31 @@ export class SmtpSession {
     const end = match.index + match[0].length;
     const reply = this.#buffer.slice(0, end).replace(/\r\n$/, '');
     this.#buffer = this.#buffer.slice(end);
-    const settle = this.#pending;
-    this.#pending = null;
-    settle({ code: Number(match[0].slice(0, 3)), text: reply.trim() });
+    const { resolve } = this.#pending;
+    this.#settle();
+    resolve({ code: Number(match[0].slice(0, 3)), text: reply.trim() });
   }
 
-  /** Wait for the next complete reply. */
+  /** Wait for the next complete reply, or reject when none can arrive. */
   read() {
-    return new Promise((resolve) => {
-      this.#pending = resolve;
+    return new Promise((resolve, reject) => {
+      const seconds = this.#readTimeoutMs / 1000;
+      const timer = setTimeout(() => {
+        this.#settle();
+        reject(new RelayConnectionError(`no reply from the relay within ${seconds} s`));
+      }, this.#readTimeoutMs);
+      this.#pending = { resolve, reject, timer };
       this.#drain();
+      if (this.#pending !== null && this.#lost !== null) {
+        this.#settle();
+        reject(new RelayConnectionError(this.#lost));
+      }
     });
   }
 
   /** Send one command line and return the reply. Nothing is printed here. */
   async send(command) {
+    if (this.#lost !== null) throw new RelayConnectionError(this.#lost);
     this.#socket.write(`${command}\r\n`);
     return this.read();
   }
@@ -689,7 +838,7 @@ export class SmtpSession {
     try {
       await this.send('QUIT');
     } catch {
-      // The server may close first.
+      // The server may close first, or not answer at all.
     }
     this.#socket.destroy();
   }
@@ -733,9 +882,21 @@ export function advertisesStartTls(ehloText) {
  * Stage 2. Connect, negotiate encryption for the port, and return a session
  * that is ready for AUTH. No credential is touched here.
  *
- * @param {{ host: string, port: number, transport?: typeof nodeTransport, secrets?: string[] }} target
+ * @param {{
+ *   host: string,
+ *   port: number,
+ *   transport?: typeof nodeTransport,
+ *   secrets?: string[],
+ *   readTimeoutMs?: number,
+ * }} target
  */
-export async function openRelay({ host, port, transport = nodeTransport, secrets = [] }) {
+export async function openRelay({
+  host,
+  port,
+  transport = nodeTransport,
+  secrets = [],
+  readTimeoutMs = DEFAULT_READ_TIMEOUT_MS,
+}) {
   const mode = tlsModeForPort(port);
   if (mode === null) {
     throw new LocalRefusal(
@@ -746,9 +907,15 @@ export async function openRelay({ host, port, transport = nodeTransport, secrets
 
   let session;
   if (mode === 'implicit') {
-    session = new SmtpSession(await transport.connectSecure({ host, port }), { encrypted: true });
+    session = new SmtpSession(await transport.connectSecure({ host, port }), {
+      encrypted: true,
+      readTimeoutMs,
+    });
   } else {
-    session = new SmtpSession(await transport.connectPlain({ host, port }), { encrypted: false });
+    session = new SmtpSession(await transport.connectPlain({ host, port }), {
+      encrypted: false,
+      readTimeoutMs,
+    });
   }
 
   try {
@@ -836,13 +1003,28 @@ export async function sendMessage(session, { from, to, senderName, write, secret
  * ------------------------------------------------------------------------- */
 
 /**
- * Read the single mode flag and the optional recipient off the command line.
- * A recipient that begins with `--` is refused rather than accepted.
+ * Read the single mode flag, the optional recipient and the optional per-read
+ * limit off the command line. A recipient that begins with `--` is refused
+ * rather than accepted, and so is a read limit that is not a positive number of
+ * seconds.
  */
 export function parseArguments(argv) {
   const modes = [];
   let recipient;
   let recipientRefused = false;
+  let readTimeoutMs = DEFAULT_READ_TIMEOUT_MS;
+  let readTimeoutRefused = false;
+  const takeReadTimeout = (candidate) => {
+    const seconds =
+      typeof candidate === 'string' && /^\d+(\.\d+)?$/.test(candidate)
+        ? Number(candidate)
+        : Number.NaN;
+    if (!Number.isFinite(seconds) || seconds <= 0) {
+      readTimeoutRefused = true;
+      return;
+    }
+    readTimeoutMs = Math.round(seconds * 1000);
+  };
   const takeRecipient = (candidate) => {
     if (typeof candidate !== 'string' || candidate.length === 0 || candidate.startsWith('--')) {
       recipientRefused = true;
@@ -859,13 +1041,33 @@ export function parseArguments(argv) {
       takeRecipient(argv[index + 1]);
       index += 1;
     } else if (argument.startsWith('--to=')) takeRecipient(argument.slice('--to='.length));
+    else if (argument === '--read-timeout') {
+      takeReadTimeout(argv[index + 1]);
+      index += 1;
+    } else if (argument.startsWith('--read-timeout=')) {
+      takeReadTimeout(argument.slice('--read-timeout='.length));
+    }
   }
-  return { modes, recipient, recipientRefused };
+  return { modes, recipient, recipientRefused, readTimeoutMs, readTimeoutRefused };
+}
+
+/**
+ * The names a mode cannot run without. `--probe` sends no credential, so it
+ * needs only the relay's address; `--authenticate` needs the login and the
+ * sender identity as well; `--send` needs all six.
+ */
+export function requiredNamesFor(mode) {
+  if (mode === 'probe') return ['SMTP_HOST', 'SMTP_PORT'];
+  if (mode === 'send') return [...NAMES];
+  if (mode === 'authenticate') return NAMES.filter((name) => name !== 'SMTP_SENDER_NAME');
+  return [];
 }
 
 const USAGE = [
   'Choose exactly one mode. Each flag reaches one stage:',
   ...STAGES.map((stage) => `  ${stage.flag.padEnd(28)}stage ${stage.number}: ${stage.label}`),
+  '',
+  'Any mode that opens a socket also accepts --read-timeout <seconds> (default 20).',
   '',
   ...NOT_PROVEN_LINES,
   '',
@@ -958,6 +1160,7 @@ export function reportSettings(loaded, write, { configText } = {}) {
  *   env?: Record<string, string | undefined>,
  *   envFile?: string,
  *   envFiles?: string[],
+ *   envRoot?: string,
  *   configFile?: string,
  *   transport?: typeof nodeTransport,
  *   stdout?: (text: string) => unknown,
@@ -970,6 +1173,7 @@ export async function run({
   env = process.env,
   envFile,
   envFiles,
+  envRoot = REPOSITORY_ROOT,
   configFile = CONFIG_FILE,
   transport = nodeTransport,
   stdout = (text) => process.stdout.write(text),
@@ -978,9 +1182,15 @@ export async function run({
   const out = (text) => stdout(text);
   const err = (text) => stderr(text);
 
-  const { modes, recipient, recipientRefused } = parseArguments(argv ?? []);
+  const { modes, recipient, recipientRefused, readTimeoutMs, readTimeoutRefused } = parseArguments(
+    argv ?? []
+  );
   if (recipientRefused) {
     err('--to needs an address. A value that begins with "--" is a flag, not a recipient.\n');
+    return 2;
+  }
+  if (readTimeoutRefused) {
+    err('--read-timeout needs a positive number of seconds.\n');
     return 2;
   }
   if (modes.length !== 1) {
@@ -994,7 +1204,9 @@ export async function run({
 
   const files =
     envFiles ??
-    (envFile !== undefined ? [envFile] : defaultEnvFiles({ supabaseEnv: env.SUPABASE_ENV }));
+    (envFile !== undefined
+      ? [envFile]
+      : defaultEnvFiles({ root: envRoot, supabaseEnv: env.SUPABASE_ENV }));
   const loaded = loadEnvironment({ env, envFiles: files });
   const environment = loaded.values;
 
@@ -1013,7 +1225,7 @@ export async function run({
     return 2;
   }
 
-  const required = mode === 'send' ? NAMES : NAMES.filter((name) => name !== 'SMTP_SENDER_NAME');
+  const required = requiredNamesFor(mode);
   const missing = required.filter((name) => environment[name] === undefined);
   if (missing.length > 0) {
     err(`Not configured. Missing: ${missing.join(', ')}\n`);
@@ -1031,26 +1243,25 @@ export async function run({
   // present as the sender, so it is the address whose acceptance is measured.
   const loginUser = environment.SMTP_USER;
   const sender = environment.SMTP_ADMIN_EMAIL;
-  const secrets = [environment.SMTP_PASS, loginUser];
+  // Relay text that echoes a mailbox has it redacted, like any credential.
+  const secrets = [environment.SMTP_PASS, loginUser, sender, recipient];
   const target = STAGES[STAGE_OF_MODE[mode] - 1];
 
   out(`Relay    : ${host}:${port}\n`);
   out(`Mode     : ${target.flag.split(' ')[0]} (stage ${target.number} of 4: ${target.label})\n`);
-  if (mode === 'send') out(`Sender   : ${sender}\n`);
-  if (mode === 'send') out(`Recipient: ${recipient}\n`);
+  if (mode === 'send') out(`Sender   : ${maskMailbox(sender)}\n`);
+  if (mode === 'send') out(`Recipient: ${maskMailbox(recipient)}\n`);
   out('\n');
 
   const verdicts = { 1: 'NOT RUN by this mode (run --settings)' };
   let current = 2;
   let session = null;
   try {
-    const opened = await openRelay({ host, port, transport, secrets });
+    const opened = await openRelay({ host, port, transport, secrets, readTimeoutMs });
     session = opened.session;
     const transportName = opened.mode === 'implicit' ? 'implicit TLS' : 'STARTTLS';
     out(`Transport: ${transportName}, encrypted: ${session.encrypted}\n`);
-    out(
-      `AUTH offered: ${opened.mechanisms.length > 0 ? opened.mechanisms.join(' ') : '(none advertised)'}\n`
-    );
+    out(`AUTH offered: ${describeAuthMechanisms(opened.mechanisms, secrets)}\n`);
     verdicts[2] = `PASS (${transportName} on ${port}, encrypted: ${session.encrypted})`;
 
     if (mode === 'probe') {
@@ -1088,17 +1299,22 @@ export async function run({
     out(stageReport(verdicts));
     return 0;
   } catch (error) {
+    const stage = STAGES[current - 1];
     const message =
-      error instanceof SmtpRejection || error instanceof LocalRefusal
-        ? error.message
-        : redactRelayText(error instanceof Error ? error.message : String(error), secrets);
+      error instanceof RelayConnectionError
+        ? `Stage ${stage.number} ${stage.label}: FAILED - ${error.reason}`
+        : error instanceof SmtpRejection || error instanceof LocalRefusal
+          ? error.message
+          : redactRelayText(error instanceof Error ? error.message : String(error), secrets);
     err(`${message}\n`);
     verdicts[current] =
       error instanceof SmtpRejection
         ? `FAIL (${error.classification}; SMTP ${error.code}${error.enhanced ? `, enhanced ${error.enhanced}` : ''})`
         : error instanceof LocalRefusal
           ? 'FAIL (refused by this script before the relay was asked)'
-          : 'FAIL (connection error)';
+          : error instanceof RelayConnectionError
+            ? `FAIL (${error.reason})`
+            : 'FAIL (connection error)';
     for (let later = current + 1; later <= target.number; later += 1) {
       verdicts[later] = 'NOT REACHED';
     }

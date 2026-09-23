@@ -378,9 +378,9 @@ port = 465
 # The account authenticating to the relay. On the selected provider this is the
 # COMPLETE mailbox address, not the local part.
 user = "env(SMTP_USER)"
-# The account's password, held only in the untracked root `.env`, typed there
-# locally by the Owner. On the selected provider it is that mailbox's ordinary
-# password; nothing here trims, folds, measures or pattern-matches it.
+# The account's password, from the process environment or one of the git-ignored
+# `.env` files the CLI reads, never from a tracked file. On the selected provider
+# it is the mailbox's ordinary password; nothing here trims or pattern-matches it.
 pass = "env(SMTP_PASS)"
 # The From address, the sender identity rather than the login in `user`: it
 # must be an address that mailbox is authorised to send as. Many relays rewrite
