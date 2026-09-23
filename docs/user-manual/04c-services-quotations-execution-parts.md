@@ -998,9 +998,9 @@ work** screen at `/{locale}/technicians/me`, covered in part 4B.
   The cancelling transition is labelled "cancels the work order" <!-- workOrders.detail.cancelling -->
   and an ending one "ends the work order" <!-- workOrders.detail.terminal --> .
 - "This work order has no next state. Its lifecycle has ended and it is frozen." <!-- workOrders.detail.noNextStates -->
-- **The work-order board is single-branch.** It opens on **Choose a branch** <!-- workOrders.queue.idleTitle -->
-  with "A work-order board belongs to one branch. Nothing is requested until you name one." <!-- workOrders.queue.idleBody -->
-  There is no tenant-wide board.
+- **The work-order board follows the branch named at the top of the page**, and it loads itself as
+  soon as you open it. You can also read **all your branches** of one company at once, in which case
+  every row says which branch it is from. There is still no board across more than one company.
 
 **If it goes wrong**
 

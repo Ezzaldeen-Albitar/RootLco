@@ -1,9 +1,9 @@
 {
   "generatedFrom": "scripts/check-operation-test-coverage.mjs",
   "counts": {
-    "registered": 81,
-    "publicApi": 81,
-    "operationDepth": 81,
+    "registered": 82,
+    "publicApi": 82,
+    "operationDepth": 82,
     "invocationOnly": 0,
     "pending": 0,
     "unitOnly": 0,
@@ -1388,6 +1388,40 @@
         "cross-tenant",
         "denial",
         "isolation",
+        "route",
+        "service",
+        "success"
+      ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "inv.part-issue-list",
+      "surface": "public-api",
+      "method": "GET",
+      "path": "/part-issues",
+      "public": false,
+      "files": ["tests/backend/p1-32-inventory-operations.test.ts"],
+      "referenced": true,
+      "derived": ["route", "service", "success", "authorization", "isolation"],
+      "declared": ["success", "authorization", "denial", "cross-tenant", "isolation", "pagination"],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "isolation",
+        "denial",
+        "cross-tenant",
+        "pagination"
+      ],
+      "provided": [
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "isolation",
+        "pagination",
         "route",
         "service",
         "success"

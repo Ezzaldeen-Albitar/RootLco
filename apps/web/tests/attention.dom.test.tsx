@@ -1,4 +1,4 @@
-import { screen, waitFor, within } from '@testing-library/react';
+import { act, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -6,6 +6,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import ar from '../src/i18n/messages/ar.json';
 import { PermissionDeniedState } from '@/components/states/States';
+import { flattenNavigation } from '@/config/navigation';
+import { formatMessage } from '@/i18n/get-messages';
 import {
   BranchSwitch,
   OTHER_BRANCH,
@@ -98,6 +100,9 @@ vi.mock('next/navigation', () => ({
   notFound: () => {
     throw new Error('notFound() was called');
   },
+  redirect: (target: string) => {
+    throw Object.assign(new Error('NEXT_REDIRECT'), { target });
+  },
 }));
 
 let PERMISSIONS: readonly string[] = [];
@@ -111,9 +116,17 @@ vi.mock('@/features/authentication/api/session', () => ({
 
 const { AttentionScreen } = await import('@/features/attention/components/AttentionScreen');
 const { DashboardScreen } = await import('@/features/overview/components/DashboardScreen');
+const { CHART_WIDTH, LABEL_FONT_SIZE, LABEL_TEXT_WIDTH, estimatedTextWidth, fitLabel } =
+  await import('@/features/overview/components/charts');
 const { StockAlertIndicator } = await import('@/features/inventory/components/StockAlertIndicator');
 type RoutePage = (args: { params: Promise<Record<string, string>> }) => Promise<React.ReactNode>;
 const AttentionPage = (await import('@/app/[locale]/(dashboard)/attention/page'))
+  .default as unknown as RoutePage;
+type SearchedRoutePage = (args: {
+  params: Promise<Record<string, string>>;
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
+}) => Promise<React.ReactNode>;
+const DashboardPage = (await import('@/app/[locale]/(dashboard)/page'))
   .default as unknown as RoutePage;
 
 const lowStockRow = (over: Record<string, unknown> = {}) => ({
@@ -338,6 +351,65 @@ describe('the branch is chosen once and every stock card is addressed to it', ()
     await waitFor(() => expect(readCountDiscrepancyAlerts).toHaveBeenCalledWith(pair));
     await waitFor(() => expect(readUnusualConsumptionAlerts).toHaveBeenCalledWith(pair));
     await waitFor(() => expect(readAgedInTransitAlerts).toHaveBeenCalledWith(pair));
+  });
+
+  it('opens on the branch the address names, once its list holds it', async () => {
+    // The dashboard sends the branch its low-stock figure was counted for.
+    renderLtr(
+      <AttentionScreen
+        locale="en"
+        messages={messagesFor('en')}
+        canReadStock
+        canReadCapacity
+        canReadBranches
+        initialBranchId={BRANCH_ID}
+      />
+    );
+
+    const pair = { companyId: COMPANY_ID, branchId: BRANCH_ID };
+    await waitFor(() => expect(readLowStockAlerts).toHaveBeenCalledWith(pair));
+    expect(
+      ((await screen.findByLabelText(labelled('attention.target.branch'))) as HTMLSelectElement)
+        .value
+    ).toBe(BRANCH_ID);
+  });
+
+  it('ignores a branch its own list does not hold, and asks as it always did', async () => {
+    renderLtr(
+      <AttentionScreen
+        locale="en"
+        messages={messagesFor('en')}
+        canReadStock
+        canReadCapacity
+        canReadBranches
+        initialBranchId="99999999-9999-4999-8999-999999999999"
+      />
+    );
+    await screen.findByLabelText(labelled('attention.target.branch'));
+
+    expect(readLowStockAlerts).not.toHaveBeenCalled();
+    expect(
+      within(card('attention.lowStock.title')).getByText(EN['attention.state.noBranch'] as string)
+    ).toBeInTheDocument();
+  });
+
+  it('believes only an identifier-shaped branch from the address', async () => {
+    PERMISSIONS = ['inv.stock.read', 'org.branch.read'];
+    const page = AttentionPage as unknown as SearchedRoutePage;
+
+    const named = await page({
+      params: Promise.resolve({ locale: 'en' }),
+      searchParams: Promise.resolve({ branchId: BRANCH_ID }),
+    });
+    expect(findScreenProps(named)?.['initialBranchId']).toBe(BRANCH_ID);
+
+    for (const junk of ['brake pads', '../admin', '', ['a', 'b']]) {
+      const dropped = await page({
+        params: Promise.resolve({ locale: 'en' }),
+        searchParams: Promise.resolve({ branchId: junk }),
+      });
+      expect(findScreenProps(dropped)?.['initialBranchId'], String(junk)).toBeNull();
+    }
   });
 });
 
@@ -1143,13 +1215,50 @@ describe('every figure opens the list it counted', () => {
     });
   });
 
-  it('sends a stock figure to the page where stock is acted on', async () => {
+  it('sends a stock figure to that branch on the page where stock is acted on', async () => {
     const { container } = renderLtr(
       inBranch(<DashboardScreen locale="en" messages={messagesFor('en')} />)
     );
     await screen.findByText('7');
 
-    expect(tile(container, 'lowStock').getAttribute('href')).toBe('/en/attention');
+    // The branch the figure was counted for travels, so the page opens on it.
+    const stock = tile(container, 'lowStock');
+    expect(stock.getAttribute('href')).toBe(`/en/attention?branchId=${TEST_BRANCH.id}`);
+    // A RELATED destination, never "the list": the figure counts distinct items
+    // and the page lists findings, one per reorder level, capped.
+    expect(stock.textContent).toContain(EN['dashboard.card.reviewBranchStock']);
+    expect(stock.textContent).not.toContain(EN['dashboard.card.openTheList']);
+  });
+
+  it('claims no list for a stock figure counted across every branch', async () => {
+    const user = userEvent.setup();
+    const { container } = renderLtr(
+      inBranch(
+        <>
+          <BranchSwitch to="all" label="everywhere" />
+          <DashboardScreen locale="en" messages={messagesFor('en')} />
+        </>,
+        { snapshot: branchSnapshot([TEST_BRANCH, OTHER_BRANCH]) }
+      )
+    );
+    await user.click(screen.getByRole('button', { name: 'everywhere' }));
+    await screen.findByText('7');
+    expect(readDashboardSummary).toHaveBeenLastCalledWith(
+      { companyId: TEST_COMPANY.id, branchId: null },
+      { period: 'today' }
+    );
+
+    // No one branch to open on, and words that say the warnings are reviewed
+    // branch by branch rather than implying a company-wide list of this figure.
+    const stock = tile(container, 'lowStock');
+    expect(stock.getAttribute('href')).toBe('/en/attention');
+    expect(stock.textContent).toContain(EN['dashboard.card.reviewStockByBranch']);
+    expect(stock.textContent).not.toContain(EN['dashboard.card.openTheList']);
+    // The work-order figures still open their lists: the board reads the same
+    // authorized branch set the summary counted.
+    expect(tile(container, 'awaitingParts').textContent).toContain(
+      EN['dashboard.card.openTheList']
+    );
   });
 
   it('offers no link for a figure no list can be narrowed to', async () => {
@@ -1165,22 +1274,47 @@ describe('every figure opens the list it counted', () => {
   });
 
   it('puts what is waiting for someone beside where it is dealt with', async () => {
-    renderLtr(inBranch(<DashboardScreen locale="en" messages={messagesFor('en')} />));
+    readDashboardSummary.mockResolvedValue(
+      okRead(
+        dashboardSummary({
+          // Two ORDERS held up by five REQUESTS: different numbers on purpose,
+          // so the case can tell which one sits beside the link.
+          awaitingApproval: figure(2),
+          pendingApprovalsCount: figure(5),
+        })
+      )
+    );
+    const { container } = renderLtr(
+      inBranch(<DashboardScreen locale="en" messages={messagesFor('en')} />)
+    );
     await screen.findByText('7');
 
     const panel = screen
       .getByRole('heading', { name: EN['dashboard.actions.title'] as string })
       .closest('section') as HTMLElement;
+
+    // The link opens a list of WORK ORDERS, so the figure beside it is the
+    // number of work orders — never the number of requests.
+    const orders = container.querySelector('[data-actionable="approvalOrders"]') as HTMLElement;
+    expect(orders.textContent).toContain(EN['dashboard.actions.approvalOrders']);
+    expect(orders.querySelector('strong')?.textContent).toBe('2');
     expect(
-      within(panel)
+      within(orders)
         .getByRole('link', { name: EN['dashboard.actions.openApprovals'] as string })
         .getAttribute('href')
     ).toBe('/en/work-orders?view=awaitingApproval');
+
+    // The requests are said on their own line, and that line offers no link.
+    const requests = container.querySelector('[data-actionable="approvalRequests"]') as HTMLElement;
+    expect(requests.textContent).toContain(EN['dashboard.actions.approvals']);
+    expect(requests.querySelector('strong')?.textContent).toBe('5');
+    expect(within(requests).queryByRole('link')).toBeNull();
+
     expect(
       within(panel)
         .getAllByRole('link', { name: EN['dashboard.actions.openAttention'] as string })[0]
         ?.getAttribute('href')
-    ).toBe('/en/attention');
+    ).toBe(`/en/attention?branchId=${TEST_BRANCH.id}`);
   });
 });
 
@@ -1336,5 +1470,384 @@ describe('the dashboard in Arabic, and reachable from the keyboard', () => {
     await waitFor(() => {
       expect(readDashboardSummary).toHaveBeenCalledTimes(2);
     });
+  });
+});
+
+describe('the dashboard answers for the period and the branch it is showing', () => {
+  beforeEach(() => {
+    window.localStorage.clear();
+    readDashboardSummary.mockReset();
+    readDashboardSummary.mockResolvedValue(okRead(dashboardSummary()));
+  });
+
+  it('discards an answer that arrives after the one that replaced it', async () => {
+    // The ordering that makes a screen lie: a slow read for the OLD period
+    // lands after the fast read for the new one, and the reader sees figures
+    // for a period the heading no longer names.
+    const user = userEvent.setup();
+    let release: (value: unknown) => void = () => undefined;
+    const slow = new Promise((resolve) => {
+      release = resolve;
+    });
+    readDashboardSummary.mockReturnValueOnce(slow);
+    readDashboardSummary.mockResolvedValue(
+      okRead(dashboardSummary({ activeWorkOrders: figure(99) }))
+    );
+
+    renderLtr(inBranch(<DashboardScreen locale="en" messages={messagesFor('en')} />));
+    await user.click(
+      screen.getByRole('button', { name: EN['dashboard.period.yesterday'] as string })
+    );
+    await screen.findByText('99');
+
+    release(okRead(dashboardSummary({ activeWorkOrders: figure(7) })));
+    await act(async () => {
+      await slow;
+    });
+
+    expect(screen.queryByText('7')).toBeNull();
+    expect(screen.getByText('99')).toBeTruthy();
+  });
+
+  it('says which period the figures still cover while dates are being chosen', async () => {
+    const user = userEvent.setup();
+    renderLtr(inBranch(<DashboardScreen locale="en" messages={messagesFor('en')} />));
+    await screen.findByText('7');
+
+    await user.click(screen.getByRole('button', { name: EN['dashboard.period.custom'] as string }));
+
+    // Pressing the control changes no figure — no days have been named yet —
+    // so the screen must not read as though it had.
+    expect(
+      screen.getByText(
+        formatMessage(EN['dashboard.period.notApplied'] as string, {
+          period: EN['dashboard.period.today'] as string,
+        })
+      )
+    ).toBeTruthy();
+    expect(screen.getByText('7')).toBeTruthy();
+    expect(readDashboardSummary).toHaveBeenCalledTimes(1);
+  });
+
+  it('drops that line once the chosen days are applied', async () => {
+    const user = userEvent.setup();
+    renderLtr(inBranch(<DashboardScreen locale="en" messages={messagesFor('en')} />));
+    await screen.findByText('7');
+
+    await user.click(screen.getByRole('button', { name: EN['dashboard.period.custom'] as string }));
+    await user.type(screen.getByLabelText(EN['dashboard.period.from'] as string), '2026-09-01');
+    await user.type(screen.getByLabelText(EN['dashboard.period.to'] as string), '2026-09-10');
+    await user.click(screen.getByRole('button', { name: EN['dashboard.period.apply'] as string }));
+
+    await waitFor(() => {
+      expect(readDashboardSummary).toHaveBeenLastCalledWith(
+        { companyId: TEST_COMPANY.id, branchId: TEST_BRANCH.id },
+        { period: 'custom', from: '2026-09-01', to: '2026-09-10' }
+      );
+    });
+    expect(
+      screen.queryByText(
+        formatMessage(EN['dashboard.period.notApplied'] as string, {
+          period: EN['dashboard.period.today'] as string,
+        })
+      )
+    ).toBeNull();
+  });
+
+  it('puts every state within reach of a keyboard, outside the drawing', async () => {
+    const { container } = renderLtr(
+      inBranch(<DashboardScreen locale="en" messages={messagesFor('en')} />)
+    );
+    await screen.findByText('7');
+
+    // Nothing inside the drawing is a control: a shape under `role="img"` is
+    // pruned from the accessibility tree along with anything nested in it, so a
+    // link drawn there would exist for a mouse and for nobody else.
+    expect(container.querySelectorAll('svg a').length).toBe(0);
+
+    const link = screen.getByRole('link', { name: /With the insurer/ });
+    expect(link.closest('svg')).toBeNull();
+    expect(link.getAttribute('href')).toBe('/en/work-orders?state=awaiting_insurer');
+    (link as HTMLElement).focus();
+    expect(document.activeElement).toBe(link);
+
+    // One per state, and the table is not the only way to any of them.
+    for (const label of ['In progress', 'Closed']) {
+      expect(screen.getByRole('link', { name: new RegExp(label) })).toBeTruthy();
+    }
+  });
+});
+
+describe('the charts anchor their words to a side, whatever the document direction', () => {
+  beforeEach(() => {
+    window.localStorage.clear();
+    readDashboardSummary.mockReset();
+    readDashboardSummary.mockResolvedValue(okRead(dashboardSummary()));
+  });
+
+  /** The `<text>` elements of the state chart, in document order. */
+  function stateChartTexts(headingText: string): readonly SVGTextElement[] {
+    const heading = screen.getByRole('heading', { name: headingText });
+    const drawing = heading.closest('section')?.querySelector('svg');
+    if (!drawing) throw new Error('no state chart drawing');
+    expect(drawing.getAttribute('direction')).toBe('ltr');
+    return Array.from(drawing.querySelectorAll('text'));
+  }
+
+  /** x, anchor and direction of one text element — what jsdom CAN observe. */
+  const geometry = (text: SVGTextElement | undefined) => ({
+    x: text?.getAttribute('x'),
+    anchor: text?.getAttribute('text-anchor'),
+    direction: text?.getAttribute('direction'),
+  });
+
+  /**
+   * The physical extent of a count's text in drawing units, from its anchor:
+   * `start` grows rightwards from `x`, `end` leftwards. Budgeted by the same
+   * conservative estimate the chart lays out with, since jsdom measures nothing.
+   */
+  function extent(text: SVGTextElement | undefined): { left: number; right: number } {
+    const x = Number(text?.getAttribute('x'));
+    const width = estimatedTextWidth(text?.textContent ?? '', LABEL_FONT_SIZE);
+    return text?.getAttribute('text-anchor') === 'end'
+      ? { left: x - width, right: x }
+      : { left: x, right: x + width };
+  }
+
+  it('puts a label at the left margin and its count past the bar, left to right', async () => {
+    renderLtr(inBranch(<DashboardScreen locale="en" messages={messagesFor('en')} />));
+    await screen.findByText('7');
+
+    // Row one is "In progress", the longest bar (5 of 5): label at the left
+    // inset, count just past the bar's right end, both growing rightwards —
+    // and the bar stops short of the far margin by the count gutter, so the
+    // count is inside the drawing rather than starting at its last 4 units.
+    const [label, count] = stateChartTexts(EN['dashboard.byState.title'] as string);
+    expect(geometry(label)).toEqual({ x: '4', anchor: 'start', direction: 'ltr' });
+    expect(geometry(count)).toEqual({ x: '532', anchor: 'start', direction: 'ltr' });
+    expect(extent(count).left).toBeGreaterThanOrEqual(0);
+    expect(extent(count).right).toBeLessThanOrEqual(CHART_WIDTH);
+    // The words sit in an isolate that takes its own direction from its text —
+    // as the presentation attribute AND as the CSS declaration.
+    const words = label?.querySelector('tspan');
+    expect(words?.getAttribute('unicode-bidi')).toBe('plaintext');
+    expect(words?.style.unicodeBidi).toBe('plaintext');
+  });
+
+  it('keeps the largest count wholly inside the drawing, in both directions', async () => {
+    // A figure with many digits on the longest bar of each bar chart: the
+    // gutter widens to fit it, so it can never be clipped by the viewBox.
+    readDashboardSummary.mockResolvedValue(
+      okRead(
+        dashboardSummary({
+          workOrdersByState: figure([
+            { state: 'in_progress', label: 'In progress', count: 1234567, isTerminal: false },
+            { state: 'awaiting_parts', label: 'Waiting for parts', count: 3, isTerminal: false },
+          ]),
+          technicianWorkload: figure([
+            { technicianId: 'tech-1', displayName: 'Technician', activeCount: 9876543 },
+            { technicianId: 'tech-2', displayName: 'Second', activeCount: 1 },
+          ]),
+        })
+      )
+    );
+    for (const [render, locale] of [
+      [renderLtr, 'en'],
+      [renderRtl, 'ar'],
+    ] as const) {
+      window.localStorage.clear();
+      const { unmount } = render(
+        inBranch(<DashboardScreen locale={locale} messages={messagesFor(locale)} />, { locale })
+      );
+      const messages = locale === 'en' ? EN : AR;
+      for (const headingKey of ['dashboard.byState.title', 'dashboard.workload.title']) {
+        // The drawing appears once the read has answered.
+        const [, count] = await waitFor(() => {
+          const texts = stateChartTexts(messages[headingKey] as string);
+          expect(texts.length).toBeGreaterThan(1);
+          return texts;
+        });
+        const where = `${locale} ${headingKey}`;
+        expect(count?.textContent?.length, where).toBeGreaterThan(6);
+        expect(extent(count).left, where).toBeGreaterThanOrEqual(0);
+        expect(extent(count).right, where).toBeLessThanOrEqual(CHART_WIDTH);
+      }
+      unmount();
+    }
+  });
+
+  it('mirrors both to the other side in Arabic, with the anchor naming the RIGHT edge', async () => {
+    renderRtl(
+      inBranch(<DashboardScreen locale="ar" messages={messagesFor('ar')} />, { locale: 'ar' })
+    );
+    await screen.findByRole('heading', { name: AR['dashboard.byState.title'] as string });
+    expect(document.documentElement.dir).toBe('rtl');
+
+    // `direction="ltr"` on the element is what makes `end` mean the right edge
+    // here; inherited from the rtl document it would have meant the left one,
+    // and the label would have hung off the drawing.
+    const [label, count] = stateChartTexts(AR['dashboard.byState.title'] as string);
+    expect(geometry(label)).toEqual({ x: '596', anchor: 'end', direction: 'ltr' });
+    // The count ends 68 units from the left edge — the mirror of 532 — so the
+    // whole of it is drawn, rather than ending at x = 4 and running off.
+    expect(geometry(count)).toEqual({ x: '68', anchor: 'end', direction: 'ltr' });
+    expect(extent(count).left).toBeGreaterThanOrEqual(0);
+    expect(extent(count).right).toBeLessThanOrEqual(CHART_WIDTH);
+  });
+
+  it('cuts a label that cannot fit the label column, and keeps the whole of it', async () => {
+    const long = 'Waiting for the insurance assessor to call back';
+    readDashboardSummary.mockResolvedValue(
+      okRead(
+        dashboardSummary({
+          workOrdersByState: figure([
+            { state: 'awaiting_assessor', label: long, count: 2, isTerminal: false },
+          ]),
+          technicianWorkload: figure([
+            { technicianId: 'tech-1', displayName: long, activeCount: 1 },
+          ]),
+        })
+      )
+    );
+    const user = userEvent.setup();
+    renderLtr(inBranch(<DashboardScreen locale="en" messages={messagesFor('en')} />));
+    await screen.findByText('7');
+
+    for (const headingKey of ['dashboard.byState.title', 'dashboard.workload.title']) {
+      const [label] = stateChartTexts(EN[headingKey] as string);
+      const drawn = label?.querySelector('tspan')?.textContent ?? '';
+      expect(drawn.endsWith('…'), headingKey).toBe(true);
+      expect(Array.from(drawn).length).toBeLessThanOrEqual(25);
+      expect(long.startsWith(drawn.slice(0, -1))).toBe(true);
+      // The whole wording stays with the label for a pointer...
+      expect(label?.querySelector('title')?.textContent).toBe(long);
+    }
+
+    // ...and in the table alternative, uncut.
+    const section = chart('dashboard.byState.title');
+    await user.click(
+      within(section).getByRole('button', { name: EN['dashboard.chart.showTable'] as string })
+    );
+    expect(within(within(section).getByRole('table')).getByText(long)).toBeTruthy();
+  });
+
+  it('cuts an all-capitals label to the column, however wide its glyphs run', async () => {
+    const shouted = 'WAITING FOR THE INSURANCE ASSESSOR TO CALL BACK';
+    readDashboardSummary.mockResolvedValue(
+      okRead(
+        dashboardSummary({
+          workOrdersByState: figure([
+            { state: 'awaiting_assessor', label: shouted, count: 2, isTerminal: false },
+          ]),
+        })
+      )
+    );
+    renderLtr(inBranch(<DashboardScreen locale="en" messages={messagesFor('en')} />));
+    await screen.findByText('7');
+
+    const [label] = stateChartTexts(EN['dashboard.byState.title'] as string);
+    const drawn = label?.querySelector('tspan')?.textContent ?? '';
+    expect(drawn.endsWith('…')).toBe(true);
+    expect(shouted.startsWith(drawn.slice(0, -1))).toBe(true);
+    // Within the column by the conservative budget...
+    expect(estimatedTextWidth(drawn, LABEL_FONT_SIZE)).toBeLessThanOrEqual(LABEL_TEXT_WIDTH);
+    // ...and fewer characters than the old 0.6-em average would have kept
+    // (25), which is what let a line of capitals run into the bars.
+    expect(Array.from(drawn).length).toBeLessThan(25);
+    expect(label?.querySelector('title')?.textContent).toBe(shouted);
+  });
+
+  it('budgets wide glyphs, capitals and ordinary letters apart', () => {
+    // A run of the widest glyphs is cut sooner than capitals, and capitals
+    // sooner than lower case, and every cut fits the column.
+    const cut = (text: string) => fitLabel(text);
+    const wide = cut('W'.repeat(40));
+    const capitals = cut('H'.repeat(40));
+    const lower = cut('h'.repeat(40));
+    expect(wide.length).toBeLessThan(capitals.length);
+    expect(capitals.length).toBeLessThan(lower.length);
+    for (const drawn of [wide, capitals, lower]) {
+      expect(estimatedTextWidth(drawn, LABEL_FONT_SIZE)).toBeLessThanOrEqual(LABEL_TEXT_WIDTH);
+    }
+    // A label within the budget is returned as it is.
+    expect(cut('In progress')).toBe('In progress');
+  });
+
+  it('leaves a label that fits exactly as it is, with no second copy', async () => {
+    renderLtr(inBranch(<DashboardScreen locale="en" messages={messagesFor('en')} />));
+    await screen.findByText('7');
+
+    const [label] = stateChartTexts(EN['dashboard.byState.title'] as string);
+    expect(label?.querySelector('tspan')?.textContent).toBe('In progress');
+    expect(label?.querySelector('title')).toBeNull();
+  });
+});
+
+describe('the dashboard page lands a reader somewhere they can work', () => {
+  const landing = async (): Promise<string | null> => {
+    try {
+      await DashboardPage({ params: Promise.resolve({ locale: 'en' }) });
+    } catch (error) {
+      if (error instanceof Error && error.message === 'NEXT_REDIRECT') {
+        return (error as Error & { target: string }).target;
+      }
+      throw error;
+    }
+    return null;
+  };
+
+  it('renders the dashboard for a session holding its code', async () => {
+    PERMISSIONS = ['wo.work_order.read'];
+    expect(await landing()).toBeNull();
+    const page = await DashboardPage({ params: Promise.resolve({ locale: 'en' }) });
+    expect(rendersType(page, DashboardScreen)).toBe(true);
+    expect(rendersType(page, PermissionDeniedState)).toBe(false);
+  });
+
+  it('sends a session without it to the first screen its codes open', async () => {
+    // Not a full-page refusal on the screen they land on after signing in.
+    PERMISSIONS = ['inv.stock.read'];
+    expect(await landing()).toBe('/en/attention');
+
+    PERMISSIONS = ['crm.customer.read'];
+    expect(await landing()).toBe('/en/reception/walk-in');
+  });
+
+  it('refuses a session with no usable code on the page itself, sending it nowhere', async () => {
+    // Not to the design gallery (a 404 in production), and not back to this
+    // page: no redirect at all, and the refusal is stated here.
+    for (const permissions of [[], ['not.a.real.code']]) {
+      PERMISSIONS = permissions;
+      expect(await landing(), permissions.join(',')).toBeNull();
+      const page = await DashboardPage({ params: Promise.resolve({ locale: 'en' }) });
+      expect(rendersType(page, PermissionDeniedState), permissions.join(',')).toBe(true);
+      expect(rendersType(page, DashboardScreen), permissions.join(',')).toBe(false);
+    }
+  });
+
+  it('gates on exactly the code its own navigation entry names', async () => {
+    const entry = flattenNavigation().find((item) => item.href === '/');
+    const code = entry?.permission ?? null;
+    expect(code).not.toBeNull();
+
+    // That code alone opens the page...
+    PERMISSIONS = code === null ? [] : [code];
+    expect(await landing()).toBeNull();
+    const page = await DashboardPage({ params: Promise.resolve({ locale: 'en' }) });
+    expect(rendersType(page, DashboardScreen)).toBe(true);
+
+    // ...and every OTHER code the navigation names does not: the page sends the
+    // session on to a real screen, never to itself and never to the root.
+    PERMISSIONS = [
+      ...new Set(
+        flattenNavigation()
+          .map((item) => item.permission)
+          .filter((other): other is string => other !== null && other !== code)
+      ),
+    ];
+    const elsewhere = await landing();
+    expect(elsewhere).not.toBeNull();
+    expect(elsewhere).not.toBe('/en');
+    expect(elsewhere).not.toBe('/en/gallery');
   });
 });

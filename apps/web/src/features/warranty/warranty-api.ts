@@ -29,6 +29,7 @@ import type {
   WarrantyPolicyRenameBody,
   WarrantyPolicySummary,
   WarrantyRecord,
+  WarrantyRecordDetail,
   WarrantyStatusHistoryEnvelope,
   WarrantyStatusSetBody,
 } from './warranty-contract';
@@ -219,8 +220,12 @@ export async function listBranches(): Promise<ReadState<ItemsOnly<BranchOption>>
  * caller cannot see, or an identifier that names nothing. The backend deliberately
  * does not confirm that a record it will not show you exists.
  */
-export async function readWarranty(warrantyId: string): Promise<ReadState<WarrantyRecord>> {
-  return readOperation<WarrantyRecord>(warrantyPath(warrantyId));
+export async function readWarranty(warrantyId: string): Promise<ReadState<WarrantyRecordDetail>> {
+  // `WarrantyRecordDetail` and not `WarrantyRecord` (Owner directive,
+  // P1-32-PRE-OD-UX): this read carries the vehicle and customer blocks, and the
+  // generation response does not. The two shapes are named apart so a screen
+  // cannot read a block off a body that never had one.
+  return readOperation<WarrantyRecordDetail>(warrantyPath(warrantyId));
 }
 
 /**

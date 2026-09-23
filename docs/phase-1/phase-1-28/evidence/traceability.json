@@ -230,7 +230,7 @@
         },
         {
           "file": "apps/web/tests/p1-28-appointment-routes.test.ts",
-          "cases": ["hands the screen no company or branch reference at all"]
+          "cases": ["passes NO scope down — the branch is the working context, not the session"]
         }
       ],
       "observedInBrowserBy": [

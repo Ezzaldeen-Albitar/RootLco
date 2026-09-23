@@ -1183,6 +1183,104 @@ export class WarrantyRepository extends Repository {
   }
 
   /**
+   * The party who brought each car in, one work order at a time (Owner directive,
+   * P1-32-PRE-OD-UX).
+   *
+   * ## Only the ID is read here
+   *
+   * The NAME comes from the CRM module's own published read, which checks
+   * `crm.customer.read` for itself and answers an unentitled caller with nothing.
+   * Joining `crm.business_partners` in this statement would put a second,
+   * unchecked definition of "may this caller see a customer" in the codebase and
+   * hand a name to a caller that module refuses. Same division of labour as
+   * `ReceptionReadRepository.listReceptions`.
+   *
+   * ## Why the warranty repository may ask this at all
+   *
+   * A warranty record names no party of its own — `wty.warranty_records` has 22
+   * columns and not one of them is a partner — so the customer is reached through
+   * the record's work order and that work order's reception visit. This file
+   * already walks exactly that path for the list's search box (see the
+   * `partnerIds` arm of `listWarranties`), so the hop is the one this module
+   * already depends on rather than a new reach across a boundary.
+   *
+   * ## The CURRENT holder of the role
+   *
+   * `valid_to IS NULL` — the same instant `rec.reception-list` answers for, and
+   * deliberately not the work order's `opened_at`, which is what
+   * `PartyContextRepository.partiesForWorkOrders` dates its answer at. The
+   * difference is a decision: that projection exists to keep a CLOSED work order
+   * reporting whoever brought the car at the time, and this one names the party a
+   * warranty may be claimed by today. A warranty is live paperwork for as long as
+   * it is in force, and a correction to the role is a correction to who may claim.
+   *
+   * Ordered and LIMITed rather than left to chance: `uq_reception_party_roles_active`
+   * is unique on (visit, partner, role), so two different partners may legitimately
+   * hold the role at once, and an unordered scalar subquery would pick an arbitrary
+   * one of the two on every page. The earliest `valid_from` wins, deterministically,
+   * which is the rule both reception reads already apply.
+   *
+   * ## Batched
+   *
+   * One statement for a whole page. A per-row lookup is the N+1 every enriched
+   * read in this repository was written to avoid, and `wty.warranty-list` carries
+   * the `expensive-read` bucket precisely because its pages are not cheap.
+   *
+   * A work order with no `service_requester` is ABSENT from the map rather than
+   * present with a null: `rec.reception_party_roles` requires the role before a
+   * visit is ACTIVATED, as a deferred contract, so a visit can legitimately carry
+   * none and a list must render the absence instead of failing on it.
+   */
+  public async findCustomerPartnerIds(
+    db: DbHandle,
+    workOrderIds: readonly string[],
+    /**
+     * `SERVICE_REQUESTER`, passed in by the service from `@/modules/reception`.
+     *
+     * An ARGUMENT rather than an import, because it is the reception module's
+     * vocabulary and no data file anywhere in `apps/api/src/modules` imports
+     * another module — cross-module imports live in the application layer, and
+     * being the first exception here would set a precedent that outlives this
+     * field. Transcribing the word into this file instead would be a second copy
+     * of a value `ck_reception_party_roles_role` freezes.
+     */
+    relationshipRole: string
+  ): Promise<ReadonlyMap<string, string>> {
+    const unique = [...new Set(workOrderIds)];
+    // No ids means no statement: an empty array is a round trip that can only
+    // return nothing.
+    if (unique.length === 0) return new Map();
+    const context = this.assertContext(db);
+    const result = await this.run<{ work_order_id: string; partner_id: string }>(
+      db,
+      `SELECT w.id AS work_order_id, r.partner_id
+         FROM wo.work_orders w
+         CROSS JOIN LATERAL (
+           SELECT p.partner_id
+             FROM rec.reception_party_roles p
+            WHERE p.tenant_id = w.tenant_id
+              AND p.reception_visit_id = w.reception_visit_id
+              AND p.relationship_role = $3
+              AND p.valid_to IS NULL
+              AND p.deleted_at IS NULL
+            ORDER BY p.valid_from ASC, p.partner_id ASC
+            LIMIT 1
+         ) r
+        WHERE w.tenant_id = $1 AND w.id = ANY($2::uuid[])`,
+      [
+        context.principal.tenantId,
+        unique,
+        // Bound rather than spliced. It reaches this method from a module
+        // constant with no caller influence, so this is not an injection fix — it
+        // is this layer's standing convention, and a literal inside the SQL would
+        // be the one place a reader has to stop and prove that for themselves.
+        relationshipRole,
+      ]
+    );
+    return new Map(result.rows.map((row) => [row.work_order_id, row.partner_id]));
+  }
+
+  /**
    * A warranty record's transition ledger, newest first (P1-31 prerequisite P-18).
    *
    * ## This one had nothing to publish either

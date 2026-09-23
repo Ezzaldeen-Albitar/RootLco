@@ -1,9 +1,9 @@
 {
   "generatedBy": "scripts/p1-24-operation-register.mjs",
   "totals": {
-    "operations": 497,
-    "openapiPaths": 389,
-    "openapiOperations": 497,
+    "operations": 498,
+    "openapiPaths": 390,
+    "openapiOperations": 498,
     "openapiSchemas": 3,
     "events": 50,
     "eventsProduced": 47,
@@ -11,10 +11,10 @@
     "outboxForeignWriters": 0,
     "errorCodes": 34,
     "permissionCodes": 132,
-    "auditActions": 284
+    "auditActions": 285
   },
   "counts": {
-    "Covered": 497
+    "Covered": 498
   },
   "operations": [
     {
@@ -176,7 +176,10 @@
       "requiredEvidence": ["route", "service", "success", "authorization", "isolation", "denial"],
       "providedEvidence": ["authorization", "denial", "isolation", "route", "service", "success"],
       "missingEvidence": [],
-      "tests": ["tests/backend/p1-18-appointment-reads.test.ts"],
+      "tests": [
+        "tests/backend/p1-18-appointment-reads.test.ts",
+        "tests/backend/p1-22-isolation.test.ts"
+      ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/appointments/route.ts"
     },
@@ -5989,6 +5992,50 @@
       "file": "apps/api/src/app/api/v1/opening-inventory-batches/[batchId]/route.ts"
     },
     {
+      "id": "inv.part-issue-list",
+      "domain": "inventory",
+      "method": "GET",
+      "route": "/api/v1/part-issues",
+      "permissions": ["inv.stock.read"],
+      "public": false,
+      "scope": "branch",
+      "transaction": "read (no business mutation)",
+      "auditClass": "none",
+      "auditAction": null,
+      "idempotent": false,
+      "versionGuarded": false,
+      "openapi": "GET /api/v1/part-issues",
+      "documentedResponses": ["200", "401", "403", "422", "429", "500"],
+      "requiredEvidence": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "isolation",
+        "denial",
+        "cross-tenant",
+        "pagination"
+      ],
+      "providedEvidence": [
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "isolation",
+        "pagination",
+        "route",
+        "service",
+        "success"
+      ],
+      "missingEvidence": [],
+      "tests": [
+        "tests/backend/p1-21-helpers.ts",
+        "tests/backend/p1-22-isolation.test.ts",
+        "tests/backend/p1-32-inventory-operations.test.ts"
+      ],
+      "classification": "Covered",
+      "file": "apps/api/src/app/api/v1/part-issues/route.ts"
+    },
+    {
       "id": "inv.reorder-level-list",
       "domain": "inventory",
       "method": "GET",
@@ -8338,7 +8385,10 @@
         "success"
       ],
       "missingEvidence": [],
-      "tests": ["tests/backend/p1-31-report-engine-work-orders.test.ts"],
+      "tests": [
+        "tests/backend/p1-22-isolation.test.ts",
+        "tests/backend/p1-31-report-engine-work-orders.test.ts"
+      ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/dashboard/summary/route.ts"
     },
@@ -11800,7 +11850,10 @@
       "requiredEvidence": ["route", "service", "success", "authorization", "isolation", "denial"],
       "providedEvidence": ["authorization", "denial", "isolation", "route", "service", "success"],
       "missingEvidence": [],
-      "tests": ["tests/backend/p1-27-reception-reads.test.ts"],
+      "tests": [
+        "tests/backend/p1-22-isolation.test.ts",
+        "tests/backend/p1-27-reception-reads.test.ts"
+      ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/receptions/route.ts"
     },
@@ -13464,6 +13517,7 @@
       ],
       "missingEvidence": [],
       "tests": [
+        "tests/backend/p1-22-isolation.test.ts",
         "tests/backend/p1-31-delivering-employee-seam.test.ts",
         "tests/backend/p1-31-delivery-list-seam.test.ts",
         "tests/backend/p1-31-privilege-escalation.test.ts",
@@ -19458,6 +19512,7 @@
       "tests": [
         "tests/backend/br-05-work-order-customer-context.test.ts",
         "tests/backend/p1-19-work-order-reads.test.ts",
+        "tests/backend/p1-22-isolation.test.ts",
         "tests/backend/p1-32-friendly-search.test.ts"
       ],
       "classification": "Covered",
@@ -19791,6 +19846,7 @@
       ],
       "missingEvidence": [],
       "tests": [
+        "tests/backend/p1-22-isolation.test.ts",
         "tests/backend/p1-31-privilege-escalation.test.ts",
         "tests/backend/p1-31-tenant-administrator-bundle-backfill.test.ts",
         "tests/backend/p1-31-warranty-read-seam.test.ts",

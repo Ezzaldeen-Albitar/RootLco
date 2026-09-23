@@ -171,29 +171,40 @@ describe('the queue route', () => {
   it('renders the board only for a holder of the read permission', async () => {
     PERMISSIONS = [RECEPTION_PERMISSIONS.read];
     const granted = await QueuePage({ params: Promise.resolve({ locale: 'en' }) });
-    expect(findProps(granted, 'companyIds')).not.toBeNull();
+    expect(findProps(granted, 'canCreate')).not.toBeNull();
 
     PERMISSIONS = ALL.filter((p) => p !== RECEPTION_PERMISSIONS.read);
     const denied = await QueuePage({ params: Promise.resolve({ locale: 'en' }) });
-    expect(findProps(denied, 'companyIds')).toBeNull();
+    expect(findProps(denied, 'canCreate')).toBeNull();
   });
 
   it('grants the check-in offer from the manage permission and nothing else', async () => {
     PERMISSIONS = [RECEPTION_PERMISSIONS.read, RECEPTION_PERMISSIONS.manage];
     const granted = await QueuePage({ params: Promise.resolve({ locale: 'en' }) });
-    expect(findProps(granted, 'companyIds')?.['canCreate']).toBe(true);
+    expect(findProps(granted, 'canCreate')?.['canCreate']).toBe(true);
 
     PERMISSIONS = ALL.filter((p) => p !== RECEPTION_PERMISSIONS.manage);
     const denied = await QueuePage({ params: Promise.resolve({ locale: 'en' }) });
-    expect(findProps(denied, 'companyIds')?.['canCreate']).toBe(false);
+    expect(findProps(denied, 'canCreate')?.['canCreate']).toBe(false);
   });
 
-  it("passes the session's own resolved scope as the target options", async () => {
+  it('passes NO scope down — the branch is the working context, not the session', async () => {
+    /*
+     * The inverse of what this case used to assert, and for the reason the
+     * board itself changed: the session's `companyIds` and `branchIds` are bare
+     * references with no names, and an EMPTY pair of them means unrestricted
+     * rather than none. The route hands neither down now. The branch is chosen
+     * once in the header, and the route's job is the permission gate.
+     */
     PERMISSIONS = [RECEPTION_PERMISSIONS.read];
     const tree = await QueuePage({ params: Promise.resolve({ locale: 'en' }) });
-    const props = findProps(tree, 'companyIds');
-    expect(props?.['companyIds']).toEqual(['11111111-1111-4111-8111-111111111111']);
-    expect(props?.['branchIds']).toEqual(['22222222-2222-4222-8222-222222222222']);
+    const props = findProps(tree, 'canCreate');
+    expect(props, 'the reception board was not rendered at all').not.toBeNull();
+    expect(
+      props?.['companyIds'],
+      'the route still hands the board bare references'
+    ).toBeUndefined();
+    expect(props?.['branchIds'], 'the route still hands the board bare references').toBeUndefined();
   });
 });
 

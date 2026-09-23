@@ -287,11 +287,11 @@ and has no screen at this version — **OPERATOR PROCEDURE** for that one act.
 
 In the **settings** blocks — **System settings**, **Numbering rules**, **Taxes**, **Currencies**,
 and the company and branch settings lower down the **Organization** screen — a company or a branch
-is chosen by **name** from a list, labelled **Company** <!-- admin.scope.company --> or **Branch**
-<!-- admin.scope.branch --> . The list holds the active companies and branches your account may act
-
-in, and a branch is shown with the company it belongs to, so two workshops with the same name can be
-told apart. If the list is empty, the screen says so rather than leaving a blank space.
+is chosen by **name** from a list, labelled **Company** <!-- admin.scope.company --> or
+**Branch** <!-- admin.scope.branch --> . The list holds the active companies and branches your
+account may act in, and a branch is shown with the company it belongs to, so two workshops with the
+same name can be told apart. If the list is empty, the screen says so rather than leaving a blank
+space.
 
 ---
 

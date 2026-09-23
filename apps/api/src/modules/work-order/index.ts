@@ -140,6 +140,7 @@ export {
   PARTS_FORWARD_STATES,
   SETTABLE_FULFILLMENT_STATES,
   WORK_ORDER_KINDS,
+  WORK_ORDER_STATE_GROUPS,
   WorkOrderRuleError,
   assertAdditionalWorkTransition,
   assertTransitionReason,
@@ -153,6 +154,7 @@ export {
   type PartsForwardState,
   type SettableFulfillmentState,
   type WorkOrderKind,
+  type WorkOrderStateGroup,
 } from './domain/work-order';
 
 export type {

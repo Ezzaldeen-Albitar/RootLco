@@ -566,13 +566,34 @@ async function bodyText(page: Page): Promise<string> {
  * configured workspace's operator (§18) — and a second copy of these six lines
  * is a second thing to keep true.
  */
-async function signInThroughTheForm(page: Page, { email, password }: Credentials): Promise<void> {
+async function signInThroughTheForm(
+  page: Page,
+  { email, password }: Credentials,
+  landing: RegExp
+): Promise<void> {
   await page.goto('/en/login');
   await page.getByLabel('Email address').fill(email);
   await page.getByRole('textbox', { name: 'Password', exact: true }).fill(password);
   await page.getByRole('button', { name: 'Sign in' }).click();
-  await page.waitForURL(/\/en(\?.*)?$/, { timeout: 20_000 });
+  await page.waitForURL(landing, { timeout: 20_000 });
 }
+
+/**
+ * Where a sign-in lands, per principal (Owner directive, P1-32-PRE-OD-UX).
+ *
+ * A session lands on the FIRST screen of the navigation its codes open
+ * (`landingRoute` in `src/lib/permissions.ts`). The dashboard is that screen for
+ * anyone holding `wo.work_order.read` — the configured workspace's operator —
+ * so that sign-in lands on the workspace root.
+ *
+ * The reader holds neither `wo.work_order.read` (the dashboard) nor
+ * `inv.stock.read` (the attention list), so the first entry it can open is the
+ * walk-in reception, gated on `crm.customer.read`, which `READER_PERMISSIONS`
+ * grants. Landing it on the dashboard would sign it in to a page that can only
+ * refuse it, which is exactly what the rule exists to prevent.
+ */
+const LANDS_ON_WORKSPACE_ROOT = /\/en(\?.*)?$/;
+const READER_LANDS_ON_WALK_IN = /\/en\/reception\/walk-in(\?.*)?$/;
 
 /** What `BrowserContext.cookies()` hands back, without naming Playwright's type. */
 type SessionCookies = Awaited<ReturnType<BrowserContext['cookies']>>;
@@ -602,14 +623,15 @@ const browserSessions = new Map<string, SessionCookies>();
 async function signInOncePerProject(
   page: Page,
   who: string,
-  credentials: Credentials
+  credentials: Credentials,
+  landing: RegExp
 ): Promise<void> {
   const held = browserSessions.get(who);
   if (held !== undefined) {
     await page.context().addCookies(held);
     return;
   }
-  await signInThroughTheForm(page, credentials);
+  await signInThroughTheForm(page, credentials, landing);
   browserSessions.set(who, await page.context().cookies());
 }
 
@@ -918,12 +940,55 @@ test.describe('the reception queue is a board for one named branch', () => {
     await segmentRendered(page, '/en/receptions');
     await expect(page.getByRole('main')).toContainText(say('en', 'receptions.queue.periodLabel'));
 
-    const before = posts.length;
-    await workInBranch(page, BRANCH_A);
+    /*
+     * WHICH READ IS BEING COUNTED, and why the two bootstraps cannot share one
+     * counter.
+     *
+     * This sampled `before = posts.length` AFTER the navigation and then polled
+     * the DELTA for a read. That is the arrangement the old screen needed — the
+     * read could only follow a Show press — and it is exactly wrong for a board
+     * that reads on ARRIVAL: the read is already counted by the time the
+     * baseline is taken, so the delta never moves and the assertion fails
+     * because the behaviour it is checking is working. It duly failed in all
+     * three projects with "the board issued no read at all, Received 0".
+     *
+     * The honest counter depends on what the acceptance principal is granted,
+     * which this file cannot know and must not assume:
+     *
+     *   - SEVERAL authorized branches — none is chosen for them, so the board
+     *     is not addressed, says which control answers, and reads nothing. The
+     *     baseline is meaningful here, and choosing a branch must move it.
+     *   - EXACTLY ONE — it is chosen for them by the shell, so the board is
+     *     addressed on arrival and has already read before any of this runs.
+     *     There is no delta to wait for; the claim is that a read happened at
+     *     all, and `workInBranch` asserts the branch is stated read-only rather
+     *     than asked for.
+     *
+     * Both are the same promise — the board reads for the branch it is
+     * addressed to, without being asked twice — measured where each bootstrap
+     * actually puts the read.
+     */
+    if ((await page.getByTestId('working-context-select').count()) > 0) {
+      // The claim develop's block made, kept — minus the button it pressed to
+      // make it. There is no Show control on this screen any more, so the
+      // assertion is that an unchosen branch leaves the board silent and says
+      // which control answers.
+      const before = posts.length;
+      await expect(page.getByTestId('requires-concrete-branch').first()).toBeVisible();
+      expect(posts.length - before, 'a branch nobody chose must not issue a read').toBe(0);
 
-    await expect
-      .poll(() => posts.length - before, { message: 'the board issued no read at all' })
-      .toBeGreaterThan(0);
+      await workInBranch(page, BRANCH_A);
+      await expect
+        .poll(() => posts.length - before, {
+          message: 'naming a branch issued no read at all',
+        })
+        .toBeGreaterThan(0);
+    } else {
+      await workInBranch(page, BRANCH_A);
+      await expect
+        .poll(() => posts.length, { message: 'the board issued no read on arrival' })
+        .toBeGreaterThan(0);
+    }
     expect(observed.length, 'the listener saw no requests at all').toBeGreaterThan(0);
 
     // An answered read that returned nothing. "No matches" is a statement about
@@ -1322,7 +1387,12 @@ test.describe('a read-only operator meets a denial, not an empty screen', () => 
 
   /** The read-only principal, signed in the way an operator signs in. */
   async function signInAsReader(page: Page): Promise<void> {
-    await signInOncePerProject(page, 'reader (browser)', readerCredentials());
+    await signInOncePerProject(
+      page,
+      'reader (browser)',
+      readerCredentials(),
+      READER_LANDS_ON_WALK_IN
+    );
   }
 
   test('the booking form is refused, while the calendar and queue still read', async ({ page }) => {
@@ -1488,15 +1558,47 @@ test.describe('check-in can originate from an appointment', () => {
       'the walk-in requester control survived the switch to an appointment origin'
     ).toHaveCount(0);
 
-    // No branch target yet, so the picker must not be usable and must SAY why
-    // rather than answering an empty list the operator would read as "none".
+    /*
+     * The picker must not answer before it is addressed to a branch — an empty
+     * list read WITHOUT a branch is one an operator would take for "this
+     * customer has no appointments".
+     *
+     * Which state the principal starts in is a property of the BOOTSTRAP, not
+     * of this screen, and both are correct, so both are asserted rather than
+     * one being assumed:
+     *
+     *   - several authorized branches, none chosen yet — the picker is
+     *     unavailable and the screen says why;
+     *   - exactly one — it is chosen for them before the page paints, so the
+     *     picker is ALREADY usable and the header names where it will read.
+     *
+     * The earlier version asserted only the first, which the single-branch
+     * acceptance principal can no longer enter: the pair used to be two empty
+     * controls on this form, and it is now a selection the shell makes.
+     */
     const load = page.getByRole('button', {
       name: say('en', 'receptions.checkIn.loadAppointments'),
     });
-    await expect(load, 'the appointment picker was usable with no branch named').toBeDisabled();
-    await expect(page.getByRole('main')).toContainText(say('en', 'receptions.checkIn.targetFirst'));
-
     const before = posts.length;
+
+    if ((await page.getByTestId('working-context-select').count()) > 0) {
+      await expect(load, 'the appointment picker was usable with no branch named').toBeDisabled();
+      await expect(page.getByRole('main')).toContainText(
+        say('en', 'receptions.checkIn.targetFirst')
+      );
+    } else {
+      const named = page.getByTestId('working-context-single');
+      await expect(named, 'the header named no branch for a single-branch account').toBeVisible();
+      expect(
+        (await named.innerText()).trim().length,
+        'the header named a branch with no name'
+      ).toBeGreaterThan(0);
+      await expect(
+        load,
+        'a branch chosen for the operator still left the appointment picker unusable'
+      ).toBeEnabled();
+    }
+
     await workInBranch(page, BRANCH_A);
     await expect(load, 'a named branch target did not enable the picker').toBeEnabled();
     await expect(
@@ -1944,6 +2046,8 @@ test.describe('the P1-28 surface discloses nothing of another workspace', () => 
   const COMPANY_B = 'c1000000-0000-4000-8000-00000000000b';
   const BRANCH_B = 'c1100000-0000-4000-8000-00000000000b';
   const TENANT_B_NAME = 'CRM Isolation Tenant B';
+  /** Lower-cased, because every check against it reads rendered text. */
+  const TENANT_B_BRANCH_NAME = 'isolation branch b';
 
   /**
    * Renders a route and proves it really rendered FOR TENANT A before any
@@ -2040,11 +2144,39 @@ test.describe('the P1-28 surface discloses nothing of another workspace', () => 
         chooser.locator(`option[value="${COMPANY_B}"]`),
         'the header offered a company of another workspace'
       ).toHaveCount(0);
+      expect(
+        (await chooser.innerText()).toLowerCase(),
+        'the branch list named another workspace'
+      ).not.toContain(TENANT_B_BRANCH_NAME);
+    } else {
+      /*
+       * A single-branch principal has no list, and an assertion that only runs
+       * against a list would be VACUOUS for them — the one shape where "the
+       * header offered nothing foreign" is trivially true because the header
+       * offers nothing at all.
+       *
+       * So the claim is made positively instead: the header names a branch, it
+       * is the principal's own, and it is not Tenant B's. That is the same
+       * isolation statement carried by the element that actually exists.
+       */
+      const named = page.getByTestId('working-context-single');
+      await expect(named, 'the header named no branch at all').toBeVisible();
+      const headerText = (await named.innerText()).trim();
+      expect(headerText.length, 'the header named a branch with no name').toBeGreaterThan(0);
+      expect(
+        headerText.toLowerCase(),
+        'the header named a branch of another workspace'
+      ).not.toContain(TENANT_B_BRANCH_NAME);
+      // And the screen below it agrees with the header, by name rather than by
+      // reference — the two must not be able to disagree about where we are.
+      const onPage = page.locator(BRANCH_ON_PAGE).first();
+      if ((await onPage.count()) > 0) {
+        expect(
+          (await onPage.innerText()).toLowerCase(),
+          'the screen named a branch the header did not'
+        ).toContain(headerText.split(' · ')[0]?.toLowerCase() ?? headerText.toLowerCase());
+      }
     }
-    const chooserText = (await chooser.count()) > 0 ? await chooser.innerText() : '';
-    expect(chooserText.toLowerCase(), 'the branch list named another workspace').not.toContain(
-      'isolation branch b'
-    );
 
     await workInBranch(page, BRANCH_A);
 
@@ -2058,7 +2190,7 @@ test.describe('the P1-28 surface discloses nothing of another workspace', () => 
       .toBeGreaterThan(40);
     const body = await bodyText(page);
     expect(body, 'the queue disclosed Tenant B').not.toContain(TENANT_B_NAME.toLowerCase());
-    expect(body, 'the queue named the Tenant B branch').not.toContain('isolation branch b');
+    expect(body, 'the queue named the Tenant B branch').not.toContain(TENANT_B_BRANCH_NAME);
   });
 
   const BOARDS_FOR_B = [
@@ -2456,7 +2588,12 @@ test.describe('the configured workspace: the four catalogue-blocked capabilities
 
   /** Signs in and puts the branch target in, the two things every case needs. */
   async function openConfigured(page: Page, route: string): Promise<void> {
-    await signInOncePerProject(page, 'configured operator', configuredCredentials());
+    await signInOncePerProject(
+      page,
+      'configured operator',
+      configuredCredentials(),
+      LANDS_ON_WORKSPACE_ROOT
+    );
     await page.goto(route);
     await segmentRendered(page, route);
   }
@@ -2487,7 +2624,22 @@ test.describe('the configured workspace: the four catalogue-blocked capabilities
       'a configured catalogue still reported itself unconfigured'
     ).not.toContainText(say('en', 'appointments.book.noTypes'));
     const submit = page.getByRole('button', { name: say('en', 'appointments.book.submit') });
-    await expect(submit, 'a configured catalogue left the booking control disabled').toBeEnabled();
+
+    /*
+     * The BRANCH first, and this order is load-bearing.
+     *
+     * A booking is addressed to one branch — the route names both halves of the
+     * pair as mandatory — so the control is unavailable until one is chosen.
+     * Clicking it before that would do nothing at all, and the validation
+     * assertions below would time out against a form that was never submitted.
+     * Choosing first makes the state deterministic for both bootstraps, and
+     * what is then asserted is the form's own local refusals.
+     */
+    await workInBranch(page, manifest.branchId);
+    await expect(
+      submit,
+      'a configured catalogue and a chosen branch still left the booking control disabled'
+    ).toBeEnabled();
 
     /*
      * Validation, which could not be observed while submit was disabled: an
@@ -2504,8 +2656,6 @@ test.describe('the configured workspace: the four catalogue-blocked capabilities
     await expect(page.getByText(say('en', 'field.required')).first()).toBeVisible();
     await expect(main).toContainText(say('en', 'appointments.book.requesterRequired'));
     expect(posts.length, 'an incomplete booking was sent to the server').toBe(0);
-
-    await workInBranch(page, manifest.branchId);
 
     // The customer, by NAME — the whole reason `CustomerSelector` exists.
     const selector = page.getByTestId('customer-selector');

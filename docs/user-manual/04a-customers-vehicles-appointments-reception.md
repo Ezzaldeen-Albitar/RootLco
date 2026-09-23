@@ -52,7 +52,7 @@ The single-branch screens in this part are:
 | -------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Appointments** <!-- appointments.calendar.title -->    | "Choose a branch to see its calendar" <!-- appointments.calendar.idleTitle --> — "Choose which branch's calendar to show, and the days you care about. Nothing is loaded until you ask." <!-- appointments.calendar.idleBody --> |
 | **Book an appointment** <!-- appointments.book.title --> | The booking will not submit without a company and a branch                                                                                                                                                                       |
-| **Reception queue** <!-- receptions.queue.title -->      | "Choose a branch" <!-- receptions.queue.idleTitle --> — "The queue is read for one branch at a time. Name the company and branch, then show the queue." <!-- receptions.queue.idleBody -->                                       |
+| **Reception queue** <!-- receptions.queue.title -->      | Today's visits for the branch you are working in, loaded as the page opens. The branch is the one named at the top of every page; you can also read **all your branches** at once here.                                          |
 | **Vehicle check-in** <!-- receptions.checkIn.title -->   | "The visit is opened for one branch. The server authorizes this request against exactly the branch named here." <!-- receptions.checkIn.targetHint -->                                                                           |
 
 Customer search, vehicle search and both duplicate queues are **not** branch-scoped: they read
@@ -77,18 +77,18 @@ name, the active branches your account may act in, grouped by company.
 
 Every branch-scoped screen — appointments, the reception queue, check-in, the work-order board, the
 quality queue, the technician workspace — shows the branch it is addressed to as **text**, with the
-line "To work somewhere else, change your branch at the top of the page."
-<!-- workingContext.changeInHeader --> . None of them asks you to type or pick a reference; the
-
-header is the only place the answer changes.
+line "To work somewhere else, change your branch at the top of the
+page." <!-- workingContext.changeInHeader --> . None of them asks you to type or pick a reference;
+the header is the only place the answer changes.
 
 Changing branch while a form holds something you have not saved asks first: "Leave this unsaved
 work?" <!-- workingContext.discard.title --> . Lists re-read for the new branch as soon as you
 switch, so what is on screen always belongs to the branch named above it.
 
-**Practical consequence.** Keep the branch references for Al-Noor Auto Services (example) written
-down at the front desk. You will type them several times a day, and no screen will look them up for
-you.
+**Practical consequence.** There is nothing to write down and nothing to keep at the front desk.
+You set your branch once when you sign in — or it is set for you, if you have only one — and every
+screen follows it for the rest of the session. Check the name in the header before you record
+anything; it is the one place that says where the work is going.
 
 **Related — there is no company, branch, department or employee screen. Label: OPERATOR PROCEDURE.**
 Companies, branches, departments and employee records are created by runbook acts and backend
@@ -1174,25 +1174,67 @@ Other exits: **"Open the customer page"**, **"Open the vehicle page"**, **"Start
 **Where** — **Workshop** > **Reception** (`/{locale}/receptions`). Heading **"Reception queue"** <!-- receptions.queue.title -->
 , described as "The vehicles this branch has received, most recently received first." <!-- receptions.queue.description -->
 
-**Steps** — name the company and branch (4A.1), optionally set **"Status"** <!-- receptions.queue.statusFilter -->
-(default **"Any status"** <!-- receptions.queue.anyStatus --> ), then choose **"Show the queue"** <!-- receptions.queue.show -->
-.
+**Steps** — nothing. The queue loads as the page opens, for the branch named at the top of the
+page and for **today** on that branch's own clock. Then narrow it if you want to:
+
+1. **Period** <!-- receptions.queue.periodLabel --> — **Today**, **Yesterday**, **Last 7 days**,
+   **Before today** or **Chosen dates** <!-- receptions.queue.period.* --> . The line under the
+   buttons always says which period is showing. With **Chosen dates** , fill **From** <!-- receptions.queue.fromDay -->
+   and **To** <!-- receptions.queue.toDay --> and choose **Use these dates** <!-- receptions.queue.applyPeriod -->
+   ; a second date earlier than the first is refused at the field — "The second date cannot be
+   earlier than the first." <!-- receptions.queue.invertedRange -->
+2. **Status** <!-- receptions.queue.statusFilter --> (default **Any status** <!-- receptions.queue.anyStatus -->
+   ). One control, two kinds of answer. At the top are the whole groups —
+   **Everything still with us** <!-- receptions.queue.statusWhole.open --> and **Everything
+   finished** <!-- receptions.queue.statusWhole.finished --> — and under them the six individual
+   statuses, grouped the same way <!-- receptions.queue.statusGroupOpen / .statusGroupFinished --> .
+   Choose a whole group when that is the question; choose one status when it is not.
+3. **Search this list** <!-- receptions.queue.searchLabel --> — one box over a name, the last digits
+   of a phone number, a plate, a chassis number or the visit number. Two characters at least: "Type
+   at least two characters to search." <!-- receptions.queue.searchTooShort --> Digits typed on an
+   Arabic keyboard are accepted. The list follows what you type, a moment after you stop.
+
+There is one button for the question a reception desk asks most: **Still with us from before
+today** <!-- receptions.queue.olderUnfinished --> , which sets the period to **Before today** and
+the status to the whole **still with us** group in one go.
 
 **Result** — heading **"Reception queue results"** <!-- receptions.queue.resultsHeading --> ,
 caption "Reception visits for the chosen branch" <!-- receptions.queue.caption --> , columns
-**"Visit"**, **"Status"**, **"Origin"**, **"Vehicle"**, **"Received"**, **"Custody"** <!-- receptions.queue.column.* -->
-. Custody reads **"Vehicle still held"** <!-- receptions.queue.custodyHeld --> or **"Released"** <!-- receptions.queue.custodyReleased -->
-. Row actions: **"Open the visit"** <!-- receptions.queue.open --> , **"Open the visit to end it"** <!-- receptions.queue.releaseVehicle -->
-and **"Acknowledgement"** <!-- receptions.queue.acknowledgement --> .
+**"Visit"**, **"Customer"** <!-- receptions.queue.column.customer --> , **"Vehicle"**,
+**"Status"**, **"Received"** and **"Custody"** <!-- receptions.queue.column.* --> . A **"Branch"** <!-- receptions.queue.column.branch -->
+column appears only when you are reading all your branches. The **Vehicle** cell shows the plate the
+car carries today with the vehicle's own reference under it; a registered vehicle with no plate
+reads **"No plate"** <!-- receptions.queue.column.noPlate --> . The **Customer** cell tells three
+things apart: the name, "No customer recorded for this visit" <!-- receptions.queue.column.noCustomer -->
+when the visit has not named one yet, and "Recorded; you may not see who" <!-- receptions.queue.column.customerHidden -->
+when it has and you are not allowed to read the customer directory. **"Received"** is shown on the clock of the branch the visit belongs to, so it
+agrees with the period in the heading. Custody reads **"Vehicle still held"** <!-- receptions.queue.custodyHeld -->
+or **"Released"** <!-- receptions.queue.custodyReleased --> .
+
+Row actions: **"Continue the check-in"** <!-- receptions.queue.continueCheckIn --> while the visit
+can still move, **"Open the visit"** <!-- receptions.queue.open --> once it has finished, and
+**"Acknowledgement"** <!-- receptions.queue.acknowledgement --> . Both of the first two open the
+same visit; nothing on the board writes anything, because a row shows the visit as it was when the
+page was read and ending a visit has to be done against the visit's own current version.
+
+Two offers sit under the filters when you are allowed to use them: **"Check a vehicle in"** <!-- receptions.queue.checkInVehicle -->
+, and **"New customer? Add a customer"** <!-- receptions.queue.newCustomer --> , which opens the
+walk-in desk where a customer and their car are recorded before check-in.
 
 Visit statuses: **"Opened"**, **"Inspecting"**, **"Authorized"**, **"Converted to a work order"**,
 **"Closed without work"**, **"Refused"** <!-- receptions.status.* --> . Origins: **"Walk-in"** and
 **"Appointment"** <!-- receptions.origin.* --> .
 
-**Restrictions** — one branch at a time, and there is no count: "Ordered by when the vehicle was
-received, newest first. The platform publishes no total, so none is shown." <!-- receptions.queue.orderingNote -->
+**Restrictions** — a whole group and a single status are alternatives, not a pair: the control
+holds one answer at a time because the platform refuses both together. There is no count: "Ordered by when the vehicle was received, newest first.
+The platform publishes no total, so none is shown." <!-- receptions.queue.orderingNote --> Nothing
+here is ever marked late: the platform records when a vehicle was received and never a promised
+time, so there is no such thing as an overdue visit to show.
 
-**If it goes wrong** — "No reception visit in this branch matches what you asked for." <!-- receptions.queue.noneMatching -->
+**If it goes wrong** — a search that matched nothing says so about the SEARCH and offers
+**"Clear the filters"** <!-- receptions.queue.clearFilters --> ; it never claims the branch is
+empty. If you have not chosen a branch yet, or you are reading all your branches across more than
+one company, the list says which control answers that instead of guessing.
 
 **Screenshot** — no screenshot available at this version.
 

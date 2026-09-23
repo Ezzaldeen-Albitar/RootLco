@@ -88,6 +88,20 @@ const ALL = [
 ];
 
 /** Walks a returned element tree for the first node carrying `marker`. */
+/*
+ * The marker moved from `companyIds` to the screen's own capability prop.
+ *
+ * `findProps` locates the screen in the rendered tree by a prop only that
+ * screen carries, and it used the session's company references — which the
+ * page no longer passes, because the branch is the working context's named
+ * selection and not a list of references handed down from the session. A
+ * locator keyed on a prop that has been removed finds nothing, and every
+ * assertion built on it then reads as a permission failure.
+ *
+ * `canManage` / `canCreate` are the replacement for the same reason the old one
+ * was chosen: they exist on the screen, on no other node of the tree, and are
+ * present exactly when the page decided to render the screen at all.
+ */
 function findProps(node: unknown, marker: string): Record<string, unknown> | null {
   if (node === null || typeof node !== 'object') return null;
   const element = node as ReactElement<Record<string, unknown>>;
@@ -121,21 +135,21 @@ describe('the calendar route', () => {
   it('renders the screen only for a holder of the read permission', async () => {
     PERMISSIONS = [APPOINTMENT_PERMISSIONS.read];
     const granted = await CalendarPage({ params: Promise.resolve({ locale: 'en' }) });
-    expect(findProps(granted, 'canCheckIn')).not.toBeNull();
+    expect(findProps(granted, 'canManage')).not.toBeNull();
 
     PERMISSIONS = ALL.filter((p) => p !== APPOINTMENT_PERMISSIONS.read);
     const denied = await CalendarPage({ params: Promise.resolve({ locale: 'en' }) });
-    expect(findProps(denied, 'canCheckIn')).toBeNull();
+    expect(findProps(denied, 'canManage')).toBeNull();
   });
 
   it('grants the booking offer from the manage permission and nothing else', async () => {
     PERMISSIONS = [APPOINTMENT_PERMISSIONS.read, APPOINTMENT_PERMISSIONS.manage];
     const granted = await CalendarPage({ params: Promise.resolve({ locale: 'en' }) });
-    expect(findProps(granted, 'canCheckIn')?.['canManage']).toBe(true);
+    expect(findProps(granted, 'canManage')?.['canManage']).toBe(true);
 
     PERMISSIONS = ALL.filter((p) => p !== APPOINTMENT_PERMISSIONS.manage);
     const denied = await CalendarPage({ params: Promise.resolve({ locale: 'en' }) });
-    expect(findProps(denied, 'canCheckIn')?.['canManage']).toBe(false);
+    expect(findProps(denied, 'canManage')?.['canManage']).toBe(false);
   });
 
   it('grants the day queue’s arrival affordance from the RECEPTION permission', async () => {
@@ -147,31 +161,38 @@ describe('the calendar route', () => {
      */
     PERMISSIONS = [APPOINTMENT_PERMISSIONS.read, RECEPTION_PERMISSIONS.manage];
     const granted = await CalendarPage({ params: Promise.resolve({ locale: 'en' }) });
-    expect(findProps(granted, 'canCheckIn')?.['canCheckIn']).toBe(true);
+    expect(findProps(granted, 'canManage')?.['canCheckIn']).toBe(true);
 
     // Every appointment permission and NOT the reception one: still false.
     PERMISSIONS = ALL;
     const denied = await CalendarPage({ params: Promise.resolve({ locale: 'en' }) });
-    expect(findProps(denied, 'canCheckIn')?.['canCheckIn']).toBe(false);
+    expect(findProps(denied, 'canManage')?.['canCheckIn']).toBe(false);
   });
 
-  it('hands the screen no company or branch reference at all', async () => {
+  it('passes NO scope down — the branch is the working context, not the session', async () => {
     /*
-     * This case used to assert the opposite: that the session's resolved
-     * `companyIds` and `branchIds` reached the screen as the OPTIONS for a
-     * branch target the operator picked. They were bare references with no names
-     * on them, and an unrestricted grant publishes both as empty arrays — so the
-     * widest-reaching operator of all was offered a picker with nothing in it and
-     * two boxes to type into. The branch is the working context's own named
-     * selection now, read from the header, so the page passes neither.
+     * The inverse of what this case used to assert.
+     *
+     * It checked that the route handed the screen the session's `companyIds`
+     * and `branchIds`. Those are bare references with no names, and an EMPTY
+     * pair of them means unrestricted rather than none — the two facts that
+     * produced the reference select and the free-text box the calendar used to
+     * render. The page passes neither now; the branch is chosen once in the
+     * header and read from the working context, and the route's job is the
+     * permission gate and nothing else.
      */
     PERMISSIONS = [APPOINTMENT_PERMISSIONS.read];
     const tree = await CalendarPage({ params: Promise.resolve({ locale: 'en' }) });
-    const props = findProps(tree, 'canCheckIn');
-    expect(props).not.toBeNull();
-    expect(props?.['companyIds']).toBeUndefined();
-    expect(props?.['branchIds']).toBeUndefined();
-    expect(findProps(tree, 'companyIds')).toBeNull();
+    const props = findProps(tree, 'canManage');
+    expect(props, 'the calendar screen was not rendered at all').not.toBeNull();
+    expect(
+      props?.['companyIds'],
+      'the route still hands the screen bare references'
+    ).toBeUndefined();
+    expect(
+      props?.['branchIds'],
+      'the route still hands the screen bare references'
+    ).toBeUndefined();
   });
 });
 

@@ -1,7 +1,8 @@
-import { screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { useState } from 'react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { SEARCH_DEBOUNCE_MS } from '@/lib/use-debounced-value';
 import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
 import en from '../src/i18n/messages/en.json';
@@ -112,45 +113,102 @@ describe('the selector asks nothing until it is asked', () => {
     expect(screen.getByText(en['customerSelector.idle'])).toBeInTheDocument();
   });
 
-  it('issues no request PER KEYSTROKE, and exactly one for the settled term', async () => {
-    const user = userEvent.setup();
-    renderLtr(<Harness />);
-    await user.type(screen.getByLabelText(en['crm.customers.column.name']), 'Layla Haddad');
-    // Twelve keystrokes. A request per character would have spent 12 of 30.
-    expect(searchCustomerDirectory).not.toHaveBeenCalled();
-
-    // One, once the term settles — and still one after the timer has had time
-    // to fire again, because nothing changed.
-    await waitFor(() => expect(searchCustomerDirectory).toHaveBeenCalledTimes(1));
-    await new Promise((resolve) => setTimeout(resolve, 350));
-    expect(searchCustomerDirectory).toHaveBeenCalledTimes(1);
-    expect(searchCustomerDirectory.mock.calls[0]?.[2]).toEqual({ name: 'Layla Haddad' });
-  });
-
-  it('refuses a one-character free-text term before spending a request', async () => {
-    const user = userEvent.setup();
-    renderLtr(<Harness />);
-    await user.type(screen.getByLabelText(en['customerSelector.q']), 'L');
-    expect(await screen.findByText(en['crm.customers.search.qTooShort'])).toBeInTheDocument();
-    await new Promise((resolve) => setTimeout(resolve, 350));
-    expect(searchCustomerDirectory).not.toHaveBeenCalled();
-  });
-
-  it('refuses to search on nothing at all', async () => {
-    const user = userEvent.setup();
-    renderLtr(<Harness />);
-    await user.click(screen.getByRole('button', { name: en['customerSelector.search'] }));
-    // An empty search asks the backend for "everything" and spends a slot to
-    // say something nobody asked. Waited out, so the debounce cannot hide one.
-    await new Promise((resolve) => setTimeout(resolve, 350));
-    expect(searchCustomerDirectory).not.toHaveBeenCalled();
-    expect(screen.getByText(en['customerSelector.idle'])).toBeInTheDocument();
-  });
-
   it('searches once, on the explicit action', async () => {
     renderLtr(<Harness />);
     await searchFor('Layla');
     await waitFor(() => expect(searchCustomerDirectory).toHaveBeenCalledTimes(1));
+  });
+});
+
+/**
+ * The debounce contract, on a clock the test owns.
+ *
+ * ## Why these three do not use the wall clock
+ *
+ * They used to. `await user.type(...)` of a twelve-character name was followed
+ * by "no request has been made yet", and that assertion was a race against the
+ * 300 ms the debounce waits: `userEvent` yields to the event loop between
+ * keystrokes, so typing takes REAL time. Measured in this environment with this
+ * file running alone on an idle machine, those twelve keystrokes took 265 ms —
+ * a 35 ms margin. Under the full DOM tier, with workers competing for the same
+ * cores, they cross 300 ms, the debounce fires mid-word, and the case fails;
+ * run alone it passes every time. That is the whole of the order dependence,
+ * and it lived in the test rather than in the component. A longer sleep cannot
+ * fix it, because the failure is a timer firing EARLY.
+ *
+ * ## Why `fireEvent` and not `userEvent` here
+ *
+ * `userEvent` routes every interaction through the testing library async
+ * wrapper, which drains the microtask queue with a `setTimeout(0)` it only
+ * advances when a JEST clock is installed. Under Vitest fake timers there is no
+ * such clock, so that drain never resolves and each case hangs to the suite
+ * timeout — a worse failure than the race, and one that looks like a product
+ * hang. `fireEvent` is synchronous and act-wrapped, which is exactly what these
+ * three need: the events land with NO time between them, which is what "typed
+ * rapidly" means, and the clock moves only where a line below says so.
+ *
+ * Only the four timer functions the debounce is built on are faked. Faking the
+ * rest takes `setImmediate` with it, which the same drain also reaches for.
+ */
+describe('the debounce spends one request per pause, and none before one', () => {
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] });
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  /** Move the clock, and let everything it started finish. */
+  async function settle(ms: number) {
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(ms);
+    });
+  }
+
+  /** One change event per character, with nothing between them. */
+  function typeRapidly(field: HTMLElement, text: string) {
+    for (let cut = 1; cut <= text.length; cut += 1) {
+      fireEvent.change(field, { target: { value: text.slice(0, cut) } });
+    }
+  }
+
+  it('sends nothing while twelve characters are typed, then exactly one', async () => {
+    renderLtr(<Harness />);
+    typeRapidly(screen.getByLabelText(en['crm.customers.column.name']), 'Layla Haddad');
+    // Twelve keystrokes. A request per character would have spent 12 of the 30
+    // this operation allows in sixty seconds.
+    expect(searchCustomerDirectory).not.toHaveBeenCalled();
+
+    await settle(SEARCH_DEBOUNCE_MS);
+    expect(searchCustomerDirectory).toHaveBeenCalledTimes(1);
+    expect(searchCustomerDirectory.mock.calls[0]?.[2]).toEqual({ name: 'Layla Haddad' });
+
+    // Still one, three intervals later: a debounce that re-fired on an
+    // unchanged term would spend the allowance on a question already answered.
+    await settle(SEARCH_DEBOUNCE_MS * 3);
+    expect(searchCustomerDirectory).toHaveBeenCalledTimes(1);
+  });
+
+  it('refuses a one-character free-text term before spending a request', async () => {
+    renderLtr(<Harness />);
+    fireEvent.change(screen.getByLabelText(en['customerSelector.q']), { target: { value: 'L' } });
+    expect(screen.getByText(en['crm.customers.search.qTooShort'])).toBeInTheDocument();
+    // The minimum is the backend own rule and it is read BEFORE the timer, so
+    // running the clock on changes nothing: there was never anything to ask.
+    await settle(SEARCH_DEBOUNCE_MS * 2);
+    expect(searchCustomerDirectory).not.toHaveBeenCalled();
+  });
+
+  it('refuses to search on nothing at all', async () => {
+    renderLtr(<Harness />);
+    fireEvent.click(screen.getByRole('button', { name: en['customerSelector.search'] }));
+    // An empty search asks the backend for "everything" and spends a slot to
+    // say something nobody asked. The clock is run on, so the debounce cannot
+    // be hiding one that lands later.
+    await settle(SEARCH_DEBOUNCE_MS * 2);
+    expect(searchCustomerDirectory).not.toHaveBeenCalled();
+    expect(screen.getByText(en['customerSelector.idle'])).toBeInTheDocument();
   });
 });
 

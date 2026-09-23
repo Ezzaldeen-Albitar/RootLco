@@ -62,7 +62,12 @@ export interface WorkOrderBoardCounts {
   readonly byState: readonly WorkOrderStateBucket[];
   /** Live orders in a NON-terminal state — the work actually in the shop. */
   readonly active: number;
-  /** Live orders whose parts have been requested and not yet reserved. */
+  /**
+   * Live orders waiting for parts: not terminal, and parts requested or reserved
+   * elsewhere but never recorded as in hand. The SAME predicate the board's
+   * `awaitingParts` view filters with (`waitingForPartsPredicate` in the
+   * repository), so the figure equals the list it links to.
+   */
   readonly awaitingParts: number;
   /**
    * Live orders in a CLOSED, non-cancellation state.
@@ -103,7 +108,11 @@ export class WorkOrderOverviewPort extends ApplicationService {
     // Sequential: both statements run on the ONE client the transaction holds,
     // so issuing them together would only queue them inside the driver.
     const states = await this.catalog.workOrderStates(db);
-    const rows = await this.repository.overviewStateCounts(db, scope);
+    // The terminal set, resolved here exactly as `WorkOrderService.list` resolves
+    // the board's `terminalStates`, and handed to the shared parts predicate so
+    // both sides exclude the same finished orders.
+    const finishedStates = states.filter((state) => state.isTerminal).map((state) => state.code);
+    const rows = await this.repository.overviewStateCounts(db, scope, finishedStates);
     const counted = new Map(rows.map((row) => [row.state, row]));
 
     const byState = states.map((state) => ({
@@ -120,16 +129,21 @@ export class WorkOrderOverviewPort extends ApplicationService {
       const row = counted.get(state.code);
       if (row === undefined) continue;
       if (!state.isTerminal) active += row.total;
-      // Counted on the NON-terminal orders only. A finished job whose parts were
-      // once requested is not waiting for anything.
-      if (!state.isTerminal) awaitingParts += row.awaitingParts;
+      // Already zero for every terminal state: the repository's predicate
+      // excludes them, because a finished job whose parts were once requested
+      // is not waiting for anything. Summed over every row rather than
+      // re-filtered here, so the exclusion has one home.
+      awaitingParts += row.awaitingParts;
       if (state.isClosed && !state.isCancellation) readyForDelivery += row.total;
     }
 
     return { byState, active, awaitingParts, readyForDelivery };
   }
 
-  /** Additional-work requests awaiting a decision, and the orders they hold up. */
+  /**
+   * Live work orders waiting for a customer decision (the figure the board's
+   * `awaitingApproval` view lists), and the pending requests on them.
+   */
   async pendingApprovals(
     db: DbHandle,
     scope: OverviewScope

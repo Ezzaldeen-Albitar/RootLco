@@ -40,18 +40,15 @@ import { translate } from '@/i18n/get-messages';
  * screen's submit, validation and request-building are untouched — what changed
  * is where the values come from.
  *
- * `companyIds` and `branchIds` are still accepted and are no longer read. They
- * are the session's bare references, which nothing should be rendering.
+ * The session's `companyIds` and `branchIds` are gone from this component and
+ * from every page that fed them to it. They were bare references with no names,
+ * and an EMPTY pair of them meant unrestricted rather than none — the two facts
+ * that produced the reference select and the free-text box this used to render.
+ * Nothing should be passing them anywhere, so nothing accepts them.
  */
 
 export function BranchTargetFields(props: {
   readonly messages: Messages;
-  /**
-   * The session's resolved scope. Accepted for compatibility and NOT read —
-   * the working context publishes names, and these never had any.
-   */
-  readonly companyIds?: readonly string[];
-  readonly branchIds?: readonly string[];
   readonly companyId: string;
   readonly branchId: string;
   readonly onCompanyChange: (next: string) => void;

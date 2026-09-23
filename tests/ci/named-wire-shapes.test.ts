@@ -195,8 +195,12 @@ describe('every route body serialises a named type', () => {
     // 497 with the Owner directive working-context read: the route serialises the
     // NAMED `WorkingContextView`, so `named` moves by one again and `composed`
     // still does not move.
-    expect(summary.bodies).toBe(497);
-    expect(summary.named).toBe(445);
+    // 498 with the Owner directive issued-parts read: the route serialises a
+    // `Page<IssuedPartListView>`, which the checker resolves through the same
+    // generic the other paged reads use — so `named` moves by one and `composed`
+    // still does not move.
+    expect(summary.bodies).toBe(498);
+    expect(summary.named).toBe(446);
     expect(summary.composed).toBe(52);
     expect(summary.anonymous).toBe(0);
     expect(summary.unresolved).toBe(0);

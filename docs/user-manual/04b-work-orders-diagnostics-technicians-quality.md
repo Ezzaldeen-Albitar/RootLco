@@ -77,18 +77,18 @@ applies." <!-- permissions.visibilityNotice -->
 
 **IMPLEMENTED (UI)**
 
-**A. Most workshop lists belong to ONE branch, and ask for it first.** The work-order board, the
-quality-control queue and the technician workspace all open on a chooser and request nothing until
-you name a company and a branch. There is no view that shows every branch at once, and no
-tenant-wide work-order list exists.
+**A. Most workshop lists belong to ONE branch, and take it from the top of the page.** You choose
+your working branch once, in the header, and every screen reads it. The work-order board loads
+itself from that choice as soon as you open it; the quality-control queue and the technician
+workspace still ask you to press their own button first. The work-order board can also read **all
+your branches** of one company at once — every row then says which branch it is from — and there is
+still no board across more than one company.
 
-**B. Company and branch are offered as identifiers, not as names.** The chooser shows the references
-your account is scoped to, with the note "The service publishes no company or branch directory, so
-references are shown rather than names." <!-- admin.contractGap.noDirectory --> If your account is
-not restricted to particular branches, the field becomes a box you type into: "Your access is not
-restricted to particular branches, so enter the identifier of the one you want." <!-- workOrders.queue.scopeUnrestricted -->
-Keep a written note of which identifier is Riyadh — Exit 5 (example) and which is Jeddah — Corniche
-(example); the application will not tell you.
+**B. Your branches are offered BY NAME, and you never type a reference.** The header lists the
+companies and branches your account is allowed to work in, each with its own name, and an account
+allowed only one branch is not asked at all. An earlier version of the product showed references
+instead, because the platform published no directory of names; it publishes one now, and nothing in
+the workshop asks you to know an identifier.
 
 The same applies inside the work order: a technician is assigned by **technician profile**
 reference, not by name, and the rework sign-off and lead-technician fields are references too.
@@ -156,26 +156,64 @@ described as "The work orders of this branch, most recently opened first." <!-- 
 
 **Steps**
 
-1. The board opens idle: **Choose a branch** <!-- workOrders.queue.idleTitle --> / "A work-order
-   board belongs to one branch. Nothing is requested until you name one." <!-- workOrders.queue.idleBody -->
-2. Fill **Company** <!-- workOrders.queue.company --> (required) and **Branch** <!-- workOrders.queue.branch -->
-   (required).
+The board loads as the page opens, for the branch named at the top of every page — which is also
+shown here, read-only, as **Branch** <!-- workOrders.queue.branch --> . Then narrow it:
+
+1. The board opens on **Still with us** <!-- workOrders.queue.view.active --> — every work order
+   that is neither finished nor abandoned, of any age. That is the day's work, and it is where a
+   foreman starts. The other views along the top <!-- workOrders.queue.viewLabel --> are **All**,
+   **Created today**, **Finished today** <!-- workOrders.queue.view.completedToday --> , **My
+   work**, **Waiting for the customer to agree**, **Waiting for parts**, **Waiting for a quality
+   check** and **Ready to hand over** <!-- workOrders.queue.view.* --> . **Created today** counts by
+   when the order was opened and **Finished today** by when it was finished — two different
+   questions — and both count the day on the branch's own clock.
+
+   Two of the views carry a number: **Still with us** and **Ready to hand over**. Those two are the
+   ones where the figure counts exactly the same work orders the view lists. The others deliberately
+   carry none — see the strip below.
+
+2. Optionally narrow by **State** <!-- workOrders.queue.stateFilter --> — "The states your workshop
+   has set up." <!-- workOrders.queue.stateFilterHelp --> They are listed by name, grouped into
+   **Still with us** <!-- workOrders.queue.stateGroupOpen --> and **Finished** <!-- workOrders.queue.stateGroupFinished -->
+   , and the names are your workshop's own; there is no code to type. Choosing one state moves the
+   view to **All**, and going back to **Still with us** clears the state — the platform takes either
+   a single state or a whole group, never both, so the screen keeps them apart for you.
 3. Optionally narrow by **Kind** <!-- workOrders.queue.kindFilter --> — **Any kind** <!-- workOrders.queue.anyKind -->
-   , **Ordinary** <!-- workOrders.kind.ordinary --> or **Rework** <!-- workOrders.kind.rework --> —
-   and by **State code** <!-- workOrders.queue.stateFilter --> , whose help text is "The state code
-   as your workshop defines it. An unknown code returns nothing rather than an error." <!-- workOrders.queue.stateFilterHelp -->
-4. To find one particular work order, use either of the two boxes added at this version:
-   - **Work order number** <!-- workOrders.queue.numberFilter --> — "The exact number." <!-- workOrders.queue.numberFilterHelp -->
-     This is how you answer a customer who is holding their copy and reading the number off it.
-   - **Search** <!-- workOrders.queue.searchFilter --> — "Part of the number, a customer name, a plate
-     or a VIN." <!-- workOrders.queue.searchFilterHelp --> At least two characters: "Type at least two
-     characters." <!-- workOrders.queue.searchTooShort --> Arabic-Indic digits are treated the same as
-     ASCII ones, so a number or a plate typed either way matches.
-5. Press **Show work orders** <!-- workOrders.queue.show --> .
+   , **Ordinary** <!-- workOrders.kind.ordinary --> or **Rework** <!-- workOrders.kind.rework --> .
+4. Optionally set **Opened from** <!-- workOrders.queue.openedFrom --> and **Opened to** <!-- workOrders.queue.openedTo -->
+   and choose **Use these dates** <!-- workOrders.queue.applyOpenedRange --> . A second date earlier
+   than the first is refused at the field.
+5. To find one particular work order, use **Search this list** <!-- workOrders.queue.searchLabel --> —
+   one box over part of the number, a customer name, a plate or a chassis number. At least two
+   characters: "Type at least two characters." <!-- workOrders.queue.searchTooShort --> Digits typed
+   on an Arabic keyboard match the same work order as digits typed the ordinary way. The list
+   follows what you type, a moment after you stop.
+
+Above the list sits a strip of figures for the branch's day — how many orders are open, how many
+finished today, how many are waiting on a customer decision, how many have parts requested and how
+many are closed and ready to hand over. Each one is labelled with exactly what it counts, and the
+strip says which clock the day was counted on. **They are figures for the whole branch**, so they do
+not shrink when you narrow the list with the other filters.
+
+Where a figure counts exactly the work orders a view lists, it is printed on that view's button too.
+Where it does not, it is left in the strip alone rather than put somewhere it would be misread — for
+example "parts requested" counts orders that are still with you, while the **Waiting for parts**
+view lists any order with parts outstanding whatever its state. A figure you are not allowed to see
+reads "not available to you" <!-- workOrders.queue.figure.withheld --> rather than nought, because
+nought would be a statement about the workshop instead of about you.
 
 **Result** · **Work orders for the chosen branch** <!-- workOrders.queue.resultsHeading --> with the
-columns **Number** <!-- workOrders.queue.column.reference --> , **State**, **Kind**, **Vehicle**,
-**Customer** and **Opened**. A work order with no number reads **Not numbered** <!-- workOrders.queue.column.noReference -->
+columns **Number** <!-- workOrders.queue.column.reference --> , **Customer**, **Vehicle**, **State**,
+**Technician** <!-- workOrders.queue.column.technician --> , **Opened** and **Finished** <!-- workOrders.queue.column.completed -->
+, plus a **Branch** <!-- workOrders.queue.column.branch --> column when you are reading all your
+branches. The **Technician** cell tells three things apart: "Nobody is on this car yet" <!-- workOrders.queue.column.unassigned -->
+, "Someone is on this car; you may not see who" <!-- workOrders.queue.column.technicianHidden --> ,
+and the person's name. The row action names what you can do where it lands — **Open the work order**
+<!-- workOrders.queue.open --> , or, in the two views where it is the point, **Open to record the
+
+answer from the customer** <!-- workOrders.queue.openForApproval --> and **Open to hand the vehicle
+over** <!-- workOrders.queue.openForDelivery --> . Nothing on the board moves a work order; the move
+is made on the work order itself. A work order with no number reads **Not numbered** <!-- workOrders.queue.column.noReference -->
 ; a vehicle with nothing recorded reads "No plate or model recorded" <!-- workOrders.queue.column.noVehicleDetail -->
 ; a visit with no customer reads "No customer recorded for this visit" <!-- workOrders.queue.column.noCustomer -->
 .
@@ -184,12 +222,16 @@ Read the ordering note at the foot of the table and take it literally: "Ordered 
 order was opened, newest first. The platform publishes no total, so none is shown. A closed work
 order shows the customer of its own visit, which may differ from the vehicle's current owner." <!-- workOrders.queue.orderingNote -->
 
-**Restrictions** · One branch at a time. No total count is published, so the board cannot tell you
-how many work orders exist — only what it read.
+**Restrictions** · One branch, or all your branches of one company — never across two companies. No
+total count is published, so the board cannot tell you how many work orders exist, only what it
+read. A single state and a whole group are alternatives, not a pair. Nothing here is ever marked
+late: a work order records when it was opened and never when it was promised, so there is no due
+date to be late against.
 
-**If it goes wrong** · "No work order in this branch matches what you asked for." <!-- workOrders.queue.noneMatching -->
-Most often the **State code** is spelled differently from the workshop's own code. A state code is
-"lower-case letters, digits and underscores, starting with a letter." <!-- workOrders.queue.stateFormat -->
+**If it goes wrong** · A search that matched nothing says so about the SEARCH, and offers
+**"Clear the filters"** <!-- workOrders.queue.clearFilters --> ; it never claims the branch is
+empty. States are now chosen from a list of your workshop's own names, so a state can no longer be
+spelled wrongly.
 
 **Screenshot** · no screenshot available at this version.
 

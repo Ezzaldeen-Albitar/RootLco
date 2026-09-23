@@ -36,13 +36,212 @@ import { formatInteger } from '@/lib/format';
  * every bar and every label below is mirrored from the locale's direction, and
  * a bar in Arabic grows from the right edge towards the left exactly as the
  * text does.
+ *
+ * ## The anchoring rule — every `<text>` here is PHYSICALLY anchored
+ *
+ * `text-anchor="start"` does not mean "left". It means the start of the text in
+ * the element's inline direction, and `direction` is INHERITED — from
+ * `<html dir="rtl">` in Arabic. So a label written as "start at x = 4" in a
+ * right-to-left document hangs off the left edge of the drawing, and one
+ * written as "end at x = WIDTH - 4" hangs off the right. The mirroring above
+ * computed the right coordinates and the inherited direction then applied them
+ * to the wrong end of the text.
+ *
+ * The rule, applied through `ChartText` and nowhere else:
+ *
+ *  1. every `<text>` (and the `<svg>` itself) carries `direction="ltr"`, so an
+ *     anchor means one physical side in SVG space whatever the document says:
+ *     `start` is the LEFT edge, `end` the RIGHT;
+ *  2. the side is chosen here, per locale, from the coordinate — a label at the
+ *     right margin is `end`, one at the left margin is `start`;
+ *  3. the words inside are wrapped in a `<tspan>` carrying
+ *     `unicode-bidi: plaintext`, an isolate whose own direction comes from its
+ *     first strong character. That is what keeps an Arabic label reading right
+ *     to left — including one that carries a Latin code or a number — while
+ *     the ANCHORING paragraph around it stays left-to-right. Arabic shaping
+ *     does not depend on direction at all; only the ORDER of mixed runs does,
+ *     and the isolate settles that.
+ *
+ *     It is set TWICE, deliberately: as the `unicode-bidi` presentation
+ *     attribute and as the same CSS declaration in the element's `style`.
+ *     `unicode-bidi` is an SVG presentation attribute, but `plaintext` is a
+ *     CSS Writing Modes value that SVG 1.1's attribute grammar did not list, so
+ *     an engine that parses the attribute by the older grammar could drop it;
+ *     an inline declaration sets the CSS property directly and does not depend
+ *     on that parse. How each browser draws it is confirmed by eye in browser
+ *     QA — jsdom does no bidi layout.
+ *
+ * jsdom cannot lay out SVG, so the tests assert the attributes this rule
+ * produces; how a browser draws them is confirmed by eye in browser QA.
  */
 
 /** The drawing's own coordinate space. Scaled to the container by the browser. */
-const WIDTH = 600;
+export const CHART_WIDTH = 600;
+const WIDTH = CHART_WIDTH;
 const LABEL_WIDTH = 190;
-const PLOT_WIDTH = WIDTH - LABEL_WIDTH - 10;
 const ROW_HEIGHT = 26;
+/** The inset of a label from the drawing's own edge. */
+const LABEL_INSET = 4;
+/** The font size a bar label and a bar count are drawn at, in drawing units. */
+export const LABEL_FONT_SIZE = 12;
+/** The width a bar label may occupy: the label column less an inset each side. */
+export const LABEL_TEXT_WIDTH = LABEL_WIDTH - LABEL_INSET * 2;
+/** The space between a bar's far end and the count written past it. */
+const COUNT_GAP = 6;
+/**
+ * The room reserved past the LONGEST bar for its count — at least seven glyphs
+ * at the budget below ("999,999"), and wider whenever the widest count drawn
+ * needs more (`barPlotWidth`).
+ *
+ * Without it the longest bar ran to the drawing's far margin and the count
+ * written past it started at x = 596 in a 600-unit drawing: the largest figure
+ * on every bar chart was the one cut off.
+ */
+const COUNT_GUTTER = 64;
+
+/** Glyphs budgeted at a whole em. See `glyphEms`. */
+const WIDE_GLYPHS = new Set(['M', 'W', 'm', 'w', '@', '%', '…', '—']);
+
+/**
+ * A glyph's width budget, in ems — a CONSERVATIVE estimate by glyph class.
+ *
+ * Nothing that renders the page on the server or in a test can measure a glyph
+ * run, and `getComputedTextLength` after mount would draw one frame of
+ * overflowing text before correcting it. So text is budgeted rather than
+ * measured, and each budget is chosen at or above the typical advance of its
+ * class in common sans-serif faces:
+ *
+ *   - the widest Latin glyphs (`M`, `W`, `m`, `w`, `@`, `%`), the ellipsis, an
+ *     em dash, and East Asian wide characters: a whole em;
+ *   - any other uppercase letter: 0.8 em — capitals run wider than the 0.6 em
+ *     average the first budget assumed, which is how an all-caps label
+ *     overflowed its column;
+ *   - everything else, Arabic included: 0.72 em.
+ *
+ * The face actually drawn is confirmed by eye in browser QA.
+ */
+function glyphEms(character: string): number {
+  if (WIDE_GLYPHS.has(character)) return 1;
+  const codePoint = character.codePointAt(0) ?? 0;
+  if (codePoint >= 0x2e80) return 1;
+  if (/\p{Lu}/u.test(character)) return 0.8;
+  return 0.72;
+}
+
+/**
+ * The budgeted width of a run of text at a font size, in drawing units. Counted
+ * in code points rather than UTF-16 units, so a character stored as two is
+ * budgeted once.
+ */
+export function estimatedTextWidth(text: string, fontSize: number = LABEL_FONT_SIZE): number {
+  return Array.from(text).reduce((sum, character) => sum + glyphEms(character), 0) * fontSize;
+}
+
+/**
+ * The label as drawn: whole if its budgeted width fits the column, otherwise
+ * cut — ellipsis included — to the longest prefix that does. A label that is
+ * cut keeps its whole text in a `<title>` beside it and in the table
+ * alternative.
+ */
+export function fitLabel(
+  label: string,
+  maxWidth: number = LABEL_TEXT_WIDTH,
+  fontSize: number = LABEL_FONT_SIZE
+): string {
+  if (estimatedTextWidth(label, fontSize) <= maxWidth) return label;
+  const room = maxWidth - estimatedTextWidth('…', fontSize);
+  const kept: string[] = [];
+  let used = 0;
+  for (const character of Array.from(label)) {
+    const width = glyphEms(character) * fontSize;
+    if (used + width > room) break;
+    kept.push(character);
+    used += width;
+  }
+  // At least one character, so a cut is never an ellipsis on its own.
+  const prefix = kept.length === 0 ? Array.from(label).slice(0, 1) : kept;
+  return `${prefix.join('').trimEnd()}…`;
+}
+
+/**
+ * The longest a bar may run in a horizontal bar chart, so that the count
+ * written past the longest bar lies wholly inside the drawing.
+ *
+ * The gutter is the wider of `COUNT_GUTTER` and the widest count actually drawn,
+ * so no figure — however many digits — can reach past the far inset.
+ */
+export function barPlotWidth(
+  counts: readonly string[],
+  fontSize: number = LABEL_FONT_SIZE
+): number {
+  const widest = counts.reduce(
+    (max, count) => Math.max(max, estimatedTextWidth(count, fontSize)),
+    0
+  );
+  const gutter = Math.max(COUNT_GUTTER, Math.ceil(widest));
+  return WIDTH - LABEL_WIDTH - COUNT_GAP - gutter - LABEL_INSET;
+}
+
+/**
+ * Where one horizontal bar, its label and its count sit, mirrored for Arabic.
+ * The ONE geometry both bar charts draw with, so neither can drift back to a
+ * count past the drawing's edge.
+ */
+function barRow(value: number, highest: number, plotWidth: number, rtl: boolean) {
+  const length = highest === 0 ? 0 : (value / highest) * plotWidth;
+  return {
+    length,
+    barX: rtl ? WIDTH - LABEL_WIDTH - length : LABEL_WIDTH,
+    labelX: rtl ? WIDTH - LABEL_INSET : LABEL_INSET,
+    countX: rtl ? WIDTH - LABEL_WIDTH - length - COUNT_GAP : LABEL_WIDTH + length + COUNT_GAP,
+  };
+}
+
+/** Which physical side of the text sits at its `x`. See the anchoring rule. */
+type PhysicalAnchor = 'left' | 'right' | 'middle';
+
+/**
+ * A `<text>` whose anchor means a SIDE, whatever direction the document runs.
+ *
+ * `anchor` names the physical edge placed at `x`: `left` is `start` and
+ * `right` is `end` under the `direction="ltr"` this element always carries.
+ * `full` is the untruncated wording, given only when the drawn words were cut,
+ * and becomes the element's `<title>` so a pointer can still read it.
+ */
+function ChartText({
+  x,
+  y,
+  anchor,
+  fontSize,
+  className,
+  children,
+  full,
+}: {
+  readonly x: number;
+  readonly y: number;
+  readonly anchor: PhysicalAnchor;
+  readonly fontSize: number;
+  readonly className: string;
+  readonly children: string;
+  readonly full?: string;
+}) {
+  return (
+    <text
+      x={x}
+      y={y}
+      direction="ltr"
+      textAnchor={anchor === 'left' ? 'start' : anchor === 'right' ? 'end' : 'middle'}
+      fontSize={fontSize}
+      fill="currentColor"
+      className={className}
+    >
+      {full === undefined || full === children ? null : <title>{full}</title>}
+      <tspan unicodeBidi="plaintext" style={{ unicodeBidi: 'plaintext' }}>
+        {children}
+      </tspan>
+    </text>
+  );
+}
 
 /** The hatch every "second meaning" is drawn with, so colour is never alone. */
 function Hatch({ id }: { readonly id: string }) {
@@ -187,6 +386,7 @@ export function StateBarChart({
   const total = rows.reduce((sum, row) => sum + row.count, 0);
   const highest = rows.reduce((max, row) => (row.count > max ? row.count : max), 0);
   const height = Math.max(rows.length * ROW_HEIGHT, ROW_HEIGHT);
+  const plotWidth = barPlotWidth(rows.map((row) => formatInteger(row.count, locale)));
 
   const table = (
     <FigureTable
@@ -236,6 +436,7 @@ export function StateBarChart({
         viewBox={`0 0 ${String(WIDTH)} ${String(height)}`}
         width="100%"
         height={height}
+        direction="ltr"
         className="text-primary"
       >
         <title id={titleId}>{title}</title>
@@ -248,22 +449,21 @@ export function StateBarChart({
         <Hatch id={hatchId} />
         {rows.map((row, index) => {
           const y = index * ROW_HEIGHT;
-          const length = highest === 0 ? 0 : (row.count / highest) * PLOT_WIDTH;
-          const barX = rtl ? WIDTH - LABEL_WIDTH - length : LABEL_WIDTH;
-          const labelX = rtl ? WIDTH - 4 : 4;
-          const countX = rtl ? WIDTH - LABEL_WIDTH - length - 6 : LABEL_WIDTH + length + 6;
+          const { length, barX, labelX, countX } = barRow(row.count, highest, plotWidth, rtl);
+          const wording = row.isTerminal ? `${row.label} — ${finished}` : row.label;
           return (
-            <a key={row.code} href={row.href} tabIndex={-1}>
-              <text
+            <g key={row.code}>
+              {/* The label column hugs the reading edge: right in Arabic. */}
+              <ChartText
                 x={labelX}
                 y={y + 15}
-                textAnchor={rtl ? 'end' : 'start'}
-                fontSize={12}
-                fill="currentColor"
+                anchor={rtl ? 'right' : 'left'}
+                fontSize={LABEL_FONT_SIZE}
                 className="text-text-primary"
+                full={wording}
               >
-                {row.isTerminal ? `${row.label} — ${finished}` : row.label}
-              </text>
+                {fitLabel(wording)}
+              </ChartText>
               <rect
                 x={barX}
                 y={y + 5}
@@ -273,20 +473,53 @@ export function StateBarChart({
                 fill={row.isTerminal ? `url(#${hatchId})` : 'currentColor'}
                 className={row.isTerminal ? 'text-text-muted' : 'text-primary'}
               />
-              <text
+              {/* The count sits past the bar's far end, growing away from it. */}
+              <ChartText
                 x={countX}
                 y={y + 15}
-                textAnchor={rtl ? 'end' : 'start'}
-                fontSize={12}
-                fill="currentColor"
+                anchor={rtl ? 'right' : 'left'}
+                fontSize={LABEL_FONT_SIZE}
                 className="text-text-secondary"
               >
                 {formatInteger(row.count, locale)}
-              </text>
-            </a>
+              </ChartText>
+            </g>
           );
         })}
       </svg>
+      {/*
+        The keyboard's way in, and everybody else's second one.
+
+        The bars themselves are not links. A shape inside a `role="img"` is
+        pruned from the accessibility tree along with anything nested in it, so
+        an anchor drawn there is reachable by a mouse and by nothing else —
+        which is a control that exists for some readers and not others. The
+        legend beside the drawing carries one ordinary link per state, in the
+        same order, with the same count and the same destination, and it is
+        always present rather than hidden behind the table's disclosure.
+      */}
+      <ul className="mt-3 flex flex-wrap gap-2">
+        {rows.map((row) => (
+          <li key={row.code}>
+            <a
+              href={row.href}
+              className="flex items-center gap-2 rounded-md border border-border px-2 py-1 text-caption text-text-primary transition-colors duration-fast ease-standard hover:bg-surface-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+            >
+              <span
+                aria-hidden="true"
+                className={
+                  row.isTerminal
+                    ? 'inline-block h-3 w-3 rounded-sm border border-border-strong bg-surface-subtle'
+                    : 'inline-block h-3 w-3 rounded-sm bg-primary'
+                }
+              />
+              <bdi>{row.label}</bdi>
+              {row.isTerminal ? <span className="text-text-muted">{finished}</span> : null}
+              <span className="text-text-secondary">{formatInteger(row.count, locale)}</span>
+            </a>
+          </li>
+        ))}
+      </ul>
     </ChartFrame>
   );
 }
@@ -379,6 +612,7 @@ export function TrendChart({
           viewBox={`0 0 ${String(WIDTH)} ${String(height)}`}
           width="100%"
           height={height}
+          direction="ltr"
           className="text-primary"
         >
           <title id={titleId}>{title}</title>
@@ -406,26 +640,24 @@ export function TrendChart({
             strokeWidth={1}
             className="text-border-strong"
           />
-          <text
-            x={rtl ? WIDTH - 4 : 4}
+          <ChartText
+            x={rtl ? WIDTH - LABEL_INSET : LABEL_INSET}
             y={plotTop + 8}
-            textAnchor={rtl ? 'end' : 'start'}
+            anchor={rtl ? 'right' : 'left'}
             fontSize={11}
-            fill="currentColor"
             className="text-text-secondary"
           >
             {formatInteger(highest, locale)}
-          </text>
-          <text
-            x={rtl ? WIDTH - 4 : 4}
+          </ChartText>
+          <ChartText
+            x={rtl ? WIDTH - LABEL_INSET : LABEL_INSET}
             y={plotBottom}
-            textAnchor={rtl ? 'end' : 'start'}
+            anchor={rtl ? 'right' : 'left'}
             fontSize={11}
-            fill="currentColor"
             className="text-text-secondary"
           >
             {formatInteger(0, locale)}
-          </text>
+          </ChartText>
           {rows.map((row, index) => {
             const slot = rtl ? axisStart - (index + 1) * step : axisStart + index * step;
             const openedHeight = highest === 0 ? 0 : (row.opened / highest) * plotHeight;
@@ -451,16 +683,15 @@ export function TrendChart({
                   className="text-text-secondary"
                 />
                 {index % labelEvery === 0 ? (
-                  <text
+                  <ChartText
                     x={slot + barWidth}
                     y={plotBottom + 14}
-                    textAnchor="middle"
+                    anchor="middle"
                     fontSize={10}
-                    fill="currentColor"
                     className="text-text-secondary"
                   >
                     {row.label}
-                  </text>
+                  </ChartText>
                 ) : null}
               </g>
             );
@@ -496,6 +727,7 @@ export function WorkloadChart({
 
   const highest = rows.reduce((max, row) => (row.activeCount > max ? row.activeCount : max), 0);
   const height = Math.max(rows.length * ROW_HEIGHT, ROW_HEIGHT);
+  const plotWidth = barPlotWidth(rows.map((row) => formatInteger(row.activeCount, locale)));
 
   const table = (
     <FigureTable
@@ -524,6 +756,7 @@ export function WorkloadChart({
         viewBox={`0 0 ${String(WIDTH)} ${String(height)}`}
         width="100%"
         height={height}
+        direction="ltr"
         className="text-primary"
       >
         <title id={titleId}>{title}</title>
@@ -534,22 +767,19 @@ export function WorkloadChart({
         </desc>
         {rows.map((row, index) => {
           const y = index * ROW_HEIGHT;
-          const length = highest === 0 ? 0 : (row.activeCount / highest) * PLOT_WIDTH;
-          const barX = rtl ? WIDTH - LABEL_WIDTH - length : LABEL_WIDTH;
-          const labelX = rtl ? WIDTH - 4 : 4;
-          const countX = rtl ? WIDTH - LABEL_WIDTH - length - 6 : LABEL_WIDTH + length + 6;
+          const { length, barX, labelX, countX } = barRow(row.activeCount, highest, plotWidth, rtl);
           return (
             <g key={row.technicianId}>
-              <text
+              <ChartText
                 x={labelX}
                 y={y + 15}
-                textAnchor={rtl ? 'end' : 'start'}
-                fontSize={12}
-                fill="currentColor"
+                anchor={rtl ? 'right' : 'left'}
+                fontSize={LABEL_FONT_SIZE}
                 className="text-text-primary"
+                full={row.label}
               >
-                {row.label}
-              </text>
+                {fitLabel(row.label)}
+              </ChartText>
               <rect
                 x={barX}
                 y={y + 5}
@@ -559,16 +789,15 @@ export function WorkloadChart({
                 fill="currentColor"
                 className="text-primary"
               />
-              <text
+              <ChartText
                 x={countX}
                 y={y + 15}
-                textAnchor={rtl ? 'end' : 'start'}
-                fontSize={12}
-                fill="currentColor"
+                anchor={rtl ? 'right' : 'left'}
+                fontSize={LABEL_FONT_SIZE}
                 className="text-text-secondary"
               >
                 {formatInteger(row.activeCount, locale)}
-              </text>
+              </ChartText>
             </g>
           );
         })}

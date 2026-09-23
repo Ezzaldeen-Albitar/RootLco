@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 
 /**
@@ -34,6 +36,8 @@ vi.mock('@/lib/api/server-client', () => ({
 }));
 
 const { listWorkOrders, readWorkOrderCatalogue } = await import('@/features/work-orders/api');
+const { WORK_ORDER_KINDS, WORK_ORDER_STATE_GROUPS } =
+  await import('@/features/work-orders/work-orders-contract');
 
 const TARGET = {
   companyId: '11111111-1111-4111-8111-111111111111',
@@ -149,21 +153,48 @@ describe('listWorkOrders maps a published page onto table rows', () => {
     // `.strict()` at the backend means an empty-but-present parameter is a 422,
     // not a silent ignore, so "not sent" has to mean not sent.
     expect(path).not.toContain('customerId=');
-    expect(path).not.toContain('number=');
     expect(path).not.toContain('q=');
+    expect(path).not.toContain('stateGroup=');
+    expect(path).not.toContain('completedFrom=');
+    expect(path).not.toContain('completedTo=');
   });
 
-  it('sends the P1-32 number and free-text criteria as typed, beside the target', async () => {
+  it('sends the state group and the completion window when they were chosen', async () => {
     get.mockResolvedValue(ok({ items: [], nextCursor: null, hasMore: false }));
 
-    await listWorkOrders(TARGET, { number: '١٢٣', q: 'Nadia' }, REQUEST, null);
+    await listWorkOrders(
+      TARGET,
+      {
+        stateGroup: 'active',
+        completedFrom: '2026-09-01T00:00:00.000Z',
+        completedTo: '2026-09-30T23:59:59.999Z',
+      },
+      REQUEST,
+      null
+    );
+
+    const url = new URL(`https://api.invalid${String(get.mock.calls[0]?.[0])}`);
+    expect(url.searchParams.get('stateGroup')).toBe('active');
+    expect(url.searchParams.get('completedFrom')).toBe('2026-09-01T00:00:00.000Z');
+    expect(url.searchParams.get('completedTo')).toBe('2026-09-30T23:59:59.999Z');
+    // `stateGroup` and `state` are mutually exclusive at the backend, which
+    // answers 422 rather than intersecting them — so a screen that offers both
+    // controls must never send both, and this criteria object sent neither.
+    expect(url.searchParams.get('state')).toBeNull();
+  });
+
+  it('sends the P1-32 free-text criterion as typed, beside the target', async () => {
+    get.mockResolvedValue(ok({ items: [], nextCursor: null, hasMore: false }));
+
+    await listWorkOrders(TARGET, { q: '١٢٣' }, REQUEST, null);
 
     const url = new URL(`https://api.invalid${String(get.mock.calls[0]?.[0])}`);
     expect(url.searchParams.get('companyId')).toBe(TARGET.companyId);
     expect(url.searchParams.get('branchId')).toBe(TARGET.branchId);
-    // Not folded here: the backend folds Arabic-Indic digits itself.
-    expect(url.searchParams.get('number')).toBe('١٢٣');
-    expect(url.searchParams.get('q')).toBe('Nadia');
+    // Sent exactly as the operator typed it: the backend folds Arabic-Indic
+    // digits itself, and folding them here as well would be two rules for one
+    // question with only one of them written down at the backend.
+    expect(url.searchParams.get('q')).toBe('١٢٣');
   });
 
   it('a REFUSAL is a refusal, never an empty board', async () => {
@@ -324,5 +355,59 @@ describe('the state catalogue read the board labels its rows from', () => {
     get.mockResolvedValue(failure('forbidden'));
     const read = await readWorkOrderCatalogue();
     expect(read.status).toBe('denied');
+  });
+});
+
+/**
+ * The mirror gate the contract module promises (Owner directive,
+ * P1-32-PRE-OD-UX).
+ *
+ * `work-orders-contract.ts` says of both vocabularies that they are "mirrored
+ * rather than imported" and that a test "holds this array against the route
+ * source so a third kind added in the Backend fails a test rather than a
+ * reviewer". Until now no such test existed and the sentence was a claim about
+ * a file that was never written — which is exactly the defect class this
+ * repository keeps finding: a docblock stating a rule the code does not
+ * implement.
+ *
+ * Held against the backend source as TEXT, not by importing it: `apps/web` may
+ * never import `apps/api`, and the boundary checker is right to say so. Reading
+ * a tracked file is what `receptions-contract.test.ts` already does with the
+ * migration that owns a CHECK constraint.
+ */
+describe('the mirrored vocabularies are held against the backend source', () => {
+  const DOMAIN = readFileSync(
+    join(process.cwd(), '..', 'api', 'src', 'modules', 'work-order', 'domain', 'work-order.ts'),
+    'utf8'
+  );
+
+  /**
+   * The members of an `export const NAME = [...] as const;` array literal.
+   *
+   * Sliced rather than matched with a built regular expression: a pattern
+   * assembled from a string needs its brackets escaped twice, and an
+   * over-escaped one throws at construction while an under-escaped one silently
+   * matches the wrong thing.
+   */
+  function exported(name: string): readonly string[] {
+    const opening = `export const ${name} = [`;
+    const from = DOMAIN.indexOf(opening);
+    expect(from, `${name} was renamed, moved or reshaped in the backend`).toBeGreaterThan(-1);
+    const to = DOMAIN.indexOf('] as const;', from);
+    expect(to, `${name} is no longer a closed array literal`).toBeGreaterThan(from);
+    const body = DOMAIN.slice(from + opening.length, to);
+    const members = [...body.matchAll(/'([^']+)'/g)].map((match) => match[1]);
+    // Anti-vacuity: a regular expression matching an empty group would compare
+    // two empty lists and report clean.
+    expect(members.length, `no member was read out of ${name}`).toBeGreaterThan(0);
+    return members as readonly string[];
+  }
+
+  it('WORK_ORDER_STATE_GROUPS matches the backend vocabulary exactly', () => {
+    expect([...WORK_ORDER_STATE_GROUPS]).toEqual(exported('WORK_ORDER_STATE_GROUPS'));
+  });
+
+  it('WORK_ORDER_KINDS matches the backend vocabulary exactly', () => {
+    expect([...WORK_ORDER_KINDS]).toEqual(exported('WORK_ORDER_KINDS'));
   });
 });

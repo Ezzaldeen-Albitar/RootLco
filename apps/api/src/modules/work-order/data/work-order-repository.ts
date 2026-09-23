@@ -29,13 +29,73 @@ import { Repository } from '@/server/db/repository';
 import type { DbHandle } from '@/server/db/transaction';
 import { buildPage, keysetFragment, type Page, type PageRequest } from '@/server/db/pagination';
 import { halfOpenLocalDayRange, type LocalDayPeriod } from '@/server/db/period';
-import { toWorkOrderSearchTerms } from '../domain/work-order';
+import { PARTS_NOT_IN_HAND_STATES, toWorkOrderSearchTerms } from '../domain/work-order';
+
+/**
+ * "Waiting for parts" — ONE predicate, shared by the overview count and the
+ * board's `awaitingParts` view (Owner directive, P1-32-PRE-OD-UX).
+ *
+ * A work order is waiting for parts when BOTH hold:
+ *
+ *   1. its `parts_forward_state` is one of `PARTS_NOT_IN_HAND_STATES` —
+ *      `requested` or `reserved_elsewhere`, the two values that mean the parts
+ *      are not yet in hand for the job; and
+ *   2. it is NOT in a terminal state. A finished or cancelled order is not
+ *      waiting for anything, whatever its parts column last said. The terminal
+ *      codes are resolved by the caller from the live catalogue and bound as
+ *      `finishedStatesParam`; the constraint `ck_work_order_states_cancellation`
+ *      makes every cancellation terminal, so one set excludes both.
+ *
+ * Written against the unaliased `wo.work_orders` because both statements that use
+ * it select from that table without an alias. A NULL parameter excludes nothing,
+ * which is what an empty catalogue answer means too — and an empty array is not
+ * the same as "every state is terminal".
+ *
+ * The literal list is generated from the domain constant, which is a frozen
+ * vocabulary of identifiers and never input, so interpolating it is safe.
+ */
+const PARTS_NOT_IN_HAND_SQL = PARTS_NOT_IN_HAND_STATES.map((value) => `'${value}'`).join(', ');
+function waitingForPartsPredicate(finishedStatesParam: string): string {
+  return `(wo.work_orders.parts_forward_state IN (${PARTS_NOT_IN_HAND_SQL})
+           AND NOT (wo.work_orders.state = ANY(COALESCE(${finishedStatesParam}::text[], ARRAY[]::text[]))))`;
+}
+
+/**
+ * The additional-work request rows that mean a customer decision is still owed:
+ * `pending`, and not tombstoned. Aliased `r`.
+ *
+ * A withdrawn or soft-deleted request must not pin a work order in a queue
+ * called "waiting for the customer to agree" for ever with nothing to act on.
+ */
+const PENDING_DECISION_ROW = `r.deleted_at IS NULL AND r.state = 'pending'`;
+
+/**
+ * "Waiting for the customer to agree" — ONE predicate over a work order, shared
+ * by the overview count and the board's `awaitingApproval` view (Owner
+ * directive, P1-32-PRE-OD-UX).
+ *
+ * An EXISTS rather than a join, so an order with two pending requests is one
+ * order and not two. Both callers also require `wo.work_orders.deleted_at IS
+ * NULL` in their own WHERE clause, which is what keeps a request on a RETIRED
+ * work order out of the figure: the earlier overview statement selected from the
+ * request table on the scope columns alone and counted such a request while the
+ * board — which walks from the work order — could not return it.
+ */
+const PENDING_DECISION_EXISTS = `EXISTS (
+                SELECT 1
+                  FROM wo.additional_work_requests r
+                 WHERE r.tenant_id = wo.work_orders.tenant_id
+                   AND r.work_order_id = wo.work_orders.id
+                   AND ${PENDING_DECISION_ROW})`;
 
 /** One current state and how many live work orders are in it. */
 export interface OverviewStateCountRow {
   readonly state: string;
   readonly total: number;
-  /** How many of that state's orders have parts requested but not yet reserved. */
+  /**
+   * How many of that state's live orders are waiting for parts, under the shared
+   * `waitingForPartsPredicate` — so always zero for a terminal state.
+   */
   readonly awaitingParts: number;
 }
 
@@ -240,7 +300,11 @@ export interface WorkOrderListFilter {
    * be the same answer: one is an empty page, the other is the whole board.
    */
   readonly matchNothing?: boolean | undefined;
-  /** Parts are outstanding: `parts_forward_state` is anything but `none`. */
+  /**
+   * Waiting for parts: `parts_forward_state` is one of `PARTS_NOT_IN_HAND_STATES`
+   * AND the order is not in one of `terminalStates`. The overview count uses the
+   * same `waitingForPartsPredicate`, so the two cannot disagree.
+   */
   readonly awaitingParts?: boolean | undefined;
   /** An additional-work request is still `pending` a customer decision. */
   readonly awaitingApproval?: boolean | undefined;
@@ -265,6 +329,55 @@ export interface WorkOrderListFilter {
    * delivery readiness queue already answers.
    */
   readonly readyStates?: readonly string[] | undefined;
+  /**
+   * The codes of the state GROUP the caller asked for, resolved by the SERVICE
+   * from the live catalogue (Owner directive, P1-32-PRE-OD-UX).
+   *
+   * A third code set beside `state` and `states` rather than a reuse of either,
+   * and the separation is load-bearing. `state` is the caller's single opaque
+   * code and `states` is the readiness queue's internally resolved set; folding a
+   * group into `states` would make two callers of one service silently overwrite
+   * each other's predicate the day a third one passes both. All three AND
+   * together, which is well defined: a caller naming a state AND a group it does
+   * not belong to gets an empty page, and the route refuses that combination
+   * before it can happen anyway.
+   *
+   * An EMPTY array matches nothing and is honest: a tenant whose catalogue
+   * resolves no state in the asked group has no work order in it. `undefined`
+   * means the caller asked for no group at all.
+   */
+  readonly groupStates?: readonly string[] | undefined;
+  /**
+   * Inclusive bounds on the COMPLETION instant (Owner directive,
+   * P1-32-PRE-OD-UX) — the same value the row publishes as `completedAt`, not a
+   * second derivation of it.
+   *
+   * There is no `completed_at` column, so the predicate is applied to the
+   * lateral that computes the published value; see the statement below for why
+   * the derivation moved out of the SELECT list. A work order that is not
+   * currently in a terminal state has no completion instant, so a window
+   * NARROWS to finished work by construction — a bounded question about
+   * completions cannot be answered with a car that is still on the ramp.
+   */
+  readonly completedFrom?: Date | undefined;
+  /** Inclusive upper bound on the completion instant. */
+  readonly completedTo?: Date | undefined;
+  /**
+   * The codes a work order must be in for a COMPLETION WINDOW to return it,
+   * resolved by the service when either bound was sent.
+   *
+   * The same predicate `stateGroup: 'terminal'` uses — terminal AND NOT a
+   * cancellation — and NOT `terminalStates`, which is the wider set that dates
+   * `completedAt`. The two sets are deliberately different and the difference is
+   * the point: a cancellation is a terminal transition, so it HAS a dated
+   * instant and a row may honestly publish it, but "what was finished in
+   * September" must not answer with the cars that were abandoned in September.
+   * A window whose group disagreed with `stateGroup: 'terminal'` would give two
+   * controls on one board two different meanings for the same word.
+   *
+   * `undefined` when no bound was sent, which leaves the board unnarrowed.
+   */
+  readonly completionStates?: readonly string[] | undefined;
 }
 
 /**
@@ -772,6 +885,10 @@ export class WorkOrderRepository extends Repository {
       filter.awaitingQualityIds === undefined ? null : [...filter.awaitingQualityIds],
       filter.readyStates === undefined ? null : [...filter.readyStates],
       filter.matchNothing === true,
+      filter.groupStates === undefined ? null : [...filter.groupStates],
+      filter.completedFrom ?? null,
+      filter.completedTo ?? null,
+      filter.completionStates === undefined ? null : [...filter.completionStates],
     ];
     const keyset = keysetFragment(
       page,
@@ -823,21 +940,15 @@ export class WorkOrderRepository extends Repository {
               -- is no completed_at column and none is invented: the ledger knows,
               -- and the terminal CODES come from the service ($15) rather than
               -- from a second join onto wo.work_order_states.
-              -- ...and ONLY while the order is still IN one. A reopened work
-              -- order has a terminal transition in its ledger and is not
-              -- finished, so reading the ledger alone would report a completion
-              -- instant for a car back on the ramp. The CURRENT state decides
-              -- whether there is a completion at all; the ledger decides when it
-              -- was.
-              (CASE
-                 WHEN $15::text[] IS NOT NULL AND wo.work_orders.state = ANY($15::text[])
-                 THEN (SELECT max(h.occurred_at)
-                         FROM wo.work_order_status_history h
-                        WHERE h.tenant_id = wo.work_orders.tenant_id
-                          AND h.work_order_id = wo.work_orders.id
-                          AND h.to_state = ANY($15::text[]))
-                 ELSE NULL
-               END)                                      AS completed_at
+              --
+              -- Computed in the LATERAL below rather than inline here, because
+              -- the Owner directive (P1-32-PRE-OD-UX) added completedFrom /
+              -- completedTo and a WHERE clause cannot see a SELECT alias. The
+              -- alternative was to write the derivation twice — once to publish
+              -- it and once to filter on it — and two copies of one definition
+              -- is how a page ends up filtered by an instant different from the
+              -- one it displays.
+              completion.at                                   AS completed_at
          FROM wo.work_orders
          LEFT JOIN LATERAL (
            SELECT a.technician_profile_id, t.user_id
@@ -857,6 +968,28 @@ export class WorkOrderRepository extends Repository {
             ORDER BY a.valid_from DESC, a.id DESC
             LIMIT 1
          ) AS assignment ON true
+         -- The completion instant, ONE definition, used by the projection above
+         -- and by the completedFrom/completedTo window below.
+         --
+         -- Gated on the CURRENT state, not on the ledger alone. A reopened work
+         -- order has a terminal transition in its history and is not finished,
+         -- so the ledger by itself would report a completion for a car back on
+         -- the ramp. The current state decides whether there is a completion at
+         -- all; the ledger decides when it was.
+         --
+         -- max() over no rows is NULL and the subquery always returns exactly
+         -- one row, so this is a LEFT JOIN in name only — it never drops a work
+         -- order, it only leaves the instant null. That matters: an unfiltered
+         -- board must still list every open order.
+         LEFT JOIN LATERAL (
+           SELECT max(h.occurred_at) AS at
+             FROM wo.work_order_status_history h
+            WHERE h.tenant_id = wo.work_orders.tenant_id
+              AND h.work_order_id = wo.work_orders.id
+              AND $15::text[] IS NOT NULL
+              AND wo.work_orders.state = ANY($15::text[])
+              AND h.to_state = ANY($15::text[])
+         ) AS completion ON true
         WHERE tenant_id = $1 AND company_id = $2
           -- NULL is "every branch of the company", which only a caller the
           -- policies impose no branch narrowing on can reach.
@@ -930,17 +1063,14 @@ export class WorkOrderRepository extends Repository {
                    AND j.work_order_id = wo.work_orders.id
                    AND a.technician_profile_id = $16::uuid
                    AND a.valid_to IS NULL))
-          AND (NOT $17::boolean OR parts_forward_state <> 'none')
-          AND (NOT $18::boolean OR EXISTS (
-                SELECT 1
-                  FROM wo.additional_work_requests r
-                 WHERE r.tenant_id = wo.work_orders.tenant_id
-                   AND r.work_order_id = wo.work_orders.id
-                   -- Every other read of this table filters the tombstone, and a
-                   -- withdrawn request must not pin a work order in a queue
-                   -- called "awaiting approval" forever.
-                   AND r.deleted_at IS NULL
-                   AND r.state = 'pending'))
+          -- awaitingParts and awaitingApproval. Each is the SAME fragment the
+          -- overview aggregate counts with (see the two constants at the top of
+          -- this file), so the dashboard figure that links here and the view it
+          -- links to are one definition rather than two that resemble each
+          -- other. $15 is the terminal set the service always resolves: a
+          -- finished order is not waiting for parts.
+          AND (NOT $17::boolean OR ${waitingForPartsPredicate('$15')})
+          AND (NOT $18::boolean OR ${PENDING_DECISION_EXISTS})
           -- awaitingQuality. The ids are resolved by the QUALITY module, which
           -- owns that schema, and bound here as an array: a correlated EXISTS
           -- would make this layer a second reader of another module's table, and
@@ -954,6 +1084,28 @@ export class WorkOrderRepository extends Repository {
           -- FALSE and not an empty id list, because "no profile" and "no filter"
           -- are the same absence and must not be the same answer.
           AND NOT $21::boolean
+          -- stateGroup. The codes of the asked group, resolved by the service
+          -- from the live catalogue exactly as readyStates is. An EMPTY array
+          -- matches nothing, which is the honest answer for a tenant whose
+          -- catalogue holds no state in that group; NULL is "no group asked".
+          AND ($22::text[] IS NULL OR state = ANY($22::text[]))
+          -- completedFrom / completedTo, closed on both ends, over the SAME
+          -- lateral the row publishes as completedAt. A work order with no
+          -- completion instant has a NULL here and is excluded by either bound,
+          -- which is the intended narrowing rather than an accident of NULL
+          -- comparison: a window over completions cannot contain a work order
+          -- that has not been completed.
+          --
+          -- $25 is the second half of that narrowing and is NOT redundant. It is
+          -- the closed-and-not-cancelled set, resolved by the service whenever a
+          -- bound was sent, and it is what keeps an ABANDONED job out of a
+          -- window that asks what was finished — a cancellation is a terminal
+          -- transition, so it has a dated instant and would otherwise sit inside
+          -- the window. It is exactly the set stateGroup = terminal resolves,
+          -- so the two controls agree about the word.
+          AND ($25::text[] IS NULL OR state = ANY($25::text[]))
+          AND ($23::timestamptz IS NULL OR completion.at >= $23)
+          AND ($24::timestamptz IS NULL OR completion.at <= $24)
           ${keyset.predicate}
         ${keyset.order}
         ${keyset.limitClause}`,
@@ -2445,6 +2597,12 @@ export class WorkOrderRepository extends Repository {
    * predicate: two statements could observe two snapshots and publish a
    * per-state total that does not add up to the figure beside it.
    *
+   * It is counted with `waitingForPartsPredicate` — the fragment the board's
+   * `awaitingParts` view filters with — so the dashboard figure and the list it
+   * links to are one definition. `finishedStates` is the terminal set the caller
+   * resolved from the live catalogue, exactly as `list` resolves the board's
+   * `terminalStates`; a terminal bucket therefore always reports zero here.
+   *
    * Grouped by the raw `state` code and NOT joined to `wo.work_order_states`
    * here. The catalogue is dual-scoped — a platform row and a tenant row may
    * share a code — so resolving precedence in SQL would be a second copy of the
@@ -2453,42 +2611,50 @@ export class WorkOrderRepository extends Repository {
    */
   async overviewStateCounts(
     db: DbHandle,
-    scope: { readonly companyId: string; readonly branchIds: readonly string[] }
+    scope: { readonly companyId: string; readonly branchIds: readonly string[] },
+    finishedStates: readonly string[]
   ): Promise<readonly OverviewStateCountRow[]> {
     const context = this.assertContext(db);
-    // The projection is `parts_requested` and NOT `awaiting_parts`. The column
-    // being counted is `parts_forward_state`, a forward contract with three
+    // The projection is `waiting_for_parts` and NOT `awaiting_parts`. The column
+    // being tested is `parts_forward_state`, a forward contract with three
     // values of its own; `awaiting_parts` is a `wo.work_order_states` CODE, and
     // naming the alias after it would put a state name in this module's
     // TypeScript — which is the mirror `tests/foundation/p1-19-module-foundation`
     // refuses, and which would be wrong on its own terms because an order in any
-    // state may have parts requested.
-    const result = await this.run<{ state: string; total: number; parts_requested: number }>(
+    // non-terminal state may be waiting for parts.
+    const result = await this.run<{ state: string; total: number; waiting_for_parts: number }>(
       db,
       `SELECT state,
               count(*)::int AS total,
-              count(*) FILTER (WHERE parts_forward_state = 'requested')::int AS parts_requested
+              count(*) FILTER (WHERE ${waitingForPartsPredicate('$4')})::int AS waiting_for_parts
          FROM wo.work_orders
         WHERE tenant_id = $1 AND company_id = $2 AND branch_id = ANY($3::uuid[])
           AND deleted_at IS NULL
         GROUP BY state
         ORDER BY state`,
-      [context.principal.tenantId, scope.companyId, scope.branchIds]
+      [context.principal.tenantId, scope.companyId, scope.branchIds, [...finishedStates]]
     );
     return result.rows.map((row) => ({
       state: row.state,
       total: row.total,
-      awaitingParts: row.parts_requested,
+      awaitingParts: row.waiting_for_parts,
     }));
   }
 
   /**
-   * Additional-work requests still awaiting a decision, two ways.
+   * Work orders waiting for a customer decision, and the requests behind them.
    *
-   * `requests` counts the decisions somebody owes; `workOrders` counts the jobs
-   * held up by at least one of them. They are different questions and a screen
-   * needs both — five requests on one order is one stalled vehicle, not five —
-   * so they come from one statement over one snapshot rather than from two.
+   * `workOrders` is the figure the dashboard links to the board's
+   * `awaitingApproval` view with, and it is counted with the SAME
+   * `PENDING_DECISION_EXISTS` fragment over live (`deleted_at IS NULL`) work
+   * orders in the same branch set — so an order with two pending requests is
+   * one, and a request on a retired work order is none, on both sides.
+   *
+   * `requests` counts the decisions somebody owes on those same live orders.
+   * It is a different question — five requests on one order is one stalled
+   * vehicle, not five — and no list on the product enumerates requests, so a
+   * screen may show it but must not pair it with a link. Both come from one
+   * statement so they observe one snapshot.
    *
    * `pending` only. An APPROVED request that is not yet fulfilled also blocks
    * closure (`wo.guard_work_order_closure` blocker B3), but nobody is waiting on
@@ -2502,17 +2668,27 @@ export class WorkOrderRepository extends Repository {
     const context = this.assertContext(db);
     const row = await this.runOne<{ requests: number; work_orders: number }>(
       db,
-      `SELECT count(*)::int                        AS requests,
-              count(DISTINCT work_order_id)::int   AS work_orders
-         FROM wo.additional_work_requests
-        WHERE tenant_id = $1 AND company_id = $2 AND branch_id = ANY($3::uuid[])
-          AND deleted_at IS NULL
-          AND state = 'pending'`,
+      `SELECT
+         (SELECT count(*)::int
+            FROM wo.work_orders
+           WHERE tenant_id = $1 AND company_id = $2 AND branch_id = ANY($3::uuid[])
+             AND deleted_at IS NULL
+             AND ${PENDING_DECISION_EXISTS})                 AS work_orders,
+         (SELECT count(*)::int
+            FROM wo.additional_work_requests r
+            JOIN wo.work_orders
+              ON wo.work_orders.tenant_id = r.tenant_id
+             AND wo.work_orders.id = r.work_order_id
+           WHERE wo.work_orders.tenant_id = $1
+             AND wo.work_orders.company_id = $2
+             AND wo.work_orders.branch_id = ANY($3::uuid[])
+             AND wo.work_orders.deleted_at IS NULL
+             AND ${PENDING_DECISION_ROW})                   AS requests`,
       [context.principal.tenantId, scope.companyId, scope.branchIds]
     );
-    // An aggregate with no GROUP BY always produces a row, so the null branch is
-    // unreachable; it is written as zeros rather than as a throw because the
-    // honest reading of "no rows matched" for a COUNT is zero.
+    // A SELECT of two scalar subqueries always produces a row, so the null
+    // branch is unreachable; it is written as zeros rather than as a throw
+    // because the honest reading of "no rows matched" for a COUNT is zero.
     return { requests: row?.requests ?? 0, workOrders: row?.work_orders ?? 0 };
   }
 

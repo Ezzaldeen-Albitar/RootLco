@@ -41,6 +41,33 @@ export const WORK_ORDER_KINDS = ['ordinary', 'rework'] as const;
 export type WorkOrderKind = (typeof WORK_ORDER_KINDS)[number];
 
 /**
+ * The three groups a board may narrow to (Owner directive, P1-32-PRE-OD-UX).
+ *
+ * A group is NOT a state code and never becomes one here. `wo.work_order_states`
+ * is tenant-extensible and carries `is_terminal` and `is_cancellation`; the
+ * group is resolved from those two flags against the LIVE catalogue, so a tenant
+ * that defines its own non-terminal state has it counted as `active` without
+ * this vocabulary changing. Naming state codes in TypeScript instead would be a
+ * second copy of a tenant's own configuration, rotting from the moment it was
+ * written.
+ *
+ * The three are a PARTITION of the catalogue, which is why `terminal` excludes
+ * the cancellations rather than containing them:
+ *
+ *   cancelled  is_cancellation
+ *   terminal   is_terminal AND NOT is_cancellation
+ *   active     NOT is_terminal AND NOT is_cancellation
+ *
+ * If `terminal` meant "every is_terminal row" it would overlap `cancelled`, and
+ * a board offering all three as one control would show the same abandoned job
+ * under two labels — which reads as a duplicate rather than as a classification.
+ * A caller that wants the union asks for two groups' worth by asking twice; a
+ * caller that wants one asks for one, and gets rows that belong to no other.
+ */
+export const WORK_ORDER_STATE_GROUPS = ['active', 'terminal', 'cancelled'] as const;
+export type WorkOrderStateGroup = (typeof WORK_ORDER_STATE_GROUPS)[number];
+
+/**
  * Frozen `ck_work_orders_parts_forward_state` vocabulary.
  *
  * Note `reserved_elsewhere` — not `reserved`, and there is no `issued`. The column
@@ -49,6 +76,31 @@ export type WorkOrderKind = (typeof WORK_ORDER_KINDS)[number];
  */
 export const PARTS_FORWARD_STATES = ['none', 'requested', 'reserved_elsewhere'] as const;
 export type PartsForwardState = (typeof PARTS_FORWARD_STATES)[number];
+
+/**
+ * The `parts_forward_state` values that mean the parts are NOT YET IN HAND for
+ * the job (Owner directive, P1-32-PRE-OD-UX — "waiting for parts").
+ *
+ * Both non-`none` values qualify, and each for a stated reason:
+ *
+ *   `requested`           somebody asked for the parts and nothing has been
+ *                         reserved yet;
+ *   `reserved_elsewhere`  the parts were reserved in a system this phase does not
+ *                         own. A reservation is not an issue: the vocabulary has
+ *                         no `issued` value because handing stock to a job is not
+ *                         a fact this schema can record (see
+ *                         `DEFERRED_CLOSURE_BLOCKERS`), so the column never says
+ *                         the parts arrived.
+ *
+ * Listed explicitly rather than written as "anything but `none`", so a value
+ * added later — an `issued`, say — does not silently join the set. This is the
+ * ONE definition the overview count and the board's `awaitingParts` view share;
+ * the repository builds its SQL fragment from it.
+ */
+export const PARTS_NOT_IN_HAND_STATES = [
+  'requested',
+  'reserved_elsewhere',
+] as const satisfies readonly PartsForwardState[];
 
 // Deliberately NOT here: the quality-control result vocabulary, the diagnostic
 // report status vocabulary and the labor-session source vocabulary. Each of those

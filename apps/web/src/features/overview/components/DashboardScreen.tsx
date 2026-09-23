@@ -108,7 +108,17 @@ interface FigureCard {
   readonly section: DashboardSection<number>;
   /** `null` when no list on this product can be narrowed the way this counted. */
   readonly href: string | null;
+  /**
+   * What the link says. `dashboard.card.openTheList` is a CLAIM — that the page
+   * behind it lists exactly the set this figure counted, under the same
+   * predicate, period and branch scope — and only a card for which that is true
+   * may use it. A card whose destination is related but not identical names the
+   * destination instead.
+   */
+  readonly linkLabelKey: string;
 }
+
+const OPEN_THE_LIST = 'dashboard.card.openTheList';
 
 export function DashboardScreen({
   locale,
@@ -345,6 +355,21 @@ export function DashboardScreen({
         </div>
       ) : null}
 
+      {/*
+        Pressing "Choose dates" does not change a single figure — the days have
+        not been named yet, so there is nothing to ask for. Without this line
+        the control reads as applied while every number below still answers the
+        period before it, which is the screen stating one period and showing
+        another.
+      */}
+      {custom && period.kind !== 'custom' ? (
+        <p className="text-supporting text-warning">
+          {formatMessage(t('dashboard.period.notApplied'), {
+            period: translateDynamic(messages, `dashboard.period.${period.kind}`),
+          })}
+        </p>
+      ) : null}
+
       <p className="text-supporting text-text-secondary">
         {summary === null
           ? t('dashboard.period.pending')
@@ -398,7 +423,7 @@ export function DashboardScreen({
         />
       );
     }
-    if (answer.status !== 'ok' || summary === null) {
+    if (answer.status !== 'ok') {
       return (
         <ErrorState
           messages={messages}
@@ -407,7 +432,10 @@ export function DashboardScreen({
       );
     }
 
-    const sections = summary.sections;
+    // Read off the ANSWER rather than the derived `summary`: the two can only
+    // ever hold the same object, and testing the second for absence was a
+    // branch no run could reach — dead code that reads like a handled case.
+    const sections = answer.data.sections;
 
     const cards: readonly FigureCard[] = [
       {
@@ -415,45 +443,74 @@ export function DashboardScreen({
         labelKey: 'dashboard.card.receptionsOpened',
         section: sections.receptionsOpened,
         href: receptionsPeriodLink(locale, criteriaForLink),
+        linkLabelKey: OPEN_THE_LIST,
       },
       {
         id: 'activeWorkOrders',
         labelKey: 'dashboard.card.activeWorkOrders',
         section: sections.activeWorkOrders,
-        href: workOrdersViewLink(locale, 'all'),
+        // `active` is the board's state GROUP the overview aggregate counts.
+        href: workOrdersViewLink(locale, 'active'),
+        linkLabelKey: OPEN_THE_LIST,
       },
       {
+        // Distinct live WORK ORDERS with a pending request — the board view's
+        // own predicate, shared in SQL — and not the number of requests.
         id: 'awaitingApproval',
         labelKey: 'dashboard.card.awaitingApproval',
         section: sections.awaitingApproval,
         href: workOrdersViewLink(locale, 'awaitingApproval'),
+        linkLabelKey: OPEN_THE_LIST,
       },
       {
+        // Unfinished orders whose parts are not yet in hand — the ONE SQL
+        // predicate the board's `awaitingParts` view also filters with.
         id: 'awaitingParts',
         labelKey: 'dashboard.card.awaitingParts',
         section: sections.awaitingParts,
         href: workOrdersViewLink(locale, 'awaitingParts'),
+        linkLabelKey: OPEN_THE_LIST,
       },
       {
         id: 'readyForDelivery',
         labelKey: 'dashboard.card.readyForDelivery',
         section: sections.readyForDelivery,
         href: workOrdersViewLink(locale, 'readyForDelivery'),
+        linkLabelKey: OPEN_THE_LIST,
       },
       {
-        // No link: the board can be sent an OPENED window and no completed one,
-        // so there is no list that is narrowed the way this figure counted.
-        // Linking to the unfiltered board would answer a different question.
+        // No link: the board's one completion view is `completedToday`, and
+        // it lists orders finished NOW while this figure counts ENTRIES into a
+        // finished state over the period — they disagree about a job completed
+        // and then reopened. Linking to a list that counts differently would
+        // answer a different question.
         id: 'completedInPeriod',
         labelKey: 'dashboard.card.completedInPeriod',
         section: sections.completedInPeriod,
         href: null,
+        linkLabelKey: OPEN_THE_LIST,
       },
       {
+        /*
+         * A RELATED destination, never "the list". The figure counts distinct
+         * ITEMS at or below a reorder level in the branch set it was asked for;
+         * the Attention page lists FINDINGS, one per applicable level, one
+         * branch at a time, and caps the list. No page counts this set, so the
+         * link names where the items are dealt with instead.
+         *
+         * For one working branch it opens that page on the SAME branch the
+         * figure was counted for. For "all my branches" there is no one branch
+         * to open on, and the words say the warnings are reviewed branch by
+         * branch rather than implying a company-wide list.
+         */
         id: 'lowStock',
         labelKey: 'dashboard.card.lowStock',
         section: sections.lowStock,
-        href: attentionAreaLink(locale),
+        href: attentionAreaLink(locale, branchId),
+        linkLabelKey:
+          branchId === null
+            ? 'dashboard.card.reviewStockByBranch'
+            : 'dashboard.card.reviewBranchStock',
       },
     ];
 
@@ -519,8 +576,10 @@ export function DashboardScreen({
         <ActionablePanel
           messages={messages}
           locale={locale}
-          pendingApprovals={sections.pendingApprovalsCount}
+          waitingOrders={sections.awaitingApproval}
+          pendingRequests={sections.pendingApprovalsCount}
           lowStock={sections.lowStock}
+          attentionHref={attentionAreaLink(locale, branchId)}
         />
 
         {sections.workOrdersByState.status === 'ok' ? (
@@ -655,7 +714,7 @@ function FigureTile({
     >
       {figure}
       <span className="text-caption text-primary">
-        {translate(messages, 'dashboard.card.openTheList')}
+        {translateDynamic(messages, card.linkLabelKey)}
       </span>
     </Link>
   );
@@ -663,6 +722,19 @@ function FigureTile({
 
 /**
  * What is waiting for somebody, and where it is dealt with.
+ *
+ * ## The figure beside a link is the figure of that link's list
+ *
+ * "Open the waiting list" opens the board's `awaitingApproval` view, which
+ * lists WORK ORDERS — so the number beside it is the distinct live work orders
+ * with a pending request, the same predicate in SQL. The number of pending
+ * REQUESTS is useful too (five on one order is still one stalled vehicle), and
+ * it is shown on its own line with its own words and NO link, because no list
+ * on the product enumerates requests.
+ *
+ * The stock line links to the Attention page on the figure's own branch and is
+ * worded as the page where warnings are dealt with, not as the list of what was
+ * counted — see `attentionAreaLink`.
  *
  * The four stock warnings and the allowance warning are NOT read here. Each is
  * its own branch-targeted read with its own permission, and issuing five more
@@ -674,13 +746,20 @@ function FigureTile({
 function ActionablePanel({
   messages,
   locale,
-  pendingApprovals,
+  waitingOrders,
+  pendingRequests,
   lowStock,
+  attentionHref,
 }: {
   readonly messages: Messages;
   readonly locale: Locale;
-  readonly pendingApprovals: DashboardSection<number>;
+  /** Distinct live work orders with a pending request: the linked list's count. */
+  readonly waitingOrders: DashboardSection<number>;
+  /** Pending requests on those orders. Never paired with a link. */
+  readonly pendingRequests: DashboardSection<number>;
   readonly lowStock: DashboardSection<number>;
+  /** The Attention page, on the figure's branch when there is one. */
+  readonly attentionHref: string;
 }) {
   const t = (key: keyof Messages) => translate(messages, key);
   const line = (section: DashboardSection<number>): string =>
@@ -696,9 +775,12 @@ function ActionablePanel({
         {t('dashboard.actions.title')}
       </h2>
       <ul className="mt-2 flex flex-col gap-2">
-        <li className="flex flex-wrap items-baseline gap-2 text-body text-text-primary">
-          <span>{t('dashboard.actions.approvals')}</span>
-          <strong className="text-text-heading">{line(pendingApprovals)}</strong>
+        <li
+          data-actionable="approvalOrders"
+          className="flex flex-wrap items-baseline gap-2 text-body text-text-primary"
+        >
+          <span>{t('dashboard.actions.approvalOrders')}</span>
+          <strong className="text-text-heading">{line(waitingOrders)}</strong>
           <Link
             href={workOrdersViewLink(locale, 'awaitingApproval')}
             className="text-caption text-primary underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
@@ -706,11 +788,18 @@ function ActionablePanel({
             {t('dashboard.actions.openApprovals')}
           </Link>
         </li>
+        <li
+          data-actionable="approvalRequests"
+          className="flex flex-wrap items-baseline gap-2 text-body text-text-secondary"
+        >
+          <span>{t('dashboard.actions.approvals')}</span>
+          <strong className="text-text-heading">{line(pendingRequests)}</strong>
+        </li>
         <li className="flex flex-wrap items-baseline gap-2 text-body text-text-primary">
           <span>{t('dashboard.actions.lowStock')}</span>
           <strong className="text-text-heading">{line(lowStock)}</strong>
           <Link
-            href={attentionAreaLink(locale)}
+            href={attentionHref}
             className="text-caption text-primary underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
           >
             {t('dashboard.actions.openAttention')}
@@ -719,7 +808,7 @@ function ActionablePanel({
         <li className="flex flex-wrap items-baseline gap-2 text-body text-text-secondary">
           <span>{t('dashboard.actions.otherWarnings')}</span>
           <Link
-            href={attentionAreaLink(locale)}
+            href={attentionHref}
             className="text-caption text-primary underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
           >
             {t('dashboard.actions.openAttention')}

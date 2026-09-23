@@ -174,7 +174,16 @@ test.describe('the shell', () => {
   test('renders no planned module as a link', async ({ page }) => {
     await page.goto('/en/gallery');
     const nav = page.getByRole('navigation', { name: 'Modules' });
-    await expect(nav.getByRole('link', { name: 'Overview' })).toBeVisible();
+    // The one ungated entry is the gallery itself, drawn as a link that is the
+    // current page — proof the sidebar rendered at all, so every absence below
+    // is a filter decision and not an empty navigation.
+    const gallery = nav.getByRole('link', { name: 'Component gallery' });
+    await expect(gallery).toBeVisible();
+    await expect(gallery).toHaveAttribute('aria-current', 'page');
+    // The dashboard is gated on `wo.work_order.read` — the code its summary read
+    // is entitled by (Owner directive, P1-32-PRE-OD-UX) — and this page renders
+    // with no capabilities, so it is not offered either.
+    await expect(nav.getByRole('link', { name: 'Dashboard' })).toHaveCount(0);
     // Billing is still a P1-27-and-later module, so it must not be clickable.
     await expect(nav.getByRole('link', { name: 'Billing' })).toHaveCount(0);
     // Administration IS built now, but it is permission-gated and this page

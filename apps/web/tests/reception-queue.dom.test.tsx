@@ -52,8 +52,40 @@ vi.mock('@/features/receptions/api', () => ({
   listReceptions: (...args: unknown[]) => listReceptions(...args),
 }));
 
+/**
+ * The session the ROUTE resolves, so the address cases at the end of this file
+ * can invoke it. The screen cases render the board directly and never see it.
+ */
+let PERMISSIONS: readonly string[] = [];
+vi.mock('@/features/authentication/api/session', () => ({
+  requireSession: async () => ({
+    permissions: PERMISSIONS,
+    email: 'operator@test.local',
+    companyIds: [],
+    branchIds: [],
+  }),
+}));
+
+/** The props one element in a route's returned tree carries. */
+function propsCarrying(node: unknown, prop: string): Record<string, unknown> | null {
+  if (node === null || typeof node !== 'object') return null;
+  const props = (node as { props?: Record<string, unknown> }).props;
+  if (props && typeof props === 'object' && prop in props) return props;
+  const children = props?.['children'];
+  for (const child of Array.isArray(children) ? children : [children]) {
+    const found = propsCarrying(child, prop);
+    if (found) return found;
+  }
+  return null;
+}
+
 const { ReceptionQueueScreen } =
   await import('@/features/receptions/components/ReceptionQueueScreen');
+const ReceptionQueuePage = (await import('@/app/[locale]/(dashboard)/receptions/page'))
+  .default as (args: {
+  params: Promise<Record<string, string>>;
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
+}) => Promise<unknown>;
 
 const COMPANY = TEST_COMPANY.id;
 const BRANCH = TEST_BRANCH.id;
@@ -68,6 +100,8 @@ function row(over: Record<string, unknown> = {}) {
     origin: 'walk_in',
     vehicleId: 'veh-9',
     vehicleDisplayNumber: 'V-9',
+    customer: { id: 'partner-1', displayName: 'A recorded customer' },
+    plate: 'ABC-1234',
     custodyAcceptedAt: '2026-08-13T07:00:00.000Z',
     custodyReleasedAt: null,
     recordVersion: 3,
@@ -180,7 +214,14 @@ describe('the period control', () => {
     expect(lastCall().filters).toEqual(rangeOfDays(ZONE, addDays(today, -6), today));
   });
 
-  it('sends only an upper bound for "before today", so the oldest visits are not hidden', async () => {
+  it('ends "before today" at the LAST instant of yesterday, not the first of today', async () => {
+    /*
+     * The API compares `custody_accepted_at <= to`, closed on both ends. Sending
+     * the start of today satisfies that comparison, so a car received at
+     * midnight — or any row the database stamped exactly on the boundary —
+     * appeared on a board headed "before today". One millisecond, one wrong row,
+     * and no way for the operator to tell.
+     */
     const user = userEvent.setup();
     renderQueue();
     await waitFor(() => expect(listReceptions).toHaveBeenCalledTimes(1));
@@ -189,7 +230,13 @@ describe('the period control', () => {
       screen.getByRole('button', { name: EN['receptions.queue.period.beforeToday'] as string })
     );
     await waitFor(() => expect(listReceptions).toHaveBeenCalledTimes(2));
-    expect(lastCall().filters).toEqual({ to: startOfDay(ZONE, dayIn(ZONE)).toISOString() });
+
+    const yesterday = addDays(dayIn(ZONE), -1);
+    expect(lastCall().filters).toEqual({ to: endOfDay(ZONE, yesterday).toISOString() });
+    // The boundary itself, stated: one millisecond before today begins.
+    expect(new Date(lastCall().filters['to'] as string).getTime()).toBe(
+      startOfDay(ZONE, dayIn(ZONE)).getTime() - 1
+    );
     // A lower bound would be a beginning nobody named.
     expect(lastCall().filters['from']).toBeUndefined();
   });
@@ -272,10 +319,12 @@ describe('the status control is grouped from the graph, not from a list', () => 
     const select = screen.getByLabelText(EN['receptions.queue.statusFilter'] as string, {
       exact: false,
     });
+    // The two whole-group answers sit above the codes and are asserted by their
+    // own case; this one is about the six codes the frozen graph defines.
     const values = within(select)
       .getAllByRole('option')
       .map((option) => (option as HTMLOptionElement).value)
-      .filter((value) => value !== '');
+      .filter((value) => value !== '' && !value.startsWith('group:'));
     expect([...values].sort()).toEqual([...RECEPTION_STATUSES].sort());
 
     const groups = within(select).getAllByRole('group');
@@ -309,6 +358,105 @@ describe('the status control is grouped from the graph, not from a list', () => 
     // A filter change spends a fresh cursor, never the one the previous
     // ordering issued.
     expect(listReceptions.mock.calls.at(-1)?.[3]).toBeNull();
+  });
+});
+
+describe('what is still with us from before today is ONE button', () => {
+  it('sends the open GROUP with an upper bound, in one request', async () => {
+    /*
+     * It was two controls used together, because `status` took one code at a
+     * time and the set of unfinished statuses could not be sent. `statusGroup`
+     * is that set, so the question is one request again.
+     */
+    const user = userEvent.setup();
+    renderQueue();
+    await waitFor(() => expect(listReceptions).toHaveBeenCalledTimes(1));
+
+    await user.click(
+      screen.getByRole('button', { name: EN['receptions.queue.olderUnfinished'] as string })
+    );
+    const yesterday = addDays(dayIn(ZONE), -1);
+    await waitFor(() =>
+      expect(lastCall().filters).toEqual({
+        statusGroup: 'open',
+        to: endOfDay(ZONE, yesterday).toISOString(),
+      })
+    );
+  });
+
+  it('never sends a status code beside a status group', async () => {
+    /*
+     * The route answers 422 `status_and_group_exclusive` rather than
+     * intersecting them. One control holds either answer, so the pair is not a
+     * state the screen can be in.
+     */
+    const user = userEvent.setup();
+    renderQueue();
+    await waitFor(() => expect(listReceptions).toHaveBeenCalledTimes(1));
+
+    const select = screen.getByLabelText(EN['receptions.queue.statusFilter'] as string, {
+      exact: false,
+    });
+    await user.selectOptions(select, 'group:finished');
+    await waitFor(() => expect(lastCall().filters['statusGroup']).toBe('finished'));
+    await user.selectOptions(select, 'authorized');
+    await waitFor(() => expect(lastCall().filters['status']).toBe('authorized'));
+
+    for (const call of listReceptions.mock.calls) {
+      const filters = call[1] as Record<string, unknown>;
+      expect(
+        filters['status'] !== undefined && filters['statusGroup'] !== undefined,
+        'a code and a group travelled together'
+      ).toBe(false);
+    }
+  });
+
+  it('offers both whole groups above the six codes, from the graph', async () => {
+    renderQueue();
+    await waitFor(() => expect(listReceptions).toHaveBeenCalled());
+    const select = screen.getByLabelText(EN['receptions.queue.statusFilter'] as string, {
+      exact: false,
+    });
+    const values = within(select)
+      .getAllByRole('option')
+      .map((option) => (option as HTMLOptionElement).value)
+      .filter((value) => value !== '');
+    expect(values.slice(0, 2)).toEqual(['group:open', 'group:finished']);
+    expect([...values.slice(2)].sort()).toEqual([...RECEPTION_STATUSES].sort());
+  });
+});
+
+describe('the customer and the plate', () => {
+  it('names the customer and shows the plate the car carries today', async () => {
+    renderQueue();
+    const table = await screen.findByRole('table');
+    expect(within(table).getByText('A recorded customer')).toBeVisible();
+    expect(within(table).getByText('ABC-1234')).toBeVisible();
+  });
+
+  it('tells three absences apart rather than rendering one blank', async () => {
+    listReceptions.mockResolvedValue(
+      page([
+        row({ id: 'a', displayNumber: 'R-1', customer: null, plate: null }),
+        row({
+          id: 'b',
+          displayNumber: 'R-2',
+          customer: { id: 'partner-2', displayName: null },
+          plate: 'XYZ-9',
+        }),
+      ])
+    );
+    const { container } = renderQueue();
+    // A visit that names no service requester yet — permitted by the platform.
+    expect(
+      await screen.findByText(EN['receptions.queue.column.noCustomer'] as string)
+    ).toBeVisible();
+    // A visit that HAS one, read by somebody who may not see who. Said in
+    // words, never as the identifier.
+    expect(screen.getByText(EN['receptions.queue.column.customerHidden'] as string)).toBeVisible();
+    expect(container.textContent ?? '').not.toContain('partner-2');
+    // A registered vehicle carrying no plate.
+    expect(screen.getByText(EN['receptions.queue.column.noPlate'] as string)).toBeVisible();
   });
 });
 
@@ -349,6 +497,24 @@ describe('the one search box', () => {
 });
 
 describe('every non-answer reads as itself', () => {
+  it('renders an ENDED SESSION as itself, with the way back and no Try-again', async () => {
+    listReceptions.mockResolvedValue({
+      status: 'expired',
+      rows: [],
+      nextCursor: null,
+      hasMore: false,
+      correlationId: null,
+    });
+    renderQueue();
+    expect(await screen.findByText(EN['state.expired.title'] as string)).toBeVisible();
+    expect(screen.queryByText(EN['state.error.title'] as string)).toBeNull();
+    expect(screen.queryByRole('button', { name: EN['state.retry'] as string })).toBeNull();
+    expect(screen.getByRole('link', { name: EN['auth.backToLogin'] as string })).toHaveAttribute(
+      'href',
+      '/en/login'
+    );
+  });
+
   it('renders a refusal as a refusal, never as an empty board', async () => {
     listReceptions.mockResolvedValue({
       status: 'denied',
@@ -391,6 +557,83 @@ describe('every non-answer reads as itself', () => {
     expect(
       await screen.findByRole('button', { name: EN['receptions.queue.clearFilters'] as string })
     ).toBeVisible();
+  });
+
+  it('offers the way back for a PERIOD that matched nothing, with no term typed', async () => {
+    /*
+     * The offer used to be made only for a searchable term, which left the
+     * commonest empty board of all with no way out: a period or a status that
+     * happens to match nothing today is not something the operator typed, and
+     * undoing it by hand means remembering which of four controls they moved.
+     * Clear is offered whenever pressing it would change the question.
+     */
+    const user = userEvent.setup();
+    listReceptions.mockResolvedValue(page([]));
+    renderQueue();
+    expect(await screen.findByText(EN['state.noResults.title'] as string)).toBeVisible();
+    expect(
+      screen.queryByRole('button', { name: EN['receptions.queue.clearFilters'] as string })
+    ).toBeNull();
+
+    await user.click(
+      screen.getByRole('button', { name: EN['receptions.queue.period.yesterday'] as string })
+    );
+    const clear = await screen.findByRole('button', {
+      name: EN['receptions.queue.clearFilters'] as string,
+    });
+    expect(clear).toBeVisible();
+
+    // And pressing it really does put every control back, so the offer is not
+    // a button that says the board is already clear.
+    await user.click(clear);
+    await waitFor(() =>
+      expect(
+        screen.getByRole('button', { name: EN['receptions.queue.period.today'] as string })
+      ).toHaveAttribute('aria-pressed', 'true')
+    );
+    expect(
+      screen.queryByRole('button', { name: EN['receptions.queue.clearFilters'] as string })
+    ).toBeNull();
+  });
+
+  it('names the period buttons as one group rather than five loose toggles', () => {
+    /*
+     * Without the role a screen reader announces five unrelated toggles and the
+     * word beside them as a stray line of text, so the operator hears "Today,
+     * pressed" with nothing saying today WHAT. The name comes from that same
+     * visible word, which is what stops the two drifting apart.
+     */
+    renderQueue();
+    const group = screen.getByRole('group', {
+      name: EN['receptions.queue.periodLabel'] as string,
+    });
+    for (const kind of ['today', 'yesterday', 'last7', 'beforeToday', 'custom']) {
+      expect(
+        within(group).getByRole('button', {
+          name: EN[`receptions.queue.period.${kind}`] as string,
+        })
+      ).toBeVisible();
+    }
+  });
+
+  it('offers the way back while the box holds only spaces', async () => {
+    // A term of spaces is not searched for, but it is text the operator can see
+    // in the box — and a board with no Clear leaves them to find it by hand.
+    const user = userEvent.setup();
+    listReceptions.mockResolvedValue(page([]));
+    renderQueue();
+    expect(await screen.findByText(EN['state.noResults.title'] as string)).toBeVisible();
+    const box = screen.getByLabelText(EN['receptions.queue.searchLabel'] as string);
+
+    await user.type(box, '   ');
+    const clear = await screen.findByRole('button', {
+      name: EN['receptions.queue.clearFilters'] as string,
+    });
+    await user.click(clear);
+    await waitFor(() => expect(box).toHaveValue(''));
+    expect(
+      screen.queryByRole('button', { name: EN['receptions.queue.clearFilters'] as string })
+    ).toBeNull();
   });
 
   it('invents no total, and offers Next only while the server says more exists', async () => {
@@ -513,6 +756,45 @@ describe('a branch changed in the header re-targets the board', () => {
     expect(screen.queryByText('R-0001')).toBeNull();
   });
 
+  it('issues NO read for the branch it just left', async () => {
+    /*
+     * The criteria are derived from the working context during render, so they
+     * are the new branch's the moment the header moves. The key the hook
+     * FETCHED was the DEBOUNCED one and `version` was not debounced, so the
+     * request that went out carried the previous branch's criteria at the new
+     * version — one whole read for the branch the operator had just left,
+     * rendered under the new branch's heading until the debounce caught up.
+     *
+     * Asserted over every call, not the last: a superseded read still happened.
+     */
+    const user = userEvent.setup();
+    renderLtr(
+      inBranch(
+        <>
+          <BranchSwitch to={TEST_BRANCH.id} label="use main" />
+          <BranchSwitch to={OTHER_BRANCH.id} label="use second" />
+          <ReceptionQueueScreen locale="en" messages={en} canCreate />
+        </>,
+        { snapshot: branchSnapshot([TEST_BRANCH, OTHER_BRANCH]) }
+      )
+    );
+    await user.click(screen.getByRole('button', { name: 'use main' }));
+    await waitFor(() => expect(listReceptions).toHaveBeenCalled());
+
+    listReceptions.mockClear();
+    await user.click(screen.getByRole('button', { name: 'use second' }));
+    await waitFor(() => expect(listReceptions).toHaveBeenCalled());
+    // Waited past the debounce, so a late read for the old branch would have
+    // landed by now.
+    await new Promise((resolve) => setTimeout(resolve, 400));
+
+    const branches = listReceptions.mock.calls.map(
+      (call) => (call[0] as { branchId: string | null }).branchId
+    );
+    expect(branches).not.toContain(TEST_BRANCH.id);
+    expect(branches).toContain(OTHER_BRANCH.id);
+  });
+
   it('reads every branch of the company, and names the branch of each row, on all my branches', async () => {
     const user = userEvent.setup();
     listReceptions.mockResolvedValue(
@@ -537,6 +819,27 @@ describe('a branch changed in the header re-targets the board', () => {
     // And the period label names the clock the day was counted on, because
     // several branches have no single one.
     expect(screen.getByTestId('reception-period-label')).toHaveTextContent(TEST_BRANCH.name);
+  });
+
+  it('renders a branch it cannot name as an absence, never as an empty cell', async () => {
+    // The directory no longer publishes it — revoked between the read and the
+    // render. An empty cell reads as a rendering fault.
+    const user = userEvent.setup();
+    listReceptions.mockResolvedValue(
+      page([row({ branchId: '99999999-9999-4999-8999-999999999999' })])
+    );
+    renderLtr(
+      inBranch(
+        <>
+          <BranchSwitch to="all" label="use all" />
+          <ReceptionQueueScreen locale="en" messages={en} canCreate />
+        </>,
+        { snapshot: branchSnapshot([TEST_BRANCH, OTHER_BRANCH]) }
+      )
+    );
+    await user.click(screen.getByRole('button', { name: 'use all' }));
+    const table = await screen.findByRole('table');
+    expect(within(table).getAllByText('—').length).toBeGreaterThan(0);
   });
 });
 
@@ -587,20 +890,122 @@ describe('the day the board asks about is the day at the branch', () => {
     expect(endOfDay('Europe/London', '2026-03-29').toISOString()).toBe('2026-03-29T22:59:59.999Z');
   });
 
-  it('reads the calendar day a zone is on at an instant', () => {
-    // 23:30 UTC is already the next day in Riyadh and still the same day in
-    // London — the exact disagreement a browser-clock board would get wrong.
-    const instant = new Date('2026-09-22T23:30:00.000Z');
-    expect(dayIn('Asia/Riyadh', instant)).toBe('2026-09-23');
-    expect(dayIn('Europe/London', instant)).toBe('2026-09-23');
-    const morning = new Date('2026-09-22T00:30:00.000Z');
-    expect(dayIn('Asia/Riyadh', morning)).toBe('2026-09-22');
-    expect(dayIn('Europe/London', morning)).toBe('2026-09-22');
+  it('reads the calendar day a zone is on at an instant, and the two can disagree', () => {
+    /*
+     * The instant is chosen in JANUARY on purpose. In September London is on
+     * summer time (UTC+1) and 23:30 UTC is already the next day there too, so
+     * that instant proves nothing about the zone being read — it would pass
+     * against a helper that ignored the zone entirely and returned the UTC day.
+     *
+     * At 2026-01-15T22:30Z London is on UTC+0 and still on the 15th, while
+     * Riyadh is on UTC+3 and already on the 16th. That is exactly the
+     * disagreement a board reading the browser's clock gets wrong.
+     */
+    const evening = new Date('2026-01-15T22:30:00.000Z');
+    expect(dayIn('Asia/Riyadh', evening)).toBe('2026-01-16');
+    expect(dayIn('Europe/London', evening)).toBe('2026-01-15');
+    // And the other way at the start of a day: 21:30Z is already tomorrow in
+    // Riyadh whatever the season.
+    const summerEvening = new Date('2026-09-22T21:30:00.000Z');
+    expect(dayIn('Asia/Riyadh', summerEvening)).toBe('2026-09-23');
+    expect(dayIn('Europe/London', summerEvening)).toBe('2026-09-22');
   });
 
   it('moves whole calendar days, not fixed spans of milliseconds', () => {
     expect(addDays('2026-03-01', -1)).toBe('2026-02-28');
     expect(addDays('2026-12-31', 1)).toBe('2027-01-01');
     expect(addDays('2028-02-28', 1)).toBe('2028-02-29');
+  });
+});
+
+/* -------------------------------------------------------------------------- *
+ * Arriving from a figure counted over a period (Owner directive,
+ * `P1-32-PRE-OD-UX`)
+ *
+ * The dashboard counts visits over a period and links here. A link that landed
+ * on "today" whatever the figure covered would answer a different question from
+ * the one the reader clicked, so the period travels — and is checked on arrival,
+ * because an address is written by anybody.
+ * -------------------------------------------------------------------------- */
+
+describe('the reception board opens on the period the address names', () => {
+  beforeEach(() => {
+    PERMISSIONS = ['rec.reception.read'];
+  });
+
+  /** The props the ROUTE hands the board, for one address. */
+  async function routeProps(query: Record<string, string | string[]>) {
+    const tree = await ReceptionQueuePage({
+      params: Promise.resolve({ locale: 'en' }),
+      searchParams: Promise.resolve(query),
+    });
+    const props = propsCarrying(tree, 'initialPeriod');
+    expect(props, 'the route did not render the board').not.toBeNull();
+    return props as Record<string, unknown>;
+  }
+
+  it('passes a declared period through', async () => {
+    expect((await routeProps({ period: 'last7' }))['initialPeriod']).toEqual({
+      kind: 'last7',
+      from: '',
+      to: '',
+    });
+  });
+
+  it('passes a chosen range through with both its days', async () => {
+    expect(
+      (await routeProps({ period: 'custom', from: '2026-09-01', to: '2026-09-10' }))[
+        'initialPeriod'
+      ]
+    ).toEqual({ kind: 'custom', from: '2026-09-01', to: '2026-09-10' });
+  });
+
+  it('drops a period it does not declare', async () => {
+    for (const period of ['last30', 'Today', 'week']) {
+      expect((await routeProps({ period }))['initialPeriod']).toBeUndefined();
+    }
+  });
+
+  it('drops a chosen range that is inverted, incomplete or not a calendar day', async () => {
+    const bad: readonly Record<string, string>[] = [
+      { period: 'custom', from: '2026-09-10', to: '2026-09-01' },
+      { period: 'custom', from: '2026-09-01' },
+      { period: 'custom', to: '2026-09-01' },
+      { period: 'custom', from: 'yesterday', to: 'today' },
+      { period: 'custom', from: '2026-9-1', to: '2026-9-10' },
+      { period: 'custom' },
+    ];
+    for (const query of bad) {
+      expect((await routeProps(query))['initialPeriod'], JSON.stringify(query)).toBeUndefined();
+    }
+  });
+
+  it('reads one value from a repeated parameter rather than a list', async () => {
+    expect((await routeProps({ period: ['yesterday', 'last7'] }))['initialPeriod']).toEqual({
+      kind: 'yesterday',
+      from: '',
+      to: '',
+    });
+  });
+
+  it('reads the arriving period on first paint, not today', async () => {
+    const today = dayIn(ZONE);
+    renderQueue({ initialPeriod: { kind: 'last7', from: '', to: '' } });
+    await waitFor(() => expect(listReceptions).toHaveBeenCalledTimes(1));
+    expect(lastCall().filters).toEqual(rangeOfDays(ZONE, addDays(today, -6), today));
+  });
+
+  it('reads an arriving range, and shows its two days in the form', async () => {
+    renderQueue({ initialPeriod: { kind: 'custom', from: '2026-09-01', to: '2026-09-10' } });
+    await waitFor(() => expect(listReceptions).toHaveBeenCalledTimes(1));
+    expect(lastCall().filters).toEqual(rangeOfDays(ZONE, '2026-09-01', '2026-09-10'));
+    // The boxes agree with the list. An empty pair would invite the reader to
+    // "apply" a period they never asked for.
+    expect(
+      (screen.getByLabelText(EN['receptions.queue.fromDay'] as string) as HTMLInputElement).value
+    ).toBe('2026-09-01');
+    expect(
+      (screen.getByLabelText(EN['receptions.queue.toDay'] as string) as HTMLInputElement).value
+    ).toBe('2026-09-10');
   });
 });
