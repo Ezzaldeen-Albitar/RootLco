@@ -22,7 +22,7 @@ import { inventoryModule, type OpenInventoryCommitments } from '@/modules/invent
 // reception's port. The same shape as the inventory import above, and for the
 // same reason — the owning module answers for its own tables.
 import { receptionModule } from '@/modules/reception';
-import { iamDirectory } from '@/modules/iam';
+import { iamDirectory, iamOrganizationContext } from '@/modules/iam';
 import {
   JOB_HISTORY_ORDER,
   WORK_ORDER_HISTORY_ORDER,
@@ -740,10 +740,24 @@ export class WorkOrderService extends ApplicationService {
     // Resolved only when a bound was actually sent: otherwise it would narrow a
     // board nobody asked to narrow.
     const windowed = filter.completedFrom !== undefined || filter.completedTo !== undefined;
+    // "Every branch" is the company's LIVE branches, never every branch it ever
+    // had (Owner directive, P1-32-PRE-OD-UX). `undefined` is the route's
+    // `authorizedBranches` answer for a caller with no branch narrowing, and
+    // the resolver's narrowed arm already drops a retired branch; reading the
+    // company arm through the same live-branch list the dashboard's
+    // "all my branches" figures use keeps an order still standing in a retired
+    // branch out of both, so the figure and the page it links to agree. Read
+    // under the caller's own RLS, so it can only narrow.
+    const branchIds =
+      filter.branchIds ??
+      (await iamOrganizationContext().branches.listBranchesForCompany(db, filter.companyId)).map(
+        (branch) => branch.branchId
+      );
     const rows = await this.repository.listWorkOrders(
       db,
       {
         ...filter,
+        branchIds,
         terminalStates: catalogue.filter((state) => state.isTerminal).map((state) => state.code),
         ...(windowed
           ? {

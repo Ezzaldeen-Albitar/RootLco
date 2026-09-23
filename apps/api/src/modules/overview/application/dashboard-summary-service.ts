@@ -53,11 +53,19 @@
  * omitting it means "every branch of that company I am authorized in", which is
  * resolved rather than assumed:
  *
- *  1. `iamOrganizationContext().branches.listBranchesForCompany` returns the
- *     branches within the caller's RLS reach. That reach is the PERMISSION-BLIND union of every
- *     active grant (P1-18-A-01), so it is a starting set and never a decision;
- *  2. each candidate is then put to `iam.has_permission_in_scope` for
- *     `wo.work_order.read`, and only the branches that pass are counted;
+ *  1. the set is the one the work-order BOARD resolves for the same request,
+ *     through the same two steps, so an "all my branches" figure and the list
+ *     it links to cover the same branches (Owner directive, P1-32-PRE-OD-UX):
+ *     the pipeline's `authorizedBranches` seam (`resolveAuthorizedBranches`,
+ *     bound to this operation, whose only code is the board's
+ *     `wo.work_order.read`) decides it, one branch at a time, for a
+ *     branch-narrowed caller; and for a caller with no branch narrowing it
+ *     answers "the company", which both sides read as every LIVE branch of it
+ *     from `iamOrganizationContext().branches.listBranchesForCompany`;
+ *  2. a RETIRED branch is in neither set. The resolver's narrowed arm already
+ *     drops it (`deleted_at IS NULL`), and the company arm is read through the
+ *     same live-branch list on both sides, so an order still standing in a
+ *     retired branch is counted by neither the figure nor the list;
  *  3. a NAMED `branchId` goes through `authorizeScope`, which raises the uniform
  *     `ERR-IAM-001` — so an unauthorized branch is refused rather than quietly
  *     dropped, and the refusal never says whether the branch exists;
@@ -84,7 +92,11 @@
 import { ApplicationService } from '@/server/layering';
 import { AppFailure } from '@/server/errors/app-failure';
 import type { DbHandle } from '@/server/db/transaction';
-import { callerHoldsPermission, type ScopeAuthorizer } from '@/server/auth/authorization';
+import {
+  callerHoldsPermission,
+  type BranchScopeResolver,
+  type ScopeAuthorizer,
+} from '@/server/auth/authorization';
 import type { LocalDayPeriod } from '@/server/db/period';
 import { iamOrganizationContext, type BranchContextRow } from '@/modules/iam';
 import { workOrderModule } from '@/modules/work-order';
@@ -225,13 +237,18 @@ export class DashboardSummaryService extends ApplicationService {
    * transaction. It is used for the named-branch case rather than a bare
    * `callerHoldsPermission`, so the refusal carries the operation's declared
    * codes and is raised inside the transaction that would have read the rows.
+   *
+   * `authorizedBranches` is the same pipeline's `resolveAuthorizedBranches`,
+   * bound to this operation — the seam the work-order board resolves its own
+   * all-branches set with — and is used when no branch is named.
    */
   async summary(
     db: DbHandle,
     query: DashboardSummaryQuery,
-    authorizeScope: ScopeAuthorizer
+    authorizeScope: ScopeAuthorizer,
+    authorizedBranches: BranchScopeResolver
   ): Promise<DashboardSummaryView> {
-    const branches = await this.resolveBranches(db, query, authorizeScope);
+    const branches = await this.resolveBranches(db, query, authorizeScope, authorizedBranches);
     const branchIds = branches.map((branch) => branch.branchId);
     const scope = { companyId: query.companyId, branchIds };
 
@@ -325,7 +342,8 @@ export class DashboardSummaryService extends ApplicationService {
   private async resolveBranches(
     db: DbHandle,
     query: DashboardSummaryQuery,
-    authorizeScope: ScopeAuthorizer
+    authorizeScope: ScopeAuthorizer,
+    authorizedBranches: BranchScopeResolver
   ): Promise<readonly BranchContextRow[]> {
     // `iamOrganizationContext` and NOT `iamModule`: the organizational root is
     // provider-free, so reading a branch's timezone cannot make this read depend
@@ -350,14 +368,15 @@ export class DashboardSummaryService extends ApplicationService {
       return [branch];
     }
 
-    const reachable = await branches.listBranchesForCompany(db, query.companyId);
-    const authorized: BranchContextRow[] = [];
-    for (const branch of reachable) {
-      // Sequential and not `Promise.all`: this evaluates the deployed protected
-      // function once per branch on ONE connection, and a company's branch count
-      // is the size of the organisation rather than of its trading.
-      if (await callerHoldsPermission(db, WORK_ORDER_READ, branch)) authorized.push(branch);
-    }
+    // The board's own resolution, step for step (see the module note): the
+    // seam decides a narrowed caller's branches and refuses one holding none;
+    // `undefined` means the company, read as its LIVE branches — the list the
+    // board reads for the same answer. The live list is read either way because
+    // it carries the zone and the stable name order the figures are cut in.
+    const narrowed = await authorizedBranches(query.companyId);
+    const live = await branches.listBranchesForCompany(db, query.companyId);
+    const authorized =
+      narrowed === undefined ? live : live.filter((branch) => narrowed.includes(branch.branchId));
     if (authorized.length === 0) {
       throw new AppFailure('ERR-IAM-001', {
         safeDetails: { requiredPermissions: [WORK_ORDER_READ] },

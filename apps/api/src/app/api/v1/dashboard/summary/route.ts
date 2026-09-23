@@ -27,10 +27,13 @@
  * Omitting it cannot be left to RLS. `app.branch_ids` is the union of every
  * active grant regardless of which permission carries it (P1-18-A-01), so a
  * caller holding `wo.work_order.read` in one branch and any grant at all in a
- * second would otherwise be answered for both. The service therefore reads the
- * company's reachable branches, puts each one to `iam.has_permission_in_scope`
- * for the declared code, and counts only those — refusing outright when none
- * passes rather than answering an unauthorized caller with zeros.
+ * second would otherwise be answered for both. The service therefore resolves
+ * the set through the handler's `authorizedBranches` seam — the one the
+ * work-order board resolves its own all-branches page with, which puts each
+ * candidate branch to `iam.has_permission_in_scope` for the declared code —
+ * and counts only those, refusing outright when none passes rather than
+ * answering an unauthorized caller with zeros. A caller with no branch
+ * narrowing is answered for the company's LIVE branches, as the board is.
  *
  * ## The period is a calendar period in the branch's own zone
  *
@@ -93,7 +96,7 @@ export async function GET(request: Request): Promise<Response> {
   return handleOperation(
     DASHBOARD_SUMMARY_OPERATION,
     request,
-    async ({ db, authorizeScope }) => {
+    async ({ db, authorizeScope, authorizedBranches }) => {
       const query = parseOrFail(Query, raw, 'query');
       return {
         body: await overviewModule().dashboard.summary(
@@ -105,7 +108,8 @@ export async function GET(request: Request): Promise<Response> {
             ...(query.from === undefined ? {} : { from: query.from }),
             ...(query.to === undefined ? {} : { to: query.to }),
           },
-          authorizeScope
+          authorizeScope,
+          authorizedBranches
         ),
       };
     },
