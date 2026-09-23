@@ -321,17 +321,66 @@ otp_expiry = 3600
 #
 # The key names are the ones this pinned CLI defines for the block (enabled,
 # host, port, user, pass, admin_email, sender_name).
+#
+# WHICH EMAIL SYSTEM THIS IS. This block configures ONE of the two, and they are
+# different questions with different owners:
+#
+#   1. Authentication email — the identity service's own account mail:
+#      confirmation, recovery, invitation. That is what every key below affects,
+#      and it is the only thing they affect.
+#   2. Application notification email — the product's own notification
+#      capability. It is a separate subsystem behind the `MessageProvider` port
+#      in `apps/api/src/modules/shared-services/provider/message-provider.ts`,
+#      selected by `NOTIFICATION_PROVIDER`, whose default `unconfigured` REFUSES
+#      to deliver rather than pretending. No production adapter exists and none
+#      is claimed; the provider choice is the open Owner decision OD-02 in
+#      `docs/phase-1/phase-1-15/open-decisions.md`. Turning the flag below to
+#      `true` gives that subsystem no outbound path whatsoever.
+#
+# WHICH RELAY. The Owner selected the mail service on the `rootlco.com` hosting
+# account (2026-09-23), so the values the `.env` is expected to carry are host
+# `smtp.hostinger.com`, the COMPLETE mailbox address as the username, that
+# mailbox's own password, an address the mailbox is authorised to send as, and
+# the sender display name `RootLco`. Nothing in this repository enforces or
+# depends on that choice: the keys below are references, this file names no
+# provider in a value, and `scripts/dev/check-smtp.mjs` contains no
+# provider-specific logic of any kind. The account's own email section is the
+# only authority on the settings it publishes, and whether the mailbox exists is
+# the Owner's to confirm.
+#
+# WHAT IS PROVEN BY THIS FILE: nothing on the far side of the machine.
+# `scripts/dev/check-smtp.mjs` reports four delivery stages, each separately:
+#
+#   Stage 1  Settings            — local, no network (--settings).
+#   Stage 2  Relay connection    — TCP and TLS: implicit TLS on 465, STARTTLS
+#                                  on 587 (--probe). No credential is sent.
+#   Stage 3  Authentication      — the relay accepts the credential.
+#   Stage 4  Message acceptance  — the relay accepts one message (--send).
+#
+# Two further checks are NOT PROVEN by that tool: inbox receipt (a person
+# confirms the message arrived) and the application's own recovery and
+# invitation mail through the auth service, which needs this flag `true` and a
+# restarted stack. None of the six is established while `enabled = false`, and
+# a pass at one stage is never evidence for the next.
 [auth.email.smtp]
 # The switch. Activation changes this line; choosing 587 changes the port too.
 enabled = false
-# Relay hostname.
+# Relay hostname. Expected `smtp.hostinger.com` per the selection above, read
+# from the untracked `.env` — no hostname is written into this file.
 host = "env(SMTP_HOST)"
-# Relay port, a literal for the reason given above. 465 is implicit TLS.
-# `check-smtp.mjs` also speaks 587 STARTTLS; whether THIS image does is unknown.
+# Relay port, a literal for the reason given above. 465 (implicit TLS) and 587
+# (STARTTLS) are the ports Hostinger publishes; no recorded probe run is kept in
+# the repository. Whether the pinned auth container performs STARTTLS on 587 is
+# NOT ESTABLISHED (the CLI hands it a host and a port and no variable naming a
+# transport), so 465 stays committed. `check-smtp.mjs --settings` refuses an
+# SMTP_PORT that differs from this literal, which is the port the container uses.
 port = 465
-# The account authenticating to the relay.
+# The account authenticating to the relay. On the selected provider this is the
+# COMPLETE mailbox address, not the local part.
 user = "env(SMTP_USER)"
-# The account's password, held only in the untracked root `.env`.
+# The account's password, from the process environment or one of the git-ignored
+# `.env` files the CLI reads, never from a tracked file. On the selected provider
+# it is the mailbox's ordinary password; nothing here trims or pattern-matches it.
 pass = "env(SMTP_PASS)"
 # The From address, the sender identity rather than the login in `user`: it
 # must be an address that mailbox is authorised to send as. Many relays rewrite
