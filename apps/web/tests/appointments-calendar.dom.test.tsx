@@ -50,9 +50,8 @@ const push = vi.fn();
 const refresh = vi.fn();
 vi.mock('next/navigation', () => ({ useRouter: () => ({ push, refresh }) }));
 
-const { AppointmentCalendarScreen } = await import(
-  '@/features/appointments/components/AppointmentCalendarScreen'
-);
+const { AppointmentCalendarScreen } =
+  await import('@/features/appointments/components/AppointmentCalendarScreen');
 
 const COMPANY = TEST_COMPANY.id;
 const BRANCH = TEST_BRANCH.id;
@@ -193,7 +192,9 @@ describe('the period control', () => {
       screen.getByRole('button', { name: EN['appointments.calendar.applyPeriod'] as string })
     );
 
-    expect(await screen.findByText(EN['appointments.calendar.rangeInverted'] as string)).toBeVisible();
+    expect(
+      await screen.findByText(EN['appointments.calendar.rangeInverted'] as string)
+    ).toBeVisible();
     // The control itself is marked, not only a sentence beside it — that is what
     // assistive technology announces and what focus-first-invalid finds.
     expect(to).toHaveAttribute('aria-invalid', 'true');
@@ -315,7 +316,9 @@ describe('the row an operator acts from', () => {
     expect(await screen.findByText('APT-0007')).toBeInTheDocument();
     const row = screen.getByRole('row', { name: /APT-0007/ });
     expect(within(row).getByText('Nadia Khoury')).toBeInTheDocument();
-    expect(within(row).getByText(EN['appointments.status.requested'] as string)).toBeInTheDocument();
+    expect(
+      within(row).getByText(EN['appointments.status.requested'] as string)
+    ).toBeInTheDocument();
     // No confirmed window yet — said as a fact, never as a blank.
     expect(
       within(row).getByText(EN['appointments.window.notConfirmed'] as string)
@@ -326,7 +329,9 @@ describe('the row an operator acts from', () => {
   it('opens an appointment from its row', async () => {
     const user = userEvent.setup();
     renderScreen();
-    await user.click(await screen.findByRole('button', { name: EN['appointments.calendar.open'] as string }));
+    await user.click(
+      await screen.findByRole('button', { name: EN['appointments.calendar.open'] as string })
+    );
     expect(push).toHaveBeenCalledWith(`/en/appointments/${ROW.id}`);
   });
 
@@ -340,7 +345,9 @@ describe('the row an operator acts from', () => {
   it('offers no booking without it', async () => {
     renderScreen({ canManage: false });
     await waitFor(() => expect(listAppointments).toHaveBeenCalled());
-    expect(screen.queryByRole('link', { name: EN['appointments.book.title'] as string })).toBeNull();
+    expect(
+      screen.queryByRole('link', { name: EN['appointments.book.title'] as string })
+    ).toBeNull();
   });
 });
 
@@ -432,7 +439,9 @@ describe('the day queue', () => {
       screen.queryByRole('link', { name: EN['appointments.calendar.checkIn'] as string })
     ).toBeNull();
     // The row is still openable; only the arrival affordance is withdrawn.
-    expect(screen.getByRole('button', { name: EN['appointments.calendar.open'] as string })).toBeVisible();
+    expect(
+      screen.getByRole('button', { name: EN['appointments.calendar.open'] as string })
+    ).toBeVisible();
   });
 
   it('says "Check in", never "Confirm" — there is no confirm operation', () => {

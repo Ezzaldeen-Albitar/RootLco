@@ -188,11 +188,7 @@ export function SetupScreen({
         units={units}
         canManage={canManage}
       />
-      <LocationsSection
-        messages={messages}
-        canManage={canManage}
-        canReadStock={canReadStock}
-      />
+      <LocationsSection messages={messages} canManage={canManage} canReadStock={canReadStock} />
       <ReorderLevelsSection
         locale={locale}
         messages={messages}

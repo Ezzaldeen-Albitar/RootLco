@@ -853,7 +853,9 @@ test.describe('the appointment calendar reads only for a named branch', () => {
       .click();
     await page.getByLabel(say('en', 'appointments.calendar.fromDay')).fill('2026-08-20');
     await page.getByLabel(say('en', 'appointments.calendar.toDay')).fill('2026-08-10');
-    await page.getByRole('button', { name: say('en', 'appointments.calendar.applyPeriod') }).click();
+    await page
+      .getByRole('button', { name: say('en', 'appointments.calendar.applyPeriod') })
+      .click();
 
     await expect(page.getByRole('main')).toContainText(
       say('en', 'appointments.calendar.rangeInverted')

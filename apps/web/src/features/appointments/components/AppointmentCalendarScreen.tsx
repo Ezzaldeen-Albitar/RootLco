@@ -223,7 +223,12 @@ export function AppointmentCalendarScreen({
       criteria: Asked,
       cursor: string | null
     ): Promise<ReadState<CursorPage<AppointmentListEntry>>> => {
-      const page = await listAppointments(criteria.scope, criteria.filters, INITIAL_REQUEST, cursor);
+      const page = await listAppointments(
+        criteria.scope,
+        criteria.filters,
+        INITIAL_REQUEST,
+        cursor
+      );
       if (page.status !== 'ok') return { status: page.status, correlationId: page.correlationId };
       return {
         status: 'ok',
@@ -254,7 +259,9 @@ export function AppointmentCalendarScreen({
       // Refused here rather than at the backend. The operation answers 422 for
       // an inverted range, and a 422 arriving as a page-level failure teaches
       // the operator nothing about which of the two boxes to change.
-      setRefusal(invalid({ toDay: 'appointments.calendar.rangeInverted' }, (refusal.attempt ?? 0) + 1));
+      setRefusal(
+        invalid({ toDay: 'appointments.calendar.rangeInverted' }, (refusal.attempt ?? 0) + 1)
+      );
       return;
     }
     setRefusal(IDLE);
@@ -567,44 +574,44 @@ export function AppointmentCalendarScreen({
           {search.table.status === 'expired' ? (
             <SessionExpiredState messages={messages} />
           ) : (
-          <SearchStates
-            messages={messages}
-            phase={search.phase}
-            correlationId={search.correlationId}
-            idle={
-              // Reached only while a custom period is half filled in. Nothing
-              // else here can be idle — the calendar reads on arrival.
-              <p className="py-6 text-center text-body text-text-secondary" lang={locale}>
-                {translate(messages, 'appointments.calendar.chooseBothDays')}
-              </p>
-            }
-            {...(search.phase === 'empty'
-              ? {
-                  onClearFilters: (
-                    <button
-                      type="button"
-                      onClick={clearFilters}
-                      className="rounded-md border border-border px-3 py-1.5 text-body text-text-primary transition-colors duration-fast ease-standard hover:bg-surface-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
-                    >
-                      {translate(messages, 'appointments.calendar.clearFilters')}
-                    </button>
-                  ),
-                }
-              : {})}
-            {...(search.phase === 'unavailable' || search.phase === 'failed'
-              ? {
-                  retry: (
-                    <button
-                      type="button"
-                      onClick={search.submit}
-                      className="rounded-md border border-border px-3 py-1.5 text-body text-text-primary transition-colors duration-fast ease-standard hover:bg-surface-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
-                    >
-                      {translate(messages, 'state.retry')}
-                    </button>
-                  ),
-                }
-              : {})}
-          />
+            <SearchStates
+              messages={messages}
+              phase={search.phase}
+              correlationId={search.correlationId}
+              idle={
+                // Reached only while a custom period is half filled in. Nothing
+                // else here can be idle — the calendar reads on arrival.
+                <p className="py-6 text-center text-body text-text-secondary" lang={locale}>
+                  {translate(messages, 'appointments.calendar.chooseBothDays')}
+                </p>
+              }
+              {...(search.phase === 'empty'
+                ? {
+                    onClearFilters: (
+                      <button
+                        type="button"
+                        onClick={clearFilters}
+                        className="rounded-md border border-border px-3 py-1.5 text-body text-text-primary transition-colors duration-fast ease-standard hover:bg-surface-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+                      >
+                        {translate(messages, 'appointments.calendar.clearFilters')}
+                      </button>
+                    ),
+                  }
+                : {})}
+              {...(search.phase === 'unavailable' || search.phase === 'failed'
+                ? {
+                    retry: (
+                      <button
+                        type="button"
+                        onClick={search.submit}
+                        className="rounded-md border border-border px-3 py-1.5 text-body text-text-primary transition-colors duration-fast ease-standard hover:bg-surface-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+                      >
+                        {translate(messages, 'state.retry')}
+                      </button>
+                    ),
+                  }
+                : {})}
+            />
           )}
 
           {search.phase === 'ready' ? (

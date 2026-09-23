@@ -12,11 +12,7 @@ import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic, translateWithValues } from '@/i18n/get-messages';
 
-import {
-  createWarrantyPolicy,
-  listWarrantyPolicies,
-  type PolicyWriteState,
-} from '../warranty-api';
+import { createWarrantyPolicy, listWarrantyPolicies, type PolicyWriteState } from '../warranty-api';
 import {
   MAX_POLICY_NAME,
   POLICY_CODE_FORMAT,

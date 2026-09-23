@@ -570,9 +570,7 @@ describe('CC-15 — the branch picker says which state it is in, and never offer
     listBranches.mockImplementation(() => new Promise((resolve) => (release = resolve)));
     withoutContext(permitted);
 
-    expect(
-      screen.getByText(EN['inventory.common.branchesLoading'] as string)
-    ).toBeVisible();
+    expect(screen.getByText(EN['inventory.common.branchesLoading'] as string)).toBeVisible();
     // THE finding: not a select with nothing in it, and not two boxes either.
     expect(levelBranch()).toBeNull();
     expect(screen.queryByLabelText(labelled('inventory.common.companyIdField'))).toBeNull();
@@ -604,9 +602,7 @@ describe('CC-15 — the branch picker says which state it is in, and never offer
   it('states a refusal as a refusal, and offers no retry that cannot work', async () => {
     listBranches.mockResolvedValue(denied());
     withoutContext(permitted);
-    expect(
-      await screen.findByText(EN['inventory.common.branchesRefused'] as string)
-    ).toBeVisible();
+    expect(await screen.findByText(EN['inventory.common.branchesRefused'] as string)).toBeVisible();
     expect(screen.queryByRole('button', { name: EN['state.retry'] as string })).toBeNull();
     expect(screen.queryByLabelText(labelled('inventory.common.companyIdField'))).toBeNull();
   });
@@ -626,7 +622,9 @@ describe('CC-15 — the branch picker says which state it is in, and never offer
     expect(
       await screen.findByText(EN['inventory.common.branchesUnavailable'] as string)
     ).toBeVisible();
-    await user.click(screen.getAllByRole('button', { name: EN['state.retry'] as string })[0] as HTMLElement);
+    await user.click(
+      screen.getAllByRole('button', { name: EN['state.retry'] as string })[0] as HTMLElement
+    );
     await waitFor(() => expect(levelBranch()).not.toBeNull());
   });
 
@@ -641,13 +639,7 @@ describe('CC-15 — the branch picker says which state it is in, and never offer
 
   it('explains the same absence in Arabic, right to left', async () => {
     renderInRtl(
-      <SetupScreen
-        locale="ar"
-        messages={ar}
-        canManage
-        canReadStock
-        canReadBranches={false}
-      />
+      <SetupScreen locale="ar" messages={ar} canManage canReadStock canReadBranches={false} />
     );
     expect(
       await screen.findByText(AR['inventory.common.branchesNotOffered'] as string)
@@ -932,9 +924,9 @@ describe('reorder levels', () => {
     expect(within(panel).getByLabelText(labelled('inventory.reorderLevels.set.level'))).toHaveValue(
       '4.000'
     );
-    expect(within(panel).getByLabelText(labelled('inventory.reorderLevels.set.branch'))).toHaveValue(
-      BRANCH_ID
-    );
+    expect(
+      within(panel).getByLabelText(labelled('inventory.reorderLevels.set.branch'))
+    ).toHaveValue(BRANCH_ID);
   });
 
   /**

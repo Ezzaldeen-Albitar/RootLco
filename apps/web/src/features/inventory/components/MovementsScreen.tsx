@@ -22,13 +22,7 @@ import {
   type StockMovement,
   type StockTarget,
 } from '../inventory-contract';
-import {
-  LocationPicker,
-  PRIMARY_BUTTON,
-  Qty,
-  UUID,
-  useLocations,
-} from './shared';
+import { LocationPicker, PRIMARY_BUTTON, Qty, UUID, useLocations } from './shared';
 import { BranchTargetForm } from './stock-operations';
 
 /**

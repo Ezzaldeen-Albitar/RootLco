@@ -340,7 +340,11 @@ export function BranchPairPicker({
   return (
     <div className="flex flex-col gap-1.5 sm:col-span-3">
       <p className="text-label font-medium text-text-primary">{label}</p>
-      <p role="status" data-testid="branch-pair-unavailable" className="text-supporting text-text-secondary">
+      <p
+        role="status"
+        data-testid="branch-pair-unavailable"
+        className="text-supporting text-text-secondary"
+      >
         {sentence}
       </p>
       {retry === null ? (

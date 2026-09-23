@@ -28,7 +28,12 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import en from '../src/i18n/messages/en.json';
 import ar from '../src/i18n/messages/ar.json';
 import type { ReactElement } from 'react';
-import { TEST_BRANCH, inBranch, renderLtr as renderInLtr, renderRtl as renderInRtl } from './render';
+import {
+  TEST_BRANCH,
+  inBranch,
+  renderLtr as renderInLtr,
+  renderRtl as renderInRtl,
+} from './render';
 
 /*
  * Every screen in this file is addressed by the WORKING CONTEXT: the branch it
@@ -808,5 +813,4 @@ describe('the route page', () => {
     await waitFor(() => expect(listOpeningBatches).toHaveBeenCalled());
     expect(listBranches).not.toHaveBeenCalled();
   });
-
 });

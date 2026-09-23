@@ -124,9 +124,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   PERMISSIONS = [];
   listVehicleSpecifications.mockImplementation(async () => listing([specification()]));
-  listItemCategories.mockResolvedValue(
-    okRead({ items: [], nextCursor: null, hasMore: false })
-  );
+  listItemCategories.mockResolvedValue(okRead({ items: [], nextCursor: null, hasMore: false }));
   listUnitsOfMeasure.mockImplementation(async () =>
     okRead({
       items: [{ id: UOM_ID, scope: 'platform', code: 'L', name: 'Litre', dimension: 'volume' }],

@@ -87,11 +87,7 @@ export default async function WarrantyListPage({
         crumbs={crumbs}
       />
       <PageBody>
-        <WarrantyListScreen
-          locale={locale}
-          messages={messages}
-          initialVehicleId={vehicleId}
-        />
+        <WarrantyListScreen locale={locale} messages={messages} initialVehicleId={vehicleId} />
       </PageBody>
     </>
   );

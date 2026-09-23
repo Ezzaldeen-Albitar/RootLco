@@ -121,7 +121,11 @@ export function DeliveryReadinessScreen({
           submitted={{ target: branch.target }}
         />
       ) : (
-        <RequiresConcreteBranch messages={messages} state={branch} testId="delivery-queue-blocked" />
+        <RequiresConcreteBranch
+          messages={messages}
+          state={branch}
+          testId="delivery-queue-blocked"
+        />
       )}
     </div>
   );

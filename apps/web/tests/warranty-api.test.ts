@@ -245,7 +245,7 @@ describe('the car and the customer arrive named', () => {
   it('carries both blocks off a list page unchanged', async () => {
     get.mockResolvedValue(ok({ items: [ROW], nextCursor: null, hasMore: false }));
 
-    const state = await listWarranties(TARGET, null, null);
+    const state = await listWarranties(TARGET, NO_FILTERS, null);
 
     expect(state.status).toBe('ok');
     // Field by field rather than a reference comparison: an identity check on the
@@ -290,7 +290,7 @@ describe('the car and the customer arrive named', () => {
       })
     );
 
-    const state = await listWarranties(TARGET, null, null);
+    const state = await listWarranties(TARGET, NO_FILTERS, null);
 
     expect(state.rows[0]?.vehicle.plate).toBeNull();
     expect(state.rows[0]?.vehicle.vin).toBeNull();

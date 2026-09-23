@@ -392,9 +392,7 @@ describe('the prices panel', () => {
      */
     const user = userEvent.setup();
     renderLtr(manage());
-    const branch = await screen.findByLabelText(
-      labelled('inventory.prices.set.branchField')
-    );
+    const branch = await screen.findByLabelText(labelled('inventory.prices.set.branchField'));
     expect(branch).toBeDisabled();
 
     await user.selectOptions(

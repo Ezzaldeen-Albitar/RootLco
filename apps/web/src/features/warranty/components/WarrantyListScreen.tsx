@@ -144,7 +144,8 @@ export function WarrantyListScreen({
       cursor: string | null
     ): Promise<ReadState<CursorPage<WarrantyListRow>>> => {
       const state = await listWarranties(criteria.scope, criteria.filters, cursor);
-      if (state.status !== 'ok') return { status: state.status, correlationId: state.correlationId };
+      if (state.status !== 'ok')
+        return { status: state.status, correlationId: state.correlationId };
       return {
         status: 'ok',
         data: { items: state.rows, nextCursor: state.nextCursor, hasMore: state.hasMore },

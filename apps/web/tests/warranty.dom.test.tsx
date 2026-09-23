@@ -266,10 +266,7 @@ function renderPanel(
 
 const submit = () => screen.getByRole('button', { name: EN['warranty.generate.submit'] as string });
 
-async function renderListPage(
-  search: Record<string, string> = {},
-  snapshot = branchSnapshot()
-) {
+async function renderListPage(search: Record<string, string> = {}, snapshot = branchSnapshot()) {
   const tree = await WarrantyListPage({
     params: Promise.resolve({ locale: 'en' }),
     searchParams: Promise.resolve(search),
@@ -286,8 +283,6 @@ async function renderRecordPage() {
   });
   return renderLtr(tree as React.ReactElement);
 }
-
-
 
 describe('both route pages decide before they read', () => {
   it('refuses the list without the read code, and asks the backend for nothing', async () => {
@@ -407,10 +402,7 @@ describe('the list reads the branch the operator is working in, on arrival', () 
     const user = userEvent.setup();
     await renderListPage();
     await waitFor(() => expect(listWarranties).toHaveBeenCalled());
-    await user.type(
-      screen.getByLabelText(EN['warranty.filter.searchLabel'] as string),
-      'ABC-12'
-    );
+    await user.type(screen.getByLabelText(EN['warranty.filter.searchLabel'] as string), 'ABC-12');
     await user.keyboard('{Enter}');
     await waitFor(() => expect(listWarranties.mock.calls.at(-1)?.[1]).toEqual({ q: 'ABC-12' }));
   });
@@ -1170,10 +1162,9 @@ describe('the words are the catalogue’s, in both reading directions', () => {
 
   it('shows the list in Arabic, including the state vocabulary, and reads on arrival', async () => {
     renderRtl(
-      inBranch(
-        <WarrantyListScreen locale="ar" messages={ar as never} initialVehicleId={null} />,
-        { locale: 'ar' }
-      )
+      inBranch(<WarrantyListScreen locale="ar" messages={ar as never} initialVehicleId={null} />, {
+        locale: 'ar',
+      })
     );
     expect(await screen.findByText(AR['warranty.status.issued'] as string)).toBeInTheDocument();
     expect(screen.getByText(AR['warranty.list.columnPolicy'] as string)).toBeInTheDocument();
