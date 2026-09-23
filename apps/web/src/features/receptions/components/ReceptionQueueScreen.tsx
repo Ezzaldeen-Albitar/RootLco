@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useId, useMemo, useState } from 'react';
 import { DataTable, type Column } from '@/components/data-table/DataTable';
 import { INITIAL_REQUEST } from '@/components/data-table/table-state';
 import { SelectField, TextField } from '@/components/forms/Field';
@@ -237,6 +237,9 @@ export function ReceptionQueueScreen({
    */
   const [status, setStatus] = useState<'' | `group:${ReceptionStatusGroup}` | ReceptionStatus>('');
   const [term, setTerm] = useState('');
+  // The period group is named by its visible label. A generated id rather than
+  // a written one, so two boards on one page could never share a name.
+  const periodLabelId = useId();
   /**
    * The filter form's own refusals, in the shape every form on this product
    * speaks. `attempt` is what moves the cursor to the first bad field and what
@@ -401,14 +404,15 @@ export function ReceptionQueueScreen({
    *
    * The draft days count even when the period is not custom: they are typed
    * text the operator can see, and a Clear that left them sitting there would
-   * be a Clear that did not.
+   * be a Clear that did not. The search box counts by the same rule, on its RAW
+   * text: a term of spaces asks nothing, but it is still text in the box.
    */
   const filtersApplied =
     period.kind !== TODAY_PERIOD.kind ||
     draftFrom !== '' ||
     draftTo !== '' ||
     status !== '' ||
-    trimmed !== '';
+    term !== '';
 
   /*
    * The two groups first, as whole answers, then the six codes underneath them
@@ -610,20 +614,17 @@ export function ReceptionQueueScreen({
           A GROUP, named by the label already beside it.
 
           The buttons are one control with one answer, and without the role a
-          screen reader announces six unrelated toggles whose shared heading is
+          screen reader announces five unrelated toggles whose shared heading is
           a stray line of text. `aria-labelledby` rather than a second
           `aria-label` so the name a reader hears and the word on the screen
           cannot drift apart. The work-order board's view chips do the same.
         */}
         <div
           role="group"
-          aria-labelledby="reception-queue-period-label"
+          aria-labelledby={periodLabelId}
           className="flex flex-wrap items-center gap-2"
         >
-          <span
-            id="reception-queue-period-label"
-            className="text-label font-medium text-text-primary"
-          >
+          <span id={periodLabelId} className="text-label font-medium text-text-primary">
             {translate(messages, 'receptions.queue.periodLabel')}
           </span>
           {PERIOD_KINDS.map((kind) => (

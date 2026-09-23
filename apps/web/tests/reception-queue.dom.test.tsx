@@ -596,9 +596,9 @@ describe('every non-answer reads as itself', () => {
     ).toBeNull();
   });
 
-  it('names the period buttons as one group rather than six loose toggles', () => {
+  it('names the period buttons as one group rather than five loose toggles', () => {
     /*
-     * Without the role a screen reader announces six unrelated toggles and the
+     * Without the role a screen reader announces five unrelated toggles and the
      * word beside them as a stray line of text, so the operator hears "Today,
      * pressed" with nothing saying today WHAT. The name comes from that same
      * visible word, which is what stops the two drifting apart.
@@ -614,6 +614,26 @@ describe('every non-answer reads as itself', () => {
         })
       ).toBeVisible();
     }
+  });
+
+  it('offers the way back while the box holds only spaces', async () => {
+    // A term of spaces is not searched for, but it is text the operator can see
+    // in the box — and a board with no Clear leaves them to find it by hand.
+    const user = userEvent.setup();
+    listReceptions.mockResolvedValue(page([]));
+    renderQueue();
+    expect(await screen.findByText(EN['state.noResults.title'] as string)).toBeVisible();
+    const box = screen.getByLabelText(EN['receptions.queue.searchLabel'] as string);
+
+    await user.type(box, '   ');
+    const clear = await screen.findByRole('button', {
+      name: EN['receptions.queue.clearFilters'] as string,
+    });
+    await user.click(clear);
+    await waitFor(() => expect(box).toHaveValue(''));
+    expect(
+      screen.queryByRole('button', { name: EN['receptions.queue.clearFilters'] as string })
+    ).toBeNull();
   });
 
   it('invents no total, and offers Next only while the server says more exists', async () => {
