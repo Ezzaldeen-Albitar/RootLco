@@ -56,6 +56,7 @@ const { default: PlatformLayout } = await import('@/app/[locale]/(platform)/layo
 const { PLATFORM_NAVIGATION } = await import('@/config/platform-navigation');
 const { NAVIGATION, flattenNavigation, hrefFor } = await import('@/config/navigation');
 const { NO_CAPABILITIES, landingRoute, visibleNavigation } = await import('@/lib/permissions');
+const { landingPath } = await import('@/features/authentication/api/landing');
 
 const USER = '2f1c5b3e-6a4d-4b21-9c8e-1f2a3b4c5d6e';
 
@@ -381,7 +382,7 @@ describe('where a signed-in tenant session lands', () => {
   });
 
   it('never lands on an entry the sidebar would not offer', () => {
-    for (const permissions of [[], ['crm.customer.read'], ['inv.stock.read'], ['iam.user.read']]) {
+    for (const permissions of [['crm.customer.read'], ['inv.stock.read'], ['iam.user.read']]) {
       const route = landingRoute({ permissions });
       const offered = visibleNavigation(NAVIGATION, { permissions }).flatMap((group) =>
         flattenNavigation([group])
@@ -395,8 +396,44 @@ describe('where a signed-in tenant session lands', () => {
     }
   });
 
-  it('never lands on the dashboard for a session with no capabilities', () => {
-    expect(landingRoute(NO_CAPABILITIES)?.key).toBe('gallery');
-    expect(landingRoute(null)?.key).toBe('gallery');
+  it('lands a session with no usable code on the workspace root, never on the design gallery', () => {
+    // The gallery is the one entry no permission gates, and `galleryEnabled()`
+    // makes it a 404 in production — so it is not a destination. With nothing
+    // else open, there is no landing, and the address is the workspace root,
+    // where the dashboard page states the refusal instead of redirecting.
+    expect(landingRoute(NO_CAPABILITIES)).toBeNull();
+    expect(landingRoute(null)).toBeNull();
+    expect(landingPath('en', [])).toBe('/en');
+    expect(landingPath('ar', [])).toBe('/ar');
+    // A code this client does not recognise opens nothing either.
+    expect(landingPath('en', ['not.a.real.code'])).toBe('/en');
+  });
+
+  it('skips an ungated entry even when it is drawn first', () => {
+    // Order is not what keeps the gallery out: moved to the top of the model,
+    // it is still passed over for the first screen the session's codes open.
+    const gallery = flattenNavigation().find((entry) => entry.key === 'gallery');
+    expect(gallery?.permission).toBeNull();
+    if (gallery === undefined) return;
+    const reordered = [
+      { key: 'first', labelKey: 'nav.group.work', items: [gallery] },
+      ...NAVIGATION,
+    ];
+    expect(landingRoute({ permissions: ['crm.customer.read'] }, reordered)?.key).toBe('walk-in');
+    expect(landingRoute(NO_CAPABILITIES, reordered)).toBeNull();
+  });
+
+  it('never lands on the gallery, whatever single code a session holds', () => {
+    const codes = new Set(
+      flattenNavigation()
+        .map((entry) => entry.permission)
+        .filter((code): code is string => code !== null)
+    );
+    for (const code of codes) {
+      const route = landingRoute({ permissions: [code] });
+      expect(route?.key, code).not.toBe('gallery');
+      // Either nothing, or an entry that very code opens.
+      expect(route === null || route.permission === code, code).toBe(true);
+    }
   });
 });

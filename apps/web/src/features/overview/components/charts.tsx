@@ -54,51 +54,147 @@ import { formatInteger } from '@/lib/format';
  *     `start` is the LEFT edge, `end` the RIGHT;
  *  2. the side is chosen here, per locale, from the coordinate — a label at the
  *     right margin is `end`, one at the left margin is `start`;
- *  3. the words inside are wrapped in a `<tspan unicode-bidi="plaintext">`, an
- *     isolate whose own direction comes from its first strong character. That
- *     is what keeps an Arabic label reading right to left — including one that
- *     carries a Latin code or a number — while the ANCHORING paragraph around it
- *     stays left-to-right. Arabic shaping does not depend on direction at all;
- *     only the ORDER of mixed runs does, and the isolate settles that.
+ *  3. the words inside are wrapped in a `<tspan>` carrying
+ *     `unicode-bidi: plaintext`, an isolate whose own direction comes from its
+ *     first strong character. That is what keeps an Arabic label reading right
+ *     to left — including one that carries a Latin code or a number — while
+ *     the ANCHORING paragraph around it stays left-to-right. Arabic shaping
+ *     does not depend on direction at all; only the ORDER of mixed runs does,
+ *     and the isolate settles that.
+ *
+ *     It is set TWICE, deliberately: as the `unicode-bidi` presentation
+ *     attribute and as the same CSS declaration in the element's `style`.
+ *     `unicode-bidi` is an SVG presentation attribute, but `plaintext` is a
+ *     CSS Writing Modes value that SVG 1.1's attribute grammar did not list, so
+ *     an engine that parses the attribute by the older grammar could drop it;
+ *     an inline declaration sets the CSS property directly and does not depend
+ *     on that parse. How each browser draws it is confirmed by eye in browser
+ *     QA — jsdom does no bidi layout.
  *
  * jsdom cannot lay out SVG, so the tests assert the attributes this rule
  * produces; how a browser draws them is confirmed by eye in browser QA.
  */
 
 /** The drawing's own coordinate space. Scaled to the container by the browser. */
-const WIDTH = 600;
+export const CHART_WIDTH = 600;
+const WIDTH = CHART_WIDTH;
 const LABEL_WIDTH = 190;
-const PLOT_WIDTH = WIDTH - LABEL_WIDTH - 10;
 const ROW_HEIGHT = 26;
 /** The inset of a label from the drawing's own edge. */
 const LABEL_INSET = 4;
-/** The font size a bar label is drawn at, in drawing units. */
-const LABEL_FONT_SIZE = 12;
-
+/** The font size a bar label and a bar count are drawn at, in drawing units. */
+export const LABEL_FONT_SIZE = 12;
+/** The width a bar label may occupy: the label column less an inset each side. */
+export const LABEL_TEXT_WIDTH = LABEL_WIDTH - LABEL_INSET * 2;
+/** The space between a bar's far end and the count written past it. */
+const COUNT_GAP = 6;
 /**
- * How many characters of a bar label fit the label column, ellipsis included.
+ * The room reserved past the LONGEST bar for its count — at least seven glyphs
+ * at the budget below ("999,999"), and wider whenever the widest count drawn
+ * needs more (`barPlotWidth`).
  *
- * A budget and not a measurement: nothing that renders the page on the server
- * or in a test can measure a glyph run, and `getComputedTextLength` after mount
- * would draw one frame of overflowing labels before correcting them. An average
- * glyph at 12 units is taken as 0.6 of the font size — generous for Arabic and
- * for most Latin text — over the column less both insets. A label that is cut
- * keeps its whole text in a `<title>` beside it and in the table alternative.
+ * Without it the longest bar ran to the drawing's far margin and the count
+ * written past it started at x = 596 in a 600-unit drawing: the largest figure
+ * on every bar chart was the one cut off.
  */
-const LABEL_MAX_CHARS = Math.floor((LABEL_WIDTH - LABEL_INSET * 2) / (LABEL_FONT_SIZE * 0.6));
+const COUNT_GUTTER = 64;
+
+/** Glyphs budgeted at a whole em. See `glyphEms`. */
+const WIDE_GLYPHS = new Set(['M', 'W', 'm', 'w', '@', '%', '…', '—']);
 
 /**
- * The label as drawn: whole if it fits the column, otherwise cut to the budget
- * with an ellipsis. Counted in code points rather than UTF-16 units, so a cut
- * never splits a character that is stored as two.
+ * A glyph's width budget, in ems — a CONSERVATIVE estimate by glyph class.
+ *
+ * Nothing that renders the page on the server or in a test can measure a glyph
+ * run, and `getComputedTextLength` after mount would draw one frame of
+ * overflowing text before correcting it. So text is budgeted rather than
+ * measured, and each budget is chosen at or above the typical advance of its
+ * class in common sans-serif faces:
+ *
+ *   - the widest Latin glyphs (`M`, `W`, `m`, `w`, `@`, `%`), the ellipsis, an
+ *     em dash, and East Asian wide characters: a whole em;
+ *   - any other uppercase letter: 0.8 em — capitals run wider than the 0.6 em
+ *     average the first budget assumed, which is how an all-caps label
+ *     overflowed its column;
+ *   - everything else, Arabic included: 0.72 em.
+ *
+ * The face actually drawn is confirmed by eye in browser QA.
  */
-export function fitLabel(label: string, maxChars: number = LABEL_MAX_CHARS): string {
-  const characters = Array.from(label);
-  if (characters.length <= maxChars) return label;
-  return `${characters
-    .slice(0, Math.max(maxChars - 1, 1))
-    .join('')
-    .trimEnd()}…`;
+function glyphEms(character: string): number {
+  if (WIDE_GLYPHS.has(character)) return 1;
+  const codePoint = character.codePointAt(0) ?? 0;
+  if (codePoint >= 0x2e80) return 1;
+  if (/\p{Lu}/u.test(character)) return 0.8;
+  return 0.72;
+}
+
+/**
+ * The budgeted width of a run of text at a font size, in drawing units. Counted
+ * in code points rather than UTF-16 units, so a character stored as two is
+ * budgeted once.
+ */
+export function estimatedTextWidth(text: string, fontSize: number = LABEL_FONT_SIZE): number {
+  return Array.from(text).reduce((sum, character) => sum + glyphEms(character), 0) * fontSize;
+}
+
+/**
+ * The label as drawn: whole if its budgeted width fits the column, otherwise
+ * cut — ellipsis included — to the longest prefix that does. A label that is
+ * cut keeps its whole text in a `<title>` beside it and in the table
+ * alternative.
+ */
+export function fitLabel(
+  label: string,
+  maxWidth: number = LABEL_TEXT_WIDTH,
+  fontSize: number = LABEL_FONT_SIZE
+): string {
+  if (estimatedTextWidth(label, fontSize) <= maxWidth) return label;
+  const room = maxWidth - estimatedTextWidth('…', fontSize);
+  const kept: string[] = [];
+  let used = 0;
+  for (const character of Array.from(label)) {
+    const width = glyphEms(character) * fontSize;
+    if (used + width > room) break;
+    kept.push(character);
+    used += width;
+  }
+  // At least one character, so a cut is never an ellipsis on its own.
+  const prefix = kept.length === 0 ? Array.from(label).slice(0, 1) : kept;
+  return `${prefix.join('').trimEnd()}…`;
+}
+
+/**
+ * The longest a bar may run in a horizontal bar chart, so that the count
+ * written past the longest bar lies wholly inside the drawing.
+ *
+ * The gutter is the wider of `COUNT_GUTTER` and the widest count actually drawn,
+ * so no figure — however many digits — can reach past the far inset.
+ */
+export function barPlotWidth(
+  counts: readonly string[],
+  fontSize: number = LABEL_FONT_SIZE
+): number {
+  const widest = counts.reduce(
+    (max, count) => Math.max(max, estimatedTextWidth(count, fontSize)),
+    0
+  );
+  const gutter = Math.max(COUNT_GUTTER, Math.ceil(widest));
+  return WIDTH - LABEL_WIDTH - COUNT_GAP - gutter - LABEL_INSET;
+}
+
+/**
+ * Where one horizontal bar, its label and its count sit, mirrored for Arabic.
+ * The ONE geometry both bar charts draw with, so neither can drift back to a
+ * count past the drawing's edge.
+ */
+function barRow(value: number, highest: number, plotWidth: number, rtl: boolean) {
+  const length = highest === 0 ? 0 : (value / highest) * plotWidth;
+  return {
+    length,
+    barX: rtl ? WIDTH - LABEL_WIDTH - length : LABEL_WIDTH,
+    labelX: rtl ? WIDTH - LABEL_INSET : LABEL_INSET,
+    countX: rtl ? WIDTH - LABEL_WIDTH - length - COUNT_GAP : LABEL_WIDTH + length + COUNT_GAP,
+  };
 }
 
 /** Which physical side of the text sits at its `x`. See the anchoring rule. */
@@ -140,7 +236,9 @@ function ChartText({
       className={className}
     >
       {full === undefined || full === children ? null : <title>{full}</title>}
-      <tspan unicodeBidi="plaintext">{children}</tspan>
+      <tspan unicodeBidi="plaintext" style={{ unicodeBidi: 'plaintext' }}>
+        {children}
+      </tspan>
     </text>
   );
 }
@@ -288,6 +386,7 @@ export function StateBarChart({
   const total = rows.reduce((sum, row) => sum + row.count, 0);
   const highest = rows.reduce((max, row) => (row.count > max ? row.count : max), 0);
   const height = Math.max(rows.length * ROW_HEIGHT, ROW_HEIGHT);
+  const plotWidth = barPlotWidth(rows.map((row) => formatInteger(row.count, locale)));
 
   const table = (
     <FigureTable
@@ -350,10 +449,7 @@ export function StateBarChart({
         <Hatch id={hatchId} />
         {rows.map((row, index) => {
           const y = index * ROW_HEIGHT;
-          const length = highest === 0 ? 0 : (row.count / highest) * PLOT_WIDTH;
-          const barX = rtl ? WIDTH - LABEL_WIDTH - length : LABEL_WIDTH;
-          const labelX = rtl ? WIDTH - LABEL_INSET : LABEL_INSET;
-          const countX = rtl ? WIDTH - LABEL_WIDTH - length - 6 : LABEL_WIDTH + length + 6;
+          const { length, barX, labelX, countX } = barRow(row.count, highest, plotWidth, rtl);
           const wording = row.isTerminal ? `${row.label} — ${finished}` : row.label;
           return (
             <g key={row.code}>
@@ -631,6 +727,7 @@ export function WorkloadChart({
 
   const highest = rows.reduce((max, row) => (row.activeCount > max ? row.activeCount : max), 0);
   const height = Math.max(rows.length * ROW_HEIGHT, ROW_HEIGHT);
+  const plotWidth = barPlotWidth(rows.map((row) => formatInteger(row.activeCount, locale)));
 
   const table = (
     <FigureTable
@@ -670,10 +767,7 @@ export function WorkloadChart({
         </desc>
         {rows.map((row, index) => {
           const y = index * ROW_HEIGHT;
-          const length = highest === 0 ? 0 : (row.activeCount / highest) * PLOT_WIDTH;
-          const barX = rtl ? WIDTH - LABEL_WIDTH - length : LABEL_WIDTH;
-          const labelX = rtl ? WIDTH - LABEL_INSET : LABEL_INSET;
-          const countX = rtl ? WIDTH - LABEL_WIDTH - length - 6 : LABEL_WIDTH + length + 6;
+          const { length, barX, labelX, countX } = barRow(row.activeCount, highest, plotWidth, rtl);
           return (
             <g key={row.technicianId}>
               <ChartText

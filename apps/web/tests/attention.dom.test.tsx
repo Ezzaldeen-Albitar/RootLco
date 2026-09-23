@@ -6,6 +6,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import ar from '../src/i18n/messages/ar.json';
 import { PermissionDeniedState } from '@/components/states/States';
+import { flattenNavigation } from '@/config/navigation';
 import { formatMessage } from '@/i18n/get-messages';
 import {
   BranchSwitch,
@@ -115,6 +116,8 @@ vi.mock('@/features/authentication/api/session', () => ({
 
 const { AttentionScreen } = await import('@/features/attention/components/AttentionScreen');
 const { DashboardScreen } = await import('@/features/overview/components/DashboardScreen');
+const { CHART_WIDTH, LABEL_FONT_SIZE, LABEL_TEXT_WIDTH, estimatedTextWidth, fitLabel } =
+  await import('@/features/overview/components/charts');
 const { StockAlertIndicator } = await import('@/features/inventory/components/StockAlertIndicator');
 type RoutePage = (args: { params: Promise<Record<string, string>> }) => Promise<React.ReactNode>;
 const AttentionPage = (await import('@/app/[locale]/(dashboard)/attention/page'))
@@ -1598,17 +1601,79 @@ describe('the charts anchor their words to a side, whatever the document directi
     direction: text?.getAttribute('direction'),
   });
 
+  /**
+   * The physical extent of a count's text in drawing units, from its anchor:
+   * `start` grows rightwards from `x`, `end` leftwards. Budgeted by the same
+   * conservative estimate the chart lays out with, since jsdom measures nothing.
+   */
+  function extent(text: SVGTextElement | undefined): { left: number; right: number } {
+    const x = Number(text?.getAttribute('x'));
+    const width = estimatedTextWidth(text?.textContent ?? '', LABEL_FONT_SIZE);
+    return text?.getAttribute('text-anchor') === 'end'
+      ? { left: x - width, right: x }
+      : { left: x, right: x + width };
+  }
+
   it('puts a label at the left margin and its count past the bar, left to right', async () => {
     renderLtr(inBranch(<DashboardScreen locale="en" messages={messagesFor('en')} />));
     await screen.findByText('7');
 
     // Row one is "In progress", the longest bar (5 of 5): label at the left
-    // inset, count just past the bar's right end, both growing rightwards.
+    // inset, count just past the bar's right end, both growing rightwards —
+    // and the bar stops short of the far margin by the count gutter, so the
+    // count is inside the drawing rather than starting at its last 4 units.
     const [label, count] = stateChartTexts(EN['dashboard.byState.title'] as string);
     expect(geometry(label)).toEqual({ x: '4', anchor: 'start', direction: 'ltr' });
-    expect(geometry(count)).toEqual({ x: '596', anchor: 'start', direction: 'ltr' });
-    // The words sit in an isolate that takes its own direction from its text.
-    expect(label?.querySelector('tspan')?.getAttribute('unicode-bidi')).toBe('plaintext');
+    expect(geometry(count)).toEqual({ x: '532', anchor: 'start', direction: 'ltr' });
+    expect(extent(count).left).toBeGreaterThanOrEqual(0);
+    expect(extent(count).right).toBeLessThanOrEqual(CHART_WIDTH);
+    // The words sit in an isolate that takes its own direction from its text —
+    // as the presentation attribute AND as the CSS declaration.
+    const words = label?.querySelector('tspan');
+    expect(words?.getAttribute('unicode-bidi')).toBe('plaintext');
+    expect(words?.style.unicodeBidi).toBe('plaintext');
+  });
+
+  it('keeps the largest count wholly inside the drawing, in both directions', async () => {
+    // A figure with many digits on the longest bar of each bar chart: the
+    // gutter widens to fit it, so it can never be clipped by the viewBox.
+    readDashboardSummary.mockResolvedValue(
+      okRead(
+        dashboardSummary({
+          workOrdersByState: figure([
+            { state: 'in_progress', label: 'In progress', count: 1234567, isTerminal: false },
+            { state: 'awaiting_parts', label: 'Waiting for parts', count: 3, isTerminal: false },
+          ]),
+          technicianWorkload: figure([
+            { technicianId: 'tech-1', displayName: 'Technician', activeCount: 9876543 },
+            { technicianId: 'tech-2', displayName: 'Second', activeCount: 1 },
+          ]),
+        })
+      )
+    );
+    for (const [render, locale] of [
+      [renderLtr, 'en'],
+      [renderRtl, 'ar'],
+    ] as const) {
+      window.localStorage.clear();
+      const { unmount } = render(
+        inBranch(<DashboardScreen locale={locale} messages={messagesFor(locale)} />, { locale })
+      );
+      const messages = locale === 'en' ? EN : AR;
+      for (const headingKey of ['dashboard.byState.title', 'dashboard.workload.title']) {
+        // The drawing appears once the read has answered.
+        const [, count] = await waitFor(() => {
+          const texts = stateChartTexts(messages[headingKey] as string);
+          expect(texts.length).toBeGreaterThan(1);
+          return texts;
+        });
+        const where = `${locale} ${headingKey}`;
+        expect(count?.textContent?.length, where).toBeGreaterThan(6);
+        expect(extent(count).left, where).toBeGreaterThanOrEqual(0);
+        expect(extent(count).right, where).toBeLessThanOrEqual(CHART_WIDTH);
+      }
+      unmount();
+    }
   });
 
   it('mirrors both to the other side in Arabic, with the anchor naming the RIGHT edge', async () => {
@@ -1623,7 +1688,11 @@ describe('the charts anchor their words to a side, whatever the document directi
     // and the label would have hung off the drawing.
     const [label, count] = stateChartTexts(AR['dashboard.byState.title'] as string);
     expect(geometry(label)).toEqual({ x: '596', anchor: 'end', direction: 'ltr' });
-    expect(geometry(count)).toEqual({ x: '4', anchor: 'end', direction: 'ltr' });
+    // The count ends 68 units from the left edge — the mirror of 532 — so the
+    // whole of it is drawn, rather than ending at x = 4 and running off.
+    expect(geometry(count)).toEqual({ x: '68', anchor: 'end', direction: 'ltr' });
+    expect(extent(count).left).toBeGreaterThanOrEqual(0);
+    expect(extent(count).right).toBeLessThanOrEqual(CHART_WIDTH);
   });
 
   it('cuts a label that cannot fit the label column, and keeps the whole of it', async () => {
@@ -1660,6 +1729,48 @@ describe('the charts anchor their words to a side, whatever the document directi
       within(section).getByRole('button', { name: EN['dashboard.chart.showTable'] as string })
     );
     expect(within(within(section).getByRole('table')).getByText(long)).toBeTruthy();
+  });
+
+  it('cuts an all-capitals label to the column, however wide its glyphs run', async () => {
+    const shouted = 'WAITING FOR THE INSURANCE ASSESSOR TO CALL BACK';
+    readDashboardSummary.mockResolvedValue(
+      okRead(
+        dashboardSummary({
+          workOrdersByState: figure([
+            { state: 'awaiting_assessor', label: shouted, count: 2, isTerminal: false },
+          ]),
+        })
+      )
+    );
+    renderLtr(inBranch(<DashboardScreen locale="en" messages={messagesFor('en')} />));
+    await screen.findByText('7');
+
+    const [label] = stateChartTexts(EN['dashboard.byState.title'] as string);
+    const drawn = label?.querySelector('tspan')?.textContent ?? '';
+    expect(drawn.endsWith('…')).toBe(true);
+    expect(shouted.startsWith(drawn.slice(0, -1))).toBe(true);
+    // Within the column by the conservative budget...
+    expect(estimatedTextWidth(drawn, LABEL_FONT_SIZE)).toBeLessThanOrEqual(LABEL_TEXT_WIDTH);
+    // ...and fewer characters than the old 0.6-em average would have kept
+    // (25), which is what let a line of capitals run into the bars.
+    expect(Array.from(drawn).length).toBeLessThan(25);
+    expect(label?.querySelector('title')?.textContent).toBe(shouted);
+  });
+
+  it('budgets wide glyphs, capitals and ordinary letters apart', () => {
+    // A run of the widest glyphs is cut sooner than capitals, and capitals
+    // sooner than lower case, and every cut fits the column.
+    const cut = (text: string) => fitLabel(text);
+    const wide = cut('W'.repeat(40));
+    const capitals = cut('H'.repeat(40));
+    const lower = cut('h'.repeat(40));
+    expect(wide.length).toBeLessThan(capitals.length);
+    expect(capitals.length).toBeLessThan(lower.length);
+    for (const drawn of [wide, capitals, lower]) {
+      expect(estimatedTextWidth(drawn, LABEL_FONT_SIZE)).toBeLessThanOrEqual(LABEL_TEXT_WIDTH);
+    }
+    // A label within the budget is returned as it is.
+    expect(cut('In progress')).toBe('In progress');
   });
 
   it('leaves a label that fits exactly as it is, with no second copy', async () => {
@@ -1700,5 +1811,43 @@ describe('the dashboard page lands a reader somewhere they can work', () => {
 
     PERMISSIONS = ['crm.customer.read'];
     expect(await landing()).toBe('/en/reception/walk-in');
+  });
+
+  it('refuses a session with no usable code on the page itself, sending it nowhere', async () => {
+    // Not to the design gallery (a 404 in production), and not back to this
+    // page: no redirect at all, and the refusal is stated here.
+    for (const permissions of [[], ['not.a.real.code']]) {
+      PERMISSIONS = permissions;
+      expect(await landing(), permissions.join(',')).toBeNull();
+      const page = await DashboardPage({ params: Promise.resolve({ locale: 'en' }) });
+      expect(rendersType(page, PermissionDeniedState), permissions.join(',')).toBe(true);
+      expect(rendersType(page, DashboardScreen), permissions.join(',')).toBe(false);
+    }
+  });
+
+  it('gates on exactly the code its own navigation entry names', async () => {
+    const entry = flattenNavigation().find((item) => item.href === '/');
+    const code = entry?.permission ?? null;
+    expect(code).not.toBeNull();
+
+    // That code alone opens the page...
+    PERMISSIONS = code === null ? [] : [code];
+    expect(await landing()).toBeNull();
+    const page = await DashboardPage({ params: Promise.resolve({ locale: 'en' }) });
+    expect(rendersType(page, DashboardScreen)).toBe(true);
+
+    // ...and every OTHER code the navigation names does not: the page sends the
+    // session on to a real screen, never to itself and never to the root.
+    PERMISSIONS = [
+      ...new Set(
+        flattenNavigation()
+          .map((item) => item.permission)
+          .filter((other): other is string => other !== null && other !== code)
+      ),
+    ];
+    const elsewhere = await landing();
+    expect(elsewhere).not.toBeNull();
+    expect(elsewhere).not.toBe('/en');
+    expect(elsewhere).not.toBe('/en/gallery');
   });
 });

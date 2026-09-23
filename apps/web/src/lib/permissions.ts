@@ -73,7 +73,15 @@ export function isVisible(
  * actually use, instead of to a page that could only refuse it. "Can open" is
  * the sidebar's own rule — `visibleNavigation`, then the entries that render as
  * links (`navigationLinks`, expanded) — so the landing can never be a screen
- * the sidebar does not offer. `null` only when the model offers nothing at all.
+ * the sidebar does not offer.
+ *
+ * Only WORKSPACE destinations count: an entry no permission gates is a
+ * development tool (the design gallery, which `galleryEnabled()` answers with a
+ * 404 in production), not a screen of the product, so it is never a landing —
+ * a session whose codes open nothing else would otherwise be sent to a page
+ * that does not exist. `null` when no workspace screen is open to the session,
+ * which `landingPath` turns into the workspace root, where the dashboard page
+ * states the refusal.
  *
  * The Platform Owner Console is not in this model and is not decided here: a
  * platform operator has no tenant session, and `destinationAfterSignIn` routes
@@ -83,7 +91,22 @@ export function landingRoute(
   capabilities: ActorCapabilities | null | undefined,
   groups: readonly NavigationGroup[] = NAVIGATION
 ): NavigationItem | null {
-  return navigationLinks(visibleNavigation(groups, capabilities), false)[0] ?? null;
+  return (
+    navigationLinks(visibleNavigation(groups, capabilities), false).find(isWorkspaceDestination) ??
+    null
+  );
+}
+
+/**
+ * Whether an entry is a screen of the workspace a session may be SENT to.
+ *
+ * A permission-gated entry is: the server decides every request behind it by
+ * that code. An ungated one is not — the only such entry is the design gallery,
+ * whose route is switched off by an environment flag and is a 404 wherever it
+ * is off.
+ */
+export function isWorkspaceDestination(item: NavigationItem): boolean {
+  return item.permission !== null;
 }
 
 /**

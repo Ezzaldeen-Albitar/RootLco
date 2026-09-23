@@ -13,8 +13,11 @@ import { landingRoute } from '@/lib/permissions';
  * place, for the two callers that decide a landing: the sign-in redirect and the
  * dashboard page.
  *
- * The workspace root when the navigation offers nothing at all, which leaves the
- * dashboard page to state the refusal.
+ * The workspace root when the navigation offers the session no workspace screen
+ * at all — a development-only entry such as the design gallery never counts, so
+ * a session with no usable code is never sent to a 404 — which leaves the
+ * dashboard page to state the refusal. The page redirects only to an address
+ * other than the root, so this cannot loop.
  */
 export function landingPath(locale: Locale, permissions: readonly string[]): string {
   const route = landingRoute({ permissions });
