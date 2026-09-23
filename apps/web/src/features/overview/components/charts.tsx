@@ -36,6 +36,33 @@ import { formatInteger } from '@/lib/format';
  * every bar and every label below is mirrored from the locale's direction, and
  * a bar in Arabic grows from the right edge towards the left exactly as the
  * text does.
+ *
+ * ## The anchoring rule — every `<text>` here is PHYSICALLY anchored
+ *
+ * `text-anchor="start"` does not mean "left". It means the start of the text in
+ * the element's inline direction, and `direction` is INHERITED — from
+ * `<html dir="rtl">` in Arabic. So a label written as "start at x = 4" in a
+ * right-to-left document hangs off the left edge of the drawing, and one
+ * written as "end at x = WIDTH - 4" hangs off the right. The mirroring above
+ * computed the right coordinates and the inherited direction then applied them
+ * to the wrong end of the text.
+ *
+ * The rule, applied through `ChartText` and nowhere else:
+ *
+ *  1. every `<text>` (and the `<svg>` itself) carries `direction="ltr"`, so an
+ *     anchor means one physical side in SVG space whatever the document says:
+ *     `start` is the LEFT edge, `end` the RIGHT;
+ *  2. the side is chosen here, per locale, from the coordinate — a label at the
+ *     right margin is `end`, one at the left margin is `start`;
+ *  3. the words inside are wrapped in a `<tspan unicode-bidi="plaintext">`, an
+ *     isolate whose own direction comes from its first strong character. That
+ *     is what keeps an Arabic label reading right to left — including one that
+ *     carries a Latin code or a number — while the ANCHORING paragraph around it
+ *     stays left-to-right. Arabic shaping does not depend on direction at all;
+ *     only the ORDER of mixed runs does, and the isolate settles that.
+ *
+ * jsdom cannot lay out SVG, so the tests assert the attributes this rule
+ * produces; how a browser draws them is confirmed by eye in browser QA.
  */
 
 /** The drawing's own coordinate space. Scaled to the container by the browser. */
@@ -43,6 +70,80 @@ const WIDTH = 600;
 const LABEL_WIDTH = 190;
 const PLOT_WIDTH = WIDTH - LABEL_WIDTH - 10;
 const ROW_HEIGHT = 26;
+/** The inset of a label from the drawing's own edge. */
+const LABEL_INSET = 4;
+/** The font size a bar label is drawn at, in drawing units. */
+const LABEL_FONT_SIZE = 12;
+
+/**
+ * How many characters of a bar label fit the label column, ellipsis included.
+ *
+ * A budget and not a measurement: nothing that renders the page on the server
+ * or in a test can measure a glyph run, and `getComputedTextLength` after mount
+ * would draw one frame of overflowing labels before correcting them. An average
+ * glyph at 12 units is taken as 0.6 of the font size — generous for Arabic and
+ * for most Latin text — over the column less both insets. A label that is cut
+ * keeps its whole text in a `<title>` beside it and in the table alternative.
+ */
+const LABEL_MAX_CHARS = Math.floor((LABEL_WIDTH - LABEL_INSET * 2) / (LABEL_FONT_SIZE * 0.6));
+
+/**
+ * The label as drawn: whole if it fits the column, otherwise cut to the budget
+ * with an ellipsis. Counted in code points rather than UTF-16 units, so a cut
+ * never splits a character that is stored as two.
+ */
+export function fitLabel(label: string, maxChars: number = LABEL_MAX_CHARS): string {
+  const characters = Array.from(label);
+  if (characters.length <= maxChars) return label;
+  return `${characters
+    .slice(0, Math.max(maxChars - 1, 1))
+    .join('')
+    .trimEnd()}…`;
+}
+
+/** Which physical side of the text sits at its `x`. See the anchoring rule. */
+type PhysicalAnchor = 'left' | 'right' | 'middle';
+
+/**
+ * A `<text>` whose anchor means a SIDE, whatever direction the document runs.
+ *
+ * `anchor` names the physical edge placed at `x`: `left` is `start` and
+ * `right` is `end` under the `direction="ltr"` this element always carries.
+ * `full` is the untruncated wording, given only when the drawn words were cut,
+ * and becomes the element's `<title>` so a pointer can still read it.
+ */
+function ChartText({
+  x,
+  y,
+  anchor,
+  fontSize,
+  className,
+  children,
+  full,
+}: {
+  readonly x: number;
+  readonly y: number;
+  readonly anchor: PhysicalAnchor;
+  readonly fontSize: number;
+  readonly className: string;
+  readonly children: string;
+  readonly full?: string;
+}) {
+  return (
+    <text
+      x={x}
+      y={y}
+      direction="ltr"
+      textAnchor={anchor === 'left' ? 'start' : anchor === 'right' ? 'end' : 'middle'}
+      fontSize={fontSize}
+      fill="currentColor"
+      className={className}
+    >
+      {full === undefined || full === children ? null : <title>{full}</title>}
+      <tspan unicodeBidi="plaintext">{children}</tspan>
+    </text>
+  );
+}
 
 /** The hatch every "second meaning" is drawn with, so colour is never alone. */
 function Hatch({ id }: { readonly id: string }) {
@@ -236,6 +337,7 @@ export function StateBarChart({
         viewBox={`0 0 ${String(WIDTH)} ${String(height)}`}
         width="100%"
         height={height}
+        direction="ltr"
         className="text-primary"
       >
         <title id={titleId}>{title}</title>
@@ -250,20 +352,22 @@ export function StateBarChart({
           const y = index * ROW_HEIGHT;
           const length = highest === 0 ? 0 : (row.count / highest) * PLOT_WIDTH;
           const barX = rtl ? WIDTH - LABEL_WIDTH - length : LABEL_WIDTH;
-          const labelX = rtl ? WIDTH - 4 : 4;
+          const labelX = rtl ? WIDTH - LABEL_INSET : LABEL_INSET;
           const countX = rtl ? WIDTH - LABEL_WIDTH - length - 6 : LABEL_WIDTH + length + 6;
+          const wording = row.isTerminal ? `${row.label} — ${finished}` : row.label;
           return (
             <g key={row.code}>
-              <text
+              {/* The label column hugs the reading edge: right in Arabic. */}
+              <ChartText
                 x={labelX}
                 y={y + 15}
-                textAnchor={rtl ? 'end' : 'start'}
-                fontSize={12}
-                fill="currentColor"
+                anchor={rtl ? 'right' : 'left'}
+                fontSize={LABEL_FONT_SIZE}
                 className="text-text-primary"
+                full={wording}
               >
-                {row.isTerminal ? `${row.label} — ${finished}` : row.label}
-              </text>
+                {fitLabel(wording)}
+              </ChartText>
               <rect
                 x={barX}
                 y={y + 5}
@@ -273,16 +377,16 @@ export function StateBarChart({
                 fill={row.isTerminal ? `url(#${hatchId})` : 'currentColor'}
                 className={row.isTerminal ? 'text-text-muted' : 'text-primary'}
               />
-              <text
+              {/* The count sits past the bar's far end, growing away from it. */}
+              <ChartText
                 x={countX}
                 y={y + 15}
-                textAnchor={rtl ? 'end' : 'start'}
-                fontSize={12}
-                fill="currentColor"
+                anchor={rtl ? 'right' : 'left'}
+                fontSize={LABEL_FONT_SIZE}
                 className="text-text-secondary"
               >
                 {formatInteger(row.count, locale)}
-              </text>
+              </ChartText>
             </g>
           );
         })}
@@ -412,6 +516,7 @@ export function TrendChart({
           viewBox={`0 0 ${String(WIDTH)} ${String(height)}`}
           width="100%"
           height={height}
+          direction="ltr"
           className="text-primary"
         >
           <title id={titleId}>{title}</title>
@@ -439,26 +544,24 @@ export function TrendChart({
             strokeWidth={1}
             className="text-border-strong"
           />
-          <text
-            x={rtl ? WIDTH - 4 : 4}
+          <ChartText
+            x={rtl ? WIDTH - LABEL_INSET : LABEL_INSET}
             y={plotTop + 8}
-            textAnchor={rtl ? 'end' : 'start'}
+            anchor={rtl ? 'right' : 'left'}
             fontSize={11}
-            fill="currentColor"
             className="text-text-secondary"
           >
             {formatInteger(highest, locale)}
-          </text>
-          <text
-            x={rtl ? WIDTH - 4 : 4}
+          </ChartText>
+          <ChartText
+            x={rtl ? WIDTH - LABEL_INSET : LABEL_INSET}
             y={plotBottom}
-            textAnchor={rtl ? 'end' : 'start'}
+            anchor={rtl ? 'right' : 'left'}
             fontSize={11}
-            fill="currentColor"
             className="text-text-secondary"
           >
             {formatInteger(0, locale)}
-          </text>
+          </ChartText>
           {rows.map((row, index) => {
             const slot = rtl ? axisStart - (index + 1) * step : axisStart + index * step;
             const openedHeight = highest === 0 ? 0 : (row.opened / highest) * plotHeight;
@@ -484,16 +587,15 @@ export function TrendChart({
                   className="text-text-secondary"
                 />
                 {index % labelEvery === 0 ? (
-                  <text
+                  <ChartText
                     x={slot + barWidth}
                     y={plotBottom + 14}
-                    textAnchor="middle"
+                    anchor="middle"
                     fontSize={10}
-                    fill="currentColor"
                     className="text-text-secondary"
                   >
                     {row.label}
-                  </text>
+                  </ChartText>
                 ) : null}
               </g>
             );
@@ -557,6 +659,7 @@ export function WorkloadChart({
         viewBox={`0 0 ${String(WIDTH)} ${String(height)}`}
         width="100%"
         height={height}
+        direction="ltr"
         className="text-primary"
       >
         <title id={titleId}>{title}</title>
@@ -569,20 +672,20 @@ export function WorkloadChart({
           const y = index * ROW_HEIGHT;
           const length = highest === 0 ? 0 : (row.activeCount / highest) * PLOT_WIDTH;
           const barX = rtl ? WIDTH - LABEL_WIDTH - length : LABEL_WIDTH;
-          const labelX = rtl ? WIDTH - 4 : 4;
+          const labelX = rtl ? WIDTH - LABEL_INSET : LABEL_INSET;
           const countX = rtl ? WIDTH - LABEL_WIDTH - length - 6 : LABEL_WIDTH + length + 6;
           return (
             <g key={row.technicianId}>
-              <text
+              <ChartText
                 x={labelX}
                 y={y + 15}
-                textAnchor={rtl ? 'end' : 'start'}
-                fontSize={12}
-                fill="currentColor"
+                anchor={rtl ? 'right' : 'left'}
+                fontSize={LABEL_FONT_SIZE}
                 className="text-text-primary"
+                full={row.label}
               >
-                {row.label}
-              </text>
+                {fitLabel(row.label)}
+              </ChartText>
               <rect
                 x={barX}
                 y={y + 5}
@@ -592,16 +695,15 @@ export function WorkloadChart({
                 fill="currentColor"
                 className="text-primary"
               />
-              <text
+              <ChartText
                 x={countX}
                 y={y + 15}
-                textAnchor={rtl ? 'end' : 'start'}
-                fontSize={12}
-                fill="currentColor"
+                anchor={rtl ? 'right' : 'left'}
+                fontSize={LABEL_FONT_SIZE}
                 className="text-text-secondary"
               >
                 {formatInteger(row.activeCount, locale)}
-              </text>
+              </ChartText>
             </g>
           );
         })}

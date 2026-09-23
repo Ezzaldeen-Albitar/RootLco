@@ -1,4 +1,10 @@
-import type { NavigationGroup, NavigationItem, PermissionCode } from '@/config/navigation';
+import {
+  NAVIGATION,
+  navigationLinks,
+  type NavigationGroup,
+  type NavigationItem,
+  type PermissionCode,
+} from '@/config/navigation';
 
 /**
  * Client-side permission evaluation — for USABILITY ONLY.
@@ -55,6 +61,29 @@ export function isVisible(
   item: NavigationItem
 ): boolean {
   return hasPermission(capabilities, item.permission);
+}
+
+/**
+ * Where a signed-in session should land: the FIRST entry of the navigation it
+ * can open, in the order the sidebar draws them (Owner directive,
+ * P1-32-PRE-OD-UX).
+ *
+ * The dashboard is that first entry, so a session holding its code lands on it
+ * exactly as before. A session without it is sent to the next screen it may
+ * actually use, instead of to a page that could only refuse it. "Can open" is
+ * the sidebar's own rule — `visibleNavigation`, then the entries that render as
+ * links (`navigationLinks`, expanded) — so the landing can never be a screen
+ * the sidebar does not offer. `null` only when the model offers nothing at all.
+ *
+ * The Platform Owner Console is not in this model and is not decided here: a
+ * platform operator has no tenant session, and `destinationAfterSignIn` routes
+ * that principal before this is ever consulted.
+ */
+export function landingRoute(
+  capabilities: ActorCapabilities | null | undefined,
+  groups: readonly NavigationGroup[] = NAVIGATION
+): NavigationItem | null {
+  return navigationLinks(visibleNavigation(groups, capabilities), false)[0] ?? null;
 }
 
 /**

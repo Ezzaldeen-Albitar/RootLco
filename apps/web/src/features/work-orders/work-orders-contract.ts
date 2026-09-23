@@ -245,8 +245,11 @@ export interface WorkOrderListCriteria {
    *   `assignedToMe`      a live job assignment for the caller's own technician
    *                       profile; a caller with no profile is answered an EMPTY
    *                       page rather than the whole board;
-   *   `awaitingParts`     `parts_forward_state` is anything but `none`;
-   *   `awaitingApproval`  an additional-work request is still `pending`;
+   *   `awaitingParts`     parts are `requested` or `reserved_elsewhere` (not yet
+   *                       in hand) on an order that is not in a terminal state —
+   *                       the same predicate the dashboard figure counts with;
+   *   `awaitingApproval`  a live work order has an additional-work request still
+   *                       `pending` — the same predicate the dashboard counts;
    *   `awaitingQuality`   a quality record's `overall_result` is `pending`;
    *   `readyForDelivery`  the state is closed and not a cancellation, resolved
    *                       from the live catalogue.

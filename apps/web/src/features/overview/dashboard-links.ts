@@ -4,6 +4,10 @@ import {
   WORK_ORDER_STATE_CODE_PATTERN,
   type WorkOrderBoardView,
 } from '@/features/work-orders/work-orders-contract';
+import {
+  ATTENTION_BRANCH_PARAM,
+  isAttentionBranchParam,
+} from '@/features/attention/attention-contract';
 import type { DashboardSummaryCriteria } from './overview-contract';
 
 /**
@@ -17,6 +21,11 @@ import type { DashboardSummaryCriteria } from './overview-contract';
  * was — and the narrowing travels as a VIEW NAME or a STATE CODE, never as
  * anything an operator typed.
  *
+ * The Owner rule this obeys: a link offered as "the list" must lead to a list
+ * that counts EXACTLY the figure's set — same predicate, same period, same
+ * branch scope. Where no such list exists the link is worded as a related
+ * destination instead (`attentionAreaLink`), or the figure is not a link.
+ *
  * ## What may travel in an address, and why only this
  *
  * `components/data-table/table-state.ts` states the rule this module obeys: an
@@ -25,8 +34,9 @@ import type { DashboardSummaryCriteria } from './overview-contract';
  * header of every outbound request. A view name is drawn from a list of nine
  * this repository declares; a state code is drawn from the workshop's own
  * vocabulary and is checked against the operation's own pattern before it is
- * believed; a period name is one of four. None of them is free text, none of
- * them names a person, a vehicle or an amount, and none of them is in
+ * believed; a period name is one of four; a branch is an identifier the reader's
+ * own working context already holds. None of them is free text, none of them
+ * names a person, a vehicle or an amount, and none of them is in
  * `FORBIDDEN_URL_KEYS`.
  *
  * The two boards read these back through their own validators. A name neither
@@ -76,7 +86,21 @@ export function receptionsPeriodLink(locale: Locale, criteria: DashboardSummaryC
   return `/${locale}/receptions?${query.toString()}`;
 }
 
-/** The Attention area, where a stock or allowance warning is acted on. */
-export function attentionAreaLink(locale: Locale): string {
-  return `/${locale}/attention`;
+/**
+ * The Attention area, where a stock or allowance warning is acted on.
+ *
+ * With a branch, the page opens with that branch already chosen — the branch the
+ * figure was counted for. Without one, or with a value that is not an
+ * identifier, it opens with the choice left to the reader.
+ *
+ * NOT "the list" behind the low-stock figure, and no caller may word it as
+ * one. The figure counts distinct ITEMS; the page lists FINDINGS — one per
+ * applicable reorder level, so one item may appear more than once — and caps
+ * its list. It is where those items are dealt with, which is what the link
+ * text says.
+ */
+export function attentionAreaLink(locale: Locale, branchId: string | null = null): string {
+  return isAttentionBranchParam(branchId)
+    ? `/${locale}/attention?${ATTENTION_BRANCH_PARAM}=${encodeURIComponent(branchId)}`
+    : `/${locale}/attention`;
 }

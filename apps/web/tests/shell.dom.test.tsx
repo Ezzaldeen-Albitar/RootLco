@@ -120,8 +120,24 @@ describe('sidebar', () => {
         collapsed={false}
       />
     );
-    expect(screen.getByRole('link', { name: 'Dashboard' })).toBeInTheDocument();
+    // The dashboard is gated on `wo.work_order.read` — the code its summary read
+    // is entitled by — so an actor holding nothing is not offered it either.
+    expect(screen.queryByRole('link', { name: 'Dashboard' })).toBeNull();
     expect(screen.queryByText('Billing')).toBeNull();
+
+    const groupsForFloorStaff = visibleNavigation(NAVIGATION, {
+      permissions: ['wo.work_order.read'],
+    });
+    renderLtr(
+      <Sidebar
+        locale="en"
+        messages={messages}
+        groups={groupsForFloorStaff}
+        pathname="/en"
+        collapsed={false}
+      />
+    );
+    expect(screen.getByRole('link', { name: 'Dashboard' })).toBeInTheDocument();
   });
 
   it('renders in Arabic under RTL', () => {

@@ -99,6 +99,9 @@ vi.mock('next/navigation', () => ({
   notFound: () => {
     throw new Error('notFound() was called');
   },
+  redirect: (target: string) => {
+    throw Object.assign(new Error('NEXT_REDIRECT'), { target });
+  },
 }));
 
 let PERMISSIONS: readonly string[] = [];
@@ -115,6 +118,12 @@ const { DashboardScreen } = await import('@/features/overview/components/Dashboa
 const { StockAlertIndicator } = await import('@/features/inventory/components/StockAlertIndicator');
 type RoutePage = (args: { params: Promise<Record<string, string>> }) => Promise<React.ReactNode>;
 const AttentionPage = (await import('@/app/[locale]/(dashboard)/attention/page'))
+  .default as unknown as RoutePage;
+type SearchedRoutePage = (args: {
+  params: Promise<Record<string, string>>;
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
+}) => Promise<React.ReactNode>;
+const DashboardPage = (await import('@/app/[locale]/(dashboard)/page'))
   .default as unknown as RoutePage;
 
 const lowStockRow = (over: Record<string, unknown> = {}) => ({
@@ -339,6 +348,65 @@ describe('the branch is chosen once and every stock card is addressed to it', ()
     await waitFor(() => expect(readCountDiscrepancyAlerts).toHaveBeenCalledWith(pair));
     await waitFor(() => expect(readUnusualConsumptionAlerts).toHaveBeenCalledWith(pair));
     await waitFor(() => expect(readAgedInTransitAlerts).toHaveBeenCalledWith(pair));
+  });
+
+  it('opens on the branch the address names, once its list holds it', async () => {
+    // The dashboard sends the branch its low-stock figure was counted for.
+    renderLtr(
+      <AttentionScreen
+        locale="en"
+        messages={messagesFor('en')}
+        canReadStock
+        canReadCapacity
+        canReadBranches
+        initialBranchId={BRANCH_ID}
+      />
+    );
+
+    const pair = { companyId: COMPANY_ID, branchId: BRANCH_ID };
+    await waitFor(() => expect(readLowStockAlerts).toHaveBeenCalledWith(pair));
+    expect(
+      ((await screen.findByLabelText(labelled('attention.target.branch'))) as HTMLSelectElement)
+        .value
+    ).toBe(BRANCH_ID);
+  });
+
+  it('ignores a branch its own list does not hold, and asks as it always did', async () => {
+    renderLtr(
+      <AttentionScreen
+        locale="en"
+        messages={messagesFor('en')}
+        canReadStock
+        canReadCapacity
+        canReadBranches
+        initialBranchId="99999999-9999-4999-8999-999999999999"
+      />
+    );
+    await screen.findByLabelText(labelled('attention.target.branch'));
+
+    expect(readLowStockAlerts).not.toHaveBeenCalled();
+    expect(
+      within(card('attention.lowStock.title')).getByText(EN['attention.state.noBranch'] as string)
+    ).toBeInTheDocument();
+  });
+
+  it('believes only an identifier-shaped branch from the address', async () => {
+    PERMISSIONS = ['inv.stock.read', 'org.branch.read'];
+    const page = AttentionPage as unknown as SearchedRoutePage;
+
+    const named = await page({
+      params: Promise.resolve({ locale: 'en' }),
+      searchParams: Promise.resolve({ branchId: BRANCH_ID }),
+    });
+    expect(findScreenProps(named)?.['initialBranchId']).toBe(BRANCH_ID);
+
+    for (const junk of ['brake pads', '../admin', '', ['a', 'b']]) {
+      const dropped = await page({
+        params: Promise.resolve({ locale: 'en' }),
+        searchParams: Promise.resolve({ branchId: junk }),
+      });
+      expect(findScreenProps(dropped)?.['initialBranchId'], String(junk)).toBeNull();
+    }
   });
 });
 
@@ -1144,13 +1212,50 @@ describe('every figure opens the list it counted', () => {
     });
   });
 
-  it('sends a stock figure to the page where stock is acted on', async () => {
+  it('sends a stock figure to that branch on the page where stock is acted on', async () => {
     const { container } = renderLtr(
       inBranch(<DashboardScreen locale="en" messages={messagesFor('en')} />)
     );
     await screen.findByText('7');
 
-    expect(tile(container, 'lowStock').getAttribute('href')).toBe('/en/attention');
+    // The branch the figure was counted for travels, so the page opens on it.
+    const stock = tile(container, 'lowStock');
+    expect(stock.getAttribute('href')).toBe(`/en/attention?branchId=${TEST_BRANCH.id}`);
+    // A RELATED destination, never "the list": the figure counts distinct items
+    // and the page lists findings, one per reorder level, capped.
+    expect(stock.textContent).toContain(EN['dashboard.card.reviewBranchStock']);
+    expect(stock.textContent).not.toContain(EN['dashboard.card.openTheList']);
+  });
+
+  it('claims no list for a stock figure counted across every branch', async () => {
+    const user = userEvent.setup();
+    const { container } = renderLtr(
+      inBranch(
+        <>
+          <BranchSwitch to="all" label="everywhere" />
+          <DashboardScreen locale="en" messages={messagesFor('en')} />
+        </>,
+        { snapshot: branchSnapshot([TEST_BRANCH, OTHER_BRANCH]) }
+      )
+    );
+    await user.click(screen.getByRole('button', { name: 'everywhere' }));
+    await screen.findByText('7');
+    expect(readDashboardSummary).toHaveBeenLastCalledWith(
+      { companyId: TEST_COMPANY.id, branchId: null },
+      { period: 'today' }
+    );
+
+    // No one branch to open on, and words that say the warnings are reviewed
+    // branch by branch rather than implying a company-wide list of this figure.
+    const stock = tile(container, 'lowStock');
+    expect(stock.getAttribute('href')).toBe('/en/attention');
+    expect(stock.textContent).toContain(EN['dashboard.card.reviewStockByBranch']);
+    expect(stock.textContent).not.toContain(EN['dashboard.card.openTheList']);
+    // The work-order figures still open their lists: the board reads the same
+    // authorized branch set the summary counted.
+    expect(tile(container, 'awaitingParts').textContent).toContain(
+      EN['dashboard.card.openTheList']
+    );
   });
 
   it('offers no link for a figure no list can be narrowed to', async () => {
@@ -1166,22 +1271,47 @@ describe('every figure opens the list it counted', () => {
   });
 
   it('puts what is waiting for someone beside where it is dealt with', async () => {
-    renderLtr(inBranch(<DashboardScreen locale="en" messages={messagesFor('en')} />));
+    readDashboardSummary.mockResolvedValue(
+      okRead(
+        dashboardSummary({
+          // Two ORDERS held up by five REQUESTS: different numbers on purpose,
+          // so the case can tell which one sits beside the link.
+          awaitingApproval: figure(2),
+          pendingApprovalsCount: figure(5),
+        })
+      )
+    );
+    const { container } = renderLtr(
+      inBranch(<DashboardScreen locale="en" messages={messagesFor('en')} />)
+    );
     await screen.findByText('7');
 
     const panel = screen
       .getByRole('heading', { name: EN['dashboard.actions.title'] as string })
       .closest('section') as HTMLElement;
+
+    // The link opens a list of WORK ORDERS, so the figure beside it is the
+    // number of work orders — never the number of requests.
+    const orders = container.querySelector('[data-actionable="approvalOrders"]') as HTMLElement;
+    expect(orders.textContent).toContain(EN['dashboard.actions.approvalOrders']);
+    expect(orders.querySelector('strong')?.textContent).toBe('2');
     expect(
-      within(panel)
+      within(orders)
         .getByRole('link', { name: EN['dashboard.actions.openApprovals'] as string })
         .getAttribute('href')
     ).toBe('/en/work-orders?view=awaitingApproval');
+
+    // The requests are said on their own line, and that line offers no link.
+    const requests = container.querySelector('[data-actionable="approvalRequests"]') as HTMLElement;
+    expect(requests.textContent).toContain(EN['dashboard.actions.approvals']);
+    expect(requests.querySelector('strong')?.textContent).toBe('5');
+    expect(within(requests).queryByRole('link')).toBeNull();
+
     expect(
       within(panel)
         .getAllByRole('link', { name: EN['dashboard.actions.openAttention'] as string })[0]
         ?.getAttribute('href')
-    ).toBe('/en/attention');
+    ).toBe(`/en/attention?branchId=${TEST_BRANCH.id}`);
   });
 });
 
@@ -1442,5 +1572,133 @@ describe('the dashboard answers for the period and the branch it is showing', ()
     for (const label of ['In progress', 'Closed']) {
       expect(screen.getByRole('link', { name: new RegExp(label) })).toBeTruthy();
     }
+  });
+});
+
+describe('the charts anchor their words to a side, whatever the document direction', () => {
+  beforeEach(() => {
+    window.localStorage.clear();
+    readDashboardSummary.mockReset();
+    readDashboardSummary.mockResolvedValue(okRead(dashboardSummary()));
+  });
+
+  /** The `<text>` elements of the state chart, in document order. */
+  function stateChartTexts(headingText: string): readonly SVGTextElement[] {
+    const heading = screen.getByRole('heading', { name: headingText });
+    const drawing = heading.closest('section')?.querySelector('svg');
+    if (!drawing) throw new Error('no state chart drawing');
+    expect(drawing.getAttribute('direction')).toBe('ltr');
+    return Array.from(drawing.querySelectorAll('text'));
+  }
+
+  /** x, anchor and direction of one text element — what jsdom CAN observe. */
+  const geometry = (text: SVGTextElement | undefined) => ({
+    x: text?.getAttribute('x'),
+    anchor: text?.getAttribute('text-anchor'),
+    direction: text?.getAttribute('direction'),
+  });
+
+  it('puts a label at the left margin and its count past the bar, left to right', async () => {
+    renderLtr(inBranch(<DashboardScreen locale="en" messages={messagesFor('en')} />));
+    await screen.findByText('7');
+
+    // Row one is "In progress", the longest bar (5 of 5): label at the left
+    // inset, count just past the bar's right end, both growing rightwards.
+    const [label, count] = stateChartTexts(EN['dashboard.byState.title'] as string);
+    expect(geometry(label)).toEqual({ x: '4', anchor: 'start', direction: 'ltr' });
+    expect(geometry(count)).toEqual({ x: '596', anchor: 'start', direction: 'ltr' });
+    // The words sit in an isolate that takes its own direction from its text.
+    expect(label?.querySelector('tspan')?.getAttribute('unicode-bidi')).toBe('plaintext');
+  });
+
+  it('mirrors both to the other side in Arabic, with the anchor naming the RIGHT edge', async () => {
+    renderRtl(
+      inBranch(<DashboardScreen locale="ar" messages={messagesFor('ar')} />, { locale: 'ar' })
+    );
+    await screen.findByRole('heading', { name: AR['dashboard.byState.title'] as string });
+    expect(document.documentElement.dir).toBe('rtl');
+
+    // `direction="ltr"` on the element is what makes `end` mean the right edge
+    // here; inherited from the rtl document it would have meant the left one,
+    // and the label would have hung off the drawing.
+    const [label, count] = stateChartTexts(AR['dashboard.byState.title'] as string);
+    expect(geometry(label)).toEqual({ x: '596', anchor: 'end', direction: 'ltr' });
+    expect(geometry(count)).toEqual({ x: '4', anchor: 'end', direction: 'ltr' });
+  });
+
+  it('cuts a label that cannot fit the label column, and keeps the whole of it', async () => {
+    const long = 'Waiting for the insurance assessor to call back';
+    readDashboardSummary.mockResolvedValue(
+      okRead(
+        dashboardSummary({
+          workOrdersByState: figure([
+            { state: 'awaiting_assessor', label: long, count: 2, isTerminal: false },
+          ]),
+          technicianWorkload: figure([
+            { technicianId: 'tech-1', displayName: long, activeCount: 1 },
+          ]),
+        })
+      )
+    );
+    const user = userEvent.setup();
+    renderLtr(inBranch(<DashboardScreen locale="en" messages={messagesFor('en')} />));
+    await screen.findByText('7');
+
+    for (const headingKey of ['dashboard.byState.title', 'dashboard.workload.title']) {
+      const [label] = stateChartTexts(EN[headingKey] as string);
+      const drawn = label?.querySelector('tspan')?.textContent ?? '';
+      expect(drawn.endsWith('…'), headingKey).toBe(true);
+      expect(Array.from(drawn).length).toBeLessThanOrEqual(25);
+      expect(long.startsWith(drawn.slice(0, -1))).toBe(true);
+      // The whole wording stays with the label for a pointer...
+      expect(label?.querySelector('title')?.textContent).toBe(long);
+    }
+
+    // ...and in the table alternative, uncut.
+    const section = chart('dashboard.byState.title');
+    await user.click(
+      within(section).getByRole('button', { name: EN['dashboard.chart.showTable'] as string })
+    );
+    expect(within(within(section).getByRole('table')).getByText(long)).toBeTruthy();
+  });
+
+  it('leaves a label that fits exactly as it is, with no second copy', async () => {
+    renderLtr(inBranch(<DashboardScreen locale="en" messages={messagesFor('en')} />));
+    await screen.findByText('7');
+
+    const [label] = stateChartTexts(EN['dashboard.byState.title'] as string);
+    expect(label?.querySelector('tspan')?.textContent).toBe('In progress');
+    expect(label?.querySelector('title')).toBeNull();
+  });
+});
+
+describe('the dashboard page lands a reader somewhere they can work', () => {
+  const landing = async (): Promise<string | null> => {
+    try {
+      await DashboardPage({ params: Promise.resolve({ locale: 'en' }) });
+    } catch (error) {
+      if (error instanceof Error && error.message === 'NEXT_REDIRECT') {
+        return (error as Error & { target: string }).target;
+      }
+      throw error;
+    }
+    return null;
+  };
+
+  it('renders the dashboard for a session holding its code', async () => {
+    PERMISSIONS = ['wo.work_order.read'];
+    expect(await landing()).toBeNull();
+    const page = await DashboardPage({ params: Promise.resolve({ locale: 'en' }) });
+    expect(rendersType(page, DashboardScreen)).toBe(true);
+    expect(rendersType(page, PermissionDeniedState)).toBe(false);
+  });
+
+  it('sends a session without it to the first screen its codes open', async () => {
+    // Not a full-page refusal on the screen they land on after signing in.
+    PERMISSIONS = ['inv.stock.read'];
+    expect(await landing()).toBe('/en/attention');
+
+    PERMISSIONS = ['crm.customer.read'];
+    expect(await landing()).toBe('/en/reception/walk-in');
   });
 });

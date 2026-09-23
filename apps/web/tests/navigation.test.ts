@@ -233,9 +233,13 @@ describe('the navigation model', () => {
     }
   });
 
-  it('requires a permission for every module except the two ungated ones', () => {
+  it('requires a permission for every module except the design gallery', () => {
     const ungated = ALL.filter((entry) => entry.permission === null).map((e) => e.key);
-    expect(ungated.sort()).toEqual(['gallery', 'overview']);
+    expect(ungated.sort()).toEqual(['gallery']);
+    // The dashboard is gated on the one code its summary read is entitled by,
+    // `wo.work_order.read`. Ungated, it offered the page to staff it could only
+    // refuse.
+    expect(ALL.find((entry) => entry.key === 'overview')?.permission).toBe('wo.work_order.read');
   });
 
   it('declares a scope for every entry', () => {
@@ -311,7 +315,7 @@ describe('permission filtering — unknown means denied', () => {
   it('shows only the ungated entries to an actor with no capabilities', () => {
     const visible = visibleNavigation(NAVIGATION, NO_CAPABILITIES);
     const keys = visible.flatMap((group) => group.items.map((entry) => entry.key));
-    expect(keys.sort()).toEqual(['gallery', 'overview']);
+    expect(keys.sort()).toEqual(['gallery']);
   });
 
   it('removes a group whose every item is hidden', () => {
@@ -344,7 +348,8 @@ describe('permission filtering — unknown means denied', () => {
       group.items.map((entry) => entry.key)
     );
     // `walk-in` appears with `crm.customer.read` because that is the code its
-    // first operation (customer search) requires.
-    expect(keys.sort()).toEqual(['customers', 'gallery', 'overview', 'vehicles', 'walk-in']);
+    // first operation (customer search) requires. The dashboard does NOT: it
+    // needs `wo.work_order.read`, which these capabilities do not hold.
+    expect(keys.sort()).toEqual(['customers', 'gallery', 'vehicles', 'walk-in']);
   });
 });

@@ -2,6 +2,7 @@ import { redirect } from 'next/navigation';
 import type { ApiClient } from '@/lib/api/client';
 import { authorizedClient } from '@/lib/api/server-client';
 import type { Locale } from '@/i18n/config';
+import { landingPath } from '@/features/authentication/api/landing';
 import { SESSION_ENDED_SEGMENT } from '@/features/authentication/api/session-ended';
 
 /**
@@ -84,16 +85,34 @@ export async function requirePlatformSession(locale: Locale): Promise<PlatformSe
 /**
  * Where a successful sign-in lands, decided on the server with the new token.
  *
- * A tenant operator whose own session read succeeds goes to the workspace, as
- * before. Only when that read fails and the platform session succeeds does the
+ * A tenant operator whose own session read succeeds goes to the workspace — to
+ * the FIRST screen of the navigation their permissions open (`landingPath`),
+ * which is the dashboard for anyone holding its code and the next screen they
+ * can actually use for anyone who does not (Owner directive, P1-32-PRE-OD-UX).
+ * A session answer that carries no readable permission list keeps the workspace
+ * root, where the dashboard page applies the same rule.
+ *
+ * Only when the tenant read fails and the platform session succeeds does the
  * sign-in go to the console. Anything else keeps today's destination, where the
  * workspace layout explains the problem.
  */
 export async function destinationAfterSignIn(client: ApiClient, locale: Locale): Promise<string> {
   const tenant = await client.get<unknown>(TENANT_SESSION_PATH, { retries: 0 });
-  if (tenant.ok) return `/${locale}`;
+  if (tenant.ok) {
+    const permissions = permissionsOf(tenant.data);
+    return permissions === null ? `/${locale}` : landingPath(locale, permissions);
+  }
   const platform = await readPlatformSession(client);
   return platform.ok ? `/${locale}/platform` : `/${locale}`;
+}
+
+/** The permission codes a tenant session answer carries, or null if it has none. */
+function permissionsOf(value: unknown): readonly string[] | null {
+  if (typeof value !== 'object' || value === null) return null;
+  const permissions = (value as Record<string, unknown>)['permissions'];
+  return Array.isArray(permissions) && permissions.every((entry) => typeof entry === 'string')
+    ? (permissions as readonly string[])
+    : null;
 }
 
 function isPlatformSessionShape(value: unknown): value is PlatformSession {
