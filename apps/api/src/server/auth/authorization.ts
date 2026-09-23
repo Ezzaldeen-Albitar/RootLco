@@ -331,6 +331,35 @@ export async function callerHoldsPermission(
 }
 
 /**
+ * Whether the caller holds a permission at ONE company's scope — through an
+ * unrestricted grant or a company-typed scope row naming that company.
+ *
+ * The company-level counterpart of `callerHoldsPermission`, asking the same
+ * deployed function with the branch left out. It is the question
+ * `resolveAuthorizedBranches` already puts to the operation's own codes for a
+ * caller with no branch narrowing, asked here of a bare code: the dashboard
+ * decides each section of a company that has NO branch this way, because there
+ * is no branch to ask about and "every branch of an empty set" would answer yes
+ * for any caller at all. A branch-typed grant never satisfies it — the scoped
+ * arm of `iam.has_permission_in_scope` matches a branch row on `branch_id`
+ * only — which is the right answer for a company in which no branch exists.
+ *
+ * Like `callerHoldsPermission`, it answers only about the caller and takes a
+ * REQUIRED company, so it is not a scope-blind variant.
+ */
+export async function callerHoldsPermissionInCompany(
+  db: DbHandle,
+  permissionCode: string,
+  companyId: string
+): Promise<boolean> {
+  const result = await db.query<{ allowed: boolean }>(
+    'SELECT iam.has_permission_in_scope($1, $2, NULL, NULL) AS allowed',
+    [permissionCode, companyId]
+  );
+  return result.rows[0]?.allowed === true;
+}
+
+/**
  * Whether the caller holds a permission TENANT-WIDE, i.e. through an unrestricted grant.
  *
  * Some writes are not scoped to a company or branch because the row they produce is not

@@ -62,8 +62,8 @@ describe('sidebar', () => {
     renderLtr(
       <Sidebar locale="en" messages={messages} groups={groups} pathname="/en" collapsed={false} />
     );
-    const overview = screen.getByRole('link', { name: 'Overview' });
-    expect(overview).toHaveAttribute('aria-current', 'page');
+    const dashboard = screen.getByRole('link', { name: 'Dashboard' });
+    expect(dashboard).toHaveAttribute('aria-current', 'page');
   });
 
   it('renders a planned module as NOT a link', () => {
@@ -102,11 +102,11 @@ describe('sidebar', () => {
     const { rerender } = renderLtr(
       <Sidebar locale="en" messages={messages} groups={groups} pathname="/en" collapsed={false} />
     );
-    expect(screen.getByRole('link', { name: 'Overview' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Dashboard' })).toBeInTheDocument();
     rerender(<Sidebar locale="en" messages={messages} groups={groups} pathname="/en" collapsed />);
     // Collapsing is a VISUAL affordance; it must not change what a screen
     // reader announces.
-    expect(screen.getByRole('link', { name: 'Overview' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Dashboard' })).toBeInTheDocument();
   });
 
   it('shows only what the actor may see', () => {
@@ -120,8 +120,24 @@ describe('sidebar', () => {
         collapsed={false}
       />
     );
-    expect(screen.getByRole('link', { name: 'Overview' })).toBeInTheDocument();
+    // The dashboard is gated on `wo.work_order.read` — the code its summary read
+    // is entitled by — so an actor holding nothing is not offered it either.
+    expect(screen.queryByRole('link', { name: 'Dashboard' })).toBeNull();
     expect(screen.queryByText('Billing')).toBeNull();
+
+    const groupsForFloorStaff = visibleNavigation(NAVIGATION, {
+      permissions: ['wo.work_order.read'],
+    });
+    renderLtr(
+      <Sidebar
+        locale="en"
+        messages={messages}
+        groups={groupsForFloorStaff}
+        pathname="/en"
+        collapsed={false}
+      />
+    );
+    expect(screen.getByRole('link', { name: 'Dashboard' })).toBeInTheDocument();
   });
 
   it('renders in Arabic under RTL', () => {
@@ -324,9 +340,9 @@ describe('page header', () => {
       <PageHeader
         locale="en"
         messages={messages}
-        titleKey="overview.title"
-        descriptionKey="overview.description"
-        crumbs={[{ labelKey: 'nav.overview', href: '/en' }, { labelKey: 'nav.gallery' }]}
+        titleKey="dashboard.title"
+        descriptionKey="dashboard.description"
+        crumbs={[{ labelKey: 'nav.dashboard', href: '/en' }, { labelKey: 'nav.gallery' }]}
       />
     );
     expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1);
@@ -338,7 +354,7 @@ describe('page header', () => {
         locale="en"
         messages={messages}
         titleKey="gallery.title"
-        crumbs={[{ labelKey: 'nav.overview', href: '/en' }, { labelKey: 'nav.gallery' }]}
+        crumbs={[{ labelKey: 'nav.dashboard', href: '/en' }, { labelKey: 'nav.gallery' }]}
       />
     );
     const nav = screen.getByRole('navigation', { name: 'Breadcrumb' });
@@ -445,14 +461,14 @@ describe('exactly one breadcrumb says it is the current page', () => {
   const TRAILS = crumbTrailsInSource();
 
   /** Real keys for the crumbs whose `labelKey` the source computes at runtime. */
-  const RUNTIME_LABEL_KEYS = ['nav.overview', 'nav.gallery', 'nav.profile'];
+  const RUNTIME_LABEL_KEYS = ['nav.dashboard', 'nav.gallery', 'nav.profile'];
 
   function renderTrail(trail: SourceTrail) {
     return renderLtr(
       <PageHeader
         locale="en"
         messages={messages}
-        titleKey="overview.title"
+        titleKey="dashboard.title"
         crumbs={trail.crumbs.map((crumb, index) => ({
           labelKey: crumb.labelKey ?? (RUNTIME_LABEL_KEYS[index] as string),
           ...(crumb.href === null ? {} : { href: crumb.href }),

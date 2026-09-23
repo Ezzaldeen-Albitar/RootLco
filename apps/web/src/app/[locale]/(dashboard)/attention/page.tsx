@@ -5,7 +5,11 @@ import { PermissionDeniedState } from '@/components/states/States';
 import { requireSession } from '@/features/authentication/api/session';
 import { holds } from '@/features/crm/permissions';
 import { AttentionScreen } from '@/features/attention/components/AttentionScreen';
-import { ATTENTION_PERMISSIONS } from '@/features/attention/attention-contract';
+import {
+  ATTENTION_BRANCH_PARAM,
+  ATTENTION_PERMISSIONS,
+  isAttentionBranchParam,
+} from '@/features/attention/attention-contract';
 import { isLocale } from '@/i18n/config';
 import { getMessages } from '@/i18n/get-messages';
 import { pageMetadata } from '@/lib/page-metadata';
@@ -26,11 +30,21 @@ import { pageMetadata } from '@/lib/page-metadata';
  * alerts are branch-targeted and the server re-authorizes the pair on each call.
  * Nothing is read here, so there is no server-side read outcome for this route
  * to map.
+ *
+ * ## One address parameter: the branch to open on
+ *
+ * `branchId` preselects the stock cards' branch — the dashboard sends the
+ * branch its figure was counted for. It is checked for the shape of an
+ * identifier HERE and dropped otherwise, and the screen then believes it only if
+ * it is one of the branches its own picker lists. See
+ * `ATTENTION_BRANCH_PARAM`.
  */
 export default async function AttentionPage({
   params,
+  searchParams,
 }: {
   readonly params: Promise<{ locale: string }>;
+  readonly searchParams?: Promise<Record<string, string | string[] | undefined>> | undefined;
 }) {
   const { locale } = await params;
   if (!isLocale(locale)) notFound();
@@ -58,6 +72,11 @@ export default async function AttentionPage({
     );
   }
 
+  const query = (await searchParams) ?? {};
+  const raw = query[ATTENTION_BRANCH_PARAM];
+  const candidate = Array.isArray(raw) ? raw[0] : raw;
+  const initialBranchId = isAttentionBranchParam(candidate) ? candidate : null;
+
   return (
     <>
       <PageHeader
@@ -71,6 +90,7 @@ export default async function AttentionPage({
         <AttentionScreen
           locale={locale}
           messages={messages}
+          initialBranchId={initialBranchId}
           canReadStock={canReadStock}
           canReadCapacity={canReadCapacity}
           canReadBranches={holds(session.permissions, ATTENTION_PERMISSIONS.branchRead)}

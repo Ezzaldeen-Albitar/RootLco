@@ -54,6 +54,9 @@ const { destinationAfterSignIn, readPlatformSession, requirePlatformSession } =
 const { ApiClient } = await import('@/lib/api/client');
 const { default: PlatformLayout } = await import('@/app/[locale]/(platform)/layout');
 const { PLATFORM_NAVIGATION } = await import('@/config/platform-navigation');
+const { NAVIGATION, flattenNavigation, hrefFor } = await import('@/config/navigation');
+const { NO_CAPABILITIES, landingRoute, visibleNavigation } = await import('@/lib/permissions');
+const { landingPath } = await import('@/features/authentication/api/landing');
 
 const USER = '2f1c5b3e-6a4d-4b21-9c8e-1f2a3b4c5d6e';
 
@@ -64,7 +67,9 @@ const TENANT_SESSION = {
   displayName: 'Operator',
   companyIds: [],
   branchIds: [],
-  permissions: ['iam.user.read'],
+  // `wo.work_order.read` opens the dashboard, so this operator lands on the
+  // workspace root; the case below takes it away.
+  permissions: ['iam.user.read', 'wo.work_order.read'],
 };
 
 const PLATFORM_SESSION = {
@@ -85,6 +90,7 @@ interface Answers {
   readonly tenant: number;
   readonly platform: number;
   readonly platformBody?: unknown;
+  readonly tenantBody?: unknown;
 }
 
 let calls: string[] = [];
@@ -108,7 +114,9 @@ function backend(answers: Answers) {
           : respond(status);
       }
       if (path === '/api/v1/auth/session') {
-        return answers.tenant === 200 ? respond(200, TENANT_SESSION) : respond(answers.tenant);
+        return answers.tenant === 200
+          ? respond(200, answers.tenantBody ?? TENANT_SESSION)
+          : respond(answers.tenant);
       }
       if (path === '/api/v1/platform/session') {
         return answers.platform === 200
@@ -156,6 +164,32 @@ describe('sign-in decides the destination on the server', () => {
     expect(target).toBe('/en');
     expect(calls).not.toContain('/api/v1/platform/session');
     expect(jar.set.length).toBe(1);
+  });
+
+  it('sends a tenant operator who cannot open the dashboard to the first screen they can', async () => {
+    // The dashboard's summary is entitled by `wo.work_order.read`. Without it the
+    // workspace root could only refuse this operator, so sign-in sends them to
+    // the first navigation entry their codes open instead — here the
+    // administration area `iam.user.read` opens — and still never asks the
+    // platform.
+    backend({
+      tenant: 200,
+      platform: 403,
+      tenantBody: { ...TENANT_SESSION, permissions: ['iam.user.read'] },
+    });
+    const target = await redirectTarget(() => loginAction({ status: 'idle' }, credentials('ar')));
+    expect(target).toBe('/ar/administration');
+    expect(calls).not.toContain('/api/v1/platform/session');
+  });
+
+  it('keeps the workspace root when the session answer carries no permission list', async () => {
+    backend({
+      tenant: 200,
+      platform: 403,
+      tenantBody: { ...TENANT_SESSION, permissions: undefined },
+    });
+    const target = await redirectTarget(() => loginAction({ status: 'idle' }, credentials()));
+    expect(target).toBe('/en');
   });
 
   it('sends the platform operator to the console', async () => {
@@ -215,7 +249,7 @@ describe('the workspace root routes a platform operator instead of stranding the
   it('leaves a tenant operator untouched', async () => {
     backend({ tenant: 200, platform: 200 });
     const session = await requireSession('en');
-    expect(session.permissions).toEqual(['iam.user.read']);
+    expect(session.permissions).toEqual(TENANT_SESSION.permissions);
     expect(calls).toEqual(['/api/v1/auth/session']);
   });
 
@@ -321,5 +355,86 @@ describe('the console route group refuses at the LAYOUT, not only at the helper'
     await expect(
       PlatformLayout({ children: null, params: Promise.resolve({ locale: 'fr' }) })
     ).rejects.toThrow('NEXT_NOT_FOUND');
+  });
+});
+
+/**
+ * The rule every landing above is decided by (Owner directive, P1-32-PRE-OD-UX):
+ * the FIRST entry of the tenant navigation the session's codes open, in the
+ * order the sidebar draws them. Held here, beside the sign-in cases that use it,
+ * rather than in the navigation model's own suite, because it is a question
+ * about where an account lands.
+ */
+describe('where a signed-in tenant session lands', () => {
+  it('lands on the dashboard when the session holds its code', () => {
+    const route = landingRoute({ permissions: ['wo.work_order.read', 'crm.customer.read'] });
+    expect(route?.key).toBe('overview');
+    expect(route === null ? null : hrefFor('en', route)).toBe('/en');
+  });
+
+  it('lands on the first screen it can open when it cannot open the dashboard', () => {
+    // The dashboard needs `wo.work_order.read` and the Attention area after it
+    // needs `inv.stock.read`, and this session holds neither. Walk-in intake is
+    // the next entry, and the first that `crm.customer.read` opens — so that is
+    // where this session goes, rather than to a page that could only refuse it.
+    const route = landingRoute({ permissions: ['crm.customer.read'] });
+    expect(route?.key).toBe('walk-in');
+    expect(route === null ? null : hrefFor('ar', route)).toBe('/ar/reception/walk-in');
+  });
+
+  it('never lands on an entry the sidebar would not offer', () => {
+    for (const permissions of [['crm.customer.read'], ['inv.stock.read'], ['iam.user.read']]) {
+      const route = landingRoute({ permissions });
+      const offered = visibleNavigation(NAVIGATION, { permissions }).flatMap((group) =>
+        flattenNavigation([group])
+      );
+      expect(route, permissions.join(',')).not.toBeNull();
+      expect(
+        offered.map((entry) => entry.key),
+        permissions.join(',')
+      ).toContain(route?.key);
+      expect(route?.status).toBe('available');
+    }
+  });
+
+  it('lands a session with no usable code on the workspace root, never on the design gallery', () => {
+    // The gallery is the one entry no permission gates, and `galleryEnabled()`
+    // makes it a 404 in production — so it is not a destination. With nothing
+    // else open, there is no landing, and the address is the workspace root,
+    // where the dashboard page states the refusal instead of redirecting.
+    expect(landingRoute(NO_CAPABILITIES)).toBeNull();
+    expect(landingRoute(null)).toBeNull();
+    expect(landingPath('en', [])).toBe('/en');
+    expect(landingPath('ar', [])).toBe('/ar');
+    // A code this client does not recognise opens nothing either.
+    expect(landingPath('en', ['not.a.real.code'])).toBe('/en');
+  });
+
+  it('skips an ungated entry even when it is drawn first', () => {
+    // Order is not what keeps the gallery out: moved to the top of the model,
+    // it is still passed over for the first screen the session's codes open.
+    const gallery = flattenNavigation().find((entry) => entry.key === 'gallery');
+    expect(gallery?.permission).toBeNull();
+    if (gallery === undefined) return;
+    const reordered = [
+      { key: 'first', labelKey: 'nav.group.work', items: [gallery] },
+      ...NAVIGATION,
+    ];
+    expect(landingRoute({ permissions: ['crm.customer.read'] }, reordered)?.key).toBe('walk-in');
+    expect(landingRoute(NO_CAPABILITIES, reordered)).toBeNull();
+  });
+
+  it('never lands on the gallery, whatever single code a session holds', () => {
+    const codes = new Set(
+      flattenNavigation()
+        .map((entry) => entry.permission)
+        .filter((code): code is string => code !== null)
+    );
+    for (const code of codes) {
+      const route = landingRoute({ permissions: [code] });
+      expect(route?.key, code).not.toBe('gallery');
+      // Either nothing, or an entry that very code opens.
+      expect(route === null || route.permission === code, code).toBe(true);
+    }
   });
 });

@@ -4,7 +4,11 @@ import { PermissionDeniedState } from '@/components/states/States';
 import { requireSession } from '@/features/authentication/api/session';
 import { CRM_PERMISSIONS, holds } from '@/features/crm/permissions';
 import { ReceptionQueueScreen } from '@/features/receptions/components/ReceptionQueueScreen';
-import { RECEPTION_PERMISSIONS } from '@/features/receptions/receptions-contract';
+import {
+  RECEPTION_PERMISSIONS,
+  isReceptionBoardPeriod,
+} from '@/features/receptions/receptions-contract';
+import { isCalendarDay } from '@/lib/branch-time';
 import { isLocale } from '@/i18n/config';
 import { getMessages } from '@/i18n/get-messages';
 import { pageMetadata } from '@/lib/page-metadata';
@@ -31,8 +35,10 @@ import { pageMetadata } from '@/lib/page-metadata';
  */
 export default async function ReceptionQueuePage({
   params,
+  searchParams,
 }: {
   readonly params: Promise<{ locale: string }>;
+  readonly searchParams?: Promise<Record<string, string | string[] | undefined>> | undefined;
 }) {
   const { locale } = await params;
   if (!isLocale(locale)) notFound();
@@ -58,6 +64,28 @@ export default async function ReceptionQueuePage({
     );
   }
 
+  /*
+   * The period the board opens on, when the dashboard sent the reader here.
+   *
+   * A period NAME out of the five this repository declares, and for a chosen
+   * range the two calendar days it covers. Days are what a reader picked for a
+   * report — not a name, a plate or an amount — and without them the period they
+   * were looking at cannot be carried across at all. Anything that fails its
+   * check is dropped here, and the board opens on today.
+   */
+  const query = (await searchParams) ?? {};
+  const askedPeriod = single(query['period']);
+  const from = single(query['from']);
+  const to = single(query['to']);
+  const initialPeriod =
+    askedPeriod !== null && isReceptionBoardPeriod(askedPeriod)
+      ? askedPeriod === 'custom'
+        ? from !== null && to !== null && isCalendarDay(from) && isCalendarDay(to) && from <= to
+          ? { kind: askedPeriod, from, to }
+          : undefined
+        : { kind: askedPeriod, from: '', to: '' }
+      : undefined;
+
   return (
     <>
       <PageHeader
@@ -73,10 +101,17 @@ export default async function ReceptionQueuePage({
           messages={messages}
           canCreate={holds(session.permissions, RECEPTION_PERMISSIONS.manage)}
           canReachIntake={holds(session.permissions, CRM_PERMISSIONS.customerRead)}
+          initialPeriod={initialPeriod}
         />
       </PageBody>
     </>
   );
+}
+
+/** One value, or none. A repeated parameter is a malformed address, not a list. */
+function single(value: string | string[] | undefined): string | null {
+  if (typeof value === 'string') return value;
+  return Array.isArray(value) && typeof value[0] === 'string' ? value[0] : null;
 }
 
 export const generateMetadata = pageMetadata('receptions.queue.title');

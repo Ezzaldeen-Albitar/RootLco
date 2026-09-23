@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
@@ -152,12 +152,54 @@ describe('the approved brand assets', () => {
 });
 
 describe('the provisional declaration is governed by brand state', () => {
-  // P1-25-F-026. The header notice and the overview card were rendered
-  // UNCONDITIONALLY, which quietly falsified the phase's central claim: an
-  // approved brand would still have shipped a product announcing "final brand
-  // pending". Both are now guarded on `brand.isProvisional`, and these tests
-  // exist so the guard cannot be removed without a red suite.
-  const SURFACES = ['src/components/shell/AppShell.tsx', 'src/app/[locale]/(dashboard)/page.tsx'];
+  /*
+   * P1-25-F-026. The header notice and the overview card were rendered
+   * UNCONDITIONALLY, which quietly falsified the phase's central claim: an
+   * approved brand would still have shipped a product announcing "final brand
+   * pending". Both were guarded on `brand.isProvisional`, and these cases exist
+   * so the guard cannot be removed without a red suite.
+   *
+   * The surfaces are NAMED, one list, checked to exist. A discovery rule —
+   * "every file that mentions the copy" — cannot fail when the mention is
+   * deleted, so the day somebody removes the guard and the copy together the
+   * suite goes quiet instead of red. A list has to be edited in the open.
+   */
+  const SURFACES = ['src/components/shell/AppShell.tsx'];
+
+  /**
+   * The screens that took the overview's place, named so their silence is a
+   * decision on the record rather than an omission.
+   *
+   * The overview page used to be the second guarded surface. It is the
+   * workshop's dashboard now and says nothing about the brand at all, which is
+   * only safe while it stays that way: an unguarded line of provisional copy
+   * added to any of these would ship "final brand pending" under an approved
+   * brand, which is the exact defect this block exists for.
+   */
+  const MAKES_NO_BRAND_CLAIM = [
+    'src/app/[locale]/(dashboard)/page.tsx',
+    'src/features/overview/components/DashboardScreen.tsx',
+    'src/features/overview/components/charts.tsx',
+  ];
+
+  it('names surfaces that exist, so the two cases below are not vacuous', () => {
+    expect(SURFACES.length, 'no surface renders provisional-state copy').toBeGreaterThan(0);
+    for (const rel of [...SURFACES, ...MAKES_NO_BRAND_CLAIM]) {
+      expect(existsSync(join(ROOT, rel)), `${rel} is gone`).toBe(true);
+    }
+  });
+
+  it('keeps the dashboard free of any claim about the brand', () => {
+    for (const rel of MAKES_NO_BRAND_CLAIM) {
+      const source = readFileSync(join(ROOT, rel), 'utf8');
+      for (const claim of ['provisionalBrand', 'overview.brandTitle', 'overview.brandBody']) {
+        expect(
+          source.includes(claim),
+          `${rel} renders ${claim} — it must be guarded or removed`
+        ).toBe(false);
+      }
+    }
+  });
 
   it('guards every surface that renders provisional-state copy', () => {
     for (const rel of SURFACES) {

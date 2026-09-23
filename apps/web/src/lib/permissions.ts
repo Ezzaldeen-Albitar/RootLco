@@ -1,4 +1,10 @@
-import type { NavigationGroup, NavigationItem, PermissionCode } from '@/config/navigation';
+import {
+  NAVIGATION,
+  navigationLinks,
+  type NavigationGroup,
+  type NavigationItem,
+  type PermissionCode,
+} from '@/config/navigation';
 
 /**
  * Client-side permission evaluation — for USABILITY ONLY.
@@ -55,6 +61,52 @@ export function isVisible(
   item: NavigationItem
 ): boolean {
   return hasPermission(capabilities, item.permission);
+}
+
+/**
+ * Where a signed-in session should land: the FIRST entry of the navigation it
+ * can open, in the order the sidebar draws them (Owner directive,
+ * P1-32-PRE-OD-UX).
+ *
+ * The dashboard is that first entry, so a session holding its code lands on it
+ * exactly as before. A session without it is sent to the next screen it may
+ * actually use, instead of to a page that could only refuse it. "Can open" is
+ * the sidebar's own rule — `visibleNavigation`, then the entries that render as
+ * links (`navigationLinks`, expanded) — so the landing can never be a screen
+ * the sidebar does not offer.
+ *
+ * Only WORKSPACE destinations count: an entry no permission gates is a
+ * development tool (the design gallery, which `galleryEnabled()` answers with a
+ * 404 in production), not a screen of the product, so it is never a landing —
+ * a session whose codes open nothing else would otherwise be sent to a page
+ * that does not exist. `null` when no workspace screen is open to the session,
+ * which `landingPath` turns into the workspace root, where the dashboard page
+ * states the refusal.
+ *
+ * The Platform Owner Console is not in this model and is not decided here: a
+ * platform operator has no tenant session, and `destinationAfterSignIn` routes
+ * that principal before this is ever consulted.
+ */
+export function landingRoute(
+  capabilities: ActorCapabilities | null | undefined,
+  groups: readonly NavigationGroup[] = NAVIGATION
+): NavigationItem | null {
+  return (
+    navigationLinks(visibleNavigation(groups, capabilities), false).find(isWorkspaceDestination) ??
+    null
+  );
+}
+
+/**
+ * Whether an entry is a screen of the workspace a session may be SENT to.
+ *
+ * A permission-gated entry is: the server decides every request behind it by
+ * that code. An ungated one is not — the only such entry is the design gallery,
+ * whose route is switched off by an environment flag and is a 404 wherever it
+ * is off.
+ */
+export function isWorkspaceDestination(item: NavigationItem): boolean {
+  return item.permission !== null;
 }
 
 /**

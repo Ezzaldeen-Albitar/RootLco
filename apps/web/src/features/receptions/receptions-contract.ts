@@ -1659,3 +1659,29 @@ export interface SignatureEventRecorded {
 
 /** `rec.signature_events.reason`. */
 export const MAX_REPUDIATION_REASON = 500;
+
+/**
+ * The periods the reception board offers.
+ *
+ * Declared here rather than inside the board because the dashboard now links to
+ * it carrying the period the figure was counted over: a figure labelled "today"
+ * that opens a list of the last seven days is a worse answer than no link at
+ * all. Both sides check an arriving name against this one list.
+ *
+ * `beforeToday` has no counterpart on the dashboard — the summary knows no such
+ * period — and that is exactly why the two sets are checked separately rather
+ * than assumed equal.
+ */
+export const RECEPTION_BOARD_PERIODS = [
+  'today',
+  'yesterday',
+  'last7',
+  'beforeToday',
+  'custom',
+] as const;
+
+export type ReceptionBoardPeriod = (typeof RECEPTION_BOARD_PERIODS)[number];
+
+export function isReceptionBoardPeriod(value: string): value is ReceptionBoardPeriod {
+  return (RECEPTION_BOARD_PERIODS as readonly string[]).includes(value);
+}

@@ -29,13 +29,73 @@ import { Repository } from '@/server/db/repository';
 import type { DbHandle } from '@/server/db/transaction';
 import { buildPage, keysetFragment, type Page, type PageRequest } from '@/server/db/pagination';
 import { halfOpenLocalDayRange, type LocalDayPeriod } from '@/server/db/period';
-import { toWorkOrderSearchTerms } from '../domain/work-order';
+import { PARTS_NOT_IN_HAND_STATES, toWorkOrderSearchTerms } from '../domain/work-order';
+
+/**
+ * "Waiting for parts" — ONE predicate, shared by the overview count and the
+ * board's `awaitingParts` view (Owner directive, P1-32-PRE-OD-UX).
+ *
+ * A work order is waiting for parts when BOTH hold:
+ *
+ *   1. its `parts_forward_state` is one of `PARTS_NOT_IN_HAND_STATES` —
+ *      `requested` or `reserved_elsewhere`, the two values that mean the parts
+ *      are not yet in hand for the job; and
+ *   2. it is NOT in a terminal state. A finished or cancelled order is not
+ *      waiting for anything, whatever its parts column last said. The terminal
+ *      codes are resolved by the caller from the live catalogue and bound as
+ *      `finishedStatesParam`; the constraint `ck_work_order_states_cancellation`
+ *      makes every cancellation terminal, so one set excludes both.
+ *
+ * Written against the unaliased `wo.work_orders` because both statements that use
+ * it select from that table without an alias. A NULL parameter excludes nothing,
+ * which is what an empty catalogue answer means too — and an empty array is not
+ * the same as "every state is terminal".
+ *
+ * The literal list is generated from the domain constant, which is a frozen
+ * vocabulary of identifiers and never input, so interpolating it is safe.
+ */
+const PARTS_NOT_IN_HAND_SQL = PARTS_NOT_IN_HAND_STATES.map((value) => `'${value}'`).join(', ');
+function waitingForPartsPredicate(finishedStatesParam: string): string {
+  return `(wo.work_orders.parts_forward_state IN (${PARTS_NOT_IN_HAND_SQL})
+           AND NOT (wo.work_orders.state = ANY(COALESCE(${finishedStatesParam}::text[], ARRAY[]::text[]))))`;
+}
+
+/**
+ * The additional-work request rows that mean a customer decision is still owed:
+ * `pending`, and not tombstoned. Aliased `r`.
+ *
+ * A withdrawn or soft-deleted request must not pin a work order in a queue
+ * called "waiting for the customer to agree" for ever with nothing to act on.
+ */
+const PENDING_DECISION_ROW = `r.deleted_at IS NULL AND r.state = 'pending'`;
+
+/**
+ * "Waiting for the customer to agree" — ONE predicate over a work order, shared
+ * by the overview count and the board's `awaitingApproval` view (Owner
+ * directive, P1-32-PRE-OD-UX).
+ *
+ * An EXISTS rather than a join, so an order with two pending requests is one
+ * order and not two. Both callers also require `wo.work_orders.deleted_at IS
+ * NULL` in their own WHERE clause, which is what keeps a request on a RETIRED
+ * work order out of the figure: the earlier overview statement selected from the
+ * request table on the scope columns alone and counted such a request while the
+ * board — which walks from the work order — could not return it.
+ */
+const PENDING_DECISION_EXISTS = `EXISTS (
+                SELECT 1
+                  FROM wo.additional_work_requests r
+                 WHERE r.tenant_id = wo.work_orders.tenant_id
+                   AND r.work_order_id = wo.work_orders.id
+                   AND ${PENDING_DECISION_ROW})`;
 
 /** One current state and how many live work orders are in it. */
 export interface OverviewStateCountRow {
   readonly state: string;
   readonly total: number;
-  /** How many of that state's orders have parts requested but not yet reserved. */
+  /**
+   * How many of that state's live orders are waiting for parts, under the shared
+   * `waitingForPartsPredicate` — so always zero for a terminal state.
+   */
   readonly awaitingParts: number;
 }
 
@@ -240,7 +300,11 @@ export interface WorkOrderListFilter {
    * be the same answer: one is an empty page, the other is the whole board.
    */
   readonly matchNothing?: boolean | undefined;
-  /** Parts are outstanding: `parts_forward_state` is anything but `none`. */
+  /**
+   * Waiting for parts: `parts_forward_state` is one of `PARTS_NOT_IN_HAND_STATES`
+   * AND the order is not in one of `terminalStates`. The overview count uses the
+   * same `waitingForPartsPredicate`, so the two cannot disagree.
+   */
   readonly awaitingParts?: boolean | undefined;
   /** An additional-work request is still `pending` a customer decision. */
   readonly awaitingApproval?: boolean | undefined;
@@ -999,17 +1063,14 @@ export class WorkOrderRepository extends Repository {
                    AND j.work_order_id = wo.work_orders.id
                    AND a.technician_profile_id = $16::uuid
                    AND a.valid_to IS NULL))
-          AND (NOT $17::boolean OR parts_forward_state <> 'none')
-          AND (NOT $18::boolean OR EXISTS (
-                SELECT 1
-                  FROM wo.additional_work_requests r
-                 WHERE r.tenant_id = wo.work_orders.tenant_id
-                   AND r.work_order_id = wo.work_orders.id
-                   -- Every other read of this table filters the tombstone, and a
-                   -- withdrawn request must not pin a work order in a queue
-                   -- called "awaiting approval" forever.
-                   AND r.deleted_at IS NULL
-                   AND r.state = 'pending'))
+          -- awaitingParts and awaitingApproval. Each is the SAME fragment the
+          -- overview aggregate counts with (see the two constants at the top of
+          -- this file), so the dashboard figure that links here and the view it
+          -- links to are one definition rather than two that resemble each
+          -- other. $15 is the terminal set the service always resolves: a
+          -- finished order is not waiting for parts.
+          AND (NOT $17::boolean OR ${waitingForPartsPredicate('$15')})
+          AND (NOT $18::boolean OR ${PENDING_DECISION_EXISTS})
           -- awaitingQuality. The ids are resolved by the QUALITY module, which
           -- owns that schema, and bound here as an array: a correlated EXISTS
           -- would make this layer a second reader of another module's table, and
@@ -2536,6 +2597,12 @@ export class WorkOrderRepository extends Repository {
    * predicate: two statements could observe two snapshots and publish a
    * per-state total that does not add up to the figure beside it.
    *
+   * It is counted with `waitingForPartsPredicate` — the fragment the board's
+   * `awaitingParts` view filters with — so the dashboard figure and the list it
+   * links to are one definition. `finishedStates` is the terminal set the caller
+   * resolved from the live catalogue, exactly as `list` resolves the board's
+   * `terminalStates`; a terminal bucket therefore always reports zero here.
+   *
    * Grouped by the raw `state` code and NOT joined to `wo.work_order_states`
    * here. The catalogue is dual-scoped — a platform row and a tenant row may
    * share a code — so resolving precedence in SQL would be a second copy of the
@@ -2544,42 +2611,50 @@ export class WorkOrderRepository extends Repository {
    */
   async overviewStateCounts(
     db: DbHandle,
-    scope: { readonly companyId: string; readonly branchIds: readonly string[] }
+    scope: { readonly companyId: string; readonly branchIds: readonly string[] },
+    finishedStates: readonly string[]
   ): Promise<readonly OverviewStateCountRow[]> {
     const context = this.assertContext(db);
-    // The projection is `parts_requested` and NOT `awaiting_parts`. The column
-    // being counted is `parts_forward_state`, a forward contract with three
+    // The projection is `waiting_for_parts` and NOT `awaiting_parts`. The column
+    // being tested is `parts_forward_state`, a forward contract with three
     // values of its own; `awaiting_parts` is a `wo.work_order_states` CODE, and
     // naming the alias after it would put a state name in this module's
     // TypeScript — which is the mirror `tests/foundation/p1-19-module-foundation`
     // refuses, and which would be wrong on its own terms because an order in any
-    // state may have parts requested.
-    const result = await this.run<{ state: string; total: number; parts_requested: number }>(
+    // non-terminal state may be waiting for parts.
+    const result = await this.run<{ state: string; total: number; waiting_for_parts: number }>(
       db,
       `SELECT state,
               count(*)::int AS total,
-              count(*) FILTER (WHERE parts_forward_state = 'requested')::int AS parts_requested
+              count(*) FILTER (WHERE ${waitingForPartsPredicate('$4')})::int AS waiting_for_parts
          FROM wo.work_orders
         WHERE tenant_id = $1 AND company_id = $2 AND branch_id = ANY($3::uuid[])
           AND deleted_at IS NULL
         GROUP BY state
         ORDER BY state`,
-      [context.principal.tenantId, scope.companyId, scope.branchIds]
+      [context.principal.tenantId, scope.companyId, scope.branchIds, [...finishedStates]]
     );
     return result.rows.map((row) => ({
       state: row.state,
       total: row.total,
-      awaitingParts: row.parts_requested,
+      awaitingParts: row.waiting_for_parts,
     }));
   }
 
   /**
-   * Additional-work requests still awaiting a decision, two ways.
+   * Work orders waiting for a customer decision, and the requests behind them.
    *
-   * `requests` counts the decisions somebody owes; `workOrders` counts the jobs
-   * held up by at least one of them. They are different questions and a screen
-   * needs both — five requests on one order is one stalled vehicle, not five —
-   * so they come from one statement over one snapshot rather than from two.
+   * `workOrders` is the figure the dashboard links to the board's
+   * `awaitingApproval` view with, and it is counted with the SAME
+   * `PENDING_DECISION_EXISTS` fragment over live (`deleted_at IS NULL`) work
+   * orders in the same branch set — so an order with two pending requests is
+   * one, and a request on a retired work order is none, on both sides.
+   *
+   * `requests` counts the decisions somebody owes on those same live orders.
+   * It is a different question — five requests on one order is one stalled
+   * vehicle, not five — and no list on the product enumerates requests, so a
+   * screen may show it but must not pair it with a link. Both come from one
+   * statement so they observe one snapshot.
    *
    * `pending` only. An APPROVED request that is not yet fulfilled also blocks
    * closure (`wo.guard_work_order_closure` blocker B3), but nobody is waiting on
@@ -2593,17 +2668,27 @@ export class WorkOrderRepository extends Repository {
     const context = this.assertContext(db);
     const row = await this.runOne<{ requests: number; work_orders: number }>(
       db,
-      `SELECT count(*)::int                        AS requests,
-              count(DISTINCT work_order_id)::int   AS work_orders
-         FROM wo.additional_work_requests
-        WHERE tenant_id = $1 AND company_id = $2 AND branch_id = ANY($3::uuid[])
-          AND deleted_at IS NULL
-          AND state = 'pending'`,
+      `SELECT
+         (SELECT count(*)::int
+            FROM wo.work_orders
+           WHERE tenant_id = $1 AND company_id = $2 AND branch_id = ANY($3::uuid[])
+             AND deleted_at IS NULL
+             AND ${PENDING_DECISION_EXISTS})                 AS work_orders,
+         (SELECT count(*)::int
+            FROM wo.additional_work_requests r
+            JOIN wo.work_orders
+              ON wo.work_orders.tenant_id = r.tenant_id
+             AND wo.work_orders.id = r.work_order_id
+           WHERE wo.work_orders.tenant_id = $1
+             AND wo.work_orders.company_id = $2
+             AND wo.work_orders.branch_id = ANY($3::uuid[])
+             AND wo.work_orders.deleted_at IS NULL
+             AND ${PENDING_DECISION_ROW})                   AS requests`,
       [context.principal.tenantId, scope.companyId, scope.branchIds]
     );
-    // An aggregate with no GROUP BY always produces a row, so the null branch is
-    // unreachable; it is written as zeros rather than as a throw because the
-    // honest reading of "no rows matched" for a COUNT is zero.
+    // A SELECT of two scalar subqueries always produces a row, so the null
+    // branch is unreachable; it is written as zeros rather than as a throw
+    // because the honest reading of "no rows matched" for a COUNT is zero.
     return { requests: row?.requests ?? 0, workOrders: row?.work_orders ?? 0 };
   }
 

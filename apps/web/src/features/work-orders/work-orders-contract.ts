@@ -245,8 +245,11 @@ export interface WorkOrderListCriteria {
    *   `assignedToMe`      a live job assignment for the caller's own technician
    *                       profile; a caller with no profile is answered an EMPTY
    *                       page rather than the whole board;
-   *   `awaitingParts`     `parts_forward_state` is anything but `none`;
-   *   `awaitingApproval`  an additional-work request is still `pending`;
+   *   `awaitingParts`     parts are `requested` or `reserved_elsewhere` (not yet
+   *                       in hand) on an order that is not in a terminal state —
+   *                       the same predicate the dashboard figure counts with;
+   *   `awaitingApproval`  a live work order has an additional-work request still
+   *                       `pending` — the same predicate the dashboard counts;
    *   `awaitingQuality`   a quality record's `overall_result` is `pending`;
    *   `readyForDelivery`  the state is closed and not a cancellation, resolved
    *                       from the live catalogue.
@@ -353,6 +356,51 @@ export const WORK_ORDER_QUERY_REFUSAL_KEYS: readonly string[] = Object.freeze([
 export const MAX_WORK_ORDER_SEARCH = 80;
 /** `MIN_WORK_ORDER_SEARCH_FRAGMENT` in the domain: the free-text box only. */
 export const MIN_WORK_ORDER_SEARCH = 2;
+
+/**
+ * The board's quick views — exactly the requests the list operation can be sent.
+ *
+ * Here rather than inside the board because a SECOND screen now names one: the
+ * dashboard links a figure to the view that shows the rows behind it, and a
+ * link built from a name the board does not recognise lands on the unfiltered
+ * list while looking like it worked. One declaration, and both sides of the
+ * link are checked against it.
+ */
+export const WORK_ORDER_BOARD_VIEWS = [
+  'active',
+  'all',
+  'openedToday',
+  'completedToday',
+  'mine',
+  'awaitingApproval',
+  'awaitingParts',
+  'awaitingQuality',
+  'readyForDelivery',
+] as const;
+
+export type WorkOrderBoardView = (typeof WORK_ORDER_BOARD_VIEWS)[number];
+
+/**
+ * The view the board opens on when nothing else is asked for: the work that is
+ * still the workshop's problem. An address that names no view means this one,
+ * which is why a link to it says nothing.
+ */
+export const WORK_ORDER_BOARD_DEFAULT_VIEW: WorkOrderBoardView = 'active';
+
+/** Whether an arriving name is one of the nine. Anything else is discarded. */
+export function isWorkOrderBoardView(value: string): value is WorkOrderBoardView {
+  return (WORK_ORDER_BOARD_VIEWS as readonly string[]).includes(value);
+}
+
+/**
+ * The shape a state code may take, mirrored from the list operation's own
+ * schema (`^[a-z][a-z0-9_]{1,62}$`).
+ *
+ * A code is a declared vocabulary term, not something an operator types, so it
+ * is the one filter value that may travel in an address. This pattern is what a
+ * value arriving from one has to satisfy before it is believed.
+ */
+export const WORK_ORDER_STATE_CODE_PATTERN = /^[a-z][a-z0-9_]{1,62}$/;
 
 /* ------------------------------------------------------------------ *
  * W3 — the work-order detail

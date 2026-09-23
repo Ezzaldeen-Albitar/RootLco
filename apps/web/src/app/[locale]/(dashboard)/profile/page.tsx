@@ -46,7 +46,7 @@ export default async function ProfilePage({
         messages={messages}
         titleKey="profile.title"
         descriptionKey="profile.description"
-        crumbs={[{ labelKey: 'nav.overview', href: `/${locale}` }, { labelKey: 'nav.profile' }]}
+        crumbs={[{ labelKey: 'nav.dashboard', href: `/${locale}` }, { labelKey: 'nav.profile' }]}
       />
       <PageBody>
         <div className="flex flex-col gap-6">

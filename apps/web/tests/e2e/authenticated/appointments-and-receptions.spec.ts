@@ -566,13 +566,34 @@ async function bodyText(page: Page): Promise<string> {
  * configured workspace's operator (§18) — and a second copy of these six lines
  * is a second thing to keep true.
  */
-async function signInThroughTheForm(page: Page, { email, password }: Credentials): Promise<void> {
+async function signInThroughTheForm(
+  page: Page,
+  { email, password }: Credentials,
+  landing: RegExp
+): Promise<void> {
   await page.goto('/en/login');
   await page.getByLabel('Email address').fill(email);
   await page.getByRole('textbox', { name: 'Password', exact: true }).fill(password);
   await page.getByRole('button', { name: 'Sign in' }).click();
-  await page.waitForURL(/\/en(\?.*)?$/, { timeout: 20_000 });
+  await page.waitForURL(landing, { timeout: 20_000 });
 }
+
+/**
+ * Where a sign-in lands, per principal (Owner directive, P1-32-PRE-OD-UX).
+ *
+ * A session lands on the FIRST screen of the navigation its codes open
+ * (`landingRoute` in `src/lib/permissions.ts`). The dashboard is that screen for
+ * anyone holding `wo.work_order.read` — the configured workspace's operator —
+ * so that sign-in lands on the workspace root.
+ *
+ * The reader holds neither `wo.work_order.read` (the dashboard) nor
+ * `inv.stock.read` (the attention list), so the first entry it can open is the
+ * walk-in reception, gated on `crm.customer.read`, which `READER_PERMISSIONS`
+ * grants. Landing it on the dashboard would sign it in to a page that can only
+ * refuse it, which is exactly what the rule exists to prevent.
+ */
+const LANDS_ON_WORKSPACE_ROOT = /\/en(\?.*)?$/;
+const READER_LANDS_ON_WALK_IN = /\/en\/reception\/walk-in(\?.*)?$/;
 
 /** What `BrowserContext.cookies()` hands back, without naming Playwright's type. */
 type SessionCookies = Awaited<ReturnType<BrowserContext['cookies']>>;
@@ -602,14 +623,15 @@ const browserSessions = new Map<string, SessionCookies>();
 async function signInOncePerProject(
   page: Page,
   who: string,
-  credentials: Credentials
+  credentials: Credentials,
+  landing: RegExp
 ): Promise<void> {
   const held = browserSessions.get(who);
   if (held !== undefined) {
     await page.context().addCookies(held);
     return;
   }
-  await signInThroughTheForm(page, credentials);
+  await signInThroughTheForm(page, credentials, landing);
   browserSessions.set(who, await page.context().cookies());
 }
 
@@ -1376,7 +1398,12 @@ test.describe('a read-only operator meets a denial, not an empty screen', () => 
 
   /** The read-only principal, signed in the way an operator signs in. */
   async function signInAsReader(page: Page): Promise<void> {
-    await signInOncePerProject(page, 'reader (browser)', readerCredentials());
+    await signInOncePerProject(
+      page,
+      'reader (browser)',
+      readerCredentials(),
+      READER_LANDS_ON_WALK_IN
+    );
   }
 
   test('the booking form is refused, while the calendar and queue still read', async ({ page }) => {
@@ -2570,7 +2597,12 @@ test.describe('the configured workspace: the four catalogue-blocked capabilities
 
   /** Signs in and puts the branch target in, the two things every case needs. */
   async function openConfigured(page: Page, route: string): Promise<void> {
-    await signInOncePerProject(page, 'configured operator', configuredCredentials());
+    await signInOncePerProject(
+      page,
+      'configured operator',
+      configuredCredentials(),
+      LANDS_ON_WORKSPACE_ROOT
+    );
     await page.goto(route);
     await segmentRendered(page, route);
   }

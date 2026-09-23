@@ -54,9 +54,16 @@ export function AttentionScreen({
   canReadStock,
   canReadCapacity,
   canReadBranches,
+  initialBranchId = null,
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
+  /**
+   * The branch the address asked the stock cards to open on, already checked
+   * for the shape of an identifier by the page. Believed only if the picker's
+   * own list holds it; otherwise the screen opens with no branch chosen.
+   */
+  readonly initialBranchId?: string | null;
   /** `inv.stock.read` — the four stock alerts. */
   readonly canReadStock: boolean;
   /** `org.tenant.read` — the subscription allowance. */
@@ -67,6 +74,23 @@ export function AttentionScreen({
   const branches = useBranches(canReadBranches && canReadStock);
   const [pair, setPair] = useState<BranchPair>(EMPTY_PAIR);
   const t = (key: keyof Messages) => translate(messages, key);
+
+  /*
+   * The address's branch, applied ONCE — when the list it must belong to has
+   * arrived — and never again, so a later choice from the picker is not
+   * overwritten by a branch from an address the reader has since moved on from.
+   *
+   * Decided during render rather than in an effect: it is state derived from a
+   * prop and a list, and adjusting it here settles in the same render instead
+   * of painting "choose a branch" for a frame and then cascading. A branch the
+   * list does not hold is dropped, not guessed at.
+   */
+  const [preselected, setPreselected] = useState(initialBranchId === null);
+  if (!preselected && branches.phase === 'listed') {
+    setPreselected(true);
+    const chosen = branches.items.find((row) => row.id === initialBranchId);
+    if (chosen !== undefined) setPair({ companyId: chosen.companyId, branchId: chosen.id });
+  }
 
   /*
    * The branch list, as a lookup for the cards that report on a PAIR of

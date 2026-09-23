@@ -41,9 +41,10 @@ export interface NavigationItem {
   /**
    * Permission required to SEE the item.
    *
-   * `null` means "no permission gates visibility" — used only for the overview.
-   * Anything else must be held by the actor. A permission this client does not
-   * recognise is treated as NOT held: unknown means denied, never allowed.
+   * `null` means "no permission gates visibility" — used only for the design
+   * gallery. Anything else must be held by the actor. A permission this client
+   * does not recognise is treated as NOT held: unknown means denied, never
+   * allowed.
    */
   readonly permission: PermissionCode | null;
   readonly status: NavigationStatus;
@@ -116,11 +117,32 @@ export const NAVIGATION: readonly NavigationGroup[] = Object.freeze([
     labelKey: 'nav.group.work',
     items: [
       {
+        /*
+         * The key stays `overview` — it is the entry's identity, and `isActive`,
+         * the ownership records and the console's own separate entry all name
+         * it. What changed is the LABEL: the screen behind it is now the
+         * workshop's dashboard rather than a description of the product, and an
+         * entry whose word does not match the screen sends people looking
+         * elsewhere for the figures that are right here.
+         *
+         * Gated on `wo.work_order.read` (Owner directive, P1-32-PRE-OD-UX).
+         * It used to be ungated on the reasoning that every signed-in person
+         * lands here — but `ovw.dashboard-summary-read` is entitled by exactly
+         * that code, so a member of staff without it was offered an entry, and
+         * landed after sign-in on, a page that could only refuse them. The gate
+         * names the one code the page itself needs; each SECTION still gates
+         * itself on the status the summary publishes for it.
+         *
+         * A session without the code does not land here at all:
+         * `landingRoute` in `lib/permissions.ts` picks the first entry of this
+         * map it can open, and both the sign-in redirect and the page send it
+         * there (`features/authentication/api/landing.ts`).
+         */
         key: 'overview',
-        labelKey: 'nav.overview',
+        labelKey: 'nav.dashboard',
         icon: 'overview',
         href: '/',
-        permission: null,
+        permission: 'wo.work_order.read',
         status: 'available',
         scope: 'branch',
       },

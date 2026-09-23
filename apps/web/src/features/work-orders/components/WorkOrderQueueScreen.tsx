@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { DataTable, type Column } from '@/components/data-table/DataTable';
 import { INITIAL_REQUEST } from '@/components/data-table/table-state';
 import { DigitsEcho } from '@/components/forms/DigitsEcho';
@@ -30,10 +30,13 @@ import { listWorkOrders, readWorkOrderCatalogue } from '../api';
 import {
   MAX_WORK_ORDER_SEARCH,
   MIN_WORK_ORDER_SEARCH,
+  WORK_ORDER_BOARD_DEFAULT_VIEW,
+  WORK_ORDER_BOARD_VIEWS,
   WORK_ORDER_KINDS,
   finishedStates,
   openStates,
   workOrderStateLabel,
+  type WorkOrderBoardView,
   type WorkOrderKind,
   type WorkOrderListCriteria,
   type WorkOrderListEntry,
@@ -69,9 +72,9 @@ import {
  *     separately; either bound narrows the board to finished work by
  *     construction, because an unfinished order has no completion instant.
  *   - the five board FLAGS, each backed by a row the schema really keeps: a live
- *     job assignment for the caller, a non-`none` parts forward state, a pending
- *     additional-work request, a pending quality result, and a closed
- *     non-cancellation state.
+ *     job assignment for the caller, parts not yet in hand on an unfinished
+ *     order, a pending additional-work request, a pending quality result, and a
+ *     closed non-cancellation state.
  *
  * Two of these could not be asked for at all one wave ago — `state` took a
  * single catalogue code and there was no completion window — and this screen
@@ -96,16 +99,17 @@ import {
  *
  * ## A figure sits on a chip only where the two count the same SET
  *
- * Two of the nine views qualify, and each is an identity rather than a
+ * Four of the nine views qualify, and each is an identity rather than a
  * resemblance — `chipFigure` below carries the proof for each, and the reason
  * every other view carries no number. The rest of the published figures live in
  * the strip, labelled with the set the AGGREGATE counts, and the strip says
  * plainly that it is about the branch's day rather than about the list.
  *
  * The pairing is checked, not assumed. "Awaiting parts" is the case that taught
- * it: the aggregate counts NON-TERMINAL orders whose `parts_forward_state` is
- * `requested`, the list filter is a bare `parts_forward_state` other than
+ * it: the aggregate once counted NON-TERMINAL orders whose `parts_forward_state`
+ * was `requested` while the list filter was any `parts_forward_state` other than
  * `none` in any state at all, and the two sat beside each other as one claim.
+ * Both now use ONE backend predicate, and only that is what put it on a chip.
  *
  * Each figure carries its own state and all three are rendered apart: computed,
  * withheld for want of the section's own read code, or unanswerable. A withheld
@@ -128,32 +132,23 @@ import {
  * "overdue", "due today" or "late", and no control offers to sort by one.
  */
 
-/** The views the operation can actually be sent. See the docblock. */
-type ViewKind =
-  | 'active'
-  | 'all'
-  | 'openedToday'
-  | 'completedToday'
-  | 'mine'
-  | 'awaitingApproval'
-  | 'awaitingParts'
-  | 'awaitingQuality'
-  | 'readyForDelivery';
+/**
+ * The views the operation can actually be sent. See the docblock.
+ *
+ * Declared in the contract rather than here since the dashboard began linking
+ * to them: a link built from a name this board does not recognise lands on the
+ * unfiltered list while looking as though it worked, and one declaration is
+ * what stops the two sides drifting apart.
+ */
+type ViewKind = WorkOrderBoardView;
 
-const VIEW_KINDS: readonly ViewKind[] = [
-  'active',
-  'all',
-  'openedToday',
-  'completedToday',
-  'mine',
-  'awaitingApproval',
-  'awaitingParts',
-  'awaitingQuality',
-  'readyForDelivery',
-];
+const VIEW_KINDS: readonly ViewKind[] = WORK_ORDER_BOARD_VIEWS;
+
+/** What became of a state code that arrived in the address. See the body. */
+type Arrival = 'none' | 'pending' | 'accepted' | 'refused' | 'unread';
 
 /** The board opens on the work that is still the workshop's problem. */
-const DEFAULT_VIEW: ViewKind = 'active';
+const DEFAULT_VIEW: ViewKind = WORK_ORDER_BOARD_DEFAULT_VIEW;
 
 /** What the read is asked for: the scope it is addressed to and the filters. */
 interface Asked {
@@ -206,6 +201,8 @@ function criteriaOf(view: ViewKind, zone: string): WorkOrderListCriteria {
 export function WorkOrderQueueScreen({
   locale,
   messages,
+  initialView = DEFAULT_VIEW,
+  initialState = '',
   canReachDelivery = false,
 }: {
   readonly locale: Locale;
@@ -223,11 +220,45 @@ export function WorkOrderQueueScreen({
    * a mistake here should fail in.
    */
   readonly canReachDelivery?: boolean;
+  /**
+   * The view this board opens on, when it was reached from a figure elsewhere.
+   *
+   * Validated by the ROUTE against `WORK_ORDER_BOARD_VIEWS` before it arrives,
+   * so an unrecognised name never reaches this component: it becomes the
+   * default view, which is what the address without it means.
+   */
+  readonly initialView?: WorkOrderBoardView | undefined;
+  /**
+   * The state code this board opens filtered to.
+   *
+   * The route checks its SHAPE against the one the operation accepts; this
+   * screen checks its MEANING against the workshop's own catalogue, because the
+   * two are different questions and only the second can be answered here. A
+   * well-formed code for a state nobody defined is dropped with a notice, and
+   * the board reads unfiltered. See the arrival note in the body.
+   */
+  readonly initialState?: string | undefined;
 }) {
   const context = useWorkingContext();
   const branch = useBranchTarget();
 
-  const [view, setView] = useState<ViewKind>(DEFAULT_VIEW);
+  /*
+   * The arriving view and state are the board's STARTING position and nothing
+   * more. Once here, the strip and the picker own them — a reader who presses
+   * another view is not fighting the address they came from.
+   *
+   * The view is one of nine this repository declares, so it is believed on
+   * sight. The state is a code out of the WORKSHOP's own vocabulary, which this
+   * repository does not hold: it is left out of the filter until the catalogue
+   * has been read and says the workshop keeps it. See the arrival note below.
+   */
+  //
+  // A state that arrives with the default view starts on `all` instead: the
+  // default sends a state GROUP, the list operation refuses a code and a group
+  // together, and a refused code must leave the board showing everything.
+  const [view, setView] = useState<ViewKind>(
+    initialState.trim() !== '' && initialView === 'active' ? 'all' : initialView
+  );
   const [state, setState] = useState('');
   const [kind, setKind] = useState<'' | WorkOrderKind>('');
   const [term, setTerm] = useState('');
@@ -262,15 +293,63 @@ export function WorkOrderQueueScreen({
    * itself — which is exactly what it did before this read existed.
    */
   const [catalogue, setCatalogue] = useState<readonly WorkOrderStateCatalogueEntry[]>([]);
+
+  /*
+   * What became of a state code that arrived in the address.
+   *
+   *   `none`     — none arrived.
+   *   `pending`  — one did, and the catalogue has not answered yet. The board
+   *                asks for NOTHING in this state: a code matching the
+   *                operation's shape is not thereby a code this workshop keeps,
+   *                and sending it would either narrow the board by a state
+   *                nobody defined or be answered 422 far from the link.
+   *   `accepted` — the catalogue names it. The picker shows it and the read
+   *                carries it.
+   *   `refused`  — the catalogue was read and does not name it. The code is
+   *                DROPPED, the picker stands at "Any state", and a line says
+   *                the requested state is not one this workshop uses rather
+   *                than letting the board look filtered when it is not.
+   *   `unread`   — the catalogue could not be read at all. The code is DROPPED
+   *                for the same reason — nothing established that the workshop
+   *                keeps it — but the line says what actually happened: the
+   *                state list could not be loaded, so the state was not
+   *                applied. Saying "not one this workshop uses" here would be a
+   *                claim about the workshop that nobody checked.
+   *
+   * A ref decides it once, at arrival. The catalogue is re-read whenever the
+   * working branch changes, and re-running this on a later read would overwrite
+   * a state the operator has since chosen with one from an address they left
+   * behind.
+   */
+  const requestedState = initialState.trim();
+  const openedWith: 'none' | 'pending' = requestedState === '' ? 'none' : 'pending';
+  // Both start from the same expression rather than one reading the other: a
+  // ref may not be read during render, and this is the render that sets up.
+  const arrivalRef = useRef<Arrival>(openedWith);
+  const [arrival, setArrival] = useState<Arrival>(openedWith);
+
   useEffect(() => {
     let cancelled = false;
     void readWorkOrderCatalogue().then((read) => {
-      if (!cancelled && read.status === 'ok') setCatalogue(read.data.workOrderStates);
+      if (cancelled) return;
+      const states = read.status === 'ok' ? read.data.workOrderStates : [];
+      if (read.status === 'ok') setCatalogue(states);
+      if (arrivalRef.current === 'pending') {
+        const known = states.some((entry) => entry.code === requestedState);
+        arrivalRef.current = read.status !== 'ok' ? 'unread' : known ? 'accepted' : 'refused';
+        setArrival(arrivalRef.current);
+        if (known) {
+          setState(requestedState);
+          // The same exclusion `chooseState` keeps: a state code never travels
+          // with the `active` group, so an accepted code moves the view off it.
+          setView((current) => (current === 'active' ? 'all' : current));
+        }
+      }
     });
     return () => {
       cancelled = true;
     };
-  }, [context.version]);
+  }, [context.version, requestedState]);
 
   /*
    * The figures, read once per scope and period.
@@ -339,9 +418,13 @@ export function WorkOrderQueueScreen({
    * nothing local holds a stale copy of either. The version change and the new
    * criteria arrive in the same render, and `useSearchRequest` treats the
    * version change as a submission of exactly these criteria.
+   *
+   * Nothing is asked for while a code that arrived in the address is still
+   * unresolved. A board that read first and narrowed second would show the
+   * whole branch for a frame under a heading the address promised was filtered.
    */
   const asked: Asked | null =
-    scope === null
+    scope === null || arrival === 'pending'
       ? null
       : {
           scope,
@@ -616,10 +699,9 @@ export function WorkOrderQueueScreen({
    * Every figure the aggregate publishes for this board, in the aggregate's own
    * terms.
    *
-   * The label of each one states the SET it counts — "open orders with parts
-   * requested", not "waiting for parts" — because that is the only way a figure
-   * and a list filter of a different shape can sit on one screen without
-   * appearing to disagree.
+   * The label of each one states the SET it counts — "open orders waiting for
+   * parts", not a bare "parts" — because that is the only way a figure and a
+   * list filter can sit on one screen without appearing to disagree.
    */
   const FIGURES = [
     {
@@ -654,7 +736,7 @@ export function WorkOrderQueueScreen({
    * The figure a view's chip may carry, or `null` where the two still count
    * different sets.
    *
-   * TWO of the nine agree EXACTLY, and each agreement is a fact about the
+   * FOUR of the nine agree EXACTLY, and each agreement is a fact about the
    * database rather than a resemblance:
    *
    *   - `active` — the route resolves the group as
@@ -663,8 +745,15 @@ export function WorkOrderQueueScreen({
    *     the second conjunct is implied and the sets are identical.
    *   - `readyForDelivery` — both resolve `isClosed && !isCancellation` from
    *     the live catalogue.
+   *   - `awaitingParts` — both are the repository's ONE
+   *     `waitingForPartsPredicate`: parts `requested` or `reserved_elsewhere`,
+   *     on a live order that is not in a terminal state.
+   *   - `awaitingApproval` — both are the repository's ONE
+   *     `PENDING_DECISION_EXISTS` over live work orders: the aggregate counts
+   *     distinct work orders, not requests, and no longer counts a request whose
+   *     work order was soft-deleted.
    *
-   * The other seven carry no figure, and each for a stated reason:
+   * The other five carry no figure, and each for a stated reason:
    *
    *   - `all` and `mine` — the aggregate publishes no such total.
    *   - `openedToday` — the aggregate's per-day opened counts sit inside a
@@ -674,23 +763,7 @@ export function WorkOrderQueueScreen({
    *     during the day; the list requires the order to be finished NOW. They
    *     disagree about a job completed this morning and reopened this
    *     afternoon.
-   *   - `awaitingParts` — the aggregate counts non-terminal orders whose parts
-   *     are `requested`; the list filter is any state whose parts are not
-   *     `none`.
    *   - `awaitingQuality` — the aggregate publishes no section for it.
-   *   - `awaitingApproval` — CLOSE, and not the same set. Both sides count a
-   *     `pending`, undeleted additional-work request, but the LIST reaches the
-   *     request through its work order and the aggregate reaches it through the
-   *     branch: the aggregate's statement selects from
-   *     `wo.additional_work_requests` on the scope columns alone and never
-   *     joins the parent, so a request whose work order has been soft-deleted is
-   *     still counted while the list — which walks from the work order — cannot
-   *     return it. The gap is small and it is real, and a number that is
-   *     occasionally one larger than the list beneath it is exactly the quiet
-   *     disagreement this whole arrangement exists to prevent. The figure stays
-   *     in the strip, where it is labelled as the branch's count rather than as
-   *     this view's, and a backend follow-up adding the parent join is what
-   *     would bring it onto the chip.
    */
   const chipFigure = (kindOfView: ViewKind): number | null => {
     if (sections === null) return null;
@@ -699,7 +772,11 @@ export function WorkOrderQueueScreen({
         ? sections.activeWorkOrders
         : kindOfView === 'readyForDelivery'
           ? sections.readyForDelivery
-          : undefined;
+          : kindOfView === 'awaitingParts'
+            ? sections.awaitingParts
+            : kindOfView === 'awaitingApproval'
+              ? sections.awaitingApproval
+              : undefined;
     const resolved = figureStateOf(section);
     return resolved.kind === 'figure' ? resolved.value : null;
   };
@@ -729,7 +806,7 @@ export function WorkOrderQueueScreen({
 
             A number beside a view is read as "this is how many the list below
             will show", so it may only appear where that is true. `chipFigure`
-            carries the two that agree and the reason each of the other seven
+            carries the four that agree and the reason each of the other five
             does not; the strip below carries every published figure, labelled
             by what the AGGREGATE counts, for the ones a chip cannot claim.
 
@@ -923,6 +1000,29 @@ export function WorkOrderQueueScreen({
           <h2 id="work-order-queue-heading" className="sr-only">
             {translate(messages, 'workOrders.queue.resultsHeading')}
           </h2>
+
+          {/*
+            An address asked for a state this workshop does not keep. The board
+            is showing everything, and says so — silently ignoring the request
+            would leave the reader believing they are looking at a filtered list.
+          */}
+          {arrival === 'refused' ? (
+            <p
+              role="status"
+              data-testid="work-order-queue-state-unknown"
+              className="rounded-md bg-warning-subtle px-3 py-2 text-supporting text-text-secondary"
+            >
+              {translate(messages, 'workOrders.queue.stateNotRecognised')}
+            </p>
+          ) : arrival === 'unread' ? (
+            <p
+              role="status"
+              data-testid="work-order-queue-state-unapplied"
+              className="rounded-md bg-warning-subtle px-3 py-2 text-supporting text-text-secondary"
+            >
+              {translate(messages, 'workOrders.queue.stateListUnavailable')}
+            </p>
+          ) : null}
 
           <SearchStates
             messages={messages}

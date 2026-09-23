@@ -114,11 +114,43 @@ const CATALOGUE_STATES = [
 const push = vi.fn();
 vi.mock('next/navigation', () => ({ useRouter: () => ({ push }) }));
 
+/**
+ * The session the work-order ROUTE resolves, so the address cases below can
+ * invoke it. Nothing else in this file reaches for a session.
+ */
+let PERMISSIONS: readonly string[] = [];
+vi.mock('@/features/authentication/api/session', () => ({
+  requireSession: async () => ({
+    permissions: PERMISSIONS,
+    email: 'operator@test.local',
+    companyIds: [],
+    branchIds: [],
+  }),
+}));
+
+/** The props one element in a route's returned tree carries. */
+function propsCarrying(node: unknown, prop: string): Record<string, unknown> | null {
+  if (node === null || typeof node !== 'object') return null;
+  const props = (node as { props?: Record<string, unknown> }).props;
+  if (props && typeof props === 'object' && prop in props) return props;
+  const children = props?.['children'];
+  for (const child of Array.isArray(children) ? children : [children]) {
+    const found = propsCarrying(child, prop);
+    if (found) return found;
+  }
+  return null;
+}
+
 const { CustomerSearchScreen } =
   await import('@/features/crm/customers/components/CustomerSearchScreen');
 const { VehicleSearchScreen } = await import('@/features/vehicles/components/VehicleSearchScreen');
 const { WorkOrderQueueScreen } =
   await import('@/features/work-orders/components/WorkOrderQueueScreen');
+const WorkOrderQueuePage = (await import('@/app/[locale]/(dashboard)/work-orders/page'))
+  .default as (args: {
+  params: Promise<Record<string, string>>;
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
+}) => Promise<unknown>;
 
 const EMPTY_PAGE = {
   status: 'ok',
@@ -580,19 +612,19 @@ describe('the work-order board reads on arrival and narrows honestly', () => {
 
   it('prints a figure on a chip ONLY where the two count the same set', async () => {
     /*
-     * The two that agree, and each agreement is a fact rather than a
+     * The four that agree, and each agreement is a fact rather than a
      * resemblance: `active` is `!isTerminal` on both sides once
-     * `ck_work_order_states_cancellation` is taken into account, and
-     * `readyForDelivery` is `isClosed && !isCancellation` on both.
+     * `ck_work_order_states_cancellation` is taken into account,
+     * `readyForDelivery` is `isClosed && !isCancellation` on both, and
+     * `awaitingParts` and `awaitingApproval` are each ONE shared SQL predicate
+     * on the backend — the pairing `tests/backend/p1-31-report-engine-work-orders`
+     * holds against the board route itself.
      *
-     * And the seven that do not. `awaitingParts` is the loudest — the aggregate
-     * counts NON-TERMINAL orders whose parts are `requested`, the list filter is
-     * any state whose parts are not `none` — and `awaitingApproval` is the
-     * quietest: both count a pending, undeleted request, but the aggregate
-     * selects from the request table on the scope columns alone while the list
-     * walks from the work order, so a request whose parent was soft-deleted is
-     * counted and not listed. A number one larger than the rows beneath it is
-     * exactly the disagreement a chip figure must not carry.
+     * And the five that do not: nothing publishes a total for `all` or `mine`,
+     * the opened and completed figures are counted under a different definition
+     * from the windows, and there is no quality section. A number that is not
+     * the count of the rows beneath it is exactly the disagreement a chip figure
+     * must not carry.
      */
     readDashboardSummary.mockResolvedValue(summaryWith({}));
     render();
@@ -604,14 +636,14 @@ describe('the work-order board reads on arrival and narrows honestly', () => {
 
     expect(chip('active')).toHaveTextContent('7');
     expect(chip('readyForDelivery')).toHaveTextContent('1');
+    expect(chip('awaitingApproval')).toHaveTextContent('3');
+    expect(chip('awaitingParts')).toHaveTextContent('5');
 
     for (const view of [
       'all',
       'openedToday',
       'completedToday',
       'mine',
-      'awaitingApproval',
-      'awaitingParts',
       'awaitingQuality',
     ] as const) {
       expect(chip(view).textContent, view).toBe(label(view));
@@ -886,5 +918,177 @@ describe('this file is not vacuous', () => {
       expect(Object.keys(ar), key).toContain(key);
     }
     expect(en['state.empty.title']).not.toBe(en['crm.customers.search.noMatch']);
+  });
+});
+
+/* -------------------------------------------------------------------------- *
+ * Where the board opens when a figure sent the reader here
+ * (Owner directive, `P1-32-PRE-OD-UX`)
+ * -------------------------------------------------------------------------- */
+
+describe('the work-order board opens where the address says, or says it could not', () => {
+  const COMPANY = TEST_COMPANY.id;
+  const BRANCH = TEST_BRANCH.id;
+
+  const firstFilters = () =>
+    (listWorkOrders.mock.calls.at(0) as [Record<string, unknown>, Record<string, unknown>])[1];
+
+  beforeEach(() => {
+    listWorkOrders.mockReset();
+    listWorkOrders.mockResolvedValue({ ...EMPTY_PAGE });
+    readWorkOrderCatalogue.mockReset();
+    readWorkOrderCatalogue.mockResolvedValue({
+      status: 'ok',
+      data: { workOrderStates: CATALOGUE_STATES },
+      correlationId: null,
+    });
+    readDashboardSummary.mockReset();
+    readDashboardSummary.mockResolvedValue({ status: 'unavailable', correlationId: null });
+    window.localStorage.clear();
+    PERMISSIONS = ['wo.work_order.read'];
+  });
+
+  /** The props the ROUTE hands the board, for one address. */
+  async function routeProps(query: Record<string, string | string[]>) {
+    const tree = await WorkOrderQueuePage({
+      params: Promise.resolve({ locale: 'en' }),
+      searchParams: Promise.resolve(query),
+    });
+    const props = propsCarrying(tree, 'initialView');
+    expect(props, 'the route did not render the board').not.toBeNull();
+    return props as Record<string, unknown>;
+  }
+
+  it('passes a declared view and a well-shaped code through', async () => {
+    const props = await routeProps({ view: 'awaitingParts', state: 'awaiting_insurer' });
+    expect(props['initialView']).toBe('awaitingParts');
+    expect(props['initialState']).toBe('awaiting_insurer');
+  });
+
+  it('drops a view it does not declare, and opens the default board', async () => {
+    for (const view of ['completedInPeriod', 'ALL', 'nonsense']) {
+      expect((await routeProps({ view }))['initialView']).toBe('active');
+    }
+    expect((await routeProps({}))['initialView']).toBe('active');
+  });
+
+  it('drops a state that is not shaped like a code', async () => {
+    for (const state of ['In Progress', 'a', '../../etc', '1open']) {
+      expect((await routeProps({ state }))['initialState']).toBe('');
+    }
+  });
+
+  it('reads one value from a repeated parameter rather than a list', async () => {
+    const props = await routeProps({
+      view: ['awaitingParts', 'mine'],
+      state: ['open', 'closed'],
+    });
+    expect(props['initialView']).toBe('awaitingParts');
+    expect(props['initialState']).toBe('open');
+  });
+
+  it('sends the arriving view on the first read', async () => {
+    renderLtr(
+      inBranch(<WorkOrderQueueScreen locale="en" messages={en} initialView="awaitingParts" />)
+    );
+    await waitFor(() => expect(listWorkOrders).toHaveBeenCalledTimes(1));
+    expect(firstFilters()).toEqual({ awaitingParts: true });
+  });
+
+  it('asks for nothing while the catalogue has not answered', async () => {
+    // A code matching the operation's SHAPE is not thereby a state this
+    // workshop keeps. Reading first would show the whole branch for a frame
+    // under an address that promised one state.
+    readWorkOrderCatalogue.mockReturnValue(new Promise(() => undefined));
+    renderLtr(
+      inBranch(<WorkOrderQueueScreen locale="en" messages={en} initialState="awaiting_insurer" />)
+    );
+    await waitFor(() => expect(readWorkOrderCatalogue).toHaveBeenCalled());
+    expect(listWorkOrders).not.toHaveBeenCalled();
+  });
+
+  it('carries a code the catalogue names, and shows it in the picker', async () => {
+    renderLtr(
+      inBranch(<WorkOrderQueueScreen locale="en" messages={en} initialState="awaiting_insurer" />)
+    );
+    await waitFor(() => expect(listWorkOrders).toHaveBeenCalledTimes(1));
+    expect(firstFilters()).toEqual({ state: 'awaiting_insurer' });
+    expect(
+      (screen.getByLabelText(en['workOrders.queue.stateFilter']) as HTMLSelectElement).value
+    ).toBe('awaiting_insurer');
+    expect(screen.queryByTestId('work-order-queue-state-unknown')).toBeNull();
+  });
+
+  it('drops a well-shaped code this workshop does not keep, and says so', async () => {
+    renderLtr(
+      inBranch(<WorkOrderQueueScreen locale="en" messages={en} initialState="awaiting_dealer" />)
+    );
+    await waitFor(() => expect(listWorkOrders).toHaveBeenCalledTimes(1));
+
+    // The read carries no state at all — not the code, and not a guess.
+    expect(firstFilters()).toEqual({});
+    expect(await screen.findByTestId('work-order-queue-state-unknown')).toHaveTextContent(
+      en['workOrders.queue.stateNotRecognised'] as string
+    );
+    expect(
+      (screen.getByLabelText(en['workOrders.queue.stateFilter']) as HTMLSelectElement).value
+    ).toBe('');
+  });
+
+  it('moves an accepted code off the default view, which sends a group', async () => {
+    // The list operation refuses a state code and a state group together, so a
+    // code arriving with `view=active` opens on every state instead.
+    renderLtr(
+      inBranch(
+        <WorkOrderQueueScreen
+          locale="en"
+          messages={en}
+          initialView="active"
+          initialState="awaiting_insurer"
+        />
+      )
+    );
+    await waitFor(() => expect(listWorkOrders).toHaveBeenCalledTimes(1));
+    expect(firstFilters()).toEqual({ state: 'awaiting_insurer' });
+  });
+
+  it('drops the code when the catalogue itself could not be read, and says why', async () => {
+    // Unreadable and unknown lead to the same DECISION — nothing established
+    // that the workshop keeps this state, so the board must not claim to be
+    // filtered by it — but not to the same SENTENCE. Nobody checked the state
+    // against the workshop, so "not one this workshop uses" would be false; what
+    // is true is that the list could not be loaded and the state was not applied.
+    readWorkOrderCatalogue.mockResolvedValue({ status: 'unavailable', correlationId: 'c' });
+    renderLtr(
+      inBranch(<WorkOrderQueueScreen locale="en" messages={en} initialState="awaiting_insurer" />)
+    );
+    await waitFor(() => expect(listWorkOrders).toHaveBeenCalledTimes(1));
+    expect(firstFilters()).toEqual({});
+    expect(await screen.findByTestId('work-order-queue-state-unapplied')).toHaveTextContent(
+      en['workOrders.queue.stateListUnavailable'] as string
+    );
+    expect(screen.queryByTestId('work-order-queue-state-unknown')).toBeNull();
+    expect(screen.queryByText(en['workOrders.queue.stateNotRecognised'] as string)).toBeNull();
+  });
+
+  it('says the same thing in Arabic when the catalogue could not be read', async () => {
+    readWorkOrderCatalogue.mockResolvedValue({ status: 'unavailable', correlationId: 'c' });
+    renderRtl(
+      inBranch(<WorkOrderQueueScreen locale="ar" messages={ar} initialState="awaiting_insurer" />, {
+        locale: 'ar',
+      })
+    );
+    expect(await screen.findByTestId('work-order-queue-state-unapplied')).toHaveTextContent(
+      ar['workOrders.queue.stateListUnavailable'] as string
+    );
+  });
+
+  it('addresses the read to the working branch however it arrived', async () => {
+    renderLtr(
+      inBranch(<WorkOrderQueueScreen locale="en" messages={en} initialView="awaitingApproval" />)
+    );
+    await waitFor(() => expect(listWorkOrders).toHaveBeenCalledTimes(1));
+    const scope = (listWorkOrders.mock.calls.at(0) as [Record<string, unknown>])[0];
+    expect(scope).toEqual({ companyId: COMPANY, branchId: BRANCH });
   });
 });

@@ -64,6 +64,15 @@
  * OWN company and branches (`COMPANY_D`) so the counts it asserts are exactly the
  * rows it inserted and cannot move when this file's report fixtures change; what
  * it reuses is the harness, the principal seeding and the visit primitive.
+ *
+ * ## Every linked figure equals the list it links to
+ *
+ * The last block holds the Owner rule — a dashboard figure offered as "the list"
+ * counts exactly the set that list shows — against the board route itself, in a
+ * third company of its own (`COMPANY_E`) whose fixtures are the edge cases that
+ * separated the two definitions before they were shared: a FINISHED order with
+ * parts requested, parts `reserved_elsewhere`, a RETIRED work order holding a
+ * pending request, and one order holding TWO pending requests.
  */
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import type { Pool } from 'pg';
@@ -105,6 +114,9 @@ import { GET as DASHBOARD_SUMMARY } from '@/app/api/v1/dashboard/summary/route';
 import { POST as CLOSE_WORK_ORDER } from '@/app/api/v1/work-orders/[workOrderId]/closure/route';
 import { POST as CREATE_JOB } from '@/app/api/v1/work-orders/[workOrderId]/jobs/route';
 import { POST as TRANSITION_JOB } from '@/app/api/v1/jobs/[jobId]/transition/route';
+import { GET as LIST_WORK_ORDERS } from '@/app/api/v1/work-orders/route';
+import { GET as LIST_RECEPTIONS } from '@/app/api/v1/receptions/route';
+import { __resetRateLimitForTests } from '@/server/http/rate-limit';
 
 let admin: Pool;
 let runtime: Pool;
@@ -839,7 +851,8 @@ async function seedScopedGrant(
   grantId: string,
   userId: string,
   roleId: string,
-  branchIds: readonly string[]
+  branchIds: readonly string[],
+  companyId: string = COMPANY_D
 ): Promise<void> {
   const client = await admin.connect();
   try {
@@ -853,7 +866,7 @@ async function seedScopedGrant(
       await client.query(
         `INSERT INTO iam.grant_scopes (tenant_id, grant_id, scope_type, company_id, branch_id, created_by)
          VALUES ($1,$2,'branch',$3,$4,$5)`,
-        [TENANT_A, grantId, COMPANY_D, branchId, USER_A]
+        [TENANT_A, grantId, companyId, branchId, USER_A]
       );
     }
     await client.query('COMMIT');
@@ -2156,5 +2169,711 @@ describe('tenant report restrictions remain visible to a read-only report caller
         ).toEqual([otherBranchOrder]);
       }
     );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// ovw.dashboard-summary-read — every linked figure counts the list it links to
+// (Owner directive, P1-32-PRE-OD-UX)
+// ---------------------------------------------------------------------------
+
+/** This block's OWN company, so nothing another block inserts can move a count. */
+const COMPANY_E = 'f1310000-0000-4000-8000-0000000000e0';
+const BRANCH_E1 = 'f1310000-0000-4000-8000-0000000000e1';
+const BRANCH_E2 = 'f1310000-0000-4000-8000-0000000000e2';
+/**
+ * A branch that holds an ACTIVE order and a reception, and is then RETIRED.
+ * "All my branches" is whatever the shared resolver answers, on both sides: for
+ * a caller with no branch narrowing it answers "the company", which every list
+ * filters on alone, so the retired branch's rows are listed and counted; for a
+ * branch-narrowed caller its narrowed arm drops a retired branch, so they are
+ * in neither.
+ */
+const BRANCH_E3 = 'f1310000-0000-4000-8000-0000000000e3';
+
+/** Unrestricted, holding every code the dashboard's sections and the board ask for. */
+const OVW_LINKS: Principal = {
+  roleId: 'f1310000-0000-4000-8000-000000000301',
+  userId: 'f1310000-0000-4000-8000-000000000302',
+  subject: 'fx_ovw_links',
+  tenantId: TENANT_A,
+  permissions: [...DASHBOARD_CODES],
+};
+
+/**
+ * Branch-restricted: every dashboard code in the FIRST branch and in the branch
+ * that is later RETIRED, and an unrelated code in the sibling — so the sibling
+ * is inside its permission-blind RLS reach with no work-order authority there,
+ * the retired branch still carries a grant scope, and "all my branches" must
+ * resolve to the first branch alone on BOTH sides.
+ */
+const OVW_LINKS_E1: Principal = {
+  roleId: 'f1310000-0000-4000-8000-000000000311',
+  userId: 'f1310000-0000-4000-8000-000000000312',
+  subject: 'fx_ovw_links_e1',
+  tenantId: TENANT_A,
+  permissions: [...DASHBOARD_CODES],
+  scope: { companyId: COMPANY_E, branchId: BRANCH_E1 },
+  grantId: 'f1310000-0000-4000-8000-000000000313',
+};
+const OVW_LINKS_REACH_ROLE = 'f1310000-0000-4000-8000-000000000314';
+const OVW_LINKS_REACH_GRANT = 'f1310000-0000-4000-8000-000000000315';
+
+describe('ovw.dashboard-summary-read — every linked figure counts the list it links to', () => {
+  /** Unfinished, parts requested: waiting for parts. */
+  let partsRequested = '';
+  /** Unfinished, parts reserved in another system and never issued: waiting. */
+  let partsReservedElsewhere = '';
+  /** Parts requested and then CLOSED: a finished order is not waiting. */
+  let finishedWithParts = '';
+  /** Parts requested and a pending request, then RETIRED: counted by nothing. */
+  let retiredWithRequest = '';
+  /** Two pending requests on ONE order: one work order, two requests. */
+  let twoRequests = '';
+  /** Active, waiting on parts and a decision, in a branch that is then RETIRED. */
+  let inRetiredBranch = '';
+
+  async function seedLinkOrder(branchId: string): Promise<string> {
+    const visit = await seedAuthorizedVisit({ companyId: COMPANY_E, branchId });
+    const inserted = await admin.query<{ id: string }>(
+      `INSERT INTO wo.work_orders
+         (tenant_id, company_id, branch_id, reception_visit_id, vehicle_id, created_by)
+       VALUES ($1,$2,$3,$4,$5,$6) RETURNING id`,
+      [TENANT_A, COMPANY_E, branchId, visit.visitId, visit.vehicleId, USER_A]
+    );
+    return inserted.rows[0]?.id ?? '';
+  }
+
+  async function setParts(workOrderId: string, value: string): Promise<void> {
+    await admin.query(`UPDATE wo.work_orders SET parts_forward_state = $2 WHERE id = $1`, [
+      workOrderId,
+      value,
+    ]);
+  }
+
+  async function pendingRequest(workOrderId: string, branchId: string): Promise<void> {
+    await admin.query(
+      `INSERT INTO wo.additional_work_requests
+         (tenant_id, company_id, branch_id, work_order_id, summary, state, is_required, created_by)
+       VALUES ($1,$2,$3,$4,'Dashboard link fixture request','pending',false,$5)`,
+      [TENANT_A, COMPANY_E, branchId, workOrderId, USER_A]
+    );
+  }
+
+  /** Drives an order to `closed` through the shipped transition and closure routes. */
+  async function closeLinkOrder(workOrderId: string): Promise<void> {
+    const version = await advance(workOrderId, [...OVW_CLOSURE_PATH], FULL);
+    authAs(FULL);
+    const response = await CLOSE_WORK_ORDER(
+      new Request(`http://localhost/api/v1/work-orders/${workOrderId}/closure`, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'idempotency-key': randomUUID(),
+          'if-match': String(version),
+        },
+        body: JSON.stringify({ toState: 'closed' }),
+      }),
+      { params: Promise.resolve({ workOrderId }) }
+    );
+    if (response.status !== 200) {
+      throw new Error(`fixture closure failed with ${response.status}: ${await response.text()}`);
+    }
+  }
+
+  /**
+   * Every work-order id the BOARD returns for one query, walking every page.
+   *
+   * The figure is compared with the list's own answer rather than with a count
+   * written here, so the case fails the moment the two definitions part —
+   * whichever side moves.
+   */
+  async function boardIds(
+    query: Record<string, string>,
+    principal: Principal = OVW_LINKS
+  ): Promise<readonly string[]> {
+    const ids: string[] = [];
+    let cursor: string | null = null;
+    do {
+      __resetRateLimitForTests();
+      authAs(principal);
+      const url = new URL('http://localhost/api/v1/work-orders');
+      for (const [key, value] of Object.entries(query)) url.searchParams.set(key, value);
+      url.searchParams.set('limit', '100');
+      if (cursor !== null) url.searchParams.set('cursor', cursor);
+      const response = await LIST_WORK_ORDERS(new Request(url));
+      if (response.status !== 200) {
+        throw new Error(`board read failed with ${response.status}: ${await response.text()}`);
+      }
+      const body = (await response.json()) as {
+        items: readonly { id: string }[];
+        nextCursor: string | null;
+        hasMore: boolean;
+      };
+      ids.push(...body.items.map((item) => item.id));
+      cursor = body.hasMore ? body.nextCursor : null;
+    } while (cursor !== null);
+    return ids;
+  }
+
+  /**
+   * Every reception the reception BOARD returns for one query, walking every
+   * page — the list the dashboard's receptions figure links to.
+   */
+  async function receptionRows(
+    query: Record<string, string>,
+    principal: Principal = OVW_LINKS
+  ): Promise<readonly { readonly id: string; readonly branchId: string }[]> {
+    const rows: { id: string; branchId: string }[] = [];
+    let cursor: string | null = null;
+    do {
+      __resetRateLimitForTests();
+      authAs(principal);
+      const url = new URL('http://localhost/api/v1/receptions');
+      for (const [key, value] of Object.entries(query)) url.searchParams.set(key, value);
+      url.searchParams.set('limit', '100');
+      if (cursor !== null) url.searchParams.set('cursor', cursor);
+      const response = await LIST_RECEPTIONS(new Request(url));
+      if (response.status !== 200) {
+        throw new Error(`reception read failed with ${response.status}: ${await response.text()}`);
+      }
+      const body = (await response.json()) as {
+        items: readonly { id: string; branchId: string }[];
+        nextCursor: string | null;
+        hasMore: boolean;
+      };
+      rows.push(...body.items.map((item) => ({ id: item.id, branchId: item.branchId })));
+      cursor = body.hasMore ? body.nextCursor : null;
+    } while (cursor !== null);
+    return rows;
+  }
+
+  /**
+   * The reception board's inclusive instant bounds for the calendar days a
+   * dashboard answer was cut in — its first local midnight, and the last
+   * millisecond before the local midnight after its last day — converted by the
+   * database in the zone the answer names, not by this process.
+   */
+  async function receptionWindow(view: SummaryBody): Promise<Record<string, string>> {
+    const bounds = await admin.query<{ opens: Date; closes: Date }>(
+      `SELECT (($1::date)::timestamp AT TIME ZONE $3) AS opens,
+              ((($2::date + 1)::timestamp AT TIME ZONE $3) - interval '1 millisecond') AS closes`,
+      [view.period.from, view.period.to, view.period.timezone]
+    );
+    const row = bounds.rows[0];
+    if (row === undefined) throw new Error('the period bounds did not resolve');
+    return { from: row.opens.toISOString(), to: row.closes.toISOString() };
+  }
+
+  beforeAll(async () => {
+    await admin.query(
+      `INSERT INTO org.legal_companies
+         (id, tenant_id, company_code, legal_name, base_currency_code, created_by)
+       VALUES ($1,$2,'fx_ovw_links','Dashboard Links Company','USD',$3)
+       ON CONFLICT (id) DO NOTHING`,
+      [COMPANY_E, TENANT_A, USER_A]
+    );
+    for (const [id, code, name] of [
+      [BRANCH_E1, 'fx_ovw_branch_e1', 'Dashboard Links Branch A'],
+      [BRANCH_E2, 'fx_ovw_branch_e2', 'Dashboard Links Branch B'],
+      [BRANCH_E3, 'fx_ovw_branch_e3', 'Dashboard Links Branch C'],
+    ]) {
+      await admin.query(
+        `INSERT INTO org.branches
+           (id, tenant_id, company_id, branch_code, name, timezone_name, created_by)
+         VALUES ($1,$2,$3,$4,$5,$6,$7) ON CONFLICT (id) DO NOTHING`,
+        [id, TENANT_A, COMPANY_E, code, name, BRANCH_TIMEZONE, USER_A]
+      );
+    }
+    await seedPrincipal(OVW_LINKS);
+    await seedPrincipal(OVW_LINKS_E1);
+    // The restricted principal's authority reaches the branch retired below as
+    // well, so leaving it out is the resolver's retired-branch rule at work and
+    // not a caller that never had the branch.
+    await admin.query(
+      `INSERT INTO iam.grant_scopes (tenant_id, grant_id, scope_type, company_id, branch_id, created_by)
+       VALUES ($1,$2,'branch',$3,$4,$5)`,
+      [TENANT_A, OVW_LINKS_E1.grantId, COMPANY_E, BRANCH_E3, USER_A]
+    );
+    // The reach role: an unrelated code scoped to the sibling branch, so the
+    // restricted principal's RLS reach covers both branches while its
+    // work-order authority covers one. Without it the restricted case would
+    // pass because RLS returned nothing, which proves the wrong control.
+    await admin.query(
+      `INSERT INTO iam.roles (id, tenant_id, role_code, name, created_by)
+       VALUES ($1,$2,'fx_ovw_links_reach','Dashboard links reach only',$3)
+       ON CONFLICT (id) DO NOTHING`,
+      [OVW_LINKS_REACH_ROLE, TENANT_A, USER_A]
+    );
+    await admin.query(
+      `INSERT INTO iam.role_permissions (tenant_id, role_id, permission_id, effect, created_by)
+       SELECT $1::uuid,$2::uuid,p.id,'allow',$3::uuid FROM iam.permissions p
+        WHERE p.permission_code = $4
+       ON CONFLICT (tenant_id, role_id, permission_id) DO NOTHING`,
+      [TENANT_A, OVW_LINKS_REACH_ROLE, USER_A, REACH_ONLY]
+    );
+    await seedScopedGrant(
+      OVW_LINKS_REACH_GRANT,
+      OVW_LINKS_E1.userId,
+      OVW_LINKS_REACH_ROLE,
+      [BRANCH_E2],
+      COMPANY_E
+    );
+
+    partsRequested = await seedLinkOrder(BRANCH_E1);
+    await setParts(partsRequested, 'requested');
+
+    partsReservedElsewhere = await seedLinkOrder(BRANCH_E1);
+    await setParts(partsReservedElsewhere, 'reserved_elsewhere');
+    await pendingRequest(partsReservedElsewhere, BRANCH_E1);
+
+    finishedWithParts = await seedLinkOrder(BRANCH_E1);
+    await setParts(finishedWithParts, 'requested');
+    await closeLinkOrder(finishedWithParts);
+
+    retiredWithRequest = await seedLinkOrder(BRANCH_E1);
+    await setParts(retiredWithRequest, 'requested');
+    await pendingRequest(retiredWithRequest, BRANCH_E1);
+    await admin.query(
+      `UPDATE wo.work_orders SET deleted_at = now(), deleted_by = $2 WHERE id = $1`,
+      [retiredWithRequest, USER_A]
+    );
+
+    twoRequests = await seedLinkOrder(BRANCH_E1);
+    await pendingRequest(twoRequests, BRANCH_E1);
+    await pendingRequest(twoRequests, BRANCH_E1);
+
+    // An untouched order, so no view is trivially "every order".
+    await seedLinkOrder(BRANCH_E1);
+
+    // The sibling branch: one order waiting on both, so the branch scope and the
+    // all-branches scope are each tested against a set that differs.
+    const sibling = await seedLinkOrder(BRANCH_E2);
+    await setParts(sibling, 'requested');
+    await pendingRequest(sibling, BRANCH_E2);
+
+    // The retired branch: an active order waiting on parts and on a decision,
+    // seeded while the branch is live, and then the BRANCH is retired — the
+    // order and its reception stay live. Every figure it could move is linked,
+    // so the all-branches equality above would part the moment one side counted
+    // it and the other did not.
+    inRetiredBranch = await seedLinkOrder(BRANCH_E3);
+    await setParts(inRetiredBranch, 'requested');
+    await pendingRequest(inRetiredBranch, BRANCH_E3);
+    await admin.query(`UPDATE org.branches SET deleted_at = now(), deleted_by = $2 WHERE id = $1`, [
+      BRANCH_E3,
+      USER_A,
+    ]);
+
+    __resetAuthenticatorForTests();
+  });
+
+  /** The three scopes a dashboard can be asked for, and the board query for each. */
+  const SCOPES = [
+    { name: 'the first branch', branchId: BRANCH_E1 },
+    { name: 'the sibling branch', branchId: BRANCH_E2 },
+    { name: 'every authorized branch', branchId: null },
+  ] as const;
+
+  for (const scope of SCOPES) {
+    it(`matches every linked figure to its board view for ${scope.name}`, async () => {
+      const where: Record<string, string> =
+        scope.branchId === null
+          ? { companyId: COMPANY_E }
+          : { companyId: COMPANY_E, branchId: scope.branchId };
+      const view = await dashboardAs(OVW_LINKS, { ...where, period: 'today' });
+
+      // Each pair is the card's figure and the board view its link opens. A
+      // snapshot figure is not bounded by the period, and neither is the view.
+      const pairs = [
+        { card: view.sections.awaitingParts, query: { awaitingParts: 'true' } },
+        { card: view.sections.awaitingApproval, query: { awaitingApproval: 'true' } },
+        { card: view.sections.activeWorkOrders, query: { stateGroup: 'active' } },
+        { card: view.sections.readyForDelivery, query: { readyForDelivery: 'true' } },
+      ] as const;
+      for (const pair of pairs) {
+        const ids = await boardIds({ ...where, ...pair.query });
+        expect(sectionValue(pair.card), JSON.stringify(pair.query)).toBe(ids.length);
+      }
+    });
+  }
+
+  it('counts parts not in hand on unfinished orders, and nothing retired or finished', async () => {
+    const view = await dashboardAs(OVW_LINKS, {
+      companyId: COMPANY_E,
+      branchId: BRANCH_E1,
+      period: 'today',
+    });
+    expect(view.sections.awaitingParts).toEqual({ status: 'ok', value: 2 });
+
+    const ids = await boardIds({
+      companyId: COMPANY_E,
+      branchId: BRANCH_E1,
+      awaitingParts: 'true',
+    });
+    expect([...ids].sort()).toEqual([partsRequested, partsReservedElsewhere].sort());
+    expect(ids).not.toContain(finishedWithParts);
+    expect(ids).not.toContain(retiredWithRequest);
+
+    // Three live-branch orders and the one standing in the retired branch: an
+    // unrestricted caller's board lists it, so the figure counts it.
+    const everywhere = await dashboardAs(OVW_LINKS, { companyId: COMPANY_E, period: 'today' });
+    expect(everywhere.sections.awaitingParts).toEqual({ status: 'ok', value: 4 });
+  });
+
+  it('counts work orders waiting on a decision once each, and requests separately', async () => {
+    const view = await dashboardAs(OVW_LINKS, {
+      companyId: COMPANY_E,
+      branchId: BRANCH_E1,
+      period: 'today',
+    });
+    // Two ORDERS: the reserved one and the one holding two requests. The retired
+    // order's request is still a live row and is counted by neither figure.
+    expect(view.sections.awaitingApproval).toEqual({ status: 'ok', value: 2 });
+    expect(view.sections.pendingApprovalsCount).toEqual({ status: 'ok', value: 3 });
+
+    const ids = await boardIds({
+      companyId: COMPANY_E,
+      branchId: BRANCH_E1,
+      awaitingApproval: 'true',
+    });
+    expect([...ids].sort()).toEqual([partsReservedElsewhere, twoRequests].sort());
+    expect(ids).not.toContain(retiredWithRequest);
+
+    // Adds the sibling's order and the retired branch's, one request each.
+    const everywhere = await dashboardAs(OVW_LINKS, { companyId: COMPANY_E, period: 'today' });
+    expect(everywhere.sections.awaitingApproval).toEqual({ status: 'ok', value: 4 });
+    expect(everywhere.sections.pendingApprovalsCount).toEqual({ status: 'ok', value: 5 });
+  });
+
+  it('matches every all-branches figure to its board view for a branch-restricted caller', async () => {
+    const where = { companyId: COMPANY_E };
+    const view = await dashboardAs(OVW_LINKS_E1, { ...where, period: 'today' });
+    // Resolved to the one branch it holds the read in — not the sibling its
+    // reach grant touches, and not the company.
+    expect(view.branchIds).toEqual([BRANCH_E1]);
+
+    const pairs = [
+      { card: view.sections.awaitingParts, query: { awaitingParts: 'true' } },
+      { card: view.sections.awaitingApproval, query: { awaitingApproval: 'true' } },
+      { card: view.sections.activeWorkOrders, query: { stateGroup: 'active' } },
+      { card: view.sections.readyForDelivery, query: { readyForDelivery: 'true' } },
+    ] as const;
+    for (const pair of pairs) {
+      const ids = await boardIds({ ...where, ...pair.query }, OVW_LINKS_E1);
+      expect(sectionValue(pair.card), JSON.stringify(pair.query)).toBe(ids.length);
+    }
+
+    // The restricted figure is the first branch's own, and it is strictly less
+    // than the unrestricted caller's — so the equality above is not two sides
+    // agreeing on the whole company.
+    const firstBranch = await dashboardAs(OVW_LINKS, {
+      ...where,
+      branchId: BRANCH_E1,
+      period: 'today',
+    });
+    const everywhere = await dashboardAs(OVW_LINKS, { ...where, period: 'today' });
+    expect(view.sections.awaitingParts).toEqual(firstBranch.sections.awaitingParts);
+    expect(sectionValue(view.sections.awaitingParts)).toBeLessThan(
+      sectionValue(everywhere.sections.awaitingParts)
+    );
+  });
+
+  it('counts an active order in a retired branch exactly where the board lists it', async () => {
+    const LINKED = [
+      { awaitingParts: 'true' },
+      { awaitingApproval: 'true' },
+      { stateGroup: 'active' },
+      {},
+    ] as const;
+
+    // Unrestricted: the resolver answers "the company", the board filters on
+    // the company alone, and the retired branch is in the dashboard's set...
+    const everywhere = await dashboardAs(OVW_LINKS, { companyId: COMPANY_E, period: 'today' });
+    expect([...everywhere.branchIds].sort()).toEqual([BRANCH_E1, BRANCH_E2, BRANCH_E3].sort());
+    // ...its order is on every board view the figures link to...
+    for (const query of LINKED) {
+      const ids = await boardIds({ companyId: COMPANY_E, ...query });
+      expect(ids, JSON.stringify(query)).toContain(inRetiredBranch);
+    }
+    // ...and the figures count it: the per-branch cases pin three and three for
+    // the two live branches, and the retired branch adds one to each.
+    expect(everywhere.sections.awaitingParts).toEqual({ status: 'ok', value: 4 });
+    expect(everywhere.sections.awaitingApproval).toEqual({ status: 'ok', value: 4 });
+    const active = await boardIds({ companyId: COMPANY_E, stateGroup: 'active' });
+    expect(sectionValue(everywhere.sections.activeWorkOrders)).toBe(active.length);
+
+    // Branch-restricted, with authority granted in the retired branch too: the
+    // resolver's narrowed arm drops a retired branch, so its order is in
+    // neither the figure nor the list.
+    const restricted = await dashboardAs(OVW_LINKS_E1, { companyId: COMPANY_E, period: 'today' });
+    expect(restricted.branchIds).toEqual([BRANCH_E1]);
+    for (const query of LINKED) {
+      const ids = await boardIds({ companyId: COMPANY_E, ...query }, OVW_LINKS_E1);
+      expect(ids, JSON.stringify(query)).not.toContain(inRetiredBranch);
+    }
+    const restrictedParts = await boardIds(
+      { companyId: COMPANY_E, awaitingParts: 'true' },
+      OVW_LINKS_E1
+    );
+    expect(sectionValue(restricted.sections.awaitingParts)).toBe(restrictedParts.length);
+    expect(restricted.sections.awaitingParts).toEqual({ status: 'ok', value: 2 });
+
+    // The order itself is live: it is the BRANCH that was retired, so this case
+    // measures the branch rule and not the work-order tombstone.
+    const row = await admin.query<{ deleted_at: Date | null }>(
+      `SELECT deleted_at FROM wo.work_orders WHERE id = $1`,
+      [inRetiredBranch]
+    );
+    expect(row.rows[0]?.deleted_at).toBeNull();
+  });
+
+  it('counts the receptions the reception board lists for the same period and branches', async () => {
+    // Unrestricted, all branches: the retired branch holds a reception in the
+    // period, and both sides include it.
+    const everywhere = await dashboardAs(OVW_LINKS, { companyId: COMPANY_E, period: 'today' });
+    const everywhereRows = await receptionRows({
+      companyId: COMPANY_E,
+      ...(await receptionWindow(everywhere)),
+    });
+    expect(sectionValue(everywhere.sections.receptionsOpened)).toBe(everywhereRows.length);
+    expect(everywhereRows.map((row) => row.branchId)).toContain(BRANCH_E3);
+
+    // Unrestricted, one named branch: the same equality, over a smaller set.
+    const firstBranch = await dashboardAs(OVW_LINKS, {
+      companyId: COMPANY_E,
+      branchId: BRANCH_E1,
+      period: 'today',
+    });
+    const firstBranchRows = await receptionRows({
+      companyId: COMPANY_E,
+      branchId: BRANCH_E1,
+      ...(await receptionWindow(firstBranch)),
+    });
+    expect(sectionValue(firstBranch.sections.receptionsOpened)).toBe(firstBranchRows.length);
+    expect(firstBranchRows.length).toBeLessThan(everywhereRows.length);
+
+    // Branch-restricted, all branches: the reception board resolves its own set
+    // through the same resolver, for its own code, and lands on the first branch
+    // alone — the sibling carries no reception authority and the retired branch
+    // is dropped — exactly as the dashboard does.
+    const restricted = await dashboardAs(OVW_LINKS_E1, { companyId: COMPANY_E, period: 'today' });
+    const restrictedRows = await receptionRows(
+      { companyId: COMPANY_E, ...(await receptionWindow(restricted)) },
+      OVW_LINKS_E1
+    );
+    expect(sectionValue(restricted.sections.receptionsOpened)).toBe(restrictedRows.length);
+    expect(new Set(restrictedRows.map((row) => row.branchId))).toEqual(new Set([BRANCH_E1]));
+    expect(restrictedRows.length).toBe(firstBranchRows.length);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// ovw.dashboard-summary-read — a company with no branch at all
+// ---------------------------------------------------------------------------
+
+/** A company of tenant A that holds NO branch, live or retired. */
+const COMPANY_Z = 'f1310000-0000-4000-8000-0000000000f0';
+/** A company id no tenant holds. */
+const COMPANY_NOWHERE = 'f1310000-0000-4000-8000-0000000000f9';
+
+/**
+ * Company-scoped in `COMPANY_Z` for every dashboard code except stock, and
+ * company-scoped for stock in `COMPANY_R` ONLY.
+ *
+ * No branch-typed scope row anywhere, so the caller carries no branch
+ * narrowing and the resolver answers "the company" for `COMPANY_Z`. The stock
+ * grant elsewhere is the decisive part: a section decision that asked "does
+ * this caller hold the code anywhere in the tenant" would answer yes and show
+ * a low-stock zero for a company in which the caller may not read stock.
+ */
+const OVW_EMPTY_SCOPED = {
+  userId: 'f1310000-0000-4000-8000-000000000401',
+  subject: 'fx_ovw_empty_scoped',
+  baseRoleId: 'f1310000-0000-4000-8000-000000000402',
+  baseGrantId: 'f1310000-0000-4000-8000-000000000403',
+  stockRoleId: 'f1310000-0000-4000-8000-000000000404',
+  stockGrantId: 'f1310000-0000-4000-8000-000000000405',
+} as const;
+
+/**
+ * This block's own unrestricted callers — every dashboard code, and the same
+ * minus stock — so the block depends on no other block's fixtures.
+ */
+const OVW_EMPTY_FULL: Principal = {
+  roleId: 'f1310000-0000-4000-8000-000000000411',
+  userId: 'f1310000-0000-4000-8000-000000000412',
+  subject: 'fx_ovw_empty_full',
+  tenantId: TENANT_A,
+  permissions: [...DASHBOARD_CODES],
+};
+const OVW_EMPTY_NO_STOCK: Principal = {
+  roleId: 'f1310000-0000-4000-8000-000000000421',
+  userId: 'f1310000-0000-4000-8000-000000000422',
+  subject: 'fx_ovw_empty_no_stock',
+  tenantId: TENANT_A,
+  permissions: DASHBOARD_CODES.filter((code) => code !== STOCK_READ),
+};
+
+/** A role holding `codes`, granted to one user scoped to ONE company. */
+async function seedCompanyScopedRole(input: {
+  readonly userId: string;
+  readonly roleId: string;
+  readonly roleCode: string;
+  readonly grantId: string;
+  readonly companyId: string;
+  readonly codes: readonly string[];
+}): Promise<void> {
+  await admin.query(
+    `INSERT INTO iam.roles (id, tenant_id, role_code, name, created_by)
+     VALUES ($1,$2,$3,'Dashboard company-scoped role',$4) ON CONFLICT (id) DO NOTHING`,
+    [input.roleId, TENANT_A, input.roleCode, USER_A]
+  );
+  for (const code of input.codes) {
+    await admin.query(
+      `INSERT INTO iam.role_permissions (tenant_id, role_id, permission_id, effect, created_by)
+       SELECT $1::uuid,$2::uuid,p.id,'allow',$3::uuid FROM iam.permissions p
+        WHERE p.permission_code = $4
+       ON CONFLICT (tenant_id, role_id, permission_id) DO NOTHING`,
+      [TENANT_A, input.roleId, USER_A, code]
+    );
+  }
+  // A scoped grant must carry at least one scope, enforced by a DEFERRABLE
+  // constraint trigger, so the grant and its scope land in ONE transaction.
+  const client = await admin.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query(
+      `INSERT INTO iam.role_grants (id, tenant_id, user_id, role_id, scope_mode, granted_by, created_by)
+       VALUES ($1,$2,$3,$4,'scoped',$5,$5)`,
+      [input.grantId, TENANT_A, input.userId, input.roleId, USER_A]
+    );
+    await client.query(
+      `INSERT INTO iam.grant_scopes (tenant_id, grant_id, scope_type, company_id, branch_id, created_by)
+       VALUES ($1,$2,'company',$3,NULL,$4)`,
+      [TENANT_A, input.grantId, input.companyId, USER_A]
+    );
+    await client.query('COMMIT');
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+describe('ovw.dashboard-summary-read — a company with no branch at all', () => {
+  const EMPTY_SCOPED_PRINCIPAL: Principal = {
+    roleId: OVW_EMPTY_SCOPED.baseRoleId,
+    userId: OVW_EMPTY_SCOPED.userId,
+    subject: OVW_EMPTY_SCOPED.subject,
+    tenantId: TENANT_A,
+    permissions: DASHBOARD_CODES.filter((code) => code !== STOCK_READ),
+  };
+
+  beforeAll(async () => {
+    await admin.query(
+      `INSERT INTO org.legal_companies
+         (id, tenant_id, company_code, legal_name, base_currency_code, created_by)
+       VALUES ($1,$2,'fx_ovw_no_branch','Dashboard Company Without Branches','USD',$3)
+       ON CONFLICT (id) DO NOTHING`,
+      [COMPANY_Z, TENANT_A, USER_A]
+    );
+    await seedPrincipal(OVW_EMPTY_FULL);
+    await seedPrincipal(OVW_EMPTY_NO_STOCK);
+    await admin.query(
+      `INSERT INTO iam.user_accounts
+         (id, tenant_id, identity_provider, provider_subject, email, display_name, status, created_by)
+       VALUES ($1,$2,$3,$4,$4||'@example.test','Dashboard company-scoped','active',$5)
+       ON CONFLICT (id) DO NOTHING`,
+      [OVW_EMPTY_SCOPED.userId, TENANT_A, IDENTITY_PROVIDER, OVW_EMPTY_SCOPED.subject, USER_A]
+    );
+    await seedCompanyScopedRole({
+      userId: OVW_EMPTY_SCOPED.userId,
+      roleId: OVW_EMPTY_SCOPED.baseRoleId,
+      roleCode: 'fx_ovw_empty_base',
+      grantId: OVW_EMPTY_SCOPED.baseGrantId,
+      companyId: COMPANY_Z,
+      codes: EMPTY_SCOPED_PRINCIPAL.permissions,
+    });
+    await seedCompanyScopedRole({
+      userId: OVW_EMPTY_SCOPED.userId,
+      roleId: OVW_EMPTY_SCOPED.stockRoleId,
+      roleCode: 'fx_ovw_empty_stock_elsewhere',
+      grantId: OVW_EMPTY_SCOPED.stockGrantId,
+      companyId: COMPANY_R,
+      codes: [STOCK_READ],
+    });
+    __resetAuthenticatorForTests();
+  });
+
+  it('answers every section the caller holds as a computed zero', async () => {
+    __resetRateLimitForTests();
+    const view = await dashboardAs(OVW_EMPTY_FULL, { companyId: COMPANY_Z, period: 'today' });
+    expect(view.branchIds).toEqual([]);
+    expect(view.period.timezone).toBe('UTC');
+    expect(view.sections.receptionsOpened).toEqual({ status: 'ok', value: 0 });
+    expect(view.sections.activeWorkOrders).toEqual({ status: 'ok', value: 0 });
+    expect(view.sections.awaitingApproval).toEqual({ status: 'ok', value: 0 });
+    expect(view.sections.awaitingParts).toEqual({ status: 'ok', value: 0 });
+    expect(view.sections.readyForDelivery).toEqual({ status: 'ok', value: 0 });
+    expect(view.sections.completedInPeriod).toEqual({ status: 'ok', value: 0 });
+    expect(view.sections.technicianWorkload).toEqual({ status: 'ok', value: [] });
+    expect(view.sections.lowStock).toEqual({ status: 'ok', value: 0 });
+    expect(view.sections.pendingApprovalsCount).toEqual({ status: 'ok', value: 0 });
+    expect(view.sections.overdue.status).toBe('unavailable');
+  });
+
+  it('withholds a section the caller lacks rather than answering it with zero', async () => {
+    __resetRateLimitForTests();
+    // Unrestricted and one code short: the section the code gates is withheld,
+    // and every other section is still a computed zero.
+    const unrestricted = await dashboardAs(OVW_EMPTY_NO_STOCK, {
+      companyId: COMPANY_Z,
+      period: 'today',
+    });
+    expect(unrestricted.branchIds).toEqual([]);
+    expect(unrestricted.sections.lowStock).toEqual({ status: 'unauthorized' });
+    expect(unrestricted.sections.receptionsOpened).toEqual({ status: 'ok', value: 0 });
+    expect(unrestricted.sections.readyForDelivery).toEqual({ status: 'ok', value: 0 });
+    expect(unrestricted.sections.technicianWorkload).toEqual({ status: 'ok', value: [] });
+    expect(unrestricted.sections.activeWorkOrders).toEqual({ status: 'ok', value: 0 });
+
+    // Company-scoped here, and holding stock only in ANOTHER company: the stock
+    // section is decided at THIS company's scope, so it is withheld too.
+    const scoped = await dashboardAs(EMPTY_SCOPED_PRINCIPAL, {
+      companyId: COMPANY_Z,
+      period: 'today',
+    });
+    expect(scoped.branchIds).toEqual([]);
+    expect(scoped.sections.lowStock).toEqual({ status: 'unauthorized' });
+    expect(scoped.sections.receptionsOpened).toEqual({ status: 'ok', value: 0 });
+    expect(scoped.sections.readyForDelivery).toEqual({ status: 'ok', value: 0 });
+    expect(scoped.sections.technicianWorkload).toEqual({ status: 'ok', value: [] });
+    expect(scoped.sections.pendingApprovalsCount).toEqual({ status: 'ok', value: 0 });
+  });
+
+  it('still refuses a company the caller cannot see', async () => {
+    __resetRateLimitForTests();
+    // Another tenant's caller, on a real company of this one.
+    authAs(RPT_TENANT_B);
+    const foreign = await dashboard({ companyId: COMPANY_Z, period: 'today' });
+    expect(foreign.status).toBe(403);
+    expect(await foreign.json()).toMatchObject({ code: 'ERR-IAM-001' });
+
+    // An unrestricted caller, on a company that exists nowhere: an empty branch
+    // list is the same answer as for the branchless company above, and only
+    // the visibility read turns this one into a refusal.
+    authAs(OVW_EMPTY_FULL);
+    const nowhere = await dashboard({ companyId: COMPANY_NOWHERE, period: 'today' });
+    expect(nowhere.status).toBe(403);
+    expect(await nowhere.json()).toMatchObject({ code: 'ERR-IAM-001' });
+
+    // The company-scoped caller, on a company where it holds stock but not the
+    // work-order read the operation is entitled by.
+    authAs(EMPTY_SCOPED_PRINCIPAL);
+    const outside = await dashboard({ companyId: COMPANY_R, period: 'today' });
+    expect(outside.status).toBe(403);
+    expect(await outside.json()).toMatchObject({ code: 'ERR-IAM-001' });
   });
 });
