@@ -347,6 +347,7 @@ import '@/app/api/v1/opening-inventory-batches/[batchId]/approval/route';
 import '@/app/api/v1/stock-reservations/route';
 import '@/app/api/v1/stock-reservations/[reservationId]/release/route';
 import '@/app/api/v1/stock-issues/route';
+import '@/app/api/v1/part-issues/route';
 import '@/app/api/v1/stock-returns/route';
 import '@/app/api/v1/damaged-stock/route';
 import '@/app/api/v1/customer-supplied-parts/route';

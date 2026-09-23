@@ -9,10 +9,10 @@ Regenerate with `node scripts/p1-24-operation-register.mjs`; CI runs it with `--
 
 | Measure                  | Value |
 | ------------------------ | ----- |
-| Public operations        | 497   |
+| Public operations        | 498   |
 | Domains (modules)        | 21    |
-| OpenAPI paths            | 389   |
-| OpenAPI operations       | 497   |
+| OpenAPI paths            | 390   |
+| OpenAPI operations       | 498   |
 | OpenAPI schemas          | 3     |
 | OpenAPI security schemes | 1     |
 | Permission codes seeded  | 132   |
@@ -24,7 +24,7 @@ Regenerate with `node scripts/p1-24-operation-register.mjs`; CI runs it with `--
 
 | Classification    | Operations |
 | ----------------- | ---------- |
-| Covered           | 497        |
+| Covered           | 498        |
 | Partially covered | 0          |
 | Uncovered         | 0          |
 | Not applicable    | 0          |
@@ -39,7 +39,7 @@ Regenerate with `node scripts/p1-24-operation-register.mjs`; CI runs it with `--
 | delivery        | 22         | 22      | 11     | 11      | 8          | 4               |
 | diagnostics     | 23         | 23      | 15     | 15      | 14         | 4               |
 | iam             | 56         | 56      | 34     | 32      | 15         | 10              |
-| inventory       | 81         | 81      | 46     | 47      | 42         | 3               |
+| inventory       | 82         | 82      | 46     | 47      | 42         | 3               |
 | meta            | 1          | 1       | 0      | 0       | 0          | 0               |
 | overview        | 1          | 1       | 0      | 0       | 0          | 0               |
 | payments        | 5          | 5       | 2      | 2       | 2          | 0               |
@@ -212,6 +212,7 @@ Regenerate with `node scripts/p1-24-operation-register.mjs`; CI runs it with `--
 | `inv.opening-batch-line-create`                     | POST   | `/api/v1/opening-inventory-batches/{batchId}/lines`                                     | branch  | `inv.stock.operate`                                                  | —                                              | —    | —   | authorization cross-tenant denial isolation route service success                                                             | Covered |
 | `inv.opening-batch-list`                            | GET    | `/api/v1/opening-inventory-batches`                                                     | branch  | `inv.stock.read`                                                     | —                                              | —    | —   | authorization cross-tenant denial isolation pagination route service success                                                  | Covered |
 | `inv.opening-batch-read`                            | GET    | `/api/v1/opening-inventory-batches/{batchId}`                                           | branch  | `inv.stock.read`                                                     | —                                              | —    | —   | authorization cross-tenant denial isolation route service success                                                             | Covered |
+| `inv.part-issue-list`                               | GET    | `/api/v1/part-issues`                                                                   | branch  | `inv.stock.read`                                                     | —                                              | —    | —   | authorization cross-tenant denial isolation route service success                                                             | Covered |
 | `inv.reorder-level-list`                            | GET    | `/api/v1/reorder-levels`                                                                | tenant  | `inv.stock.read`                                                     | —                                              | —    | —   | authorization denial isolation route service success                                                                          | Covered |
 | `inv.reorder-level-retire`                          | POST   | `/api/v1/reorder-levels/{reorderLevelId}/retirement`                                    | tenant  | `inv.item.manage`                                                    | inv.item_reorder_level.retired                 | yes  | yes | audit authorization cross-tenant denial idempotency isolation route service stale-version success                             | Covered |
 | `inv.reorder-level-set`                             | POST   | `/api/v1/reorder-levels`                                                                | tenant  | `inv.item.manage`                                                    | inv.item_reorder_level.set                     | —    | —   | audit authorization denial idempotency isolation route service success                                                        | Covered |

@@ -225,6 +225,7 @@ export type {
 
 export type {
   AvailabilityView,
+  IssuedPartListView,
   ItemView,
   MovementView,
   OpenInventoryCommitments,

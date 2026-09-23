@@ -36,9 +36,10 @@
  *   inv.stock-count-line-record: route service authorization success denial cross-tenant stale-version audit idempotency isolation
  *   inv.stock-count-reconcile: route service authorization success denial cross-tenant audit idempotency isolation
  *   inv.stock-count-cancel: route service authorization success denial cross-tenant audit idempotency isolation
+ *   inv.part-issue-list: route service authorization success denial cross-tenant isolation
  */
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import type { Pool } from 'pg';
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import type { Pool, PoolClient } from 'pg';
 import { randomUUID } from 'node:crypto';
 import { Quantity } from '@/modules/inventory';
 import {
@@ -48,19 +49,25 @@ import {
   ensureTestLogins,
   BRANCH_A1,
   COMPANY_A1,
+  TENANT_A,
+  TENANT_B,
 } from './helpers';
-import { BRANCH_A2, FULL, establishP1_19Fixtures } from './p1-19-helpers';
+import { BRANCH_A2, FULL, createOpenWorkOrder, establishP1_19Fixtures } from './p1-19-helpers';
 import {
   INV_APPROVER,
   INV_FULL,
   INV_NO_COST,
   INV_PERMISSION_ELSEWHERE,
   INV_READER,
+  INV_READER_NAMED,
   INV_SCOPED_A2,
   INV_TENANT_B,
   ITEM_A,
   ITEM_A_ALT,
+  ITEM_A_WILDCARD,
   QUARANTINE_A1,
+  WAREHOUSE_A1,
+  WAREHOUSE_A2,
   auditCountFor,
   authAs,
   balanceOf,
@@ -68,6 +75,7 @@ import {
   countRowsOf,
   establishP1_21Fixtures,
   freshLocation,
+  seedApprovedMaterialRequirement,
   seedStock,
 } from './p1-21-helpers';
 import { GET as TRANSFER_LIST, POST as TRANSFER_CREATE } from '@/app/api/v1/stock-transfers/route';
@@ -88,6 +96,13 @@ import { PUT as COUNT_LINE } from '@/app/api/v1/stock-counts/[countId]/lines/[it
 import { POST as COUNT_RECONCILE } from '@/app/api/v1/stock-counts/[countId]/reconciliation/route';
 import { POST as COUNT_CANCEL } from '@/app/api/v1/stock-counts/[countId]/cancellation/route';
 import { GET as AVAILABILITY } from '@/app/api/v1/stock-availability/route';
+import { POST as ISSUE } from '@/app/api/v1/stock-issues/route';
+import { POST as RETURN } from '@/app/api/v1/stock-returns/route';
+import { PART_ISSUE_LIST_OPERATION, GET as PART_ISSUE_LIST } from '@/app/api/v1/part-issues/route';
+import { primaryPool } from '@/server/db/pool';
+import { withReadOnlyTransaction } from '@/server/db/transaction';
+import { buildRequestContext } from '@/server/context/request-context';
+import { __resetRateLimitForTests } from '@/server/http/rate-limit';
 
 let admin: Pool;
 
@@ -1518,5 +1533,538 @@ describe('the intake and counting refusal tokens, on the wire', () => {
     expect((await bodyOf<ProblemViolations>(response)).violations).toEqual([
       { path: 'body', rule: 'stock_count_closed' },
     ]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The branch-wide issued-parts read (Owner directive, P1-32-PRE-OD-UX).
+//
+// Every case below bounds its page with `issuedFrom`, captured immediately
+// before the fixtures it is about. A branch-wide list accumulates, and a
+// `not.toContain` over an unbounded page is an assertion about which rows
+// happened to fit — which is not the assertion any of these cases means.
+// ---------------------------------------------------------------------------
+
+interface IssuedPartRow {
+  id: string;
+  workOrderId: string;
+  workOrderDisplayNumber: string | null;
+  item: { id: string; code: string; name: string };
+  quantity: string;
+  returnedQuantity: string;
+  returnableQuantity: string;
+  unitCode: string;
+  issuedAt: string;
+  issuedBy: { id: string; displayName: string | null };
+  branchId: string;
+}
+
+/** One part issued to a fresh open work order, through the shipped write path. */
+async function issuePart(
+  options: {
+    readonly branchId?: string;
+    readonly locationId?: string;
+    readonly itemId?: string;
+    readonly quantity?: string;
+  } = {}
+): Promise<{ id: string; workOrderId: string }> {
+  const branchId = options.branchId ?? BRANCH_A1;
+  const locationId = options.locationId ?? WAREHOUSE_A1;
+  const itemId = options.itemId ?? ITEM_A;
+  const order = await createOpenWorkOrder({ companyId: COMPANY_A1, branchId });
+  const materialRequirementId = await seedApprovedMaterialRequirement({
+    workOrderId: order.workOrderId,
+    itemId,
+  });
+  await seedStock({ itemId, locationId, branchId, quantity: '50.000' });
+  authAs(INV_FULL);
+  const response = await post(ISSUE, '/api/v1/stock-issues', {
+    workOrderId: order.workOrderId,
+    itemId,
+    locationId,
+    quantity: options.quantity ?? '2.000',
+    materialRequirementId,
+  });
+  expect(response.status).toBe(201);
+  const issued = await bodyOf<{ id: string }>(response);
+  return { id: issued.id, workOrderId: order.workOrderId };
+}
+
+/** An instant a shade before now, as the inclusive lower bound of a page. */
+const justBefore = (): string => new Date(Date.now() - 5_000).toISOString();
+
+const listIssuedParts = (query: string): Promise<Response> =>
+  get(PART_ISSUE_LIST, `/api/v1/part-issues?${query}`);
+
+const idsOf = async (response: Response): Promise<string[]> =>
+  (await bodyOf<{ items: IssuedPartRow[] }>(response)).items.map((row) => row.id);
+
+const rowsOf = async (response: Response): Promise<IssuedPartRow[]> =>
+  (await bodyOf<{ items: IssuedPartRow[] }>(response)).items;
+
+/** A page of issued parts as the wire carries it, cursor included. */
+interface IssuedPartPage {
+  items: IssuedPartRow[];
+  nextCursor: string | null;
+  hasMore: boolean;
+}
+
+/** Every ASCII digit rewritten as its Arabic-Indic twin (U+0660..U+0669). */
+const arabicIndic = (value: string): string =>
+  value.replace(/[0-9]/g, (digit) => String.fromCharCode(0x0660 + Number(digit)));
+
+// Statement counting for the issued-parts read. The route reaches the database
+// through the primary pool, so that pool is wrapped at its connection boundary —
+// below the route, the service, the repository and the transaction helper — and
+// every statement PostgreSQL is asked is recorded, the technique
+// `p1-24-read-path-shape.test.ts` uses. Counting is OFF unless a case turns it
+// on, so every other case in this file runs unobserved.
+let issuedPartStatements: string[] = [];
+let countingIssuedPartStatements = false;
+const countedClients = new WeakSet<PoolClient>();
+
+function countClient(client: PoolClient): void {
+  if (countedClients.has(client)) return;
+  countedClients.add(client);
+  const query = client.query.bind(client) as (...args: readonly unknown[]) => unknown;
+  const counted = (...args: readonly unknown[]): unknown => {
+    if (countingIssuedPartStatements) {
+      const first = args[0];
+      issuedPartStatements.push(
+        typeof first === 'string'
+          ? first
+          : String((first as { text?: string } | undefined)?.text ?? '<config>')
+      );
+    }
+    return query(...args);
+  };
+  (client as unknown as { query: unknown }).query = counted;
+}
+
+/** Wraps every client the pool hands out, in both of `pg`'s calling styles. */
+function countStatementsOn(pool: Pool): void {
+  const connect = pool.connect.bind(pool) as (...args: readonly unknown[]) => unknown;
+  const patched = (...args: readonly unknown[]): unknown => {
+    const callback = args[0];
+    if (typeof callback === 'function') {
+      return connect((error: unknown, client: PoolClient | undefined, release: unknown) => {
+        if (client !== undefined) countClient(client);
+        (callback as (...values: readonly unknown[]) => void)(error, client, release);
+      });
+    }
+    return (connect() as Promise<PoolClient>).then((client) => {
+      countClient(client);
+      return client;
+    });
+  };
+  (pool as unknown as { connect: unknown }).connect = patched;
+}
+
+/** Runs one request with counting on, and returns its page and every statement it sent. */
+async function measureIssuedParts(
+  query: string
+): Promise<{ status: number; page: IssuedPartPage; statements: readonly string[] }> {
+  issuedPartStatements = [];
+  countingIssuedPartStatements = true;
+  try {
+    const response = await listIssuedParts(query);
+    return {
+      status: response.status,
+      page: await bodyOf<IssuedPartPage>(response),
+      statements: [...issuedPartStatements],
+    };
+  } finally {
+    countingIssuedPartStatements = false;
+  }
+}
+
+describe('inv.part-issue-list', () => {
+  beforeAll(() => {
+    countStatementsOn(primaryPool());
+  });
+
+  // Several cases below make many list calls as one caller; without a fresh
+  // limiter a later case answers 429 and reads as a broken filter.
+  beforeEach(() => {
+    __resetRateLimitForTests();
+  });
+
+  it('answers the branch that is named, and the AUTHORIZED union when none is', async () => {
+    const since = justBefore();
+    const inA1 = await issuePart({ branchId: BRANCH_A1, locationId: WAREHOUSE_A1 });
+    const inA2 = await issuePart({ branchId: BRANCH_A2, locationId: WAREHOUSE_A2 });
+    const window = `companyId=${COMPANY_A1}&issuedFrom=${encodeURIComponent(since)}&limit=100`;
+
+    // A named branch answers for that branch and no other.
+    authAs(INV_READER);
+    const named = await listIssuedParts(`${window}&branchId=${BRANCH_A1}`);
+    expect(named.status).toBe(200);
+    expect(await idsOf(named)).toContain(inA1.id);
+    expect(await idsOf(await listIssuedParts(`${window}&branchId=${BRANCH_A1}`))).not.toContain(
+      inA2.id
+    );
+
+    // Omitting the branch answers for every branch of the company this caller may
+    // run the operation in. Unrestricted, so that is both.
+    const union = await listIssuedParts(window);
+    expect(union.status).toBe(200);
+    const unionIds = await idsOf(union);
+    expect(unionIds).toContain(inA1.id);
+    expect(unionIds).toContain(inA2.id);
+
+    // The decisive case. `INV_PERMISSION_ELSEWHERE` holds the inventory codes in
+    // A2 only, and an unrelated grant in A1 — so A1's rows ARE visible to RLS for
+    // it. Omitting the branch must still answer for A2 alone: the union is the set
+    // of branches that carry THIS operation's codes, never the permission-blind
+    // union of every grant (P1-18-A-01).
+    authAs(INV_PERMISSION_ELSEWHERE);
+    const narrowed = await listIssuedParts(window);
+    expect(narrowed.status).toBe(200);
+    const narrowedIds = await idsOf(narrowed);
+    expect(narrowedIds).toContain(inA2.id);
+    expect(narrowedIds).not.toContain(inA1.id);
+  });
+
+  it('refuses a named branch the caller holds no authority in, and another tenant', async () => {
+    const since = justBefore();
+    const inA1 = await issuePart({ branchId: BRANCH_A1, locationId: WAREHOUSE_A1 });
+    const window = `companyId=${COMPANY_A1}&issuedFrom=${encodeURIComponent(since)}&limit=100`;
+
+    // Named A1 by a caller whose inventory grant is in A2. RLS would admit the
+    // row; the scoped permission check is the only thing that refuses it.
+    authAs(INV_PERMISSION_ELSEWHERE);
+    const tampered = await listIssuedParts(`${window}&branchId=${BRANCH_A1}`);
+    expect(tampered.status).toBe(403);
+    expect(await tampered.text()).not.toContain(inA1.id);
+
+    // Authority, not tenancy: a tenant-A caller holding no inventory read at all.
+    authAs(FULL);
+    expect((await listIssuedParts(`${window}&branchId=${BRANCH_A1}`)).status).toBe(403);
+
+    // The tenant boundary. A tenant-B caller naming tenant A's company holds the
+    // codes and no branch narrowing, so the seam treats the company as the scope
+    // (`resolveAuthorizedBranches`, first case) and the page is read under tenant
+    // B's own tenant and row-level security: an EMPTY page, never a line of
+    // tenant A. The policy half is proved on its own in the RLS case below.
+    authAs(INV_TENANT_B);
+    const foreign = await listIssuedParts(window);
+    expect(foreign.status).toBe(200);
+    expect((await bodyOf<{ items: IssuedPartRow[] }>(foreign.clone())).items).toEqual([]);
+    expect(await foreign.text()).not.toContain(inA1.id);
+  });
+
+  it('matches the item name, the item code and the work-order number, and nothing else', async () => {
+    const since = justBefore();
+    const pad = await issuePart({ itemId: ITEM_A });
+    const filter = await issuePart({ itemId: ITEM_A_ALT });
+    const window = `companyId=${COMPANY_A1}&branchId=${BRANCH_A1}&issuedFrom=${encodeURIComponent(
+      since
+    )}&limit=100`;
+
+    authAs(INV_READER);
+    // The NAME arm. `Fixture brake pad` is folded by `shared.fold_search_text`,
+    // the SQL twin of the rule the fragment was folded by.
+    const byName = await listIssuedParts(`${window}&q=brake`);
+    expect(byName.status).toBe(200);
+    const nameIds = await idsOf(byName);
+    expect(nameIds).toContain(pad.id);
+    expect(nameIds).not.toContain(filter.id);
+
+    // The CODE arm. `FX-P121-B` is the oil filter's SKU and no part of the brake
+    // pad's name or code.
+    const byCode = await idsOf(
+      await listIssuedParts(`${window}&q=${encodeURIComponent('P121-B')}`)
+    );
+    expect(byCode).toContain(filter.id);
+    expect(byCode).not.toContain(pad.id);
+
+    // The paperwork-number arm, searched by the number actually allocated to the
+    // pad's job rather than by a number this test invented.
+    const number = (await rowsOf(await listIssuedParts(window))).find(
+      (row) => row.id === pad.id
+    )?.workOrderDisplayNumber;
+    expect(number).toBeTruthy();
+    const byNumber = await idsOf(
+      await listIssuedParts(`${window}&q=${encodeURIComponent(number ?? '')}`)
+    );
+    expect(byNumber).toContain(pad.id);
+    expect(byNumber).not.toContain(filter.id);
+  });
+
+  it('reports the remainder the DATABASE computed, after a partial return', async () => {
+    const since = justBefore();
+    const issued = await issuePart({ quantity: '4.000' });
+    const window = `companyId=${COMPANY_A1}&branchId=${BRANCH_A1}&issuedFrom=${encodeURIComponent(
+      since
+    )}&limit=100`;
+
+    authAs(INV_READER);
+    const before = (await rowsOf(await listIssuedParts(window))).find(
+      (row) => row.id === issued.id
+    );
+    expect(before?.quantity).toBe('4.000');
+    expect(before?.returnedQuantity).toBe('0.000');
+    expect(before?.returnableQuantity).toBe('4.000');
+    // The row is readable without already knowing the job: a name, a code and a unit.
+    expect(before?.item.name).toBe('Fixture brake pad');
+    expect(before?.item.code).toBe('FX-P121-A');
+    expect(before?.unitCode).toBeTruthy();
+    expect(before?.branchId).toBe(BRANCH_A1);
+
+    authAs(INV_FULL);
+    const returned = await post(RETURN, '/api/v1/stock-returns', {
+      partIssueId: issued.id,
+      quantity: '1.500',
+      reason: 'wrong part fitted',
+    });
+    expect(returned.status).toBe(201);
+
+    authAs(INV_READER);
+    const after = (await rowsOf(await listIssuedParts(window))).find((row) => row.id === issued.id);
+    // All three operands travel, so the subtraction is checkable rather than
+    // asserted — and none of it happened in JavaScript.
+    expect(after?.quantity).toBe('4.000');
+    expect(after?.returnedQuantity).toBe('1.500');
+    expect(after?.returnableQuantity).toBe('2.500');
+  });
+
+  it('names who issued the part only to a caller holding iam.user.read', async () => {
+    const since = justBefore();
+    const issued = await issuePart();
+    const window = `companyId=${COMPANY_A1}&branchId=${BRANCH_A1}&issuedFrom=${encodeURIComponent(
+      since
+    )}&limit=100`;
+
+    // Without the directory code: the id is published, the NAME is not.
+    authAs(INV_READER);
+    const unnamed = (await rowsOf(await listIssuedParts(window))).find(
+      (row) => row.id === issued.id
+    );
+    expect(unnamed?.issuedBy.id).toBe(INV_FULL.userId);
+    expect(unnamed?.issuedBy.displayName).toBeNull();
+
+    // With it: the same row, named. Without this half the assertion above would
+    // pass against a resolution that is broken for everybody.
+    authAs(INV_READER_NAMED);
+    const named = (await rowsOf(await listIssuedParts(window))).find((row) => row.id === issued.id);
+    expect(named?.issuedBy.id).toBe(INV_FULL.userId);
+    expect(named?.issuedBy.displayName).toBe('P1-21 Principal');
+  });
+
+  it('refuses an inverted issued window with a catalogued token instead of an empty page', async () => {
+    const from = '2026-03-02T00:00:00Z';
+    const to = '2026-03-01T00:00:00Z';
+    authAs(INV_READER);
+    const response = await listIssuedParts(
+      `companyId=${COMPANY_A1}&branchId=${BRANCH_A1}` +
+        `&issuedFrom=${encodeURIComponent(from)}&issuedTo=${encodeURIComponent(to)}`
+    );
+    expect(response.status).toBe(422);
+    expect((await bodyOf<ProblemViolations>(response)).violations).toEqual([
+      { path: 'query.issuedTo', rule: 'issued_window_inverted' },
+    ]);
+
+    // The same two instants the right way round are an ordinary page, so the
+    // refusal is about the ORDER and not about the parameters existing.
+    const ordered = await listIssuedParts(
+      `companyId=${COMPANY_A1}&branchId=${BRANCH_A1}` +
+        `&issuedFrom=${encodeURIComponent(to)}&issuedTo=${encodeURIComponent(from)}`
+    );
+    expect(ordered.status).toBe(200);
+  });
+
+  it('reaches the item code and the work-order number through Arabic-Indic digits', async () => {
+    const since = justBefore();
+    const pad = await issuePart({ itemId: ITEM_A });
+    const filter = await issuePart({ itemId: ITEM_A_ALT });
+    const window = `companyId=${COMPANY_A1}&branchId=${BRANCH_A1}&issuedFrom=${encodeURIComponent(
+      since
+    )}&limit=100`;
+
+    authAs(INV_READER);
+    // The CODE arm, typed with the digits a keyboard set to Arabic produces: the
+    // fragment folds to `P121-B`, which is the oil filter's SKU and no part of the
+    // brake pad's.
+    const byCode = await listIssuedParts(
+      `${window}&q=${encodeURIComponent(arabicIndic('P121-B'))}`
+    );
+    expect(byCode.status).toBe(200);
+    const codeIds = await idsOf(byCode);
+    expect(codeIds).toContain(filter.id);
+    expect(codeIds).not.toContain(pad.id);
+
+    // The paperwork-number arm, with every digit of the number actually allocated
+    // to the pad's job rewritten. Anti-vacuity: the number carries digits, so the
+    // query below really differs from the ASCII spelling.
+    const number = (await rowsOf(await listIssuedParts(window))).find(
+      (row) => row.id === pad.id
+    )?.workOrderDisplayNumber;
+    expect(number).toMatch(/[0-9]/);
+    const typed = arabicIndic(number ?? '');
+    expect(typed).not.toBe(number);
+    const byNumber = await idsOf(await listIssuedParts(`${window}&q=${encodeURIComponent(typed)}`));
+    expect(byNumber).toContain(pad.id);
+    expect(byNumber).not.toContain(filter.id);
+  });
+
+  it('treats a LIKE metacharacter in the box as a literal character', async () => {
+    const since = justBefore();
+    const pad = await issuePart({ itemId: ITEM_A });
+    const wildcard = await issuePart({ itemId: ITEM_A_WILDCARD });
+    const window = `companyId=${COMPANY_A1}&branchId=${BRANCH_A1}&issuedFrom=${encodeURIComponent(
+      since
+    )}&limit=100`;
+
+    authAs(INV_READER);
+    // `FX_P121` unescaped would read `_` as "any one character" and match the
+    // brake pad's `FX-P121-A` too. Escaped, it matches the SKU that really holds
+    // an underscore, `FX_P121_WILD`, and nothing else.
+    const response = await listIssuedParts(`${window}&q=${encodeURIComponent('FX_P121')}`);
+    expect(response.status).toBe(200);
+    const ids = await idsOf(response);
+    expect(ids).toContain(wildcard.id);
+    expect(ids).not.toContain(pad.id);
+  });
+
+  it('narrows by work order and by item, and a page walked by cursor is the whole page', async () => {
+    const since = justBefore();
+    const first = await issuePart({ itemId: ITEM_A });
+    const second = await issuePart({ itemId: ITEM_A_ALT });
+    const third = await issuePart({ itemId: ITEM_A });
+    const window = `companyId=${COMPANY_A1}&branchId=${BRANCH_A1}&issuedFrom=${encodeURIComponent(
+      since
+    )}`;
+
+    authAs(INV_READER);
+    // The two exact filters. Each is a predicate on the row, so each answers its
+    // own line and no other line of this window.
+    const byOrder = await idsOf(
+      await listIssuedParts(`${window}&workOrderId=${second.workOrderId}`)
+    );
+    expect(byOrder).toEqual([second.id]);
+    const byItem = await idsOf(await listIssuedParts(`${window}&itemId=${ITEM_A_ALT}&limit=100`));
+    expect(byItem).toContain(second.id);
+    expect(byItem).not.toContain(first.id);
+    expect(byItem).not.toContain(third.id);
+
+    // The whole window in one page, newest first.
+    const whole = await bodyOf<IssuedPartPage>(await listIssuedParts(`${window}&limit=100`));
+    expect(whole.hasMore).toBe(false);
+    const wholeIds = whole.items.map((row) => row.id);
+    expect(wholeIds).toEqual(expect.arrayContaining([first.id, second.id, third.id]));
+    // Newest first, compared as INSTANTS: `issuedAt` never increases down the page.
+    const instants = whole.items.map((row) => Date.parse(row.issuedAt));
+    expect(instants).toEqual([...instants].sort((a, b) => b - a));
+
+    // The same window walked one row at a time. The keyset is (created_at, id), so
+    // every row arrives exactly once and in the same order as the single page —
+    // no duplicate at a page boundary and no row skipped between two.
+    const walked: string[] = [];
+    let cursor: string | null = null;
+    for (let guard = 0; guard < wholeIds.length + 2; guard += 1) {
+      const suffix: string = cursor === null ? '' : `&cursor=${encodeURIComponent(cursor)}`;
+      const page: IssuedPartPage = await bodyOf<IssuedPartPage>(
+        await listIssuedParts(`${window}&limit=1${suffix}`)
+      );
+      expect(page.items.length).toBeLessThanOrEqual(1);
+      walked.push(...page.items.map((row) => row.id));
+      cursor = page.nextCursor;
+      if (cursor === null) break;
+    }
+    expect(cursor).toBeNull();
+    expect(walked).toEqual(wholeIds);
+  });
+
+  it('refuses a malformed filter with the rule that names it', async () => {
+    authAs(INV_READER);
+    const base = `companyId=${COMPANY_A1}&branchId=${BRANCH_A1}`;
+    const refusals: ReadonlyArray<readonly [string, ProblemViolations['violations']]> = [
+      [`branchId=${BRANCH_A1}`, [{ path: 'query.companyId', rule: 'invalid_type' }]],
+      [
+        `${base}&workOrderId=not-a-work-order`,
+        [{ path: 'query.workOrderId', rule: 'invalid_format' }],
+      ],
+      [`${base}&itemId=not-an-item`, [{ path: 'query.itemId', rule: 'invalid_format' }]],
+      // An instant with no offset is refused rather than read in the server's zone.
+      [
+        `${base}&issuedFrom=2026-03-01T00:00:00`,
+        [{ path: 'query.issuedFrom', rule: 'invalid_format' }],
+      ],
+      [`${base}&issuedTo=yesterday`, [{ path: 'query.issuedTo', rule: 'invalid_format' }]],
+      [`${base}&q=a`, [{ path: 'query.q', rule: 'too_small' }]],
+      // `.strict()`: a parameter the read does not know is refused, never ignored.
+      [`${base}&customerId=${COMPANY_A1}`, [{ path: 'query', rule: 'unrecognized_keys' }]],
+    ];
+    for (const [query, violations] of refusals) {
+      const response = await listIssuedParts(query);
+      expect(response.status, query).toBe(422);
+      expect((await bodyOf<ProblemViolations>(response)).violations, query).toEqual(violations);
+    }
+  });
+
+  it('is hidden from another tenant by row-level security, not only by the query', async () => {
+    const issued = await issuePart();
+    // The statement carries NO tenant predicate of its own, so the only thing that
+    // can hide the row from tenant B is the policy on the runtime role.
+    const sql = `SELECT pi.id::text AS id
+                   FROM inv.part_issues pi
+                   JOIN inv.item_master i ON i.id = pi.item_id
+                   JOIN wo.work_orders w ON w.id = pi.work_order_id
+                  WHERE pi.id = $1`;
+    const readAs = (userId: string, tenantId: string): Promise<string[]> =>
+      withReadOnlyTransaction(
+        buildRequestContext({
+          correlationId: randomUUID(),
+          principal: { userId, tenantId },
+          operation: PART_ISSUE_LIST_OPERATION.id,
+          module: 'inventory',
+        }),
+        async (db) => (await db.query<{ id: string }>(sql, [issued.id])).rows.map((row) => row.id)
+      );
+
+    // The positive control FIRST: the same statement, on the same runtime pool,
+    // answers for the row's own tenant — so the empty answer below is the policy
+    // and not a statement that finds nothing for anybody.
+    expect(await readAs(INV_READER.userId, TENANT_A)).toEqual([issued.id]);
+    expect(await readAs(INV_TENANT_B.userId, TENANT_B)).toEqual([]);
+
+    // And through the route: a tenant-B caller naming tenant A's company is never
+    // handed tenant A's line, whatever the status it is answered with.
+    authAs(INV_TENANT_B);
+    const foreign = await listIssuedParts(`companyId=${COMPANY_A1}&limit=100`);
+    expect(await foreign.text()).not.toContain(issued.id);
+  });
+
+  it('sends the same statements for one row as for three, names included', async () => {
+    const since = justBefore();
+    await issuePart();
+    await issuePart();
+    await issuePart();
+    const window = `companyId=${COMPANY_A1}&branchId=${BRANCH_A1}&issuedFrom=${encodeURIComponent(
+      since
+    )}`;
+
+    // A caller holding `iam.user.read`, so every row's issuer IS named and the
+    // directory statement is part of what is measured rather than skipped.
+    authAs(INV_READER_NAMED);
+    // Warm, then measure: a cold pool client issues session-setup statements a
+    // reused one does not, which would read as the larger page being cheaper.
+    await listIssuedParts(`${window}&limit=1`).then((response) => response.text());
+    await listIssuedParts(`${window}&limit=3`).then((response) => response.text());
+
+    const one = await measureIssuedParts(`${window}&limit=1`);
+    const three = await measureIssuedParts(`${window}&limit=3`);
+    expect(one.status).toBe(200);
+    expect(three.status).toBe(200);
+    expect(one.page.items).toHaveLength(1);
+    expect(three.page.items).toHaveLength(3);
+    for (const row of three.page.items) expect(row.issuedBy.displayName).toBe('P1-21 Principal');
+
+    // Anti-vacuity: counting really observed the read.
+    const readsIssues = (text: string): boolean => /FROM\s+inv\.part_issues/i.test(text);
+    expect(one.statements.filter(readsIssues)).toHaveLength(1);
+    // No statement per row: two more rows, and not one more statement.
+    expect(three.statements.length).toBe(one.statements.length);
+    expect(three.statements.filter(readsIssues)).toHaveLength(1);
   });
 });

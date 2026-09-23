@@ -22,6 +22,8 @@ import {
   RESERVATION_ORDER,
 } from '../data/inventory-repository';
 import { workOrderModule } from '@/modules/work-order';
+import { iamDirectory } from '@/modules/iam';
+import { toEntitySearchTerms } from '@/shared/text/search-terms';
 import type { DbHandle } from '@/server/db/transaction';
 import type { ScopeAuthorizer } from '@/server/auth/authorization';
 import type {
@@ -33,6 +35,7 @@ import type {
   MovementRow,
   OpeningBatchHeaderRow,
   OpeningLineRow,
+  IssuedPartListRow,
   PartIssueListRow,
   ReservationListRow,
   StockBalanceRow,
@@ -230,6 +233,41 @@ export interface PartIssueListView {
   readonly issuedAt: string;
 }
 
+/**
+ * One issued part as the branch-wide picker renders it (Owner directive,
+ * P1-32-PRE-OD-UX).
+ *
+ * The returns counter has to find a line by what the person in front of it is
+ * holding — a part with a name on it, off a job whose number is on the paperwork
+ * — so the row carries the item's NAME beside its code, the unit the quantity is
+ * counted in, and the work order's display number. Publishing ids alone is what
+ * made the previous screen ask a clerk to type a reference.
+ *
+ * `quantity`, `returnedQuantity` and `returnableQuantity` are all
+ * `numeric(12, 3)` decimal STRINGS. Unlike `PartIssueListView` this row DOES
+ * publish the remainder, because the subtraction happens in PostgreSQL — see
+ * `InventoryRepository.listIssuedParts`. All three operands travel, so the
+ * arithmetic is checkable rather than merely asserted.
+ *
+ * `issuedBy.displayName` is `null` for a caller who does not hold
+ * `iam.user.read`: a stock read must not become a staff directory. The id is
+ * published either way, so the naming is additive and nothing was taken from the
+ * caller who cannot resolve it.
+ */
+export interface IssuedPartListView {
+  readonly id: string;
+  readonly workOrderId: string;
+  readonly workOrderDisplayNumber: string | null;
+  readonly item: { readonly id: string; readonly code: string; readonly name: string };
+  readonly quantity: string;
+  readonly returnedQuantity: string;
+  readonly returnableQuantity: string;
+  readonly unitCode: string;
+  readonly issuedAt: string;
+  readonly issuedBy: { readonly id: string; readonly displayName: string | null };
+  readonly branchId: string;
+}
+
 /** One stock location as the picker renders it (Phase 1-30 A2, S-16). */
 export interface StockLocationView {
   readonly id: string;
@@ -316,6 +354,27 @@ const toPartIssueListView = (row: PartIssueListRow): PartIssueListView => ({
   // `inv.part_issues` has no `issued_at` column; `created_at` IS the instant the
   // part left the store, written by the statement that posted the movement.
   issuedAt: row.createdAt.toISOString(),
+});
+
+const toIssuedPartListView = (
+  row: IssuedPartListRow,
+  identities: ReadonlyMap<string, { readonly displayName: string }>
+): IssuedPartListView => ({
+  id: row.id,
+  workOrderId: row.workOrderId,
+  workOrderDisplayNumber: row.workOrderDisplayNumber,
+  item: { id: row.itemId, code: row.sku, name: row.itemName },
+  quantity: row.quantity,
+  returnedQuantity: row.returnedQuantity,
+  returnableQuantity: row.returnableQuantity,
+  unitCode: row.unitCode,
+  // `inv.part_issues` has no `issued_at` column; `created_at` IS the instant the
+  // part left the store, written by the statement that posted the movement.
+  issuedAt: row.createdAt.toISOString(),
+  // `null`, never the id repeated as a name: an unresolvable actor is an absence
+  // this row states, and the id is published beside it either way.
+  issuedBy: { id: row.issuedBy, displayName: identities.get(row.issuedBy)?.displayName ?? null },
+  branchId: row.branchId,
 });
 
 const toStockLocationView = (row: StockLocationListRow): StockLocationView => ({
@@ -619,6 +678,104 @@ export class InventoryReadService {
       pageRequest(PART_ISSUE_ORDER, page)
     );
     return { ...result, items: result.items.map(toPartIssueListView) };
+  }
+
+  /**
+   * `inv.part-issue-list` — a branch's issued parts, newest first (Owner
+   * directive, P1-32-PRE-OD-UX).
+   *
+   * ## What it is for, and why the per-work-order read could not do it
+   *
+   * A customer returns a part over the counter. The clerk is holding the PART and
+   * has no job in hand, so the only thing that can be typed is the part's own
+   * name or code — and the read that exists is keyed on a work order, which is
+   * the fact the clerk is trying to recover. That is why the returns screen asked
+   * for a typed reference: there was nothing to pick from.
+   *
+   * `listPartIssuesForWorkOrder` is untouched. It answers a different question
+   * from a parent the caller already opened, and its refusal shape is shipped.
+   *
+   * ## How the scope is decided when no branch is named
+   *
+   * A NAMED branch is decided here, by `authorizeScope`, exactly as every other
+   * branch-scoped inventory read decides it. An OMITTED branch was decided before
+   * this call by the route's `authorizedBranches` seam, which evaluates THIS
+   * operation's declared codes once per candidate branch of the named company and
+   * refuses a caller that holds none — so re-running the pair check here would
+   * have nothing to add and no pair to run it on. The company predicate is bound
+   * either way: `iam.has_permission_in_scope` matches a company-scoped grant on
+   * its company half, so a caller could otherwise name one company and point the
+   * query at another (P1-21-H6).
+   *
+   * ## The box, and the arms it is NOT given
+   *
+   * `q` reaches the item's name, the item's code, the work order's display
+   * number, the plate and the VIN. It does NOT reach a customer's name or the
+   * tail of their phone number, and that is a decision rather than an oversight:
+   * this page carries no customer data at all, so a customer arm would make a
+   * stock read into a way of probing the partner register while answering nothing
+   * the caller could see. `withoutCustomerArms` is therefore not consulted — its
+   * two arms are never built here — and no permission beyond this operation's own
+   * is checked for the box.
+   *
+   * ## Naming who issued the part
+   *
+   * Through `iamDirectory().directory`, which checks `iam.user.read` itself and
+   * hands back an empty map to a caller without it. `iamDirectory()` and not
+   * `iamModule()`: the latter's composition root installs the identity provider
+   * and reads `clientEnv()`, which would make this stock read fail wherever those
+   * variables are unset — measured on the vehicle history read, not feared.
+   */
+  public async listIssuedParts(
+    db: DbHandle,
+    filter: {
+      readonly companyId: string;
+      /**
+       * The branch the CALLER named, when it named one. Kept beside `branchIds`
+       * rather than folded into it because the two mean different things: a named
+       * branch is a claim this service must decide, and a resolved set has
+       * already been decided, one branch at a time, by the route's seam.
+       */
+      readonly branchId?: string | undefined;
+      /** The branches the page may cover. `undefined` means every branch of the company. */
+      readonly branchIds?: readonly string[] | undefined;
+      readonly workOrderId?: string | undefined;
+      readonly itemId?: string | undefined;
+      readonly issuedFrom?: string | undefined;
+      readonly issuedTo?: string | undefined;
+      /** The raw free-text box; reduced here, once, by the shared rule. */
+      readonly q?: string | undefined;
+    },
+    page: { readonly cursor?: string | undefined; readonly limit?: number | undefined },
+    authorizeScope: ScopeAuthorizer
+  ): Promise<Page<IssuedPartListView>> {
+    if (filter.branchId !== undefined) {
+      await authorizeScope({ companyId: filter.companyId, branchId: filter.branchId });
+    }
+    const result = await this.repository.listIssuedParts(
+      db,
+      {
+        companyId: filter.companyId,
+        ...(filter.branchIds === undefined ? {} : { branchIds: filter.branchIds }),
+        ...(filter.workOrderId === undefined ? {} : { workOrderId: filter.workOrderId }),
+        ...(filter.itemId === undefined ? {} : { itemId: filter.itemId }),
+        ...(filter.issuedFrom === undefined ? {} : { issuedFrom: filter.issuedFrom }),
+        ...(filter.issuedTo === undefined ? {} : { issuedTo: filter.issuedTo }),
+        search: toEntitySearchTerms(filter.q),
+      },
+      pageRequest(PART_ISSUE_ORDER, page)
+    );
+    // ONE additional statement for the whole page, and only when the page has
+    // rows: a per-row lookup would be a read amplification on a picker that is
+    // opened on every return.
+    const identities = await iamDirectory().directory.resolveDisplayIdentities(
+      db,
+      result.items.map((row) => row.issuedBy)
+    );
+    return {
+      ...result,
+      items: result.items.map((row) => toIssuedPartListView(row, identities)),
+    };
   }
 
   /**
