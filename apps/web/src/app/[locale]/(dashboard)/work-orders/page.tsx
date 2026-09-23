@@ -96,8 +96,6 @@ export default async function WorkOrderQueuePage({
         <WorkOrderQueueScreen
           locale={locale}
           messages={messages}
-          companyIds={session.companyIds}
-          branchIds={session.branchIds}
           initialView={initialView}
           initialState={initialState}
         />

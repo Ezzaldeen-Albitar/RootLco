@@ -77,6 +77,8 @@ function listRow(over: Partial<ReceptionListEntry> = {}): ReceptionListEntry {
     custodyAcceptedAt: '2026-08-13T08:00:00.000Z',
     custodyReleasedAt: null,
     recordVersion: 1,
+    customer: null,
+    plate: null,
     ...over,
   };
 }

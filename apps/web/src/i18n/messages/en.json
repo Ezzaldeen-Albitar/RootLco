@@ -5890,5 +5890,8 @@
   "dashboard.actions.openApprovals": "Open the waiting list",
   "dashboard.actions.openAttention": "Open the warnings page",
   "dashboard.period.notApplied": "The figures still cover {period}. Choose two dates and press Use these dates.",
-  "workOrders.queue.stateNotRecognised": "The state you asked for is not one this workshop uses, so every work order is shown."
+  "workOrders.queue.stateNotRecognised": "The state you asked for is not one this workshop uses, so every work order is shown.",
+  "form.violation.completion_window_inverted": "The finished-on dates are the wrong way round. The earlier date goes first and the later date second.",
+  "form.violation.state_and_group_exclusive": "Choose either a single stage or a group of stages, not both. Clear one of them and search again.",
+  "form.violation.status_and_group_exclusive": "Choose either a single status or a group of statuses, not both. Clear one of them and search again."
 }

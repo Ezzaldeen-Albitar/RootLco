@@ -375,12 +375,19 @@ export const MODULE_DISPOSITION = Object.freeze({
   'apps/web/src/components/print': 'in-surface',
   /** `Icon`, rendered inside P1-27 controls. */
   'apps/web/src/components/primitives': 'in-surface',
-  /**
-   * `SearchBox` and `SearchStates` — the one box a screen asks its question in,
-   * and the six things a search can be other than an answer. Newly visible when
-   * the customer chooser adopted them under the Owner directive
-   * (`P1-32-PRE-OD-UX`); they render the label, the example and every refusal an
-   * operator reads, so `in-surface` rather than transport.
+  /*
+   * `SearchBox` and `SearchStates` — the one control a screen asks its question
+   * through, and the six things a search can be other than an answer. Both
+   * became visible here when the customer chooser and the two boards adopted
+   * them under the Owner directive (`P1-32-PRE-OD-UX`).
+   *
+   * `in-surface` rather than excluded, and the reason is this gate's own
+   * subject matter: the box is where an operator types a name, a phone number,
+   * a plate or a chassis fragment, so it is exactly the surface SEC-002 is
+   * about — free text must never reach the address bar, and a scope must never
+   * be asserted from the client. Keeping it out would leave the control that
+   * handles the most sensitive keystrokes in the phase unmeasured, which is the
+   * shape of omission `MODULE_DISPOSITION` exists to make impossible.
    */
   'apps/web/src/components/search': 'in-surface',
   /** `PageHeader`, and the locale switcher that carries table state across it. */

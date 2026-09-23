@@ -28,6 +28,7 @@
  */
 import { z } from 'zod';
 import { defineOperation } from '@/server/auth/operation-registry';
+import { AppFailure } from '@/server/errors/app-failure';
 import { handleOperation } from '@/server/http/route-handler';
 import {
   parseOrFail,
@@ -39,6 +40,7 @@ import {
   MAX_WORK_ORDER_SEARCH_FRAGMENT,
   MIN_WORK_ORDER_SEARCH_FRAGMENT,
   WORK_ORDER_KINDS,
+  WORK_ORDER_STATE_GROUPS,
   workOrderModule,
 } from '@/modules/work-order';
 
@@ -79,9 +81,41 @@ const Query = z
       .string()
       .regex(/^[a-z][a-z0-9_]{1,62}$/, 'must be a lower-snake state code')
       .optional(),
+    /**
+     * The state GROUP (Owner directive, P1-32-PRE-OD-UX) — the control a board
+     * actually offers, because nobody opens a workshop screen thinking in
+     * catalogue codes.
+     *
+     * A CLOSED vocabulary where `state` is open, and the two are not the same
+     * kind of thing: `state` is a tenant's own code and must not be validated
+     * against a TypeScript list, while a group is a question about the
+     * catalogue's `is_terminal` / `is_cancellation` flags and is resolved from
+     * the live rows inside the module. An unknown group is therefore a 422 and
+     * an unknown state is still an empty page.
+     *
+     * Mutually exclusive with `state`, refused below rather than ANDed. ANDing
+     * them is well defined in SQL and useless to a caller: every combination is
+     * either the state on its own or an empty page that looks like a missing
+     * row. A 422 naming the conflict is the difference between a bug the caller
+     * can fix and a board that silently shows nothing.
+     */
+    stateGroup: z.enum(WORK_ORDER_STATE_GROUPS).optional(),
     kind: z.enum(WORK_ORDER_KINDS).optional(),
     openedFrom: z.string().datetime({ offset: true }).optional(),
     openedTo: z.string().datetime({ offset: true }).optional(),
+    /**
+     * Inclusive bounds on the COMPLETION instant (Owner directive,
+     * P1-32-PRE-OD-UX) — the same value the row publishes as `completedAt`, so
+     * the window and the column a board sorts by describe one fact.
+     *
+     * Beside `openedFrom`/`openedTo` and not instead of them: "opened last week"
+     * and "finished last week" are different questions, and a month-end handover
+     * report asks the second one. A work order that is not currently in a
+     * terminal state has no completion instant, so either bound narrows the
+     * board to finished work by construction.
+     */
+    completedFrom: z.string().datetime({ offset: true }).optional(),
+    completedTo: z.string().datetime({ offset: true }).optional(),
     /**
      * BR-05. Narrows to work orders whose reception visit names this partner in
      * ANY role — a customer search wants every car they are connected to.
@@ -142,6 +176,50 @@ const Query = z
   })
   .strict();
 
+/**
+ * The two cross-field refusals this query carries, as CATALOGUED rule tokens.
+ *
+ * Asserted here rather than in a `superRefine`, and the difference is what the
+ * caller receives. `toViolations` publishes `issue.code` as the rule, and every
+ * Zod refinement issue carries the code `custom` — so a refinement can state its
+ * reason only in an English `message` that the problem document does not even
+ * publish, and the browser maps `custom` to a generic sentence. A token the
+ * catalogue carries is what turns the refusal into words an operator can act on,
+ * in their own language.
+ *
+ * The shape is the ordinary one — `{ path, rule }` under `ERR-VAL-001` — so this
+ * is indistinguishable from a schema violation to every consumer.
+ */
+function assertQueryCoherent(query: z.infer<typeof Query>): void {
+  const violations: { readonly path: string; readonly rule: string }[] = [];
+  if (query.state !== undefined && query.stateGroup !== undefined) {
+    // Refused rather than ANDed. See `stateGroup` above: the intersection is
+    // either the state itself or nothing, and "nothing" reaching a board as an
+    // empty page is indistinguishable from a branch with no work in it.
+    violations.push({ path: 'query.stateGroup', rule: 'state_and_group_exclusive' });
+  }
+  if (
+    query.completedFrom !== undefined &&
+    query.completedTo !== undefined &&
+    Date.parse(query.completedTo) < Date.parse(query.completedFrom)
+  ) {
+    // An inverted window matches nothing by construction, so answering it with
+    // an empty page would read as "nothing was finished" rather than "bad
+    // request" — the rule `rec.reception-list` and `apt.appointment-list`
+    // already apply to their own windows. Compared as INSTANTS: both values
+    // carry an explicit offset, and a lexical comparison of offset-bearing ISO
+    // strings is wrong in both directions.
+    violations.push({ path: 'query.completedTo', rule: 'completion_window_inverted' });
+  }
+  if (violations.length === 0) return;
+  throw new AppFailure('ERR-VAL-001', {
+    // Not published: `problemFor` renders the catalogue title and the
+    // violations, never this string. It exists for the log line.
+    message: 'The board query asks for two things that cannot both be true',
+    safeDetails: { violations },
+  });
+}
+
 export const WORK_ORDER_LIST_OPERATION = defineOperation({
   id: 'wo.work-order-list',
   module: 'work-order',
@@ -167,6 +245,7 @@ export async function GET(request: Request): Promise<Response> {
       // `AppFailure` escape the route function entirely, and the caller would see
       // an unhandled 500 instead of a 422 naming the field.
       const query = parseOrFail(Query, raw, 'query');
+      assertQueryCoherent(query);
       const branchIds =
         query.branchId === undefined ? await authorizedBranches(query.companyId) : [query.branchId];
       return {
@@ -179,6 +258,9 @@ export async function GET(request: Request): Promise<Response> {
             kind: query.kind,
             openedFrom: query.openedFrom === undefined ? undefined : new Date(query.openedFrom),
             openedTo: query.openedTo === undefined ? undefined : new Date(query.openedTo),
+            completedFrom:
+              query.completedFrom === undefined ? undefined : new Date(query.completedFrom),
+            completedTo: query.completedTo === undefined ? undefined : new Date(query.completedTo),
             customerId: query.customerId,
             number: query.number,
             q: query.q,
@@ -194,6 +276,7 @@ export async function GET(request: Request): Promise<Response> {
               assignedToMe: query.assignedToMe,
               readyForDelivery: query.readyForDelivery,
               awaitingQuality: query.awaitingQuality,
+              stateGroup: query.stateGroup,
             })),
           },
           { cursor: query.cursor, limit: query.limit }

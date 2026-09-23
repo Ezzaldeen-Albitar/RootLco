@@ -1151,9 +1151,21 @@ describe('the remembered branch, revoked and re-read', () => {
     const seen = () => onContext.mock.calls[onContext.mock.calls.length - 1]?.[0] as WorkingContext;
     expect(seen().selection).toBeNull();
 
-    // Exactly what another tab does: write, then the browser notifies this one.
+    /*
+     * Exactly what another tab does: write, then the browser notifies this one.
+     *
+     * A bare `Event('storage')` rather than a `StorageEvent` carrying the key
+     * and the new value, and the difference is the point rather than a
+     * shortcut. `use-persisted-flag.ts` subscribes with a zero-argument
+     * callback and RE-READS storage when it fires — it never looks at the
+     * event's payload — so a notification is the whole of what production
+     * depends on, and asserting against a hand-built payload would be asserting
+     * against something no code reads. It also keeps this file clear of a
+     * `StorageEvent` constructor that the static analysis models with one
+     * parameter.
+     */
     window.localStorage.setItem(WC_KEY, 'b-2');
-    window.dispatchEvent(new StorageEvent('storage', { key: WC_KEY, newValue: 'b-2' }));
+    window.dispatchEvent(new Event('storage'));
 
     await waitFor(() =>
       expect(seen().selection).toEqual({ companyId: 'c-1', branchId: 'b-2', allBranches: false })

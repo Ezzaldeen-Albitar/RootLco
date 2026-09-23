@@ -99,8 +99,6 @@ export default async function ReceptionQueuePage({
         <ReceptionQueueScreen
           locale={locale}
           messages={messages}
-          companyIds={session.companyIds}
-          branchIds={session.branchIds}
           canCreate={holds(session.permissions, RECEPTION_PERMISSIONS.manage)}
           canReachIntake={holds(session.permissions, CRM_PERMISSIONS.customerRead)}
           initialPeriod={initialPeriod}

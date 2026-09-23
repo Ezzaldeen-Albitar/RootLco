@@ -230,7 +230,7 @@
         },
         {
           "file": "apps/web/tests/p1-28-appointment-routes.test.ts",
-          "cases": ["passes the session's own resolved scope as the target options"]
+          "cases": ["passes NO scope down — the branch is the working context, not the session"]
         }
       ],
       "observedInBrowserBy": [

@@ -64,8 +64,6 @@ export default async function AppointmentsPage({
         <AppointmentCalendarScreen
           locale={locale}
           messages={messages}
-          companyIds={session.companyIds}
-          branchIds={session.branchIds}
           canManage={holds(session.permissions, APPOINTMENT_PERMISSIONS.manage)}
           /*
            * The day queue's arrival affordance leads to `rec.reception-create`,

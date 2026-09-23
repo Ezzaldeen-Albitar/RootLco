@@ -5890,5 +5890,8 @@
   "dashboard.actions.openApprovals": "فتح قائمة الانتظار",
   "dashboard.actions.openAttention": "فتح صفحة التنبيهات",
   "dashboard.period.notApplied": "الأرقام ما زالت تغطي {period}. اختر تاريخين ثم اضغط استخدام هذين التاريخين.",
-  "workOrders.queue.stateNotRecognised": "الحالة التي طلبتها ليست من الحالات المستخدمة في هذه الورشة، لذلك تظهر جميع أوامر العمل."
+  "workOrders.queue.stateNotRecognised": "الحالة التي طلبتها ليست من الحالات المستخدمة في هذه الورشة، لذلك تظهر جميع أوامر العمل.",
+  "form.violation.completion_window_inverted": "تاريخا الانتهاء معكوسان. يأتي التاريخ الأسبق أولًا ثم التاريخ الأحدث.",
+  "form.violation.state_and_group_exclusive": "اختر مرحلة واحدة أو مجموعة مراحل، لا الاثنتين معًا. امسح إحداهما ثم أعد البحث.",
+  "form.violation.status_and_group_exclusive": "اختر حالة واحدة أو مجموعة حالات، لا الاثنتين معًا. امسح إحداهما ثم أعد البحث."
 }
