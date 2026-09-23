@@ -4,7 +4,12 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import en from '../src/i18n/messages/en.json';
 import ar from '../src/i18n/messages/ar.json';
 import type { ReactElement } from 'react';
-import { inBranch, renderLtr as renderInLtr, renderRtl as renderInRtl } from './render';
+import {
+  TEST_BRANCH,
+  inBranch,
+  renderLtr as renderInLtr,
+  renderRtl as renderInRtl,
+} from './render';
 
 /*
  * Every screen in this file is addressed by the WORKING CONTEXT: the branch it
@@ -85,8 +90,10 @@ vi.mock('@/features/inventory/api', () => ({
 }));
 
 const readWorkOrderDetail = vi.fn();
+const listWorkOrders = vi.fn();
 vi.mock('@/features/work-orders/api', () => ({
   readWorkOrderDetail: (...args: unknown[]) => readWorkOrderDetail(...args),
+  listWorkOrders: (...args: unknown[]) => listWorkOrders(...args),
 }));
 
 const push = vi.fn();
@@ -334,19 +341,45 @@ beforeEach(() => {
 });
 
 describe('reached from a work order', () => {
-  it('without a work order, explains and takes an identifier', async () => {
+  it('without a work order, finds the job on the working branch instead of asking for a reference', async () => {
+    listWorkOrders.mockResolvedValue({
+      status: 'ok',
+      rows: [workOrder],
+      nextCursor: null,
+      hasMore: false,
+      correlationId: 'corr-wo',
+    });
     const user = userEvent.setup();
     renderScreen({ workOrderId: null, workOrder: null });
     expect(screen.getByText(EN['inventory.parts.choose.explain'] as string)).toBeVisible();
     expect(listPartIssues).not.toHaveBeenCalled();
-    await user.type(
-      screen.getByLabelText(labelled('inventory.parts.choose.workOrderId')),
-      WORK_ORDER_ID
+    const box = screen.getByLabelText(EN['inventory.parts.choose.workOrderId'] as string);
+    await user.click(
+      screen.getByRole('button', { name: EN['inventory.parts.choose.submit'] as string })
+    );
+    expect(box).toHaveAttribute('aria-invalid', 'true');
+    expect(push).not.toHaveBeenCalled();
+    await user.type(box, 'Corolla{Enter}');
+    await user.click(await screen.findByRole('button', { name: /WO-000042/ }));
+    expect(listWorkOrders).toHaveBeenCalledWith(
+      { companyId: TEST_BRANCH.companyId, branchId: TEST_BRANCH.id },
+      { q: 'Corolla' },
+      expect.objectContaining({ page: 1 }),
+      null
     );
     await user.click(
       screen.getByRole('button', { name: EN['inventory.parts.choose.submit'] as string })
     );
     expect(push).toHaveBeenCalledWith(`/en/inventory/parts?workOrderId=${WORK_ORDER_ID}`);
+  });
+
+  it('without the work-order code, the chooser offers no search and no submit', () => {
+    renderScreen({ workOrderId: null, workOrder: null, canReadWorkOrder: false });
+    expect(screen.getByText(EN['workOrders.picker.notPermitted'] as string)).toBeVisible();
+    expect(screen.queryByRole('searchbox')).toBeNull();
+    expect(
+      screen.queryByRole('button', { name: EN['inventory.parts.choose.submit'] as string })
+    ).toBeNull();
   });
 
   it('lists the issues on first paint with two figures as strings, and names the work order', async () => {

@@ -13,11 +13,13 @@ import {
   workOrderStateMessageKey,
   type WorkOrderListEntry,
 } from '@/features/work-orders/work-orders-contract';
+import { WorkOrderPicker } from '@/features/work-orders/components/WorkOrderPicker';
 import { useBranchTarget } from '@/features/working-context/use-branch-target';
 import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic } from '@/i18n/get-messages';
 import type { ActionState } from '@/lib/forms/action-result';
+import { useFocusFirstInvalid } from '@/lib/forms/use-focus-first-invalid';
 import { formatDateTime } from '@/lib/format';
 
 import {
@@ -182,7 +184,9 @@ export function PartsScreen({
   );
 
   if (workOrderId === null) {
-    return <ChooseWorkOrder locale={locale} messages={messages} />;
+    return (
+      <ChooseWorkOrder locale={locale} messages={messages} canSearchWorkOrders={canReadWorkOrder} />
+    );
   }
 
   const changed = (next: WriteNotice | null) => {
@@ -452,23 +456,40 @@ function WorkOrderState({
 function ChooseWorkOrder({
   locale,
   messages,
+  canSearchWorkOrders,
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
+  /** `wo.work_order.read` — whether the jobs of the branch can be searched. */
+  readonly canSearchWorkOrders: boolean;
 }) {
   const router = useRouter();
-  const [value, setValue] = useState('');
-  const [error, setError] = useState<string | undefined>(undefined);
+  /*
+   * The job is FOUND, not typed (Owner directive, `P1-32-PRE-OD-UX`): the
+   * same picker the invoice desk and the quotation builder use, searching the
+   * working branch's jobs on the server.
+   */
+  const [chosen, setChosen] = useState<WorkOrderListEntry | null>(null);
+  const [refusal, setRefusal] = useState<ActionState>({ status: 'idle' });
+  const formRef = useFocusFirstInvalid(refusal);
+  const error =
+    refusal.status === 'invalid' && chosen === null
+      ? translate(messages, 'workOrders.picker.required')
+      : undefined;
   return (
     <form
+      ref={formRef}
       onSubmit={(event) => {
         event.preventDefault();
-        const id = value.trim();
-        if (!UUID.test(id)) {
-          setError(translate(messages, 'inventory.common.idFormat'));
+        if (chosen === null) {
+          setRefusal((previous) => ({
+            status: 'invalid',
+            fieldErrors: { workOrderId: 'workOrders.picker.required' },
+            attempt: (previous.attempt ?? 0) + 1,
+          }));
           return;
         }
-        router.push(`/${locale}/inventory/parts?workOrderId=${encodeURIComponent(id)}`);
+        router.push(`/${locale}/inventory/parts?workOrderId=${encodeURIComponent(chosen.id)}`);
       }}
       noValidate
       aria-labelledby="parts-choose-heading"
@@ -489,20 +510,21 @@ function ChooseWorkOrder({
           {translate(messages, 'inventory.parts.choose.boardLink')}
         </Link>
       </p>
-      <TextField
+      <WorkOrderPicker
+        messages={messages}
         label={translate(messages, 'inventory.parts.choose.workOrderId')}
-        required
-        spellCheck={false}
-        dir="ltr"
-        value={value}
-        onChange={(event) => setValue(event.target.value)}
+        value={chosen}
+        onChange={setChosen}
         error={error}
+        canSearch={canSearchWorkOrders}
       />
-      <div>
-        <button type="submit" className={PRIMARY_BUTTON}>
-          {translate(messages, 'inventory.parts.choose.submit')}
-        </button>
-      </div>
+      {canSearchWorkOrders ? (
+        <div>
+          <button type="submit" className={PRIMARY_BUTTON}>
+            {translate(messages, 'inventory.parts.choose.submit')}
+          </button>
+        </div>
+      ) : null}
     </form>
   );
 }
