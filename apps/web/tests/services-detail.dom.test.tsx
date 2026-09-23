@@ -1,9 +1,27 @@
 import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import en from '../src/i18n/messages/en.json';
 import ar from '../src/i18n/messages/ar.json';
-import { TEST_BRANCH, branchSnapshot, inBranch, renderLtr, renderRtl } from './render';
+import {
+  BranchSwitch,
+  OTHER_BRANCH as SECOND_BRANCH,
+  TEST_BRANCH,
+  WorkingBranchProbe,
+  branchSnapshot,
+  inBranch,
+  renderLtr,
+  renderRtl,
+  RETIRED_BOX,
+} from './render';
+import {
+  discardAndSwitch,
+  forgetRememberedBranch,
+  heldBranch,
+  stayOnBranch,
+  switchExpectingQuestion,
+  switchWithoutQuestion,
+} from './support/branch-switch';
 
 /**
  * The service detail, rendered (P1-30, `W1`, FE-001).
@@ -234,7 +252,7 @@ describe('availability is a branch-scoped write', () => {
       )
     );
     expect(listBranches).not.toHaveBeenCalled();
-    expect(screen.queryByLabelText(labelled('services.availability.companyIdField'))).toBeNull();
+    expect(screen.queryByLabelText(RETIRED_BOX.en.company)).toBeNull();
     // The header's branch, named, and the company comes from that branch's own row.
     expect(screen.getByLabelText(labelled('services.availability.branch'))).toHaveValue(
       TEST_BRANCH.id
@@ -280,7 +298,7 @@ describe('availability is a branch-scoped write', () => {
   it('with neither the directory nor a working context, says so and offers no submit', () => {
     renderDetail({ canReadBranches: false });
     expect(screen.getByText(EN['services.availability.noBranch'] as string)).toBeVisible();
-    expect(screen.queryByLabelText(labelled('services.availability.branchIdField'))).toBeNull();
+    expect(screen.queryByLabelText(RETIRED_BOX.en.branch)).toBeNull();
     expect(
       screen.getByRole('button', { name: EN['services.availability.submit'] as string })
     ).toBeDisabled();
@@ -315,6 +333,95 @@ describe('availability is a branch-scoped write', () => {
  * every first paint of this panel — and a branch typed during that window
  * survived into a submit the blank select was no longer displaying.
  * -------------------------------------------------------------------- */
+describe('availability follows the header, not just its first value', () => {
+  /*
+   * The panel's branch used to be copied from the working context once, on
+   * mount, so after a switch the header named one workshop and the write went
+   * to another. It now follows every change; a changed choice is unsaved work,
+   * so the switch asks first; and a reply to a write made before the switch is
+   * not shown after it.
+   */
+  afterEach(forgetRememberedBranch);
+
+  function renderTwo() {
+    renderLtr(
+      inBranch(
+        <>
+          <BranchSwitch to={TEST_BRANCH.id} label="first" />
+          <BranchSwitch to={SECOND_BRANCH.id} label="second" />
+          <WorkingBranchProbe />
+          <ServiceDetailScreen
+            locale="en"
+            messages={en}
+            service={service() as never}
+            canManage
+            canReadBranches={false}
+          />
+        </>,
+        { snapshot: branchSnapshot([TEST_BRANCH, SECOND_BRANCH]) }
+      )
+    );
+  }
+  const branchControl = () => screen.getByLabelText(labelled('services.availability.branch'));
+  const offered = () => screen.getByLabelText(labelled('services.availability.offered'));
+
+  it('an untouched panel switches without asking and names the new working branch', async () => {
+    const user = userEvent.setup();
+    renderTwo();
+    await user.click(screen.getByRole('button', { name: 'first' }));
+    await waitFor(() => expect(branchControl()).toHaveValue(TEST_BRANCH.id));
+    await switchWithoutQuestion(user, 'second');
+    await waitFor(() => expect(branchControl()).toHaveValue(SECOND_BRANCH.id));
+    await user.click(
+      screen.getByRole('button', { name: EN['services.availability.submit'] as string })
+    );
+    await waitFor(() => expect(setBranchAvailability).toHaveBeenCalled());
+    expect(setBranchAvailability).toHaveBeenCalledWith(SERVICE_ID, {
+      companyId: SECOND_BRANCH.companyId,
+      branchId: SECOND_BRANCH.id,
+      isAvailable: true,
+    });
+  });
+
+  it('a changed choice asks first; staying keeps it, discarding resets to the new branch', async () => {
+    const user = userEvent.setup();
+    renderTwo();
+    await user.click(screen.getByRole('button', { name: 'first' }));
+    await waitFor(() => expect(branchControl()).toHaveValue(TEST_BRANCH.id));
+    await user.click(offered());
+    expect(offered()).not.toBeChecked();
+
+    await stayOnBranch(user, await switchExpectingQuestion(user, 'second'));
+    expect(heldBranch()).toBe(TEST_BRANCH.id);
+    expect(branchControl()).toHaveValue(TEST_BRANCH.id);
+    expect(offered()).not.toBeChecked();
+
+    await discardAndSwitch(user, await switchExpectingQuestion(user, 'second'));
+    await waitFor(() => expect(heldBranch()).toBe(SECOND_BRANCH.id));
+    await waitFor(() => expect(branchControl()).toHaveValue(SECOND_BRANCH.id));
+    expect(offered()).toBeChecked();
+  });
+
+  it('a recorded choice is not unsaved work any more', async () => {
+    const user = userEvent.setup();
+    renderTwo();
+    await user.click(screen.getByRole('button', { name: 'first' }));
+    await waitFor(() => expect(branchControl()).toHaveValue(TEST_BRANCH.id));
+    await user.click(offered());
+    await user.click(
+      screen.getByRole('button', { name: EN['services.availability.submit'] as string })
+    );
+    await waitFor(() => expect(setBranchAvailability).toHaveBeenCalled());
+    await waitFor(() =>
+      expect(
+        screen.getByRole('button', { name: EN['services.availability.submit'] as string })
+      ).toBeEnabled()
+    );
+    await switchWithoutQuestion(user, 'second');
+    await waitFor(() => expect(heldBranch()).toBe(SECOND_BRANCH.id));
+  });
+});
+
 describe('CC-15 — the availability branch picker says which state it is in', () => {
   const listedBranches = okRead({
     items: [{ id: BRANCH, companyId: COMPANY, branchCode: 'B1', name: 'Main' }],
@@ -330,12 +437,8 @@ describe('CC-15 — the availability branch picker says which state it is in', (
     expect(within(panel).getByRole('status')).toHaveTextContent(
       EN['services.catalogue.branchesLoading'] as string
     );
-    expect(
-      within(panel).queryByLabelText(labelled('services.availability.companyIdField'))
-    ).toBeNull();
-    expect(
-      within(panel).queryByLabelText(labelled('services.availability.branchIdField'))
-    ).toBeNull();
+    expect(within(panel).queryByLabelText(RETIRED_BOX.en.company)).toBeNull();
+    expect(within(panel).queryByLabelText(RETIRED_BOX.en.branch)).toBeNull();
     release(listedBranches);
     expect(await screen.findByLabelText(labelled('services.availability.branch'))).toBeVisible();
   });
@@ -364,8 +467,8 @@ describe('CC-15 — the availability branch picker says which state it is in', (
     listBranches.mockResolvedValue(okRead({ items: [] }));
     renderDetail({ canReadBranches: true });
     expect(await screen.findByText(EN['services.catalogue.branchesNone'] as string)).toBeVisible();
-    expect(screen.queryByLabelText(labelled('services.availability.companyIdField'))).toBeNull();
-    expect(screen.queryByLabelText(labelled('services.availability.branchIdField'))).toBeNull();
+    expect(screen.queryByLabelText(RETIRED_BOX.en.company)).toBeNull();
+    expect(screen.queryByLabelText(RETIRED_BOX.en.branch)).toBeNull();
     expect(
       screen.getByRole('button', { name: EN['services.availability.submit'] as string })
     ).toBeDisabled();
@@ -417,11 +520,7 @@ describe('CC-15 — the availability branch picker says which state it is in', (
     expect(within(panel).getByRole('status')).toHaveTextContent(
       AR['services.catalogue.branchesLoading'] as string
     );
-    expect(
-      within(panel).queryByLabelText(
-        new RegExp(`^${escape(AR['services.availability.companyIdField'] as string)}`)
-      )
-    ).toBeNull();
+    expect(within(panel).queryByLabelText(RETIRED_BOX.ar.company)).toBeNull();
     release(listedBranches);
     expect(
       await screen.findByLabelText(
@@ -442,11 +541,7 @@ describe('CC-15 — the availability branch picker says which state it is in', (
       />
     );
     expect(await screen.findByText(AR['services.catalogue.branchesNone'] as string)).toBeVisible();
-    expect(
-      screen.queryByLabelText(
-        new RegExp(`^${escape(AR['services.availability.branchIdField'] as string)}`)
-      )
-    ).toBeNull();
+    expect(screen.queryByLabelText(RETIRED_BOX.ar.branch)).toBeNull();
   });
 });
 

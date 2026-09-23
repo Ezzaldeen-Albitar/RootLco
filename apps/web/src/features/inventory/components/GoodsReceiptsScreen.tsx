@@ -29,6 +29,7 @@ import { useEffect, useState } from 'react';
 
 import { TextAreaField, TextField } from '@/components/forms/Field';
 import { notifyActionResult } from '@/components/notifications/action-notifications';
+import { useUnsavedGuard } from '@/features/working-context/WorkingContextProvider';
 import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic } from '@/i18n/get-messages';
@@ -131,7 +132,6 @@ export function GoodsReceiptsScreen({
         messages={messages}
         formLabelKey="inventory.receipts.targetLabel"
         explainKey="inventory.target.explain"
-        submitKey="inventory.receipts.chooseBranch"
         onChosen={setTarget}
       />
       {target !== null ? (
@@ -494,6 +494,22 @@ function ReceiptForm({
   const [busy, setBusy] = useState(false);
   const [outcome, setOutcome] = useState<ActionState | null>(null);
   const [attemptKey, setAttemptKey] = useState(() => crypto.randomUUID());
+
+  /*
+   * Unsaved work, declared to the shell. The receipt is addressed to THIS
+   * branch and its lines name this branch's locations, so a switch asks first;
+   * a confirmed switch remounts the form empty under the new branch. The
+   * chosen location and currency are not counted: they survive a successful
+   * create on purpose, as defaults for the next receipt, and a guard that is
+   * dirty after every save asks about every switch.
+   */
+  useUnsavedGuard(
+    lines.length > 0 ||
+      item !== null ||
+      line.quantity.trim().length > 0 ||
+      line.unitCost.trim().length > 0 ||
+      Object.values(header).some((value) => value.trim().length > 0)
+  );
 
   const errorFor = (name: string) =>
     errors[name] ? translateDynamic(messages, errors[name]) : outcomeField(messages, outcome, name);

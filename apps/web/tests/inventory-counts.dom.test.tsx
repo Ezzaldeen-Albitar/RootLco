@@ -1,10 +1,27 @@
 import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import ar from '../src/i18n/messages/ar.json';
 import en from '../src/i18n/messages/en.json';
 import type { ReactElement } from 'react';
-import { inBranch, renderLtr as renderInLtr, renderRtl as renderInRtl } from './render';
+import {
+  inBranch,
+  renderLtr as renderInLtr,
+  renderRtl as renderInRtl,
+  BranchSwitch,
+  OTHER_BRANCH,
+  TEST_BRANCH,
+  WorkingBranchProbe,
+  branchSnapshot,
+} from './render';
+import {
+  discardAndSwitch,
+  forgetRememberedBranch,
+  heldBranch,
+  stayOnBranch,
+  switchExpectingQuestion,
+  switchWithoutQuestion,
+} from './support/branch-switch';
 
 /*
  * Every screen in this file is addressed by the WORKING CONTEXT: the branch it
@@ -528,6 +545,65 @@ describe('recording and reconciling', () => {
     expect(body['locationId']).toBe(LOCATION_ID);
     expect(typeof body['idempotencyKey']).toBe('string');
     expect(await screen.findByRole('region', { name: /Count of WH-1/ })).toBeVisible();
+  });
+});
+
+describe('a count being opened and a branch switch', () => {
+  /*
+   * The open form names one of this branch's locations and is keyed on the branch,
+   * so a switch used to drop it without a word. It now asks first.
+   */
+  afterEach(forgetRememberedBranch);
+
+  async function openTwoBranches(user: ReturnType<typeof userEvent.setup>) {
+    renderInLtr(
+      inBranch(
+        <>
+          <BranchSwitch to={TEST_BRANCH.id} label="first" />
+          <BranchSwitch to={OTHER_BRANCH.id} label="second" />
+          <WorkingBranchProbe />
+          <StockCountsScreen locale="en" messages={en} canOperate={true} canReadBranches={true} />
+        </>,
+        { snapshot: branchSnapshot([TEST_BRANCH, OTHER_BRANCH]) }
+      )
+    );
+    await user.click(screen.getByRole('button', { name: 'first' }));
+    await screen.findByRole('form', { name: EN['inventory.counts.openForm.heading'] as string });
+  }
+  const field = () =>
+    within(
+      screen.getByRole('form', { name: EN['inventory.counts.openForm.heading'] as string })
+    ).getByLabelText(labelled('inventory.counts.openForm.notes')) as HTMLInputElement;
+
+  it('asks before switching; staying keeps what was typed and the branch', async () => {
+    const user = userEvent.setup();
+    await openTwoBranches(user);
+    await user.type(field(), 'Front shelf');
+    await stayOnBranch(user, await switchExpectingQuestion(user, 'second'));
+    expect(heldBranch()).toBe(TEST_BRANCH.id);
+    expect(field().value).toBe('Front shelf');
+  });
+
+  it('discarding switches the branch and opens the form empty under it', async () => {
+    const user = userEvent.setup();
+    await openTwoBranches(user);
+    await user.type(field(), 'Front shelf');
+    await discardAndSwitch(user, await switchExpectingQuestion(user, 'second'));
+    await waitFor(() => expect(heldBranch()).toBe(OTHER_BRANCH.id));
+    await waitFor(() =>
+      expect(listLocations.mock.lastCall?.[0]).toEqual({
+        companyId: OTHER_BRANCH.companyId,
+        branchId: OTHER_BRANCH.id,
+      })
+    );
+    expect(field().value).toBe('');
+  });
+
+  it('an untouched form switches without asking', async () => {
+    const user = userEvent.setup();
+    await openTwoBranches(user);
+    await switchWithoutQuestion(user, 'second');
+    await waitFor(() => expect(heldBranch()).toBe(OTHER_BRANCH.id));
   });
 });
 

@@ -52,6 +52,7 @@ import { useCallback, useState } from 'react';
 import { INITIAL_REQUEST } from '@/components/data-table/table-state';
 import { SelectField, TextField } from '@/components/forms/Field';
 import { notifyActionResult } from '@/components/notifications/action-notifications';
+import { useUnsavedGuard } from '@/features/working-context/WorkingContextProvider';
 import {
   cancelInvoice,
   createCounterSale,
@@ -135,7 +136,6 @@ export function CounterSalesScreen({
         messages={messages}
         formLabelKey="inventory.counterSales.targetLabel"
         explainKey="inventory.target.explain"
-        submitKey="inventory.counterSales.chooseBranch"
         onChosen={setTarget}
       />
       {target === null ? null : !canSell ? (
@@ -174,6 +174,13 @@ function BranchCounter({
   const [lines, setLines] = useState<readonly CounterSaleLine[]>([]);
   const [sale, setSale] = useState<CreatedInvoice | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  /*
+   * Unsaved work, declared to the shell. A buyer chosen or a line added before
+   * the draft exists is held only here, under THIS branch's key, so a branch
+   * switch asks first; a confirmed switch remounts the counter empty. Once the
+   * draft exists it is stored, and the drafts list offers it back.
+   */
+  useUnsavedGuard(sale === null && (buyer !== null || lines.length > 0));
   /*
    * DEF-T-13. The branch's drafted sales, so one is reachable again after a
    * reload. Re-read after every draft, issue and void, because each of those
@@ -555,6 +562,9 @@ function LineBuilder({
   const [errors, setErrors] = useState<Readonly<Record<string, string>>>({});
   const [scanNote, setScanNote] = useState<string | null>(null);
   const [onShelf, setOnShelf] = useState<string | null>(null);
+  useUnsavedGuard(
+    finderItem !== null || scanned !== null || locationId !== '' || quantity.trim().length > 0
+  );
   const chosen: ChosenItem | null =
     scanned ??
     (finderItem === null
@@ -855,6 +865,8 @@ function SalePanel({
   const [busy, setBusy] = useState(false);
   const [outcome, setOutcome] = useState<ActionState | null>(null);
   const invoice = sale.invoice;
+  // A void reason typed against a draft is unsaved until the void is recorded.
+  useUnsavedGuard(invoice.status === 'draft' && reason.trim().length > 0);
 
   /*
    * DEF-T-13 used to be guarded here by a `beforeunload` confirmation, because a

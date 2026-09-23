@@ -46,6 +46,7 @@ import { useEffect, useState } from 'react';
 import { INITIAL_REQUEST } from '@/components/data-table/table-state';
 import { CheckboxField, SelectField, TextAreaField, TextField } from '@/components/forms/Field';
 import { notifyActionResult } from '@/components/notifications/action-notifications';
+import { useUnsavedGuard } from '@/features/working-context/WorkingContextProvider';
 import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic } from '@/i18n/get-messages';
@@ -808,6 +809,9 @@ function LocationsSection({
       ) : null}
       {target !== null && canManage ? (
         <LocationForm
+          // Keyed on the branch: a parent warehouse chosen for one branch is not
+          // a shelf the next branch has, and must not travel with the form.
+          key={`${target.companyId}:${target.branchId}`}
           messages={messages}
           target={target}
           known={known}
@@ -838,6 +842,12 @@ function LocationForm({
   const [errors, setErrors] = useState<Readonly<Record<string, string>>>({});
   const [busy, setBusy] = useState(false);
   const [outcome, setOutcome] = useState<ActionState | null>(null);
+  /*
+   * Unsaved work, declared to the shell. The type and parent stay chosen after
+   * a location is added, as defaults for the next one, so only the code and
+   * name — cleared on success — count as work a switch would lose.
+   */
+  useUnsavedGuard(form.locationCode.trim().length > 0 || form.name.trim().length > 0);
 
   const errorFor = (name: string): string | undefined => {
     const key = errors[name] ?? outcome?.fieldErrors?.[name];

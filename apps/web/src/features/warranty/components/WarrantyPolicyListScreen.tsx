@@ -7,7 +7,11 @@ import { SelectField, TextField } from '@/components/forms/Field';
 import { EmptyState, FailureExplanation, LoadingState } from '@/components/states/States';
 import { RequiresConcreteBranch } from '@/features/working-context/components/WorkingBranchField';
 import { useBranchTarget } from '@/features/working-context/use-branch-target';
-import { useWorkingContext } from '@/features/working-context/WorkingContextProvider';
+import {
+  useUnsavedGuard,
+  useWorkingContext,
+  useWorkingContextChange,
+} from '@/features/working-context/WorkingContextProvider';
 import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic, translateWithValues } from '@/i18n/get-messages';
@@ -360,6 +364,21 @@ function CreatePolicySection({
     setLastDefault(defaultCompany);
     setCompanyId(defaultCompany);
   }
+
+  /*
+   * Unsaved work, declared to the shell. A branch switch can move the company
+   * default under a half-typed policy, so it asks first; a confirmed switch
+   * clears what was typed, and the company follows the header as above.
+   */
+  useUnsavedGuard(
+    policyCode.trim().length > 0 || name.trim().length > 0 || companyId !== defaultCompany
+  );
+  useWorkingContextChange(() => {
+    setPolicyCode('');
+    setName('');
+    setErrors({});
+    setState(null);
+  });
 
   // Nothing to choose from is a real state — an operator authorized for no
   // company at all — and it is said rather than drawn as an empty control.

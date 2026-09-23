@@ -1,9 +1,26 @@
 import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import en from '../src/i18n/messages/en.json';
 import ar from '../src/i18n/messages/ar.json';
-import { TEST_BRANCH, branchSnapshot, inBranch, renderLtr, renderRtl } from './render';
+import {
+  TEST_BRANCH,
+  branchSnapshot,
+  inBranch,
+  renderLtr,
+  renderRtl,
+  BranchSwitch,
+  OTHER_BRANCH,
+  WorkingBranchProbe,
+} from './render';
+import {
+  discardAndSwitch,
+  forgetRememberedBranch,
+  heldBranch,
+  stayOnBranch,
+  switchExpectingQuestion,
+  switchWithoutQuestion,
+} from './support/branch-switch';
 
 /**
  * Inventory, rendered (P1-30, `W4`, FE-008/009/010).
@@ -889,6 +906,87 @@ describe('FE-010 — reservations', () => {
     const first = createReservation.mock.calls[0]?.[0] as { idempotencyKey: string };
     const second = createReservation.mock.calls[1]?.[0] as { idempotencyKey: string };
     expect(second.idempotencyKey).toBe(first.idempotencyKey);
+  });
+});
+
+describe('a reservation being written and a branch switch', () => {
+  /*
+   * The reservation names one of this branch's locations, and a switch remounts
+   * the panel it lives in, so it used to go without a word. It now asks first.
+   */
+  afterEach(forgetRememberedBranch);
+
+  async function openTwoBranches(user: ReturnType<typeof userEvent.setup>) {
+    renderLtr(
+      inBranch(
+        <>
+          <BranchSwitch to={TEST_BRANCH.id} label="first" />
+          <BranchSwitch to={OTHER_BRANCH.id} label="second" />
+          <WorkingBranchProbe />
+          <InventoryScreen
+            locale="en"
+            messages={en}
+            initialWorkOrderId={null}
+            canReadStock={true}
+            canReadBranches={true}
+            canOperate={true}
+          />
+        </>,
+        { snapshot: branchSnapshot([TEST_BRANCH, OTHER_BRANCH]) }
+      )
+    );
+    await user.click(screen.getByRole('button', { name: 'first' }));
+    await (async () => {
+      await user.click(
+        await within(
+          await screen.findByRole('region', {
+            name: EN['inventory.reservations.heading'] as string,
+          })
+        ).findByRole('button', { name: EN['inventory.reserve.open'] as string })
+      );
+      await screen.findByRole('form', { name: EN['inventory.reserve.heading'] as string });
+    })();
+  }
+  const field = () =>
+    within(
+      screen.getByRole('form', { name: EN['inventory.reserve.heading'] as string })
+    ).getByLabelText(labelled('inventory.reserve.quantity')) as HTMLInputElement;
+
+  it('asks before switching; staying keeps what was typed and the branch', async () => {
+    const user = userEvent.setup();
+    await openTwoBranches(user);
+    await user.type(field(), '2.5');
+    await stayOnBranch(user, await switchExpectingQuestion(user, 'second'));
+    expect(heldBranch()).toBe(TEST_BRANCH.id);
+    expect(field().value).toBe('2.5');
+  });
+
+  it('discarding switches the branch and opens the form empty under it', async () => {
+    const user = userEvent.setup();
+    await openTwoBranches(user);
+    await user.type(field(), '2.5');
+    await discardAndSwitch(user, await switchExpectingQuestion(user, 'second'));
+    await waitFor(() => expect(heldBranch()).toBe(OTHER_BRANCH.id));
+    await waitFor(() =>
+      expect(listLocations.mock.lastCall?.[0]).toEqual({
+        companyId: OTHER_BRANCH.companyId,
+        branchId: OTHER_BRANCH.id,
+      })
+    );
+    await user.click(
+      await within(
+        await screen.findByRole('region', { name: EN['inventory.reservations.heading'] as string })
+      ).findByRole('button', { name: EN['inventory.reserve.open'] as string })
+    );
+    await screen.findByRole('form', { name: EN['inventory.reserve.heading'] as string });
+    expect(field().value).toBe('');
+  });
+
+  it('an untouched form switches without asking', async () => {
+    const user = userEvent.setup();
+    await openTwoBranches(user);
+    await switchWithoutQuestion(user, 'second');
+    await waitFor(() => expect(heldBranch()).toBe(OTHER_BRANCH.id));
   });
 });
 

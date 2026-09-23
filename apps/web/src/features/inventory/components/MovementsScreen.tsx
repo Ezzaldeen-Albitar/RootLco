@@ -7,6 +7,7 @@ import { DataTable, type Column } from '@/components/data-table/DataTable';
 import { INITIAL_REQUEST, type TableRequest } from '@/components/data-table/table-state';
 import { useServerTable } from '@/components/data-table/use-server-table';
 import { SelectField, TextField } from '@/components/forms/Field';
+import { useUnsavedGuard } from '@/features/working-context/WorkingContextProvider';
 import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic } from '@/i18n/get-messages';
@@ -114,7 +115,7 @@ function LedgerPanel({
   readonly initialWorkOrderId: string | null;
 }) {
   const locations = useLocations(target);
-  const [draft, setDraft] = useState({
+  const [initial] = useState(() => ({
     itemId: '',
     locationId: '',
     workOrderId: initialWorkOrderId ?? '',
@@ -122,7 +123,17 @@ function LedgerPanel({
     referenceKind: '',
     occurredFrom: '',
     occurredTo: '',
-  });
+  }));
+  const [draft, setDraft] = useState(initial);
+  /*
+   * The filters are held under THIS branch's key, and a location filter names
+   * one of this branch's locations, so a switch would silently drop what the
+   * operator set. It asks first; a confirmed switch remounts the panel with the
+   * filters it opened with.
+   */
+  useUnsavedGuard(
+    (Object.keys(initial) as (keyof typeof initial)[]).some((name) => draft[name] !== initial[name])
+  );
   const [errors, setErrors] = useState<Readonly<Record<string, string>>>({});
   // `null` until the operator asks: the ledger read is recorded server-side and
   // is never made on first paint.

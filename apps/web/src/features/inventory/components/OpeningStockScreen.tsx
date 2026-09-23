@@ -43,6 +43,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { INITIAL_REQUEST } from '@/components/data-table/table-state';
 import { SelectField, TextAreaField, TextField } from '@/components/forms/Field';
 import { notifyActionResult } from '@/components/notifications/action-notifications';
+import { useUnsavedGuard } from '@/features/working-context/WorkingContextProvider';
 import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic } from '@/i18n/get-messages';
@@ -320,6 +321,9 @@ export function OpeningStockScreen({
 
       {target !== null && batch === null && canOperate ? (
         <BatchForm
+          // Keyed on the branch: the form would otherwise stay mounted across a
+          // switch and send what was typed for one branch to the next.
+          key={`${target.companyId}:${target.branchId}`}
           messages={messages}
           target={target}
           onOpened={(opened) => {
@@ -608,6 +612,8 @@ function BatchForm({
   const [errors, setErrors] = useState<Readonly<Record<string, string>>>({});
   const [busy, setBusy] = useState(false);
   const [outcome, setOutcome] = useState<ActionState | null>(null);
+  // The batch is addressed to THIS branch, so a switch asks before dropping it.
+  useUnsavedGuard(Object.values(form).some((value) => value.trim().length > 0));
 
   const errorFor = (name: string): string | undefined => {
     const key = errors[name] ?? outcome?.fieldErrors?.[name];
@@ -717,6 +723,16 @@ function LineForm({
   const [errors, setErrors] = useState<Readonly<Record<string, string>>>({});
   const [busy, setBusy] = useState(false);
   const [outcome, setOutcome] = useState<ActionState | null>(null);
+  /*
+   * Unsaved work, declared to the shell. The item and location stay chosen
+   * after a line is added, as defaults for the next one, so after the first
+   * line only a typed quantity counts — otherwise the guard would stay raised
+   * for ever and ask about every switch.
+   */
+  const [added, setAdded] = useState(false);
+  useUnsavedGuard(
+    form.quantity.trim().length > 0 || (!added && (form.itemId !== '' || form.locationId !== ''))
+  );
 
   const errorFor = (name: string): string | undefined => {
     const key = errors[name] ?? outcome?.fieldErrors?.[name];
@@ -781,6 +797,7 @@ function LineForm({
         locationCode: location?.locationCode ?? result.created.locationId,
       });
       setForm((f) => ({ ...f, quantity: '' }));
+      setAdded(true);
     }
   };
 

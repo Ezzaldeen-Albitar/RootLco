@@ -38,6 +38,7 @@ import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic } from '@/i18n/get-messages';
 import type { ActionState } from '@/lib/forms/action-result';
 import { formatDateTime } from '@/lib/format';
+import { useUnsavedGuard } from '@/features/working-context/WorkingContextProvider';
 
 import {
   cancelTransfer,
@@ -134,7 +135,6 @@ export function TransfersScreen({
         messages={messages}
         formLabelKey="inventory.transfers.targetLabel"
         explainKey="inventory.target.explain"
-        submitKey="inventory.transfers.chooseBranch"
         onChosen={setTarget}
       />
       {target !== null ? (
@@ -534,6 +534,8 @@ function WriteOffDecisionForm({
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [outcome, setOutcome] = useState<ActionState | null>(null);
+  // Unsaved work, declared to the shell: a branch switch asks before it closes this.
+  useUnsavedGuard(reason.trim().length > 0);
 
   const decide = async (decision: AdjustmentDecision) => {
     const why = reason.trim();
@@ -666,6 +668,7 @@ function ReceiveForm({
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [outcome, setOutcome] = useState<ActionState | null>(null);
+  useUnsavedGuard(quantity.trim().length > 0);
 
   const submit = async () => {
     const value = quantity.trim();
@@ -761,6 +764,9 @@ function ResolveForm({
   // One key per opened form: the settlement keeps the header key for its life,
   // so a second press after a lost answer replays the first settlement.
   const [attemptKey] = useState(() => crypto.randomUUID());
+  useUnsavedGuard(
+    kind !== 'return_to_origin' || quantity.trim().length > 0 || reason.trim().length > 0
+  );
 
   const errorFor = (name: string) =>
     errors[name] ? translateDynamic(messages, errors[name]) : outcomeField(messages, outcome, name);
@@ -877,6 +883,7 @@ function CancelForm({
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [outcome, setOutcome] = useState<ActionState | null>(null);
+  useUnsavedGuard(reason.trim().length > 0);
 
   const submit = async () => {
     const why = reason.trim();
@@ -959,6 +966,12 @@ function DispatchForm({
   // The transfer keeps the body key for its whole life, so a second press after
   // a lost answer returns the transfer already dispatched.
   const [attemptKey, setAttemptKey] = useState(() => crypto.randomUUID());
+  /*
+   * Unsaved work, declared to the shell. The locations belong to THIS branch,
+   * so a switch would re-address the dispatch: it asks first, and a confirmed
+   * switch remounts the form empty under the new branch.
+   */
+  useUnsavedGuard(item !== null || Object.values(form).some((value) => value.trim().length > 0));
 
   const errorFor = (name: string) =>
     errors[name] ? translateDynamic(messages, errors[name]) : outcomeField(messages, outcome, name);

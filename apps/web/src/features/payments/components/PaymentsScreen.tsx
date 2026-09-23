@@ -8,6 +8,7 @@ import { useServerTable } from '@/components/data-table/use-server-table';
 import { SelectField, TextField } from '@/components/forms/Field';
 import { notifyActionResult } from '@/components/notifications/action-notifications';
 import { WorkingBranchField } from '@/features/working-context/components/WorkingBranchField';
+import { useUnsavedGuard } from '@/features/working-context/WorkingContextProvider';
 import { useBranchTarget } from '@/features/working-context/use-branch-target';
 import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
@@ -427,6 +428,19 @@ function RecordForm({
     currency: '',
     amount: '',
   });
+  /*
+   * Unsaved work, declared to the shell. The panel is keyed on the branch, so a
+   * switch would drop a half-filled payment and address the next one to a
+   * different branch's cash. It asks first; a confirmed switch remounts the
+   * form empty. The pre-selected method is a default, not something typed, so
+   * only a CHANGE of method counts.
+   */
+  useUnsavedGuard(
+    draft.paymentMethodId !== (methods[0]?.id ?? '') ||
+      draft.payerPartnerId.trim().length > 0 ||
+      draft.currency.trim().length > 0 ||
+      draft.amount.trim().length > 0
+  );
   const [errors, setErrors] = useState<Readonly<Record<string, string>>>({});
   const [outcome, setOutcome] = useState<ActionState | null>(null);
   const [busy, setBusy] = useState(false);
@@ -902,6 +916,10 @@ function AllocateForm({
     invoiceId: initialInvoiceId ?? '',
     amount: '',
   });
+  // A branch switch closes the previous branch's receipt, and this form with it.
+  useUnsavedGuard(
+    draft.invoiceId.trim() !== (initialInvoiceId ?? '') || draft.amount.trim().length > 0
+  );
   const [errors, setErrors] = useState<Readonly<Record<string, string>>>({});
   const [outcome, setOutcome] = useState<ActionState | null>(null);
   const [busy, setBusy] = useState(false);

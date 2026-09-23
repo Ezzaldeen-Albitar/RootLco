@@ -8,7 +8,11 @@ import { SearchStates } from '@/components/search/SearchStates';
 import { SessionExpiredState } from '@/components/states/States';
 import { RequiresConcreteBranch } from '@/features/working-context/components/WorkingBranchField';
 import { useBranchTarget } from '@/features/working-context/use-branch-target';
-import { useWorkingContext } from '@/features/working-context/WorkingContextProvider';
+import {
+  useUnsavedGuard,
+  useWorkingContext,
+  useWorkingContextChange,
+} from '@/features/working-context/WorkingContextProvider';
 import type { Messages } from '@/i18n/get-messages';
 import { translate } from '@/i18n/get-messages';
 import type { CursorPage, ReadState } from '@/lib/api/read-operation';
@@ -54,6 +58,24 @@ import {
  * scope at all, because `companyId` is mandatory on the read and there is no
  * honest single answer — the operator is told to choose one branch.
  *
+ * ## A branch switch forgets the choice
+ *
+ * A job belongs to one branch. Every change of the working context increments
+ * `version`, and on that change the chosen job and the search term are both
+ * cleared — a job found under one branch must not stay chosen under the next,
+ * and a search typed for one branch must not be re-asked of another. A reply
+ * still in flight is dropped by `useSearchRequest`, which is keyed on the same
+ * version. A chosen job is also declared as unsaved work, so the switch asks
+ * before it forgets it.
+ *
+ * ## When there is nothing to search, the caller is told
+ *
+ * With no scope the box is not offered, so a caller's "nothing chosen"
+ * complaint has no control to sit beside. `useWorkOrderSearchScope` lets the
+ * caller disable its submit instead, and `needsBranchId` names the sentence
+ * that says why, so the disabled button is described by it. A complaint the
+ * caller still passes is rendered in that state too, rather than dropped.
+ *
  * ## Permission-aware
  *
  * Without `wo.work_order.read` the read would be refused every time, so the
@@ -67,6 +89,31 @@ import {
  * `type="button"`, and Enter in the box searches rather than submitting the
  * caller's form with nothing chosen.
  */
+/** What the picker searches: one branch, every branch of one company, or nothing. */
+export type WorkOrderSearchScope = {
+  readonly companyId: string;
+  readonly branchId: string | null;
+} | null;
+
+/**
+ * The scope the picker would search under the current working context.
+ *
+ * Exported so a caller can tell, before its submit is pressed, that there is
+ * nothing to search — and disable the submit with the reason, rather than let
+ * it refuse without a control to point at.
+ */
+export function useWorkOrderSearchScope(): WorkOrderSearchScope {
+  const context = useWorkingContext();
+  const branch = useBranchTarget();
+  if (branch.kind === 'ready') {
+    return { companyId: branch.target.companyId, branchId: branch.target.branchId };
+  }
+  if (branch.kind === 'all' && context.selection?.companyId) {
+    return { companyId: context.selection.companyId, branchId: null };
+  }
+  return null;
+}
+
 export function WorkOrderPicker({
   messages,
   label,
@@ -74,6 +121,7 @@ export function WorkOrderPicker({
   onChange,
   error,
   canSearch,
+  needsBranchId,
   testId = 'work-order-picker',
 }: {
   readonly messages: Messages;
@@ -86,19 +134,35 @@ export function WorkOrderPicker({
   readonly error?: string | undefined;
   /** `wo.work_order.read` — whether a search can be answered at all. */
   readonly canSearch: boolean;
+  /**
+   * The id given to the sentence shown when there is nothing to search, so a
+   * caller can describe its disabled submit with it.
+   */
+  readonly needsBranchId?: string | undefined;
   readonly testId?: string;
 }) {
   const base = useId();
   const context = useWorkingContext();
   const branch = useBranchTarget();
-  const [term, setTerm] = useState('');
+  const scope = useWorkOrderSearchScope();
+  /*
+   * The term remembers the working-context version it was typed under. On the
+   * render where the version moves, a term typed for the previous branch is
+   * already treated as empty — clearing it in an effect alone would let that
+   * one render ask the NEW branch the OLD question before the effect ran.
+   */
+  const [typed, setTyped] = useState(() => ({ text: '', version: context.version }));
+  const term = typed.version === context.version ? typed.text : '';
+  const setTerm = (text: string) => setTyped({ text, version: context.version });
 
-  const scope =
-    branch.kind === 'ready'
-      ? { companyId: branch.target.companyId, branchId: branch.target.branchId }
-      : branch.kind === 'all' && context.selection?.companyId
-        ? { companyId: context.selection.companyId, branchId: null }
-        : null;
+  // A chosen job is work the operator would lose: a branch switch asks first.
+  useUnsavedGuard(value !== null);
+
+  // Forget the choice and the term when the working context changes.
+  useWorkingContextChange(() => {
+    setTerm('');
+    if (value !== null) onChange(null);
+  });
 
   const trimmed = term.trim();
   const tooShort = trimmed.length > 0 && trimmed.length < MIN_WORK_ORDER_SEARCH;
@@ -189,11 +253,18 @@ export function WorkOrderPicker({
       <div className="flex flex-col gap-1.5" data-testid={testId}>
         {heading}
         {/* "All my branches" across companies says "choose one branch"; the rest say their own reason. */}
-        <RequiresConcreteBranch
-          messages={messages}
-          state={branch}
-          testId={`${testId}-needs-branch`}
-        />
+        <div id={needsBranchId}>
+          <RequiresConcreteBranch
+            messages={messages}
+            state={branch}
+            testId={`${testId}-needs-branch`}
+          />
+        </div>
+        {error ? (
+          <p role="alert" className="text-supporting text-error">
+            {error}
+          </p>
+        ) : null}
       </div>
     );
   }

@@ -44,6 +44,7 @@ import { SelectField, TextAreaField, TextField } from '@/components/forms/Field'
 import { notifyActionResult } from '@/components/notifications/action-notifications';
 import { listCounterSales, readInvoice } from '@/features/billing/api';
 import type { Invoice, InvoiceLine } from '@/features/billing/billing-contract';
+import { useUnsavedGuard } from '@/features/working-context/WorkingContextProvider';
 import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic, translateWithValues } from '@/i18n/get-messages';
@@ -110,7 +111,6 @@ export function CustomerReturnsScreen({
         messages={messages}
         formLabelKey="inventory.returns.targetLabel"
         explainKey="inventory.target.explain"
-        submitKey="inventory.returns.chooseBranch"
         onChosen={setTarget}
       />
       {target !== null ? (
@@ -298,6 +298,20 @@ function ReceiveForm({
   /* One key per opened form: a repeated scan of the part being handed back, or
    * a retry after a lost answer, replays the first receipt. */
   const [attemptKey, setAttemptKey] = useState(() => crypto.randomUUID());
+  /*
+   * Unsaved work, declared to the shell. The return lands in THIS branch's
+   * locations, so a switch asks first; a confirmed switch remounts the form
+   * empty. The source KIND is not counted: it is a posture that survives a
+   * successful receipt, not something the operator would lose.
+   */
+  useUnsavedGuard(
+    sourceId.trim().length > 0 ||
+      form.quantity.trim().length > 0 ||
+      form.condition !== 'restockable' ||
+      form.receivedLocationId !== '' ||
+      form.quarantineLocationId !== '' ||
+      form.reason.trim().length > 0
+  );
 
   const errorFor = (name: string) =>
     errors[name] ? translateDynamic(messages, errors[name]) : outcomeField(messages, outcome, name);

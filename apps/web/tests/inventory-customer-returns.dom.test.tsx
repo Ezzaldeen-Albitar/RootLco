@@ -1,10 +1,27 @@
-import { screen, waitFor } from '@testing-library/react';
+import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import ar from '../src/i18n/messages/ar.json';
 import en from '../src/i18n/messages/en.json';
 import type { ReactElement } from 'react';
-import { inBranch, renderLtr as renderInLtr, renderRtl as renderInRtl } from './render';
+import {
+  inBranch,
+  renderLtr as renderInLtr,
+  renderRtl as renderInRtl,
+  BranchSwitch,
+  OTHER_BRANCH,
+  TEST_BRANCH,
+  WorkingBranchProbe,
+  branchSnapshot,
+} from './render';
+import {
+  discardAndSwitch,
+  forgetRememberedBranch,
+  heldBranch,
+  stayOnBranch,
+  switchExpectingQuestion,
+  switchWithoutQuestion,
+} from './support/branch-switch';
 
 /*
  * Every screen in this file is addressed by the WORKING CONTEXT: the branch it
@@ -613,6 +630,65 @@ describe('reaching the credit a return raised', () => {
     expect(
       screen.queryByRole('link', { name: EN['inventory.returns.openCredit'] as string })
     ).toBeNull();
+  });
+});
+
+describe('a return being received and a branch switch', () => {
+  /*
+   * The return lands in this branch's locations and the form is keyed on the branch,
+   * so a switch used to drop it without a word. It now asks first.
+   */
+  afterEach(forgetRememberedBranch);
+
+  async function openTwoBranches(user: ReturnType<typeof userEvent.setup>) {
+    renderInLtr(
+      inBranch(
+        <>
+          <BranchSwitch to={TEST_BRANCH.id} label="first" />
+          <BranchSwitch to={OTHER_BRANCH.id} label="second" />
+          <WorkingBranchProbe />
+          {operable()}
+        </>,
+        { snapshot: branchSnapshot([TEST_BRANCH, OTHER_BRANCH]) }
+      )
+    );
+    await user.click(screen.getByRole('button', { name: 'first' }));
+    await screen.findByRole('form', { name: EN['inventory.returns.create.heading'] as string });
+  }
+  const field = () =>
+    within(
+      screen.getByRole('form', { name: EN['inventory.returns.create.heading'] as string })
+    ).getByLabelText(labelled('inventory.returns.create.quantity')) as HTMLInputElement;
+
+  it('asks before switching; staying keeps what was typed and the branch', async () => {
+    const user = userEvent.setup();
+    await openTwoBranches(user);
+    await user.type(field(), '1');
+    await stayOnBranch(user, await switchExpectingQuestion(user, 'second'));
+    expect(heldBranch()).toBe(TEST_BRANCH.id);
+    expect(field().value).toBe('1');
+  });
+
+  it('discarding switches the branch and opens the form empty under it', async () => {
+    const user = userEvent.setup();
+    await openTwoBranches(user);
+    await user.type(field(), '1');
+    await discardAndSwitch(user, await switchExpectingQuestion(user, 'second'));
+    await waitFor(() => expect(heldBranch()).toBe(OTHER_BRANCH.id));
+    await waitFor(() =>
+      expect(listLocations.mock.lastCall?.[0]).toEqual({
+        companyId: OTHER_BRANCH.companyId,
+        branchId: OTHER_BRANCH.id,
+      })
+    );
+    expect(field().value).toBe('');
+  });
+
+  it('an untouched form switches without asking', async () => {
+    const user = userEvent.setup();
+    await openTwoBranches(user);
+    await switchWithoutQuestion(user, 'second');
+    await waitFor(() => expect(heldBranch()).toBe(OTHER_BRANCH.id));
   });
 });
 

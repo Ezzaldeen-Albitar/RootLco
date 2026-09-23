@@ -1,10 +1,27 @@
 import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import en from '../src/i18n/messages/en.json';
 import ar from '../src/i18n/messages/ar.json';
 import type { ReactElement } from 'react';
-import { inBranch, renderLtr as renderInLtr, renderRtl as renderInRtl } from './render';
+import {
+  inBranch,
+  renderLtr as renderInLtr,
+  renderRtl as renderInRtl,
+  BranchSwitch,
+  OTHER_BRANCH,
+  TEST_BRANCH,
+  WorkingBranchProbe,
+  branchSnapshot,
+} from './render';
+import {
+  discardAndSwitch,
+  forgetRememberedBranch,
+  heldBranch,
+  stayOnBranch,
+  switchExpectingQuestion,
+  switchWithoutQuestion,
+} from './support/branch-switch';
 
 /*
  * Every screen in this file is addressed by the WORKING CONTEXT: the branch it
@@ -323,6 +340,64 @@ describe('the ledger is read only when asked', () => {
     expect(
       await within(ledger()).findByText(EN['inventory.movements.none'] as string)
     ).toBeVisible();
+  });
+});
+
+describe('filters being set and a branch switch', () => {
+  /*
+   * The ledger panel is keyed on the branch and its location filter names one of
+   * this branch's locations, so a switch used to drop the filters without a word.
+   * It now asks first; a confirmed switch opens the panel with its first filters.
+   */
+  afterEach(forgetRememberedBranch);
+
+  async function openTwoBranches(user: ReturnType<typeof userEvent.setup>) {
+    renderInLtr(
+      inBranch(
+        <>
+          <BranchSwitch to={TEST_BRANCH.id} label="first" />
+          <BranchSwitch to={OTHER_BRANCH.id} label="second" />
+          <WorkingBranchProbe />
+          <MovementsScreen
+            locale="en"
+            messages={en}
+            initialWorkOrderId={null}
+            canReadBranches={true}
+          />
+        </>,
+        { snapshot: branchSnapshot([TEST_BRANCH, OTHER_BRANCH]) }
+      )
+    );
+    await user.click(screen.getByRole('button', { name: 'first' }));
+    await screen.findByRole('region', { name: EN['inventory.movements.heading'] as string });
+  }
+  const field = () =>
+    within(ledger()).getByLabelText(labelled('inventory.movements.itemId')) as HTMLInputElement;
+
+  it('asks before switching; staying keeps what was typed and the branch', async () => {
+    const user = userEvent.setup();
+    await openTwoBranches(user);
+    await user.type(field(), 'BRK-001');
+    await stayOnBranch(user, await switchExpectingQuestion(user, 'second'));
+    expect(heldBranch()).toBe(TEST_BRANCH.id);
+    expect(field().value).toBe('BRK-001');
+  });
+
+  it('discarding switches the branch and opens the form empty under it', async () => {
+    const user = userEvent.setup();
+    await openTwoBranches(user);
+    await user.type(field(), 'BRK-001');
+    await discardAndSwitch(user, await switchExpectingQuestion(user, 'second'));
+    await waitFor(() => expect(heldBranch()).toBe(OTHER_BRANCH.id));
+    await screen.findByRole('region', { name: EN['inventory.movements.heading'] as string });
+    expect(field().value).toBe('');
+  });
+
+  it('an untouched form switches without asking', async () => {
+    const user = userEvent.setup();
+    await openTwoBranches(user);
+    await switchWithoutQuestion(user, 'second');
+    await waitFor(() => expect(heldBranch()).toBe(OTHER_BRANCH.id));
   });
 });
 

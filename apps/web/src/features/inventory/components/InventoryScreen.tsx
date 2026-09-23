@@ -9,6 +9,7 @@ import { useServerTable } from '@/components/data-table/use-server-table';
 import { CheckboxField, SelectField, TextField } from '@/components/forms/Field';
 import { SearchBox } from '@/components/search/SearchBox';
 import { notifyActionResult } from '@/components/notifications/action-notifications';
+import { useUnsavedGuard } from '@/features/working-context/WorkingContextProvider';
 import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic } from '@/i18n/get-messages';
@@ -1035,13 +1036,22 @@ function ReserveForm({
   readonly initialWorkOrderId: string | null;
   readonly onReserved: (echo: ReservationEcho) => void;
 }) {
-  const [form, setForm] = useState({
+  const [initial] = useState(() => ({
     itemId: '',
     locationId: '',
     quantity: '',
     workOrderId: initialWorkOrderId ?? '',
     expiresAt: '',
-  });
+  }));
+  const [form, setForm] = useState(initial);
+  /*
+   * Unsaved work, declared to the shell. The reservation names one of THIS
+   * branch's locations, so a switch asks first; a confirmed switch remounts the
+   * panel and the form opens empty again.
+   */
+  useUnsavedGuard(
+    (Object.keys(initial) as (keyof typeof initial)[]).some((name) => form[name] !== initial[name])
+  );
   const [errors, setErrors] = useState<Readonly<Record<string, string>>>({});
   const [busy, setBusy] = useState(false);
   const [outcome, setOutcome] = useState<ActionState | null>(null);

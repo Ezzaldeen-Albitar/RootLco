@@ -6,6 +6,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from 'react';
@@ -158,6 +159,30 @@ export function useUnsavedGuard(isDirty: boolean): void {
       registry.delete(entry);
     };
   }, [registry, isDirty]);
+}
+
+/**
+ * Runs `onChange` after every change of the working context, and never on the
+ * first render.
+ *
+ * For state a screen seeds FROM the working branch and then holds itself — a
+ * lookup's branch, a job found in the branch's list. Seeding once on mount
+ * leaves that state naming the previous branch after a switch, so the screen
+ * shows one branch in the header and asks about another. The callback is read
+ * from the latest render, so it sees the selection the change produced.
+ */
+export function useWorkingContextChange(onChange: () => void): void {
+  const { version } = useContext(WorkingContextValue);
+  const seen = useRef(version);
+  const latest = useRef(onChange);
+  useEffect(() => {
+    latest.current = onChange;
+  });
+  useEffect(() => {
+    if (seen.current === version) return;
+    seen.current = version;
+    latest.current();
+  }, [version]);
 }
 
 export function WorkingContextProvider({

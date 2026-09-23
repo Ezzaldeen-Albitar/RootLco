@@ -1,9 +1,27 @@
 import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import en from '../src/i18n/messages/en.json';
 import ar from '../src/i18n/messages/ar.json';
-import { TEST_COMPANY, inBranch, renderLtr, renderRtl } from './render';
+import {
+  TEST_COMPANY,
+  inBranch,
+  renderLtr,
+  renderRtl,
+  BranchSwitch,
+  OTHER_BRANCH,
+  TEST_BRANCH,
+  WorkingBranchProbe,
+  branchSnapshot,
+} from './render';
+import {
+  discardAndSwitch,
+  forgetRememberedBranch,
+  heldBranch,
+  stayOnBranch,
+  switchExpectingQuestion,
+  switchWithoutQuestion,
+} from './support/branch-switch';
 
 /**
  * The warranty plan administration screens, rendered (P1-31, FE-008).
@@ -485,6 +503,65 @@ describe('creating a plan is drawn on the administration code and on nothing els
     expect(
       await screen.findByText(EN['warranty.policies.refusedDuplicateCode'] as string)
     ).toBeInTheDocument();
+  });
+});
+
+describe('a plan being written and a branch switch', () => {
+  /*
+   * The company a plan is created for follows the header, so a switch could move
+   * it under a half-typed plan without a word. The form now asks first, and a
+   * confirmed switch clears what was typed.
+   */
+  afterEach(forgetRememberedBranch);
+
+  async function openTwoBranches(user: ReturnType<typeof userEvent.setup>) {
+    PERMISSIONS = [READ, MANAGE];
+    const tree = (await PolicyListPage({
+      params: Promise.resolve({ locale: 'en' }),
+    })) as React.ReactElement;
+    renderLtr(
+      inBranch(
+        <>
+          <BranchSwitch to={TEST_BRANCH.id} label="first" />
+          <BranchSwitch to={OTHER_BRANCH.id} label="second" />
+          <WorkingBranchProbe />
+          {tree}
+        </>,
+        { snapshot: branchSnapshot([TEST_BRANCH, OTHER_BRANCH]) }
+      )
+    );
+    await user.click(screen.getByRole('button', { name: 'first' }));
+    await screen.findByRole('form', { name: EN['warranty.policies.createFormLabel'] as string });
+  }
+  const field = () =>
+    screen.getByRole('textbox', {
+      name: labelled('warranty.policies.codeField'),
+    }) as HTMLInputElement;
+
+  it('asks before switching; staying keeps what was typed and the branch', async () => {
+    const user = userEvent.setup();
+    await openTwoBranches(user);
+    await user.type(field(), 'standard_12');
+    await stayOnBranch(user, await switchExpectingQuestion(user, 'second'));
+    expect(heldBranch()).toBe(TEST_BRANCH.id);
+    expect(field().value).toBe('standard_12');
+  });
+
+  it('discarding switches the branch and opens the form empty under it', async () => {
+    const user = userEvent.setup();
+    await openTwoBranches(user);
+    await user.type(field(), 'standard_12');
+    await discardAndSwitch(user, await switchExpectingQuestion(user, 'second'));
+    await waitFor(() => expect(heldBranch()).toBe(OTHER_BRANCH.id));
+    await screen.findByRole('form', { name: EN['warranty.policies.createFormLabel'] as string });
+    expect(field().value).toBe('');
+  });
+
+  it('an untouched form switches without asking', async () => {
+    const user = userEvent.setup();
+    await openTwoBranches(user);
+    await switchWithoutQuestion(user, 'second');
+    await waitFor(() => expect(heldBranch()).toBe(OTHER_BRANCH.id));
   });
 });
 

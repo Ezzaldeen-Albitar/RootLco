@@ -1,12 +1,16 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { SelectField, TextAreaField, TextField } from '@/components/forms/Field';
 import { notifyActionResult } from '@/components/notifications/action-notifications';
 import { useBranchTarget } from '@/features/working-context/use-branch-target';
-import { useWorkingContext } from '@/features/working-context/WorkingContextProvider';
+import {
+  useUnsavedGuard,
+  useWorkingContext,
+  useWorkingContextChange,
+} from '@/features/working-context/WorkingContextProvider';
 import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic } from '@/i18n/get-messages';
@@ -473,13 +477,38 @@ function AvailabilityPanel({
    */
   const working = useBranchTarget();
   const workingContext = useWorkingContext();
-  const [branchId, setBranchId] = useState(() =>
-    working.kind === 'ready' ? working.target.branchId : ''
-  );
+  const workingBranch = (): string => (working.kind === 'ready' ? working.target.branchId : '');
+  const [branchId, setBranchId] = useState(workingBranch);
   const [offered, setOffered] = useState(true);
   const [errors, setErrors] = useState<Readonly<Record<string, string>>>({});
   const [busy, setBusy] = useState(false);
   const [outcome, setOutcome] = useState<ActionState | null>(null);
+  /*
+   * What the form last matched: the values it opened with, then the values
+   * last recorded. A change from it is unsaved work, declared to the shell so a
+   * branch switch asks before it resets the form.
+   */
+  const [baseline, setBaseline] = useState(() => ({ branchId: workingBranch(), offered: true }));
+  useUnsavedGuard(branchId !== baseline.branchId || offered !== baseline.offered);
+  // Which write is current. The reply to one made before a switch is not shown after it.
+  const attempt = useRef(0);
+
+  /*
+   * The branch FOLLOWS the header, not just its first value. Seeded once, the
+   * panel went on naming the previous branch after a switch. On every change it
+   * is reset to the new working branch (or to nothing, when the selection is
+   * not one branch), and a reply still in flight is superseded.
+   */
+  useWorkingContextChange(() => {
+    attempt.current += 1;
+    const next = workingBranch();
+    setBranchId(next);
+    setOffered(true);
+    setBaseline({ branchId: next, offered: true });
+    setErrors({});
+    setOutcome(null);
+    setBusy(false);
+  });
 
   const errorFor = (name: string): string | undefined => {
     const key = errors[name] ?? outcome?.fieldErrors?.[name];
@@ -521,14 +550,18 @@ function AvailabilityPanel({
     if (Object.keys(found).length > 0) return;
 
     setBusy(true);
+    attempt.current += 1;
+    const mine = attempt.current;
     const result = await setBranchAvailability(service.id, {
       companyId: company,
       branchId: branch,
       isAvailable: offered,
     });
-    setBusy(false);
     notifyActionResult(result, messages);
+    if (mine !== attempt.current) return;
+    setBusy(false);
     setOutcome(result.status === 'success' ? null : result);
+    if (result.status === 'success') setBaseline({ branchId: branch, offered });
   };
 
   return (

@@ -1,6 +1,6 @@
 import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import en from '../src/i18n/messages/en.json';
 import ar from '../src/i18n/messages/ar.json';
 import { formatMoney } from '../src/lib/money';
@@ -13,7 +13,17 @@ import {
   inBranch,
   renderLtr,
   renderRtl as renderInRtl,
+  RETIRED_BOX,
+  WorkingBranchProbe,
 } from './render';
+import {
+  discardAndSwitch,
+  forgetRememberedBranch,
+  heldBranch,
+  stayOnBranch,
+  switchExpectingQuestion,
+  switchWithoutQuestion,
+} from './support/branch-switch';
 
 /*
  * The branch the receipts belong to is the working context's own named
@@ -273,8 +283,8 @@ describe('nothing is read until the working context names one branch', () => {
   it('names the branch and offers no box to type a company or branch reference into', async () => {
     renderScreen();
     await chooseBranch();
-    expect(screen.queryByLabelText(labelled('payments.common.companyIdField'))).toBeNull();
-    expect(screen.queryByLabelText(labelled('payments.common.branchIdField'))).toBeNull();
+    expect(screen.queryByLabelText(RETIRED_BOX.en.company)).toBeNull();
+    expect(screen.queryByLabelText(RETIRED_BOX.en.branch)).toBeNull();
     // The directory read is not how the branch is found any more.
     expect(listBranches).not.toHaveBeenCalled();
   });
@@ -313,6 +323,92 @@ describe('nothing is read until the working context names one branch', () => {
     expect(
       screen.queryByRole('region', { name: EN['payments.receipt.heading'] as string })
     ).toBeNull();
+  });
+});
+
+describe('a half-filled form and a branch switch', () => {
+  afterEach(forgetRememberedBranch);
+  /*
+   * The record panel is keyed on the branch, so a switch used to drop a
+   * half-filled payment without a word — and the next one typed would go to a
+   * different branch's cash. The form now declares its unsaved work, and the
+   * switch asks.
+   */
+  async function openTwoBranches(user: ReturnType<typeof userEvent.setup>) {
+    renderLtr(
+      inBranch(
+        <>
+          <BranchSwitch to={TEST_BRANCH.id} label="first" />
+          <BranchSwitch to={OTHER_BRANCH.id} label="second" />
+          <WorkingBranchProbe />
+          {screenFor()}
+        </>,
+        { snapshot: branchSnapshot([TEST_BRANCH, OTHER_BRANCH]) }
+      )
+    );
+    await user.click(screen.getByRole('button', { name: 'first' }));
+    return screen.findByRole('form', { name: EN['payments.record.formLabel'] as string });
+  }
+
+  const amountBox = () =>
+    within(
+      screen.getByRole('form', { name: EN['payments.record.formLabel'] as string })
+    ).getByLabelText(labelled('payments.record.amount')) as HTMLInputElement;
+
+  it('asks before switching; staying keeps the typed amount and the branch', async () => {
+    const user = userEvent.setup();
+    const form = await openTwoBranches(user);
+    await user.type(within(form).getByLabelText(labelled('payments.record.amount')), '25.0000');
+    const dialog = await switchExpectingQuestion(user, 'second');
+    await stayOnBranch(user, dialog);
+    expect(heldBranch()).toBe(TEST_BRANCH.id);
+    expect(amountBox().value).toBe('25.0000');
+    expect(listReceipts.mock.lastCall?.[0]).toEqual({
+      companyId: TEST_BRANCH.companyId,
+      branchId: TEST_BRANCH.id,
+    });
+  });
+
+  it('discarding switches the branch and opens the form empty under it', async () => {
+    const user = userEvent.setup();
+    const form = await openTwoBranches(user);
+    await user.type(within(form).getByLabelText(labelled('payments.record.amount')), '25.0000');
+    await discardAndSwitch(user, await switchExpectingQuestion(user, 'second'));
+    await waitFor(() => expect(heldBranch()).toBe(OTHER_BRANCH.id));
+    await screen.findByRole('form', { name: EN['payments.record.formLabel'] as string });
+    expect(amountBox().value).toBe('');
+    await waitFor(() =>
+      expect(listReceipts.mock.lastCall?.[0]).toEqual({
+        companyId: OTHER_BRANCH.companyId,
+        branchId: OTHER_BRANCH.id,
+      })
+    );
+  });
+
+  it('an untouched form switches without asking', async () => {
+    const user = userEvent.setup();
+    await openTwoBranches(user);
+    await switchWithoutQuestion(user, 'second');
+    await waitFor(() => expect(heldBranch()).toBe(OTHER_BRANCH.id));
+  });
+
+  it('a half-typed allocation asks too, because the switch closes the receipt', async () => {
+    const user = userEvent.setup();
+    await openTwoBranches(user);
+    const list = await screen.findByRole('region', { name: EN['payments.list.heading'] as string });
+    await user.click(await within(list).findByRole('button', { name: 'RCT-000007' }));
+    const allocate = await screen.findByRole('form', {
+      name: EN['payments.allocate.formLabel'] as string,
+    });
+    await user.type(
+      within(allocate).getByLabelText(labelled('payments.allocate.invoice')),
+      INVOICE_ID
+    );
+    await stayOnBranch(user, await switchExpectingQuestion(user, 'second'));
+    expect(heldBranch()).toBe(TEST_BRANCH.id);
+    expect(
+      within(allocate).getByLabelText(labelled('payments.allocate.invoice')) as HTMLInputElement
+    ).toHaveValue(INVOICE_ID);
   });
 });
 

@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useId, useMemo, useState } from 'react';
 
 import { DataTable, type Column } from '@/components/data-table/DataTable';
 import { INITIAL_REQUEST, type TableRequest } from '@/components/data-table/table-state';
@@ -10,7 +10,10 @@ import { useServerTable } from '@/components/data-table/use-server-table';
 import { TextField } from '@/components/forms/Field';
 import { notifyActionResult } from '@/components/notifications/action-notifications';
 import type { WorkOrderListEntry } from '@/features/work-orders/work-orders-contract';
-import { WorkOrderPicker } from '@/features/work-orders/components/WorkOrderPicker';
+import {
+  WorkOrderPicker,
+  useWorkOrderSearchScope,
+} from '@/features/work-orders/components/WorkOrderPicker';
 import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic } from '@/i18n/get-messages';
@@ -200,6 +203,15 @@ function ChooseWorkOrder({
     refusal.status === 'invalid' && chosen === null
       ? translate(messages, 'workOrders.picker.required')
       : undefined;
+  /*
+   * With nothing to search — "All my branches" spanning companies, or no branch
+   * chosen yet — the picker offers no box, so a refusal would have no control to
+   * point at. The submit is disabled instead, described by the sentence the
+   * picker shows in place of the box.
+   */
+  const scope = useWorkOrderSearchScope();
+  const needsBranchId = useId();
+  const blocked = chosen === null && scope === null;
   return (
     <form
       ref={formRef}
@@ -241,10 +253,16 @@ function ChooseWorkOrder({
         onChange={setChosen}
         error={error}
         canSearch={canSearchWorkOrders}
+        needsBranchId={needsBranchId}
       />
       {canSearchWorkOrders ? (
         <div>
-          <button type="submit" className={PRIMARY_BUTTON}>
+          <button
+            type="submit"
+            className={PRIMARY_BUTTON}
+            disabled={blocked}
+            aria-describedby={blocked ? needsBranchId : undefined}
+          >
             {translate(messages, 'quotations.choose.submit')}
           </button>
         </div>

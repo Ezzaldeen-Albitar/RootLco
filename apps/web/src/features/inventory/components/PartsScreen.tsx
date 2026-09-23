@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useId, useMemo, useState, type ReactNode } from 'react';
 
 import { DataTable, type Column } from '@/components/data-table/DataTable';
 import { INITIAL_REQUEST, type TableRequest } from '@/components/data-table/table-state';
@@ -13,7 +13,10 @@ import {
   workOrderStateMessageKey,
   type WorkOrderListEntry,
 } from '@/features/work-orders/work-orders-contract';
-import { WorkOrderPicker } from '@/features/work-orders/components/WorkOrderPicker';
+import {
+  WorkOrderPicker,
+  useWorkOrderSearchScope,
+} from '@/features/work-orders/components/WorkOrderPicker';
 import { useBranchTarget } from '@/features/working-context/use-branch-target';
 import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
@@ -476,6 +479,15 @@ function ChooseWorkOrder({
     refusal.status === 'invalid' && chosen === null
       ? translate(messages, 'workOrders.picker.required')
       : undefined;
+  /*
+   * With nothing to search — "All my branches" spanning companies, or no branch
+   * chosen yet — the picker offers no box, so a refusal would have no control to
+   * point at. The submit is disabled instead, described by the sentence the
+   * picker shows in place of the box.
+   */
+  const scope = useWorkOrderSearchScope();
+  const needsBranchId = useId();
+  const blocked = chosen === null && scope === null;
   return (
     <form
       ref={formRef}
@@ -517,10 +529,16 @@ function ChooseWorkOrder({
         onChange={setChosen}
         error={error}
         canSearch={canSearchWorkOrders}
+        needsBranchId={needsBranchId}
       />
       {canSearchWorkOrders ? (
         <div>
-          <button type="submit" className={PRIMARY_BUTTON}>
+          <button
+            type="submit"
+            className={PRIMARY_BUTTON}
+            disabled={blocked}
+            aria-describedby={blocked ? needsBranchId : undefined}
+          >
             {translate(messages, 'inventory.parts.choose.submit')}
           </button>
         </div>

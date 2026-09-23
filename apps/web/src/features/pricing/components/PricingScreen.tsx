@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 
 import { DataTable, type Column } from '@/components/data-table/DataTable';
 import { INITIAL_REQUEST } from '@/components/data-table/table-state';
@@ -10,6 +10,7 @@ import { useServerTable } from '@/components/data-table/use-server-table';
 import { TextAreaField, TextField } from '@/components/forms/Field';
 import { notifyActionResult } from '@/components/notifications/action-notifications';
 import { useBranchTarget } from '@/features/working-context/use-branch-target';
+import { useWorkingContextChange } from '@/features/working-context/WorkingContextProvider';
 import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic } from '@/i18n/get-messages';
@@ -340,16 +341,35 @@ export function PriceLookupPanel({
    * `P1-32-PRE-OD-UX`).
    */
   const working = useBranchTarget();
-  const [pair, setPair] = useState<BranchPair>(() =>
+  const workingPair = (): BranchPair =>
     working.kind === 'ready'
       ? { companyId: working.target.companyId, branchId: working.target.branchId }
-      : EMPTY_PAIR
-  );
+      : EMPTY_PAIR;
+  const [pair, setPair] = useState<BranchPair>(workingPair);
   const [customerClass, setCustomerClass] = useState('');
   const [asOf, setAsOf] = useState('');
   const [errors, setErrors] = useState<Readonly<Record<string, string>>>({});
   const [busy, setBusy] = useState(false);
   const [answer, setAnswer] = useState<ReadState<ResolvedPrice> | null>(null);
+  // Which lookup is current. A reply to any other is dropped when it lands.
+  const lookup = useRef(0);
+
+  /*
+   * The branch FOLLOWS the header, not just its first value.
+   *
+   * Seeded once, the lookup went on naming the previous branch after a switch —
+   * the header said one workshop and the form priced for another. On every
+   * change the branch is reset to the new working branch (or cleared, when the
+   * selection is not one branch), the answer about the old one is removed, and
+   * a lookup still in flight is superseded so its reply cannot land under the
+   * new heading.
+   */
+  useWorkingContextChange(() => {
+    lookup.current += 1;
+    setPair(workingPair());
+    setAnswer(null);
+    setBusy(false);
+  });
 
   const errorFor = (name: string): string | undefined => {
     const key = errors[name];
@@ -376,6 +396,8 @@ export function PriceLookupPanel({
     if (Object.keys(found).length > 0) return;
 
     setBusy(true);
+    lookup.current += 1;
+    const mine = lookup.current;
     const state = await resolvePrice({
       serviceId: service,
       companyId,
@@ -383,6 +405,7 @@ export function PriceLookupPanel({
       ...(klass ? { customerClass: klass } : {}),
       ...(date ? { asOf: date } : {}),
     });
+    if (mine !== lookup.current) return;
     setBusy(false);
     setAnswer(state);
   };

@@ -24,7 +24,7 @@
 
 import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import en from '../src/i18n/messages/en.json';
 import ar from '../src/i18n/messages/ar.json';
 import type { ReactElement } from 'react';
@@ -33,7 +33,19 @@ import {
   inBranch,
   renderLtr as renderInLtr,
   renderRtl as renderInRtl,
+  BranchSwitch,
+  OTHER_BRANCH,
+  WorkingBranchProbe,
+  branchSnapshot,
 } from './render';
+import {
+  discardAndSwitch,
+  forgetRememberedBranch,
+  heldBranch,
+  stayOnBranch,
+  switchExpectingQuestion,
+  switchWithoutQuestion,
+} from './support/branch-switch';
 
 /*
  * Every screen in this file is addressed by the WORKING CONTEXT: the branch it
@@ -590,6 +602,72 @@ describe('the chain, in order', () => {
       EN['form.violation.duplicate_opening_cell']
     );
     expect(screen.queryByText(AR['inventory.opening.approve.secondPerson'] as string)).toBeNull();
+  });
+});
+
+describe('a batch being opened and a branch switch', () => {
+  /*
+   * The batch form was not keyed on the branch at all: it stayed mounted across a
+   * switch and would have sent what was typed for one branch to the next. It is
+   * keyed now, and it asks first.
+   */
+  afterEach(forgetRememberedBranch);
+
+  async function openTwoBranches(user: ReturnType<typeof userEvent.setup>) {
+    renderInLtr(
+      inBranch(
+        <>
+          <BranchSwitch to={TEST_BRANCH.id} label="first" />
+          <BranchSwitch to={OTHER_BRANCH.id} label="second" />
+          <WorkingBranchProbe />
+          <OpeningStockScreen
+            locale="en"
+            messages={en}
+            canOperate={true}
+            canApprove={false}
+            canReadBranches={true}
+          />
+        </>,
+        { snapshot: branchSnapshot([TEST_BRANCH, OTHER_BRANCH]) }
+      )
+    );
+    await user.click(screen.getByRole('button', { name: 'first' }));
+    await screen.findByRole('form', { name: EN['inventory.opening.batch.new'] as string });
+  }
+  const field = () =>
+    within(
+      screen.getByRole('form', { name: EN['inventory.opening.batch.new'] as string })
+    ).getByLabelText(labelled('inventory.opening.batch.code')) as HTMLInputElement;
+
+  it('asks before switching; staying keeps what was typed and the branch', async () => {
+    const user = userEvent.setup();
+    await openTwoBranches(user);
+    await user.type(field(), 'OPEN-2026');
+    await stayOnBranch(user, await switchExpectingQuestion(user, 'second'));
+    expect(heldBranch()).toBe(TEST_BRANCH.id);
+    expect(field().value).toBe('OPEN-2026');
+  });
+
+  it('discarding switches the branch and opens the form empty under it', async () => {
+    const user = userEvent.setup();
+    await openTwoBranches(user);
+    await user.type(field(), 'OPEN-2026');
+    await discardAndSwitch(user, await switchExpectingQuestion(user, 'second'));
+    await waitFor(() => expect(heldBranch()).toBe(OTHER_BRANCH.id));
+    await waitFor(() =>
+      expect(listLocations.mock.lastCall?.[0]).toEqual({
+        companyId: OTHER_BRANCH.companyId,
+        branchId: OTHER_BRANCH.id,
+      })
+    );
+    expect(field().value).toBe('');
+  });
+
+  it('an untouched form switches without asking', async () => {
+    const user = userEvent.setup();
+    await openTwoBranches(user);
+    await switchWithoutQuestion(user, 'second');
+    await waitFor(() => expect(heldBranch()).toBe(OTHER_BRANCH.id));
   });
 });
 

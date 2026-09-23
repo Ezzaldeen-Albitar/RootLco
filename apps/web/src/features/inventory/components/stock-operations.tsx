@@ -234,8 +234,6 @@ export function BranchTargetForm({
   readonly canReadBranches?: boolean;
   readonly formLabelKey: string;
   readonly explainKey: string;
-  /** The label of the submit this section no longer has. Accepted, unread. */
-  readonly submitKey?: string;
   /** `null` while the selection is not a single branch. */
   readonly onChosen: (target: StockTarget | null) => void;
 }) {

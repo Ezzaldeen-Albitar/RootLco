@@ -14,11 +14,29 @@
 
 import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import en from '../src/i18n/messages/en.json';
 import ar from '../src/i18n/messages/ar.json';
 import type { ReactElement } from 'react';
-import { inBranch, renderLtr as renderInLtr, renderRtl as renderInRtl } from './render';
+import {
+  inBranch,
+  renderLtr as renderInLtr,
+  renderRtl as renderInRtl,
+  RETIRED_BOX,
+  BranchSwitch,
+  OTHER_BRANCH,
+  TEST_BRANCH,
+  WorkingBranchProbe,
+  branchSnapshot,
+} from './render';
+import {
+  discardAndSwitch,
+  forgetRememberedBranch,
+  heldBranch,
+  stayOnBranch,
+  switchExpectingQuestion,
+  switchWithoutQuestion,
+} from './support/branch-switch';
 
 /*
  * Every screen in this file is addressed by the WORKING CONTEXT: the branch it
@@ -524,6 +542,72 @@ describe('stock locations', () => {
  * gets by design. Five failure reasons flattened into one sentence, and a
  * zero-row list rendered a select holding only its placeholder.
  * -------------------------------------------------------------------- */
+describe('a location being added and a branch switch', () => {
+  /*
+   * The location form was not keyed on the branch: a parent warehouse chosen for
+   * one branch travelled to the next. It is keyed now, and it asks first.
+   */
+  afterEach(forgetRememberedBranch);
+
+  async function openTwoBranches(user: ReturnType<typeof userEvent.setup>) {
+    renderInLtr(
+      inBranch(
+        <>
+          <BranchSwitch to={TEST_BRANCH.id} label="first" />
+          <BranchSwitch to={OTHER_BRANCH.id} label="second" />
+          <WorkingBranchProbe />
+          <SetupScreen
+            locale="en"
+            messages={en}
+            canManage={true}
+            canReadStock={true}
+            canReadBranches={true}
+          />
+        </>,
+        { snapshot: branchSnapshot([TEST_BRANCH, OTHER_BRANCH]) }
+      )
+    );
+    await user.click(screen.getByRole('button', { name: 'first' }));
+    await screen.findByRole('form', { name: EN['inventory.setup.location.new'] as string });
+  }
+  const field = () =>
+    within(
+      screen.getByRole('form', { name: EN['inventory.setup.location.new'] as string })
+    ).getByLabelText(labelled('inventory.setup.location.code')) as HTMLInputElement;
+
+  it('asks before switching; staying keeps what was typed and the branch', async () => {
+    const user = userEvent.setup();
+    await openTwoBranches(user);
+    await user.type(field(), 'SH-9');
+    await stayOnBranch(user, await switchExpectingQuestion(user, 'second'));
+    expect(heldBranch()).toBe(TEST_BRANCH.id);
+    expect(field().value).toBe('SH-9');
+  });
+
+  it('discarding switches the branch and opens the form empty under it', async () => {
+    const user = userEvent.setup();
+    await openTwoBranches(user);
+    await user.type(field(), 'SH-9');
+    await discardAndSwitch(user, await switchExpectingQuestion(user, 'second'));
+    await waitFor(() => expect(heldBranch()).toBe(OTHER_BRANCH.id));
+    await waitFor(() =>
+      expect(listLocations.mock.lastCall?.[0]).toEqual({
+        companyId: OTHER_BRANCH.companyId,
+        branchId: OTHER_BRANCH.id,
+      })
+    );
+    await screen.findByRole('form', { name: EN['inventory.setup.location.new'] as string });
+    expect(field().value).toBe('');
+  });
+
+  it('an untouched form switches without asking', async () => {
+    const user = userEvent.setup();
+    await openTwoBranches(user);
+    await switchWithoutQuestion(user, 'second');
+    await waitFor(() => expect(heldBranch()).toBe(OTHER_BRANCH.id));
+  });
+});
+
 describe('CC-15 — the branch picker says which state it is in, and never offers a box', () => {
   /*
    * CC-15 was: a permitted operator met two free-text boxes on every first
@@ -573,7 +657,7 @@ describe('CC-15 — the branch picker says which state it is in, and never offer
     expect(screen.getByText(EN['inventory.common.branchesLoading'] as string)).toBeVisible();
     // THE finding: not a select with nothing in it, and not two boxes either.
     expect(levelBranch()).toBeNull();
-    expect(screen.queryByLabelText(labelled('inventory.common.companyIdField'))).toBeNull();
+    expect(screen.queryByLabelText(RETIRED_BOX.en.company)).toBeNull();
 
     release(okRead({ items: [branch] }));
     await waitFor(() => expect(levelBranch()).not.toBeNull());
@@ -596,7 +680,7 @@ describe('CC-15 — the branch picker says which state it is in, and never offer
     listBranches.mockResolvedValue(okRead({ items: [] }));
     withoutContext(permitted);
     expect(await screen.findByText(EN['inventory.common.branchesNone'] as string)).toBeVisible();
-    expect(screen.queryByLabelText(labelled('inventory.common.companyIdField'))).toBeNull();
+    expect(screen.queryByLabelText(RETIRED_BOX.en.company)).toBeNull();
   });
 
   it('states a refusal as a refusal, and offers no retry that cannot work', async () => {
@@ -604,7 +688,7 @@ describe('CC-15 — the branch picker says which state it is in, and never offer
     withoutContext(permitted);
     expect(await screen.findByText(EN['inventory.common.branchesRefused'] as string)).toBeVisible();
     expect(screen.queryByRole('button', { name: EN['state.retry'] as string })).toBeNull();
-    expect(screen.queryByLabelText(labelled('inventory.common.companyIdField'))).toBeNull();
+    expect(screen.queryByLabelText(RETIRED_BOX.en.company)).toBeNull();
   });
 
   it('states an ended session as one, and offers no retry either', async () => {
@@ -634,7 +718,7 @@ describe('CC-15 — the branch picker says which state it is in, and never offer
       await screen.findByText(EN['inventory.common.branchesNotOffered'] as string)
     ).toBeVisible();
     expect(listBranches).not.toHaveBeenCalled();
-    expect(screen.queryByLabelText(labelled('inventory.common.companyIdField'))).toBeNull();
+    expect(screen.queryByLabelText(RETIRED_BOX.en.company)).toBeNull();
   });
 
   it('explains the same absence in Arabic, right to left', async () => {

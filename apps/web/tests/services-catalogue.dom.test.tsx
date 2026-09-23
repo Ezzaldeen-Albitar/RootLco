@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import en from '../src/i18n/messages/en.json';
 import ar from '../src/i18n/messages/ar.json';
-import { TEST_BRANCH, inBranch, renderLtr, renderRtl } from './render';
+import { TEST_BRANCH, inBranch, renderLtr, renderRtl, RETIRED_BOX } from './render';
 import { SERVICE_LIFECYCLE_STATES } from '@/features/services/services-contract';
 
 /**
@@ -221,7 +221,7 @@ describe('a refusal is a refusal', () => {
 describe('the branch filter follows the operator’s access', () => {
   it('without org.branch.read or a working context, says the catalogue covers every branch and offers no box', () => {
     renderCatalogue({ canReadBranches: false });
-    expect(screen.queryByLabelText(labelled('services.catalogue.branchIdField'))).toBeNull();
+    expect(screen.queryByLabelText(RETIRED_BOX.en.branch)).toBeNull();
     expect(screen.getByText(EN['services.catalogue.branchesNotOffered'] as string)).toBeVisible();
     expect(listBranches).not.toHaveBeenCalled();
   });
@@ -412,7 +412,7 @@ describe('CC-15 — the services branch picker says which state it is in', () =>
     expect(screen.getByRole('status')).toHaveTextContent(
       EN['services.catalogue.branchesLoading'] as string
     );
-    expect(screen.queryByLabelText(labelled('services.catalogue.branchIdField'))).toBeNull();
+    expect(screen.queryByLabelText(RETIRED_BOX.en.branch)).toBeNull();
     release(listedBranches);
     expect(
       await screen.findByLabelText(labelled('services.catalogue.availableAtBranch'))
@@ -424,7 +424,7 @@ describe('CC-15 — the services branch picker says which state it is in', () =>
     listBranches.mockResolvedValue(okRead({ items: [] }));
     renderCatalogue({ canReadBranches: true });
     expect(await screen.findByText(EN['services.catalogue.branchesNone'] as string)).toBeVisible();
-    expect(screen.queryByLabelText(labelled('services.catalogue.branchIdField'))).toBeNull();
+    expect(screen.queryByLabelText(RETIRED_BOX.en.branch)).toBeNull();
     expect(screen.queryByLabelText(labelled('services.catalogue.availableAtBranch'))).toBeNull();
   });
 
@@ -469,11 +469,7 @@ describe('CC-15 — the services branch picker says which state it is in', () =>
     expect(screen.getByRole('status')).toHaveTextContent(
       AR['services.catalogue.branchesLoading'] as string
     );
-    expect(
-      screen.queryByLabelText(
-        new RegExp(`^${escape(AR['services.catalogue.branchIdField'] as string)}`)
-      )
-    ).toBeNull();
+    expect(screen.queryByLabelText(RETIRED_BOX.ar.branch)).toBeNull();
     release(listedBranches);
     expect(
       await screen.findByLabelText(
@@ -488,11 +484,7 @@ describe('CC-15 — the services branch picker says which state it is in', () =>
       <ServiceCatalogueScreen locale="ar" messages={ar} canManage={false} canReadBranches={true} />
     );
     expect(await screen.findByText(AR['services.catalogue.branchesNone'] as string)).toBeVisible();
-    expect(
-      screen.queryByLabelText(
-        new RegExp(`^${escape(AR['services.catalogue.branchIdField'] as string)}`)
-      )
-    ).toBeNull();
+    expect(screen.queryByLabelText(RETIRED_BOX.ar.branch)).toBeNull();
   });
 });
 
