@@ -110,10 +110,17 @@ export const PART_ISSUE_ORDER: OrderingContract = Object.freeze({
  * and `inv.sales_returns` with `source_kind = 'part_issue'` — and ONE ceiling:
  * `inv.guard_part_return_ceiling` and `inv.guard_sales_return_ceiling` both
  * refuse a return once the sum over BOTH tables would pass the issued quantity,
- * and the latter computes that sum with `inv.returned_quantity`. Every read that
- * reports a returned figure for an issue line uses this one expression, so the
- * per-work-order list, the branch-wide list and the pre-check a return runs
- * cannot disagree with each other or with the ceiling.
+ * and the latter computes that sum with `inv.returned_quantity`. Four reads in
+ * this repository use this one expression:
+ *
+ * - `listPartIssuesForWorkOrder` — the per-work-order issue list;
+ * - `listIssuedParts` — the branch-wide issue list and its returnable remainder;
+ * - `readPartIssue` — the issue the `POST /stock-returns` pre-check reads;
+ * - `countOpenCommitments` — an issue is unreturned while its quantity exceeds
+ *   this sum, which is what work-order close and delivery readiness block on.
+ *
+ * So none of them can disagree with another or with the ceiling: an issue brought
+ * back in full through `POST /sales-returns` is no longer open anywhere.
  */
 const PART_ISSUE_RETURNED_SQL = `inv.returned_quantity(pi.tenant_id, 'part_issue', pi.id)`;
 
@@ -3881,9 +3888,12 @@ export class InventoryRepository extends Repository {
    *
    * The work-order filter resolves through the reference rather than a column,
    * because `inv.stock_movements` has no `work_order_id`: an issue's work order is
-   * on `inv.part_issues`, and a return's is on the issue its `part_returns` row
-   * points at. Doing it in one `EXISTS` per kind keeps the correlation honest
-   * instead of inventing a denormalised column the schema does not have.
+   * on `inv.part_issues`, a stock return's is on the issue its `part_returns` row
+   * points at, and a sales return's is on the issue its `inv.sales_returns` row
+   * names as `source_kind = 'part_issue'` / `source_id` — a sales return of an
+   * invoice line names no work order and is never matched. Doing it in one
+   * `EXISTS` per kind keeps the correlation honest instead of inventing a
+   * denormalised column the schema does not have.
    */
   public async listMovements(
     db: DbHandle,
@@ -3935,6 +3945,13 @@ export class InventoryRepository extends Repository {
                                      AND pi2.id = pr.part_issue_id
             WHERE pr.tenant_id = m.tenant_id AND pr.id = m.reference_id
               AND pi2.work_order_id = $${p}))
+        OR (m.reference_kind = 'sales_return' AND EXISTS (
+           SELECT 1 FROM inv.sales_returns sr
+             JOIN inv.part_issues pi3 ON pi3.tenant_id = sr.tenant_id
+                                     AND pi3.id = sr.source_id
+            WHERE sr.tenant_id = m.tenant_id AND sr.id = m.reference_id
+              AND sr.source_kind = 'part_issue'
+              AND pi3.work_order_id = $${p}))
       )`);
     }
 
@@ -5242,6 +5259,12 @@ export class InventoryRepository extends Repository {
     };
   }
 
+  /**
+   * Active reservations and unreturned issues of one work order. "Unreturned" is
+   * `quantity > PART_ISSUE_RETURNED_SQL` — both return tables, the same sum the
+   * ceiling enforces — so an issue that can take no further return is never
+   * reported as still out.
+   */
   public async countOpenCommitments(
     db: DbHandle,
     workOrderId: string
@@ -5255,9 +5278,7 @@ export class InventoryRepository extends Repository {
            AS reservations,
          (SELECT count(*)::text FROM inv.part_issues pi
            WHERE pi.tenant_id = $1 AND pi.work_order_id = $2 AND pi.deleted_at IS NULL
-             AND pi.quantity > COALESCE((SELECT sum(pr.quantity) FROM inv.part_returns pr
-                                          WHERE pr.tenant_id = pi.tenant_id
-                                            AND pr.part_issue_id = pi.id), 0))
+             AND pi.quantity > ${PART_ISSUE_RETURNED_SQL})
            AS issues`,
       [context.principal.tenantId, workOrderId]
     );

@@ -64,6 +64,7 @@ import {
   POST as SALES_RETURN_CREATE,
 } from '@/app/api/v1/sales-returns/route';
 import { GET as RETURNABLE } from '@/app/api/v1/returnable-quantities/route';
+import { GET as MOVEMENTS } from '@/app/api/v1/stock-movements/route';
 
 let admin: Pool;
 
@@ -181,6 +182,14 @@ async function issuedSale(
 
 /** A part issued to a work order, so a `part_issue` source exists. */
 async function issuedPart(cell: string, quantity: string): Promise<string> {
+  return (await issuedPartOnWorkOrder(cell, quantity)).issueId;
+}
+
+/** `issuedPart`, also naming the work order the part was issued to. */
+async function issuedPartOnWorkOrder(
+  cell: string,
+  quantity: string
+): Promise<{ readonly issueId: string; readonly workOrderId: string }> {
   // `open` is the first state that accepts parts (`assertWorkOrderAcceptsParts`).
   const workOrder = await createOpenWorkOrder();
   // Every issue for a work order draws on an approved material requirement.
@@ -198,7 +207,7 @@ async function issuedPart(cell: string, quantity: string): Promise<string> {
       quantity,
     })
   );
-  return issue.id;
+  return { issueId: issue.id, workOrderId: workOrder.workOrderId };
 }
 
 async function provisionInvoiceSequence(): Promise<void> {
@@ -425,6 +434,53 @@ describe('inv.sales-return-create', () => {
         [TENANT_A, issueId]
       )
     ).toBe(0);
+  });
+});
+
+describe('the movement ledger, filtered by work order', () => {
+  it("carries a sales return of that work order's issue, and not a return of an unrelated sale", async () => {
+    const cell = await freshLocation();
+    await seedStock({ itemId: ITEM_A, locationId: cell, quantity: '10' });
+    const { issueId, workOrderId } = await issuedPartOnWorkOrder(cell, '2');
+    const sale = await issuedSale(cell, '2');
+
+    authAs(INV_COUNTER);
+    const ofIssue = await bodyOf<ReturnBody>(
+      await receiveReturn({
+        sourceKind: 'part_issue',
+        sourceId: issueId,
+        quantity: '1',
+        condition: 'restockable',
+        receivedLocationId: cell,
+      })
+    );
+    const ofSale = await bodyOf<ReturnBody>(
+      await receiveReturn({
+        sourceKind: 'invoice_line',
+        sourceId: sale.lineId,
+        quantity: '1',
+        condition: 'restockable',
+        receivedLocationId: cell,
+      })
+    );
+    // Both returns posted a movement, so the filter below is choosing between them.
+    expect(await returnMovementsOf(ofIssue.id)).toBe(1);
+    expect(await returnMovementsOf(ofSale.id)).toBe(1);
+
+    const response = await MOVEMENTS(
+      new Request(
+        `http://localhost/api/v1/stock-movements?companyId=${COMPANY_A1}&branchId=${BRANCH_A1}&workOrderId=${workOrderId}&limit=100`
+      )
+    );
+    expect(response.status).toBe(200);
+    const body = await bodyOf<{
+      items: readonly { reference: { kind: string; id: string }; direction: string }[];
+    }>(response);
+    const references = body.items.map((row) => `${row.reference.kind}:${row.reference.id}`);
+    expect(references).toContain(`part_issue:${issueId}`);
+    expect(references).toContain(`sales_return:${ofIssue.id}`);
+    expect(references).not.toContain(`sales_return:${ofSale.id}`);
+    expect(body.items.find((row) => row.reference.id === ofIssue.id)?.direction).toBe('in');
   });
 });
 
