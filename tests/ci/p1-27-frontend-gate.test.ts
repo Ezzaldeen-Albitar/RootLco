@@ -1553,7 +1553,11 @@ describe('the phase modules outside every scan root are DERIVED, not listed', ()
     const derived = importedModuleDirectories(scanned);
     // Anti-vacuity: the derivation really read something. A regex that matched
     // nothing would make the equality below a comparison of two empty sets.
-    expect(derived.length, 'no module import was discovered — the derivation is broken').toBe(19);
+    // Eighteen, plus `components/search` and `lib/branch-time`. Both came into
+    // view of a scanned tree under the Owner directive (`P1-32-PRE-OD-UX`) and
+    // both are DECIDED in `MODULE_DISPOSITION` rather than silently collected,
+    // which is what moves this number.
+    expect(derived.length, 'no module import was discovered — the derivation is broken').toBe(20);
     expect(
       derived,
       'a module the scanned trees import has no recorded disposition, or a recorded module is ' +
@@ -1620,9 +1624,11 @@ describe('the phase modules outside every scan root are DERIVED, not listed', ()
 
   it('is a live set of modules that exist and are not collected', () => {
     // Sixteen, plus `components/search` — the box the customer and vehicle
-    // searches ask through (P1-32). It is derived from `MODULE_DISPOSITION`,
-    // so this number moves with a recorded decision and never on its own.
-    expect(UNCOLLECTED_PHASE_MODULES.length).toBe(17);
+    // searches ask through (P1-32) — and `lib/branch-time`, which decides the
+    // day a board is headed with on the BRANCH's clock. Both are derived from
+    // `MODULE_DISPOSITION`, so this number moves with a recorded decision and
+    // never on its own.
+    expect(UNCOLLECTED_PHASE_MODULES.length).toBe(18);
     for (const dir of UNCOLLECTED_PHASE_MODULES) {
       // `moduleSourceRoot`, not `existsSync`: `apps/web/src/lib/page-metadata`
       // is a FILE, and dropping it to avoid an `ENOENT` would be precisely the

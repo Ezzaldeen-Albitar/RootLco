@@ -449,14 +449,19 @@ describe('a search request', () => {
     await waitFor(() => expect(screen.getByTestId('phase')).toHaveTextContent('empty'));
   });
 
-  it('keeps a refusal, an outage and a fault apart', async () => {
+  it('keeps a refusal, an ended session, an outage and a fault apart', async () => {
     // The collapse this prevents: rendering "no matches" over a permission
     // failure tells an operator a record does not exist when the truth is that
     // they may not look at it.
+    //
+    // An ended session is its OWN phase since the Owner directive. It used to be
+    // a `failed` carrying `state.expired.message`, which every renderer had to
+    // recognise by comparing an error KEY — one did and the rest showed
+    // "Something went wrong" over a retry that could not work.
     for (const [status, phase, key] of [
       ['denied', 'refused', 'state.denied.title'],
       ['unavailable', 'unavailable', 'state.unavailable.title'],
-      ['expired', 'failed', 'state.expired.message'],
+      ['expired', 'expired', 'state.expired.message'],
       ['error', 'failed', 'state.error.title'],
       ['not-found', 'failed', 'state.notFound.title'],
     ] as const) {
@@ -476,6 +481,7 @@ describe('the states a search can be in', () => {
       ['empty', en['state.noResults.title']],
       ['unavailable', en['state.unavailable.title']],
       ['refused', en['state.denied.title']],
+      ['expired', en['state.expired.title']],
       ['failed', en['state.error.title']],
     ] as const;
     for (const [phase, text] of cases) {
@@ -485,6 +491,26 @@ describe('the states a search can be in', () => {
     }
     const ready = renderLtr(<SearchStates messages={en} phase="ready" />);
     expect(ready.container).toBeEmptyDOMElement();
+  });
+
+  it('offers the way back to signing in when the session has ended, and no retry', () => {
+    // Re-issuing the same request with the same dead session fails identically,
+    // so the only control offered is the one that can change the answer. The
+    // locale is what keeps the link in the operator's own language; without one
+    // the sentence still stands and the link is simply not offered.
+    const expired = renderLtr(<SearchStates messages={en} locale="en" phase="expired" />);
+    expect(screen.getByText(en['state.expired.title'] as string)).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: en['auth.backToLogin'] as string })).toHaveAttribute(
+      'href',
+      '/en/login'
+    );
+    expect(screen.queryByRole('button')).toBeNull();
+    expired.unmount();
+
+    const anonymous = renderLtr(<SearchStates messages={en} phase="expired" />);
+    expect(screen.getByText(en['state.expired.title'] as string)).toBeInTheDocument();
+    expect(screen.queryByRole('link')).toBeNull();
+    anonymous.unmount();
   });
 
   it('offers a retry on an outage and NONE on a refusal', () => {
