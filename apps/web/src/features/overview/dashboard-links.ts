@@ -74,6 +74,13 @@ export function workOrdersStateLink(locale: Locale, code: string): string {
  * The two days of a chosen period travel with it. They are calendar days the
  * reader picked for a report — not a name, a plate or an amount — and without
  * them "the period you were looking at" cannot be carried across at all.
+ *
+ * The period NAME travels, not the instants. For one branch, or for branches
+ * that share a zone, both sides cut it at the same local midnight. Across
+ * branches in different zones they may not: the summary cuts it in the zone of
+ * the first branch of its own set, the board in the zone of the first branch of
+ * the working context, and those need not be the same branch — an open item,
+ * not a guarantee this link makes.
  */
 export function receptionsPeriodLink(locale: Locale, criteria: DashboardSummaryCriteria): string {
   if (criteria.period !== 'custom') return `/${locale}/receptions?period=${criteria.period}`;

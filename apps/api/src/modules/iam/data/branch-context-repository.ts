@@ -102,6 +102,19 @@ export class BranchContextRepository extends Repository {
    * own: an empty branch list is the same answer for a company with no branch
    * and for a company the caller cannot see at all, and only the second is a
    * refusal. Like every read here it is NOT an authorization decision.
+   *
+   * ## Why not `companyVisibleInTenant` in `server/auth/authorization.ts`
+   *
+   * That probe asks nearly the same question and is deliberately NOT reused,
+   * because the two differ on one row: it refuses a RETIRED company
+   * (`deleted_at IS NULL`), since it decides whether a write may name one. This
+   * read keeps a retired company visible, because the reads this one mirrors
+   * filter on the company alone and still answer for it — refusing here would
+   * make the dashboard 403 where every list it links to answers an empty page.
+   * Both run under the caller's RLS with the tenant from the context, so tenant
+   * isolation is identical; only the retired-company answer differs. It is also
+   * module-private to that file, and exporting it to serve a read with different
+   * semantics would put two meanings behind one name.
    */
   async companyVisible(db: DbHandle, companyId: string): Promise<boolean> {
     const context = this.assertContext(db);
@@ -147,20 +160,19 @@ export class BranchContextRepository extends Repository {
    * tell that it was partial, which for an aggregate is worse than a long read —
    * it is a wrong total that looks right.
    *
-   * ## Retired branches, on request
+   * ## Retired branches are included
    *
-   * By default only LIVE branches are returned. `includeRetired` adds the
-   * company's retired ones too, for a consumer that must cover exactly the
-   * branches a company-wide list covers: a list read with no branch narrowing
-   * filters on the company alone, so an order still standing in a retired
-   * branch is on it, and a figure that links to that list must count it as
-   * well. Live branches always sort first, so a consumer taking the first row
-   * for a timezone takes a live branch's whenever one exists.
+   * The company's retired branches are returned as well as its live ones,
+   * because its one consumer must cover exactly the branches a company-wide
+   * list covers: a list read with no branch narrowing filters on the company
+   * alone, so an order still standing in a retired branch is on it, and a
+   * figure that links to that list must count it as well. Live branches always
+   * sort first, so a consumer taking the first row for a timezone takes a live
+   * branch's whenever one exists.
    */
   async listBranchesForCompany(
     db: DbHandle,
-    companyId: string,
-    options: { readonly includeRetired?: boolean } = {}
+    companyId: string
   ): Promise<readonly BranchContextRow[]> {
     const context = this.assertContext(db);
     const result = await this.run<{
@@ -173,9 +185,8 @@ export class BranchContextRepository extends Repository {
       `SELECT id, company_id, name, timezone_name
          FROM org.branches
         WHERE tenant_id = $1 AND company_id = $2
-          AND ($3::boolean OR deleted_at IS NULL)
         ORDER BY (deleted_at IS NOT NULL), name, id`,
-      [context.principal.tenantId, companyId, options.includeRetired === true]
+      [context.principal.tenantId, companyId]
     );
     return result.rows.map((row) => ({
       branchId: row.id,

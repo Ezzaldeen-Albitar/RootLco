@@ -2667,3 +2667,213 @@ describe('ovw.dashboard-summary-read — every linked figure counts the list it 
     expect(restrictedRows.length).toBe(firstBranchRows.length);
   });
 });
+
+// ---------------------------------------------------------------------------
+// ovw.dashboard-summary-read — a company with no branch at all
+// ---------------------------------------------------------------------------
+
+/** A company of tenant A that holds NO branch, live or retired. */
+const COMPANY_Z = 'f1310000-0000-4000-8000-0000000000f0';
+/** A company id no tenant holds. */
+const COMPANY_NOWHERE = 'f1310000-0000-4000-8000-0000000000f9';
+
+/**
+ * Company-scoped in `COMPANY_Z` for every dashboard code except stock, and
+ * company-scoped for stock in `COMPANY_R` ONLY.
+ *
+ * No branch-typed scope row anywhere, so the caller carries no branch
+ * narrowing and the resolver answers "the company" for `COMPANY_Z`. The stock
+ * grant elsewhere is the decisive part: a section decision that asked "does
+ * this caller hold the code anywhere in the tenant" would answer yes and show
+ * a low-stock zero for a company in which the caller may not read stock.
+ */
+const OVW_EMPTY_SCOPED = {
+  userId: 'f1310000-0000-4000-8000-000000000401',
+  subject: 'fx_ovw_empty_scoped',
+  baseRoleId: 'f1310000-0000-4000-8000-000000000402',
+  baseGrantId: 'f1310000-0000-4000-8000-000000000403',
+  stockRoleId: 'f1310000-0000-4000-8000-000000000404',
+  stockGrantId: 'f1310000-0000-4000-8000-000000000405',
+} as const;
+
+/**
+ * This block's own unrestricted callers — every dashboard code, and the same
+ * minus stock — so the block depends on no other block's fixtures.
+ */
+const OVW_EMPTY_FULL: Principal = {
+  roleId: 'f1310000-0000-4000-8000-000000000411',
+  userId: 'f1310000-0000-4000-8000-000000000412',
+  subject: 'fx_ovw_empty_full',
+  tenantId: TENANT_A,
+  permissions: [...DASHBOARD_CODES],
+};
+const OVW_EMPTY_NO_STOCK: Principal = {
+  roleId: 'f1310000-0000-4000-8000-000000000421',
+  userId: 'f1310000-0000-4000-8000-000000000422',
+  subject: 'fx_ovw_empty_no_stock',
+  tenantId: TENANT_A,
+  permissions: DASHBOARD_CODES.filter((code) => code !== STOCK_READ),
+};
+
+/** A role holding `codes`, granted to one user scoped to ONE company. */
+async function seedCompanyScopedRole(input: {
+  readonly userId: string;
+  readonly roleId: string;
+  readonly roleCode: string;
+  readonly grantId: string;
+  readonly companyId: string;
+  readonly codes: readonly string[];
+}): Promise<void> {
+  await admin.query(
+    `INSERT INTO iam.roles (id, tenant_id, role_code, name, created_by)
+     VALUES ($1,$2,$3,'Dashboard company-scoped role',$4) ON CONFLICT (id) DO NOTHING`,
+    [input.roleId, TENANT_A, input.roleCode, USER_A]
+  );
+  for (const code of input.codes) {
+    await admin.query(
+      `INSERT INTO iam.role_permissions (tenant_id, role_id, permission_id, effect, created_by)
+       SELECT $1::uuid,$2::uuid,p.id,'allow',$3::uuid FROM iam.permissions p
+        WHERE p.permission_code = $4
+       ON CONFLICT (tenant_id, role_id, permission_id) DO NOTHING`,
+      [TENANT_A, input.roleId, USER_A, code]
+    );
+  }
+  // A scoped grant must carry at least one scope, enforced by a DEFERRABLE
+  // constraint trigger, so the grant and its scope land in ONE transaction.
+  const client = await admin.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query(
+      `INSERT INTO iam.role_grants (id, tenant_id, user_id, role_id, scope_mode, granted_by, created_by)
+       VALUES ($1,$2,$3,$4,'scoped',$5,$5)`,
+      [input.grantId, TENANT_A, input.userId, input.roleId, USER_A]
+    );
+    await client.query(
+      `INSERT INTO iam.grant_scopes (tenant_id, grant_id, scope_type, company_id, branch_id, created_by)
+       VALUES ($1,$2,'company',$3,NULL,$4)`,
+      [TENANT_A, input.grantId, input.companyId, USER_A]
+    );
+    await client.query('COMMIT');
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+describe('ovw.dashboard-summary-read — a company with no branch at all', () => {
+  const EMPTY_SCOPED_PRINCIPAL: Principal = {
+    roleId: OVW_EMPTY_SCOPED.baseRoleId,
+    userId: OVW_EMPTY_SCOPED.userId,
+    subject: OVW_EMPTY_SCOPED.subject,
+    tenantId: TENANT_A,
+    permissions: DASHBOARD_CODES.filter((code) => code !== STOCK_READ),
+  };
+
+  beforeAll(async () => {
+    await admin.query(
+      `INSERT INTO org.legal_companies
+         (id, tenant_id, company_code, legal_name, base_currency_code, created_by)
+       VALUES ($1,$2,'fx_ovw_no_branch','Dashboard Company Without Branches','USD',$3)
+       ON CONFLICT (id) DO NOTHING`,
+      [COMPANY_Z, TENANT_A, USER_A]
+    );
+    await seedPrincipal(OVW_EMPTY_FULL);
+    await seedPrincipal(OVW_EMPTY_NO_STOCK);
+    await admin.query(
+      `INSERT INTO iam.user_accounts
+         (id, tenant_id, identity_provider, provider_subject, email, display_name, status, created_by)
+       VALUES ($1,$2,$3,$4,$4||'@example.test','Dashboard company-scoped','active',$5)
+       ON CONFLICT (id) DO NOTHING`,
+      [OVW_EMPTY_SCOPED.userId, TENANT_A, IDENTITY_PROVIDER, OVW_EMPTY_SCOPED.subject, USER_A]
+    );
+    await seedCompanyScopedRole({
+      userId: OVW_EMPTY_SCOPED.userId,
+      roleId: OVW_EMPTY_SCOPED.baseRoleId,
+      roleCode: 'fx_ovw_empty_base',
+      grantId: OVW_EMPTY_SCOPED.baseGrantId,
+      companyId: COMPANY_Z,
+      codes: EMPTY_SCOPED_PRINCIPAL.permissions,
+    });
+    await seedCompanyScopedRole({
+      userId: OVW_EMPTY_SCOPED.userId,
+      roleId: OVW_EMPTY_SCOPED.stockRoleId,
+      roleCode: 'fx_ovw_empty_stock_elsewhere',
+      grantId: OVW_EMPTY_SCOPED.stockGrantId,
+      companyId: COMPANY_R,
+      codes: [STOCK_READ],
+    });
+    __resetAuthenticatorForTests();
+  });
+
+  it('answers every section the caller holds as a computed zero', async () => {
+    __resetRateLimitForTests();
+    const view = await dashboardAs(OVW_EMPTY_FULL, { companyId: COMPANY_Z, period: 'today' });
+    expect(view.branchIds).toEqual([]);
+    expect(view.period.timezone).toBe('UTC');
+    expect(view.sections.receptionsOpened).toEqual({ status: 'ok', value: 0 });
+    expect(view.sections.activeWorkOrders).toEqual({ status: 'ok', value: 0 });
+    expect(view.sections.awaitingApproval).toEqual({ status: 'ok', value: 0 });
+    expect(view.sections.awaitingParts).toEqual({ status: 'ok', value: 0 });
+    expect(view.sections.readyForDelivery).toEqual({ status: 'ok', value: 0 });
+    expect(view.sections.completedInPeriod).toEqual({ status: 'ok', value: 0 });
+    expect(view.sections.technicianWorkload).toEqual({ status: 'ok', value: [] });
+    expect(view.sections.lowStock).toEqual({ status: 'ok', value: 0 });
+    expect(view.sections.pendingApprovalsCount).toEqual({ status: 'ok', value: 0 });
+    expect(view.sections.overdue.status).toBe('unavailable');
+  });
+
+  it('withholds a section the caller lacks rather than answering it with zero', async () => {
+    __resetRateLimitForTests();
+    // Unrestricted and one code short: the section the code gates is withheld,
+    // and every other section is still a computed zero.
+    const unrestricted = await dashboardAs(OVW_EMPTY_NO_STOCK, {
+      companyId: COMPANY_Z,
+      period: 'today',
+    });
+    expect(unrestricted.branchIds).toEqual([]);
+    expect(unrestricted.sections.lowStock).toEqual({ status: 'unauthorized' });
+    expect(unrestricted.sections.receptionsOpened).toEqual({ status: 'ok', value: 0 });
+    expect(unrestricted.sections.readyForDelivery).toEqual({ status: 'ok', value: 0 });
+    expect(unrestricted.sections.technicianWorkload).toEqual({ status: 'ok', value: [] });
+    expect(unrestricted.sections.activeWorkOrders).toEqual({ status: 'ok', value: 0 });
+
+    // Company-scoped here, and holding stock only in ANOTHER company: the stock
+    // section is decided at THIS company's scope, so it is withheld too.
+    const scoped = await dashboardAs(EMPTY_SCOPED_PRINCIPAL, {
+      companyId: COMPANY_Z,
+      period: 'today',
+    });
+    expect(scoped.branchIds).toEqual([]);
+    expect(scoped.sections.lowStock).toEqual({ status: 'unauthorized' });
+    expect(scoped.sections.receptionsOpened).toEqual({ status: 'ok', value: 0 });
+    expect(scoped.sections.readyForDelivery).toEqual({ status: 'ok', value: 0 });
+    expect(scoped.sections.technicianWorkload).toEqual({ status: 'ok', value: [] });
+    expect(scoped.sections.pendingApprovalsCount).toEqual({ status: 'ok', value: 0 });
+  });
+
+  it('still refuses a company the caller cannot see', async () => {
+    __resetRateLimitForTests();
+    // Another tenant's caller, on a real company of this one.
+    authAs(RPT_TENANT_B);
+    const foreign = await dashboard({ companyId: COMPANY_Z, period: 'today' });
+    expect(foreign.status).toBe(403);
+    expect(await foreign.json()).toMatchObject({ code: 'ERR-IAM-001' });
+
+    // An unrestricted caller, on a company that exists nowhere: an empty branch
+    // list is the same answer as for the branchless company above, and only
+    // the visibility read turns this one into a refusal.
+    authAs(OVW_EMPTY_FULL);
+    const nowhere = await dashboard({ companyId: COMPANY_NOWHERE, period: 'today' });
+    expect(nowhere.status).toBe(403);
+    expect(await nowhere.json()).toMatchObject({ code: 'ERR-IAM-001' });
+
+    // The company-scoped caller, on a company where it holds stock but not the
+    // work-order read the operation is entitled by.
+    authAs(EMPTY_SCOPED_PRINCIPAL);
+    const outside = await dashboard({ companyId: COMPANY_R, period: 'today' });
+    expect(outside.status).toBe(403);
+    expect(await outside.json()).toMatchObject({ code: 'ERR-IAM-001' });
+  });
+});

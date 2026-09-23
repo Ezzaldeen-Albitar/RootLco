@@ -1678,8 +1678,8 @@ describe('no caller-supplied scope narrowing on the ten P1-22 isolation operatio
     // The five other reads that carry `branchNarrowing`. None of them owns one of
     // the ten P1-22 operations, so none was scanned — and `deliveries/route.ts`
     // was only scanned because `sal.delivery-create` happens to live beside the
-    // list. A rule that reaches one of six routes by coincidence is not a rule,
-    // so the census names them.
+    // list. A rule that reaches one of seven routes by coincidence is not a
+    // rule, so the census names them.
     'src/app/api/v1/receptions/route.ts',
     'src/app/api/v1/appointments/route.ts',
     'src/app/api/v1/work-orders/route.ts',
@@ -1780,7 +1780,7 @@ describe('no caller-supplied scope narrowing on the ten P1-22 isolation operatio
         //    keep out: omit it and `authorizeScope` is skipped, leaving
         //    `app.branch_ids` — the permission-blind union of every grant — as the
         //    only narrowing. The Owner directive makes an optional BRANCH
-        //    legitimate on six reads, and the point of the exemption is that it
+        //    legitimate on seven reads, and the point of the exemption is that it
         //    cannot be taken quietly or by accident.
         const operationId = [...byOperationId.entries()].find(([, n]) => n === node)?.[0];
         const audit = auditBranchNarrowing(

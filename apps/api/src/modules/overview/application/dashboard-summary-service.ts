@@ -32,9 +32,11 @@
  *   `ok`            the figure was computed. A zero is an `ok` with value 0 —
  *                   "nothing is awaiting parts" is an answer, not an absence.
  *   `unauthorized`  this caller does not hold the module read code that section
- *                   needs, in every branch being counted. The section is omitted
- *                   rather than shown at zero, because a zero would be a lie
- *                   about the workshop instead of a fact about the caller.
+ *                   needs, in every branch being counted — or, for a company
+ *                   with no branch at all, at that company's scope. The section
+ *                   is omitted rather than shown at zero, because a zero would
+ *                   be a lie about the workshop instead of a fact about the
+ *                   caller.
  *   `unavailable`   the schema cannot answer the question at all, with the
  *                   reason in words. `overdue` is the live example: no work-order
  *                   table carries a promised or due instant, so there is nothing
@@ -45,7 +47,9 @@
  * A section is `ok` only when the caller holds its code in EVERY branch in the
  * resolved set. A figure that silently summed the branches the caller could read
  * and skipped the rest would be a total that is wrong in a way nothing on the
- * screen could reveal.
+ * screen could reveal. An EMPTY set is not allowed to pass that test vacuously:
+ * with no branch to ask about, the section is decided at the company's own
+ * scope instead, so zero, unavailable and unauthorized stay three answers.
  *
  * ## Scope, and what makes it fail closed
  *
@@ -66,19 +70,22 @@
  *  3. a caller with no branch narrowing gets `undefined` from the seam, which
  *     every list reads as "the company" and filters on the company alone — so
  *     a retired branch's rows are on those lists, and here the set is every
- *     branch of the company, retired ones included
- *     (`listBranchesForCompany(…, { includeRetired: true })`). An order still
- *     standing in a retired branch is therefore counted by the figure exactly
- *     when the list it links to shows it, and no history disappears;
+ *     branch of the company, retired ones included (`listBranchesForCompany`
+ *     returns them). An order still standing in a retired branch is therefore
+ *     counted by the figure exactly when the list it links to shows it, and no
+ *     history disappears;
  *  4. a company with NO branch at all, asked by a caller with no branch
  *     narrowing, is answered — every figure a computed zero, cut in UTC —
  *     because each list answers the same request with an empty page rather than
- *     a refusal. The section gates hold vacuously over an empty set; that
- *     discloses nothing, since a company with no branch holds no visit, order or
- *     stock row for a section to withhold. A company the caller cannot SEE —
- *     another tenant's, or one that exists nowhere — is still refused with the
- *     uniform `ERR-IAM-001`, as it always was here: an empty branch list is the
- *     same answer for both, and only the visibility read tells them apart;
+ *     a refusal. The section gates do NOT hold vacuously over the empty set:
+ *     each is decided at the company's scope (`callerHoldsPermissionInCompany`
+ *     — the question the resolver itself asks of the operation's code for a
+ *     caller with no branch narrowing), so a caller lacking a section's code is
+ *     told `unauthorized` rather than shown a zero it was never entitled to. A
+ *     company the caller cannot SEE — another tenant's, or one that exists
+ *     nowhere — is still refused with the uniform `ERR-IAM-001`, as it always
+ *     was here: an empty branch list is the same answer for both, and only the
+ *     visibility read tells them apart;
  *  5. a NAMED `branchId` goes through `authorizeScope`, which raises the uniform
  *     `ERR-IAM-001` — so an unauthorized branch is refused rather than quietly
  *     dropped, and the refusal never says whether the branch exists.
@@ -92,6 +99,14 @@
  * beats silently picking one. The day itself is measured on the DATABASE clock
  * (`OverviewClockRepository`), not on this process's.
  *
+ * So across branches in DIFFERENT zones, an all-branches period figure and the
+ * reception board it links to are not guaranteed to cut "today" at the same
+ * instant: that board takes the zone of the first branch in the reader's
+ * working context and reads the browser's clock, and its first branch need not
+ * be this one. They agree for a single branch and for a set that shares one
+ * zone; the multi-zone case is an open item, not a property this service
+ * provides.
+ *
  * ## No money crosses this surface
  *
  * Not one figure here is an amount, a rate or a currency. That is a scope
@@ -102,7 +117,11 @@
 import { ApplicationService } from '@/server/layering';
 import { AppFailure } from '@/server/errors/app-failure';
 import type { DbHandle } from '@/server/db/transaction';
-import { callerHoldsPermission, type ScopeAuthorizer } from '@/server/auth/authorization';
+import {
+  callerHoldsPermission,
+  callerHoldsPermissionInCompany,
+  type ScopeAuthorizer,
+} from '@/server/auth/authorization';
 import type { LocalDayPeriod } from '@/server/db/period';
 import { iamOrganizationContext, type BranchContextRow } from '@/modules/iam';
 import { workOrderModule } from '@/modules/work-order';
@@ -382,9 +401,7 @@ export class DashboardSummaryService extends ApplicationService {
     // are cut in; `undefined` keeps every one of them, as a list filtering on
     // the company alone does, and a narrowed answer keeps exactly its members.
     const narrowed = query.branchIds;
-    const company = await branches.listBranchesForCompany(db, query.companyId, {
-      includeRetired: true,
-    });
+    const company = await branches.listBranchesForCompany(db, query.companyId);
     if (narrowed === undefined) {
       if (company.length > 0 || (await branches.companyVisible(db, query.companyId))) {
         return company;
@@ -416,12 +433,24 @@ export class DashboardSummaryService extends ApplicationService {
    * caller holding `inv.stock.read` in one of three branches would otherwise be
    * shown a low-stock count for the whole company that is really a count for a
    * third of it, with nothing on the response to say so.
+   *
+   * An EMPTY set is decided at the company's scope instead of passing
+   * vacuously. `every` over no branch is true for any caller at all, which
+   * would answer a caller without the section's code with an `ok` zero — the
+   * one answer the three section states exist to keep apart from
+   * `unauthorized`. The set is empty only for a company with no branch, asked
+   * by a caller with no branch narrowing (a narrowed caller holding none is
+   * refused before this runs), and the company scope is exactly where that
+   * caller's grants are decided.
    */
   private async holdsEverywhere(
     db: DbHandle,
     permissionCode: string,
     scope: { readonly companyId: string; readonly branchIds: readonly string[] }
   ): Promise<boolean> {
+    if (scope.branchIds.length === 0) {
+      return callerHoldsPermissionInCompany(db, permissionCode, scope.companyId);
+    }
     for (const branchId of scope.branchIds) {
       if (
         !(await callerHoldsPermission(db, permissionCode, { companyId: scope.companyId, branchId }))
