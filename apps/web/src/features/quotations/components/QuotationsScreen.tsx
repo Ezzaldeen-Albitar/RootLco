@@ -15,6 +15,7 @@ import {
   WorkOrderPicker,
   useWorkOrderSearchScope,
 } from '@/features/work-orders/components/WorkOrderPicker';
+import { useUnsavedGuard } from '@/features/working-context/WorkingContextProvider';
 import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic } from '@/i18n/get-messages';
@@ -32,6 +33,7 @@ import {
   PRIMARY_BUTTON,
   QuotationStatusBadge,
   SECONDARY_BUTTON,
+  UUID,
   newLine,
   validateLines,
   type DraftLine,
@@ -409,8 +411,18 @@ function QuotationBuilder({
    * name (Owner directive, `P1-32-PRE-OD-UX`); both used to be boxes asking for
    * a reference. The payer opens on the work order's own customer, which is a
    * default rather than unsaved work.
+   *
+   * The customer search needs `crm.customer.read`, and creating a quotation does
+   * NOT: `quo.quotation-create` declares `quo.quotation.manage` and
+   * `wo.work_order.read` only. So a caller without the customer read keeps the
+   * box they had before — a payer reference, opened on the work order's own
+   * customer as it always was, labelled as the fallback it is, checked for shape
+   * before it is sent, and counted as unsaved work once it differs from that
+   * default. With the customer read there is no box at all.
    */
   const [payer, setPayer] = useState<ChosenCustomer | null>(initialPayer);
+  const [payerReference, setPayerReference] = useState(initialPayer?.id ?? '');
+  useUnsavedGuard(!canReadCustomers && payerReference.trim() !== (initialPayer?.id ?? ''));
   const [customerClass, setCustomerClass] = useState('');
   const [requestedBy, setRequestedBy] = useState<ChosenRequester | null>(null);
   const [lines, setLines] = useState<readonly DraftLine[]>([newLine()]);
@@ -425,7 +437,9 @@ function QuotationBuilder({
 
   const submit = async () => {
     const { bodies, errors: found } = validateLines(lines);
-    const payerId = payer?.id ?? '';
+    const payerId = canReadCustomers ? (payer?.id ?? '') : payerReference.trim();
+    if (!canReadCustomers && payerId.length > 0 && !UUID.test(payerId))
+      found['payerPartnerRef'] = 'quotations.build.payerReferenceFormat';
     const klass = customerClass.trim();
     if (klass.length > 0 && !INTERNAL_CODE.test(klass))
       found['customerClass'] = 'quotations.common.classFormat';
@@ -466,22 +480,42 @@ function QuotationBuilder({
       <p className="text-caption text-text-muted">
         {translate(messages, 'quotations.build.explain')}
       </p>
-      <div className="flex flex-col gap-1.5">
-        <CustomerPicker
-          messages={messages}
-          locale={locale}
-          label={translate(messages, 'quotations.build.payer')}
-          value={payer}
-          onChange={setPayer}
-          canSearch={canReadCustomers}
+      {canReadCustomers ? (
+        <div className="flex flex-col gap-1.5">
+          <CustomerPicker
+            messages={messages}
+            locale={locale}
+            label={translate(messages, 'quotations.build.payer')}
+            value={payer}
+            onChange={setPayer}
+            canSearch
+            error={errorFor('payerPartnerRef')}
+            pristineId={initialPayer?.id ?? null}
+            testId="quotation-payer-picker"
+          />
+          <p className="text-caption text-text-muted">
+            {translate(messages, 'quotations.build.payerHelp')}
+          </p>
+        </div>
+      ) : (
+        <TextField
+          label={translate(messages, 'quotations.build.payerReference')}
+          description={translate(messages, 'quotations.build.payerReferenceHelp')}
+          spellCheck={false}
+          autoComplete="off"
+          dir="ltr"
+          value={payerReference}
+          onChange={(event) => {
+            setPayerReference(event.target.value);
+            setErrors((current) =>
+              Object.fromEntries(
+                Object.entries(current).filter(([name]) => name !== 'payerPartnerRef')
+              )
+            );
+          }}
           error={errorFor('payerPartnerRef')}
-          pristineId={initialPayer?.id ?? null}
-          testId="quotation-payer-picker"
         />
-        <p className="text-caption text-text-muted">
-          {translate(messages, 'quotations.build.payerHelp')}
-        </p>
-      </div>
+      )}
       <div className="grid gap-3 sm:grid-cols-2">
         <TextField
           label={translate(messages, 'quotations.build.customerClass')}

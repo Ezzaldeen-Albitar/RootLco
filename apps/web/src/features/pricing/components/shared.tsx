@@ -6,7 +6,10 @@ import { INITIAL_REQUEST } from '@/components/data-table/table-state';
 import { SelectField, TextField } from '@/components/forms/Field';
 import { listServices } from '@/features/services/api';
 import type { BranchOption, ServiceSummary } from '@/features/services/services-contract';
-import { useWorkingContext } from '@/features/working-context/WorkingContextProvider';
+import {
+  useUnsavedGuard,
+  useWorkingContext,
+} from '@/features/working-context/WorkingContextProvider';
 import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic } from '@/i18n/get-messages';
 import type { ActionState } from '@/lib/forms/action-result';
@@ -412,7 +415,7 @@ export function ServicePicker({
   value,
   onChange,
   error,
-  unavailableId,
+  countsAsUnsaved = false,
 }: {
   readonly messages: Messages;
   readonly canRead: boolean;
@@ -421,10 +424,10 @@ export function ServicePicker({
   readonly onChange: (serviceId: string) => void;
   readonly error?: string | undefined;
   /**
-   * The id given to the sentence shown without `svc.service.read`, so the
-   * caller can describe its held submit with it.
+   * Whether a typed reference is unsaved work: true inside a form that writes,
+   * false beside a read such as the price lookup.
    */
-  readonly unavailableId?: string | undefined;
+  readonly countsAsUnsaved?: boolean;
 }) {
   const [term, setTerm] = useState('');
   const [found, setFound] = useState<readonly ServiceSummary[] | null>(null);
@@ -456,21 +459,31 @@ export function ServicePicker({
     [found]
   );
 
+  useUnsavedGuard(countsAsUnsaved && !canRead && value.trim().length > 0);
+
   /*
-   * Without the catalogue read there is nothing to choose from, and a box asking
-   * for a service reference is not a way to choose one: nobody holds that
-   * reference except by copying it out of a screen they may not open (Owner
-   * directive, `P1-32-PRE-OD-UX`). No narrower read publishes services, so the
-   * picker says why and the caller holds its submit, described by this sentence.
+   * Without the catalogue read there is nothing to choose from. Recording a rule
+   * (`svc.price-rule-record`, `svc.price.manage`) and looking a price up
+   * (`svc.price-resolve`, `svc.price.read`) do NOT need that read, so holding
+   * the submit would take away a write and a read the server accepts from this
+   * caller (Owner directive, `P1-32-PRE-OD-UX`: a pass never removes a workflow
+   * a role already had). The caller keeps the box it had before — a pasted
+   * service reference, labelled as the fallback it is and checked for shape by
+   * the caller before anything is sent. With the catalogue read there is no box.
    */
   if (!canRead) {
     return (
-      <div className="flex flex-col gap-1.5">
-        <span className="text-label font-medium text-text-primary">{label}</span>
-        <p id={unavailableId} role="status" className="text-supporting text-text-secondary">
-          {translate(messages, 'pricing.picker.servicesNotReadable')}
-        </p>
-      </div>
+      <TextField
+        label={translate(messages, 'pricing.picker.serviceReference')}
+        description={translate(messages, 'pricing.picker.servicesNotReadable')}
+        required
+        spellCheck={false}
+        autoComplete="off"
+        dir="ltr"
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        error={error}
+      />
     );
   }
 

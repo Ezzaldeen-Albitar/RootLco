@@ -689,6 +689,13 @@ describe('FE-014 — no invoice yet: the preview and creating one', () => {
     });
   });
 
+  it('with the customer read offers the search and no reference box at all', async () => {
+    renderScreen({ canReadCustomers: true });
+    const form = await screen.findByRole('form', { name: EN['invoices.create.heading'] as string });
+    expect(within(form).getByTestId('invoice-payer-picker')).toBeVisible();
+    expect(within(form).queryByLabelText(labelled('invoices.create.payerReference'))).toBeNull();
+  });
+
   it('without the customer read offers no search, and still bills the work order’s customer', async () => {
     createInvoice.mockResolvedValue({
       state: { status: 'success', messageKey: 'invoices.create.success', attempt: 1 },
@@ -697,14 +704,93 @@ describe('FE-014 — no invoice yet: the preview and creating one', () => {
     const user = userEvent.setup();
     renderScreen({ canReadCustomers: false });
     const form = await screen.findByRole('form', { name: EN['invoices.create.heading'] as string });
-    expect(within(form).getByText(EN['customerPicker.notPermitted'] as string)).toBeVisible();
     expect(within(form).queryByRole('searchbox')).toBeNull();
+    expect(within(form).queryByTestId('invoice-payer-picker')).toBeNull();
     await user.click(
       within(form).getByRole('button', { name: EN['invoices.create.submit'] as string })
     );
     await waitFor(() => expect(createInvoice).toHaveBeenCalled());
     expect(createInvoice.mock.calls[0]?.[0]).toEqual({ workOrderId: WORK_ORDER_ID });
     expect(searchCustomerDirectory).not.toHaveBeenCalled();
+  });
+
+  it('without the customer read a different payer is STILL named, through the labelled reference', async () => {
+    // `sal.invoice-create` declares the invoice and finance codes only, and the
+    // server REQUIRES a payer here when the quotation names none, so a caller
+    // without `crm.customer.read` must not lose the invoice it could create.
+    createInvoice.mockResolvedValue({
+      state: { status: 'success', messageKey: 'invoices.create.success', attempt: 1 },
+      created: { ...detail(), replayed: false },
+    });
+    const user = userEvent.setup();
+    renderScreen({ canReadCustomers: false });
+    const form = await screen.findByRole('form', { name: EN['invoices.create.heading'] as string });
+    expect(
+      within(form).getByText(EN['invoices.create.payerReferenceHelp'] as string)
+    ).toBeVisible();
+    const box = within(form).getByLabelText(labelled('invoices.create.payerReference'));
+    const submit = within(form).getByRole('button', {
+      name: EN['invoices.create.submit'] as string,
+    });
+    expect(submit).toBeEnabled();
+
+    await user.type(box, 'not-a-reference');
+    await user.click(submit);
+    expect(
+      await within(form).findByText(EN['invoices.create.payerReferenceFormat'] as string)
+    ).toBeVisible();
+    expect(box).toHaveAttribute('aria-invalid', 'true');
+    expect(createInvoice).not.toHaveBeenCalled();
+
+    await user.clear(box);
+    await user.type(box, OTHER_PAYER);
+    await user.click(submit);
+    await waitFor(() => expect(createInvoice).toHaveBeenCalledTimes(1));
+    expect(createInvoice.mock.calls[0]?.[0]).toEqual({
+      workOrderId: WORK_ORDER_ID,
+      payerPartnerId: OTHER_PAYER,
+    });
+    expect(searchCustomerDirectory).not.toHaveBeenCalled();
+  });
+
+  it('a typed payer reference is unsaved work: a branch switch asks first', async () => {
+    const user = userEvent.setup();
+    renderInLtr(
+      inBranch(
+        <>
+          <BranchSwitch to={TEST_BRANCH.id} label="first" />
+          <BranchSwitch to={OTHER_BRANCH.id} label="second" />
+          <WorkingBranchProbe />
+          <InvoiceScreen
+            locale="en"
+            messages={en}
+            workOrderId={WORK_ORDER_ID}
+            workOrder={workOrder as never}
+            workOrderRefused={null}
+            initialInvoice={okRead({ workOrderId: WORK_ORDER_ID, invoice: null }) as never}
+            canViewFinance={true}
+            canIssue={false}
+            canReadCustomers={false}
+          />
+        </>,
+        { snapshot: branchSnapshot([TEST_BRANCH, OTHER_BRANCH]) }
+      )
+    );
+    await user.click(screen.getByRole('button', { name: 'first' }));
+    const form = await screen.findByRole('form', { name: EN['invoices.create.heading'] as string });
+    try {
+      // Nothing typed yet, so nothing to lose.
+      await switchWithoutQuestion(user, 'second');
+      await waitFor(() => expect(heldBranch()).toBe(OTHER_BRANCH.id));
+      await user.type(
+        within(form).getByLabelText(labelled('invoices.create.payerReference')),
+        OTHER_PAYER
+      );
+      await stayOnBranch(user, await switchExpectingQuestion(user, 'first'));
+      expect(heldBranch()).toBe(OTHER_BRANCH.id);
+    } finally {
+      forgetRememberedBranch();
+    }
   });
 
   it('a refused create re-tries with the SAME key, and a conflict re-reads the work order’s invoice', async () => {

@@ -98,9 +98,11 @@ decisions below); and a quotation's discount requester is found through `iam.use
 (active accounts only, offered with `iam.user.read`). Each searches on the server after a pause,
 keeps the term in memory, forgets the term and the choice on a working-context switch (asking first
 when something was chosen), puts the caller's complaint on its own control, and — without the code
-its read needs — offers no box, says why, and the submit it would feed is held and described by
-that sentence. The pricing service picker no longer falls back to a reference box without
-`svc.service.read`: no narrower read publishes services, so it says why and the submit is held.
+its read needs — offers no search and says why. Where the write or read the picker feeds does not
+itself need that code, the caller keeps the box they had before B1 instead: a labelled reference,
+checked for shape before it is sent, counted as unsaved work in a form that writes, and explained
+in both languages (`B1-04`, `B1-05`; the permission decisions below). The pricing service picker
+is one of these: without `svc.service.read` it keeps a labelled service reference.
 
 Columns this pass did not measure say `not swept`.
 
@@ -108,11 +110,11 @@ Columns this pass did not measure say `not swept`.
 | --------------------------- | ----------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- | -------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------- | ------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------- | ----------- | --------- |
 | `/services`                 | `apps/web/src/features/services/components/ServiceCatalogueScreen.tsx`  | fixed (709)                                                                                                   | pass                                               | fixed (709) — the branch filter names branches                                                                                                                                                                                                                                  | fixed (709)                                     | pass                           | fixed (709) — marked and cleared on correction                                                                                                                  | not swept | fixed (709) | not swept |
 | `/services/[serviceId]`     | `apps/web/src/features/services/components/ServiceDetailScreen.tsx`     | fixed (709, 715) — availability follows the working branch and a half-filled form asks before a branch switch | pass                                               | fixed (709)                                                                                                                                                                                                                                                                     | n/a — one record, reached by address            | n/a                            | fixed (709) — the branch complaint on the one branch control                                                                                                    | not swept | fixed (709) | not swept |
-| `/pricing`                  | `apps/web/src/features/pricing/components/PricingScreen.tsx`            | fixed (709, 715) — the lookup follows the working branch, and a lookup in flight when it changes is dropped   | pass                                               | fixed (709) for the branch; fixed (B1-02) — without `svc.service.read` no reference box is offered: the reason is stated and the lookup is held, described by it                                                                                                                | not swept                                       | not swept                      | fixed (709) — a submit with no branch to send is held; fixed (B1-02) — a missing service is said to be missing, on the service control                          | not swept | fixed (709) | not swept |
-| `/pricing/[priceListId]`    | `apps/web/src/features/pricing/components/PriceListDetailScreen.tsx`    | fixed (709) — the shared picker                                                                               | not swept                                          | fixed (B1-02) — the service as on `/pricing`, and a rule narrowed to one company names the company from the working context; blocked — the tax class, see below                                                                                                                 | n/a — one record, reached by address            | not swept                      | not swept                                                                                                                                                       | not swept | not swept   | not swept |
-| `/quotations`               | `apps/web/src/features/quotations/components/QuotationsScreen.tsx`      | pass                                                                                                          | pass — opens on the work order it was reached from | fixed (709, 715) — the job is found by name, and forgotten on a branch switch; fixed (B1-02) — the paying customer and the discount requester are found by name                                                                                                                 | fixed (709) — the job search                    | not swept                      | fixed (709, 715) — the chooser; with nothing to search the submit is disabled and says why                                                                      | not swept | fixed (709) | not swept |
+| `/pricing`                  | `apps/web/src/features/pricing/components/PricingScreen.tsx`            | fixed (709, 715) — the lookup follows the working branch, and a lookup in flight when it changes is dropped   | pass                                               | fixed (709) for the branch; fixed (B1-02, B1-05) — the service is found by name; without `svc.service.read` a labelled, shape-checked service reference is kept, because the lookup does not need that code                                                                     | not swept                                       | not swept                      | fixed (709) — a submit with no branch to send is held; fixed (B1-02, B1-05) — a missing or malformed service is said on the service control                     | not swept | fixed (709) | not swept |
+| `/pricing/[priceListId]`    | `apps/web/src/features/pricing/components/PriceListDetailScreen.tsx`    | fixed (709) — the shared picker                                                                               | not swept                                          | fixed (B1-02, B1-05) — the service as on `/pricing` (a typed fallback reference is unsaved work), and a rule narrowed to one company names the company from the working context; blocked — the tax class, see below                                                             | n/a — one record, reached by address            | not swept                      | not swept                                                                                                                                                       | not swept | not swept   | not swept |
+| `/quotations`               | `apps/web/src/features/quotations/components/QuotationsScreen.tsx`      | pass                                                                                                          | pass — opens on the work order it was reached from | fixed (709, 715) — the job is found by name, and forgotten on a branch switch; fixed (B1-02, B1-05) — the paying customer and the discount requester are found by name; a manager without the customer read keeps a labelled payer reference; remaining — see below             | fixed (709) — the job search                    | not swept                      | fixed (709, 715) — the chooser; with nothing to search the submit is disabled and says why                                                                      | not swept | fixed (709) | not swept |
 | `/quotations/[quotationId]` | `apps/web/src/features/quotations/components/QuotationDetailScreen.tsx` | not swept                                                                                                     | not swept                                          | fixed (B1-02) — a revision’s discount requester is found by name, and the deciding party is a yes-or-no over the quotation’s own payer; remaining — see below                                                                                                                   | not swept                                       | not swept                      | not swept                                                                                                                                                       | not swept | not swept   | not swept |
-| `/invoices`                 | `apps/web/src/features/billing/components/InvoiceScreen.tsx`            | pass                                                                                                          | pass — opens on the work order it was reached from | fixed (709, 715) — the job is found by name, and forgotten on a branch switch; fixed (B1-02) — a different payer is found by name; remaining — see below                                                                                                                        | fixed (709) — the job search                    | n/a — one work order's invoice | fixed (709, 715) — the chooser; with nothing to search the submit is disabled and says why                                                                      | not swept | fixed (709) | not swept |
+| `/invoices`                 | `apps/web/src/features/billing/components/InvoiceScreen.tsx`            | pass                                                                                                          | pass — opens on the work order it was reached from | fixed (709, 715) — the job is found by name, and forgotten on a branch switch; fixed (B1-02, B1-05) — a different payer is found by name; a caller without the customer read keeps a labelled payer reference; remaining — see below                                            | fixed (709) — the job search                    | n/a — one work order's invoice | fixed (709, 715) — the chooser; with nothing to search the submit is disabled and says why                                                                      | not swept | fixed (709) | not swept |
 | `/payments`                 | `apps/web/src/features/payments/components/PaymentsScreen.tsx`          | fixed (709, 715) — the branch is the working context's, and a half-filled form asks before a branch switch    | fixed (709) — reads on arrival for that branch     | fixed (B1-01, B1-02, B1-04) — the payer and the invoice are found by name on the record form, the allocate form and the list filters; the invoice picker needs finance view only; a recorder without the customer read pastes a labelled payer reference; remaining — see below | n/a — the read publishes no free-text parameter | not swept                      | fixed (B1-02) — a missing payer or invoice is said on its control, the cursor moves to the first, corrected fields stop complaining, and a held submit says why | not swept | fixed (709) | not swept |
 
 ### Permission decisions (`B1-04`)
@@ -135,6 +137,25 @@ nobody who could do the job before B1 is refused it now.
   a recorder without `crm.customer.read` keeps the one box they had before B1: a pasted payer
   reference, labelled as a fallback, checked for shape before it is sent, and explained in both
   languages. With `crm.customer.read` there is no such box. Follow-up below.
+- **The payer on `/invoices` and `/quotations` (`B1-05`).** `sal.invoice-create` needs only
+  `sal.invoice.manage` and `sal.finance.view`, and when the accepted quotation names no payer the
+  server requires one in the request; `quo.quotation-create` needs only `quo.quotation.manage` and
+  `wo.work_order.read`. Before B1 both forms took a typed payer reference. So a caller without
+  `crm.customer.read` keeps that box, labelled as the fallback, shape-checked, counted as unsaved
+  work (on `/quotations` once it differs from the work order's own customer it opens on), with the
+  complaint on the box itself. With `crm.customer.read` there is no such box.
+- **The service on `/pricing` and `/pricing/[priceListId]` (`B1-05`).** `svc.price-resolve` needs
+  only `svc.price.read` and `svc.price-rule-record` only `svc.price.manage`; before B1 both forms
+  took a typed service reference without `svc.service.read`. B1-02 held both submits instead, which
+  took the lookup and the rule away from those callers; B1-05 restores the labelled, shape-checked
+  service reference for them (unsaved work on the rule form, not on the lookup, which is a read).
+- **The discount requester on `/quotations` and `/quotations/[quotationId]`.** Measured, not
+  changed: `iam.user-list` needs `iam.user.read`, which `GET /auth/session` also requires, so every
+  operator who can load either screen holds it and the picker refuses nobody who could name a
+  requester before.
+- **The deciding party on `/quotations/[quotationId]`.** Measured, not changed: the server accepts
+  a deciding party only when it is the quotation's own payer, so the yes-or-no over that payer
+  offers every value the typed box could have sent successfully.
 
 ### Remaining for the next sweep
 
@@ -162,15 +183,16 @@ found and did not change.
    first-paint read is acceptable; the item and work-order filters are typed references; and each
    row names its location by identifier only, because the row publishes no location code.
 8. `/quotations` and `/quotations/[quotationId]` — the line builder's service falls back to a
-   typed reference without `svc.service.read`, as the pricing picker did before B1-02.
-9. `/payments` — a recorder without `crm.customer.read` still pastes the payer's reference (see
-   the permission decisions above). Closing it needs a least-privilege payer-name read that
+   typed reference without `svc.service.read`, as the pricing picker does (B1-05).
+9. `/payments`, `/invoices` and `/quotations` — a caller without `crm.customer.read` still pastes
+   the payer's reference, and `/pricing` and `/pricing/[priceListId]` a service reference without
+   `svc.service.read` (see the permission decisions above). Closing it needs a least-privilege payer-name read that
    `sal.payment.record` can call and that returns a display name, number and party type only
    (backend prerequisite 7 below).
-10. `/invoices` and `/quotations` — the same question for the other payer pickers, not measured
-    in B1-04: without `crm.customer.read` the invoice form can no longer name a different payer
-    (it still bills the work order's own customer), and the quotation builder offers no payer box.
-    Whether either loses a workflow the server allows has to be measured before it is changed.
+10. Resolved in B1-05: the invoice and quotation payer boxes and the pricing service box were
+    measured against develop and each had lost a workflow the server allows; each now keeps the
+    labelled reference for callers without the read (permission decisions above). The discount
+    requester and the deciding party were measured and lose nothing.
 11. Every `not swept` cell above.
 
 ### Everything else
@@ -222,7 +244,9 @@ nothing below is invented on the client.
 7. **A payer-name lookup for recorders.** `crm.customer-search` declares `crm.customer.read`, and
    the registry cannot declare "either code". A recorder holding `sal.payment.record` and not the
    customer read needs a read of its own — display name, number and party type only, no contact
-   data — before the pasted payer reference on `/payments` can go.
+   data — before the pasted payer reference on `/payments` can go. The same read would retire the
+   payer reference on `/invoices` and `/quotations`; the pricing service reference needs a
+   service-name read that `svc.price.read` and `svc.price.manage` can reach.
 
 ## Shared-component gaps recorded rather than worked around
 

@@ -1,7 +1,7 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { useEffect, useId, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 import { SelectField, TextAreaField, TextField } from '@/components/forms/Field';
 import { MoneyField } from '@/components/forms/MoneyField';
@@ -589,7 +589,6 @@ function RecordRuleForm({
   readonly onRecorded: () => void;
 }) {
   const [serviceId, setServiceId] = useState('');
-  const serviceUnavailableId = useId();
   const [amount, setAmount] = useState('');
   const [amountValid, setAmountValid] = useState(true);
   const [pair, setPair] = useState<BranchPair>(EMPTY_PAIR);
@@ -608,8 +607,12 @@ function RecordRuleForm({
   const submit = async () => {
     const found: Record<string, string> = {};
     const service = serviceId.trim();
-    if (service.length === 0) found['serviceId'] = 'pricing.picker.serviceRequired';
-    else if (!UUID.test(service)) found['serviceId'] = 'pricing.common.idFormat';
+    if (canReadServices) {
+      if (service.length === 0) found['serviceId'] = 'pricing.picker.serviceRequired';
+      else if (!UUID.test(service)) found['serviceId'] = 'pricing.common.idFormat';
+    } else if (!UUID.test(service)) {
+      found['serviceId'] = 'pricing.picker.serviceReferenceFormat';
+    }
     const money = amount.trim();
     if (money.length === 0) found['amount'] = 'field.required';
     else if (!amountValid || !AMOUNT.test(money)) found['amount'] = 'pricing.rule.amountFormat';
@@ -682,7 +685,7 @@ function RecordRuleForm({
           value={serviceId}
           onChange={setServiceId}
           error={errorFor('serviceId')}
-          unavailableId={serviceUnavailableId}
+          countsAsUnsaved
         />
       </div>
       <MoneyField
@@ -749,12 +752,7 @@ function RecordRuleForm({
         <OutcomeNote messages={messages} outcome={outcome} />
       </div>
       <div className="sm:col-span-2">
-        <button
-          type="submit"
-          className={PRIMARY_BUTTON}
-          disabled={busy || !canReadServices}
-          aria-describedby={canReadServices ? undefined : serviceUnavailableId}
-        >
+        <button type="submit" className={PRIMARY_BUTTON} disabled={busy}>
           {translate(messages, 'pricing.rule.submit')}
         </button>
       </div>

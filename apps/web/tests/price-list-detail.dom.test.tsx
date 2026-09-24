@@ -2,7 +2,22 @@ import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import en from '../src/i18n/messages/en.json';
-import { inBranch, renderLtr } from './render';
+import {
+  BranchSwitch,
+  OTHER_BRANCH,
+  TEST_BRANCH,
+  WorkingBranchProbe,
+  branchSnapshot,
+  inBranch,
+  renderLtr,
+} from './render';
+import {
+  forgetRememberedBranch,
+  heldBranch,
+  stayOnBranch,
+  switchExpectingQuestion,
+  switchWithoutQuestion,
+} from './support/branch-switch';
 
 /**
  * One price list, rendered (P1-30, `W2`, FE-002).
@@ -159,21 +174,23 @@ function rulesOf(versionId: string, rules: readonly unknown[]) {
  * branch narrowing is CHOSEN from that named list now; there is no box to type
  * a company or branch reference into (Owner directive, `P1-32-PRE-OD-UX`).
  */
-function renderDetailInBranch(over: Record<string, unknown> = {}, list = priceList()) {
-  return renderLtr(
-    inBranch(
-      <PriceListDetailScreen
-        locale="en"
-        messages={en}
-        priceList={list as never}
-        canManage
-        canPublish={false}
-        canReadBranches={false}
-        canReadServices={true}
-        {...over}
-      />
-    )
+function detailFor(over: Record<string, unknown> = {}, list = priceList()) {
+  return (
+    <PriceListDetailScreen
+      locale="en"
+      messages={en}
+      priceList={list as never}
+      canManage
+      canPublish={false}
+      canReadBranches={false}
+      canReadServices={true}
+      {...over}
+    />
   );
+}
+
+function renderDetailInBranch(over: Record<string, unknown> = {}, list = priceList()) {
+  return renderLtr(inBranch(detailFor(over, list)));
 }
 
 function renderDetail(over: Record<string, unknown> = {}, list = priceList()) {
@@ -192,8 +209,9 @@ function renderDetail(over: Record<string, unknown> = {}, list = priceList()) {
 }
 
 /**
- * The service, FOUND in the catalogue and chosen — the only way to name one now
- * (Owner directive, `P1-32-PRE-OD-UX`).
+ * The service, FOUND in the catalogue and chosen — the way to name one with
+ * `svc.service.read` (Owner directive, `P1-32-PRE-OD-UX`). Without that read the
+ * form keeps a labelled service reference instead; see the cases below.
  */
 async function pickService(user: ReturnType<typeof userEvent.setup>, form: HTMLElement) {
   await user.type(within(form).getByLabelText(labelled('pricing.picker.serviceSearch')), 'OIL');
@@ -567,18 +585,77 @@ describe('a rule narrowed to a company is named, never typed', () => {
     expect(branch).toHaveValue('');
   });
 
-  it('without the service catalogue, offers no reference box and holds the rule, saying why', async () => {
+  it('with the service catalogue, offers the search and no reference box', async () => {
+    renderDetailInBranch({ canReadServices: true });
+    const form = await within(rulesRegion()).findByRole('form', {
+      name: EN['pricing.rule.heading'] as string,
+    });
+    expect(within(form).getByLabelText(labelled('pricing.picker.serviceSearch'))).toBeVisible();
+    expect(within(form).queryByLabelText(labelled('pricing.picker.serviceReference'))).toBeNull();
+  });
+
+  it('without the service catalogue, STILL records the rule through the labelled service reference', async () => {
+    // `svc.price-rule-record` declares `svc.price.manage` only, so a price
+    // manager without `svc.service.read` keeps the rule the server accepts.
+    const user = userEvent.setup();
     renderDetailInBranch({ canReadServices: false });
     const form = await within(rulesRegion()).findByRole('form', {
       name: EN['pricing.rule.heading'] as string,
     });
+    expect(
+      within(form).getByText(EN['pricing.picker.servicesNotReadable'] as string)
+    ).toBeVisible();
     const submit = within(form).getByRole('button', {
       name: EN['pricing.rule.submit'] as string,
     });
-    expect(submit).toBeDisabled();
-    const reason = document.getElementById(submit.getAttribute('aria-describedby') ?? '');
-    expect(reason).toHaveTextContent(EN['pricing.picker.servicesNotReadable'] as string);
+    expect(submit).toBeEnabled();
+    const box = within(form).getByLabelText(labelled('pricing.picker.serviceReference'));
+    await user.type(within(form).getByLabelText(labelled('pricing.rule.amount')), '9');
+
+    await user.click(submit);
+    expect(
+      await within(form).findByText(EN['pricing.picker.serviceReferenceFormat'] as string)
+    ).toBeVisible();
+    expect(box).toHaveAttribute('aria-invalid', 'true');
+    expect(recordPriceRule).not.toHaveBeenCalled();
+
+    await user.type(box, SERVICE_ID);
+    await user.click(submit);
+    await waitFor(() => expect(recordPriceRule).toHaveBeenCalledTimes(1));
+    const body = recordPriceRule.mock.calls[0]?.[2] as Record<string, unknown>;
+    expect(body['serviceId']).toBe(SERVICE_ID);
     expect(listServices).not.toHaveBeenCalled();
+  });
+
+  it('without the service catalogue, a typed service reference is unsaved work: a branch switch asks first', async () => {
+    const user = userEvent.setup();
+    renderLtr(
+      inBranch(
+        <>
+          <BranchSwitch to={TEST_BRANCH.id} label="first" />
+          <BranchSwitch to={OTHER_BRANCH.id} label="second" />
+          <WorkingBranchProbe />
+          {detailFor({ canReadServices: false })}
+        </>,
+        { snapshot: branchSnapshot([TEST_BRANCH, OTHER_BRANCH]) }
+      )
+    );
+    await user.click(screen.getByRole('button', { name: 'first' }));
+    const form = await within(rulesRegion()).findByRole('form', {
+      name: EN['pricing.rule.heading'] as string,
+    });
+    try {
+      await switchWithoutQuestion(user, 'second');
+      await waitFor(() => expect(heldBranch()).toBe(OTHER_BRANCH.id));
+      await user.type(
+        within(form).getByLabelText(labelled('pricing.picker.serviceReference')),
+        SERVICE_ID
+      );
+      await stayOnBranch(user, await switchExpectingQuestion(user, 'first'));
+      expect(heldBranch()).toBe(OTHER_BRANCH.id);
+    } finally {
+      forgetRememberedBranch();
+    }
   });
 });
 

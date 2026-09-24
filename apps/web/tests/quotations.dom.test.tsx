@@ -506,18 +506,99 @@ describe('the builder names its people rather than asking for references', () =>
     expect(listUsers).not.toHaveBeenCalled();
   });
 
-  it('without the customer read, keeps the work order’s customer and offers no search', async () => {
+  it('with the customer read, names the payer through the search and offers no reference box', async () => {
     const user = userEvent.setup();
-    renderScreen({ canManage: true, canReadCustomers: false });
+    renderScreen({ canManage: true, canReadCustomers: true });
     await user.click(screen.getByRole('button', { name: EN['quotations.list.create'] as string }));
     const form = await builderForm();
     expect(within(form).getByTestId('quotation-payer-picker-chosen')).toHaveTextContent(
       'Layla Haddad'
     );
-    await user.click(
-      within(form).getByRole('button', { name: EN['customerSelector.change'] as string })
+    expect(within(form).queryByLabelText(labelled('quotations.build.payerReference'))).toBeNull();
+  });
+
+  it('without the customer read, a DIFFERENT payer is still named through the labelled reference', async () => {
+    // `quo.quotation-create` declares the quotation and work-order codes only, so
+    // a manager without `crm.customer.read` keeps the payer box they had before.
+    const OTHER_PAYER = '66666666-6666-4666-8666-666666666666';
+    const user = userEvent.setup();
+    createQuotation.mockResolvedValue({
+      state: { status: 'success', messageKey: 'quotations.create.success', attempt: 1 },
+      created: { ...summary({ id: 'new-id' }), currentRevision: null },
+    });
+    renderScreen({ canManage: true, canReadCustomers: false });
+    await user.click(screen.getByRole('button', { name: EN['quotations.list.create'] as string }));
+    const form = await builderForm();
+    expect(within(form).queryByTestId('quotation-payer-picker')).toBeNull();
+    expect(
+      within(form).getByText(EN['quotations.build.payerReferenceHelp'] as string)
+    ).toBeVisible();
+    // It opens on the work order's own customer, as it always did.
+    const box = within(form).getByLabelText(labelled('quotations.build.payerReference'));
+    expect(box).toHaveValue(PARTNER_ID);
+    await user.type(
+      within(form).getByLabelText(labelled('quotations.picker.serviceIdField')),
+      SERVICE_ID
     );
-    expect(within(form).getByText(EN['customerPicker.notPermitted'] as string)).toBeVisible();
+    await user.type(within(form).getByLabelText(labelled('quotations.lines.quantity')), '1');
+    const submit = within(form).getByRole('button', {
+      name: EN['quotations.build.submit'] as string,
+    });
+
+    await user.clear(box);
+    await user.type(box, 'not-a-reference');
+    await user.click(submit);
+    expect(
+      await within(form).findByText(EN['quotations.build.payerReferenceFormat'] as string)
+    ).toBeVisible();
+    expect(box).toHaveAttribute('aria-invalid', 'true');
+    expect(createQuotation).not.toHaveBeenCalled();
+
+    await user.clear(box);
+    await user.type(box, OTHER_PAYER);
+    await user.click(submit);
+    await waitFor(() => expect(createQuotation).toHaveBeenCalledTimes(1));
+    const body = createQuotation.mock.calls[0]?.[0] as Record<string, unknown>;
+    expect(body['payerPartnerRef']).toBe(OTHER_PAYER);
+    expect((body['lines'] as Record<string, unknown>[])[0]?.['serviceId']).toBe(SERVICE_ID);
+  });
+
+  it('without the customer read, a changed payer reference is unsaved work: a branch switch asks first', async () => {
+    const user = userEvent.setup();
+    renderLtr(
+      inBranch(
+        <>
+          <BranchSwitch to={TEST_BRANCH.id} label="first" />
+          <BranchSwitch to={OTHER_BRANCH.id} label="second" />
+          <WorkingBranchProbe />
+          <QuotationsScreen
+            locale="en"
+            messages={en}
+            workOrderId={WORK_ORDER_ID}
+            workOrder={workOrder as never}
+            canManage={true}
+            canReadServices={false}
+            canReadCustomers={false}
+          />
+        </>,
+        { snapshot: branchSnapshot([TEST_BRANCH, OTHER_BRANCH]) }
+      )
+    );
+    await user.click(screen.getByRole('button', { name: 'first' }));
+    await user.click(screen.getByRole('button', { name: EN['quotations.list.create'] as string }));
+    const form = await builderForm();
+    try {
+      // Opened on the work order's customer: a default, not unsaved work.
+      await switchWithoutQuestion(user, 'second');
+      await waitFor(() => expect(heldBranch()).toBe(OTHER_BRANCH.id));
+      const box = within(form).getByLabelText(labelled('quotations.build.payerReference'));
+      await user.clear(box);
+      await user.type(box, '66666666-6666-4666-8666-666666666666');
+      await stayOnBranch(user, await switchExpectingQuestion(user, 'first'));
+      expect(heldBranch()).toBe(OTHER_BRANCH.id);
+    } finally {
+      forgetRememberedBranch();
+    }
   });
 });
 
@@ -535,7 +616,7 @@ describe('the builder sends lines as strings and prices nothing', () => {
       state: { status: 'success', messageKey: 'quotations.create.success', attempt: 1 },
       created: { ...summary({ id: 'new-id' }), currentRevision: null },
     });
-    renderScreen({ canManage: true });
+    renderScreen({ canManage: true, canReadCustomers: true });
     await user.click(screen.getByRole('button', { name: EN['quotations.list.create'] as string }));
     const form = await builderForm();
     // The payer opens on the work order's own customer, NAMED rather than shown

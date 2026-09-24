@@ -395,16 +395,46 @@ describe('the lookup renders the server’s figures, never its own', () => {
     expect(resolvePrice).not.toHaveBeenCalled();
   });
 
-  it('without the service catalogue, offers no box to type a reference into, and holds the lookup', () => {
+  it('with the service catalogue, offers the search and no reference box', () => {
+    renderInBranch({ canReadServices: true });
+    const form = lookupForm();
+    expect(within(form).getByLabelText(labelled('pricing.picker.serviceSearch'))).toBeVisible();
+    expect(within(form).queryByLabelText(labelled('pricing.picker.serviceReference'))).toBeNull();
+  });
+
+  it('without the service catalogue, STILL looks a price up through the labelled service reference', async () => {
+    // `svc.price-resolve` declares `svc.price.read` only, so a caller without
+    // `svc.service.read` keeps the lookup the server answers for them.
+    const user = userEvent.setup();
+    resolvePrice.mockResolvedValue(okRead(resolved));
     renderInBranch({ canReadServices: false });
     const form = lookupForm();
-    expect(within(form).queryByRole('textbox', { name: /service/i })).toBeNull();
+    expect(
+      within(form).getByText(EN['pricing.picker.servicesNotReadable'] as string)
+    ).toBeVisible();
     const submit = within(form).getByRole('button', {
       name: EN['pricing.lookup.submit'] as string,
     });
-    expect(submit).toBeDisabled();
-    const reason = document.getElementById(submit.getAttribute('aria-describedby') ?? '');
-    expect(reason).toHaveTextContent(EN['pricing.picker.servicesNotReadable'] as string);
+    expect(submit).toBeEnabled();
+    const box = within(form).getByLabelText(labelled('pricing.picker.serviceReference'));
+
+    await user.type(box, 'OIL-CHANGE');
+    await user.click(submit);
+    expect(
+      await within(form).findByText(EN['pricing.picker.serviceReferenceFormat'] as string)
+    ).toBeVisible();
+    expect(box).toHaveAttribute('aria-invalid', 'true');
+    expect(resolvePrice).not.toHaveBeenCalled();
+
+    await user.clear(box);
+    await user.type(box, SERVICE_ID);
+    await user.click(submit);
+    await waitFor(() => expect(resolvePrice).toHaveBeenCalledTimes(1));
+    expect(resolvePrice.mock.calls[0]?.[0]).toEqual({
+      serviceId: SERVICE_ID,
+      companyId: COMPANY,
+      branchId: BRANCH,
+    });
     expect(listServices).not.toHaveBeenCalled();
   });
 

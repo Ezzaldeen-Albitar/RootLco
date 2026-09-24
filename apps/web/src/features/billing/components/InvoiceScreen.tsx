@@ -12,6 +12,7 @@ import {
   WorkOrderPicker,
   useWorkOrderSearchScope,
 } from '@/features/work-orders/components/WorkOrderPicker';
+import { useUnsavedGuard } from '@/features/working-context/WorkingContextProvider';
 import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic } from '@/i18n/get-messages';
@@ -46,6 +47,7 @@ import {
   PRIMARY_BUTTON,
   SECONDARY_BUTTON,
   Unavailable,
+  UUID,
 } from './shared';
 
 /**
@@ -616,8 +618,18 @@ function CreateForm({
    * A different payer is FOUND among customers and chosen by name (Owner
    * directive, `P1-32-PRE-OD-UX`); it used to be a box asking for a partner
    * reference. Left empty, the server bills the work order's own customer.
+   *
+   * The search needs `crm.customer.read`, and creating an invoice does NOT:
+   * `sal.invoice-create` declares `sal.invoice.manage` and `sal.finance.view`
+   * only, and when the accepted quotation names no payer the server REQUIRES
+   * one here. So a caller without the customer read keeps the box they had
+   * before — a pasted payer reference, labelled as the fallback it is, checked
+   * for shape before it is sent, and counted as unsaved work. With the customer
+   * read there is no box at all.
    */
   const [payer, setPayer] = useState<ChosenCustomer | null>(null);
+  const [payerReference, setPayerReference] = useState('');
+  useUnsavedGuard(!canReadCustomers && payerReference.trim().length > 0);
   // ONE transport key per opened form, kept across a refusal or a lost answer:
   // pressing again replays the stored answer instead of asking for a second
   // invoice (which the server would refuse as a conflict).
@@ -638,8 +650,14 @@ function CreateForm({
   };
 
   const submit = async () => {
+    const typed = payerReference.trim();
+    const payerPartnerId = canReadCustomers ? (payer?.id ?? null) : typed || null;
+    if (!canReadCustomers && typed.length > 0 && !UUID.test(typed)) {
+      setErrors({ payerPartnerId: 'invoices.create.payerReferenceFormat' });
+      setAttempt((n) => n + 1);
+      return;
+    }
     setErrors({});
-    const payerPartnerId = payer?.id ?? null;
     setBusy(true);
     const result = await createInvoice(
       {
@@ -682,25 +700,44 @@ function CreateForm({
       <p className="text-caption text-text-muted sm:col-span-2">
         {translate(messages, 'invoices.create.explain')}
       </p>
-      <div className="flex flex-col gap-1.5 sm:col-span-2">
-        <CustomerPicker
-          messages={messages}
-          locale={locale}
-          label={translate(messages, 'invoices.create.payer')}
-          value={payer}
-          onChange={(next) => {
-            setPayer(next);
-            setErrors({});
-            setOutcome(null);
-          }}
-          canSearch={canReadCustomers}
-          error={errorFor('payerPartnerId')}
-          testId="invoice-payer-picker"
-        />
-        <p className="text-caption text-text-muted">
-          {translate(messages, 'invoices.create.payerHelp')}
-        </p>
-      </div>
+      {canReadCustomers ? (
+        <div className="flex flex-col gap-1.5 sm:col-span-2">
+          <CustomerPicker
+            messages={messages}
+            locale={locale}
+            label={translate(messages, 'invoices.create.payer')}
+            value={payer}
+            onChange={(next) => {
+              setPayer(next);
+              setErrors({});
+              setOutcome(null);
+            }}
+            canSearch
+            error={errorFor('payerPartnerId')}
+            testId="invoice-payer-picker"
+          />
+          <p className="text-caption text-text-muted">
+            {translate(messages, 'invoices.create.payerHelp')}
+          </p>
+        </div>
+      ) : (
+        <div className="sm:col-span-2">
+          <TextField
+            label={translate(messages, 'invoices.create.payerReference')}
+            description={translate(messages, 'invoices.create.payerReferenceHelp')}
+            spellCheck={false}
+            autoComplete="off"
+            dir="ltr"
+            value={payerReference}
+            onChange={(event) => {
+              setPayerReference(event.target.value);
+              setErrors({});
+              setOutcome(null);
+            }}
+            error={errorFor('payerPartnerId')}
+          />
+        </div>
+      )}
       <div className="sm:col-span-2">
         <OutcomeNote messages={messages} outcome={outcome} />
       </div>
