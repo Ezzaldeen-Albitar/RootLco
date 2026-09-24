@@ -24,6 +24,7 @@ import { useState } from 'react';
 
 import { RadioGroupField, SelectField, TextAreaField, TextField } from '@/components/forms/Field';
 import { notifyActionResult } from '@/components/notifications/action-notifications';
+import { useUnsavedGuard } from '@/features/working-context/WorkingContextProvider';
 import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic } from '@/i18n/get-messages';
@@ -79,7 +80,6 @@ export function AdjustmentsScreen({
   currentUserId,
   canOperate,
   canApprove,
-  canReadBranches,
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
@@ -89,8 +89,13 @@ export function AdjustmentsScreen({
   readonly canOperate: boolean;
   /** `inv.adjustment.approve` — approving or rejecting someone else's request. */
   readonly canApprove: boolean;
-  /** `org.branch.read` — whether a branch list is requested for the picker. */
-  readonly canReadBranches: boolean;
+  /**
+   * `org.branch.read`. Accepted so the route did not have to change, and no
+   * longer read: the branch is the working context's own named selection, and
+   * that read is gated on `iam.user.read` rather than on an administration
+   * code.
+   */
+  readonly canReadBranches?: boolean;
 }) {
   const [target, setTarget] = useState<StockTarget | null>(null);
   return (
@@ -101,10 +106,8 @@ export function AdjustmentsScreen({
       </p>
       <BranchTargetForm
         messages={messages}
-        canReadBranches={canReadBranches}
         formLabelKey="inventory.adjustments.targetLabel"
         explainKey="inventory.target.explain"
-        submitKey="inventory.adjustments.chooseBranch"
         onChosen={setTarget}
       />
       {target !== null ? (
@@ -329,6 +332,8 @@ function DecisionForm({
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [outcome, setOutcome] = useState<ActionState | null>(null);
+  // Unsaved work, declared to the shell: a branch switch asks before it closes this.
+  useUnsavedGuard(reason.trim().length > 0);
 
   const decide = async (decision: AdjustmentDecision) => {
     const why = reason.trim();
@@ -432,6 +437,18 @@ function RequestForm({
   const [errors, setErrors] = useState<Readonly<Record<string, string>>>({});
   const [busy, setBusy] = useState(false);
   const [outcome, setOutcome] = useState<ActionState | null>(null);
+  /*
+   * Unsaved work, declared to the shell. The request is addressed to THIS
+   * branch and names one of its locations, so a switch asks first; a confirmed
+   * switch remounts the form empty under the new branch.
+   */
+  useUnsavedGuard(
+    item !== null ||
+      form.locationId !== '' ||
+      form.direction !== 'out' ||
+      form.quantity.trim().length > 0 ||
+      form.reason.trim().length > 0
+  );
 
   const errorFor = (name: string) =>
     errors[name] ? translateDynamic(messages, errors[name]) : outcomeField(messages, outcome, name);

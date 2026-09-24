@@ -18,11 +18,10 @@ import { pageMetadata } from '@/lib/page-metadata';
  * permission on every request), it only stops an operator being handed a form
  * whose every submission would come back denied.
  *
- * The session's resolved `companyIds`/`branchIds` are passed down as the
- * OPTIONS for the mandatory branch target — the operation demands the pair as
- * a resource selector, and the resolved scope is the only directory of
- * references this product has. Empty arrays mean unrestricted, and the screen
- * offers typed entry instead, the approval-limits precedent.
+ * The branch is not passed down. It is the working context's own named
+ * selection, read by the screen from the header: the session publishes bare
+ * references with no names on them, and an unrestricted grant publishes them as
+ * empty arrays, so neither half could ever be shown to an operator.
  */
 export default async function AppointmentsPage({
   params,

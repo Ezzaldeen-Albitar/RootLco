@@ -3,14 +3,24 @@ import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import en from '../src/i18n/messages/en.json';
 import ar from '../src/i18n/messages/ar.json';
-import { renderLtr, renderRtl } from './render';
+import {
+  BranchSwitch,
+  OTHER_BRANCH,
+  TEST_BRANCH,
+  TEST_COMPANY,
+  branchSnapshot,
+  inBranch,
+  renderLtr,
+  renderRtl,
+} from './render';
 
 /**
  * The warranty screens, rendered (P1-31, FE-008 warranty record, FE-009 history).
  *
- * The properties under test: both route pages decide before they read; the list asks
- * for nothing until a branch has been named, because the branch is the read's target
- * and not an assumption this screen may make; a refusal is drawn as a refusal and
+ * The properties under test: both route pages decide before they read; the list
+ * reads the branch the operator is working in, on arrival, and asks for nothing at
+ * all while no branch is chosen — the branch is the read's target and is the working
+ * context's named selection, never a reference typed here; a refusal is drawn as a refusal and
  * never as a branch that has issued nothing; the record shows the terms it was issued
  * under and keeps the two odometer figures apart; the issue control is ABSENT without
  * the code the generation declares and is withheld while the vehicle is still in the
@@ -256,12 +266,15 @@ function renderPanel(
 
 const submit = () => screen.getByRole('button', { name: EN['warranty.generate.submit'] as string });
 
-async function renderListPage(search: Record<string, string> = {}) {
+async function renderListPage(search: Record<string, string> = {}, snapshot = branchSnapshot()) {
   const tree = await WarrantyListPage({
     params: Promise.resolve({ locale: 'en' }),
     searchParams: Promise.resolve(search),
   });
-  return renderLtr(tree as React.ReactElement);
+  // The list is addressed by the working context now, so the page has to be
+  // rendered inside one. Rendering it outside is a real state — an operator
+  // whose branch list could not be read — and not the one most cases are about.
+  return renderLtr(inBranch(tree as React.ReactElement, { snapshot }));
 }
 
 async function renderRecordPage() {
@@ -269,19 +282,6 @@ async function renderRecordPage() {
     params: Promise.resolve({ locale: 'en', warrantyId: WARRANTY_ID }),
   });
   return renderLtr(tree as React.ReactElement);
-}
-
-/** Name a branch in the target form, which is what unblocks every read. */
-async function nameBranch(user: ReturnType<typeof userEvent.setup>) {
-  await user.type(
-    screen.getByRole('textbox', { name: labelled('warranty.common.companyIdField') }),
-    COMPANY_ID
-  );
-  await user.type(
-    screen.getByRole('textbox', { name: labelled('warranty.common.branchIdField') }),
-    BRANCH_ID
-  );
-  await user.click(screen.getByRole('button', { name: EN['warranty.target.choose'] as string }));
 }
 
 describe('both route pages decide before they read', () => {
@@ -322,17 +322,21 @@ describe('both route pages decide before they read', () => {
   });
 });
 
-describe('the list asks for nothing until a branch is named', () => {
-  it('reads no warranty before a branch has been chosen', async () => {
-    await renderListPage();
-    expect(screen.getByText(EN['warranty.list.chooseBranchFirst'] as string)).toBeInTheDocument();
+describe('the list reads the branch the operator is working in, on arrival', () => {
+  it('asks for nothing at all while no branch is chosen, and says which control answers', async () => {
+    const second = { ...TEST_BRANCH, id: '77777777-7777-4777-8777-777777777777', name: 'Second' };
+    await renderListPage({}, branchSnapshot([TEST_BRANCH, second]));
+    expect(screen.getByTestId('warranty-list-blocked')).toHaveTextContent(
+      EN['workingContext.chooseFirst'] as string
+    );
+    // Waited out rather than asserted synchronously, so a debounce cannot hide
+    // a request that was made after the assertion.
+    await new Promise((resolve) => setTimeout(resolve, 350));
     expect(listWarranties).not.toHaveBeenCalled();
   });
 
-  it('reads the chosen branch, and shows its warranties', async () => {
-    const user = userEvent.setup();
+  it('reads the working branch on first paint, and shows its warranties', async () => {
     await renderListPage();
-    await nameBranch(user);
     await waitFor(() => expect(listWarranties).toHaveBeenCalled());
     expect(listWarranties.mock.calls[0]?.[0]).toEqual({
       companyId: COMPANY_ID,
@@ -342,75 +346,125 @@ describe('the list asks for nothing until a branch is named', () => {
     expect(screen.getByText(EN['warranty.status.issued'] as string)).toBeInTheDocument();
   });
 
-  it('carries a vehicle named in the address into the read', async () => {
+  it('leaves the branch unnamed when the operator is reading all of them', async () => {
     const user = userEvent.setup();
+    const tree = await WarrantyListPage({
+      params: Promise.resolve({ locale: 'en' }),
+      searchParams: Promise.resolve({}),
+    });
+    renderLtr(
+      inBranch(
+        <>
+          <BranchSwitch to="all" label="use all" />
+          {tree as React.ReactElement}
+        </>,
+        { snapshot: branchSnapshot([TEST_BRANCH, OTHER_BRANCH]) }
+      )
+    );
+    await user.click(screen.getByRole('button', { name: 'use all' }));
+    // The company travels; the branch is deliberately omitted, which is what
+    // asks the platform for every branch this operator may read.
+    await waitFor(() =>
+      expect(listWarranties.mock.calls.at(-1)?.[0]).toEqual({
+        companyId: TEST_COMPANY.id,
+        branchId: null,
+      })
+    );
+  });
+
+  it('carries a vehicle named in the address into the read, and says so in words', async () => {
     await renderListPage({ vehicleId: VEHICLE_ID });
-    await nameBranch(user);
     await waitFor(() => expect(listWarranties).toHaveBeenCalled());
-    expect(listWarranties.mock.calls[0]?.[1]).toBe(VEHICLE_ID);
+    expect(listWarranties.mock.calls[0]?.[1]).toEqual({ vehicleId: VEHICLE_ID });
+    // The reference is never printed at the operator; the filter is named.
+    expect(screen.getByTestId('warranty-vehicle-filter')).toHaveTextContent(
+      EN['warranty.filter.oneVehicleOnly'] as string
+    );
   });
 
   it('drops a vehicle in the address that is not shaped like a reference', async () => {
-    const user = userEvent.setup();
     await renderListPage({ vehicleId: 'not-a-reference' });
-    await nameBranch(user);
     await waitFor(() => expect(listWarranties).toHaveBeenCalled());
-    expect(listWarranties.mock.calls[0]?.[1]).toBeNull();
+    expect(listWarranties.mock.calls[0]?.[1]).toEqual({});
+  });
+
+  it('lifts the vehicle filter when the operator asks for every vehicle', async () => {
+    const user = userEvent.setup();
+    await renderListPage({ vehicleId: VEHICLE_ID });
+    await waitFor(() => expect(listWarranties).toHaveBeenCalled());
+    await user.click(
+      screen.getByRole('button', { name: EN['warranty.filter.showAllVehicles'] as string })
+    );
+    await waitFor(() => expect(listWarranties.mock.calls.at(-1)?.[1]).toEqual({}));
+  });
+
+  it('sends a settled search term as typed', async () => {
+    const user = userEvent.setup();
+    await renderListPage();
+    await waitFor(() => expect(listWarranties).toHaveBeenCalled());
+    await user.type(screen.getByLabelText(EN['warranty.filter.searchLabel'] as string), 'ABC-12');
+    await user.keyboard('{Enter}');
+    await waitFor(() => expect(listWarranties.mock.calls.at(-1)?.[1]).toEqual({ q: 'ABC-12' }));
+  });
+
+  it('refuses a one-character term at the box and never sends it', async () => {
+    const user = userEvent.setup();
+    await renderListPage();
+    await waitFor(() => expect(listWarranties).toHaveBeenCalled());
+    await user.type(screen.getByLabelText(EN['warranty.filter.searchLabel'] as string), 'A');
+    expect(
+      await screen.findByText(EN['warranty.filter.searchTooShort'] as string)
+    ).toBeInTheDocument();
+    await new Promise((resolve) => setTimeout(resolve, 350));
+    for (const call of listWarranties.mock.calls) {
+      expect((call[1] as Record<string, unknown>)['q']).toBeUndefined();
+    }
   });
 
   it('draws a branch that has issued none as empty, not as refused', async () => {
     listWarranties.mockResolvedValue(page([]));
-    const user = userEvent.setup();
     await renderListPage();
-    await nameBranch(user);
-    expect(await screen.findByText(EN['warranty.list.noneTitle'] as string)).toBeInTheDocument();
+    expect(await screen.findByText(EN['state.noResults.title'] as string)).toBeInTheDocument();
     expect(screen.queryByText(EN['state.denied.title'] as string)).not.toBeInTheDocument();
   });
 
   it('draws a refusal as a refusal, not as an empty branch', async () => {
     listWarranties.mockResolvedValue(refusedList('denied'));
-    const user = userEvent.setup();
     await renderListPage();
-    await nameBranch(user);
     expect(await screen.findByText(EN['state.denied.title'] as string)).toBeInTheDocument();
-    expect(screen.queryByText(EN['warranty.list.noneTitle'] as string)).not.toBeInTheDocument();
+    expect(screen.queryByText(EN['state.noResults.title'] as string)).not.toBeInTheDocument();
+  });
+
+  it('tells an ended session to sign in again, with no useless retry', async () => {
+    /*
+     * `SearchPhase` collapses an ended session into `failed`, whose shared arm
+     * offers a Try again control that cannot work. The screen renders the
+     * expired case itself from the finer status, so the sentence and the absent
+     * button are both asserted here.
+     */
+    listWarranties.mockResolvedValue(refusedList('expired'));
+    await renderListPage();
+    expect(await screen.findByText(EN['state.expired.title'] as string)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: EN['state.retry'] as string })).toBeNull();
   });
 
   it('offers another page only when the SERVER says one exists', async () => {
     listWarranties.mockResolvedValue(page([row], true, 'next-cursor'));
     const user = userEvent.setup();
     await renderListPage();
-    await nameBranch(user);
-    const more = await screen.findByRole('button', {
-      name: EN['warranty.list.loadMore'] as string,
-    });
-    await user.click(more);
-    await waitFor(() => expect(listWarranties.mock.calls.length).toBeGreaterThan(1));
+    await screen.findByText(policy.name);
+    const next = screen.getByRole('button', { name: EN['table.nextPage'] as string });
+    expect(next).toBeEnabled();
+    await user.click(next);
     // The cursor goes back exactly as the server minted it.
-    expect(listWarranties.mock.calls[1]?.[2]).toBe('next-cursor');
+    await waitFor(() => expect(listWarranties.mock.calls.at(-1)?.[2]).toBe('next-cursor'));
   });
 
-  it('states a further page it could not resolve, and never the key composed from it', async () => {
-    /*
-     * CC-59 (c) on this screen. The failed page's outcome was held as a bare string and
-     * the sentence was built as `state.${status}.title`, which is a catalogue key for
-     * four of the five outcomes and NOT a key for `not-found` — the catalogue holds
-     * `state.notFound.title`, and a missing key renders AS the key. The screen now
-     * renders the outcome through the same shared states its FIRST page uses.
-     */
-    listWarranties
-      .mockResolvedValueOnce(page([row], true, 'next-cursor'))
-      .mockResolvedValueOnce(refusedList('not-found'));
-    const user = userEvent.setup();
+  it('closes the way forward when the server says the set has ended', async () => {
+    listWarranties.mockResolvedValue(page([row]));
     await renderListPage();
-    await nameBranch(user);
-    await user.click(
-      await screen.findByRole('button', { name: EN['warranty.list.loadMore'] as string })
-    );
-    expect(await screen.findByText(EN['state.notFound.title'] as string)).toBeInTheDocument();
-    expect(screen.queryByText('state.not-found.title')).toBeNull();
-    // The rows already read stay on screen: the operator keeps their place.
-    expect(screen.getByText(policy.name)).toBeInTheDocument();
+    await screen.findByText(policy.name);
+    expect(screen.getByRole('button', { name: EN['table.nextPage'] as string })).toBeDisabled();
   });
 });
 
@@ -1106,102 +1160,71 @@ describe('the words are the catalogue’s, in both reading directions', () => {
     expect(screen.getByText(VEHICLE_ID)).toHaveAttribute('dir', 'ltr');
   });
 
-  it('shows the list in Arabic, including the state vocabulary', async () => {
-    const user = userEvent.setup();
+  it('shows the list in Arabic, including the state vocabulary, and reads on arrival', async () => {
     renderRtl(
-      <WarrantyListScreen
-        locale="ar"
-        messages={ar as never}
-        initialVehicleId={null}
-        canReadBranches={false}
-      />
+      inBranch(<WarrantyListScreen locale="ar" messages={ar as never} initialVehicleId={null} />, {
+        locale: 'ar',
+      })
     );
-    await user.type(
-      screen.getByRole('textbox', {
-        name: new RegExp(`^${escape(AR['warranty.common.companyIdField'] as string)}`),
-      }),
-      COMPANY_ID
-    );
-    await user.type(
-      screen.getByRole('textbox', {
-        name: new RegExp(`^${escape(AR['warranty.common.branchIdField'] as string)}`),
-      }),
-      BRANCH_ID
-    );
-    await user.click(screen.getByRole('button', { name: AR['warranty.target.choose'] as string }));
     expect(await screen.findByText(AR['warranty.status.issued'] as string)).toBeInTheDocument();
     expect(screen.getByText(AR['warranty.list.columnPolicy'] as string)).toBeInTheDocument();
+    // The branch is named, in Arabic, by the context rather than typed here.
+    expect(screen.getByTestId('warranty-branch-target')).toHaveTextContent(TEST_BRANCH.name);
   });
 });
 
-describe('the branch directory is asked for only when the code is held', () => {
-  it('asks for no directory without the organisation read code', async () => {
+describe('the branch is the header\u2019s choice, and nothing here asks for one', () => {
+  it('asks for no branch directory at all', async () => {
+    /*
+     * The screen used to read `org.branch-list` to populate a target picker, and
+     * to fall back to two boxes asking an operator to paste a company reference
+     * and a branch reference when that read was refused \u2014 which was exactly the
+     * operator whose grant is not narrowed. Both are gone: the working context
+     * publishes the named branches this caller is authorized for.
+     */
     renderLtr(
-      <WarrantyListScreen
-        locale="en"
-        messages={en as never}
-        initialVehicleId={null}
-        canReadBranches={false}
-      />
+      inBranch(<WarrantyListScreen locale="en" messages={en as never} initialVehicleId={null} />)
     );
-    await waitFor(() => expect(listBranches).not.toHaveBeenCalled());
-    expect(
-      screen.getByRole('textbox', { name: labelled('warranty.common.branchIdField') })
-    ).toBeInTheDocument();
+    await waitFor(() => expect(listWarranties).toHaveBeenCalled());
+    expect(listBranches).not.toHaveBeenCalled();
   });
 
-  it('falls back to the typed pair when the directory is refused', async () => {
+  it('offers nothing to type, in either half of the pair', async () => {
     renderLtr(
-      <WarrantyListScreen
-        locale="en"
-        messages={en as never}
-        initialVehicleId={null}
-        canReadBranches={true}
-      />
+      inBranch(<WarrantyListScreen locale="en" messages={en as never} initialVehicleId={null} />)
     );
-    await waitFor(() => expect(listBranches).toHaveBeenCalled());
-    expect(
-      await screen.findByText(EN['warranty.common.branchesRefused'] as string)
-    ).toBeInTheDocument();
+    await waitFor(() => expect(listWarranties).toHaveBeenCalled());
+    // One box on this screen, and it is the search box.
+    const boxes = screen.getAllByRole('searchbox');
+    expect(boxes).toHaveLength(1);
+    expect(screen.queryAllByRole('textbox')).toEqual([]);
   });
 
-  it('offers a picker when the directory answers', async () => {
-    listBranches.mockResolvedValue({
-      status: 'ok',
-      data: {
-        items: [
-          {
-            id: BRANCH_ID,
-            companyId: COMPANY_ID,
-            branchCode: 'B-01',
-            name: 'Main workshop',
-            city: null,
-            countryCode: null,
-            timezoneName: 'UTC',
-            status: 'active',
-          },
-        ],
-      },
-      correlationId: 'corr-1',
-    });
+  it('re-targets the list when the branch changes in the header', async () => {
     const user = userEvent.setup();
     renderLtr(
-      <WarrantyListScreen
-        locale="en"
-        messages={en as never}
-        initialVehicleId={null}
-        canReadBranches={true}
-      />
+      inBranch(
+        <>
+          <BranchSwitch to={TEST_BRANCH.id} label="use main" />
+          <BranchSwitch to={OTHER_BRANCH.id} label="use second" />
+          <WarrantyListScreen locale="en" messages={en as never} initialVehicleId={null} />
+        </>,
+        { snapshot: branchSnapshot([TEST_BRANCH, OTHER_BRANCH]) }
+      )
     );
-    const picker = await screen.findByRole('combobox', {
-      name: labelled('warranty.common.branchField'),
-    });
-    await user.selectOptions(picker, BRANCH_ID);
-    await user.click(screen.getByRole('button', { name: EN['warranty.target.choose'] as string }));
-    await waitFor(() => expect(listWarranties).toHaveBeenCalled());
-    expect(listWarranties.mock.calls[0]?.[0]).toEqual({
-      companyId: COMPANY_ID,
-      branchId: BRANCH_ID,
-    });
+    await user.click(screen.getByRole('button', { name: 'use main' }));
+    await waitFor(() =>
+      expect(listWarranties.mock.calls.at(-1)?.[0]).toEqual({
+        companyId: TEST_COMPANY.id,
+        branchId: TEST_BRANCH.id,
+      })
+    );
+    await user.click(screen.getByRole('button', { name: 'use second' }));
+    await waitFor(() =>
+      expect(listWarranties.mock.calls.at(-1)?.[0]).toEqual({
+        companyId: TEST_COMPANY.id,
+        branchId: OTHER_BRANCH.id,
+      })
+    );
   });
 });

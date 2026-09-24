@@ -1,9 +1,19 @@
 import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import en from '../src/i18n/messages/en.json';
 import ar from '../src/i18n/messages/ar.json';
-import { renderLtr, renderRtl } from './render';
+import {
+  BranchSwitch,
+  OTHER_BRANCH,
+  TEST_BRANCH,
+  branchSnapshot,
+  inBranch,
+  renderLtr,
+  renderRtl,
+  RETIRED_BOX,
+} from './render';
+import { forgetRememberedBranch } from './support/branch-switch';
 
 /**
  * Price lists and the price lookup, rendered (P1-30, `W2`, FE-002 and FE-006).
@@ -116,6 +126,22 @@ function renderScreen(over: Record<string, unknown> = {}) {
       canReadServices={false}
       {...over}
     />
+  );
+}
+
+/** The screen inside a working context holding one branch — the `BRANCH` pair. */
+function renderInBranch(over: Record<string, unknown> = {}) {
+  return renderLtr(
+    inBranch(
+      <PricingScreen
+        locale="en"
+        messages={en}
+        canManage={false}
+        canReadBranches={false}
+        canReadServices={false}
+        {...over}
+      />
+    )
   );
 }
 
@@ -313,21 +339,19 @@ describe('the lookup renders the server’s figures, never its own', () => {
     expect(within(result).getByText(/JOD/)).toBeVisible();
   });
 
-  it('without either list, takes identifiers and never asks for the lists', async () => {
+  it('without either list, resolves for the working branch and never asks the directory', async () => {
     const user = userEvent.setup();
     resolvePrice.mockResolvedValue(okRead(resolved));
-    renderScreen({ canReadBranches: false, canReadServices: false });
+    renderInBranch({ canReadBranches: false, canReadServices: false });
     const form = lookupForm();
     expect(listBranches).not.toHaveBeenCalled();
+    // The branch is the one the header holds, already chosen, and named.
+    expect(within(form).getByLabelText(labelled('pricing.lookup.branch'))).toHaveValue(BRANCH);
+    expect(within(form).queryByLabelText(RETIRED_BOX.en.company)).toBeNull();
     await user.type(
       within(form).getByLabelText(labelled('pricing.picker.serviceIdField')),
       SERVICE_ID
     );
-    await user.type(
-      within(form).getByLabelText(labelled('pricing.common.companyIdField')),
-      COMPANY
-    );
-    await user.type(within(form).getByLabelText(labelled('pricing.common.branchIdField')), BRANCH);
     await user.type(within(form).getByLabelText(labelled('pricing.lookup.customerClass')), 'fleet');
     await user.click(
       within(form).getByRole('button', { name: EN['pricing.lookup.submit'] as string })
@@ -344,7 +368,7 @@ describe('the lookup renders the server’s figures, never its own', () => {
 
   it('refuses a malformed identifier before any request', async () => {
     const user = userEvent.setup();
-    renderScreen();
+    renderInBranch();
     const form = lookupForm();
     await user.type(
       within(form).getByLabelText(labelled('pricing.picker.serviceIdField')),
@@ -362,17 +386,12 @@ describe('the lookup renders the server’s figures, never its own', () => {
   it('renders a lookup that resolved nothing as a refusal, with the reference, and no zero', async () => {
     const user = userEvent.setup();
     resolvePrice.mockResolvedValue({ status: 'error', correlationId: 'corr-7' });
-    renderScreen();
+    renderInBranch();
     const form = lookupForm();
     await user.type(
       within(form).getByLabelText(labelled('pricing.picker.serviceIdField')),
       SERVICE_ID
     );
-    await user.type(
-      within(form).getByLabelText(labelled('pricing.common.companyIdField')),
-      COMPANY
-    );
-    await user.type(within(form).getByLabelText(labelled('pricing.common.branchIdField')), BRANCH);
     await user.click(
       within(form).getByRole('button', { name: EN['pricing.lookup.submit'] as string })
     );
@@ -384,21 +403,128 @@ describe('the lookup renders the server’s figures, never its own', () => {
   it('renders a refused lookup as refused', async () => {
     const user = userEvent.setup();
     resolvePrice.mockResolvedValue(deniedRead);
-    renderScreen();
+    renderInBranch();
     const form = lookupForm();
     await user.type(
       within(form).getByLabelText(labelled('pricing.picker.serviceIdField')),
       SERVICE_ID
     );
-    await user.type(
-      within(form).getByLabelText(labelled('pricing.common.companyIdField')),
-      COMPANY
-    );
-    await user.type(within(form).getByLabelText(labelled('pricing.common.branchIdField')), BRANCH);
     await user.click(
       within(form).getByRole('button', { name: EN['pricing.lookup.submit'] as string })
     );
     expect(await screen.findByText(EN['pricing.lookup.refused'] as string)).toBeVisible();
+  });
+});
+
+describe('the lookup follows the header, not just its first value', () => {
+  /*
+   * The lookup's branch used to be copied from the working context once, on
+   * mount. After a switch the header named one workshop and the form priced for
+   * another. It now follows every change, drops the answer about the previous
+   * branch, and a lookup still in flight cannot land under the new heading.
+   */
+  afterEach(forgetRememberedBranch);
+
+  const priced = okRead({
+    asOf: '2026-09-05',
+    priceRuleId: 'rule-1',
+    unitPrice: '77.5000',
+    currency: 'JOD',
+    taxClassId: 'tc-1',
+    taxRate: '0.160000',
+    taxClassCode: 'standard',
+  });
+
+  function renderTwo() {
+    renderLtr(
+      inBranch(
+        <>
+          <BranchSwitch to={TEST_BRANCH.id} label="first" />
+          <BranchSwitch to={OTHER_BRANCH.id} label="second" />
+          <BranchSwitch to="all" label="everywhere" />
+          <PricingScreen
+            locale="en"
+            messages={en}
+            canManage={false}
+            canReadBranches={false}
+            canReadServices={false}
+          />
+        </>,
+        { snapshot: branchSnapshot([TEST_BRANCH, OTHER_BRANCH]) }
+      )
+    );
+  }
+  const branchControl = () =>
+    within(lookupForm()).getByLabelText(labelled('pricing.lookup.branch'));
+  async function lookUp(user: ReturnType<typeof userEvent.setup>) {
+    // The service is not the branch's, so it survives a switch; it is replaced
+    // rather than appended to.
+    const service = within(lookupForm()).getByLabelText(labelled('pricing.picker.serviceIdField'));
+    await user.clear(service);
+    await user.type(service, SERVICE_ID);
+    await user.click(
+      within(lookupForm()).getByRole('button', { name: EN['pricing.lookup.submit'] as string })
+    );
+  }
+
+  it('resets the branch to the new working branch and clears the previous answer', async () => {
+    const user = userEvent.setup();
+    resolvePrice.mockResolvedValue(priced);
+    renderTwo();
+    await user.click(screen.getByRole('button', { name: 'first' }));
+    expect(branchControl()).toHaveValue(TEST_BRANCH.id);
+    await lookUp(user);
+    expect(
+      await screen.findByRole('region', { name: EN['pricing.lookup.resultHeading'] as string })
+    ).toBeVisible();
+
+    await user.click(screen.getByRole('button', { name: 'second' }));
+    await waitFor(() => expect(branchControl()).toHaveValue(OTHER_BRANCH.id));
+    expect(
+      screen.queryByRole('region', { name: EN['pricing.lookup.resultHeading'] as string })
+    ).toBeNull();
+    await lookUp(user);
+    await waitFor(() => expect(resolvePrice).toHaveBeenCalledTimes(2));
+    expect(resolvePrice.mock.calls[1]?.[0]).toEqual({
+      serviceId: SERVICE_ID,
+      companyId: OTHER_BRANCH.companyId,
+      branchId: OTHER_BRANCH.id,
+    });
+  });
+
+  it('under "All my branches" the lookup names no branch until one is chosen', async () => {
+    const user = userEvent.setup();
+    renderTwo();
+    await user.click(screen.getByRole('button', { name: 'first' }));
+    expect(branchControl()).toHaveValue(TEST_BRANCH.id);
+    await user.click(screen.getByRole('button', { name: 'everywhere' }));
+    await waitFor(() => expect(branchControl()).toHaveValue(''));
+  });
+
+  it('a lookup still in flight when the branch changes is dropped', async () => {
+    const user = userEvent.setup();
+    let answer: (value: unknown) => void = () => undefined;
+    resolvePrice.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          answer = resolve;
+        })
+    );
+    renderTwo();
+    await user.click(screen.getByRole('button', { name: 'first' }));
+    await lookUp(user);
+    await waitFor(() => expect(resolvePrice).toHaveBeenCalledTimes(1));
+    await user.click(screen.getByRole('button', { name: 'second' }));
+    await waitFor(() => expect(branchControl()).toHaveValue(OTHER_BRANCH.id));
+    answer(priced);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(
+      screen.queryByRole('region', { name: EN['pricing.lookup.resultHeading'] as string })
+    ).toBeNull();
+    // Not left looking busy for a reply that no longer counts.
+    expect(
+      within(lookupForm()).getByRole('button', { name: EN['pricing.lookup.submit'] as string })
+    ).toBeEnabled();
   });
 });
 
@@ -481,8 +607,8 @@ describe('CC-15 — the pricing branch picker says which state it is in', () => 
     expect(within(form).getByRole('status')).toHaveTextContent(
       EN['pricing.common.branchesLoading'] as string
     );
-    expect(within(form).queryByLabelText(labelled('pricing.common.companyIdField'))).toBeNull();
-    expect(within(form).queryByLabelText(labelled('pricing.common.branchIdField'))).toBeNull();
+    expect(within(form).queryByLabelText(RETIRED_BOX.en.company)).toBeNull();
+    expect(within(form).queryByLabelText(RETIRED_BOX.en.branch)).toBeNull();
     // The lookup REQUIRES the pair, so submitting while there is no control to
     // put an error on would fail silently.
     expect(submitButton()).toBeDisabled();
@@ -494,16 +620,17 @@ describe('CC-15 — the pricing branch picker says which state it is in', () => 
     expect(submitButton()).toBeEnabled();
   });
 
-  it('with no branch listed, says so and keeps the identifiers', async () => {
+  it('with no branch listed, says so, offers no box to type into, and holds the submit', async () => {
     listBranches.mockResolvedValue(okRead({ items: [] }));
     renderScreen(permitted);
     const form = lookupForm();
     expect(
       await within(form).findByText(EN['pricing.common.branchesNone'] as string)
     ).toBeVisible();
-    expect(within(form).getByLabelText(labelled('pricing.common.companyIdField'))).toBeVisible();
-    expect(within(form).getByLabelText(labelled('pricing.common.branchIdField'))).toBeVisible();
-    expect(submitButton()).toBeEnabled();
+    expect(within(form).queryByLabelText(RETIRED_BOX.en.company)).toBeNull();
+    expect(within(form).queryByLabelText(RETIRED_BOX.en.branch)).toBeNull();
+    // The lookup needs a branch, and there is no control to put that complaint on.
+    expect(submitButton()).toBeDisabled();
   });
 
   it('a failure that could clear offers a retry; a refusal does not', async () => {
@@ -542,14 +669,22 @@ describe('CC-15 — the pricing branch picker says which state it is in', () => 
     expect(within(form).queryByRole('button', { name: EN['state.retry'] as string })).toBeNull();
   });
 
-  it('without org.branch.read, the identifiers are the design and no list is requested', async () => {
+  it('without org.branch.read, the working context still lists its branches, and no directory read is made', async () => {
+    renderInBranch({ canReadBranches: false, canReadServices: false });
+    const form = lookupForm();
+    expect(listBranches).not.toHaveBeenCalled();
+    expect(within(form).getByLabelText(labelled('pricing.lookup.branch'))).toHaveValue(BRANCH);
+    expect(within(form).queryByLabelText(RETIRED_BOX.en.company)).toBeNull();
+    expect(submitButton()).toBeEnabled();
+  });
+
+  it('with neither the directory nor a working context, says no branch is available and offers no box', () => {
     renderScreen({ canReadBranches: false, canReadServices: false });
     const form = lookupForm();
     expect(listBranches).not.toHaveBeenCalled();
-    expect(within(form).getByLabelText(labelled('pricing.common.companyIdField'))).toBeVisible();
-    expect(within(form).getByText(EN['pricing.common.identifierHelp'] as string)).toBeVisible();
-    expect(within(form).queryByRole('status')).toBeNull();
-    expect(submitButton()).toBeEnabled();
+    expect(within(form).getByText(EN['pricing.common.branchesNotOffered'] as string)).toBeVisible();
+    expect(within(form).queryByLabelText(RETIRED_BOX.en.company)).toBeNull();
+    expect(submitButton()).toBeDisabled();
   });
 
   it('in Arabic, a read in flight is a wait and not two identifier boxes', async () => {
@@ -569,11 +704,7 @@ describe('CC-15 — the pricing branch picker says which state it is in', () => 
     expect(within(form).getByRole('status')).toHaveTextContent(
       AR['pricing.common.branchesLoading'] as string
     );
-    expect(
-      within(form).queryByLabelText(
-        new RegExp(`^${escape(AR['pricing.common.companyIdField'] as string)}`)
-      )
-    ).toBeNull();
+    expect(within(form).queryByLabelText(RETIRED_BOX.ar.company)).toBeNull();
     release(listed);
     expect(
       await within(
@@ -582,7 +713,7 @@ describe('CC-15 — the pricing branch picker says which state it is in', () => 
     ).toBeVisible();
   });
 
-  it('in Arabic, a zero-row list says so and keeps the identifiers', async () => {
+  it('in Arabic, a zero-row list says so and offers no identifier box', async () => {
     listBranches.mockResolvedValue(okRead({ items: [] }));
     renderRtl(
       <PricingScreen
@@ -597,11 +728,7 @@ describe('CC-15 — the pricing branch picker says which state it is in', () => 
     expect(
       await within(form).findByText(AR['pricing.common.branchesNone'] as string)
     ).toBeVisible();
-    expect(
-      within(form).getByLabelText(
-        new RegExp(`^${escape(AR['pricing.common.branchIdField'] as string)}`)
-      )
-    ).toBeVisible();
+    expect(within(form).queryByLabelText(RETIRED_BOX.ar.branch)).toBeNull();
   });
 });
 

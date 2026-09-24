@@ -79,7 +79,6 @@ export default async function WarrantyPolicyListPage({
           locale={locale}
           messages={messages}
           canManagePolicies={holds(session.permissions, WARRANTY_PERMISSIONS.policyManage)}
-          canReadBranches={holds(session.permissions, WARRANTY_PERMISSIONS.branchRead)}
         />
       </PageBody>
     </>

@@ -1,17 +1,45 @@
 import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import en from '../src/i18n/messages/en.json';
 import ar from '../src/i18n/messages/ar.json';
 import { formatMoney } from '../src/lib/money';
-import { renderLtr, renderRtl } from './render';
+import type { ReactElement } from 'react';
+import {
+  BranchSwitch,
+  OTHER_BRANCH,
+  TEST_BRANCH,
+  branchSnapshot,
+  inBranch,
+  renderLtr,
+  renderRtl as renderInRtl,
+  RETIRED_BOX,
+  WorkingBranchProbe,
+} from './render';
+import {
+  discardAndSwitch,
+  forgetRememberedBranch,
+  heldBranch,
+  stayOnBranch,
+  switchExpectingQuestion,
+  switchWithoutQuestion,
+} from './support/branch-switch';
+
+/*
+ * The branch the receipts belong to is the working context's own named
+ * selection — chosen once in the header, never typed on this screen (Owner
+ * directive, `P1-32-PRE-OD-UX`). So a screen render goes inside a provider,
+ * holding one branch unless a case says otherwise.
+ */
+const renderRtl = (ui: ReactElement) => renderInRtl(inBranch(ui, { locale: 'ar' }));
 
 /**
  * Payments and receipts, rendered (P1-30, `W7`, FE-016, FE-017, FE-018,
  * FE-021).
  *
- * The properties under test: nothing is read until a branch is named, and both
- * halves of the target travel with every read; the record form is offered only
+ * The properties under test: nothing is read until the working context names
+ * one branch, both halves of that branch travel with every read, and no box
+ * asks for a company or branch reference; the record form is offered only
  * with the recording code AND a method this tenant owns, and an organisation
  * with only platform methods is TOLD so rather than shown a choice the server
  * would refuse; one transport key per opened form, and a replay is stated as
@@ -192,8 +220,8 @@ beforeEach(() => {
   });
 });
 
-function renderScreen(over: Record<string, unknown> = {}) {
-  return renderLtr(
+function screenFor(over: Record<string, unknown> = {}) {
+  return (
     <PaymentsScreen
       locale="en"
       messages={en}
@@ -201,26 +229,28 @@ function renderScreen(over: Record<string, unknown> = {}) {
       initialInvoiceId={null}
       canRecord={true}
       canAllocate={true}
-      canReadBranches={false}
       {...over}
     />
   );
 }
 
-/** Names the branch in the target panel, which is what opens every other panel. */
-async function chooseBranch(user: ReturnType<typeof userEvent.setup>) {
-  const form = screen.getByRole('form', { name: EN['payments.target.formLabel'] as string });
-  await user.type(
-    within(form).getByLabelText(labelled('payments.common.companyIdField')),
-    COMPANY_ID
-  );
-  await user.type(
-    within(form).getByLabelText(labelled('payments.common.branchIdField')),
-    BRANCH_ID
-  );
-  await user.click(
-    within(form).getByRole('button', { name: EN['payments.target.choose'] as string })
-  );
+function renderScreen(
+  over: Record<string, unknown> = {},
+  snapshot: ReturnType<typeof branchSnapshot> = branchSnapshot()
+) {
+  return renderLtr(inBranch(screenFor(over), { snapshot }));
+}
+
+/**
+ * The working branch, as the screen states it.
+ *
+ * It used to be CHOSEN here — two references typed and a submit pressed —
+ * which is what opened every other panel. The header holds it now, so this
+ * only confirms the screen is addressed to it; kept as a step so the
+ * cases that named a branch read the same.
+ */
+async function chooseBranch() {
+  expect(await screen.findByTestId('payments-branch-target')).toHaveTextContent(TEST_BRANCH.name);
 }
 
 async function renderPage(params: Record<string, string>, search: Record<string, string> = {}) {
@@ -231,19 +261,18 @@ async function renderPage(params: Record<string, string>, search: Record<string,
   return renderLtr(tree as React.ReactElement);
 }
 
-describe('nothing is read until a branch is named', () => {
-  it('asks for the branch first and reads nothing before it is given', () => {
-    renderScreen();
+describe('nothing is read until the working context names one branch', () => {
+  it('with several branches and none chosen, asks in the header and reads nothing', () => {
+    renderScreen({}, branchSnapshot([TEST_BRANCH, OTHER_BRANCH]));
     expect(screen.getByText(EN['payments.target.explain'] as string)).toBeVisible();
+    expect(screen.getByText(EN['workingContext.chooseFirst'] as string)).toBeVisible();
     expect(listReceipts).not.toHaveBeenCalled();
     expect(readReceipt).not.toHaveBeenCalled();
     expect(listPaymentMethods).not.toHaveBeenCalled();
   });
 
-  it('sends BOTH halves of the target to the list once a branch is named', async () => {
-    const user = userEvent.setup();
+  it('sends BOTH halves of the working branch to the list, without being asked', async () => {
     renderScreen();
-    await chooseBranch(user);
     await waitFor(() => expect(listReceipts).toHaveBeenCalled());
     expect(listReceipts.mock.calls[0]?.[0]).toEqual({
       companyId: COMPANY_ID,
@@ -251,80 +280,142 @@ describe('nothing is read until a branch is named', () => {
     });
   });
 
-  it('refuses a malformed identifier without reading anything', async () => {
-    const user = userEvent.setup();
+  it('names the branch and offers no box to type a company or branch reference into', async () => {
     renderScreen();
-    const form = screen.getByRole('form', { name: EN['payments.target.formLabel'] as string });
-    await user.type(
-      within(form).getByLabelText(labelled('payments.common.companyIdField')),
-      'not-a-uuid'
-    );
-    await user.type(
-      within(form).getByLabelText(labelled('payments.common.branchIdField')),
-      BRANCH_ID
-    );
-    await user.click(
-      within(form).getByRole('button', { name: EN['payments.target.choose'] as string })
-    );
-    expect(await screen.findAllByText(EN['payments.common.idFormat'] as string)).not.toHaveLength(
-      0
-    );
+    await chooseBranch();
+    expect(screen.queryByLabelText(RETIRED_BOX.en.company)).toBeNull();
+    expect(screen.queryByLabelText(RETIRED_BOX.en.branch)).toBeNull();
+    // The directory read is not how the branch is found any more.
+    expect(listBranches).not.toHaveBeenCalled();
+  });
+
+  it('with no branch authorized, says so and reads nothing', () => {
+    renderScreen({}, branchSnapshot([], 'none'));
+    expect(screen.getByText(EN['workingContext.noBranch'] as string)).toBeVisible();
     expect(listReceipts).not.toHaveBeenCalled();
   });
 
-  it('offers the branches it can read, and choosing one fills its company', async () => {
-    listBranches.mockResolvedValue(
-      okRead({
-        items: [{ id: BRANCH_ID, companyId: COMPANY_ID, branchCode: 'B-01', name: 'Main branch' }],
+  it('a different branch re-reads under its own name and closes the previous branch’s receipt', async () => {
+    const user = userEvent.setup();
+    renderLtr(
+      inBranch(
+        <>
+          <BranchSwitch to={TEST_BRANCH.id} label="first" />
+          <BranchSwitch to={OTHER_BRANCH.id} label="second" />
+          {screenFor()}
+        </>,
+        { snapshot: branchSnapshot([TEST_BRANCH, OTHER_BRANCH]) }
+      )
+    );
+    await user.click(screen.getByRole('button', { name: 'first' }));
+    const list = await screen.findByRole('region', {
+      name: EN['payments.list.heading'] as string,
+    });
+    await user.click(await within(list).findByRole('button', { name: 'RCT-000007' }));
+    await waitFor(() => expect(readReceipt).toHaveBeenCalledWith(RECEIPT_ID));
+    await user.click(screen.getByRole('button', { name: 'second' }));
+    await waitFor(() =>
+      expect(listReceipts.mock.lastCall?.[0]).toEqual({
+        companyId: OTHER_BRANCH.companyId,
+        branchId: OTHER_BRANCH.id,
       })
     );
+    expect(
+      screen.queryByRole('region', { name: EN['payments.receipt.heading'] as string })
+    ).toBeNull();
+  });
+});
+
+describe('a half-filled form and a branch switch', () => {
+  afterEach(forgetRememberedBranch);
+  /*
+   * The record panel is keyed on the branch, so a switch used to drop a
+   * half-filled payment without a word — and the next one typed would go to a
+   * different branch's cash. The form now declares its unsaved work, and the
+   * switch asks.
+   */
+  async function openTwoBranches(user: ReturnType<typeof userEvent.setup>) {
+    renderLtr(
+      inBranch(
+        <>
+          <BranchSwitch to={TEST_BRANCH.id} label="first" />
+          <BranchSwitch to={OTHER_BRANCH.id} label="second" />
+          <WorkingBranchProbe />
+          {screenFor()}
+        </>,
+        { snapshot: branchSnapshot([TEST_BRANCH, OTHER_BRANCH]) }
+      )
+    );
+    await user.click(screen.getByRole('button', { name: 'first' }));
+    return screen.findByRole('form', { name: EN['payments.record.formLabel'] as string });
+  }
+
+  const amountBox = () =>
+    within(
+      screen.getByRole('form', { name: EN['payments.record.formLabel'] as string })
+    ).getByLabelText(labelled('payments.record.amount')) as HTMLInputElement;
+
+  it('asks before switching; staying keeps the typed amount and the branch', async () => {
     const user = userEvent.setup();
-    renderScreen({ canReadBranches: true });
-    const form = await screen.findByRole('form', {
-      name: EN['payments.target.formLabel'] as string,
-    });
-    await waitFor(() =>
-      expect(within(form).getByRole('option', { name: /Main branch/ })).toBeDefined()
-    );
-    await user.selectOptions(
-      within(form).getByLabelText(labelled('payments.common.branchField')),
-      BRANCH_ID
-    );
-    await user.click(
-      within(form).getByRole('button', { name: EN['payments.target.choose'] as string })
-    );
-    await waitFor(() => expect(listReceipts).toHaveBeenCalled());
-    // The company is not typed: it comes from the branch that was chosen.
-    expect(listReceipts.mock.calls[0]?.[0]).toEqual({
-      companyId: COMPANY_ID,
-      branchId: BRANCH_ID,
+    const form = await openTwoBranches(user);
+    await user.type(within(form).getByLabelText(labelled('payments.record.amount')), '25.0000');
+    const dialog = await switchExpectingQuestion(user, 'second');
+    await stayOnBranch(user, dialog);
+    expect(heldBranch()).toBe(TEST_BRANCH.id);
+    expect(amountBox().value).toBe('25.0000');
+    expect(listReceipts.mock.lastCall?.[0]).toEqual({
+      companyId: TEST_BRANCH.companyId,
+      branchId: TEST_BRANCH.id,
     });
   });
 
-  it('falls back to identifier fields when the readable branch list is empty', async () => {
-    listBranches.mockResolvedValue(okRead({ items: [] }));
+  it('discarding switches the branch and opens the form empty under it', async () => {
     const user = userEvent.setup();
-    renderScreen({ canReadBranches: true });
-    // An empty picker would be a control with nothing to choose and no way on.
+    const form = await openTwoBranches(user);
+    await user.type(within(form).getByLabelText(labelled('payments.record.amount')), '25.0000');
+    await discardAndSwitch(user, await switchExpectingQuestion(user, 'second'));
+    await waitFor(() => expect(heldBranch()).toBe(OTHER_BRANCH.id));
+    await screen.findByRole('form', { name: EN['payments.record.formLabel'] as string });
+    expect(amountBox().value).toBe('');
     await waitFor(() =>
-      expect(screen.getByLabelText(labelled('payments.common.branchIdField'))).toBeDefined()
+      expect(listReceipts.mock.lastCall?.[0]).toEqual({
+        companyId: OTHER_BRANCH.companyId,
+        branchId: OTHER_BRANCH.id,
+      })
     );
-    await chooseBranch(user);
-    await waitFor(() => expect(listReceipts).toHaveBeenCalled());
   });
 
-  it('says the branch list was refused instead of pretending there are none', async () => {
-    listBranches.mockResolvedValue(refusedRead('denied'));
-    renderScreen({ canReadBranches: true });
-    expect(await screen.findByText(EN['payments.common.branchesRefused'] as string)).toBeVisible();
+  it('an untouched form switches without asking', async () => {
+    const user = userEvent.setup();
+    await openTwoBranches(user);
+    await switchWithoutQuestion(user, 'second');
+    await waitFor(() => expect(heldBranch()).toBe(OTHER_BRANCH.id));
+  });
+
+  it('a half-typed allocation asks too, because the switch closes the receipt', async () => {
+    const user = userEvent.setup();
+    await openTwoBranches(user);
+    const list = await screen.findByRole('region', { name: EN['payments.list.heading'] as string });
+    await user.click(await within(list).findByRole('button', { name: 'RCT-000007' }));
+    const allocate = await screen.findByRole('form', {
+      name: EN['payments.allocate.formLabel'] as string,
+    });
+    await user.type(
+      within(allocate).getByLabelText(labelled('payments.allocate.invoice')),
+      INVOICE_ID
+    );
+    await stayOnBranch(user, await switchExpectingQuestion(user, 'second'));
+    expect(heldBranch()).toBe(TEST_BRANCH.id);
+    expect(
+      within(allocate).getByLabelText(labelled('payments.allocate.invoice')) as HTMLInputElement
+    ).toHaveValue(INVOICE_ID);
   });
 });
 
 describe('the receipts of the branch', () => {
   it('renders the server’s strings and computes no figure of its own', async () => {
-    const user = userEvent.setup();
     renderScreen();
-    await chooseBranch(user);
+    await chooseBranch();
     const region = await screen.findByRole('region', {
       name: EN['payments.list.heading'] as string,
     });
@@ -342,16 +433,15 @@ describe('the receipts of the branch', () => {
   });
 
   it('states that the list takes no date range', async () => {
-    const user = userEvent.setup();
     renderScreen();
-    await chooseBranch(user);
+    await chooseBranch();
     expect(await screen.findByText(EN['payments.list.noDateFilter'] as string)).toBeVisible();
   });
 
   it('passes the filters it was given, and only those', async () => {
     const user = userEvent.setup();
     renderScreen();
-    await chooseBranch(user);
+    await chooseBranch();
     await waitFor(() => expect(listReceipts).toHaveBeenCalled());
     const filters = screen.getByRole('form', {
       name: EN['payments.list.filtersLabel'] as string,
@@ -375,7 +465,7 @@ describe('the receipts of the branch', () => {
   it('keeps the operator’s filters when a write re-reads the list', async () => {
     const user = userEvent.setup();
     renderScreen();
-    await chooseBranch(user);
+    await chooseBranch();
     await waitFor(() => expect(listReceipts).toHaveBeenCalled());
     const filters = screen.getByRole('form', {
       name: EN['payments.list.filtersLabel'] as string,
@@ -417,9 +507,8 @@ describe('the receipts of the branch', () => {
 
   it('says a withdrawn method is withdrawn rather than leaving a blank', async () => {
     listReceipts.mockResolvedValue(okPage([{ ...receipt, method: null }]));
-    const user = userEvent.setup();
     renderScreen();
-    await chooseBranch(user);
+    await chooseBranch();
     expect(await screen.findByText(EN['payments.list.methodGone'] as string)).toBeVisible();
   });
 
@@ -431,35 +520,31 @@ describe('the receipts of the branch', () => {
       hasMore: false,
       correlationId: 'corr-403',
     });
-    const user = userEvent.setup();
     renderScreen();
-    await chooseBranch(user);
+    await chooseBranch();
     expect(await screen.findByText(EN['state.denied.title'] as string)).toBeVisible();
     expect(screen.queryByText(EN['payments.list.empty'] as string)).toBeNull();
   });
 
   it('says when the branch holds no receipt', async () => {
     listReceipts.mockResolvedValue(okPage([]));
-    const user = userEvent.setup();
     renderScreen();
-    await chooseBranch(user);
+    await chooseBranch();
     expect(await screen.findByText(EN['payments.list.empty'] as string)).toBeVisible();
   });
 });
 
 describe('recording a payment', () => {
   it('offers the form only with the recording code', async () => {
-    const user = userEvent.setup();
     renderScreen({ canRecord: false });
-    await chooseBranch(user);
+    await chooseBranch();
     expect(await screen.findByText(EN['payments.record.needsCode'] as string)).toBeVisible();
     expect(listPaymentMethods).not.toHaveBeenCalled();
   });
 
   it('offers only the methods this tenant may cite', async () => {
-    const user = userEvent.setup();
     renderScreen();
-    await chooseBranch(user);
+    await chooseBranch();
     const form = await screen.findByRole('form', {
       name: EN['payments.record.formLabel'] as string,
     });
@@ -472,9 +557,8 @@ describe('recording a payment', () => {
 
   it('says an organisation with only platform methods cannot record, and offers no form', async () => {
     listPaymentMethods.mockResolvedValue(okRead({ items: [platformMethod] }));
-    const user = userEvent.setup();
     renderScreen();
-    await chooseBranch(user);
+    await chooseBranch();
     expect(await screen.findByText(EN['payments.methods.noneRecordable'] as string)).toBeVisible();
     expect(
       screen.queryByRole('form', { name: EN['payments.record.formLabel'] as string })
@@ -483,9 +567,8 @@ describe('recording a payment', () => {
 
   it('says a refused method list is a refusal, and offers no form', async () => {
     listPaymentMethods.mockResolvedValue(refusedRead('denied'));
-    const user = userEvent.setup();
     renderScreen();
-    await chooseBranch(user);
+    await chooseBranch();
     expect(await screen.findByText(EN['payments.methods.refused'] as string)).toBeVisible();
     expect(screen.getByText('corr-403')).toBeVisible();
     expect(
@@ -496,7 +579,7 @@ describe('recording a payment', () => {
   it('sends the branch target and the typed amount as a string, with one key', async () => {
     const user = userEvent.setup();
     renderScreen();
-    await chooseBranch(user);
+    await chooseBranch();
     const form = await screen.findByRole('form', {
       name: EN['payments.record.formLabel'] as string,
     });
@@ -532,7 +615,7 @@ describe('recording a payment', () => {
     });
     const user = userEvent.setup();
     renderScreen();
-    await chooseBranch(user);
+    await chooseBranch();
     const form = await screen.findByRole('form', {
       name: EN['payments.record.formLabel'] as string,
     });
@@ -557,7 +640,7 @@ describe('recording a payment', () => {
   it('refuses a malformed amount before sending anything', async () => {
     const user = userEvent.setup();
     renderScreen();
-    await chooseBranch(user);
+    await chooseBranch();
     const form = await screen.findByRole('form', {
       name: EN['payments.record.formLabel'] as string,
     });
@@ -590,7 +673,7 @@ describe('recording a payment', () => {
     });
     const user = userEvent.setup();
     renderScreen();
-    await chooseBranch(user);
+    await chooseBranch();
     const form = await screen.findByRole('form', {
       name: EN['payments.record.formLabel'] as string,
     });
@@ -611,7 +694,7 @@ describe('recording a payment', () => {
   it('states a fresh recording as recorded, with the receipt’s reference', async () => {
     const user = userEvent.setup();
     renderScreen();
-    await chooseBranch(user);
+    await chooseBranch();
     const form = await screen.findByRole('form', {
       name: EN['payments.record.formLabel'] as string,
     });
@@ -629,7 +712,7 @@ describe('recording a payment', () => {
   it('lets a cashier record a SECOND payment after the first succeeds', async () => {
     const user = userEvent.setup();
     renderScreen();
-    await chooseBranch(user);
+    await chooseBranch();
     const fill = async () => {
       const form = await screen.findByRole('form', {
         name: EN['payments.record.formLabel'] as string,
@@ -653,7 +736,7 @@ describe('recording a payment', () => {
   it('refuses a zero amount before sending, because the server refuses it too', async () => {
     const user = userEvent.setup();
     renderScreen();
-    await chooseBranch(user);
+    await chooseBranch();
     const form = await screen.findByRole('form', {
       name: EN['payments.record.formLabel'] as string,
     });
@@ -690,12 +773,12 @@ describe('recording a payment', () => {
       );
     };
     const first = renderScreen();
-    await chooseBranch(user);
+    await chooseBranch();
     await fill();
     await waitFor(() => expect(recordPayment).toHaveBeenCalledTimes(1));
     first.unmount();
     renderScreen();
-    await chooseBranch(user);
+    await chooseBranch();
     await fill();
     await waitFor(() => expect(recordPayment).toHaveBeenCalledTimes(2));
     expect(recordPayment.mock.calls[1]?.[1]).not.toBe(recordPayment.mock.calls[0]?.[1]);
@@ -705,7 +788,7 @@ describe('recording a payment', () => {
 describe('the receipt and its allocations', () => {
   async function openReceipt(user: ReturnType<typeof userEvent.setup>) {
     renderScreen();
-    await chooseBranch(user);
+    await chooseBranch();
     const list = await screen.findByRole('region', {
       name: EN['payments.list.heading'] as string,
     });
@@ -716,7 +799,8 @@ describe('the receipt and its allocations', () => {
   it('opens a receipt named in the address without asking for a branch first', async () => {
     // The detail read names its receipt in the PATH and takes no target, so a
     // link into one must not wait for a branch to be chosen.
-    renderScreen({ initialReceiptId: RECEIPT_ID });
+    // Two branches and none chosen: no list may be read, and the receipt opens.
+    renderScreen({ initialReceiptId: RECEIPT_ID }, branchSnapshot([TEST_BRANCH, OTHER_BRANCH]));
     await waitFor(() => expect(readReceipt).toHaveBeenCalledWith(RECEIPT_ID));
     expect(
       await screen.findByRole('region', { name: EN['payments.receipt.heading'] as string })
@@ -765,7 +849,7 @@ describe('the receipt and its allocations', () => {
 describe('applying a receipt to an invoice', () => {
   async function openReceipt(user: ReturnType<typeof userEvent.setup>, over = {}) {
     renderScreen(over);
-    await chooseBranch(user);
+    await chooseBranch();
     const list = await screen.findByRole('region', {
       name: EN['payments.list.heading'] as string,
     });
@@ -947,7 +1031,7 @@ describe('applying a receipt to an invoice', () => {
 describe('the printable receipt (FE-021)', () => {
   async function openPrint(user: ReturnType<typeof userEvent.setup>) {
     renderScreen();
-    await chooseBranch(user);
+    await chooseBranch();
     const list = await screen.findByRole('region', {
       name: EN['payments.list.heading'] as string,
     });
@@ -978,7 +1062,7 @@ describe('the printable receipt (FE-021)', () => {
   it('states whether the printable copy is open', async () => {
     const user = userEvent.setup();
     renderScreen();
-    await chooseBranch(user);
+    await chooseBranch();
     const list = await screen.findByRole('region', {
       name: EN['payments.list.heading'] as string,
     });
@@ -1055,10 +1139,10 @@ describe('Arabic', () => {
         initialInvoiceId={null}
         canRecord={false}
         canAllocate={false}
-        canReadBranches={false}
       />
     );
     expect(screen.getByText(AR['payments.target.explain'] as string)).toBeVisible();
+    expect(screen.getByText(AR['workingContext.changeInHeader'] as string)).toBeVisible();
   });
 
   it('states the currency refusal in Arabic, beside the same box', async () => {
@@ -1080,24 +1164,7 @@ describe('Arabic', () => {
         initialInvoiceId={null}
         canRecord={true}
         canAllocate={false}
-        canReadBranches={false}
       />
-    );
-    const target = screen.getByRole('form', { name: AR['payments.target.formLabel'] as string });
-    await user.type(
-      within(target).getByLabelText(
-        new RegExp(`^${escape(AR['payments.common.companyIdField'] as string)}`)
-      ),
-      COMPANY_ID
-    );
-    await user.type(
-      within(target).getByLabelText(
-        new RegExp(`^${escape(AR['payments.common.branchIdField'] as string)}`)
-      ),
-      BRANCH_ID
-    );
-    await user.click(
-      within(target).getByRole('button', { name: AR['payments.target.choose'] as string })
     );
     const form = await screen.findByRole('form', {
       name: AR['payments.record.formLabel'] as string,

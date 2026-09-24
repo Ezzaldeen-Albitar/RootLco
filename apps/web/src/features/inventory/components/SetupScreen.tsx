@@ -46,6 +46,7 @@ import { useEffect, useState } from 'react';
 import { INITIAL_REQUEST } from '@/components/data-table/table-state';
 import { CheckboxField, SelectField, TextAreaField, TextField } from '@/components/forms/Field';
 import { notifyActionResult } from '@/components/notifications/action-notifications';
+import { useUnsavedGuard } from '@/features/working-context/WorkingContextProvider';
 import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic } from '@/i18n/get-messages';
@@ -87,7 +88,6 @@ import {
   PRIMARY_BUTTON,
   SECONDARY_BUTTON,
   UUID,
-  canNameBranch,
   useBranches,
   useItemCategories,
   useLocations,
@@ -95,6 +95,7 @@ import {
   type Branches,
   type Categories,
 } from './shared';
+import { BranchTargetForm } from './stock-operations';
 
 const LINK = 'text-primary underline-offset-2 hover:underline';
 const PANEL = 'flex flex-col gap-3 rounded-lg border border-border bg-surface p-4';
@@ -147,8 +148,13 @@ export function SetupScreen({
   readonly canManage: boolean;
   /** `inv.stock.read` — whether the location list can be read at all. */
   readonly canReadStock: boolean;
-  /** `org.branch.read` — whether a branch list is requested for the picker. */
-  readonly canReadBranches: boolean;
+  /**
+   * `org.branch.read`. Accepted so the route did not have to change, and no
+   * longer read: the branch is the working context's own named selection, and
+   * that read is gated on `iam.user.read` rather than on an administration
+   * code.
+   */
+  readonly canReadBranches?: boolean;
 }) {
   const categories = useItemCategories();
   const units = useUnits();
@@ -157,7 +163,7 @@ export function SetupScreen({
   // issue `org.branch-list` twice for one paint, mount two pickers in two
   // independent phases, and give the operator two retry buttons for one
   // failure. The phase machine (CC-15) is shared, so the answer is shared.
-  const branches = useBranches(canReadBranches);
+  const branches = useBranches(canReadBranches ?? false);
 
   return (
     <div className="flex min-h-0 flex-col gap-4">
@@ -183,12 +189,7 @@ export function SetupScreen({
         units={units}
         canManage={canManage}
       />
-      <LocationsSection
-        messages={messages}
-        branches={branches}
-        canManage={canManage}
-        canReadStock={canReadStock}
-      />
+      <LocationsSection messages={messages} canManage={canManage} canReadStock={canReadStock} />
       <ReorderLevelsSection
         locale={locale}
         messages={messages}
@@ -710,25 +711,16 @@ function ItemForm({
 
 function LocationsSection({
   messages,
-  branches,
   canManage,
   canReadStock,
 }: {
   readonly messages: Messages;
-  readonly branches: Branches;
   readonly canManage: boolean;
   readonly canReadStock: boolean;
 }) {
-  const [pair, setPair] = useState<BranchPair>(EMPTY_PAIR);
-  const [errors, setErrors] = useState<Readonly<Record<string, string>>>({});
   const [target, setTarget] = useState<StockTarget | null>(null);
   const [added, setAdded] = useState<readonly CreatedStockLocation[]>([]);
   const locations = useLocations(canReadStock ? target : null);
-
-  const errorFor = (name: string): string | undefined => {
-    const key = errors[name];
-    return key ? translateDynamic(messages, key) : undefined;
-  };
 
   const known: readonly StockLocation[] = [
     ...(locations.items ?? []),
@@ -743,36 +735,18 @@ function LocationsSection({
       <p className="text-caption text-text-muted">
         {translate(messages, 'inventory.setup.locations.explain')}
       </p>
-      <form
-        onSubmit={(event) => {
-          event.preventDefault();
-          const found: Record<string, string> = {};
-          if (!UUID.test(pair.companyId.trim())) found['companyId'] = 'inventory.common.idFormat';
-          if (!UUID.test(pair.branchId.trim())) found['branchId'] = 'inventory.common.idFormat';
-          setErrors(found);
-          if (Object.keys(found).length > 0) return;
+      <BranchTargetForm
+        messages={messages}
+        formLabelKey="inventory.setup.locations.targetLabel"
+        explainKey="inventory.target.explain"
+        onChosen={(next) => {
+          // The locations just added belonged to the previous branch. Carrying
+          // them into the next one would put a shelf in a workshop that has no
+          // such shelf.
           setAdded([]);
-          setTarget({ companyId: pair.companyId.trim(), branchId: pair.branchId.trim() });
+          setTarget(next);
         }}
-        noValidate
-        aria-label={translate(messages, 'inventory.setup.locations.targetLabel')}
-        className="grid gap-3 rounded-lg border border-border bg-surface p-4 sm:grid-cols-3"
-      >
-        <BranchPairPicker
-          messages={messages}
-          branches={branches}
-          label={translate(messages, 'inventory.target.branch')}
-          placeholder={translate(messages, 'inventory.target.chooseBranch')}
-          value={pair}
-          onChange={setPair}
-          errors={{ companyId: errorFor('companyId'), branchId: errorFor('branchId') }}
-        />
-        <div className="sm:col-span-3">
-          <button type="submit" className={PRIMARY_BUTTON} disabled={!canNameBranch(branches)}>
-            {translate(messages, 'inventory.setup.locations.show')}
-          </button>
-        </div>
-      </form>
+      />
 
       {target === null ? null : !canReadStock ? (
         <p className="text-caption text-text-muted">
@@ -835,6 +809,9 @@ function LocationsSection({
       ) : null}
       {target !== null && canManage ? (
         <LocationForm
+          // Keyed on the branch: a parent warehouse chosen for one branch is not
+          // a shelf the next branch has, and must not travel with the form.
+          key={`${target.companyId}:${target.branchId}`}
           messages={messages}
           target={target}
           known={known}
@@ -865,6 +842,12 @@ function LocationForm({
   const [errors, setErrors] = useState<Readonly<Record<string, string>>>({});
   const [busy, setBusy] = useState(false);
   const [outcome, setOutcome] = useState<ActionState | null>(null);
+  /*
+   * Unsaved work, declared to the shell. The type and parent stay chosen after
+   * a location is added, as defaults for the next one, so only the code and
+   * name — cleared on success — count as work a switch would lose.
+   */
+  useUnsavedGuard(form.locationCode.trim().length > 0 || form.name.trim().length > 0);
 
   const errorFor = (name: string): string | undefined => {
     const key = errors[name] ?? outcome?.fieldErrors?.[name];

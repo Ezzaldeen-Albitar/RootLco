@@ -143,13 +143,17 @@ test.describe('P1-31 warranty screens, over the acceptance journey records', () 
     ).toBeVisible();
     await expect(page.locator('html')).toHaveAttribute('dir', direction);
 
-    // The form that names the branch is this screen's own surface, and the page-level gate
-    // replaces the whole body — so its presence is what separates "reached" from "refused".
-    const targetForm = main.getByRole('form', { name: say(locale, 'warranty.target.formLabel') });
+    /*
+     * The search box is this screen's own surface, and the page-level gate replaces the
+     * whole body — so its presence is what separates "reached" from "refused". It replaces
+     * the branch-target form the screen used to carry: the branch is the header's named
+     * selection now, and there is nothing on this page to name it with.
+     */
+    const findBox = main.getByLabel(say(locale, 'warranty.filter.searchLabel'));
     if (!mayRead) {
       await expect(
-        targetForm,
-        `${kind} does not hold ${WARRANTY_READ}, so the warranty list must withhold its form`
+        findBox,
+        `${kind} does not hold ${WARRANTY_READ}, so the warranty list must withhold its filters`
       ).toHaveCount(0);
       await expect(main).toContainText(say(locale, 'state.denied.title'));
       await expect(main).toContainText(say(locale, 'state.denied.description'));
@@ -160,17 +164,18 @@ test.describe('P1-31 warranty screens, over the acceptance journey records', () 
       ).not.toContainText(say(locale, 'state.empty.title'));
     } else {
       await expect(
-        targetForm,
+        findBox,
         `${kind} holds ${WARRANTY_READ}, so the warranty list must let it through`
       ).toHaveCount(1);
-      await expect(targetForm).toBeVisible();
-      // Nothing is read until a branch is named, and the screen says so. Asserted before any
-      // choice is made, because "the list is empty" and "no branch has been chosen" are two
-      // different states and only one of them would be a finding.
-      await expect(main.getByText(say(locale, 'warranty.list.chooseBranchFirst'))).toBeVisible();
+      await expect(findBox).toBeVisible();
+      // The branch is stated, never asked: the screen offers no control that would set it.
       await expect(
-        main.getByRole('table', { name: say(locale, 'warranty.list.tableCaption') }),
-        'the list read warranties before a branch was named'
+        main.getByTestId('warranty-branch-target').getByRole('textbox'),
+        'the warranty list asked the operator to type a branch'
+      ).toHaveCount(0);
+      await expect(
+        main.getByTestId('warranty-branch-target').getByRole('combobox'),
+        'the warranty list offered a second place to choose a branch'
       ).toHaveCount(0);
       await expect(main.getByText(say(locale, 'state.denied.title'))).toHaveCount(0);
     }
@@ -282,36 +287,23 @@ test.describe('P1-31 warranty screens, over the acceptance journey records', () 
     ).toBeVisible();
     await expect(page.locator('html')).toHaveAttribute('dir', locale === 'ar' ? 'rtl' : 'ltr');
 
-    // Nothing is read until a branch is named — the screen says so, and that sentence is
-    // asserted before the choice is made, because "the list is empty" and "no branch has
-    // been chosen" are two different states and only one of them is a finding.
-    await expect(page.getByText(say(locale, 'warranty.list.chooseBranchFirst'))).toBeVisible();
-
     /*
-     * The branch control by ROLE, with its whole name — and the role is what makes this
-     * case wait for the right node instead of racing it.
+     * The branch is chosen ONCE, in the header, and this screen reads that choice.
      *
-     * `getByLabel(…'Branch')` matched THREE: the section, whose `aria-labelledby` heading is
-     * the word itself; the form, whose `aria-label` is "Choose the branch"; and the control.
-     * Strict mode refused, and it refused INSTANTLY — which hid a second thing. This screen
-     * reads the branch directory after mounting, and until that read answers it renders
-     * identifier text fields instead of a picker, so the third node strict mode named was the
-     * "Branch identifier" textbox and not a select at all. A `combobox` named exactly the
-     * field's name resolves to nothing until the picker arrives, and `selectOption` waits for
-     * it — which is the honest way to wait for a directory rather than for a timeout.
+     * It used to be chosen here: a picker when the branch-directory read answered, and two
+     * boxes asking for a pasted reference when it did not. Both are gone, so the branch is
+     * set where it now lives and the list re-targets itself.
      */
-    await page
-      .getByRole('combobox', { name: say(locale, 'warranty.common.branchField'), exact: true })
-      .selectOption(h.branchId);
-    await page
-      .getByRole('button', { name: say(locale, 'warranty.target.choose'), exact: true })
-      .click();
+    const chooser = page.getByTestId('working-context-select');
+    if ((await chooser.count()) > 0) {
+      await chooser.selectOption(h.branchId);
+    }
 
     await expect(
       page.getByRole('heading', { name: say(locale, 'warranty.list.heading') })
     ).toBeVisible();
     // The harness issued a warranty in this branch, so the empty state must NOT be shown.
-    await expect(page.getByText(say(locale, 'warranty.list.noneTitle'))).toHaveCount(0);
+    await expect(page.getByText(say(locale, 'state.noResults.title'))).toHaveCount(0);
 
     const table = page.getByRole('table', { name: say(locale, 'warranty.list.tableCaption') });
     await expect(table).toBeVisible();

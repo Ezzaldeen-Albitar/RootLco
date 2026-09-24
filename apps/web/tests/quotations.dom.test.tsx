@@ -1,9 +1,27 @@
 import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import en from '../src/i18n/messages/en.json';
 import ar from '../src/i18n/messages/ar.json';
-import { renderLtr, renderRtl } from './render';
+import {
+  TEST_BRANCH,
+  inBranch,
+  renderLtr,
+  renderRtl,
+  BranchSwitch,
+  OTHER_BRANCH,
+  TEST_COMPANY,
+  WorkingBranchProbe,
+  branchSnapshot,
+} from './render';
+import {
+  discardAndSwitch,
+  forgetRememberedBranch,
+  heldBranch,
+  stayOnBranch,
+  switchExpectingQuestion,
+  switchWithoutQuestion,
+} from './support/branch-switch';
 
 /**
  * The quotations of a work order and the builder, rendered (P1-30, `W3`,
@@ -48,8 +66,10 @@ vi.mock('@/features/services/api', () => ({
 }));
 
 const readWorkOrderDetail = vi.fn();
+const listWorkOrders = vi.fn();
 vi.mock('@/features/work-orders/api', () => ({
   readWorkOrderDetail: (...args: unknown[]) => readWorkOrderDetail(...args),
+  listWorkOrders: (...args: unknown[]) => listWorkOrders(...args),
 }));
 
 const push = vi.fn();
@@ -173,26 +193,71 @@ beforeEach(() => {
 });
 
 describe('reached from a work order', () => {
-  it('without a work order, explains and takes an identifier', async () => {
+  it('without a work order, finds the job on the working branch instead of asking for a reference', async () => {
+    listWorkOrders.mockResolvedValue({
+      status: 'ok',
+      rows: [workOrder],
+      nextCursor: null,
+      hasMore: false,
+      correlationId: 'corr-wo',
+    });
     const user = userEvent.setup();
-    renderScreen({ workOrderId: null, workOrder: null });
+    renderLtr(
+      inBranch(
+        <QuotationsScreen
+          locale="en"
+          messages={en}
+          workOrderId={null}
+          workOrder={null}
+          canManage={false}
+          canReadServices={false}
+          canSearchWorkOrders={true}
+        />
+      )
+    );
     expect(screen.getByText(EN['quotations.choose.explain'] as string)).toBeVisible();
     expect(listQuotations).not.toHaveBeenCalled();
-    await user.type(screen.getByLabelText(labelled('quotations.choose.workOrderId')), 'nope');
+    const box = screen.getByLabelText(EN['quotations.choose.workOrderId'] as string);
+    // Nothing chosen: the box is marked and says why, and nothing is opened.
     await user.click(
       screen.getByRole('button', { name: EN['quotations.choose.submit'] as string })
     );
-    expect(await screen.findByText(EN['quotations.common.idFormat'] as string)).toBeVisible();
+    expect(box).toHaveAttribute('aria-invalid', 'true');
+    expect(screen.getByText(EN['workOrders.picker.required'] as string)).toBeVisible();
     expect(push).not.toHaveBeenCalled();
-    await user.clear(screen.getByLabelText(labelled('quotations.choose.workOrderId')));
-    await user.type(
-      screen.getByLabelText(labelled('quotations.choose.workOrderId')),
-      WORK_ORDER_ID
+    await user.type(box, '12-34{Enter}');
+    await user.click(await screen.findByRole('button', { name: /WO-000042/ }));
+    expect(listWorkOrders).toHaveBeenCalledWith(
+      { companyId: TEST_BRANCH.companyId, branchId: TEST_BRANCH.id },
+      { q: '12-34' },
+      expect.objectContaining({ page: 1 }),
+      null
     );
     await user.click(
       screen.getByRole('button', { name: EN['quotations.choose.submit'] as string })
     );
     expect(push).toHaveBeenCalledWith(`/en/quotations?workOrderId=${WORK_ORDER_ID}`);
+  });
+
+  it('without the work-order code, offers no search and no submit', () => {
+    renderLtr(
+      inBranch(
+        <QuotationsScreen
+          locale="en"
+          messages={en}
+          workOrderId={null}
+          workOrder={null}
+          canManage={false}
+          canReadServices={false}
+          canSearchWorkOrders={false}
+        />
+      )
+    );
+    expect(screen.getByText(EN['workOrders.picker.notPermitted'] as string)).toBeVisible();
+    expect(screen.queryByRole('searchbox')).toBeNull();
+    expect(
+      screen.queryByRole('button', { name: EN['quotations.choose.submit'] as string })
+    ).toBeNull();
   });
 
   it('with a work order, reads on first paint and names the work order and customer', async () => {
@@ -229,6 +294,144 @@ describe('reached from a work order', () => {
     listQuotations.mockResolvedValue(page([]));
     renderScreen();
     expect(await screen.findByText(EN['quotations.list.none'] as string)).toBeVisible();
+  });
+});
+
+describe('the job picker and the working context', () => {
+  /*
+   * The picker searches what the header holds: one branch, or every branch of
+   * the company under "All my branches" (the union the server enforces), or
+   * nothing when "All my branches" spans companies. A switch forgets the job
+   * found under the previous branch, asks first when one was chosen, and drops
+   * a reply that was still in flight.
+   */
+  afterEach(forgetRememberedBranch);
+
+  const FAR_COMPANY = {
+    id: '88888888-8888-4888-8888-888888888888',
+    name: 'Far Operations',
+    code: 'FAR',
+  };
+  const FAR_BRANCH = {
+    ...OTHER_BRANCH,
+    id: '77777777-7777-4777-8777-777777777777',
+    companyId: FAR_COMPANY.id,
+    name: 'Far workshop',
+  };
+  const found = (rows: readonly unknown[]) => ({
+    status: 'ok' as const,
+    rows,
+    nextCursor: null,
+    hasMore: false,
+    correlationId: 'corr-wo',
+  });
+
+  function renderWith(snapshot: ReturnType<typeof branchSnapshot>) {
+    renderLtr(
+      inBranch(
+        <>
+          <BranchSwitch to={TEST_BRANCH.id} label="first" />
+          <BranchSwitch to={OTHER_BRANCH.id} label="second" />
+          <BranchSwitch to="all" label="everywhere" />
+          <WorkingBranchProbe />
+          <QuotationsScreen
+            locale="en"
+            messages={en}
+            workOrderId={null}
+            workOrder={null}
+            canManage={false}
+            canReadServices={false}
+            canSearchWorkOrders={true}
+          />
+        </>,
+        { snapshot }
+      )
+    );
+  }
+  const box = () => screen.getByLabelText(EN['quotations.choose.workOrderId'] as string);
+  const submit = () =>
+    screen.getByRole('button', { name: EN['quotations.choose.submit'] as string });
+
+  it('under "All my branches" in one company, searches the whole company', async () => {
+    listWorkOrders.mockResolvedValue(found([workOrder]));
+    const user = userEvent.setup();
+    renderWith(branchSnapshot([TEST_BRANCH, OTHER_BRANCH]));
+    await user.click(screen.getByRole('button', { name: 'everywhere' }));
+    await user.type(box(), 'Layla{Enter}');
+    expect(await screen.findByRole('button', { name: /WO-000042/ })).toBeVisible();
+    expect(listWorkOrders).toHaveBeenCalledWith(
+      { companyId: TEST_COMPANY.id, branchId: null },
+      { q: 'Layla' },
+      expect.objectContaining({ page: 1 }),
+      null
+    );
+  });
+
+  it('under "All my branches" across companies, says why, reads nothing, and disables the submit with that reason', async () => {
+    const user = userEvent.setup();
+    renderWith({
+      ...branchSnapshot([TEST_BRANCH, FAR_BRANCH]),
+      companies: [TEST_COMPANY, FAR_COMPANY],
+    });
+    await user.click(screen.getByRole('button', { name: 'everywhere' }));
+    const panel = await screen.findByTestId('work-order-picker-needs-branch');
+    expect(panel).toHaveTextContent(EN['workingContext.needsOneBranch'] as string);
+    expect(screen.queryByRole('searchbox')).toBeNull();
+    // A submit that would refuse with no control to point at is disabled
+    // instead, and described by the sentence that says why.
+    expect(submit()).toBeDisabled();
+    const describedBy = submit().getAttribute('aria-describedby');
+    expect(describedBy).toBeTruthy();
+    expect(document.getElementById(describedBy as string)).toHaveTextContent(
+      EN['workingContext.needsOneBranch'] as string
+    );
+    expect(listWorkOrders).not.toHaveBeenCalled();
+    expect(push).not.toHaveBeenCalled();
+  });
+
+  it('a reply still in flight when the branch changes is dropped, and the term goes with it', async () => {
+    let answer: (value: unknown) => void = () => undefined;
+    listWorkOrders.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          answer = resolve;
+        })
+    );
+    const user = userEvent.setup();
+    renderWith(branchSnapshot([TEST_BRANCH, OTHER_BRANCH]));
+    await user.click(screen.getByRole('button', { name: 'first' }));
+    await user.type(box(), 'Layla{Enter}');
+    await waitFor(() => expect(listWorkOrders).toHaveBeenCalledTimes(1));
+    // Nothing chosen yet, so nothing to lose: the switch does not ask.
+    await switchWithoutQuestion(user, 'second');
+    await waitFor(() => expect(heldBranch()).toBe(OTHER_BRANCH.id));
+    answer(found([workOrder]));
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(screen.queryByRole('button', { name: /WO-000042/ })).toBeNull();
+    expect(box()).toHaveValue('');
+    expect(listWorkOrders).toHaveBeenCalledTimes(1);
+  });
+
+  it('a chosen job is unsaved work: the switch asks, staying keeps it, discarding clears it', async () => {
+    listWorkOrders.mockResolvedValue(found([workOrder]));
+    const user = userEvent.setup();
+    renderWith(branchSnapshot([TEST_BRANCH, OTHER_BRANCH]));
+    await user.click(screen.getByRole('button', { name: 'first' }));
+    await user.type(box(), 'Layla{Enter}');
+    await user.click(await screen.findByRole('button', { name: /WO-000042/ }));
+    expect(screen.getByTestId('work-order-picker-chosen')).toHaveTextContent('WO-000042');
+
+    await stayOnBranch(user, await switchExpectingQuestion(user, 'second'));
+    expect(heldBranch()).toBe(TEST_BRANCH.id);
+    expect(screen.getByTestId('work-order-picker-chosen')).toHaveTextContent('WO-000042');
+
+    await discardAndSwitch(user, await switchExpectingQuestion(user, 'second'));
+    await waitFor(() => expect(heldBranch()).toBe(OTHER_BRANCH.id));
+    await waitFor(() => expect(screen.queryByTestId('work-order-picker-chosen')).toBeNull());
+    expect(box()).toHaveValue('');
+    // Nothing is opened for a job that belonged to the previous branch.
+    await user.click(submit());
+    expect(push).not.toHaveBeenCalled();
   });
 });
 

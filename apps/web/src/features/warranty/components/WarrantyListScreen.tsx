@@ -1,94 +1,249 @@
 'use client';
 
 import Link from 'next/link';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 
-import { EmptyState, LoadingState } from '@/components/states/States';
-import { SelectField, TextField } from '@/components/forms/Field';
+import { DataTable, type Column } from '@/components/data-table/DataTable';
+import { SearchBox } from '@/components/search/SearchBox';
+import { SearchStates } from '@/components/search/SearchStates';
+import { SessionExpiredState } from '@/components/states/States';
+import {
+  RequiresConcreteBranch,
+  WorkingBranchField,
+} from '@/features/working-context/components/WorkingBranchField';
+import { useBranchTarget } from '@/features/working-context/use-branch-target';
+import { useWorkingContext } from '@/features/working-context/WorkingContextProvider';
+import type { BranchScope, CursorPage, ReadState } from '@/lib/api/read-operation';
+import { useSearchRequest } from '@/lib/api/use-search-request';
 import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
-import { translate, translateDynamic } from '@/i18n/get-messages';
+import { translate } from '@/i18n/get-messages';
 import { formatDate } from '@/lib/format';
 
-import { listBranches, listWarranties, type WarrantyListState } from '../warranty-api';
-import type { WarrantyListRow } from '../warranty-contract';
+import { listWarranties } from '../warranty-api';
 import {
-  Distance,
-  PRIMARY_BUTTON,
-  ReadFailure,
-  SECONDARY_BUTTON,
-  Section,
-  UUID,
-  WarrantyStatusLabel,
-  type MoreFailure,
-} from './shared';
-import type { BranchOption } from '@/features/services/services-contract';
+  MAX_WARRANTY_SEARCH,
+  MIN_WARRANTY_SEARCH,
+  type WarrantyListCriteria,
+  type WarrantyListRow,
+} from '../warranty-contract';
+import { Distance, SECONDARY_BUTTON, Section, WarrantyStatusLabel } from './shared';
 
 /**
- * A branch's warranty records (P1-31, FE-008 entry point, FE-009 partial).
+ * A branch's warranty records (P1-31, FE-008 entry point, FE-009 partial;
+ * rebuilt under the Owner directive `P1-32-PRE-OD-UX`).
  *
- * ## Nothing is read until a branch is named
+ * ## The branch is no longer typed, and the list no longer waits
  *
- * `wty.warranty-list` makes `companyId` and `branchId` required and authorizes that
- * pair before a row is read, because the row-level scope narrows on the
- * permission-blind union of every grant the caller holds. So the pair is chosen
- * first, in the target section, and every read is addressed to it. A screen that
- * guessed a branch would be asserting a scope on the operator's behalf.
+ * This screen used to open on a sentence saying "choose a branch first", above a
+ * form that asked the operator to PASTE two identifiers — a company reference
+ * and a branch reference — whenever the branch directory read was refused them,
+ * which is precisely the operator whose grant is not narrowed. Nothing was read
+ * until they had done it.
  *
- * ## FE-009 is this filter, and the rest is named rather than faked
+ * Both halves are gone. The branch is the working context's own named selection,
+ * chosen once in the header, and there is exactly one place it can be changed;
+ * and because there is no longer a value to validate, the list reads on arrival.
+ * `branchId` also became OPTIONAL on `wty.warranty-list` with the same
+ * directive, so "all my branches" is a request the backend documents rather
+ * than a guess made here: the company is named, the branch is omitted, and the
+ * API resolves the authorized set one branch at a time.
  *
- * Filtering by vehicle gives the warranties issued for one vehicle, newest first —
- * which is the history this backend publishes. The per-record transition ledger
- * (`wty.warranty_status_history`, as the migration names it) has no reader anywhere,
- * so the screen says that in its own words instead of assembling a plausible sequence
- * out of a record's current state. An invented ledger is worse than an absent one: it
- * would be believed.
+ * ## One box, five things it can match
+ *
+ * `q` reaches part of a party's name on the originating visit, the tail of their
+ * phone number, part of any plate the vehicle has carried, part of its VIN, or
+ * part of the work-order number. It replaces the vehicle-reference box the
+ * screen used to offer, which asked an operator to know a vehicle by a string
+ * they could not read and would not have.
+ *
+ * The vehicle filter itself SURVIVES, because that is how a vehicle screen hands
+ * over to one vehicle's warranty history — it arrives in the address, it is
+ * shown as a filter in force with a control that lifts it, and the reference is
+ * never printed at the operator.
+ *
+ * ## What this read still cannot say
+ *
+ * `wty.warranty-list` publishes no vehicle display number, plate or VIN on a
+ * row, so the vehicle column is a bare reference. That is recorded as a backend
+ * prerequisite rather than papered over: resolving a name here would mean a read
+ * per row, and inventing one is not available.
  *
  * ## A refusal is never drawn as an empty branch
  *
- * The first read's whole outcome is kept, not flattened into rows, so "you may not
- * see these" and "this branch has issued none" are two different sentences. Drawing
- * them the same way is the single most misleading thing a permission-gated list can do.
+ * The whole outcome is kept, not flattened into rows, so "you may not see these"
+ * and "this branch has issued none" stay two different sentences with two
+ * different next steps.
  *
  * ## The end of the set is the server's to declare
  *
- * `hasMore` and `nextCursor` come from the response; nothing here infers the end from
- * a short page and no total is requested or invented. A failed further page leaves
- * the rows already on screen and reports the failure beside the button that caused it.
+ * `hasMore` and `nextCursor` come from the response; nothing here infers the end
+ * from a short page and no total is requested or invented.
  */
 
-interface Target {
-  readonly companyId: string;
-  readonly branchId: string;
+/** What the read is asked for: the scope it is addressed to, and the filters. */
+interface Asked {
+  readonly scope: BranchScope;
+  readonly filters: WarrantyListCriteria;
 }
-
-const EMPTY_PAIR: Target = { companyId: '', branchId: '' };
 
 export function WarrantyListScreen({
   locale,
   messages,
   initialVehicleId,
-  canReadBranches,
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
   /** From the address, when the screen was reached from a vehicle. Filters on arrival. */
   readonly initialVehicleId: string | null;
-  /** `org.branch.read` — whether a branch directory is requested for the target picker. */
-  readonly canReadBranches: boolean;
 }) {
-  const [target, setTarget] = useState<Target | null>(null);
+  const context = useWorkingContext();
+  const branch = useBranchTarget();
+
   const [vehicleId, setVehicleId] = useState<string | null>(initialVehicleId);
+  const [term, setTerm] = useState('');
+
+  /*
+   * The scope, or the reason there is none.
+   *
+   * "All my branches" spanning MORE THAN ONE COMPANY resolves to no company at
+   * all — `companyId` is mandatory on this operation and there is no honest
+   * single answer — so the screen says so rather than picking one.
+   */
+  const scope: BranchScope | null =
+    branch.kind === 'ready'
+      ? { companyId: branch.target.companyId, branchId: branch.target.branchId }
+      : branch.kind === 'all' && context.selection?.companyId
+        ? { companyId: context.selection.companyId, branchId: null }
+        : null;
+
+  const trimmed = term.trim();
+  const termIsSearchable = trimmed.length >= MIN_WARRANTY_SEARCH;
+  const termTooShort = trimmed.length > 0 && !termIsSearchable;
+
+  /*
+   * Built inline on every render: `useSearchRequest` keys on the SERIALISED
+   * criteria rather than on the object's identity, so memoising buys nothing.
+   * `null` is "there is nothing to ask for yet", and the hook makes no request
+   * at all in that state.
+   */
+  const asked: Asked | null =
+    scope === null
+      ? null
+      : {
+          scope,
+          filters: {
+            ...(vehicleId === null ? {} : { vehicleId }),
+            ...(termIsSearchable ? { q: trimmed } : {}),
+          },
+        };
+
+  const load = useCallback(
+    async (
+      criteria: Asked,
+      cursor: string | null
+    ): Promise<ReadState<CursorPage<WarrantyListRow>>> => {
+      const state = await listWarranties(criteria.scope, criteria.filters, cursor);
+      if (state.status !== 'ok')
+        return { status: state.status, correlationId: state.correlationId };
+      return {
+        status: 'ok',
+        data: { items: state.rows, nextCursor: state.nextCursor, hasMore: state.hasMore },
+        correlationId: state.correlationId,
+      };
+    },
+    []
+  );
+
+  const search = useSearchRequest<WarrantyListRow, Asked>({
+    criteria: asked,
+    load,
+    version: context.version,
+  });
+
+  const clearFilters = () => {
+    setVehicleId(null);
+    setTerm('');
+  };
+
+  const columns = useMemo<readonly Column<WarrantyListRow>[]>(
+    () => [
+      {
+        id: 'policy',
+        headerKey: 'warranty.list.columnPolicy',
+        cell: (row) => (
+          <Link
+            href={`/${locale}/warranty/${row.id}`}
+            className="text-primary underline-offset-2 hover:underline"
+          >
+            <bdi>{row.policy.name}</bdi>
+          </Link>
+        ),
+      },
+      {
+        id: 'status',
+        headerKey: 'warranty.list.columnStatus',
+        cell: (row) => <WarrantyStatusLabel messages={messages} status={row.status} />,
+      },
+      {
+        id: 'branch',
+        headerKey: 'warranty.list.columnBranch',
+        // Rendered only while the list spans branches. The name, never the
+        // identifier: a reference here would be a second thing to look up.
+        cell: (row) => <bdi>{context.branchName(row.branchId) ?? ''}</bdi>,
+      },
+      {
+        id: 'start',
+        headerKey: 'warranty.list.columnStart',
+        cell: (row) => formatDate(row.startDate, locale),
+      },
+      {
+        id: 'expiry',
+        headerKey: 'warranty.list.columnExpiry',
+        cell: (row) => formatDate(row.expiryDate, locale),
+      },
+      {
+        id: 'odometerLimit',
+        headerKey: 'warranty.list.columnOdometerLimit',
+        cell: (row) =>
+          row.odometerLimit === null ? (
+            translate(messages, 'warranty.summary.noDistanceLimit')
+          ) : (
+            <Distance value={row.odometerLimit} />
+          ),
+      },
+      {
+        id: 'vehicle',
+        headerKey: 'warranty.list.columnVehicle',
+        cell: (row) => (
+          /*
+           * A bare reference, because this read publishes no plate, chassis
+           * number or display number for the vehicle. Showing what there is and
+           * recording the gap beats leaving the column blank or resolving a name
+           * with one read per row — see the docblock.
+           */
+          <code className="font-mono text-caption" dir="ltr">
+            {row.vehicleId}
+          </code>
+        ),
+      },
+    ],
+    [context, locale, messages]
+  );
+
+  const blocked =
+    branch.kind === 'unchosen' || branch.kind === 'none' || branch.kind === 'unavailable';
+  const spansCompanies = branch.kind === 'all' && scope === null;
+  const spansBranches = branch.kind === 'all';
 
   return (
     <div className="flex flex-col gap-6">
       {/*
-       * The way to the plan administration screen, offered to everyone who can read a
-       * warranty. It is NOT gated on `wty.policy.manage` here: the plan list and the
-       * plan read both answer the read code, so a clerk may look at the terms they
-       * issue under, and it is that screen which withholds the controls that change
-       * them. A link hidden from a reader who is allowed to follow it would be this
-       * side inventing an authority the backend does not assert.
+       * The way to the plan administration screen, offered to everyone who can
+       * read a warranty. It is NOT gated on `wty.policy.manage` here: the plan
+       * list and the plan read both answer the read code, so a clerk may look at
+       * the terms they issue under, and it is that screen which withholds the
+       * controls that change them.
        */}
       <p className="text-body">
         <Link
@@ -99,382 +254,127 @@ export function WarrantyListScreen({
         </Link>
       </p>
 
-      <TargetSection
+      <Section
+        headingId="warranty-filter-heading"
+        titleKey="warranty.filter.heading"
         messages={messages}
-        canReadBranches={canReadBranches}
-        chosen={target}
-        onChosen={setTarget}
-      />
+        description={translate(messages, 'warranty.filter.explain')}
+      >
+        <div className="grid gap-3 sm:grid-cols-2">
+          {/*
+            The branch is STATED, not asked. A second editable control here would
+            be a second authority for the same fact.
+          */}
+          <WorkingBranchField messages={messages} testId="warranty-branch-target" />
+          <div className="sm:col-span-2">
+            <SearchBox
+              messages={messages}
+              label={translate(messages, 'warranty.filter.searchLabel')}
+              placeholder={translate(messages, 'warranty.filter.searchPlaceholder')}
+              example={translate(messages, 'warranty.filter.searchExample')}
+              value={term}
+              onChange={setTerm}
+              onSubmit={search.submit}
+              busy={search.phase === 'loading'}
+              maxLength={MAX_WARRANTY_SEARCH}
+              {...(termTooShort
+                ? { error: translate(messages, 'warranty.filter.searchTooShort') }
+                : {})}
+            />
+          </div>
+        </div>
 
-      <VehicleFilterSection messages={messages} vehicleId={vehicleId} onChanged={setVehicleId} />
+        {vehicleId === null ? null : (
+          // The filter that arrived with the address, said in words rather than
+          // printed as the reference it is, with the way out beside it.
+          <p
+            role="status"
+            data-testid="warranty-vehicle-filter"
+            className="mt-3 flex flex-wrap items-center gap-3 rounded-md bg-surface-subtle px-3 py-2 text-supporting text-text-secondary"
+          >
+            {translate(messages, 'warranty.filter.oneVehicleOnly')}
+            <button type="button" className={SECONDARY_BUTTON} onClick={() => setVehicleId(null)}>
+              {translate(messages, 'warranty.filter.showAllVehicles')}
+            </button>
+          </p>
+        )}
+      </Section>
 
-      {target === null ? (
-        <p className="rounded-md border border-border bg-surface p-4 text-body text-text-secondary">
-          {translate(messages, 'warranty.list.chooseBranchFirst')}
+      {blocked ? (
+        <RequiresConcreteBranch messages={messages} state={branch} testId="warranty-list-blocked" />
+      ) : spansCompanies ? (
+        <p
+          role="status"
+          data-testid="warranty-list-spans-companies"
+          className="rounded-md bg-warning-subtle px-3 py-2 text-supporting text-text-secondary"
+        >
+          {translate(messages, 'workingContext.spansCompanies')}
         </p>
       ) : (
-        <ResultsSection locale={locale} messages={messages} target={target} vehicleId={vehicleId} />
-      )}
-    </div>
-  );
-}
-
-/** The branch whose warranties are read. Chosen, never assumed. */
-function TargetSection({
-  messages,
-  canReadBranches,
-  chosen,
-  onChosen,
-}: {
-  readonly messages: Messages;
-  readonly canReadBranches: boolean;
-  readonly chosen: Target | null;
-  readonly onChosen: (next: Target) => void;
-}) {
-  const [branches, setBranches] = useState<readonly BranchOption[] | null>(null);
-  const [branchesRefused, setBranchesRefused] = useState(false);
-  const [pair, setPair] = useState<Target>(EMPTY_PAIR);
-  const [errors, setErrors] = useState<Readonly<Record<string, string>>>({});
-
-  useEffect(() => {
-    if (!canReadBranches) return;
-    let live = true;
-    void listBranches().then((state) => {
-      if (!live) return;
-      if (state.status === 'ok') setBranches(state.data.items);
-      else setBranchesRefused(true);
-    });
-    return () => {
-      live = false;
-    };
-  }, [canReadBranches]);
-
-  // An empty directory is not a picker: with no branch to choose, the operator gets
-  // the identifier fields rather than a control with nothing in it.
-  const offered = canReadBranches && branches !== null && branches.length > 0;
-
-  return (
-    <Section
-      headingId="warranty-target-heading"
-      titleKey="warranty.target.heading"
-      messages={messages}
-      description={translate(messages, 'warranty.target.explain')}
-    >
-      <form
-        aria-label={translate(messages, 'warranty.target.formLabel')}
-        className="grid gap-3 sm:grid-cols-2"
-        onSubmit={(event) => {
-          event.preventDefault();
-          const found: Record<string, string> = {};
-          // The company is chosen with the branch when a directory is offered, so
-          // only the branch has a control that could show an error.
-          if (!offered && !UUID.test(pair.companyId.trim())) {
-            found['companyId'] = 'warranty.common.idFormat';
-          }
-          if (!UUID.test(pair.branchId.trim())) found['branchId'] = 'warranty.common.idFormat';
-          setErrors(found);
-          if (Object.keys(found).length > 0) return;
-          onChosen({ companyId: pair.companyId.trim(), branchId: pair.branchId.trim() });
-        }}
-      >
-        {offered ? (
-          <SelectField
-            label={translate(messages, 'warranty.common.branchField')}
-            required
-            value={pair.branchId}
-            onChange={(event) => {
-              const picked = branches?.find((branch) => branch.id === event.target.value);
-              setPair(picked ? { companyId: picked.companyId, branchId: picked.id } : EMPTY_PAIR);
-            }}
-            options={(branches ?? []).map((branch) => ({
-              value: branch.id,
-              label: `${branch.branchCode} — ${branch.name}`,
-            }))}
-            placeholder={translate(messages, 'warranty.common.branchPlaceholder')}
-            error={errors['branchId'] ? translateDynamic(messages, errors['branchId']) : undefined}
-          />
-        ) : (
-          <>
-            <TextField
-              label={translate(messages, 'warranty.common.companyIdField')}
-              description={
-                branchesRefused
-                  ? translate(messages, 'warranty.common.branchesRefused')
-                  : translate(messages, 'warranty.common.identifierHelp')
-              }
-              required
-              spellCheck={false}
-              dir="ltr"
-              value={pair.companyId}
-              onChange={(event) => setPair({ ...pair, companyId: event.target.value })}
-              error={
-                errors['companyId'] ? translateDynamic(messages, errors['companyId']) : undefined
-              }
-            />
-            <TextField
-              label={translate(messages, 'warranty.common.branchIdField')}
-              required
-              spellCheck={false}
-              dir="ltr"
-              value={pair.branchId}
-              onChange={(event) => setPair({ ...pair, branchId: event.target.value })}
-              error={
-                errors['branchId'] ? translateDynamic(messages, errors['branchId']) : undefined
-              }
-            />
-          </>
-        )}
-        <div className="sm:col-span-2">
-          <button type="submit" className={PRIMARY_BUTTON}>
-            {translate(messages, chosen ? 'warranty.target.change' : 'warranty.target.choose')}
-          </button>
-        </div>
-      </form>
-    </Section>
-  );
-}
-
-/**
- * The one filter the read accepts.
- *
- * The route is `.strict()` and offers `vehicleId` and nothing else, so this control
- * offers nothing else either. Applying it is what FE-009 asks of this screen: the
- * warranties of one vehicle, in order.
- */
-function VehicleFilterSection({
-  messages,
-  vehicleId,
-  onChanged,
-}: {
-  readonly messages: Messages;
-  readonly vehicleId: string | null;
-  readonly onChanged: (next: string | null) => void;
-}) {
-  const [draft, setDraft] = useState(vehicleId ?? '');
-  const [error, setError] = useState<string | null>(null);
-
-  return (
-    <Section
-      headingId="warranty-filter-heading"
-      titleKey="warranty.filter.heading"
-      messages={messages}
-      description={translate(messages, 'warranty.filter.explain')}
-    >
-      <form
-        aria-label={translate(messages, 'warranty.filter.formLabel')}
-        className="flex flex-col gap-3 sm:flex-row sm:items-end"
-        onSubmit={(event) => {
-          event.preventDefault();
-          const trimmed = draft.trim();
-          if (trimmed.length === 0) {
-            setError(null);
-            onChanged(null);
-            return;
-          }
-          if (!UUID.test(trimmed)) {
-            // Refused here rather than at the backend: a malformed filter is a 422
-            // for the whole request, and being told by the control is how it gets
-            // corrected instead of looking like an outage.
-            setError('warranty.common.idFormat');
-            return;
-          }
-          setError(null);
-          onChanged(trimmed);
-        }}
-      >
-        <div className="grow">
-          <TextField
-            label={translate(messages, 'warranty.filter.vehicleField')}
-            spellCheck={false}
-            dir="ltr"
-            value={draft}
-            onChange={(event) => setDraft(event.target.value)}
-            error={error ? translateDynamic(messages, error) : undefined}
-          />
-        </div>
-        <button type="submit" className={SECONDARY_BUTTON}>
-          {translate(messages, 'warranty.filter.apply')}
-        </button>
-      </form>
-    </Section>
-  );
-}
-
-/** What is held, and the read it belongs to. */
-interface Held {
-  readonly key: string;
-  readonly first: WarrantyListState;
-  readonly rows: readonly WarrantyListRow[];
-  readonly nextCursor: string | null;
-  readonly hasMore: boolean;
-  readonly moreFailed: MoreFailure | null;
-}
-
-const keyOf = (target: Target, vehicleId: string | null) =>
-  `${target.companyId}#${target.branchId}#${vehicleId ?? ''}`;
-
-function ResultsSection({
-  locale,
-  messages,
-  target,
-  vehicleId,
-}: {
-  readonly locale: Locale;
-  readonly messages: Messages;
-  readonly target: Target;
-  readonly vehicleId: string | null;
-}) {
-  const [held, setHeld] = useState<Held | null>(null);
-  const [loading, setLoading] = useState(false);
-  const key = keyOf(target, vehicleId);
-
-  useEffect(() => {
-    let live = true;
-    void listWarranties(target, vehicleId, null).then((state) => {
-      if (!live) return;
-      // Carrying the key the read belongs to, so an answer for a branch or a filter
-      // the operator has since left is treated as absent rather than shown under the
-      // heading it no longer describes.
-      setHeld({
-        key,
-        first: state,
-        rows: state.rows,
-        nextCursor: state.nextCursor,
-        hasMore: state.hasMore,
-        moreFailed: null,
-      });
-    });
-    return () => {
-      live = false;
-    };
-  }, [key, target, vehicleId]);
-
-  const loadMore = useCallback(async () => {
-    if (!held || held.key !== key || held.nextCursor === null || loading) return;
-    setLoading(true);
-    const next = await listWarranties(target, vehicleId, held.nextCursor);
-    setLoading(false);
-    if (next.status !== 'ok') {
-      // The operator keeps the pages they have. Wiping them to report a transient
-      // fault loses their place for no benefit.
-      setHeld({
-        ...held,
-        moreFailed: { status: next.status, correlationId: next.correlationId },
-      });
-      return;
-    }
-    setHeld({
-      ...held,
-      rows: [...held.rows, ...next.rows],
-      nextCursor: next.nextCursor,
-      hasMore: next.hasMore,
-      moreFailed: null,
-    });
-  }, [held, key, loading, target, vehicleId]);
-
-  const current = held !== null && held.key === key ? held : null;
-
-  return (
-    <Section
-      headingId="warranty-results-heading"
-      titleKey="warranty.list.heading"
-      messages={messages}
-    >
-      {current === null ? (
-        <LoadingState messages={messages} />
-      ) : current.first.status !== 'ok' ? (
-        <ReadFailure
+        <Section
+          headingId="warranty-results-heading"
+          titleKey="warranty.list.heading"
           messages={messages}
-          status={current.first.status}
-          correlationId={current.first.correlationId}
-        />
-      ) : current.rows.length === 0 ? (
-        <EmptyState
-          messages={messages}
-          titleKey="warranty.list.noneTitle"
-          descriptionKey="warranty.list.noneDescription"
-        />
-      ) : (
-        <>
-          <table className="w-full text-body">
-            <caption className="sr-only">
-              {translate(messages, 'warranty.list.tableCaption')}
-            </caption>
-            <thead>
-              <tr className="text-caption text-text-muted">
-                <th scope="col" className="p-2 text-start">
-                  {translate(messages, 'warranty.list.columnPolicy')}
-                </th>
-                <th scope="col" className="p-2 text-start">
-                  {translate(messages, 'warranty.list.columnStatus')}
-                </th>
-                <th scope="col" className="p-2 text-start">
-                  {translate(messages, 'warranty.list.columnStart')}
-                </th>
-                <th scope="col" className="p-2 text-start">
-                  {translate(messages, 'warranty.list.columnExpiry')}
-                </th>
-                <th scope="col" className="p-2 text-start">
-                  {translate(messages, 'warranty.list.columnOdometerLimit')}
-                </th>
-                <th scope="col" className="p-2 text-start">
-                  {translate(messages, 'warranty.list.columnVehicle')}
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {current.rows.map((row) => (
-                <tr key={row.id} className="border-t border-border-subtle">
-                  <td className="p-2">
-                    <Link
-                      href={`/${locale}/warranty/${row.id}`}
-                      className="text-primary underline-offset-2 hover:underline"
-                    >
-                      <bdi>{row.policy.name}</bdi>
-                    </Link>
-                  </td>
-                  <td className="p-2">
-                    <WarrantyStatusLabel messages={messages} status={row.status} />
-                  </td>
-                  <td className="p-2">{formatDate(row.startDate, locale)}</td>
-                  <td className="p-2">{formatDate(row.expiryDate, locale)}</td>
-                  <td className="p-2">
-                    {row.odometerLimit === null ? (
-                      translate(messages, 'warranty.summary.noDistanceLimit')
-                    ) : (
-                      <Distance value={row.odometerLimit} />
-                    )}
-                  </td>
-                  <td className="p-2">
-                    <code className="font-mono text-caption" dir="ltr">
-                      {row.vehicleId}
-                    </code>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-
-          {current.moreFailed === null ? null : (
-            <ReadFailure
+        >
+          {/*
+            An ended session, said as itself. `SearchPhase` collapses it into
+            `failed` and `SearchStates` renders that arm with a Try again control
+            — a button that cannot work for somebody whose session has ended. The
+            finer `table.status` still distinguishes the two. A shared `expired`
+            arm would be the better home for this; `components/search` is owned
+            elsewhere and is left untouched.
+          */}
+          {search.table.status === 'expired' ? (
+            <SessionExpiredState messages={messages} />
+          ) : (
+            <SearchStates
               messages={messages}
-              status={current.moreFailed.status}
-              correlationId={current.moreFailed.correlationId}
+              phase={search.phase}
+              correlationId={search.correlationId}
+              {...(search.phase === 'empty' && (termIsSearchable || vehicleId !== null)
+                ? {
+                    onClearFilters: (
+                      <button type="button" className={SECONDARY_BUTTON} onClick={clearFilters}>
+                        {translate(messages, 'warranty.filter.clearFilters')}
+                      </button>
+                    ),
+                  }
+                : {})}
+              {...(search.phase === 'unavailable' || search.phase === 'failed'
+                ? {
+                    retry: (
+                      <button type="button" className={SECONDARY_BUTTON} onClick={search.submit}>
+                        {translate(messages, 'state.retry')}
+                      </button>
+                    ),
+                  }
+                : {})}
             />
           )}
 
-          {current.hasMore ? (
-            <button
-              type="button"
-              className={`mt-3 ${SECONDARY_BUTTON}`}
-              disabled={loading}
-              onClick={() => void loadMore()}
-            >
-              {translate(messages, 'warranty.list.loadMore')}
-            </button>
+          {search.phase === 'ready' ? (
+            <DataTable<WarrantyListRow>
+              messages={messages}
+              columns={columns}
+              rowId={(row) => row.id}
+              request={search.table.request}
+              response={search.table.response}
+              status={search.table.status}
+              onRequestChange={search.table.setRequest}
+              onRetry={search.table.refresh}
+              correlationId={search.table.correlationId}
+              caption={translate(messages, 'warranty.list.tableCaption')}
+              hiddenColumnIds={spansBranches ? [] : ['branch']}
+              /*
+               * The filters live outside `TableRequest`, so the table's own
+               * empty state would claim something about the whole branch on the
+               * evidence of one filter. `SearchStates` says it instead.
+               */
+              suppressEmptyState
+            />
           ) : null}
-        </>
+        </Section>
       )}
-    </Section>
+    </div>
   );
 }

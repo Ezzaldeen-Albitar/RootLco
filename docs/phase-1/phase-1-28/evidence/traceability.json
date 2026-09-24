@@ -222,9 +222,9 @@
         {
           "file": "apps/web/tests/appointments-calendar.dom.test.tsx",
           "cases": [
-            "sends the named branch as the target and the days as offset-bearing bounds",
+            "issues exactly one read on first paint, for today in the branch timezone",
             "renders a denial instead of an empty calendar",
-            "says a zero-row range is about the RANGE, not the branch",
+            "states no matches only after an answer, and offers a way back to the whole day",
             "renders in Arabic, right to left"
           ]
         },
@@ -237,7 +237,7 @@
         {
           "file": "apps/web/tests/e2e/authenticated/appointments-and-receptions.spec.ts",
           "cases": [
-            "it shows the idle state and issues no read until a target is submitted",
+            "it issues no read while no branch is chosen, and reads as soon as one is",
             "an inverted range is refused beside the field, not relayed from the server"
           ]
         }

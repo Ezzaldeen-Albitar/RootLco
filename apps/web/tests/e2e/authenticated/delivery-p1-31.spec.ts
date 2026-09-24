@@ -53,16 +53,6 @@ const handoff = readHandoff();
  */
 const READINESS_CODES = ['sal.delivery.view', 'wo.work_order.read', 'sal.finance.view'] as const;
 
-/**
- * The directory codes the queue's company and branch selectors are built from.
- *
- * They decide between the screen's two idle answers: with the directory readable and a
- * branch in it, the queue renders its form and its "nothing has been asked for yet"
- * state; without, it renders "no branch is available to you". That is the difference
- * the case below pins, instead of accepting either.
- */
-const DIRECTORY_CODES = ['org.company.read', 'org.branch.read'] as const;
-
 /** Replaces `window.print` with a counter, before any script on the page runs. */
 async function countPrintCalls(page: Page): Promise<void> {
   await page.addInitScript(() => {
@@ -88,24 +78,21 @@ async function printCalls(page: Page): Promise<number> {
 /**
  * Chooses the branch the harness worked in, on the readiness queue's own form.
  *
- * Addressed by ROLE, inside the form, with an exact name — not by label text.
- * `getByLabel(…'Branch')` matched TWO nodes and strict mode refused to guess
- * between them: a label is matched as a SUBSTRING of an accessible name, and the
- * form's own `aria-label` ("Choose a branch to review delivery readiness")
- * contains the word. The form is a `form` and the control is a `combobox`, and
- * the asterisk beside a required label is `aria-hidden`, so the control's
- * accessible name is the field's name exactly. Naming the role and the whole name
- * is the same fix `auth.setup.ts` records for "Password" against "Show password".
+ * The branch is chosen ONCE, in the header, and every screen reads that choice.
+ *
+ * It used to be chosen on the queue itself, from two selects over a directory
+ * the screen read for itself, behind a Show button. All three are gone: the
+ * working context publishes the named branches this caller is authorized for,
+ * and the queue reads its branch on arrival. An operator with exactly one
+ * authorized branch has it selected for them and meets no control at all, so
+ * the chooser is set only when it exists.
  */
 async function chooseBranch(page: Page, locale: 'en' | 'ar', h: P131Handoff): Promise<void> {
-  const form = page.getByRole('form', { name: say(locale, 'delivery.queue.formLabel') });
-  await form
-    .getByRole('combobox', { name: say(locale, 'delivery.queue.company'), exact: true })
-    .selectOption(h.companyId);
-  await form
-    .getByRole('combobox', { name: say(locale, 'delivery.queue.branch'), exact: true })
-    .selectOption(h.branchId);
-  await form.getByRole('button', { name: say(locale, 'delivery.queue.show'), exact: true }).click();
+  void locale;
+  const chooser = page.getByTestId('working-context-select');
+  if ((await chooser.count()) > 0) {
+    await chooser.selectOption(h.branchId);
+  }
 }
 
 /* ------------------------------------------------------------------ *
@@ -206,20 +193,15 @@ test.describe('P1-31 delivery screens, over the acceptance journey records', () 
    * IDLE states, because the tenant the bootstrap makes carries no work order.
    *
    * That is the case below. It asserts the conjunction let this session through, and that the
-   * screen answered with the ONE idle state that account is entitled to — rather than with a
-   * blank region, which is the failure mode a queue has when it renders before it is asked and
-   * reads to an operator as "nothing is ready" when the truth is "nothing has been requested".
+   * screen then answered about a branch rather than with a blank region.
    *
-   * ## Which idle, and why it is pinned rather than accepted either way
+   * ## The branch is no longer a question this screen asks
    *
-   * The screen has two honest idles. `noScopes` when the session can reach no
-   * company-and-branch pair at all; `idle` when it can and has not asked yet. That is not a
-   * fixture detail this case may decline to know: it is decided by whether the account holds
-   * the two directory codes, and both credential kinds do, in an environment where an
-   * organisation with a company and a branch was provisioned before the browser ran. So the
-   * case pins `idle` and requires `noScopes` to be ABSENT. A directory that came back empty
-   * for a caller entitled to read it would fail here, which is exactly the kind of silent
-   * regression the previous "one of the two, either will do" version could not see.
+   * It used to carry two selects over a directory it read for itself, behind a Show button,
+   * with two honest idle states depending on whether that directory could be read at all.
+   * The branch is the working context's own named selection now, so what is pinned is that
+   * the queue either NAMES its branch or says why it cannot — and that it offers no control
+   * of its own that would set one, which is the defect the change was for.
    */
   test('the readiness queue answers exactly what the signed-in account is entitled to', async ({
     page,
@@ -227,12 +209,15 @@ test.describe('P1-31 delivery screens, over the acceptance journey records', () 
     const locale = localeOf(testInfo.project.name);
     const kind = readAccountKind();
     const mayView = READINESS_CODES.every((code) => holds(kind, code));
-    const mayReadDirectory = DIRECTORY_CODES.every((code) => holds(kind, code));
 
     await page.goto(`/${locale}/delivery`);
 
+    // EXACT, because the queue now reads on arrival and so renders its results
+    // section at once, whose visually hidden heading names the page title and
+    // then the branch. A heading name is matched as a substring by default, so
+    // the page title alone resolved to both and strict mode refused to guess.
     await expect(
-      page.getByRole('heading', { name: say(locale, 'delivery.queue.title') })
+      page.getByRole('heading', { name: say(locale, 'delivery.queue.title'), exact: true })
     ).toBeVisible();
     await expect(page.locator('html')).toHaveAttribute('dir', locale === 'ar' ? 'rtl' : 'ltr');
 
@@ -244,9 +229,7 @@ test.describe('P1-31 delivery screens, over the acceptance journey records', () 
         `${kind} does not hold all of ${READINESS_CODES.join(', ')}, so the queue must refuse it`
       ).toBeVisible();
       await expect(page.getByText(say(locale, 'state.denied.description'))).toBeVisible();
-      await expect(
-        page.getByRole('form', { name: say(locale, 'delivery.queue.formLabel') })
-      ).toHaveCount(0);
+      await expect(page.getByTestId('delivery-queue-branch')).toHaveCount(0);
       return;
     }
 
@@ -257,29 +240,26 @@ test.describe('P1-31 delivery screens, over the acceptance journey records', () 
       `${kind} holds all of ${READINESS_CODES.join(', ')}, so the queue must let it through`
     ).toHaveCount(0);
 
-    const idling = page.getByText(say(locale, 'delivery.queue.idleTitle'));
-    const noScopes = page.getByText(say(locale, 'delivery.queue.noScopesTitle'));
-    if (mayReadDirectory) {
-      await expect(
-        page.getByRole('form', { name: say(locale, 'delivery.queue.formLabel') })
-      ).toBeVisible();
-      await expect(
-        idling,
-        'the queue reached its form and has been asked for nothing, so it must say so'
-      ).toBeVisible();
-      await expect(
-        noScopes,
-        `${kind} holds ${DIRECTORY_CODES.join(' and ')} in an organisation that has a branch, ` +
-          'so "no branch is available to you" is the wrong answer'
-      ).toHaveCount(0);
-    } else {
-      await expect(
-        noScopes,
-        `${kind} cannot read the company and branch directory, so the queue must say the ` +
-          'selection cannot be made rather than showing an empty form'
-      ).toBeVisible();
-      await expect(idling).toHaveCount(0);
-    }
+    /*
+     * The queue reads on arrival now, so what proves it was reached is the
+     * branch it states rather than an idle sentence it no longer has. The branch
+     * is STATED: there is no control on this page that could set it, which is
+     * the property the two directory codes used to decide between.
+     */
+    const named = page.getByTestId('delivery-queue-branch');
+    const blocked = page.getByTestId('delivery-queue-blocked');
+    await expect(
+      named.or(blocked).first(),
+      'the queue neither named a branch nor said why it could not'
+    ).toBeVisible();
+    await expect(
+      named.getByRole('combobox'),
+      'the queue offered a second place to choose a branch'
+    ).toHaveCount(0);
+    await expect(
+      named.getByRole('textbox'),
+      'the queue asked the operator to type a branch'
+    ).toHaveCount(0);
   });
 
   test('the readiness queue answers for every row it shows', async ({ page }, testInfo) => {
@@ -292,7 +272,7 @@ test.describe('P1-31 delivery screens, over the acceptance journey records', () 
 
     await page.goto(`/${locale}/delivery`);
     await expect(
-      page.getByRole('heading', { name: say(locale, 'delivery.queue.title') })
+      page.getByRole('heading', { name: say(locale, 'delivery.queue.title'), exact: true })
     ).toBeVisible();
     await expect(page.locator('html')).toHaveAttribute('dir', locale === 'ar' ? 'rtl' : 'ltr');
 

@@ -1,9 +1,42 @@
 import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import ar from '../src/i18n/messages/ar.json';
 import en from '../src/i18n/messages/en.json';
-import { renderLtr, renderRtl } from './render';
+import type { ReactElement } from 'react';
+import {
+  inBranch,
+  renderLtr as renderInLtr,
+  renderRtl as renderInRtl,
+  BranchSwitch,
+  OTHER_BRANCH,
+  TEST_BRANCH,
+  WorkingBranchProbe,
+  branchSnapshot,
+} from './render';
+import {
+  discardAndSwitch,
+  forgetRememberedBranch,
+  heldBranch,
+  stayOnBranch,
+  switchExpectingQuestion,
+  switchWithoutQuestion,
+} from './support/branch-switch';
+
+/*
+ * Every screen in this file is addressed by the WORKING CONTEXT: the branch it
+ * reads is the header's own named selection, not a pair typed into the screen
+ * (Owner directive, `P1-32-PRE-OD-UX`). So each render goes inside a provider.
+ *
+ * The two names are shadowed rather than changed at every call site, which
+ * keeps the default snapshot — one authorized branch, selected for the operator
+ * — true for every case below. A case that needs a different snapshot builds
+ * one and renders it explicitly.
+ */
+const renderLtr = (ui: ReactElement, options?: Parameters<typeof renderInLtr>[1]) =>
+  renderInLtr(inBranch(ui), options);
+const renderRtl = (ui: ReactElement, options?: Parameters<typeof renderInRtl>[1]) =>
+  renderInRtl(inBranch(ui, { locale: 'ar' }), options);
 import {
   BRANCH_ID,
   COMPANY_ID,
@@ -129,7 +162,6 @@ function transfer(over: Record<string, unknown> = {}) {
 }
 
 const TARGET_FORM = 'inventory.transfers.targetLabel';
-const TARGET_SUBMIT = 'inventory.transfers.chooseBranch';
 const listRegion = () =>
   screen.getByRole('region', { name: EN['inventory.transfers.list.heading'] as string });
 
@@ -165,12 +197,16 @@ beforeEach(() => {
 });
 
 describe('the transfers of a branch', () => {
-  it('reads nothing before a branch is named, then lists what the branch sent', async () => {
-    const user = userEvent.setup();
+  it('reads the working branch on arrival, and lists what it sent', async () => {
+    /*
+     * This used to assert that nothing was read until a branch was named in a
+     * form on this screen. The branch is the header's own named selection now,
+     * so opening the screen IS naming it — and no directory read is issued,
+     * because the shell already holds the names.
+     */
     renderScreen();
-    await waitFor(() => expect(listBranches).toHaveBeenCalled());
-    expect(listTransfers).not.toHaveBeenCalled();
-    await chooseBranch(user, TARGET_FORM, TARGET_SUBMIT);
+    await chooseBranch(TARGET_FORM);
+    expect(listBranches).not.toHaveBeenCalled();
     await waitFor(() => expect(listTransfers).toHaveBeenCalled());
     expect(listTransfers.mock.calls[0]?.[0]).toEqual({
       companyId: COMPANY_ID,
@@ -189,7 +225,7 @@ describe('the transfers of a branch', () => {
   it('reads the list again for the transfers coming to the branch', async () => {
     const user = userEvent.setup();
     renderScreen();
-    await chooseBranch(user, TARGET_FORM, TARGET_SUBMIT);
+    await chooseBranch(TARGET_FORM);
     await within(listRegion()).findByRole('table');
     await user.click(
       within(listRegion()).getByLabelText(EN['inventory.transfers.direction.inbound'] as string)
@@ -204,10 +240,9 @@ describe('the transfers of a branch', () => {
   });
 
   it('a refused list is a refusal, never an empty branch', async () => {
-    const user = userEvent.setup();
     listTransfers.mockResolvedValue({ status: 'denied', correlationId: 'c' });
     renderScreen();
-    await chooseBranch(user, TARGET_FORM, TARGET_SUBMIT);
+    await chooseBranch(TARGET_FORM);
     expect(
       await within(listRegion()).findByText(EN['inventory.transfers.list.refused'] as string)
     ).toBeVisible();
@@ -232,7 +267,7 @@ describe('receiving what arrived', () => {
       )
     );
     renderScreen();
-    await chooseBranch(user, TARGET_FORM, TARGET_SUBMIT);
+    await chooseBranch(TARGET_FORM);
     await openAction(user, 'inventory.transfers.receive.action');
     const form = screen.getByRole('form', { name: /Receive the transfer of/ });
     await user.type(
@@ -269,7 +304,7 @@ describe('receiving what arrived', () => {
   it('refuses a malformed or zero quantity before sending', async () => {
     const user = userEvent.setup();
     renderScreen();
-    await chooseBranch(user, TARGET_FORM, TARGET_SUBMIT);
+    await chooseBranch(TARGET_FORM);
     await openAction(user, 'inventory.transfers.receive.action');
     const form = screen.getByRole('form', { name: /Receive the transfer of/ });
     await user.type(
@@ -289,7 +324,7 @@ describe('receiving what arrived', () => {
     const user = userEvent.setup();
     receiveTransfer.mockResolvedValue(refusedWith('inventory.transfers.receive.refused'));
     renderScreen();
-    await chooseBranch(user, TARGET_FORM, TARGET_SUBMIT);
+    await chooseBranch(TARGET_FORM);
     await openAction(user, 'inventory.transfers.receive.action');
     const form = screen.getByRole('form', { name: /Receive the transfer of/ });
     await user.type(
@@ -314,7 +349,7 @@ describe('receiving what arrived', () => {
       const user = userEvent.setup();
       receiveTransfer.mockResolvedValue(refusedWith(`form.violation.${rule}`));
       renderScreen();
-      await chooseBranch(user, TARGET_FORM, TARGET_SUBMIT);
+      await chooseBranch(TARGET_FORM);
       await openAction(user, 'inventory.transfers.receive.action');
       const form = screen.getByRole('form', { name: /Receive the transfer of/ });
       const quantity = within(form).getByLabelText(
@@ -364,7 +399,7 @@ describe('settling what did not arrive', () => {
       })
     );
     renderScreen();
-    await chooseBranch(user, TARGET_FORM, TARGET_SUBMIT);
+    await chooseBranch(TARGET_FORM);
     await openAction(user, 'inventory.transfers.resolve.action');
     const form = screen.getByRole('form', { name: /Settle missing units of/ });
     await user.click(
@@ -424,7 +459,7 @@ describe('settling what did not arrive', () => {
       })
     );
     renderScreen();
-    await chooseBranch(user, TARGET_FORM, TARGET_SUBMIT);
+    await chooseBranch(TARGET_FORM);
     await openAction(user, 'inventory.transfers.resolve.action');
     const form = screen.getByRole('form', { name: /Settle missing units of/ });
     // Return to origin is the preselected choice.
@@ -467,7 +502,7 @@ describe('settling what did not arrive', () => {
       refusedWith('inventory.transfers.resolve.refused')
     );
     renderScreen();
-    await chooseBranch(user, TARGET_FORM, TARGET_SUBMIT);
+    await chooseBranch(TARGET_FORM);
     await openAction(user, 'inventory.transfers.resolve.action');
     const form = screen.getByRole('form', { name: /Settle missing units of/ });
     await user.type(
@@ -487,12 +522,11 @@ describe('settling what did not arrive', () => {
   });
 
   it('cancel is offered only while nothing has been received', async () => {
-    const user = userEvent.setup();
     listTransfers.mockResolvedValue(
       okPage([transfer({ status: 'partially_received', receivedQuantity: '1.000' })])
     );
     renderScreen();
-    await chooseBranch(user, TARGET_FORM, TARGET_SUBMIT);
+    await chooseBranch(TARGET_FORM);
     const table = await within(listRegion()).findByRole('table');
     expect(
       within(table).getByRole('button', {
@@ -548,7 +582,7 @@ describe('deciding a write-off that waits for a second person', () => {
       })
     );
     renderScreen();
-    await chooseBranch(user, TARGET_FORM, TARGET_SUBMIT);
+    await chooseBranch(TARGET_FORM);
     await waitFor(() => expect(listTransferWriteOffs).toHaveBeenCalledTimes(1));
     expect(listTransferWriteOffs.mock.calls[0]).toEqual([
       { companyId: COMPANY_ID, branchId: BRANCH_ID },
@@ -602,7 +636,7 @@ describe('deciding a write-off that waits for a second person', () => {
       })
     );
     renderScreen();
-    await chooseBranch(user, TARGET_FORM, TARGET_SUBMIT);
+    await chooseBranch(TARGET_FORM);
     const table = await within(writeOffRegion()).findByRole('table');
     await user.click(within(table).getByRole('button', { name: DECIDE_BUTTON }));
     const form = screen.getByRole('form', { name: /Decide the write-off of/ });
@@ -631,10 +665,9 @@ describe('deciding a write-off that waits for a second person', () => {
   });
 
   it('the requester is not offered the decision and is told another person must decide it', async () => {
-    const user = userEvent.setup();
     listTransferWriteOffs.mockResolvedValue(okPage([writeOff({ requestedBy: USER_ID })]));
     renderScreen();
-    await chooseBranch(user, TARGET_FORM, TARGET_SUBMIT);
+    await chooseBranch(TARGET_FORM);
     const table = await within(writeOffRegion()).findByRole('table');
     expect(
       within(table).getByText(EN['inventory.transfers.writeOffs.ownRequest'] as string)
@@ -646,10 +679,9 @@ describe('deciding a write-off that waits for a second person', () => {
   });
 
   it('without the approval permission no decision is offered, and the row says why', async () => {
-    const user = userEvent.setup();
     listTransferWriteOffs.mockResolvedValue(okPage([writeOff()]));
     renderScreen({ canApprove: false });
-    await chooseBranch(user, TARGET_FORM, TARGET_SUBMIT);
+    await chooseBranch(TARGET_FORM);
     const table = await within(writeOffRegion()).findByRole('table');
     expect(
       within(table).getByText(EN['inventory.transfers.writeOffs.needsApprove'] as string)
@@ -664,7 +696,7 @@ describe('deciding a write-off that waits for a second person', () => {
       refusedWith('inventory.transfers.writeOffs.decide.refused')
     );
     renderScreen();
-    await chooseBranch(user, TARGET_FORM, TARGET_SUBMIT);
+    await chooseBranch(TARGET_FORM);
     const table = await within(writeOffRegion()).findByRole('table');
     await user.click(within(table).getByRole('button', { name: DECIDE_BUTTON }));
     const form = screen.getByRole('form', { name: /Decide the write-off of/ });
@@ -683,10 +715,9 @@ describe('deciding a write-off that waits for a second person', () => {
   });
 
   it('a refused write-off list is a refusal, never an empty list', async () => {
-    const user = userEvent.setup();
     listTransferWriteOffs.mockResolvedValue({ status: 'denied', correlationId: 'c' });
     renderScreen();
-    await chooseBranch(user, TARGET_FORM, TARGET_SUBMIT);
+    await chooseBranch(TARGET_FORM);
     expect(
       await within(writeOffRegion()).findByText(
         EN['inventory.transfers.writeOffs.refused'] as string
@@ -698,6 +729,72 @@ describe('deciding a write-off that waits for a second person', () => {
   });
 });
 
+describe('a half-written transfer and a branch switch', () => {
+  /*
+   * The dispatch form names this branch's locations and is keyed on the branch,
+   * so a switch used to drop it without a word. It now asks first.
+   */
+  afterEach(forgetRememberedBranch);
+
+  async function openTwoBranches(user: ReturnType<typeof userEvent.setup>) {
+    renderInLtr(
+      inBranch(
+        <>
+          <BranchSwitch to={TEST_BRANCH.id} label="first" />
+          <BranchSwitch to={OTHER_BRANCH.id} label="second" />
+          <WorkingBranchProbe />
+          <TransfersScreen
+            locale="en"
+            messages={en}
+            currentUserId={USER_ID}
+            canOperate={true}
+            canApprove={true}
+            canReadBranches={true}
+          />
+        </>,
+        { snapshot: branchSnapshot([TEST_BRANCH, OTHER_BRANCH]) }
+      )
+    );
+    await user.click(screen.getByRole('button', { name: 'first' }));
+    await screen.findByRole('form', { name: EN['inventory.transfers.create.heading'] as string });
+  }
+  const field = () =>
+    within(
+      screen.getByRole('form', { name: EN['inventory.transfers.create.heading'] as string })
+    ).getByLabelText(labelled('inventory.transfers.create.quantity')) as HTMLInputElement;
+
+  it('asks before switching; staying keeps what was typed and the branch', async () => {
+    const user = userEvent.setup();
+    await openTwoBranches(user);
+    await user.type(field(), '2.500');
+    await stayOnBranch(user, await switchExpectingQuestion(user, 'second'));
+    expect(heldBranch()).toBe(TEST_BRANCH.id);
+    expect(field().value).toBe('2.500');
+  });
+
+  it('discarding switches the branch and opens the form empty under it', async () => {
+    const user = userEvent.setup();
+    await openTwoBranches(user);
+    await user.type(field(), '2.500');
+    await discardAndSwitch(user, await switchExpectingQuestion(user, 'second'));
+    await waitFor(() => expect(heldBranch()).toBe(OTHER_BRANCH.id));
+    await waitFor(() =>
+      expect(listTransfers.mock.lastCall?.[0]).toEqual({
+        companyId: OTHER_BRANCH.companyId,
+        branchId: OTHER_BRANCH.id,
+      })
+    );
+    expect(field().value).toBe('');
+  });
+
+  it('an untouched form switches without asking', async () => {
+    const user = userEvent.setup();
+    await openTwoBranches(user);
+    await switchWithoutQuestion(user, 'second');
+    await waitFor(() => expect(heldBranch()).toBe(OTHER_BRANCH.id));
+  });
+});
+
 describe('sending a transfer', () => {
   it('sends the chosen item, both locations, the typed quantity and one key per form', async () => {
     const user = userEvent.setup();
@@ -705,7 +802,7 @@ describe('sending a transfer', () => {
       succeeded('inventory.transfers.create.success', { ...transfer(), replayed: false })
     );
     renderScreen();
-    await chooseBranch(user, TARGET_FORM, TARGET_SUBMIT);
+    await chooseBranch(TARGET_FORM);
     const form = screen.getByRole('form', {
       name: EN['inventory.transfers.create.heading'] as string,
     });
@@ -743,7 +840,7 @@ describe('sending a transfer', () => {
   it('refuses the same location at both ends before sending', async () => {
     const user = userEvent.setup();
     renderScreen();
-    await chooseBranch(user, TARGET_FORM, TARGET_SUBMIT);
+    await chooseBranch(TARGET_FORM);
     const form = screen.getByRole('form', {
       name: EN['inventory.transfers.create.heading'] as string,
     });
@@ -773,10 +870,9 @@ describe('sending a transfer', () => {
 
 describe('permission decides what is offered', () => {
   it('without the operate permission there is no action and no form, and the screen says why', async () => {
-    const user = userEvent.setup();
     renderScreen({ canOperate: false });
     expect(screen.getByText(EN['inventory.transfers.needsOperate'] as string)).toBeVisible();
-    await chooseBranch(user, TARGET_FORM, TARGET_SUBMIT);
+    await chooseBranch(TARGET_FORM);
     const table = await within(listRegion()).findByRole('table');
     expect(within(table).queryAllByRole('button')).toHaveLength(0);
     expect(
@@ -799,7 +895,14 @@ describe('the /inventory/transfers route page decides before it reads', () => {
     expect(listTransfers).not.toHaveBeenCalled();
   });
 
-  it('binds the operate capability to inv.stock.operate and the branch list to org.branch.read', async () => {
+  it('binds the operate capability to inv.stock.operate, and reads no directory either way', async () => {
+    /*
+     * The second half of this case used to bind the branch LIST to
+     * `org.branch.read`. That binding is gone: the working context publishes
+     * the named branches this caller may act in, is gated on `iam.user.read`,
+     * and is read once by the shell — so no screen issues `org.branch-list` for
+     * a picker any more, with the code or without it.
+     */
     PERMISSIONS = ['inv.stock.read'];
     const { unmount } = await renderPage();
     expect(screen.getByText(EN['inventory.transfers.needsOperate'] as string)).toBeVisible();
@@ -812,17 +915,17 @@ describe('the /inventory/transfers route page decides before it reads', () => {
     PERMISSIONS = ['inv.stock.read', 'inv.stock.operate', 'org.branch.read'];
     await renderPage();
     expect(screen.queryByText(EN['inventory.transfers.needsOperate'] as string)).toBeNull();
-    await waitFor(() => expect(listBranches).toHaveBeenCalled());
+    await waitFor(() => expect(listTransfers).toHaveBeenCalled());
+    expect(listBranches).not.toHaveBeenCalled();
   });
 
   it('binds the decision to inv.adjustment.approve and the requester to the signed-in person', async () => {
-    const user = userEvent.setup();
     listTransferWriteOffs.mockResolvedValue(
       okPage([writeOff(), writeOff({ id: 'own', sku: 'OWN-001', requestedBy: USER_ID })])
     );
     PERMISSIONS = ['inv.stock.read', 'org.branch.read'];
     const { unmount } = await renderPage();
-    await chooseBranch(user, TARGET_FORM, TARGET_SUBMIT);
+    await chooseBranch(TARGET_FORM);
     let table = await within(writeOffRegion()).findByRole('table');
     expect(
       within(table).getAllByText(EN['inventory.transfers.writeOffs.needsApprove'] as string)
@@ -831,7 +934,7 @@ describe('the /inventory/transfers route page decides before it reads', () => {
 
     PERMISSIONS = ['inv.stock.read', 'inv.adjustment.approve', 'org.branch.read'];
     await renderPage();
-    await chooseBranch(user, TARGET_FORM, TARGET_SUBMIT);
+    await chooseBranch(TARGET_FORM);
     table = await within(writeOffRegion()).findByRole('table');
     expect(within(table).getByRole('button', { name: DECIDE_BUTTON })).toBeVisible();
     expect(
@@ -847,14 +950,13 @@ describe('the /inventory/transfers route page decides before it reads', () => {
 
 describe('accessibility and Arabic', () => {
   it('the listed branch has no serious or critical accessibility finding', async () => {
-    const user = userEvent.setup();
     const { container } = renderScreen();
-    await chooseBranch(user, TARGET_FORM, TARGET_SUBMIT);
+    await chooseBranch(TARGET_FORM);
     await within(listRegion()).findByRole('table');
     expect(await seriousViolations(container)).toEqual([]);
   });
 
-  it('renders in Arabic, right to left, with the same controls', async () => {
+  it('renders in Arabic, right to left, and reads its branch there too', async () => {
     renderRtl(
       <TransfersScreen
         locale="ar"
@@ -862,13 +964,14 @@ describe('accessibility and Arabic', () => {
         currentUserId={USER_ID}
         canOperate={true}
         canApprove={true}
-        canReadBranches={false}
       />
     );
     expect(screen.getByText(AR['inventory.transfers.explain'] as string)).toBeVisible();
     expect(
-      screen.getByRole('form', { name: AR['inventory.transfers.targetLabel'] as string })
+      screen.getByRole('region', { name: AR['inventory.transfers.targetLabel'] as string })
     ).toBeVisible();
-    expect(listTransfers).not.toHaveBeenCalled();
+    expect(document.documentElement.dir).toBe('rtl');
+    // Addressed on arrival in Arabic exactly as in English.
+    await waitFor(() => expect(listTransfers).toHaveBeenCalled());
   });
 });

@@ -7,6 +7,7 @@ import { DataTable, type Column } from '@/components/data-table/DataTable';
 import { INITIAL_REQUEST, type TableRequest } from '@/components/data-table/table-state';
 import { useServerTable } from '@/components/data-table/use-server-table';
 import { SelectField, TextField } from '@/components/forms/Field';
+import { useUnsavedGuard } from '@/features/working-context/WorkingContextProvider';
 import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic } from '@/i18n/get-messages';
@@ -22,18 +23,8 @@ import {
   type StockMovement,
   type StockTarget,
 } from '../inventory-contract';
-import {
-  BranchPairPicker,
-  EMPTY_PAIR,
-  LocationPicker,
-  PRIMARY_BUTTON,
-  Qty,
-  UUID,
-  canNameBranch,
-  useBranches,
-  useLocations,
-  type BranchPair,
-} from './shared';
+import { LocationPicker, PRIMARY_BUTTON, Qty, UUID, useLocations } from './shared';
+import { BranchTargetForm } from './stock-operations';
 
 /**
  * Stock movements (P1-30, `W5`, FE-013): the ledger of one branch, newest
@@ -58,23 +49,18 @@ export function MovementsScreen({
   locale,
   messages,
   initialWorkOrderId,
-  canReadBranches,
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
   /** From the address, when the screen was reached from a work order; prefills the filter. */
   readonly initialWorkOrderId: string | null;
-  /** `org.branch.read` — whether a branch list is requested for the target picker. */
-  readonly canReadBranches: boolean;
+  /**
+   * `org.branch.read`. Accepted so the route did not have to change, and no
+   * longer read: the branch is the working context's named selection.
+   */
+  readonly canReadBranches?: boolean;
 }) {
-  const branches = useBranches(canReadBranches);
-  const [pair, setPair] = useState<BranchPair>(EMPTY_PAIR);
   const [target, setTarget] = useState<StockTarget | null>(null);
-  const [errors, setErrors] = useState<Readonly<Record<string, string>>>({});
-  const errorFor = (name: string): string | undefined => {
-    const key = errors[name];
-    return key ? translateDynamic(messages, key) : undefined;
-  };
 
   return (
     <div className="flex min-h-0 flex-col gap-4">
@@ -88,38 +74,12 @@ export function MovementsScreen({
         </Link>
       </p>
 
-      <form
-        onSubmit={(event) => {
-          event.preventDefault();
-          const found: Record<string, string> = {};
-          if (!UUID.test(pair.companyId.trim())) found['companyId'] = 'inventory.common.idFormat';
-          if (!UUID.test(pair.branchId.trim())) found['branchId'] = 'inventory.common.idFormat';
-          setErrors(found);
-          if (Object.keys(found).length > 0) return;
-          setTarget({ companyId: pair.companyId.trim(), branchId: pair.branchId.trim() });
-        }}
-        noValidate
-        aria-label={translate(messages, 'inventory.target.formLabel')}
-        className="grid gap-3 rounded-lg border border-border bg-surface p-4 sm:grid-cols-3"
-      >
-        <p className="text-caption text-text-muted sm:col-span-3">
-          {translate(messages, 'inventory.target.explain')}
-        </p>
-        <BranchPairPicker
-          messages={messages}
-          branches={branches}
-          label={translate(messages, 'inventory.target.branch')}
-          placeholder={translate(messages, 'inventory.target.chooseBranch')}
-          value={pair}
-          onChange={setPair}
-          errors={{ companyId: errorFor('companyId'), branchId: errorFor('branchId') }}
-        />
-        <div className="sm:col-span-3">
-          <button type="submit" className={PRIMARY_BUTTON} disabled={!canNameBranch(branches)}>
-            {translate(messages, 'inventory.movements.chooseBranch')}
-          </button>
-        </div>
-      </form>
+      <BranchTargetForm
+        messages={messages}
+        formLabelKey="inventory.target.formLabel"
+        explainKey="inventory.target.explain"
+        onChosen={setTarget}
+      />
 
       {target ? (
         <LedgerPanel
@@ -155,7 +115,7 @@ function LedgerPanel({
   readonly initialWorkOrderId: string | null;
 }) {
   const locations = useLocations(target);
-  const [draft, setDraft] = useState({
+  const [initial] = useState(() => ({
     itemId: '',
     locationId: '',
     workOrderId: initialWorkOrderId ?? '',
@@ -163,7 +123,17 @@ function LedgerPanel({
     referenceKind: '',
     occurredFrom: '',
     occurredTo: '',
-  });
+  }));
+  const [draft, setDraft] = useState(initial);
+  /*
+   * The filters are held under THIS branch's key, and a location filter names
+   * one of this branch's locations, so a switch would silently drop what the
+   * operator set. It asks first; a confirmed switch remounts the panel with the
+   * filters it opened with.
+   */
+  useUnsavedGuard(
+    (Object.keys(initial) as (keyof typeof initial)[]).some((name) => draft[name] !== initial[name])
+  );
   const [errors, setErrors] = useState<Readonly<Record<string, string>>>({});
   // `null` until the operator asks: the ledger read is recorded server-side and
   // is never made on first paint.

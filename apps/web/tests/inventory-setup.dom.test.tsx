@@ -14,18 +14,49 @@
 
 import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import en from '../src/i18n/messages/en.json';
 import ar from '../src/i18n/messages/ar.json';
-import { renderLtr, renderRtl } from './render';
+import type { ReactElement } from 'react';
+import {
+  inBranch,
+  renderLtr as renderInLtr,
+  renderRtl as renderInRtl,
+  RETIRED_BOX,
+  BranchSwitch,
+  OTHER_BRANCH,
+  TEST_BRANCH,
+  WorkingBranchProbe,
+  branchSnapshot,
+} from './render';
+import {
+  discardAndSwitch,
+  forgetRememberedBranch,
+  heldBranch,
+  stayOnBranch,
+  switchExpectingQuestion,
+  switchWithoutQuestion,
+} from './support/branch-switch';
+
+/*
+ * Every screen in this file is addressed by the WORKING CONTEXT: the branch it
+ * reads is the header's own named selection, not a pair typed into the screen
+ * (Owner directive, `P1-32-PRE-OD-UX`). So each render goes inside a provider.
+ *
+ * The two names are shadowed rather than changed at every call site, which
+ * keeps the default snapshot — one authorized branch, selected for the operator
+ * — true for every case below. A case that needs a different snapshot builds
+ * one and renders it explicitly.
+ */
+const renderLtr = (ui: ReactElement, options?: Parameters<typeof renderInLtr>[1]) =>
+  renderInLtr(inBranch(ui), options);
+const renderRtl = (ui: ReactElement, options?: Parameters<typeof renderInRtl>[1]) =>
+  renderInRtl(inBranch(ui, { locale: 'ar' }), options);
 
 const EN = en as Record<string, string>;
 const AR = ar as Record<string, string>;
 const escape = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const labelled = (key: string) => new RegExp(`^${escape(EN[key] as string)}`);
-const labelledAr = (key: string) => new RegExp(`^${escape(AR[key] as string)}`);
-/** The one listed branch, as the picker labels it. */
-const OPTION_NAME = 'AMM-1 — Amman';
 
 const listItemCategories = vi.fn();
 const listUnitsOfMeasure = vi.fn();
@@ -170,16 +201,18 @@ async function renderPage(params: Record<string, string>) {
 }
 const form = (key: string) => screen.getByRole('form', { name: EN[key] as string });
 const targetForm = () =>
-  screen.getByRole('form', { name: EN['inventory.setup.locations.targetLabel'] as string });
+  screen.getByRole('region', { name: EN['inventory.setup.locations.targetLabel'] as string });
 
-async function chooseBranch(user: ReturnType<typeof userEvent.setup>) {
-  const select = await within(targetForm()).findByRole('combobox');
-  await user.selectOptions(select, BRANCH_ID);
-  await user.click(
-    within(targetForm()).getByRole('button', {
-      name: EN['inventory.setup.locations.show'] as string,
-    })
-  );
+/**
+ * Wait for the branch this screen is addressed to.
+ *
+ * It used to choose one from a select and press a submit. Both are gone (Owner
+ * directive, `P1-32-PRE-OD-UX`): the branch is the working context own named
+ * selection, so the screen is addressed the moment it mounts and what is left
+ * to do is wait for what follows.
+ */
+async function chooseBranch() {
+  await waitFor(() => expect(listLocations).toHaveBeenCalled());
 }
 
 beforeEach(() => {
@@ -392,7 +425,7 @@ describe('stock locations', () => {
       )
     );
     renderScreen({ canManage: true, canReadStock: true, canReadBranches: true });
-    await chooseBranch(user);
+    await chooseBranch();
     await waitFor(() =>
       expect(listLocations).toHaveBeenCalledWith({ companyId: COMPANY_ID, branchId: BRANCH_ID })
     );
@@ -438,7 +471,7 @@ describe('stock locations', () => {
       )
     );
     renderScreen({ canManage: true, canReadStock: true, canReadBranches: true });
-    await chooseBranch(user);
+    await chooseBranch();
     await screen.findByText('WH-1');
     const panel = form('inventory.setup.location.new');
     await user.type(
@@ -482,20 +515,20 @@ describe('stock locations', () => {
   });
 
   it('without inv.stock.read, requests no location list and says why', async () => {
-    const user = userEvent.setup();
     renderScreen({ canManage: true, canReadStock: false, canReadBranches: true });
-    await chooseBranch(user);
     expect(
       await screen.findByText(EN['inventory.setup.locations.noPermission'] as string)
     ).toBeVisible();
+    // The branch is addressed on arrival, and the read is still withheld: the
+    // permission decides it, not the absence of a target.
+    await new Promise((resolve) => setTimeout(resolve, 100));
     expect(listLocations).not.toHaveBeenCalled();
   });
 
   it('a refused location read is a refusal, where the list would have been', async () => {
-    const user = userEvent.setup();
     listLocations.mockResolvedValue(denied());
     renderScreen({ canManage: false, canReadStock: true, canReadBranches: true });
-    await chooseBranch(user);
+    await chooseBranch();
     expect(await screen.findByText(EN['inventory.locations.refused'] as string)).toBeVisible();
   });
 });
@@ -509,215 +542,193 @@ describe('stock locations', () => {
  * gets by design. Five failure reasons flattened into one sentence, and a
  * zero-row list rendered a select holding only its placeholder.
  * -------------------------------------------------------------------- */
-describe('CC-15 — the branch picker says which of six states it is in', () => {
+describe('a location being added and a branch switch', () => {
+  /*
+   * The location form was not keyed on the branch: a parent warehouse chosen for
+   * one branch travelled to the next. It is keyed now, and it asks first.
+   */
+  afterEach(forgetRememberedBranch);
+
+  async function openTwoBranches(user: ReturnType<typeof userEvent.setup>) {
+    renderInLtr(
+      inBranch(
+        <>
+          <BranchSwitch to={TEST_BRANCH.id} label="first" />
+          <BranchSwitch to={OTHER_BRANCH.id} label="second" />
+          <WorkingBranchProbe />
+          <SetupScreen
+            locale="en"
+            messages={en}
+            canManage={true}
+            canReadStock={true}
+            canReadBranches={true}
+          />
+        </>,
+        { snapshot: branchSnapshot([TEST_BRANCH, OTHER_BRANCH]) }
+      )
+    );
+    await user.click(screen.getByRole('button', { name: 'first' }));
+    await screen.findByRole('form', { name: EN['inventory.setup.location.new'] as string });
+  }
+  const field = () =>
+    within(
+      screen.getByRole('form', { name: EN['inventory.setup.location.new'] as string })
+    ).getByLabelText(labelled('inventory.setup.location.code')) as HTMLInputElement;
+
+  it('asks before switching; staying keeps what was typed and the branch', async () => {
+    const user = userEvent.setup();
+    await openTwoBranches(user);
+    await user.type(field(), 'SH-9');
+    await stayOnBranch(user, await switchExpectingQuestion(user, 'second'));
+    expect(heldBranch()).toBe(TEST_BRANCH.id);
+    expect(field().value).toBe('SH-9');
+  });
+
+  it('discarding switches the branch and opens the form empty under it', async () => {
+    const user = userEvent.setup();
+    await openTwoBranches(user);
+    await user.type(field(), 'SH-9');
+    await discardAndSwitch(user, await switchExpectingQuestion(user, 'second'));
+    await waitFor(() => expect(heldBranch()).toBe(OTHER_BRANCH.id));
+    await waitFor(() =>
+      expect(listLocations.mock.lastCall?.[0]).toEqual({
+        companyId: OTHER_BRANCH.companyId,
+        branchId: OTHER_BRANCH.id,
+      })
+    );
+    await screen.findByRole('form', { name: EN['inventory.setup.location.new'] as string });
+    expect(field().value).toBe('');
+  });
+
+  it('an untouched form switches without asking', async () => {
+    const user = userEvent.setup();
+    await openTwoBranches(user);
+    await switchWithoutQuestion(user, 'second');
+    await waitFor(() => expect(heldBranch()).toBe(OTHER_BRANCH.id));
+  });
+});
+
+describe('CC-15 — the branch picker says which state it is in, and never offers a box', () => {
+  /*
+   * CC-15 was: a permitted operator met two free-text boxes on every first
+   * paint, because `items: null` meant both "the read is in flight" and "you
+   * may not read branches". The phases that fixed it are still here and still
+   * distinct; what has gone is the CONTROL four of them rendered.
+   *
+   * A reference is not something anybody can look up, and the operator most
+   * likely to meet those boxes was the one whose directory read had just been
+   * refused. The working context publishes the named branches this caller may
+   * act in and is gated on `iam.user.read`, so it answers first; where it
+   * cannot, the screen says so in words (Owner directive, `P1-32-PRE-OD-UX`).
+   *
+   * These cases render OUTSIDE the provider, which is the only way the
+   * directory read is the sole answer there is.
+   */
   const permitted = { canManage: true, canReadStock: true, canReadBranches: true };
-  const showButton = () =>
-    within(targetForm()).getByRole('button', {
-      name: EN['inventory.setup.locations.show'] as string,
+  const withoutContext = (over: Record<string, unknown> = {}) =>
+    renderInLtr(
+      <SetupScreen
+        locale="en"
+        messages={en}
+        canManage={false}
+        canReadStock={false}
+        canReadBranches={false}
+        {...over}
+      />
+    );
+  /*
+   * The reorder-level form's own branch control — the one picker left.
+   *
+   * By ROLE with the whole name: "Branch" is also what the section above calls
+   * the branch it STATES, and a label is matched as a substring of an
+   * accessible name, so the loose query matched two nodes and strict mode
+   * refused.
+   */
+  const levelBranch = () =>
+    screen.queryByRole('combobox', {
+      name: new RegExp(`^${escape(EN['inventory.reorderLevels.set.branch'] as string)}`),
     });
 
   it('while a permitted read is in flight, waits — and offers no field at all', async () => {
     let release: (value: unknown) => void = () => {};
     listBranches.mockImplementation(() => new Promise((resolve) => (release = resolve)));
-    renderScreen(permitted);
+    withoutContext(permitted);
 
-    const target = targetForm();
-    expect(within(target).getByRole('status')).toHaveTextContent(
-      EN['inventory.common.branchesLoading'] as string
-    );
-    // THE finding: not a select with nothing in it, and not the identifier
-    // fields either. There is no control to type into while the answer is
-    // still coming.
-    expect(within(target).queryByRole('combobox')).toBeNull();
-    expect(within(target).queryByLabelText(labelled('inventory.common.companyIdField'))).toBeNull();
-    expect(within(target).queryByLabelText(labelled('inventory.common.branchIdField'))).toBeNull();
-    expect(showButton()).toBeDisabled();
+    expect(screen.getByText(EN['inventory.common.branchesLoading'] as string)).toBeVisible();
+    // THE finding: not a select with nothing in it, and not two boxes either.
+    expect(levelBranch()).toBeNull();
+    expect(screen.queryByLabelText(RETIRED_BOX.en.company)).toBeNull();
 
     release(okRead({ items: [branch] }));
-    expect(await within(targetForm()).findByRole('combobox')).toBeVisible();
-    expect(within(targetForm()).queryByRole('status')).toBeNull();
-    expect(showButton()).toBeEnabled();
+    await waitFor(() => expect(levelBranch()).not.toBeNull());
+    expect(levelBranch()).toBeInstanceOf(HTMLSelectElement);
   });
 
   it('with rows, offers the list and carries the chosen branch its own company', async () => {
     const user = userEvent.setup();
-    renderScreen(permitted);
-    const select = await within(targetForm()).findByRole('combobox');
-    expect(within(select).getByRole('option', { name: OPTION_NAME })).toBeVisible();
-    expect(
-      within(targetForm()).queryByLabelText(labelled('inventory.common.companyIdField'))
-    ).toBeNull();
+    listBranches.mockResolvedValue(okRead({ items: [branch] }));
+    withoutContext(permitted);
+    await waitFor(() => expect(levelBranch()).not.toBeNull());
+    const select = levelBranch() as HTMLSelectElement;
+    // The option is named, never a reference.
+    expect(within(select).getByRole('option', { name: /Amman/ })).toBeVisible();
     await user.selectOptions(select, BRANCH_ID);
-    await user.click(showButton());
-    // The affordance the identifier fields cannot give: the company comes from
-    // the branch's own row.
-    await waitFor(() =>
-      expect(listLocations).toHaveBeenCalledWith({ companyId: COMPANY_ID, branchId: BRANCH_ID })
-    );
+    expect(select).toHaveValue(BRANCH_ID);
   });
 
-  it('with no row, says so and KEEPS the identifiers, so no permitted operator is blocked', async () => {
+  it('says a zero-row directory is empty, and offers nothing to type', async () => {
     listBranches.mockResolvedValue(okRead({ items: [] }));
-    renderScreen(permitted);
-    const target = targetForm();
-    expect(
-      await within(target).findByText(EN['inventory.common.branchesNone'] as string)
-    ).toBeVisible();
-    expect(
-      within(target).getByLabelText(labelled('inventory.common.companyIdField'))
-    ).toBeVisible();
-    expect(within(target).getByLabelText(labelled('inventory.common.branchIdField'))).toBeVisible();
-    expect(within(target).queryByRole('combobox')).toBeNull();
-    // Not a dead end: the operator may still be authorised for a branch this
-    // screen cannot name, and the server re-authorizes the pair anyway.
-    expect(showButton()).toBeEnabled();
+    withoutContext(permitted);
+    expect(await screen.findByText(EN['inventory.common.branchesNone'] as string)).toBeVisible();
+    expect(screen.queryByLabelText(RETIRED_BOX.en.company)).toBeNull();
   });
 
-  it('a failure that a second attempt could clear offers one, and the retry reconciles the pair', async () => {
-    const user = userEvent.setup();
-    listBranches
-      .mockResolvedValueOnce({ status: 'unavailable', correlationId: 'corr' })
-      .mockResolvedValueOnce(okRead({ items: [branch] }));
-    renderScreen(permitted);
-    expect(
-      await within(targetForm()).findByText(EN['inventory.common.branchesUnavailable'] as string)
-    ).toBeVisible();
-    await user.type(
-      within(targetForm()).getByLabelText(labelled('inventory.common.companyIdField')),
-      COMPANY_ID
-    );
-    await user.click(
-      within(targetForm()).getByRole('button', { name: EN['state.retry'] as string })
-    );
-    const select = await within(targetForm()).findByRole('combobox');
-    expect(within(select).getByRole('option', { name: OPTION_NAME })).toBeVisible();
-    expect(listBranches).toHaveBeenCalledTimes(2);
-    // The corruption path: a pair the arriving list cannot contain is
-    // discarded, so the control and the form agree about what will be sent.
-    expect(select).toHaveValue('');
-  });
-
-  it('a retry that fails again does not cost the operator what they typed', async () => {
-    const user = userEvent.setup();
-    listBranches.mockResolvedValue({ status: 'unavailable', correlationId: 'corr' });
-    renderScreen(permitted);
-    const company = await within(targetForm()).findByLabelText(
-      labelled('inventory.common.companyIdField')
-    );
-    await user.type(company, COMPANY_ID);
-    await user.click(
-      within(targetForm()).getByRole('button', { name: EN['state.retry'] as string })
-    );
-    await waitFor(() => expect(listBranches).toHaveBeenCalledTimes(2));
-    expect(
-      within(targetForm()).getByLabelText(labelled('inventory.common.companyIdField'))
-    ).toHaveValue(COMPANY_ID);
-  });
-
-  it('a refusal is stated as a refusal, and is not offered a retry', async () => {
+  it('states a refusal as a refusal, and offers no retry that cannot work', async () => {
     listBranches.mockResolvedValue(denied());
-    renderScreen(permitted);
-    const target = targetForm();
-    expect(
-      await within(target).findByText(EN['inventory.common.branchesRefused'] as string)
-    ).toBeVisible();
-    expect(within(target).getByLabelText(labelled('inventory.common.branchIdField'))).toBeVisible();
-    // A refusal retried is a refusal.
-    expect(within(target).queryByRole('button', { name: EN['state.retry'] as string })).toBeNull();
+    withoutContext(permitted);
+    expect(await screen.findByText(EN['inventory.common.branchesRefused'] as string)).toBeVisible();
+    expect(screen.queryByRole('button', { name: EN['state.retry'] as string })).toBeNull();
+    expect(screen.queryByLabelText(RETIRED_BOX.en.company)).toBeNull();
   });
 
-  it('an ended session is stated as one, and is not offered a retry either', async () => {
-    listBranches.mockResolvedValue({ status: 'expired', correlationId: 'corr' });
-    renderScreen(permitted);
-    const target = targetForm();
-    expect(await within(target).findByText(EN['state.expired.message'] as string)).toBeVisible();
-    expect(
-      within(target).getByLabelText(labelled('inventory.common.companyIdField'))
-    ).toBeVisible();
-    expect(within(target).queryByRole('button', { name: EN['state.retry'] as string })).toBeNull();
+  it('states an ended session as one, and offers no retry either', async () => {
+    listBranches.mockResolvedValue({ status: 'expired' as const, correlationId: null });
+    withoutContext(permitted);
+    expect(await screen.findByText(EN['state.expired.message'] as string)).toBeVisible();
+    expect(screen.queryByRole('button', { name: EN['state.retry'] as string })).toBeNull();
   });
 
-  it('without org.branch.read, the identifiers are the design and no list is requested', async () => {
-    renderScreen({ canManage: true, canReadStock: true, canReadBranches: false });
-    const target = targetForm();
-    expect(listBranches).not.toHaveBeenCalled();
-    expect(
-      within(target).getByLabelText(labelled('inventory.common.companyIdField'))
-    ).toBeVisible();
-    expect(within(target).getByLabelText(labelled('inventory.common.branchIdField'))).toBeVisible();
-    expect(within(target).getByText(EN['inventory.common.identifierHelp'] as string)).toBeVisible();
-    expect(within(target).queryByRole('status')).toBeNull();
-    expect(within(target).queryByRole('button', { name: EN['state.retry'] as string })).toBeNull();
-    expect(showButton()).toBeEnabled();
-  });
-
-  /* ---- Arabic, right to left: the state the CC-15 screenshot captured ---- */
-
-  function renderArabic(over: Record<string, unknown> = {}) {
-    return renderRtl(
-      <SetupScreen
-        locale="ar"
-        messages={ar}
-        canManage={true}
-        canReadStock={true}
-        canReadBranches={true}
-        {...over}
-      />
-    );
-  }
-  const arabicTarget = () =>
-    screen.getByRole('form', { name: AR['inventory.setup.locations.targetLabel'] as string });
-
-  it('in Arabic, a read in flight is a wait and not two identifier boxes', async () => {
-    let release: (value: unknown) => void = () => {};
-    listBranches.mockImplementation(() => new Promise((resolve) => (release = resolve)));
-    renderArabic();
-    expect(document.documentElement.dir).toBe('rtl');
-    const target = arabicTarget();
-    expect(within(target).getByRole('status')).toHaveTextContent(
-      AR['inventory.common.branchesLoading'] as string
-    );
-    expect(
-      within(target).queryByLabelText(labelledAr('inventory.common.companyIdField'))
-    ).toBeNull();
-    release(okRead({ items: [branch] }));
-    expect(await within(arabicTarget()).findByRole('combobox')).toBeVisible();
-  });
-
-  it('in Arabic without the branch read, the identifier fields stay left to right', async () => {
-    renderArabic({ canReadBranches: false });
-    const target = arabicTarget();
-    const company = within(target).getByLabelText(labelledAr('inventory.common.companyIdField'));
-    expect(company).toHaveAttribute('dir', 'ltr');
-    expect(within(target).getByText(AR['inventory.common.identifierHelp'] as string)).toBeVisible();
-  });
-
-  it('in Arabic, a zero-row list says so and keeps the identifiers', async () => {
-    listBranches.mockResolvedValue(okRead({ items: [] }));
-    renderArabic();
-    const target = arabicTarget();
-    expect(
-      await within(target).findByText(AR['inventory.common.branchesNone'] as string)
-    ).toBeVisible();
-    expect(
-      within(target).getByLabelText(labelledAr('inventory.common.branchIdField'))
-    ).toBeVisible();
-  });
-
-  it('in Arabic, a failure offers the Arabic retry and then the list', async () => {
+  it('offers a retry for a failure a second attempt could clear, and then the list', async () => {
     const user = userEvent.setup();
-    listBranches
-      .mockResolvedValueOnce({ status: 'unavailable', correlationId: 'corr' })
-      .mockResolvedValueOnce(okRead({ items: [branch] }));
-    renderArabic();
+    listBranches.mockResolvedValueOnce({ status: 'unavailable' as const, correlationId: 'c' });
+    listBranches.mockResolvedValue(okRead({ items: [branch] }));
+    withoutContext(permitted);
     expect(
-      await within(arabicTarget()).findByText(AR['inventory.common.branchesUnavailable'] as string)
+      await screen.findByText(EN['inventory.common.branchesUnavailable'] as string)
     ).toBeVisible();
     await user.click(
-      within(arabicTarget()).getByRole('button', { name: AR['state.retry'] as string })
+      screen.getAllByRole('button', { name: EN['state.retry'] as string })[0] as HTMLElement
     );
-    expect(await within(arabicTarget()).findByRole('combobox')).toBeVisible();
-    expect(listBranches).toHaveBeenCalledTimes(2);
+    await waitFor(() => expect(levelBranch()).not.toBeNull());
+  });
+
+  it('without org.branch.read and no context, says so and requests no list', async () => {
+    withoutContext({ canManage: true, canReadStock: true, canReadBranches: false });
+    expect(
+      await screen.findByText(EN['inventory.common.branchesNotOffered'] as string)
+    ).toBeVisible();
+    expect(listBranches).not.toHaveBeenCalled();
+    expect(screen.queryByLabelText(RETIRED_BOX.en.company)).toBeNull();
+  });
+
+  it('explains the same absence in Arabic, right to left', async () => {
+    renderInRtl(
+      <SetupScreen locale="ar" messages={ar} canManage canReadStock canReadBranches={false} />
+    );
+    expect(
+      await screen.findByText(AR['inventory.common.branchesNotOffered'] as string)
+    ).toBeVisible();
+    expect(document.documentElement.dir).toBe('rtl');
   });
 });
 
@@ -945,17 +956,16 @@ describe('reorder levels', () => {
     expect(setReorderLevel).not.toHaveBeenCalled();
   });
 
-  it('states a company the level needs beside the company field, level still typed', async () => {
+  it('states a company the level needs where the operator is looking, level still typed', async () => {
     /*
      * `inv.reorder-level-set` refuses `body.companyId` with the same rule the
      * price rule uses, and the sentence has to be true of BOTH. A reorder level
      * is not a price rule, so the wording names neither: it says an entry
      * narrowed to one branch must also name that branch's company.
      *
-     * The picker is in its identifier phase here (`canReadBranches: false`),
-     * which is the phase that renders a company control at all — in the listed
-     * phase the branch select carries its own company and no company error can
-     * be shown.
+     * The branch is chosen from the working context's named list now, and the
+     * select carries its own company — so the refusal is the SERVER's, relayed
+     * where the operator is looking, and no company is typed to earn it.
      */
     const user = userEvent.setup();
     setReorderLevel.mockResolvedValue(
@@ -974,12 +984,8 @@ describe('reorder levels', () => {
       within(panel).getByLabelText(labelled('inventory.reorderLevels.set.item')),
       ITEM_ID
     );
-    await user.type(
-      within(panel).getByLabelText(labelled('inventory.common.companyIdField')),
-      COMPANY_ID
-    );
-    await user.type(
-      within(panel).getByLabelText(labelled('inventory.common.branchIdField')),
+    await user.selectOptions(
+      within(panel).getByLabelText(labelled('inventory.reorderLevels.set.branch')),
       BRANCH_ID
     );
     await user.type(
@@ -998,13 +1004,13 @@ describe('reorder levels', () => {
     // Nothing in the sentence is about a price rule, because at this site no
     // price rule exists.
     expect(EN['form.violation.branch_needs_company'] as string).not.toMatch(/price/i);
-    // What the operator typed is still there to correct.
+    // What the operator entered is still there to correct.
     expect(within(panel).getByLabelText(labelled('inventory.reorderLevels.set.level'))).toHaveValue(
       '4.000'
     );
-    expect(within(panel).getByLabelText(labelled('inventory.common.branchIdField'))).toHaveValue(
-      BRANCH_ID
-    );
+    expect(
+      within(panel).getByLabelText(labelled('inventory.reorderLevels.set.branch'))
+    ).toHaveValue(BRANCH_ID);
   });
 
   /**

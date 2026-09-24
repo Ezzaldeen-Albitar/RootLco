@@ -7,7 +7,9 @@ import { DataTable, type Column } from '@/components/data-table/DataTable';
 import { INITIAL_REQUEST, type TableRequest } from '@/components/data-table/table-state';
 import { useServerTable } from '@/components/data-table/use-server-table';
 import { CheckboxField, SelectField, TextField } from '@/components/forms/Field';
+import { SearchBox } from '@/components/search/SearchBox';
 import { notifyActionResult } from '@/components/notifications/action-notifications';
+import { useUnsavedGuard } from '@/features/working-context/WorkingContextProvider';
 import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic } from '@/i18n/get-messages';
@@ -40,9 +42,7 @@ import {
   type StockTarget,
 } from '../inventory-contract';
 import {
-  BranchPairPicker,
   CategoryPicker,
-  EMPTY_PAIR,
   LocationPicker,
   LocationTypeLabel,
   OutcomeNote,
@@ -51,15 +51,12 @@ import {
   ReservationStatusBadge,
   SECONDARY_BUTTON,
   UUID,
-  canNameBranch,
-  useBranches,
   useItemCategories,
   useLocations,
-  type BranchPair,
   type Locations,
 } from './shared';
 import { StockAlertIndicator } from './StockAlertIndicator';
-import { LINK } from './stock-operations';
+import { BranchTargetForm, LINK } from './stock-operations';
 
 /**
  * Inventory (P1-30, `W4`): item search (FE-008), stock balance (FE-009) and
@@ -68,9 +65,10 @@ import { LINK } from './stock-operations';
  * ## The item search is tenant-wide; the stock reads are addressed to a branch
  *
  * Items have no company or branch, so the search reads on first paint. Every
- * stock read takes a branch as its TARGET — the pair is chosen once, in the
- * target panel, and re-authorized server-side on every read — so nothing about
- * stock is requested until a branch is named.
+ * stock read takes a branch as its TARGET — the pair is the working context'''s
+ * own named selection, chosen once in the header and re-authorized server-side
+ * on every read — so the stock panels are addressed the moment this screen
+ * mounts, and say so when the selection is not a single branch.
  *
  * ## Availability is the server's
  *
@@ -99,7 +97,6 @@ export function InventoryScreen({
   initialWorkOrderId,
   canReadStock,
   canOperate,
-  canReadBranches,
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
@@ -109,10 +106,13 @@ export function InventoryScreen({
   readonly canReadStock: boolean;
   /** `inv.stock.operate` — reserving and releasing. */
   readonly canOperate: boolean;
-  /** `org.branch.read` — whether a branch list is requested for the target picker. */
-  readonly canReadBranches: boolean;
+  /**
+   * `org.branch.read`. Accepted so the route did not have to change, and no
+   * longer read: the branch is the working context'''s named selection, and that
+   * read is gated on `iam.user.read` rather than on an administration code.
+   */
+  readonly canReadBranches?: boolean;
 }) {
-  const branches = useBranches(canReadBranches && canReadStock);
   const [target, setTarget] = useState<StockTarget | null>(null);
   const [epoch, setEpoch] = useState(0);
   // A write re-reads both stock panels by remounting them, which would also
@@ -206,9 +206,10 @@ export function InventoryScreen({
       </p>
 
       {canReadStock ? (
-        <TargetPanel
+        <BranchTargetForm
           messages={messages}
-          branches={branches}
+          formLabelKey="inventory.target.formLabel"
+          explainKey="inventory.target.explain"
           onChosen={(next) => {
             setTarget(next);
             changed(null);
@@ -340,14 +341,28 @@ function ItemSearch({
         aria-labelledby="inventory-items-heading"
         className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5"
       >
-        <TextField
-          label={translate(messages, 'inventory.items.search')}
-          description={translate(messages, 'inventory.items.searchHelp')}
-          spellCheck={false}
-          value={draft.search}
-          onChange={(event) => setDraft((d) => ({ ...d, search: event.target.value }))}
-          error={errorFor('search')}
-        />
+        <div className="sm:col-span-2 lg:col-span-3">
+          {/*
+            One box for the one thing an operator at a parts counter is holding:
+            part of a code, or part of a name. It is the same control every other
+            board searches with, so the question reads the same way everywhere —
+            and the structured filters beside it stay, because they answer a
+            different question. Enter asks at once; the Show button below asks
+            for the whole form, so this box carries no second control of its own.
+          */}
+          <SearchBox
+            messages={messages}
+            label={translate(messages, 'inventory.items.search')}
+            placeholder={translate(messages, 'inventory.items.searchPlaceholder')}
+            example={translate(messages, 'inventory.items.searchHelp')}
+            value={draft.search}
+            onChange={(next) => setDraft((d) => ({ ...d, search: next }))}
+            onSubmit={submit}
+            inlineSubmit={false}
+            maxLength={MAX_NAME}
+            {...(errorFor('search') === undefined ? {} : { error: errorFor('search') as string })}
+          />
+        </div>
         <SelectField
           label={translate(messages, 'inventory.items.type')}
           value={draft.itemType}
@@ -515,61 +530,6 @@ function ItemResults({
         {translate(messages, 'inventory.items.noCostNote')}
       </p>
     </div>
-  );
-}
-
-/* ------------------------------------------------------------------ *
- * The branch every stock read is addressed to
- * ------------------------------------------------------------------ */
-
-function TargetPanel({
-  messages,
-  branches,
-  onChosen,
-}: {
-  readonly messages: Messages;
-  readonly branches: ReturnType<typeof useBranches>;
-  readonly onChosen: (target: StockTarget) => void;
-}) {
-  const [pair, setPair] = useState<BranchPair>(EMPTY_PAIR);
-  const [errors, setErrors] = useState<Readonly<Record<string, string>>>({});
-  const errorFor = (name: string): string | undefined => {
-    const key = errors[name];
-    return key ? translateDynamic(messages, key) : undefined;
-  };
-  return (
-    <form
-      onSubmit={(event) => {
-        event.preventDefault();
-        const found: Record<string, string> = {};
-        if (!UUID.test(pair.companyId.trim())) found['companyId'] = 'inventory.common.idFormat';
-        if (!UUID.test(pair.branchId.trim())) found['branchId'] = 'inventory.common.idFormat';
-        setErrors(found);
-        if (Object.keys(found).length > 0) return;
-        onChosen({ companyId: pair.companyId.trim(), branchId: pair.branchId.trim() });
-      }}
-      noValidate
-      aria-label={translate(messages, 'inventory.target.formLabel')}
-      className="grid gap-3 rounded-lg border border-border bg-surface p-4 sm:grid-cols-3"
-    >
-      <p className="text-caption text-text-muted sm:col-span-3">
-        {translate(messages, 'inventory.target.explain')}
-      </p>
-      <BranchPairPicker
-        messages={messages}
-        branches={branches}
-        label={translate(messages, 'inventory.target.branch')}
-        placeholder={translate(messages, 'inventory.target.chooseBranch')}
-        value={pair}
-        onChange={setPair}
-        errors={{ companyId: errorFor('companyId'), branchId: errorFor('branchId') }}
-      />
-      <div className="sm:col-span-3">
-        <button type="submit" className={PRIMARY_BUTTON} disabled={!canNameBranch(branches)}>
-          {translate(messages, 'inventory.target.show')}
-        </button>
-      </div>
-    </form>
   );
 }
 
@@ -1076,13 +1036,22 @@ function ReserveForm({
   readonly initialWorkOrderId: string | null;
   readonly onReserved: (echo: ReservationEcho) => void;
 }) {
-  const [form, setForm] = useState({
+  const [initial] = useState(() => ({
     itemId: '',
     locationId: '',
     quantity: '',
     workOrderId: initialWorkOrderId ?? '',
     expiresAt: '',
-  });
+  }));
+  const [form, setForm] = useState(initial);
+  /*
+   * Unsaved work, declared to the shell. The reservation names one of THIS
+   * branch's locations, so a switch asks first; a confirmed switch remounts the
+   * panel and the form opens empty again.
+   */
+  useUnsavedGuard(
+    (Object.keys(initial) as (keyof typeof initial)[]).some((name) => form[name] !== initial[name])
+  );
   const [errors, setErrors] = useState<Readonly<Record<string, string>>>({});
   const [busy, setBusy] = useState(false);
   const [outcome, setOutcome] = useState<ActionState | null>(null);

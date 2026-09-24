@@ -31,6 +31,7 @@ import { useState } from 'react';
 
 import { TextAreaField, TextField } from '@/components/forms/Field';
 import { notifyActionResult } from '@/components/notifications/action-notifications';
+import { useUnsavedGuard } from '@/features/working-context/WorkingContextProvider';
 import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic } from '@/i18n/get-messages';
@@ -93,14 +94,18 @@ export function StockCountsScreen({
   locale,
   messages,
   canOperate,
-  canReadBranches,
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
   /** `inv.stock.operate` — open, record, reconcile, cancel. */
   readonly canOperate: boolean;
-  /** `org.branch.read` — whether a branch list is requested for the picker. */
-  readonly canReadBranches: boolean;
+  /**
+   * `org.branch.read`. Accepted so the route did not have to change, and no
+   * longer read: the branch is the working context's own named selection, and
+   * that read is gated on `iam.user.read` rather than on an administration
+   * code.
+   */
+  readonly canReadBranches?: boolean;
 }) {
   const [target, setTarget] = useState<StockTarget | null>(null);
   return (
@@ -116,10 +121,8 @@ export function StockCountsScreen({
       ) : null}
       <BranchTargetForm
         messages={messages}
-        canReadBranches={canReadBranches}
         formLabelKey="inventory.counts.targetLabel"
         explainKey="inventory.target.explain"
-        submitKey="inventory.counts.chooseBranch"
         onChosen={setTarget}
       />
       {/*
@@ -494,9 +497,15 @@ function CountLineRow({
   readonly onRecorded: (count: StockCountDetail) => void;
 }) {
   const [value, setValue] = useState(line.countedQty ?? '');
+  // What the server last holds for this line, as this row sent or received it.
+  // Compared against rather than `line.countedQty`, which the server may
+  // restate in a different but equal spelling.
+  const [saved, setSaved] = useState(line.countedQty ?? '');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [outcome, setOutcome] = useState<ActionState | null>(null);
+  // A count typed and not yet recorded is lost if the branch changes.
+  useUnsavedGuard(value.trim() !== saved.trim());
 
   const record = async () => {
     const counted = value.trim();
@@ -517,7 +526,10 @@ function CountLineRow({
     setBusy(false);
     setOutcome(result.state);
     notifyActionResult(result.state, messages);
-    if (result.state.status === 'success' && result.created) onRecorded(result.created);
+    if (result.state.status === 'success' && result.created) {
+      setSaved(counted);
+      onRecorded(result.created);
+    }
   };
 
   const fieldError = error
@@ -615,6 +627,7 @@ function CancelCountForm({
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [outcome, setOutcome] = useState<ActionState | null>(null);
+  useUnsavedGuard(reason.trim().length > 0);
 
   const submit = async () => {
     const why = reason.trim();
@@ -685,6 +698,8 @@ function OpenCountForm({
   const [busy, setBusy] = useState(false);
   const [outcome, setOutcome] = useState<ActionState | null>(null);
   const [attemptKey, setAttemptKey] = useState(() => crypto.randomUUID());
+  // The location is one of THIS branch's, so a switch asks before dropping it.
+  useUnsavedGuard(locationId !== '' || notes.trim().length > 0);
 
   const errorFor = (name: string) =>
     errors[name] ? translateDynamic(messages, errors[name]) : outcomeField(messages, outcome, name);

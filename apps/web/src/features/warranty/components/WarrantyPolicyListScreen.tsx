@@ -5,16 +5,18 @@ import { useEffect, useState } from 'react';
 
 import { SelectField, TextField } from '@/components/forms/Field';
 import { EmptyState, FailureExplanation, LoadingState } from '@/components/states/States';
+import { RequiresConcreteBranch } from '@/features/working-context/components/WorkingBranchField';
+import { useBranchTarget } from '@/features/working-context/use-branch-target';
+import {
+  useUnsavedGuard,
+  useWorkingContext,
+  useWorkingContextChange,
+} from '@/features/working-context/WorkingContextProvider';
 import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic, translateWithValues } from '@/i18n/get-messages';
 
-import {
-  createWarrantyPolicy,
-  listBranches,
-  listWarrantyPolicies,
-  type PolicyWriteState,
-} from '../warranty-api';
+import { createWarrantyPolicy, listWarrantyPolicies, type PolicyWriteState } from '../warranty-api';
 import {
   MAX_POLICY_NAME,
   POLICY_CODE_FORMAT,
@@ -22,14 +24,12 @@ import {
   type WarrantyConfigurationStatus,
   type WarrantyPolicySummary,
 } from '../warranty-contract';
-import type { BranchOption } from '@/features/services/services-contract';
 import {
   ConfigurationStatusLabel,
   PRIMARY_BUTTON,
   ReadFailure,
   SECONDARY_BUTTON,
   Section,
-  UUID,
   refusalKeyFor,
   type MoreFailure,
 } from './shared';
@@ -88,15 +88,17 @@ export function WarrantyPolicyListScreen({
   locale,
   messages,
   canManagePolicies,
-  canReadBranches,
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
   /** `wty.policy.manage` — whether the create form is drawn at all. */
   readonly canManagePolicies: boolean;
-  /** `org.branch.read` — whether a company is chosen from a directory or typed. */
-  readonly canReadBranches: boolean;
 }) {
+  const context = useWorkingContext();
+  /** The published name of a company, or null when it is outside this context. */
+  const companyName = (id: string): string | null =>
+    context.companies.find((company) => company.id === id)?.name ?? null;
+
   const [filter, setFilter] = useState<WarrantyConfigurationStatus | ''>(ANY_STATUS);
   const [reloads, setReloads] = useState(0);
   const [held, setHeld] = useState<Held | null>(null);
@@ -169,7 +171,6 @@ export function WarrantyPolicyListScreen({
         <CreatePolicySection
           locale={locale}
           messages={messages}
-          canReadBranches={canReadBranches}
           onCreated={() => setReloads((count) => count + 1)}
         />
       ) : null}
@@ -259,9 +260,18 @@ export function WarrantyPolicyListScreen({
                       <ConfigurationStatusLabel messages={messages} status={row.status} />
                     </td>
                     <td className="p-2">
-                      <code className="font-mono text-caption" dir="ltr">
-                        {row.companyId}
-                      </code>
+                      {/*
+                        The name the platform published for this company, never
+                        its reference: a reader cannot recognise a workshop by a
+                        string they have never seen. A company outside the
+                        reader's own working context has no name here, and the
+                        reference is then all there is to show.
+                      */}
+                      {companyName(row.companyId) ?? (
+                        <code className="font-mono text-caption" dir="ltr">
+                          {row.companyId}
+                        </code>
+                      )}
                     </td>
                   </tr>
                 ))}
@@ -311,41 +321,67 @@ export function WarrantyPolicyListScreen({
 function CreatePolicySection({
   locale,
   messages,
-  canReadBranches,
   onCreated,
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
-  readonly canReadBranches: boolean;
   readonly onCreated: () => void;
 }) {
-  const [companyId, setCompanyId] = useState('');
+  const context = useWorkingContext();
+  const branch = useBranchTarget();
+  /*
+   * The company the operator is working in, chosen for them.
+   *
+   * The working context publishes the NAMED companies this caller is authorized
+   * for, so the reference that used to be typed here — by exactly the operator
+   * whose branch directory read was refused — is gone. A single authorized
+   * company is filled in; several are offered by name; the header's own branch
+   * choice decides the default when it names one.
+   */
+  const companies = context.companies;
+  const defaultCompany =
+    branch.kind === 'ready'
+      ? branch.target.companyId
+      : companies.length === 1
+        ? (companies[0]?.id ?? '')
+        : '';
+  const [companyId, setCompanyId] = useState(defaultCompany);
   const [policyCode, setPolicyCode] = useState('');
   const [name, setName] = useState('');
   const [errors, setErrors] = useState<Readonly<Record<string, string>>>({});
   const [state, setState] = useState<PolicyWriteState | null>(null);
   const [sending, setSending] = useState(false);
-  const [branches, setBranches] = useState<readonly BranchOption[] | null>(null);
-  const [directoryRefused, setDirectoryRefused] = useState(false);
 
-  useEffect(() => {
-    if (!canReadBranches) return;
-    let live = true;
-    void listBranches().then((result) => {
-      if (!live) return;
-      if (result.status === 'ok') setBranches(result.data.items);
-      else setDirectoryRefused(true);
-    });
-    return () => {
-      live = false;
-    };
-  }, [canReadBranches]);
+  /*
+   * The default follows the header, adjusted DURING render.
+   *
+   * React's documented shape for "reset state when an input changes". An effect
+   * would paint one frame with the previous company selected, which is the one
+   * frame in which a submission would name the wrong workshop.
+   */
+  const [lastDefault, setLastDefault] = useState(defaultCompany);
+  if (defaultCompany !== lastDefault) {
+    setLastDefault(defaultCompany);
+    setCompanyId(defaultCompany);
+  }
 
-  // One entry per company the directory named, first mention wins. A company with
-  // four branches is one choice, not four.
-  const companies = [...new Set((branches ?? []).map((branch) => branch.companyId))];
-  // An empty directory is not a picker: with nothing to choose, the operator gets the
-  // identifier field rather than a control with nothing in it.
+  /*
+   * Unsaved work, declared to the shell. A branch switch can move the company
+   * default under a half-typed policy, so it asks first; a confirmed switch
+   * clears what was typed, and the company follows the header as above.
+   */
+  useUnsavedGuard(
+    policyCode.trim().length > 0 || name.trim().length > 0 || companyId !== defaultCompany
+  );
+  useWorkingContextChange(() => {
+    setPolicyCode('');
+    setName('');
+    setErrors({});
+    setState(null);
+  });
+
+  // Nothing to choose from is a real state — an operator authorized for no
+  // company at all — and it is said rather than drawn as an empty control.
   const offered = companies.length > 0;
   const created = state?.policy ?? null;
   /*
@@ -377,7 +413,9 @@ function CreatePolicySection({
           const chosenCompany = companyId.trim();
           const chosenCode = policyCode.trim();
           const chosenName = name.trim();
-          if (!UUID.test(chosenCompany)) found['companyId'] = 'warranty.common.idFormat';
+          // The company is picked from the platform's own named list now, so
+          // the only refusal left is "none was picked".
+          if (chosenCompany.length === 0) found['companyId'] = 'field.required';
           if (!POLICY_CODE_FORMAT.test(chosenCode)) {
             // Refused by the control rather than by the request: the route answers a
             // malformed reference with a refusal of the whole body, which reads like
@@ -411,24 +449,15 @@ function CreatePolicySection({
             required
             value={companyId}
             onChange={(event) => setCompanyId(event.target.value)}
-            options={companies.map((id) => ({ value: id, label: id }))}
+            options={companies.map((company) => ({ value: company.id, label: company.name }))}
             placeholder={translate(messages, 'warranty.policies.companyPlaceholder')}
             error={companyError}
           />
         ) : (
-          <TextField
-            label={translate(messages, 'warranty.common.companyIdField')}
-            description={
-              directoryRefused
-                ? translate(messages, 'warranty.common.branchesRefused')
-                : translate(messages, 'warranty.common.identifierHelp')
-            }
-            required
-            spellCheck={false}
-            dir="ltr"
-            value={companyId}
-            onChange={(event) => setCompanyId(event.target.value)}
-            error={companyError}
+          <RequiresConcreteBranch
+            messages={messages}
+            fallbackKey="warranty.policies.noCompanies"
+            testId="warranty-policies-no-company"
           />
         )}
 

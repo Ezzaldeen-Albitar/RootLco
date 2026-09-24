@@ -24,10 +24,43 @@
 
 import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import en from '../src/i18n/messages/en.json';
 import ar from '../src/i18n/messages/ar.json';
-import { renderLtr, renderRtl } from './render';
+import type { ReactElement } from 'react';
+import {
+  TEST_BRANCH,
+  inBranch,
+  renderLtr as renderInLtr,
+  renderRtl as renderInRtl,
+  BranchSwitch,
+  OTHER_BRANCH,
+  WorkingBranchProbe,
+  branchSnapshot,
+} from './render';
+import {
+  discardAndSwitch,
+  forgetRememberedBranch,
+  heldBranch,
+  stayOnBranch,
+  switchExpectingQuestion,
+  switchWithoutQuestion,
+} from './support/branch-switch';
+
+/*
+ * Every screen in this file is addressed by the WORKING CONTEXT: the branch it
+ * reads is the header's own named selection, not a pair typed into the screen
+ * (Owner directive, `P1-32-PRE-OD-UX`). So each render goes inside a provider.
+ *
+ * The two names are shadowed rather than changed at every call site, which
+ * keeps the default snapshot — one authorized branch, selected for the operator
+ * — true for every case below. A case that needs a different snapshot builds
+ * one and renders it explicitly.
+ */
+const renderLtr = (ui: ReactElement, options?: Parameters<typeof renderInLtr>[1]) =>
+  renderInLtr(inBranch(ui), options);
+const renderRtl = (ui: ReactElement, options?: Parameters<typeof renderInRtl>[1]) =>
+  renderInRtl(inBranch(ui, { locale: 'ar' }), options);
 
 const EN = en as Record<string, string>;
 const AR = ar as Record<string, string>;
@@ -234,16 +267,17 @@ async function renderPage(params: Record<string, string>) {
 }
 const form = (key: string) => screen.getByRole('form', { name: EN[key] as string });
 const targetForm = () =>
-  screen.getByRole('form', { name: EN['inventory.opening.targetLabel'] as string });
+  screen.getByRole('region', { name: EN['inventory.opening.targetLabel'] as string });
 
-async function chooseBranch(user: ReturnType<typeof userEvent.setup>) {
-  const select = await within(targetForm()).findByRole('combobox');
-  await user.selectOptions(select, BRANCH_ID);
-  await user.click(
-    within(targetForm()).getByRole('button', {
-      name: EN['inventory.opening.chooseBranch'] as string,
-    })
-  );
+/**
+ * Wait for the branch this screen is addressed to.
+ *
+ * It used to choose one from a select and press a submit. Both are gone (Owner
+ * directive, `P1-32-PRE-OD-UX`): the branch is the working context own named
+ * selection, so the screen is addressed the moment it mounts and what is left
+ * to do is wait for the reads that follow.
+ */
+async function chooseBranch() {
   await waitFor(() => expect(listLocations).toHaveBeenCalled());
 }
 
@@ -321,22 +355,22 @@ beforeEach(() => {
 });
 
 describe('the chain, in order', () => {
-  it('states that a batch is reachable after this page, and offers no batch form before a branch is chosen', async () => {
+  it('states that a batch is reachable after this page, and opens no batch of its own', async () => {
+    /*
+     * The list is branch-targeted and the branch is the header's own named
+     * selection, so it is read on arrival. What must still be true is that
+     * READING is all that happens: no batch is created by opening the screen.
+     */
     renderScreen();
     expect(screen.getByText(EN['inventory.opening.batchesReadable'] as string)).toBeVisible();
-    // Nothing is read before a branch is named: the list is branch-targeted.
-    expect(listOpeningBatches).not.toHaveBeenCalled();
-    expect(
-      screen.queryByRole('form', { name: EN['inventory.opening.batch.new'] as string })
-    ).toBeNull();
+    await waitFor(() => expect(listOpeningBatches).toHaveBeenCalled());
     expect(createOpeningBatch).not.toHaveBeenCalled();
   });
 
   it('without inv.stock.operate or inv.adjustment.approve, explains and offers nothing', async () => {
-    const user = userEvent.setup();
     renderScreen({ canOperate: false, canApprove: false });
     expect(screen.getByText(EN['inventory.opening.needsOperate'] as string)).toBeVisible();
-    await chooseBranch(user);
+    await chooseBranch();
     expect(
       screen.queryByRole('form', { name: EN['inventory.opening.batch.new'] as string })
     ).toBeNull();
@@ -345,7 +379,7 @@ describe('the chain, in order', () => {
   it('opens a batch for the chosen branch with the code and date as typed and no empty notes, then shows the echo', async () => {
     const user = userEvent.setup();
     renderScreen();
-    await chooseBranch(user);
+    await chooseBranch();
     await openBatch(user);
     expect(createOpeningBatch).toHaveBeenCalledWith({
       companyId: COMPANY_ID,
@@ -366,7 +400,7 @@ describe('the chain, in order', () => {
   it('refuses a malformed batch code and an empty date before sending anything', async () => {
     const user = userEvent.setup();
     renderScreen();
-    await chooseBranch(user);
+    await chooseBranch();
     const panel = form('inventory.opening.batch.new');
     await user.type(
       within(panel).getByLabelText(labelled('inventory.opening.batch.code')),
@@ -385,7 +419,7 @@ describe('the chain, in order', () => {
   it('adds a line with the found item, the chosen location and the quantity as typed, and lists the echo', async () => {
     const user = userEvent.setup();
     renderScreen();
-    await chooseBranch(user);
+    await chooseBranch();
     await openBatch(user);
     await addLine(user);
     await waitFor(() =>
@@ -420,7 +454,7 @@ describe('the chain, in order', () => {
     });
     const user = userEvent.setup();
     renderScreen();
-    await chooseBranch(user);
+    await chooseBranch();
     await openBatch(user);
     await addLine(user);
     const panel = form('inventory.opening.line.heading');
@@ -435,7 +469,7 @@ describe('the chain, in order', () => {
   it('refuses a zero or malformed quantity before sending anything', async () => {
     const user = userEvent.setup();
     renderScreen();
-    await chooseBranch(user);
+    await chooseBranch();
     await openBatch(user);
     await addLine(user, '0');
     const panel = form('inventory.opening.line.heading');
@@ -448,7 +482,7 @@ describe('the chain, in order', () => {
   it('offers approval only to inv.adjustment.approve holders, and says a second person is needed otherwise', async () => {
     const user = userEvent.setup();
     renderScreen({ canApprove: false });
-    await chooseBranch(user);
+    await chooseBranch();
     await openBatch(user);
     await addLine(user);
     await screen.findByText('12.000');
@@ -461,7 +495,7 @@ describe('the chain, in order', () => {
   it('approves the batch, shows it approved, and links to the stock and the movements', async () => {
     const user = userEvent.setup();
     renderScreen({ canApprove: true });
-    await chooseBranch(user);
+    await chooseBranch();
     await openBatch(user);
     await addLine(user);
     await screen.findByText('12.000');
@@ -489,7 +523,7 @@ describe('the chain, in order', () => {
     const user = userEvent.setup();
     approveOpeningBatch.mockResolvedValue(conflict());
     renderScreen({ canApprove: true });
-    await chooseBranch(user);
+    await chooseBranch();
     await openBatch(user);
     await addLine(user);
     await screen.findByText('12.000');
@@ -518,7 +552,7 @@ describe('the chain, in order', () => {
     const user = userEvent.setup();
     approveOpeningBatch.mockResolvedValue(duplicateOpeningCell());
     renderScreen({ canApprove: true });
-    await chooseBranch(user);
+    await chooseBranch();
     await openBatch(user);
     await addLine(user);
     await screen.findByText('12.000');
@@ -548,13 +582,12 @@ describe('the chain, in order', () => {
       />
     );
     expect(document.documentElement.dir).toBe('rtl');
-    const target = screen.getByRole('form', {
-      name: AR['inventory.opening.targetLabel'] as string,
-    });
-    await user.selectOptions(await within(target).findByRole('combobox'), BRANCH_ID);
-    await user.click(
-      within(target).getByRole('button', { name: AR['inventory.opening.chooseBranch'] as string })
-    );
+    // The branch is the header's own named selection, so it is already
+    // addressed: there is nothing on this screen to choose or to submit.
+    expect(
+      screen.getByRole('region', { name: AR['inventory.opening.targetLabel'] as string })
+    ).toHaveTextContent(TEST_BRANCH.name);
+    await waitFor(() => expect(listOpeningBatches).toHaveBeenCalled());
     await openListed(user, 'OPEN-2026');
     await user.click(
       await screen.findByRole('button', { name: AR['inventory.opening.approve.action'] as string })
@@ -572,12 +605,77 @@ describe('the chain, in order', () => {
   });
 });
 
+describe('a batch being opened and a branch switch', () => {
+  /*
+   * The batch form was not keyed on the branch at all: it stayed mounted across a
+   * switch and would have sent what was typed for one branch to the next. It is
+   * keyed now, and it asks first.
+   */
+  afterEach(forgetRememberedBranch);
+
+  async function openTwoBranches(user: ReturnType<typeof userEvent.setup>) {
+    renderInLtr(
+      inBranch(
+        <>
+          <BranchSwitch to={TEST_BRANCH.id} label="first" />
+          <BranchSwitch to={OTHER_BRANCH.id} label="second" />
+          <WorkingBranchProbe />
+          <OpeningStockScreen
+            locale="en"
+            messages={en}
+            canOperate={true}
+            canApprove={false}
+            canReadBranches={true}
+          />
+        </>,
+        { snapshot: branchSnapshot([TEST_BRANCH, OTHER_BRANCH]) }
+      )
+    );
+    await user.click(screen.getByRole('button', { name: 'first' }));
+    await screen.findByRole('form', { name: EN['inventory.opening.batch.new'] as string });
+  }
+  const field = () =>
+    within(
+      screen.getByRole('form', { name: EN['inventory.opening.batch.new'] as string })
+    ).getByLabelText(labelled('inventory.opening.batch.code')) as HTMLInputElement;
+
+  it('asks before switching; staying keeps what was typed and the branch', async () => {
+    const user = userEvent.setup();
+    await openTwoBranches(user);
+    await user.type(field(), 'OPEN-2026');
+    await stayOnBranch(user, await switchExpectingQuestion(user, 'second'));
+    expect(heldBranch()).toBe(TEST_BRANCH.id);
+    expect(field().value).toBe('OPEN-2026');
+  });
+
+  it('discarding switches the branch and opens the form empty under it', async () => {
+    const user = userEvent.setup();
+    await openTwoBranches(user);
+    await user.type(field(), 'OPEN-2026');
+    await discardAndSwitch(user, await switchExpectingQuestion(user, 'second'));
+    await waitFor(() => expect(heldBranch()).toBe(OTHER_BRANCH.id));
+    await waitFor(() =>
+      expect(listLocations.mock.lastCall?.[0]).toEqual({
+        companyId: OTHER_BRANCH.companyId,
+        branchId: OTHER_BRANCH.id,
+      })
+    );
+    expect(field().value).toBe('');
+  });
+
+  it('an untouched form switches without asking', async () => {
+    const user = userEvent.setup();
+    await openTwoBranches(user);
+    await switchWithoutQuestion(user, 'second');
+    await waitFor(() => expect(heldBranch()).toBe(OTHER_BRANCH.id));
+  });
+});
+
 describe('the recovery path — a batch is reachable after the page is left', () => {
   it('lists the branch batches with the status and the line count the server gave them', async () => {
-    const user = userEvent.setup();
     listOpeningBatches.mockResolvedValue(cursor([summary, approvedSummary]));
     renderScreen();
-    await chooseBranch(user);
+    await chooseBranch();
     const table = await screen.findByRole('table', {
       name: EN['inventory.opening.batches.caption'] as string,
     });
@@ -610,7 +708,7 @@ describe('the recovery path — a batch is reachable after the page is left', ()
     const user = userEvent.setup();
     listOpeningBatches.mockResolvedValue(cursor([summary]));
     renderScreen();
-    await chooseBranch(user);
+    await chooseBranch();
     // Nothing was created in this render: this is the reload case.
     expect(createOpeningBatch).not.toHaveBeenCalled();
     await openListed(user, 'OPEN-2026');
@@ -630,7 +728,7 @@ describe('the recovery path — a batch is reachable after the page is left', ()
     const user = userEvent.setup();
     listOpeningBatches.mockResolvedValue(cursor([summary]));
     renderScreen({ canOperate: false, canApprove: true });
-    await chooseBranch(user);
+    await chooseBranch();
     const readsBefore = listOpeningBatches.mock.calls.length;
     await openListed(user, 'OPEN-2026');
     // The approver counts nothing: no batch form and no line form are offered.
@@ -652,10 +750,9 @@ describe('the recovery path — a batch is reachable after the page is left', ()
   });
 
   it('a branch with no batch says so, and offers no table to read', async () => {
-    const user = userEvent.setup();
     listOpeningBatches.mockResolvedValue(cursor([]));
     renderScreen();
-    await chooseBranch(user);
+    await chooseBranch();
     expect(await screen.findByText(EN['inventory.opening.batches.none'] as string)).toBeVisible();
     expect(
       screen.queryByRole('table', { name: EN['inventory.opening.batches.caption'] as string })
@@ -667,7 +764,7 @@ describe('the recovery path — a batch is reachable after the page is left', ()
     const user = userEvent.setup();
     listOpeningBatches.mockResolvedValue({ status: 'unavailable' as const, correlationId: 'corr' });
     const unavailable = renderScreen();
-    await chooseBranch(user);
+    await chooseBranch();
     expect(
       await screen.findByText(EN['inventory.opening.batches.unavailable'] as string)
     ).toBeVisible();
@@ -679,7 +776,7 @@ describe('the recovery path — a batch is reachable after the page is left', ()
 
     listOpeningBatches.mockResolvedValue({ status: 'denied' as const, correlationId: 'corr' });
     renderScreen();
-    await chooseBranch(user);
+    await chooseBranch();
     expect(
       await screen.findByText(EN['inventory.opening.batches.refused'] as string)
     ).toBeVisible();
@@ -691,7 +788,7 @@ describe('the recovery path — a batch is reachable after the page is left', ()
     listOpeningBatches.mockResolvedValue(cursor([summary]));
     readOpeningBatch.mockResolvedValue({ status: 'not-found' as const, correlationId: 'corr' });
     renderScreen();
-    await chooseBranch(user);
+    await chooseBranch();
     await openListed(user, 'OPEN-2026');
     expect(await screen.findByText(EN['inventory.opening.detail.gone'] as string)).toBeVisible();
     expect(
@@ -713,15 +810,12 @@ describe('the recovery path — a batch is reachable after the page is left', ()
       />
     );
     expect(document.documentElement.dir).toBe('rtl');
-    const target = screen.getByRole('form', {
-      name: AR['inventory.opening.targetLabel'] as string,
-    });
-    await user.selectOptions(await within(target).findByRole('combobox'), BRANCH_ID);
-    await user.click(
-      within(target).getByRole('button', {
-        name: AR['inventory.opening.chooseBranch'] as string,
-      })
-    );
+    // The branch is the header's own named selection, so it is already
+    // addressed: there is nothing on this screen to choose or to submit.
+    expect(
+      screen.getByRole('region', { name: AR['inventory.opening.targetLabel'] as string })
+    ).toHaveTextContent(TEST_BRANCH.name);
+    await waitFor(() => expect(listOpeningBatches).toHaveBeenCalled());
     const table = await screen.findByRole('table', {
       name: AR['inventory.opening.batches.caption'] as string,
     });
@@ -755,7 +849,7 @@ describe('the route page', () => {
     expect(await screen.findByText(EN['inventory.opening.needsOperate'] as string)).toBeVisible();
   });
 
-  it('with the three codes and org.branch.read, offers the chain from the branch picker', async () => {
+  it('with the three codes, opens the chain on the branch the operator is working in', async () => {
     PERMISSIONS = [
       'inv.stock.read',
       'inv.stock.operate',
@@ -763,8 +857,11 @@ describe('the route page', () => {
       'org.branch.read',
     ];
     await renderPage({ locale: 'en' });
-    expect(await within(targetForm()).findByRole('combobox')).toBeVisible();
+    // The branch is STATED, not chosen here, and the batches of it are read.
+    expect(targetForm()).toHaveTextContent(TEST_BRANCH.name);
+    await waitFor(() => expect(listOpeningBatches).toHaveBeenCalled());
     expect(screen.queryByText(EN['inventory.opening.needsOperate'] as string)).toBeNull();
+    expect(listBranches).not.toHaveBeenCalled();
   });
 
   it('a locale it does not serve is not found', async () => {
@@ -774,69 +871,24 @@ describe('the route page', () => {
   /*
    * P1-30 CC-15. The finding was taken FROM THIS SCREEN: the W9 Arabic
    * opening-stock screenshot, at first paint, shows the two identifier fields
-   * the branch list then replaces. Both languages are pinned here because the
-   * evidence that the defect existed was an Arabic one.
+   * the branch list then replaces. They are gone outright now (Owner directive,
+   * `P1-32-PRE-OD-UX`) — in both languages, and in every phase — and the branch
+   * is the header's own named selection. Arabic is pinned because the evidence
+   * that the defect existed was an Arabic one.
    */
-  it('while the permitted branch read is in flight, waits rather than asking for identifiers', async () => {
-    let release: (value: unknown) => void = () => {};
-    listBranches.mockImplementation(() => new Promise((resolve) => (release = resolve)));
-    renderScreen({ canReadBranches: true });
-    const target = targetForm();
-    expect(within(target).getByRole('status')).toHaveTextContent(
-      EN['inventory.common.branchesLoading'] as string
-    );
-    expect(within(target).queryByLabelText(labelled('inventory.common.companyIdField'))).toBeNull();
-    expect(within(target).queryByRole('combobox')).toBeNull();
-    expect(
-      within(target).getByRole('button', { name: EN['inventory.opening.chooseBranch'] as string })
-    ).toBeDisabled();
-    release(okRead({ items: [branch] }));
-    expect(await within(targetForm()).findByRole('combobox')).toBeVisible();
-  });
-
-  it('in Arabic, the first paint of this screen is a wait, not two identifier boxes', async () => {
-    let release: (value: unknown) => void = () => {};
-    listBranches.mockImplementation(() => new Promise((resolve) => (release = resolve)));
+  it('in Arabic, the first paint names the branch and offers nothing to type', async () => {
     renderRtl(
-      <OpeningStockScreen
-        locale="ar"
-        messages={ar}
-        canOperate={true}
-        canApprove={false}
-        canReadBranches={true}
-      />
+      <OpeningStockScreen locale="ar" messages={ar} canOperate={true} canApprove={false} />
     );
     expect(document.documentElement.dir).toBe('rtl');
-    const target = screen.getByRole('form', {
+    const target = screen.getByRole('region', {
       name: AR['inventory.opening.targetLabel'] as string,
     });
-    expect(within(target).getByRole('status')).toHaveTextContent(
-      AR['inventory.common.branchesLoading'] as string
-    );
-    expect(
-      within(target).queryByLabelText(
-        new RegExp(`^${escape(AR['inventory.common.companyIdField'] as string)}`)
-      )
-    ).toBeNull();
-    release(okRead({ items: [branch] }));
-    expect(
-      await within(
-        screen.getByRole('form', { name: AR['inventory.opening.targetLabel'] as string })
-      ).findByRole('combobox')
-    ).toBeVisible();
-  });
-
-  it('renders in Arabic, right to left, with the same statement about reaching a batch again', async () => {
-    const { container } = renderRtl(
-      <OpeningStockScreen
-        locale="ar"
-        messages={ar}
-        canOperate={true}
-        canApprove={false}
-        canReadBranches={false}
-      />
-    );
-    expect(screen.getByText(AR['inventory.opening.batchesReadable'] as string)).toBeVisible();
-    expect(container.querySelector('[dir="rtl"], [dir="ltr"]')).not.toBeNull();
+    expect(target).toHaveTextContent(TEST_BRANCH.name);
+    expect(within(target).queryAllByRole('textbox')).toEqual([]);
+    expect(within(target).queryAllByRole('combobox')).toEqual([]);
+    // Addressed on arrival in Arabic exactly as in English.
+    await waitFor(() => expect(listOpeningBatches).toHaveBeenCalled());
+    expect(listBranches).not.toHaveBeenCalled();
   });
 });

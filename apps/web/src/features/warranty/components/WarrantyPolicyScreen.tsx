@@ -4,6 +4,7 @@ import { useState } from 'react';
 
 import { SelectField, TextField } from '@/components/forms/Field';
 import { FailureExplanation } from '@/components/states/States';
+import { useWorkingContext } from '@/features/working-context/WorkingContextProvider';
 import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic, translateWithValues } from '@/i18n/get-messages';
 
@@ -117,6 +118,7 @@ export function WarrantyPolicyScreen({
   /** `wty.policy.manage` — whether any control that changes the plan is drawn. */
   readonly canManagePolicies: boolean;
 }) {
+  const context = useWorkingContext();
   const [detail, setDetail] = useState<WarrantyPolicyDetail>(initial);
   const [outcome, setOutcome] = useState<Outcome | null>(null);
   const [rereadFailed, setRereadFailed] = useState<MoreFailure | null>(null);
@@ -242,10 +244,20 @@ export function WarrantyPolicyScreen({
             label={translate(messages, 'warranty.policies.codeField')}
             value={policy.policyCode}
           />
-          <Reference
-            label={translate(messages, 'warranty.policies.columnCompany')}
-            value={policy.companyId}
-          />
+          <Fact label={translate(messages, 'warranty.policies.columnCompany')}>
+            {/*
+              The name the platform published for this company, never its
+              reference: a reader cannot recognise a workshop by a string they
+              have never seen. A company outside this reader's own working
+              context has no name here, and the reference is then all there is.
+            */}
+            {context.companies.find((company) => company.id === policy.companyId)?.name ?? (
+              <Reference
+                label={translate(messages, 'warranty.policies.columnCompany')}
+                value={policy.companyId}
+              />
+            )}
+          </Fact>
         </div>
         {rereadFailed === null ? null : (
           <div className="mt-3">

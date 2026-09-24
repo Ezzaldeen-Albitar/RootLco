@@ -2,13 +2,15 @@
 
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 
 import { DataTable, type Column } from '@/components/data-table/DataTable';
 import { INITIAL_REQUEST } from '@/components/data-table/table-state';
 import { useServerTable } from '@/components/data-table/use-server-table';
 import { TextAreaField, TextField } from '@/components/forms/Field';
 import { notifyActionResult } from '@/components/notifications/action-notifications';
+import { useBranchTarget } from '@/features/working-context/use-branch-target';
+import { useWorkingContextChange } from '@/features/working-context/WorkingContextProvider';
 import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic } from '@/i18n/get-messages';
@@ -330,12 +332,44 @@ export function PriceLookupPanel({
   readonly canReadServices: boolean;
 }) {
   const [serviceId, setServiceId] = useState('');
-  const [pair, setPair] = useState<BranchPair>(EMPTY_PAIR);
+  /*
+   * The branch starts at the one the operator is working in.
+   *
+   * A price is resolved FOR a branch, and the form used to open empty and wait
+   * to be told which — from two free-text boxes. The picker beside it is there
+   * to change that choice rather than to make it (Owner directive,
+   * `P1-32-PRE-OD-UX`).
+   */
+  const working = useBranchTarget();
+  const workingPair = (): BranchPair =>
+    working.kind === 'ready'
+      ? { companyId: working.target.companyId, branchId: working.target.branchId }
+      : EMPTY_PAIR;
+  const [pair, setPair] = useState<BranchPair>(workingPair);
   const [customerClass, setCustomerClass] = useState('');
   const [asOf, setAsOf] = useState('');
   const [errors, setErrors] = useState<Readonly<Record<string, string>>>({});
   const [busy, setBusy] = useState(false);
   const [answer, setAnswer] = useState<ReadState<ResolvedPrice> | null>(null);
+  // Which lookup is current. A reply to any other is dropped when it lands.
+  const lookup = useRef(0);
+
+  /*
+   * The branch FOLLOWS the header, not just its first value.
+   *
+   * Seeded once, the lookup went on naming the previous branch after a switch —
+   * the header said one workshop and the form priced for another. On every
+   * change the branch is reset to the new working branch (or cleared, when the
+   * selection is not one branch), the answer about the old one is removed, and
+   * a lookup still in flight is superseded so its reply cannot land under the
+   * new heading.
+   */
+  useWorkingContextChange(() => {
+    lookup.current += 1;
+    setPair(workingPair());
+    setAnswer(null);
+    setBusy(false);
+  });
 
   const errorFor = (name: string): string | undefined => {
     const key = errors[name];
@@ -348,8 +382,10 @@ export function PriceLookupPanel({
     if (!UUID.test(service)) found['serviceId'] = 'pricing.common.idFormat';
     const companyId = pair.companyId.trim();
     const branchId = pair.branchId.trim();
-    if (!UUID.test(companyId)) found['companyId'] = 'pricing.common.idFormat';
-    if (!UUID.test(branchId)) found['branchId'] = 'pricing.common.idFormat';
+    // Chosen from the platform's own named list, so the only rule left is that
+    // one was chosen at all.
+    if (companyId.length === 0) found['companyId'] = 'field.required';
+    if (branchId.length === 0) found['branchId'] = 'field.required';
     const klass = customerClass.trim();
     if (klass.length > 0 && !INTERNAL_CODE.test(klass)) {
       found['customerClass'] = 'pricing.common.classFormat';
@@ -360,6 +396,8 @@ export function PriceLookupPanel({
     if (Object.keys(found).length > 0) return;
 
     setBusy(true);
+    lookup.current += 1;
+    const mine = lookup.current;
     const state = await resolvePrice({
       serviceId: service,
       companyId,
@@ -367,6 +405,7 @@ export function PriceLookupPanel({
       ...(klass ? { customerClass: klass } : {}),
       ...(date ? { asOf: date } : {}),
     });
+    if (mine !== lookup.current) return;
     setBusy(false);
     setAnswer(state);
   };

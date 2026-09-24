@@ -43,6 +43,10 @@ const POLICY_ID = '88888888-8888-4888-8888-888888888888';
 const CURSOR = 'd2FycmFudHktY3Vyc29y';
 
 const TARGET = { companyId: COMPANY_ID, branchId: BRANCH_ID };
+/** Every branch of the company the caller may read — the branch left unnamed. */
+const WIDE = { companyId: COMPANY_ID, branchId: null };
+/** No filters. Named so a case that means "nothing was asked for" says so. */
+const NO_FILTERS = {};
 
 const ok = (data: unknown) => ({ ok: true as const, data, correlationId: 'corr-1' });
 const failure = (kind: string, problem?: unknown) => ({
@@ -67,7 +71,7 @@ const requested = () => String(get.mock.calls[0]?.[0]);
 describe('the list is addressed to one branch', () => {
   it('sends the branch pair the route requires, as the read’s target', async () => {
     get.mockResolvedValue(ok(emptyPage));
-    await listWarranties(TARGET, null, null);
+    await listWarranties(TARGET, NO_FILTERS, null);
     const url = new URL(requested(), 'https://test.local');
     expect(url.pathname).toBe('/api/v1/warranties');
     expect(url.searchParams.get('companyId')).toBe(COMPANY_ID);
@@ -78,7 +82,7 @@ describe('the list is addressed to one branch', () => {
     // The route refuses anything above one hundred, so a page size that exceeded it
     // would be a request refused for the whole screen rather than a longer list.
     get.mockResolvedValue(ok(emptyPage));
-    await listWarranties(TARGET, null, null);
+    await listWarranties(TARGET, NO_FILTERS, null);
     const limit = new URL(requested(), 'https://test.local').searchParams.get('limit');
     expect(Number(limit)).toBe(PAGE_SIZE);
     expect(Number(limit)).toBeLessThanOrEqual(100);
@@ -91,16 +95,45 @@ describe('the list is addressed to one branch', () => {
     // different: the server resolves who you are and never accepts it from here.
     get.mockResolvedValue(ok(emptyPage));
     await expect(
-      listWarranties({ companyId: COMPANY_ID, branchId: '' }, null, null)
-    ).rejects.toThrow(/mandatory/i);
+      listWarranties({ companyId: COMPANY_ID, branchId: '  ' }, NO_FILTERS, null)
+    ).rejects.toThrow(/branchId/);
     expect(get).not.toHaveBeenCalled();
   });
 });
 
-describe('the one filter the route accepts', () => {
+describe('the branch may be named or deliberately left unnamed', () => {
+  it('omits the branch entirely when the operator is reading all their branches', async () => {
+    /*
+     * An omitted branch is what the route documents as "every branch of this
+     * company I may read", and the API resolves that set one branch at a time
+     * against this operation's own permission code. A BLANK value would be a
+     * malformed identifier refused for the whole page, so the two must not be
+     * confused: absent, never empty.
+     */
+    get.mockResolvedValue(ok(emptyPage));
+    await listWarranties(WIDE, NO_FILTERS, null);
+    const url = new URL(requested(), 'https://test.local');
+    expect(url.searchParams.get('companyId')).toBe(COMPANY_ID);
+    expect(url.searchParams.has('branchId')).toBe(false);
+  });
+});
+
+describe('the filters the route accepts', () => {
+  it('sends a search term as the operator typed it', async () => {
+    get.mockResolvedValue(ok(emptyPage));
+    await listWarranties(TARGET, { q: 'ABC-12' }, null);
+    expect(new URL(requested(), 'https://test.local').searchParams.get('q')).toBe('ABC-12');
+  });
+
+  it('omits the search term entirely when none was typed', async () => {
+    get.mockResolvedValue(ok(emptyPage));
+    await listWarranties(TARGET, NO_FILTERS, null);
+    expect(requested()).not.toContain('q=');
+  });
+
   it('sends the vehicle when one was named', async () => {
     get.mockResolvedValue(ok(emptyPage));
-    await listWarranties(TARGET, VEHICLE_ID, null);
+    await listWarranties(TARGET, { vehicleId: VEHICLE_ID }, null);
     expect(new URL(requested(), 'https://test.local').searchParams.get('vehicleId')).toBe(
       VEHICLE_ID
     );
@@ -110,19 +143,19 @@ describe('the one filter the route accepts', () => {
     // The route is strict about what it does not recognise, and an empty value is
     // not a missing one: a blank filter would be a request refused for the page.
     get.mockResolvedValue(ok(emptyPage));
-    await listWarranties(TARGET, null, null);
+    await listWarranties(TARGET, NO_FILTERS, null);
     expect(requested()).not.toContain('vehicleId');
   });
 
   it('passes the cursor back exactly as the server minted it', async () => {
     get.mockResolvedValue(ok(emptyPage));
-    await listWarranties(TARGET, null, CURSOR);
+    await listWarranties(TARGET, NO_FILTERS, CURSOR);
     expect(new URL(requested(), 'https://test.local').searchParams.get('cursor')).toBe(CURSOR);
   });
 
   it('sends no cursor on the first page', async () => {
     get.mockResolvedValue(ok(emptyPage));
-    await listWarranties(TARGET, null, null);
+    await listWarranties(TARGET, NO_FILTERS, null);
     expect(requested()).not.toContain('cursor');
   });
 });
@@ -130,7 +163,7 @@ describe('the one filter the route accepts', () => {
 describe('a refusal is a refusal, never an empty branch', () => {
   it('reports a forbidden list as denied and returns no rows', async () => {
     get.mockResolvedValue(failure('forbidden'));
-    const state = await listWarranties(TARGET, null, null);
+    const state = await listWarranties(TARGET, NO_FILTERS, null);
     expect(state.status).toBe('denied');
     expect(state.rows).toEqual([]);
     expect(state.hasMore).toBe(false);
@@ -139,14 +172,14 @@ describe('a refusal is a refusal, never an empty branch', () => {
 
   it('reports an ended session without asking the transport at all', async () => {
     authorizedClient.mockResolvedValue(null as unknown);
-    const state = await listWarranties(TARGET, null, null);
+    const state = await listWarranties(TARGET, NO_FILTERS, null);
     expect(state.status).toBe('expired');
     expect(get).not.toHaveBeenCalled();
   });
 
   it('carries the server’s own end-of-set signals rather than inferring them', async () => {
     get.mockResolvedValue(ok({ items: [{ id: WARRANTY_ID }], nextCursor: CURSOR, hasMore: true }));
-    const state = await listWarranties(TARGET, null, null);
+    const state = await listWarranties(TARGET, NO_FILTERS, null);
     expect(state.status).toBe('ok');
     expect(state.hasMore).toBe(true);
     expect(state.nextCursor).toBe(CURSOR);
@@ -212,7 +245,7 @@ describe('the car and the customer arrive named', () => {
   it('carries both blocks off a list page unchanged', async () => {
     get.mockResolvedValue(ok({ items: [ROW], nextCursor: null, hasMore: false }));
 
-    const state = await listWarranties(TARGET, null, null);
+    const state = await listWarranties(TARGET, NO_FILTERS, null);
 
     expect(state.status).toBe('ok');
     // Field by field rather than a reference comparison: an identity check on the
@@ -257,7 +290,7 @@ describe('the car and the customer arrive named', () => {
       })
     );
 
-    const state = await listWarranties(TARGET, null, null);
+    const state = await listWarranties(TARGET, NO_FILTERS, null);
 
     expect(state.rows[0]?.vehicle.plate).toBeNull();
     expect(state.rows[0]?.vehicle.vin).toBeNull();

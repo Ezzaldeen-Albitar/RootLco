@@ -866,26 +866,13 @@ describe('P1-28-SEC-003 — the ONE door, and the abuse cases that try the walls
      * table keyed on the submission alone would then page branch A's cursor
      * under branch B's name. The version moves on every change, so it cannot.
      */
-    // The calendar still submits a form and still mounts its results under a
-    // key built from the whole submission.
-    {
-      const source = webFile(
-        'features',
-        'appointments',
-        'components',
-        'AppointmentCalendarScreen.tsx'
-      );
-      expect(source).toContain('JSON.stringify(submitted)');
-      expect(source).toMatch(/key=\{`\$\{[A-Za-z]*[Vv]ersion\}:/);
-      expect(source).toMatch(/target:\s*(\{\s*companyId|branch\.target)/);
-    }
-
     /*
-     * The two boards reach the same place by a different mechanism, and the
+     * Three screens reach the same place by the same mechanism, and the
      * mechanism is now the hook's rather than a remount key.
      *
      * They read on arrival (Owner directive `P1-32-PRE-OD-UX`), so there is no
-     * submission to key a remount on. `useSearchRequest` owns the ordering
+     * submission to key a remount on — the calendar's Show button and its
+     * `JSON.stringify(submitted)` remount key went with it. `useSearchRequest` owns the ordering
      * contract instead: it is the serialised CRITERIA plus the working-context
      * VERSION, `useCursorPages` is keyed on exactly that string, and page one is
      * restored in the same render that the contract changes in. So both halves
@@ -898,6 +885,7 @@ describe('P1-28-SEC-003 — the ONE door, and the abuse cases that try the walls
      * flight rather than letting it land under the new branch's name.
      */
     for (const relative of [
+      ['features', 'appointments', 'components', 'AppointmentCalendarScreen.tsx'],
       ['features', 'receptions', 'components', 'ReceptionQueueScreen.tsx'],
       ['features', 'work-orders', 'components', 'WorkOrderQueueScreen.tsx'],
     ]) {

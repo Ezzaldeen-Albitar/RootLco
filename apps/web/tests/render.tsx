@@ -148,3 +148,26 @@ export function BranchSwitch({
     </button>
   );
 }
+
+/**
+ * The labels of the typed company and branch boxes the Owner directive retired
+ * (`P1-32-PRE-OD-UX`).
+ *
+ * Their catalogue entries went with them, so a case asserting that no such box
+ * has come back names the words here rather than reading a key that no longer
+ * exists — an absent key would make every such assertion vacuous.
+ */
+export const RETIRED_BOX = {
+  en: { company: /^Company identifier/, branch: /^Branch identifier/ },
+  ar: { company: /^معرّف الشركة/, branch: /^معرّف الفرع/ },
+} as const;
+
+/**
+ * What the working context currently holds, rendered as text, so a case can
+ * assert that a switch the operator declined left the branch where it was.
+ */
+export function WorkingBranchProbe() {
+  const { selection } = useWorkingContext();
+  const text = selection === null ? '' : selection.allBranches ? 'all' : selection.branchId;
+  return <output data-testid="working-branch-probe">{text}</output>;
+}

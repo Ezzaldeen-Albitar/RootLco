@@ -92,7 +92,6 @@ export function CreditNotesScreen({
         canReadBranches={canReadBranches}
         formLabelKey="creditNotes.targetLabel"
         explainKey="creditNotes.targetExplain"
-        submitKey="creditNotes.chooseBranch"
         onChosen={setTarget}
       />
 

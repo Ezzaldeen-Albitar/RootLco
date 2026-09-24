@@ -23,15 +23,15 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
  * it is the authority, not this page — but the request would still have been made.
  * `scripts/ci/check-p1-31-access.mjs` is what keeps that ordering true here.
  *
- * ## A second permission is computed and does not gate the page
+ * ## The branch is not a permission this page computes
  *
- * `org.branch.read` decides only whether a branch DIRECTORY is requested for the
- * target picker. A warranty reader who does not hold it types the branch pair in by
- * hand and reaches exactly the same rows, so gating the page on it would hide the
- * warranties from everyone outside organisation administration.
+ * It used to resolve `org.branch.read` so the screen could decide between a
+ * branch picker and two boxes asking an operator to paste a reference. The
+ * working context publishes the named branches this caller is authorized for,
+ * so neither control exists any more and neither does the question.
  *
- * **Both are affordances, never enforcement.** Every read is decided again by the
- * backend against the actual rows.
+ * **The read check here is an affordance, never enforcement.** Every read is
+ * decided again by the backend against the actual rows.
  *
  * ## The vehicle may arrive in the address, and nothing else may
  *
@@ -87,12 +87,7 @@ export default async function WarrantyListPage({
         crumbs={crumbs}
       />
       <PageBody>
-        <WarrantyListScreen
-          locale={locale}
-          messages={messages}
-          initialVehicleId={vehicleId}
-          canReadBranches={holds(session.permissions, WARRANTY_PERMISSIONS.branchRead)}
-        />
+        <WarrantyListScreen locale={locale} messages={messages} initialVehicleId={vehicleId} />
       </PageBody>
     </>
   );

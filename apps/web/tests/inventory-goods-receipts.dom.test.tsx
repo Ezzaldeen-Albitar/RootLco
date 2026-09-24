@@ -1,9 +1,42 @@
 import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import ar from '../src/i18n/messages/ar.json';
 import en from '../src/i18n/messages/en.json';
-import { renderLtr, renderRtl } from './render';
+import type { ReactElement } from 'react';
+import {
+  BranchSwitch,
+  OTHER_BRANCH,
+  TEST_BRANCH,
+  WorkingBranchProbe,
+  branchSnapshot,
+  inBranch,
+  renderLtr as renderInLtr,
+  renderRtl as renderInRtl,
+} from './render';
+import {
+  discardAndSwitch,
+  forgetRememberedBranch,
+  heldBranch,
+  stayOnBranch,
+  switchExpectingQuestion,
+  switchWithoutQuestion,
+} from './support/branch-switch';
+
+/*
+ * Every screen in this file is addressed by the WORKING CONTEXT: the branch it
+ * reads is the header's own named selection, not a pair typed into the screen
+ * (Owner directive, `P1-32-PRE-OD-UX`). So each render goes inside a provider.
+ *
+ * The two names are shadowed rather than changed at every call site, which
+ * keeps the default snapshot — one authorized branch, selected for the operator
+ * — true for every case below. A case that needs a different snapshot builds
+ * one and renders it explicitly.
+ */
+const renderLtr = (ui: ReactElement, options?: Parameters<typeof renderInLtr>[1]) =>
+  renderInLtr(inBranch(ui), options);
+const renderRtl = (ui: ReactElement, options?: Parameters<typeof renderInRtl>[1]) =>
+  renderInRtl(inBranch(ui, { locale: 'ar' }), options);
 import {
   BRANCH_ID,
   COMPANY_ID,
@@ -120,7 +153,6 @@ const detail = (over: Record<string, unknown> = {}) => ({
 });
 
 const TARGET_FORM = 'inventory.receipts.targetLabel';
-const TARGET_SUBMIT = 'inventory.receipts.chooseBranch';
 const listRegion = () =>
   screen.getByRole('region', { name: EN['inventory.receipts.list.heading'] as string });
 const createForm = () =>
@@ -166,7 +198,7 @@ describe('recording a receipt', () => {
       succeeded('inventory.receipts.create.success', detail({ recordVersion: 1 }))
     );
     renderScreen();
-    await chooseBranch(user, TARGET_FORM, TARGET_SUBMIT);
+    await chooseBranch(TARGET_FORM);
     const form = createForm();
     expect(within(form).queryByLabelText(labelled('inventory.receipts.line.unitCost'))).toBeNull();
     expect(
@@ -210,7 +242,7 @@ describe('recording a receipt', () => {
     const user = userEvent.setup();
     createGoodsReceipt.mockResolvedValue(succeeded('inventory.receipts.create.success', detail()));
     renderScreen({ canViewCost: true });
-    await chooseBranch(user, TARGET_FORM, TARGET_SUBMIT);
+    await chooseBranch(TARGET_FORM);
     const form = createForm();
     await chooseItem(user, form);
     await within(form).findByRole('option', { name: 'WH-1 — Main warehouse' });
@@ -265,7 +297,7 @@ describe('recording a receipt', () => {
       created: null,
     });
     renderScreen({ canViewCost: true });
-    await chooseBranch(user, TARGET_FORM, TARGET_SUBMIT);
+    await chooseBranch(TARGET_FORM);
     const form = createForm();
     await chooseItem(user, form);
     await within(form).findByRole('option', { name: 'WH-1 — Main warehouse' });
@@ -303,7 +335,7 @@ describe('recording a receipt', () => {
   it('refuses to save a receipt with no line', async () => {
     const user = userEvent.setup();
     renderScreen();
-    await chooseBranch(user, TARGET_FORM, TARGET_SUBMIT);
+    await chooseBranch(TARGET_FORM);
     const form = createForm();
     await user.type(
       within(form).getByLabelText(labelled('inventory.receipts.create.receivedOn')),
@@ -319,6 +351,72 @@ describe('recording a receipt', () => {
   });
 });
 
+describe('a half-written receipt and a branch switch', () => {
+  /*
+   * The form is keyed on the branch, so a switch used to drop a half-written
+   * receipt without a word. It now declares its unsaved work and the switch
+   * asks first.
+   */
+  afterEach(forgetRememberedBranch);
+
+  async function openTwoBranches(user: ReturnType<typeof userEvent.setup>) {
+    renderInLtr(
+      inBranch(
+        <>
+          <BranchSwitch to={TEST_BRANCH.id} label="first" />
+          <BranchSwitch to={OTHER_BRANCH.id} label="second" />
+          <WorkingBranchProbe />
+          <GoodsReceiptsScreen
+            locale="en"
+            messages={en}
+            canOperate={true}
+            canViewCost={false}
+            canReadBranches={true}
+          />
+        </>,
+        { snapshot: branchSnapshot([TEST_BRANCH, OTHER_BRANCH]) }
+      )
+    );
+    await user.click(screen.getByRole('button', { name: 'first' }));
+    return screen.findByRole('form', { name: EN['inventory.receipts.create.heading'] as string });
+  }
+  const receivedOn = () =>
+    within(createForm()).getByLabelText(
+      labelled('inventory.receipts.create.receivedOn')
+    ) as HTMLInputElement;
+
+  it('asks before switching; staying keeps what was typed and the branch', async () => {
+    const user = userEvent.setup();
+    await openTwoBranches(user);
+    await user.type(receivedOn(), '2026-09-17');
+    await stayOnBranch(user, await switchExpectingQuestion(user, 'second'));
+    expect(heldBranch()).toBe(TEST_BRANCH.id);
+    expect(receivedOn().value).toBe('2026-09-17');
+  });
+
+  it('discarding switches the branch and opens the form empty under it', async () => {
+    const user = userEvent.setup();
+    await openTwoBranches(user);
+    await user.type(receivedOn(), '2026-09-17');
+    await discardAndSwitch(user, await switchExpectingQuestion(user, 'second'));
+    await waitFor(() => expect(heldBranch()).toBe(OTHER_BRANCH.id));
+    await waitFor(() =>
+      expect(listGoodsReceipts.mock.lastCall?.[0]).toEqual({
+        companyId: OTHER_BRANCH.companyId,
+        branchId: OTHER_BRANCH.id,
+      })
+    );
+    expect(receivedOn().value).toBe('');
+  });
+
+  it('an untouched form switches without asking', async () => {
+    const user = userEvent.setup();
+    await openTwoBranches(user);
+    await switchWithoutQuestion(user, 'second');
+    await waitFor(() => expect(heldBranch()).toBe(OTHER_BRANCH.id));
+  });
+});
+
 describe('posting a receipt', () => {
   it('sends the version the read answered and shows the posted receipt', async () => {
     const user = userEvent.setup();
@@ -329,7 +427,7 @@ describe('posting a receipt', () => {
       )
     );
     renderScreen();
-    await chooseBranch(user, TARGET_FORM, TARGET_SUBMIT);
+    await chooseBranch(TARGET_FORM);
     const panel = await openReceipt(user);
     expect(readGoodsReceipt).toHaveBeenCalledWith(RECEIPT_ID);
     await user.click(
@@ -344,7 +442,7 @@ describe('posting a receipt', () => {
     const user = userEvent.setup();
     postGoodsReceipt.mockResolvedValue(refusedWith('inventory.receipts.post.refused'));
     renderScreen();
-    await chooseBranch(user, TARGET_FORM, TARGET_SUBMIT);
+    await chooseBranch(TARGET_FORM);
     const panel = await openReceipt(user);
     await user.click(
       within(panel).getByRole('button', { name: EN['inventory.receipts.post.action'] as string })
@@ -357,7 +455,7 @@ describe('posting a receipt', () => {
   it('without the operate permission there is no posting and no receipt form', async () => {
     const user = userEvent.setup();
     renderScreen({ canOperate: false });
-    await chooseBranch(user, TARGET_FORM, TARGET_SUBMIT);
+    await chooseBranch(TARGET_FORM);
     const panel = await openReceipt(user);
     expect(
       within(panel).queryByRole('button', { name: EN['inventory.receipts.post.action'] as string })
@@ -386,7 +484,7 @@ describe('the cost history', () => {
       })
     );
     renderScreen({ canViewCost: true });
-    await chooseBranch(user, TARGET_FORM, TARGET_SUBMIT);
+    await chooseBranch(TARGET_FORM);
     const panel = await openReceipt(user);
     await user.click(
       within(panel).getByRole('button', {
@@ -419,7 +517,7 @@ describe('the cost history', () => {
       })
     );
     renderScreen({ canViewCost: true });
-    await chooseBranch(user, TARGET_FORM, TARGET_SUBMIT);
+    await chooseBranch(TARGET_FORM);
     const panel = await openReceipt(user);
     await user.click(
       within(panel).getByRole('button', {
@@ -434,7 +532,7 @@ describe('the cost history', () => {
   it('is not offered without the cost permission', async () => {
     const user = userEvent.setup();
     renderScreen({ canViewCost: false });
-    await chooseBranch(user, TARGET_FORM, TARGET_SUBMIT);
+    await chooseBranch(TARGET_FORM);
     const panel = await openReceipt(user);
     expect(
       within(panel).queryByRole('button', {
@@ -461,10 +559,9 @@ describe('the /inventory/goods-receipts route page decides before it reads', () 
   });
 
   it('binds the cost fields to inv.cost.view and the forms to inv.stock.operate', async () => {
-    const user = userEvent.setup();
     PERMISSIONS = ['inv.stock.read', 'inv.stock.operate', 'inv.cost.view', 'org.branch.read'];
     const { unmount } = await renderPage();
-    await chooseBranch(user, TARGET_FORM, TARGET_SUBMIT);
+    await chooseBranch(TARGET_FORM);
     expect(
       within(createForm()).getByLabelText(labelled('inventory.receipts.line.unitCost'))
     ).toBeVisible();
@@ -478,24 +575,18 @@ describe('the /inventory/goods-receipts route page decides before it reads', () 
 
 describe('accessibility and Arabic', () => {
   it('the listed branch and its form have no serious or critical accessibility finding', async () => {
-    const user = userEvent.setup();
     const { container } = renderScreen({ canViewCost: true });
-    await chooseBranch(user, TARGET_FORM, TARGET_SUBMIT);
+    await chooseBranch(TARGET_FORM);
     await within(listRegion()).findByRole('table');
     expect(await seriousViolations(container)).toEqual([]);
   });
 
-  it('renders in Arabic, right to left', () => {
+  it('renders in Arabic, right to left, and reads its branch there too', async () => {
     renderRtl(
-      <GoodsReceiptsScreen
-        locale="ar"
-        messages={ar}
-        canOperate={true}
-        canViewCost={true}
-        canReadBranches={false}
-      />
+      <GoodsReceiptsScreen locale="ar" messages={ar} canOperate={true} canViewCost={true} />
     );
     expect(screen.getByText(AR['inventory.receipts.explain'] as string)).toBeVisible();
-    expect(listGoodsReceipts).not.toHaveBeenCalled();
+    expect(document.documentElement.dir).toBe('rtl');
+    await waitFor(() => expect(listGoodsReceipts).toHaveBeenCalled());
   });
 });

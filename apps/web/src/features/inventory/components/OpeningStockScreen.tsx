@@ -43,6 +43,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { INITIAL_REQUEST } from '@/components/data-table/table-state';
 import { SelectField, TextAreaField, TextField } from '@/components/forms/Field';
 import { notifyActionResult } from '@/components/notifications/action-notifications';
+import { useUnsavedGuard } from '@/features/working-context/WorkingContextProvider';
 import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic } from '@/i18n/get-messages';
@@ -69,19 +70,15 @@ import {
   type StockTarget,
 } from '../inventory-contract';
 import {
-  BranchPairPicker,
-  EMPTY_PAIR,
   LocationPicker,
   OutcomeNote,
   PRIMARY_BUTTON,
   Qty,
   SECONDARY_BUTTON,
   UUID,
-  canNameBranch,
-  useBranches,
   useLocations,
-  type BranchPair,
 } from './shared';
+import { BranchTargetForm } from './stock-operations';
 
 const LINK = 'text-primary underline-offset-2 hover:underline';
 const PANEL = 'flex flex-col gap-3 rounded-lg border border-border bg-surface p-4';
@@ -219,7 +216,6 @@ export function OpeningStockScreen({
   messages,
   canOperate,
   canApprove,
-  canReadBranches,
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
@@ -227,12 +223,12 @@ export function OpeningStockScreen({
   readonly canOperate: boolean;
   /** `inv.adjustment.approve` — approving; the server still refuses the counter. */
   readonly canApprove: boolean;
-  /** `org.branch.read` — whether a branch list is requested for the picker. */
-  readonly canReadBranches: boolean;
+  /**
+   * `org.branch.read`. Accepted so the route did not have to change, and no
+   * longer read: the branch is the working context's named selection.
+   */
+  readonly canReadBranches?: boolean;
 }) {
-  const branches = useBranches(canReadBranches);
-  const [pair, setPair] = useState<BranchPair>(EMPTY_PAIR);
-  const [errors, setErrors] = useState<Readonly<Record<string, string>>>({});
   const [target, setTarget] = useState<StockTarget | null>(null);
   const [batch, setBatch] = useState<OpeningBatch | null>(null);
   const [lines, setLines] = useState<readonly ShownLine[]>([]);
@@ -240,11 +236,6 @@ export function OpeningStockScreen({
   const [openFailure, setOpenFailure] = useState<string | null>(null);
   const locations = useLocations(target);
   const { list, reload } = useOpeningBatches(target);
-
-  const errorFor = (name: string): string | undefined => {
-    const key = errors[name];
-    return key ? translateDynamic(messages, key) : undefined;
-  };
 
   const approved = batch !== null && batch.status === 'approved';
 
@@ -300,43 +291,21 @@ export function OpeningStockScreen({
         </p>
       ) : null}
 
-      <form
-        onSubmit={(event) => {
-          event.preventDefault();
-          const found: Record<string, string> = {};
-          if (!UUID.test(pair.companyId.trim())) found['companyId'] = 'inventory.common.idFormat';
-          if (!UUID.test(pair.branchId.trim())) found['branchId'] = 'inventory.common.idFormat';
-          setErrors(found);
-          if (Object.keys(found).length > 0) return;
+      <BranchTargetForm
+        messages={messages}
+        formLabelKey="inventory.opening.targetLabel"
+        explainKey="inventory.opening.targetExplain"
+        onChosen={(next) => {
+          // Everything the previous branch owned goes with it. A failure to
+          // read a batch of THAT branch says nothing about this one, and a
+          // batch left on screen would be one workshop's count under another
+          // workshop's name.
           setBatch(null);
           setLines([]);
-          // A failure to read a batch of the PREVIOUS branch says nothing about
-          // this one, so it is cleared with everything else the branch owned.
           setOpenFailure(null);
-          setTarget({ companyId: pair.companyId.trim(), branchId: pair.branchId.trim() });
+          setTarget(next);
         }}
-        noValidate
-        aria-label={translate(messages, 'inventory.opening.targetLabel')}
-        className="grid gap-3 rounded-lg border border-border bg-surface p-4 sm:grid-cols-3"
-      >
-        <p className="text-caption text-text-muted sm:col-span-3">
-          {translate(messages, 'inventory.opening.targetExplain')}
-        </p>
-        <BranchPairPicker
-          messages={messages}
-          branches={branches}
-          label={translate(messages, 'inventory.target.branch')}
-          placeholder={translate(messages, 'inventory.target.chooseBranch')}
-          value={pair}
-          onChange={setPair}
-          errors={{ companyId: errorFor('companyId'), branchId: errorFor('branchId') }}
-        />
-        <div className="sm:col-span-3">
-          <button type="submit" className={PRIMARY_BUTTON} disabled={!canNameBranch(branches)}>
-            {translate(messages, 'inventory.opening.chooseBranch')}
-          </button>
-        </div>
-      </form>
+      />
 
       {target !== null ? (
         <BatchListPanel
@@ -352,6 +321,9 @@ export function OpeningStockScreen({
 
       {target !== null && batch === null && canOperate ? (
         <BatchForm
+          // Keyed on the branch: the form would otherwise stay mounted across a
+          // switch and send what was typed for one branch to the next.
+          key={`${target.companyId}:${target.branchId}`}
           messages={messages}
           target={target}
           onOpened={(opened) => {
@@ -640,6 +612,8 @@ function BatchForm({
   const [errors, setErrors] = useState<Readonly<Record<string, string>>>({});
   const [busy, setBusy] = useState(false);
   const [outcome, setOutcome] = useState<ActionState | null>(null);
+  // The batch is addressed to THIS branch, so a switch asks before dropping it.
+  useUnsavedGuard(Object.values(form).some((value) => value.trim().length > 0));
 
   const errorFor = (name: string): string | undefined => {
     const key = errors[name] ?? outcome?.fieldErrors?.[name];
@@ -749,6 +723,16 @@ function LineForm({
   const [errors, setErrors] = useState<Readonly<Record<string, string>>>({});
   const [busy, setBusy] = useState(false);
   const [outcome, setOutcome] = useState<ActionState | null>(null);
+  /*
+   * Unsaved work, declared to the shell. The item and location stay chosen
+   * after a line is added, as defaults for the next one, so after the first
+   * line only a typed quantity counts — otherwise the guard would stay raised
+   * for ever and ask about every switch.
+   */
+  const [added, setAdded] = useState(false);
+  useUnsavedGuard(
+    form.quantity.trim().length > 0 || (!added && (form.itemId !== '' || form.locationId !== ''))
+  );
 
   const errorFor = (name: string): string | undefined => {
     const key = errors[name] ?? outcome?.fieldErrors?.[name];
@@ -813,6 +797,7 @@ function LineForm({
         locationCode: location?.locationCode ?? result.created.locationId,
       });
       setForm((f) => ({ ...f, quantity: '' }));
+      setAdded(true);
     }
   };
 

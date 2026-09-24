@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import en from '../src/i18n/messages/en.json';
 import ar from '../src/i18n/messages/ar.json';
-import { renderLtr, renderRtl } from './render';
+import { TEST_BRANCH, inBranch, renderLtr, renderRtl, RETIRED_BOX } from './render';
 import { SERVICE_LIFECYCLE_STATES } from '@/features/services/services-contract';
 
 /**
@@ -219,10 +219,36 @@ describe('a refusal is a refusal', () => {
 });
 
 describe('the branch filter follows the operator’s access', () => {
-  it('without org.branch.read, offers an identifier field and never asks for the list', () => {
+  it('without org.branch.read or a working context, says the catalogue covers every branch and offers no box', () => {
     renderCatalogue({ canReadBranches: false });
-    expect(screen.getByLabelText(labelled('services.catalogue.branchIdField'))).toBeVisible();
+    expect(screen.queryByLabelText(RETIRED_BOX.en.branch)).toBeNull();
+    expect(screen.getByText(EN['services.catalogue.branchesNotOffered'] as string)).toBeVisible();
     expect(listBranches).not.toHaveBeenCalled();
+  });
+
+  it('without org.branch.read, the working context names the branches to filter by', async () => {
+    const user = userEvent.setup();
+    renderLtr(
+      inBranch(
+        <ServiceCatalogueScreen
+          locale="en"
+          messages={en}
+          canManage={false}
+          canReadBranches={false}
+        />
+      )
+    );
+    const select = screen.getByLabelText(labelled('services.catalogue.availableAtBranch'));
+    expect(
+      within(select).getByRole('option', { name: `${TEST_BRANCH.code} — ${TEST_BRANCH.name}` })
+    ).toBeInTheDocument();
+    expect(listBranches).not.toHaveBeenCalled();
+    await waitFor(() => expect(listServices).toHaveBeenCalled());
+    listServices.mockClear();
+    await user.selectOptions(select, TEST_BRANCH.id);
+    await user.click(showButton());
+    await waitFor(() => expect(listServices).toHaveBeenCalled());
+    expect(listServices.mock.calls[0]?.[0]).toEqual({ availableAtBranchId: TEST_BRANCH.id });
   });
 
   it('with org.branch.read, offers the branch list by code and name', async () => {
@@ -240,20 +266,18 @@ describe('the branch filter follows the operator’s access', () => {
     expect(listServices.mock.calls[0]?.[0]).toEqual({ availableAtBranchId: BRANCH });
   });
 
-  it('refuses an identifier that is not one, and reads nothing', async () => {
+  it('the one search box says what it takes, and Enter asks the server with the term', async () => {
     const user = userEvent.setup();
     renderCatalogue({ canReadBranches: false });
     await waitFor(() => expect(listServices).toHaveBeenCalled());
     listServices.mockClear();
-    await user.type(
-      screen.getByLabelText(labelled('services.catalogue.branchIdField')),
-      'not-a-branch'
-    );
-    await user.click(showButton());
-    expect(
-      await screen.findByText(EN['services.catalogue.branchIdFormat'] as string)
-    ).toBeVisible();
-    expect(listServices).not.toHaveBeenCalled();
+    expect(screen.getByText(EN['services.catalogue.searchExample'] as string)).toBeVisible();
+    const box = screen.getByRole('searchbox', { name: EN['services.catalogue.search'] as string });
+    await user.type(box, 'OIL{Enter}');
+    await waitFor(() => expect(listServices).toHaveBeenCalled());
+    expect(listServices.mock.calls[0]?.[0]).toEqual({ search: 'OIL' });
+    // One search control on the form, not two with the same name.
+    expect(screen.queryByRole('button', { name: EN['search.submit'] as string })).toBeNull();
   });
 });
 
@@ -388,7 +412,7 @@ describe('CC-15 — the services branch picker says which state it is in', () =>
     expect(screen.getByRole('status')).toHaveTextContent(
       EN['services.catalogue.branchesLoading'] as string
     );
-    expect(screen.queryByLabelText(labelled('services.catalogue.branchIdField'))).toBeNull();
+    expect(screen.queryByLabelText(RETIRED_BOX.en.branch)).toBeNull();
     release(listedBranches);
     expect(
       await screen.findByLabelText(labelled('services.catalogue.availableAtBranch'))
@@ -396,11 +420,11 @@ describe('CC-15 — the services branch picker says which state it is in', () =>
     expect(screen.queryByRole('status')).toBeNull();
   });
 
-  it('with no branch listed, says so and keeps the identifier field', async () => {
+  it('with no branch listed, says so and offers no box to type a reference into', async () => {
     listBranches.mockResolvedValue(okRead({ items: [] }));
     renderCatalogue({ canReadBranches: true });
     expect(await screen.findByText(EN['services.catalogue.branchesNone'] as string)).toBeVisible();
-    expect(screen.getByLabelText(labelled('services.catalogue.branchIdField'))).toBeVisible();
+    expect(screen.queryByLabelText(RETIRED_BOX.en.branch)).toBeNull();
     expect(screen.queryByLabelText(labelled('services.catalogue.availableAtBranch'))).toBeNull();
   });
 
@@ -445,11 +469,7 @@ describe('CC-15 — the services branch picker says which state it is in', () =>
     expect(screen.getByRole('status')).toHaveTextContent(
       AR['services.catalogue.branchesLoading'] as string
     );
-    expect(
-      screen.queryByLabelText(
-        new RegExp(`^${escape(AR['services.catalogue.branchIdField'] as string)}`)
-      )
-    ).toBeNull();
+    expect(screen.queryByLabelText(RETIRED_BOX.ar.branch)).toBeNull();
     release(listedBranches);
     expect(
       await screen.findByLabelText(
@@ -458,17 +478,13 @@ describe('CC-15 — the services branch picker says which state it is in', () =>
     ).toBeVisible();
   });
 
-  it('in Arabic, a zero-row list says so and keeps the identifier field', async () => {
+  it('in Arabic, a zero-row list says so and offers no identifier box', async () => {
     listBranches.mockResolvedValue(okRead({ items: [] }));
     renderRtl(
       <ServiceCatalogueScreen locale="ar" messages={ar} canManage={false} canReadBranches={true} />
     );
     expect(await screen.findByText(AR['services.catalogue.branchesNone'] as string)).toBeVisible();
-    expect(
-      screen.getByLabelText(
-        new RegExp(`^${escape(AR['services.catalogue.branchIdField'] as string)}`)
-      )
-    ).toBeVisible();
+    expect(screen.queryByLabelText(RETIRED_BOX.ar.branch)).toBeNull();
   });
 });
 

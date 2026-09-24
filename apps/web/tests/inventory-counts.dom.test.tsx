@@ -1,9 +1,42 @@
 import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import ar from '../src/i18n/messages/ar.json';
 import en from '../src/i18n/messages/en.json';
-import { renderLtr, renderRtl } from './render';
+import type { ReactElement } from 'react';
+import {
+  inBranch,
+  renderLtr as renderInLtr,
+  renderRtl as renderInRtl,
+  BranchSwitch,
+  OTHER_BRANCH,
+  TEST_BRANCH,
+  WorkingBranchProbe,
+  branchSnapshot,
+} from './render';
+import {
+  discardAndSwitch,
+  forgetRememberedBranch,
+  heldBranch,
+  stayOnBranch,
+  switchExpectingQuestion,
+  switchWithoutQuestion,
+} from './support/branch-switch';
+
+/*
+ * Every screen in this file is addressed by the WORKING CONTEXT: the branch it
+ * reads is the header's own named selection, not a pair typed into the screen
+ * (Owner directive, `P1-32-PRE-OD-UX`). So each render goes inside a provider.
+ *
+ * The two names are shadowed rather than changed at every call site, which
+ * keeps the default snapshot — one authorized branch, selected for the operator
+ * — true for every case below. A case that needs a different snapshot builds
+ * one and renders it explicitly.
+ */
+const renderLtr = (ui: ReactElement, options?: Parameters<typeof renderInLtr>[1]) =>
+  renderInLtr(inBranch(ui), options);
+const renderRtl = (ui: ReactElement, options?: Parameters<typeof renderInRtl>[1]) =>
+  renderInRtl(inBranch(ui, { locale: 'ar' }), options);
 import {
   BRANCH_ID,
   COMPANY_ID,
@@ -166,7 +199,6 @@ function detail(over: Record<string, unknown> = {}, lines?: readonly unknown[]) 
 }
 
 const TARGET_FORM = 'inventory.counts.targetLabel';
-const TARGET_SUBMIT = 'inventory.counts.chooseBranch';
 const listRegion = () =>
   screen.getByRole('region', { name: EN['inventory.counts.list.heading'] as string });
 
@@ -206,9 +238,8 @@ beforeEach(() => {
 
 describe('what a count shows', () => {
   it('lists the counts of the branch with the server’s variance figures', async () => {
-    const user = userEvent.setup();
     renderScreen();
-    await chooseBranch(user, TARGET_FORM, TARGET_SUBMIT);
+    await chooseBranch(TARGET_FORM);
     await waitFor(() =>
       expect(listStockCounts).toHaveBeenCalledWith({ companyId: COMPANY_ID, branchId: BRANCH_ID })
     );
@@ -219,10 +250,9 @@ describe('what a count shows', () => {
   });
 
   it('carries the branch stock signals beside the counts that raise half of them', async () => {
-    const user = userEvent.setup();
     renderScreen();
     expect(screen.queryByTestId('stock-alert-indicator')).toBeNull();
-    await chooseBranch(user, TARGET_FORM, TARGET_SUBMIT);
+    await chooseBranch(TARGET_FORM);
 
     const indicator = await screen.findByTestId('stock-alert-indicator');
     expect(indicator).toHaveTextContent(EN['inventory.signals.quiet'] as string);
@@ -234,7 +264,7 @@ describe('what a count shows', () => {
   it('shows snapshot, counted and variance, and says what is not counted', async () => {
     const user = userEvent.setup();
     renderScreen({ canOperate: false });
-    await chooseBranch(user, TARGET_FORM, TARGET_SUBMIT);
+    await chooseBranch(TARGET_FORM);
     const panel = await openCount(user);
     expect(readStockCount).toHaveBeenCalledWith(COUNT_ID);
     const counted = lineRow(panel, 'BRK-001');
@@ -260,7 +290,7 @@ describe('what a count shows', () => {
   it('does not present the unwritten movement figure as measured while the count is open', async () => {
     const user = userEvent.setup();
     renderScreen({ canOperate: false });
-    await chooseBranch(user, TARGET_FORM, TARGET_SUBMIT);
+    await chooseBranch(TARGET_FORM);
     const panel = await openCount(user);
     const counted = lineRow(panel, 'BRK-001');
     expect(within(counted).queryByText('-2.000')).toBeNull();
@@ -286,7 +316,7 @@ describe('what a count shows', () => {
     const user = userEvent.setup();
     readStockCount.mockResolvedValue(okRead(detail({ status: 'reconciled' })));
     renderScreen({ canOperate: false });
-    await chooseBranch(user, TARGET_FORM, TARGET_SUBMIT);
+    await chooseBranch(TARGET_FORM);
     const panel = await openCount(user);
     const counted = lineRow(panel, 'BRK-001');
     expect(within(counted).getByText('-2.000')).toBeVisible();
@@ -342,7 +372,7 @@ describe('recording and reconciling', () => {
         succeeded('inventory.counts.line.success', detail({ recordVersion: 8 }))
       );
     renderScreen();
-    await chooseBranch(user, TARGET_FORM, TARGET_SUBMIT);
+    await chooseBranch(TARGET_FORM);
     const panel = await openCount(user);
     const pending = lineRow(panel, 'OIL-5W30');
     await user.type(
@@ -383,7 +413,7 @@ describe('recording and reconciling', () => {
       )
     );
     renderScreen();
-    await chooseBranch(user, TARGET_FORM, TARGET_SUBMIT);
+    await chooseBranch(TARGET_FORM);
     const panel = await openCount(user);
     await user.click(
       within(panel).getByRole('button', { name: EN['inventory.counts.reconcile.action'] as string })
@@ -408,7 +438,7 @@ describe('recording and reconciling', () => {
     const user = userEvent.setup();
     recordStockCountLine.mockResolvedValue(refusedWith('inventory.counts.closed'));
     renderScreen();
-    await chooseBranch(user, TARGET_FORM, TARGET_SUBMIT);
+    await chooseBranch(TARGET_FORM);
     const panel = await openCount(user);
     const row = lineRow(panel, 'BRK-001');
     await user.click(
@@ -435,7 +465,7 @@ describe('recording and reconciling', () => {
       )
     );
     renderScreen();
-    await chooseBranch(user, TARGET_FORM, TARGET_SUBMIT);
+    await chooseBranch(TARGET_FORM);
     const panel = await openCount(user);
     await user.click(
       within(panel).getByRole('button', { name: EN['inventory.counts.cancel.action'] as string })
@@ -474,7 +504,7 @@ describe('recording and reconciling', () => {
     const user = userEvent.setup();
     cancelStockCount.mockResolvedValue(refusedWith('inventory.counts.closed'));
     renderScreen();
-    await chooseBranch(user, TARGET_FORM, TARGET_SUBMIT);
+    await chooseBranch(TARGET_FORM);
     const panel = await openCount(user);
     await user.click(
       within(panel).getByRole('button', { name: EN['inventory.counts.cancel.action'] as string })
@@ -498,7 +528,7 @@ describe('recording and reconciling', () => {
       succeeded('inventory.counts.open.success', detail({ status: 'open' }))
     );
     renderScreen();
-    await chooseBranch(user, TARGET_FORM, TARGET_SUBMIT);
+    await chooseBranch(TARGET_FORM);
     const form = screen.getByRole('form', {
       name: EN['inventory.counts.openForm.heading'] as string,
     });
@@ -518,12 +548,71 @@ describe('recording and reconciling', () => {
   });
 });
 
+describe('a count being opened and a branch switch', () => {
+  /*
+   * The open form names one of this branch's locations and is keyed on the branch,
+   * so a switch used to drop it without a word. It now asks first.
+   */
+  afterEach(forgetRememberedBranch);
+
+  async function openTwoBranches(user: ReturnType<typeof userEvent.setup>) {
+    renderInLtr(
+      inBranch(
+        <>
+          <BranchSwitch to={TEST_BRANCH.id} label="first" />
+          <BranchSwitch to={OTHER_BRANCH.id} label="second" />
+          <WorkingBranchProbe />
+          <StockCountsScreen locale="en" messages={en} canOperate={true} canReadBranches={true} />
+        </>,
+        { snapshot: branchSnapshot([TEST_BRANCH, OTHER_BRANCH]) }
+      )
+    );
+    await user.click(screen.getByRole('button', { name: 'first' }));
+    await screen.findByRole('form', { name: EN['inventory.counts.openForm.heading'] as string });
+  }
+  const field = () =>
+    within(
+      screen.getByRole('form', { name: EN['inventory.counts.openForm.heading'] as string })
+    ).getByLabelText(labelled('inventory.counts.openForm.notes')) as HTMLInputElement;
+
+  it('asks before switching; staying keeps what was typed and the branch', async () => {
+    const user = userEvent.setup();
+    await openTwoBranches(user);
+    await user.type(field(), 'Front shelf');
+    await stayOnBranch(user, await switchExpectingQuestion(user, 'second'));
+    expect(heldBranch()).toBe(TEST_BRANCH.id);
+    expect(field().value).toBe('Front shelf');
+  });
+
+  it('discarding switches the branch and opens the form empty under it', async () => {
+    const user = userEvent.setup();
+    await openTwoBranches(user);
+    await user.type(field(), 'Front shelf');
+    await discardAndSwitch(user, await switchExpectingQuestion(user, 'second'));
+    await waitFor(() => expect(heldBranch()).toBe(OTHER_BRANCH.id));
+    await waitFor(() =>
+      expect(listLocations.mock.lastCall?.[0]).toEqual({
+        companyId: OTHER_BRANCH.companyId,
+        branchId: OTHER_BRANCH.id,
+      })
+    );
+    expect(field().value).toBe('');
+  });
+
+  it('an untouched form switches without asking', async () => {
+    const user = userEvent.setup();
+    await openTwoBranches(user);
+    await switchWithoutQuestion(user, 'second');
+    await waitFor(() => expect(heldBranch()).toBe(OTHER_BRANCH.id));
+  });
+});
+
 describe('permission decides what is offered', () => {
   it('without the operate permission there is no record, reconcile, cancel or open', async () => {
     const user = userEvent.setup();
     renderScreen({ canOperate: false });
     expect(screen.getByText(EN['inventory.counts.needsOperate'] as string)).toBeVisible();
-    await chooseBranch(user, TARGET_FORM, TARGET_SUBMIT);
+    await chooseBranch(TARGET_FORM);
     const panel = await openCount(user);
     expect(
       within(panel).queryByLabelText(labelled('inventory.counts.line.countedField'))
@@ -567,16 +656,15 @@ describe('accessibility and Arabic', () => {
   it('an open count has no serious or critical accessibility finding', async () => {
     const user = userEvent.setup();
     const { container } = renderScreen();
-    await chooseBranch(user, TARGET_FORM, TARGET_SUBMIT);
+    await chooseBranch(TARGET_FORM);
     await openCount(user);
     expect(await seriousViolations(container)).toEqual([]);
   });
 
-  it('renders in Arabic, right to left', () => {
-    renderRtl(
-      <StockCountsScreen locale="ar" messages={ar} canOperate={true} canReadBranches={false} />
-    );
+  it('renders in Arabic, right to left, and reads its branch there too', async () => {
+    renderRtl(<StockCountsScreen locale="ar" messages={ar} canOperate={true} />);
     expect(screen.getByText(AR['inventory.counts.explain'] as string)).toBeVisible();
-    expect(listStockCounts).not.toHaveBeenCalled();
+    expect(document.documentElement.dir).toBe('rtl');
+    await waitFor(() => expect(listStockCounts).toHaveBeenCalled());
   });
 });

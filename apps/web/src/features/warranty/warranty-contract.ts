@@ -210,6 +210,29 @@ export const WARRANTY_ELIGIBLE_DELIVERY_STATUS = 'delivered';
 export const PAGE_SIZE = 25;
 
 /**
+ * The filters `wty.warranty-list` accepts, minus the scope.
+ *
+ * The route is `.strict()`, so this is the whole set: one vehicle, and one free
+ * text box. `vehicleId` is never typed by an operator — it arrives in the
+ * address when a vehicle screen hands over — and `q` is what a person at a
+ * counter actually holds.
+ */
+export interface WarrantyListCriteria {
+  readonly vehicleId?: string;
+  /**
+   * One free-text box: part of a party's name on the originating visit, the tail
+   * of their phone number, part of any plate the vehicle has carried, part of
+   * its VIN, or part of the work-order number. Two characters at least.
+   */
+  readonly q?: string;
+}
+
+/** `MIN_SEARCH_FRAGMENT` in `shared/text/search-terms.ts`. */
+export const MIN_WARRANTY_SEARCH = 2;
+/** `MAX_SEARCH_FRAGMENT` in `shared/text/search-terms.ts`. */
+export const MAX_WARRANTY_SEARCH = 80;
+
+/**
  * The message key that names a closed-vocabulary value in the operator's language.
  *
  * A lookup rather than a key built from the value, so a word the backend adds
