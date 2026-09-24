@@ -51,6 +51,7 @@ import {
   SERVICE_A,
   SVC_FULL,
   SVC_NO_CEILING,
+  SVC_READER,
   SVC_TENANT_B,
   SVC_UNPERMITTED,
   TAX_CLASS_A,
@@ -476,9 +477,13 @@ describe('P1-30 W3 — the quotation reads answer a real actor with real rows', 
 
   it('W3-9 a discount beyond the actor’s approval limit is a 403 — the refusal the screen renders', async () => {
     const opened = await createOpenWorkOrder();
+    // A colleague other than the approver is named as the one who asked for the
+    // discount in both requests: with no policy row the approver and the requester
+    // must differ, and this case is about the LIMIT, not that separation.
     authAs(SVC_NO_CEILING);
     const refused = await createQuotation({
       workOrderId: opened.workOrderId,
+      discountRequestedBy: SVC_READER.userId,
       lines: [{ serviceId: SERVICE_A, quantity: '1.000', discount: '1.0000' }],
     });
     expect(refused.status).toBe(403);
@@ -488,6 +493,7 @@ describe('P1-30 W3 — the quotation reads answer a real actor with real rows', 
     authAs(SVC_FULL);
     const created = await createQuotation({
       workOrderId: opened.workOrderId,
+      discountRequestedBy: SVC_READER.userId,
       lines: [{ serviceId: SERVICE_A, quantity: '1.000', discount: '5.0000' }],
     });
     expect(created.status).toBe(201);

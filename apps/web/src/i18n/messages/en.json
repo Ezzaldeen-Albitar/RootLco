@@ -1256,6 +1256,8 @@
   "form.violation.delivery_stopped": "This handover is marked as a problem, so nothing more can be recorded against it. Settle the problem first, or start the handover again.",
   "form.violation.delivery_work_not_finished": "The work on the vehicle is not finished, so it cannot be released. Finish and close the work first.",
   "form.violation.did_not_verify": "We could not confirm your current password. Enter it again.",
+  "form.violation.discount_approver_must_differ": "This discount needs approval, and the person who approves it must not be the person who asked for it. Choose the colleague who asked for the discount under Discount requested by, then try again. If nobody else asks for discounts in your company, remove the discount or keep it below your company's discount threshold; a company with no threshold needs approval for every discount.",
+  "form.violation.discount_no_approval_limit": "You have no discount approval limit that counts for this company, so you cannot approve this discount. A limit you set yourself, for your own account or for a role you hold, never counts. Ask another administrator to set your limit, or keep the discount below your company's discount threshold.",
   "form.violation.duplicate_cell": "A quantity has already been counted for this item at this location on this count. Correct the line already entered instead of adding a second one.",
   "form.violation.duplicate_code": "This code is already used.",
   "form.violation.duplicate_identifier": "This code is already in use. Enter a different code.",

@@ -628,6 +628,16 @@ with a **Draft** <!-- quotations.status.draft --> revision.
   colleague with a higher one." <!-- quotations.build.discountRefusedHint --> The quotation is not
   created with the discount silently dropped; nothing is created at all. Either reduce the discount,
   or ask a colleague with a higher limit to create the quotation.
+- **No colleague named as the requester, or you named yourself.** "This discount needs approval, and
+  the person who approves it must not be the person who asked for it. Choose the colleague who
+  asked for the discount under Discount requested by, then try again. If nobody else asks for
+  discounts in your company, remove the discount or keep it below your company's discount
+  threshold; a company with no threshold needs approval for every discount." <!-- form.violation.discount_approver_must_differ -->
+  See 4C.4.3 for a company with a single administrator.
+- **No limit that counts for you.** "You have no discount approval limit that counts for this
+  company, so you cannot approve this discount. A limit you set yourself, for your own account or
+  for a role you hold, never counts. Ask another administrator to set your limit, or keep the
+  discount below your company's discount threshold." <!-- form.violation.discount_no_approval_limit -->
 - "Enter a quantity above zero with up to three decimal places." <!-- quotations.lines.quantityFormat -->
   / "Enter a discount of zero or more with up to four decimal places." <!-- quotations.lines.discountFormat -->
 - "The description is limited to 2000 characters." <!-- quotations.lines.descriptionTooLong -->
@@ -911,6 +921,22 @@ per company." <!-- approvalLimits.description -->
   to set it, or choose a role you do not hold." <!-- form.violation.approval_limit_for_own_role -->
   And a limit you set never counts for you when you approve a discount, even if you are given the
   role later: someone else's limit has to cover it.
+- **Limits you set before this rule stop counting for you.** A limit an administrator set earlier
+  for their own account, or for a role they hold, is still listed, and it still counts for every
+  other holder of that role. It no longer counts when that administrator approves a discount. Check
+  the list for such limits and ask another administrator to set yours again.
+- **Whoever approves a discount must not be the person who asked for it.** Whenever a discount needs
+  approval, the account creating the quotation is the approver, and a different, active colleague
+  must be named under **Discount requested by**. A company with no discount threshold needs
+  approval for every discount above zero. So does every discount at or above the threshold of a
+  company that has one. Only a company threshold that turns the separation off in so many words
+  lifts it.
+- **So a company with a single administrator cannot approve its own discounts.** Nobody else can set
+  that administrator's limit, and nobody else can ask for the discount. The supported paths are a
+  company discount threshold, below which a discount needs no approval, or a second person: one
+  who asks for discounts, plus another administrator who sets the first administrator's limit. This
+  release has no screen for the company discount threshold. Whoever operates your installation has
+  to set it up. Until then, quote without a discount or add the second person.
 - **The meaning of a limit type is yours to define.** The application does not interpret it; your
   organisation decides what each type means and must use the same spelling everywhere.
 - **Company, role and person are named by reference, not by name.** There is no company or branch

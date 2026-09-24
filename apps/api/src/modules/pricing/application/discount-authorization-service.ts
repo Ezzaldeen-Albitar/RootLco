@@ -163,6 +163,9 @@ export class DiscountAuthorizationService {
     const overThreshold =
       policy === null || this.exceedsThreshold(policy, discount, base, request.currency);
 
+    // Absent row → the column's own default, `true`. See the separation below.
+    const makerApproverDistinct = policy === null || policy.makerApproverDistinct;
+
     let permissionCode: string | null = null;
     if (overThreshold) {
       permissionCode = policy?.requiredPermissionCode ?? 'svc.price.manage';
@@ -183,15 +186,33 @@ export class DiscountAuthorizationService {
        *
        * An absent requester now means "the caller is requesting it themselves",
        * which is the only honest reading: nobody else has been recorded as asking.
+       *
+       * ## No policy row means the separation APPLIES
+       *
+       * The flag used to be read as `policy?.makerApproverDistinct === true`, so a
+       * company with no policy row — where every non-zero discount needs approval,
+       * because the threshold is zero — was the one case where the separation did
+       * not run at all. The column defaults to `true`; an absent row now takes that
+       * default, in keeping with the fail-closed stance above: a missing row can
+       * never be more permissive than a configured one. Only a policy row that
+       * says `false` in so many words turns the separation off.
+       *
+       * Named (`discount_approver_must_differ`, on the requester field) so the
+       * screen can say what to do rather than report a missing permission.
        */
       if (
-        policy?.makerApproverDistinct === true &&
+        makerApproverDistinct &&
         (request.requestedBy === null || request.requestedBy === request.actorId)
       ) {
         throw new AppFailure('ERR-IAM-001', {
           message:
             'This company requires the approver of a discount to be someone other than the ' +
             'person who requested it, and that other person must be named',
+          safeDetails: {
+            violations: [
+              { path: 'body.discountRequestedBy', rule: 'discount_approver_must_differ' },
+            ],
+          },
         });
       }
       /**
@@ -204,7 +225,7 @@ export class DiscountAuthorizationService {
        * trace to find afterwards; both halves are fixed, here and in the audit record.
        */
       if (
-        policy?.makerApproverDistinct === true &&
+        makerApproverDistinct &&
         request.requestedBy !== null &&
         !(await this.repository.isActiveUserInTenant(db, request.requestedBy))
       ) {
@@ -226,8 +247,12 @@ export class DiscountAuthorizationService {
 
     if (overThreshold) {
       if (ceiling === null) {
+        // Named, because since `callerApprovalCeiling` stopped counting a limit the
+        // caller set (QA row 7.1d) an administrator can hold a limit on file and
+        // still have none that counts — the screen has to say why.
         throw new AppFailure('ERR-IAM-001', {
           message: 'You have no discount approval limit for this company',
+          safeDetails: { violations: [{ path: 'body', rule: 'discount_no_approval_limit' }] },
         });
       }
       const allowed = Money.of(ceiling.amount, ceiling.currencyCode);

@@ -282,6 +282,10 @@ async function seedQuotation(
         ...(options.discount === undefined ? {} : { discount: options.discount }),
       },
     ],
+    // With no policy row every non-zero discount needs approval, and the approver
+    // (the caller) must name a different colleague as the one who asked for it.
+    // `SVC_READER` is a real, active user in tenant A who is not `SVC_FULL`.
+    ...(options.discount === undefined ? {} : { discountRequestedBy: SVC_READER.userId }),
   });
   expect(response.status).toBe(201);
   return (await response.json()) as Quotation;
@@ -2345,5 +2349,56 @@ describe('discount maker/approver — the requester is resolved against PostgreS
     // afterwards, or an invented requester is undetectable even once it is refused at write.
     expect(requester).toBeDefined();
     expect(requester?.new_value_masked).toContain(SVC_READER.userId);
+  });
+});
+
+/**
+ * A company with NO policy row keeps the requester and the approver apart too.
+ *
+ * With no `svc.pricing_approval_policies` row the threshold is zero, so every
+ * non-zero discount needs approval — and the separation used to run only when a
+ * row existed (`policy?.makerApproverDistinct === true`), which made the
+ * unconfigured company the one place an approver could ask for their own
+ * discount. The column defaults to `true`; an absent row now takes that default.
+ */
+describe('discount maker/approver — a company with no policy row', () => {
+  beforeAll(async () => {
+    await clearDiscountPolicy(TENANT_A);
+  });
+
+  const quoteAs = async (requestedBy: string | undefined): Promise<Response> => {
+    const order = await createOpenWorkOrder();
+    authAs(SVC_FULL);
+    return createQuotation({
+      workOrderId: order.workOrderId,
+      payerPartnerRef: PARTNER_A,
+      ...(requestedBy === undefined ? {} : { discountRequestedBy: requestedBy }),
+      lines: [{ serviceId: SERVICE_A, quantity: '1.000', discount: '40.0000' }],
+    });
+  };
+
+  it.each([
+    ['names nobody as the requester', undefined],
+    ['names themselves as the requester', SVC_FULL.userId],
+  ])('refuses, by name, an approver who %s', async (_label, requestedBy) => {
+    const refused = await quoteAs(requestedBy);
+    expect(refused.status).toBe(403);
+    const body = (await refused.json()) as {
+      code: string;
+      violations?: readonly { path: string; rule: string }[];
+    };
+    expect(body.code).toBe('ERR-IAM-001');
+    expect(body.violations).toEqual([
+      { path: 'body.discountRequestedBy', rule: 'discount_approver_must_differ' },
+    ]);
+  });
+
+  it('lets a different approver with a sufficient limit authorize it', async () => {
+    // `SVC_FULL` approves under the 1000 JOD role limit the fixtures' administrator
+    // set, and `SVC_READER` — someone else — asked for the discount.
+    const accepted = await quoteAs(SVC_READER.userId);
+    expect(accepted.status).toBe(201);
+    const created = (await accepted.json()) as Quotation;
+    expect(created.currentRevision?.lines[0]?.discount).toBe('40.0000');
   });
 });
