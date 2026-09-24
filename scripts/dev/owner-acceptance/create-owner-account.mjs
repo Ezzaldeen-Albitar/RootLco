@@ -246,9 +246,12 @@ async function ensureRole(client, { id, tenantId, code, name, description, permi
   if (present.rows[0].n !== permissions.length) {
     throw new Error(
       `Only ${present.rows[0].n} of ${permissions.length} permission codes exist in the ` +
-        'catalogue: the database is behind this checkout. Bring it forward without deleting ' +
-        'data (docs/platform/environment-configuration.md section 19.4). Only a brand-new, ' +
-        'empty local stack is rebuilt instead, per section 19.5 - never the acceptance database.'
+        'catalogue: the permission catalogue is behind this checkout. No migration inserts ' +
+        'permission codes, so bringing the schema forward (section 19.4) does not add them. ' +
+        'Apply supabase/seeds/04_iam_permission_catalog.sql as it stands, after a backup; it ' +
+        'only adds missing codes (docs/platform/environment-configuration.md section 19.4a; ' +
+        'docs/phase-1/phase-1-31/operator-runbook.md section 3). Never reset the acceptance ' +
+        'database for this.'
     );
   }
   return mapped.rowCount;
@@ -357,13 +360,30 @@ async function main() {
   const summary = {};
 
   try {
-    const catalogue = await client.query('SELECT count(*)::int AS n FROM iam.permissions');
+    let catalogue;
+    try {
+      catalogue = await client.query('SELECT count(*)::int AS n FROM iam.permissions');
+    } catch (error) {
+      // 42P01 undefined_table / 3F000 invalid_schema_name: the schema itself is
+      // behind this checkout, which is a migration problem, not a seed problem.
+      if (error.code === '42P01' || error.code === '3F000') {
+        throw new Error(
+          'iam.permissions does not exist: the database schema is behind this checkout. If ' +
+            'this database already holds data, bring it forward without deleting it ' +
+            '(docs/platform/environment-configuration.md section 19.4). Only a brand-new, empty ' +
+            'local stack is rebuilt instead, per section 19.5 - never the acceptance database.'
+        );
+      }
+      throw error;
+    }
     if (catalogue.rows[0].n === 0) {
       throw new Error(
-        'iam.permissions is empty: the platform catalogue has not been seeded. If this database ' +
-          'already holds data, bring it forward without deleting it ' +
-          '(docs/platform/environment-configuration.md section 19.4). Only a brand-new, empty ' +
-          'local stack is rebuilt instead, per section 19.5 - never the acceptance database.'
+        'iam.permissions is empty: the platform permission catalogue has not been seeded. No ' +
+          'migration inserts permission codes, so section 19.4 does not add them. Apply ' +
+          'supabase/seeds/04_iam_permission_catalog.sql as it stands, after a backup; it only ' +
+          'adds missing codes (docs/platform/environment-configuration.md section 19.4a; ' +
+          'docs/phase-1/phase-1-31/operator-runbook.md section 3). Never reset the acceptance ' +
+          'database for this.'
       );
     }
 

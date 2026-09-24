@@ -1217,6 +1217,49 @@ proved to be in the database already, one version at a time, and only after the 
 marking a version applied that never ran hides a missing change for good. If the cause is not that,
 stop and ask; do not reset.
 
+### 19.4a Load the permission catalogue on an existing database
+
+Permission codes reach a database only through `supabase/seeds/04_iam_permission_catalog.sql`; no
+migration writes to `iam.permissions`. Section 19.4 runs no seed, so a database brought forward
+with it can still lack codes a newer checkout needs, and `npm run acceptance:create-owner` then
+refuses with "the permission catalogue is behind this checkout" or "iam.permissions is empty". The
+procedure below is the one `docs/phase-1/phase-1-31/operator-runbook.md` section 3 documents and
+records; that section is the authority for its verification queries and rollback criterion.
+
+**Why it is safe to re-run.** The file is one `INSERT INTO iam.permissions ... ON CONFLICT
+(permission_code) DO NOTHING` followed by a block that only prints a count. It adds codes that are
+absent and never changes or deletes a row that exists. Re-read the file before applying it: if it
+ever holds anything other than that insert and notice, do not use this procedure and stop.
+
+**Step 1 — stop the application tiers and take a backup.** `npm run dev:stop`, then section 19.4
+step 3, with a new archive name. Do not continue until the archive exists and `pg_restore --list`
+read it.
+
+**Step 2 — apply the seed file as it stands.** Never transcribe rows by hand; a second copy of the
+catalogue drifts.
+
+PowerShell:
+
+```powershell
+docker cp supabase/seeds/04_iam_permission_catalog.sql supabase_db_RootLco:/tmp/04_iam_permission_catalog.sql
+docker exec supabase_db_RootLco psql -U postgres -d postgres -v ON_ERROR_STOP=1 --echo-errors -f /tmp/04_iam_permission_catalog.sql
+docker exec supabase_db_RootLco rm /tmp/04_iam_permission_catalog.sql
+```
+
+bash (Git Bash on Windows):
+
+```bash
+export MSYS_NO_PATHCONV=1   # stops Git Bash rewriting the container's /tmp paths into Windows ones
+docker cp supabase/seeds/04_iam_permission_catalog.sql supabase_db_RootLco:/tmp/04_iam_permission_catalog.sql
+docker exec supabase_db_RootLco psql -U postgres -d postgres -v ON_ERROR_STOP=1 --echo-errors -f /tmp/04_iam_permission_catalog.sql
+docker exec supabase_db_RootLco rm /tmp/04_iam_permission_catalog.sql
+```
+
+If `psql` reports an error, stop: `ON_ERROR_STOP` ends the run and the insert is one statement, so
+nothing was added. **Step 3 — verify**, with the queries in the runbook's section 3: the catalogue
+count rose by exactly the number of codes that were absent and every pre-existing row is unchanged.
+Then restart with section 19.4 step 5 and run `npm run acceptance:create-owner` again.
+
 ### 19.5 Destructive: rebuild an empty local database
 
 > **WARNING — this deletes every row in the local database.** That includes the acceptance tenant,
