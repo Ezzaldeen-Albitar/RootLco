@@ -96,8 +96,13 @@ export async function verifyReceiverWithEvidence(
   // Action transport gives an unnamed file part the name "blob", so an
   // untouched control reached this line as a named, empty file and was refused
   // as an empty document (QA row 3.4). That is why the panel, which knows what
-  // the operator chose, decides the part before it is sent.
-  const chosen = file instanceof File && (file.name !== '' || file.size > 0);
+  // the operator chose, decides the part before it is sent — and why this
+  // action ALSO reads an empty part named "blob" as no document, so a second
+  // caller that forwards an untouched control cannot bring the refusal back.
+  // An empty file with a name of its own is still a chosen file, and is
+  // refused below as an empty document.
+  const chosen =
+    file instanceof File && (file.size > 0 || (file.name !== '' && file.name !== 'blob'));
 
   if (!chosen) {
     const verified = await verifyReceiver(deliveryId, { receiverPartnerId });

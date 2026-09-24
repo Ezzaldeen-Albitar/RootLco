@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import en from '../src/i18n/messages/en.json';
 import ar from '../src/i18n/messages/ar.json';
 import type { captureDeliverySignature as RealCaptureDeliverySignature } from '@/features/delivery/signature-capture';
+import { verifyReceiverWithEvidence } from '@/features/delivery/receiver-capture';
 import {
   BranchSwitch,
   OTHER_BRANCH,
@@ -1594,6 +1595,48 @@ describe('optional identity evidence when confirming a receiver', () => {
     ).toBeNull();
     expect(captureDocument).not.toHaveBeenCalled();
     expect(createDocumentLink).not.toHaveBeenCalled();
+  });
+
+  it('the Server Action itself reads an empty part named "blob" as no document, whoever sent it', async () => {
+    /*
+     * The panel no longer sends the part, but the action must not depend on
+     * that: a second caller that forwards an untouched file control would hand
+     * it the same empty "blob" part the transport produces, and the receiver
+     * would be refused as an empty document again (QA row 3.4). Called here
+     * directly, with no panel in between.
+     */
+    verifyReceiver.mockResolvedValue(succeeded('delivery.receiver.verified'));
+    const form = new FormData();
+    form.set('identityEvidenceFile', new File([], 'blob', { type: 'application/octet-stream' }));
+
+    const outcome = await verifyReceiverWithEvidence(DELIVERY_ID, VISIT_ID, PARTNER_ID, form);
+
+    expect(outcome.status).toBe('success');
+    expect(outcome.withEvidence).toBe(false);
+    expect(verifyReceiver.mock.calls).toStrictEqual([
+      [DELIVERY_ID, { receiverPartnerId: PARTNER_ID }],
+    ]);
+    expect(listDocumentCategories).not.toHaveBeenCalled();
+    expect(captureDocument).not.toHaveBeenCalled();
+    expect(createDocumentLink).not.toHaveBeenCalled();
+  });
+
+  it('the Server Action still refuses an empty file the operator named, and sends nothing', async () => {
+    // The counterpart: only the transport's own empty "blob" part is read as
+    // "no document". An empty file with a name of its own was chosen, and it is
+    // refused as an empty document, as before.
+    const form = new FormData();
+    form.set('identityEvidenceFile', new File([], 'licence.png', { type: 'image/png' }));
+
+    const outcome = await verifyReceiverWithEvidence(DELIVERY_ID, VISIT_ID, PARTNER_ID, form);
+
+    expect(outcome.status).toBe('invalid');
+    expect(outcome.withEvidence).toBe(true);
+    expect(outcome.fieldErrors).toStrictEqual({
+      identityEvidenceFile: 'attachments.capture.empty',
+    });
+    expect(verifyReceiver).not.toHaveBeenCalled();
+    expect(captureDocument).not.toHaveBeenCalled();
   });
 
   it.each([
