@@ -212,8 +212,12 @@ test.describe('P1-31 delivery screens, over the acceptance journey records', () 
 
     await page.goto(`/${locale}/delivery`);
 
+    // EXACT, because the queue now reads on arrival and so renders its results
+    // section at once, whose visually hidden heading names the page title and
+    // then the branch. A heading name is matched as a substring by default, so
+    // the page title alone resolved to both and strict mode refused to guess.
     await expect(
-      page.getByRole('heading', { name: say(locale, 'delivery.queue.title') })
+      page.getByRole('heading', { name: say(locale, 'delivery.queue.title'), exact: true })
     ).toBeVisible();
     await expect(page.locator('html')).toHaveAttribute('dir', locale === 'ar' ? 'rtl' : 'ltr');
 
@@ -268,7 +272,7 @@ test.describe('P1-31 delivery screens, over the acceptance journey records', () 
 
     await page.goto(`/${locale}/delivery`);
     await expect(
-      page.getByRole('heading', { name: say(locale, 'delivery.queue.title') })
+      page.getByRole('heading', { name: say(locale, 'delivery.queue.title'), exact: true })
     ).toBeVisible();
     await expect(page.locator('html')).toHaveAttribute('dir', locale === 'ar' ? 'rtl' : 'ltr');
 

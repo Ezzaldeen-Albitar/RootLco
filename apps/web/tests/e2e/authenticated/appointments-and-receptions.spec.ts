@@ -803,29 +803,46 @@ test.describe('the appointment calendar reads only for a named branch', () => {
     );
 
     /*
-     * No request for a branch nobody chose.
+     * WHICH READ IS BEING COUNTED — the reception queue's case below records
+     * the same correction, for the same reason.
      *
-     * Conditional on the chooser existing, because an operator with exactly one
-     * authorized branch has it selected for them and has nothing to withhold.
-     * Asserting the unchosen state unconditionally would fail on a perfectly
-     * correct single-branch stack.
+     * This sampled `before` after arrival and polled the DELTA once a branch
+     * was chosen. On a stack where the principal has exactly ONE authorized
+     * branch, the shell chooses it, the calendar is addressed on arrival and has
+     * already read before the baseline is taken, so the delta never moved and
+     * the case failed in all three projects with "Received 0" — because the
+     * behaviour it checks was working.
+     *
+     *   - SEVERAL authorized branches — none is chosen for them, so the calendar
+     *     says which control answers and reads nothing; choosing one must move
+     *     the baseline.
+     *   - EXACTLY ONE — the calendar is not blocked, and a read has happened on
+     *     arrival; `workInBranch` asserts the branch is stated, not asked for.
+     *
+     * Both are the positive control twice over: the listener really is wired,
+     * and an addressed calendar really does issue the read.
      */
-    const before = posts.length;
     if ((await page.getByTestId('working-context-select').count()) > 0) {
+      const before = posts.length;
       await expect(page.getByTestId('appointment-calendar-blocked')).toBeVisible();
       expect(posts.length - before, 'a branch nobody chose must not issue a read').toBe(0);
+
+      await workInBranch(page, BRANCH_A);
+      await expect
+        .poll(() => posts.length - before, {
+          message: 'naming a branch target issued no read at all',
+        })
+        .toBeGreaterThan(0);
+    } else {
+      await expect(
+        page.getByTestId('appointment-calendar-blocked'),
+        'the one authorized branch is chosen by the shell, so the calendar must not be blocked'
+      ).toHaveCount(0);
+      await workInBranch(page, BRANCH_A);
+      await expect
+        .poll(() => posts.length, { message: 'the calendar issued no read on arrival' })
+        .toBeGreaterThan(0);
     }
-
-    // The positive control, twice over: the listener really is wired, and a
-    // chosen branch really does issue the read. Without this the assertion
-    // above would also pass on a page that made no requests at all.
-    await workInBranch(page, BRANCH_A);
-
-    await expect
-      .poll(() => posts.length - before, {
-        message: 'naming a branch target issued no read at all',
-      })
-      .toBeGreaterThan(0);
     expect(observed.length, 'the listener saw no requests at all').toBeGreaterThan(0);
 
     /*
