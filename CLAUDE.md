@@ -95,8 +95,14 @@ the browser smoke. Delegate it as its own task, never as a casual step.
 
 **The database tier is separate** and is never covered by the aggregate. `npm run test:db` and
 `npm run test:backend` need a live PostgreSQL. A change under `supabase/migrations/**` or
-`supabase/seeds/**` needs, with the user's approval, `npm run supabase:start`,
-`npm run supabase:reset` and `npm run verify:database`.
+`supabase/seeds/**` needs, with the user's approval, `npm run verify:database` against a
+disposable database (CONTRIBUTING.md section 8, "Pre-push step for schema and seed changes").
+**`npm run supabase:reset` is destructive:** it deletes every row in the local database,
+including the acceptance tenant, the Owner account and every fixture. Never run it on the
+shared local stack that holds the acceptance database; bring that database forward with the
+non-destructive path in `docs/platform/environment-configuration.md` section 19.4, and reset
+only under its section 19.5, deliberately, on a database whose contents nobody needs — and
+still only with the user's approval.
 
 **Local stack, only when the user asks:** `npm run dev:all`, `npm run dev:status` (read-only),
 `npm run dev:stop`. Never kill node processes broadly.

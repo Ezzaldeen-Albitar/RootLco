@@ -1052,10 +1052,10 @@ npm run acceptance:status-owner
 
 1. `npm run supabase:start` — the local stack: API gateway 54321, database 54322, mailbox 54324.
    It starts the stack on the data volumes it already has. If the checkout carries migrations the
-   database has not yet applied, bring the database forward with 19.4 before step 4; never with the
+   database has not yet applied, bring the database forward with 19.4 before step 3; never with the
    destructive rebuild of 19.5.
-2. `ROOTLCO_ENV` set to `local-acceptance` in the shell (the line above is PowerShell). The
-   acceptance helpers refuse without it.
+2. `ROOTLCO_ENV` set to `local-acceptance` in the shell (the line above is PowerShell; in bash it
+   is `export ROOTLCO_ENV=local-acceptance`). The acceptance helpers refuse without it.
 3. `npm run acceptance:create-owner` — creates or reconciles the Owner account, aligns the local
    token signing with what the API verifies (`align-local-jwt.mjs`, finding `P1-26-F-045`), and
    writes the four names of section 1 into `apps/api/.env.local`. After any later restart of the
@@ -1140,15 +1140,32 @@ server (a host `pg_dump` older than the server aborts), then copied out. It adds
 an archive taken without it does not carry the database-level settings a restore needs
 (`docs/phase-1/phase-1-12/evidence/backup-evidence.md`, the dated addendum).
 
-```
+PowerShell:
+
+```powershell
+New-Item -ItemType Directory -Force -Path "C:/RootLco-backups"
 docker exec supabase_db_RootLco pg_dump -U postgres -d postgres -Fc --create -f /tmp/rootlco-before-migrate.dump
 docker exec supabase_db_RootLco pg_restore --list /tmp/rootlco-before-migrate.dump
-docker cp supabase_db_RootLco:/tmp/rootlco-before-migrate.dump <folder-outside-the-checkout>
+docker cp supabase_db_RootLco:/tmp/rootlco-before-migrate.dump "C:/RootLco-backups/rootlco-before-migrate.dump"
 docker exec supabase_db_RootLco rm /tmp/rootlco-before-migrate.dump
 ```
 
-`<folder-outside-the-checkout>` is a placeholder for a folder that is not inside any checkout: a
-dump holds every tenant's rows and must never be committed. `pg_restore --list` reads the archive's
+bash (Git Bash on Windows):
+
+```bash
+export MSYS_NO_PATHCONV=1   # stops Git Bash rewriting the container's /tmp paths into Windows ones
+mkdir -p "C:/RootLco-backups"
+docker exec supabase_db_RootLco pg_dump -U postgres -d postgres -Fc --create -f /tmp/rootlco-before-migrate.dump
+docker exec supabase_db_RootLco pg_restore --list /tmp/rootlco-before-migrate.dump
+docker cp supabase_db_RootLco:/tmp/rootlco-before-migrate.dump "C:/RootLco-backups/rootlco-before-migrate.dump"
+docker exec supabase_db_RootLco rm /tmp/rootlco-before-migrate.dump
+```
+
+`C:/RootLco-backups/rootlco-before-migrate.dump` is an example destination; replace it, in both
+the folder line and the `docker cp` line, with any path that is not inside a checkout — a dump
+holds every tenant's rows and must never be committed. The forward slashes and the double quotes
+are deliberate: the path then parses the same way in PowerShell and in bash. Use a new file name
+for each backup so an earlier archive is never overwritten. `pg_restore --list` reads the archive's
 table of contents and touches no database; if it fails, the backup is not usable and nothing below
 may run. Do not continue until the copied file exists and is not empty.
 
@@ -1169,8 +1186,19 @@ out-of-sync case below. The second `list` must show no pending version.
 
 **Step 5 — restart and verify.**
 
+PowerShell:
+
+```powershell
+$env:ROOTLCO_ENV = "local-acceptance"
+npm run acceptance:serve
+npm run dev:status
+npm run acceptance:status-owner
 ```
-$env:ROOTLCO_ENV = 'local-acceptance'
+
+bash:
+
+```bash
+export ROOTLCO_ENV=local-acceptance
 npm run acceptance:serve
 npm run dev:status
 npm run acceptance:status-owner
