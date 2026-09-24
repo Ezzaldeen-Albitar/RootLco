@@ -326,6 +326,32 @@ describe('a refusal arrives as a refusal, never as an empty report', () => {
     expect(state.status).toBe(expected);
   });
 
+  it('keeps the wait a throttled run advised, so the screen can say how long', async () => {
+    const run = () =>
+      runReport({
+        reportCode: CODE,
+        companyId: COMPANY_ID,
+        branchId: BRANCH_ID,
+        from: '2026-09-01',
+        to: '2026-09-08',
+        cursor: null,
+        limit: REPORT_PAGE_SIZE,
+      });
+    transport(() => ({ ...failure('rate-limited'), problem: { retryAfterSeconds: 20 } }));
+    expect(await run()).toEqual({
+      status: 'unavailable',
+      correlationId: 'corr-9',
+      throttled: true,
+      retryAfterSeconds: 20,
+    });
+    // An advice this side cannot trust is dropped, never rendered.
+    transport(() => ({ ...failure('rate-limited'), problem: { retryAfterSeconds: 1e21 } }));
+    expect(await run()).toMatchObject({ throttled: true, retryAfterSeconds: null });
+    // Any other unavailable answer is not called a throttle.
+    transport(() => failure('timeout'));
+    expect(await run()).toEqual({ status: 'unavailable', correlationId: 'corr-9' });
+  });
+
   it.each([
     ['forbidden', 'denied'],
     ['not-found', 'not-found'],

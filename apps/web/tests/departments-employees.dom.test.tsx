@@ -11,7 +11,13 @@ import {
   renderLtr,
   renderRtl,
 } from './render';
-import { forgetRememberedBranch } from './support/branch-switch';
+import {
+  discardAndSwitch,
+  forgetRememberedBranch,
+  stayOnBranch,
+  switchExpectingQuestion,
+  switchWithoutQuestion,
+} from './support/branch-switch';
 import type { BranchView, CompanyView } from '@/features/administration/organization/types';
 
 /**
@@ -493,5 +499,158 @@ describe('the registers open on the working branch (route sweep B3)', () => {
     expect(await screen.findByText('Handover Clerk')).toBeVisible();
     expect(screen.queryByText(EN('employees.chooseBranch'))).toBeNull();
     expect(get.mock.calls[0]?.[0]).toContain(TARGET);
+  });
+});
+
+describe('a branch switch asks before it closes a dialog holding typed work (route sweep B3 review)', () => {
+  /*
+   * Following the working branch closes an open dialog, which is right — its
+   * write would otherwise land on the new branch — but it closed one holding
+   * typed entries without a word. The dialogs now declare that work, so the
+   * switch asks first, exactly as every other write form does.
+   */
+  afterEach(forgetRememberedBranch);
+
+  const SECOND: BranchView = {
+    ...BRANCH,
+    id: '20000000-0000-4000-8000-000000000009',
+    branchCode: 'second_branch',
+    name: 'Second Branch',
+  };
+  const both = { status: 'ok' as const, data: [BRANCH, SECOND], correlationId: 'corr-b' };
+  const snapshot = branchSnapshot([
+    { ...TEST_BRANCH, id: BRANCH.id, companyId: COMPANY.id, name: BRANCH.name },
+    { ...TEST_BRANCH, id: SECOND.id, companyId: COMPANY.id, name: SECOND.name },
+  ]);
+
+  function renderInContext(screenUnderTest: React.ReactElement) {
+    return renderLtr(
+      inBranch(
+        <>
+          <BranchSwitch to={BRANCH.id} label="first" />
+          <BranchSwitch to={SECOND.id} label="second" />
+          {screenUnderTest}
+        </>,
+        { snapshot }
+      )
+    );
+  }
+
+  it('departments: a typed new department makes the switch ask, and "stay" keeps it', async () => {
+    get.mockResolvedValue({ ok: true, status: 200, data: { items: [] }, correlationId: 'c' });
+    const user = userEvent.setup();
+    renderInContext(
+      <DepartmentsScreen messages={en} branches={both} companies={[COMPANY]} canManage />
+    );
+    await user.click(screen.getByRole('button', { name: 'first' }));
+    await user.click(await screen.findByRole('button', { name: EN('departments.add') }));
+    const dialog = screen.getByRole('dialog');
+    await user.type(within(dialog).getByLabelText(/^Code/), 'parts_desk');
+
+    const question = await switchExpectingQuestion(user, 'second');
+    await stayOnBranch(user, question);
+    // The dialog, what was typed, and the branch it writes to are all still there.
+    expect(within(screen.getByRole('dialog')).getByLabelText(/^Code/)).toHaveValue('parts_desk');
+    expect(get).toHaveBeenLastCalledWith(`/api/v1/org/departments?${TARGET}`);
+
+    await discardAndSwitch(user, await switchExpectingQuestion(user, 'second'));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    await waitFor(() =>
+      expect(get).toHaveBeenLastCalledWith(
+        `/api/v1/org/departments?companyId=${COMPANY.id}&branchId=${SECOND.id}`
+      )
+    );
+  });
+
+  it('departments: an edited name in the rename dialog makes the switch ask', async () => {
+    get.mockResolvedValue({
+      ok: true,
+      status: 200,
+      data: { items: [DEPARTMENT] },
+      correlationId: 'c',
+    });
+    const user = userEvent.setup();
+    renderInContext(
+      <DepartmentsScreen messages={en} branches={both} companies={[COMPANY]} canManage />
+    );
+    await user.click(screen.getByRole('button', { name: 'first' }));
+    await user.click(
+      await screen.findByRole('button', { name: `${EN('departments.rename')}: Service` })
+    );
+    const dialog = screen.getByRole('dialog');
+    await user.type(within(dialog).getByLabelText(/^Department name/), ' desk');
+
+    const question = await switchExpectingQuestion(user, 'second');
+    await stayOnBranch(user, question);
+    expect(within(screen.getByRole('dialog')).getByLabelText(/^Department name/)).toHaveValue(
+      'Service desk'
+    );
+  });
+
+  it('departments: an untouched dialog is closed by the switch without a question', async () => {
+    get.mockResolvedValue({ ok: true, status: 200, data: { items: [] }, correlationId: 'c' });
+    const user = userEvent.setup();
+    renderInContext(
+      <DepartmentsScreen messages={en} branches={both} companies={[COMPANY]} canManage />
+    );
+    await user.click(screen.getByRole('button', { name: 'first' }));
+    await user.click(await screen.findByRole('button', { name: EN('departments.add') }));
+    expect(screen.getByRole('dialog')).toBeVisible();
+
+    await switchWithoutQuestion(user, 'second');
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+  });
+
+  it('employees: a typed new employee makes the switch ask, and "stay" keeps it', async () => {
+    get.mockResolvedValue({
+      ok: true,
+      status: 200,
+      data: { items: [], nextCursor: null, hasMore: false },
+      correlationId: 'c',
+    });
+    const user = userEvent.setup();
+    renderInContext(
+      <EmployeesScreen
+        messages={en}
+        branches={both}
+        companies={[COMPANY]}
+        loginAccounts={[ACCOUNT]}
+        canManage
+      />
+    );
+    await user.click(screen.getByRole('button', { name: 'first' }));
+    await user.click(await screen.findByRole('button', { name: EN('employees.add') }));
+    const dialog = screen.getByRole('dialog');
+    await user.type(within(dialog).getByLabelText(/^Name/), 'New Clerk');
+
+    const question = await switchExpectingQuestion(user, 'second');
+    await stayOnBranch(user, question);
+    expect(within(screen.getByRole('dialog')).getByLabelText(/^Name/)).toHaveValue('New Clerk');
+
+    await discardAndSwitch(user, await switchExpectingQuestion(user, 'second'));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+  });
+
+  it('employees: an untouched dialog is closed by the switch without a question', async () => {
+    get.mockResolvedValue({
+      ok: true,
+      status: 200,
+      data: { items: [], nextCursor: null, hasMore: false },
+      correlationId: 'c',
+    });
+    const user = userEvent.setup();
+    renderInContext(
+      <EmployeesScreen
+        messages={en}
+        branches={both}
+        companies={[COMPANY]}
+        loginAccounts={[ACCOUNT]}
+        canManage
+      />
+    );
+    await user.click(screen.getByRole('button', { name: 'first' }));
+    await user.click(await screen.findByRole('button', { name: EN('employees.add') }));
+    await switchWithoutQuestion(user, 'second');
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
   });
 });

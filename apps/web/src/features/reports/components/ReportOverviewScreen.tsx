@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { EmptyState } from '@/components/states/States';
 import {
@@ -9,7 +9,7 @@ import {
 } from '@/features/working-context/WorkingContextProvider';
 import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
-import { translate, translateDynamic } from '@/i18n/get-messages';
+import { formatMessage, translate, translateDynamic } from '@/i18n/get-messages';
 import type { CursorPage, ReadState } from '@/lib/api/read-operation';
 import { runReport } from '../reports-api';
 import { fieldHeading, runTitle } from '../report-labels';
@@ -25,6 +25,7 @@ import {
   type ReportDefinition,
   type ReportGroup,
   type ReportRun,
+  type ReportRunState,
   type ReportScopeOptions,
   type ReportScopeSelection,
 } from '../reports-contract';
@@ -118,7 +119,46 @@ export function ReportOverviewScreen({
    * report as a union (route sweep B3).
    */
   const working = useWorkingReportScope(scopeOptions.status === 'ok' ? scopeOptions.data : null);
-  const followed = fixedBranchId === null && working.kind === 'ready' ? working.selection : null;
+  const answered = fixedBranchId === null && working.kind === 'ready' ? working.selection : null;
+  /*
+   * The same selection is the same OBJECT from one render to the next.
+   *
+   * The hook answers a fresh object on every render, and the results below read
+   * whenever their selection changes identity — so any re-render of this screen
+   * (a parent's, a context's) ran the four expensive reads again for a branch
+   * and a period that had not changed (route sweep B3 review). Keyed on the four
+   * values, it changes only when one of them does.
+   */
+  const followedCompanyId = answered?.companyId ?? null;
+  const followedBranchId = answered?.branchId ?? null;
+  const followedFrom = answered?.from ?? null;
+  const followedTo = answered?.to ?? null;
+  const followed = useMemo<ReportScopeSelection | null>(
+    () =>
+      followedCompanyId === null ||
+      followedBranchId === null ||
+      followedFrom === null ||
+      followedTo === null
+        ? null
+        : {
+            companyId: followedCompanyId,
+            branchId: followedBranchId,
+            from: followedFrom,
+            to: followedTo,
+          },
+    [followedCompanyId, followedBranchId, followedFrom, followedTo]
+  );
+  /*
+   * Answers this page has already read, by selection, for this visit only.
+   *
+   * The overview reads on arrival and again on every branch switch, and each
+   * visit is four runs of an expensive read limited per minute. Switching to a
+   * branch and back within a minute would spend eight more of those on figures
+   * this page already holds, so a selection read in the last minute is shown
+   * from here instead. Held in state created once, never in browser storage:
+   * figures are not interface preferences, and they are gone when the page is.
+   */
+  const [recent] = useState<RecentAnswers>(() => new Map());
   const { version } = useWorkingContext();
   useWorkingContextChange(() => {
     if (fixedBranchId === null) setChosen(null);
@@ -218,6 +258,7 @@ export function ReportOverviewScreen({
           messages={messages}
           definitions={catalogue.data.items}
           selection={submitted}
+          recent={recent}
           companyName={companies.find((c) => c.id === submitted.companyId)?.legalName ?? null}
           branchName={reachable.find((b) => b.id === submitted.branchId)?.name ?? null}
         />
@@ -227,7 +268,37 @@ export function ReportOverviewScreen({
 }
 
 /** What one section knows after the four reads have settled. */
-type SectionOutcome = ReadState<ReportRun> | 'unreachable';
+type SectionOutcome = ReportRunState | 'unreachable';
+
+type Outcomes = Readonly<Record<string, SectionOutcome>>;
+
+/** A selection's answers and when they arrived, for this page visit. */
+type RecentAnswers = Map<string, { readonly at: number; readonly outcomes: Outcomes }>;
+
+/** How long an answer is shown again instead of being read again. */
+const OVERVIEW_REUSE_MS = 60_000;
+
+/**
+ * Whether a set of answers is worth showing again.
+ *
+ * Only answers that are facts about the selection: figures, a refusal, a
+ * report the platform cannot run. A failure that says "try again" — a
+ * throttled, unavailable or failed run — is not kept, so coming back is the
+ * retry it asked for.
+ */
+function reusable(outcomes: Outcomes): boolean {
+  return Object.values(outcomes).every(
+    (outcome) =>
+      outcome === 'unreachable' || (outcome.status !== 'unavailable' && outcome.status !== 'error')
+  );
+}
+
+/** The answers read for this selection within the reuse window, if any. */
+function recentFor(recent: RecentAnswers, key: string, now: number): Outcomes | null {
+  const entry = recent.get(key);
+  if (entry === undefined || now - entry.at >= OVERVIEW_REUSE_MS) return null;
+  return entry.outcomes;
+}
 
 /**
  * The first run that answered, in the order the overview shows its sections.
@@ -236,7 +307,7 @@ type SectionOutcome = ReadState<ReportRun> | 'unreachable';
  * carry the same selection, so the first answer states it once — and when none
  * answered there is nothing to state, which is why this may return nothing.
  */
-function firstPublishedRun(outcomes: Readonly<Record<string, SectionOutcome>>): ReportRun | null {
+function firstPublishedRun(outcomes: Outcomes): ReportRun | null {
   for (const section of OVERVIEW_SECTIONS) {
     const outcome = outcomes[section.reportCode];
     if (outcome === undefined || outcome === 'unreachable') continue;
@@ -258,6 +329,7 @@ function OverviewResults({
   messages,
   definitions,
   selection,
+  recent,
   companyName,
   branchName,
 }: {
@@ -265,12 +337,24 @@ function OverviewResults({
   readonly messages: Messages;
   readonly definitions: readonly ReportDefinition[];
   readonly selection: ReportScopeSelection;
+  readonly recent: RecentAnswers;
   readonly companyName: string | null;
   readonly branchName: string | null;
 }) {
-  const [outcomes, setOutcomes] = useState<Readonly<Record<string, SectionOutcome>> | null>(null);
+  const { companyId, branchId, from, to } = selection;
+  const recentKey = JSON.stringify({ companyId, branchId, from, to });
+  // Looked up once, when this selection's results mount — which is exactly when
+  // the four reads would otherwise be issued.
+  const [reused] = useState<Outcomes | null>(() => recentFor(recent, recentKey, Date.now()));
+  const [outcomes, setOutcomes] = useState<Outcomes | null>(reused);
 
+  /*
+   * Keyed on the selection's VALUES, not on the object. The object is stable
+   * above, and this is the second half of the same guarantee: nothing but a
+   * different branch or period issues the four reads again.
+   */
   useEffect(() => {
+    if (reused !== null) return;
     let live = true;
     const runnable = OVERVIEW_SECTIONS.filter((section) => {
       const definition = definitionFor(definitions, section.reportCode);
@@ -291,16 +375,15 @@ function OverviewResults({
         runnable.map((section) =>
           runReport({
             reportCode: section.reportCode,
-            companyId: selection.companyId,
-            branchId: selection.branchId,
-            from: selection.from,
-            to: selection.to,
+            companyId,
+            branchId,
+            from,
+            to,
             cursor: null,
             limit: OVERVIEW_ROW_LIMIT,
           })
         )
       );
-      if (!live) return;
       const next: Record<string, SectionOutcome> = {};
       runnable.forEach((section, index) => {
         const result = settled[index];
@@ -309,6 +392,10 @@ function OverviewResults({
             ? result.value
             : { status: 'error', correlationId: null };
       });
+      // Remembered even when this view has since moved on: the reads were
+      // spent, and a switch back within the minute should not spend them again.
+      if (reusable(next)) recent.set(recentKey, { at: Date.now(), outcomes: next });
+      if (!live) return;
       setOutcomes(next);
     };
 
@@ -316,7 +403,7 @@ function OverviewResults({
     return () => {
       live = false;
     };
-  }, [definitions, selection]);
+  }, [definitions, companyId, branchId, from, to, reused, recent, recentKey]);
 
   if (outcomes === null) return <ReportLoading messages={messages} />;
 
@@ -501,12 +588,27 @@ function SectionBody({
   }
 
   if (outcome.status !== 'ok') {
-    return (
+    const failure = (
       <ReportFailure
         messages={messages}
         status={outcome.status}
         correlationId={outcome.correlationId}
       />
+    );
+    if (!('throttled' in outcome)) return failure;
+    // Throttled: the "unavailable" state, and how long to wait when the
+    // server said. Not a fault, so never the generic failure.
+    return (
+      <div className="flex flex-col gap-2">
+        {failure}
+        <p className="text-supporting text-text-secondary" lang={locale}>
+          {outcome.retryAfterSeconds === null
+            ? translate(messages, 'state.throttled.message')
+            : formatMessage(translate(messages, 'state.throttled.messageWithSeconds'), {
+                seconds: String(outcome.retryAfterSeconds),
+              })}
+        </p>
+      </div>
     );
   }
 

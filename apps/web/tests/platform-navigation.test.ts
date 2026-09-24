@@ -148,6 +148,10 @@ describe('the console stays outside tenant context (route sweep B3)', () => {
    * shell no working-context control, and nothing the console renders reads the
    * working context or its branch directory — so no branch selector and no
    * tenant's branch data can appear on a console screen.
+   *
+   * These two read the SOURCE, so they see a direct import only. The render-level
+   * proof is in `platform-console.dom.test.tsx`: every working-context hook
+   * throws there, and the console shell and each console screen render under it.
    */
   const SRC = join(__dirname, '..', 'src');
   const read = (...parts: string[]) => readFileSync(join(SRC, ...parts), 'utf8');

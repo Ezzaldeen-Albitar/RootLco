@@ -13,6 +13,7 @@ import { FormFeedback } from '@/features/authentication/components/FormFeedback'
 import { SubmitButton } from '@/features/authentication/components/SubmitButton';
 import { ReadBoundary } from '../../shared/components/ScreenStates';
 import { useWorkingBranch } from '../../shared/use-working-branch';
+import { useUnsavedGuard } from '@/features/working-context/WorkingContextProvider';
 import {
   BranchPicker,
   PRIMARY_BUTTON,
@@ -272,6 +273,11 @@ export function EmployeesScreen({
   );
 }
 
+/** Whether anything was typed or chosen in a draft — blank fields are not work. */
+function hasTyped(draft: Readonly<Record<string, string>>): boolean {
+  return Object.values(draft).some((value) => value.trim().length > 0);
+}
+
 function CreateEmployeeDialog({
   messages,
   branch,
@@ -286,6 +292,9 @@ function CreateEmployeeDialog({
   const [state, formAction] = useActionState<ActionState, FormData>(createEmployeeAction, IDLE);
   const [draft, setDraft] = useState<Record<string, string>>({});
   const t = (key: string) => translate(messages, key as keyof Messages);
+  // Typed and not yet created is work a branch switch would throw away with
+  // the dialog, so the switch asks first. A created employee is saved work.
+  useUnsavedGuard(hasTyped(draft) && state.status !== 'success');
   // Question f: the cursor goes to the refused field, and its complaint goes
   // once the operator edits it (route sweep B3).
   const {

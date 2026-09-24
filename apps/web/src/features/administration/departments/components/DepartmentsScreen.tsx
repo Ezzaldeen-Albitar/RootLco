@@ -14,6 +14,7 @@ import { SubmitButton } from '@/features/authentication/components/SubmitButton'
 import { ReadBoundary } from '../../shared/components/ScreenStates';
 import { useWorkingBranch } from '../../shared/use-working-branch';
 import { useActionRefusal } from '@/lib/forms/use-action-refusal';
+import { useUnsavedGuard } from '@/features/working-context/WorkingContextProvider';
 import {
   BranchPicker,
   PRIMARY_BUTTON,
@@ -273,6 +274,11 @@ export function DepartmentsScreen({
   );
 }
 
+/** Whether anything was typed into a draft — blank fields are not work. */
+function hasTyped(draft: Readonly<Record<string, string>>): boolean {
+  return Object.values(draft).some((value) => value.trim().length > 0);
+}
+
 function CreateDepartmentDialog({
   messages,
   branch,
@@ -285,6 +291,9 @@ function CreateDepartmentDialog({
   const [state, formAction] = useActionState<ActionState, FormData>(createDepartmentAction, IDLE);
   const [draft, setDraft] = useState<Record<string, string>>({});
   const t = (key: string) => translate(messages, key as keyof Messages);
+  // Typed and not yet created is work a branch switch would throw away with
+  // the dialog, so the switch asks first. A created department is saved work.
+  useUnsavedGuard(hasTyped(draft) && state.status !== 'success');
   // Question f: the cursor goes to the refused field, and its complaint goes
   // once the operator edits it (route sweep B3).
   const {
@@ -374,6 +383,8 @@ function RenameDialog({
 }) {
   const t = (key: string) => translate(messages, key as keyof Messages);
   const [name, setName] = useState(department.name);
+  // A name changed and not yet saved is lost if a branch switch closes this.
+  useUnsavedGuard(name !== department.name);
   const {
     edited: refusalEdited,
     errorKey: refusalErrorKey,

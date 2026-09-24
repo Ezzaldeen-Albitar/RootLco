@@ -277,7 +277,9 @@ hand-built form moves the cursor to the refused field and withdraws a corrected 
 
 Outside tenant context by construction: the console layout passes the shell no working-context
 control, and nothing in the console feature or its pages imports the working context (pinned by
-`tests/platform-navigation.test.ts`). Column a is therefore `n/a` on every row.
+`tests/platform-navigation.test.ts`, and at render level by `tests/platform-console.dom.test.tsx`,
+where every working-context hook throws and the console shell and screens render regardless).
+Column a is therefore `n/a` on every row.
 
 | Route                                | Screen file                                                                 | a                            | b                               | c                                                                                                 | d                                                        | e                                 | f                                                                        | g    | h    | i    |
 | ------------------------------------ | --------------------------------------------------------------------------- | ---------------------------- | ------------------------------- | ------------------------------------------------------------------------------------------------- | -------------------------------------------------------- | --------------------------------- | ------------------------------------------------------------------------ | ---- | ---- | ---- |
@@ -296,7 +298,8 @@ while its page draws the shared refusal for a caller missing `wo.work_order.read
 `sal.finance.view` — the three codes its one read, `sal.delivery-readiness-list`, declares. The
 page holds nothing for such a caller (the refusal names no code, and no other read is on it), so
 the offer landed on a refusal. A navigation entry may now name further codes its page requires
-(`alsoRequires`, a conjunction — never "any of"), and the delivery entry names both. The handover
+(`alsoRequires`, a conjunction — never "any of"), and the delivery entry names both; the
+permission-parity gate parses each `alsoRequires` code as it parses `permission`. The handover
 list that the delivery code alone could read has no screen (prerequisite 4 below). The credit
 notes entry has the same shape (`sal.credit.manage`, page also checks `sal.finance.view`) and was
 not changed here: it was outside this sweep's instruction.
@@ -315,7 +318,9 @@ need that code. No read was widened and no operation was added.
 
 **Carried nits closed.** The working context moves its version and retires its signal on every
 effective change of branch — including another tab's choice and a remembered branch restored
-after hydration — and still once, not twice, for the header's own select. The invoice and quotation
+after hydration — and still once, not twice, for the header's own select. Another tab's choice is
+held while this tab has unsaved work: a notice offers "Switch now" (the header's discard
+question) or "Stay", and with nothing unsaved it is followed at once. The invoice and quotation
 choosers follow one rule: the form only opens a page, so neither a chosen job nor a typed reference
 is unsaved work. `SearchPicker` counts putting back the record a form opened on as unsaved work,
 the rule `WorkOrderPicker` follows. Reading the linked job again on the movement ledger never

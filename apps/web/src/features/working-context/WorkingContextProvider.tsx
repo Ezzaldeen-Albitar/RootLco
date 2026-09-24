@@ -5,6 +5,7 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useId,
   useMemo,
   useRef,
   useState,
@@ -12,8 +13,8 @@ import {
 } from 'react';
 import { ConfirmDialog } from '@/components/overlays/Overlays';
 import type { Messages } from '@/i18n/get-messages';
-import { translate } from '@/i18n/get-messages';
-import { usePersistedPreference } from '@/lib/use-persisted-flag';
+import { formatMessage, translate } from '@/i18n/get-messages';
+import { readPreference, usePersistedPreference } from '@/lib/use-persisted-flag';
 import {
   ALL_BRANCHES,
   preferenceKeyFor,
@@ -250,7 +251,12 @@ export function WorkingContextProvider({
     tenantId !== null && accountId !== null ? preferenceKeyFor(tenantId, accountId) : '';
   const [stored, setStored] = usePersistedPreference(preferenceKey);
 
-  const [pending, setPending] = useState<string | null>(null);
+  /*
+   * The switch waiting on the discard question. Wrapped, because "switch to no
+   * branch at all" is a real answer when it is another tab's change being taken
+   * (see `held`), and a bare `null` already means "nothing is waiting".
+   */
+  const [pending, setPending] = useState<{ readonly next: string | null } | null>(null);
 
   // A Set, created once. The registry identity must be stable: every guard
   // registers against it in an effect keyed on that identity.
@@ -258,9 +264,53 @@ export function WorkingContextProvider({
 
   const usable = preferenceKey.length > 0;
 
+  /*
+   * ## A change from another tab does not re-address unsaved work either
+   *
+   * The header's select asks before it discards (`select`, below). Another tab
+   * writing the remembered branch did not pass through `select` at all: the
+   * storage notification re-read the preference, the selection moved, and every
+   * picker holding a chosen record in a half-filled form cleared it without a
+   * word (route sweep B3 review).
+   *
+   * So an outside write that would change this tab's branch while any screen
+   * holds unsaved work is HELD: this tab keeps the value it was using, and a
+   * notice offers the two answers — switch now (through the same guarded
+   * question the header asks) or stay. With nothing unsaved it is applied at
+   * once, exactly as before, so tabs still follow each other.
+   *
+   * `seenStored` is the stored value this tab last rendered with. `apply`
+   * advances it together with its own write, so the only difference left for
+   * the render below to find is a write this tab did not make.
+   */
+  const [seenStored, setSeenStored] = useState<string | null>(stored);
+  const [held, setHeld] = useState<{ readonly value: string | null } | null>(null);
+  /** The outside value the operator chose to stay against — asked about once. */
+  const [declined, setDeclined] = useState<{ readonly value: string | null } | null>(null);
+
+  let heldNow = held;
+  if (stored !== seenStored) {
+    setSeenStored(stored);
+    const anyDirty = Array.from(guards).some((guard) => guard.dirty);
+    if (heldNow === null) {
+      const before = keyOf(deriveSelection(status, branches, usable ? seenStored : null));
+      const after = keyOf(deriveSelection(status, branches, usable ? stored : null));
+      if (anyDirty && before !== after) heldNow = { value: seenStored };
+    } else if (stored === heldNow.value || !anyDirty) {
+      // The other tab came back to this one's branch, or the work was saved
+      // since: nothing is at stake any more, so the tabs agree again.
+      heldNow = null;
+    }
+    if (heldNow !== held) {
+      setHeld(heldNow);
+      setDeclined(null);
+    }
+  }
+  const effectiveStored = heldNow !== null ? heldNow.value : stored;
+
   const selection = useMemo<WorkingContextSelection | null>(
-    () => deriveSelection(status, branches, usable ? stored : null),
-    [status, branches, stored, usable]
+    () => deriveSelection(status, branches, usable ? effectiveStored : null),
+    [status, branches, effectiveStored, usable]
   );
   const selectionKey = keyOf(selection);
 
@@ -343,8 +393,17 @@ export function WorkingContextProvider({
   }, [usable, status, stored, branches, setStored]);
 
   const apply = useCallback(
-    (next: string) => {
-      if (usable) setStored(next);
+    (next: string | null) => {
+      // This tab's own write, marked as seen in the same batch as it lands so
+      // it is never mistaken for another tab's, and whatever was held is
+      // answered by it. What is marked is what storage now holds — a blocked
+      // store keeps the old value, and that is not an outside change either.
+      setHeld(null);
+      setDeclined(null);
+      if (usable) {
+        setStored(next);
+        setSeenStored(readPreference(preferenceKey));
+      }
       /*
        * FUNCTIONAL, and the abort happens INSIDE the update.
        *
@@ -378,20 +437,36 @@ export function WorkingContextProvider({
         return { version: previous.version + 1, controller: new AbortController(), key: nextKey };
       });
     },
-    [usable, setStored, status, branches]
+    [usable, setStored, preferenceKey, status, branches]
   );
 
-  const select = useCallback(
-    (next: string) => {
+  /** The one guarded path: every switch this tab makes, whoever proposed it. */
+  const requestSwitch = useCallback(
+    (next: string | null) => {
       const dirty = Array.from(guards).some((guard) => guard.dirty);
       if (dirty) {
-        setPending(next);
+        setPending({ next });
         return;
       }
       apply(next);
     },
     [apply, guards]
   );
+
+  const select = useCallback((next: string) => requestSwitch(next), [requestSwitch]);
+
+  /*
+   * The notice for a held change: shown while another tab's value differs from
+   * the one this tab stayed on, until the operator answers it. "Stay" is an
+   * answer for THAT value; a later, different change from the other tab asks
+   * again.
+   */
+  const outside =
+    heldNow !== null &&
+    stored !== heldNow.value &&
+    !(declined !== null && declined.value === stored)
+      ? { value: stored }
+      : null;
 
   const value = useMemo<WorkingContext>(() => {
     return {
@@ -422,9 +497,9 @@ export function WorkingContextProvider({
           open={pending !== null}
           onCancel={() => setPending(null)}
           onConfirm={() => {
-            const next = pending;
+            const waiting = pending;
             setPending(null);
-            if (next !== null) apply(next);
+            if (waiting !== null) apply(waiting.next);
           }}
           title={translate(messages, 'workingContext.discard.title')}
           description={translate(messages, 'workingContext.discard.description')}
@@ -432,7 +507,117 @@ export function WorkingContextProvider({
           messages={messages}
           destructive
         />
+        <CrossTabNotice
+          messages={messages}
+          current={labelFor(selection, branches, messages)}
+          incoming={
+            outside === null
+              ? null
+              : labelFor(
+                  deriveSelection(status, branches, usable ? outside.value : null),
+                  branches,
+                  messages
+                )
+          }
+          open={outside !== null}
+          onSwitch={() => {
+            if (outside !== null) requestSwitch(outside.value);
+          }}
+          onStay={() => {
+            if (outside !== null) setDeclined({ value: outside.value });
+          }}
+        />
       </GuardRegistryValue.Provider>
     </WorkingContextValue.Provider>
+  );
+}
+
+/** What a person calls a selection: a branch's name, every branch, or nothing. */
+function labelFor(
+  selection: WorkingContextSelection | null,
+  branches: readonly WorkingContextBranch[],
+  messages: Messages
+): string | null {
+  if (selection === null) return null;
+  if (selection.allBranches) return translate(messages, 'workingContext.allBranches');
+  return branches.find((branch) => branch.id === selection.branchId)?.name ?? null;
+}
+
+/**
+ * Says that another tab changed the working branch, and asks what this one
+ * should do, while a screen here holds unsaved work.
+ *
+ * Not a dialog: nothing is lost by leaving it open, and this tab keeps working
+ * on the branch it was on. The polite live region around it is rendered
+ * whether or not there is anything to say, because a region born with its
+ * content is not announced; it carries no role of its own, so an empty one is
+ * not a second status on every page. The notice inside it is the status.
+ * "Switch now" goes through the same discard question the header asks, so the
+ * answer that loses work is still given on purpose.
+ */
+function CrossTabNotice({
+  messages,
+  current,
+  incoming,
+  open,
+  onSwitch,
+  onStay,
+}: {
+  readonly messages: Messages;
+  readonly current: string | null;
+  readonly incoming: string | null;
+  readonly open: boolean;
+  readonly onSwitch: () => void;
+  readonly onStay: () => void;
+}) {
+  const titleId = useId();
+  return (
+    <div
+      aria-live="polite"
+      data-testid="working-context-cross-tab-live"
+      className="pointer-events-none fixed bottom-4 end-4 z-toast flex max-w-[calc(100vw-2rem)] flex-col items-end"
+    >
+      {open ? (
+        <div
+          role="status"
+          aria-labelledby={titleId}
+          data-testid="working-context-cross-tab"
+          className="pointer-events-auto flex w-full max-w-md flex-col gap-3 break-words rounded-md border border-border bg-surface p-3 shadow-md"
+        >
+          <div className="flex flex-col gap-1">
+            <p id={titleId} className="text-body font-medium text-text-primary">
+              {translate(messages, 'workingContext.crossTab.title')}
+            </p>
+            {incoming !== null ? (
+              <p className="text-supporting text-text-secondary">
+                {formatMessage(translate(messages, 'workingContext.crossTab.description'), {
+                  branch: incoming,
+                })}
+              </p>
+            ) : null}
+          </div>
+          <div className="flex flex-wrap justify-end gap-2">
+            <button
+              type="button"
+              onClick={onStay}
+              className="rounded-md border border-border bg-surface px-4 py-2 text-button text-text-secondary hover:bg-surface-subtle"
+            >
+              {current !== null
+                ? formatMessage(translate(messages, 'workingContext.crossTab.stay'), {
+                    branch: current,
+                  })
+                : translate(messages, 'workingContext.crossTab.stayHere')}
+            </button>
+            <button
+              type="button"
+              onClick={onSwitch}
+              className="rounded-md bg-primary px-4 py-2 text-button font-medium text-text-inverse transition-colors duration-fast ease-standard hover:bg-primary-hover"
+            >
+              {translate(messages, 'workingContext.crossTab.switch')}
+            </button>
+          </div>
+        </div>
+      ) : null}
+    </div>
   );
 }

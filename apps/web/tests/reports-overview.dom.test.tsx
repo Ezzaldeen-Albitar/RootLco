@@ -598,6 +598,156 @@ describe('the working branch and today answer on arrival (route sweep B3)', () =
   });
 });
 
+describe('the four reads are spent once per branch and period (route sweep B3 review)', () => {
+  /*
+   * Each run is an expensive read limited per minute, and the overview issues
+   * four at a time. A re-render with the same selection used to issue the four
+   * again (the selection was a new object every render), and switching to a
+   * branch and back issued them again for figures already on the page.
+   */
+  afterEach(() => {
+    forgetRememberedBranch();
+    vi.restoreAllMocks();
+  });
+
+  const TWO_SCOPES = {
+    status: 'ok' as const,
+    data: {
+      companies: SCOPES.data.companies,
+      branches: [
+        { id: BRANCH_ID, companyId: COMPANY_ID, name: 'Service branch' },
+        { id: OTHER_BRANCH_ID, companyId: COMPANY_ID, name: 'Second service branch' },
+      ],
+    },
+    correlationId: null,
+  };
+  const TWO_BRANCHES = branchSnapshot([
+    { ...OTHER_BRANCH, id: BRANCH_ID, companyId: COMPANY_ID, name: 'Service branch' },
+    { ...OTHER_BRANCH, id: OTHER_BRANCH_ID, companyId: COMPANY_ID, name: 'Second service branch' },
+  ]);
+  const catalogue = CATALOGUE(ALL_FOUR);
+
+  function tree() {
+    return inBranch(
+      <>
+        <BranchSwitch to={BRANCH_ID} label="first" />
+        <BranchSwitch to={OTHER_BRANCH_ID} label="second" />
+        <ReportOverviewScreen
+          locale="en"
+          messages={en}
+          scopeOptions={TWO_SCOPES as never}
+          catalogue={catalogue as never}
+        />
+      </>,
+      { snapshot: TWO_BRANCHES }
+    );
+  }
+
+  const runsFor = (branchId: string) =>
+    runReport.mock.calls.filter((call) => (call[0] as { branchId: string }).branchId === branchId)
+      .length;
+
+  it('issues no new run when the screen re-renders with the same selection', async () => {
+    allFourPublish();
+    const user = userEvent.setup();
+    const rendered = renderLtr(tree());
+    await user.click(screen.getByRole('button', { name: 'first' }));
+    await waitFor(() => expect(runReport).toHaveBeenCalledTimes(4));
+    await screen.findByRole('region', {
+      name: EN['reports.work_orders_by_status.title'] as string,
+    });
+
+    rendered.rerender(tree());
+    rendered.rerender(tree());
+    // Give any effect the re-render scheduled the chance to issue its reads.
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(runReport).toHaveBeenCalledTimes(4);
+  });
+
+  it('shows a branch read in the last minute again instead of reading it again', async () => {
+    allFourPublish();
+    const user = userEvent.setup();
+    renderLtr(tree());
+
+    await user.click(screen.getByRole('button', { name: 'first' }));
+    await waitFor(() => expect(runsFor(BRANCH_ID)).toBe(4));
+    await user.click(screen.getByRole('button', { name: 'second' }));
+    await waitFor(() => expect(runsFor(OTHER_BRANCH_ID)).toBe(4));
+    await user.click(screen.getByRole('button', { name: 'first' }));
+
+    // The first branch's figures are on screen again, and not one run was spent.
+    expect(
+      await within(await waitFor(() => panel('work_orders_by_status'))).findByText('4')
+    ).toBeVisible();
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(runsFor(BRANCH_ID)).toBe(4);
+    expect(runReport).toHaveBeenCalledTimes(8);
+  });
+
+  it('reads a branch again once its answers are more than a minute old', async () => {
+    allFourPublish();
+    const user = userEvent.setup();
+    const start = Date.now();
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(start);
+    renderLtr(tree());
+
+    await user.click(screen.getByRole('button', { name: 'first' }));
+    await waitFor(() => expect(runsFor(BRANCH_ID)).toBe(4));
+    await user.click(screen.getByRole('button', { name: 'second' }));
+    await waitFor(() => expect(runsFor(OTHER_BRANCH_ID)).toBe(4));
+
+    clock.mockReturnValue(start + 61_000);
+    await user.click(screen.getByRole('button', { name: 'first' }));
+    await waitFor(() => expect(runsFor(BRANCH_ID)).toBe(8));
+  });
+
+  it('says a throttled section is waiting, with the wait the server advised', async () => {
+    runReport.mockImplementation(async (input: { readonly reportCode: string }) =>
+      input.reportCode === 'inventory_movements'
+        ? {
+            status: 'unavailable',
+            correlationId: 'corr-429',
+            throttled: true,
+            retryAfterSeconds: 20,
+          }
+        : runOk(input.reportCode)
+    );
+    const user = userEvent.setup();
+    renderLtr(tree());
+    await user.click(screen.getByRole('button', { name: 'first' }));
+
+    const throttled = within(await waitFor(() => panel('inventory_movements')));
+    expect(throttled.getByText(EN['state.unavailable.title'] as string)).toBeVisible();
+    expect(
+      throttled.getByText(
+        (EN['state.throttled.messageWithSeconds'] as string).replace('{seconds}', '20')
+      )
+    ).toBeVisible();
+    // Not a fault: the generic failure is not what the operator is told.
+    expect(throttled.queryByText(EN['state.error.title'] as string)).toBeNull();
+    expect(within(panel('work_orders_by_status')).getByText('4')).toBeVisible();
+
+    // A throttled answer is not kept: coming back is the retry it asked for.
+    await user.click(screen.getByRole('button', { name: 'second' }));
+    await waitFor(() => expect(runsFor(OTHER_BRANCH_ID)).toBe(4));
+    await user.click(screen.getByRole('button', { name: 'first' }));
+    await waitFor(() => expect(runsFor(BRANCH_ID)).toBe(8));
+  });
+
+  it('says a throttled section is waiting, without a figure when none was advised', async () => {
+    runReport.mockImplementation(async (input: { readonly reportCode: string }) =>
+      input.reportCode === 'inventory_movements'
+        ? { status: 'unavailable', correlationId: null, throttled: true, retryAfterSeconds: null }
+        : runOk(input.reportCode)
+    );
+    const user = userEvent.setup();
+    renderLtr(tree());
+    await user.click(screen.getByRole('button', { name: 'first' }));
+    const throttled = within(await waitFor(() => panel('inventory_movements')));
+    expect(throttled.getByText(EN['state.throttled.message'] as string)).toBeVisible();
+  });
+});
+
 describe('FE-016 fixes the branch from the address, and never from a literal', () => {
   it('fixes both selectors at the named branch and still runs the four reports', async () => {
     await showOverview('en', { branchId: BRANCH_ID });

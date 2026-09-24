@@ -12,6 +12,7 @@ import { INITIAL_REQUEST, type TableRequest } from '@/components/data-table/tabl
 import { MoneyField } from '@/components/forms/MoneyField';
 import { RecordForm } from '@/components/forms/RecordForm';
 import { TextField } from '@/components/forms/Field';
+import { SearchPicker } from '@/components/search/SearchPicker';
 import { PageHeader } from '@/components/shell/PageHeader';
 import { LocaleSwitcher, swapLocale } from '@/components/shell/LocaleSwitcher';
 import { Sidebar } from '@/components/shell/Sidebar';
@@ -1323,5 +1324,192 @@ describe('a form with unsaved work blocks a branch switch', () => {
 
     const dialog = await screen.findByRole('alertdialog');
     expect(within(dialog).getByText(messages['workingContext.discard.title'])).toBeInTheDocument();
+  });
+});
+
+describe('a branch change made in ANOTHER TAB does not discard unsaved work', () => {
+  /*
+   * The header's select asks before it discards; a change arriving from another
+   * tab used to be applied straight away, so a record chosen in a half-filled
+   * form was cleared without a word (route sweep B3 review). With unsaved work
+   * on screen the change is now held and the operator is asked; with none it is
+   * followed as before.
+   */
+  beforeEach(() => {
+    window.localStorage.clear();
+  });
+
+  interface Chosen {
+    readonly id: string;
+    readonly name: string;
+  }
+
+  /** A write form holding one chosen record — the case the review reproduced. */
+  function PickerForm({ onCleared }: { readonly onCleared: () => void }) {
+    const [value, setValue] = useState<Chosen | null>({ id: 'r-1', name: 'Chosen record' });
+    return (
+      <SearchPicker<Chosen>
+        messages={messages}
+        label="Record"
+        value={value}
+        onChange={(next) => {
+          if (next === null) onCleared();
+          setValue(next);
+        }}
+        labelOf={(row) => row.name}
+        load={async () => ({
+          status: 'ok',
+          data: { items: [], nextCursor: null, hasMore: false },
+          correlationId: null,
+        })}
+        canSearch
+        notPermitted="Not permitted"
+        minLength={2}
+        maxLength={40}
+        placeholder=""
+        example=""
+        tooShort=""
+        resultsLabel="Matches"
+        change="Change record"
+        testId="record-picker"
+      />
+    );
+  }
+
+  function renderWith(extra: ReactNode, locale: 'en' | 'ar' = 'en') {
+    const onContext = vi.fn();
+    const onChange = vi.fn();
+    const render = locale === 'ar' ? renderRtl : renderLtr;
+    render(
+      <WorkingContextProvider
+        snapshot={wcSnapshot([MAIN, SECOND])}
+        messages={locale === 'ar' ? arabic : messages}
+      >
+        <Probe onContext={onContext} />
+        <ChangeProbe onChange={onChange} />
+        {extra}
+        <WorkingContextControl messages={locale === 'ar' ? arabic : messages} />
+      </WorkingContextProvider>
+    );
+    return {
+      onChange,
+      seen: () => onContext.mock.calls[onContext.mock.calls.length - 1]?.[0] as WorkingContext,
+    };
+  }
+
+  /** Exactly what another tab does: write the preference, then notify this one. */
+  function otherTabChooses(branchId: string) {
+    window.localStorage.setItem(WC_KEY, branchId);
+    window.dispatchEvent(new Event('storage'));
+  }
+
+  it("keeps a chosen record and this tab's branch, and says what happened", async () => {
+    window.localStorage.setItem(WC_KEY, 'b-1');
+    const onCleared = vi.fn();
+    const { seen, onChange } = renderWith(<PickerForm onCleared={onCleared} />);
+    const before = seen();
+    expect(screen.getByTestId('record-picker-chosen')).toHaveTextContent('Chosen record');
+
+    otherTabChooses('b-2');
+
+    const notice = await screen.findByTestId('working-context-cross-tab');
+    expect(within(notice).getByText(messages['workingContext.crossTab.title'])).toBeInTheDocument();
+    expect(notice).toHaveTextContent('Another tab is now working in Second workshop.');
+    expect(notice).toHaveAccessibleName(messages['workingContext.crossTab.title']);
+    // A status, announced through a live region that was there before it was.
+    expect(notice).toHaveAttribute('role', 'status');
+    expect(screen.getByTestId('working-context-cross-tab-live')).toHaveAttribute(
+      'aria-live',
+      'polite'
+    );
+    expect(screen.getByTestId('working-context-cross-tab-live')).toContainElement(notice);
+    expect(
+      within(notice).getByRole('button', { name: 'Stay on Main workshop' })
+    ).toBeInTheDocument();
+    expect(
+      within(notice).getByRole('button', { name: messages['workingContext.crossTab.switch'] })
+    ).toBeInTheDocument();
+
+    // Nothing moved: not the branch, not the version, not the signal, not the record.
+    expect(seen().selection).toMatchObject({ branchId: 'b-1' });
+    expect(seen().version).toBe(before.version);
+    expect(before.signal.aborted).toBe(false);
+    expect(onChange).not.toHaveBeenCalled();
+    expect(onCleared).not.toHaveBeenCalled();
+    expect(screen.getByTestId('record-picker-chosen')).toHaveTextContent('Chosen record');
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+  });
+
+  it('"Switch now" asks the same discard question the header asks, then switches', async () => {
+    const user = userEvent.setup();
+    window.localStorage.setItem(WC_KEY, 'b-1');
+    const onCleared = vi.fn();
+    const { seen } = renderWith(<PickerForm onCleared={onCleared} />);
+    otherTabChooses('b-2');
+    const notice = await screen.findByTestId('working-context-cross-tab');
+
+    await user.click(
+      within(notice).getByRole('button', { name: messages['workingContext.crossTab.switch'] })
+    );
+    const dialog = await screen.findByRole('alertdialog');
+    expect(within(dialog).getByText(messages['workingContext.discard.title'])).toBeInTheDocument();
+    // Still on this tab's branch while the question is open.
+    expect(seen().selection).toMatchObject({ branchId: 'b-1' });
+    expect(onCleared).not.toHaveBeenCalled();
+
+    await user.click(
+      within(dialog).getByRole('button', { name: messages['workingContext.discard.confirm'] })
+    );
+    await waitFor(() => expect(seen().selection).toMatchObject({ branchId: 'b-2' }));
+    expect(onCleared).toHaveBeenCalledTimes(1);
+    expect(screen.queryByTestId('working-context-cross-tab')).toBeNull();
+    expect(window.localStorage.getItem(WC_KEY)).toBe('b-2');
+  });
+
+  it('"Stay" keeps this tab on its branch and keeps what was typed', async () => {
+    const user = userEvent.setup();
+    window.localStorage.setItem(WC_KEY, 'b-1');
+    const { seen, onChange } = renderWith(
+      <RecordForm
+        messages={messages}
+        fields={[{ name: 'reason', kind: 'text', labelKey: 'crm.customers.notes.body' }]}
+        action={async () => ({ status: 'success', messageKey: 'action.succeeded', attempt: 1 })}
+        submitKey="form.submit"
+        titleKey="crm.customers.notes.add"
+      />
+    );
+    await user.type(screen.getByLabelText(messages['crm.customers.notes.body']), 'a note');
+    otherTabChooses('b-2');
+    const notice = await screen.findByTestId('working-context-cross-tab');
+
+    await user.click(within(notice).getByRole('button', { name: 'Stay on Main workshop' }));
+
+    expect(screen.queryByTestId('working-context-cross-tab')).toBeNull();
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+    expect(seen().selection).toMatchObject({ branchId: 'b-1' });
+    expect(onChange).not.toHaveBeenCalled();
+    expect(screen.getByLabelText(messages['crm.customers.notes.body'])).toHaveValue('a note');
+  });
+
+  it('follows the other tab at once when nothing on screen is unsaved', async () => {
+    window.localStorage.setItem(WC_KEY, 'b-1');
+    const { seen, onChange } = renderWith(<DirtyScreen dirty={false} />);
+    otherTabChooses('b-2');
+    await waitFor(() => expect(seen().selection).toMatchObject({ branchId: 'b-2' }));
+    expect(onChange).toHaveBeenCalledTimes(1);
+    expect(screen.queryByTestId('working-context-cross-tab')).toBeNull();
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+  });
+
+  it('says it in Arabic too', async () => {
+    window.localStorage.setItem(WC_KEY, 'b-1');
+    renderWith(<DirtyScreen dirty />, 'ar');
+    otherTabChooses('b-2');
+    const notice = await screen.findByTestId('working-context-cross-tab');
+    expect(notice).toHaveTextContent(arabic['workingContext.crossTab.title']);
+    expect(
+      within(notice).getByRole('button', { name: arabic['workingContext.crossTab.switch'] })
+    ).toBeInTheDocument();
+    expect(document.documentElement.dir).toBe('rtl');
   });
 });
