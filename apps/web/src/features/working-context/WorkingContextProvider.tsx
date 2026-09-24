@@ -185,6 +185,50 @@ export function useWorkingContextChange(onChange: () => void): void {
   }, [version]);
 }
 
+interface Epoch {
+  readonly version: number;
+  readonly controller: AbortController;
+  /** The effective selection this epoch was issued for — see `keyOf`. */
+  readonly key: string;
+}
+
+/**
+ * The selection a snapshot and a remembered choice produce. Pure, so the
+ * provider and `apply` derive the same answer from the same inputs.
+ */
+function deriveSelection(
+  status: WorkingContextStatus,
+  branches: readonly WorkingContextBranch[],
+  stored: string | null
+): WorkingContextSelection | null {
+  if (status !== 'ready') return null;
+  // Exactly one: chosen for them, and never asked about.
+  if (branches.length === 1) {
+    const only = branches[0] as WorkingContextBranch;
+    return { companyId: only.companyId, branchId: only.id, allBranches: false };
+  }
+  if (stored === null) return null;
+  if (stored === ALL_BRANCHES) {
+    const spans = new Set(branches.map((branch) => branch.companyId));
+    return {
+      companyId:
+        spans.size === 1 ? ((branches[0] as WorkingContextBranch).companyId ?? null) : null,
+      branchId: null,
+      allBranches: true,
+    };
+  }
+  const match = branches.find((branch) => branch.id === stored);
+  // Remembered, then revoked. Discarded rather than sent — see the provider.
+  if (match === undefined) return null;
+  return { companyId: match.companyId, branchId: match.id, allBranches: false };
+}
+
+/** One string per effective selection: none, every branch, or one branch. */
+function keyOf(selection: WorkingContextSelection | null): string {
+  if (selection === null) return '';
+  return selection.allBranches ? ALL_BRANCHES : selection.branchId;
+}
+
 export function WorkingContextProvider({
   snapshot,
   messages,
@@ -206,6 +250,20 @@ export function WorkingContextProvider({
     tenantId !== null && accountId !== null ? preferenceKeyFor(tenantId, accountId) : '';
   const [stored, setStored] = usePersistedPreference(preferenceKey);
 
+  const [pending, setPending] = useState<string | null>(null);
+
+  // A Set, created once. The registry identity must be stable: every guard
+  // registers against it in an effect keyed on that identity.
+  const [guards] = useState<GuardRegistry>(() => new Set());
+
+  const usable = preferenceKey.length > 0;
+
+  const selection = useMemo<WorkingContextSelection | null>(
+    () => deriveSelection(status, branches, usable ? stored : null),
+    [status, branches, stored, usable]
+  );
+  const selectionKey = keyOf(selection);
+
   /*
    * The version and the controller move TOGETHER, as one value.
    *
@@ -217,41 +275,52 @@ export function WorkingContextProvider({
    * It is state rather than a ref because the signal is READ during render —
    * every consumer takes it off the context value — and a ref read during
    * render is not guaranteed to be the value the render is about.
+   *
+   * `key` is the effective selection the epoch was issued for. See below.
    */
-  const [epoch, setEpoch] = useState<{
-    readonly version: number;
-    readonly controller: AbortController;
-  }>(() => ({ version: 0, controller: new AbortController() }));
-  const [pending, setPending] = useState<string | null>(null);
+  const [epoch, setEpoch] = useState<Epoch>(() => ({
+    version: 0,
+    controller: new AbortController(),
+    key: selectionKey,
+  }));
 
-  // A Set, created once. The registry identity must be stable: every guard
-  // registers against it in an effect keyed on that identity.
-  const [guards] = useState<GuardRegistry>(() => new Set());
+  /*
+   * EVERY change of the effective selection moves the epoch, whoever made it.
+   *
+   * The header's own select goes through `apply`, which moves it at once. Two
+   * other paths change the selection without passing through `apply`: another
+   * tab writing the preference (the storage notification re-reads it), and a
+   * reload whose remembered branch arrives after hydration, when the server
+   * snapshot (nothing chosen) gives way to the stored one. Both used to change
+   * the selection with the version and the signal untouched, so a screen that
+   * seeds state from the branch through `useWorkingContextChange` kept naming
+   * the previous branch, and a read in flight was never aborted.
+   *
+   * The adjustment is made DURING render — React's pattern for state that
+   * follows a value — so no child ever renders the new selection under the old
+   * version. The updater is pure; the retired controller is aborted after the
+   * commit, below.
+   */
+  if (epoch.key !== selectionKey) {
+    setEpoch((previous) =>
+      previous.key === selectionKey
+        ? previous
+        : { version: previous.version + 1, controller: new AbortController(), key: selectionKey }
+    );
+  }
 
-  const usable = preferenceKey.length > 0;
-
-  const selection = useMemo<WorkingContextSelection | null>(() => {
-    if (status !== 'ready') return null;
-    // Exactly one: chosen for them, and never asked about.
-    if (branches.length === 1) {
-      const only = branches[0] as WorkingContextBranch;
-      return { companyId: only.companyId, branchId: only.id, allBranches: false };
-    }
-    if (!usable || stored === null) return null;
-    if (stored === ALL_BRANCHES) {
-      const spans = new Set(branches.map((branch) => branch.companyId));
-      return {
-        companyId:
-          spans.size === 1 ? ((branches[0] as WorkingContextBranch).companyId ?? null) : null,
-        branchId: null,
-        allBranches: true,
-      };
-    }
-    const match = branches.find((branch) => branch.id === stored);
-    // Remembered, then revoked. Discarded rather than sent — see the effect below.
-    if (match === undefined) return null;
-    return { companyId: match.companyId, branchId: match.id, allBranches: false };
-  }, [status, branches, stored, usable]);
+  /*
+   * The controller a render-time adjustment retired is aborted once the new
+   * epoch commits. `apply` aborts its own synchronously, and a second `abort()`
+   * on the same controller does nothing. Tracked by a ref rather than by an
+   * effect cleanup, so a Strict Mode re-run cannot abort the controller in use.
+   */
+  const retired = useRef(epoch.controller);
+  useEffect(() => {
+    if (retired.current === epoch.controller) return;
+    retired.current.abort();
+    retired.current = epoch.controller;
+  }, [epoch.controller]);
 
   /*
    * A stored choice the server no longer publishes is REMOVED, not merely
@@ -298,12 +367,18 @@ export function WorkingContextProvider({
        * twice with no second effect. The spare controller the discarded call
        * creates is never handed out.
        */
+      /*
+       * The epoch is issued for the selection `next` produces, so the
+       * render-time adjustment above finds nothing left to do and a switch
+       * made here moves the version exactly once.
+       */
+      const nextKey = keyOf(deriveSelection(status, branches, usable ? next : null));
       setEpoch((previous) => {
         previous.controller.abort();
-        return { version: previous.version + 1, controller: new AbortController() };
+        return { version: previous.version + 1, controller: new AbortController(), key: nextKey };
       });
     },
-    [usable, setStored]
+    [usable, setStored, status, branches]
   );
 
   const select = useCallback(

@@ -3,6 +3,7 @@ import { join, relative, sep } from 'node:path';
 import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { useEffect, useState, type ReactNode } from 'react';
+import { renderToString } from 'react-dom/server';
 import ts from 'typescript';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { axe } from 'vitest-axe';
@@ -22,6 +23,7 @@ import {
   WorkingContextProvider,
   useUnsavedGuard,
   useWorkingContext,
+  useWorkingContextChange,
   type WorkingContext,
 } from '@/features/working-context/WorkingContextProvider';
 import {
@@ -941,6 +943,18 @@ function Probe({ onContext }: { readonly onContext: (context: WorkingContext) =>
   return null;
 }
 
+/** Reports every change the way a screen seeding state from the branch sees it. */
+function ChangeProbe({ onChange }: { readonly onChange: (branchId: string | null) => void }) {
+  const { selection } = useWorkingContext();
+  useWorkingContextChange(() => onChange(selection?.branchId ?? null));
+  return null;
+}
+
+function SelectionText() {
+  const { selection } = useWorkingContext();
+  return <p>{`selection:${selection?.branchId ?? 'none'}`}</p>;
+}
+
 function DirtyScreen({ dirty }: { readonly dirty: boolean }) {
   useUnsavedGuard(dirty);
   return null;
@@ -1186,6 +1200,91 @@ describe('the remembered branch, revoked and re-read', () => {
     await waitFor(() =>
       expect(seen().selection).toEqual({ companyId: 'c-1', branchId: 'b-2', allBranches: false })
     );
+  });
+
+  it('moves the version and aborts the signal when ANOTHER TAB changes the branch', async () => {
+    /*
+     * The header's own select moved the version; a change arriving from
+     * another tab changed the selection with the version and the signal
+     * untouched, so every `useWorkingContextChange` consumer kept the state it
+     * had seeded from the previous branch and a read in flight committed.
+     */
+    window.localStorage.setItem(WC_KEY, 'b-1');
+    const onContext = vi.fn();
+    const onChange = vi.fn();
+    renderLtr(
+      <WorkingContextProvider snapshot={wcSnapshot([MAIN, SECOND])} messages={messages}>
+        <Probe onContext={onContext} />
+        <ChangeProbe onChange={onChange} />
+      </WorkingContextProvider>
+    );
+    const seen = () => onContext.mock.calls[onContext.mock.calls.length - 1]?.[0] as WorkingContext;
+    const before = seen();
+    expect(before.selection).toMatchObject({ branchId: 'b-1' });
+
+    window.localStorage.setItem(WC_KEY, 'b-2');
+    window.dispatchEvent(new Event('storage'));
+
+    await waitFor(() => expect(seen().selection).toMatchObject({ branchId: 'b-2' }));
+    expect(seen().version).toBe(before.version + 1);
+    expect(before.signal.aborted).toBe(true);
+    expect(seen().signal.aborted).toBe(false);
+    expect(onChange).toHaveBeenCalledTimes(1);
+    expect(onChange).toHaveBeenLastCalledWith('b-2');
+  });
+
+  it('moves the version once, not twice, when the header select makes the change', async () => {
+    const user = userEvent.setup();
+    const onChange = vi.fn();
+    const { seen } = (() => {
+      const onContext = vi.fn();
+      renderLtr(
+        <WorkingContextProvider snapshot={wcSnapshot([MAIN, SECOND])} messages={messages}>
+          <Probe onContext={onContext} />
+          <ChangeProbe onChange={onChange} />
+          <WorkingContextControl messages={messages} />
+        </WorkingContextProvider>
+      );
+      return {
+        seen: () => onContext.mock.calls[onContext.mock.calls.length - 1]?.[0] as WorkingContext,
+      };
+    })();
+    const before = seen();
+    await user.selectOptions(screen.getByTestId('working-context-select'), 'b-2');
+    await waitFor(() => expect(seen().selection).toMatchObject({ branchId: 'b-2' }));
+    expect(seen().version).toBe(before.version + 1);
+    expect(onChange).toHaveBeenCalledTimes(1);
+  });
+
+  it('moves the version when a reload restores the remembered branch after hydration', async () => {
+    /*
+     * A reload renders on the server with nothing chosen — storage does not
+     * exist there — and the remembered branch arrives when hydration gives way
+     * to the client snapshot. That is a change of branch for every screen that
+     * mounted under "nothing chosen", and it must reach them as one.
+     */
+    const onContext = vi.fn();
+    const onChange = vi.fn();
+    const tree = (
+      <WorkingContextProvider snapshot={wcSnapshot([MAIN, SECOND])} messages={messages}>
+        <Probe onContext={onContext} />
+        <ChangeProbe onChange={onChange} />
+        <SelectionText />
+      </WorkingContextProvider>
+    );
+    const container = document.createElement('div');
+    container.innerHTML = renderToString(tree);
+    document.body.appendChild(container);
+    expect(container).toHaveTextContent('selection:none');
+
+    window.localStorage.setItem(WC_KEY, 'b-2');
+    renderLtr(tree, { container, hydrate: true });
+
+    const seen = () => onContext.mock.calls[onContext.mock.calls.length - 1]?.[0] as WorkingContext;
+    await waitFor(() => expect(seen().selection).toMatchObject({ branchId: 'b-2' }));
+    expect(seen().version).toBe(1);
+    expect(onChange).toHaveBeenCalledTimes(1);
+    expect(onChange).toHaveBeenLastCalledWith('b-2');
   });
 });
 

@@ -92,9 +92,10 @@ describe('the navigation model', () => {
       'customer-duplicates',
       'customers',
       // P1-31 FE-001: the ready-for-delivery queue at `/delivery`, gated on
-      // `sal.delivery.view` — the module's own read code. The queue itself needs
-      // `wo.work_order.read` and `sal.finance.view` as well, and the page says
-      // so; a navigation gate names one code, as every other row here does.
+      // `sal.delivery.view` — the module's own read code — AND, since route
+      // sweep B3, on `wo.work_order.read` and `sal.finance.view`, the other two
+      // codes its one read declares (`alsoRequires`): the page holds nothing
+      // for a caller missing either.
       'delivery',
       'gallery',
       // P1-30 W4: item search, stock availability and reservations at `/inventory`.
@@ -230,6 +231,9 @@ describe('the navigation model', () => {
     expect(gated.length, 'no gated navigation entry was examined').toBeGreaterThan(0);
     for (const entry of gated) {
       expect(CATALOGUE.has(entry.permission!), `${entry.key} → ${entry.permission}`).toBe(true);
+      for (const code of entry.alsoRequires ?? []) {
+        expect(CATALOGUE.has(code), `${entry.key} → ${code}`).toBe(true);
+      }
     }
   });
 
@@ -351,5 +355,36 @@ describe('permission filtering — unknown means denied', () => {
     // first operation (customer search) requires. The dashboard does NOT: it
     // needs `wo.work_order.read`, which these capabilities do not hold.
     expect(keys.sort()).toEqual(['customers', 'gallery', 'vehicles', 'walk-in']);
+  });
+
+  it('offers the delivery queue only with every code its one read declares', () => {
+    /*
+     * The queue's page draws the shared refusal for a caller missing any of the
+     * three, so an entry shown on the delivery code alone landed on a refusal.
+     * Each code is dropped in turn: the entry must disappear every time.
+     */
+    const all = ['sal.delivery.view', 'wo.work_order.read', 'sal.finance.view'];
+    const offered = (permissions: readonly string[]) =>
+      visibleNavigation(NAVIGATION, { permissions })
+        .flatMap((group) => group.items)
+        .some((entry) => entry.key === 'delivery');
+    expect(offered(all)).toBe(true);
+    for (const missing of all) {
+      expect(offered(all.filter((code) => code !== missing)), `offered without ${missing}`).toBe(
+        false
+      );
+    }
+  });
+
+  it('reads `alsoRequires` as a conjunction, never as "any of"', () => {
+    const gated = item({ permission: 'a.b.c', alsoRequires: ['d.e.f', 'g.h.i'] });
+    const shown = (permissions: readonly string[]) =>
+      visibleNavigation([{ key: 'g', labelKey: 'nav.dashboard', items: [gated] }], {
+        permissions,
+      }).length === 1;
+    expect(shown(['a.b.c', 'd.e.f', 'g.h.i'])).toBe(true);
+    expect(shown(['a.b.c', 'd.e.f'])).toBe(false);
+    expect(shown(['d.e.f', 'g.h.i'])).toBe(false);
+    expect(shown(['a.b.c'])).toBe(false);
   });
 });

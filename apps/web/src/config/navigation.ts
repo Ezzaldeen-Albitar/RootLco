@@ -47,6 +47,17 @@ export interface NavigationItem {
    * allowed.
    */
   readonly permission: PermissionCode | null;
+  /**
+   * Further codes the destination's page requires before it shows anything
+   * other than a refusal — ALL of them, beside `permission`.
+   *
+   * A conjunction, never "any of": the entry is shown only when every code is
+   * held. Used where the page is one read that declares several codes and
+   * holds nothing for a caller missing one of them, so the sidebar does not
+   * offer a page that could only refuse. Each code must exist in the catalogue,
+   * which `tests/navigation.test.ts` checks the same way it checks `permission`.
+   */
+  readonly alsoRequires?: readonly PermissionCode[];
   readonly status: NavigationStatus;
   readonly scope: NavigationScope;
   /** Optional numeric badge, e.g. unread notifications. */
@@ -609,15 +620,17 @@ export const NAVIGATION: readonly NavigationGroup[] = Object.freeze([
         // `.read` code. See the permission-reuse register under
         // docs/phase-1/pre-p1-29-multi-tenant-admin-rbac-workflow/.
         //
-        // ONE code gates the entry while the queue itself requires three
-        // (`wo.work_order.read` and `sal.finance.view` as well). That is
-        // deliberate and matches every other row here: a navigation gate names
-        // the module's own read code, and the page states the rest in the
-        // operator's language. Naming all three here would hide the module from
-        // an adviser who holds the delivery code and would otherwise be told, on
-        // the page, exactly which authority they are missing.
+        // The queue is ONE read, `sal.delivery-readiness-list`, and it declares
+        // three codes: this one, `wo.work_order.read` and `sal.finance.view`.
+        // The page holds nothing for a caller missing any of them — it checks
+        // all three before any read and draws the shared refusal, which names
+        // no code — so offering the entry on the delivery code alone was an
+        // offer that lands on a refusal. The entry now asks for all three
+        // (route sweep B3). The handover list, which the delivery code alone
+        // could read, has no screen yet (a recorded backend prerequisite).
         href: '/delivery',
         permission: 'sal.delivery.view',
+        alsoRequires: ['wo.work_order.read', 'sal.finance.view'],
         status: 'available',
         scope: 'branch',
       },

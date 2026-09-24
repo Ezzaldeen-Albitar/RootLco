@@ -17,7 +17,6 @@ import {
   WorkingBranchProbe,
 } from './render';
 import {
-  discardAndSwitch,
   forgetRememberedBranch,
   heldBranch,
   stayOnBranch,
@@ -128,6 +127,7 @@ vi.mock('@/components/notifications/action-notifications', () => ({
 
 const { InvoiceScreen } = await import('@/features/billing/components/InvoiceScreen');
 const { CreditNotesScreen } = await import('@/features/billing/components/CreditNotesScreen');
+const { WorkOrderPicker } = await import('@/features/work-orders/components/WorkOrderPicker');
 const CreditNotesPage = (await import('@/app/[locale]/(dashboard)/credit-notes/page'))
   .default as unknown as RoutePage;
 type RoutePage = (args: {
@@ -527,7 +527,10 @@ describe('the job picker and the working context', () => {
     correlationId: 'corr-wo',
   });
 
-  function renderWith(snapshot: ReturnType<typeof branchSnapshot>) {
+  function renderWith(
+    snapshot: ReturnType<typeof branchSnapshot>,
+    over: Record<string, unknown> = {}
+  ) {
     renderInLtr(
       inBranch(
         <>
@@ -535,7 +538,7 @@ describe('the job picker and the working context', () => {
           <BranchSwitch to={OTHER_BRANCH.id} label="second" />
           <BranchSwitch to="all" label="everywhere" />
           <WorkingBranchProbe />
-          {chooser()}
+          {chooser(over)}
         </>,
         { snapshot }
       )
@@ -604,7 +607,7 @@ describe('the job picker and the working context', () => {
     expect(listWorkOrders).toHaveBeenCalledTimes(1);
   });
 
-  it('a chosen job is unsaved work: the switch asks, staying keeps it, discarding clears it', async () => {
+  it('a chosen job is not unsaved work — the form only opens a page — so the switch does not ask, and forgets it (route sweep B3)', async () => {
     listWorkOrders.mockResolvedValue(found([workOrder]));
     const user = userEvent.setup();
     renderWith(branchSnapshot([TEST_BRANCH, OTHER_BRANCH]));
@@ -613,17 +616,53 @@ describe('the job picker and the working context', () => {
     await user.click(await screen.findByRole('button', { name: /WO-000042/ }));
     expect(screen.getByTestId('work-order-picker-chosen')).toHaveTextContent('WO-000042');
 
-    await stayOnBranch(user, await switchExpectingQuestion(user, 'second'));
-    expect(heldBranch()).toBe(TEST_BRANCH.id);
-    expect(screen.getByTestId('work-order-picker-chosen')).toHaveTextContent('WO-000042');
-
-    await discardAndSwitch(user, await switchExpectingQuestion(user, 'second'));
+    await switchWithoutQuestion(user, 'second');
     await waitFor(() => expect(heldBranch()).toBe(OTHER_BRANCH.id));
     await waitFor(() => expect(screen.queryByTestId('work-order-picker-chosen')).toBeNull());
     expect(box()).toHaveValue('');
     // Nothing is opened for a job that belonged to the previous branch.
     await user.click(submit());
     expect(push).not.toHaveBeenCalled();
+  });
+
+  it('a typed job reference is not unsaved work either: the same rule as the picker, and the reference is kept', async () => {
+    const user = userEvent.setup();
+    renderWith(branchSnapshot([TEST_BRANCH, OTHER_BRANCH]), { canSearchWorkOrders: false });
+    await user.click(screen.getByRole('button', { name: 'first' }));
+    const typed = screen.getByLabelText(labelled('invoices.choose.referenceLabel'));
+    await user.type(typed, WORK_ORDER_ID);
+    await switchWithoutQuestion(user, 'second');
+    await waitFor(() => expect(heldBranch()).toBe(OTHER_BRANCH.id));
+    // A reference names one job whatever the branch, so it stays for the submit.
+    expect(typed).toHaveValue(WORK_ORDER_ID);
+  });
+});
+
+describe('the job picker without the work-order code', () => {
+  it('says the job cannot be looked up in a sentence carrying the id its caller describes a control with', () => {
+    /*
+     * The invoice desk now keeps a typed reference in this case, so the sentence
+     * is rendered by the picker itself here. A caller that describes its submit
+     * by `needsBranchId` must find an element with that id, never a blank one.
+     */
+    renderInLtr(
+      inBranch(
+        <WorkOrderPicker
+          messages={en}
+          label="Job"
+          value={null}
+          onChange={() => undefined}
+          canSearch={false}
+          needsBranchId="job-why"
+        />
+      )
+    );
+    const sentence = screen.getByText(EN['workOrders.picker.notPermitted'] as string);
+    expect(sentence).toBeVisible();
+    expect(sentence.id).not.toBe('');
+    expect(sentence.id).toBe('job-why');
+    expect(screen.queryByRole('searchbox')).toBeNull();
+    expect(listWorkOrders).not.toHaveBeenCalled();
   });
 });
 

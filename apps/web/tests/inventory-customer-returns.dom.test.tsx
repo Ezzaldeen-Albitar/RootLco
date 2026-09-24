@@ -794,6 +794,34 @@ describe('naming the part handed to a job instead of typing its reference (route
     expect(screen.queryByText('2.000')).toBeNull();
     expect(screen.getAllByText('7.000').length).toBeGreaterThan(0);
   });
+
+  it('a reply about a sale line is not drawn once the clerk has switched to a part handed to a job (route sweep B3)', async () => {
+    const held: ((value: unknown) => void)[] = [];
+    readReturnable.mockImplementation(() => new Promise((resolve) => held.push(resolve)));
+    const user = userEvent.setup();
+    renderLtr(operable());
+    await openBranch();
+    await user.selectOptions(
+      await screen.findByLabelText(labelled('inventory.returns.sale.label')),
+      SALE_ID
+    );
+    await user.selectOptions(
+      await screen.findByLabelText(labelled('inventory.returns.sale.lineLabel')),
+      SOURCE_ID
+    );
+    await waitFor(() => expect(held).toHaveLength(1));
+    // The kind changes before the answer about the sale line arrives.
+    await user.selectOptions(
+      screen.getByLabelText(labelled('inventory.returns.source.kind')),
+      'part_issue'
+    );
+    held[0]?.(returnable());
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    // None of the three figures of the sale line is shown under the new kind.
+    expect(screen.queryByText('5.000')).toBeNull();
+    expect(screen.queryByText('3.000')).toBeNull();
+    expect(screen.queryByText(EN['inventory.returns.source.looking'] as string)).toBeNull();
+  });
 });
 
 /**

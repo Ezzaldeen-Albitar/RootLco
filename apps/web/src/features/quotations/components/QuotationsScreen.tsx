@@ -212,6 +212,10 @@ function ChooseWorkOrder({
    * in was to copy one out of another page's address bar. `wo.work-order-list`
    * answers the question the form was really asking (Owner directive,
    * `P1-32-PRE-OD-UX`).
+   *
+   * The chosen job is not unsaved work: this form writes nothing, it opens the
+   * quotation page for the job, so a branch switch forgets the choice without
+   * asking — the rule the invoice desk's chooser follows (route sweep B3).
    */
   const [chosen, setChosen] = useState<WorkOrderListEntry | null>(null);
   // An attempt counter rather than a flag: the focus hook moves the cursor to
@@ -273,6 +277,7 @@ function ChooseWorkOrder({
         error={error}
         canSearch={canSearchWorkOrders}
         needsBranchId={needsBranchId}
+        countsAsUnsaved={false}
       />
       {canSearchWorkOrders ? (
         <div>

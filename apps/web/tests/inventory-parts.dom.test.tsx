@@ -1091,11 +1091,73 @@ describe('the item and the required part are found, not typed (route sweep B2)',
       name: EN['inventory.parts.required.issueThis'] as string,
     });
     listRequiredParts.mockImplementation(async () => okRead({ items: [] }));
+    createIssue.mockResolvedValue({
+      state: { status: 'failed', messageKey: 'action.failed', attempt: 1 },
+    });
     await user.click(issueThis);
     const form = await issueForm();
     expect(
       await within(form).findByText(EN['inventory.issue.requiredPartGone'] as string)
     ).toBeVisible();
+    // Said to be dropped, and dropped: the draw goes out without the line
+    // (route sweep B3, the carried review nit).
+    await within(form).findByRole('option', { name: 'WH-1 — Main warehouse' });
+    await user.selectOptions(
+      within(form).getByLabelText(labelled('inventory.issue.location')),
+      LOCATION_ID
+    );
+    await user.click(
+      within(form).getByRole('button', { name: EN['inventory.issue.submit'] as string })
+    );
+    await waitFor(() => expect(createIssue).toHaveBeenCalledTimes(1));
+    expect(createIssue.mock.calls[0]?.[0]).not.toHaveProperty('requiredPartRef');
+  });
+
+  it('a required part carried from "Issue" stays linked while the job’s list is still being read, and is shown in the select once it answers (route sweep B3)', async () => {
+    const user = userEvent.setup();
+    createIssue.mockResolvedValue({
+      state: { status: 'failed', messageKey: 'action.failed', attempt: 1 },
+    });
+    renderScreen({ canOperate: true, canReadItems: true });
+    await chooseRequirement(user);
+    const issueThis = await within(requiredRegion()).findByRole('button', {
+      name: EN['inventory.parts.required.issueThis'] as string,
+    });
+    // The form's own read of the job's list is held open.
+    let answer: (value: unknown) => void = () => undefined;
+    listRequiredParts.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          answer = resolve;
+        })
+    );
+    await user.click(issueThis);
+    const form = await issueForm();
+    const carried = await within(form).findByText(
+      (EN['inventory.issue.requiredPartCarried'] as string).replace('{part}', 'Front brake pads'),
+      { exact: false }
+    );
+    expect(carried).toBeVisible();
+    // Still loading is not a refusal: no refusal is said beside it.
+    expect(carried).not.toHaveTextContent(EN['inventory.parts.required.unavailable'] as string);
+    await within(form).findByRole('option', { name: 'WH-1 — Main warehouse' });
+    await user.selectOptions(
+      within(form).getByLabelText(labelled('inventory.issue.location')),
+      LOCATION_ID
+    );
+    await user.click(
+      within(form).getByRole('button', { name: EN['inventory.issue.submit'] as string })
+    );
+    await waitFor(() => expect(createIssue).toHaveBeenCalledTimes(1));
+    // Sent while the list was still being read: never dropped for want of a select.
+    expect(createIssue.mock.calls[0]?.[0]).toMatchObject({ requiredPartRef: REQUIRED_PART_ID });
+
+    answer(okRead({ items: [{ ...requiredPart }] }));
+    await waitFor(() =>
+      expect(
+        within(form).getByRole('combobox', { name: labelled('inventory.issue.requiredPart') })
+      ).toHaveValue(REQUIRED_PART_ID)
+    );
   });
 
   it('a late reply for an earlier item search is not drawn under a later one (route sweep B2 review)', async () => {

@@ -502,6 +502,107 @@ describe('the item filter and the job from the link (route sweep B2 review)', ()
   });
 });
 
+describe('reading the job from the link again (route sweep B3)', () => {
+  afterEach(forgetRememberedBranch);
+
+  const OTHER_JOB = {
+    ...workOrder,
+    id: '42424242-4242-4424-8424-424242424242',
+    displayNumber: 'WO-000077',
+  };
+
+  it('does not replace a job the operator chose while the read was out', async () => {
+    const user = userEvent.setup();
+    renderScreen({
+      initialWorkOrderId: WORK_ORDER_ID,
+      initialWorkOrder: null,
+      canReadWorkOrders: true,
+    });
+    await chooseBranch();
+    await firstRead();
+    const panel = ledger();
+    let answer: (value: unknown) => void = () => undefined;
+    readWorkOrderDetail.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          answer = resolve;
+        })
+    );
+    await user.click(
+      within(panel).getByRole('button', { name: EN['inventory.workOrderLink.readAgain'] as string })
+    );
+    // Meanwhile the operator finds and chooses another job.
+    listWorkOrders.mockResolvedValue(page([OTHER_JOB]));
+    await user.type(
+      within(panel).getByLabelText(EN['inventory.movements.workOrder'] as string),
+      'WO-77{Enter}'
+    );
+    await user.click(await within(panel).findByRole('button', { name: /WO-000077/ }));
+    expect(within(panel).getByTestId('movements-work-order-picker-chosen')).toHaveTextContent(
+      'WO-000077'
+    );
+
+    answer(okRead({ workOrder, jobs: [], nextStates: [], reachableStates: [] }));
+    await waitFor(() =>
+      expect(
+        within(panel).queryByText(EN['inventory.workOrderLink.unreadable'] as string)
+      ).toBeNull()
+    );
+    expect(within(panel).getByTestId('movements-work-order-picker-chosen')).toHaveTextContent(
+      'WO-000077'
+    );
+  });
+
+  it('drops an answer that lands after a branch switch replaced the panel', async () => {
+    const user = userEvent.setup();
+    readWorkOrderDetail.mockResolvedValue({ status: 'unavailable', correlationId: 'ref-503' });
+    renderInLtr(
+      inBranch(
+        <>
+          <BranchSwitch to={TEST_BRANCH.id} label="first" />
+          <BranchSwitch to={OTHER_BRANCH.id} label="second" />
+          <WorkingBranchProbe />
+          <MovementsScreen
+            locale="en"
+            messages={en}
+            initialWorkOrderId={WORK_ORDER_ID}
+            initialWorkOrder={null}
+            canReadWorkOrders={true}
+            canReadBranches={true}
+          />
+        </>,
+        { snapshot: branchSnapshot([TEST_BRANCH, OTHER_BRANCH]) }
+      )
+    );
+    await user.click(screen.getByRole('button', { name: 'first' }));
+    await chooseBranch();
+    let answer: (value: unknown) => void = () => undefined;
+    readWorkOrderDetail.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          answer = resolve;
+        })
+    );
+    await user.click(
+      within(ledger()).getByRole('button', {
+        name: EN['inventory.workOrderLink.readAgain'] as string,
+      })
+    );
+    await switchWithoutQuestion(user, 'second');
+    await waitFor(() => expect(heldBranch()).toBe(OTHER_BRANCH.id));
+    await chooseBranch();
+
+    answer(okRead({ workOrder, jobs: [], nextStates: [], reachableStates: [] }));
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    // The panel under the new branch still says the link could not be read,
+    // and no job from the earlier panel's read is chosen in it.
+    expect(within(ledger()).queryByTestId('movements-work-order-picker-chosen')).toBeNull();
+    expect(
+      within(ledger()).getByText(EN['inventory.workOrderLink.unreadable'] as string)
+    ).toBeVisible();
+  });
+});
+
 describe('filters being set and a branch switch', () => {
   /*
    * The ledger panel is keyed on the branch and its location filter names one of
