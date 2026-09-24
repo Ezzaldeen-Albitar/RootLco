@@ -51,14 +51,21 @@ import { Decimal, MONEY, moneyView, type MoneyView } from '@/modules/pricing';
 // quotation composition root — `quotationModule()` is memoised behind a closure.
 import { rollUpDecisions } from '@/modules/quotation';
 import type { DbHandle } from '@/server/db/transaction';
-import type { ScopeAuthorizer } from '@/server/auth/authorization';
+import { callerHoldsPermissionAnywhere, type ScopeAuthorizer } from '@/server/auth/authorization';
 import { pageRequest, type Page } from '@/server/db/pagination';
-import { CREDIT_NOTE_ORDER } from '../data/billing-repository';
+import {
+  CUSTOMER_SEARCH_PERMISSION,
+  toEntitySearchTerms,
+  withoutCustomerArms,
+  type EntitySearchTerms,
+} from '@/shared/text/search-terms';
+import { CREDIT_NOTE_ORDER, INVOICE_LIST_ORDER } from '../data/billing-repository';
 import type {
   BillingRepository,
   CommercialSourceRow,
   CreditNoteRow,
   InvoiceLineRow,
+  InvoiceListRow,
   InvoiceRow,
   NumberingConfigRow,
 } from '../data/billing-repository';
@@ -121,6 +128,39 @@ export interface InvoiceView {
   readonly recordVersion: number;
   /** `null` without `sal.finance.view`, and on a draft before amounts are written. */
   readonly totals: InvoiceTotalsView | null;
+}
+
+/**
+ * Who an invoice bills, by name (Owner directive, P1-32-PRE-OD-UX).
+ *
+ * Every field is `null` exactly when the payer is not named to THIS caller:
+ * withheld because the caller does not hold `crm.customer.read`, or not a live
+ * partner — retired since the invoice was written, or not visible. The box then
+ * cannot reach that name either, so the list never names a payer it would not
+ * find by name, nor finds one by a name it would not show. The block keeps its
+ * shape either way, as the warranty list's customer block does. The id is
+ * `payerPartnerId` on the header and is not repeated here.
+ */
+export interface InvoicePayerView {
+  readonly displayName: string | null;
+  readonly displayNumber: string | null;
+  readonly partyType: string | null;
+}
+
+/**
+ * One row of `sal.invoice-list`: the header every other invoice read publishes,
+ * plus the payer's name and the open balance.
+ *
+ * `outstanding` is `null` whenever `balanceIsTrustworthy` says the zero
+ * `sal.invoice_open_receivable` would compute cannot be believed — that is, for
+ * an issued or credited invoice whose amounts row this caller cannot see. The
+ * route's gate is `sal.finance.view`, so that is no longer the ordinary case;
+ * the guard stays because a policy change underneath must hide money, never
+ * report a zero. Omitted, never zeroed, for the reason `totals` is.
+ */
+export interface InvoiceListEntryView extends InvoiceView {
+  readonly payer: InvoicePayerView;
+  readonly outstanding: MoneyView | null;
 }
 
 /** An invoice with its lines, as the detail read returns it. */
@@ -306,6 +346,45 @@ export const toInvoiceView = (row: InvoiceRow): InvoiceView => ({
       }
     : null,
 });
+
+/** The payer block of a caller the payer may not be named to. Same shape, every field null. */
+const WITHHELD_PAYER: InvoicePayerView = Object.freeze({
+  displayName: null,
+  displayNumber: null,
+  partyType: null,
+});
+
+/**
+ * The list row: the shared header mapper, the payer's name where the caller may
+ * read customers, and the open balance only where it can be believed.
+ */
+export const toInvoiceListEntryView = (
+  row: InvoiceListRow,
+  mayNamePayer: boolean
+): InvoiceListEntryView => ({
+  ...toInvoiceView(row),
+  payer: mayNamePayer
+    ? {
+        displayName: row.payerDisplayName,
+        displayNumber: row.payerDisplayNumber,
+        partyType: row.payerPartyType,
+      }
+    : WITHHELD_PAYER,
+  outstanding: balanceIsTrustworthy(row) ? moneyView(row.openAmount, row.currencyCode) : null,
+});
+
+/**
+ * The permission a caller needs before the invoice list's box may match a plate
+ * or a VIN — the code the vehicle module itself asks before it tells anyone a
+ * registration (`VehicleReadRepository.mayReadVehicles`).
+ */
+const VEHICLE_SEARCH_PERMISSION = 'veh.vehicle.read';
+
+/** Switches off the two arms that read vehicle data. See `withoutCustomerArms`. */
+function withoutVehicleArms(terms: EntitySearchTerms): EntitySearchTerms {
+  if (!terms.present) return terms;
+  return { ...terms, plateFragment: '', vinFragment: '' };
+}
 
 export const toInvoiceLineView = (row: InvoiceLineRow): InvoiceLineView => ({
   id: row.id,
@@ -787,6 +866,73 @@ export class BillingReadService {
       pageRequest(CREDIT_NOTE_ORDER, page)
     );
     return { ...result, items: result.items.map(toCreditNoteView) };
+  }
+
+  /**
+   * One branch's invoices of every kind, newest first (Owner directive,
+   * P1-32-PRE-OD-UX, `sal.invoice-list`).
+   *
+   * The pair is authorized BEFORE any row is read, as `listCreditNotes` and
+   * `listCounterSales` do, so a caller cannot page a branch it holds no authority
+   * in and learn what was billed there.
+   *
+   * ## Least privilege
+   *
+   * The gate is `sal.finance.view`, and that code reaches money, never a
+   * customer's name or a vehicle's registration. So the page names the payer,
+   * and the box matches a payer's name, only for a caller holding
+   * `crm.customer.read`; and the box matches a plate or a VIN only for a caller
+   * holding `veh.vehicle.read`. The invoice number is always matched: it is on
+   * the row the caller already reads. Each answer is ONE scope-blind
+   * `iam.has_permission` statement, asked the way the reception, appointment,
+   * delivery and warranty lists ask it — the customer question on every call,
+   * because the payer block depends on it; the vehicle question only when a box
+   * was sent. Both can only narrow the page, never widen it, and neither depends
+   * on the page size, so the statements sent stay constant.
+   *
+   * The PHONE arm is switched off for everyone: a phone number is on no row of
+   * this list, and a box that matched one would turn a billing read into a way
+   * of probing contact data.
+   */
+  public async listInvoices(
+    db: DbHandle,
+    filter: {
+      readonly companyId: string;
+      readonly branchId: string;
+      readonly status?: string | undefined;
+      /** Only the invoices money can still be applied to (`issued`/`credited`, open above zero). */
+      readonly allocatable?: boolean | undefined;
+      /** The raw free-text box; reduced here, once, by the shared rule. */
+      readonly q?: string | undefined;
+    },
+    page: { readonly cursor?: string | undefined; readonly limit?: number | undefined },
+    authorizeScope: ScopeAuthorizer
+  ): Promise<Page<InvoiceListEntryView>> {
+    await authorizeScope({ companyId: filter.companyId, branchId: filter.branchId });
+    const mayReadCustomers = await callerHoldsPermissionAnywhere(db, CUSTOMER_SEARCH_PERMISSION);
+    let terms = toEntitySearchTerms(filter.q);
+    if (terms.present) {
+      terms = { ...terms, phoneDigits: '', phoneSuffixEligible: false };
+      if (!mayReadCustomers) terms = withoutCustomerArms(terms);
+      if (!(await callerHoldsPermissionAnywhere(db, VEHICLE_SEARCH_PERMISSION))) {
+        terms = withoutVehicleArms(terms);
+      }
+    }
+    const result = await this.repository.listInvoices(
+      db,
+      {
+        companyId: filter.companyId,
+        branchId: filter.branchId,
+        ...(filter.status === undefined ? {} : { status: filter.status }),
+        ...(filter.allocatable === true ? { allocatable: true } : {}),
+        search: terms,
+      },
+      pageRequest(INVOICE_LIST_ORDER, page)
+    );
+    return {
+      ...result,
+      items: result.items.map((row) => toInvoiceListEntryView(row, mayReadCustomers)),
+    };
   }
 
   // -------------------------------------------------------------------------

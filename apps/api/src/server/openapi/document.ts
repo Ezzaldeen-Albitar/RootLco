@@ -249,11 +249,31 @@ function standardFailureResponses(operation: RegisteredOperation): JsonObject {
   return responses;
 }
 
+/**
+ * One `in: query` parameter per property of the operation's query-string schema,
+ * in the schema's own order. Required exactly when the schema's `required` list
+ * names the property. An operation that declares no query schema publishes none.
+ */
+function queryParameters(schema: Readonly<Record<string, unknown>> | undefined): JsonObject[] {
+  if (schema === undefined) return [];
+  const properties = (schema['properties'] ?? {}) as Readonly<Record<string, unknown>>;
+  const required = new Set(
+    Array.isArray(schema['required']) ? (schema['required'] as readonly string[]) : []
+  );
+  return Object.entries(properties).map(([name, property]) => ({
+    name,
+    in: 'query',
+    required: required.has(name),
+    schema: property as JsonObject,
+  }));
+}
+
 function operationObject(operation: RegisteredOperation): JsonObject {
   const parameters: JsonObject[] = [{ $ref: '#/components/parameters/CorrelationId' }];
   for (const [name, schema] of Object.entries(operation.pathParameterSchemas ?? {})) {
     parameters.push({ name, in: 'path', required: true, schema });
   }
+  parameters.push(...queryParameters(operation.queryParameterSchema));
   if (operation.idempotent) parameters.push({ $ref: '#/components/parameters/IdempotencyKey' });
   if (operation.versionGuarded) parameters.push({ $ref: '#/components/parameters/IfMatch' });
 

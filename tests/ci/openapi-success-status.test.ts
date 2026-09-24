@@ -97,7 +97,9 @@ describe('every operation publishes the success status it returns', () => {
     // new route module.
     // 498 with the Owner directive issued-parts read: one operation over one new
     // route module, a GET that answers 200.
-    expect(actual.size).toBe(498);
+    // 499 with the Owner directive invoice list: one operation added beside
+    // `sal.invoice-create` in an EXISTING route module, a GET that answers 200.
+    expect(actual.size).toBe(499);
   });
 
   it('agrees with the committed contract for every operation', () => {
@@ -235,7 +237,8 @@ describe('every operation publishes the success status it returns', () => {
     // publishes 200 and does not move the 201 count.
     // 358 -> 359 with the Owner directive issued-parts read, a GET returning 200,
     // so the 201 count does not move either.
-    expect(counts[200]).toBe(359);
+    // 359 -> 360 with the Owner directive invoice list, a GET returning 200.
+    expect(counts[200]).toBe(360);
   });
 
   it('reads the handler, not the declaration', () => {

@@ -6,7 +6,6 @@ import { requireSession } from '@/features/authentication/api/session';
 import { CreditNotesScreen } from '@/features/billing/components/CreditNotesScreen';
 import { BILLING_PERMISSIONS } from '@/features/billing/billing-contract';
 import { holds } from '@/features/crm/permissions';
-import { INVENTORY_PERMISSIONS } from '@/features/inventory/inventory-contract';
 import { isLocale } from '@/i18n/config';
 import { getMessages } from '@/i18n/get-messages';
 import { pageMetadata } from '@/lib/page-metadata';
@@ -22,8 +21,9 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
  * a caller holding only the first would reach a screen that could show nothing
  * and would have to explain an empty list that meant a refusal.
  *
- * `org.branch.read` decides only whether a branch list is requested for the
- * picker; the branch pair is re-authorized on every read regardless.
+ * The branch is the working context's own named selection (Owner directive,
+ * `P1-32-PRE-OD-UX`), so no directory code is consulted here; the branch pair is
+ * re-authorized on every read regardless.
  *
  * One address leads in: a credit note named in the address opens straight onto
  * its detail, which is how the customer-returns screen links to the credit a
@@ -80,7 +80,6 @@ export default async function CreditNotesPage({
         <CreditNotesScreen
           locale={locale}
           messages={messages}
-          canReadBranches={holds(session.permissions, INVENTORY_PERMISSIONS.branchRead)}
           initialCreditNoteId={named && UUID.test(named) ? named : null}
         />
       </PageBody>

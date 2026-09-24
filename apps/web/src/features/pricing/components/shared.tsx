@@ -1,12 +1,16 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { regexes } from 'zod';
 
 import { INITIAL_REQUEST } from '@/components/data-table/table-state';
 import { SelectField, TextField } from '@/components/forms/Field';
 import { listServices } from '@/features/services/api';
 import type { BranchOption, ServiceSummary } from '@/features/services/services-contract';
-import { useWorkingContext } from '@/features/working-context/WorkingContextProvider';
+import {
+  useUnsavedGuard,
+  useWorkingContext,
+} from '@/features/working-context/WorkingContextProvider';
 import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic } from '@/i18n/get-messages';
 import type { ActionState } from '@/lib/forms/action-result';
@@ -25,7 +29,14 @@ import type { ActivationState, PriceListVersionState } from '../pricing-contract
  * read in flight must never render as a refusal.
  */
 
-export const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+/**
+ * An identifier exactly as the server's `z.string().uuid()` accepts it — zod's own
+ * pattern, not a copy: an RFC 9562 version digit (1-8) and variant (8, 9, a or b),
+ * or the all-zero and all-f identifiers zod also admits. A looser 8-4-4-4-12 hex
+ * check passed values the route then refused, so the box said nothing and the
+ * submit failed on the server instead.
+ */
+export const UUID = regexes.uuid();
 
 export const PRIMARY_BUTTON =
   'rounded-md bg-primary px-4 py-2 text-body font-medium text-on-primary transition-colors duration-fast ease-standard hover:bg-primary-hover';
@@ -192,6 +203,65 @@ export interface BranchPair {
 export const EMPTY_PAIR: BranchPair = { companyId: '', branchId: '' };
 
 /**
+ * The company a price rule is narrowed to, NAMED from the working context
+ * (Owner directive, `P1-32-PRE-OD-UX`).
+ *
+ * A rule may apply to one company and every one of its branches. The branch
+ * picker names a company only by naming one of its branches, so before this a
+ * company-only rule had no control at all — it was reachable only through the
+ * reference boxes an earlier pass removed. The companies are the ones
+ * `GET /auth/working-context` publishes for this operator, by name.
+ *
+ * Choosing a company that is not the chosen branch's own clears the branch,
+ * because the pair the server receives must be coherent.
+ */
+export function CompanyPicker({
+  messages,
+  label,
+  placeholder,
+  value,
+  onChange,
+  error,
+}: {
+  readonly messages: Messages;
+  readonly label: string;
+  readonly placeholder: string;
+  readonly value: BranchPair;
+  readonly onChange: (next: BranchPair) => void;
+  readonly error?: string | undefined;
+}) {
+  const context = useWorkingContext();
+  if (context.companies.length === 0) {
+    return (
+      <div className="flex flex-col gap-1.5">
+        <span className="text-label font-medium text-text-primary">{label}</span>
+        <p className="text-supporting text-text-secondary">
+          {translate(messages, 'pricing.rule.noCompanies')}
+        </p>
+      </div>
+    );
+  }
+  return (
+    <SelectField
+      label={label}
+      value={value.companyId}
+      onChange={(event) => {
+        const companyId = event.target.value;
+        const keepsBranch =
+          value.branchId !== '' && context.companyOf(value.branchId)?.id === companyId;
+        onChange({ companyId, branchId: keepsBranch ? value.branchId : '' });
+      }}
+      options={context.companies.map((company) => ({
+        value: company.id,
+        label: company.code ? `${company.code} — ${company.name}` : company.name,
+      }))}
+      placeholder={placeholder}
+      error={error}
+    />
+  );
+}
+
+/**
  * A branch as a list — choosing a branch fills its company too — and a sentence
  * saying why in every case where this screen has no list to narrow to. A read
  * in flight is a WAIT, not a refusal.
@@ -353,6 +423,7 @@ export function ServicePicker({
   value,
   onChange,
   error,
+  countsAsUnsaved = false,
 }: {
   readonly messages: Messages;
   readonly canRead: boolean;
@@ -360,6 +431,11 @@ export function ServicePicker({
   readonly value: string;
   readonly onChange: (serviceId: string) => void;
   readonly error?: string | undefined;
+  /**
+   * Whether a typed reference is unsaved work: true inside a form that writes,
+   * false beside a read such as the price lookup.
+   */
+  readonly countsAsUnsaved?: boolean;
 }) {
   const [term, setTerm] = useState('');
   const [found, setFound] = useState<readonly ServiceSummary[] | null>(null);
@@ -391,13 +467,26 @@ export function ServicePicker({
     [found]
   );
 
+  useUnsavedGuard(countsAsUnsaved && !canRead && value.trim().length > 0);
+
+  /*
+   * Without the catalogue read there is nothing to choose from. Recording a rule
+   * (`svc.price-rule-record`, `svc.price.manage`) and looking a price up
+   * (`svc.price-resolve`, `svc.price.read`) do NOT need that read, so holding
+   * the submit would take away a write and a read the server accepts from this
+   * caller (Owner directive, `P1-32-PRE-OD-UX`: a pass never removes a workflow
+   * a role already had). The caller keeps the box it had before — a pasted
+   * service reference, labelled as the fallback it is and checked for shape by
+   * the caller before anything is sent. With the catalogue read there is no box.
+   */
   if (!canRead) {
     return (
       <TextField
-        label={translate(messages, 'pricing.picker.serviceIdField')}
+        label={translate(messages, 'pricing.picker.serviceReference')}
         description={translate(messages, 'pricing.picker.servicesNotReadable')}
         required
         spellCheck={false}
+        autoComplete="off"
         dir="ltr"
         value={value}
         onChange={(event) => onChange(event.target.value)}

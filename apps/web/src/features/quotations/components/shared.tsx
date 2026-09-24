@@ -1,6 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
+import { regexes } from 'zod';
 
 import { INITIAL_REQUEST } from '@/components/data-table/table-state';
 import { SelectField, TextAreaField, TextField } from '@/components/forms/Field';
@@ -33,7 +34,14 @@ import {
  * too, and a quantity is not a thing this screen multiplies by anything.
  */
 
-export const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+/**
+ * An identifier exactly as the server's `z.string().uuid()` accepts it — zod's own
+ * pattern, not a copy: an RFC 9562 version digit (1-8) and variant (8, 9, a or b),
+ * or the all-zero and all-f identifiers zod also admits. A looser 8-4-4-4-12 hex
+ * check passed values the route then refused, so the box said nothing and the
+ * submit failed on the server instead.
+ */
+export const UUID = regexes.uuid();
 
 export const PRIMARY_BUTTON =
   'rounded-md bg-primary px-4 py-2 text-body font-medium text-on-primary transition-colors duration-fast ease-standard hover:bg-primary-hover';

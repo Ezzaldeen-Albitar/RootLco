@@ -150,6 +150,14 @@ export interface OperationDeclaration {
   readonly requestBodySchema?: Readonly<Record<string, unknown>>;
   readonly successBodySchema?: Readonly<Record<string, unknown>>;
   readonly pathParameterSchemas?: Readonly<Record<string, Readonly<Record<string, unknown>>>>;
+  /**
+   * The JSON Schema of the operation's query-string parser — an `object` schema,
+   * produced from the same zod schema the route parses with. Each property is
+   * published as one `in: query` parameter, required exactly when the schema's
+   * `required` list names it, so the published query cannot drift from the one
+   * the route accepts.
+   */
+  readonly queryParameterSchema?: Readonly<Record<string, unknown>>;
 }
 
 export interface RegisteredOperation extends OperationDeclaration {

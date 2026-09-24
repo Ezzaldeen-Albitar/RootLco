@@ -72,6 +72,37 @@ vi.mock('@/features/work-orders/api', () => ({
   listWorkOrders: (...args: unknown[]) => listWorkOrders(...args),
 }));
 
+// The discount requester is FOUND among the tenant's accounts; the adapter is
+// replaced here, never the picker.
+const listUsers = vi.fn();
+vi.mock('@/features/administration/users/api', () => ({
+  listUsers: (...args: unknown[]) => listUsers(...args),
+}));
+const COLLEAGUE_ID = '99999999-9999-4999-8999-999999999999';
+const colleaguePage = {
+  status: 'ok',
+  rows: [
+    {
+      id: COLLEAGUE_ID,
+      email: 'omar@test.local',
+      displayName: 'Omar Saleh',
+      status: 'active',
+      mfaRequired: false,
+      createdAt: '2026-01-01T00:00:00.000Z',
+      recordVersion: 1,
+    },
+  ],
+  nextCursor: null,
+  hasMore: false,
+  correlationId: 'corr-u',
+};
+
+/** The colleague who asked for the discount, found by name and chosen. */
+async function chooseRequester(user: ReturnType<typeof userEvent.setup>, form: HTMLElement) {
+  await user.type(within(form).getByLabelText(labelled('quotations.build.requestedBy')), 'Omar');
+  await user.click(await within(form).findByRole('button', { name: /Omar Saleh/ }));
+}
+
 const push = vi.fn();
 const refresh = vi.fn();
 vi.mock('next/navigation', () => ({
@@ -435,6 +466,153 @@ describe('the job picker and the working context', () => {
   });
 });
 
+describe('the builder names its people rather than asking for references', () => {
+  it('attributes the discount to a colleague found by name, and sends only the account', async () => {
+    listUsers.mockResolvedValue(colleaguePage);
+    const user = userEvent.setup();
+    createQuotation.mockResolvedValue({
+      state: { status: 'success', messageKey: 'quotations.create.success', attempt: 1 },
+      created: { ...summary({ id: 'new-id' }), currentRevision: null },
+    });
+    renderScreen({ canManage: true, canReadUsers: true });
+    await user.click(screen.getByRole('button', { name: EN['quotations.list.create'] as string }));
+    const form = await builderForm();
+    await chooseRequester(user, form);
+    // Only ACTIVE accounts are asked for: only an active one is accepted.
+    expect(listUsers.mock.calls.at(-1)?.[0]).toMatchObject({
+      search: 'Omar',
+      filters: [{ key: 'status', value: 'active' }],
+    });
+    expect(within(form).getByTestId('requester-picker-chosen')).toHaveTextContent('Omar Saleh');
+    await user.type(
+      within(form).getByLabelText(labelled('quotations.picker.serviceIdField')),
+      SERVICE_ID
+    );
+    await user.type(within(form).getByLabelText(labelled('quotations.lines.quantity')), '1');
+    await user.click(
+      within(form).getByRole('button', { name: EN['quotations.build.submit'] as string })
+    );
+    await waitFor(() => expect(createQuotation).toHaveBeenCalled());
+    const body = createQuotation.mock.calls[0]?.[0] as Record<string, unknown>;
+    expect(body['discountRequestedBy']).toBe(COLLEAGUE_ID);
+  });
+
+  it('without the directory, offers no box for the requester and says why', async () => {
+    const user = userEvent.setup();
+    renderScreen({ canManage: true, canReadUsers: false });
+    await user.click(screen.getByRole('button', { name: EN['quotations.list.create'] as string }));
+    const form = await builderForm();
+    expect(within(form).getByText(EN['quotations.requester.notPermitted'] as string)).toBeVisible();
+    expect(listUsers).not.toHaveBeenCalled();
+  });
+
+  it('with the customer read, names the payer through the search and offers no reference box', async () => {
+    const user = userEvent.setup();
+    renderScreen({ canManage: true, canReadCustomers: true });
+    await user.click(screen.getByRole('button', { name: EN['quotations.list.create'] as string }));
+    const form = await builderForm();
+    expect(within(form).getByTestId('quotation-payer-picker-chosen')).toHaveTextContent(
+      'Layla Haddad'
+    );
+    expect(within(form).queryByLabelText(labelled('quotations.build.payerReference'))).toBeNull();
+  });
+
+  it('without the customer read, a DIFFERENT payer is still named through the labelled reference', async () => {
+    // `quo.quotation-create` declares the quotation and work-order codes only, so
+    // a manager without `crm.customer.read` keeps the payer box they had before.
+    const OTHER_PAYER = '66666666-6666-4666-8666-666666666666';
+    const user = userEvent.setup();
+    createQuotation.mockResolvedValue({
+      state: { status: 'success', messageKey: 'quotations.create.success', attempt: 1 },
+      created: { ...summary({ id: 'new-id' }), currentRevision: null },
+    });
+    renderScreen({ canManage: true, canReadCustomers: false });
+    await user.click(screen.getByRole('button', { name: EN['quotations.list.create'] as string }));
+    const form = await builderForm();
+    expect(within(form).queryByTestId('quotation-payer-picker')).toBeNull();
+    expect(
+      within(form).getByText(EN['quotations.build.payerReferenceHelp'] as string)
+    ).toBeVisible();
+    // It opens on the work order's own customer, as it always did.
+    const box = within(form).getByLabelText(labelled('quotations.build.payerReference'));
+    expect(box).toHaveValue(PARTNER_ID);
+    await user.type(
+      within(form).getByLabelText(labelled('quotations.picker.serviceIdField')),
+      SERVICE_ID
+    );
+    await user.type(within(form).getByLabelText(labelled('quotations.lines.quantity')), '1');
+    const submit = within(form).getByRole('button', {
+      name: EN['quotations.build.submit'] as string,
+    });
+
+    await user.clear(box);
+    await user.type(box, 'not-a-reference');
+    await user.click(submit);
+    expect(
+      await within(form).findByText(EN['quotations.build.payerReferenceFormat'] as string)
+    ).toBeVisible();
+    expect(box).toHaveAttribute('aria-invalid', 'true');
+    expect(createQuotation).not.toHaveBeenCalled();
+
+    // Eight-four-four-four-twelve hex with no RFC version digit or variant: the
+    // server's `z.string().uuid()` refuses it, so the box refuses it first.
+    await user.clear(box);
+    await user.type(box, '12345678-1234-0234-7234-123456789abc');
+    await user.click(submit);
+    expect(
+      await within(form).findByText(EN['quotations.build.payerReferenceFormat'] as string)
+    ).toBeVisible();
+    expect(box).toHaveAttribute('aria-invalid', 'true');
+    expect(createQuotation).not.toHaveBeenCalled();
+
+    await user.clear(box);
+    await user.type(box, OTHER_PAYER);
+    await user.click(submit);
+    await waitFor(() => expect(createQuotation).toHaveBeenCalledTimes(1));
+    const body = createQuotation.mock.calls[0]?.[0] as Record<string, unknown>;
+    expect(body['payerPartnerRef']).toBe(OTHER_PAYER);
+    expect((body['lines'] as Record<string, unknown>[])[0]?.['serviceId']).toBe(SERVICE_ID);
+  });
+
+  it('without the customer read, a changed payer reference is unsaved work: a branch switch asks first', async () => {
+    const user = userEvent.setup();
+    renderLtr(
+      inBranch(
+        <>
+          <BranchSwitch to={TEST_BRANCH.id} label="first" />
+          <BranchSwitch to={OTHER_BRANCH.id} label="second" />
+          <WorkingBranchProbe />
+          <QuotationsScreen
+            locale="en"
+            messages={en}
+            workOrderId={WORK_ORDER_ID}
+            workOrder={workOrder as never}
+            canManage={true}
+            canReadServices={false}
+            canReadCustomers={false}
+          />
+        </>,
+        { snapshot: branchSnapshot([TEST_BRANCH, OTHER_BRANCH]) }
+      )
+    );
+    await user.click(screen.getByRole('button', { name: 'first' }));
+    await user.click(screen.getByRole('button', { name: EN['quotations.list.create'] as string }));
+    const form = await builderForm();
+    try {
+      // Opened on the work order's customer: a default, not unsaved work.
+      await switchWithoutQuestion(user, 'second');
+      await waitFor(() => expect(heldBranch()).toBe(OTHER_BRANCH.id));
+      const box = within(form).getByLabelText(labelled('quotations.build.payerReference'));
+      await user.clear(box);
+      await user.type(box, '66666666-6666-4666-8666-666666666666');
+      await stayOnBranch(user, await switchExpectingQuestion(user, 'first'));
+      expect(heldBranch()).toBe(OTHER_BRANCH.id);
+    } finally {
+      forgetRememberedBranch();
+    }
+  });
+});
+
 describe('the builder sends lines as strings and prices nothing', () => {
   it('is not offered without quo.quotation.manage', () => {
     renderScreen({ canManage: false });
@@ -449,10 +627,14 @@ describe('the builder sends lines as strings and prices nothing', () => {
       state: { status: 'success', messageKey: 'quotations.create.success', attempt: 1 },
       created: { ...summary({ id: 'new-id' }), currentRevision: null },
     });
-    renderScreen({ canManage: true });
+    renderScreen({ canManage: true, canReadCustomers: true });
     await user.click(screen.getByRole('button', { name: EN['quotations.list.create'] as string }));
     const form = await builderForm();
-    expect(within(form).getByLabelText(labelled('quotations.build.payer'))).toHaveValue(PARTNER_ID);
+    // The payer opens on the work order's own customer, NAMED rather than shown
+    // as a reference.
+    expect(within(form).getByTestId('quotation-payer-picker-chosen')).toHaveTextContent(
+      'Layla Haddad'
+    );
     await user.type(
       within(form).getByLabelText(labelled('quotations.picker.serviceIdField')),
       SERVICE_ID

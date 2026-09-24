@@ -379,7 +379,12 @@ export function PriceLookupPanel({
   const submit = async () => {
     const found: Record<string, string> = {};
     const service = serviceId.trim();
-    if (!UUID.test(service)) found['serviceId'] = 'pricing.common.idFormat';
+    if (canReadServices) {
+      if (service.length === 0) found['serviceId'] = 'pricing.picker.serviceRequired';
+      else if (!UUID.test(service)) found['serviceId'] = 'pricing.common.idFormat';
+    } else if (!UUID.test(service)) {
+      found['serviceId'] = 'pricing.picker.serviceReferenceFormat';
+    }
     const companyId = pair.companyId.trim();
     const branchId = pair.branchId.trim();
     // Chosen from the platform's own named list, so the only rule left is that

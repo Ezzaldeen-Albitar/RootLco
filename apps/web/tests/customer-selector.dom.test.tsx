@@ -40,6 +40,8 @@ vi.mock('@/lib/customers/directory', () => ({
 }));
 
 const { CustomerSelector } = await import('@/components/party/CustomerSelector');
+const { CustomerPicker } = await import('@/components/party/CustomerPicker');
+type ChosenCustomer = Parameters<typeof CustomerPicker>[0]['value'];
 type SelectedCustomer = Parameters<typeof CustomerSelector>[0]['value'];
 
 const CUSTOMER_UUID = '9f8e7d6c-5b4a-4392-8172-0e02b2c3d479';
@@ -393,5 +395,76 @@ describe('this file is not vacuous', () => {
 
   it('uses a fixture id long enough that "absent" means something', () => {
     expect(CUSTOMER_UUID).toMatch(/^[0-9a-f-]{36}$/);
+  });
+});
+
+/*
+ * CustomerPicker — the one-box chooser the finance screens use (Owner
+ * directive, `P1-32-PRE-OD-UX`). It spends the same directory adapter as the
+ * selector above, so it is proved here beside it: found by name, chosen by
+ * name, never a reference; permission-aware; and the caller's refusal sits on
+ * the control that fixes it.
+ */
+function PickerHarness({
+  canSearch = true,
+  error,
+}: {
+  readonly canSearch?: boolean;
+  readonly error?: string;
+}) {
+  const [value, setValue] = useState<ChosenCustomer>(null);
+  return (
+    <>
+      <CustomerPicker
+        messages={en}
+        locale="en"
+        label="Paying customer"
+        value={value}
+        onChange={setValue}
+        canSearch={canSearch}
+        error={error}
+        unavailableId="picker-unavailable"
+      />
+      <output data-testid="picker-value">{value?.id ?? ''}</output>
+    </>
+  );
+}
+
+describe('CustomerPicker', () => {
+  it('asks the directory with the typed words and names the customer it chose', async () => {
+    searchCustomerDirectory.mockResolvedValue(page([HIT]));
+    const user = userEvent.setup();
+    renderLtr(<PickerHarness />);
+    await user.type(screen.getByLabelText(/^Paying customer/), 'Layla');
+    await user.click(await screen.findByRole('button', { name: /Layla Haddad/ }));
+    expect(searchCustomerDirectory.mock.calls.at(-1)?.[2]).toEqual({ q: 'Layla' });
+    expect(screen.getByTestId('customer-picker-chosen')).toHaveTextContent(
+      'Layla Haddad — C-000482'
+    );
+    // The reference is what the caller receives, and it is never shown.
+    expect(screen.getByTestId('picker-value')).toHaveTextContent(CUSTOMER_UUID);
+    expect(screen.getByTestId('customer-picker')).not.toHaveTextContent(CUSTOMER_UUID);
+  });
+
+  it('says a single character is too short and sends nothing', async () => {
+    const user = userEvent.setup();
+    renderLtr(<PickerHarness />);
+    await user.type(screen.getByLabelText(/^Paying customer/), 'L');
+    expect(await screen.findByText(en['customerPicker.tooShort'])).toBeVisible();
+    expect(searchCustomerDirectory).not.toHaveBeenCalled();
+  });
+
+  it('without the customer read offers no box and names the reason by id', () => {
+    renderLtr(<PickerHarness canSearch={false} />);
+    expect(screen.queryByRole('searchbox')).toBeNull();
+    expect(document.getElementById('picker-unavailable')).toHaveTextContent(
+      en['customerPicker.notPermitted']
+    );
+  });
+
+  it('puts the caller’s refusal on the box', () => {
+    renderLtr(<PickerHarness error="Choose the paying customer." />);
+    expect(screen.getByLabelText(/^Paying customer/)).toHaveAttribute('aria-invalid', 'true');
+    expect(screen.getByText('Choose the paying customer.')).toBeVisible();
   });
 });

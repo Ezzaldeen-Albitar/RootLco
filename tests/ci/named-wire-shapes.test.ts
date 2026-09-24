@@ -199,8 +199,11 @@ describe('every route body serialises a named type', () => {
     // `Page<IssuedPartListView>`, which the checker resolves through the same
     // generic the other paged reads use — so `named` moves by one and `composed`
     // still does not move.
-    expect(summary.bodies).toBe(498);
-    expect(summary.named).toBe(446);
+    // 499 with the Owner directive invoice list: `GET /invoices` serialises a
+    // `Page<InvoiceListEntryView>` through the same generic, so `named` moves
+    // by one and `composed` still does not move.
+    expect(summary.bodies).toBe(499);
+    expect(summary.named).toBe(447);
     expect(summary.composed).toBe(52);
     expect(summary.anonymous).toBe(0);
     expect(summary.unresolved).toBe(0);

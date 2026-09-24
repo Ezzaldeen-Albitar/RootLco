@@ -7,15 +7,18 @@ import { INITIAL_REQUEST, type TableRequest } from '@/components/data-table/tabl
 import { useServerTable } from '@/components/data-table/use-server-table';
 import { SelectField, TextField } from '@/components/forms/Field';
 import { notifyActionResult } from '@/components/notifications/action-notifications';
+import { CustomerPicker, type ChosenCustomer } from '@/components/party/CustomerPicker';
+import { InvoicePicker } from '@/features/billing/components/InvoicePicker';
 import { WorkingBranchField } from '@/features/working-context/components/WorkingBranchField';
 import { useUnsavedGuard } from '@/features/working-context/WorkingContextProvider';
 import { useBranchTarget } from '@/features/working-context/use-branch-target';
 import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic } from '@/i18n/get-messages';
-import type { Outstanding } from '@/features/billing/billing-contract';
+import type { InvoiceListEntry, Outstanding } from '@/features/billing/billing-contract';
 import type { ReadState } from '@/lib/api/read-operation';
 import type { ActionState } from '@/lib/forms/action-result';
+import { useFocusFirstInvalid } from '@/lib/forms/use-focus-first-invalid';
 import { formatDateTime } from '@/lib/format';
 
 import {
@@ -48,6 +51,7 @@ import {
   SECONDARY_BUTTON,
   UUID,
   isPayableAmount,
+  withoutKey,
 } from './shared';
 
 /**
@@ -83,6 +87,28 @@ import {
  * names its invoice by identifier and never by number. The screen shows the
  * identifiers it is given and says why there is no name, rather than reading a
  * customer the plan does not name or leaving a blank that looks like an error.
+ *
+ * ## What the operator ENTERS is found by name
+ *
+ * The payer is chosen among customers and the invoice among the branch's
+ * invoices, each through a search the server answers (Owner directive,
+ * `P1-32-PRE-OD-UX`). The invoice search needs `sal.finance.view`, which every
+ * caller of this page holds, so it is always offered.
+ *
+ * The payer search needs `crm.customer.read`, and recording a payment does NOT:
+ * `sal.payment-record` declares `sal.payment.record` and `sal.finance.view`
+ * only. So a recorder without the customer read is not held — that would take
+ * away a payment the server accepts from them. For that caller alone the form
+ * keeps the one box it had before, a pasted payer reference, labelled as the
+ * fallback it is, checked for shape before it is sent, and explained in the
+ * same sentence that says how to choose by name instead. It is never the
+ * ordinary path: with the customer read there is no box at all.
+ *
+ * The receipt list's payer filter is the same case. `sal.receipt-list` accepts
+ * `payerPartnerId` with `sal.finance.view` alone, and before the pickers the
+ * filter was a typed box; so a finance viewer without the customer read keeps a
+ * labelled, shape-checked payer reference there too. It is a list filter, so it
+ * is never counted as unsaved work.
  *
  * ## Recording needs a method this tenant owns
  *
@@ -124,6 +150,8 @@ export function PaymentsScreen({
   initialInvoiceId,
   canRecord,
   canAllocate,
+  canReadCustomers = false,
+  canListInvoices = false,
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
@@ -140,6 +168,10 @@ export function PaymentsScreen({
    * longer read: the branch is the working context's own named selection.
    */
   readonly canReadBranches?: boolean;
+  /** `crm.customer.read` — whether a payer can be found by name. */
+  readonly canReadCustomers?: boolean;
+  /** `sal.finance.view` — whether the branch's invoices can be searched. */
+  readonly canListInvoices?: boolean;
 }) {
   const [target, setTarget] = useState<Target | null>(null);
   const [receiptId, setReceiptId] = useState<string | null>(initialReceiptId);
@@ -210,8 +242,10 @@ export function PaymentsScreen({
           {canRecord ? (
             <RecordPanel
               key={`record-${target.branchId}-${epoch}`}
+              locale={locale}
               messages={messages}
               target={target}
+              canReadCustomers={canReadCustomers}
               onRecorded={(receipt, replayed) => {
                 setReceiptId(receipt.id);
                 changed({
@@ -240,6 +274,8 @@ export function PaymentsScreen({
             messages={messages}
             target={target}
             initialInvoiceId={initialInvoiceId}
+            canReadCustomers={canReadCustomers}
+            canListInvoices={canListInvoices}
             epoch={epoch}
             selected={receiptId}
             onSelect={(id) => {
@@ -260,6 +296,7 @@ export function PaymentsScreen({
           receiptId={receiptId}
           initialInvoiceId={initialInvoiceId}
           canAllocate={canAllocate}
+          canListInvoices={canListInvoices}
           onAllocated={(allocation, open) => {
             setBalance({ invoiceId: allocation.invoiceId, state: open });
             changed({
@@ -348,12 +385,16 @@ function TargetPanel({
  * ------------------------------------------------------------------ */
 
 function RecordPanel({
+  locale,
   messages,
   target,
+  canReadCustomers,
   onRecorded,
 }: {
+  readonly locale: Locale;
   readonly messages: Messages;
   readonly target: Target;
+  readonly canReadCustomers: boolean;
   readonly onRecorded: (receipt: RecordedReceipt, replayed: boolean) => void;
 }) {
   const [methods, setMethods] = useState<ReadState<{ items: readonly PaymentMethod[] }> | null>(
@@ -397,9 +438,11 @@ function RecordPanel({
         </p>
       ) : (
         <RecordForm
+          locale={locale}
           messages={messages}
           target={target}
           methods={recordable}
+          canReadCustomers={canReadCustomers}
           onRecorded={onRecorded}
         />
       )}
@@ -408,14 +451,18 @@ function RecordPanel({
 }
 
 function RecordForm({
+  locale,
   messages,
   target,
   methods,
+  canReadCustomers,
   onRecorded,
 }: {
+  readonly locale: Locale;
   readonly messages: Messages;
   readonly target: Target;
   readonly methods: readonly PaymentMethod[];
+  readonly canReadCustomers: boolean;
   readonly onRecorded: (receipt: RecordedReceipt, replayed: boolean) => void;
 }) {
   // ONE transport key for this opened form: a retry after a lost answer replays
@@ -424,10 +471,17 @@ function RecordForm({
   const [attemptKey] = useState(() => crypto.randomUUID());
   const [draft, setDraft] = useState({
     paymentMethodId: methods[0]?.id ?? '',
-    payerPartnerId: '',
     currency: '',
     amount: '',
   });
+  /*
+   * The payer is FOUND among customers and chosen by name (Owner directive,
+   * `P1-32-PRE-OD-UX`); it used to be a box asking for a partner reference. The
+   * picker declares a chosen payer as unsaved work itself.
+   */
+  const [payer, setPayer] = useState<ChosenCustomer | null>(null);
+  // The fallback for a recorder without the customer read — see the file header.
+  const [payerReference, setPayerReference] = useState('');
   /*
    * Unsaved work, declared to the shell. The panel is keyed on the branch, so a
    * switch would drop a half-filled payment and address the next one to a
@@ -437,13 +491,20 @@ function RecordForm({
    */
   useUnsavedGuard(
     draft.paymentMethodId !== (methods[0]?.id ?? '') ||
-      draft.payerPartnerId.trim().length > 0 ||
       draft.currency.trim().length > 0 ||
-      draft.amount.trim().length > 0
+      draft.amount.trim().length > 0 ||
+      payerReference.trim().length > 0
   );
   const [errors, setErrors] = useState<Readonly<Record<string, string>>>({});
   const [outcome, setOutcome] = useState<ActionState | null>(null);
   const [busy, setBusy] = useState(false);
+  // One per refused submit, so the cursor moves to the first field to fix once.
+  const [attempt, setAttempt] = useState(0);
+  const formRef = useFocusFirstInvalid({
+    status: 'invalid',
+    fieldErrors: { ...(outcome?.fieldErrors ?? {}), ...errors },
+    attempt,
+  });
 
   /** A field's own error, then the server's violation for the same field. */
   const errorFor = (name: string): string | undefined => {
@@ -451,29 +512,47 @@ function RecordForm({
     return key ? translateDynamic(messages, key) : undefined;
   };
 
+  /** A corrected field stops complaining, whichever side raised the complaint. */
+  const clearError = (name: string) => {
+    setErrors((previous) => withoutKey(previous, name));
+    setOutcome((previous) =>
+      previous?.fieldErrors?.[name]
+        ? { ...previous, fieldErrors: withoutKey(previous.fieldErrors, name) }
+        : previous
+    );
+  };
+
   return (
     <form
+      ref={formRef}
       aria-label={translate(messages, 'payments.record.formLabel')}
       className="mt-3 grid gap-3 sm:grid-cols-2"
+      noValidate
       onSubmit={(event) => {
         event.preventDefault();
         const found: Record<string, string> = {};
         if (!UUID.test(draft.paymentMethodId))
           found['paymentMethodId'] = 'payments.common.required';
-        if (!UUID.test(draft.payerPartnerId.trim()))
-          found['payerPartnerId'] = 'payments.common.idFormat';
+        const payerPartnerId = canReadCustomers ? (payer?.id ?? null) : payerReference.trim();
+        if (canReadCustomers && payerPartnerId === null)
+          found['payerPartnerId'] = 'payments.record.payerRequired';
+        if (!canReadCustomers && !UUID.test(payerReference.trim()))
+          found['payerPartnerId'] = 'payments.record.payerReferenceFormat';
         if (!CURRENCY.test(draft.currency.trim().toUpperCase()))
           found['currency'] = 'payments.common.currencyFormat';
         if (!isPayableAmount(draft.amount)) found['amount'] = 'payments.common.amountFormat';
         setErrors(found);
-        if (Object.keys(found).length > 0) return;
+        if (Object.keys(found).length > 0 || payerPartnerId === null) {
+          setAttempt((n) => n + 1);
+          return;
+        }
         setBusy(true);
         void recordPayment(
           {
             companyId: target.companyId,
             branchId: target.branchId,
             paymentMethodId: draft.paymentMethodId,
-            payerPartnerId: draft.payerPartnerId.trim(),
+            payerPartnerId,
             currency: draft.currency.trim().toUpperCase(),
             amount: draft.amount.trim(),
           },
@@ -488,6 +567,7 @@ function RecordForm({
             onRecorded(result.created, result.created.replayed);
             return;
           }
+          if (Object.keys(result.state.fieldErrors ?? {}).length > 0) setAttempt((n) => n + 1);
           setBusy(false);
         });
       }}
@@ -496,30 +576,58 @@ function RecordForm({
         label={translate(messages, 'payments.record.method')}
         required
         value={draft.paymentMethodId}
-        onChange={(event) => setDraft((d) => ({ ...d, paymentMethodId: event.target.value }))}
+        onChange={(event) => {
+          setDraft((d) => ({ ...d, paymentMethodId: event.target.value }));
+          clearError('paymentMethodId');
+        }}
         options={methods.map((method) => ({
           value: method.id,
           label: `${method.displayName} — ${translateDynamic(messages, `payments.kind.${method.kind}`)}`,
         }))}
         error={errorFor('paymentMethodId')}
       />
-      <TextField
-        label={translate(messages, 'payments.record.payer')}
-        description={translate(messages, 'payments.record.payerHelp')}
-        required
-        spellCheck={false}
-        dir="ltr"
-        value={draft.payerPartnerId}
-        onChange={(event) => setDraft((d) => ({ ...d, payerPartnerId: event.target.value }))}
-        error={errorFor('payerPartnerId')}
-      />
+      <div className="sm:col-span-2">
+        {canReadCustomers ? (
+          <CustomerPicker
+            messages={messages}
+            locale={locale}
+            label={translate(messages, 'payments.record.payer')}
+            value={payer}
+            onChange={(next) => {
+              setPayer(next);
+              if (next !== null) clearError('payerPartnerId');
+            }}
+            canSearch
+            error={errorFor('payerPartnerId')}
+            testId="payments-payer-picker"
+          />
+        ) : (
+          <TextField
+            label={translate(messages, 'payments.record.payerReference')}
+            description={translate(messages, 'payments.record.payerReferenceHelp')}
+            required
+            spellCheck={false}
+            autoComplete="off"
+            dir="ltr"
+            value={payerReference}
+            onChange={(event) => {
+              setPayerReference(event.target.value);
+              clearError('payerPartnerId');
+            }}
+            error={errorFor('payerPartnerId')}
+          />
+        )}
+      </div>
       <TextField
         label={translate(messages, 'payments.record.currency')}
         required
         spellCheck={false}
         dir="ltr"
         value={draft.currency}
-        onChange={(event) => setDraft((d) => ({ ...d, currency: event.target.value }))}
+        onChange={(event) => {
+          setDraft((d) => ({ ...d, currency: event.target.value }));
+          clearError('currency');
+        }}
         error={errorFor('currency')}
       />
       <TextField
@@ -529,7 +637,10 @@ function RecordForm({
         spellCheck={false}
         dir="ltr"
         value={draft.amount}
-        onChange={(event) => setDraft((d) => ({ ...d, amount: event.target.value }))}
+        onChange={(event) => {
+          setDraft((d) => ({ ...d, amount: event.target.value }));
+          clearError('amount');
+        }}
         error={errorFor('amount')}
       />
       <div className="sm:col-span-2">
@@ -554,6 +665,8 @@ function ReceiptsPanel({
   messages,
   target,
   initialInvoiceId,
+  canReadCustomers,
+  canListInvoices,
   epoch,
   selected,
   onSelect,
@@ -562,6 +675,8 @@ function ReceiptsPanel({
   readonly messages: Messages;
   readonly target: Target;
   readonly initialInvoiceId: string | null;
+  readonly canReadCustomers: boolean;
+  readonly canListInvoices: boolean;
   /** Bumped by every write. The list re-reads; it is NOT remounted, because a
    *  remount would throw away the filters and page the operator had chosen. */
   readonly epoch: number;
@@ -573,11 +688,22 @@ function ReceiptsPanel({
     status: null,
     invoiceId: initialInvoiceId,
   });
-  const [draft, setDraft] = useState({
-    payerPartnerId: '',
-    status: '',
-    invoiceId: initialInvoiceId ?? '',
-  });
+  /*
+   * The filters, as CHOSEN rather than typed (Owner directive,
+   * `P1-32-PRE-OD-UX`): a payer found among customers, an invoice found among
+   * the branch's invoices. An invoice named in the address stays the filter
+   * until the operator removes it, and is described rather than printed.
+   */
+  const [draft, setDraft] = useState<{
+    readonly payer: ChosenCustomer | null;
+    readonly status: string;
+    readonly invoice: InvoiceListEntry | null;
+    readonly fromAddress: string | null;
+  }>({ payer: null, status: '', invoice: null, fromAddress: initialInvoiceId });
+  // The fallback for a finance viewer without the customer read — see the file
+  // header. A list filter: never declared as unsaved work.
+  const [payerReference, setPayerReference] = useState('');
+  const [payerReferenceError, setPayerReferenceError] = useState<string | null>(null);
 
   const load = useCallback(
     (request: TableRequest, cursor: string | null) =>
@@ -661,22 +787,53 @@ function ReceiptsPanel({
         className="mt-3 grid gap-3 sm:grid-cols-3"
         onSubmit={(event) => {
           event.preventDefault();
+          const typed = payerReference.trim();
+          if (!canReadCustomers && typed.length > 0 && !UUID.test(typed)) {
+            // A malformed reference is said on its box, and nothing is applied:
+            // silently dropping it would show every payer's receipts under a
+            // filter the operator believes is narrowing them.
+            setPayerReferenceError('payments.record.payerReferenceFormat');
+            return;
+          }
           setCriteria({
-            payerPartnerId: UUID.test(draft.payerPartnerId.trim())
-              ? draft.payerPartnerId.trim()
-              : null,
+            payerPartnerId: canReadCustomers
+              ? (draft.payer?.id ?? null)
+              : typed.length > 0
+                ? typed
+                : null,
             status: draft.status ? (draft.status as ReceiptStatus) : null,
-            invoiceId: UUID.test(draft.invoiceId.trim()) ? draft.invoiceId.trim() : null,
+            invoiceId: draft.invoice?.id ?? draft.fromAddress,
           });
         }}
       >
-        <TextField
-          label={translate(messages, 'payments.list.payerFilter')}
-          spellCheck={false}
-          dir="ltr"
-          value={draft.payerPartnerId}
-          onChange={(event) => setDraft((d) => ({ ...d, payerPartnerId: event.target.value }))}
-        />
+        {canReadCustomers ? (
+          <CustomerPicker
+            messages={messages}
+            locale={locale}
+            label={translate(messages, 'payments.list.payerFilter')}
+            value={draft.payer}
+            onChange={(payer) => setDraft((d) => ({ ...d, payer }))}
+            canSearch
+            countsAsUnsaved={false}
+            testId="payments-payer-filter"
+          />
+        ) : (
+          <TextField
+            label={translate(messages, 'payments.list.payerReference')}
+            description={translate(messages, 'payments.list.payerReferenceHelp')}
+            spellCheck={false}
+            autoComplete="off"
+            dir="ltr"
+            value={payerReference}
+            onChange={(event) => {
+              setPayerReference(event.target.value);
+              setPayerReferenceError(null);
+            }}
+            error={
+              payerReferenceError ? translateDynamic(messages, payerReferenceError) : undefined
+            }
+          />
+        )}
         <SelectField
           label={translate(messages, 'payments.list.statusFilter')}
           value={draft.status}
@@ -687,14 +844,37 @@ function ReceiptsPanel({
           }))}
           placeholder={translate(messages, 'payments.list.anyStatus')}
         />
-        <TextField
-          label={translate(messages, 'payments.list.invoiceFilter')}
-          description={translate(messages, 'payments.list.invoiceFilterHelp')}
-          spellCheck={false}
-          dir="ltr"
-          value={draft.invoiceId}
-          onChange={(event) => setDraft((d) => ({ ...d, invoiceId: event.target.value }))}
-        />
+        {draft.fromAddress !== null && draft.invoice === null ? (
+          <div className="flex flex-col gap-1.5">
+            <span className="text-label font-medium text-text-primary">
+              {translate(messages, 'payments.list.invoiceFilter')}
+            </span>
+            <p className="text-body text-text-secondary">
+              {translate(messages, 'payments.list.invoiceFromAddress')}
+            </p>
+            <div>
+              <button
+                type="button"
+                className={SECONDARY_BUTTON}
+                onClick={() => setDraft((d) => ({ ...d, fromAddress: null }))}
+              >
+                {translate(messages, 'invoices.picker.change')}
+              </button>
+            </div>
+          </div>
+        ) : (
+          <InvoicePicker
+            messages={messages}
+            locale={locale}
+            label={translate(messages, 'payments.list.invoiceFilter')}
+            target={target}
+            value={draft.invoice}
+            onChange={(invoice) => setDraft((d) => ({ ...d, invoice }))}
+            canSearch={canListInvoices}
+            countsAsUnsaved={false}
+            testId="payments-invoice-filter"
+          />
+        )}
         <div className="sm:col-span-3">
           <button type="submit" className={SECONDARY_BUTTON}>
             {translate(messages, 'payments.list.apply')}
@@ -738,6 +918,7 @@ function ReceiptPanel({
   receiptId,
   initialInvoiceId,
   canAllocate,
+  canListInvoices,
   onAllocated,
 }: {
   readonly locale: Locale;
@@ -745,6 +926,7 @@ function ReceiptPanel({
   readonly receiptId: string;
   readonly initialInvoiceId: string | null;
   readonly canAllocate: boolean;
+  readonly canListInvoices: boolean;
   readonly onAllocated: (allocation: Allocation, open: ReadState<Outstanding>) => void;
 }) {
   const [state, setState] = useState<ReadState<ReceiptDetail> | null>(null);
@@ -869,9 +1051,11 @@ function ReceiptPanel({
 
         {canAllocate ? (
           <AllocateForm
+            locale={locale}
             messages={messages}
             receipt={receipt}
             initialInvoiceId={initialInvoiceId}
+            canListInvoices={canListInvoices}
             onAllocated={onAllocated}
           />
         ) : (
@@ -900,29 +1084,45 @@ function Row({ label, children }: { readonly label: string; readonly children: R
  * ------------------------------------------------------------------ */
 
 function AllocateForm({
+  locale,
   messages,
   receipt,
   initialInvoiceId,
+  canListInvoices,
   onAllocated,
 }: {
+  readonly locale: Locale;
   readonly messages: Messages;
   readonly receipt: ReceiptDetail;
   readonly initialInvoiceId: string | null;
+  readonly canListInvoices: boolean;
   readonly onAllocated: (allocation: Allocation, open: ReadState<Outstanding>) => void;
 }) {
   // One transport key per opened form, as on the record form.
   const [attemptKey] = useState(() => crypto.randomUUID());
-  const [draft, setDraft] = useState({
-    invoiceId: initialInvoiceId ?? '',
-    amount: '',
-  });
+  /*
+   * The invoice is FOUND among the receipt's own branch's invoices that can still
+   * take money — issued, or credited with a balance open — and chosen by its
+   * number and payer (Owner directive, `P1-32-PRE-OD-UX`); it used
+   * to be a box asking for an invoice reference. One reached from an invoice
+   * arrives named in the address and stays the choice until it is changed.
+   */
+  const [invoice, setInvoice] = useState<InvoiceListEntry | null>(null);
+  const [fromAddress, setFromAddress] = useState<string | null>(initialInvoiceId);
+  const [amount, setAmount] = useState('');
   // A branch switch closes the previous branch's receipt, and this form with it.
-  useUnsavedGuard(
-    draft.invoiceId.trim() !== (initialInvoiceId ?? '') || draft.amount.trim().length > 0
-  );
+  // The picker declares a chosen invoice itself.
+  useUnsavedGuard(amount.trim().length > 0);
   const [errors, setErrors] = useState<Readonly<Record<string, string>>>({});
   const [outcome, setOutcome] = useState<ActionState | null>(null);
   const [busy, setBusy] = useState(false);
+  const [attempt, setAttempt] = useState(0);
+  const formRef = useFocusFirstInvalid({
+    status: 'invalid',
+    fieldErrors: { ...(outcome?.fieldErrors ?? {}), ...errors },
+    attempt,
+  });
+  const invoiceId = invoice?.id ?? fromAddress;
 
   /** A field's own error, then the server's violation for the same field. */
   const errorFor = (name: string): string | undefined => {
@@ -930,24 +1130,38 @@ function AllocateForm({
     return key ? translateDynamic(messages, key) : undefined;
   };
 
+  /** A corrected field stops complaining, whichever side raised the complaint. */
+  const clearError = (name: string) => {
+    setErrors((previous) => withoutKey(previous, name));
+    setOutcome((previous) =>
+      previous?.fieldErrors?.[name]
+        ? { ...previous, fieldErrors: withoutKey(previous.fieldErrors, name) }
+        : previous
+    );
+  };
+
   return (
     <form
+      ref={formRef}
       aria-label={translate(messages, 'payments.allocate.formLabel')}
       className="mt-4 grid gap-3 sm:grid-cols-2"
+      noValidate
       onSubmit={(event) => {
         event.preventDefault();
         const found: Record<string, string> = {};
-        if (!UUID.test(draft.invoiceId.trim())) found['invoiceId'] = 'payments.common.idFormat';
-        if (!isPayableAmount(draft.amount)) found['amount'] = 'payments.common.amountFormat';
+        if (invoiceId === null) found['invoiceId'] = 'payments.allocate.invoiceRequired';
+        if (!isPayableAmount(amount)) found['amount'] = 'payments.common.amountFormat';
         setErrors(found);
-        if (Object.keys(found).length > 0) return;
+        if (Object.keys(found).length > 0 || invoiceId === null) {
+          setAttempt((n) => n + 1);
+          return;
+        }
         setBusy(true);
-        const invoiceId = draft.invoiceId.trim();
         void allocatePayment(
           receipt.id,
           {
             invoiceId,
-            amount: draft.amount.trim(),
+            amount: amount.trim(),
             // The receipt's own currency: the route compares the declared code
             // against the receipt AND the invoice, and refuses any disagreement.
             currency: receipt.money.currency,
@@ -964,6 +1178,7 @@ function AllocateForm({
             onAllocated(result.created, open);
             return;
           }
+          if (Object.keys(result.state.fieldErrors ?? {}).length > 0) setAttempt((n) => n + 1);
           setBusy(false);
         });
       }}
@@ -984,24 +1199,59 @@ function AllocateForm({
         </p>
       ) : (
         <>
-          <TextField
-            label={translate(messages, 'payments.allocate.invoice')}
-            description={translate(messages, 'payments.allocate.invoiceHelp')}
-            required
-            spellCheck={false}
-            dir="ltr"
-            value={draft.invoiceId}
-            onChange={(event) => setDraft((d) => ({ ...d, invoiceId: event.target.value }))}
-            error={errorFor('invoiceId')}
-          />
+          <div className="sm:col-span-2">
+            {fromAddress !== null && invoice === null ? (
+              <div className="flex flex-col gap-1.5" data-testid="payments-invoice-from-address">
+                <span className="text-label font-medium text-text-primary">
+                  {translate(messages, 'payments.allocate.invoice')}
+                </span>
+                <p className="text-body text-text-secondary">
+                  {translate(messages, 'payments.allocate.invoiceFromAddress')}
+                </p>
+                {canListInvoices ? (
+                  <div>
+                    <button
+                      type="button"
+                      className={SECONDARY_BUTTON}
+                      onClick={() => setFromAddress(null)}
+                    >
+                      {translate(messages, 'invoices.picker.change')}
+                    </button>
+                  </div>
+                ) : null}
+              </div>
+            ) : (
+              <InvoicePicker
+                messages={messages}
+                locale={locale}
+                label={translate(messages, 'payments.allocate.invoice')}
+                target={{ companyId: receipt.companyId, branchId: receipt.branchId }}
+                allocatable
+                value={invoice}
+                onChange={(next) => {
+                  setInvoice(next);
+                  if (next !== null) clearError('invoiceId');
+                }}
+                canSearch={canListInvoices}
+                error={errorFor('invoiceId')}
+                testId="payments-invoice-picker"
+              />
+            )}
+            <p className="mt-1 text-caption text-text-muted">
+              {translate(messages, 'payments.allocate.invoiceHelp')}
+            </p>
+          </div>
           <TextField
             label={`${translate(messages, 'payments.allocate.amount')} (${receipt.money.currency})`}
             description={translate(messages, 'payments.allocate.amountHelp')}
             required
             spellCheck={false}
             dir="ltr"
-            value={draft.amount}
-            onChange={(event) => setDraft((d) => ({ ...d, amount: event.target.value }))}
+            value={amount}
+            onChange={(event) => {
+              setAmount(event.target.value);
+              clearError('amount');
+            }}
             error={errorFor('amount')}
           />
           <div className="sm:col-span-2">

@@ -70,6 +70,14 @@ export const QUOTATION_PERMISSIONS = {
   serviceRead: 'svc.service.read',
   /** Creating a quotation demands the work order be readable too. */
   workOrderRead: 'wo.work_order.read',
+  /** The paying customer is FOUND among customers, which `crm.customer-search` answers. */
+  customerRead: 'crm.customer.read',
+  /**
+   * The discount requester is FOUND among the tenant's accounts through
+   * `iam.user-list`. Every operator who can load the application holds it,
+   * because `GET /auth/session` requires it too.
+   */
+  userRead: 'iam.user.read',
 } as const;
 
 /** `ck_quotations_status`, mirrored. `cancelled` is in the constraint but no code path writes it. */

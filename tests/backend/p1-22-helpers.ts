@@ -61,6 +61,23 @@
  *    stamps the maker from the session and `sal.guard_dual_control_approval` refuses
  *    `approved_by = requested_by`, so maker ≠ approver has to be satisfiable by two
  *    real accounts rather than by one account used twice.
+ *  - `SAL_CASHIER` holds `sal.finance.view` and `sal.payment.allocate` ONLY — the
+ *    cash desk that applies receipts to invoices and authors none. It exists to prove
+ *    that finding an invoice to allocate to never demands an invoice-writing code
+ *    (Owner directive, P1-32-PRE-OD-UX, the branch invoice list).
+ *  - `SAL_FINANCE_NAMES` holds `sal.finance.view`, `crm.customer.read` and
+ *    `veh.vehicle.read` ONLY — the finance viewer who may also read customers and
+ *    vehicles. It is the positive control for the invoice list's least-privilege
+ *    rule: it is told the payer's name and its box matches a payer name, a plate and
+ *    a VIN, where `SAL_READER` and `SAL_CASHIER` (finance view without those reads)
+ *    are told nothing and match by invoice number alone.
+ *  - `SAL_FINANCE_CUSTOMERS` holds `sal.finance.view` and `crm.customer.read` ONLY,
+ *    and `SAL_FINANCE_VEHICLES` holds `sal.finance.view` and `veh.vehicle.read`
+ *    ONLY. Each holds exactly one of the two reads, so the list must answer each
+ *    read from its own code: the first is told the payer's name and matches by it
+ *    but not by plate or VIN; the second is told nothing of the payer and matches
+ *    by plate and VIN but not by payer name. A list that asked the two questions
+ *    the wrong way round would pass every principal holding both reads or neither.
  *  - `SAL_READER` holds `sal.finance.view` and `sal.delivery.view` only. It is the
  *    403 probe for every command: a principal that holds NEITHER
  *    `sal.payment.record` nor `wty.warranty.issue`, in a tenant where the rows are
@@ -126,6 +143,15 @@ export const WARRANTY_READ = 'wty.warranty.read';
  * warranty against a work order it may not read would be an odd grant to model.
  */
 export const WORK_ORDER_READ = 'wo.work_order.read';
+
+/**
+ * The customer and vehicle read codes, held ONLY by `SAL_FINANCE_NAMES` (both) and by
+ * `SAL_FINANCE_CUSTOMERS` and `SAL_FINANCE_VEHICLES` (one each). Both are
+ * seeded platform codes (`supabase/seeds/04_iam_permission_catalog.sql`); nothing
+ * here invents one.
+ */
+export const CUSTOMER_READ = 'crm.customer.read';
+export const VEHICLE_READ = 'veh.vehicle.read';
 
 const ALL_SAL_WTY = [
   INVOICE_MANAGE,
@@ -273,6 +299,42 @@ export const SAL_NO_FINANCE: Principal = {
   permissions: ALL_SAL_WTY.filter((code) => code !== FINANCE_VIEW),
 };
 
+/** The cash desk: finance view and allocation, and no invoice-writing code. See the file header. */
+export const SAL_CASHIER: Principal = {
+  roleId: 'f1220000-0000-4000-8000-000000000171',
+  userId: 'f1220000-0000-4000-8000-000000000172',
+  subject: 'fx_p1_22_cashier',
+  tenantId: TENANT_A,
+  permissions: [FINANCE_VIEW, PAYMENT_ALLOCATE],
+};
+
+/** Finance view plus the customer and vehicle reads, and nothing else. See the file header. */
+export const SAL_FINANCE_NAMES: Principal = {
+  roleId: 'f1220000-0000-4000-8000-000000000181',
+  userId: 'f1220000-0000-4000-8000-000000000182',
+  subject: 'fx_p1_22_finance_names',
+  tenantId: TENANT_A,
+  permissions: [FINANCE_VIEW, CUSTOMER_READ, VEHICLE_READ],
+};
+
+/** Finance view plus the customer read ONLY. See the file header. */
+export const SAL_FINANCE_CUSTOMERS: Principal = {
+  roleId: 'f1220000-0000-4000-8000-000000000191',
+  userId: 'f1220000-0000-4000-8000-000000000192',
+  subject: 'fx_p1_22_finance_customers',
+  tenantId: TENANT_A,
+  permissions: [FINANCE_VIEW, CUSTOMER_READ],
+};
+
+/** Finance view plus the vehicle read ONLY. See the file header. */
+export const SAL_FINANCE_VEHICLES: Principal = {
+  roleId: 'f1220000-0000-4000-8000-0000000001a1',
+  userId: 'f1220000-0000-4000-8000-0000000001a2',
+  subject: 'fx_p1_22_finance_vehicles',
+  tenantId: TENANT_A,
+  permissions: [FINANCE_VIEW, VEHICLE_READ],
+};
+
 /** Reads only. A command refusal from it is about authority, not tenancy. */
 export const SAL_READER: Principal = {
   roleId: 'f1220000-0000-4000-8000-000000000131',
@@ -330,6 +392,10 @@ export const P1_22_PRINCIPALS: readonly Principal[] = [
   SAL_FULL,
   SAL_APPROVER,
   SAL_NO_FINANCE,
+  SAL_CASHIER,
+  SAL_FINANCE_NAMES,
+  SAL_FINANCE_CUSTOMERS,
+  SAL_FINANCE_VEHICLES,
   SAL_READER,
   SAL_SCOPED_A2,
   SAL_PERMISSION_ELSEWHERE,

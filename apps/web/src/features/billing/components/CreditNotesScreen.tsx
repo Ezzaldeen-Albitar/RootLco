@@ -13,9 +13,11 @@
  *
  * `sal.credit-note-list` takes the branch as its TARGET and re-authorizes it
  * server-side, because a credit note is raised against an invoice by a return
- * that never names one — there is no parent document to hang the list off. So
- * the branch is chosen first, exactly as it is on the counter and the returns
- * desk, and the same picker is used rather than a second one.
+ * that never names one — there is no parent document to hang the list off. The
+ * branch is the working context's own named selection, stated by the same
+ * section the counter and the returns desk use (Owner directive,
+ * `P1-32-PRE-OD-UX`): it is chosen once in the header, never on this screen,
+ * and the list reads as soon as one branch is selected.
  *
  * ## A refusal is shown as a refusal, never as an empty list
  *
@@ -54,13 +56,10 @@ import type { CreditNote } from '../billing-contract';
 export function CreditNotesScreen({
   locale,
   messages,
-  canReadBranches,
   initialCreditNoteId,
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
-  /** `org.branch.read` — whether a branch list is requested for the picker. */
-  readonly canReadBranches: boolean;
   /**
    * A note named in the address, opened straight onto its detail.
    *
@@ -89,7 +88,6 @@ export function CreditNotesScreen({
 
       <BranchTargetForm
         messages={messages}
-        canReadBranches={canReadBranches}
         formLabelKey="creditNotes.targetLabel"
         explainKey="creditNotes.targetExplain"
         onChosen={setTarget}

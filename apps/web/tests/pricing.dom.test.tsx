@@ -123,7 +123,7 @@ function renderScreen(over: Record<string, unknown> = {}) {
       messages={en}
       canManage={false}
       canReadBranches={false}
-      canReadServices={false}
+      canReadServices={true}
       {...over}
     />
   );
@@ -138,7 +138,7 @@ function renderInBranch(over: Record<string, unknown> = {}) {
         messages={en}
         canManage={false}
         canReadBranches={false}
-        canReadServices={false}
+        canReadServices={true}
         {...over}
       />
     )
@@ -146,6 +146,22 @@ function renderInBranch(over: Record<string, unknown> = {}) {
 }
 
 const lookupForm = () => screen.getByRole('form', { name: EN['pricing.lookup.heading'] as string });
+
+/**
+ * The service, FOUND in the catalogue and chosen by code and name — the only
+ * way to name one now. Without `svc.service.read` there is no box to type a
+ * reference into (Owner directive, `P1-32-PRE-OD-UX`).
+ */
+async function pickService(user: ReturnType<typeof userEvent.setup>, form: HTMLElement) {
+  const search = within(form).getByLabelText(labelled('pricing.picker.serviceSearch'));
+  await user.clear(search);
+  await user.type(search, 'OIL');
+  await user.click(
+    within(form).getByRole('button', { name: EN['pricing.picker.search'] as string })
+  );
+  const service = await within(form).findByRole('option', { name: /OIL-CHANGE/ });
+  await user.selectOptions(service.closest('select') as HTMLSelectElement, SERVICE_ID);
+}
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -342,16 +358,13 @@ describe('the lookup renders the server’s figures, never its own', () => {
   it('without either list, resolves for the working branch and never asks the directory', async () => {
     const user = userEvent.setup();
     resolvePrice.mockResolvedValue(okRead(resolved));
-    renderInBranch({ canReadBranches: false, canReadServices: false });
+    renderInBranch({ canReadBranches: false, canReadServices: true });
     const form = lookupForm();
     expect(listBranches).not.toHaveBeenCalled();
     // The branch is the one the header holds, already chosen, and named.
     expect(within(form).getByLabelText(labelled('pricing.lookup.branch'))).toHaveValue(BRANCH);
     expect(within(form).queryByLabelText(RETIRED_BOX.en.company)).toBeNull();
-    await user.type(
-      within(form).getByLabelText(labelled('pricing.picker.serviceIdField')),
-      SERVICE_ID
-    );
+    await pickService(user, form);
     await user.type(within(form).getByLabelText(labelled('pricing.lookup.customerClass')), 'fleet');
     await user.click(
       within(form).getByRole('button', { name: EN['pricing.lookup.submit'] as string })
@@ -363,24 +376,77 @@ describe('the lookup renders the server’s figures, never its own', () => {
       branchId: BRANCH,
       customerClass: 'fleet',
     });
-    expect(listServices).not.toHaveBeenCalled();
   });
 
-  it('refuses a malformed identifier before any request', async () => {
+  it('refuses a lookup with no service chosen, beside the service control, before any request', async () => {
     const user = userEvent.setup();
     renderInBranch();
     const form = lookupForm();
-    await user.type(
-      within(form).getByLabelText(labelled('pricing.picker.serviceIdField')),
-      'not-a-service'
-    );
     await user.click(
       within(form).getByRole('button', { name: EN['pricing.lookup.submit'] as string })
     );
     expect(
-      (await within(form).findAllByText(EN['pricing.common.idFormat'] as string)).length
-    ).toBeGreaterThan(0);
+      await within(form).findByText(EN['pricing.picker.serviceRequired'] as string)
+    ).toBeVisible();
+    expect(within(form).getByLabelText(labelled('pricing.lookup.service'))).toHaveAttribute(
+      'aria-invalid',
+      'true'
+    );
     expect(resolvePrice).not.toHaveBeenCalled();
+  });
+
+  it('with the service catalogue, offers the search and no reference box', () => {
+    renderInBranch({ canReadServices: true });
+    const form = lookupForm();
+    expect(within(form).getByLabelText(labelled('pricing.picker.serviceSearch'))).toBeVisible();
+    expect(within(form).queryByLabelText(labelled('pricing.picker.serviceReference'))).toBeNull();
+  });
+
+  it('without the service catalogue, STILL looks a price up through the labelled service reference', async () => {
+    // `svc.price-resolve` declares `svc.price.read` only, so a caller without
+    // `svc.service.read` keeps the lookup the server answers for them.
+    const user = userEvent.setup();
+    resolvePrice.mockResolvedValue(okRead(resolved));
+    renderInBranch({ canReadServices: false });
+    const form = lookupForm();
+    expect(
+      within(form).getByText(EN['pricing.picker.servicesNotReadable'] as string)
+    ).toBeVisible();
+    const submit = within(form).getByRole('button', {
+      name: EN['pricing.lookup.submit'] as string,
+    });
+    expect(submit).toBeEnabled();
+    const box = within(form).getByLabelText(labelled('pricing.picker.serviceReference'));
+
+    await user.type(box, 'OIL-CHANGE');
+    await user.click(submit);
+    expect(
+      await within(form).findByText(EN['pricing.picker.serviceReferenceFormat'] as string)
+    ).toBeVisible();
+    expect(box).toHaveAttribute('aria-invalid', 'true');
+    expect(resolvePrice).not.toHaveBeenCalled();
+
+    // Eight-four-four-four-twelve hex with no RFC version digit or variant: the
+    // server's `z.string().uuid()` refuses it, so the box refuses it first.
+    await user.clear(box);
+    await user.type(box, '12345678-1234-0234-7234-123456789abc');
+    await user.click(submit);
+    expect(
+      await within(form).findByText(EN['pricing.picker.serviceReferenceFormat'] as string)
+    ).toBeVisible();
+    expect(box).toHaveAttribute('aria-invalid', 'true');
+    expect(resolvePrice).not.toHaveBeenCalled();
+
+    await user.clear(box);
+    await user.type(box, SERVICE_ID);
+    await user.click(submit);
+    await waitFor(() => expect(resolvePrice).toHaveBeenCalledTimes(1));
+    expect(resolvePrice.mock.calls[0]?.[0]).toEqual({
+      serviceId: SERVICE_ID,
+      companyId: COMPANY,
+      branchId: BRANCH,
+    });
+    expect(listServices).not.toHaveBeenCalled();
   });
 
   it('renders a lookup that resolved nothing as a refusal, with the reference, and no zero', async () => {
@@ -388,10 +454,7 @@ describe('the lookup renders the server’s figures, never its own', () => {
     resolvePrice.mockResolvedValue({ status: 'error', correlationId: 'corr-7' });
     renderInBranch();
     const form = lookupForm();
-    await user.type(
-      within(form).getByLabelText(labelled('pricing.picker.serviceIdField')),
-      SERVICE_ID
-    );
+    await pickService(user, form);
     await user.click(
       within(form).getByRole('button', { name: EN['pricing.lookup.submit'] as string })
     );
@@ -405,10 +468,7 @@ describe('the lookup renders the server’s figures, never its own', () => {
     resolvePrice.mockResolvedValue(deniedRead);
     renderInBranch();
     const form = lookupForm();
-    await user.type(
-      within(form).getByLabelText(labelled('pricing.picker.serviceIdField')),
-      SERVICE_ID
-    );
+    await pickService(user, form);
     await user.click(
       within(form).getByRole('button', { name: EN['pricing.lookup.submit'] as string })
     );
@@ -447,7 +507,7 @@ describe('the lookup follows the header, not just its first value', () => {
             messages={en}
             canManage={false}
             canReadBranches={false}
-            canReadServices={false}
+            canReadServices={true}
           />
         </>,
         { snapshot: branchSnapshot([TEST_BRANCH, OTHER_BRANCH]) }
@@ -457,11 +517,9 @@ describe('the lookup follows the header, not just its first value', () => {
   const branchControl = () =>
     within(lookupForm()).getByLabelText(labelled('pricing.lookup.branch'));
   async function lookUp(user: ReturnType<typeof userEvent.setup>) {
-    // The service is not the branch's, so it survives a switch; it is replaced
-    // rather than appended to.
-    const service = within(lookupForm()).getByLabelText(labelled('pricing.picker.serviceIdField'));
-    await user.clear(service);
-    await user.type(service, SERVICE_ID);
+    // The service is not the branch's, so it survives a switch; it is chosen
+    // again from the catalogue rather than typed.
+    await pickService(user, lookupForm());
     await user.click(
       within(lookupForm()).getByRole('button', { name: EN['pricing.lookup.submit'] as string })
     );
@@ -670,7 +728,7 @@ describe('CC-15 — the pricing branch picker says which state it is in', () => 
   });
 
   it('without org.branch.read, the working context still lists its branches, and no directory read is made', async () => {
-    renderInBranch({ canReadBranches: false, canReadServices: false });
+    renderInBranch({ canReadBranches: false, canReadServices: true });
     const form = lookupForm();
     expect(listBranches).not.toHaveBeenCalled();
     expect(within(form).getByLabelText(labelled('pricing.lookup.branch'))).toHaveValue(BRANCH);

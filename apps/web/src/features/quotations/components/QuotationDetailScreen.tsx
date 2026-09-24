@@ -7,7 +7,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { DataTable, type Column } from '@/components/data-table/DataTable';
 import { INITIAL_REQUEST, type TableRequest } from '@/components/data-table/table-state';
 import { useServerTable } from '@/components/data-table/use-server-table';
-import { SelectField, TextAreaField, TextField } from '@/components/forms/Field';
+import { CheckboxField, SelectField, TextAreaField, TextField } from '@/components/forms/Field';
 import { notifyActionResult } from '@/components/notifications/action-notifications';
 import { listApprovalLimits } from '@/features/administration/access/api';
 import type { Locale } from '@/i18n/config';
@@ -27,6 +27,7 @@ import {
   readRevision,
   readRevisionDecisions,
 } from '../api';
+import { RequesterPicker, type ChosenRequester } from './RequesterPicker';
 import {
   DECISIONS,
   DECISION_CHANNELS,
@@ -97,6 +98,7 @@ export function QuotationDetailScreen({
   canDecide,
   canReadLimits,
   canReadServices,
+  canReadUsers = false,
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
@@ -109,6 +111,8 @@ export function QuotationDetailScreen({
   readonly canReadLimits: boolean;
   /** `svc.service.read` — whether a service can be found by code in the revision builder. */
   readonly canReadServices: boolean;
+  /** `iam.user.read` — whether the discount requester can be found by name. */
+  readonly canReadUsers?: boolean;
 }) {
   const router = useRouter();
   const open = quotation.status === 'draft' || quotation.status === 'active';
@@ -221,6 +225,7 @@ export function QuotationDetailScreen({
           messages={messages}
           quotation={quotation}
           canReadServices={canReadServices}
+          canReadUsers={canReadUsers}
           onCreated={() => router.refresh()}
         />
       ) : null}
@@ -639,7 +644,14 @@ function DecisionForm({
   const [target, setTarget] = useState('revision');
   const [decision, setDecision] = useState<string>('');
   const [channel, setChannel] = useState<string>('');
-  const [party, setParty] = useState(quotation.payerPartnerRef ?? '');
+  /*
+   * Whether the PAYING customer made this decision. The server accepts a deciding
+   * party only when it is this quotation's payer, so the honest control is a
+   * yes/no over that one customer rather than a box asking for a reference
+   * (Owner directive, `P1-32-PRE-OD-UX`). With no payer there is nothing to ask.
+   */
+  const payerRef = quotation.payerPartnerRef;
+  const [byPayer, setByPayer] = useState(payerRef !== null);
   const [evidenceKind, setEvidenceKind] = useState<string>('');
   const [note, setNote] = useState('');
   const [documentVersionId, setDocumentVersionId] = useState('');
@@ -659,9 +671,7 @@ function DecisionForm({
     if (!DECISION_CHANNELS.includes(channel as (typeof DECISION_CHANNELS)[number])) {
       found['channel'] = 'field.required';
     }
-    const partyId = party.trim();
-    if (partyId.length > 0 && !UUID.test(partyId))
-      found['decidingPartyRef'] = 'quotations.common.idFormat';
+    const partyId = byPayer && payerRef !== null ? payerRef : '';
     const kind = evidenceKind;
     const referenceNote = note.trim();
     const docId = documentVersionId.trim();
@@ -763,15 +773,19 @@ function DecisionForm({
         placeholder={translate(messages, 'quotations.decide.chooseChannel')}
         error={errorFor('channel')}
       />
-      <TextField
-        label={translate(messages, 'quotations.decide.party')}
-        description={translate(messages, 'quotations.decide.partyHelp')}
-        spellCheck={false}
-        dir="ltr"
-        value={party}
-        onChange={(event) => setParty(event.target.value)}
-        error={errorFor('decidingPartyRef')}
-      />
+      {payerRef !== null ? (
+        <CheckboxField
+          label={translate(messages, 'quotations.decide.party')}
+          description={translate(messages, 'quotations.decide.partyHelp')}
+          checked={byPayer}
+          onChange={(event) => setByPayer(event.target.checked)}
+          error={errorFor('decidingPartyRef')}
+        />
+      ) : (
+        <p className="text-caption text-text-muted">
+          {translate(messages, 'quotations.decide.noPayer')}
+        </p>
+      )}
       <SelectField
         label={translate(messages, 'quotations.decide.evidenceKind')}
         value={evidenceKind}
@@ -935,17 +949,20 @@ function NewRevisionPanel({
   messages,
   quotation,
   canReadServices,
+  canReadUsers,
   onCreated,
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
   readonly quotation: QuotationDetail;
   readonly canReadServices: boolean;
+  readonly canReadUsers: boolean;
   readonly onCreated: () => void;
 }) {
   const [lines, setLines] = useState<readonly DraftLine[]>([newLine()]);
   const [customerClass, setCustomerClass] = useState('');
-  const [requestedBy, setRequestedBy] = useState('');
+  // FOUND and chosen by name (Owner directive, `P1-32-PRE-OD-UX`), never typed.
+  const [requestedBy, setRequestedBy] = useState<ChosenRequester | null>(null);
   const [errors, setErrors] = useState<Readonly<Record<string, string>>>({});
   const [busy, setBusy] = useState(false);
   const [outcome, setOutcome] = useState<ActionState | null>(null);
@@ -960,9 +977,7 @@ function NewRevisionPanel({
     const klass = customerClass.trim();
     if (klass.length > 0 && !INTERNAL_CODE.test(klass))
       found['customerClass'] = 'quotations.common.classFormat';
-    const requester = requestedBy.trim();
-    if (requester.length > 0 && !UUID.test(requester))
-      found['discountRequestedBy'] = 'quotations.common.idFormat';
+    const requester = requestedBy?.id ?? '';
     setErrors(found);
     if (Object.keys(found).length > 0) return;
 
@@ -1022,15 +1037,19 @@ function NewRevisionPanel({
             onChange={(event) => setCustomerClass(event.target.value)}
             error={errorFor('customerClass')}
           />
-          <TextField
-            label={translate(messages, 'quotations.build.requestedBy')}
-            description={translate(messages, 'quotations.build.requestedByHelp')}
-            spellCheck={false}
-            dir="ltr"
-            value={requestedBy}
-            onChange={(event) => setRequestedBy(event.target.value)}
-            error={errorFor('discountRequestedBy')}
-          />
+          <div className="flex flex-col gap-1.5">
+            <RequesterPicker
+              messages={messages}
+              locale={locale}
+              value={requestedBy}
+              onChange={setRequestedBy}
+              canSearch={canReadUsers}
+              error={errorFor('discountRequestedBy')}
+            />
+            <p className="text-caption text-text-muted">
+              {translate(messages, 'quotations.build.requestedByHelp')}
+            </p>
+          </div>
         </div>
         <LinesEditor
           messages={messages}

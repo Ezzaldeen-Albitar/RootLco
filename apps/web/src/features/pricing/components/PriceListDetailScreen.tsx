@@ -34,6 +34,7 @@ import {
 import {
   ActivationBadge,
   BranchPairPicker,
+  CompanyPicker,
   EMPTY_PAIR,
   Figure,
   OutcomeNote,
@@ -606,7 +607,12 @@ function RecordRuleForm({
   const submit = async () => {
     const found: Record<string, string> = {};
     const service = serviceId.trim();
-    if (!UUID.test(service)) found['serviceId'] = 'pricing.common.idFormat';
+    if (canReadServices) {
+      if (service.length === 0) found['serviceId'] = 'pricing.picker.serviceRequired';
+      else if (!UUID.test(service)) found['serviceId'] = 'pricing.common.idFormat';
+    } else if (!UUID.test(service)) {
+      found['serviceId'] = 'pricing.picker.serviceReferenceFormat';
+    }
     const money = amount.trim();
     if (money.length === 0) found['amount'] = 'field.required';
     else if (!amountValid || !AMOUNT.test(money)) found['amount'] = 'pricing.rule.amountFormat';
@@ -679,6 +685,7 @@ function RecordRuleForm({
           value={serviceId}
           onChange={setServiceId}
           error={errorFor('serviceId')}
+          countsAsUnsaved
         />
       </div>
       <MoneyField
@@ -702,14 +709,26 @@ function RecordRuleForm({
         onChange={(event) => setPriority(event.target.value)}
         error={errorFor('priority')}
       />
+      <CompanyPicker
+        messages={messages}
+        label={translate(messages, 'pricing.rule.company')}
+        placeholder={translate(messages, 'pricing.rule.anyCompany')}
+        value={pair}
+        onChange={setPair}
+        error={errorFor('companyId')}
+      />
       <BranchPairPicker
         messages={messages}
         branches={branches}
         label={translate(messages, 'pricing.rule.branch')}
         placeholder={translate(messages, 'pricing.rule.anyBranch')}
         value={pair}
-        onChange={setPair}
-        errors={{ companyId: errorFor('companyId'), branchId: errorFor('branchId') }}
+        onChange={(next) =>
+          // Clearing the branch keeps the company the operator chose: a rule for
+          // every branch of one company is a choice, not an absence.
+          setPair(next.branchId === '' ? { companyId: pair.companyId, branchId: '' } : next)
+        }
+        errors={{ branchId: errorFor('branchId') }}
       />
       <TextField
         label={translate(messages, 'pricing.rule.customerClass')}

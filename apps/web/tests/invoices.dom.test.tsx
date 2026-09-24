@@ -81,6 +81,13 @@ vi.mock('@/features/billing/api', () => ({
   readCreditNote: (...args: unknown[]) => readCreditNote(...args),
 }));
 
+// A different payer is FOUND among customers; the directory adapter is replaced.
+const searchCustomerDirectory = vi.fn();
+vi.mock('@/lib/customers/directory', () => ({
+  searchCustomerDirectory: (...args: unknown[]) => searchCustomerDirectory(...args),
+}));
+const OTHER_PAYER = '99999999-9999-4999-8999-999999999999';
+
 /*
  * The credit-note screen names its branch through the SAME picker the stock
  * screens use, so the branch list it reads belongs to the inventory adapter.
@@ -640,6 +647,163 @@ describe('FE-014 — no invoice yet: the preview and creating one', () => {
     expect(refresh).toHaveBeenCalled();
   });
 
+  it('bills a different payer found by name, and sends only that customer', async () => {
+    searchCustomerDirectory.mockResolvedValue({
+      status: 'ok',
+      rows: [
+        {
+          id: OTHER_PAYER,
+          displayNumber: 'C-000900',
+          displayName: 'Fleet Partner',
+          partyType: 'organization',
+          lifecycleStatus: 'active',
+          createdAt: '2026-01-01T00:00:00.000Z',
+          primaryPhone: null,
+          phoneMasked: false,
+          vehicleCount: 3,
+        },
+      ],
+      nextCursor: null,
+      hasMore: false,
+      correlationId: 'corr-c',
+    });
+    createInvoice.mockResolvedValue({
+      state: { status: 'success', messageKey: 'invoices.create.success', attempt: 1 },
+      created: { ...detail(), replayed: false },
+    });
+    const user = userEvent.setup();
+    renderScreen({ canReadCustomers: true });
+    const form = await screen.findByRole('form', { name: EN['invoices.create.heading'] as string });
+    // No box on this form asks for a partner reference.
+    expect(within(form).queryByDisplayValue(UUID_SHAPE)).toBeNull();
+    await user.type(within(form).getByLabelText(labelled('invoices.create.payer')), 'Fleet');
+    await user.click(await within(form).findByRole('button', { name: /Fleet Partner/ }));
+    expect(searchCustomerDirectory.mock.calls.at(-1)?.[2]).toEqual({ q: 'Fleet' });
+    await user.click(
+      within(form).getByRole('button', { name: EN['invoices.create.submit'] as string })
+    );
+    await waitFor(() => expect(createInvoice).toHaveBeenCalled());
+    expect(createInvoice.mock.calls[0]?.[0]).toEqual({
+      workOrderId: WORK_ORDER_ID,
+      payerPartnerId: OTHER_PAYER,
+    });
+  });
+
+  it('with the customer read offers the search and no reference box at all', async () => {
+    renderScreen({ canReadCustomers: true });
+    const form = await screen.findByRole('form', { name: EN['invoices.create.heading'] as string });
+    expect(within(form).getByTestId('invoice-payer-picker')).toBeVisible();
+    expect(within(form).queryByLabelText(labelled('invoices.create.payerReference'))).toBeNull();
+  });
+
+  it('without the customer read offers no search, and still bills the work order’s customer', async () => {
+    createInvoice.mockResolvedValue({
+      state: { status: 'success', messageKey: 'invoices.create.success', attempt: 1 },
+      created: { ...detail(), replayed: false },
+    });
+    const user = userEvent.setup();
+    renderScreen({ canReadCustomers: false });
+    const form = await screen.findByRole('form', { name: EN['invoices.create.heading'] as string });
+    expect(within(form).queryByRole('searchbox')).toBeNull();
+    expect(within(form).queryByTestId('invoice-payer-picker')).toBeNull();
+    await user.click(
+      within(form).getByRole('button', { name: EN['invoices.create.submit'] as string })
+    );
+    await waitFor(() => expect(createInvoice).toHaveBeenCalled());
+    expect(createInvoice.mock.calls[0]?.[0]).toEqual({ workOrderId: WORK_ORDER_ID });
+    expect(searchCustomerDirectory).not.toHaveBeenCalled();
+  });
+
+  it('without the customer read a different payer is STILL named, through the labelled reference', async () => {
+    // `sal.invoice-create` declares the invoice and finance codes only, and the
+    // server REQUIRES a payer here when the quotation names none, so a caller
+    // without `crm.customer.read` must not lose the invoice it could create.
+    createInvoice.mockResolvedValue({
+      state: { status: 'success', messageKey: 'invoices.create.success', attempt: 1 },
+      created: { ...detail(), replayed: false },
+    });
+    const user = userEvent.setup();
+    renderScreen({ canReadCustomers: false });
+    const form = await screen.findByRole('form', { name: EN['invoices.create.heading'] as string });
+    expect(
+      within(form).getByText(EN['invoices.create.payerReferenceHelp'] as string)
+    ).toBeVisible();
+    const box = within(form).getByLabelText(labelled('invoices.create.payerReference'));
+    const submit = within(form).getByRole('button', {
+      name: EN['invoices.create.submit'] as string,
+    });
+    expect(submit).toBeEnabled();
+
+    await user.type(box, 'not-a-reference');
+    await user.click(submit);
+    expect(
+      await within(form).findByText(EN['invoices.create.payerReferenceFormat'] as string)
+    ).toBeVisible();
+    expect(box).toHaveAttribute('aria-invalid', 'true');
+    expect(createInvoice).not.toHaveBeenCalled();
+
+    // Eight-four-four-four-twelve hex with no RFC version digit or variant: the
+    // server's `z.string().uuid()` refuses it, so the box refuses it first.
+    await user.clear(box);
+    await user.type(box, '12345678-1234-0234-7234-123456789abc');
+    await user.click(submit);
+    expect(
+      await within(form).findByText(EN['invoices.create.payerReferenceFormat'] as string)
+    ).toBeVisible();
+    expect(box).toHaveAttribute('aria-invalid', 'true');
+    expect(createInvoice).not.toHaveBeenCalled();
+
+    await user.clear(box);
+    await user.type(box, OTHER_PAYER);
+    await user.click(submit);
+    await waitFor(() => expect(createInvoice).toHaveBeenCalledTimes(1));
+    expect(createInvoice.mock.calls[0]?.[0]).toEqual({
+      workOrderId: WORK_ORDER_ID,
+      payerPartnerId: OTHER_PAYER,
+    });
+    expect(searchCustomerDirectory).not.toHaveBeenCalled();
+  });
+
+  it('a typed payer reference is unsaved work: a branch switch asks first', async () => {
+    const user = userEvent.setup();
+    renderInLtr(
+      inBranch(
+        <>
+          <BranchSwitch to={TEST_BRANCH.id} label="first" />
+          <BranchSwitch to={OTHER_BRANCH.id} label="second" />
+          <WorkingBranchProbe />
+          <InvoiceScreen
+            locale="en"
+            messages={en}
+            workOrderId={WORK_ORDER_ID}
+            workOrder={workOrder as never}
+            workOrderRefused={null}
+            initialInvoice={okRead({ workOrderId: WORK_ORDER_ID, invoice: null }) as never}
+            canViewFinance={true}
+            canIssue={false}
+            canReadCustomers={false}
+          />
+        </>,
+        { snapshot: branchSnapshot([TEST_BRANCH, OTHER_BRANCH]) }
+      )
+    );
+    await user.click(screen.getByRole('button', { name: 'first' }));
+    const form = await screen.findByRole('form', { name: EN['invoices.create.heading'] as string });
+    try {
+      // Nothing typed yet, so nothing to lose.
+      await switchWithoutQuestion(user, 'second');
+      await waitFor(() => expect(heldBranch()).toBe(OTHER_BRANCH.id));
+      await user.type(
+        within(form).getByLabelText(labelled('invoices.create.payerReference')),
+        OTHER_PAYER
+      );
+      await stayOnBranch(user, await switchExpectingQuestion(user, 'first'));
+      expect(heldBranch()).toBe(OTHER_BRANCH.id);
+    } finally {
+      forgetRememberedBranch();
+    }
+  });
+
   it('a refused create re-tries with the SAME key, and a conflict re-reads the work order’s invoice', async () => {
     const user = userEvent.setup();
     createInvoice.mockResolvedValueOnce({
@@ -1118,7 +1282,7 @@ describe('credit notes are reachable', () => {
   });
 
   const creditNotesScreen = (initial: string | null = null) => (
-    <CreditNotesScreen locale="en" messages={en} canReadBranches initialCreditNoteId={initial} />
+    <CreditNotesScreen locale="en" messages={en} initialCreditNoteId={initial} />
   );
 
   it('lists the working branch notes with the server amount and the state in words', async () => {

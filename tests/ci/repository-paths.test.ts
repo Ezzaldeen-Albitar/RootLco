@@ -331,7 +331,7 @@ describe('the API application lives in the workspace', () => {
     }
   });
 
-  it('discovers the same 498 operations from the root, apps/api and apps/web', () => {
+  it('discovers the same 499 operations from the root, apps/api and apps/web', () => {
     // The decisive cwd proof, run against a REAL validator rather than the
     // helper alone: `check-authorization-coverage.mjs` derived the repository
     // from `process.cwd()` until this migration, so its answer used to depend on
@@ -423,7 +423,9 @@ describe('the API application lives in the workspace', () => {
     // new route module, for the same reason.
     // 498 with the Owner directive issued-parts read: one operation over one new
     // route module, for the same reason.
-    expect(report.operations).toHaveLength(498);
+    // 499 with the Owner directive invoice list: one operation added to the
+    // EXISTING `invoices` route module, so the route-module count does not move.
+    expect(report.operations).toHaveLength(499);
 
     // Three node processes, each loading the whole route surface, so the cost
     // grows with the surface. The budget was 30 s and began timing out inside the

@@ -1,10 +1,10 @@
 {
   "generatedFrom": "scripts/check-operation-test-coverage.mjs",
   "counts": {
-    "registered": 498,
-    "publicApi": 498,
+    "registered": 499,
+    "publicApi": 499,
     "internal": 0,
-    "withRequiredEvidence": 498,
+    "withRequiredEvidence": 499,
     "invocationOnly": 0,
     "p1_15": {
       "registered": 28,
@@ -77,9 +77,9 @@
       "metadataOnly": 0
     },
     "p1_22": {
-      "registered": 51,
-      "publicApi": 51,
-      "operationDepth": 51,
+      "registered": 52,
+      "publicApi": 52,
+      "operationDepth": 52,
       "invocationOnly": 0,
       "pending": 0,
       "unitOnly": 0,
@@ -12342,6 +12342,40 @@
         "route",
         "service",
         "stale-version",
+        "success"
+      ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "sal.invoice-list",
+      "surface": "public-api",
+      "method": "GET",
+      "path": "/invoices",
+      "public": false,
+      "files": ["tests/backend/p1-30-w6-invoices.test.ts"],
+      "referenced": true,
+      "derived": ["route", "service", "success", "authorization", "isolation"],
+      "declared": ["success", "authorization", "denial", "cross-tenant", "isolation", "pagination"],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "isolation",
+        "denial",
+        "cross-tenant",
+        "pagination"
+      ],
+      "provided": [
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "isolation",
+        "pagination",
+        "route",
+        "service",
         "success"
       ],
       "missing": [],

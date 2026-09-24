@@ -95,6 +95,7 @@ export default async function InvoicesPage({
           initialInvoice={initialInvoice}
           canViewFinance={holds(session.permissions, BILLING_PERMISSIONS.financeView)}
           canIssue={holds(session.permissions, BILLING_PERMISSIONS.issue)}
+          canReadCustomers={holds(session.permissions, BILLING_PERMISSIONS.customerRead)}
           canSearchWorkOrders={canReadWorkOrder}
         />
       </PageBody>
