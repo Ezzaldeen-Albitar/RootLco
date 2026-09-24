@@ -1,9 +1,18 @@
 import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import en from '../src/i18n/messages/en.json';
 import ar from '../src/i18n/messages/ar.json';
-import { renderLtr, renderRtl } from './render';
+import {
+  BranchSwitch,
+  OTHER_BRANCH,
+  branchSnapshot,
+  inBranch,
+  renderLtr,
+  renderRtl,
+} from './render';
+import { forgetRememberedBranch } from './support/branch-switch';
+import { addDays, dayIn } from '../src/lib/branch-time';
 
 /**
  * The operational overview, rendered (P1-31, FE-010 and FE-016; Owner decision
@@ -66,6 +75,7 @@ type RoutePage = (args: {
 }) => Promise<React.ReactNode>;
 const OverviewPage = (await import('@/app/[locale]/(dashboard)/reports/overview/page'))
   .default as unknown as RoutePage;
+const { ReportOverviewScreen } = await import('@/features/reports/components/ReportOverviewScreen');
 
 const COMPANY_ID = '11111111-1111-4111-8111-111111111111';
 const BRANCH_ID = '22222222-2222-4222-8222-222222222222';
@@ -534,6 +544,57 @@ describe('a domain that cannot answer says so, and the others still answer', () 
     const section = within(await waitFor(() => panel('inventory_movements')));
     expect(section.getByText(EN['reports.overview.noneInPeriod'] as string)).toBeVisible();
     expect(section.queryByText(EN['reports.overview.noSummary'] as string)).toBeNull();
+  });
+});
+
+describe('the working branch and today answer on arrival (route sweep B3)', () => {
+  afterEach(forgetRememberedBranch);
+
+  function renderInContext(snapshot = branchSnapshot(), fixedBranchId: string | null = null) {
+    return renderLtr(
+      inBranch(
+        <>
+          <BranchSwitch to="all" label="everywhere" />
+          <ReportOverviewScreen
+            locale="en"
+            messages={en}
+            scopeOptions={SCOPES as never}
+            catalogue={CATALOGUE(ALL_FOUR) as never}
+            fixedBranchId={fixedBranchId}
+          />
+        </>,
+        { snapshot }
+      )
+    );
+  }
+
+  it('runs the four reports for the working branch over today on arrival', async () => {
+    allFourPublish();
+    renderInContext();
+    const today = dayIn('Asia/Riyadh');
+    await waitFor(() => expect(runReport).toHaveBeenCalledTimes(4));
+    for (const call of runReport.mock.calls) {
+      expect(call[0]).toMatchObject({
+        companyId: COMPANY_ID,
+        branchId: BRANCH_ID,
+        from: today,
+        to: addDays(today, 1),
+      });
+    }
+    expect(screen.queryByText(EN['reports.overview.idleTitle'] as string)).toBeNull();
+  });
+
+  it('under "All my branches" runs nothing and says an overview covers one branch', async () => {
+    const user = userEvent.setup();
+    renderInContext(
+      branchSnapshot([
+        { ...OTHER_BRANCH, id: BRANCH_ID },
+        { ...OTHER_BRANCH, name: 'Another workshop' },
+      ])
+    );
+    await user.click(screen.getByRole('button', { name: 'everywhere' }));
+    expect(await screen.findByText(EN['reports.run.oneBranchNote'] as string)).toBeVisible();
+    expect(runReport).not.toHaveBeenCalled();
   });
 });
 

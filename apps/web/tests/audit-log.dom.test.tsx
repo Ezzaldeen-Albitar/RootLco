@@ -305,6 +305,76 @@ describe('no export', () => {
   });
 });
 
+describe('who: found by name for a caller holding the user read (route sweep B3)', () => {
+  const PERSON = {
+    id: ACTOR_ID,
+    email: 'rana@example.test',
+    displayName: 'Rana Saleh',
+    status: 'locked',
+    mfaRequired: false,
+    createdAt: '2026-09-01T00:00:00.000Z',
+    recordVersion: 1,
+  };
+  function answerUsers() {
+    apiGet.mockImplementation(async (path: string) =>
+      path.startsWith('/api/v1/iam/users')
+        ? {
+            ok: true,
+            status: 200,
+            data: { items: [PERSON], nextCursor: null, hasMore: false },
+            correlationId: 'corr-users',
+          }
+        : { ok: false, kind: 'not-found', status: 404, correlationId: 'x' }
+    );
+  }
+
+  it('finds the person by name, says a locked account is locked, and applies it on submit', async () => {
+    answerUsers();
+    const user = userEvent.setup();
+    renderScreen({ canReadUsers: true });
+    await waitFor(() => expect(listAuditEvents).toHaveBeenCalled());
+    const form = filterForm();
+    expect(within(form).queryByText(EN['audit.filter.identifierHelp'] as string)).toBeNull();
+    await user.type(within(form).getByLabelText(EN['audit.filter.actor'] as string), 'Rana{Enter}');
+    await user.click(
+      await within(form).findByRole('button', {
+        name: `Rana Saleh — rana@example.test (${EN['users.status.locked'] as string})`,
+      })
+    );
+    // Chosen is not applied: the audited read runs on submit only.
+    expect(lastFilters()).toEqual({ action: '', entityType: '', actorId: '' });
+    await apply(user);
+    expect(lastFilters()).toEqual({ action: '', entityType: '', actorId: ACTOR_ID });
+    // The search went to the server and never into the address.
+    expect(apiGet.mock.calls.some(([path]) => String(path).includes('search=Rana'))).toBe(true);
+
+    await user.click(
+      within(form).getByRole('button', { name: EN['audit.filter.clear'] as string })
+    );
+    await waitFor(() => expect(lastFilters()).toEqual({ action: '', entityType: '', actorId: '' }));
+    expect(within(form).queryByTestId('audit-actor-picker-chosen')).toBeNull();
+  });
+
+  it('the route page offers the search with the user read, and the reference box without it', async () => {
+    answerUsers();
+    for (const [permissions, searchable] of [
+      [['iam.audit.view', 'iam.user.read'], true],
+      [['iam.audit.view'], false],
+    ] as const) {
+      PERMISSIONS = permissions;
+      const view = renderLtr(
+        (await AuditLogPage({ params: Promise.resolve({ locale: 'en' }) })) as never
+      );
+      await waitFor(() => expect(listAuditEvents).toHaveBeenCalled());
+      expect(screen.queryByTestId('audit-actor-picker') !== null).toBe(searchable);
+      expect(screen.queryByText(EN['audit.filter.identifierHelp'] as string) !== null).toBe(
+        !searchable
+      );
+      view.unmount();
+    }
+  });
+});
+
 describe('the /administration/audit-log route page decides before it reads', () => {
   it('refuses without the audit code, and issues no read', async () => {
     PERMISSIONS = [];

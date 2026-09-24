@@ -3,6 +3,10 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { EmptyState } from '@/components/states/States';
+import {
+  useWorkingContext,
+  useWorkingContextChange,
+} from '@/features/working-context/WorkingContextProvider';
 import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic } from '@/i18n/get-messages';
@@ -33,6 +37,7 @@ import {
   ReportLoading,
 } from './ReportShell';
 import { ReportScopeForm } from './ReportScopeForm';
+import { useWorkingReportScope } from './use-working-report-scope';
 
 /**
  * The operational overview of the four approved report domains (P1-31, FE-010
@@ -104,7 +109,21 @@ export function ReportOverviewScreen({
   /** FE-016: the branch named in the address, or nothing. Never a literal. */
   readonly fixedBranchId?: string | null;
 }) {
-  const [submitted, setSubmitted] = useState<ReportScopeSelection | null>(null);
+  const [chosen, setChosen] = useState<ReportScopeSelection | null>(null);
+  /*
+   * The working branch and today, read on arrival, unless the address fixed a
+   * branch (FE-016). The same rule and the same helper as the report screen:
+   * one branch the directory holds, `[today, tomorrow)` on its clock, followed
+   * on a switch; nothing under "All my branches", which the server does not
+   * report as a union (route sweep B3).
+   */
+  const working = useWorkingReportScope(scopeOptions.status === 'ok' ? scopeOptions.data : null);
+  const followed = fixedBranchId === null && working.kind === 'ready' ? working.selection : null;
+  const { version } = useWorkingContext();
+  useWorkingContextChange(() => {
+    if (fixedBranchId === null) setChosen(null);
+  });
+  const submitted = chosen ?? followed;
 
   if (scopeOptions.status !== 'ok') {
     return (
@@ -166,14 +185,21 @@ export function ReportOverviewScreen({
 
   return (
     <div className="flex flex-col gap-4">
+      {fixedBranchId === null && working.kind === 'oneBranch' ? (
+        <p role="status" className="text-supporting text-text-secondary" lang={locale}>
+          {translate(messages, 'reports.run.oneBranchNote')}
+        </p>
+      ) : null}
+
       <ReportScopeForm
+        key={`${String(version)}:${followed === null ? '' : JSON.stringify(followed)}`}
         locale={locale}
         messages={messages}
         options={scopeOptions.data}
-        initial={initial}
+        initial={followed ?? initial}
         submitKey="reports.overview.show"
         fixedBranchId={fixedBranch === null ? null : fixedBranch.id}
-        onSubmit={setSubmitted}
+        onSubmit={setChosen}
       />
 
       {submitted === null ? (

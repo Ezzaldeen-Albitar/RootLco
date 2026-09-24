@@ -413,6 +413,68 @@ describe('the branch is chosen once and every stock card is addressed to it', ()
   });
 });
 
+describe('the stock cards open on the working branch (route sweep B3)', () => {
+  function renderIn(snapshot = branchSnapshot(), initialBranchId: string | null = null) {
+    return renderLtr(
+      inBranch(
+        <>
+          <BranchSwitch to={TEST_BRANCH.id} label="first" />
+          <BranchSwitch to={OTHER_BRANCH.id} label="second" />
+          <AttentionScreen
+            locale="en"
+            messages={messagesFor('en')}
+            canReadStock
+            canReadCapacity
+            canReadBranches
+            initialBranchId={initialBranchId}
+          />
+        </>,
+        { snapshot }
+      )
+    );
+  }
+
+  it('reads the working branch on arrival, with no branch to choose first', async () => {
+    renderIn();
+    const pair = { companyId: TEST_COMPANY.id, branchId: TEST_BRANCH.id };
+    await waitFor(() => expect(readLowStockAlerts).toHaveBeenCalledWith(pair));
+    await waitFor(() => expect(readAgedInTransitAlerts).toHaveBeenCalledWith(pair));
+    expect(
+      ((await screen.findByLabelText(labelled('attention.target.branch'))) as HTMLSelectElement)
+        .value
+    ).toBe(TEST_BRANCH.id);
+  });
+
+  it('follows a switch of the working branch to the new branch', async () => {
+    const user = userEvent.setup();
+    try {
+      renderIn(branchSnapshot([TEST_BRANCH, OTHER_BRANCH]));
+      // Several branches and none chosen in the header: nothing is read yet.
+      await screen.findByLabelText(labelled('attention.target.branch'));
+      expect(readLowStockAlerts).not.toHaveBeenCalled();
+      await user.click(screen.getByRole('button', { name: 'second' }));
+      await waitFor(() =>
+        expect(readLowStockAlerts).toHaveBeenLastCalledWith({
+          companyId: TEST_COMPANY.id,
+          branchId: OTHER_BRANCH.id,
+        })
+      );
+    } finally {
+      window.localStorage.clear();
+    }
+  });
+
+  it('an address that names a branch wins on arrival', async () => {
+    renderIn(branchSnapshot([TEST_BRANCH, OTHER_BRANCH]), OTHER_BRANCH.id);
+    await waitFor(() =>
+      expect(readLowStockAlerts).toHaveBeenCalledWith({
+        companyId: TEST_COMPANY.id,
+        branchId: OTHER_BRANCH.id,
+      })
+    );
+  });
+});
+
 describe('running low', () => {
   it('draws the row from the read and labels the order quantity as a suggestion', async () => {
     readLowStockAlerts.mockResolvedValue(lowStock([lowStockRow()]));

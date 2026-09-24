@@ -5,6 +5,7 @@ import { useCallback, useMemo, useState } from 'react';
 import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
 import { translate } from '@/i18n/get-messages';
+import { useWorkingContext } from '@/features/working-context/WorkingContextProvider';
 import {
   BranchPairPicker,
   EMPTY_PAIR,
@@ -90,6 +91,29 @@ export function AttentionScreen({
     setPreselected(true);
     const chosen = branches.items.find((row) => row.id === initialBranchId);
     if (chosen !== undefined) setPair({ companyId: chosen.companyId, branchId: chosen.id });
+  }
+
+  /*
+   * The working branch, followed (route sweep B3). The stock cards used to wait
+   * on "choose a branch" while the header already named one. With no branch in
+   * the address they now open on the working branch, and every later change of
+   * the working branch moves them to the new one — decided during render, like
+   * the address above, once per working-context version. An address that named
+   * a branch wins on arrival only. "All my branches" and "not chosen yet" leave
+   * the picker as it is: every stock alert is addressed to one branch.
+   */
+  const context = useWorkingContext();
+  const [followed, setFollowed] = useState<number | null>(() =>
+    initialBranchId === null ? null : context.version
+  );
+  if (followed !== context.version && preselected && branches.phase === 'listed') {
+    setFollowed(context.version);
+    const selection = context.selection;
+    const working =
+      selection !== null && !selection.allBranches
+        ? branches.items.find((row) => row.id === selection.branchId)
+        : undefined;
+    if (working !== undefined) setPair({ companyId: working.companyId, branchId: working.id });
   }
 
   /*

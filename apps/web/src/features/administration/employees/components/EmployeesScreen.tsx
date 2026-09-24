@@ -12,6 +12,7 @@ import { IDLE, type ActionState } from '@/lib/forms/action-result';
 import { FormFeedback } from '@/features/authentication/components/FormFeedback';
 import { SubmitButton } from '@/features/authentication/components/SubmitButton';
 import { ReadBoundary } from '../../shared/components/ScreenStates';
+import { useWorkingBranch } from '../../shared/use-working-branch';
 import {
   BranchPicker,
   PRIMARY_BUTTON,
@@ -59,6 +60,9 @@ export function EmployeesScreen({
   const [outcome, setOutcome] = useState<ActionState>(IDLE);
   const [loading, startLoading] = useTransition();
   const [running, startRunning] = useTransition();
+  // Bumped when the register follows the working branch, so the uncontrolled
+  // branch control is re-seeded to show the branch now being read.
+  const [followed, setFollowed] = useState(0);
 
   const accountName = new Map(loginAccounts.map((account) => [account.id, account.displayName]));
 
@@ -86,6 +90,18 @@ export function EmployeesScreen({
   const hasMore = page?.status === 'ok' && page.data.hasMore;
   const nextCursor = page?.status === 'ok' ? page.data.nextCursor : null;
 
+  /*
+   * On arrival, and on every change of the working branch, the register reads
+   * the branch the header names (route sweep B3). A dialog open over the
+   * previous branch is closed rather than left to write against the new one.
+   */
+  useWorkingBranch(branches.status === 'ok' ? branches.data : null, (row) => {
+    setCreating(false);
+    setPending(null);
+    setFollowed((count) => count + 1);
+    reload(row);
+  });
+
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-end justify-between gap-3">
@@ -93,6 +109,7 @@ export function EmployeesScreen({
           <ReadBoundary state={branches} messages={messages}>
             {(options) => (
               <BranchPicker
+                key={followed}
                 messages={messages}
                 branches={options}
                 companies={companies}

@@ -11,6 +11,7 @@ import type { Messages } from '@/i18n/get-messages';
 import { translate } from '@/i18n/get-messages';
 import { formatDateTime } from '@/lib/format';
 import { useServerTable } from '../../shared/use-server-table';
+import { AccountPicker, type ChosenAccount } from '../../users/components/AccountPicker';
 import { listAuditEvents, readAuditEvent } from '../api';
 import {
   NO_AUDIT_FILTERS,
@@ -71,12 +72,19 @@ export function AuditLogScreen({
   initialFrom,
   initialTo,
   scopeOptions,
+  canReadUsers = false,
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
   readonly initialFrom: string;
   readonly initialTo: string;
   readonly scopeOptions?: AuditScopeOptions;
+  /**
+   * `iam.user.read` — whether the "who" criterion can be FOUND by name or email
+   * (route sweep B3). The audit read does not need that code, so a caller
+   * without it keeps the labelled reference box, checked for shape as before.
+   */
+  readonly canReadUsers?: boolean;
 }) {
   const t = useCallback((key: string) => translate(messages, key as keyof Messages), [messages]);
 
@@ -88,6 +96,7 @@ export function AuditLogScreen({
   const [draft, setDraft] = useState<AuditFilters>(NO_AUDIT_FILTERS);
   const [applied, setApplied] = useState<AuditFilters>(NO_AUDIT_FILTERS);
   const [actorInvalid, setActorInvalid] = useState(false);
+  const [actor, setActor] = useState<ChosenAccount | null>(null);
   const [draftTarget, setDraftTarget] = useState<BranchTarget>({ companyId: '', branchId: '' });
   const [appliedTarget, setAppliedTarget] = useState<BranchTarget | null>(null);
   const [targetInvalid, setTargetInvalid] = useState(false);
@@ -185,7 +194,7 @@ export function AuditLogScreen({
         className="flex flex-wrap items-start gap-3"
         onSubmit={(event) => {
           event.preventDefault();
-          const actorId = draft.actorId.trim();
+          const actorId = canReadUsers ? (actor?.id ?? '') : draft.actorId.trim();
           // Refused here rather than sent: the parameter is schema-checked, so
           // a malformed one fails the WHOLE request and the operator is told
           // the request was invalid without being told which box.
@@ -257,15 +266,32 @@ export function AuditLogScreen({
             setDraft((current) => ({ ...current, entityType: event.target.value }))
           }
         />
-        <TextField
-          label={t('audit.filter.actor')}
-          description={t('audit.filter.identifierHelp')}
-          spellCheck={false}
-          dir="ltr"
-          value={draft.actorId}
-          onChange={(event) => setDraft((current) => ({ ...current, actorId: event.target.value }))}
-          error={actorInvalid ? t('audit.filter.idFormat') : undefined}
-        />
+        {canReadUsers ? (
+          <div className="w-full max-w-md">
+            <AccountPicker
+              messages={messages}
+              locale={locale}
+              label={t('audit.filter.actor')}
+              value={actor}
+              onChange={setActor}
+              canSearch
+              countsAsUnsaved={false}
+              testId="audit-actor-picker"
+            />
+          </div>
+        ) : (
+          <TextField
+            label={t('audit.filter.actor')}
+            description={t('audit.filter.identifierHelp')}
+            spellCheck={false}
+            dir="ltr"
+            value={draft.actorId}
+            onChange={(event) =>
+              setDraft((current) => ({ ...current, actorId: event.target.value }))
+            }
+            error={actorInvalid ? t('audit.filter.idFormat') : undefined}
+          />
+        )}
         <div className="flex items-center gap-2 pt-6">
           <button type="submit" className={PRIMARY_BUTTON}>
             {t('audit.filter.apply')}
@@ -276,6 +302,7 @@ export function AuditLogScreen({
             onClick={() => {
               setDraft(NO_AUDIT_FILTERS);
               setApplied(NO_AUDIT_FILTERS);
+              setActor(null);
               setActorInvalid(false);
               setDraftTarget({ companyId: '', branchId: '' });
               setAppliedTarget(null);

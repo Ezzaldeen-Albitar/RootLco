@@ -1,9 +1,19 @@
 import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import en from '../src/i18n/messages/en.json';
 import ar from '../src/i18n/messages/ar.json';
-import { renderLtr, renderRtl } from './render';
+import {
+  BranchSwitch,
+  OTHER_BRANCH,
+  TEST_BRANCH,
+  branchSnapshot,
+  inBranch,
+  renderLtr,
+  renderRtl,
+} from './render';
+import { forgetRememberedBranch } from './support/branch-switch';
+import { addDays, dayIn } from '../src/lib/branch-time';
 
 /**
  * The report screens, rendered (P1-31, FE-011, FE-012, FE-013, FE-014).
@@ -456,6 +466,114 @@ describe('the report screen requests nothing until it has a branch and a period'
     await renderReportPage();
     expect(screen.getByText(EN['state.notFound.title'] as string)).toBeVisible();
     expect(readReportScopes).not.toHaveBeenCalled();
+  });
+});
+
+describe('the working branch and today answer on arrival (route sweep B3)', () => {
+  /*
+   * The Owner directive: a screen reads on arrival, within the working context,
+   * bounded to today. A report takes exactly one branch and the server reports
+   * no union, so "All my branches" reads nothing and says so.
+   */
+  afterEach(forgetRememberedBranch);
+
+  const TWO = {
+    ...SCOPES,
+    data: {
+      companies: SCOPES.data.companies,
+      branches: [
+        ...SCOPES.data.branches,
+        { id: OTHER_BRANCH.id, companyId: COMPANY_ID, name: 'Second branch' },
+      ],
+    },
+  };
+  const today = dayIn(TEST_BRANCH.timezone);
+  const tomorrow = addDays(today, 1);
+
+  function renderInContext(
+    snapshot = branchSnapshot(),
+    named: Record<string, string> = {},
+    scopes: typeof SCOPES = SCOPES
+  ) {
+    return renderLtr(
+      inBranch(
+        <>
+          <BranchSwitch to={TEST_BRANCH.id} label="first" />
+          <BranchSwitch to={OTHER_BRANCH.id} label="second" />
+          <BranchSwitch to="all" label="everywhere" />
+          <ReportScreen
+            locale="en"
+            messages={en}
+            definition={BASELINE as never}
+            scopeOptions={scopes as never}
+            named={named}
+          />
+        </>,
+        { snapshot }
+      )
+    );
+  }
+
+  it('runs the report for the working branch over today, and shows that selection in the form', async () => {
+    renderInContext();
+    await waitFor(() => expect(runReport).toHaveBeenCalledTimes(1));
+    expect(runReport).toHaveBeenCalledWith(
+      expect.objectContaining({
+        reportCode: CODE,
+        companyId: COMPANY_ID,
+        branchId: BRANCH_ID,
+        from: today,
+        to: tomorrow,
+        cursor: null,
+      })
+    );
+    expect(
+      (screen.getByRole('combobox', { name: labelled('reports.run.branch') }) as HTMLSelectElement)
+        .value
+    ).toBe(BRANCH_ID);
+    expect(screen.getByLabelText(labelled('reports.run.from'))).toHaveValue(today);
+    expect(screen.getByLabelText(labelled('reports.run.to'))).toHaveValue(tomorrow);
+    expect(screen.queryByText(EN['reports.run.idleTitle'] as string)).toBeNull();
+  });
+
+  it('under "All my branches" reads nothing and says a report covers one branch', async () => {
+    const user = userEvent.setup();
+    renderInContext(branchSnapshot([TEST_BRANCH, OTHER_BRANCH]), {}, TWO);
+    await user.click(screen.getByRole('button', { name: 'everywhere' }));
+    expect(await screen.findByText(EN['reports.run.oneBranchNote'] as string)).toBeVisible();
+    expect(screen.getByText(EN['reports.run.idleTitle'] as string)).toBeVisible();
+    expect(runReport).not.toHaveBeenCalled();
+  });
+
+  it('follows a switch of the working branch, reading the new branch', async () => {
+    const user = userEvent.setup();
+    renderInContext(branchSnapshot([TEST_BRANCH, OTHER_BRANCH]), {}, TWO);
+    await user.click(screen.getByRole('button', { name: 'first' }));
+    await waitFor(() =>
+      expect(runReport).toHaveBeenLastCalledWith(expect.objectContaining({ branchId: BRANCH_ID }))
+    );
+    await user.click(screen.getByRole('button', { name: 'second' }));
+    await waitFor(() =>
+      expect(runReport).toHaveBeenLastCalledWith(
+        expect.objectContaining({ branchId: OTHER_BRANCH.id, from: today, to: tomorrow })
+      )
+    );
+    expect(
+      (screen.getByRole('combobox', { name: labelled('reports.run.branch') }) as HTMLSelectElement)
+        .value
+    ).toBe(OTHER_BRANCH.id);
+  });
+
+  it('an address that names a selection takes the working branch’s place and runs nothing by itself', async () => {
+    renderInContext(branchSnapshot(), {
+      companyId: COMPANY_ID,
+      branchId: BRANCH_ID,
+      from: '2026-09-01',
+      to: '2026-09-08',
+    });
+    expect(await screen.findByText(EN['reports.run.idleTitle'] as string)).toBeVisible();
+    expect(screen.getByLabelText(labelled('reports.run.from'))).toHaveValue('2026-09-01');
+    expect(runReport).not.toHaveBeenCalled();
   });
 });
 

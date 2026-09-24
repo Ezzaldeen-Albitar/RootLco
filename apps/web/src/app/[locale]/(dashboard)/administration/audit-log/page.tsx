@@ -64,6 +64,7 @@ export default async function AuditLogPage({
           initialFrom={isoDate(from)}
           initialTo={isoDate(now)}
           scopeOptions={scopeOptions}
+          canReadUsers={holds(session.permissions, PERMISSIONS.userRead)}
         />
       </PageBody>
     </>

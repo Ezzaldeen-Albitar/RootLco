@@ -1,9 +1,17 @@
 import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import en from '../src/i18n/messages/en.json';
 import ar from '../src/i18n/messages/ar.json';
-import { renderLtr, renderRtl } from './render';
+import {
+  BranchSwitch,
+  TEST_BRANCH,
+  branchSnapshot,
+  inBranch,
+  renderLtr,
+  renderRtl,
+} from './render';
+import { forgetRememberedBranch } from './support/branch-switch';
 import type { BranchView, CompanyView } from '@/features/administration/organization/types';
 
 /**
@@ -380,5 +388,90 @@ describe('Employees', () => {
     expect(await screen.findByText('Handover Clerk')).toBeVisible();
     expect(screen.queryByRole('button', { name: EN('employees.add') })).toBeNull();
     expect(screen.queryByRole('button', { name: /Deactivate/ })).toBeNull();
+  });
+});
+
+describe('the registers open on the working branch (route sweep B3)', () => {
+  /*
+   * Both registers asked "which branch?" on a blank page while the header
+   * already named one. They now read the header's branch on arrival and follow
+   * it when it changes; the branch control stays for reading another branch.
+   */
+  afterEach(forgetRememberedBranch);
+
+  const SECOND: BranchView = {
+    ...BRANCH,
+    id: '20000000-0000-4000-8000-000000000009',
+    branchCode: 'second_branch',
+    name: 'Second Branch',
+  };
+  const both = { status: 'ok' as const, data: [BRANCH, SECOND], correlationId: 'corr-b' };
+  const snapshot = branchSnapshot([
+    { ...TEST_BRANCH, id: BRANCH.id, companyId: COMPANY.id, name: BRANCH.name },
+    { ...TEST_BRANCH, id: SECOND.id, companyId: COMPANY.id, name: SECOND.name },
+  ]);
+
+  it('departments: reads the working branch on arrival and follows a switch', async () => {
+    get.mockResolvedValue({
+      ok: true,
+      status: 200,
+      data: { items: [DEPARTMENT] },
+      correlationId: 'c',
+    });
+    const user = userEvent.setup();
+    renderLtr(
+      inBranch(
+        <>
+          <BranchSwitch to={BRANCH.id} label="first" />
+          <BranchSwitch to={SECOND.id} label="second" />
+          <DepartmentsScreen messages={en} branches={both} companies={[COMPANY]} canManage />
+        </>,
+        { snapshot }
+      )
+    );
+    // Nothing chosen in the header yet: the register still asks, and reads nothing.
+    expect(screen.getByText(EN('departments.chooseBranch'))).toBeVisible();
+    expect(get).not.toHaveBeenCalled();
+
+    await user.click(screen.getByRole('button', { name: 'first' }));
+    expect(await screen.findByText('Service')).toBeVisible();
+    expect(get).toHaveBeenLastCalledWith(`/api/v1/org/departments?${TARGET}`);
+    expect((screen.getByLabelText(/^Branch/) as HTMLSelectElement).value).toBe(BRANCH.id);
+
+    await user.click(screen.getByRole('button', { name: 'second' }));
+    await waitFor(() =>
+      expect(get).toHaveBeenLastCalledWith(
+        `/api/v1/org/departments?companyId=${COMPANY.id}&branchId=${SECOND.id}`
+      )
+    );
+    expect((screen.getByLabelText(/^Branch/) as HTMLSelectElement).value).toBe(SECOND.id);
+  });
+
+  it('employees: reads the working branch on arrival, with no branch to choose first', async () => {
+    get.mockResolvedValue({
+      ok: true,
+      status: 200,
+      data: { items: [EMPLOYEE], nextCursor: null, hasMore: false },
+      correlationId: 'c',
+    });
+    renderLtr(
+      inBranch(
+        <EmployeesScreen
+          messages={en}
+          branches={branches}
+          companies={[COMPANY]}
+          loginAccounts={[ACCOUNT]}
+          canManage
+        />,
+        {
+          snapshot: branchSnapshot([
+            { ...TEST_BRANCH, id: BRANCH.id, companyId: COMPANY.id, name: BRANCH.name },
+          ]),
+        }
+      )
+    );
+    expect(await screen.findByText('Handover Clerk')).toBeVisible();
+    expect(screen.queryByText(EN('employees.chooseBranch'))).toBeNull();
+    expect(get.mock.calls[0]?.[0]).toContain(TARGET);
   });
 });

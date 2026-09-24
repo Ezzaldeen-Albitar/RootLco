@@ -14,6 +14,7 @@ import { FormFeedback } from '@/features/authentication/components/FormFeedback'
 import { RequiresConcreteBranch } from '@/features/working-context/components/WorkingBranchField';
 import { useWorkingContext } from '@/features/working-context/WorkingContextProvider';
 import { SubmitButton } from '@/features/authentication/components/SubmitButton';
+import { AccountPicker, type ChosenAccount } from '../../users/components/AccountPicker';
 import { useServerTable } from '../../shared/use-server-table';
 import { listApprovalLimits } from '../api';
 import type { ApprovalLimitRow, RoleRow } from '../types';
@@ -50,11 +51,18 @@ export function ApprovalLimitsScreen({
   messages,
   roles,
   canManage,
+  canReadUsers = false,
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
   readonly roles: readonly RoleRow[];
   readonly canManage: boolean;
+  /**
+   * `iam.user.read` — whether a person can be FOUND by name for a limit. Without
+   * it the dialog keeps the labelled account reference it always had, because
+   * `iam.approval-limit-create` does not need the user read (route sweep B3).
+   */
+  readonly canReadUsers?: boolean;
 }) {
   const table = useServerTable<ApprovalLimitRow>(listApprovalLimits);
   const [createOpen, setCreateOpen] = useState(false);
@@ -168,8 +176,10 @@ export function ApprovalLimitsScreen({
       {createOpen ? (
         <CreateDialog
           open
+          locale={locale}
           messages={messages}
           roles={roles}
+          canReadUsers={canReadUsers}
           onClose={() => {
             setCreateOpen(false);
             table.refresh();
@@ -240,13 +250,17 @@ export function ApprovalLimitsScreen({
 
 function CreateDialog({
   open,
+  locale,
   messages,
   roles,
+  canReadUsers,
   onClose,
 }: {
   readonly open: boolean;
+  readonly locale: Locale;
   readonly messages: Messages;
   readonly roles: readonly RoleRow[];
+  readonly canReadUsers: boolean;
   readonly onClose: () => void;
 }) {
   const [state, formAction] = useActionState<ActionState, FormData>(
@@ -301,6 +315,12 @@ function CreateDialog({
   const { companies: workingCompanies } = useWorkingContext();
   const [companyId, setCompanyId] = useState(workingCompanies[0]?.id ?? '');
   const [roleId, setRoleId] = useState(roles[0]?.id ?? '');
+  /*
+   * The person, FOUND by name or email (route sweep B3). Held in state like the
+   * selects above, so the Server Action's form reset cannot lose it; the
+   * account reference travels in a hidden field the reset cannot empty either.
+   */
+  const [person, setPerson] = useState<ChosenAccount | null>(null);
   const t = (key: string) => translate(messages, key as keyof Messages);
   const error = (name: string) => {
     const key = state.fieldErrors?.[name];
@@ -394,16 +414,38 @@ function CreateDialog({
             options={roles.map((role) => ({ value: role.id, label: role.name }))}
             error={error('roleId')}
           />
+        ) : canReadUsers ? (
+          <>
+            <AccountPicker
+              messages={messages}
+              locale={locale}
+              label={t('approvalLimits.field.person')}
+              value={person}
+              onChange={setPerson}
+              canSearch
+              error={error('userId')}
+              countsAsUnsaved
+              testId="approval-limit-person-picker"
+            />
+            <input type="hidden" name="userId" value={person?.id ?? ''} />
+          </>
         ) : (
+          // Without `iam.user.read` nobody can be looked up here, and creating a
+          // limit does not need that code: the account reference box stays,
+          // labelled and explained, and the action checks its shape.
           <TextField
             key={`userId-${state.attempt ?? 0}`}
             name="userId"
             label={t('approvalLimits.field.userId')}
+            description={t('approvalLimits.field.userIdHelp')}
             required
             spellCheck={false}
+            autoComplete="off"
+            dir="ltr"
             defaultValue={retained('userId')}
             onChange={retain('userId')}
             error={error('userId')}
+            data-testid="approval-limit-person-reference"
           />
         )}
 
