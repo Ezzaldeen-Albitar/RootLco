@@ -1,6 +1,28 @@
 /**
  * /api/v1/invoices — create a draft invoice from approved commercial data
- * (P1-22-BE-003).
+ * (P1-22-BE-003), and list a branch's invoices (Owner directive,
+ * P1-32-PRE-OD-UX, `sal.invoice-list`).
+ *
+ * ## The list, and why it is a read of its own
+ *
+ * Every other invoice read is addressed by something the caller already holds.
+ * The payment desk applies a receipt to an invoice and had nothing to choose
+ * from, so it asked for a typed reference. `GET` answers the question that form
+ * was asking: which invoices does this branch have, found by number, by the
+ * payer's name, or by the plate or VIN of the job's vehicle.
+ *
+ * `companyId` AND `branchId` are REQUIRED and travel as the authorization target
+ * through `scopeTargetOption`, the shape `sal.credit-note-list` and
+ * `sal.receipt-list` use. There is no optional branch here: an allocation cannot
+ * cross a branch boundary, so a page spanning branches would offer invoices the
+ * very next write refuses.
+ *
+ * It declares `sal.invoice.manage`, the code `sal.invoice-detail` declares, and
+ * NOT `sal.finance.view`: the header is branch-scoped only, and a caller without
+ * the finance code reads every row with `totals` and `outstanding` null —
+ * omitted, never zeroed. `status` is validated against the invoice vocabulary at
+ * the boundary, so an unknown value is refused rather than answered with a page
+ * that reads as "none".
  *
  * ## Client totals are not ignored — they are unexpressible
  *
@@ -35,8 +57,14 @@ import { z } from 'zod';
 import { defineOperation } from '@/server/auth/operation-registry';
 import { handleOperation } from '@/server/http/route-handler';
 import { IDEMPOTENCY_HEADER } from '@/server/http/idempotency';
-import { parseOrFail, schemas } from '@/server/http/validation';
-import { billingModule } from '@/modules/billing';
+import {
+  parseOrFail,
+  schemas,
+  scopeTargetOption,
+  searchParamsToObject,
+} from '@/server/http/validation';
+import { MAX_SEARCH_FRAGMENT, MIN_SEARCH_FRAGMENT } from '@/shared/text/search-terms';
+import { INVOICE_STATUSES, billingModule } from '@/modules/billing';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -94,5 +122,65 @@ export async function POST(request: Request): Promise<Response> {
       return { status: 201, body: invoice };
     },
     { body }
+  );
+}
+
+const ListQuery = z
+  .object({
+    companyId: schemas.uuid,
+    branchId: schemas.uuid,
+    status: z.enum(INVOICE_STATUSES).optional(),
+    /**
+     * One free-text box: part of the invoice number, part of the payer's name,
+     * or part of any plate or the VIN of the job's vehicle.
+     */
+    q: z.string().min(MIN_SEARCH_FRAGMENT).max(MAX_SEARCH_FRAGMENT).optional(),
+    cursor: schemas.cursor.optional(),
+    limit: schemas.limit.optional(),
+  })
+  .strict();
+
+export const INVOICE_LIST_OPERATION = defineOperation({
+  id: 'sal.invoice-list',
+  module: 'billing',
+  method: 'GET',
+  path: '/invoices',
+  summary: "List a branch's invoices by number, payer or vehicle, newest first.",
+  permissions: ['sal.invoice.manage'],
+  scope: 'branch',
+  auditClass: 'none',
+  rateLimitPolicy: 'expensive-read',
+  cacheCategory: 'never',
+});
+
+export async function GET(request: Request): Promise<Response> {
+  const raw = searchParamsToObject(new URL(request.url).searchParams);
+  return handleOperation(
+    INVOICE_LIST_OPERATION,
+    request,
+    async ({ db, authorizeScope }) => {
+      // Parsed INSIDE the handler so a malformed query renders the shared problem
+      // document rather than escaping as an unhandled 500.
+      const query = parseOrFail(ListQuery, raw, 'query');
+      return {
+        body: await billingModule().reads.listInvoices(
+          db,
+          {
+            companyId: query.companyId,
+            branchId: query.branchId,
+            ...(query.status === undefined ? {} : { status: query.status }),
+            ...(query.q === undefined ? {} : { q: query.q }),
+          },
+          {
+            ...(query.cursor === undefined ? {} : { cursor: query.cursor }),
+            ...(query.limit === undefined ? {} : { limit: query.limit }),
+          },
+          authorizeScope
+        ),
+      };
+    },
+    // The target comes from the RAW query: a pair that is not two uuids yields no
+    // target, which can only make the check stricter (P1-18-A-01).
+    scopeTargetOption(raw)
   );
 }

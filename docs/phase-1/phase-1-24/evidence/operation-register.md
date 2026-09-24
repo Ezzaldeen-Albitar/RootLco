@@ -9,10 +9,10 @@ Regenerate with `node scripts/p1-24-operation-register.mjs`; CI runs it with `--
 
 | Measure                  | Value |
 | ------------------------ | ----- |
-| Public operations        | 498   |
+| Public operations        | 499   |
 | Domains (modules)        | 21    |
 | OpenAPI paths            | 390   |
-| OpenAPI operations       | 498   |
+| OpenAPI operations       | 499   |
 | OpenAPI schemas          | 3     |
 | OpenAPI security schemes | 1     |
 | Permission codes seeded  | 132   |
@@ -24,7 +24,7 @@ Regenerate with `node scripts/p1-24-operation-register.mjs`; CI runs it with `--
 
 | Classification    | Operations |
 | ----------------- | ---------- |
-| Covered           | 498        |
+| Covered           | 499        |
 | Partially covered | 0          |
 | Uncovered         | 0          |
 | Not applicable    | 0          |
@@ -34,7 +34,7 @@ Regenerate with `node scripts/p1-24-operation-register.mjs`; CI runs it with `--
 
 | Domain          | Operations | Covered | Writes | Audited | Idempotent | Version-guarded |
 | --------------- | ---------- | ------- | ------ | ------- | ---------- | --------------- |
-| billing         | 13         | 13      | 6      | 6       | 6          | 2               |
+| billing         | 14         | 14      | 6      | 6       | 6          | 2               |
 | crm             | 29         | 29      | 15     | 15      | 15         | 0               |
 | delivery        | 22         | 22      | 11     | 11      | 8          | 4               |
 | diagnostics     | 23         | 23      | 15     | 15      | 14         | 4               |
@@ -409,6 +409,7 @@ Regenerate with `node scripts/p1-24-operation-register.mjs`; CI runs it with `--
 | `sal.invoice-create`                                | POST   | `/api/v1/invoices`                                                                      | branch  | `sal.invoice.manage`<br>`sal.finance.view`                           | sal.invoice.created                            | yes  | —   | audit authorization cross-tenant denial idempotency isolation outbox route service success                                    | Covered |
 | `sal.invoice-detail`                                | GET    | `/api/v1/invoices/{invoiceId}`                                                          | branch  | `sal.invoice.manage`                                                 | —                                              | —    | —   | authorization cross-tenant denial isolation route service success                                                             | Covered |
 | `sal.invoice-issue`                                 | POST   | `/api/v1/invoices/{invoiceId}/issuance`                                                 | branch  | `sal.invoice.issue`<br>`sal.finance.view`                            | sal.invoice.issued                             | yes  | yes | audit authorization cross-tenant denial idempotency isolation outbox route service stale-version success                      | Covered |
+| `sal.invoice-list`                                  | GET    | `/api/v1/invoices`                                                                      | branch  | `sal.invoice.manage`                                                 | —                                              | —    | —   | authorization cross-tenant denial isolation pagination route service success                                                  | Covered |
 | `sal.invoice-outstanding-read`                      | GET    | `/api/v1/invoices/{invoiceId}/outstanding`                                              | branch  | `sal.finance.view`                                                   | —                                              | —    | —   | authorization cross-tenant denial isolation route service success                                                             | Covered |
 | `sal.invoice-preview`                               | GET    | `/api/v1/work-orders/{workOrderId}/invoice-preview`                                     | branch  | `sal.invoice.manage`<br>`sal.finance.view`                           | —                                              | —    | —   | authorization cross-tenant denial isolation route service success                                                             | Covered |
 | `sal.payment-allocate`                              | POST   | `/api/v1/payments/{paymentId}/allocations`                                              | branch  | `sal.payment.allocate`<br>`sal.finance.view`                         | sal.payment.allocated                          | yes  | —   | audit authorization cross-tenant denial idempotency isolation outbox route service success                                    | Covered |

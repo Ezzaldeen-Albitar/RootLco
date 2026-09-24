@@ -39,8 +39,20 @@
  *   sal.invoice-create: route service authorization success denial idempotency
  *   sal.invoice-issue: route service authorization success denial idempotency stale-version
  *   sal.invoice-cancel: route service authorization success denial idempotency stale-version
+ *   sal.invoice-list: route service authorization success denial cross-tenant isolation pagination
+ *
+ * ## `sal.invoice-list` (Owner directive, P1-32-PRE-OD-UX)
+ *
+ * The branch read the payment desk chooses an invoice from. Proved below: the
+ * named pair is the authorization target (a caller granted only in another
+ * branch is refused, another tenant is refused, and row-level security hides
+ * the row on the runtime pool with a positive control first); the finance split
+ * omits `totals` and `outstanding` rather than zeroing them; the box reaches the
+ * invoice number (Arabic-Indic digits folded) and the payer's name and treats a
+ * LIKE metacharacter as a literal; a page walked by cursor never repeats a row;
+ * and the statements sent do not grow with the page.
  */
-import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { Pool, PoolClient } from 'pg';
 import { randomUUID } from 'node:crypto';
 import {
@@ -56,17 +68,28 @@ import {
   PARTNER_A,
   SAL_FULL,
   SAL_NO_FINANCE,
+  SAL_PERMISSION_ELSEWHERE,
   SAL_READER,
   SAL_TENANT_B,
+  TENANT_B,
   authAs,
   cleanP1_22Fixtures,
   establishP1_22Fixtures,
+  seedIssuedInvoice,
   seedWorkOrderChain,
 } from './p1-22-helpers';
 import { __resetAuthenticatorForTests } from '@/server/context/principal';
+import { __resetRateLimitForTests } from '@/server/http/rate-limit';
+import { primaryPool } from '@/server/db/pool';
+import { withReadOnlyTransaction } from '@/server/db/transaction';
+import { buildRequestContext } from '@/server/context/request-context';
 import { GET as PREVIEW } from '@/app/api/v1/work-orders/[workOrderId]/invoice-preview/route';
 import { GET as WORK_ORDER_INVOICE } from '@/app/api/v1/work-orders/[workOrderId]/invoice/route';
-import { POST as CREATE } from '@/app/api/v1/invoices/route';
+import {
+  INVOICE_LIST_OPERATION,
+  POST as CREATE,
+  GET as INVOICE_LIST,
+} from '@/app/api/v1/invoices/route';
 import { GET as DETAIL } from '@/app/api/v1/invoices/[invoiceId]/route';
 import { POST as ISSUE } from '@/app/api/v1/invoices/[invoiceId]/issuance/route';
 import { GET as OUTSTANDING } from '@/app/api/v1/invoices/[invoiceId]/outstanding/route';
@@ -672,5 +695,274 @@ describe('FE-015 cancel, and FE-014 refusals', () => {
     expect(JSON.stringify(problem)).not.toContain('0.0000');
     const created = await create({ workOrderId: undecided.workOrderId });
     expect(created.status).toBe(404);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// sal.invoice-list — the branch's invoices, found rather than typed
+// ---------------------------------------------------------------------------
+
+interface ListRow extends InvoiceBody {
+  readonly companyId: string;
+  readonly branchId: string;
+  readonly payer: {
+    readonly displayName: string | null;
+    readonly displayNumber: string | null;
+    readonly partyType: string | null;
+  };
+  readonly outstanding: MoneyBody | null;
+}
+interface ListPage {
+  readonly items: readonly ListRow[];
+  readonly nextCursor: string | null;
+  readonly hasMore: boolean;
+}
+
+const listInvoices = (query: string): Promise<Response> =>
+  INVOICE_LIST(new Request(`http://localhost/api/v1/invoices?${query}`));
+
+const arabicIndic = (value: string): string =>
+  value.replace(/[0-9]/g, (digit) => String.fromCharCode(0x0660 + Number(digit)));
+
+// Statement counting, the technique `p1-24-read-path-shape.test.ts` uses: the
+// primary pool is wrapped at its connection boundary, below the route, the
+// service, the repository and the transaction helper. Counting is OFF unless a
+// case turns it on, so every other case in this file runs unobserved.
+let listStatements: string[] = [];
+let countingList = false;
+const countedClients = new WeakSet<PoolClient>();
+
+function countClient(client: PoolClient): void {
+  if (countedClients.has(client)) return;
+  countedClients.add(client);
+  const query = client.query.bind(client) as (...args: readonly unknown[]) => unknown;
+  (client as unknown as { query: unknown }).query = (...args: readonly unknown[]): unknown => {
+    if (countingList) {
+      const first = args[0];
+      listStatements.push(
+        typeof first === 'string'
+          ? first
+          : String((first as { text?: string } | undefined)?.text ?? '<config>')
+      );
+    }
+    return query(...args);
+  };
+}
+
+function countStatementsOn(pool: Pool): void {
+  const connect = pool.connect.bind(pool) as (...args: readonly unknown[]) => unknown;
+  (pool as unknown as { connect: unknown }).connect = (...args: readonly unknown[]): unknown => {
+    const callback = args[0];
+    if (typeof callback === 'function') {
+      return connect((error: unknown, client: PoolClient | undefined, release: unknown) => {
+        if (client !== undefined) countClient(client);
+        (callback as (...values: readonly unknown[]) => void)(error, client, release);
+      });
+    }
+    return (connect() as Promise<PoolClient>).then((client) => {
+      countClient(client);
+      return client;
+    });
+  };
+}
+
+async function measureList(
+  query: string
+): Promise<{ status: number; page: ListPage; statements: readonly string[] }> {
+  listStatements = [];
+  countingList = true;
+  try {
+    const response = await listInvoices(query);
+    return {
+      status: response.status,
+      page: await bodyOf<ListPage>(response),
+      statements: [...listStatements],
+    };
+  } finally {
+    countingList = false;
+  }
+}
+
+describe('sal.invoice-list', () => {
+  let first: Awaited<ReturnType<typeof seedIssuedInvoice>>;
+  let second: Awaited<ReturnType<typeof seedIssuedInvoice>>;
+  let third: Awaited<ReturnType<typeof seedIssuedInvoice>>;
+  let scope: { readonly companyId: string; readonly branchId: string };
+  let pair: string;
+
+  beforeAll(async () => {
+    countStatementsOn(primaryPool());
+    first = await seedIssuedInvoice('w6_list_one', { net: '120.0000', tax: '12.0000' });
+    second = await seedIssuedInvoice('w6_list_two');
+    third = await seedIssuedInvoice('w6_list_three');
+    const where = await admin.query<{ company_id: string; branch_id: string }>(
+      `SELECT company_id, branch_id FROM sal.invoices WHERE id = $1`,
+      [first.invoiceId]
+    );
+    scope = {
+      companyId: where.rows[0]?.company_id ?? '',
+      branchId: where.rows[0]?.branch_id ?? '',
+    };
+    pair = `companyId=${scope.companyId}&branchId=${scope.branchId}`;
+  }, 120_000);
+
+  // Many list calls as one caller; without a fresh limiter a later case answers
+  // 429 and reads as a broken filter.
+  beforeEach(() => {
+    __resetRateLimitForTests();
+  });
+
+  it('finds an invoice by its number and names its payer, status and open balance', async () => {
+    expect(INVOICE_LIST_OPERATION.id).toBe('sal.invoice-list');
+    authAs(SAL_FULL);
+    const response = await listInvoices(
+      `${pair}&q=${encodeURIComponent(first.invoiceNumber)}&limit=100`
+    );
+    expect(response.status).toBe(200);
+    const page = await bodyOf<ListPage>(response);
+    const row = page.items.find((item) => item.id === first.invoiceId);
+    expect(row).toMatchObject({
+      companyId: scope.companyId,
+      branchId: scope.branchId,
+      status: 'issued',
+      invoiceNumber: first.invoiceNumber,
+      payerPartnerId: PARTNER_A,
+      currency: 'USD',
+      payer: { displayName: 'Reception Requester' },
+      outstanding: { amount: first.gross, currency: 'USD' },
+    });
+    expect(row?.totals?.gross).toEqual({ amount: first.gross, currency: 'USD' });
+    expect(typeof row?.outstanding?.amount).toBe('string');
+    // The other two invoices do not carry that number.
+    expect(page.items.some((item) => item.id === second.invoiceId)).toBe(false);
+  });
+
+  it('omits every amount for a caller without finance view, and never answers zero', async () => {
+    authAs(SAL_NO_FINANCE);
+    const response = await listInvoices(
+      `${pair}&q=${encodeURIComponent(first.invoiceNumber)}&limit=100`
+    );
+    expect(response.status).toBe(200);
+    const raw = await response.text();
+    const page = JSON.parse(raw) as ListPage;
+    const row = page.items.find((item) => item.id === first.invoiceId);
+    expect(row).toMatchObject({ status: 'issued', invoiceNumber: first.invoiceNumber });
+    expect(row?.totals).toBeNull();
+    expect(row?.outstanding).toBeNull();
+    expect(raw).not.toContain(first.gross);
+  });
+
+  it('refuses a caller without the invoice code, and a malformed query by its rule', async () => {
+    authAs(SAL_READER);
+    const refused = await listInvoices(pair);
+    expect(refused.status).toBe(403);
+    expect(await codeOf(refused)).toBe('ERR-IAM-001');
+
+    authAs(SAL_FULL);
+    for (const query of [
+      `companyId=${scope.companyId}`,
+      `${pair}&status=paid`,
+      `${pair}&q=x`,
+      `${pair}&payerPartnerId=${PARTNER_A}`,
+      `${pair}&limit=0`,
+    ]) {
+      const response = await listInvoices(query);
+      expect(response.status, query).toBe(422);
+      expect(await codeOf(response), query).toBe('ERR-VAL-001');
+    }
+  });
+
+  it('refuses a branch the caller holds no invoice authority in, and another tenant', async () => {
+    // Granted in A2, with an unrelated grant putting this branch inside its
+    // permission-blind union: RLS would admit the rows, so only the scoped
+    // check can refuse.
+    authAs(SAL_PERMISSION_ELSEWHERE);
+    const elsewhere = await listInvoices(pair);
+    expect(elsewhere.status).toBe(403);
+    expect(await elsewhere.text()).not.toContain(first.invoiceId);
+
+    authAs(SAL_TENANT_B);
+    const foreign = await listInvoices(pair);
+    expect(foreign.status).toBe(403);
+    expect(await foreign.text()).not.toContain(first.invoiceId);
+  });
+
+  it('is hidden from another tenant by row-level security, not only by the query', async () => {
+    // No tenant predicate of its own: only the policy can hide the row.
+    const sql = `SELECT i.id::text AS id FROM sal.invoices i WHERE i.id = $1`;
+    const readAs = (userId: string, tenantId: string): Promise<string[]> =>
+      withReadOnlyTransaction(
+        buildRequestContext({
+          correlationId: randomUUID(),
+          principal: { userId, tenantId },
+          operation: INVOICE_LIST_OPERATION.id,
+          module: 'billing',
+        }),
+        async (db) =>
+          (await db.query<{ id: string }>(sql, [first.invoiceId])).rows.map((row) => row.id)
+      );
+    // The positive control FIRST, on the same runtime pool.
+    expect(await readAs(SAL_FULL.userId, TENANT_A)).toEqual([first.invoiceId]);
+    expect(await readAs(SAL_TENANT_B.userId, TENANT_B)).toEqual([]);
+  });
+
+  it('reaches the number through Arabic-Indic digits and the payer by name, and a wildcard is a literal', async () => {
+    authAs(SAL_FULL);
+    const folded = await bodyOf<ListPage>(
+      await listInvoices(
+        `${pair}&q=${encodeURIComponent(arabicIndic(first.invoiceNumber))}&limit=100`
+      )
+    );
+    expect(folded.items.map((item) => item.id)).toContain(first.invoiceId);
+
+    const byName = await bodyOf<ListPage>(
+      await listInvoices(`${pair}&q=${encodeURIComponent('reception requester')}&limit=100`)
+    );
+    expect(byName.items.map((item) => item.id)).toEqual(
+      expect.arrayContaining([first.invoiceId, second.invoiceId, third.invoiceId])
+    );
+
+    const wildcard = await listInvoices(`${pair}&q=${encodeURIComponent('%%')}&limit=100`);
+    expect(wildcard.status).toBe(200);
+    expect((await bodyOf<ListPage>(wildcard)).items).toEqual([]);
+
+    const drafts = await bodyOf<ListPage>(await listInvoices(`${pair}&status=draft&limit=100`));
+    expect(drafts.items.every((item) => item.status === 'draft')).toBe(true);
+    expect(drafts.items.map((item) => item.id)).not.toContain(first.invoiceId);
+  });
+
+  it('walks the branch by cursor, newest first, without repeating a row', async () => {
+    authAs(SAL_FULL);
+    const one = await bodyOf<ListPage>(await listInvoices(`${pair}&limit=1`));
+    expect(one.items).toHaveLength(1);
+    expect(one.hasMore).toBe(true);
+    expect(one.nextCursor).not.toBeNull();
+    // The three seeded here are the newest in the branch.
+    expect(one.items[0]?.id).toBe(third.invoiceId);
+    const two = await bodyOf<ListPage>(
+      await listInvoices(`${pair}&limit=1&cursor=${encodeURIComponent(one.nextCursor ?? '')}`)
+    );
+    expect(two.items).toHaveLength(1);
+    expect(two.items[0]?.id).toBe(second.invoiceId);
+    expect(two.items[0]?.id).not.toBe(one.items[0]?.id);
+  });
+
+  it('sends the same statements for one row as for three', async () => {
+    authAs(SAL_FULL);
+    // Warm, then measure: a cold pool client issues session-setup statements a
+    // reused one does not.
+    await listInvoices(`${pair}&limit=1`).then((response) => response.text());
+    await listInvoices(`${pair}&limit=3`).then((response) => response.text());
+    const one = await measureList(`${pair}&limit=1`);
+    const three = await measureList(`${pair}&limit=3`);
+    expect(one.status).toBe(200);
+    expect(three.status).toBe(200);
+    expect(one.page.items).toHaveLength(1);
+    expect(three.page.items).toHaveLength(3);
+    const readsInvoices = (text: string): boolean => /FROM\s+sal\.invoices\s+i\b/i.test(text);
+    // Anti-vacuity: counting really observed the read.
+    expect(one.statements.filter(readsInvoices)).toHaveLength(1);
+    expect(three.statements.length).toBe(one.statements.length);
+    expect(three.statements.filter(readsInvoices)).toHaveLength(1);
   });
 });

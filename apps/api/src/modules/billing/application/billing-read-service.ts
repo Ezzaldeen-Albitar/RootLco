@@ -53,12 +53,14 @@ import { rollUpDecisions } from '@/modules/quotation';
 import type { DbHandle } from '@/server/db/transaction';
 import type { ScopeAuthorizer } from '@/server/auth/authorization';
 import { pageRequest, type Page } from '@/server/db/pagination';
-import { CREDIT_NOTE_ORDER } from '../data/billing-repository';
+import { toEntitySearchTerms } from '@/shared/text/search-terms';
+import { CREDIT_NOTE_ORDER, INVOICE_LIST_ORDER } from '../data/billing-repository';
 import type {
   BillingRepository,
   CommercialSourceRow,
   CreditNoteRow,
   InvoiceLineRow,
+  InvoiceListRow,
   InvoiceRow,
   NumberingConfigRow,
 } from '../data/billing-repository';
@@ -121,6 +123,32 @@ export interface InvoiceView {
   readonly recordVersion: number;
   /** `null` without `sal.finance.view`, and on a draft before amounts are written. */
   readonly totals: InvoiceTotalsView | null;
+}
+
+/**
+ * Who an invoice bills, by name (Owner directive, P1-32-PRE-OD-UX).
+ *
+ * Every field is `null` exactly when the payer row is not visible; the id is
+ * `payerPartnerId` on the header and is not repeated here.
+ */
+export interface InvoicePayerView {
+  readonly displayName: string | null;
+  readonly displayNumber: string | null;
+  readonly partyType: string | null;
+}
+
+/**
+ * One row of `sal.invoice-list`: the header every other invoice read publishes,
+ * plus the payer's name and the open balance.
+ *
+ * `outstanding` is `null` whenever `balanceIsTrustworthy` says the zero
+ * `sal.invoice_open_receivable` would compute cannot be believed — that is, for
+ * an issued or credited invoice read by a caller without `sal.finance.view`.
+ * Omitted, never zeroed, for the reason `totals` is.
+ */
+export interface InvoiceListEntryView extends InvoiceView {
+  readonly payer: InvoicePayerView;
+  readonly outstanding: MoneyView | null;
 }
 
 /** An invoice with its lines, as the detail read returns it. */
@@ -305,6 +333,20 @@ export const toInvoiceView = (row: InvoiceRow): InvoiceView => ({
         gross: moneyView(row.money.grossTotal, row.currencyCode),
       }
     : null,
+});
+
+/**
+ * The list row: the shared header mapper, the payer's name, and the open balance
+ * only where it can be believed.
+ */
+export const toInvoiceListEntryView = (row: InvoiceListRow): InvoiceListEntryView => ({
+  ...toInvoiceView(row),
+  payer: {
+    displayName: row.payerDisplayName,
+    displayNumber: row.payerDisplayNumber,
+    partyType: row.payerPartyType,
+  },
+  outstanding: balanceIsTrustworthy(row) ? moneyView(row.openAmount, row.currencyCode) : null,
 });
 
 export const toInvoiceLineView = (row: InvoiceLineRow): InvoiceLineView => ({
@@ -787,6 +829,47 @@ export class BillingReadService {
       pageRequest(CREDIT_NOTE_ORDER, page)
     );
     return { ...result, items: result.items.map(toCreditNoteView) };
+  }
+
+  /**
+   * One branch's invoices of every kind, newest first (Owner directive,
+   * P1-32-PRE-OD-UX, `sal.invoice-list`).
+   *
+   * The pair is authorized BEFORE any row is read, as `listCreditNotes` and
+   * `listCounterSales` do, so a caller cannot page a branch it holds no authority
+   * in and learn what was billed there.
+   *
+   * The box reaches the invoice number, the payer's name, and the plate and VIN
+   * of the job's vehicle. The PHONE arm is switched off here: the row names its
+   * payer, so matching that name tells the caller nothing the page does not
+   * already say, but a phone number is on no row of this list, and a box that
+   * matched one would turn a billing read into a way of probing contact data.
+   */
+  public async listInvoices(
+    db: DbHandle,
+    filter: {
+      readonly companyId: string;
+      readonly branchId: string;
+      readonly status?: string | undefined;
+      /** The raw free-text box; reduced here, once, by the shared rule. */
+      readonly q?: string | undefined;
+    },
+    page: { readonly cursor?: string | undefined; readonly limit?: number | undefined },
+    authorizeScope: ScopeAuthorizer
+  ): Promise<Page<InvoiceListEntryView>> {
+    await authorizeScope({ companyId: filter.companyId, branchId: filter.branchId });
+    const terms = toEntitySearchTerms(filter.q);
+    const result = await this.repository.listInvoices(
+      db,
+      {
+        companyId: filter.companyId,
+        branchId: filter.branchId,
+        ...(filter.status === undefined ? {} : { status: filter.status }),
+        search: terms.present ? { ...terms, phoneDigits: '', phoneSuffixEligible: false } : terms,
+      },
+      pageRequest(INVOICE_LIST_ORDER, page)
+    );
+    return { ...result, items: result.items.map(toInvoiceListEntryView) };
   }
 
   // -------------------------------------------------------------------------

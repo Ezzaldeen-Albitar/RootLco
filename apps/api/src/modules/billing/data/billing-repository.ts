@@ -72,7 +72,9 @@ import {
   type PageRequest,
 } from '@/server/db/pagination';
 import { halfOpenLocalDayRange } from '@/server/db/period';
+import { searchFragment } from '@/server/db/search-predicate';
 import type { DbHandle } from '@/server/db/transaction';
+import { NO_SEARCH_TERMS, type EntitySearchTerms } from '@/shared/text/search-terms';
 
 /**
  * SQLSTATEs the `sal` primitives raise deliberately.
@@ -91,6 +93,21 @@ import type { DbHandle } from '@/server/db/transaction';
  */
 export const COUNTER_SALE_ORDER: OrderingContract = Object.freeze({
   key: 'sal.invoices:created_at_desc',
+  direction: 'desc',
+});
+
+/**
+ * A branch's invoices of EVERY kind, newest first (Owner directive,
+ * P1-32-PRE-OD-UX, `sal.invoice-list`).
+ *
+ * `created_at` for the reason `COUNTER_SALE_ORDER` gives: a draft has no number
+ * and no issue moment, and a list whose order depended on either would page
+ * inconsistently across the moment an invoice is issued. A key of its OWN rather
+ * than `COUNTER_SALE_ORDER`'s: the two lists cover different sets, and a cursor
+ * minted by one must not be accepted by the other.
+ */
+export const INVOICE_LIST_ORDER: OrderingContract = Object.freeze({
+  key: 'sal.invoices:all_kinds:created_at_desc',
   direction: 'desc',
 });
 
@@ -264,6 +281,24 @@ export interface OpenReceivableRow {
   readonly amount: string;
   readonly currencyCode: string;
   readonly status: string;
+}
+
+/**
+ * One invoice as the branch list returns it (Owner directive, P1-32-PRE-OD-UX).
+ *
+ * The header exactly as `findInvoice` reads it — money folded to `null` where
+ * `sel_invoice_amounts_gated` hid it — plus the two facts a person choosing an
+ * invoice needs and the header does not carry: WHO it bills, by name, and what
+ * `sal.invoice_open_receivable` answered for it. That answer is carried raw; the
+ * read service decides whether it can be believed (`balanceIsTrustworthy`).
+ */
+export interface InvoiceListRow extends InvoiceRow {
+  /** `null` only when the payer row is not visible — never invented. */
+  readonly payerDisplayName: string | null;
+  readonly payerDisplayNumber: string | null;
+  readonly payerPartyType: string | null;
+  /** `round(sal.invoice_open_receivable(id), 4)` as a decimal STRING. */
+  readonly openAmount: string;
 }
 
 /**
@@ -2050,6 +2085,139 @@ export class BillingRepository extends Repository {
       result.rows.map((row) => ({ item: toInvoice(row), sortValue: row.sort_value, id: row.id })),
       request,
       COUNTER_SALE_ORDER
+    );
+  }
+
+  /**
+   * One branch's invoices, newest first, searchable by what a person holds
+   * (Owner directive, P1-32-PRE-OD-UX, `sal.invoice-list`).
+   *
+   * ## Why this read exists
+   *
+   * Every other invoice read is addressed by something the caller must ALREADY
+   * hold — an invoice id, a work order id, an idempotency key. The payment desk
+   * applies a receipt to an invoice, and before this read it asked for that
+   * invoice as a typed reference, because nothing answered "which invoices does
+   * this branch have". The counter-sale list answers it for counter sales only.
+   *
+   * ## Scope
+   *
+   * `company_id` and `branch_id` are bound predicates and the service has already
+   * authorized the pair — the same order `listCounterSales` uses, and for the
+   * same reason: the row policy narrows on the permission-blind union of the
+   * caller's grants (P1-18-A-01). RLS remains the guarantee underneath.
+   *
+   * ## Money
+   *
+   * The amounts are the same LEFT JOIN `findInvoice` uses, so a caller without
+   * `sal.finance.view` reads the header with `money` null. The open receivable is
+   * CALLED, never re-derived, and `round(…, 4)` only fixes its scale — exactly as
+   * `openReceivable` does. For that same caller the function computes zero
+   * (`balanceIsTrustworthy` explains why), so the service withholds it.
+   *
+   * ## The box
+   *
+   * One free-text box through the shared `searchFragment`: the invoice number,
+   * the payer's name, and the plate and VIN of the job's vehicle. The payer is
+   * the invoice's own `payer_partner_id`; a counter sale has no work order, so
+   * its vehicle anchor is NULL and those two arms cannot match it. The service
+   * switches the phone arm off before this is called.
+   *
+   * ## No index and no migration
+   *
+   * The branch predicate is served by the table's tenant/company/branch-leading
+   * indexes and the ordering is a sort over the already-narrowed set, which is
+   * the decision `listCounterSales` and the delivery list took on the same table
+   * shape.
+   */
+  public async listInvoices(
+    db: DbHandle,
+    filter: {
+      readonly companyId: string;
+      readonly branchId: string;
+      readonly status?: string | undefined;
+      /** Already reduced by `toEntitySearchTerms`. */
+      readonly search?: EntitySearchTerms | undefined;
+    },
+    request: PageRequest
+  ): Promise<Page<InvoiceListRow>> {
+    const context = this.assertContext(db);
+    const values: unknown[] = [
+      context.principal.tenantId,
+      filter.companyId,
+      filter.branchId,
+      filter.status ?? null,
+    ];
+    const search = searchFragment(
+      filter.search ?? NO_SEARCH_TERMS,
+      {
+        tenant: 'i.tenant_id',
+        // A counter sale has no work order, so this is NULL for it and neither
+        // vehicle arm can match one.
+        vehicleId: `(SELECT w.vehicle_id
+                       FROM wo.work_orders w
+                      WHERE w.tenant_id = i.tenant_id
+                        AND w.id = i.work_order_id)`,
+        partnerIds: 'SELECT i.payer_partner_id',
+        reference: 'i.invoice_number',
+      },
+      values.length + 1
+    );
+    const keyset = keysetFragment(
+      request,
+      { sort: 'i.created_at', id: 'i.id' },
+      INVOICE_LIST_ORDER,
+      values.length + search.values.length + 1
+    );
+    const result = await this.run<
+      InvoiceSql & {
+        sort_value: string;
+        open_amount: string;
+        payer_display_name: string | null;
+        payer_display_number: string | null;
+        payer_party_type: string | null;
+      }
+    >(
+      db,
+      `SELECT ${INVOICE_COLUMNS},
+              a.net_total::text   AS net_total,
+              a.tax_total::text   AS tax_total,
+              a.gross_total::text AS gross_total,
+              round(sal.invoice_open_receivable(i.id), 4)::text AS open_amount,
+              pp.display_name   AS payer_display_name,
+              pp.display_number AS payer_display_number,
+              pp.party_type     AS payer_party_type,
+              ${cursorTimestamp('i.created_at')} AS sort_value
+         FROM sal.invoices i
+         LEFT JOIN sal.invoice_amounts a
+           ON a.tenant_id = i.tenant_id AND a.company_id = i.company_id
+          AND a.branch_id = i.branch_id AND a.invoice_id = i.id
+          AND a.deleted_at IS NULL
+         LEFT JOIN crm.business_partners pp
+           ON pp.tenant_id = i.tenant_id AND pp.id = i.payer_partner_id
+        WHERE i.tenant_id = $1 AND i.company_id = $2 AND i.branch_id = $3
+          AND i.deleted_at IS NULL
+          AND ($4::text IS NULL OR i.status = $4)
+          ${search.predicate}
+          ${keyset.predicate}
+        ${keyset.order}
+        ${keyset.limitClause}`,
+      [...values, ...search.values, ...keyset.values]
+    );
+    return buildPageWithCursors(
+      result.rows.map((row) => ({
+        item: {
+          ...toInvoice(row),
+          payerDisplayName: row.payer_display_name,
+          payerDisplayNumber: row.payer_display_number,
+          payerPartyType: row.payer_party_type,
+          openAmount: row.open_amount,
+        },
+        sortValue: row.sort_value,
+        id: row.id,
+      })),
+      request,
+      INVOICE_LIST_ORDER
     );
   }
 
