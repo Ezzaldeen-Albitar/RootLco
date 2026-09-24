@@ -1380,6 +1380,37 @@ describe('callerApprovalCeiling respects grant scope', () => {
     // null", which no assertion above would have caught.
     expect(await ceilingFor(COMPANY_A1)).toEqual({ amount: '25.0000', currencyCode: 'JOD' });
   });
+
+  /*
+   * QA row 7.1d, at the point of use. The administration service refuses a
+   * limit for yourself and for a role you hold when it is SET; this is the half
+   * that holds afterwards — a limit put on a role before its setter was granted
+   * it, or set before that refusal existed. A direct limit outranks a role
+   * limit, so without the exclusion the caller's own 9999 would be returned
+   * here; with it, the role limit somebody else set (25, by the fixtures'
+   * administrator) is the ceiling, and that same row still authorizes.
+   */
+  it('never counts a limit the caller set, and still honours one somebody else set', async () => {
+    await seedDiscountCeiling({
+      tenantId: TENANT_A,
+      companyId: COMPANY_A1,
+      roleId: SVC_PRICE_SCOPED_A2.roleId,
+      amount: '25.0000',
+      currencyCode: 'JOD',
+    });
+    const own = await admin.query<{ id: string }>(
+      `INSERT INTO iam.approval_limits
+         (tenant_id, company_id, user_id, limit_type, amount, currency_code, effective_from, created_by)
+       VALUES ($1, $2, $3, 'discount', 9999, 'JOD', $4::date, $3)
+       RETURNING id`,
+      [TENANT_A, COMPANY_A1, SVC_PRICE_SCOPED_A2.userId, EFFECTIVE_FROM]
+    );
+    try {
+      expect(await ceilingFor(COMPANY_A1)).toEqual({ amount: '25.0000', currencyCode: 'JOD' });
+    } finally {
+      await admin.query('DELETE FROM iam.approval_limits WHERE id = $1', [own.rows[0]?.id]);
+    }
+  });
 });
 
 /**

@@ -903,6 +903,14 @@ per company." <!-- approvalLimits.description -->
   complete, the screen says the opposite instead: "This is the complete list for the current
   filters, not a page of it." <!-- approvalLimits.completeList --> Always narrow by company before
   concluding that someone has no limit.
+- **Nobody sets their own limit, directly or through a role.** A limit for yourself is refused:
+  "You cannot set an approval limit for yourself: the person who sets a limit must not be the one
+  who approves against it. Ask another administrator to set your limit." <!-- form.violation.approval_limit_for_yourself -->
+  A limit for a role you hold is refused too, because it would reach you: "You hold this role, so a
+  limit on it would also be a limit for you. Ask another administrator who does not hold this role
+  to set it, or choose a role you do not hold." <!-- form.violation.approval_limit_for_own_role -->
+  And a limit you set never counts for you when you approve a discount, even if you are given the
+  role later: someone else's limit has to cover it.
 - **The meaning of a limit type is yours to define.** The application does not interpret it; your
   organisation decides what each type means and must use the same spelling everywhere.
 - **Company, role and person are named by reference, not by name.** There is no company or branch

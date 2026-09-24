@@ -188,6 +188,35 @@ export class AuthorizationRepository extends Repository {
     }));
   }
 
+  /**
+   * Whether the CALLER holds `roleId` through a grant that is live now or will
+   * become live later.
+   *
+   * The separation-of-duties question behind an approval limit for a role
+   * (QA row 7.1d): a limit on a role the administrator holds is a limit they
+   * would approve against themselves. A grant that starts in the future is
+   * counted on purpose — the limit would reach its holder the day it starts,
+   * with nobody having looked again. Any scope counts, for the same reason: a
+   * grant's places can be widened later by a scope add, without the limit being
+   * looked at again. `iam.current_user_id()` is the server-set actor; RLS keeps
+   * the read inside the caller's tenant.
+   */
+  async callerHoldsRole(db: DbHandle, roleId: string): Promise<boolean> {
+    const result = await this.run<{ held: boolean }>(
+      db,
+      `SELECT EXISTS (
+         SELECT 1
+           FROM iam.role_grants g
+          WHERE g.user_id = iam.current_user_id()
+            AND g.role_id = $1
+            AND g.status = 'active'
+            AND (g.valid_to IS NULL OR g.valid_to > now())
+       ) AS held`,
+      [roleId]
+    );
+    return result.rows[0]?.held === true;
+  }
+
   // ---- Roles -------------------------------------------------------------
 
   async findRoleById(db: DbHandle, roleId: string): Promise<RoleRow | null> {

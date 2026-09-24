@@ -12,9 +12,10 @@
  *    cannot produce an escalation. The database refusal is asserted independently
  *    by the P1-14 capability suite.
  *  - **Self-service is refused.** An administrator may not grant to, revoke from,
- *    or set an approval limit for themselves. `ck_role_grants_no_self_grant`
- *    agrees on the grant direction; the others are application rules and are
- *    stated as such.
+ *    or set an approval limit for themselves — nor set one for a role they hold,
+ *    which reaches them just the same. `ck_role_grants_no_self_grant` agrees on
+ *    the grant direction; the others are application rules and are stated as
+ *    such.
  *  - **Deny is never blocked.** Adding a `deny` mapping, revoking a grant, and
  *    ending an approval limit are all *reductions* in access, and requiring the
  *    actor to hold the permission they are taking away would be a safety
@@ -668,7 +669,14 @@ export class AccessAdministrationService extends ApplicationService {
     }
     if (input.userId) {
       // Self-approval escalation: an administrator raising their own ceiling.
-      this.delegationPolicy.assertNotSelf(facts, input.userId, 'set an approval limit for');
+      this.delegationPolicy.assertApprovalLimitNotForSelf(facts, input.userId);
+    }
+    if (input.roleId) {
+      // The same escalation through a role: a limit on a role reaches every
+      // holder, so a role the administrator holds is their own ceiling too.
+      this.delegationPolicy.assertApprovalLimitNotForHeldRole(
+        await this.authorization.callerHoldsRole(db, input.roleId)
+      );
     }
 
     this.credentialPolicy.assertApprovalAmount(input.amount, input.currency);

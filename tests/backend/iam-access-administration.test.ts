@@ -492,6 +492,72 @@ describe('approval limits', () => {
     );
     expect((error as AppFailure).code).toBe('ERR-IAM-001');
     expect((error as AppFailure).message).toMatch(/own/i);
+    // Named, so the screen states the reason rather than a missing permission (QA row 7.1c).
+    expect((error as AppFailure).safeDetails.violations).toEqual([
+      { path: 'body', rule: 'approval_limit_for_yourself' },
+    ]);
+  });
+
+  /*
+   * QA row 7.1d. The person-level refusal above was the whole rule: an
+   * administrator could put a discount limit on a role they hold and approve
+   * against it. `U_UNRESTRICTED` holds `ROLE_ADMIN` (GRANT_UNR) and does not
+   * hold `ROLE_TARGET`, so the same actor, the same company and the same limit
+   * are refused for one role and accepted for the other — the refusal is the
+   * holding, and nothing else.
+   */
+  describe('a limit for a role the administrator holds', () => {
+    const limitFor = (roleId: string) => ({
+      companyId: COMPANY_A1,
+      roleId,
+      limitType: 'discount',
+      amount: '10.00',
+      currency: 'USD',
+      effectiveFrom: '2026-01-01',
+    });
+    const limitsOf = (roleId: string) =>
+      countRows(admin, 'iam.approval_limits', 'tenant_id = $1 AND role_id = $2', [
+        TENANT_A,
+        roleId,
+      ]);
+    const clearLimits = () =>
+      admin.query('DELETE FROM iam.approval_limits WHERE tenant_id = $1 AND role_id = ANY($2)', [
+        TENANT_A,
+        [ROLE_ADMIN, ROLE_TARGET],
+      ]);
+
+    beforeEach(clearLimits);
+    afterEach(clearLimits);
+
+    it('is refused with its own named reason, and nothing is written', async () => {
+      const error = await withTransaction(ctx(AS_UNRESTRICTED), (db) =>
+        access.createApprovalLimit(db, limitFor(ROLE_ADMIN)).catch((e: unknown) => e)
+      );
+      expect(error).toBeInstanceOf(AppFailure);
+      expect((error as AppFailure).code).toBe('ERR-IAM-001');
+      expect((error as AppFailure).safeDetails.violations).toEqual([
+        { path: 'body', rule: 'approval_limit_for_own_role' },
+      ]);
+      expect(await limitsOf(ROLE_ADMIN)).toBe(0);
+    });
+
+    it('is refused to a company-scoped holder of the role as well', async () => {
+      const error = await withTransaction(ctx(AS_COMPANY), (db) =>
+        access.createApprovalLimit(db, limitFor(ROLE_ADMIN)).catch((e: unknown) => e)
+      );
+      expect((error as AppFailure).safeDetails.violations).toEqual([
+        { path: 'body', rule: 'approval_limit_for_own_role' },
+      ]);
+      expect(await limitsOf(ROLE_ADMIN)).toBe(0);
+    });
+
+    it('a role the same administrator does not hold still takes a limit', async () => {
+      const created = await withTransaction(ctx(AS_UNRESTRICTED), (db) =>
+        access.createApprovalLimit(db, limitFor(ROLE_TARGET))
+      );
+      expect(created.id).toMatch(/^[0-9a-f-]{36}$/);
+      expect(await limitsOf(ROLE_TARGET)).toBe(1);
+    });
   });
 
   it('rejects a malformed money amount', async () => {
