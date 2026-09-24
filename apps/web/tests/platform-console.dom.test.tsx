@@ -822,6 +822,38 @@ describe('billing', () => {
     });
   });
 
+  it('moves the cursor to a refused charge field and withdraws the complaint once it is edited (route sweep B3)', async () => {
+    recordChargeAction.mockResolvedValue({
+      status: 'invalid',
+      messageKey: 'form.invalid',
+      fieldErrors: { dueOn: 'platform.error.required' },
+      attempt: 1,
+    });
+    renderLtr(
+      <BillingPanel
+        locale="en"
+        messages={messages}
+        tenantId={TENANT}
+        charges={[charge]}
+        hasMore={false}
+        subscriptions={[subscription]}
+        canManage
+        defaultCurrency="SAR"
+      />
+    );
+    await userEvent.click(screen.getByRole('button', { name: L('platform.billing.recordCharge') }));
+    const dialog = await screen.findByRole('dialog');
+    const amount = within(dialog).getByLabelText(new RegExp(`^${L('platform.billing.amount')}`));
+    await userEvent.type(amount, '1200');
+    fireEvent.blur(amount);
+    await userEvent.click(within(dialog).getByRole('button', { name: L('platform.save') }));
+    const due = within(dialog).getByLabelText(new RegExp(`^${L('platform.billing.due')}`));
+    await waitFor(() => expect(due).toHaveFocus());
+    expect(due).toHaveAttribute('aria-invalid', 'true');
+    fireEvent.change(due, { target: { value: '2026-10-15' } });
+    expect(due).not.toHaveAttribute('aria-invalid', 'true');
+  });
+
   it('voids a charge under the reason given, and shows the server refusal in place', async () => {
     voidChargeAction.mockResolvedValue({
       status: 'denied',

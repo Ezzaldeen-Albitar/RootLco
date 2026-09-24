@@ -9,6 +9,7 @@ import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic } from '@/i18n/get-messages';
 import { assignTechnician, listJobAssignments, updateJob } from '../api';
 import type { DepartmentOption, JobAssignment, WorkOrderJob } from '../work-orders-contract';
+import { useHeldRefusal } from '@/lib/forms/use-local-refusal';
 
 /**
  * One job of the work order: its department routing and its technicians
@@ -219,6 +220,14 @@ function AssignmentPanel({
    * again.
    */
   const [fieldErrors, setFieldErrors] = useState<Readonly<Record<string, string>>>({});
+  // Question f: each missing field is marked, the cursor goes to the first, and
+  // a complaint goes once its field changes (route sweep B3).
+  const { errors: refusalErrors, formRef: refusalFormRef } = useHeldRefusal(fieldErrors, {
+    technicianProfileId,
+    assignmentRole: role,
+    windowFrom: from,
+    windowTo: to,
+  });
 
   /**
    * Re-read this job's assignments.
@@ -253,6 +262,11 @@ function AssignmentPanel({
 
   const assign = async () => {
     if (technicianProfileId.trim() === '' || from === '' || to === '') {
+      const missing: Record<string, string> = {};
+      if (technicianProfileId.trim() === '') missing['technicianProfileId'] = 'field.required';
+      if (from === '') missing['windowFrom'] = 'field.required';
+      if (to === '') missing['windowTo'] = 'field.required';
+      setFieldErrors(missing);
       setProblem('workOrders.detail.assignmentIncomplete');
       return;
     }
@@ -283,7 +297,7 @@ function AssignmentPanel({
   };
 
   const errorFor = (name: string): string | undefined => {
-    const key = fieldErrors[name];
+    const key = refusalErrors[name];
     return key ? translateDynamic(messages, key) : undefined;
   };
 
@@ -338,7 +352,15 @@ function AssignmentPanel({
       )}
 
       {canAssign ? (
-        <div className="mt-2 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <form
+          ref={refusalFormRef}
+          noValidate
+          onSubmit={(event) => {
+            event.preventDefault();
+            void assign();
+          }}
+          className="mt-2 grid gap-3 sm:grid-cols-2 lg:grid-cols-4"
+        >
           <TextField
             label={translate(messages, 'workOrders.detail.technicianProfileId')}
             description={translate(messages, 'workOrders.detail.technicianProfileIdHint')}
@@ -363,18 +385,19 @@ function AssignmentPanel({
             type="datetime-local"
             value={from}
             onChange={(event) => setFrom(event.target.value)}
+            error={errorFor('windowFrom')}
           />
           <TextField
             label={translate(messages, 'workOrders.detail.windowTo')}
             type="datetime-local"
             value={to}
             onChange={(event) => setTo(event.target.value)}
+            error={errorFor('windowTo')}
           />
           <div className="sm:col-span-2 lg:col-span-4">
             <button
-              type="button"
+              type="submit"
               disabled={busy}
-              onClick={() => void assign()}
               className="rounded-md border border-border px-4 py-2 text-body text-text-primary transition-colors duration-fast ease-standard hover:bg-surface-subtle disabled:opacity-60"
             >
               {translate(
@@ -383,7 +406,7 @@ function AssignmentPanel({
               )}
             </button>
           </div>
-        </div>
+        </form>
       ) : (
         <p className="text-caption text-text-muted">
           {translate(messages, 'workOrders.detail.noAssignPermission')}

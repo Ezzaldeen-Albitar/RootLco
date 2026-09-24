@@ -15,6 +15,7 @@ import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic } from '@/i18n/get-messages';
 import type { ReadState } from '@/lib/api/read-operation';
 import type { ActionState } from '@/lib/forms/action-result';
+import { useLocalRefusal } from '@/lib/forms/use-local-refusal';
 import { formatDateTime } from '@/lib/format';
 
 import type { DecisionEvidenceBody } from '@/lib/contracts/quotations-contract';
@@ -44,6 +45,7 @@ import {
   Figure,
   LinesEditor,
   lineErrors,
+  lineValues,
   LinesTable,
   Money,
   OutcomeNote,
@@ -655,12 +657,24 @@ function DecisionForm({
   const [evidenceKind, setEvidenceKind] = useState<string>('');
   const [note, setNote] = useState('');
   const [documentVersionId, setDocumentVersionId] = useState('');
-  const [errors, setErrors] = useState<Readonly<Record<string, string>>>({});
+  // Question f: the cursor goes to the first thing to fix, and a complaint is
+  // withdrawn once its field changes (route sweep B3).
+  const {
+    errorKey: localErrorKey,
+    formRef: localFormRef,
+    refuse: localRefuse,
+  } = useLocalRefusal({
+    decision,
+    channel,
+    evidenceKind,
+    documentVersionId,
+    referenceNote: note,
+  });
   const [busy, setBusy] = useState(false);
   const [outcome, setOutcome] = useState<ActionState | null>(null);
 
   const errorFor = (name: string): string | undefined => {
-    const key = errors[name] ?? outcome?.fieldErrors?.[name];
+    const key = localErrorKey(name) ?? outcome?.fieldErrors?.[name];
     return key ? translateDynamic(messages, key) : undefined;
   };
 
@@ -684,7 +698,7 @@ function DecisionForm({
       found['documentVersionId'] = 'quotations.decide.documentOnlyForDocument';
     if (referenceNote.length > MAX_REFERENCE_NOTE)
       found['referenceNote'] = 'quotations.decide.noteTooLong';
-    setErrors(found);
+    localRefuse(found);
     if (Object.keys(found).length > 0) return;
 
     const evidence: DecisionEvidenceBody | null = kind
@@ -725,6 +739,7 @@ function DecisionForm({
 
   return (
     <form
+      ref={localFormRef}
       onSubmit={(event) => {
         event.preventDefault();
         void submit();
@@ -789,7 +804,11 @@ function DecisionForm({
       <SelectField
         label={translate(messages, 'quotations.decide.evidenceKind')}
         value={evidenceKind}
-        onChange={(event) => setEvidenceKind(event.target.value)}
+        onChange={(event) => {
+          setEvidenceKind(event.target.value);
+          // The document reference belongs to document evidence only.
+          if (event.target.value !== 'document') setDocumentVersionId('');
+        }}
         options={EVIDENCE_KINDS.map((value) => ({
           value,
           label: translateDynamic(messages, `quotations.evidenceKind.${value}`),
@@ -797,15 +816,26 @@ function DecisionForm({
         placeholder={translate(messages, 'quotations.decide.noEvidence')}
         error={errorFor('evidenceKind')}
       />
-      <TextField
-        label={translate(messages, 'quotations.decide.documentVersionId')}
-        description={translate(messages, 'quotations.decide.documentHelp')}
-        spellCheck={false}
-        dir="ltr"
-        value={documentVersionId}
-        onChange={(event) => setDocumentVersionId(event.target.value)}
-        error={errorFor('documentVersionId')}
-      />
+      {/*
+        Offered only for document evidence, the one kind that names a document.
+        No read lists the documents of a quotation or its work order, so the
+        version is still a reference the operator enters — said in plain words
+        in the help, and recorded as a backend prerequisite.
+      */}
+      {evidenceKind === 'document' ? (
+        <TextField
+          label={translate(messages, 'quotations.decide.documentVersionId')}
+          description={translate(messages, 'quotations.decide.documentHelp')}
+          required
+          spellCheck={false}
+          autoComplete="off"
+          dir="ltr"
+          value={documentVersionId}
+          onChange={(event) => setDocumentVersionId(event.target.value)}
+          error={errorFor('documentVersionId')}
+          data-testid="quotation-decide-document"
+        />
+      ) : null}
       <div className="sm:col-span-2">
         <TextAreaField
           label={translate(messages, 'quotations.decide.note')}
@@ -846,7 +876,11 @@ function IssuePanel({
       ? quotation.currentRevision
       : null;
   const [expiresAt, setExpiresAt] = useState('');
-  const [errors, setErrors] = useState<Readonly<Record<string, string>>>({});
+  const {
+    errorKey: localErrorKey,
+    formRef: localFormRef,
+    refuse: localRefuse,
+  } = useLocalRefusal({ expiresAt });
   const [busy, setBusy] = useState(false);
   const [outcome, setOutcome] = useState<ActionState | null>(null);
 
@@ -857,12 +891,12 @@ function IssuePanel({
     if (raw.length > 0) {
       const parsed = new Date(raw);
       if (Number.isNaN(parsed.getTime())) {
-        setErrors({ expiresAt: 'quotations.issue.dateFormat' });
+        localRefuse({ expiresAt: 'quotations.issue.dateFormat' });
         return;
       }
       instant = parsed.toISOString();
     }
-    setErrors({});
+    localRefuse({});
     setBusy(true);
     const result = await issueQuotation(
       quotation.id,
@@ -901,6 +935,7 @@ function IssuePanel({
         </p>
       ) : (
         <form
+          ref={localFormRef}
           onSubmit={(event) => {
             event.preventDefault();
             void submit();
@@ -923,7 +958,9 @@ function IssuePanel({
             value={expiresAt}
             onChange={(event) => setExpiresAt(event.target.value)}
             error={
-              errors['expiresAt'] ? translateDynamic(messages, errors['expiresAt']) : undefined
+              localErrorKey('expiresAt')
+                ? translateDynamic(messages, localErrorKey('expiresAt') as string)
+                : undefined
             }
           />
           <div className="sm:col-span-2">
@@ -963,12 +1000,17 @@ function NewRevisionPanel({
   const [customerClass, setCustomerClass] = useState('');
   // FOUND and chosen by name (Owner directive, `P1-32-PRE-OD-UX`), never typed.
   const [requestedBy, setRequestedBy] = useState<ChosenRequester | null>(null);
-  const [errors, setErrors] = useState<Readonly<Record<string, string>>>({});
+  const {
+    errorKey: localErrorKey,
+    errors: localErrors,
+    formRef: localFormRef,
+    refuse: localRefuse,
+  } = useLocalRefusal({ ...lineValues(lines), customerClass });
   const [busy, setBusy] = useState(false);
   const [outcome, setOutcome] = useState<ActionState | null>(null);
 
   const errorFor = (name: string): string | undefined => {
-    const key = errors[name] ?? outcome?.fieldErrors?.[name];
+    const key = localErrorKey(name) ?? outcome?.fieldErrors?.[name];
     return key ? translateDynamic(messages, key) : undefined;
   };
 
@@ -978,7 +1020,7 @@ function NewRevisionPanel({
     if (klass.length > 0 && !INTERNAL_CODE.test(klass))
       found['customerClass'] = 'quotations.common.classFormat';
     const requester = requestedBy?.id ?? '';
-    setErrors(found);
+    localRefuse(found);
     if (Object.keys(found).length > 0) return;
 
     setBusy(true);
@@ -1019,6 +1061,7 @@ function NewRevisionPanel({
         {translate(messages, 'quotations.revise.explain')}
       </p>
       <form
+        ref={localFormRef}
         onSubmit={(event) => {
           event.preventDefault();
           void submit();
@@ -1057,7 +1100,7 @@ function NewRevisionPanel({
           lines={lines}
           onChange={setLines}
           canReadServices={canReadServices}
-          errors={lineErrors(errors, outcome)}
+          errors={lineErrors(localErrors, outcome)}
         />
         <OutcomeNote
           messages={messages}

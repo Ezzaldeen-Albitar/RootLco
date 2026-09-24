@@ -83,6 +83,7 @@ import {
   type ReopenAttempt,
   type ReworkLink,
 } from '../quality-contract';
+import { useHeldRefusal } from '@/lib/forms/use-local-refusal';
 
 const PRIMARY_BUTTON =
   'rounded-md bg-primary px-4 py-2 text-body font-medium text-on-primary transition-colors duration-fast ease-standard hover:bg-primary-hover disabled:opacity-60';
@@ -991,6 +992,10 @@ function ReworkRow({
   const [signOffFieldErrors, setSignOffFieldErrors] = useState<Readonly<Record<string, string>>>(
     {}
   );
+  // Question f: the cursor goes to the first refused field, and a complaint
+  // goes once its field changes (route sweep B3).
+  const { errors: signOffFieldErrorsRefusalErrors, formRef: signOffFieldErrorsRefusalFormRef } =
+    useHeldRefusal(signOffFieldErrors, { signOffBy });
   const [cost, setCost] = useState<ReadState<{ reworkCost: string; costCurrency: string }> | null>(
     null
   );
@@ -1092,7 +1097,11 @@ function ReworkRow({
         </p>
       ) : null}
       {capabilities.canSignOffRework && link.signOffAt === null ? (
-        <form action={() => void signOff()} className="mt-2 flex flex-wrap items-end gap-2">
+        <form
+          ref={signOffFieldErrorsRefusalFormRef}
+          action={() => void signOff()}
+          className="mt-2 flex flex-wrap items-end gap-2"
+        >
           <TextField
             name={`signOffBy-${link.id}`}
             label={translate(messages, 'quality.closure.signOffBy')}
@@ -1100,8 +1109,8 @@ function ReworkRow({
             value={signOffBy}
             onChange={(event) => setSignOffBy(event.target.value)}
             error={
-              signOffFieldErrors['signOffBy']
-                ? translateDynamic(messages, signOffFieldErrors['signOffBy'])
+              signOffFieldErrorsRefusalErrors['signOffBy']
+                ? translateDynamic(messages, signOffFieldErrorsRefusalErrors['signOffBy'])
                 : undefined
             }
             dir="ltr"
@@ -1463,6 +1472,16 @@ function AdditionalWorkRow({
   const [approvalFieldErrors, setApprovalFieldErrors] = useState<Readonly<Record<string, string>>>(
     {}
   );
+  // Question f: the cursor goes to the first refused field, and a complaint
+  // goes once its field changes (route sweep B3).
+  const { errors: approvalFieldErrorsRefusalErrors, formRef: approvalFieldErrorsRefusalFormRef } =
+    useHeldRefusal(approvalFieldErrors, {
+      decision,
+      channel,
+      decidingPartyRoleId,
+      presentedScope,
+      reason,
+    });
 
   useEffect(() => {
     let cancelled = false;
@@ -1590,7 +1609,11 @@ function AdditionalWorkRow({
         </form>
       ) : null}
       {capabilities.canApproveAdditionalWork && approval?.status === 'not-found' ? (
-        <form action={() => void approve()} className="mt-2 flex flex-wrap items-end gap-2">
+        <form
+          ref={approvalFieldErrorsRefusalFormRef}
+          action={() => void approve()}
+          className="mt-2 flex flex-wrap items-end gap-2"
+        >
           <SelectField
             key={`decision-${request.id}-${attempt}`}
             name={`decision-${request.id}`}
@@ -1624,8 +1647,11 @@ function AdditionalWorkRow({
             value={decidingPartyRoleId}
             onChange={(event) => setDecidingPartyRoleId(event.target.value)}
             error={
-              approvalFieldErrors['decidingPartyRoleId']
-                ? translateDynamic(messages, approvalFieldErrors['decidingPartyRoleId'])
+              approvalFieldErrorsRefusalErrors['decidingPartyRoleId']
+                ? translateDynamic(
+                    messages,
+                    approvalFieldErrorsRefusalErrors['decidingPartyRoleId']
+                  )
                 : undefined
             }
             dir="ltr"
@@ -1729,6 +1755,12 @@ function ClosurePanel({
    * instead of into a map nothing renders.
    */
   const [fieldErrors, setFieldErrors] = useState<Readonly<Record<string, string>>>({});
+  // Question f: the cursor goes to the first refused field, and a complaint
+  // goes once its field changes (route sweep B3).
+  const { errors: fieldErrorsRefusalErrors, formRef: fieldErrorsRefusalFormRef } = useHeldRefusal(
+    fieldErrors,
+    { toState, reason }
+  );
   const [attempt, setAttempt] = useState(0);
 
   if (!capabilities.canTransition || !capabilities.canClose) return null;
@@ -1780,7 +1812,11 @@ function ClosurePanel({
           {translate(messages, 'quality.closure.noClosureTarget')}
         </p>
       ) : (
-        <form action={() => void close()} className="flex flex-wrap items-end gap-3">
+        <form
+          ref={fieldErrorsRefusalFormRef}
+          action={() => void close()}
+          className="flex flex-wrap items-end gap-3"
+        >
           <SelectField
             key={`toState-${attempt}`}
             name="toState"
@@ -1790,8 +1826,8 @@ function ClosurePanel({
             options={targets.map((s) => ({ value: s.code, label: s.code }))}
             placeholder={translate(messages, 'quality.closure.chooseState')}
             error={
-              fieldErrors['toState']
-                ? translateDynamic(messages, fieldErrors['toState'])
+              fieldErrorsRefusalErrors['toState']
+                ? translateDynamic(messages, fieldErrorsRefusalErrors['toState'])
                 : undefined
             }
             required

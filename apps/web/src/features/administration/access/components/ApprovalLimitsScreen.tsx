@@ -19,6 +19,7 @@ import { useServerTable } from '../../shared/use-server-table';
 import { listApprovalLimits } from '../api';
 import type { ApprovalLimitRow, RoleRow } from '../types';
 import { createApprovalLimitAction, endApprovalLimitAction } from '../actions';
+import { useActionRefusal } from '@/lib/forms/use-action-refusal';
 
 /**
  * Approval limits.
@@ -300,8 +301,17 @@ function CreateDialog({
    */
   const [draft, setDraft] = useState<Record<string, string>>({});
   const retained = (name: string) => draft[name] ?? '';
-  const retain = (name: string) => (event: { target: { value: string } }) =>
+  // Question f: the cursor goes to the refused field, and its complaint goes
+  // once the operator edits it (route sweep B3).
+  const {
+    edited: refusalEdited,
+    errorKey: refusalErrorKey,
+    formRef: refusalFormRef,
+  } = useActionRefusal(state);
+  const retain = (name: string) => (event: { target: { value: string } }) => {
+    refusalEdited(name);
     setDraft((current) => ({ ...current, [name]: event.target.value }));
+  };
   /*
    * The companies this operator may act in, BY NAME.
    *
@@ -323,7 +333,7 @@ function CreateDialog({
   const [person, setPerson] = useState<ChosenAccount | null>(null);
   const t = (key: string) => translate(messages, key as keyof Messages);
   const error = (name: string) => {
-    const key = state.fieldErrors?.[name];
+    const key = refusalErrorKey(name);
     return key ? t(key) : undefined;
   };
 
@@ -334,7 +344,7 @@ function CreateDialog({
       messages={messages}
       title={t('approvalLimits.create.title')}
     >
-      <form action={formAction} className="flex flex-col gap-4" noValidate>
+      <form ref={refusalFormRef} action={formAction} className="flex flex-col gap-4" noValidate>
         <FormFeedback state={state} messages={messages} />
 
         {/*
@@ -369,7 +379,10 @@ function CreateDialog({
             label={t('approvalLimits.field.companyId')}
             required
             defaultValue={companyId}
-            onChange={(event) => setCompanyId(event.target.value)}
+            onChange={(event) => {
+              refusalEdited('companyId');
+              setCompanyId(event.target.value);
+            }}
             options={workingCompanies.map((company) => ({
               value: company.id,
               label: company.name,
@@ -410,7 +423,10 @@ function CreateDialog({
             name="roleId"
             label={t('approvalLimits.field.roleId')}
             defaultValue={roleId}
-            onChange={(event) => setRoleId(event.target.value)}
+            onChange={(event) => {
+              refusalEdited('roleId');
+              setRoleId(event.target.value);
+            }}
             options={roles.map((role) => ({ value: role.id, label: role.name }))}
             error={error('roleId')}
           />
@@ -421,7 +437,10 @@ function CreateDialog({
               locale={locale}
               label={t('approvalLimits.field.person')}
               value={person}
-              onChange={setPerson}
+              onChange={(next) => {
+                refusalEdited('userId');
+                setPerson(next);
+              }}
               canSearch
               error={error('userId')}
               countsAsUnsaved

@@ -309,6 +309,30 @@ describe('the template detail', () => {
   });
 });
 
+describe('the item form points at what to fix (route sweep B3)', () => {
+  it('moves the cursor to the first missing field and withdraws its complaint once it is filled', async () => {
+    const user = userEvent.setup();
+    renderLtr(
+      <TemplateDetailScreen
+        locale="en"
+        messages={en}
+        templateId={TEMPLATE}
+        initial={{ template, versions: [draftVersion] }}
+        canManage
+      />
+    );
+    const add = await screen.findByRole('button', { name: t('diagnostics.template.addItem') });
+    await user.click(add);
+    const code = screen.getByLabelText(new RegExp(`^${t('diagnostics.template.itemCode')}`));
+    const prompt = screen.getByLabelText(new RegExp(`^${t('diagnostics.template.prompt')}`));
+    await waitFor(() => expect(code).toHaveFocus());
+    expect(prompt).toHaveAttribute('aria-invalid', 'true');
+    await user.type(code, 'pad_depth');
+    expect(code).not.toHaveAttribute('aria-invalid', 'true');
+    expect(prompt).toHaveAttribute('aria-invalid', 'true');
+  });
+});
+
 describe('the job workbench', () => {
   it('lists the reports, opens one, and joins the checklist to its results', async () => {
     listJobReports.mockResolvedValue(ok({ items: [report] }));

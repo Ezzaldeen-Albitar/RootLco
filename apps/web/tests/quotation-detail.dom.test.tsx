@@ -525,6 +525,47 @@ describe('decisions are the server’s outcome, recorded against the presented r
   });
 });
 
+describe('the decision form points at what to fix (route sweep B3)', () => {
+  it('offers the document box only for document evidence, moves the cursor to it, and withdraws its complaint once typed', async () => {
+    const user = userEvent.setup();
+    renderDetail({ canDecide: true });
+    const form = await screen.findByRole('form', {
+      name: EN['quotations.decide.heading'] as string,
+    });
+    // No evidence chosen: no document box to fill in.
+    expect(within(form).queryByTestId('quotation-decide-document')).toBeNull();
+    await user.selectOptions(
+      within(form).getByLabelText(labelled('quotations.decide.decision')),
+      'approved'
+    );
+    await user.selectOptions(
+      within(form).getByLabelText(labelled('quotations.decide.channel')),
+      'email'
+    );
+    await user.selectOptions(
+      within(form).getByLabelText(labelled('quotations.decide.evidenceKind')),
+      'document'
+    );
+    const box = within(form).getByTestId('quotation-decide-document');
+    expect(box).toHaveAccessibleDescription(EN['quotations.decide.documentHelp'] as string);
+    await user.click(
+      within(form).getByRole('button', { name: EN['quotations.decide.submit'] as string })
+    );
+    await waitFor(() => expect(box).toHaveFocus());
+    expect(box).toHaveAttribute('aria-invalid', 'true');
+    await user.type(box, 'a');
+    expect(box).not.toHaveAttribute('aria-invalid', 'true');
+    expect(within(form).queryByText(EN['quotations.decide.documentNeeded'] as string)).toBeNull();
+    // Another kind of evidence: the box goes, and what was typed goes with it.
+    await user.selectOptions(
+      within(form).getByLabelText(labelled('quotations.decide.evidenceKind')),
+      'verbal'
+    );
+    expect(within(form).queryByTestId('quotation-decide-document')).toBeNull();
+    expect(decideRevision).not.toHaveBeenCalled();
+  });
+});
+
 describe('guarded writes send the QUOTATION version and renew it', () => {
   it('issues the current draft with the quotation’s recordVersion, then refreshes', async () => {
     const user = userEvent.setup();

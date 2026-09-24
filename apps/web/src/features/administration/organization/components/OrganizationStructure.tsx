@@ -29,6 +29,7 @@ import {
 } from '../actions';
 import { readBranchStatus } from '../api';
 import type { BranchView, CapacityView, CompanyView } from '../types';
+import { useActionRefusal } from '@/lib/forms/use-action-refusal';
 
 /**
  * Companies and branches, on the Organization screen.
@@ -375,10 +376,21 @@ function CompanyDialog({
   const [state, formAction] = useActionState<ActionState, FormData>(createCompanyAction, IDLE);
   const [draft, setDraft] = useState<Record<string, string>>({});
   const t = (key: string) => translate(messages, key as keyof Messages);
-  const retain = (name: string) => (event: { target: { value: string } }) =>
+  // Question f: the cursor goes to the refused field, and its complaint goes
+  // once the operator edits it (route sweep B3).
+  const {
+    edited: refusalEdited,
+    errorKey: refusalErrorKey,
+    formRef: refusalFormRef,
+  } = useActionRefusal(state);
+  const retain = (name: string) => (event: { target: { value: string } }) => {
+    refusalEdited(name);
     setDraft((current) => ({ ...current, [name]: event.target.value }));
-  const fieldError = (name: string) =>
-    state.fieldErrors?.[name] ? t(state.fieldErrors[name]) : undefined;
+  };
+  const fieldError = (name: string) => {
+    const key = refusalErrorKey(name);
+    return key ? t(key) : undefined;
+  };
 
   return (
     <Dialog
@@ -388,7 +400,7 @@ function CompanyDialog({
       title={t('organization.company.add')}
       description={t('organization.company.addDescription')}
     >
-      <form action={formAction} className="flex flex-col gap-4" noValidate>
+      <form ref={refusalFormRef} action={formAction} className="flex flex-col gap-4" noValidate>
         <FormFeedback state={state} messages={messages} />
         <TextField
           key={`code-${state.attempt ?? 0}`}
@@ -481,10 +493,21 @@ function BranchDialog({
   const [state, formAction] = useActionState<ActionState, FormData>(createBranchAction, IDLE);
   const [draft, setDraft] = useState<Record<string, string>>({});
   const t = (key: string) => translate(messages, key as keyof Messages);
-  const retain = (name: string) => (event: { target: { value: string } }) =>
+  // Question f: the cursor goes to the refused field, and its complaint goes
+  // once the operator edits it (route sweep B3).
+  const {
+    edited: refusalEdited,
+    errorKey: refusalErrorKey,
+    formRef: refusalFormRef,
+  } = useActionRefusal(state);
+  const retain = (name: string) => (event: { target: { value: string } }) => {
+    refusalEdited(name);
     setDraft((current) => ({ ...current, [name]: event.target.value }));
-  const fieldError = (name: string) =>
-    state.fieldErrors?.[name] ? t(state.fieldErrors[name]) : undefined;
+  };
+  const fieldError = (name: string) => {
+    const key = refusalErrorKey(name);
+    return key ? t(key) : undefined;
+  };
 
   return (
     <Dialog
@@ -494,7 +517,7 @@ function BranchDialog({
       title={t('organization.branch.add')}
       description={t('organization.branch.addDescription')}
     >
-      <form action={formAction} className="flex flex-col gap-4" noValidate>
+      <form ref={refusalFormRef} action={formAction} className="flex flex-col gap-4" noValidate>
         <FormFeedback state={state} messages={messages} />
         <SelectField
           key={`companyId-${state.attempt ?? 0}`}

@@ -375,6 +375,22 @@ export function validateLines(lines: readonly DraftLine[]): {
 }
 
 /**
+ * The current value behind every complaint `validateLines` can make, keyed the
+ * same way, so a form's own refusal can withdraw a complaint once its line
+ * changes (route sweep B3). `lines` stands for the number of lines.
+ */
+export function lineValues(lines: readonly DraftLine[]): Record<string, string> {
+  const values: Record<string, string> = { lines: String(lines.length) };
+  for (const line of lines) {
+    values[`line-${line.key}-serviceId`] = line.serviceId;
+    values[`line-${line.key}-quantity`] = line.quantity;
+    values[`line-${line.key}-discount`] = line.discount;
+    values[`line-${line.key}-description`] = line.description;
+  }
+  return values;
+}
+
+/**
  * The line errors to render, with the server's line refusal folded in.
  *
  * The API refuses a line against `body.lines[<n>].quantity`, and the browser

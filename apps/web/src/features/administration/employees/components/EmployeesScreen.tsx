@@ -25,6 +25,7 @@ import type { BranchView, CompanyView } from '../../organization/types';
 import { createEmployeeAction, setEmployeeStatusAction } from '../actions';
 import { listEmployees } from '../api';
 import type { EmployeePage, EmployeeView, LoginAccountOption } from '../types';
+import { useActionRefusal } from '@/lib/forms/use-action-refusal';
 
 /**
  * The employee register, one branch at a time.
@@ -285,10 +286,21 @@ function CreateEmployeeDialog({
   const [state, formAction] = useActionState<ActionState, FormData>(createEmployeeAction, IDLE);
   const [draft, setDraft] = useState<Record<string, string>>({});
   const t = (key: string) => translate(messages, key as keyof Messages);
-  const retain = (name: string) => (event: { target: { value: string } }) =>
+  // Question f: the cursor goes to the refused field, and its complaint goes
+  // once the operator edits it (route sweep B3).
+  const {
+    edited: refusalEdited,
+    errorKey: refusalErrorKey,
+    formRef: refusalFormRef,
+  } = useActionRefusal(state);
+  const retain = (name: string) => (event: { target: { value: string } }) => {
+    refusalEdited(name);
     setDraft((current) => ({ ...current, [name]: event.target.value }));
-  const fieldError = (name: string) =>
-    state.fieldErrors?.[name] ? t(state.fieldErrors[name]) : undefined;
+  };
+  const fieldError = (name: string) => {
+    const key = refusalErrorKey(name);
+    return key ? t(key) : undefined;
+  };
 
   return (
     <Dialog
@@ -298,7 +310,7 @@ function CreateEmployeeDialog({
       title={t('employees.add')}
       description={`${t('employees.addDescription')} ${branch.name}`}
     >
-      <form action={formAction} className="flex flex-col gap-4" noValidate>
+      <form ref={refusalFormRef} action={formAction} className="flex flex-col gap-4" noValidate>
         <FormFeedback state={state} messages={messages} />
         <input type="hidden" name="companyId" value={branch.companyId} />
         <input type="hidden" name="branchId" value={branch.id} />

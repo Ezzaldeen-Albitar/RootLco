@@ -20,6 +20,7 @@ import { WorkOrderDeliveryPanel } from '@/features/delivery/components/WorkOrder
 import { JobBlockersPanel } from '@/features/quality/components/JobBlockersPanel';
 import { WorkOrderHistorySection } from '@/features/quality/components/WorkOrderHistorySection';
 import { JobPanel } from './JobPanel';
+import { useHeldRefusal } from '@/lib/forms/use-local-refusal';
 
 /**
  * The work-order detail (P1-29, `W3`) — identity, lifecycle, and the job graph.
@@ -412,6 +413,12 @@ function LifecyclePanel({
    * different state rather than to retype anything.
    */
   const [fieldErrors, setFieldErrors] = useState<Readonly<Record<string, string>>>({});
+  // Question f: the cursor goes to the refused field, and a complaint goes once
+  // its field changes (route sweep B3).
+  const { errors: refusalErrors, formRef: refusalFormRef } = useHeldRefusal(fieldErrors, {
+    toState,
+    reason,
+  });
 
   const chosen = nextStates.find((state) => state.code === toState) ?? null;
   const needsReason = chosen?.requiresReason ?? false;
@@ -419,7 +426,9 @@ function LifecyclePanel({
   const submit = async () => {
     if (toState === '') return;
     if (needsReason && reason.trim().length === 0) {
-      setProblem('workOrders.detail.reasonRequired');
+      // Said on the reason itself, where the cursor is taken.
+      setProblem(null);
+      setFieldErrors({ reason: 'workOrders.detail.reasonRequired' });
       return;
     }
     setProblem(null);
@@ -480,7 +489,16 @@ function LifecyclePanel({
           {translate(messages, 'workOrders.detail.noNextStates')}
         </p>
       ) : (
-        <div className="flex flex-col gap-3">
+        <form
+          ref={refusalFormRef}
+          noValidate
+          onSubmit={(event) => {
+            event.preventDefault();
+            void submit();
+          }}
+          aria-labelledby="work-order-lifecycle-heading"
+          className="flex flex-col gap-3"
+        >
           <div className="grid gap-3 sm:grid-cols-2">
             <SelectField
               label={translate(messages, 'workOrders.detail.toState')}
@@ -499,8 +517,8 @@ function LifecyclePanel({
               }))}
               placeholder={translate(messages, 'workOrders.detail.chooseState')}
               error={
-                fieldErrors['toState']
-                  ? translateDynamic(messages, fieldErrors['toState'])
+                refusalErrors['toState']
+                  ? translateDynamic(messages, refusalErrors['toState'])
                   : undefined
               }
             />
@@ -512,8 +530,8 @@ function LifecyclePanel({
                 value={reason}
                 onChange={(event) => setReason(event.target.value)}
                 error={
-                  problem === 'workOrders.detail.reasonRequired'
-                    ? translate(messages, 'workOrders.detail.reasonRequired')
+                  refusalErrors['reason']
+                    ? translateDynamic(messages, refusalErrors['reason'])
                     : undefined
                 }
               />
@@ -528,9 +546,8 @@ function LifecyclePanel({
 
           <div>
             <button
-              type="button"
+              type="submit"
               disabled={toState === '' || busy || pending}
-              onClick={() => void submit()}
               className="rounded-md bg-primary px-4 py-2 text-body font-medium text-on-primary transition-colors duration-fast ease-standard hover:bg-primary-hover disabled:opacity-60"
             >
               {translate(
@@ -545,7 +562,7 @@ function LifecyclePanel({
               </code>
             </span>
           </div>
-        </div>
+        </form>
       )}
     </section>
   );

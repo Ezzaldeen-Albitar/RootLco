@@ -9,6 +9,7 @@ import { changeOwnPasswordAction } from '../actions';
 import type { PlatformSession } from '../api/session';
 import { PRIMARY_BUTTON, SECTION_HINT, Section } from './ui';
 import { useConsoleAction } from './use-console-action';
+import { useFocusFirstInvalid } from '@/lib/forms/use-focus-first-invalid';
 
 /**
  * Account and security for the signed-in platform operator.
@@ -58,11 +59,20 @@ export function AccountSecurityScreen({
   const [confirmPassword, setConfirmPassword] = useState('');
 
   const [local, setLocal] = useState<Readonly<Record<string, string>>>({});
+  // Refused attempts made here, before anything is sent. Added to the write's
+  // own attempts so the cursor moves to the first thing to fix after either
+  // kind of refusal (route sweep B3, question f).
+  const [localAttempts, setLocalAttempts] = useState(0);
 
   const errors = { ...(action.state.fieldErrors ?? {}), ...local };
   const error = (name: string) =>
     errors[name] ? translateDynamic(messages, errors[name] as string) : undefined;
   const succeeded = action.state.status === 'success' && Object.keys(local).length === 0;
+  const formRef = useFocusFirstInvalid({
+    status: Object.keys(errors).length > 0 ? 'invalid' : 'idle',
+    fieldErrors: errors,
+    attempt: localAttempts + (action.state.attempt ?? 0),
+  });
 
   /**
    * The three checks the operator can answer without a round trip.
@@ -104,7 +114,10 @@ export function AccountSecurityScreen({
   const submit = () => {
     const found = checkLocally();
     setLocal(found);
-    if (Object.keys(found).length > 0) return;
+    if (Object.keys(found).length > 0) {
+      setLocalAttempts((count) => count + 1);
+      return;
+    }
     action.run(
       () => changeOwnPasswordAction({ currentPassword, newPassword, confirmPassword }),
       () => {
@@ -170,6 +183,7 @@ export function AccountSecurityScreen({
         ) : null}
 
         <form
+          ref={formRef}
           noValidate
           className="mt-3 flex max-w-xl flex-col gap-4"
           onSubmit={(event) => {

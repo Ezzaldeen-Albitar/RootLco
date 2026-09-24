@@ -653,6 +653,28 @@ describe('the payer the builder opened on', () => {
   });
 });
 
+describe('the builder points at what to fix (route sweep B3)', () => {
+  it('moves the cursor to the first refused field of the line, and withdraws its complaint once corrected', async () => {
+    const user = userEvent.setup();
+    renderScreen({ canManage: true, canReadCustomers: true });
+    await user.click(screen.getByRole('button', { name: EN['quotations.list.create'] as string }));
+    const form = await builderForm();
+    const service = within(form).getByLabelText(labelled('quotations.picker.serviceIdField'));
+    const quantity = within(form).getByLabelText(labelled('quotations.lines.quantity'));
+    await user.click(
+      within(form).getByRole('button', { name: EN['quotations.build.submit'] as string })
+    );
+    // The line's service is the first thing to fix, so the cursor goes there.
+    await waitFor(() => expect(service).toHaveFocus());
+    expect(quantity).toHaveAttribute('aria-invalid', 'true');
+    await user.type(quantity, '2');
+    // Corrected: that complaint goes; the service's stays until it is fixed too.
+    expect(quantity).not.toHaveAttribute('aria-invalid', 'true');
+    expect(service).toHaveAttribute('aria-invalid', 'true');
+    expect(createQuotation).not.toHaveBeenCalled();
+  });
+});
+
 describe('the builder sends lines as strings and prices nothing', () => {
   it('is not offered without quo.quotation.manage', () => {
     renderScreen({ canManage: false });

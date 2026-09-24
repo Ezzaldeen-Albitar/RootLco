@@ -197,6 +197,26 @@ describe('Departments', () => {
     expect(send).not.toHaveBeenCalled();
   });
 
+  it('moves the cursor to the refused code and withdraws the complaint once it is edited (route sweep B3)', async () => {
+    get.mockResolvedValue({ ok: true, status: 200, data: { items: [] }, correlationId: 'c' });
+    const user = userEvent.setup();
+    renderDepartments();
+    await chooseBranch(user);
+
+    await user.click(await screen.findByRole('button', { name: EN('departments.add') }));
+    const dialog = screen.getByRole('dialog');
+    await user.type(within(dialog).getByLabelText(/^Department name/), 'Parts desk');
+    await user.type(within(dialog).getByLabelText(/^Code/), '9 bad');
+    await user.click(within(dialog).getByRole('button', { name: EN('admin.create') }));
+
+    // Re-queried: the control is keyed on the attempt and remounts after it.
+    await waitFor(() => expect(within(dialog).getByLabelText(/^Code/)).toHaveFocus());
+    expect(within(dialog).getByLabelText(/^Code/)).toHaveAttribute('aria-invalid', 'true');
+    await user.type(within(dialog).getByLabelText(/^Code/), 'x');
+    expect(within(dialog).getByLabelText(/^Code/)).not.toHaveAttribute('aria-invalid', 'true');
+    expect(send).not.toHaveBeenCalled();
+  });
+
   it('renames with the row version as If-Match', async () => {
     get.mockResolvedValue({
       ok: true,

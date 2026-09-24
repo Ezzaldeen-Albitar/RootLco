@@ -41,6 +41,7 @@ import {
   type TemplateItem,
   type TemplateVersion,
 } from '../diagnostics-contract';
+import { useHeldRefusal } from '@/lib/forms/use-local-refusal';
 
 const PRIMARY_BUTTON =
   'rounded-md bg-primary px-4 py-2 text-body font-medium text-on-primary transition-colors duration-fast ease-standard hover:bg-primary-hover disabled:opacity-60';
@@ -314,10 +315,17 @@ function NewVersionForm({
    * picked while they pick again.
    */
   const [fieldErrors, setFieldErrors] = useState<Readonly<Record<string, string>>>({});
+  // Question f: the cursor goes to the first refused field, and a complaint
+  // goes once its field changes (route sweep B3).
+  const { errors: fieldErrorsRefusalErrors, formRef: fieldErrorsRefusalFormRef } = useHeldRefusal(
+    fieldErrors,
+    { copyFromVersionId }
+  );
   const [attempt, setAttempt] = useState(0);
 
   return (
     <form
+      ref={fieldErrorsRefusalFormRef}
       action={async () => {
         setPending(true);
         setProblem(null);
@@ -351,8 +359,8 @@ function NewVersionForm({
         }))}
         placeholder={translate(messages, 'diagnostics.template.startEmpty')}
         error={
-          fieldErrors['copyFromVersionId']
-            ? translateDynamic(messages, fieldErrors['copyFromVersionId'])
+          fieldErrorsRefusalErrors['copyFromVersionId']
+            ? translateDynamic(messages, fieldErrorsRefusalErrors['copyFromVersionId'])
             : undefined
         }
       />
@@ -520,15 +528,22 @@ function NewItemForm({
   const [pending, setPending] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Readonly<Record<string, string>>>({});
+  // Question f: the cursor goes to the first refused field, and a complaint
+  // goes once its field changes (route sweep B3).
+  const { errors: fieldErrorsRefusalErrors, formRef: fieldErrorsRefusalFormRef } = useHeldRefusal(
+    fieldErrors,
+    { itemCode, prompt, responseType, unit }
+  );
   const [attempt, setAttempt] = useState(0);
 
   const errorFor = (field: string): string | undefined => {
-    const key = fieldErrors[field];
+    const key = fieldErrorsRefusalErrors[field];
     return key ? translateDynamic(messages, key) : undefined;
   };
 
   return (
     <form
+      ref={fieldErrorsRefusalFormRef}
       action={async () => {
         setPending(true);
         setProblem(null);

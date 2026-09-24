@@ -14,6 +14,7 @@ import { createPlanAction, updatePlanAction, type PlanInput } from '../actions';
 import { PLAN_STATUSES, TERM_PRESETS, type SubscriptionPlan } from '../types';
 import { Cell, PRIMARY_BUTTON, SECONDARY_BUTTON, SimpleTable, StatusBadge } from './ui';
 import { useConsoleAction } from './use-console-action';
+import { useStateRefusal } from '@/lib/forms/use-local-refusal';
 
 /**
  * The subscription plan catalogue (P1-32-PRE-068).
@@ -171,7 +172,21 @@ function PlanDialog({
   const [status, setStatus] = useState(plan?.status ?? 'draft');
   const [effectiveFrom, setEffectiveFrom] = useState(plan?.effectiveFrom.slice(0, 10) ?? '');
   const [effectiveTo, setEffectiveTo] = useState(plan?.effectiveTo?.slice(0, 10) ?? '');
-  const errors = action.state.fieldErrors ?? {};
+  // Question f: the cursor goes to the first refused field, and a complaint
+  // goes once its field changes (route sweep B3).
+  const { errors: refusalErrors, formRef: refusalFormRef } = useStateRefusal(action.state, {
+    planCode,
+    displayName,
+    description,
+    currencyCode,
+    listPrice,
+    term,
+    extraFeature,
+    status,
+    effectiveFrom,
+    effectiveTo,
+  });
+  const errors = refusalErrors;
   const error = (name: string) => (errors[name] ? t(errors[name] as string) : undefined);
   const featureList = [...new Set([...features, ...Object.keys(entitlements)])].sort();
 
@@ -214,6 +229,7 @@ function PlanDialog({
       title={t(plan ? 'platform.plans.editTitle' : 'platform.plans.newTitle')}
     >
       <form
+        ref={refusalFormRef}
         noValidate
         className="flex flex-col gap-3"
         onSubmit={(event) => {
