@@ -20,7 +20,7 @@ import {
 import { useBranchTarget } from '@/features/working-context/use-branch-target';
 import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
-import { translate, translateDynamic } from '@/i18n/get-messages';
+import { translate, translateDynamic, translateWithValues } from '@/i18n/get-messages';
 import type { ActionState } from '@/lib/forms/action-result';
 import { useFocusFirstInvalid } from '@/lib/forms/use-focus-first-invalid';
 import { formatDateTime } from '@/lib/format';
@@ -887,13 +887,33 @@ function IssueForm({
   });
   const requiredParts = useRequiredParts(canReadWorkOrder ? workOrderId : null);
   /*
-   * A line the list in hand cannot contain is treated as none chosen, so the
-   * form never sends a line the control is not showing.
+   * The required part the form was started from ("Issue" on its row), for as
+   * long as the operator has not chosen otherwise.
+   *
+   * While the job's list is still being read, or could not be read, the select
+   * has nothing to show it in. It used to be treated as none chosen, so a draw
+   * pressed in that moment went out UNLINKED without a word (route sweep B2
+   * review). It is now kept, said in words beside a control that unlinks it, and
+   * sent. Once the list answers, a line it holds is shown in the select; a line
+   * it no longer holds is dropped, and the form says so rather than dropping it
+   * silently.
    */
-  const chosenRequiredPart =
-    canReadWorkOrder &&
-    (requiredParts.items === null ||
-      !requiredParts.items.some((part) => part.id === form.requiredPartRef))
+  const carried = prefill?.requiredPartRef ?? '';
+  const holdsCarried = carried !== '' && canReadWorkOrder && form.requiredPartRef === carried;
+  const carriedPending = holdsCarried && requiredParts.items === null;
+  const carriedGone =
+    holdsCarried &&
+    requiredParts.items !== null &&
+    !requiredParts.items.some((part) => part.id === carried);
+  /*
+   * Otherwise a line the list in hand cannot contain is treated as none chosen,
+   * so the form never sends a line the control is not showing.
+   */
+  const chosenRequiredPart = carriedPending
+    ? carried
+    : canReadWorkOrder &&
+        (requiredParts.items === null ||
+          !requiredParts.items.some((part) => part.id === form.requiredPartRef))
       ? ''
       : form.requiredPartRef;
   const [errors, setErrors] = useState<Readonly<Record<string, string>>>({});
@@ -1087,23 +1107,60 @@ function IssueForm({
         onChange={(event) => setForm((f) => ({ ...f, quantity: event.target.value }))}
         error={errorFor('quantity')}
       />
-      {canReadWorkOrder ? (
-        <SelectField
-          label={translate(messages, 'inventory.issue.requiredPart')}
-          description={
-            requiredParts.refused
-              ? translateDynamic(messages, requiredParts.refused)
-              : translate(messages, 'inventory.issue.requiredPartHelp')
-          }
-          value={chosenRequiredPart}
-          onChange={(event) => setForm((f) => ({ ...f, requiredPartRef: event.target.value }))}
-          options={(requiredParts.items ?? []).map((part) => ({
-            value: part.id,
-            label: `${part.description} — ${part.quantity} ${part.unit}`,
-          }))}
-          placeholder={translate(messages, 'inventory.issue.noRequiredPart')}
-          error={errorFor('requiredPartRef')}
-        />
+      {carriedPending ? (
+        <div
+          role="group"
+          aria-labelledby="issue-required-part-carried"
+          className="flex flex-col gap-1.5"
+        >
+          <span
+            id="issue-required-part-carried"
+            className="text-label font-medium text-text-primary"
+          >
+            {translate(messages, 'inventory.issue.requiredPart')}
+          </span>
+          <p role="status" className="text-supporting text-text-secondary">
+            {translateWithValues(messages, 'inventory.issue.requiredPartCarried', {
+              part: prefill?.itemLabel ?? '',
+            })}
+            {requiredParts.refused ? (
+              <> {translateDynamic(messages, requiredParts.refused)}</>
+            ) : null}
+          </p>
+          <div>
+            <button
+              type="button"
+              className={SECONDARY_BUTTON}
+              onClick={() => setForm((f) => ({ ...f, requiredPartRef: '' }))}
+            >
+              {translate(messages, 'inventory.issue.requiredPartUnlink')}
+            </button>
+          </div>
+        </div>
+      ) : canReadWorkOrder ? (
+        <div className="flex flex-col gap-1.5">
+          <SelectField
+            label={translate(messages, 'inventory.issue.requiredPart')}
+            description={
+              requiredParts.refused
+                ? translateDynamic(messages, requiredParts.refused)
+                : translate(messages, 'inventory.issue.requiredPartHelp')
+            }
+            value={chosenRequiredPart}
+            onChange={(event) => setForm((f) => ({ ...f, requiredPartRef: event.target.value }))}
+            options={(requiredParts.items ?? []).map((part) => ({
+              value: part.id,
+              label: `${part.description} — ${part.quantity} ${part.unit}`,
+            }))}
+            placeholder={translate(messages, 'inventory.issue.noRequiredPart')}
+            error={errorFor('requiredPartRef')}
+          />
+          {carriedGone ? (
+            <p role="status" className="text-supporting text-text-secondary">
+              {translate(messages, 'inventory.issue.requiredPartGone')}
+            </p>
+          ) : null}
+        </div>
       ) : (
         <ReferenceBox
           label={translate(messages, 'inventory.parts.requiredPartReference.label')}

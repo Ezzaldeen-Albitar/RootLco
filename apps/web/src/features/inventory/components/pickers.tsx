@@ -1,10 +1,10 @@
 'use client';
 
-import { useCallback } from 'react';
+import { useCallback, useState } from 'react';
 import { regexes } from 'zod';
 
 import { INITIAL_REQUEST } from '@/components/data-table/table-state';
-import { TextField } from '@/components/forms/Field';
+import { CheckboxField, TextField } from '@/components/forms/Field';
 import { SearchPicker } from '@/components/search/SearchPicker';
 import { useUnsavedGuard } from '@/features/working-context/WorkingContextProvider';
 import type { Locale } from '@/i18n/config';
@@ -74,13 +74,36 @@ export function itemChoiceOf(item: InventoryItem): ItemChoice {
   return { id: item.id, label: `${item.sku} — ${item.name}` };
 }
 
+/** An archived catalogue row as a choice: the same words, saying it is archived. */
+function archivedChoiceOf(messages: Messages, item: InventoryItem): ItemChoice {
+  return {
+    id: item.id,
+    label: translateWithValues(messages, 'inventory.itemPicker.archivedOption', {
+      label: itemChoiceOf(item).label,
+    }),
+  };
+}
+
 /**
  * One item of the tenant's catalogue, found by the start of its stock code or its
- * name (`inv.item-search`, active items only) and chosen by what it says.
+ * name (`inv.item-search`) and chosen by what it says.
  *
  * Offered only with `inv.item.read`, the read's one code; without it the picker
  * says why, and the caller renders `ReferenceBox` where the stock code alone is
  * enough for what it sends.
+ *
+ * ## Active items by default; archived ones where the server still takes them
+ *
+ * `inv.item-search` answers active items unless asked for archived ones, and
+ * takes one status at a time. A write form keeps the default: reserving and
+ * issuing refuse an archived item (`stock_item_archived`,
+ * `InventoryStockService.requireStockTrackedItem`), so offering one would only
+ * set up a refusal. A LIST FILTER passes `offerArchived`: the availability,
+ * reservation and movement reads filter by item without looking at its status,
+ * so an archived item's stock and history are still the server's to show. The
+ * filter then offers a labelled switch to search archived items instead, and
+ * every archived match says so, in the list and once chosen. Flipping the switch
+ * starts the search again under the other status.
  */
 export function ItemPicker({
   messages,
@@ -92,6 +115,7 @@ export function ItemPicker({
   error,
   countsAsUnsaved = true,
   pristineId = null,
+  offerArchived = false,
   testId,
 }: {
   readonly messages: Messages;
@@ -106,12 +130,19 @@ export function ItemPicker({
   readonly countsAsUnsaved?: boolean;
   /** The item a form opened with; holding it is not unsaved work. */
   readonly pristineId?: string | null;
+  /**
+   * A list filter over a read that still answers for archived items: offer a
+   * switch to search them. Never for a write the server refuses them on.
+   */
+  readonly offerArchived?: boolean;
   readonly testId: string;
 }) {
+  const [archived, setArchived] = useState(false);
+  const searchArchived = offerArchived && archived;
   const load = useCallback(
     async (term: string, cursor: string | null): Promise<ReadState<CursorPage<ItemChoice>>> => {
       const page = await listItems(
-        { search: term, lifecycleStatus: 'active' },
+        { search: term, lifecycleStatus: searchArchived ? 'archived' : 'active' },
         { ...INITIAL_REQUEST, pageSize: 10 },
         cursor
       );
@@ -119,17 +150,22 @@ export function ItemPicker({
       return {
         status: 'ok',
         data: {
-          items: page.rows.map(itemChoiceOf),
+          items: page.rows.map((row) =>
+            searchArchived ? archivedChoiceOf(messages, row) : itemChoiceOf(row)
+          ),
           nextCursor: page.nextCursor,
           hasMore: page.hasMore,
         },
         correlationId: page.correlationId,
       };
     },
-    []
+    [searchArchived, messages]
   );
-  return (
+  const picker = (
     <SearchPicker<ItemChoice>
+      // A search under the other status is a new search: the term, the pages
+      // and any reply still in flight belong to the one it replaces.
+      key={searchArchived ? 'archived' : 'active'}
       messages={messages}
       locale={locale}
       label={label}
@@ -151,6 +187,21 @@ export function ItemPicker({
       countsAsUnsaved={countsAsUnsaved}
       testId={testId}
     />
+  );
+  if (!offerArchived || !canSearch) return picker;
+  return (
+    <div className="flex flex-col gap-2">
+      {picker}
+      {value === null ? (
+        <CheckboxField
+          label={translate(messages, 'inventory.itemPicker.searchArchived')}
+          description={translate(messages, 'inventory.itemPicker.searchArchivedHelp')}
+          checked={archived}
+          onChange={(event) => setArchived(event.target.checked)}
+          data-testid={`${testId}-archived`}
+        />
+      ) : null}
+    </div>
   );
 }
 

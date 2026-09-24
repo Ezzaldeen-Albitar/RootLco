@@ -428,16 +428,54 @@ describe('finding the job when none is named (WorkOrderPicker)', () => {
     expect(screen.queryByText(EN['state.noResults.title'] as string)).toBeNull();
   });
 
-  it('without the work-order code there is no box and no submit, and it says so', () => {
-    renderChooser({ canSearchWorkOrders: false });
-    expect(screen.getByText(EN['workOrders.picker.notPermitted'] as string)).toBeVisible();
+  it('without the work-order code keeps a labelled reference box and a submit, checked as the server checks it, and the invoice of the typed job is created (route sweep B2)', async () => {
+    /*
+     * `sal.invoice-create` needs `sal.invoice.manage` and `sal.finance.view`
+     * only, so a caller without `wo.work_order.read` must not lose the way in:
+     * no search, but the box they had before the picker, and a submit.
+     */
+    PERMISSIONS = ['sal.invoice.manage', 'sal.finance.view'];
+    const user = userEvent.setup();
+    const first = await renderPage({ locale: 'en' });
     expect(screen.queryByRole('searchbox')).toBeNull();
-    expect(
-      screen.queryByRole('button', { name: EN['invoices.choose.submit'] as string })
-    ).toBeNull();
-    // The sentence carries the id a caller may describe a control with, so no
-    // control ever points at an element that is not there (route sweep B2).
-    expect(screen.getByText(EN['workOrders.picker.notPermitted'] as string).id).not.toBe('');
+    expect(listWorkOrders).not.toHaveBeenCalled();
+    const box = screen.getByLabelText(labelled('invoices.choose.referenceLabel'));
+    expect(box).toHaveAttribute('dir', 'ltr');
+    expect(screen.getByText(EN['invoices.choose.referenceHelp'] as string)).toBeVisible();
+    const submit = screen.getByRole('button', { name: EN['invoices.choose.submit'] as string });
+    expect(submit).toBeEnabled();
+    // Empty: refused on the box, the cursor goes there, nothing opens.
+    await user.click(submit);
+    expect(box).toHaveAttribute('aria-invalid', 'true');
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      EN['invoices.choose.referenceFormat'] as string
+    );
+    await waitFor(() => expect(box).toHaveFocus());
+    // Shaped 8-4-4-4-12 in hex but with no valid version or variant: the
+    // server's identifier rule refuses it, so this box does too.
+    await user.type(box, 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa');
+    expect(box).not.toHaveAttribute('aria-invalid', 'true');
+    await user.click(submit);
+    expect(box).toHaveAttribute('aria-invalid', 'true');
+    expect(push).not.toHaveBeenCalled();
+    await user.clear(box);
+    await user.type(box, ` ${WORK_ORDER_ID} `);
+    await user.click(submit);
+    expect(push).toHaveBeenCalledWith(`/en/invoices?workOrderId=${WORK_ORDER_ID}`);
+    first.unmount();
+    // The address the chooser opened: the job is not read, the invoice is made.
+    createInvoice.mockResolvedValue({
+      state: { status: 'success', messageKey: 'invoices.create.success', attempt: 1 },
+      created: { ...detail(), replayed: false },
+    });
+    await renderPage({ locale: 'en' }, { workOrderId: WORK_ORDER_ID });
+    expect(readWorkOrderDetail).not.toHaveBeenCalled();
+    const form = await screen.findByRole('form', { name: EN['invoices.create.heading'] as string });
+    await user.click(
+      within(form).getByRole('button', { name: EN['invoices.create.submit'] as string })
+    );
+    await waitFor(() => expect(createInvoice).toHaveBeenCalledTimes(1));
+    expect(createInvoice.mock.calls[0]?.[0]).toEqual({ workOrderId: WORK_ORDER_ID });
   });
 
   it('with several branches and none chosen, asks for the branch and reads nothing', () => {

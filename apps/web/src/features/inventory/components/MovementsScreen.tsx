@@ -1,12 +1,13 @@
 'use client';
 
 import Link from 'next/link';
-import { useCallback, useMemo, useState, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 
 import { DataTable, type Column } from '@/components/data-table/DataTable';
 import { INITIAL_REQUEST, type TableRequest } from '@/components/data-table/table-state';
 import { useServerTable } from '@/components/data-table/use-server-table';
 import { SelectField, TextField } from '@/components/forms/Field';
+import { readWorkOrderDetail } from '@/features/work-orders/api';
 import { WorkOrderPicker } from '@/features/work-orders/components/WorkOrderPicker';
 import type { WorkOrderListEntry } from '@/features/work-orders/work-orders-contract';
 import { useUnsavedGuard } from '@/features/working-context/WorkingContextProvider';
@@ -177,8 +178,33 @@ function LedgerPanel({
   readonly canReadItems: boolean;
 }) {
   const locations = useLocations(target);
-  const unreadableLink =
-    canReadWorkOrders && initialWorkOrderId !== null && initialWorkOrder === null;
+  /*
+   * The job the address named, when the page's read of it did not answer. A
+   * read that failed for a moment used to drop the job for good: the filter
+   * narrowed nothing and nothing on screen could bring it back. The panel now
+   * offers to read it again (route sweep B2 review); an answer puts the job in
+   * the picker, where "Show movements" applies it like any other choice. A
+   * reply that lands after the panel is gone — a branch switch remounts it — is
+   * dropped.
+   */
+  const [link, setLink] = useState<{
+    readonly phase: 'unread' | 'reading' | 'restored';
+    readonly correlationId: string | null;
+  }>(() => ({
+    phase:
+      canReadWorkOrders && initialWorkOrderId !== null && initialWorkOrder === null
+        ? 'unread'
+        : 'restored',
+    correlationId: null,
+  }));
+  const unreadableLink = link.phase !== 'restored';
+  const live = useRef(true);
+  useEffect(() => {
+    live.current = true;
+    return () => {
+      live.current = false;
+    };
+  }, []);
   const [draft, setDraft] = useState(() => ({
     locationId: '',
     movementType: '',
@@ -273,6 +299,19 @@ function LedgerPanel({
     return key ? translateDynamic(messages, key) : undefined;
   };
 
+  const readLinkAgain = async () => {
+    if (initialWorkOrderId === null) return;
+    setLink({ phase: 'reading', correlationId: null });
+    const detail = await readWorkOrderDetail(initialWorkOrderId);
+    if (!live.current) return;
+    if (detail.status === 'ok') {
+      setWorkOrder(detail.data.workOrder);
+      setLink({ phase: 'restored', correlationId: null });
+    } else {
+      setLink({ phase: 'unread', correlationId: detail.correlationId });
+    }
+  };
+
   const submit = () => {
     const outcome = criteriaOf(current);
     if ('errors' in outcome) {
@@ -296,9 +335,28 @@ function LedgerPanel({
         {translate(messages, 'inventory.movements.audited')}
       </p>
       {unreadableLink ? (
-        <p role="status" className="text-caption text-text-muted">
-          {translate(messages, 'inventory.workOrderLink.unreadable')}
-        </p>
+        <div className="flex flex-wrap items-center gap-2">
+          <p role="status" className="text-caption text-text-muted">
+            {translate(messages, 'inventory.workOrderLink.unreadable')}
+            {link.correlationId ? (
+              <>
+                {' '}
+                {translate(messages, 'state.correlationId')}{' '}
+                <code className="font-mono" dir="ltr">
+                  {link.correlationId}
+                </code>
+              </>
+            ) : null}
+          </p>
+          <button
+            type="button"
+            disabled={link.phase === 'reading'}
+            onClick={() => void readLinkAgain()}
+            className="rounded-md border border-border px-3 py-1.5 text-body text-text-primary disabled:text-text-disabled focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+          >
+            {translate(messages, 'inventory.workOrderLink.readAgain')}
+          </button>
+        </div>
       ) : null}
       <form
         onSubmit={(event) => {
@@ -319,6 +377,7 @@ function LedgerPanel({
               onChange={setItem}
               canSearch
               countsAsUnsaved={false}
+              offerArchived
               testId="movements-item-picker"
             />
           ) : (

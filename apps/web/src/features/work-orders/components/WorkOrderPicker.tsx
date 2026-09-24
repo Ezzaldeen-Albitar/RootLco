@@ -170,8 +170,10 @@ export function WorkOrderPicker({
   const setTerm = (text: string) => setTyped({ text, version: context.version });
 
   // A chosen job is work the operator would lose: a branch switch asks first.
-  // A filter's choice, or the job the form opened with, is not.
-  useUnsavedGuard(countsAsUnsaved && value !== null && value.id !== pristineId);
+  // A filter's choice, or the job the form opened with, is not. Putting that
+  // job back — none chosen where the form opened on one — IS a change, so it
+  // counts as unsaved work too (route sweep B2 review).
+  useUnsavedGuard(countsAsUnsaved && (value?.id ?? null) !== pristineId);
 
   // Forget the choice and the term when the working context changes.
   useWorkingContextChange(() => {

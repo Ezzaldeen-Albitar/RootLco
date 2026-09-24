@@ -1226,6 +1226,49 @@ describe('a reservation being written and a branch switch', () => {
     expect(heldBranch()).toBe(TEST_BRANCH.id);
   });
 
+  it('putting back the job the form opened on is a change: the switch asks first (route sweep B2 review)', async () => {
+    const user = userEvent.setup();
+    renderLtr(
+      inBranch(
+        <>
+          <BranchSwitch to={TEST_BRANCH.id} label="first" />
+          <BranchSwitch to={OTHER_BRANCH.id} label="second" />
+          <WorkingBranchProbe />
+          <InventoryScreen
+            locale="en"
+            messages={en}
+            initialWorkOrderId={WORK_ORDER_ID}
+            initialWorkOrder={workOrder as never}
+            canReadWorkOrders={true}
+            canReadStock={true}
+            canReadBranches={true}
+            canOperate={true}
+          />
+        </>,
+        { snapshot: branchSnapshot([TEST_BRANCH, OTHER_BRANCH]) }
+      )
+    );
+    await user.click(screen.getByRole('button', { name: 'first' }));
+    await user.click(
+      await within(
+        await screen.findByRole('region', { name: EN['inventory.reservations.heading'] as string })
+      ).findByRole('button', { name: EN['inventory.reserve.open'] as string })
+    );
+    const form = await screen.findByRole('form', {
+      name: EN['inventory.reserve.heading'] as string,
+    });
+    expect(within(form).getByTestId('reserve-work-order-picker-chosen')).toHaveTextContent(
+      'WO-000042'
+    );
+    // Holding the job it opened on is not a change: nothing to ask about yet.
+    await user.click(
+      within(form).getByRole('button', { name: EN['workOrders.picker.change'] as string })
+    );
+    // None chosen where the form opened on one IS a change.
+    await stayOnBranch(user, await switchExpectingQuestion(user, 'second'));
+    expect(heldBranch()).toBe(TEST_BRANCH.id);
+  });
+
   it('an item chosen as an availability filter is not: the switch goes through', async () => {
     const user = userEvent.setup();
     await openTwoBranches(user);
@@ -1255,6 +1298,128 @@ describe('the availability filter finds the item by name (route sweep B2)', () =
     await waitFor(() =>
       expect(listAvailability.mock.calls.at(-1)?.[1]).toEqual({ itemId: ITEM_ID })
     );
+  });
+});
+
+describe('archived items in the filters, not in the writes (route sweep B2 review)', () => {
+  /*
+   * `inv.item-search` answers active items unless asked for archived ones. The
+   * availability and reservation reads filter by item without looking at its
+   * status, so an archived item stays choosable THERE; reserving refuses one
+   * (`stock_item_archived`), so the reserve form keeps active items only.
+   */
+  const archivedItem = {
+    ...item,
+    id: '33333333-3333-4333-8333-333333333399',
+    sku: 'OLD-001',
+    name: 'Retired pad',
+    lifecycleStatus: 'archived',
+  };
+  const archivedLabel = 'OLD-001 — Retired pad (archived)';
+
+  it('both filters search archived items when asked, label them and send the one chosen; the reserve form keeps active items only', async () => {
+    listItems.mockImplementation(async (criteria: { lifecycleStatus?: string }) =>
+      page(criteria.lifecycleStatus === 'archived' ? [archivedItem] : [item])
+    );
+    const user = userEvent.setup();
+    renderScreen({ canReadStock: true, canOperate: true });
+    await chooseBranch();
+
+    // The availability filter.
+    const availability = region('inventory.availability.heading');
+    const toggle = within(availability).getByRole('checkbox', {
+      name: EN['inventory.itemPicker.searchArchived'] as string,
+    });
+    expect(toggle).not.toBeChecked();
+    await user.click(toggle);
+    await user.type(
+      within(availability).getByLabelText(EN['inventory.availability.item'] as string),
+      'OLD{Enter}'
+    );
+    await user.click(await within(availability).findByRole('button', { name: archivedLabel }));
+    expect(listItems).toHaveBeenCalledWith(
+      { search: 'OLD', lifecycleStatus: 'archived' },
+      expect.objectContaining({ pageSize: 10 }),
+      null
+    );
+    expect(within(availability).getByTestId('availability-item-picker-chosen')).toHaveTextContent(
+      archivedLabel
+    );
+    await user.click(
+      within(availability).getByRole('button', {
+        name: EN['inventory.availability.show'] as string,
+      })
+    );
+    await waitFor(() =>
+      expect(listAvailability.mock.calls.at(-1)?.[1]).toEqual({ itemId: archivedItem.id })
+    );
+
+    // The reservation filter.
+    const reservations = region('inventory.reservations.heading');
+    await user.click(
+      within(reservations).getByRole('checkbox', {
+        name: EN['inventory.itemPicker.searchArchived'] as string,
+      })
+    );
+    await user.type(
+      within(reservations).getByLabelText(EN['inventory.reservations.item'] as string),
+      'OLD{Enter}'
+    );
+    await user.click(await within(reservations).findByRole('button', { name: archivedLabel }));
+    await user.click(
+      within(reservations).getByRole('button', {
+        name: EN['inventory.reservations.show'] as string,
+      })
+    );
+    await waitFor(() =>
+      expect(listReservations.mock.calls.at(-1)?.[1]).toEqual({ itemId: archivedItem.id })
+    );
+
+    // The reserve form: reserving refuses an archived item, so none is offered.
+    await user.click(
+      within(reservations).getByRole('button', { name: EN['inventory.reserve.open'] as string })
+    );
+    const form = await screen.findByRole('form', {
+      name: EN['inventory.reserve.heading'] as string,
+    });
+    expect(
+      within(form).queryByRole('checkbox', {
+        name: EN['inventory.itemPicker.searchArchived'] as string,
+      })
+    ).toBeNull();
+    await chooseItem(user, form, 'inventory.reserve.item');
+    expect(listItems).toHaveBeenLastCalledWith(
+      { search: 'BRK', lifecycleStatus: 'active' },
+      expect.objectContaining({ pageSize: 10 }),
+      null
+    );
+  });
+
+  it('a late reply for an earlier term is not drawn under a later one', async () => {
+    // Only the picker's reads are held; the catalogue list answers at once.
+    const held: Record<string, ((value: unknown) => void)[]> = { OL: [], OLD: [] };
+    listItems.mockImplementation((criteria: { search?: string }) => {
+      const queue = criteria.search === undefined ? undefined : held[criteria.search];
+      return queue ? new Promise((resolve) => queue.push(resolve)) : Promise.resolve(page([item]));
+    });
+    const user = userEvent.setup();
+    renderScreen({ canReadStock: true });
+    await chooseBranch();
+    const availability = region('inventory.availability.heading');
+    const box = within(availability).getByLabelText(EN['inventory.availability.item'] as string);
+    await user.type(box, 'OL{Enter}');
+    await waitFor(() => expect(held['OL']?.length).toBeGreaterThan(0));
+    await user.type(box, 'D{Enter}');
+    await waitFor(() => expect(held['OLD']?.length).toBeGreaterThan(0));
+    for (const resolve of held['OLD'] ?? []) resolve(page([item]));
+    expect(
+      await within(availability).findByRole('button', { name: 'BRK-001 — Brake pad' })
+    ).toBeVisible();
+    // The reply for "OL" lands last: it answers a term nobody is asking any more.
+    for (const resolve of held['OL'] ?? []) resolve(page([archivedItem]));
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(within(availability).queryByRole('button', { name: /OLD-001/ })).toBeNull();
+    expect(within(availability).getByRole('button', { name: 'BRK-001 — Brake pad' })).toBeVisible();
   });
 });
 

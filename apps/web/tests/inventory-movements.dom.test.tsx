@@ -431,6 +431,77 @@ describe('the ledger reads the recent movements on arrival (route sweep B2)', ()
   });
 });
 
+describe('the item filter and the job from the link (route sweep B2 review)', () => {
+  it('a job the page could not read can be read again, and an archived item can be chosen — the ledger still answers for both', async () => {
+    const ARCHIVED_ID = '33333333-3333-4333-8333-333333333399';
+    listItems.mockImplementation(async (criteria: { lifecycleStatus?: string }) =>
+      page(
+        criteria.lifecycleStatus === 'archived'
+          ? [{ ...item, id: ARCHIVED_ID, sku: 'OLD-001', name: 'Retired pad' }]
+          : [item]
+      )
+    );
+    const user = userEvent.setup();
+    readWorkOrderDetail.mockResolvedValueOnce({ status: 'unavailable', correlationId: 'ref-503' });
+    renderScreen({
+      initialWorkOrderId: WORK_ORDER_ID,
+      initialWorkOrder: null,
+      canReadWorkOrders: true,
+      canReadItems: true,
+    });
+    await chooseBranch();
+    await firstRead();
+    const panel = ledger();
+
+    // The job from the link: a failure says so, with its reference, and keeps the offer.
+    expect(
+      within(panel).getByText(EN['inventory.workOrderLink.unreadable'] as string)
+    ).toBeVisible();
+    await user.click(
+      within(panel).getByRole('button', { name: EN['inventory.workOrderLink.readAgain'] as string })
+    );
+    expect(await within(panel).findByText('ref-503')).toBeVisible();
+    expect(readWorkOrderDetail).toHaveBeenLastCalledWith(WORK_ORDER_ID);
+    // The next attempt answers: the job is chosen again.
+    await user.click(
+      within(panel).getByRole('button', { name: EN['inventory.workOrderLink.readAgain'] as string })
+    );
+    expect(
+      await within(panel).findByTestId('movements-work-order-picker-chosen')
+    ).toHaveTextContent('WO-000042');
+    expect(
+      within(panel).queryByText(EN['inventory.workOrderLink.unreadable'] as string)
+    ).toBeNull();
+
+    // The item: an archived one, found when asked for and labelled as such.
+    await user.click(
+      within(panel).getByRole('checkbox', {
+        name: EN['inventory.itemPicker.searchArchived'] as string,
+      })
+    );
+    await user.type(
+      within(panel).getByLabelText(EN['inventory.movements.item'] as string),
+      'OLD{Enter}'
+    );
+    await user.click(
+      await within(panel).findByRole('button', { name: 'OLD-001 — Retired pad (archived)' })
+    );
+    expect(listItems).toHaveBeenCalledWith(
+      { search: 'OLD', lifecycleStatus: 'archived' },
+      expect.objectContaining({ pageSize: 10 }),
+      null
+    );
+
+    // Both are applied on Show.
+    await user.click(showButton());
+    await waitFor(() => expect(listMovements).toHaveBeenCalledTimes(2));
+    expect(listMovements.mock.calls[1]?.[1]).toMatchObject({
+      workOrderId: WORK_ORDER_ID,
+      itemId: ARCHIVED_ID,
+    });
+  });
+});
+
 describe('filters being set and a branch switch', () => {
   /*
    * The ledger panel is keyed on the branch and its location filter names one of
@@ -536,6 +607,26 @@ describe('filters being set and a branch switch', () => {
     await openTwoBranches(user);
     await switchWithoutQuestion(user, 'second');
     await waitFor(() => expect(heldBranch()).toBe(OTHER_BRANCH.id));
+  });
+
+  it('the arrival read of the previous branch is not drawn after a switch (route sweep B2 review)', async () => {
+    const held: ((value: unknown) => void)[] = [];
+    listMovements.mockImplementation((target: { branchId: string }) =>
+      target.branchId === TEST_BRANCH.id
+        ? new Promise((resolve) => held.push(resolve))
+        : Promise.resolve(page([movement({ id: 'm-new', sequence: '2001' })]))
+    );
+    const user = userEvent.setup();
+    await openTwoBranches(user);
+    await waitFor(() => expect(held).toHaveLength(1));
+    await switchWithoutQuestion(user, 'second');
+    await waitFor(() => expect(heldBranch()).toBe(OTHER_BRANCH.id));
+    expect(await within(ledger()).findByText('2001')).toBeVisible();
+    // The first branch answers last: its rows belong to a branch no longer held.
+    held[0]?.(page([movement({ id: 'm-old', sequence: '9999' })]));
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(within(ledger()).queryByText('9999')).toBeNull();
+    expect(within(ledger()).getByText('2001')).toBeVisible();
   });
 });
 

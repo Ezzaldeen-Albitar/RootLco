@@ -131,8 +131,8 @@
       "class": "DERIVABLE_LOCAL",
       "standing": "CURRENT",
       "document": "docs/phase-1/phase-1-27/clean-room-evidence.md",
-      "locator": "| Committed web floor (`minTests`)            | 4502  | `.github/ci-baselines/test-count-baseline.json`                    |",
-      "value": "4502",
+      "locator": "| Committed web floor (`minTests`)            | 4513  | `.github/ci-baselines/test-count-baseline.json`                    |",
+      "value": "4513",
       "binding": {
         "kind": "baseline",
         "tier": "web",
@@ -170,8 +170,8 @@
       "class": "DERIVABLE_LOCAL",
       "standing": "CURRENT",
       "document": "docs/phase-1/phase-1-27/clean-room-evidence.md",
-      "locator": "binding \"the floor is 4502\"",
-      "value": "4502",
+      "locator": "binding \"the floor is 4513\"",
+      "value": "4513",
       "binding": {
         "kind": "baseline",
         "tier": "web",

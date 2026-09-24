@@ -611,6 +611,7 @@ function AvailabilityPanel({
             onChange={setItem}
             canSearch
             countsAsUnsaved={false}
+            offerArchived
             testId="availability-item-picker"
           />
         </div>
@@ -886,6 +887,7 @@ function ReservationsPanel({
             onChange={setItem}
             canSearch
             countsAsUnsaved={false}
+            offerArchived
             testId="reservations-item-picker"
           />
         </div>

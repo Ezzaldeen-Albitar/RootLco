@@ -50,7 +50,7 @@
  */
 
 import Link from 'next/link';
-import { useCallback, useEffect, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 
 import { SelectField, TextAreaField, TextField } from '@/components/forms/Field';
 import { notifyActionResult } from '@/components/notifications/action-notifications';
@@ -82,7 +82,6 @@ import {
   PRIMARY_BUTTON,
   Qty,
   SECONDARY_BUTTON,
-  UUID,
   useLocations,
 } from './shared';
 import {
@@ -95,7 +94,7 @@ import {
   outcomeField,
   useBranchList,
 } from './stock-operations';
-import { IssuedPartPicker } from './pickers';
+import { IssuedPartPicker, REFERENCE } from './pickers';
 
 export function CustomerReturnsScreen({
   locale,
@@ -334,21 +333,38 @@ function ReceiveForm({
   const errorFor = (name: string) =>
     errors[name] ? translateDynamic(messages, errors[name]) : outcomeField(messages, outcome, name);
 
+  /*
+   * Which question about the returnable quantity is the live one. Every new
+   * source — a part chosen, a part put back, a kind switched, a reference
+   * edited — moves it on, so a reply for a source no longer selected is dropped
+   * rather than shown under the one that replaced it (route sweep B2 review).
+   */
+  const asked = useRef(0);
+  const forgetAsked = () => {
+    asked.current += 1;
+  };
+
   /**
    * Asks the server how much of one source may still come back.
    *
    * Takes the source explicitly rather than reading it out of state, because the
    * line picker calls it in the same turn as it chooses a line — a version that
    * read `sourceId` would ask about the previous line.
+   *
+   * The shape check is the server's own identifier rule (`REFERENCE`), not a
+   * looser 8-4-4-4-12 copy that let through values the route then refused.
    */
   const lookAt = useCallback(async (kind: SalesReturnSourceKind, id: string) => {
-    if (!UUID.test(id)) {
+    asked.current += 1;
+    const question = asked.current;
+    if (!REFERENCE.test(id)) {
       setSourceNote('inventory.common.idFormat');
       setReturnable(null);
       return;
     }
     setSourceNote('inventory.returns.source.looking');
     const state = await readReturnable(kind, id);
+    if (question !== asked.current) return;
     if (state.status === 'ok') {
       setReturnable(state.data);
       setSourceNote(null);
@@ -371,7 +387,7 @@ function ReceiveForm({
     const id = sourceId.trim();
     if (sourceKind === 'part_issue' && !issuesRefused && issuedPart === null) {
       found['sourceId'] = 'inventory.returns.issue.required';
-    } else if (!UUID.test(id)) found['sourceId'] = 'inventory.common.idFormat';
+    } else if (!REFERENCE.test(id)) found['sourceId'] = 'inventory.common.idFormat';
     const quantity = form.quantity.trim();
     if (!isQuantity(quantity)) {
       found['quantity'] = 'inventory.stockOps.quantityFormat';
@@ -416,6 +432,7 @@ function ReceiveForm({
         quarantineLocationId: '',
         reason: '',
       });
+      forgetAsked();
       setReturnable(null);
       setSourceId('');
       setIssuedPart(null);
@@ -453,6 +470,7 @@ function ReceiveForm({
         required
         value={sourceKind}
         onChange={(event) => {
+          forgetAsked();
           setSourceKind(event.target.value as SalesReturnSourceKind);
           setSourceId('');
           setIssuedPart(null);
@@ -497,6 +515,7 @@ function ReceiveForm({
                   dir="ltr"
                   value={sourceId}
                   onChange={(event) => {
+                    forgetAsked();
                     setSourceId(event.target.value);
                     setReturnable(null);
                   }}
@@ -525,6 +544,7 @@ function ReceiveForm({
             target={target}
             value={issuedPart}
             onChange={(next) => {
+              forgetAsked();
               setIssuedPart(next);
               setSourceId(next?.id ?? '');
               setReturnable(null);
@@ -547,6 +567,7 @@ function ReceiveForm({
                   dir="ltr"
                   value={sourceId}
                   onChange={(event) => {
+                    forgetAsked();
                     setSourceId(event.target.value);
                     setReturnable(null);
                   }}
