@@ -141,7 +141,7 @@ describe('discount authorization — amount thresholds', () => {
     const failure = await refusal(
       service.authorize(
         db,
-        request({ discountAmount: '60.0000', requestedBy: 'user-approver' }),
+        request({ discountAmount: '50.0000', lineBase: '100.0000', requestedBy: 'user-approver' }),
         allow
       )
     );
@@ -235,7 +235,7 @@ describe('discount authorization — percentage thresholds are exact', () => {
   };
   const ceiling = { amount: '9999.0000', currencyCode: 'JOD' };
 
-  it('refuses an unnamed requester over the threshold even though the legacy flag says false (Owner decision 2026-09-24)', async () => {
+  it('refuses an unnamed requester at the threshold even though the legacy flag says false (Owner decision 2026-09-24)', async () => {
     // The rule CHANGED by Owner decision: an omitted requester means the caller is
     // requesting it themselves, which is now refused whatever the policy row says.
     const service = build({ policy, ceiling });

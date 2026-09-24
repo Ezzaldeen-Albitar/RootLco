@@ -3935,7 +3935,7 @@
   "quotations.build.payerReferenceFormat": "الصق المرجع كاملًا كما أُعطي لك تمامًا.",
   "quotations.build.payerReferenceHelp": "اختياري. يُعبّأ من عميل أمر العمل عند إمكان قراءته. صلاحياتك لا تشمل البحث عن العملاء، لذا الصق مرجع عميل دافع آخر كما أُعطي لك تمامًا. مع صلاحية الوصول إلى العملاء ستختاره بالاسم بدلًا من ذلك.",
   "quotations.build.requestedBy": "طالب الخصم",
-  "quotations.build.requestedByHelp": "الزميل الذي طلب الخصم، حين تفصل الشركة بين من يطلب الخصم ومن يوافق عليه.",
+  "quotations.build.requestedByHelp": "حين يحتاج الخصم إلى موافقة، اختر الزميل الذي طلبه. ويجب أن يكون الموافق شخصًا آخر.",
   "quotations.build.submit": "إنشاء عرض الأسعار",
   "quotations.channel.email": "بالبريد الإلكتروني",
   "quotations.channel.in_person": "حضورياً",

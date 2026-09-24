@@ -3935,7 +3935,7 @@
   "quotations.build.payerReferenceFormat": "Paste the complete reference exactly as it was given.",
   "quotations.build.payerReferenceHelp": "Optional. Filled from the work order's customer when it could be read. Your access does not include looking up customers, so paste a different paying customer's reference exactly as it was given to you. With access to customers you would choose them by name instead.",
   "quotations.build.requestedBy": "Discount requested by",
-  "quotations.build.requestedByHelp": "The colleague who asked for the discount, when the company keeps the requester and the approver apart.",
+  "quotations.build.requestedByHelp": "When the discount needs approval, name the colleague who asked for it. The approver must be a different person.",
   "quotations.build.submit": "Create quotation",
   "quotations.channel.email": "By email",
   "quotations.channel.in_person": "In person",

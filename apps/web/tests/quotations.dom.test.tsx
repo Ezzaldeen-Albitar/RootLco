@@ -494,6 +494,21 @@ describe('the builder names its people rather than asking for references', () =>
     expect(body['discountRequestedBy']).toBe(COLLEAGUE_ID);
   });
 
+  it('says the requester is needed when the discount needs approval, and never marks it optional', async () => {
+    listUsers.mockResolvedValue(colleaguePage);
+    const user = userEvent.setup();
+    renderScreen({ canManage: true, canReadUsers: true });
+    await user.click(screen.getByRole('button', { name: EN['quotations.list.create'] as string }));
+    const form = await builderForm();
+    // The help names the rule with no company exception: the approver is someone else.
+    expect(within(form).getByText(EN['quotations.build.requestedByHelp'] as string)).toBeVisible();
+    expect(EN['quotations.build.requestedByHelp']).toMatch(/must be a different person/);
+    // The label is neutral: whether the field is needed depends on the discount.
+    const label = within(form).getByText(labelledExactly('quotations.build.requestedBy'));
+    expect(label.textContent).toBe(EN['quotations.build.requestedBy']);
+    expect(label.textContent).not.toMatch(/optional/i);
+  });
+
   it('without the directory, offers no box for the requester and says why', async () => {
     const user = userEvent.setup();
     renderScreen({ canManage: true, canReadUsers: false });

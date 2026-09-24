@@ -589,9 +589,9 @@ In the example, Mr. Faris Al-Hamdan (example) prepares the quotation.
    "Optional. Filled from the work order when it could be read. Needed before a decision can be
    attributed to the customer." <!-- quotations.build.payerHelp -->
 3. **Customer class** (optional) <!-- quotations.build.customerClass --> .
-4. **Discount requested by** (optional) <!-- quotations.build.requestedBy --> — "The identifier of
-   the colleague who asked for the discount, when the company keeps the requester and the approver
-   apart." <!-- quotations.build.requestedByHelp -->
+4. **Discount requested by** (optional when the discount needs no approval; required when it does) <!-- quotations.build.requestedBy -->
+   — "When the discount needs approval, name the colleague who asked for it. The approver must be
+   a different person." <!-- quotations.build.requestedByHelp -->
 5. Under **Lines** <!-- quotations.lines.heading --> : "One line per service. The quantity may have
    up to three decimal places; a discount is an amount in the quotation currency with up to four." <!-- quotations.lines.explain -->
    For each line press **Add a line** <!-- quotations.lines.add --> and give:

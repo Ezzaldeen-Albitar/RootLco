@@ -2112,7 +2112,23 @@ describe('discount splitting defeats neither the threshold nor the ceiling', () 
       })),
     });
     expect(over.status).toBe(403);
-    expect(((await over.json()) as { code: string }).code).toBe('ERR-IAM-001');
+    const overBody = (await over.json()) as {
+      code: string;
+      violations?: readonly { path: string; rule: string }[];
+    };
+    expect(overBody.code).toBe('ERR-IAM-001');
+    /**
+     * The approval-limit refusal, and not a different one.
+     *
+     * Exceeding the limit is refused without a named rule (the reason is in the server's
+     * own message, which never reaches the caller), so the refusal is pinned by
+     * elimination. The two named refusals on this path — `discount_approver_must_differ`
+     * and `discount_no_approval_limit` — would carry `violations`; this carries none. The
+     * other unnamed refusals — the missing permission, an inactive requester, a limit in
+     * another currency — are ruled out by the `within` request above: same actor, same
+     * requester, same currency, accepted. The amount is the only thing that changed.
+     */
+    expect(overBody.violations).toBeUndefined();
     expect(
       await countRows(admin, 'quo.quotations', 'work_order_id = $1', [overOrder.workOrderId])
     ).toBe(0);
