@@ -1869,6 +1869,23 @@ describe('check-smtp redacts the longest secret first', () => {
     ).toBe('535 echo [redacted]');
   });
 
+  it('does not let a password inside a mailbox base64 encoding split that encoding', () => {
+    const mailbox = 'ab@example.com';
+    const encoded = Buffer.from(mailbox, 'utf8').toString('base64');
+    // Longer than the mailbox as written, shorter than its encoding, and inside it.
+    const password = encoded.slice(1, 16);
+    expect(password.length).toBeGreaterThan(mailbox.length);
+    expect(encoded).toContain(password);
+    for (const secrets of [
+      [password, mailboxSecret(mailbox)],
+      [mailboxSecret(mailbox), password],
+    ]) {
+      const redacted = redactRelayText(`535 echo ${encoded} end`, secrets);
+      expect(redacted).toBe('535 echo [redacted] end');
+      expect(redacted).not.toContain(encoded.slice(-4));
+    }
+  });
+
   it('prints no fragment of the sender during --send when the password is part of it', async () => {
     const recipient = 'recipient@example.com';
     let authStep = 0;

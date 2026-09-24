@@ -55,9 +55,15 @@ first file that defines it. **A name the process environment already holds is ne
 file.** That matters on the launcher path, because `tierEnv()` hands each tier the launcher's own
 environment: `NEXT_PUBLIC_API_BASE_URL` and `ROOTLCO_ENABLE_GALLERY` are always placed there
 (`start-local.mjs:725-727`), `NEXT_PUBLIC_APP_ENV` is placed there under `acceptance:serve`
-(`start-local.mjs:735`), and the seven `STORAGE_*` names derived from the running stack are placed
-in the API tier's environment after it. For those names a value written in an app's `.env.local`
-does not reach a tier the launcher started; a value exported in your shell does.
+(`start-local.mjs:735`). For those three names a value written in an app's `.env.local` does not
+reach a tier the launcher started; a value exported in your shell does, because the launcher only
+fills a name the shell left unset. **The seven `STORAGE_*` names follow a different order.**
+`tierEnv()` builds the child environment as `...process.env` first and the tier's own
+`spec.env[mode]` last (`start-local.mjs:252-259`), and for the API tier that fragment is the storage
+set derived from the running stack (`start-local.mjs:197-198`). So for those seven the precedence
+is: the launcher's derived value, then your shell, then a file — a value exported in your shell is
+overridden by the launcher whenever it derives one, and reaches the tier only when the stack could
+not be read and the fragment is empty.
 
 **The repository-root `.env.local` has two consumers, and no application process is one.** The
 `env_file:` entry in `docker-compose.yml` (marked `required: false`, so a fresh clone without one
@@ -237,7 +243,7 @@ key or storage credential, by design.
 
 | Name                            | Consumer (path:line)                        | Purpose                                                                                                                                                                                                                                                 | local / staging / production    | Requirement | Secret?      | Valid source and how to set it                                                                                                                        | Local value available?                                                           |
 | ------------------------------- | ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------- | ----------- | ------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
-| `NEXT_PUBLIC_SUPABASE_URL`      | `apps/api/src/config/env.ts:72`             | Identity provider API URL, handed to the adapter by `modules/iam/index.ts:147`.                                                                                                                                                                         | `set` / `required` / `required` | required    | browser-safe | `npm run supabase:status` locally; the hosted project in production                                                                                   | you write it in apps/api/.env.local                                              |
+| `NEXT_PUBLIC_SUPABASE_URL`      | `apps/api/src/config/env.ts:72`             | Identity provider API URL, handed to the adapter by `modules/iam/index.ts:183`.                                                                                                                                                                         | `set` / `required` / `required` | required    | browser-safe | `npm run supabase:status` locally; the hosted project in production                                                                                   | you write it in apps/api/.env.local                                              |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | `apps/api/src/config/env.ts:73`             | Public project key. Safe only because RLS is enabled and forced on every tenant table.                                                                                                                                                                  | `set` / `required` / `required` | required    | browser-safe | `npm run supabase:status` locally; the hosted project in production                                                                                   | you write it in apps/api/.env.local                                              |
 | `NEXT_PUBLIC_APP_ENV`           | `backend-config.ts:210`, `config/env.ts:74` | First segment of every storage key (immutable once written); selects bucket auto-creation; switches the production-required check on. **Absent, it defaults to `local` and that check does not run at all** — nothing refuses its absence (section 16). | `set` / `required` / `required` | required    | browser-safe | Written in `apps/api/.env.local` (the template carries `local`); under `acceptance:serve` the launcher sets `local` unless your shell exports another | `acceptance:serve`: derived by the launcher; `dev:all`: from apps/api/.env.local |
 | `NEXT_PUBLIC_APP_VERSION`       | `apps/api/src/shared/constants/app.ts:30`   | Build identity surfaced by `/api/health`. Defaults to `0.1.0`.                                                                                                                                                                                          | `unset` / optional / optional   | optional    | browser-safe | Injected at image build by CI                                                                                                                         | not needed locally                                                               |
@@ -277,25 +283,25 @@ would buy nothing.
 
 ## 9. Inventory — API tier, HTTP edge and authentication
 
-| Name                               | Consumer (path:line)                                                 | Purpose                                                                                          | local / staging / production      | Requirement                           | Secret? | Valid source and how to set it                                                | Local value available?              |
-| ---------------------------------- | -------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ | --------------------------------- | ------------------------------------- | ------- | ----------------------------------------------------------------------------- | ----------------------------------- |
-| `TRUSTED_PROXY_IPS`                | `apps/api/src/server/http/trusted-proxy.ts`                          | Exact remote addresses whose `X-Forwarded-For` may be believed. Empty ignores the header.        | `unset` / `required` / `required` | required when deployed behind a proxy | n/a     | The hosting topology, once one exists                                         | not needed locally                  |
-| `CORS_ALLOWED_ORIGINS`             | **none — RESERVED** (`backend-config.ts:185`)                        | Intended allow-list of cross-origin callers. Setting it has NO effect (section 3).               | `unset` / `unset` / `unset`       | reserved                              | n/a     | Nothing to set until a CORS layer exists                                      | not needed locally                  |
-| `RATE_LIMIT_ENABLED`               | `apps/api/src/server/http/route-handler.ts:312`                      | Master switch for the limiter. Default `true`. `false` is refused in a deployed environment.     | `default` / `true` / `true`       | required                              | n/a     | Leave at the default                                                          | not needed locally                  |
-| `CACHE_DEFAULT_TTL_SECONDS`        | **none — RESERVED** (`backend-config.ts:108`)                        | Intended default cache TTL. Setting it has NO effect (section 3).                                | `default` / `default` / `default` | reserved                              | n/a     | Nothing to set; every caller passes its own TTL                               | not needed locally                  |
-| `CACHE_MAX_ENTRIES`                | `apps/api/src/server/cache/cache.ts:172`                             | In-process cache ceiling. Default 5000, bounded 16..100000.                                      | `default` / `default` / `default` | optional                              | n/a     | Override only with a measured reason                                          | not needed locally                  |
-| `SUPABASE_SERVICE_ROLE_KEY`        | `apps/api/src/config/env.ts:102`, `modules/iam/index.ts:137`         | Privileged provider key. **Bypasses RLS entirely.** iam refuses to compose without it.           | `set` / `required` / `required`   | required                              | secret  | Written locally by the Owner-account helper; the hosted project in production | written by the Owner-account helper |
-| `AUTH_IDENTITY_PROVIDER`           | `apps/api/src/modules/iam/index.ts:156`                              | Written to and matched against `iam.user_accounts.identity_provider`. Default `supabase`.        | `default` / `default` / `default` | optional                              | n/a     | Leave at the default unless a second provider exists                          | not needed locally                  |
-| `AUTH_JWT_ISSUER`                  | `apps/api/src/modules/iam/index.ts:139`                              | Expected `iss`. A token from any other issuer is rejected.                                       | `set` / `required` / `required`   | required                              | n/a     | The project URL with `/auth/v1`; written locally by the Owner-account helper  | written by the Owner-account helper |
-| `AUTH_JWT_SECRET`                  | `apps/api/src/modules/iam/index.ts:138`                              | HS\* verification secret. Absent means nobody can authenticate.                                  | `set` / `required` / `required`   | required                              | secret  | The project's JWT secret; written locally by the Owner-account helper         | written by the Owner-account helper |
-| `AUTH_JWT_AUDIENCE`                | `apps/api/src/modules/iam/index.ts:153`                              | Expected `aud`. Default `authenticated`, which is what GoTrue issues.                            | `default` / `default` / `default` | optional                              | n/a     | Leave at the default                                                          | not needed locally                  |
-| `AUTH_JWT_ALGORITHMS`              | `apps/api/src/modules/iam/index.ts:154`                              | Algorithm ALLOW-LIST. Default `HS256`. This is what stops `alg: none` and RS256→HS256 confusion. | `default` / `default` / `default` | optional                              | n/a     | Widen only deliberately                                                       | not needed locally                  |
-| `AUTH_CLOCK_SKEW_SECONDS`          | `apps/api/src/modules/iam/index.ts:155`                              | Tolerated drift. Default 60, bounded 0..300.                                                     | `default` / `default` / `default` | optional                              | n/a     | Override only with a measured reason                                          | not needed locally                  |
-| `SESSION_IDLE_TIMEOUT_MINUTES`     | `apps/api/src/server/context/resolve-context.ts:286`                 | Server-enforced idle timeout. Default 30, bounded 1..1440.                                       | `default` / `default` / `default` | optional                              | n/a     | A policy decision, once one is made                                           | not needed locally                  |
-| `SESSION_ACTIVITY_REFRESH_SECONDS` | `apps/api/src/server/context/resolve-context.ts:287`                 | Throttle on `last_seen_at` writes. Default 60, bounded 5..3600.                                  | `default` / `default` / `default` | optional                              | n/a     | Override only with a measured reason                                          | not needed locally                  |
-| `AUTH_REDIRECT_ALLOWLIST`          | `apps/api/src/app/api/v1/auth/password-reset/route.ts:9`             | Exact absolute redirect destinations for reset and invitation links. Empty rejects every one.    | `set` / `required` / `required`   | required                              | n/a     | The public web origin's own URLs (Owner decision)                             | you write it in apps/api/.env.local |
-| `LOGIN_MAX_FAILED_ATTEMPTS`        | `apps/api/src/modules/iam/application/authentication-service.ts:413` | Consecutive failures before lockout. Default 5, bounded 1..100.                                  | `default` / `default` / `default` | optional                              | n/a     | A policy decision, once one is made                                           | not needed locally                  |
-| `LOGIN_FAILURE_WINDOW_MINUTES`     | `apps/api/src/modules/iam/application/authentication-service.ts:409` | Window over which failures are counted. Default 15, bounded 1..1440.                             | `default` / `default` / `default` | optional                              | n/a     | A policy decision, once one is made                                           | not needed locally                  |
+| Name                               | Consumer (path:line)                                                                              | Purpose                                                                                          | local / staging / production      | Requirement                           | Secret? | Valid source and how to set it                                                | Local value available?              |
+| ---------------------------------- | ------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ | --------------------------------- | ------------------------------------- | ------- | ----------------------------------------------------------------------------- | ----------------------------------- |
+| `TRUSTED_PROXY_IPS`                | `apps/api/src/server/http/trusted-proxy.ts`                                                       | Exact remote addresses whose `X-Forwarded-For` may be believed. Empty ignores the header.        | `unset` / `required` / `required` | required when deployed behind a proxy | n/a     | The hosting topology, once one exists                                         | not needed locally                  |
+| `CORS_ALLOWED_ORIGINS`             | **none — RESERVED** (`backend-config.ts:185`)                                                     | Intended allow-list of cross-origin callers. Setting it has NO effect (section 3).               | `unset` / `unset` / `unset`       | reserved                              | n/a     | Nothing to set until a CORS layer exists                                      | not needed locally                  |
+| `RATE_LIMIT_ENABLED`               | `apps/api/src/server/http/route-handler.ts:329`                                                   | Master switch for the limiter. Default `true`. `false` is refused in a deployed environment.     | `default` / `true` / `true`       | required                              | n/a     | Leave at the default                                                          | not needed locally                  |
+| `CACHE_DEFAULT_TTL_SECONDS`        | **none — RESERVED** (`backend-config.ts:108`)                                                     | Intended default cache TTL. Setting it has NO effect (section 3).                                | `default` / `default` / `default` | reserved                              | n/a     | Nothing to set; every caller passes its own TTL                               | not needed locally                  |
+| `CACHE_MAX_ENTRIES`                | `apps/api/src/server/cache/cache.ts:172`                                                          | In-process cache ceiling. Default 5000, bounded 16..100000.                                      | `default` / `default` / `default` | optional                              | n/a     | Override only with a measured reason                                          | not needed locally                  |
+| `SUPABASE_SERVICE_ROLE_KEY`        | `apps/api/src/config/env.ts:102`, `modules/iam/index.ts:172,185`                                  | Privileged provider key. **Bypasses RLS entirely.** iam refuses to compose without it.           | `set` / `required` / `required`   | required                              | secret  | Written locally by the Owner-account helper; the hosted project in production | written by the Owner-account helper |
+| `AUTH_IDENTITY_PROVIDER`           | `apps/api/src/modules/iam/index.ts:191`                                                           | Written to and matched against `iam.user_accounts.identity_provider`. Default `supabase`.        | `default` / `default` / `default` | optional                              | n/a     | Leave at the default unless a second provider exists                          | not needed locally                  |
+| `AUTH_JWT_ISSUER`                  | `apps/api/src/modules/iam/index.ts:174,187`                                                       | Expected `iss`. A token from any other issuer is rejected.                                       | `set` / `required` / `required`   | required                              | n/a     | The project URL with `/auth/v1`; written locally by the Owner-account helper  | written by the Owner-account helper |
+| `AUTH_JWT_SECRET`                  | `apps/api/src/modules/iam/index.ts:173,186`                                                       | HS\* verification secret. Absent means nobody can authenticate.                                  | `set` / `required` / `required`   | required                              | secret  | The project's JWT secret; written locally by the Owner-account helper         | written by the Owner-account helper |
+| `AUTH_JWT_AUDIENCE`                | `apps/api/src/modules/iam/index.ts:188`                                                           | Expected `aud`. Default `authenticated`, which is what GoTrue issues.                            | `default` / `default` / `default` | optional                              | n/a     | Leave at the default                                                          | not needed locally                  |
+| `AUTH_JWT_ALGORITHMS`              | `apps/api/src/modules/iam/index.ts:189`                                                           | Algorithm ALLOW-LIST. Default `HS256`. This is what stops `alg: none` and RS256→HS256 confusion. | `default` / `default` / `default` | optional                              | n/a     | Widen only deliberately                                                       | not needed locally                  |
+| `AUTH_CLOCK_SKEW_SECONDS`          | `apps/api/src/modules/iam/index.ts:190`                                                           | Tolerated drift. Default 60, bounded 0..300.                                                     | `default` / `default` / `default` | optional                              | n/a     | Override only with a measured reason                                          | not needed locally                  |
+| `SESSION_IDLE_TIMEOUT_MINUTES`     | `apps/api/src/server/context/resolve-context.ts:286`                                              | Server-enforced idle timeout. Default 30, bounded 1..1440.                                       | `default` / `default` / `default` | optional                              | n/a     | A policy decision, once one is made                                           | not needed locally                  |
+| `SESSION_ACTIVITY_REFRESH_SECONDS` | `apps/api/src/server/context/resolve-context.ts:287`                                              | Throttle on `last_seen_at` writes. Default 60, bounded 5..3600.                                  | `default` / `default` / `default` | optional                              | n/a     | Override only with a measured reason                                          | not needed locally                  |
+| `AUTH_REDIRECT_ALLOWLIST`          | `apps/api/src/modules/iam/application/authentication-service.ts:613`, `invitation-service.ts:148` | Exact absolute redirect destinations for reset and invitation links. Empty rejects every one.    | `set` / `required` / `required`   | required                              | n/a     | The public web origin's own URLs (Owner decision)                             | you write it in apps/api/.env.local |
+| `LOGIN_MAX_FAILED_ATTEMPTS`        | `apps/api/src/modules/iam/application/authentication-service.ts:464`                              | Consecutive failures before lockout. Default 5, bounded 1..100.                                  | `default` / `default` / `default` | optional                              | n/a     | A policy decision, once one is made                                           | not needed locally                  |
+| `LOGIN_FAILURE_WINDOW_MINUTES`     | `apps/api/src/modules/iam/application/authentication-service.ts:460`                              | Window over which failures are counted. Default 15, bounded 1..1440.                             | `default` / `default` / `default` | optional                              | n/a     | A policy decision, once one is made                                           | not needed locally                  |
 
 ## 10. Inventory — API tier, object storage
 
@@ -316,7 +322,7 @@ would buy nothing.
 
 | Name                               | Consumer (path:line)                                                           | Purpose                                                                                    | local / staging / production      | Requirement       | Secret? | Valid source and how to set it                      | Local value available? |
 | ---------------------------------- | ------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------ | --------------------------------- | ----------------- | ------- | --------------------------------------------------- | ---------------------- |
-| `NOTIFICATION_PROVIDER`            | `apps/api/src/modules/shared-services/application/message-dispatcher.ts:138`   | Delivery adapter. Default `unconfigured`, which refuses. **No adapter is implemented.**    | `default` / `default` / `default` | feature-dependent | n/a     | Nothing to select until an adapter exists           | not needed locally     |
+| `NOTIFICATION_PROVIDER`            | `apps/api/src/modules/shared-services/index.ts:268`                            | Delivery adapter. Default `unconfigured`, which refuses. **No adapter is implemented.**    | `default` / `default` / `default` | feature-dependent | n/a     | Nothing to select until an adapter exists           | not needed locally     |
 | `NOTIFICATION_PROVIDER_TIMEOUT_MS` | `apps/api/src/modules/shared-services/application/message-dispatcher.ts:138`   | Per-attempt timeout. Default 5000, bounded 100..60000.                                     | `default` / `default` / `default` | optional          | n/a     | Override only with a measured reason                | not needed locally     |
 | `NOTIFICATION_MAX_RENDERED_CHARS`  | `apps/api/src/modules/shared-services/application/notification-service.ts:173` | Rendered message ceiling. Default 20000, bounded 256..262144.                              | `default` / `default` / `default` | optional          | n/a     | Override only with a measured reason                | not needed locally     |
 | `READINESS_TIMEOUT_MS`             | `apps/api/src/modules/shared-services/application/health-service.ts:72`        | Budget for the whole readiness probe. Default 2000, bounded 50..10000.                     | `default` / `default` / `default` | optional          | n/a     | Match it to the balancer's own probe timeout        | not needed locally     |
@@ -349,7 +355,7 @@ workflow step and is not an input anybody supplies locally.
 | `BACKFILL_OPERATOR_EMAIL` `BACKFILL_EVIDENCE_PATH`                                                                                          | `scripts/platform/backfill-delivering-employee-identity.mjs:260`, `scripts/platform/backfill-tenant-administrator-bundle.mjs:248`                                                                        | Attribution and evidence destination for a one-off backfill.                                                                                                                                                                                                                                                                                                                                    | required for that command                                                                | n/a                                         | Owner-supplied, per invocation                             | not needed locally     |
 | `EXPORT_FIXTURE_OPERATOR_EMAIL`                                                                                                             | `scripts/dev/owner-acceptance/export-fixture-setup.mjs:432`                                                                                                                                              | Attribution for an export fixture run.                                                                                                                                                                                                                                                                                                                                                          | required for that command                                                                | n/a                                         | Your shell                                                 | not needed locally     |
 | `SMTP_HOST` `SMTP_PORT` `SMTP_USER` `SMTP_PASS` `SMTP_ADMIN_EMAIL` `SMTP_SENDER_NAME`                                                       | `supabase/config.toml:370-390` (five of them, through `env(...)`), `scripts/dev/check-smtp.mjs:164` (all six)                                                                                            | Outbound authentication mail. `SMTP_PORT` is read by the relay check only; the auth service uses the literal port. Section 17.                                                                                                                                                                                                                                                                  | required only to send auth mail; `[auth.email.smtp]` is committed with `enabled = false` | secret (`SMTP_PASS`)                        | The root `.env`, typed by the Owner (17.7)                 | the root `.env`        |
-| `SUPABASE_ENV`                                                                                                                              | `scripts/dev/check-smtp.mjs:480`, and the Supabase CLI                                                                                                                                                   | Which `.env.<name>` files the CLI and the relay check read. Unset means `development`.                                                                                                                                                                                                                                                                                                          | optional                                                                                 | n/a                                         | Your shell                                                 | not needed locally     |
+| `SUPABASE_ENV`                                                                                                                              | `scripts/dev/check-smtp.mjs:482`, and the Supabase CLI                                                                                                                                                   | Which `.env.<name>` files the CLI and the relay check read. Unset means `development`.                                                                                                                                                                                                                                                                                                          | optional                                                                                 | n/a                                         | Your shell                                                 | not needed locally     |
 | `SUPABASE_AUTH_EMAIL_SMTP_*` (7 names)                                                                                                      | `scripts/dev/check-smtp.mjs:179-185`, and the Supabase CLI                                                                                                                                               | Direct overrides of the `[auth.email.smtp]` keys. The relay check reports the settings as not ready while any is set, because an override bypasses the six names above.                                                                                                                                                                                                                         | must be unset                                                                            | secret (`SUPABASE_AUTH_EMAIL_SMTP_PASS`)    | Nothing should set them                                    | not needed locally     |
 | `ROOTLCO_E2E_AUTH`                                                                                                                          | `apps/web/playwright.config.ts:63`                                                                                                                                                                       | Turns the authenticated browser tier on. `scripts/dev/owner-acceptance/full-cycle.mjs:329` sets it for its own browser step.                                                                                                                                                                                                                                                                    | required for that tier                                                                   | n/a                                         | Your shell, or the full cycle                              | not needed locally     |
 | `ROOTLCO_E2E_EMAIL` `ROOTLCO_E2E_PASSWORD` `ROOTLCO_E2E_READER_EMAIL` `ROOTLCO_E2E_READER_PASSWORD` `ROOTLCO_E2E_TENANT_ID`                 | `apps/web/tests/e2e/authenticated/auth.setup.ts:65-66`, `isolation.spec.ts:71-73`, `appointments-and-receptions.spec.ts:275-291`                                                                         | Credentials and tenant for the authenticated browser tier. The accounts are created by the acceptance helper; nothing writes these names for you.                                                                                                                                                                                                                                               | required for that tier                                                                   | secret (the two passwords)                  | Your shell                                                 | your shell only        |
@@ -420,7 +426,7 @@ login role, and no code reads either from the environment.
    `database.role.no-bypassrls` from `preflightPrivileges()`, and a failure there is blocking. A
    connection that can see every tenant's rows is not a working deployment, it is a breach waiting
    to be noticed.
-6. **`apps/api/src/modules/iam/index.ts:137-139` refuses to compose** the identity provider unless
+6. **`apps/api/src/modules/iam/index.ts:172-174` refuses to compose** the identity provider unless
    `SUPABASE_SERVICE_ROLE_KEY`, `AUTH_JWT_SECRET` and `AUTH_JWT_ISSUER` are all present. It throws
    with the missing NAMES rather than degrading, because a partly configured provider fails at the
    first login with an opaque error instead of at boot with a precise one.
@@ -1033,10 +1039,10 @@ section 3c says why).
 
 Run every one from the root of the checkout that is to be served. The Supabase CLI resolves its env
 files from the directory it is run in, and the launcher serves the checkout it is started from.
+Nothing in this block deletes data, and it is safe to run against the acceptance database.
 
 ```
 npm run supabase:start
-npm run supabase:reset
 $env:ROOTLCO_ENV = 'local-acceptance'
 npm run acceptance:create-owner
 npm run acceptance:serve
@@ -1045,23 +1051,23 @@ npm run acceptance:status-owner
 ```
 
 1. `npm run supabase:start` — the local stack: API gateway 54321, database 54322, mailbox 54324.
-2. `npm run supabase:reset` — **only on a stack whose database must be rebuilt.** It applies every
-   migration and seed to an empty database and destroys whatever was there, including an acceptance
-   campaign's data. On a stack that already holds the schema, skip it.
-3. `ROOTLCO_ENV` set to `local-acceptance` in the shell (the line above is PowerShell). The
+   It starts the stack on the data volumes it already has. If the checkout carries migrations the
+   database has not yet applied, bring the database forward with 19.4 before step 4; never with the
+   destructive rebuild of 19.5.
+2. `ROOTLCO_ENV` set to `local-acceptance` in the shell (the line above is PowerShell). The
    acceptance helpers refuse without it.
-4. `npm run acceptance:create-owner` — creates or reconciles the Owner account, aligns the local
+3. `npm run acceptance:create-owner` — creates or reconciles the Owner account, aligns the local
    token signing with what the API verifies (`align-local-jwt.mjs`, finding `P1-26-F-045`), and
    writes the four names of section 1 into `apps/api/.env.local`. After any later restart of the
    stack that is not followed by this step, run `node scripts/dev/owner-acceptance/align-local-jwt.mjs`
    on its own.
-5. `npm run acceptance:serve` — settles `NEXT_PUBLIC_API_BASE_URL`, `NEXT_PUBLIC_APP_ENV` and
+4. `npm run acceptance:serve` — settles `NEXT_PUBLIC_API_BASE_URL`, `NEXT_PUBLIC_APP_ENV` and
    `ROOTLCO_ENABLE_GALLERY` in its own environment, derives the seven storage names from the running
    stack, builds both tiers with that environment, and starts them. It prints the two public values
    and the storage summary before it builds.
-6. `npm run dev:status` — read-only; reports the checkout, branch, `HEAD`, the mode, and whether the
+5. `npm run dev:status` — read-only; reports the checkout, branch, `HEAD`, the mode, and whether the
    processes on 3000 and 3100 belong to this checkout.
-7. `npm run acceptance:status-owner` — proves the Owner account can sign in through the running API.
+6. `npm run acceptance:status-owner` — proves the Owner account can sign in through the running API.
 
 ### 19.2 Which files must exist, and which names they hold
 
@@ -1076,7 +1082,8 @@ Names only. No value is written here or anywhere else in the repository.
 | the shell             | per command                                           | `ROOTLCO_ENV` for the acceptance helpers; `NEXT_PUBLIC_COMMIT_SHA` if the served revision is to be reported (19.3); the harness names of section 12 for a browser run.                                                                                                                                                                                                                                                             |
 
 The storage names are never written by hand on this path: they come from the running stack at each
-launch, and they take precedence over any value in `apps/api/.env.local`.
+launch, and they take precedence over any value in `apps/api/.env.local` and over one exported in
+your shell (section 1).
 
 ### 19.3 How to confirm the running revision
 
@@ -1095,3 +1102,110 @@ launch, and they take precedence over any value in `apps/api/.env.local`.
   stronger statement of the two.
 - `git rev-parse HEAD` in the served checkout gives the same answer as the `HEAD` line of
   `dev:status`, with the same caveat.
+
+### 19.4 Bringing an existing acceptance database forward
+
+This is the only supported way to give a database that already holds acceptance data the migrations
+a newer checkout carries. It keeps every row. Run every command from the root of the checkout, with
+the stack running (`npm run supabase:start`).
+
+**What does not work here, and why.** `npm run db:apply-migrations` refuses a database that already
+holds module schemas (`scripts/db/apply-migrations.mjs:98`); it is the
+clean-database runner CI uses. `npm run supabase:reset` rebuilds the database from nothing and is
+section 19.5. `scripts/db/backup-restore-drill.sh` is a drill, not a backup: its first step is
+`supabase db reset`, so it must never be pointed at an acceptance database.
+
+**Step 1 — stop the application tiers.** `npm run dev:stop`, so nothing writes while the backup is
+taken and the schema moves.
+
+**Step 2 — see what is pending.** Read-only; it changes nothing.
+
+```
+npx supabase migration list --local
+```
+
+The pinned CLI (`supabase@2.110.0`, section 17.2) describes `--local` on this command as "Lists
+migrations applied to the local database." Each row pairs a file in `supabase/migrations/` with the
+local database's migration ledger. A version the files have and the ledger lacks is pending. If the
+ledger holds a version with no file, or a file is pending that is older than the newest version the
+ledger holds, the history is out of sync: stop at this step and see "When the history is out of
+sync" below.
+
+**Step 3 — take a backup, outside the repository.** No npm script takes a backup of the local
+database. The command below is the one the recovery runbook documents
+(`docs/phase-1/phase-1-12/evidence/recovery-runbook.md` section 2) and the drill executes
+(`scripts/db/backup-restore-drill.sh:39,43`): a custom-format `pg_dump`, as the local `postgres`
+role against the `postgres` database, run INSIDE the database container so the client matches the
+server (a host `pg_dump` older than the server aborts), then copied out. It adds `--create`, because
+an archive taken without it does not carry the database-level settings a restore needs
+(`docs/phase-1/phase-1-12/evidence/backup-evidence.md`, the dated addendum).
+
+```
+docker exec supabase_db_RootLco pg_dump -U postgres -d postgres -Fc --create -f /tmp/rootlco-before-migrate.dump
+docker exec supabase_db_RootLco pg_restore --list /tmp/rootlco-before-migrate.dump
+docker cp supabase_db_RootLco:/tmp/rootlco-before-migrate.dump <folder-outside-the-checkout>
+docker exec supabase_db_RootLco rm /tmp/rootlco-before-migrate.dump
+```
+
+`<folder-outside-the-checkout>` is a placeholder for a folder that is not inside any checkout: a
+dump holds every tenant's rows and must never be committed. `pg_restore --list` reads the archive's
+table of contents and touches no database; if it fails, the backup is not usable and nothing below
+may run. Do not continue until the copied file exists and is not empty.
+
+**Step 4 — apply the pending migrations, and nothing else.**
+
+```
+npx supabase migration up --local
+npx supabase migration list --local
+```
+
+The pinned CLI describes `migration up --local` as "Applies pending migrations to the local
+database." It applies only the versions the ledger lacks and records each one in the ledger; it
+drops nothing and runs no seed. It refuses rather than guesses when the history is out of sync — it
+stops on a ledger version with no file ("Remote migration versions not found in local migrations
+directory.") and on a pending file older than the newest applied one, where it asks to be rerun with
+`--include-all`. Do not add `--include-all` on the strength of that message; treat it as the
+out-of-sync case below. The second `list` must show no pending version.
+
+**Step 5 — restart and verify.**
+
+```
+$env:ROOTLCO_ENV = 'local-acceptance'
+npm run acceptance:serve
+npm run dev:status
+npm run acceptance:status-owner
+```
+
+`migration up` does not restart the stack, so `align-local-jwt.mjs` does not need to run again. If
+`acceptance:status-owner` fails, or a migration failed part-way, stop: the step 3 archive is the way
+back, and restoring it is a deliberate recovery (`recovery-runbook.md`), not a routine step.
+
+**When the history is out of sync.** This happens when a migration was applied by hand, file by
+file, as `docs/phase-1/phase-1-31/operator-runbook.md` section 4 does on an established database.
+That runbook records the applied version with `supabase migration repair --status applied <version>`,
+which writes the ledger row and runs no SQL; the pinned CLI describes `migration repair --local` as
+"Repairs the migration history of the local database." Use it only for a version whose SQL is
+proved to be in the database already, one version at a time, and only after the step 3 backup —
+marking a version applied that never ran hides a missing change for good. If the cause is not that,
+stop and ask; do not reset.
+
+### 19.5 Destructive: rebuild an empty local database
+
+> **WARNING — this deletes every row in the local database.** That includes the acceptance tenant,
+> the Owner account, every fixture and everything a campaign has produced and not yet recorded.
+> **Never run it against the acceptance database. Never run it as part of a routine start.** A
+> database that already holds data is brought forward with 19.4, never with this.
+
+Use it only for a local stack that is being built from nothing on purpose — a fresh clone, or a
+database that is already lost — and only after deciding that nothing in it is wanted.
+
+```
+npm run supabase:reset
+```
+
+`npm run supabase:reset` is `supabase db reset` (`package.json`): it recreates the local database
+and applies every migration and seed to it. On a database that held acceptance data, that data is
+gone; restoring the 19.4 step 3 archive is the only way back, and only if one was taken. After a
+rebuild, continue with 19.1 from step 2: the Owner account and its `apps/api/.env.local` lines are
+created again by `npm run acceptance:create-owner`, and the fixtures by
+`npm run acceptance:provision-fixtures`.

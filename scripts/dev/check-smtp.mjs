@@ -597,31 +597,34 @@ function escapeRegExp(text) {
  * of a mailbox marked by `mailboxSecret` (in any letter case, or as its
  * base64 encoding) becomes `[redacted]`.
  *
- * The longest secret is replaced first, whatever its kind and whatever order
- * the caller listed them in. Replacing a shorter one first could split a longer
- * one that contains it: a password that is a substring of a mailbox address
- * would leave the rest of that address in clear, and a mailbox address inside
- * a password would leave the rest of the password.
+ * Every form of every secret — each mailbox as written (matched in any letter
+ * case), the password as written (matched exactly), and the base64 encoding of
+ * each — goes into ONE list, and the longest form is replaced first, whatever
+ * its kind and whatever order the caller listed them in. Replacing a shorter
+ * form first could split a longer one that contains it: a password that is a
+ * substring of a mailbox address would leave the rest of that address in
+ * clear, a mailbox address inside a password would leave the rest of the
+ * password, and a password that occurs inside a mailbox's base64 encoding
+ * would leave the rest of that encoding.
  *
  * @param {unknown} text
  * @param {Array<string | { mailbox: string }>} [secrets]
  */
 export function redactRelayText(text, secrets = []) {
-  const entries = secrets
-    .map((secret) => {
-      const isMailbox = secret !== null && typeof secret === 'object';
-      return { isMailbox, value: isMailbox ? secret.mailbox : secret };
-    })
-    .filter(({ value }) => typeof value === 'string' && value.length > 0)
-    .sort((a, b) => b.value.length - a.value.length);
+  const forms = [];
+  for (const secret of secrets) {
+    const isMailbox = secret !== null && typeof secret === 'object';
+    const value = isMailbox ? secret.mailbox : secret;
+    if (typeof value !== 'string' || value.length === 0) continue;
+    forms.push({ ignoreCase: isMailbox, form: value });
+    forms.push({ ignoreCase: false, form: Buffer.from(value, 'utf8').toString('base64') });
+  }
+  forms.sort((a, b) => b.form.length - a.form.length);
   let safe = String(text);
-  for (const { isMailbox, value } of entries) {
-    if (isMailbox) {
-      safe = safe.replace(new RegExp(escapeRegExp(value), 'gi'), '[redacted]');
-    } else {
-      safe = safe.split(value).join('[redacted]');
-    }
-    safe = safe.split(Buffer.from(value, 'utf8').toString('base64')).join('[redacted]');
+  for (const { ignoreCase, form } of forms) {
+    safe = ignoreCase
+      ? safe.replace(new RegExp(escapeRegExp(form), 'gi'), '[redacted]')
+      : safe.split(form).join('[redacted]');
   }
   return safe.replace(BASE64_LOOKING, '[redacted]');
 }
