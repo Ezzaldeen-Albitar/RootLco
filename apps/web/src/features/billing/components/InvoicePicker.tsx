@@ -55,7 +55,6 @@ export function InvoicePicker({
   onChange,
   canSearch,
   error,
-  unavailableId,
   pristineId,
   countsAsUnsaved = true,
   testId = 'invoice-picker',
@@ -77,7 +76,6 @@ export function InvoicePicker({
   /** `sal.finance.view`. */
   readonly canSearch: boolean;
   readonly error?: string | undefined;
-  readonly unavailableId?: string | undefined;
   readonly pristineId?: string | null;
   /** False for a list filter — see `SearchPicker`. */
   readonly countsAsUnsaved?: boolean;
@@ -114,7 +112,6 @@ export function InvoicePicker({
       load={load}
       canSearch={canSearch}
       notPermitted={translate(messages, 'invoices.picker.notPermitted')}
-      unavailableId={unavailableId}
       error={error}
       minLength={MIN_INVOICE_SEARCH}
       maxLength={MAX_INVOICE_SEARCH}

@@ -2834,7 +2834,7 @@
   "invoices.picker.payerHidden": "Customer not shown",
   "invoices.picker.results": "Matching invoices",
   "invoices.picker.searchExample": "For example: part of the invoice number. If your access includes customers and vehicles, part of the customer's name or of a plate works too. Digits typed on an Arabic keyboard are accepted.",
-  "invoices.picker.searchPlaceholder": "Invoice number, customer name or plate",
+  "invoices.picker.searchPlaceholder": "Invoice number…",
   "invoices.picker.tooShort": "Type at least two characters to search.",
   "invoices.picker.unnumbered": "Not numbered yet",
   "invoices.preview.caption": "Lines of the accepted quotation revision",

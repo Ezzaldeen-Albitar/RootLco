@@ -2834,7 +2834,7 @@
   "invoices.picker.payerHidden": "العميل غير ظاهر",
   "invoices.picker.results": "الفواتير المطابقة",
   "invoices.picker.searchExample": "مثال: جزء من رقم الفاتورة. وإن كانت صلاحياتك تشمل العملاء والمركبات، يصلح أيضًا جزء من اسم العميل أو من رقم اللوحة. تُقبل الأرقام المكتوبة بلوحة مفاتيح عربية.",
-  "invoices.picker.searchPlaceholder": "رقم الفاتورة أو اسم العميل أو اللوحة",
+  "invoices.picker.searchPlaceholder": "رقم الفاتورة…",
   "invoices.picker.tooShort": "اكتب حرفين على الأقل للبحث.",
   "invoices.picker.unnumbered": "بلا رقم بعد",
   "invoices.preview.caption": "سطور إصدار عرض الأسعار المقبول",

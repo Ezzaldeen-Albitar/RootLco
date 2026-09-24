@@ -63,7 +63,11 @@
  * the payer block with every field null and cannot match by payer name; without
  * `veh.vehicle.read` it cannot match by plate or VIN; it always matches by the
  * invoice number. `SAL_FINANCE_NAMES`, holding both reads, is the positive
- * control: named, and matched by payer name, plate and VIN.
+ * control: named, and matched by payer name, plate and VIN. Each read is also
+ * proved alone — `SAL_FINANCE_CUSTOMERS` is named and matched by payer name but
+ * not by plate or VIN, `SAL_FINANCE_VEHICLES` is told nothing of the payer and
+ * matched by plate and VIN but not by payer name — so a list that answered one
+ * read from the other's code cannot pass.
  */
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { Pool, PoolClient } from 'pg';
@@ -81,7 +85,9 @@ import {
   PARTNER_A,
   PAYMENT_METHOD_A,
   SAL_CASHIER,
+  SAL_FINANCE_CUSTOMERS,
   SAL_FINANCE_NAMES,
+  SAL_FINANCE_VEHICLES,
   SAL_FULL,
   SAL_NO_FINANCE,
   SAL_PERMISSION_ELSEWHERE,
@@ -1371,6 +1377,44 @@ describe('sal.invoice-list — the payer and the vehicle need their own reads', 
     expect(row?.payer.partyType).not.toBeNull();
 
     expect(await idsFor(payerName)).toContain(named.invoiceId);
+    expect(await idsFor(plateTerm)).toContain(named.invoiceId);
+    expect(await idsFor(vin)).toContain(named.invoiceId);
+  });
+
+  it('names the payer and matches by payer name, not plate or VIN, for the customer read alone', async () => {
+    expect(SAL_FINANCE_CUSTOMERS.permissions).toContain('crm.customer.read');
+    expect(SAL_FINANCE_CUSTOMERS.permissions).not.toContain('veh.vehicle.read');
+    authAs(SAL_FINANCE_CUSTOMERS);
+    const response = await listInvoices(
+      `${pair}&q=${encodeURIComponent(named.invoiceNumber)}&limit=100`
+    );
+    expect(response.status).toBe(200);
+    const row = (await bodyOf<ListPage>(response)).items.find(
+      (item) => item.id === named.invoiceId
+    );
+    expect(row?.payer).toMatchObject({ displayName: 'Reception Requester' });
+    expect(row?.payer.partyType).not.toBeNull();
+
+    expect(await idsFor(payerName)).toContain(named.invoiceId);
+    expect(await idsFor(plateTerm)).not.toContain(named.invoiceId);
+    expect(await idsFor(vin)).not.toContain(named.invoiceId);
+  });
+
+  it('withholds the payer and matches by plate and VIN, not payer name, for the vehicle read alone', async () => {
+    expect(SAL_FINANCE_VEHICLES.permissions).toContain('veh.vehicle.read');
+    expect(SAL_FINANCE_VEHICLES.permissions).not.toContain('crm.customer.read');
+    authAs(SAL_FINANCE_VEHICLES);
+    const response = await listInvoices(
+      `${pair}&q=${encodeURIComponent(named.invoiceNumber)}&limit=100`
+    );
+    expect(response.status).toBe(200);
+    const raw = await response.text();
+    const row = (JSON.parse(raw) as ListPage).items.find((item) => item.id === named.invoiceId);
+    expect(row).toMatchObject({ status: 'issued', invoiceNumber: named.invoiceNumber });
+    expect(row?.payer).toEqual({ displayName: null, displayNumber: null, partyType: null });
+    expect(raw).not.toContain('Reception Requester');
+
+    expect(await idsFor(payerName)).not.toContain(named.invoiceId);
     expect(await idsFor(plateTerm)).toContain(named.invoiceId);
     expect(await idsFor(vin)).toContain(named.invoiceId);
   });
