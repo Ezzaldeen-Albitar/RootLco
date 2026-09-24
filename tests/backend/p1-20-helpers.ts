@@ -777,9 +777,10 @@ export async function assignPriceList(input: {
  * splitting is only interesting when each individual line sits *under* the threshold.
  * Seeding a real policy is the only way to write that test.
  *
- * `maker_approver_distinct` defaults to `true` in the schema; it is set explicitly to
- * `false` here so the splitting test measures the aggregate control and not the
- * maker/approver control, which has its own cases.
+ * `maker_approver_distinct` is a legacy column: under the Owner's decision of
+ * 2026-09-24 the maker/approver separation applies whenever approval is required and
+ * the application ignores this flag. It defaults to the schema's own `true`; a suite
+ * may pass `false` to prove that the flag no longer switches the separation off.
  */
 export async function seedDiscountPolicy(input: {
   readonly tenantId: string;
@@ -806,7 +807,7 @@ export async function seedDiscountPolicy(input: {
       input.thresholdValue,
       input.currencyCode,
       input.requiredPermissionCode ?? PRICE_MANAGE,
-      input.makerApproverDistinct ?? false,
+      input.makerApproverDistinct ?? true,
       EFFECTIVE_FROM,
       USER_A,
     ]

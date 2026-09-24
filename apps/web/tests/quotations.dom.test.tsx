@@ -21,6 +21,8 @@ import {
   switchExpectingQuestion,
   switchWithoutQuestion,
 } from './support/branch-switch';
+import { fromFailure } from '@/lib/forms/action-result';
+import type { ApiFailure } from '@/lib/api/client';
 
 /**
  * The quotations of a work order and the builder, rendered (P1-30, `W3`,
@@ -827,6 +829,112 @@ describe('the builder sends lines as strings and prices nothing', () => {
     expect(alert.textContent).toContain('corr-d');
     expect(push).not.toHaveBeenCalled();
   });
+});
+
+/**
+ * The two named discount refusals, rendered in both languages.
+ *
+ * Under the Owner's decision of 2026-09-24 nobody approves their own discount
+ * and a limit the approver set never counts, so these are the two refusals an
+ * operator meets most. The server names each rule; the screen has to say it in
+ * words. The adapter's answer is built by the REAL `fromFailure` from the wire
+ * shape the API sends, so the rule-to-message mapping and the path-to-control
+ * mapping are exercised, not assumed.
+ */
+describe('the named discount refusals render as sentences, in English and Arabic', () => {
+  const refusedWith = (violation: { path: string; rule: string }) => {
+    const failure: ApiFailure = {
+      ok: false,
+      kind: 'forbidden',
+      status: 403,
+      problem: { status: 403, code: 'ERR-IAM-001', violations: [violation] },
+      correlationId: 'corr-named',
+    };
+    return { state: fromFailure(failure, 1), created: null };
+  };
+
+  const cases = [
+    ['en', EN, renderLtr, en],
+    ['ar', AR, renderRtl, ar],
+  ] as const;
+
+  async function submitDiscountedLine(
+    dictionary: Record<string, string>,
+    render: typeof renderLtr,
+    messages: typeof en,
+    locale: 'en' | 'ar'
+  ) {
+    const prefix = (key: string) => new RegExp(`^${escape(dictionary[key] as string)}`);
+    const whole = (key: string) => new RegExp(`^${escape(dictionary[key] as string)}$`);
+    const user = userEvent.setup();
+    render(
+      <QuotationsScreen
+        locale={locale}
+        messages={messages}
+        workOrderId={WORK_ORDER_ID}
+        workOrder={workOrder as never}
+        canManage
+        canReadServices={false}
+        canReadUsers
+      />
+    );
+    await user.click(
+      screen.getByRole('button', { name: dictionary['quotations.list.create'] as string })
+    );
+    const form = await screen.findByRole('form', {
+      name: dictionary['quotations.build.heading'] as string,
+    });
+    await user.type(
+      within(form).getByLabelText(prefix('quotations.picker.serviceIdField')),
+      SERVICE_ID
+    );
+    await user.type(within(form).getByLabelText(prefix('quotations.lines.quantity')), '1');
+    await user.type(within(form).getByLabelText(whole('quotations.lines.discount')), '5');
+    await user.click(
+      within(form).getByRole('button', { name: dictionary['quotations.build.submit'] as string })
+    );
+    await waitFor(() => expect(createQuotation).toHaveBeenCalled());
+    return form;
+  }
+
+  it.each(cases)(
+    '%s: the approver named as their own requester is told so at the requester field',
+    async (locale, dictionary, render, messages) => {
+      createQuotation.mockResolvedValue(
+        refusedWith({ path: 'body.discountRequestedBy', rule: 'discount_approver_must_differ' })
+      );
+      const form = await submitDiscountedLine(dictionary, render, messages, locale);
+      const sentence = dictionary['form.violation.discount_approver_must_differ'] as string;
+      // Field level: the sentence sits at the requester control, not in the banner.
+      expect(await within(form).findByText(sentence)).toBeVisible();
+      const alerts = within(form).getAllByRole('alert');
+      const banner = alerts.find((node) => node.textContent?.includes('corr-named'));
+      expect(banner).toBeDefined();
+      expect(banner?.textContent).not.toContain(sentence);
+      expect(alerts.some((node) => node !== banner && node.textContent?.includes(sentence))).toBe(
+        true
+      );
+      expect(push).not.toHaveBeenCalled();
+    }
+  );
+
+  it.each(cases)(
+    '%s: an approver with no limit that counts is told so in the banner',
+    async (locale, dictionary, render, messages) => {
+      createQuotation.mockResolvedValue(
+        refusedWith({ path: 'body', rule: 'discount_no_approval_limit' })
+      );
+      const form = await submitDiscountedLine(dictionary, render, messages, locale);
+      const alert = await within(form).findByRole('alert');
+      // Body level: the request as a whole was refused, so the banner carries the rule.
+      expect(alert.textContent).toContain(
+        dictionary['form.violation.discount_no_approval_limit'] as string
+      );
+      expect(alert.textContent).not.toContain(dictionary['state.denied.title'] as string);
+      expect(alert.textContent).toContain('corr-named');
+      expect(push).not.toHaveBeenCalled();
+    }
+  );
 });
 
 describe('the /quotations route page decides before it reads', () => {

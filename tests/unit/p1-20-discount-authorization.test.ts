@@ -48,6 +48,22 @@ const OTHER_USER = 'd2900000-0000-4000-8000-0000000000ff';
 const allow = async (): Promise<boolean> => true;
 const deny = async (): Promise<boolean> => false;
 
+/** Settles a refused authorization into its `AppFailure`, or `null` when it was allowed. */
+async function refusal(pending: Promise<unknown>): Promise<AppFailure | null> {
+  return pending.then(
+    () => null,
+    (error: unknown) => {
+      expect(error).toBeInstanceOf(AppFailure);
+      return error as AppFailure;
+    }
+  );
+}
+
+/** The named rules a refusal carries in its caller-safe details. */
+function rulesOf(failure: AppFailure | null): readonly string[] {
+  return (failure?.safeDetails.violations ?? []).map((violation) => violation.rule);
+}
+
 const request = (over: Partial<Parameters<DiscountAuthorizationService['authorize']>[1]> = {}) => ({
   companyId: 'c1',
   branchId: 'b1',
@@ -101,9 +117,9 @@ describe('discount authorization — fails closed when unconfigured', () => {
 
   it('treats a missing ceiling as no authority, not unlimited', async () => {
     const service = build({ policy: null, ceiling: null });
-    await expect(service.authorize(db, request(), allow)).rejects.toThrow(
-      /no discount approval limit/
-    );
+    const failure = await refusal(service.authorize(db, request(), allow));
+    expect(failure?.message).toMatch(/no discount approval limit/);
+    expect(rulesOf(failure)).toEqual(['discount_no_approval_limit']);
   });
 });
 
@@ -113,8 +129,25 @@ describe('discount authorization — amount thresholds', () => {
     thresholdValue: '50.0000',
     currencyCode: 'JOD',
     requiredPermissionCode: 'svc.price.manage',
+    // Legacy column value. It has no effect since the Owner's decision of 2026-09-24:
+    // requester and approver must differ whenever approval is required.
     makerApproverDistinct: false,
   };
+
+  it('refuses self-approval at the threshold even though the legacy flag says false (Owner decision 2026-09-24)', async () => {
+    // The rule CHANGED by Owner decision; this input used to be authorized. It is a
+    // refusal now because no configuration may switch the separation off.
+    const service = build({ policy, ceiling: { amount: '999.0000', currencyCode: 'JOD' } });
+    const failure = await refusal(
+      service.authorize(
+        db,
+        request({ discountAmount: '60.0000', requestedBy: 'user-approver' }),
+        allow
+      )
+    );
+    expect(failure?.code).toBe('ERR-IAM-001');
+    expect(rulesOf(failure)).toEqual(['discount_approver_must_differ']);
+  });
 
   it('lets a discount below the threshold through without the elevated permission', async () => {
     const service = build({ policy });
@@ -197,9 +230,35 @@ describe('discount authorization — percentage thresholds are exact', () => {
     thresholdValue: '15.0000',
     currencyCode: null,
     requiredPermissionCode: 'svc.price.manage',
+    // Legacy column value, ignored since the Owner's decision of 2026-09-24.
     makerApproverDistinct: false,
   };
   const ceiling = { amount: '9999.0000', currencyCode: 'JOD' };
+
+  it('refuses an unnamed requester over the threshold even though the legacy flag says false (Owner decision 2026-09-24)', async () => {
+    // The rule CHANGED by Owner decision: an omitted requester means the caller is
+    // requesting it themselves, which is now refused whatever the policy row says.
+    const service = build({ policy, ceiling });
+    const failure = await refusal(
+      service.authorize(
+        db,
+        request({ discountAmount: '15.0000', lineBase: '100.0000', requestedBy: null }),
+        allow
+      )
+    );
+    expect(failure?.code).toBe('ERR-IAM-001');
+    expect(rulesOf(failure)).toEqual(['discount_approver_must_differ']);
+  });
+
+  it('still needs no requester UNDER the threshold, where no approval is required', async () => {
+    const service = build({ policy, ceiling });
+    const result = await service.authorize(
+      db,
+      request({ discountAmount: '14.9999', lineBase: '100.0000', requestedBy: null }),
+      deny
+    );
+    expect(result.requiredElevatedPermission).toBe(false);
+  });
 
   it.each([
     ['10.0000', '100.0000', false, 'ten percent of a hundred is under fifteen'],
@@ -259,9 +318,13 @@ describe('discount authorization — maker must not be approver', () => {
 
   it('refuses when the requester and the approver are the same actor', async () => {
     const service = build({ policy, ceiling });
-    await expect(
+    const failure = await refusal(
       service.authorize(db, request({ requestedBy: 'u1', actorId: 'u1' }), allow)
-    ).rejects.toThrow(/someone other than the person who requested it/);
+    );
+    expect(failure?.message).toMatch(/someone other than the person who requested it/);
+    expect(failure?.safeDetails.violations).toEqual([
+      { path: 'body.discountRequestedBy', rule: 'discount_approver_must_differ' },
+    ]);
   });
 
   it('allows when they are different actors', async () => {
@@ -274,14 +337,23 @@ describe('discount authorization — maker must not be approver', () => {
     expect(result.authorized).toBe(true);
   });
 
-  it('does not apply the separation when the company has switched it off', async () => {
+  /**
+   * The rule CHANGED by Owner decision on 2026-09-24 (Option A, strict separation).
+   *
+   * This case used to assert that a policy row saying `maker_approver_distinct = false`
+   * switched the separation off and let the actor approve their own discount. The Owner
+   * decided that no configuration may switch the rule off, so the same input is now a
+   * refusal. The column is legacy and ignored; this pins that it stays ignored.
+   */
+  it('still refuses self-approval when a policy row carries the legacy flag set to false (Owner decision 2026-09-24)', async () => {
     const service = build({ policy: { ...policy, makerApproverDistinct: false }, ceiling });
-    const result = await service.authorize(
-      db,
-      request({ requestedBy: 'u1', actorId: 'u1' }),
-      allow
+    const failure = await refusal(
+      service.authorize(db, request({ requestedBy: 'u1', actorId: 'u1' }), allow)
     );
-    expect(result.authorized).toBe(true);
+    expect(failure?.code).toBe('ERR-IAM-001');
+    expect(failure?.safeDetails.violations).toEqual([
+      { path: 'body.discountRequestedBy', rule: 'discount_approver_must_differ' },
+    ]);
   });
 });
 
@@ -322,6 +394,19 @@ describe('discount maker/approver — the requester is resolved, not merely dist
     expect(failure).toBeInstanceOf(AppFailure);
     expect((failure as AppFailure).code).toBe('ERR-IAM-001');
     expect((failure as AppFailure).message).toMatch(/not an active user in this tenant/);
+  });
+
+  it('refuses an unresolved requester even under a policy row whose legacy flag says false (Owner decision 2026-09-24)', async () => {
+    const service = build({
+      policy: { ...policy, makerApproverDistinct: false },
+      ceiling: { amount: '999.0000', currencyCode: 'JOD' },
+      requesterExists: false,
+    });
+    const failure = await refusal(
+      service.authorize(db, request({ discountAmount: '50.0000', requestedBy: OTHER_USER }), allow)
+    );
+    expect(failure?.code).toBe('ERR-IAM-001');
+    expect(failure?.message).toMatch(/not an active user in this tenant/);
   });
 
   it('accepts a requester that resolves, and returns it for the audit record', async () => {

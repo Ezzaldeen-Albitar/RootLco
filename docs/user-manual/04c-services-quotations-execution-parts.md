@@ -925,18 +925,20 @@ per company." <!-- approvalLimits.description -->
   for their own account, or for a role they hold, is still listed, and it still counts for every
   other holder of that role. It no longer counts when that administrator approves a discount. Check
   the list for such limits and ask another administrator to set yours again.
-- **Whoever approves a discount must not be the person who asked for it.** Whenever a discount needs
-  approval, the account creating the quotation is the approver, and a different, active colleague
-  must be named under **Discount requested by**. A company with no discount threshold needs
-  approval for every discount above zero. So does every discount at or above the threshold of a
-  company that has one. Only a company threshold that turns the separation off in so many words
-  lifts it.
+- **Nobody can approve their own discount.** Whenever a discount needs approval, the account
+  creating the quotation is the approver, and a different, active colleague must be named under
+  **Discount requested by**. The approver also needs a limit, set by someone else, that covers the
+  discount. There is no exception for a company with a single administrator, and no setting turns
+  this rule off.
+- **When a discount needs approval.** A company can have a discount threshold: a discount below it
+  needs no approval, and a discount at or above it does. A company with no threshold needs approval
+  for every discount above zero. This release has no screen for the company discount threshold;
+  whoever operates your installation sets it up, and a management screen is planned.
 - **So a company with a single administrator cannot approve its own discounts.** Nobody else can set
-  that administrator's limit, and nobody else can ask for the discount. The supported paths are a
-  company discount threshold, below which a discount needs no approval, or a second person: one
-  who asks for discounts, plus another administrator who sets the first administrator's limit. This
-  release has no screen for the company discount threshold. Whoever operates your installation has
-  to set it up. Until then, quote without a discount or add the second person.
+  that administrator's limit, and nobody else can ask for the discount. The supported paths are to
+  keep discounts below a configured company threshold, or to add a second person: one who asks for
+  discounts, plus another administrator who sets the approver's limit. Without either, quote
+  without a discount that needs approval.
 - **The meaning of a limit type is yours to define.** The application does not interpret it; your
   organisation decides what each type means and must use the same spelling everywhere.
 - **Company, role and person are named by reference, not by name.** There is no company or branch

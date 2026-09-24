@@ -425,16 +425,27 @@ describe('quo.quotation-create — the server computes the money', () => {
   });
 
   it('refuses a discount when the actor has NO approval ceiling', async () => {
-    // SVC_UNPERMITTED_DISCOUNT holds quotation.manage and work_order.read but no
-    // discount ceiling. Fail-closed: no ceiling is no authority, never unlimited.
+    // SVC_NO_CEILING holds the elevated permission but no discount ceiling.
+    // Fail-closed: no ceiling is no authority, never unlimited.
+    //
+    // A colleague other than the approver is named as the requester, so the
+    // maker/approver separation PASSES and the refusal below is the no-ceiling rule
+    // itself. Without the requester the separation would refuse first, and this case
+    // would stay green for the wrong reason.
     const order = await createOpenWorkOrder();
     authAs(SVC_NO_CEILING);
     const response = await createQuotation({
       workOrderId: order.workOrderId,
+      discountRequestedBy: SVC_READER.userId,
       lines: [{ serviceId: SERVICE_A, quantity: '1.000', discount: '1.0000' }],
     });
     expect(response.status).toBe(403);
-    expect(((await response.json()) as { code: string }).code).toBe('ERR-IAM-001');
+    const body = (await response.json()) as {
+      code: string;
+      violations?: readonly { path: string; rule: string }[];
+    };
+    expect(body.code).toBe('ERR-IAM-001');
+    expect(body.violations).toEqual([{ path: 'body', rule: 'discount_no_approval_limit' }]);
   });
 
   it('REJECTS a client-supplied price, tax or total rather than ignoring it', async () => {
@@ -1986,7 +1997,9 @@ describe('discount splitting defeats neither the threshold nor the ceiling', () 
       thresholdKind: 'amount',
       thresholdValue: POLICY_THRESHOLD,
       currencyCode: 'JOD',
-      // maker/approver separation has its own cases; keep it out of this measurement.
+      // The LEGACY flag set to false. Under the Owner's decision of 2026-09-24 it no
+      // longer switches the maker/approver separation off, so every elevated request
+      // below names a colleague as requester, and one case asserts the refusal.
       makerApproverDistinct: false,
     });
   });
@@ -2026,6 +2039,7 @@ describe('discount splitting defeats neither the threshold nor the ceiling', () 
     const response = await createQuotation({
       workOrderId: order.workOrderId,
       payerPartnerRef: PARTNER_A,
+      discountRequestedBy: SVC_READER.userId,
       lines: [
         { serviceId: SERVICE_A, quantity: '1.000', discount: '40.0000' },
         { serviceId: SERVICE_A, quantity: '1.000', discount: '40.0000', description: 'Two' },
@@ -2033,7 +2047,13 @@ describe('discount splitting defeats neither the threshold nor the ceiling', () 
       ],
     });
     expect(response.status).toBe(403);
-    expect(((await response.json()) as { code: string }).code).toBe('ERR-IAM-001');
+    const refusedBody = (await response.json()) as {
+      code: string;
+      violations?: readonly { path: string; rule: string }[];
+    };
+    expect(refusedBody.code).toBe('ERR-IAM-001');
+    // The ceiling gate, by name — the requester is a colleague, so the separation passed.
+    expect(refusedBody.violations).toEqual([{ path: 'body', rule: 'discount_no_approval_limit' }]);
     // The whole request is refused, so no partial quotation survives.
     expect(
       await countRows(admin, 'quo.quotations', 'work_order_id = $1', [order.workOrderId])
@@ -2052,6 +2072,7 @@ describe('discount splitting defeats neither the threshold nor the ceiling', () 
     const within = await createQuotation({
       workOrderId: withinOrder.workOrderId,
       payerPartnerRef: PARTNER_A,
+      discountRequestedBy: SVC_READER.userId,
       lines: Array.from({ length: 6 }, (_unused, index) => ({
         serviceId: SERVICE_A,
         quantity: '1.000',
@@ -2082,6 +2103,7 @@ describe('discount splitting defeats neither the threshold nor the ceiling', () 
     const over = await createQuotation({
       workOrderId: overOrder.workOrderId,
       payerPartnerRef: PARTNER_A,
+      discountRequestedBy: SVC_READER.userId,
       lines: Array.from({ length: 26 }, (_unused, index) => ({
         serviceId: SERVICE_A,
         quantity: '1.000',
@@ -2109,6 +2131,7 @@ describe('discount splitting defeats neither the threshold nor the ceiling', () 
     const response = await createQuotation({
       workOrderId: order.workOrderId,
       payerPartnerRef: PARTNER_A,
+      discountRequestedBy: SVC_READER.userId,
       lines: [
         { serviceId: SERVICE_A, quantity: '1.000', discount: '30.0000' },
         { serviceId: SERVICE_A, quantity: '1.000', discount: '30.0000', description: 'Two' },
@@ -2136,6 +2159,46 @@ describe('discount splitting defeats neither the threshold nor the ceiling', () 
     expect(fields).toContain('thresholdValue');
     expect(fields).toContain('ceilingAmount');
   });
+
+  /**
+   * The rule CHANGED by Owner decision on 2026-09-24 (Option A, strict separation).
+   *
+   * This suite's policy row carries `maker_approver_distinct = false`, which used to
+   * switch the separation off so that an approver could authorize their own split
+   * discount. No configuration may switch it off any more: the same request is now a
+   * refusal, named on the requester field. This is the rule changing, not a weakening.
+   */
+  it.each([
+    ['names nobody as the requester', undefined],
+    ['names themselves as the requester', SVC_FULL.userId],
+  ])(
+    'refuses a split self-approval although the legacy flag says false, when the approver %s (Owner decision 2026-09-24)',
+    async (_label, requestedBy) => {
+      const order = await createOpenWorkOrder();
+      authAs(SVC_FULL);
+      const response = await createQuotation({
+        workOrderId: order.workOrderId,
+        payerPartnerRef: PARTNER_A,
+        ...(requestedBy === undefined ? {} : { discountRequestedBy: requestedBy }),
+        lines: [
+          { serviceId: SERVICE_A, quantity: '1.000', discount: '30.0000' },
+          { serviceId: SERVICE_A, quantity: '1.000', discount: '30.0000', description: 'Two' },
+        ],
+      });
+      expect(response.status).toBe(403);
+      const body = (await response.json()) as {
+        code: string;
+        violations?: readonly { path: string; rule: string }[];
+      };
+      expect(body.code).toBe('ERR-IAM-001');
+      expect(body.violations).toEqual([
+        { path: 'body.discountRequestedBy', rule: 'discount_approver_must_differ' },
+      ]);
+      expect(
+        await countRows(admin, 'quo.quotations', 'work_order_id = $1', [order.workOrderId])
+      ).toBe(0);
+    }
+  );
 });
 
 /**
@@ -2288,7 +2351,8 @@ describe('discount maker/approver — the requester is resolved against PostgreS
       thresholdKind: 'amount',
       thresholdValue: '10.0000',
       currencyCode: 'JOD',
-      // TRUE here — this suite is about the separation itself, not the threshold.
+      // The schema default. The flag is legacy and ignored since the Owner's decision
+      // of 2026-09-24; this suite is about resolving the requester, not the flag.
       makerApproverDistinct: true,
     });
   });
@@ -2359,7 +2423,8 @@ describe('discount maker/approver — the requester is resolved against PostgreS
  * non-zero discount needs approval — and the separation used to run only when a
  * row existed (`policy?.makerApproverDistinct === true`), which made the
  * unconfigured company the one place an approver could ask for their own
- * discount. The column defaults to `true`; an absent row now takes that default.
+ * discount. Since the Owner's decision of 2026-09-24 the separation runs whenever
+ * approval is required, with or without a row, and the flag is ignored.
  */
 describe('discount maker/approver — a company with no policy row', () => {
   beforeAll(async () => {

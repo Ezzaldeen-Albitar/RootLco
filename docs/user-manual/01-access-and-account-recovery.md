@@ -229,12 +229,11 @@ access and workspace are set by your administrator, not on this page.** <!-- aut
   So the order is fixed: the invited person sets a password first, the administrator activates
   second.
 - The link can be used once.
-- **The link must lead to this page.** Left at the identity provider's default, the invitation
-  email's link opens the sign-in page with no way to choose a password, and the invitation is already
-  used up. A link straight to **Set up your account** requires the invitation template from PR #458.
-  On the local stack that template is declared in `supabase/config.toml`, and the mail service picks
-  it up only when it is restarted. A hosted environment defines its invitation email at its identity
-  provider and must point it at the same page.
+- **The invitation email links directly to this page.** The invited person opens the link and
+  lands on **Set up your account**, where they set a password. The invitation email template is
+  part of the product configuration; an installation that defines its own invitation email at its
+  identity provider must point the link at this same page, because a link left at the provider's
+  default opens the sign-in page with no way to choose a password and uses the invitation up.
 - The link is not repeated in the address bar: the application removes it from the URL as soon as
   the page opens, so it cannot be copied out of the browser afterwards. If you need another one, ask
   for a new invitation or use the reset route (1.6).
