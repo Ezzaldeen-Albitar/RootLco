@@ -17,6 +17,7 @@
  * | `inv.stock-movement-list`          | GET    | `/stock-movements`                          | `inv.stock.read`    |
  * | `inv.stock-issue-create`           | POST   | `/stock-issues`                             | `inv.stock.operate` |
  * | `inv.stock-return-create`          | POST   | `/stock-returns`                            | `inv.stock.operate` |
+ * | `inv.part-issue-list`              | GET    | `/part-issues`                              | `inv.stock.read`    |
  *
  * Typed from the routes that own the shapes and from the views in
  * `apps/api/src/modules/inventory/application/*`. The published document
@@ -1264,6 +1265,37 @@ export interface SalesReturnEcho {
   /** True when an idempotent replay returned the return that already existed. */
   readonly replayed: boolean;
 }
+
+/**
+ * One row of `inv.part-issue-list` — `IssuedPartListView` (Owner directive,
+ * `P1-32-PRE-OD-UX`): a part handed to a job, named by the item's code and name
+ * and the job's number, so the returns desk chooses the line by what the clerk
+ * is holding rather than by a typed reference.
+ *
+ * The three quantities are the server's decimal strings; the remainder is
+ * subtracted by the database and repeated here, never computed.
+ * `issuedBy.displayName` is withheld (null) from a caller without the user read.
+ */
+export interface IssuedPart {
+  readonly id: string;
+  readonly workOrderId: string;
+  readonly workOrderDisplayNumber: string | null;
+  readonly item: { readonly id: string; readonly code: string; readonly name: string };
+  readonly quantity: string;
+  readonly returnedQuantity: string;
+  readonly returnableQuantity: string;
+  readonly unitCode: string;
+  readonly issuedAt: string;
+  readonly issuedBy: { readonly id: string; readonly displayName: string | null };
+  readonly branchId: string;
+}
+
+/** The shortest and longest `q` the issued-parts read accepts (`MIN_`/`MAX_SEARCH_FRAGMENT`). */
+export const MIN_ISSUED_PART_SEARCH = 2;
+export const MAX_ISSUED_PART_SEARCH = 80;
+
+/** The shortest item search the pickers send; the catalogue read accepts up to `MAX_NAME`. */
+export const MIN_ITEM_SEARCH = 2;
 
 /** `inv.sales-return-list` — `SalesReturnListView`; the row carries the item's stock code. */
 export interface SalesReturnRow extends Omit<SalesReturnEcho, 'replayed'> {

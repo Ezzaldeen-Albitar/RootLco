@@ -7,16 +7,18 @@ import type { Messages } from '@/i18n/get-messages';
 import { translate } from '@/i18n/get-messages';
 import { formatDate, formatInteger } from '@/lib/format';
 
-import type { WarrantyRecord } from '../warranty-contract';
+import type { WarrantyRecordDetail } from '../warranty-contract';
 import { WarrantyHistoryPanel } from './WarrantyHistoryPanel';
 import {
   ConfigurationStatusLabel,
   CoveredScopeLabel,
+  CustomerWords,
   Distance,
   Fact,
   ItemKindLabel,
   Reference,
   Section,
+  VehicleWords,
   WarrantyStatusLabel,
 } from './shared';
 
@@ -44,12 +46,14 @@ import {
  * name in two tables, and showing them under one label is how a warranty quietly
  * becomes wrong. Neither carries a unit, because neither read publishes one.
  *
- * ## Identifiers stay identifiers, with one exception that is not one
+ * ## The car and the customer are named; the job and the handover are links
  *
- * The vehicle, the work order and the handover are bare references and this screen
- * resolves none of them to a name. The handover gets a link because a handover screen
- * exists to link to, and the work order likewise; a link is navigation, not a name.
- * The policy is shown by its own code and name because the read carries both.
+ * The detail read carries the car's plate, make and model and display number and
+ * the name of the party who brought it in (route sweep B2), so both are said in
+ * words — and said to be not shown when the backend withholds them — rather than
+ * printed as references. The work order and the handover are reached by links in
+ * words; neither read publishes the job's number, so none is printed. The policy
+ * is shown by its own code and name because the read carries both.
  *
  * ## The history is READ, and it is the last section for a reason
  *
@@ -76,7 +80,7 @@ export function WarrantyRecordScreen({
   readonly locale: Locale;
   readonly messages: Messages;
   /** The page's own read. */
-  readonly warranty: WarrantyRecord;
+  readonly warranty: WarrantyRecordDetail;
 }) {
   return (
     <div className="flex min-h-0 flex-col gap-6">
@@ -133,13 +137,13 @@ export function WarrantyRecordScreen({
             </Link>
           </p>
 
-          <Reference
-            label={translate(messages, 'warranty.summary.vehicle')}
-            value={warranty.vehicleId}
-          />
-          <p className="text-caption text-text-muted">
-            {translate(messages, 'warranty.summary.identifiersExplain')}
-          </p>
+          <Fact label={translate(messages, 'warranty.summary.vehicle')}>
+            <VehicleWords messages={messages} vehicle={warranty.vehicle} />
+          </Fact>
+
+          <Fact label={translate(messages, 'warranty.summary.customer')}>
+            <CustomerWords locale={locale} messages={messages} customer={warranty.customer} />
+          </Fact>
         </div>
       </Section>
 

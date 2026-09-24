@@ -80,7 +80,9 @@ const createSalesReturn = vi.fn();
 const listSalesReturns = vi.fn();
 const listLocations = vi.fn();
 const listBranches = vi.fn();
+const listIssuedParts = vi.fn();
 vi.mock('@/features/inventory/api', () => ({
+  listIssuedParts: (...args: unknown[]) => listIssuedParts(...args),
   readReturnable: (...args: unknown[]) => readReturnable(...args),
   createSalesReturn: (...args: unknown[]) => createSalesReturn(...args),
   listSalesReturns: (...args: unknown[]) => listSalesReturns(...args),
@@ -133,6 +135,22 @@ const CustomerReturnsPage = (
 const SOURCE_ID = '77777777-7777-4777-8777-777777777777';
 const CREDIT_NOTE_ID = '88888888-8888-4888-8888-888888888888';
 const SALE_ID = '99999999-9999-4999-8999-999999999999';
+const ISSUE_ID = 'abababab-abab-4bab-8bab-abababababab';
+
+/** One part handed to a job in the branch, as `inv.part-issue-list` states it. */
+const issuedPart = {
+  id: ISSUE_ID,
+  workOrderId: '12121212-1212-4212-8212-121212121212',
+  workOrderDisplayNumber: 'WO-000042',
+  item: { id: ITEM_ID, code: 'BRK-001', name: 'Brake pad' },
+  quantity: '4.000',
+  returnedQuantity: '1.000',
+  returnableQuantity: '3.000',
+  unitCode: 'EA',
+  issuedAt: '2026-09-02T10:00:00.000Z',
+  issuedBy: { id: '13131313-1313-4313-8313-131313131313', displayName: null },
+  branchId: BRANCH_ID,
+};
 
 /** One issued counter sale of the branch, as `sal.counter-sale-list` states it. */
 const sale = {
@@ -224,6 +242,9 @@ beforeEach(() => {
   createSalesReturn.mockResolvedValue(succeeded('inventory.returns.create.success', received()));
   listCounterSales.mockResolvedValue(okPage([sale]));
   readInvoice.mockResolvedValue(okRead({ invoice: sale, lines: [saleLine], recordVersion: 2 }));
+  listIssuedParts.mockResolvedValue(
+    okRead({ items: [issuedPart], nextCursor: null, hasMore: false })
+  );
 });
 
 const operable = () => (
@@ -589,17 +610,189 @@ describe('naming the sale instead of typing its reference', () => {
     expect(screen.queryByText(EN['inventory.returns.sale.truncated'] as string)).toBeNull();
     expect(screen.queryByLabelText(labelled('inventory.returns.source.id'))).toBeNull();
   });
+});
 
-  it('keeps the typed reference for parts handed to a job, which no branch list covers', async () => {
-    const user = userEvent.setup();
+describe('naming the part handed to a job instead of typing its reference (route sweep B2)', () => {
+  async function partIssueKind(user: ReturnType<typeof userEvent.setup>) {
     renderLtr(operable());
     await openBranch();
     await user.selectOptions(
       await screen.findByLabelText(labelled('inventory.returns.source.kind')),
       'part_issue'
     );
-    expect(screen.getByLabelText(labelled('inventory.returns.source.id'))).toBeTruthy();
+  }
+  it('finds the line by what the clerk holds, says what may still come back, and asks the server', async () => {
+    const user = userEvent.setup();
+    await partIssueKind(user);
+    expect(screen.queryByLabelText(labelled('inventory.returns.source.id'))).toBeNull();
     expect(screen.queryByLabelText(labelled('inventory.returns.sale.label'))).toBeNull();
+    await user.type(
+      screen.getByLabelText(EN['inventory.returns.issue.label'] as string),
+      'Brake{Enter}'
+    );
+    await waitFor(() => expect(listIssuedParts).toHaveBeenCalled());
+    expect(listIssuedParts.mock.calls[0]?.[0]).toEqual({
+      companyId: COMPANY_ID,
+      branchId: BRANCH_ID,
+    });
+    expect(listIssuedParts.mock.calls[0]?.[1]).toEqual({ q: 'Brake' });
+    const match = await screen.findByRole('button', { name: /BRK-001 — Brake pad/ });
+    // The job's number and both figures, as the server stated them, in the unit.
+    expect(match).toHaveTextContent('WO-000042');
+    expect(match).toHaveTextContent('4.000 EA');
+    expect(match).toHaveTextContent('3.000 EA');
+    expect(match).not.toHaveTextContent(ISSUE_ID);
+    await user.click(match);
+    await waitFor(() => expect(readReturnable).toHaveBeenCalledWith('part_issue', ISSUE_ID));
+  });
+
+  it('sends the chosen line, and with nothing chosen marks the picker instead of sending', async () => {
+    const user = userEvent.setup();
+    await partIssueKind(user);
+    await user.selectOptions(
+      screen.getByLabelText(labelled('inventory.returns.create.receivedLocation')),
+      warehouse.id
+    );
+    await user.type(screen.getByLabelText(labelled('inventory.returns.create.quantity')), '1');
+    await user.click(
+      screen.getByRole('button', { name: EN['inventory.returns.create.submit'] as string })
+    );
+    expect(await screen.findByText(EN['inventory.returns.issue.required'] as string)).toBeTruthy();
+    expect(createSalesReturn).not.toHaveBeenCalled();
+    await user.type(
+      screen.getByLabelText(EN['inventory.returns.issue.label'] as string),
+      'WO-42{Enter}'
+    );
+    await user.click(await screen.findByRole('button', { name: /BRK-001 — Brake pad/ }));
+    await waitFor(() => expect(readReturnable).toHaveBeenCalled());
+    await user.click(
+      screen.getByRole('button', { name: EN['inventory.returns.create.submit'] as string })
+    );
+    await waitFor(() => expect(createSalesReturn).toHaveBeenCalled());
+    expect(createSalesReturn.mock.calls[0]?.[0]).toMatchObject({
+      sourceKind: 'part_issue',
+      sourceId: ISSUE_ID,
+      quantity: '1',
+    });
+  });
+
+  it('when the branch\u2019s issued parts are refused, puts the typed reference beside the refusal', async () => {
+    listIssuedParts.mockResolvedValue({ status: 'denied', correlationId: 'corr' });
+    const user = userEvent.setup();
+    await partIssueKind(user);
+    expect(screen.queryByLabelText(labelled('inventory.returns.source.id'))).toBeNull();
+    await user.type(
+      screen.getByLabelText(EN['inventory.returns.issue.label'] as string),
+      'Brake{Enter}'
+    );
+    expect(await screen.findByText(EN['inventory.returns.issue.fallback'] as string)).toBeTruthy();
+    const box = screen.getByLabelText(labelled('inventory.returns.source.id'));
+    await user.type(box, ISSUE_ID);
+    await user.click(
+      screen.getByRole('button', { name: EN['inventory.returns.source.look'] as string })
+    );
+    await waitFor(() => expect(readReturnable).toHaveBeenCalledWith('part_issue', ISSUE_ID));
+  });
+
+  it('the typed reference is checked by the server’s own identifier rule, not a looser copy (route sweep B2 review)', async () => {
+    listIssuedParts.mockResolvedValue({ status: 'denied', correlationId: 'corr' });
+    const user = userEvent.setup();
+    await partIssueKind(user);
+    await user.type(
+      screen.getByLabelText(EN['inventory.returns.issue.label'] as string),
+      'Brake{Enter}'
+    );
+    const box = await screen.findByLabelText(labelled('inventory.returns.source.id'));
+    // 8-4-4-4-12 hexadecimal, but neither a version nor a variant the route accepts.
+    await user.type(box, 'abababab-abab-abab-abab-abababababab');
+    await user.click(
+      screen.getByRole('button', { name: EN['inventory.returns.source.look'] as string })
+    );
+    expect(await screen.findByText(EN['inventory.common.idFormat'] as string)).toBeTruthy();
+    expect(readReturnable).not.toHaveBeenCalled();
+    await user.selectOptions(
+      screen.getByLabelText(labelled('inventory.returns.create.receivedLocation')),
+      warehouse.id
+    );
+    await user.type(screen.getByLabelText(labelled('inventory.returns.create.quantity')), '1');
+    await user.click(
+      screen.getByRole('button', { name: EN['inventory.returns.create.submit'] as string })
+    );
+    expect(box).toHaveAttribute('aria-invalid', 'true');
+    expect(createSalesReturn).not.toHaveBeenCalled();
+  });
+
+  it('a late reply is never drawn: not a search for an earlier term, and not what may come back for a part no longer chosen (route sweep B2 review)', async () => {
+    const OTHER_ISSUE_ID = 'cdcdcdcd-cdcd-4dcd-8dcd-cdcdcdcdcdcd';
+    const otherPart = {
+      ...issuedPart,
+      id: OTHER_ISSUE_ID,
+      item: { id: ITEM_ID, code: 'OIL-002', name: 'Oil filter' },
+      quantity: '8.000',
+      returnedQuantity: '1.000',
+      returnableQuantity: '7.000',
+    };
+    const stale = {
+      ...issuedPart,
+      id: 'efefefef-efef-4fef-8fef-efefefefefef',
+      item: { id: ITEM_ID, code: 'BRA-900', name: 'Bracket' },
+    };
+    const heldSearches: ((value: unknown) => void)[] = [];
+    listIssuedParts.mockImplementation((_target: unknown, criteria: { q: string }) =>
+      criteria.q === 'Bra'
+        ? new Promise((resolve) => heldSearches.push(resolve))
+        : Promise.resolve(
+            okRead({
+              items: [criteria.q === 'Oil' ? otherPart : issuedPart],
+              nextCursor: null,
+              hasMore: false,
+            })
+          )
+    );
+    const heldReturnable: ((value: unknown) => void)[] = [];
+    readReturnable.mockImplementation((_kind: string, id: string) =>
+      id === ISSUE_ID
+        ? new Promise((resolve) => heldReturnable.push(resolve))
+        : Promise.resolve(
+            returnable({
+              sourceKind: 'part_issue',
+              sourceId: OTHER_ISSUE_ID,
+              sourceQuantity: '8.000',
+              returnedQuantity: '1.000',
+              remainingQuantity: '7.000',
+            })
+          )
+    );
+    const user = userEvent.setup();
+    await partIssueKind(user);
+    const search = () => screen.getByLabelText(EN['inventory.returns.issue.label'] as string);
+
+    // The search: the reply for "Bra" lands after the one for "Brake".
+    await user.type(search(), 'Bra{Enter}');
+    await waitFor(() => expect(heldSearches.length).toBeGreaterThan(0));
+    await user.type(search(), 'ke{Enter}');
+    expect(await screen.findByRole('button', { name: /BRK-001 — Brake pad/ })).toBeVisible();
+    for (const resolve of heldSearches) {
+      resolve(okRead({ items: [stale], nextCursor: null, hasMore: false }));
+    }
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(screen.queryByRole('button', { name: /BRA-900/ })).toBeNull();
+
+    // What may come back: the clerk changes their mind before the first answer arrives.
+    await user.click(screen.getByRole('button', { name: /BRK-001 — Brake pad/ }));
+    await waitFor(() => expect(heldReturnable).toHaveLength(1));
+    await user.click(
+      screen.getByRole('button', { name: EN['inventory.returns.issue.change'] as string })
+    );
+    await user.type(search(), 'Oil{Enter}');
+    await user.click(await screen.findByRole('button', { name: /OIL-002 — Oil filter/ }));
+    await waitFor(() => expect(screen.getAllByText('7.000').length).toBeGreaterThan(0));
+    // The first part's answer lands last: it is not the part on the form.
+    heldReturnable[0]?.(returnable({ sourceKind: 'part_issue', sourceId: ISSUE_ID }));
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(screen.queryByText('5.000')).toBeNull();
+    expect(screen.queryByText('2.000')).toBeNull();
+    expect(screen.getAllByText('7.000').length).toBeGreaterThan(0);
   });
 });
 

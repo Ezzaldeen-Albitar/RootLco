@@ -61,6 +61,7 @@ const escape = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const labelled = (key: string) => new RegExp(`^${escape(EN[key] as string)}`);
 
 const listPartIssues = vi.fn();
+const listItems = vi.fn();
 const listRequiredParts = vi.fn();
 const listReservations = vi.fn();
 const listLocations = vi.fn();
@@ -82,7 +83,7 @@ vi.mock('@/features/inventory/api', () => ({
   listItemCategories: vi.fn(),
   createIssue: (...args: unknown[]) => createIssue(...args),
   createReturn: (...args: unknown[]) => createReturn(...args),
-  listItems: vi.fn(),
+  listItems: (...args: unknown[]) => listItems(...args),
   listAvailability: vi.fn(),
   listMovements: vi.fn(),
   createReservation: (...args: unknown[]) => createReservation(...args),
@@ -387,13 +388,36 @@ describe('reached from a work order', () => {
     expect(push).toHaveBeenCalledWith(`/en/inventory/parts?workOrderId=${WORK_ORDER_ID}`);
   });
 
-  it('without the work-order code, the chooser offers no search and no submit', () => {
+  it('without the work-order code, keeps a labelled job reference, checks it, and opens that job', async () => {
+    /*
+     * The parts of a job are read with `inv.stock.read` alone, so the chooser
+     * must not take the way in away from a stock clerk without the job read
+     * (route sweep B2): the labelled reference they had before the picker.
+     */
+    const user = userEvent.setup();
     renderScreen({ workOrderId: null, workOrder: null, canReadWorkOrder: false });
-    expect(screen.getByText(EN['workOrders.picker.notPermitted'] as string)).toBeVisible();
     expect(screen.queryByRole('searchbox')).toBeNull();
+    const box = screen.getByLabelText(labelled('inventory.workOrderReference.label'));
+    const submit = screen.getByRole('button', {
+      name: EN['inventory.parts.choose.submit'] as string,
+    });
+    expect(submit).toBeEnabled();
+    // Every id the submit is described by exists on the page.
+    for (const id of (submit.getAttribute('aria-describedby') ?? '').split(' ').filter(Boolean)) {
+      expect(document.getElementById(id)).not.toBeNull();
+    }
+    await user.type(box, 'WO-000042');
+    await user.click(submit);
     expect(
-      screen.queryByRole('button', { name: EN['inventory.parts.choose.submit'] as string })
-    ).toBeNull();
+      await screen.findByText(EN['inventory.workOrderReference.format'] as string)
+    ).toBeVisible();
+    expect(box).toHaveAttribute('aria-invalid', 'true');
+    expect(push).not.toHaveBeenCalled();
+    await user.clear(box);
+    await user.type(box, WORK_ORDER_ID);
+    await user.click(submit);
+    expect(push).toHaveBeenCalledWith(`/en/inventory/parts?workOrderId=${WORK_ORDER_ID}`);
+    expect(listWorkOrders).not.toHaveBeenCalled();
   });
 
   it('lists the issues on first paint with two figures as strings, and names the work order', async () => {
@@ -658,9 +682,15 @@ describe('FE-011 — issuing', () => {
       })
     );
     const form = await issueForm();
-    expect(within(form).getByLabelText(labelled('inventory.issue.itemId'))).toHaveValue(ITEM_ID);
-    expect(within(form).getByLabelText(labelled('inventory.issue.requiredPartRef'))).toHaveValue(
-      REQUIRED_PART_ID
+    // Without the catalogue read the item stays in its labelled reference box,
+    // prefilled from the row; the line is chosen from the job's own list.
+    expect(within(form).getByLabelText(labelled('inventory.itemPicker.reference'))).toHaveValue(
+      ITEM_ID
+    );
+    await waitFor(() =>
+      expect(within(form).getByLabelText(labelled('inventory.issue.requiredPart'))).toHaveValue(
+        REQUIRED_PART_ID
+      )
     );
     expect(within(form).getByLabelText(labelled('inventory.issue.quantity'))).toHaveValue('2.000');
     await waitFor(() =>
@@ -739,7 +769,9 @@ describe('FE-011 — issuing', () => {
       within(form).getByLabelText(labelled('inventory.issue.reservation')),
       RESERVATION_ID
     );
-    expect(within(form).getByLabelText(labelled('inventory.issue.itemId'))).toHaveValue(ITEM_ID);
+    expect(within(form).getByLabelText(labelled('inventory.itemPicker.reference'))).toHaveValue(
+      ITEM_ID
+    );
     await within(form).findByRole('option', { name: 'WH-1 — Main warehouse' });
     expect(within(form).getByLabelText(labelled('inventory.issue.location'))).toHaveValue(
       LOCATION_ID
@@ -768,7 +800,10 @@ describe('FE-011 — issuing', () => {
     await chooseRequirement(user);
     await user.click(screen.getByRole('button', { name: EN['inventory.issue.open'] as string }));
     const form = await issueForm();
-    await user.type(within(form).getByLabelText(labelled('inventory.issue.itemId')), ITEM_ID);
+    await user.type(
+      within(form).getByLabelText(labelled('inventory.itemPicker.reference')),
+      ITEM_ID
+    );
     await within(form).findByRole('option', { name: 'WH-1 — Main warehouse' });
     await user.selectOptions(
       within(form).getByLabelText(labelled('inventory.issue.location')),
@@ -799,7 +834,10 @@ describe('FE-011 — issuing', () => {
     await chooseRequirement(user);
     await user.click(screen.getByRole('button', { name: EN['inventory.issue.open'] as string }));
     const form = await issueForm();
-    await user.type(within(form).getByLabelText(labelled('inventory.issue.itemId')), ITEM_ID);
+    await user.type(
+      within(form).getByLabelText(labelled('inventory.itemPicker.reference')),
+      ITEM_ID
+    );
     await within(form).findByRole('option', { name: 'WH-1 — Main warehouse' });
     await user.selectOptions(
       within(form).getByLabelText(labelled('inventory.issue.location')),
@@ -852,6 +890,270 @@ describe('FE-011 — issuing', () => {
     await new Promise((resolve) => setTimeout(resolve, 50));
     expect(listLocations).toHaveBeenCalledTimes(1);
     expect(listReservations).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('the item and the required part are found, not typed (route sweep B2)', () => {
+  it('with the catalogue read, a required part opens the form on that part by name, and it is sent', async () => {
+    const user = userEvent.setup();
+    createIssue.mockResolvedValue({
+      state: { status: 'success', messageKey: 'inventory.issue.success', attempt: 1 },
+      created: { id: 'new-issue', quantity: '2.000', reservationId: null },
+    });
+    renderScreen({ canOperate: true, canReadItems: true });
+    await chooseRequirement(user);
+    await user.click(
+      await within(requiredRegion()).findByRole('button', {
+        name: EN['inventory.parts.required.issueThis'] as string,
+      })
+    );
+    const form = await issueForm();
+    expect(within(form).getByTestId('issue-item-picker-chosen')).toHaveTextContent(
+      'Front brake pads'
+    );
+    expect(within(form).queryByDisplayValue(ITEM_ID)).toBeNull();
+    expect(
+      await within(form).findByRole('option', { name: 'Front brake pads — 2.000 set' })
+    ).toBeInTheDocument();
+    await within(form).findByRole('option', { name: 'WH-1 — Main warehouse' });
+    await user.selectOptions(
+      within(form).getByLabelText(labelled('inventory.issue.location')),
+      LOCATION_ID
+    );
+    await user.click(
+      within(form).getByRole('button', { name: EN['inventory.issue.submit'] as string })
+    );
+    await waitFor(() => expect(createIssue).toHaveBeenCalled());
+    expect(createIssue.mock.calls[0]?.[0]).toMatchObject({
+      itemId: ITEM_ID,
+      requiredPartRef: REQUIRED_PART_ID,
+    });
+  });
+
+  it('with the catalogue read, an item is found by name; with none chosen, the control says so', async () => {
+    const user = userEvent.setup();
+    listItems.mockResolvedValue(
+      page([
+        {
+          id: ITEM_ID,
+          itemCategoryId: 'cat',
+          sku: 'BRK-001',
+          name: 'Brake pad',
+          description: null,
+          unitOfMeasure: { id: 'u', code: 'EA' },
+          itemType: 'part',
+          isStockTracked: true,
+          isSerialized: false,
+          lifecycleStatus: 'active',
+          recordVersion: 1,
+        },
+      ])
+    );
+    createIssue.mockResolvedValue({
+      state: { status: 'success', messageKey: 'inventory.issue.success', attempt: 1 },
+      created: { id: 'new-issue', quantity: '1', reservationId: null },
+    });
+    renderScreen({ canOperate: true, canReadItems: true });
+    await chooseRequirement(user);
+    await user.click(screen.getByRole('button', { name: EN['inventory.issue.open'] as string }));
+    const form = await issueForm();
+    await within(form).findByRole('option', { name: 'WH-1 — Main warehouse' });
+    await user.selectOptions(
+      within(form).getByLabelText(labelled('inventory.issue.location')),
+      LOCATION_ID
+    );
+    await user.type(within(form).getByLabelText(labelled('inventory.issue.quantity')), '1');
+    await user.click(
+      within(form).getByRole('button', { name: EN['inventory.issue.submit'] as string })
+    );
+    expect(
+      await within(form).findByText(EN['inventory.itemPicker.required'] as string)
+    ).toBeVisible();
+    expect(createIssue).not.toHaveBeenCalled();
+    await user.type(
+      within(form).getByLabelText(EN['inventory.issue.item'] as string),
+      'BRK{Enter}'
+    );
+    await user.click(await within(form).findByRole('button', { name: 'BRK-001 — Brake pad' }));
+    await user.click(
+      within(form).getByRole('button', { name: EN['inventory.issue.submit'] as string })
+    );
+    await waitFor(() => expect(createIssue).toHaveBeenCalled());
+    expect(createIssue.mock.calls[0]?.[0]).toMatchObject({ itemId: ITEM_ID });
+    expect(listItems).toHaveBeenCalledWith(
+      { search: 'BRK', lifecycleStatus: 'active' },
+      expect.objectContaining({ pageSize: 10 }),
+      null
+    );
+  });
+
+  it('without the job read, the required-part line stays a labelled reference, checked before it is sent', async () => {
+    const user = userEvent.setup();
+    createIssue.mockResolvedValue({
+      state: { status: 'success', messageKey: 'inventory.issue.success', attempt: 1 },
+      created: { id: 'new-issue', quantity: '1', reservationId: null },
+    });
+    listMaterialRequirements.mockImplementation(async () =>
+      okRead({ items: [materialRequirement()], nextCursor: null, hasMore: false })
+    );
+    renderScreen({ canOperate: true, canReadWorkOrder: false });
+    await chooseRequirement(user);
+    await user.click(screen.getByRole('button', { name: EN['inventory.issue.open'] as string }));
+    const form = await issueForm();
+    expect(listRequiredParts).not.toHaveBeenCalled();
+    await within(form).findByRole('option', { name: 'WH-1 — Main warehouse' });
+    await user.selectOptions(
+      within(form).getByLabelText(labelled('inventory.issue.location')),
+      LOCATION_ID
+    );
+    await user.type(within(form).getByLabelText(labelled('inventory.issue.quantity')), '1');
+    const line = within(form).getByLabelText(
+      labelled('inventory.parts.requiredPartReference.label')
+    );
+    await user.type(line, 'line-1');
+    await user.click(
+      within(form).getByRole('button', { name: EN['inventory.issue.submit'] as string })
+    );
+    expect(
+      await within(form).findByText(EN['inventory.parts.requiredPartReference.format'] as string)
+    ).toBeVisible();
+    expect(createIssue).not.toHaveBeenCalled();
+    await user.clear(line);
+    await user.type(line, REQUIRED_PART_ID);
+    await user.click(
+      within(form).getByRole('button', { name: EN['inventory.issue.submit'] as string })
+    );
+    await waitFor(() => expect(createIssue).toHaveBeenCalled());
+    // The requirement names the item, which the reference box opened on.
+    expect(createIssue.mock.calls[0]?.[0]).toMatchObject({
+      itemId: ITEM_ID,
+      requiredPartRef: REQUIRED_PART_ID,
+    });
+  });
+
+  it('a required part carried from "Issue" stays linked while the job’s list cannot be read, and is not sent once the operator unlinks it (route sweep B2 review)', async () => {
+    const user = userEvent.setup();
+    // Refused, so the form stays open for the second attempt below.
+    createIssue.mockResolvedValue({
+      state: { status: 'failed', messageKey: 'action.failed', attempt: 1 },
+    });
+    renderScreen({ canOperate: true, canReadItems: true });
+    await chooseRequirement(user);
+    const issueThis = await within(requiredRegion()).findByRole('button', {
+      name: EN['inventory.parts.required.issueThis'] as string,
+    });
+    // The panel's list answered; the form's own read of the same list does not.
+    listRequiredParts.mockImplementation(async () => ({
+      status: 'unavailable',
+      correlationId: 'ref-503',
+    }));
+    await user.click(issueThis);
+    const form = await issueForm();
+    const carried = await within(form).findByText(
+      (EN['inventory.issue.requiredPartCarried'] as string).replace('{part}', 'Front brake pads'),
+      { exact: false }
+    );
+    expect(carried).toBeVisible();
+    expect(carried).toHaveTextContent(EN['inventory.parts.required.unavailable'] as string);
+    await within(form).findByRole('option', { name: 'WH-1 — Main warehouse' });
+    await user.selectOptions(
+      within(form).getByLabelText(labelled('inventory.issue.location')),
+      LOCATION_ID
+    );
+    const submit = () =>
+      within(form).getByRole('button', { name: EN['inventory.issue.submit'] as string });
+    await user.click(submit());
+    await waitFor(() => expect(createIssue).toHaveBeenCalledTimes(1));
+    // Kept, and sent: never dropped because the select had nothing to show it in.
+    expect(createIssue.mock.calls[0]?.[0]).toMatchObject({ requiredPartRef: REQUIRED_PART_ID });
+
+    // The operator's own choice: unlinked, the line is not sent.
+    await user.click(
+      within(form).getByRole('button', {
+        name: EN['inventory.issue.requiredPartUnlink'] as string,
+      })
+    );
+    expect(
+      within(form).queryByRole('button', {
+        name: EN['inventory.issue.requiredPartUnlink'] as string,
+      })
+    ).toBeNull();
+    await user.click(submit());
+    await waitFor(() => expect(createIssue).toHaveBeenCalledTimes(2));
+    expect(createIssue.mock.calls[1]?.[0]).not.toHaveProperty('requiredPartRef');
+  });
+
+  it('a carried part the job’s list no longer holds is said to be dropped, not dropped silently (route sweep B2 review)', async () => {
+    const user = userEvent.setup();
+    renderScreen({ canOperate: true, canReadItems: true });
+    await chooseRequirement(user);
+    const issueThis = await within(requiredRegion()).findByRole('button', {
+      name: EN['inventory.parts.required.issueThis'] as string,
+    });
+    listRequiredParts.mockImplementation(async () => okRead({ items: [] }));
+    await user.click(issueThis);
+    const form = await issueForm();
+    expect(
+      await within(form).findByText(EN['inventory.issue.requiredPartGone'] as string)
+    ).toBeVisible();
+  });
+
+  it('a late reply for an earlier item search is not drawn under a later one (route sweep B2 review)', async () => {
+    const held: Record<string, ((value: unknown) => void)[]> = { BR: [], BRK: [] };
+    const found = (sku: string, name: string) =>
+      page([
+        {
+          id: sku === 'BRK-001' ? ITEM_ID : '14141414-1414-4414-8414-141414141414',
+          itemCategoryId: 'cat',
+          sku,
+          name,
+          description: null,
+          unitOfMeasure: { id: 'u', code: 'EA' },
+          itemType: 'part',
+          isStockTracked: true,
+          isSerialized: false,
+          lifecycleStatus: 'active',
+          recordVersion: 1,
+        },
+      ]);
+    listItems.mockImplementation(
+      (criteria: { search: string }) =>
+        new Promise((resolve) => held[criteria.search]?.push(resolve))
+    );
+    const user = userEvent.setup();
+    renderScreen({ canOperate: true, canReadItems: true });
+    await chooseRequirement(user);
+    await user.click(screen.getByRole('button', { name: EN['inventory.issue.open'] as string }));
+    const form = await issueForm();
+    const box = within(form).getByLabelText(EN['inventory.issue.item'] as string);
+    await user.type(box, 'BR{Enter}');
+    await waitFor(() => expect(held['BR']?.length).toBeGreaterThan(0));
+    await user.type(box, 'K{Enter}');
+    await waitFor(() => expect(held['BRK']?.length).toBeGreaterThan(0));
+    for (const resolve of held['BRK'] ?? []) resolve(found('BRK-001', 'Brake pad'));
+    expect(await within(form).findByRole('button', { name: 'BRK-001 — Brake pad' })).toBeVisible();
+    for (const resolve of held['BR'] ?? []) resolve(found('BRA-900', 'Bracket'));
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(within(form).queryByRole('button', { name: /BRA-900/ })).toBeNull();
+  });
+
+  it('with the catalogue read, the reserve form opens on the item the requirement names, in words', async () => {
+    const user = userEvent.setup();
+    listMaterialRequirements.mockImplementation(async () =>
+      okRead({ items: [materialRequirement()], nextCursor: null, hasMore: false })
+    );
+    renderScreen({ canOperate: true, canReadItems: true });
+    await chooseRequirement(user);
+    await user.click(
+      screen.getByRole('button', { name: EN['inventory.parts.reserve.open'] as string })
+    );
+    const form = await screen.findByRole('form', {
+      name: EN['inventory.parts.reserve.heading'] as string,
+    });
+    expect(within(form).getByTestId('parts-reserve-item-picker-chosen')).toHaveTextContent(
+      EN['inventory.itemPicker.fromRequirement'] as string
+    );
+    expect(within(form).queryByDisplayValue(ITEM_ID)).toBeNull();
   });
 });
 

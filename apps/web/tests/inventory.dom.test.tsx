@@ -34,7 +34,9 @@ import {
  * who may; and the route page decides before it reads.
  *
  * Labels are matched ANCHORED (the field frame decorates them) and scoped to
- * the region they live in — three panels share "Item identifier".
+ * the region they live in — three panels share "Item". The item and the job are
+ * found by name (route sweep B2); the job's labelled reference box is what a
+ * caller without `wo.work_order.read` keeps.
  */
 
 const EN = en as Record<string, string>;
@@ -84,6 +86,13 @@ vi.mock('@/features/inventory/api', () => ({
     },
     correlationId: null,
   }),
+}));
+
+const listWorkOrders = vi.fn();
+const readWorkOrderDetail = vi.fn();
+vi.mock('@/features/work-orders/api', () => ({
+  listWorkOrders: (...args: unknown[]) => listWorkOrders(...args),
+  readWorkOrderDetail: (...args: unknown[]) => readWorkOrderDetail(...args),
 }));
 
 vi.mock('next/navigation', () => ({
@@ -208,6 +217,42 @@ const denied = () => ({
 });
 const okRead = (data: unknown) => ({ status: 'ok' as const, data, correlationId: 'corr' });
 
+/** The job the page was reached from, as `wo.work-order-list` and the detail read publish it. */
+const workOrder = {
+  id: WORK_ORDER_ID,
+  companyId: COMPANY_ID,
+  branchId: BRANCH_ID,
+  receptionVisitId: 'r',
+  vehicleId: 'v',
+  kind: 'ordinary',
+  state: 'open',
+  partsForwardState: 'none',
+  displayNumber: 'WO-000042',
+  openedAt: '2026-09-01T08:00:00Z',
+  recordVersion: 2,
+  customer: {
+    partnerId: 'p',
+    displayName: 'Layla Haddad',
+    relationshipRole: 'vehicle_owner',
+    hasAdditionalParties: false,
+  },
+  vehicle: { vehicleId: 'v', registrationPlate: '12-34567', makeModel: 'Toyota Corolla' },
+};
+
+type User = ReturnType<typeof userEvent.setup>;
+
+/** Find the item by the start of its code, then choose it by what it says (route sweep B2). */
+async function chooseItem(user: User, scope: HTMLElement, labelKey: string) {
+  await user.type(within(scope).getByLabelText(EN[labelKey] as string), 'BRK{Enter}');
+  await user.click(await within(scope).findByRole('button', { name: 'BRK-001 — Brake pad' }));
+}
+
+/** Find the job by a name, then choose it. */
+async function chooseJob(user: User, scope: HTMLElement, labelKey: string) {
+  await user.type(within(scope).getByLabelText(EN[labelKey] as string), 'Layla{Enter}');
+  await user.click(await within(scope).findByRole('button', { name: /WO-000042/ }));
+}
+
 function renderScreen(over: Record<string, unknown> = {}) {
   // Inside a working context: the branch every stock read is addressed to is
   // the header's own named selection, and this screen reads it.
@@ -262,6 +307,10 @@ beforeEach(() => {
   listLocations.mockResolvedValue(okRead({ items: [location], nextCursor: null, hasMore: false }));
   listBranches.mockResolvedValue(okRead({ items: [branch] }));
   listItemCategories.mockResolvedValue(okRead(categoryPage([category])));
+  listWorkOrders.mockResolvedValue(page([workOrder]));
+  readWorkOrderDetail.mockResolvedValue(
+    okRead({ workOrder, jobs: [], nextStates: [], reachableStates: [] })
+  );
 });
 
 describe('FE-008 — the item search', () => {
@@ -665,16 +714,97 @@ describe('FE-010 — reservations', () => {
     expect(link).toHaveAttribute('href', `/en/work-orders/${WORK_ORDER_ID}`);
   });
 
-  it('prefills the work order from the address and filters by it from the first read', async () => {
+  it('without the job read, keeps the address\u2019s job in its labelled box and filters by it', async () => {
     renderScreen({ canReadStock: true, canReadBranches: true, initialWorkOrderId: WORK_ORDER_ID });
     await chooseBranch();
     await waitFor(() => expect(listReservations).toHaveBeenCalled());
     expect(listReservations.mock.calls[0]?.[1]).toEqual({ workOrderId: WORK_ORDER_ID });
     expect(
       within(region('inventory.reservations.heading')).getByLabelText(
-        labelled('inventory.reservations.workOrderId')
+        labelled('inventory.workOrderReference.label')
       )
     ).toHaveValue(WORK_ORDER_ID);
+    expect(listWorkOrders).not.toHaveBeenCalled();
+  });
+
+  it('with the job read, names the address\u2019s job and filters by it from the first read', async () => {
+    renderScreen({
+      canReadStock: true,
+      initialWorkOrderId: WORK_ORDER_ID,
+      initialWorkOrder: workOrder,
+      canReadWorkOrders: true,
+    });
+    await chooseBranch();
+    await waitFor(() => expect(listReservations).toHaveBeenCalled());
+    expect(listReservations.mock.calls[0]?.[1]).toEqual({ workOrderId: WORK_ORDER_ID });
+    const reservations = region('inventory.reservations.heading');
+    expect(
+      within(reservations).getByTestId('reservations-work-order-picker-chosen')
+    ).toHaveTextContent('WO-000042');
+    expect(within(reservations).queryByText(WORK_ORDER_ID)).toBeNull();
+  });
+
+  it('a job the page could not read narrows nothing, and says so', async () => {
+    renderScreen({
+      canReadStock: true,
+      initialWorkOrderId: WORK_ORDER_ID,
+      initialWorkOrder: null,
+      canReadWorkOrders: true,
+    });
+    await chooseBranch();
+    await waitFor(() => expect(listReservations).toHaveBeenCalled());
+    expect(listReservations.mock.calls[0]?.[1]).toEqual({});
+    expect(
+      within(region('inventory.reservations.heading')).getByText(
+        EN['inventory.workOrderLink.unreadable'] as string
+      )
+    ).toBeVisible();
+  });
+
+  it('filters the reservations by a job and an item found by name, and the filter is not unsaved work', async () => {
+    const user = userEvent.setup();
+    renderScreen({ canReadStock: true, canReadWorkOrders: true });
+    await chooseBranch();
+    const reservations = region('inventory.reservations.heading');
+    await chooseJob(user, reservations, 'inventory.reservations.workOrder');
+    await chooseItem(user, reservations, 'inventory.reservations.item');
+    expect(listItems).toHaveBeenCalledWith(
+      { search: 'BRK', lifecycleStatus: 'active' },
+      expect.objectContaining({ pageSize: 10 }),
+      null
+    );
+    await user.click(
+      within(reservations).getByRole('button', {
+        name: EN['inventory.reservations.show'] as string,
+      })
+    );
+    await waitFor(() =>
+      expect(listReservations.mock.calls.at(-1)?.[1]).toEqual({
+        workOrderId: WORK_ORDER_ID,
+        itemId: ITEM_ID,
+      })
+    );
+  });
+
+  it('refuses a malformed job reference in the filter before asking', async () => {
+    const user = userEvent.setup();
+    renderScreen({ canReadStock: true });
+    await chooseBranch();
+    const reservations = region('inventory.reservations.heading');
+    await waitFor(() => expect(listReservations).toHaveBeenCalledTimes(1));
+    await user.type(
+      within(reservations).getByLabelText(labelled('inventory.workOrderReference.label')),
+      'WO-42'
+    );
+    await user.click(
+      within(reservations).getByRole('button', {
+        name: EN['inventory.reservations.show'] as string,
+      })
+    );
+    expect(
+      await within(reservations).findByText(EN['inventory.workOrderReference.format'] as string)
+    ).toBeVisible();
+    expect(listReservations).toHaveBeenCalledTimes(1);
   });
 
   it('offers neither reserving nor releasing without inv.stock.operate', async () => {
@@ -767,13 +897,14 @@ describe('FE-010 — reservations', () => {
       name: EN['inventory.reserve.heading'] as string,
     });
     await within(form).findByRole('option', { name: 'WH-1 — Main warehouse' });
-    await user.type(within(form).getByLabelText(labelled('inventory.reserve.itemId')), ITEM_ID);
+    await chooseItem(user, form, 'inventory.reserve.item');
     await user.selectOptions(
       within(form).getByLabelText(labelled('inventory.reserve.location')),
       LOCATION_ID
     );
     await user.type(within(form).getByLabelText(labelled('inventory.reserve.quantity')), '2.5');
-    expect(within(form).getByLabelText(labelled('inventory.reserve.workOrderId'))).toHaveValue(
+    // Without the job read, the address's job stays in its labelled reference box.
+    expect(within(form).getByLabelText(labelled('inventory.workOrderReference.label'))).toHaveValue(
       WORK_ORDER_ID
     );
     const before = listAvailability.mock.calls.length;
@@ -808,7 +939,7 @@ describe('FE-010 — reservations', () => {
       name: EN['inventory.reserve.heading'] as string,
     });
     await within(form).findByRole('option', { name: 'WH-1 — Main warehouse' });
-    await user.type(within(form).getByLabelText(labelled('inventory.reserve.itemId')), ITEM_ID);
+    await chooseItem(user, form, 'inventory.reserve.item');
     await user.selectOptions(
       within(form).getByLabelText(labelled('inventory.reserve.location')),
       LOCATION_ID
@@ -848,7 +979,7 @@ describe('FE-010 — reservations', () => {
       name: EN['inventory.reserve.heading'] as string,
     });
     await within(form).findByRole('option', { name: 'WH-1 — Main warehouse' });
-    await user.type(within(form).getByLabelText(labelled('inventory.reserve.itemId')), ITEM_ID);
+    await chooseItem(user, form, 'inventory.reserve.item');
     await user.selectOptions(
       within(form).getByLabelText(labelled('inventory.reserve.location')),
       LOCATION_ID
@@ -884,7 +1015,7 @@ describe('FE-010 — reservations', () => {
       name: EN['inventory.reserve.heading'] as string,
     });
     await within(form).findByRole('option', { name: 'WH-1 — Main warehouse' });
-    await user.type(within(form).getByLabelText(labelled('inventory.reserve.itemId')), ITEM_ID);
+    await chooseItem(user, form, 'inventory.reserve.item');
     await user.selectOptions(
       within(form).getByLabelText(labelled('inventory.reserve.location')),
       LOCATION_ID
@@ -906,6 +1037,103 @@ describe('FE-010 — reservations', () => {
     const first = createReservation.mock.calls[0]?.[0] as { idempotencyKey: string };
     const second = createReservation.mock.calls[1]?.[0] as { idempotencyKey: string };
     expect(second.idempotencyKey).toBe(first.idempotencyKey);
+  });
+});
+
+describe('the reserve form finds the item and the job by name (route sweep B2)', () => {
+  async function openForm(user: User, over: Record<string, unknown> = {}) {
+    renderScreen({ canReadStock: true, canOperate: true, ...over });
+    await chooseBranch();
+    await user.click(
+      within(region('inventory.reservations.heading')).getByRole('button', {
+        name: EN['inventory.reserve.open'] as string,
+      })
+    );
+    const form = await screen.findByRole('form', {
+      name: EN['inventory.reserve.heading'] as string,
+    });
+    await within(form).findByRole('option', { name: 'WH-1 — Main warehouse' });
+    await user.selectOptions(
+      within(form).getByLabelText(labelled('inventory.reserve.location')),
+      LOCATION_ID
+    );
+    await user.type(within(form).getByLabelText(labelled('inventory.reserve.quantity')), '1');
+    return form;
+  }
+  const submit = (form: HTMLElement) =>
+    within(form).getByRole('button', { name: EN['inventory.reserve.submit'] as string });
+
+  it('with nothing chosen, marks the item control and sends nothing', async () => {
+    const user = userEvent.setup();
+    const form = await openForm(user);
+    await user.click(submit(form));
+    expect(
+      await within(form).findByText(EN['inventory.itemPicker.required'] as string)
+    ).toBeVisible();
+    expect(createReservation).not.toHaveBeenCalled();
+    // Choosing the item clears the complaint.
+    await chooseItem(user, form, 'inventory.reserve.item');
+    expect(within(form).queryByText(EN['inventory.itemPicker.required'] as string)).toBeNull();
+  });
+
+  it('with the job read, sends the job found by name, and offers no reference box', async () => {
+    const user = userEvent.setup();
+    createReservation.mockResolvedValue({
+      state: { status: 'success', messageKey: 'inventory.reserve.success', attempt: 1 },
+      created: { id: 'new-res', quantity: '1.000', status: 'active', replayed: false },
+    });
+    const form = await openForm(user, { canReadWorkOrders: true });
+    expect(
+      within(form).queryByLabelText(labelled('inventory.workOrderReference.label'))
+    ).toBeNull();
+    await chooseItem(user, form, 'inventory.reserve.item');
+    await chooseJob(user, form, 'inventory.reserve.workOrder');
+    await user.click(submit(form));
+    await waitFor(() => expect(createReservation).toHaveBeenCalled());
+    expect(createReservation.mock.calls[0]?.[0]).toMatchObject({
+      itemId: ITEM_ID,
+      workOrderId: WORK_ORDER_ID,
+    });
+  });
+
+  it('without the job read, still reserves for a pasted job — the write needs no job read', async () => {
+    const user = userEvent.setup();
+    createReservation.mockResolvedValue({
+      state: { status: 'success', messageKey: 'inventory.reserve.success', attempt: 1 },
+      created: { id: 'new-res', quantity: '1.000', status: 'active', replayed: false },
+    });
+    const form = await openForm(user, { canReadWorkOrders: false });
+    expect(within(form).queryByText(EN['workOrders.picker.notPermitted'] as string)).toBeNull();
+    await chooseItem(user, form, 'inventory.reserve.item');
+    const box = within(form).getByLabelText(labelled('inventory.workOrderReference.label'));
+    expect(box).toHaveAttribute('dir', 'ltr');
+    await user.type(box, 'not-a-job');
+    await user.click(submit(form));
+    expect(
+      await within(form).findByText(EN['inventory.workOrderReference.format'] as string)
+    ).toBeVisible();
+    expect(createReservation).not.toHaveBeenCalled();
+    await user.clear(box);
+    await user.type(box, WORK_ORDER_ID);
+    await user.click(submit(form));
+    await waitFor(() => expect(createReservation).toHaveBeenCalled());
+    expect(createReservation.mock.calls[0]?.[0]).toMatchObject({
+      itemId: ITEM_ID,
+      workOrderId: WORK_ORDER_ID,
+    });
+    expect(listWorkOrders).not.toHaveBeenCalled();
+  });
+
+  it('the job the page was reached from is chosen already, and is not a change', async () => {
+    const user = userEvent.setup();
+    const form = await openForm(user, {
+      canReadWorkOrders: true,
+      initialWorkOrderId: WORK_ORDER_ID,
+      initialWorkOrder: workOrder,
+    });
+    expect(within(form).getByTestId('reserve-work-order-picker-chosen')).toHaveTextContent(
+      'WO-000042'
+    );
   });
 });
 
@@ -988,6 +1216,211 @@ describe('a reservation being written and a branch switch', () => {
     await switchWithoutQuestion(user, 'second');
     await waitFor(() => expect(heldBranch()).toBe(OTHER_BRANCH.id));
   });
+
+  it('an item chosen in the form is unsaved work: the switch asks first', async () => {
+    const user = userEvent.setup();
+    await openTwoBranches(user);
+    const form = screen.getByRole('form', { name: EN['inventory.reserve.heading'] as string });
+    await chooseItem(user, form, 'inventory.reserve.item');
+    await stayOnBranch(user, await switchExpectingQuestion(user, 'second'));
+    expect(heldBranch()).toBe(TEST_BRANCH.id);
+  });
+
+  it('putting back the job the form opened on is a change: the switch asks first (route sweep B2 review)', async () => {
+    const user = userEvent.setup();
+    renderLtr(
+      inBranch(
+        <>
+          <BranchSwitch to={TEST_BRANCH.id} label="first" />
+          <BranchSwitch to={OTHER_BRANCH.id} label="second" />
+          <WorkingBranchProbe />
+          <InventoryScreen
+            locale="en"
+            messages={en}
+            initialWorkOrderId={WORK_ORDER_ID}
+            initialWorkOrder={workOrder as never}
+            canReadWorkOrders={true}
+            canReadStock={true}
+            canReadBranches={true}
+            canOperate={true}
+          />
+        </>,
+        { snapshot: branchSnapshot([TEST_BRANCH, OTHER_BRANCH]) }
+      )
+    );
+    await user.click(screen.getByRole('button', { name: 'first' }));
+    await user.click(
+      await within(
+        await screen.findByRole('region', { name: EN['inventory.reservations.heading'] as string })
+      ).findByRole('button', { name: EN['inventory.reserve.open'] as string })
+    );
+    const form = await screen.findByRole('form', {
+      name: EN['inventory.reserve.heading'] as string,
+    });
+    expect(within(form).getByTestId('reserve-work-order-picker-chosen')).toHaveTextContent(
+      'WO-000042'
+    );
+    // Holding the job it opened on is not a change: nothing to ask about yet.
+    await user.click(
+      within(form).getByRole('button', { name: EN['workOrders.picker.change'] as string })
+    );
+    // None chosen where the form opened on one IS a change.
+    await stayOnBranch(user, await switchExpectingQuestion(user, 'second'));
+    expect(heldBranch()).toBe(TEST_BRANCH.id);
+  });
+
+  it('an item chosen as an availability filter is not: the switch goes through', async () => {
+    const user = userEvent.setup();
+    await openTwoBranches(user);
+    // The form is open but untouched; the filter's choice alone must not ask.
+    await chooseItem(user, region('inventory.availability.heading'), 'inventory.availability.item');
+    await switchWithoutQuestion(user, 'second');
+    await waitFor(() => expect(heldBranch()).toBe(OTHER_BRANCH.id));
+  });
+});
+
+describe('the availability filter finds the item by name (route sweep B2)', () => {
+  it('sends the chosen item, and offers no box asking for its reference', async () => {
+    const user = userEvent.setup();
+    renderScreen({ canReadStock: true });
+    await chooseBranch();
+    const availability = region('inventory.availability.heading');
+    expect(within(availability).queryByDisplayValue(ITEM_ID)).toBeNull();
+    await chooseItem(user, availability, 'inventory.availability.item');
+    expect(within(availability).getByTestId('availability-item-picker-chosen')).toHaveTextContent(
+      'BRK-001 — Brake pad'
+    );
+    await user.click(
+      within(availability).getByRole('button', {
+        name: EN['inventory.availability.show'] as string,
+      })
+    );
+    await waitFor(() =>
+      expect(listAvailability.mock.calls.at(-1)?.[1]).toEqual({ itemId: ITEM_ID })
+    );
+  });
+});
+
+describe('archived items in the filters, not in the writes (route sweep B2 review)', () => {
+  /*
+   * `inv.item-search` answers active items unless asked for archived ones. The
+   * availability and reservation reads filter by item without looking at its
+   * status, so an archived item stays choosable THERE; reserving refuses one
+   * (`stock_item_archived`), so the reserve form keeps active items only.
+   */
+  const archivedItem = {
+    ...item,
+    id: '33333333-3333-4333-8333-333333333399',
+    sku: 'OLD-001',
+    name: 'Retired pad',
+    lifecycleStatus: 'archived',
+  };
+  const archivedLabel = 'OLD-001 — Retired pad (archived)';
+
+  it('both filters search archived items when asked, label them and send the one chosen; the reserve form keeps active items only', async () => {
+    listItems.mockImplementation(async (criteria: { lifecycleStatus?: string }) =>
+      page(criteria.lifecycleStatus === 'archived' ? [archivedItem] : [item])
+    );
+    const user = userEvent.setup();
+    renderScreen({ canReadStock: true, canOperate: true });
+    await chooseBranch();
+
+    // The availability filter.
+    const availability = region('inventory.availability.heading');
+    const toggle = within(availability).getByRole('checkbox', {
+      name: EN['inventory.itemPicker.searchArchived'] as string,
+    });
+    expect(toggle).not.toBeChecked();
+    await user.click(toggle);
+    await user.type(
+      within(availability).getByLabelText(EN['inventory.availability.item'] as string),
+      'OLD{Enter}'
+    );
+    await user.click(await within(availability).findByRole('button', { name: archivedLabel }));
+    expect(listItems).toHaveBeenCalledWith(
+      { search: 'OLD', lifecycleStatus: 'archived' },
+      expect.objectContaining({ pageSize: 10 }),
+      null
+    );
+    expect(within(availability).getByTestId('availability-item-picker-chosen')).toHaveTextContent(
+      archivedLabel
+    );
+    await user.click(
+      within(availability).getByRole('button', {
+        name: EN['inventory.availability.show'] as string,
+      })
+    );
+    await waitFor(() =>
+      expect(listAvailability.mock.calls.at(-1)?.[1]).toEqual({ itemId: archivedItem.id })
+    );
+
+    // The reservation filter.
+    const reservations = region('inventory.reservations.heading');
+    await user.click(
+      within(reservations).getByRole('checkbox', {
+        name: EN['inventory.itemPicker.searchArchived'] as string,
+      })
+    );
+    await user.type(
+      within(reservations).getByLabelText(EN['inventory.reservations.item'] as string),
+      'OLD{Enter}'
+    );
+    await user.click(await within(reservations).findByRole('button', { name: archivedLabel }));
+    await user.click(
+      within(reservations).getByRole('button', {
+        name: EN['inventory.reservations.show'] as string,
+      })
+    );
+    await waitFor(() =>
+      expect(listReservations.mock.calls.at(-1)?.[1]).toEqual({ itemId: archivedItem.id })
+    );
+
+    // The reserve form: reserving refuses an archived item, so none is offered.
+    await user.click(
+      within(reservations).getByRole('button', { name: EN['inventory.reserve.open'] as string })
+    );
+    const form = await screen.findByRole('form', {
+      name: EN['inventory.reserve.heading'] as string,
+    });
+    expect(
+      within(form).queryByRole('checkbox', {
+        name: EN['inventory.itemPicker.searchArchived'] as string,
+      })
+    ).toBeNull();
+    await chooseItem(user, form, 'inventory.reserve.item');
+    expect(listItems).toHaveBeenLastCalledWith(
+      { search: 'BRK', lifecycleStatus: 'active' },
+      expect.objectContaining({ pageSize: 10 }),
+      null
+    );
+  });
+
+  it('a late reply for an earlier term is not drawn under a later one', async () => {
+    // Only the picker's reads are held; the catalogue list answers at once.
+    const held: Record<string, ((value: unknown) => void)[]> = { OL: [], OLD: [] };
+    listItems.mockImplementation((criteria: { search?: string }) => {
+      const queue = criteria.search === undefined ? undefined : held[criteria.search];
+      return queue ? new Promise((resolve) => queue.push(resolve)) : Promise.resolve(page([item]));
+    });
+    const user = userEvent.setup();
+    renderScreen({ canReadStock: true });
+    await chooseBranch();
+    const availability = region('inventory.availability.heading');
+    const box = within(availability).getByLabelText(EN['inventory.availability.item'] as string);
+    await user.type(box, 'OL{Enter}');
+    await waitFor(() => expect(held['OL']?.length).toBeGreaterThan(0));
+    await user.type(box, 'D{Enter}');
+    await waitFor(() => expect(held['OLD']?.length).toBeGreaterThan(0));
+    for (const resolve of held['OLD'] ?? []) resolve(page([item]));
+    expect(
+      await within(availability).findByRole('button', { name: 'BRK-001 — Brake pad' })
+    ).toBeVisible();
+    // The reply for "OL" lands last: it answers a term nobody is asking any more.
+    for (const resolve of held['OL'] ?? []) resolve(page([archivedItem]));
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(within(availability).queryByRole('button', { name: /OLD-001/ })).toBeNull();
+    expect(within(availability).getByRole('button', { name: 'BRK-001 — Brake pad' })).toBeVisible();
+  });
 });
 
 describe('the /inventory route page decides before it reads', () => {
@@ -1026,6 +1459,18 @@ describe('the /inventory route page decides before it reads', () => {
     await chooseBranch();
     await waitFor(() => expect(listReservations).toHaveBeenCalled());
     expect(listReservations.mock.calls[0]?.[1]).toEqual({ workOrderId: WORK_ORDER_ID });
+    // Without the job read the page asks nothing about the job.
+    expect(readWorkOrderDetail).not.toHaveBeenCalled();
+  });
+
+  it('with wo.work_order.read, reads the address\u2019s job and names it; without, reads none', async () => {
+    PERMISSIONS = ['inv.item.read', 'inv.stock.read', 'wo.work_order.read'];
+    await renderPage({ locale: 'en' }, { workOrderId: WORK_ORDER_ID });
+    await chooseBranch();
+    expect(readWorkOrderDetail).toHaveBeenCalledWith(WORK_ORDER_ID);
+    expect(await screen.findByTestId('reservations-work-order-picker-chosen')).toHaveTextContent(
+      'WO-000042'
+    );
   });
 
   it('a malformed work order in the address is not sent', async () => {

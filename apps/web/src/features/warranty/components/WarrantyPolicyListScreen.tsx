@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import { SelectField, TextField } from '@/components/forms/Field';
 import { EmptyState, FailureExplanation, LoadingState } from '@/components/states/States';
@@ -373,11 +373,21 @@ function CreatePolicySection({
   useUnsavedGuard(
     policyCode.trim().length > 0 || name.trim().length > 0 || companyId !== defaultCompany
   );
+  /*
+   * Which submission is current. A reply to one sent before a working-context
+   * switch is not shown after it (route sweep B2): the switch already cleared
+   * the form, and an outcome naming the previous company — or a success that
+   * empties fields typed since — would describe work the operator can no longer
+   * see. The plan list is still re-read, because a created plan is tenant-wide.
+   */
+  const attempt = useRef(0);
   useWorkingContextChange(() => {
+    attempt.current += 1;
     setPolicyCode('');
     setName('');
     setErrors({});
     setState(null);
+    setSending(false);
   });
 
   // Nothing to choose from is a real state — an operator authorized for no
@@ -428,11 +438,17 @@ function CreatePolicySection({
           setErrors(found);
           if (Object.keys(found).length > 0) return;
           setSending(true);
+          attempt.current += 1;
+          const mine = attempt.current;
           void createWarrantyPolicy({
             companyId: chosenCompany,
             policyCode: chosenCode,
             name: chosenName,
           }).then((outcome) => {
+            if (mine !== attempt.current) {
+              if (outcome.status === 'success') onCreated();
+              return;
+            }
             setState(outcome);
             setSending(false);
             if (outcome.status !== 'success') return;

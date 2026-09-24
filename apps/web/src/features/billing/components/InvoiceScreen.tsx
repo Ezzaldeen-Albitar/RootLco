@@ -331,39 +331,62 @@ function ChooseWorkOrder({
    * in was to copy one out of another page's address bar. `wo.work-order-list`
    * answers the question the form was really asking (Owner directive,
    * `P1-32-PRE-OD-UX`).
+   *
+   * No role loses a workflow the server allows. Creating an invoice
+   * (`sal.invoice-create`) needs `sal.invoice.manage` and `sal.finance.view`
+   * only — not `wo.work_order.read` — so a caller without the job read keeps
+   * the box they had before the picker: a labelled job reference, explained in
+   * both languages and checked against the server's own identifier rule before
+   * the page is opened on it (route sweep B2, the parts desk precedent).
+   * Choosing where to look is not a write, so it is not unsaved work.
    */
   const [chosen, setChosen] = useState<WorkOrderListEntry | null>(null);
+  const [reference, setReference] = useState('');
   // An attempt counter rather than a flag: the focus hook moves the cursor to
   // the box once per refused attempt, never on a re-render.
   const [refusal, setRefusal] = useState<ActionState>({ status: 'idle' });
   const formRef = useFocusFirstInvalid(refusal);
+  const refused = refusal.status === 'invalid' ? refusal.fieldErrors?.['workOrderId'] : undefined;
   const error =
-    refusal.status === 'invalid' && chosen === null
-      ? translate(messages, 'workOrders.picker.required')
-      : undefined;
+    refused === undefined || (canSearchWorkOrders && chosen !== null)
+      ? undefined
+      : translateDynamic(messages, refused);
   /*
    * With nothing to search — "All my branches" spanning companies, or no branch
    * chosen yet — the picker offers no box, so a refusal would have no control to
    * point at. The submit is disabled instead, described by the sentence the
-   * picker shows in place of the box.
+   * picker shows in place of the box. The typed reference needs no scope.
    */
   const scope = useWorkOrderSearchScope();
   const needsBranchId = useId();
-  const blocked = chosen === null && scope === null;
+  const blocked = canSearchWorkOrders && chosen === null && scope === null;
+  const refuse = (key: string) =>
+    setRefusal((previous) => ({
+      status: 'invalid',
+      fieldErrors: { workOrderId: key },
+      attempt: (previous.attempt ?? 0) + 1,
+    }));
+  const open = (id: string) =>
+    router.push(`/${locale}/invoices?workOrderId=${encodeURIComponent(id)}`);
   return (
     <form
       ref={formRef}
       onSubmit={(event) => {
         event.preventDefault();
-        if (chosen === null) {
-          setRefusal((previous) => ({
-            status: 'invalid',
-            fieldErrors: { workOrderId: 'workOrders.picker.required' },
-            attempt: (previous.attempt ?? 0) + 1,
-          }));
+        if (!canSearchWorkOrders) {
+          const typed = reference.trim();
+          if (!UUID.test(typed)) {
+            refuse('invoices.choose.referenceFormat');
+            return;
+          }
+          open(typed);
           return;
         }
-        router.push(`/${locale}/invoices?workOrderId=${encodeURIComponent(chosen.id)}`);
+        if (chosen === null) {
+          refuse('workOrders.picker.required');
+          return;
+        }
+        open(chosen.id);
       }}
       noValidate
       aria-labelledby="invoice-choose-heading"
@@ -384,27 +407,43 @@ function ChooseWorkOrder({
           {translate(messages, 'invoices.choose.boardLink')}
         </Link>
       </p>
-      <WorkOrderPicker
-        messages={messages}
-        label={translate(messages, 'invoices.choose.workOrderId')}
-        value={chosen}
-        onChange={setChosen}
-        error={error}
-        canSearch={canSearchWorkOrders}
-        needsBranchId={needsBranchId}
-      />
       {canSearchWorkOrders ? (
-        <div>
-          <button
-            type="submit"
-            className={PRIMARY_BUTTON}
-            disabled={blocked}
-            aria-describedby={blocked ? needsBranchId : undefined}
-          >
-            {translate(messages, 'invoices.choose.submit')}
-          </button>
-        </div>
-      ) : null}
+        <WorkOrderPicker
+          messages={messages}
+          label={translate(messages, 'invoices.choose.workOrderId')}
+          value={chosen}
+          onChange={setChosen}
+          error={error}
+          canSearch
+          needsBranchId={needsBranchId}
+        />
+      ) : (
+        <TextField
+          label={translate(messages, 'invoices.choose.referenceLabel')}
+          description={translate(messages, 'invoices.choose.referenceHelp')}
+          required
+          spellCheck={false}
+          autoComplete="off"
+          dir="ltr"
+          value={reference}
+          onChange={(event) => {
+            setReference(event.target.value);
+            setRefusal({ status: 'idle' });
+          }}
+          error={error}
+          data-testid="invoice-work-order-reference"
+        />
+      )}
+      <div>
+        <button
+          type="submit"
+          className={PRIMARY_BUTTON}
+          disabled={blocked}
+          aria-describedby={blocked ? needsBranchId : undefined}
+        >
+          {translate(messages, 'invoices.choose.submit')}
+        </button>
+      </div>
     </form>
   );
 }

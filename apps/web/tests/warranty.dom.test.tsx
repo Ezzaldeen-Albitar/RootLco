@@ -94,6 +94,7 @@ const WARRANTY_ID = '77777777-7777-4777-8777-777777777777';
 const DELIVERY_ID = '33333333-3333-4333-8333-333333333333';
 const WORK_ORDER_ID = '44444444-4444-4444-8444-444444444444';
 const VEHICLE_ID = '55555555-5555-4555-8555-555555555555';
+const CUSTOMER_ID = '66666666-6666-4666-8666-666666666666';
 const JOB_ID = '99999999-9999-4999-8999-999999999999';
 
 const policy = {
@@ -129,6 +130,15 @@ const row = {
   odometerAtIssue: '41250.0',
   odometerLimit: '61250.0',
   policy,
+  // The two display blocks both warranty reads carry (route sweep B2).
+  vehicle: {
+    id: VEHICLE_ID,
+    plate: '12-34567',
+    vin: null,
+    makeModel: 'Toyota Corolla',
+    displayNumber: 'VEH-000031',
+  },
+  customer: { id: CUSTOMER_ID, displayName: 'Rana Haddad' },
   recordVersion: 1,
 };
 
@@ -1156,8 +1166,9 @@ describe('the words are the catalogue’s, in both reading directions', () => {
       <WarrantyRecordScreen locale="ar" messages={ar as never} warranty={record as never} />
     );
     // An identifier is not language: reversing it would make it unreadable and
-    // untypable, and it is the only thing an operator can quote to support.
-    expect(screen.getByText(VEHICLE_ID)).toHaveAttribute('dir', 'ltr');
+    // untypable, and it is the only thing an operator can quote to support. The
+    // job a covered item came from is the reference left on this screen.
+    expect(screen.getByText(JOB_ID)).toHaveAttribute('dir', 'ltr');
   });
 
   it('shows the list in Arabic, including the state vocabulary, and reads on arrival', async () => {
@@ -1226,5 +1237,79 @@ describe('the branch is the header\u2019s choice, and nothing here asks for one'
         branchId: OTHER_BRANCH.id,
       })
     );
+  });
+});
+
+describe('the car and the customer are named, never referenced (route sweep B2)', () => {
+  const listRow = (over: Record<string, unknown>) => ({ ...row, ...over });
+
+  it('the list names the car by plate and model, and the customer by name with a link', async () => {
+    await renderListPage();
+    expect(await screen.findByText('12-34567 — Toyota Corolla')).toBeInTheDocument();
+    const customer = screen.getByRole('link', { name: 'Rana Haddad' });
+    expect(customer).toHaveAttribute('href', `/en/crm/customers/${CUSTOMER_ID}`);
+    expect(screen.getByText(EN['warranty.list.columnCustomer'] as string)).toBeInTheDocument();
+    // Neither reference reaches the operator.
+    expect(screen.queryByText(VEHICLE_ID)).not.toBeInTheDocument();
+    expect(screen.queryByText(CUSTOMER_ID)).not.toBeInTheDocument();
+  });
+
+  it('says in words when the customer is withheld, and when none was recorded', async () => {
+    listWarranties.mockResolvedValue(
+      page([
+        listRow({ customer: { id: null, displayName: null } }),
+        listRow({ id: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd', customer: null }),
+      ])
+    );
+    await renderListPage();
+    expect(await screen.findByText(EN['warranty.customer.notShown'] as string)).toBeInTheDocument();
+    expect(screen.getByText(EN['warranty.customer.none'] as string)).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Rana Haddad' })).not.toBeInTheDocument();
+  });
+
+  it('falls back to the display number, then to a sentence — never to the reference', async () => {
+    listWarranties.mockResolvedValue(
+      page([
+        listRow({
+          vehicle: {
+            id: VEHICLE_ID,
+            plate: null,
+            vin: null,
+            makeModel: null,
+            displayNumber: 'VEH-9',
+          },
+        }),
+        listRow({
+          id: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
+          vehicle: { id: VEHICLE_ID, plate: null, vin: null, makeModel: null, displayNumber: null },
+        }),
+      ])
+    );
+    await renderListPage();
+    expect(await screen.findByText('VEH-9')).toBeInTheDocument();
+    expect(screen.getByText(EN['warranty.vehicle.notShown'] as string)).toBeInTheDocument();
+    expect(screen.queryByText(VEHICLE_ID)).not.toBeInTheDocument();
+  });
+
+  it('the record names the car and the customer, in English and in Arabic', () => {
+    const { unmount } = renderLtr(
+      <WarrantyRecordScreen locale="en" messages={en as never} warranty={record as never} />
+    );
+    expect(screen.getByText('12-34567 — Toyota Corolla')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Rana Haddad' })).toHaveAttribute(
+      'href',
+      `/en/crm/customers/${CUSTOMER_ID}`
+    );
+    expect(screen.queryByText(VEHICLE_ID)).not.toBeInTheDocument();
+    unmount();
+    renderRtl(
+      <WarrantyRecordScreen
+        locale="ar"
+        messages={ar as never}
+        warranty={{ ...record, customer: { id: null, displayName: null } } as never}
+      />
+    );
+    expect(screen.getByText(AR['warranty.summary.customer'] as string)).toBeInTheDocument();
+    expect(screen.getByText(AR['warranty.customer.notShown'] as string)).toBeInTheDocument();
   });
 });

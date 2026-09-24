@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import type { ReactNode } from 'react';
 
 import {
@@ -9,6 +10,7 @@ import {
   PermissionDeniedState,
   SessionExpiredState,
 } from '@/components/states/States';
+import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic } from '@/i18n/get-messages';
 import type { ReadFailureStatus } from '@/lib/api/read-operation';
@@ -22,6 +24,8 @@ import {
   POLICY_ERROR_CODES,
   WARRANTY_STATUS_LABEL_KEYS,
   labelKeyFor,
+  type WarrantyCustomerDisplay,
+  type WarrantyVehicleDisplay,
 } from '../warranty-contract';
 
 /**
@@ -165,6 +169,70 @@ export function Fact({
       <span className="text-caption text-text-muted">{label}</span>
       <span className="text-body text-text-primary">{children}</span>
     </div>
+  );
+}
+
+/**
+ * The car a warranty covers, in the words both warranty reads publish (Owner
+ * directive, `P1-32-PRE-OD-UX`, route sweep B2): its plate and its make and
+ * model, or its display number when it carries neither. The backend withholds
+ * the plate from a caller who may not read vehicles and leaves it empty when the
+ * car has none — the two are indistinguishable on purpose — so an absent value is
+ * one sentence, always the same, and never the car's reference.
+ */
+export function VehicleWords({
+  messages,
+  vehicle,
+}: {
+  readonly messages: Messages;
+  readonly vehicle: WarrantyVehicleDisplay;
+}) {
+  const words = [vehicle.plate, vehicle.makeModel].filter(
+    (part): part is string => typeof part === 'string' && part.length > 0
+  );
+  if (words.length > 0) return <bdi>{words.join(' — ')}</bdi>;
+  if (vehicle.displayNumber) return <bdi>{vehicle.displayNumber}</bdi>;
+  return (
+    <span className="text-text-secondary">{translate(messages, 'warranty.vehicle.notShown')}</span>
+  );
+}
+
+/**
+ * The party the warranty was issued to. The name travels only to a caller who
+ * may read customers; for anyone else the block says there IS a customer and
+ * nothing about who, and the screen says that in words. A visit that named no
+ * requester has no block at all, which is a different sentence. The name links
+ * to the customer only when the backend published the customer's identifier.
+ */
+export function CustomerWords({
+  locale,
+  messages,
+  customer,
+}: {
+  readonly locale: Locale;
+  readonly messages: Messages;
+  readonly customer: WarrantyCustomerDisplay | null;
+}) {
+  if (customer === null) {
+    return (
+      <span className="text-text-secondary">{translate(messages, 'warranty.customer.none')}</span>
+    );
+  }
+  if (customer.displayName === null) {
+    return (
+      <span className="text-text-secondary">
+        {translate(messages, 'warranty.customer.notShown')}
+      </span>
+    );
+  }
+  if (customer.id === null) return <bdi>{customer.displayName}</bdi>;
+  return (
+    <Link
+      href={`/${locale}/crm/customers/${customer.id}`}
+      className="text-primary underline-offset-2 hover:underline"
+    >
+      <bdi>{customer.displayName}</bdi>
+    </Link>
   );
 }
 

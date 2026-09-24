@@ -563,6 +563,56 @@ describe('a plan being written and a branch switch', () => {
     await switchWithoutQuestion(user, 'second');
     await waitFor(() => expect(heldBranch()).toBe(OTHER_BRANCH.id));
   });
+  it('an answer to a plan sent before a switch is dropped after it (route sweep B2)', async () => {
+    /*
+     * The switch clears the form. A refusal arriving afterwards used to be drawn
+     * under the next branch, naming a plan the operator can no longer see; it is
+     * now dropped. A success still re-reads the list, because a plan is
+     * tenant-wide, but it neither says "created" nor empties what was typed since.
+     */
+    const user = userEvent.setup();
+    const replies: ((value: unknown) => void)[] = [];
+    createWarrantyPolicy.mockImplementation(() => new Promise((resolve) => replies.push(resolve)));
+    await openTwoBranches(user);
+    const nameField = () =>
+      screen.getByRole('textbox', {
+        name: labelled('warranty.policies.nameField'),
+      }) as HTMLInputElement;
+    await user.type(field(), 'standard_12');
+    await user.type(nameField(), 'Standard cover');
+    await user.click(
+      screen.getByRole('button', { name: EN['warranty.policies.createSubmit'] as string })
+    );
+    await waitFor(() => expect(replies).toHaveLength(1));
+    await discardAndSwitch(user, await switchExpectingQuestion(user, 'second'));
+    await waitFor(() => expect(heldBranch()).toBe(OTHER_BRANCH.id));
+    replies[0]?.({ status: 'conflict', code: 'ERR-CON-001', rule: 'duplicate_code', attempt: 1 });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(
+      screen.queryByText(EN['warranty.policies.refusedDuplicateCode'] as string)
+    ).not.toBeInTheDocument();
+    expect(field().value).toBe('');
+
+    // A second attempt under the new branch, answered after a switch back: a success.
+    await user.type(field(), 'second_12');
+    await user.type(nameField(), 'Second cover');
+    await user.click(
+      screen.getByRole('button', { name: EN['warranty.policies.createSubmit'] as string })
+    );
+    await waitFor(() => expect(replies).toHaveLength(2));
+    await discardAndSwitch(user, await switchExpectingQuestion(user, 'first'));
+    await waitFor(() => expect(heldBranch()).toBe(TEST_BRANCH.id));
+    await user.type(field(), 'typed_after');
+    const readsBefore = listWarrantyPolicies.mock.calls.length;
+    replies[1]?.({ ...succeeded('warranty.policies.created'), policy });
+    await waitFor(() =>
+      expect(listWarrantyPolicies.mock.calls.length).toBeGreaterThan(readsBefore)
+    );
+    expect(field().value).toBe('typed_after');
+    expect(
+      screen.queryByRole('link', { name: EN['warranty.policies.openCreated'] as string })
+    ).not.toBeInTheDocument();
+  });
 });
 
 describe('one plan, and the controls over it', () => {

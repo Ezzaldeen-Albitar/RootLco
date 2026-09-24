@@ -64,6 +64,7 @@ import {
   type GoodsReceiptSummary,
   type InventoryItem,
   type IssueEcho,
+  type IssuedPart,
   type ItemCategory,
   type ItemCostHistory,
   type ItemIdentifierEcho,
@@ -1218,6 +1219,22 @@ export async function readReturnable(
 ): Promise<ReadState<ReturnableQuantity>> {
   return readOperation<ReturnableQuantity>(
     '/api/v1/returnable-quantities' + query({ sourceKind, sourceId })
+  );
+}
+
+/**
+ * A branch's issued parts (`inv.part-issue-list`), newest first, found by what
+ * the clerk is holding: part of the item's name or code, the job's number, a
+ * plate or a chassis number. The term travels in this Server Action's argument
+ * and never in the page address.
+ */
+export async function listIssuedParts(
+  target: StockTarget,
+  criteria: { readonly q?: string | undefined },
+  cursor: string | null
+): Promise<ReadState<CursorPage<IssuedPart>>> {
+  return readOperation<CursorPage<IssuedPart>>(
+    '/api/v1/part-issues' + branchTargetQuery(target, { q: criteria.q, cursor, limit: 10 })
   );
 }
 

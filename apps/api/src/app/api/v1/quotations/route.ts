@@ -85,10 +85,11 @@ export const QUOTATION_CREATE_OPERATION = defineOperation({
   summary: 'Create a quotation with its first draft revision and priced lines.',
   // A CONJUNCTION, and both halves are load-bearing. Creating a quotation reads
   // the work order to derive its company and branch - that order is the scope
-  // authority - and RLS on wo.work_orders is permission-based, so a caller without
-  // wo.work_order.read cannot see it at all. Declaring only quo.quotation.manage
-  // produced a 404 that looked like a missing work order rather than a missing
-  // permission.
+  // authority - so the create exercises a work-order read and declares its code.
+  // Row security on wo.work_orders (sel_work_orders_scope) is scope-based, not
+  // permission-based: it narrows by tenant and by the caller's company and
+  // branch grant union, and never looks at a permission code. The work-order
+  // half is therefore enforced by this declaration, not by the table.
   permissions: ['quo.quotation.manage', 'wo.work_order.read'],
   scope: 'branch',
   auditClass: 'financial',

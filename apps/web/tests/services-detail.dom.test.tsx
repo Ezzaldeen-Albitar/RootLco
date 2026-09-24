@@ -402,6 +402,30 @@ describe('availability follows the header, not just its first value', () => {
     expect(offered()).toBeChecked();
   });
 
+  it('a reply to a write made before a switch is not shown after it (route sweep B2)', async () => {
+    const user = userEvent.setup();
+    const replies: ((value: unknown) => void)[] = [];
+    setBranchAvailability.mockImplementation(() => new Promise((resolve) => replies.push(resolve)));
+    renderTwo();
+    await user.click(screen.getByRole('button', { name: 'first' }));
+    await waitFor(() => expect(branchControl()).toHaveValue(TEST_BRANCH.id));
+    await user.click(
+      screen.getByRole('button', { name: EN['services.availability.submit'] as string })
+    );
+    await waitFor(() => expect(replies).toHaveLength(1));
+    // An untouched panel: the switch goes through without a question.
+    await switchWithoutQuestion(user, 'second');
+    await waitFor(() => expect(branchControl()).toHaveValue(SECOND_BRANCH.id));
+    replies[0]?.({ status: 'unavailable', messageKey: 'action.failed', correlationId: 'late-ref' });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    // The late refusal names the previous branch's write: it is not drawn here.
+    expect(screen.queryByText('late-ref')).not.toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: EN['services.availability.submit'] as string })
+    ).toBeEnabled();
+    expect(branchControl()).toHaveValue(SECOND_BRANCH.id);
+  });
+
   it('a recorded choice is not unsaved work any more', async () => {
     const user = userEvent.setup();
     renderTwo();
