@@ -6,6 +6,7 @@ import { useEffect, useId, useState, type ReactNode } from 'react';
 
 import { TextField } from '@/components/forms/Field';
 import { notifyActionResult } from '@/components/notifications/action-notifications';
+import { CustomerPicker, type ChosenCustomer } from '@/components/party/CustomerPicker';
 import type { WorkOrderListEntry } from '@/features/work-orders/work-orders-contract';
 import {
   WorkOrderPicker,
@@ -45,7 +46,6 @@ import {
   PRIMARY_BUTTON,
   SECONDARY_BUTTON,
   Unavailable,
-  UUID,
 } from './shared';
 
 /**
@@ -93,6 +93,7 @@ export function InvoiceScreen({
   canViewFinance,
   canIssue,
   canSearchWorkOrders = false,
+  canReadCustomers = false,
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
@@ -110,6 +111,8 @@ export function InvoiceScreen({
   readonly canIssue: boolean;
   /** `wo.work_order.read` — decides whether the job can be FOUND when none is named. */
   readonly canSearchWorkOrders?: boolean;
+  /** `crm.customer.read` — whether a different payer can be found by name. */
+  readonly canReadCustomers?: boolean;
 }) {
   const router = useRouter();
   const [invoiceRead, setInvoiceRead] = useState<ReadState<WorkOrderInvoice> | null>(
@@ -218,6 +221,7 @@ export function InvoiceScreen({
           messages={messages}
           workOrderId={workOrderId}
           canViewFinance={canViewFinance}
+          canReadCustomers={canReadCustomers}
           onCreated={(created) =>
             void changed({
               messageKey: created.replayed
@@ -412,6 +416,7 @@ function PreviewPanel({
   messages,
   workOrderId,
   canViewFinance,
+  canReadCustomers,
   onCreated,
   onConflict,
 }: {
@@ -419,6 +424,7 @@ function PreviewPanel({
   readonly messages: Messages;
   readonly workOrderId: string;
   readonly canViewFinance: boolean;
+  readonly canReadCustomers: boolean;
   readonly onCreated: (created: { readonly replayed: boolean; readonly invoice: Invoice }) => void;
   /** A refused create most likely means an invoice now exists; the screen re-reads. */
   readonly onConflict: () => void;
@@ -459,8 +465,10 @@ function PreviewPanel({
       )}
       {canViewFinance && preview?.status === 'ok' ? (
         <CreateForm
+          locale={locale}
           messages={messages}
           workOrderId={workOrderId}
+          canReadCustomers={canReadCustomers}
           onCreated={onCreated}
           onConflict={onConflict}
         />
@@ -590,17 +598,26 @@ function PreviewFigures({
 }
 
 function CreateForm({
+  locale,
   messages,
   workOrderId,
+  canReadCustomers,
   onCreated,
   onConflict,
 }: {
+  readonly locale: Locale;
   readonly messages: Messages;
   readonly workOrderId: string;
+  readonly canReadCustomers: boolean;
   readonly onCreated: (created: { readonly replayed: boolean; readonly invoice: Invoice }) => void;
   readonly onConflict: () => void;
 }) {
-  const [payer, setPayer] = useState('');
+  /*
+   * A different payer is FOUND among customers and chosen by name (Owner
+   * directive, `P1-32-PRE-OD-UX`); it used to be a box asking for a partner
+   * reference. Left empty, the server bills the work order's own customer.
+   */
+  const [payer, setPayer] = useState<ChosenCustomer | null>(null);
   // ONE transport key per opened form, kept across a refusal or a lost answer:
   // pressing again replays the stored answer instead of asking for a second
   // invoice (which the server would refuse as a conflict).
@@ -608,18 +625,21 @@ function CreateForm({
   const [errors, setErrors] = useState<Readonly<Record<string, string>>>({});
   const [busy, setBusy] = useState(false);
   const [outcome, setOutcome] = useState<ActionState | null>(null);
+  // One per refusal the server files under a field, so the cursor moves there once.
+  const [attempt, setAttempt] = useState(0);
+  const formRef = useFocusFirstInvalid({
+    status: 'invalid',
+    fieldErrors: { ...(outcome?.fieldErrors ?? {}), ...errors },
+    attempt,
+  });
   const errorFor = (name: string): string | undefined => {
     const key = errors[name] ?? outcome?.fieldErrors?.[name];
     return key ? translateDynamic(messages, key) : undefined;
   };
 
   const submit = async () => {
-    const found: Record<string, string> = {};
-    const payerPartnerId = payer.trim();
-    if (payerPartnerId.length > 0 && !UUID.test(payerPartnerId))
-      found['payerPartnerId'] = 'invoices.common.idFormat';
-    setErrors(found);
-    if (Object.keys(found).length > 0) return;
+    setErrors({});
+    const payerPartnerId = payer?.id ?? null;
     setBusy(true);
     const result = await createInvoice(
       {
@@ -637,12 +657,14 @@ function CreateForm({
       // Most likely an invoice already exists for the order: re-read and show it.
       onConflict();
     } else {
+      if (Object.keys(result.state.fieldErrors ?? {}).length > 0) setAttempt((n) => n + 1);
       setBusy(false);
     }
   };
 
   return (
     <form
+      ref={formRef}
       onSubmit={(event) => {
         event.preventDefault();
         void submit();
@@ -660,15 +682,25 @@ function CreateForm({
       <p className="text-caption text-text-muted sm:col-span-2">
         {translate(messages, 'invoices.create.explain')}
       </p>
-      <TextField
-        label={translate(messages, 'invoices.create.payer')}
-        description={translate(messages, 'invoices.create.payerHelp')}
-        spellCheck={false}
-        dir="ltr"
-        value={payer}
-        onChange={(event) => setPayer(event.target.value)}
-        error={errorFor('payerPartnerId')}
-      />
+      <div className="flex flex-col gap-1.5 sm:col-span-2">
+        <CustomerPicker
+          messages={messages}
+          locale={locale}
+          label={translate(messages, 'invoices.create.payer')}
+          value={payer}
+          onChange={(next) => {
+            setPayer(next);
+            setErrors({});
+            setOutcome(null);
+          }}
+          canSearch={canReadCustomers}
+          error={errorFor('payerPartnerId')}
+          testId="invoice-payer-picker"
+        />
+        <p className="text-caption text-text-muted">
+          {translate(messages, 'invoices.create.payerHelp')}
+        </p>
+      </div>
       <div className="sm:col-span-2">
         <OutcomeNote messages={messages} outcome={outcome} />
       </div>

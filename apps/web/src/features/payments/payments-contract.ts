@@ -71,6 +71,10 @@ export const PAYMENT_PERMISSIONS = {
   allocate: 'sal.payment.allocate',
   /** Whether a branch list is requested for the target picker. */
   branchRead: 'org.branch.read',
+  /** The payer is FOUND among customers, which `crm.customer-search` answers. */
+  customerRead: 'crm.customer.read',
+  /** The invoice is FOUND among the branch's invoices — `sal.invoice-list`'s code. */
+  invoiceList: 'sal.invoice.manage',
 } as const;
 
 /** `ck_receipts_status`, mirrored. `reversed` is terminal and unreachable from this phase. */

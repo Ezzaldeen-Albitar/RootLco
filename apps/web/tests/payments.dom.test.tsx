@@ -74,6 +74,17 @@ vi.mock('@/features/payments/api', () => ({
   allocatePayment: (...args: unknown[]) => allocatePayment(...args),
 }));
 
+// The payer and the invoice are FOUND, through the customer directory and the
+// branch invoice list; both adapters are replaced here, never the pickers.
+const searchCustomerDirectory = vi.fn();
+vi.mock('@/lib/customers/directory', () => ({
+  searchCustomerDirectory: (...args: unknown[]) => searchCustomerDirectory(...args),
+}));
+const listInvoices = vi.fn();
+vi.mock('@/features/billing/api', () => ({
+  listInvoices: (...args: unknown[]) => listInvoices(...args),
+}));
+
 let PERMISSIONS: readonly string[] = [];
 vi.mock('@/features/authentication/api/session', () => ({
   requireSession: async () => ({ permissions: PERMISSIONS, email: 'cashier@test.local' }),
@@ -163,6 +174,36 @@ const detail = (over: Record<string, unknown> = {}) => ({
 });
 
 const okRead = (data: unknown) => ({ status: 'ok', data, correlationId: 'corr-1' });
+
+const customerHit = {
+  id: PARTNER_ID,
+  displayNumber: 'C-000482',
+  displayName: 'Layla Haddad',
+  partyType: 'individual',
+  lifecycleStatus: 'active',
+  createdAt: '2026-01-01T00:00:00.000Z',
+  primaryPhone: null,
+  phoneMasked: false,
+  vehicleCount: 1,
+};
+
+const invoiceEntry = {
+  id: INVOICE_ID,
+  companyId: COMPANY_ID,
+  branchId: BRANCH_ID,
+  workOrderId: null,
+  saleKind: 'work_order',
+  quotationRevisionId: null,
+  payerPartnerId: PARTNER_ID,
+  currency: 'USD',
+  status: 'issued',
+  invoiceNumber: 'INV-000123',
+  issuedAt: '2026-09-04T09:00:00.000Z',
+  recordVersion: 2,
+  totals: null,
+  payer: { displayName: 'Layla Haddad', displayNumber: 'C-000482', partyType: 'individual' },
+  outstanding: { amount: '40.0000', currency: 'USD' },
+};
 const refusedRead = (status: string, correlationId = 'corr-403') => ({ status, correlationId });
 const okPage = (rows: readonly unknown[]) => ({
   status: 'ok',
@@ -179,6 +220,16 @@ beforeEach(() => {
   readReceipt.mockResolvedValue(okRead(detail()));
   listPaymentMethods.mockResolvedValue(okRead({ items: [tenantMethod, platformMethod] }));
   listBranches.mockResolvedValue(okRead({ items: [] }));
+  searchCustomerDirectory.mockResolvedValue({
+    status: 'ok',
+    rows: [customerHit],
+    nextCursor: null,
+    hasMore: false,
+    correlationId: 'corr-c',
+  });
+  listInvoices.mockResolvedValue(
+    okRead({ items: [invoiceEntry], nextCursor: null, hasMore: false })
+  );
   readOutstanding.mockResolvedValue(
     okRead({
       invoiceId: INVOICE_ID,
@@ -229,6 +280,8 @@ function screenFor(over: Record<string, unknown> = {}) {
       initialInvoiceId={null}
       canRecord={true}
       canAllocate={true}
+      canReadCustomers={true}
+      canListInvoices={true}
       {...over}
     />
   );
@@ -251,6 +304,30 @@ function renderScreen(
  */
 async function chooseBranch() {
   expect(await screen.findByTestId('payments-branch-target')).toHaveTextContent(TEST_BRANCH.name);
+}
+
+/**
+ * The payer, found by name and chosen — the way an operator names one now.
+ * `label` is the picker's own question, so the same helper serves the record
+ * form, the list filter and the Arabic screen.
+ */
+async function choosePayer(
+  user: ReturnType<typeof userEvent.setup>,
+  form: HTMLElement,
+  label: RegExp = labelled('payments.record.payer')
+) {
+  await user.type(within(form).getByLabelText(label), 'Layla');
+  await user.click(await within(form).findByRole('button', { name: /Layla Haddad/ }));
+}
+
+/** The invoice, found by its number among the receipt branch's invoices and chosen. */
+async function chooseInvoice(
+  user: ReturnType<typeof userEvent.setup>,
+  form: HTMLElement,
+  label: RegExp = labelled('payments.allocate.invoice')
+) {
+  await user.type(within(form).getByLabelText(label), 'INV-0001');
+  await user.click(await within(form).findByRole('button', { name: /INV-000123/ }));
 }
 
 async function renderPage(params: Record<string, string>, search: Record<string, string> = {}) {
@@ -400,15 +477,23 @@ describe('a half-filled form and a branch switch', () => {
     const allocate = await screen.findByRole('form', {
       name: EN['payments.allocate.formLabel'] as string,
     });
-    await user.type(
-      within(allocate).getByLabelText(labelled('payments.allocate.invoice')),
-      INVOICE_ID
-    );
+    await chooseInvoice(user, allocate);
     await stayOnBranch(user, await switchExpectingQuestion(user, 'second'));
     expect(heldBranch()).toBe(TEST_BRANCH.id);
-    expect(
-      within(allocate).getByLabelText(labelled('payments.allocate.invoice')) as HTMLInputElement
-    ).toHaveValue(INVOICE_ID);
+    expect(within(allocate).getByTestId('payments-invoice-picker-chosen')).toHaveTextContent(
+      'INV-000123'
+    );
+  });
+
+  it('a chosen payer asks too, and staying keeps the choice', async () => {
+    const user = userEvent.setup();
+    const form = await openTwoBranches(user);
+    await choosePayer(user, form);
+    await stayOnBranch(user, await switchExpectingQuestion(user, 'second'));
+    expect(heldBranch()).toBe(TEST_BRANCH.id);
+    expect(within(form).getByTestId('payments-payer-picker-chosen')).toHaveTextContent(
+      'Layla Haddad'
+    );
   });
 });
 
@@ -446,10 +531,7 @@ describe('the receipts of the branch', () => {
     const filters = screen.getByRole('form', {
       name: EN['payments.list.filtersLabel'] as string,
     });
-    await user.type(
-      within(filters).getByLabelText(labelled('payments.list.payerFilter')),
-      PARTNER_ID
-    );
+    await choosePayer(user, filters, labelled('payments.list.payerFilter'));
     await user.click(
       within(filters).getByRole('button', { name: EN['payments.list.apply'] as string })
     );
@@ -462,6 +544,27 @@ describe('the receipts of the branch', () => {
     );
   });
 
+  it('filters by an invoice FOUND among the branch’s invoices, never typed', async () => {
+    const user = userEvent.setup();
+    renderScreen();
+    await chooseBranch();
+    await waitFor(() => expect(listReceipts).toHaveBeenCalled());
+    const filters = screen.getByRole('form', {
+      name: EN['payments.list.filtersLabel'] as string,
+    });
+    await chooseInvoice(user, filters, labelled('payments.list.invoiceFilter'));
+    // The filter searches the list's own branch, in any state.
+    expect(listInvoices.mock.calls.at(-1)?.[0]).toEqual({
+      companyId: COMPANY_ID,
+      branchId: BRANCH_ID,
+    });
+    expect(listInvoices.mock.calls.at(-1)?.[1]).toEqual({ q: 'INV-0001', status: undefined });
+    await user.click(
+      within(filters).getByRole('button', { name: EN['payments.list.apply'] as string })
+    );
+    await waitFor(() => expect(listReceipts.mock.calls.at(-1)?.[1]?.invoiceId).toBe(INVOICE_ID));
+  });
+
   it('keeps the operator’s filters when a write re-reads the list', async () => {
     const user = userEvent.setup();
     renderScreen();
@@ -470,10 +573,7 @@ describe('the receipts of the branch', () => {
     const filters = screen.getByRole('form', {
       name: EN['payments.list.filtersLabel'] as string,
     });
-    await user.type(
-      within(filters).getByLabelText(labelled('payments.list.payerFilter')),
-      PARTNER_ID
-    );
+    await choosePayer(user, filters, labelled('payments.list.payerFilter'));
     await user.click(
       within(filters).getByRole('button', { name: EN['payments.list.apply'] as string })
     );
@@ -484,7 +584,7 @@ describe('the receipts of the branch', () => {
     const form = await screen.findByRole('form', {
       name: EN['payments.record.formLabel'] as string,
     });
-    await user.type(within(form).getByLabelText(labelled('payments.record.payer')), PARTNER_ID);
+    await choosePayer(user, form);
     await user.type(within(form).getByLabelText(labelled('payments.record.currency')), 'USD');
     await user.type(within(form).getByLabelText(labelled('payments.record.amount')), '10.0000');
     await user.click(
@@ -497,12 +597,10 @@ describe('the receipts of the branch', () => {
       expect(listReceipts.mock.calls.at(-1)?.[1]?.payerPartnerId).toBe(PARTNER_ID)
     );
     expect(
-      (
-        within(
-          screen.getByRole('form', { name: EN['payments.list.filtersLabel'] as string })
-        ).getByLabelText(labelled('payments.list.payerFilter')) as HTMLInputElement
-      ).value
-    ).toBe(PARTNER_ID);
+      within(
+        screen.getByRole('form', { name: EN['payments.list.filtersLabel'] as string })
+      ).getByTestId('payments-payer-filter-chosen')
+    ).toHaveTextContent('Layla Haddad');
   });
 
   it('says a withdrawn method is withdrawn rather than leaving a blank', async () => {
@@ -583,7 +681,7 @@ describe('recording a payment', () => {
     const form = await screen.findByRole('form', {
       name: EN['payments.record.formLabel'] as string,
     });
-    await user.type(within(form).getByLabelText(labelled('payments.record.payer')), PARTNER_ID);
+    await choosePayer(user, form);
     await user.type(within(form).getByLabelText(labelled('payments.record.currency')), 'usd');
     await user.type(within(form).getByLabelText(labelled('payments.record.amount')), '100.0000');
     await user.click(
@@ -619,7 +717,7 @@ describe('recording a payment', () => {
     const form = await screen.findByRole('form', {
       name: EN['payments.record.formLabel'] as string,
     });
-    await user.type(within(form).getByLabelText(labelled('payments.record.payer')), PARTNER_ID);
+    await choosePayer(user, form);
     await user.type(within(form).getByLabelText(labelled('payments.record.currency')), 'USD');
     await user.type(within(form).getByLabelText(labelled('payments.record.amount')), '100.0000');
     await user.click(
@@ -644,7 +742,7 @@ describe('recording a payment', () => {
     const form = await screen.findByRole('form', {
       name: EN['payments.record.formLabel'] as string,
     });
-    await user.type(within(form).getByLabelText(labelled('payments.record.payer')), PARTNER_ID);
+    await choosePayer(user, form);
     await user.type(within(form).getByLabelText(labelled('payments.record.currency')), 'USD');
     await user.type(within(form).getByLabelText(labelled('payments.record.amount')), '-5');
     await user.click(
@@ -677,7 +775,7 @@ describe('recording a payment', () => {
     const form = await screen.findByRole('form', {
       name: EN['payments.record.formLabel'] as string,
     });
-    await user.type(within(form).getByLabelText(labelled('payments.record.payer')), PARTNER_ID);
+    await choosePayer(user, form);
     await user.type(within(form).getByLabelText(labelled('payments.record.currency')), 'USD');
     await user.type(within(form).getByLabelText(labelled('payments.record.amount')), '100.0000');
     await user.click(
@@ -698,7 +796,7 @@ describe('recording a payment', () => {
     const form = await screen.findByRole('form', {
       name: EN['payments.record.formLabel'] as string,
     });
-    await user.type(within(form).getByLabelText(labelled('payments.record.payer')), PARTNER_ID);
+    await choosePayer(user, form);
     await user.type(within(form).getByLabelText(labelled('payments.record.currency')), 'USD');
     await user.type(within(form).getByLabelText(labelled('payments.record.amount')), '100.0000');
     await user.click(
@@ -717,7 +815,7 @@ describe('recording a payment', () => {
       const form = await screen.findByRole('form', {
         name: EN['payments.record.formLabel'] as string,
       });
-      await user.type(within(form).getByLabelText(labelled('payments.record.payer')), PARTNER_ID);
+      await choosePayer(user, form);
       await user.type(within(form).getByLabelText(labelled('payments.record.currency')), 'USD');
       await user.type(within(form).getByLabelText(labelled('payments.record.amount')), '10.0000');
       await user.click(
@@ -740,7 +838,7 @@ describe('recording a payment', () => {
     const form = await screen.findByRole('form', {
       name: EN['payments.record.formLabel'] as string,
     });
-    await user.type(within(form).getByLabelText(labelled('payments.record.payer')), PARTNER_ID);
+    await choosePayer(user, form);
     await user.type(within(form).getByLabelText(labelled('payments.record.currency')), 'USD');
     await user.type(within(form).getByLabelText(labelled('payments.record.amount')), '0');
     await user.click(
@@ -765,7 +863,7 @@ describe('recording a payment', () => {
       const form = await screen.findByRole('form', {
         name: EN['payments.record.formLabel'] as string,
       });
-      await user.type(within(form).getByLabelText(labelled('payments.record.payer')), PARTNER_ID);
+      await choosePayer(user, form);
       await user.type(within(form).getByLabelText(labelled('payments.record.currency')), 'USD');
       await user.type(within(form).getByLabelText(labelled('payments.record.amount')), '10.0000');
       await user.click(
@@ -782,6 +880,67 @@ describe('recording a payment', () => {
     await fill();
     await waitFor(() => expect(recordPayment).toHaveBeenCalledTimes(2));
     expect(recordPayment.mock.calls[1]?.[1]).not.toBe(recordPayment.mock.calls[0]?.[1]);
+  });
+});
+
+describe('the payer is found by name, and the form says when it cannot be', () => {
+  it('asks the directory for the typed words and names the customer it chose', async () => {
+    const user = userEvent.setup();
+    renderScreen();
+    await chooseBranch();
+    const form = await screen.findByRole('form', {
+      name: EN['payments.record.formLabel'] as string,
+    });
+    // No box on this form asks for a partner reference any more.
+    expect(within(form).queryByDisplayValue(UUID_SHAPE)).toBeNull();
+    await choosePayer(user, form);
+    expect(searchCustomerDirectory.mock.calls.at(-1)?.[2]).toEqual({ q: 'Layla' });
+    expect(within(form).getByTestId('payments-payer-picker-chosen')).toHaveTextContent(
+      'Layla Haddad — C-000482'
+    );
+  });
+
+  it('marks the payer, moves the cursor there, and stops complaining once one is chosen', async () => {
+    const user = userEvent.setup();
+    renderScreen();
+    await chooseBranch();
+    const form = await screen.findByRole('form', {
+      name: EN['payments.record.formLabel'] as string,
+    });
+    await user.type(within(form).getByLabelText(labelled('payments.record.currency')), 'USD');
+    await user.type(within(form).getByLabelText(labelled('payments.record.amount')), '10.0000');
+    await user.click(
+      within(form).getByRole('button', { name: EN['payments.record.submit'] as string })
+    );
+    const box = within(form).getByLabelText(labelled('payments.record.payer'));
+    expect(
+      await within(form).findByText(EN['payments.record.payerRequired'] as string)
+    ).toBeVisible();
+    expect(box).toHaveAttribute('aria-invalid', 'true');
+    await waitFor(() => expect(box).toHaveFocus());
+    expect(recordPayment).not.toHaveBeenCalled();
+    // What was typed elsewhere survives the refusal.
+    expect(within(form).getByLabelText(labelled('payments.record.amount'))).toHaveValue('10.0000');
+
+    await choosePayer(user, form);
+    expect(within(form).queryByText(EN['payments.record.payerRequired'] as string)).toBeNull();
+  });
+
+  it('without the customer read offers no box, and the held submit says why', async () => {
+    renderScreen({ canReadCustomers: false });
+    await chooseBranch();
+    const form = await screen.findByRole('form', {
+      name: EN['payments.record.formLabel'] as string,
+    });
+    expect(within(form).queryByRole('searchbox')).toBeNull();
+    const submit = within(form).getByRole('button', {
+      name: EN['payments.record.submit'] as string,
+    });
+    expect(submit).toBeDisabled();
+    const reason = document.getElementById(submit.getAttribute('aria-describedby') ?? '');
+    expect(reason).not.toBeNull();
+    expect(reason).toHaveTextContent(EN['customerPicker.notPermitted'] as string);
+    expect(searchCustomerDirectory).not.toHaveBeenCalled();
   });
 });
 
@@ -861,7 +1020,7 @@ describe('applying a receipt to an invoice', () => {
     const form = await screen.findByRole('form', {
       name: EN['payments.allocate.formLabel'] as string,
     });
-    await user.type(within(form).getByLabelText(labelled('payments.allocate.invoice')), INVOICE_ID);
+    await chooseInvoice(user, form);
     await user.type(
       within(form).getByLabelText(new RegExp(escape(EN['payments.allocate.amount'] as string))),
       amount
@@ -886,13 +1045,82 @@ describe('applying a receipt to an invoice', () => {
     ).toBeNull();
   });
 
+  it('searches the RECEIPT’s own branch for issued invoices and names each by number, payer and balance', async () => {
+    const user = userEvent.setup();
+    await openReceipt(user);
+    const form = await screen.findByRole('form', {
+      name: EN['payments.allocate.formLabel'] as string,
+    });
+    await user.type(within(form).getByLabelText(labelled('payments.allocate.invoice')), 'INV-0001');
+    const option = await within(form).findByRole('button', { name: /INV-000123/ });
+    expect(listInvoices.mock.calls.at(-1)?.[0]).toEqual({
+      companyId: COMPANY_ID,
+      branchId: BRANCH_ID,
+    });
+    expect(listInvoices.mock.calls.at(-1)?.[1]).toEqual({ q: 'INV-0001', status: 'issued' });
+    expect(option).toHaveTextContent('Layla Haddad');
+    expect(option).toHaveTextContent('40.0000 USD');
+  });
+
+  it('says nothing about money for an invoice whose balance the server withheld', async () => {
+    listInvoices.mockResolvedValue(
+      okRead({ items: [{ ...invoiceEntry, outstanding: null }], nextCursor: null, hasMore: false })
+    );
+    const user = userEvent.setup();
+    await openReceipt(user);
+    const form = await screen.findByRole('form', {
+      name: EN['payments.allocate.formLabel'] as string,
+    });
+    await user.type(within(form).getByLabelText(labelled('payments.allocate.invoice')), 'INV-0001');
+    const option = await within(form).findByRole('button', { name: /INV-000123/ });
+    expect(option).not.toHaveTextContent(EN['invoices.picker.open'] as string);
+    expect(option).not.toHaveTextContent('0.0000');
+  });
+
+  it('refuses to apply with no invoice chosen, on the invoice box', async () => {
+    const user = userEvent.setup();
+    await openReceipt(user);
+    const form = await screen.findByRole('form', {
+      name: EN['payments.allocate.formLabel'] as string,
+    });
+    await user.type(within(form).getByLabelText(labelled('payments.allocate.amount')), '10.0000');
+    await user.click(
+      within(form).getByRole('button', { name: EN['payments.allocate.submit'] as string })
+    );
+    expect(
+      await within(form).findByText(EN['payments.allocate.invoiceRequired'] as string)
+    ).toBeVisible();
+    expect(within(form).getByLabelText(labelled('payments.allocate.invoice'))).toHaveAttribute(
+      'aria-invalid',
+      'true'
+    );
+    expect(allocatePayment).not.toHaveBeenCalled();
+  });
+
+  it('applies to the invoice it was reached from without asking for it again', async () => {
+    const user = userEvent.setup();
+    await openReceipt(user, { initialInvoiceId: INVOICE_ID });
+    const form = await screen.findByRole('form', {
+      name: EN['payments.allocate.formLabel'] as string,
+    });
+    expect(
+      within(form).getByText(EN['payments.allocate.invoiceFromAddress'] as string)
+    ).toBeVisible();
+    await user.type(within(form).getByLabelText(labelled('payments.allocate.amount')), '5.0000');
+    await user.click(
+      within(form).getByRole('button', { name: EN['payments.allocate.submit'] as string })
+    );
+    await waitFor(() => expect(allocatePayment).toHaveBeenCalled());
+    expect(allocatePayment.mock.calls[0]?.[1]).toMatchObject({ invoiceId: INVOICE_ID });
+  });
+
   it('sends the RECEIPT’s own currency, its own key, and no version', async () => {
     const user = userEvent.setup();
     await openReceipt(user);
     const form = await screen.findByRole('form', {
       name: EN['payments.allocate.formLabel'] as string,
     });
-    await user.type(within(form).getByLabelText(labelled('payments.allocate.invoice')), INVOICE_ID);
+    await chooseInvoice(user, form);
     await user.type(within(form).getByLabelText(labelled('payments.allocate.amount')), '40.0000');
     await user.click(
       within(form).getByRole('button', { name: EN['payments.allocate.submit'] as string })
@@ -939,7 +1167,7 @@ describe('applying a receipt to an invoice', () => {
     const form = await screen.findByRole('form', {
       name: EN['payments.allocate.formLabel'] as string,
     });
-    await user.type(within(form).getByLabelText(labelled('payments.allocate.invoice')), INVOICE_ID);
+    await chooseInvoice(user, form);
     await user.type(within(form).getByLabelText(labelled('payments.allocate.amount')), '0.0000');
     await user.click(
       within(form).getByRole('button', { name: EN['payments.allocate.submit'] as string })
@@ -1014,7 +1242,7 @@ describe('applying a receipt to an invoice', () => {
     const form = await screen.findByRole('form', {
       name: EN['payments.allocate.formLabel'] as string,
     });
-    await user.type(within(form).getByLabelText(labelled('payments.allocate.invoice')), INVOICE_ID);
+    await chooseInvoice(user, form);
     await user.type(within(form).getByLabelText(labelled('payments.allocate.amount')), '90.0000');
     await user.click(
       within(form).getByRole('button', { name: EN['payments.allocate.submit'] as string })
@@ -1123,9 +1351,16 @@ describe('the route page decides before it reads', () => {
     const form = await screen.findByRole('form', {
       name: EN['payments.allocate.formLabel'] as string,
     });
-    expect(
-      (within(form).getByLabelText(labelled('payments.allocate.invoice')) as HTMLInputElement).value
-    ).toBe('');
+    // The malformed reference is not taken as a choice…
+    expect(within(form).queryByTestId('payments-invoice-from-address')).toBeNull();
+    // …and without `sal.invoice.manage` nothing can be searched: the picker says
+    // so and the submit is held, described by that sentence.
+    const submit = within(form).getByRole('button', {
+      name: EN['payments.allocate.submit'] as string,
+    });
+    expect(submit).toBeDisabled();
+    const reason = document.getElementById(submit.getAttribute('aria-describedby') ?? '');
+    expect(reason).toHaveTextContent(EN['invoices.picker.notPermitted'] as string);
   });
 });
 
@@ -1164,15 +1399,13 @@ describe('Arabic', () => {
         initialInvoiceId={null}
         canRecord={true}
         canAllocate={false}
+        canReadCustomers={true}
       />
     );
     const form = await screen.findByRole('form', {
       name: AR['payments.record.formLabel'] as string,
     });
-    await user.type(
-      within(form).getByLabelText(new RegExp(`^${escape(AR['payments.record.payer'] as string)}`)),
-      PARTNER_ID
-    );
+    await choosePayer(user, form, new RegExp(`^${escape(AR['payments.record.payer'] as string)}`));
     await user.type(
       within(form).getByLabelText(
         new RegExp(`^${escape(AR['payments.record.currency'] as string)}`)

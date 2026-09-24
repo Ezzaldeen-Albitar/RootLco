@@ -169,7 +169,7 @@ function renderDetailInBranch(over: Record<string, unknown> = {}, list = priceLi
         canManage
         canPublish={false}
         canReadBranches={false}
-        canReadServices={false}
+        canReadServices={true}
         {...over}
       />
     )
@@ -185,9 +185,25 @@ function renderDetail(over: Record<string, unknown> = {}, list = priceList()) {
       canManage
       canPublish={false}
       canReadBranches={false}
-      canReadServices={false}
+      canReadServices={true}
       {...over}
     />
+  );
+}
+
+/**
+ * The service, FOUND in the catalogue and chosen — the only way to name one now
+ * (Owner directive, `P1-32-PRE-OD-UX`).
+ */
+async function pickService(user: ReturnType<typeof userEvent.setup>, form: HTMLElement) {
+  await user.type(within(form).getByLabelText(labelled('pricing.picker.serviceSearch')), 'OIL');
+  await user.click(
+    within(form).getByRole('button', { name: EN['pricing.picker.search'] as string })
+  );
+  await within(form).findByRole('option', { name: /OIL-CHANGE/ });
+  await user.selectOptions(
+    within(form).getByLabelText(labelled('pricing.rule.service')),
+    SERVICE_ID
   );
 }
 
@@ -199,6 +215,23 @@ beforeEach(() => {
   listBranches.mockResolvedValue(
     okRead({ items: [{ id: BRANCH, companyId: COMPANY, branchCode: 'B1', name: 'Main' }] })
   );
+  listServices.mockResolvedValue({
+    status: 'ok',
+    rows: [
+      {
+        id: SERVICE_ID,
+        serviceCode: 'OIL-CHANGE',
+        name: 'Oil change',
+        description: null,
+        categoryId: 'c',
+        lifecycleStatus: 'active',
+        recordVersion: 1,
+      },
+    ],
+    nextCursor: null,
+    hasMore: false,
+    correlationId: 'corr',
+  });
   createPriceListVersion.mockResolvedValue({
     state: success('pricing.version.created'),
     created: { ...draft, id: 'v-new', versionNo: 4 },
@@ -378,10 +411,7 @@ describe('a rule on a draft carries the canonical amount string', () => {
     const form = await within(region).findByRole('form', {
       name: EN['pricing.rule.heading'] as string,
     });
-    await user.type(
-      within(form).getByLabelText(labelled('pricing.picker.serviceIdField')),
-      SERVICE_ID
-    );
+    await pickService(user, form);
     await user.type(within(form).getByLabelText(labelled('pricing.rule.amount')), '12.5');
     // The narrowing is a NAMED branch; choosing it fills its company too.
     await user.selectOptions(within(form).getByLabelText(labelled('pricing.rule.branch')), BRANCH);
@@ -423,10 +453,7 @@ describe('a rule on a draft carries the canonical amount string', () => {
     const form = await within(region).findByRole('form', {
       name: EN['pricing.rule.heading'] as string,
     });
-    await user.type(
-      within(form).getByLabelText(labelled('pricing.picker.serviceIdField')),
-      SERVICE_ID
-    );
+    await pickService(user, form);
     await user.type(within(form).getByLabelText(labelled('pricing.rule.amount')), '12.5');
     await user.type(within(form).getByLabelText(labelled('pricing.rule.priority')), '5');
     await user.click(
@@ -466,10 +493,7 @@ describe('a rule on a draft carries the canonical amount string', () => {
     const form = await within(region).findByRole('form', {
       name: EN['pricing.rule.heading'] as string,
     });
-    await user.type(
-      within(form).getByLabelText(labelled('pricing.picker.serviceIdField')),
-      SERVICE_ID
-    );
+    await pickService(user, form);
     await user.type(within(form).getByLabelText(labelled('pricing.rule.amount')), '20');
     await user.selectOptions(within(form).getByLabelText(labelled('pricing.rule.branch')), BRANCH);
     await user.type(within(form).getByLabelText(labelled('pricing.rule.taxClass')), TAX_CLASS);
@@ -490,10 +514,7 @@ describe('a rule on a draft carries the canonical amount string', () => {
     const form = await within(region).findByRole('form', {
       name: EN['pricing.rule.heading'] as string,
     });
-    await user.type(
-      within(form).getByLabelText(labelled('pricing.picker.serviceIdField')),
-      SERVICE_ID
-    );
+    await pickService(user, form);
     await user.type(within(form).getByLabelText(labelled('pricing.rule.amount')), '12.5');
     await user.type(within(form).getByLabelText(labelled('pricing.rule.taxClass')), TAX_CLASS);
     await user.click(
@@ -507,6 +528,57 @@ describe('a rule on a draft carries the canonical amount string', () => {
       'true'
     );
     expect(recordPriceRule).not.toHaveBeenCalled();
+  });
+});
+
+describe('a rule narrowed to a company is named, never typed', () => {
+  it('narrows a rule to one company and every branch of it, by the company’s name', async () => {
+    const user = userEvent.setup();
+    renderDetailInBranch();
+    const form = await within(rulesRegion()).findByRole('form', {
+      name: EN['pricing.rule.heading'] as string,
+    });
+    await pickService(user, form);
+    await user.type(within(form).getByLabelText(labelled('pricing.rule.amount')), '9');
+    const company = within(form).getByLabelText(labelled('pricing.rule.company'));
+    expect(within(company).getByRole('option', { name: /Test Operations/ })).toBeVisible();
+    await user.selectOptions(company, COMPANY);
+    await user.click(
+      within(form).getByRole('button', { name: EN['pricing.rule.submit'] as string })
+    );
+    await waitFor(() => expect(recordPriceRule).toHaveBeenCalled());
+    const body = recordPriceRule.mock.calls[0]?.[2] as Record<string, unknown>;
+    expect(body['companyId']).toBe(COMPANY);
+    expect(body).not.toHaveProperty('branchId');
+  });
+
+  it('choosing a branch names its company, and clearing the branch keeps the company', async () => {
+    const user = userEvent.setup();
+    renderDetailInBranch();
+    const form = await within(rulesRegion()).findByRole('form', {
+      name: EN['pricing.rule.heading'] as string,
+    });
+    const branch = within(form).getByLabelText(labelled('pricing.rule.branch'));
+    const company = within(form).getByLabelText(labelled('pricing.rule.company'));
+    await user.selectOptions(branch, BRANCH);
+    expect(company).toHaveValue(COMPANY);
+    await user.selectOptions(branch, '');
+    expect(company).toHaveValue(COMPANY);
+    expect(branch).toHaveValue('');
+  });
+
+  it('without the service catalogue, offers no reference box and holds the rule, saying why', async () => {
+    renderDetailInBranch({ canReadServices: false });
+    const form = await within(rulesRegion()).findByRole('form', {
+      name: EN['pricing.rule.heading'] as string,
+    });
+    const submit = within(form).getByRole('button', {
+      name: EN['pricing.rule.submit'] as string,
+    });
+    expect(submit).toBeDisabled();
+    const reason = document.getElementById(submit.getAttribute('aria-describedby') ?? '');
+    expect(reason).toHaveTextContent(EN['pricing.picker.servicesNotReadable'] as string);
+    expect(listServices).not.toHaveBeenCalled();
   });
 });
 

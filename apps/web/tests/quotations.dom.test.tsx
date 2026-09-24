@@ -72,6 +72,37 @@ vi.mock('@/features/work-orders/api', () => ({
   listWorkOrders: (...args: unknown[]) => listWorkOrders(...args),
 }));
 
+// The discount requester is FOUND among the tenant's accounts; the adapter is
+// replaced here, never the picker.
+const listUsers = vi.fn();
+vi.mock('@/features/administration/users/api', () => ({
+  listUsers: (...args: unknown[]) => listUsers(...args),
+}));
+const COLLEAGUE_ID = '99999999-9999-4999-8999-999999999999';
+const colleaguePage = {
+  status: 'ok',
+  rows: [
+    {
+      id: COLLEAGUE_ID,
+      email: 'omar@test.local',
+      displayName: 'Omar Saleh',
+      status: 'active',
+      mfaRequired: false,
+      createdAt: '2026-01-01T00:00:00.000Z',
+      recordVersion: 1,
+    },
+  ],
+  nextCursor: null,
+  hasMore: false,
+  correlationId: 'corr-u',
+};
+
+/** The colleague who asked for the discount, found by name and chosen. */
+async function chooseRequester(user: ReturnType<typeof userEvent.setup>, form: HTMLElement) {
+  await user.type(within(form).getByLabelText(labelled('quotations.build.requestedBy')), 'Omar');
+  await user.click(await within(form).findByRole('button', { name: /Omar Saleh/ }));
+}
+
 const push = vi.fn();
 const refresh = vi.fn();
 vi.mock('next/navigation', () => ({
@@ -435,6 +466,61 @@ describe('the job picker and the working context', () => {
   });
 });
 
+describe('the builder names its people rather than asking for references', () => {
+  it('attributes the discount to a colleague found by name, and sends only the account', async () => {
+    listUsers.mockResolvedValue(colleaguePage);
+    const user = userEvent.setup();
+    createQuotation.mockResolvedValue({
+      state: { status: 'success', messageKey: 'quotations.create.success', attempt: 1 },
+      created: { ...summary({ id: 'new-id' }), currentRevision: null },
+    });
+    renderScreen({ canManage: true, canReadUsers: true });
+    await user.click(screen.getByRole('button', { name: EN['quotations.list.create'] as string }));
+    const form = await builderForm();
+    await chooseRequester(user, form);
+    // Only ACTIVE accounts are asked for: only an active one is accepted.
+    expect(listUsers.mock.calls.at(-1)?.[0]).toMatchObject({
+      search: 'Omar',
+      filters: [{ key: 'status', value: 'active' }],
+    });
+    expect(within(form).getByTestId('requester-picker-chosen')).toHaveTextContent('Omar Saleh');
+    await user.type(
+      within(form).getByLabelText(labelled('quotations.picker.serviceIdField')),
+      SERVICE_ID
+    );
+    await user.type(within(form).getByLabelText(labelled('quotations.lines.quantity')), '1');
+    await user.click(
+      within(form).getByRole('button', { name: EN['quotations.build.submit'] as string })
+    );
+    await waitFor(() => expect(createQuotation).toHaveBeenCalled());
+    const body = createQuotation.mock.calls[0]?.[0] as Record<string, unknown>;
+    expect(body['discountRequestedBy']).toBe(COLLEAGUE_ID);
+  });
+
+  it('without the directory, offers no box for the requester and says why', async () => {
+    const user = userEvent.setup();
+    renderScreen({ canManage: true, canReadUsers: false });
+    await user.click(screen.getByRole('button', { name: EN['quotations.list.create'] as string }));
+    const form = await builderForm();
+    expect(within(form).getByText(EN['quotations.requester.notPermitted'] as string)).toBeVisible();
+    expect(listUsers).not.toHaveBeenCalled();
+  });
+
+  it('without the customer read, keeps the work order’s customer and offers no search', async () => {
+    const user = userEvent.setup();
+    renderScreen({ canManage: true, canReadCustomers: false });
+    await user.click(screen.getByRole('button', { name: EN['quotations.list.create'] as string }));
+    const form = await builderForm();
+    expect(within(form).getByTestId('quotation-payer-picker-chosen')).toHaveTextContent(
+      'Layla Haddad'
+    );
+    await user.click(
+      within(form).getByRole('button', { name: EN['customerSelector.change'] as string })
+    );
+    expect(within(form).getByText(EN['customerPicker.notPermitted'] as string)).toBeVisible();
+  });
+});
+
 describe('the builder sends lines as strings and prices nothing', () => {
   it('is not offered without quo.quotation.manage', () => {
     renderScreen({ canManage: false });
@@ -452,7 +538,11 @@ describe('the builder sends lines as strings and prices nothing', () => {
     renderScreen({ canManage: true });
     await user.click(screen.getByRole('button', { name: EN['quotations.list.create'] as string }));
     const form = await builderForm();
-    expect(within(form).getByLabelText(labelled('quotations.build.payer'))).toHaveValue(PARTNER_ID);
+    // The payer opens on the work order's own customer, NAMED rather than shown
+    // as a reference.
+    expect(within(form).getByTestId('quotation-payer-picker-chosen')).toHaveTextContent(
+      'Layla Haddad'
+    );
     await user.type(
       within(form).getByLabelText(labelled('quotations.picker.serviceIdField')),
       SERVICE_ID

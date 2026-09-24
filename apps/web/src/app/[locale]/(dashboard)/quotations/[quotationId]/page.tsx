@@ -80,6 +80,7 @@ export default async function QuotationDetailPage({
       canDecide={holds(session.permissions, QUOTATION_PERMISSIONS.decide)}
       canReadLimits={holds(session.permissions, QUOTATION_PERMISSIONS.limitsRead)}
       canReadServices={holds(session.permissions, SERVICE_PERMISSIONS.read)}
+      canReadUsers={holds(session.permissions, QUOTATION_PERMISSIONS.userRead)}
     />,
     true
   );

@@ -9,6 +9,7 @@ import { INITIAL_REQUEST, type TableRequest } from '@/components/data-table/tabl
 import { useServerTable } from '@/components/data-table/use-server-table';
 import { TextField } from '@/components/forms/Field';
 import { notifyActionResult } from '@/components/notifications/action-notifications';
+import { CustomerPicker, type ChosenCustomer } from '@/components/party/CustomerPicker';
 import type { WorkOrderListEntry } from '@/features/work-orders/work-orders-contract';
 import {
   WorkOrderPicker,
@@ -21,6 +22,7 @@ import type { ActionState } from '@/lib/forms/action-result';
 import { useFocusFirstInvalid } from '@/lib/forms/use-focus-first-invalid';
 
 import { createQuotation, listQuotations } from '../api';
+import { RequesterPicker, type ChosenRequester } from './RequesterPicker';
 import { INTERNAL_CODE, type QuotationSummary } from '../quotations-contract';
 import {
   Figure,
@@ -30,7 +32,6 @@ import {
   PRIMARY_BUTTON,
   QuotationStatusBadge,
   SECONDARY_BUTTON,
-  UUID,
   newLine,
   validateLines,
   type DraftLine,
@@ -69,6 +70,8 @@ export function QuotationsScreen({
   canManage,
   canReadServices,
   canSearchWorkOrders = false,
+  canReadCustomers = false,
+  canReadUsers = false,
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
@@ -82,6 +85,10 @@ export function QuotationsScreen({
   readonly canReadServices: boolean;
   /** `wo.work_order.read` — decides whether the job can be FOUND when none is named. */
   readonly canSearchWorkOrders?: boolean;
+  /** `crm.customer.read` — whether the paying customer can be found by name. */
+  readonly canReadCustomers?: boolean;
+  /** `iam.user.read` — whether the discount requester can be found by name. */
+  readonly canReadUsers?: boolean;
 }) {
   const [building, setBuilding] = useState(false);
 
@@ -158,8 +165,18 @@ export function QuotationsScreen({
           locale={locale}
           messages={messages}
           workOrderId={workOrderId}
-          payerPartnerRef={workOrder?.customer?.partnerId ?? ''}
+          payer={
+            workOrder?.customer
+              ? {
+                  id: workOrder.customer.partnerId,
+                  displayName: workOrder.customer.displayName,
+                  displayNumber: null,
+                }
+              : null
+          }
           canReadServices={canReadServices}
+          canReadCustomers={canReadCustomers}
+          canReadUsers={canReadUsers}
           onClose={() => setBuilding(false)}
         />
       ) : null}
@@ -370,22 +387,32 @@ function QuotationBuilder({
   locale,
   messages,
   workOrderId,
-  payerPartnerRef,
+  payer: initialPayer,
   canReadServices,
+  canReadCustomers,
+  canReadUsers,
   onClose,
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
   readonly workOrderId: string;
   /** Prefilled from the work order's customer when the page could read it. */
-  readonly payerPartnerRef: string;
+  readonly payer: ChosenCustomer | null;
   readonly canReadServices: boolean;
+  readonly canReadCustomers: boolean;
+  readonly canReadUsers: boolean;
   readonly onClose: () => void;
 }) {
   const router = useRouter();
-  const [payer, setPayer] = useState(payerPartnerRef);
+  /*
+   * The paying customer and the discount requester are FOUND and chosen by
+   * name (Owner directive, `P1-32-PRE-OD-UX`); both used to be boxes asking for
+   * a reference. The payer opens on the work order's own customer, which is a
+   * default rather than unsaved work.
+   */
+  const [payer, setPayer] = useState<ChosenCustomer | null>(initialPayer);
   const [customerClass, setCustomerClass] = useState('');
-  const [requestedBy, setRequestedBy] = useState('');
+  const [requestedBy, setRequestedBy] = useState<ChosenRequester | null>(null);
   const [lines, setLines] = useState<readonly DraftLine[]>([newLine()]);
   const [errors, setErrors] = useState<Readonly<Record<string, string>>>({});
   const [busy, setBusy] = useState(false);
@@ -398,16 +425,11 @@ function QuotationBuilder({
 
   const submit = async () => {
     const { bodies, errors: found } = validateLines(lines);
-    const payerId = payer.trim();
-    if (payerId.length > 0 && !UUID.test(payerId))
-      found['payerPartnerRef'] = 'quotations.common.idFormat';
+    const payerId = payer?.id ?? '';
     const klass = customerClass.trim();
     if (klass.length > 0 && !INTERNAL_CODE.test(klass))
       found['customerClass'] = 'quotations.common.classFormat';
-    const requester = requestedBy.trim();
-    if (requester.length > 0 && !UUID.test(requester)) {
-      found['discountRequestedBy'] = 'quotations.common.idFormat';
-    }
+    const requester = requestedBy?.id ?? '';
     setErrors(found);
     if (Object.keys(found).length > 0) return;
 
@@ -444,16 +466,23 @@ function QuotationBuilder({
       <p className="text-caption text-text-muted">
         {translate(messages, 'quotations.build.explain')}
       </p>
-      <div className="grid gap-3 sm:grid-cols-3">
-        <TextField
+      <div className="flex flex-col gap-1.5">
+        <CustomerPicker
+          messages={messages}
+          locale={locale}
           label={translate(messages, 'quotations.build.payer')}
-          description={translate(messages, 'quotations.build.payerHelp')}
-          spellCheck={false}
-          dir="ltr"
           value={payer}
-          onChange={(event) => setPayer(event.target.value)}
+          onChange={setPayer}
+          canSearch={canReadCustomers}
           error={errorFor('payerPartnerRef')}
+          pristineId={initialPayer?.id ?? null}
+          testId="quotation-payer-picker"
         />
+        <p className="text-caption text-text-muted">
+          {translate(messages, 'quotations.build.payerHelp')}
+        </p>
+      </div>
+      <div className="grid gap-3 sm:grid-cols-2">
         <TextField
           label={translate(messages, 'quotations.build.customerClass')}
           description={translate(messages, 'quotations.common.classHelp')}
@@ -463,15 +492,19 @@ function QuotationBuilder({
           onChange={(event) => setCustomerClass(event.target.value)}
           error={errorFor('customerClass')}
         />
-        <TextField
-          label={translate(messages, 'quotations.build.requestedBy')}
-          description={translate(messages, 'quotations.build.requestedByHelp')}
-          spellCheck={false}
-          dir="ltr"
-          value={requestedBy}
-          onChange={(event) => setRequestedBy(event.target.value)}
-          error={errorFor('discountRequestedBy')}
-        />
+        <div className="flex flex-col gap-1.5">
+          <RequesterPicker
+            messages={messages}
+            locale={locale}
+            value={requestedBy}
+            onChange={setRequestedBy}
+            canSearch={canReadUsers}
+            error={errorFor('discountRequestedBy')}
+          />
+          <p className="text-caption text-text-muted">
+            {translate(messages, 'quotations.build.requestedByHelp')}
+          </p>
+        </div>
       </div>
       <LinesEditor
         messages={messages}

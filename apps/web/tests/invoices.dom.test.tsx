@@ -81,6 +81,13 @@ vi.mock('@/features/billing/api', () => ({
   readCreditNote: (...args: unknown[]) => readCreditNote(...args),
 }));
 
+// A different payer is FOUND among customers; the directory adapter is replaced.
+const searchCustomerDirectory = vi.fn();
+vi.mock('@/lib/customers/directory', () => ({
+  searchCustomerDirectory: (...args: unknown[]) => searchCustomerDirectory(...args),
+}));
+const OTHER_PAYER = '99999999-9999-4999-8999-999999999999';
+
 /*
  * The credit-note screen names its branch through the SAME picker the stock
  * screens use, so the branch list it reads belongs to the inventory adapter.
@@ -640,6 +647,66 @@ describe('FE-014 — no invoice yet: the preview and creating one', () => {
     expect(refresh).toHaveBeenCalled();
   });
 
+  it('bills a different payer found by name, and sends only that customer', async () => {
+    searchCustomerDirectory.mockResolvedValue({
+      status: 'ok',
+      rows: [
+        {
+          id: OTHER_PAYER,
+          displayNumber: 'C-000900',
+          displayName: 'Fleet Partner',
+          partyType: 'organization',
+          lifecycleStatus: 'active',
+          createdAt: '2026-01-01T00:00:00.000Z',
+          primaryPhone: null,
+          phoneMasked: false,
+          vehicleCount: 3,
+        },
+      ],
+      nextCursor: null,
+      hasMore: false,
+      correlationId: 'corr-c',
+    });
+    createInvoice.mockResolvedValue({
+      state: { status: 'success', messageKey: 'invoices.create.success', attempt: 1 },
+      created: { ...detail(), replayed: false },
+    });
+    const user = userEvent.setup();
+    renderScreen({ canReadCustomers: true });
+    const form = await screen.findByRole('form', { name: EN['invoices.create.heading'] as string });
+    // No box on this form asks for a partner reference.
+    expect(within(form).queryByDisplayValue(UUID_SHAPE)).toBeNull();
+    await user.type(within(form).getByLabelText(labelled('invoices.create.payer')), 'Fleet');
+    await user.click(await within(form).findByRole('button', { name: /Fleet Partner/ }));
+    expect(searchCustomerDirectory.mock.calls.at(-1)?.[2]).toEqual({ q: 'Fleet' });
+    await user.click(
+      within(form).getByRole('button', { name: EN['invoices.create.submit'] as string })
+    );
+    await waitFor(() => expect(createInvoice).toHaveBeenCalled());
+    expect(createInvoice.mock.calls[0]?.[0]).toEqual({
+      workOrderId: WORK_ORDER_ID,
+      payerPartnerId: OTHER_PAYER,
+    });
+  });
+
+  it('without the customer read offers no search, and still bills the work order’s customer', async () => {
+    createInvoice.mockResolvedValue({
+      state: { status: 'success', messageKey: 'invoices.create.success', attempt: 1 },
+      created: { ...detail(), replayed: false },
+    });
+    const user = userEvent.setup();
+    renderScreen({ canReadCustomers: false });
+    const form = await screen.findByRole('form', { name: EN['invoices.create.heading'] as string });
+    expect(within(form).getByText(EN['customerPicker.notPermitted'] as string)).toBeVisible();
+    expect(within(form).queryByRole('searchbox')).toBeNull();
+    await user.click(
+      within(form).getByRole('button', { name: EN['invoices.create.submit'] as string })
+    );
+    await waitFor(() => expect(createInvoice).toHaveBeenCalled());
+    expect(createInvoice.mock.calls[0]?.[0]).toEqual({ workOrderId: WORK_ORDER_ID });
+    expect(searchCustomerDirectory).not.toHaveBeenCalled();
+  });
+
   it('a refused create re-tries with the SAME key, and a conflict re-reads the work order’s invoice', async () => {
     const user = userEvent.setup();
     createInvoice.mockResolvedValueOnce({
@@ -1118,7 +1185,7 @@ describe('credit notes are reachable', () => {
   });
 
   const creditNotesScreen = (initial: string | null = null) => (
-    <CreditNotesScreen locale="en" messages={en} canReadBranches initialCreditNoteId={initial} />
+    <CreditNotesScreen locale="en" messages={en} initialCreditNoteId={initial} />
   );
 
   it('lists the working branch notes with the server amount and the state in words', async () => {

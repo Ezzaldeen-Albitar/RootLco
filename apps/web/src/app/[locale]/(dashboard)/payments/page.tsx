@@ -86,6 +86,8 @@ export default async function PaymentsPage({
           canRecord={holds(session.permissions, PAYMENT_PERMISSIONS.record)}
           canAllocate={holds(session.permissions, PAYMENT_PERMISSIONS.allocate)}
           canReadBranches={holds(session.permissions, PAYMENT_PERMISSIONS.branchRead)}
+          canReadCustomers={holds(session.permissions, PAYMENT_PERMISSIONS.customerRead)}
+          canListInvoices={holds(session.permissions, PAYMENT_PERMISSIONS.invoiceList)}
         />
       </PageBody>
     </>

@@ -52,6 +52,37 @@ vi.mock('@/features/administration/access/api', () => ({
   listApprovalLimits: (...args: unknown[]) => listApprovalLimits(...args),
 }));
 
+// The discount requester is FOUND among the tenant's accounts; the adapter is
+// replaced here, never the picker.
+const listUsers = vi.fn();
+vi.mock('@/features/administration/users/api', () => ({
+  listUsers: (...args: unknown[]) => listUsers(...args),
+}));
+const COLLEAGUE_ID = '99999999-9999-4999-8999-999999999999';
+const colleaguePage = {
+  status: 'ok',
+  rows: [
+    {
+      id: COLLEAGUE_ID,
+      email: 'omar@test.local',
+      displayName: 'Omar Saleh',
+      status: 'active',
+      mfaRequired: false,
+      createdAt: '2026-01-01T00:00:00.000Z',
+      recordVersion: 1,
+    },
+  ],
+  nextCursor: null,
+  hasMore: false,
+  correlationId: 'corr-u',
+};
+
+/** The colleague who asked for the discount, found by name and chosen. */
+async function chooseRequester(user: ReturnType<typeof userEvent.setup>, form: HTMLElement) {
+  await user.type(within(form).getByLabelText(labelled('quotations.build.requestedBy')), 'Omar');
+  await user.click(await within(form).findByRole('button', { name: /Omar Saleh/ }));
+}
+
 const push = vi.fn();
 const refresh = vi.fn();
 vi.mock('next/navigation', () => ({
@@ -404,6 +435,41 @@ describe('decisions are the server’s outcome, recorded against the presented r
     await waitFor(() => expect(refresh).toHaveBeenCalled());
   });
 
+  it('records the decision as NOT the payer’s when the box is cleared', async () => {
+    const user = userEvent.setup();
+    renderDetail({ canDecide: true });
+    const form = await screen.findByRole('form', {
+      name: EN['quotations.decide.heading'] as string,
+    });
+    const byPayer = within(form).getByRole('checkbox', {
+      name: EN['quotations.decide.party'] as string,
+    });
+    expect(byPayer).toBeChecked();
+    await user.click(byPayer);
+    await user.selectOptions(
+      within(form).getByLabelText(labelled('quotations.decide.decision')),
+      'approved'
+    );
+    await user.selectOptions(
+      within(form).getByLabelText(labelled('quotations.decide.channel')),
+      'phone'
+    );
+    await user.click(
+      within(form).getByRole('button', { name: EN['quotations.decide.submit'] as string })
+    );
+    await waitFor(() => expect(decideRevision).toHaveBeenCalled());
+    expect(decideRevision.mock.calls[0]?.[1]).not.toHaveProperty('decidingPartyRef');
+  });
+
+  it('with no paying customer on the quotation, asks nothing about one', async () => {
+    renderDetail({ canDecide: true }, quotation({ payerPartnerRef: null }));
+    const form = await screen.findByRole('form', {
+      name: EN['quotations.decide.heading'] as string,
+    });
+    expect(within(form).queryByRole('checkbox')).toBeNull();
+    expect(within(form).getByText(EN['quotations.decide.noPayer'] as string)).toBeVisible();
+  });
+
   it('records a single-line decision against that line', async () => {
     const user = userEvent.setup();
     renderDetail({ canDecide: true });
@@ -521,6 +587,26 @@ describe('guarded writes send the QUOTATION version and renew it', () => {
       5
     );
     await waitFor(() => expect(refresh).toHaveBeenCalled());
+  });
+
+  it('attributes a revision’s discount to a colleague found by name', async () => {
+    listUsers.mockResolvedValue(colleaguePage);
+    const user = userEvent.setup();
+    renderDetail({ canReadUsers: true });
+    const form = screen.getByRole('form', { name: EN['quotations.revise.heading'] as string });
+    await chooseRequester(user, form);
+    await user.type(
+      within(form).getByLabelText(labelled('quotations.picker.serviceIdField')),
+      SERVICE_ID
+    );
+    await user.type(within(form).getByLabelText(labelled('quotations.lines.quantity')), '3');
+    await user.click(
+      within(form).getByRole('button', { name: EN['quotations.revise.submit'] as string })
+    );
+    await waitFor(() => expect(createQuotationRevision).toHaveBeenCalled());
+    expect(createQuotationRevision.mock.calls[0]?.[1]).toMatchObject({
+      discountRequestedBy: COLLEAGUE_ID,
+    });
   });
 
   it('states an inexact line above the lines, with the revision draft still filled in', async () => {

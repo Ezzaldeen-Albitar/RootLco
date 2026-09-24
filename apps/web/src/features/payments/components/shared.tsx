@@ -35,6 +35,14 @@ export function isPayableAmount(value: string): boolean {
 /** ISO-4217 alphabetic, as both routes demand it. */
 export const CURRENCY = /^[A-Z]{3}$/;
 
+/** A copy of an error map without one field, for a field that has been corrected. */
+export function withoutKey(
+  record: Readonly<Record<string, string>>,
+  key: string
+): Readonly<Record<string, string>> {
+  return Object.fromEntries(Object.entries(record).filter(([name]) => name !== key));
+}
+
 export const PRIMARY_BUTTON =
   'rounded-md bg-primary px-4 py-2 text-body font-medium text-on-primary transition-colors duration-fast ease-standard hover:bg-primary-hover';
 export const SECONDARY_BUTTON =

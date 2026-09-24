@@ -20,6 +20,7 @@ import type {
   CreditNoteState,
   Invoice,
   InvoiceDetail,
+  InvoiceListEntry,
   InvoicePreview,
   InvoiceStatus,
   IssuedInvoice,
@@ -35,11 +36,13 @@ import type {
  * in this application. This file turns operations into view states and does
  * no arithmetic: every amount is passed through as the string the server sent.
  *
- * ## Every read names its subject in the path
+ * ## Every read names its subject in the path — except the branch list
  *
  * The four reads take a work order or an invoice in the path and no query at
  * all; the parent row is the authorization target, re-checked server-side.
- * There is no invoice list to page.
+ * `listInvoices` is the one exception: it names a company AND a branch in the
+ * query, which the server takes as the authorization target (Owner directive,
+ * `P1-32-PRE-OD-UX`).
  *
  * ## The two guarded writes
  *
@@ -296,4 +299,29 @@ export async function createCounterSale(
     },
     created: result.data,
   };
+}
+
+/**
+ * A branch's invoices, found by number, payer or vehicle (`sal.invoice-list`,
+ * Owner directive `P1-32-PRE-OD-UX`).
+ *
+ * The term travels to the server and nowhere else: it is not written to the
+ * browser's address, and the screen holds it in memory only. `status` narrows to
+ * one state — the payment desk asks for `issued`, the only state money can be
+ * applied to.
+ */
+export async function listInvoices(
+  target: BranchTarget,
+  filter: { readonly q?: string | undefined; readonly status?: InvoiceStatus | undefined },
+  cursor: string | null
+): Promise<ReadState<CursorPage<InvoiceListEntry>>> {
+  return readOperation<CursorPage<InvoiceListEntry>>(
+    '/api/v1/invoices' +
+      branchTargetQuery(target, {
+        status: filter.status ?? null,
+        q: filter.q ?? null,
+        cursor,
+        limit: 10,
+      })
+  );
 }

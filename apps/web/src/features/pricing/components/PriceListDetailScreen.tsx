@@ -1,7 +1,7 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useId, useMemo, useState } from 'react';
 
 import { SelectField, TextAreaField, TextField } from '@/components/forms/Field';
 import { MoneyField } from '@/components/forms/MoneyField';
@@ -34,6 +34,7 @@ import {
 import {
   ActivationBadge,
   BranchPairPicker,
+  CompanyPicker,
   EMPTY_PAIR,
   Figure,
   OutcomeNote,
@@ -588,6 +589,7 @@ function RecordRuleForm({
   readonly onRecorded: () => void;
 }) {
   const [serviceId, setServiceId] = useState('');
+  const serviceUnavailableId = useId();
   const [amount, setAmount] = useState('');
   const [amountValid, setAmountValid] = useState(true);
   const [pair, setPair] = useState<BranchPair>(EMPTY_PAIR);
@@ -606,7 +608,8 @@ function RecordRuleForm({
   const submit = async () => {
     const found: Record<string, string> = {};
     const service = serviceId.trim();
-    if (!UUID.test(service)) found['serviceId'] = 'pricing.common.idFormat';
+    if (service.length === 0) found['serviceId'] = 'pricing.picker.serviceRequired';
+    else if (!UUID.test(service)) found['serviceId'] = 'pricing.common.idFormat';
     const money = amount.trim();
     if (money.length === 0) found['amount'] = 'field.required';
     else if (!amountValid || !AMOUNT.test(money)) found['amount'] = 'pricing.rule.amountFormat';
@@ -679,6 +682,7 @@ function RecordRuleForm({
           value={serviceId}
           onChange={setServiceId}
           error={errorFor('serviceId')}
+          unavailableId={serviceUnavailableId}
         />
       </div>
       <MoneyField
@@ -702,14 +706,26 @@ function RecordRuleForm({
         onChange={(event) => setPriority(event.target.value)}
         error={errorFor('priority')}
       />
+      <CompanyPicker
+        messages={messages}
+        label={translate(messages, 'pricing.rule.company')}
+        placeholder={translate(messages, 'pricing.rule.anyCompany')}
+        value={pair}
+        onChange={setPair}
+        error={errorFor('companyId')}
+      />
       <BranchPairPicker
         messages={messages}
         branches={branches}
         label={translate(messages, 'pricing.rule.branch')}
         placeholder={translate(messages, 'pricing.rule.anyBranch')}
         value={pair}
-        onChange={setPair}
-        errors={{ companyId: errorFor('companyId'), branchId: errorFor('branchId') }}
+        onChange={(next) =>
+          // Clearing the branch keeps the company the operator chose: a rule for
+          // every branch of one company is a choice, not an absence.
+          setPair(next.branchId === '' ? { companyId: pair.companyId, branchId: '' } : next)
+        }
+        errors={{ branchId: errorFor('branchId') }}
       />
       <TextField
         label={translate(messages, 'pricing.rule.customerClass')}
@@ -733,7 +749,12 @@ function RecordRuleForm({
         <OutcomeNote messages={messages} outcome={outcome} />
       </div>
       <div className="sm:col-span-2">
-        <button type="submit" className={PRIMARY_BUTTON} disabled={busy}>
+        <button
+          type="submit"
+          className={PRIMARY_BUTTON}
+          disabled={busy || !canReadServices}
+          aria-describedby={canReadServices ? undefined : serviceUnavailableId}
+        >
           {translate(messages, 'pricing.rule.submit')}
         </button>
       </div>

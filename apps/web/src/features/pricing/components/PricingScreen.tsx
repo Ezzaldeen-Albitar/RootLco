@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useId, useMemo, useRef, useState } from 'react';
 
 import { DataTable, type Column } from '@/components/data-table/DataTable';
 import { INITIAL_REQUEST } from '@/components/data-table/table-state';
@@ -332,6 +332,7 @@ export function PriceLookupPanel({
   readonly canReadServices: boolean;
 }) {
   const [serviceId, setServiceId] = useState('');
+  const serviceUnavailableId = useId();
   /*
    * The branch starts at the one the operator is working in.
    *
@@ -379,7 +380,8 @@ export function PriceLookupPanel({
   const submit = async () => {
     const found: Record<string, string> = {};
     const service = serviceId.trim();
-    if (!UUID.test(service)) found['serviceId'] = 'pricing.common.idFormat';
+    if (service.length === 0) found['serviceId'] = 'pricing.picker.serviceRequired';
+    else if (!UUID.test(service)) found['serviceId'] = 'pricing.common.idFormat';
     const companyId = pair.companyId.trim();
     const branchId = pair.branchId.trim();
     // Chosen from the platform's own named list, so the only rule left is that
@@ -439,6 +441,7 @@ export function PriceLookupPanel({
             value={serviceId}
             onChange={setServiceId}
             error={errorFor('serviceId')}
+            unavailableId={serviceUnavailableId}
           />
         </div>
         <BranchPairPicker
@@ -473,7 +476,8 @@ export function PriceLookupPanel({
           <button
             type="submit"
             className={PRIMARY_BUTTON}
-            disabled={busy || !canNameBranch(branches)}
+            disabled={busy || !canNameBranch(branches) || !canReadServices}
+            aria-describedby={canReadServices ? undefined : serviceUnavailableId}
           >
             {translate(messages, 'pricing.lookup.submit')}
           </button>

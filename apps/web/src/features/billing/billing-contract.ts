@@ -74,6 +74,8 @@ export const BILLING_PERMISSIONS = {
   workOrderRead: 'wo.work_order.read',
   /** Credit notes — both reads and the approval declare it (DEF-T-07). */
   creditManage: 'sal.credit.manage',
+  /** A different payer is FOUND among customers, which `crm.customer-search` answers. */
+  customerRead: 'crm.customer.read',
 } as const;
 
 /** `ck_invoices_status`, mirrored. `credited` is admitted by the guard and unreachable today. */
@@ -127,6 +129,30 @@ export interface Invoice {
   readonly recordVersion: number;
   readonly totals: InvoiceTotals | null;
 }
+
+/** Who an invoice bills, by name — `InvoicePayerView`; every field `null` when the payer is not visible. */
+export interface InvoicePayer {
+  readonly displayName: string | null;
+  readonly displayNumber: string | null;
+  readonly partyType: string | null;
+}
+
+/**
+ * One row of `sal.invoice-list` — `InvoiceListEntryView` (Owner directive,
+ * `P1-32-PRE-OD-UX`).
+ *
+ * `outstanding` is `null` whenever the balance cannot be believed for this
+ * caller — an issued invoice read without `sal.finance.view` — and is never a
+ * zero standing in for "not shown".
+ */
+export interface InvoiceListEntry extends Invoice {
+  readonly payer: InvoicePayer;
+  readonly outstanding: MoneyView | null;
+}
+
+/** The shortest and longest box `sal.invoice-list` accepts, mirrored. */
+export const MIN_INVOICE_SEARCH = 2;
+export const MAX_INVOICE_SEARCH = 80;
 
 /** A line's money — `InvoiceLineMoneyView`; `null` without `sal.finance.view`. */
 export interface InvoiceLineMoney {
