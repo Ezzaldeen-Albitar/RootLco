@@ -9,6 +9,7 @@ import {
   useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
   type ReactNode,
 } from 'react';
 import { ConfirmDialog } from '@/components/overlays/Overlays';
@@ -64,6 +65,11 @@ import {
  * that form's write. Screens declare their unsaved work with `useUnsavedGuard`,
  * and a switch with any guard dirty asks first. Nothing is discarded without an
  * answer, and nothing is switched behind the operator's back.
+ *
+ * A change another tab makes while work is unsaved here is held the same way
+ * (see `held`). "Stay" is this tab's answer for as long as the page lives and is
+ * not written anywhere: a reload starts from the remembered branch — the other
+ * tab's — and the header shows that branch, which is the truth after a reload.
  */
 
 export type WorkingContextSelection =
@@ -224,6 +230,11 @@ function deriveSelection(
   return { companyId: match.companyId, branchId: match.id, allBranches: false };
 }
 
+/** Nothing to subscribe to: whether this is the browser never changes once it is. */
+const noSubscription = () => () => undefined;
+const browserSnapshot = () => true;
+const serverSnapshot = () => false;
+
 /** One string per effective selection: none, every branch, or one branch. */
 function keyOf(selection: WorkingContextSelection | null): string {
   if (selection === null) return '';
@@ -282,14 +293,30 @@ export function WorkingContextProvider({
    * `seenStored` is the stored value this tab last rendered with. `apply`
    * advances it together with its own write, so the only difference left for
    * the render below to find is a write this tab did not make.
+   *
+   * Hydration is not such a write. A reload renders with the server's snapshot
+   * — nothing stored, because storage does not exist there — and the remembered
+   * value arrives on the first render after hydration. Taken as a change, a
+   * screen already holding unsaved work by then would hold "nothing chosen" and
+   * report a change from another tab that never happened. So the first value
+   * read in the browser is where this tab STARTS, not something it was told:
+   * `inBrowser` is false exactly while the server snapshot is in use, and the
+   * render that turns it true adopts `stored` without comparing it.
    */
+  const inBrowser = useSyncExternalStore(noSubscription, browserSnapshot, serverSnapshot);
   const [seenStored, setSeenStored] = useState<string | null>(stored);
+  const [baselined, setBaselined] = useState(inBrowser);
   const [held, setHeld] = useState<{ readonly value: string | null } | null>(null);
   /** The outside value the operator chose to stay against — asked about once. */
   const [declined, setDeclined] = useState<{ readonly value: string | null } | null>(null);
 
   let heldNow = held;
-  if (stored !== seenStored) {
+  if (!baselined) {
+    if (inBrowser) {
+      setBaselined(true);
+      setSeenStored(stored);
+    }
+  } else if (stored !== seenStored) {
     setSeenStored(stored);
     const anyDirty = Array.from(guards).some((guard) => guard.dirty);
     if (heldNow === null) {
@@ -297,8 +324,11 @@ export function WorkingContextProvider({
       const after = keyOf(deriveSelection(status, branches, usable ? stored : null));
       if (anyDirty && before !== after) heldNow = { value: seenStored };
     } else if (stored === heldNow.value || !anyDirty) {
-      // The other tab came back to this one's branch, or the work was saved
-      // since: nothing is at stake any more, so the tabs agree again.
+      // The other tab came back to this one's branch, or the work here was
+      // saved or cleared since: nothing is at stake any more, so this change is
+      // followed like any other and the tabs agree again. Saving alone does not
+      // move this tab — it waits for the other tab's next change, because a
+      // switch at the moment of saving would be one nobody asked for.
       heldNow = null;
     }
     if (heldNow !== held) {

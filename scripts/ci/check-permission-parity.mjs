@@ -434,6 +434,22 @@ export function navigationPermissions(sourceFile) {
   const malformed = [];
   const isLiteral = (node) => ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node);
   const visit = (node) => {
+    /*
+     * The shorthand form — `{ permission }`, `{ alsoRequires }` — names a
+     * variable, never a literal, so it is exactly as unreadable as
+     * `{ permission: code }`. It is a different node kind from a property
+     * assignment, and the checks below would pass over it without a word: it is
+     * reported as malformed rather than skipped (route sweep B3 review).
+     */
+    if (
+      ts.isShorthandPropertyAssignment(node) &&
+      (node.name.text === 'permission' || node.name.text === 'alsoRequires')
+    ) {
+      malformed.push({
+        reason: `a navigation entry declares ${node.name.text} in shorthand, which this gate cannot read statically`,
+        node,
+      });
+    }
     if (
       ts.isPropertyAssignment(node) &&
       (ts.isIdentifier(node.name) || ts.isStringLiteral(node.name)) &&

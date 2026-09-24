@@ -295,6 +295,41 @@ describe('the navigation parser reads the permission property, not the translati
     expect(list.malformed).toHaveLength(1);
   });
 
+  it('RED: the shorthand { alsoRequires } and { permission } are MALFORMED, not skipped', () => {
+    // A shorthand property names a variable, so the gate can read neither the
+    // code nor the list — and it is a different node kind from `name: value`,
+    // which is why it used to pass without a word.
+    const also = navigationPermissions(
+      parseModule(
+        "const alsoRequires = ['tech.technician.read'];\n" +
+          "export const N = [{ permission: 'wo.work_order.read', alsoRequires }];"
+      )!
+    );
+    expect(also.malformed).toHaveLength(1);
+    expect(also.malformed[0]?.reason).toContain('alsoRequires');
+    expect(also.references.map((r) => r.code)).toEqual(['wo.work_order.read']);
+
+    const permission = navigationPermissions(
+      parseModule("const permission = 'wo.work_order.read';\nexport const N = [{ permission }];")!
+    );
+    expect(permission.malformed).toHaveLength(1);
+    expect(permission.malformed[0]?.reason).toContain('permission');
+    expect(permission.references).toEqual([]);
+  });
+
+  it('RED: a shorthand navigation entry fails the whole check', () => {
+    const result = harness({
+      route: operation("['wo.work_order.read']"),
+      navigation:
+        "const alsoRequires = ['tech.technician.read'];\n" +
+        "export const N = [{ permission: 'wo.work_order.read', alsoRequires }];",
+    });
+    const violation = result.violations.find((v) => v.startsWith('MALFORMED:'));
+    expect(violation).toBeDefined();
+    expect(violation).toContain('alsoRequires');
+    expect(violation).toContain('shorthand');
+  });
+
   it('reads the real navigation file and finds the entries the gate depends on', () => {
     const parsed = parseModule(readFileSync(join(ROOT, NAVIGATION_PATH), 'utf8'));
     expect(parsed, 'the real navigation file does not parse').not.toBeNull();

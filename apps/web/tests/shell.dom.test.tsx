@@ -1257,6 +1257,42 @@ describe('the remembered branch, revoked and re-read', () => {
     expect(onChange).toHaveBeenCalledTimes(1);
   });
 
+  it('takes a restored branch as where this tab starts, even over unsaved work', async () => {
+    /*
+     * The same reload, with a screen that already holds unsaved work when the
+     * remembered branch arrives. The first value read in the browser is where
+     * this tab starts: it is not another tab's change, so nothing is held and
+     * nobody is told a change happened (route sweep B3 review).
+     */
+    const onContext = vi.fn();
+    const onChange = vi.fn();
+    const tree = (
+      <WorkingContextProvider snapshot={wcSnapshot([MAIN, SECOND])} messages={messages}>
+        <Probe onContext={onContext} />
+        <ChangeProbe onChange={onChange} />
+        <DirtyScreen dirty />
+        <SelectionText />
+      </WorkingContextProvider>
+    );
+    const container = document.createElement('div');
+    container.innerHTML = renderToString(tree);
+    document.body.appendChild(container);
+    expect(container).toHaveTextContent('selection:none');
+
+    window.localStorage.setItem(WC_KEY, 'b-2');
+    renderLtr(tree, { container, hydrate: true });
+
+    const seen = () => onContext.mock.calls[onContext.mock.calls.length - 1]?.[0] as WorkingContext;
+    await waitFor(() => expect(seen().selection).toMatchObject({ branchId: 'b-2' }));
+    expect(container).toHaveTextContent('selection:b-2');
+    expect(screen.queryByTestId('working-context-cross-tab')).toBeNull();
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+    expect(onChange).toHaveBeenCalledTimes(1);
+    expect(onChange).toHaveBeenLastCalledWith('b-2');
+    // Still what storage holds: nothing was written back over it.
+    expect(window.localStorage.getItem(WC_KEY)).toBe('b-2');
+  });
+
   it('moves the version when a reload restores the remembered branch after hydration', async () => {
     /*
      * A reload renders on the server with nothing chosen — storage does not
@@ -1376,13 +1412,28 @@ describe('a branch change made in ANOTHER TAB does not discard unsaved work', ()
     );
   }
 
-  function renderWith(extra: ReactNode, locale: 'en' | 'ar' = 'en') {
+  /** A screen whose unsaved work the operator can save, which clears its guard. */
+  function SaveableScreen() {
+    const [dirty, setDirty] = useState(true);
+    useUnsavedGuard(dirty);
+    return (
+      <button type="button" onClick={() => setDirty(false)}>
+        save the work
+      </button>
+    );
+  }
+
+  function renderWith(
+    extra: ReactNode,
+    locale: 'en' | 'ar' = 'en',
+    branches: readonly ReturnType<typeof wcBranch>[] = [MAIN, SECOND]
+  ) {
     const onContext = vi.fn();
     const onChange = vi.fn();
     const render = locale === 'ar' ? renderRtl : renderLtr;
     render(
       <WorkingContextProvider
-        snapshot={wcSnapshot([MAIN, SECOND])}
+        snapshot={wcSnapshot(branches)}
         messages={locale === 'ar' ? arabic : messages}
       >
         <Probe onContext={onContext} />
@@ -1489,6 +1540,63 @@ describe('a branch change made in ANOTHER TAB does not discard unsaved work', ()
     expect(seen().selection).toMatchObject({ branchId: 'b-1' });
     expect(onChange).not.toHaveBeenCalled();
     expect(screen.getByLabelText(messages['crm.customers.notes.body'])).toHaveValue('a note');
+  });
+
+  it('asks again when, after "Stay", the other tab makes a DIFFERENT change', async () => {
+    /*
+     * "Stay" answers the change that was offered, and only that one. A later
+     * change to another branch is a new question while the work is still
+     * unsaved, and it is asked; until it is answered this tab stays put.
+     */
+    const user = userEvent.setup();
+    window.localStorage.setItem(WC_KEY, 'b-1');
+    const { seen, onChange } = renderWith(<DirtyScreen dirty />, 'en', [MAIN, SECOND, COAST]);
+    const before = seen();
+    otherTabChooses('b-2');
+    const first = await screen.findByTestId('working-context-cross-tab');
+    await user.click(within(first).getByRole('button', { name: 'Stay on Main workshop' }));
+    expect(screen.queryByTestId('working-context-cross-tab')).toBeNull();
+
+    otherTabChooses('b-3');
+
+    const again = await screen.findByTestId('working-context-cross-tab');
+    expect(again).toHaveTextContent('Another tab is now working in Coastal workshop.');
+    expect(within(again).getByRole('button', { name: 'Stay on Main workshop' })).toBeVisible();
+    expect(seen().selection).toMatchObject({ branchId: 'b-1' });
+    expect(seen().version).toBe(before.version);
+    expect(before.signal.aborted).toBe(false);
+    expect(onChange).not.toHaveBeenCalled();
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+  });
+
+  it('follows the next change at once after the work here was saved, and not before', async () => {
+    /*
+     * The hold exists only while something is at stake. Once the work is saved
+     * the next change from the other tab is followed without a word, like any
+     * other. Saving alone does not move this tab: a switch at that moment would
+     * be one nobody asked for, so it waits for the other tab's next change.
+     */
+    const user = userEvent.setup();
+    window.localStorage.setItem(WC_KEY, 'b-1');
+    const { seen, onChange } = renderWith(<SaveableScreen />, 'en', [MAIN, SECOND, COAST]);
+    const before = seen();
+    otherTabChooses('b-2');
+    const notice = await screen.findByTestId('working-context-cross-tab');
+    await user.click(within(notice).getByRole('button', { name: 'Stay on Main workshop' }));
+
+    await user.click(screen.getByRole('button', { name: 'save the work' }));
+    expect(seen().selection).toMatchObject({ branchId: 'b-1' });
+    expect(onChange).not.toHaveBeenCalled();
+
+    otherTabChooses('b-3');
+
+    await waitFor(() => expect(seen().selection).toMatchObject({ branchId: 'b-3' }));
+    expect(seen().version).toBe(before.version + 1);
+    expect(before.signal.aborted).toBe(true);
+    expect(onChange).toHaveBeenCalledTimes(1);
+    expect(onChange).toHaveBeenLastCalledWith('b-3');
+    expect(screen.queryByTestId('working-context-cross-tab')).toBeNull();
+    expect(screen.queryByRole('alertdialog')).toBeNull();
   });
 
   it('follows the other tab at once when nothing on screen is unsaved', async () => {

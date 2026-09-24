@@ -159,6 +159,12 @@ export function ReportOverviewScreen({
    * figures are not interface preferences, and they are gone when the page is.
    */
   const [recent] = useState<RecentAnswers>(() => new Map());
+  /*
+   * When the server said to wait, for this visit only — see `RUN_BUCKET`. Held
+   * beside the answers so a switch of branch or period, which mounts a new set
+   * of results, still knows the wait an earlier set was told.
+   */
+  const [waits] = useState<RunWaits>(() => new Map());
   const { version } = useWorkingContext();
   useWorkingContextChange(() => {
     if (fixedBranchId === null) setChosen(null);
@@ -222,6 +228,15 @@ export function ReportOverviewScreen({
     scopeOptions.data,
     fixedBranch === null ? {} : { branchId: fixedBranch.id }
   );
+  /*
+   * What the caller's catalogue says about the four reports, as one value. An
+   * answer is only ever shown again under the catalogue it was read under: a
+   * refresh after a grant was withdrawn publishes a different catalogue, and the
+   * figures read before it must not outlive it (route sweep B3 review).
+   */
+  const catalogueKey = JSON.stringify(
+    OVERVIEW_SECTIONS.map((section) => definitionFor(catalogue.data.items, section.reportCode))
+  );
 
   return (
     <div className="flex flex-col gap-4">
@@ -253,12 +268,14 @@ export function ReportOverviewScreen({
         // and a period are named, the component that would issue the four reads
         // does not exist.
         <OverviewResults
-          key={JSON.stringify(submitted)}
+          key={`${catalogueKey}:${JSON.stringify(submitted)}`}
           locale={locale}
           messages={messages}
           definitions={catalogue.data.items}
+          catalogueKey={catalogueKey}
           selection={submitted}
           recent={recent}
+          waits={waits}
           companyName={companies.find((c) => c.id === submitted.companyId)?.legalName ?? null}
           branchName={reachable.find((b) => b.id === submitted.branchId)?.name ?? null}
         />
@@ -279,18 +296,75 @@ type RecentAnswers = Map<string, { readonly at: number; readonly outcomes: Outco
 const OVERVIEW_REUSE_MS = 60_000;
 
 /**
+ * The one limit every run on this page counts against.
+ *
+ * The server limits the run under its `expensive-read` policy, whose bucket is
+ * keyed on the operation, the tenant and the user
+ * (`apps/api/src/server/http/rate-limit.ts`). All four reports, every branch and
+ * every period are the same run operation, and the tenant and the user are this
+ * session's own — so a wait the server advises holds for every run this page
+ * could send, not only for the selection that was told it. One entry per page
+ * visit, under this name.
+ */
+const RUN_BUCKET = 'reports.run';
+
+/** When the runs may be sent again, as the server advised, for this page visit. */
+type RunWaits = Map<typeof RUN_BUCKET, number>;
+
+/**
  * Whether a set of answers is worth showing again.
  *
  * Only answers that are facts about the selection: figures, a refusal, a
- * report the platform cannot run. A failure that says "try again" — a
- * throttled, unavailable or failed run — is not kept, so coming back is the
- * retry it asked for.
+ * report that is not there, a report the platform cannot run. An answer that
+ * says "try again" — a throttled, unavailable or failed run — is not kept, and
+ * neither is an expired session, whose answer is about the sign-in rather than
+ * the report. Coming back is the retry each of them asked for, once any wait
+ * the server advised has passed (`RUN_BUCKET`).
  */
 function reusable(outcomes: Outcomes): boolean {
   return Object.values(outcomes).every(
     (outcome) =>
-      outcome === 'unreachable' || (outcome.status !== 'unavailable' && outcome.status !== 'error')
+      outcome === 'unreachable' ||
+      outcome.status === 'ok' ||
+      outcome.status === 'denied' ||
+      outcome.status === 'not-found'
   );
+}
+
+/** The longest wait any throttled answer advised, in seconds, or nothing. */
+function advisedWait(outcomes: Outcomes): number | null {
+  let longest: number | null = null;
+  for (const outcome of Object.values(outcomes)) {
+    if (outcome === 'unreachable' || !('throttled' in outcome)) continue;
+    const seconds = outcome.retryAfterSeconds;
+    if (seconds !== null && (longest === null || seconds > longest)) longest = seconds;
+  }
+  return longest;
+}
+
+/**
+ * What the sections say while the server's wait is still running: each section
+ * that would be read is throttled, with the seconds that are left. Nothing is
+ * sent to learn it.
+ */
+function waitingOutcomes(
+  definitions: readonly ReportDefinition[],
+  until: number,
+  now: number
+): Outcomes {
+  const seconds = Math.ceil((until - now) / 1000);
+  const outcomes: Record<string, SectionOutcome> = {};
+  for (const section of OVERVIEW_SECTIONS) {
+    const definition = definitionFor(definitions, section.reportCode);
+    if (definition === null || !definition.executable) continue;
+    outcomes[section.reportCode] = {
+      status: 'unavailable',
+      correlationId: null,
+      throttled: true,
+      retryAfterSeconds: seconds,
+    };
+  }
+  return outcomes;
 }
 
 /** The answers read for this selection within the reuse window, if any. */
@@ -328,34 +402,76 @@ function OverviewResults({
   locale,
   messages,
   definitions,
+  catalogueKey,
   selection,
   recent,
+  waits,
   companyName,
   branchName,
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
   readonly definitions: readonly ReportDefinition[];
+  /** The catalogue the answers are read under — part of the reuse key. */
+  readonly catalogueKey: string;
   readonly selection: ReportScopeSelection;
   readonly recent: RecentAnswers;
+  readonly waits: RunWaits;
   readonly companyName: string | null;
   readonly branchName: string | null;
 }) {
   const { companyId, branchId, from, to } = selection;
-  const recentKey = JSON.stringify({ companyId, branchId, from, to });
+  const recentKey = JSON.stringify({ catalogueKey, companyId, branchId, from, to });
   // Looked up once, when this selection's results mount — which is exactly when
   // the four reads would otherwise be issued.
   const [reused] = useState<Outcomes | null>(() => recentFor(recent, recentKey, Date.now()));
-  const [outcomes, setOutcomes] = useState<Outcomes | null>(reused);
+  /*
+   * Mounted inside a wait the server advised: the sections say so from the
+   * start, and the effect below sends nothing until it has passed.
+   */
+  const [outcomes, setOutcomes] = useState<Outcomes | null>(() => {
+    if (reused !== null) return reused;
+    const now = Date.now();
+    const until = waits.get(RUN_BUCKET) ?? 0;
+    return until > now ? waitingOutcomes(definitions, until, now) : null;
+  });
+  /** Moves when a wait the server advised has passed, which is the retry. */
+  const [attempt, setAttempt] = useState(0);
 
   /*
    * Keyed on the selection's VALUES, not on the object. The object is stable
    * above, and this is the second half of the same guarantee: nothing but a
-   * different branch or period issues the four reads again.
+   * different branch or period — or the end of a wait the server advised —
+   * issues the four reads again.
    */
   useEffect(() => {
     if (reused !== null) return;
     let live = true;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const retryAt = (until: number) => {
+      timer = setTimeout(
+        () => {
+          if (live) setAttempt((previous) => previous + 1);
+        },
+        Math.max(0, until - Date.now())
+      );
+    };
+
+    /*
+     * The server's wait is enforced here, not only reported. Every run on this
+     * page counts against the same limit (`RUN_BUCKET`), so a switch to another
+     * branch or period — or back — inside the wait sends nothing: the sections
+     * say how long is left, and the reads go once it has passed.
+     */
+    const until = waits.get(RUN_BUCKET) ?? 0;
+    if (until > Date.now()) {
+      retryAt(until);
+      return () => {
+        live = false;
+        clearTimeout(timer);
+      };
+    }
+
     const runnable = OVERVIEW_SECTIONS.filter((section) => {
       const definition = definitionFor(definitions, section.reportCode);
       return definition !== null && definition.executable;
@@ -395,15 +511,22 @@ function OverviewResults({
       // Remembered even when this view has since moved on: the reads were
       // spent, and a switch back within the minute should not spend them again.
       if (reusable(next)) recent.set(recentKey, { at: Date.now(), outcomes: next });
+      // Recorded even when this view has moved on, for the same reason: the
+      // wait is the server's, and it holds for whatever this page sends next.
+      const wait = advisedWait(next);
+      const waitUntil = wait === null ? null : Date.now() + wait * 1000;
+      if (waitUntil !== null) waits.set(RUN_BUCKET, waitUntil);
       if (!live) return;
       setOutcomes(next);
+      if (waitUntil !== null) retryAt(waitUntil);
     };
 
     void read();
     return () => {
       live = false;
+      clearTimeout(timer);
     };
-  }, [definitions, companyId, branchId, from, to, reused, recent, recentKey]);
+  }, [definitions, companyId, branchId, from, to, reused, recent, recentKey, waits, attempt]);
 
   if (outcomes === null) return <ReportLoading messages={messages} />;
 
