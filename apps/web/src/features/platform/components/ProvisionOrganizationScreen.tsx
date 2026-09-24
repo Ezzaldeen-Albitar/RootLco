@@ -13,6 +13,7 @@ import { IDLE } from '@/lib/forms/action-result';
 import { provisionOrganizationAction } from '../actions';
 import type { ProvisionState, SubscriptionPlan } from '../types';
 import { Section } from './ui';
+import { useActionRefusal } from '@/lib/forms/use-action-refusal';
 
 /**
  * Provisioning a new organisation (P1-32-PRE-065).
@@ -54,15 +55,31 @@ export function ProvisionOrganizationScreen({
   }, [state, messages, router, locale]);
 
   const attempt = state.attempt ?? 0;
-  const retain = (name: string) => (event: ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
+  // Question f: the cursor goes to the refused field, and its complaint goes
+  // once the operator edits it (route sweep B3).
+  const {
+    edited: refusalEdited,
+    errorKey: refusalErrorKey,
+    formRef: refusalFormRef,
+  } = useActionRefusal(state);
+  const retain = (name: string) => (event: ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+    refusalEdited(name);
     setDraft((current) => ({ ...current, [name]: event.target.value }));
-  const fieldError = (name: string) =>
-    state.fieldErrors?.[name] ? t(state.fieldErrors[name] as string) : undefined;
+  };
+  const fieldError = (name: string) => {
+    const key = refusalErrorKey(name);
+    return key ? t(key) : undefined;
+  };
 
   const activePlans = (plans ?? []).filter((plan) => plan.status === 'active');
 
   return (
-    <form action={formAction} noValidate className="flex max-w-content flex-col gap-4">
+    <form
+      ref={refusalFormRef}
+      action={formAction}
+      noValidate
+      className="flex max-w-content flex-col gap-4"
+    >
       <input type="hidden" name="locale" value={locale} />
       {state.status === 'success' ? (
         <p

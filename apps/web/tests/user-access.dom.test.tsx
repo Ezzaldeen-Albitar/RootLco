@@ -37,6 +37,10 @@ const AR = (key: string): string => {
 const send = vi.fn();
 const get = vi.fn();
 vi.mock('@/lib/api/server-client', () => ({ authorizedClient: async () => ({ send, get }) }));
+let SESSION_PERMISSIONS: readonly string[] = [];
+vi.mock('@/features/authentication/api/session', () => ({
+  requireSession: async () => ({ permissions: SESSION_PERMISSIONS, email: 'admin@test.local' }),
+}));
 const refresh = vi.fn();
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn(), refresh }),
@@ -45,6 +49,8 @@ vi.mock('next/navigation', () => ({
   },
 }));
 
+const { PermissionsScreen } =
+  await import('@/features/administration/access/components/PermissionsScreen');
 const { UserAccessScreen } =
   await import('@/features/administration/users/components/UserAccessScreen');
 
@@ -619,5 +625,182 @@ describe('an approval limit’s effective window', () => {
     expect(
       within(dialog).getByLabelText(new RegExp(`^${EN('approvalLimits.field.limitType')}`))
     ).toHaveValue('discount');
+  });
+});
+
+describe('an approval limit’s person is found by name (route sweep B3)', () => {
+  /*
+   * The dialog took a pasted account reference for "Person". It now finds the
+   * person through `iam.user-list` for a caller holding `iam.user.read`; a
+   * caller without it keeps the labelled reference box, because creating a
+   * limit does not need the user read.
+   */
+  const PERSON = {
+    id: '80000000-0000-4000-8000-000000000008',
+    email: 'rana@example.test',
+    displayName: 'Rana Saleh',
+    status: 'active',
+    mfaRequired: false,
+    createdAt: '2026-09-01T00:00:00.000Z',
+    recordVersion: 1,
+  };
+  const ROLE_ROW = {
+    id: ROLE.id,
+    roleCode: ROLE.roleCode,
+    name: ROLE.name,
+    description: null,
+    isSystem: false,
+    recordVersion: 1,
+  };
+  const label = (key: string) => new RegExp(`^${EN(key)}`);
+
+  function answerReads() {
+    get.mockImplementation(async (path: string) =>
+      path.startsWith('/api/v1/iam/users')
+        ? {
+            ok: true,
+            status: 200,
+            data: { items: [PERSON], nextCursor: null, hasMore: false },
+            correlationId: 'corr-users',
+          }
+        : { ok: true, status: 200, data: { items: [], nextCursor: null }, correlationId: 'c' }
+    );
+  }
+
+  async function openAsPerson(canReadUsers: boolean) {
+    const user = userEvent.setup();
+    renderLtr(
+      inBranch(
+        <ApprovalLimitsScreen
+          locale="en"
+          messages={en}
+          roles={[ROLE_ROW]}
+          canManage
+          canReadUsers={canReadUsers}
+        />
+      )
+    );
+    await user.click(await screen.findByRole('button', { name: EN('approvalLimits.create') }));
+    const dialog = await screen.findByRole('dialog');
+    await user.selectOptions(
+      within(dialog).getByLabelText(label('approvalLimits.field.subject')),
+      'user'
+    );
+    return { user, dialog };
+  }
+
+  async function fillTheRest(user: ReturnType<typeof userEvent.setup>, dialog: HTMLElement) {
+    await user.type(
+      within(dialog).getByLabelText(label('approvalLimits.field.limitType')),
+      'discount'
+    );
+    await user.type(
+      within(dialog).getByLabelText(label('approvalLimits.field.amount')),
+      '1500.0000'
+    );
+    await user.type(within(dialog).getByLabelText(label('approvalLimits.field.currency')), 'JOD');
+    await user.type(
+      within(dialog).getByLabelText(label('approvalLimits.field.effectiveFrom')),
+      '2026-10-01'
+    );
+  }
+
+  it('with the user read, finds the person by name and sends only their account', async () => {
+    answerReads();
+    send.mockResolvedValue({ ok: true, status: 201, data: { id: 'x' }, correlationId: 'c' });
+    const { user, dialog } = await openAsPerson(true);
+    expect(within(dialog).queryByTestId('approval-limit-person-reference')).toBeNull();
+    await fillTheRest(user, dialog);
+
+    // Nothing chosen: refused on the person, not on "Applies to", and nothing is sent.
+    await user.click(within(dialog).getByRole('button', { name: EN('admin.create') }));
+    expect(await within(dialog).findByText(EN('approvalLimits.error.person'))).toBeVisible();
+    expect(send).not.toHaveBeenCalled();
+
+    await user.type(
+      within(dialog).getByLabelText(EN('approvalLimits.field.person')),
+      'Rana{Enter}'
+    );
+    await user.click(await within(dialog).findByRole('button', { name: /Rana Saleh/ }));
+    expect(get.mock.calls.some(([path]) => String(path).includes('search=Rana'))).toBe(true);
+    await user.click(within(dialog).getByRole('button', { name: EN('admin.create') }));
+    await waitFor(() => expect(send).toHaveBeenCalledTimes(1));
+    const [, path, body] = send.mock.calls[0] as [string, string, Record<string, unknown>];
+    expect(path).toBe('/api/v1/iam/approval-limits');
+    expect(body['userId']).toBe(PERSON.id);
+    expect(body['roleId']).toBeNull();
+  });
+
+  it('without the user read, keeps the labelled reference box and offers no search', async () => {
+    answerReads();
+    const { dialog } = await openAsPerson(false);
+    const box = within(dialog).getByTestId('approval-limit-person-reference');
+    expect(box).toHaveAccessibleDescription(EN('approvalLimits.field.userIdHelp'));
+    expect(within(dialog).queryByRole('searchbox')).toBeNull();
+    expect(get.mock.calls.some(([path]) => String(path).startsWith('/api/v1/iam/users'))).toBe(
+      false
+    );
+  });
+
+  it('the approval-limits page offers the search only to a caller holding the user read', async () => {
+    const ApprovalLimitsPage = (
+      await import('@/app/[locale]/(dashboard)/administration/approval-limits/page')
+    ).default as unknown as (args: {
+      params: Promise<Record<string, string>>;
+    }) => Promise<React.ReactNode>;
+    answerReads();
+    for (const [permissions, searchable] of [
+      [['iam.approval.manage', 'iam.user.read'], true],
+      [['iam.approval.manage'], false],
+    ] as const) {
+      SESSION_PERMISSIONS = permissions;
+      const view = renderLtr(
+        inBranch((await ApprovalLimitsPage({ params: Promise.resolve({ locale: 'en' }) })) as never)
+      );
+      const user = userEvent.setup();
+      await user.click(await screen.findByRole('button', { name: EN('approvalLimits.create') }));
+      const dialog = await screen.findByRole('dialog');
+      await user.selectOptions(
+        within(dialog).getByLabelText(label('approvalLimits.field.subject')),
+        'user'
+      );
+      expect(within(dialog).queryByTestId('approval-limit-person-picker') !== null).toBe(
+        searchable
+      );
+      expect(within(dialog).queryByTestId('approval-limit-person-reference') !== null).toBe(
+        !searchable
+      );
+      view.unmount();
+    }
+  });
+});
+
+describe('the permission catalogue says when it could not be read (route sweep B3)', () => {
+  it('draws a refused catalogue as a refusal with its reference, never as a role with no permissions', async () => {
+    get.mockResolvedValue({
+      ok: false,
+      kind: 'forbidden',
+      status: 403,
+      correlationId: 'corr-perm',
+    });
+    renderLtr(
+      <PermissionsScreen
+        messages={en}
+        roles={[
+          {
+            id: ROLE.id,
+            roleCode: ROLE.roleCode,
+            name: ROLE.name,
+            description: null,
+            isSystem: false,
+            recordVersion: 1,
+          },
+        ]}
+        canManage
+      />
+    );
+    expect(await screen.findByText(EN('state.denied.title'))).toBeVisible();
+    expect(screen.getByText('corr-perm')).toBeVisible();
+    expect(screen.queryByRole('table')).toBeNull();
   });
 });

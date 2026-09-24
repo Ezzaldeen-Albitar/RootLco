@@ -114,8 +114,10 @@ export function SearchPicker<Row extends { readonly id: string }>({
   const setTerm = (text: string) => setTyped({ text, version: context.version });
 
   // A chosen record in a write form is work the operator would lose: a branch
-  // switch asks first. A filter's choice is not.
-  useUnsavedGuard(countsAsUnsaved && value !== null && value.id !== pristineId);
+  // switch asks first. A filter's choice is not. Putting back the record the
+  // form OPENED with — none chosen where it opened on one — is a change too,
+  // the rule `WorkOrderPicker` follows (route sweep B3).
+  useUnsavedGuard(countsAsUnsaved && (value?.id ?? null) !== pristineId);
 
   // Forget the choice and the term when the working context changes.
   useWorkingContextChange(() => {

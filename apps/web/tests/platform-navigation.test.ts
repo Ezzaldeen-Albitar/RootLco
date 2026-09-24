@@ -1,3 +1,5 @@
+import { readFileSync, readdirSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { NAVIGATION, flattenNavigation } from '@/config/navigation';
 import { PLATFORM_NAVIGATION } from '@/config/platform-navigation';
@@ -137,5 +139,46 @@ describe('console presentation rules', () => {
       expect(catalogue[key]).toBeTruthy();
     }
     expect(catalogue['platform.audit.error.window']).toContain('{days}');
+  });
+});
+
+describe('the console stays outside tenant context (route sweep B3)', () => {
+  /*
+   * A console operator has no working branch. The console layout passes the
+   * shell no working-context control, and nothing the console renders reads the
+   * working context or its branch directory — so no branch selector and no
+   * tenant's branch data can appear on a console screen.
+   *
+   * These two read the SOURCE, so they see a direct import only. The render-level
+   * proof is in `platform-console.dom.test.tsx`: every working-context hook
+   * throws there, and the console shell and each console screen render under it.
+   */
+  const SRC = join(__dirname, '..', 'src');
+  const read = (...parts: string[]) => readFileSync(join(SRC, ...parts), 'utf8');
+
+  it('mounts the shell with no working-context control, while the workspace mounts one', () => {
+    const consoleLayout = read('app', '[locale]', '(platform)', 'layout.tsx');
+    expect(consoleLayout).toContain('<AppShell');
+    expect(consoleLayout).not.toMatch(/workingContext=/);
+    expect(consoleLayout).not.toMatch(/working-context/);
+    // The contrast that makes the absence meaningful.
+    expect(read('app', '[locale]', '(dashboard)', 'layout.tsx')).toMatch(/workingContext=/);
+  });
+
+  it('holds no import of the working context anywhere in the console feature or its pages', () => {
+    const files: string[] = [];
+    const walk = (dir: string) => {
+      for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        const full = join(dir, entry.name);
+        if (entry.isDirectory()) walk(full);
+        else if (/\.(ts|tsx)$/.test(entry.name)) files.push(full);
+      }
+    };
+    walk(join(SRC, 'features', 'platform'));
+    walk(join(SRC, 'app', '[locale]', '(platform)'));
+    expect(files.length).toBeGreaterThan(10);
+    for (const file of files) {
+      expect(readFileSync(file, 'utf8'), file).not.toMatch(/features\/working-context/);
+    }
   });
 });

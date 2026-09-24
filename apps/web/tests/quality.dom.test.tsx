@@ -777,6 +777,12 @@ describe('the closure screen says why a command was refused', () => {
     expect(alert).toBeVisible();
     expect(who.getAttribute('aria-describedby') ?? '').toContain(alert.id);
     expect((who as HTMLInputElement).value).toBe('the-colleague-reference');
+    // The rework order is reached by a link in words, never by its bare reference
+    // (route sweep B3).
+    expect(
+      screen.getByRole('link', { name: t('quality.closure.openReworkOrder') })
+    ).toHaveAttribute('href', `/en/work-orders/${reworkLink.reworkWorkOrderId}`);
+    expect(screen.queryByText(reworkLink.reworkWorkOrderId)).toBeNull();
   });
 
   it('sends the origin chosen from the job picker, and the request is accepted', async () => {

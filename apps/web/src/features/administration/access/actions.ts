@@ -131,11 +131,27 @@ const limitSchema = z
     effectiveFrom: z.string().trim().regex(DATE, 'approvalLimits.error.date'),
     effectiveTo: z.string().trim().regex(DATE, 'approvalLimits.error.date').optional(),
   })
-  .refine(
-    (value) =>
-      value.subject === 'role' ? UUID.test(value.roleId ?? '') : UUID.test(value.userId ?? ''),
-    { path: ['subject'], message: 'approvalLimits.error.subject' }
-  );
+  /*
+   * The complaint lands on the control that holds the missing choice — the role
+   * select or the person — rather than on "Applies to", which was answered
+   * (route sweep B3: field-level errors).
+   */
+  .superRefine((value, context) => {
+    if (value.subject === 'role' && !UUID.test(value.roleId ?? '')) {
+      context.addIssue({
+        code: 'custom',
+        path: ['roleId'],
+        message: 'approvalLimits.error.role',
+      });
+    }
+    if (value.subject === 'user' && !UUID.test(value.userId ?? '')) {
+      context.addIssue({
+        code: 'custom',
+        path: ['userId'],
+        message: 'approvalLimits.error.person',
+      });
+    }
+  });
 
 export async function createApprovalLimitAction(
   previous: ActionState,

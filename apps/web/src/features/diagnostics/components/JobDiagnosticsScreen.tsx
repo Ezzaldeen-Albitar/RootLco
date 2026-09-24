@@ -70,6 +70,7 @@ import {
   type ReportHistory,
   type TemplateItem,
 } from '../diagnostics-contract';
+import { useHeldRefusal } from '@/lib/forms/use-local-refusal';
 
 const PRIMARY_BUTTON =
   'rounded-md bg-primary px-4 py-2 text-body font-medium text-on-primary transition-colors duration-fast ease-standard hover:bg-primary-hover disabled:opacity-60';
@@ -248,6 +249,12 @@ function StartReportForm({
    * picked while they pick again.
    */
   const [fieldErrors, setFieldErrors] = useState<Readonly<Record<string, string>>>({});
+  // Question f: the cursor goes to the first refused field, and a complaint
+  // goes once its field changes (route sweep B3).
+  const { errors: fieldErrorsRefusalErrors, formRef: fieldErrorsRefusalFormRef } = useHeldRefusal(
+    fieldErrors,
+    { templateVersionId }
+  );
   const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
@@ -281,6 +288,7 @@ function StartReportForm({
         </p>
       ) : (
         <form
+          ref={fieldErrorsRefusalFormRef}
           action={async () => {
             setPending(true);
             setProblem(null);
@@ -317,8 +325,8 @@ function StartReportForm({
             }))}
             placeholder={translate(messages, 'diagnostics.job.chooseTemplate')}
             error={
-              fieldErrors['templateVersionId']
-                ? translateDynamic(messages, fieldErrors['templateVersionId'])
+              fieldErrorsRefusalErrors['templateVersionId']
+                ? translateDynamic(messages, fieldErrorsRefusalErrors['templateVersionId'])
                 : undefined
             }
             required
@@ -1041,6 +1049,12 @@ function EvidencePanel({
   const [pending, setPending] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Readonly<Record<string, string>>>({});
+  // Question f: the cursor goes to the first refused field, and a complaint
+  // goes once its field changes (route sweep B3).
+  const { errors: fieldErrorsRefusalErrors, formRef: fieldErrorsRefusalFormRef } = useHeldRefusal(
+    fieldErrors,
+    { categoryCode, evidenceType, note }
+  );
   const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
@@ -1057,7 +1071,7 @@ function EvidencePanel({
 
   const category = categories?.find((each) => each.categoryCode === categoryCode);
   const errorFor = (name: string): string | undefined => {
-    const key = fieldErrors[name];
+    const key = fieldErrorsRefusalErrors[name];
     return key ? translateDynamic(messages, key) : undefined;
   };
 
@@ -1075,6 +1089,7 @@ function EvidencePanel({
           </p>
         ) : (
           <form
+            ref={fieldErrorsRefusalFormRef}
             action={async (formData: FormData) => {
               setPending(true);
               setProblem(null);

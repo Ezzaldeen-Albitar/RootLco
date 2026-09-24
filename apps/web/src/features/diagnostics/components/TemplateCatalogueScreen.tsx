@@ -22,6 +22,7 @@ import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic } from '@/i18n/get-messages';
 import { createTemplate, listDiagnosticTypes, listTemplates } from '../api';
 import type { DiagnosticType, InspectionTemplateListRow } from '../diagnostics-contract';
+import { useHeldRefusal } from '@/lib/forms/use-local-refusal';
 
 const PRIMARY_BUTTON =
   'rounded-md bg-primary px-4 py-2 text-body font-medium text-on-primary transition-colors duration-fast ease-standard hover:bg-primary-hover disabled:opacity-60';
@@ -219,9 +220,16 @@ function CreateTemplateForm({
    * is the value the operator chose, so a refused submit keeps their choice.
    */
   const [attempt, setAttempt] = useState(0);
+  // Question f: the cursor goes to the first refused field, and a complaint goes
+  // once its field changes (route sweep B3).
+  const { errors: refusalErrors, formRef: refusalFormRef } = useHeldRefusal(fieldErrors, {
+    code,
+    name,
+    diagnosticTypeId,
+  });
 
   const errorFor = (field: string): string | undefined => {
-    const key = fieldErrors[field];
+    const key = refusalErrors[field];
     return key ? translateDynamic(messages, key) : undefined;
   };
 
@@ -251,6 +259,7 @@ function CreateTemplateForm({
         />
       ) : (
         <form
+          ref={refusalFormRef}
           action={async () => {
             setPending(true);
             setProblem(null);

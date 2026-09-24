@@ -12,6 +12,9 @@ import { IDLE, type ActionState } from '@/lib/forms/action-result';
 import { FormFeedback } from '@/features/authentication/components/FormFeedback';
 import { SubmitButton } from '@/features/authentication/components/SubmitButton';
 import { ReadBoundary } from '../../shared/components/ScreenStates';
+import { useWorkingBranch } from '../../shared/use-working-branch';
+import { useActionRefusal } from '@/lib/forms/use-action-refusal';
+import { useUnsavedGuard } from '@/features/working-context/WorkingContextProvider';
 import {
   BranchPicker,
   PRIMARY_BUTTON,
@@ -61,6 +64,9 @@ export function DepartmentsScreen({
   const [outcome, setOutcome] = useState<ActionState>(IDLE);
   const [loading, startLoading] = useTransition();
   const [running, startRunning] = useTransition();
+  // Bumped when the register follows the working branch, so the uncontrolled
+  // branch control is re-seeded to show the branch now being read.
+  const [followed, setFollowed] = useState(0);
 
   const reload = (chosen: BranchView | null) => {
     setBranch(chosen);
@@ -83,6 +89,18 @@ export function DepartmentsScreen({
     });
   };
 
+  /*
+   * On arrival, and on every change of the working branch, the register reads
+   * the branch the header names (route sweep B3). A dialog open over the
+   * previous branch is closed rather than left to write against the new one.
+   */
+  useWorkingBranch(branches.status === 'ok' ? branches.data : null, (row) => {
+    setCreating(false);
+    setPending(null);
+    setFollowed((count) => count + 1);
+    reload(row);
+  });
+
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-end justify-between gap-3">
@@ -90,6 +108,7 @@ export function DepartmentsScreen({
           <ReadBoundary state={branches} messages={messages}>
             {(rows) => (
               <BranchPicker
+                key={followed}
                 messages={messages}
                 branches={rows}
                 companies={companies}
@@ -255,6 +274,11 @@ export function DepartmentsScreen({
   );
 }
 
+/** Whether anything was typed into a draft — blank fields are not work. */
+function hasTyped(draft: Readonly<Record<string, string>>): boolean {
+  return Object.values(draft).some((value) => value.trim().length > 0);
+}
+
 function CreateDepartmentDialog({
   messages,
   branch,
@@ -267,10 +291,24 @@ function CreateDepartmentDialog({
   const [state, formAction] = useActionState<ActionState, FormData>(createDepartmentAction, IDLE);
   const [draft, setDraft] = useState<Record<string, string>>({});
   const t = (key: string) => translate(messages, key as keyof Messages);
-  const retain = (name: string) => (event: { target: { value: string } }) =>
+  // Typed and not yet created is work a branch switch would throw away with
+  // the dialog, so the switch asks first. A created department is saved work.
+  useUnsavedGuard(hasTyped(draft) && state.status !== 'success');
+  // Question f: the cursor goes to the refused field, and its complaint goes
+  // once the operator edits it (route sweep B3).
+  const {
+    edited: refusalEdited,
+    errorKey: refusalErrorKey,
+    formRef: refusalFormRef,
+  } = useActionRefusal(state);
+  const retain = (name: string) => (event: { target: { value: string } }) => {
+    refusalEdited(name);
     setDraft((current) => ({ ...current, [name]: event.target.value }));
-  const fieldError = (name: string) =>
-    state.fieldErrors?.[name] ? t(state.fieldErrors[name]) : undefined;
+  };
+  const fieldError = (name: string) => {
+    const key = refusalErrorKey(name);
+    return key ? t(key) : undefined;
+  };
 
   return (
     <Dialog
@@ -280,7 +318,7 @@ function CreateDepartmentDialog({
       title={t('departments.add')}
       description={`${t('departments.addDescription')} ${branch.name}`}
     >
-      <form action={formAction} className="flex flex-col gap-4" noValidate>
+      <form ref={refusalFormRef} action={formAction} className="flex flex-col gap-4" noValidate>
         <FormFeedback state={state} messages={messages} />
         <input type="hidden" name="companyId" value={branch.companyId} />
         <input type="hidden" name="branchId" value={branch.id} />
@@ -345,9 +383,18 @@ function RenameDialog({
 }) {
   const t = (key: string) => translate(messages, key as keyof Messages);
   const [name, setName] = useState(department.name);
+  // A name changed and not yet saved is lost if a branch switch closes this.
+  useUnsavedGuard(name !== department.name);
+  const {
+    edited: refusalEdited,
+    errorKey: refusalErrorKey,
+    formRef: refusalFormRef,
+  } = useActionRefusal(outcome);
+  const nameError = refusalErrorKey('name');
   return (
     <Dialog open onClose={onCancel} messages={messages} title={t('departments.rename')}>
       <form
+        ref={refusalFormRef}
         className="flex flex-col gap-4"
         noValidate
         onSubmit={(event) => {
@@ -362,8 +409,11 @@ function RenameDialog({
           required
           autoComplete="off"
           value={name}
-          onChange={(event) => setName(event.target.value)}
-          error={outcome.fieldErrors?.name ? t(outcome.fieldErrors.name) : undefined}
+          onChange={(event) => {
+            refusalEdited('name');
+            setName(event.target.value);
+          }}
+          error={nameError ? t(nameError) : undefined}
         />
         <div className="flex justify-end gap-2">
           <button

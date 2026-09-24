@@ -53,6 +53,39 @@ const push = vi.fn();
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push, refresh }),
   usePathname: () => mockPathname,
+  // The console shell's language switcher carries safe query parameters; an
+  // empty set is the honest default for the one case that renders the shell.
+  useSearchParams: () => new URLSearchParams(''),
+}));
+
+/*
+ * The console stays outside tenant context, proven at RENDER level (route sweep
+ * B3 review).
+ *
+ * A console operator has no working branch. A source scan for a direct import
+ * of the working context misses a console screen that reaches it through a
+ * shared component, so every working-context hook refuses in this file: each
+ * console screen and the console shell below renders with no provider above it
+ * and would throw here the moment any of them — directly or through anything
+ * it renders — asked for a branch.
+ */
+vi.mock('@/features/working-context/WorkingContextProvider', async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import('@/features/working-context/WorkingContextProvider')>();
+  const refuse = (name: string) => () => {
+    throw new Error(`a console surface called ${name}; the console has no working context`);
+  };
+  return {
+    ...actual,
+    useWorkingContext: refuse('useWorkingContext'),
+    useUnsavedGuard: refuse('useUnsavedGuard'),
+    useWorkingContextChange: refuse('useWorkingContextChange'),
+  };
+});
+
+const platformPermissions = vi.hoisted(() => ({ codes: [] as string[] }));
+vi.mock('@/features/platform/api/session', () => ({
+  requirePlatformSession: async () => ({ platformPermissions: platformPermissions.codes }),
 }));
 
 /**
@@ -820,6 +853,38 @@ describe('billing', () => {
       description: 'Annual subscription',
       subscriptionId: SUBSCRIPTION,
     });
+  });
+
+  it('moves the cursor to a refused charge field and withdraws the complaint once it is edited (route sweep B3)', async () => {
+    recordChargeAction.mockResolvedValue({
+      status: 'invalid',
+      messageKey: 'form.violation.invalid',
+      fieldErrors: { dueOn: 'platform.error.required' },
+      attempt: 1,
+    });
+    renderLtr(
+      <BillingPanel
+        locale="en"
+        messages={messages}
+        tenantId={TENANT}
+        charges={[charge]}
+        hasMore={false}
+        subscriptions={[subscription]}
+        canManage
+        defaultCurrency="SAR"
+      />
+    );
+    await userEvent.click(screen.getByRole('button', { name: L('platform.billing.recordCharge') }));
+    const dialog = await screen.findByRole('dialog');
+    const amount = within(dialog).getByLabelText(new RegExp(`^${L('platform.billing.amount')}`));
+    await userEvent.type(amount, '1200');
+    fireEvent.blur(amount);
+    await userEvent.click(within(dialog).getByRole('button', { name: L('platform.save') }));
+    const due = within(dialog).getByLabelText(new RegExp(`^${L('platform.billing.due')}`));
+    await waitFor(() => expect(due).toHaveFocus());
+    expect(due).toHaveAttribute('aria-invalid', 'true');
+    fireEvent.change(due, { target: { value: '2026-10-15' } });
+    expect(due).not.toHaveAttribute('aria-invalid', 'true');
   });
 
   it('voids a charge under the reason given, and shows the server refusal in place', async () => {
@@ -2335,5 +2400,33 @@ describe('the console route group draws its own waiting, failure and not-found s
     await userEvent.keyboard('{Enter}');
     expect(reset).toHaveBeenCalledTimes(1);
     logged.mockRestore();
+  });
+});
+
+describe('the console renders with no working context (route sweep B3)', () => {
+  it('refuses every working-context hook in this file, so the screens above prove it', async () => {
+    // The guard is live: were it not, every console case above would pass
+    // whether or not a console surface read the working branch.
+    const context = await import('@/features/working-context/WorkingContextProvider');
+    expect(() => context.useWorkingContext()).toThrow(/no working context/);
+    expect(() => context.useUnsavedGuard(true)).toThrow(/no working context/);
+    expect(() => context.useWorkingContextChange(() => undefined)).toThrow(/no working context/);
+  });
+
+  it('draws the console shell and a console page with no provider and no branch control', async () => {
+    const { PLATFORM_PERMISSIONS } = await import('@/features/platform/permissions');
+    platformPermissions.codes = Object.values(PLATFORM_PERMISSIONS);
+    const PlatformLayout = (await import('@/app/[locale]/(platform)/layout')).default;
+    apiGet.mockResolvedValue({ ok: true, data: { items: [], nextCursor: null, hasMore: false } });
+    const shell = await PlatformLayout({
+      params: Promise.resolve({ locale: 'en' }),
+      children: <OrganizationsScreen locale="en" messages={messages} canProvision={false} />,
+    });
+    renderLtr(shell as React.ReactElement);
+    expect(screen.getByText(L('platform.console.title'))).toBeInTheDocument();
+    expect(screen.getAllByRole('navigation').length).toBeGreaterThan(0);
+    // No branch selector, no branch prompt, no branch notice.
+    expect(document.querySelector('[data-testid^="working-context"]')).toBeNull();
+    expect(screen.queryByLabelText(L('workingContext.label'))).toBeNull();
   });
 });

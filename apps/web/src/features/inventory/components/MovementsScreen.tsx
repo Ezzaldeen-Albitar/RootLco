@@ -305,7 +305,13 @@ function LedgerPanel({
     const detail = await readWorkOrderDetail(initialWorkOrderId);
     if (!live.current) return;
     if (detail.status === 'ok') {
-      setWorkOrder(detail.data.workOrder);
+      /*
+       * Only into an EMPTY picker. The operator may have found and chosen a job
+       * while this read was out; the job from the link must not replace that
+       * choice behind their back (route sweep B3). Either way the link has been
+       * read, so its notice goes.
+       */
+      setWorkOrder((chosen) => chosen ?? detail.data.workOrder);
       setLink({ phase: 'restored', correlationId: null });
     } else {
       setLink({ phase: 'unread', correlationId: detail.correlationId });

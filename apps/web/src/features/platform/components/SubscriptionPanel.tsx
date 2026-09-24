@@ -27,6 +27,7 @@ import {
   StatusBadge,
 } from './ui';
 import { useConsoleAction } from './use-console-action';
+import { useStateRefusal } from '@/lib/forms/use-local-refusal';
 
 /**
  * The subscription panel of an organisation (P1-32-PRE-066).
@@ -251,7 +252,17 @@ function AssignDialog({
   const [reason, setReason] = useState('');
   const [accepted, setAccepted] = useState(false);
   const [acceptedReason, setAcceptedReason] = useState('');
-  const errors = action.state.fieldErrors ?? {};
+  // Question f: the cursor goes to the first refused field, and a complaint
+  // goes once its field changes (route sweep B3).
+  const { errors: refusalErrors, formRef: refusalFormRef } = useStateRefusal(action.state, {
+    planCode,
+    effectiveFrom,
+    preset,
+    customTerm,
+    reason,
+    acceptedReason,
+  });
+  const errors = refusalErrors;
   const error = (name: string) => (errors[name] ? t(errors[name] as string) : undefined);
   // What the backend refused with, kind by kind. It appears only after a
   // refusal: the console never predicts a ceiling, because the numbers that
@@ -288,6 +299,7 @@ function AssignDialog({
       description={t('platform.subscription.dialogHint')}
     >
       <form
+        ref={refusalFormRef}
         noValidate
         className="flex flex-col gap-3"
         onSubmit={(event) => {
@@ -423,7 +435,13 @@ function CancelDialog({
   const action = useConsoleAction(messages);
   const [effectiveTo, setEffectiveTo] = useState('');
   const [reason, setReason] = useState('');
-  const errors = action.state.fieldErrors ?? {};
+  // Question f: the cursor goes to the first refused field, and a complaint
+  // goes once its field changes (route sweep B3).
+  const { errors: refusalErrors, formRef: refusalFormRef } = useStateRefusal(action.state, {
+    effectiveTo,
+    reason,
+  });
+  const errors = refusalErrors;
   const error = (name: string) => (errors[name] ? t(errors[name] as string) : undefined);
 
   return (
@@ -435,6 +453,7 @@ function CancelDialog({
       description={t('platform.subscription.cancelHint')}
     >
       <form
+        ref={refusalFormRef}
         noValidate
         className="flex flex-col gap-3"
         onSubmit={(event) => {

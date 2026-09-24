@@ -17,6 +17,7 @@ import {
   pairMembers,
   type DuplicateCandidate,
 } from '../identity-contract';
+import { useActionRefusal } from '@/lib/forms/use-action-refusal';
 
 /**
  * The decision panel for one duplicate candidate (`FE-016`).
@@ -168,8 +169,16 @@ function DismissForm({
     return result;
   }, EMPTY);
 
+  // Question f: the cursor goes to the refused reason, and its complaint goes
+  // once the reason is edited (route sweep B3).
+  const {
+    edited: refusalEdited,
+    errorKey: refusalErrorKey,
+    formRef: refusalFormRef,
+  } = useActionRefusal(state);
+
   return (
-    <form action={submit} className="rounded-md border border-border p-3">
+    <form ref={refusalFormRef} action={submit} className="rounded-md border border-border p-3">
       <h3 className="text-body font-medium text-text-primary">
         {translate(messages, 'crm.duplicates.dismissHeading')}
       </h3>
@@ -194,18 +203,21 @@ function DismissForm({
         // Controlled: a transport failure must not silently discard the
         // reviewer's reasoning and ask them to write it again.
         value={reason}
-        onChange={(event) => setReason(event.target.value)}
+        onChange={(event) => {
+          refusalEdited('reason');
+          setReason(event.target.value);
+        }}
         required
         minLength={MIN_MERGE_REASON}
         maxLength={MAX_MERGE_REASON}
         rows={3}
-        aria-invalid={state.fieldErrors?.reason ? true : undefined}
-        aria-describedby={state.fieldErrors?.reason ? 'duplicate-reason-error' : undefined}
+        aria-invalid={refusalErrorKey('reason') ? true : undefined}
+        aria-describedby={refusalErrorKey('reason') ? 'duplicate-reason-error' : undefined}
         className="mt-1 w-full rounded-md border border-border bg-surface px-2 py-1.5 text-body text-text-primary"
       />
-      {state.fieldErrors?.reason ? (
+      {refusalErrorKey('reason') ? (
         <p id="duplicate-reason-error" role="alert" className="mt-1 text-caption text-error">
-          {translateDynamic(messages, state.fieldErrors.reason)}
+          {translateDynamic(messages, refusalErrorKey('reason') as string)}
         </p>
       ) : null}
 

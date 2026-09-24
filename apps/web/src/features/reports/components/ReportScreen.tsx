@@ -3,6 +3,10 @@
 import { useCallback, useState } from 'react';
 import Link from 'next/link';
 import { EmptyState } from '@/components/states/States';
+import {
+  useWorkingContext,
+  useWorkingContextChange,
+} from '@/features/working-context/WorkingContextProvider';
 import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
 import { translate } from '@/i18n/get-messages';
@@ -35,6 +39,7 @@ import {
 import { ReportScopeForm } from './ReportScopeForm';
 import { ReportExportPanel } from './ReportExportPanel';
 import { useCursorTrail } from './use-cursor-trail';
+import { useWorkingReportScope } from './use-working-report-scope';
 
 /**
  * One report, run over one branch and one period (P1-31, FE-011 … FE-014).
@@ -78,17 +83,29 @@ import { useCursorTrail } from './use-cursor-trail';
  * operator is told which box to correct instead of receiving a validation
  * failure about a request they never saw.
  *
- * There is no default period. A report over a whole history is a response whose
- * size the caller chooses, and "the last thirty days" is a business rule nobody
- * has decided.
+ * ## It reads on arrival for the working branch and today, and nothing wider
  *
- * ## Nothing is requested until an operator names a branch and a period
+ * The Owner directive (`P1-32-PRE-OD-UX`) asks every list to read on arrival,
+ * bounded to today, within the working context. So when the address names
+ * nothing and the working context names ONE branch the report directory holds,
+ * the form starts on that branch and on today in that branch's own zone —
+ * `[today, tomorrow)` — and that selection is read at once
+ * (`useWorkingReportScope`). A switch of the working branch follows it. The
+ * operator widens the period or picks another branch by name, and the form then
+ * holds their choice until the working branch changes.
+ *
+ * No wider default is chosen: "the last thirty days" is a business rule nobody
+ * has decided, and "today" is the directive's own bound.
+ *
+ * ## Nothing is requested without one branch and a period
  *
  * The operation is branch-scoped and the pair is its authorization target, not a
  * convenience: without it the backend's check degrades to a scope-blind
- * permission test. So the results are a separately MOUNTED component — before a
- * period and a branch are submitted, the component that would issue the read does
- * not exist.
+ * permission test. The server enforces no union over "All my branches", so under
+ * that posture — or with no branch chosen yet — nothing is read and the screen
+ * says a report covers one branch at a time. The results are a separately
+ * MOUNTED component: before a selection exists, the component that would issue
+ * the read does not exist.
  *
  * ## A report that cannot be run is not offered a form
  *
@@ -107,7 +124,8 @@ import { useCursorTrail } from './use-cursor-trail';
  * read over, instead of asking the operator to type them again under a heading
  * that claims to be about that branch. Nothing is submitted for them, and
  * anything the caller's own directory does not hold is dropped rather than shown:
- * see `initialReportScope`.
+ * see `initialReportScope`. An address that names anything at all takes the place
+ * of the working context: the form is filled from it and the operator runs it.
  */
 
 export function ReportScreen({
@@ -134,7 +152,20 @@ export function ReportScreen({
 }) {
   const companies = scopeOptions.status === 'ok' ? scopeOptions.data.companies : [];
   const branches = scopeOptions.status === 'ok' ? scopeOptions.data.branches : [];
-  const [submitted, setSubmitted] = useState<ReportScopeSelection | null>(null);
+  const [chosen, setChosen] = useState<ReportScopeSelection | null>(null);
+  /*
+   * The working branch and today, when the address names nothing. The
+   * operator's own submission takes its place until the working context
+   * changes, when the screen follows the new branch again.
+   */
+  const addressNamed = Object.keys(named).length > 0;
+  const working = useWorkingReportScope(scopeOptions.status === 'ok' ? scopeOptions.data : null);
+  const followed = !addressNamed && working.kind === 'ready' ? working.selection : null;
+  const { version } = useWorkingContext();
+  useWorkingContextChange(() => {
+    if (!addressNamed) setChosen(null);
+  });
+  const submitted = chosen ?? followed;
 
   const title = reportTitle(messages, definition);
 
@@ -181,13 +212,22 @@ export function ReportScreen({
     <div className="flex flex-col gap-4">
       <ReportHeading title={title} code={definition.reportCode} />
 
+      {!addressNamed && working.kind === 'oneBranch' ? (
+        <p role="status" className="text-supporting text-text-secondary" lang={locale}>
+          {translate(messages, 'reports.run.oneBranchNote')}
+        </p>
+      ) : null}
+
       <ReportScopeForm
+        // Re-seeded when the working branch (or the day it answers) changes, so
+        // the form always shows the selection that was read.
+        key={`${String(version)}:${followed === null ? '' : JSON.stringify(followed)}`}
         locale={locale}
         messages={messages}
         options={scopeOptions.data}
-        initial={initialReportScope(scopeOptions.data, named)}
+        initial={followed ?? initialReportScope(scopeOptions.data, named)}
         submitKey="reports.run.show"
-        onSubmit={setSubmitted}
+        onSubmit={setChosen}
       />
 
       {submitted === null ? (

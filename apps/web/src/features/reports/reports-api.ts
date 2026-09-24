@@ -1,11 +1,13 @@
 'use server';
 
+import { retryAfterSecondsOf } from '@/lib/api/client';
 import { authorizedClient } from '@/lib/api/server-client';
 import { fromFailure, success } from '@/lib/forms/action-result';
 import {
   branchTargetQuery,
   query,
   readOperation,
+  STATUS_BY_KIND,
   type CursorPage,
   type ItemsOnly,
   type ReadState,
@@ -18,6 +20,7 @@ import {
   type ReportExportBody,
   type ReportExportState,
   type ReportRun,
+  type ReportRunState,
   type ReportScopeOptions,
 } from './reports-contract';
 
@@ -126,7 +129,7 @@ export async function runReport(input: {
   readonly to: string;
   readonly cursor: string | null;
   readonly limit: number;
-}): Promise<ReadState<ReportRun>> {
+}): Promise<ReportRunState> {
   if (!isReportPeriod(input.from, input.to)) {
     // Refused before a request is spent. The route refuses it too — `to` is the
     // first day EXCLUDED, so an equal pair is an empty period — and answering
@@ -156,7 +159,25 @@ export async function runReport(input: {
         limit: reportPageSize(input.limit),
       }
     );
-  return readOperation<ReportRun>(path);
+  /*
+   * `readOperation`, except that a 429 keeps what it said. The run is an
+   * expensive read with its own per-minute limit, and the overview issues four
+   * at once: a throttled answer must reach the screen as "wait", with the wait
+   * the server advised, rather than as a bare "unavailable".
+   */
+  const client = await authorizedClient();
+  if (!client) return { status: 'expired', correlationId: null };
+  const result = await client.get<ReportRun>(path);
+  if (result.ok) return { status: 'ok', data: result.data, correlationId: result.correlationId };
+  if (result.kind === 'rate-limited') {
+    return {
+      status: 'unavailable',
+      correlationId: result.correlationId,
+      throttled: true,
+      retryAfterSeconds: retryAfterSecondsOf(result),
+    };
+  }
+  return { status: STATUS_BY_KIND[result.kind], correlationId: result.correlationId };
 }
 
 export async function exportReport(

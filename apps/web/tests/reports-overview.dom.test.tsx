@@ -1,9 +1,18 @@
 import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import en from '../src/i18n/messages/en.json';
 import ar from '../src/i18n/messages/ar.json';
-import { renderLtr, renderRtl } from './render';
+import {
+  BranchSwitch,
+  OTHER_BRANCH,
+  branchSnapshot,
+  inBranch,
+  renderLtr,
+  renderRtl,
+} from './render';
+import { forgetRememberedBranch } from './support/branch-switch';
+import { addDays, dayIn } from '../src/lib/branch-time';
 
 /**
  * The operational overview, rendered (P1-31, FE-010 and FE-016; Owner decision
@@ -66,6 +75,7 @@ type RoutePage = (args: {
 }) => Promise<React.ReactNode>;
 const OverviewPage = (await import('@/app/[locale]/(dashboard)/reports/overview/page'))
   .default as unknown as RoutePage;
+const { ReportOverviewScreen } = await import('@/features/reports/components/ReportOverviewScreen');
 
 const COMPANY_ID = '11111111-1111-4111-8111-111111111111';
 const BRANCH_ID = '22222222-2222-4222-8222-222222222222';
@@ -534,6 +544,385 @@ describe('a domain that cannot answer says so, and the others still answer', () 
     const section = within(await waitFor(() => panel('inventory_movements')));
     expect(section.getByText(EN['reports.overview.noneInPeriod'] as string)).toBeVisible();
     expect(section.queryByText(EN['reports.overview.noSummary'] as string)).toBeNull();
+  });
+});
+
+describe('the working branch and today answer on arrival (route sweep B3)', () => {
+  afterEach(forgetRememberedBranch);
+
+  function renderInContext(snapshot = branchSnapshot(), fixedBranchId: string | null = null) {
+    return renderLtr(
+      inBranch(
+        <>
+          <BranchSwitch to="all" label="everywhere" />
+          <ReportOverviewScreen
+            locale="en"
+            messages={en}
+            scopeOptions={SCOPES as never}
+            catalogue={CATALOGUE(ALL_FOUR) as never}
+            fixedBranchId={fixedBranchId}
+          />
+        </>,
+        { snapshot }
+      )
+    );
+  }
+
+  it('runs the four reports for the working branch over today on arrival', async () => {
+    allFourPublish();
+    renderInContext();
+    const today = dayIn('Asia/Riyadh');
+    await waitFor(() => expect(runReport).toHaveBeenCalledTimes(4));
+    for (const call of runReport.mock.calls) {
+      expect(call[0]).toMatchObject({
+        companyId: COMPANY_ID,
+        branchId: BRANCH_ID,
+        from: today,
+        to: addDays(today, 1),
+      });
+    }
+    expect(screen.queryByText(EN['reports.overview.idleTitle'] as string)).toBeNull();
+  });
+
+  it('under "All my branches" runs nothing and says an overview covers one branch', async () => {
+    const user = userEvent.setup();
+    renderInContext(
+      branchSnapshot([
+        { ...OTHER_BRANCH, id: BRANCH_ID },
+        { ...OTHER_BRANCH, name: 'Another workshop' },
+      ])
+    );
+    await user.click(screen.getByRole('button', { name: 'everywhere' }));
+    expect(await screen.findByText(EN['reports.run.oneBranchNote'] as string)).toBeVisible();
+    expect(runReport).not.toHaveBeenCalled();
+  });
+});
+
+describe('the four reads are spent once per branch and period (route sweep B3 review)', () => {
+  /*
+   * Each run is an expensive read limited per minute, and the overview issues
+   * four at a time. A re-render with the same selection used to issue the four
+   * again (the selection was a new object every render), and switching to a
+   * branch and back issued them again for figures already on the page.
+   */
+  afterEach(() => {
+    forgetRememberedBranch();
+    vi.restoreAllMocks();
+  });
+
+  const TWO_SCOPES = {
+    status: 'ok' as const,
+    data: {
+      companies: SCOPES.data.companies,
+      branches: [
+        { id: BRANCH_ID, companyId: COMPANY_ID, name: 'Service branch' },
+        { id: OTHER_BRANCH_ID, companyId: COMPANY_ID, name: 'Second service branch' },
+      ],
+    },
+    correlationId: null,
+  };
+  const TWO_BRANCHES = branchSnapshot([
+    { ...OTHER_BRANCH, id: BRANCH_ID, companyId: COMPANY_ID, name: 'Service branch' },
+    { ...OTHER_BRANCH, id: OTHER_BRANCH_ID, companyId: COMPANY_ID, name: 'Second service branch' },
+  ]);
+  const catalogue = CATALOGUE(ALL_FOUR);
+
+  function tree(published: ReturnType<typeof CATALOGUE> = catalogue) {
+    return inBranch(
+      <>
+        <BranchSwitch to={BRANCH_ID} label="first" />
+        <BranchSwitch to={OTHER_BRANCH_ID} label="second" />
+        <ReportOverviewScreen
+          locale="en"
+          messages={en}
+          scopeOptions={TWO_SCOPES as never}
+          catalogue={published as never}
+        />
+      </>,
+      { snapshot: TWO_BRANCHES }
+    );
+  }
+
+  const runsFor = (branchId: string) =>
+    runReport.mock.calls.filter((call) => (call[0] as { branchId: string }).branchId === branchId)
+      .length;
+
+  it('issues no new run when the screen re-renders with the same selection', async () => {
+    allFourPublish();
+    const user = userEvent.setup();
+    const rendered = renderLtr(tree());
+    await user.click(screen.getByRole('button', { name: 'first' }));
+    await waitFor(() => expect(runReport).toHaveBeenCalledTimes(4));
+    await screen.findByRole('region', {
+      name: EN['reports.work_orders_by_status.title'] as string,
+    });
+
+    rendered.rerender(tree());
+    rendered.rerender(tree());
+    // Give any effect the re-render scheduled the chance to issue its reads.
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(runReport).toHaveBeenCalledTimes(4);
+  });
+
+  it('shows a branch read in the last minute again instead of reading it again', async () => {
+    allFourPublish();
+    const user = userEvent.setup();
+    renderLtr(tree());
+
+    await user.click(screen.getByRole('button', { name: 'first' }));
+    await waitFor(() => expect(runsFor(BRANCH_ID)).toBe(4));
+    await user.click(screen.getByRole('button', { name: 'second' }));
+    await waitFor(() => expect(runsFor(OTHER_BRANCH_ID)).toBe(4));
+    await user.click(screen.getByRole('button', { name: 'first' }));
+
+    // The first branch's figures are on screen again, and not one run was spent.
+    expect(
+      await within(await waitFor(() => panel('work_orders_by_status'))).findByText('4')
+    ).toBeVisible();
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(runsFor(BRANCH_ID)).toBe(4);
+    expect(runReport).toHaveBeenCalledTimes(8);
+  });
+
+  it('reads a branch again once its answers are more than a minute old', async () => {
+    allFourPublish();
+    const user = userEvent.setup();
+    const start = Date.now();
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(start);
+    renderLtr(tree());
+
+    await user.click(screen.getByRole('button', { name: 'first' }));
+    await waitFor(() => expect(runsFor(BRANCH_ID)).toBe(4));
+    await user.click(screen.getByRole('button', { name: 'second' }));
+    await waitFor(() => expect(runsFor(OTHER_BRANCH_ID)).toBe(4));
+
+    clock.mockReturnValue(start + 61_000);
+    await user.click(screen.getByRole('button', { name: 'first' }));
+    await waitFor(() => expect(runsFor(BRANCH_ID)).toBe(8));
+  });
+
+  it('says a throttled section is waiting, with the wait the server advised', async () => {
+    runReport.mockImplementation(async (input: { readonly reportCode: string }) =>
+      input.reportCode === 'inventory_movements'
+        ? {
+            status: 'unavailable',
+            correlationId: 'corr-429',
+            throttled: true,
+            retryAfterSeconds: 20,
+          }
+        : runOk(input.reportCode)
+    );
+    const user = userEvent.setup();
+    renderLtr(tree());
+    await user.click(screen.getByRole('button', { name: 'first' }));
+
+    const throttled = within(await waitFor(() => panel('inventory_movements')));
+    expect(throttled.getByText(EN['state.unavailable.title'] as string)).toBeVisible();
+    expect(
+      throttled.getByText(
+        (EN['state.throttled.messageWithSeconds'] as string).replace('{seconds}', '20')
+      )
+    ).toBeVisible();
+    // Not a fault: the generic failure is not what the operator is told.
+    expect(throttled.queryByText(EN['state.error.title'] as string)).toBeNull();
+    expect(within(panel('work_orders_by_status')).getByText('4')).toBeVisible();
+
+    // The wait is enforced, not only reported: inside it nothing is sent, for
+    // another branch or for this one again. When the reads go is pinned below.
+    await user.click(screen.getByRole('button', { name: 'second' }));
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(runsFor(OTHER_BRANCH_ID)).toBe(0);
+    await user.click(screen.getByRole('button', { name: 'first' }));
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(runsFor(BRANCH_ID)).toBe(4);
+  });
+
+  it('says a throttled section is waiting, without a figure when none was advised', async () => {
+    runReport.mockImplementation(async (input: { readonly reportCode: string }) =>
+      input.reportCode === 'inventory_movements'
+        ? { status: 'unavailable', correlationId: null, throttled: true, retryAfterSeconds: null }
+        : runOk(input.reportCode)
+    );
+    const user = userEvent.setup();
+    renderLtr(tree());
+    await user.click(screen.getByRole('button', { name: 'first' }));
+    const throttled = within(await waitFor(() => panel('inventory_movements')));
+    expect(throttled.getByText(EN['state.throttled.message'] as string)).toBeVisible();
+  });
+
+  it.each([
+    [
+      'a throttled run with no wait advised',
+      {
+        status: 'unavailable',
+        correlationId: 'corr-429',
+        throttled: true,
+        retryAfterSeconds: null,
+      },
+    ],
+    ['an unavailable run', { status: 'unavailable', correlationId: 'corr-down' }],
+    ['a failed run', { status: 'error', correlationId: 'corr-failed' }],
+    ['an expired session', { status: 'expired', correlationId: null }],
+  ])('does not keep %s: switching away and back reads it again', async (_name, answer) => {
+    /*
+     * Each of these says "try again" (or "sign in again"), not something about
+     * the branch. Kept, a switch back within the minute would show the failure
+     * again with no read behind it — the retry it asked for would never happen.
+     */
+    runReport.mockImplementation(async (input: { readonly reportCode: string }) =>
+      input.reportCode === 'inventory_movements' ? answer : runOk(input.reportCode)
+    );
+    const user = userEvent.setup();
+    renderLtr(tree());
+
+    await user.click(screen.getByRole('button', { name: 'first' }));
+    await waitFor(() => expect(runsFor(BRANCH_ID)).toBe(4));
+    await user.click(screen.getByRole('button', { name: 'second' }));
+    await waitFor(() => expect(runsFor(OTHER_BRANCH_ID)).toBe(4));
+    await user.click(screen.getByRole('button', { name: 'first' }));
+
+    await waitFor(() => expect(runsFor(BRANCH_ID)).toBe(8));
+  });
+
+  it('keeps a refusal, which is a fact about the branch, for the minute', async () => {
+    runReport.mockImplementation(async (input: { readonly reportCode: string }) =>
+      input.reportCode === 'inventory_movements'
+        ? { status: 'denied', correlationId: 'corr-denied' }
+        : runOk(input.reportCode)
+    );
+    const user = userEvent.setup();
+    renderLtr(tree());
+
+    await user.click(screen.getByRole('button', { name: 'first' }));
+    await waitFor(() => expect(runsFor(BRANCH_ID)).toBe(4));
+    await user.click(screen.getByRole('button', { name: 'second' }));
+    await waitFor(() => expect(runsFor(OTHER_BRANCH_ID)).toBe(4));
+    await user.click(screen.getByRole('button', { name: 'first' }));
+
+    expect(
+      await within(await waitFor(() => panel('inventory_movements'))).findByText(
+        EN['state.denied.title'] as string
+      )
+    ).toBeVisible();
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(runsFor(BRANCH_ID)).toBe(4);
+  });
+
+  it('reads again instead of showing a kept answer once the catalogue has changed', async () => {
+    /*
+     * A grant withdrawn, then the page refreshed: the catalogue that arrives is
+     * a different one, and figures read under the old one must not be shown
+     * under it from memory.
+     */
+    allFourPublish();
+    const user = userEvent.setup();
+    const rendered = renderLtr(tree());
+
+    await user.click(screen.getByRole('button', { name: 'first' }));
+    await waitFor(() => expect(runsFor(BRANCH_ID)).toBe(4));
+    await user.click(screen.getByRole('button', { name: 'second' }));
+    await waitFor(() => expect(runsFor(OTHER_BRANCH_ID)).toBe(4));
+
+    const narrower = CATALOGUE(
+      ALL_FOUR.filter((entry) => entry.reportCode !== 'invoice_payment_summary')
+    );
+    rendered.rerender(tree(narrower));
+    await waitFor(() => expect(runsFor(OTHER_BRANCH_ID)).toBe(7));
+
+    await user.click(screen.getByRole('button', { name: 'first' }));
+
+    // Read again under the catalogue it is now shown under: three runs, because
+    // the withdrawn report is no longer one this caller can run.
+    await waitFor(() => expect(runsFor(BRANCH_ID)).toBe(7));
+    expect(
+      await within(await waitFor(() => panel('invoice_payment_summary'))).findByText(
+        EN['reports.overview.notPublished'] as string
+      )
+    ).toBeVisible();
+  });
+
+  describe('the wait the server advised is kept, for every run this page sends', () => {
+    /*
+     * The server limits the run per operation, tenant and user — every report,
+     * every branch and every period share one bucket — so a wait it advised
+     * holds for all of them, and the reads go again once it has passed.
+     */
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    const THROTTLED = {
+      status: 'unavailable',
+      correlationId: 'corr-429',
+      throttled: true,
+      retryAfterSeconds: 20,
+    };
+    const waitMessage = new RegExp(
+      `^${escape(EN['state.throttled.messageWithSeconds'] as string).replace(
+        escape('{seconds}'),
+        '\\d+'
+      )}$`
+    );
+
+    it('sends nothing inside the wait, on any branch, and reads once it has passed', async () => {
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      runReport.mockImplementation(async (input: { readonly reportCode: string }) =>
+        input.reportCode === 'inventory_movements' ? THROTTLED : runOk(input.reportCode)
+      );
+      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+      renderLtr(tree());
+
+      await user.click(screen.getByRole('button', { name: 'first' }));
+      await waitFor(() => expect(runsFor(BRANCH_ID)).toBe(4));
+      await within(await waitFor(() => panel('inventory_movements'))).findByText(waitMessage);
+
+      // Another branch inside the wait: the same bucket, so nothing is sent and
+      // every section says it is waiting.
+      await user.click(screen.getByRole('button', { name: 'second' }));
+      for (const code of contract.OVERVIEW_REPORT_CODES) {
+        expect(
+          await within(await waitFor(() => panel(code))).findByText(waitMessage),
+          code
+        ).toBeVisible();
+      }
+      await vi.advanceTimersByTimeAsync(50);
+      expect(runsFor(OTHER_BRANCH_ID)).toBe(0);
+
+      // And back again, still inside it: nothing.
+      await user.click(screen.getByRole('button', { name: 'first' }));
+      await vi.advanceTimersByTimeAsync(50);
+      expect(runsFor(BRANCH_ID)).toBe(4);
+      expect(within(panel('work_orders_by_status')).getByText(waitMessage)).toBeVisible();
+
+      // Once it has passed, the selection on screen is read — and only it.
+      allFourPublish();
+      await vi.advanceTimersByTimeAsync(20_000);
+      await waitFor(() => expect(runsFor(BRANCH_ID)).toBe(8));
+      expect(runsFor(OTHER_BRANCH_ID)).toBe(0);
+      expect(await within(panel('inventory_movements')).findByText('12.500')).toBeVisible();
+      expect(screen.queryByText(waitMessage)).toBeNull();
+    });
+
+    it('reads again on its own once the wait has passed, without a switch', async () => {
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      runReport.mockImplementation(async (input: { readonly reportCode: string }) =>
+        input.reportCode === 'inventory_movements' ? THROTTLED : runOk(input.reportCode)
+      );
+      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+      renderLtr(tree());
+
+      await user.click(screen.getByRole('button', { name: 'first' }));
+      await waitFor(() => expect(runsFor(BRANCH_ID)).toBe(4));
+      await within(await waitFor(() => panel('inventory_movements'))).findByText(waitMessage);
+
+      await vi.advanceTimersByTimeAsync(19_000);
+      expect(runsFor(BRANCH_ID)).toBe(4);
+
+      allFourPublish();
+      await vi.advanceTimersByTimeAsync(1_000);
+      await waitFor(() => expect(runsFor(BRANCH_ID)).toBe(8));
+      expect(await within(panel('inventory_movements')).findByText('12.500')).toBeVisible();
+    });
   });
 });
 

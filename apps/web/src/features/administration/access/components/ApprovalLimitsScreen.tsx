@@ -14,10 +14,12 @@ import { FormFeedback } from '@/features/authentication/components/FormFeedback'
 import { RequiresConcreteBranch } from '@/features/working-context/components/WorkingBranchField';
 import { useWorkingContext } from '@/features/working-context/WorkingContextProvider';
 import { SubmitButton } from '@/features/authentication/components/SubmitButton';
+import { AccountPicker, type ChosenAccount } from '../../users/components/AccountPicker';
 import { useServerTable } from '../../shared/use-server-table';
 import { listApprovalLimits } from '../api';
 import type { ApprovalLimitRow, RoleRow } from '../types';
 import { createApprovalLimitAction, endApprovalLimitAction } from '../actions';
+import { useActionRefusal } from '@/lib/forms/use-action-refusal';
 
 /**
  * Approval limits.
@@ -50,11 +52,18 @@ export function ApprovalLimitsScreen({
   messages,
   roles,
   canManage,
+  canReadUsers = false,
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
   readonly roles: readonly RoleRow[];
   readonly canManage: boolean;
+  /**
+   * `iam.user.read` — whether a person can be FOUND by name for a limit. Without
+   * it the dialog keeps the labelled account reference it always had, because
+   * `iam.approval-limit-create` does not need the user read (route sweep B3).
+   */
+  readonly canReadUsers?: boolean;
 }) {
   const table = useServerTable<ApprovalLimitRow>(listApprovalLimits);
   const [createOpen, setCreateOpen] = useState(false);
@@ -168,8 +177,10 @@ export function ApprovalLimitsScreen({
       {createOpen ? (
         <CreateDialog
           open
+          locale={locale}
           messages={messages}
           roles={roles}
+          canReadUsers={canReadUsers}
           onClose={() => {
             setCreateOpen(false);
             table.refresh();
@@ -240,13 +251,17 @@ export function ApprovalLimitsScreen({
 
 function CreateDialog({
   open,
+  locale,
   messages,
   roles,
+  canReadUsers,
   onClose,
 }: {
   readonly open: boolean;
+  readonly locale: Locale;
   readonly messages: Messages;
   readonly roles: readonly RoleRow[];
+  readonly canReadUsers: boolean;
   readonly onClose: () => void;
 }) {
   const [state, formAction] = useActionState<ActionState, FormData>(
@@ -286,8 +301,17 @@ function CreateDialog({
    */
   const [draft, setDraft] = useState<Record<string, string>>({});
   const retained = (name: string) => draft[name] ?? '';
-  const retain = (name: string) => (event: { target: { value: string } }) =>
+  // Question f: the cursor goes to the refused field, and its complaint goes
+  // once the operator edits it (route sweep B3).
+  const {
+    edited: refusalEdited,
+    errorKey: refusalErrorKey,
+    formRef: refusalFormRef,
+  } = useActionRefusal(state);
+  const retain = (name: string) => (event: { target: { value: string } }) => {
+    refusalEdited(name);
     setDraft((current) => ({ ...current, [name]: event.target.value }));
+  };
   /*
    * The companies this operator may act in, BY NAME.
    *
@@ -301,9 +325,15 @@ function CreateDialog({
   const { companies: workingCompanies } = useWorkingContext();
   const [companyId, setCompanyId] = useState(workingCompanies[0]?.id ?? '');
   const [roleId, setRoleId] = useState(roles[0]?.id ?? '');
+  /*
+   * The person, FOUND by name or email (route sweep B3). Held in state like the
+   * selects above, so the Server Action's form reset cannot lose it; the
+   * account reference travels in a hidden field the reset cannot empty either.
+   */
+  const [person, setPerson] = useState<ChosenAccount | null>(null);
   const t = (key: string) => translate(messages, key as keyof Messages);
   const error = (name: string) => {
-    const key = state.fieldErrors?.[name];
+    const key = refusalErrorKey(name);
     return key ? t(key) : undefined;
   };
 
@@ -314,7 +344,7 @@ function CreateDialog({
       messages={messages}
       title={t('approvalLimits.create.title')}
     >
-      <form action={formAction} className="flex flex-col gap-4" noValidate>
+      <form ref={refusalFormRef} action={formAction} className="flex flex-col gap-4" noValidate>
         <FormFeedback state={state} messages={messages} />
 
         {/*
@@ -349,7 +379,10 @@ function CreateDialog({
             label={t('approvalLimits.field.companyId')}
             required
             defaultValue={companyId}
-            onChange={(event) => setCompanyId(event.target.value)}
+            onChange={(event) => {
+              refusalEdited('companyId');
+              setCompanyId(event.target.value);
+            }}
             options={workingCompanies.map((company) => ({
               value: company.id,
               label: company.name,
@@ -390,20 +423,48 @@ function CreateDialog({
             name="roleId"
             label={t('approvalLimits.field.roleId')}
             defaultValue={roleId}
-            onChange={(event) => setRoleId(event.target.value)}
+            onChange={(event) => {
+              refusalEdited('roleId');
+              setRoleId(event.target.value);
+            }}
             options={roles.map((role) => ({ value: role.id, label: role.name }))}
             error={error('roleId')}
           />
+        ) : canReadUsers ? (
+          <>
+            <AccountPicker
+              messages={messages}
+              locale={locale}
+              label={t('approvalLimits.field.person')}
+              value={person}
+              onChange={(next) => {
+                refusalEdited('userId');
+                setPerson(next);
+              }}
+              canSearch
+              error={error('userId')}
+              countsAsUnsaved
+              testId="approval-limit-person-picker"
+            />
+            <input type="hidden" name="userId" value={person?.id ?? ''} />
+          </>
         ) : (
+          // Without `iam.user.read` nobody can be looked up here, and creating a
+          // limit does not need that code: the account reference box stays,
+          // labelled and explained, and the action checks its shape.
           <TextField
             key={`userId-${state.attempt ?? 0}`}
             name="userId"
             label={t('approvalLimits.field.userId')}
+            description={t('approvalLimits.field.userIdHelp')}
             required
             spellCheck={false}
+            autoComplete="off"
+            dir="ltr"
             defaultValue={retained('userId')}
             onChange={retain('userId')}
             error={error('userId')}
+            data-testid="approval-limit-person-reference"
           />
         )}
 

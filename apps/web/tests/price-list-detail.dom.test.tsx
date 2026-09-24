@@ -705,6 +705,31 @@ describe('an assignment is recorded, and the absence of a read is said', () => {
     expect(createPriceListAssignment).not.toHaveBeenCalled();
   });
 
+  it('moves the cursor to the first refused field, and withdraws a complaint once it is corrected (route sweep B3)', async () => {
+    const user = userEvent.setup();
+    renderDetail();
+    const form = screen.getByRole('form', { name: EN['pricing.assignment.heading'] as string });
+    const from = () => within(form).getByLabelText(labelled('pricing.assignment.effectiveFrom'));
+    const to = () => within(form).getByLabelText(labelled('pricing.assignment.effectiveTo'));
+    // Nothing typed: the start date is the first thing to fix.
+    await user.click(
+      within(form).getByRole('button', { name: EN['pricing.assignment.submit'] as string })
+    );
+    await waitFor(() => expect(from()).toHaveFocus());
+    expect(from()).toHaveAttribute('aria-invalid', 'true');
+    // Corrected: the complaint about the old value goes, without a new submit.
+    fireEvent.change(from(), { target: { value: '2026-10-01' } });
+    expect(from()).not.toHaveAttribute('aria-invalid', 'true');
+    expect(within(form).queryByText(EN['pricing.common.dateFormat'] as string)).toBeNull();
+    // A later refusal moves the cursor to ITS field.
+    fireEvent.change(to(), { target: { value: '2026-09-01' } });
+    await user.click(
+      within(form).getByRole('button', { name: EN['pricing.assignment.submit'] as string })
+    );
+    await waitFor(() => expect(to()).toHaveFocus());
+    expect(createPriceListAssignment).not.toHaveBeenCalled();
+  });
+
   it('states an already-assigned coverage beside the priority, with the dates kept', async () => {
     /*
      * `svc.price-list-assignment-create` publishes `body.priority` /

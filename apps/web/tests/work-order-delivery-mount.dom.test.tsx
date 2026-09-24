@@ -381,6 +381,47 @@ describe('the work-order record says why a command was refused', () => {
     expect(document.body.textContent).not.toContain('primary_already_assigned');
   });
 
+  it('marks each missing assignment field, moves the cursor to the first, and withdraws a complaint once it is filled (route sweep B3)', async () => {
+    PERMISSIONS = [WORK_ORDER_READ, 'tech.technician.read', 'tech.assignment.manage'];
+    readWorkOrderDetail.mockResolvedValue({
+      status: 'ok',
+      data: movable,
+      correlationId: 'corr-wo',
+    });
+    listJobAssignments.mockResolvedValue({
+      status: 'ok',
+      data: { items: [] },
+      correlationId: 'corr-assignments',
+    });
+    listJobBlockers.mockResolvedValue({
+      status: 'ok',
+      data: { items: [] },
+      correlationId: 'corr-blockers',
+    });
+    const user = userEvent.setup();
+    await renderRecord();
+
+    await user.click(
+      await screen.findByRole('button', { name: EN['workOrders.detail.openJob'] as string })
+    );
+    const profile = await screen.findByLabelText(
+      new RegExp(`^${EN['workOrders.detail.technicianProfileId'] as string}`)
+    );
+    const from = screen.getByLabelText(
+      new RegExp(`^${EN['workOrders.detail.windowFrom'] as string}`)
+    );
+    await user.click(
+      screen.getByRole('button', { name: EN['workOrders.detail.assignTechnician'] as string })
+    );
+    await waitFor(() => expect(profile).toHaveFocus());
+    expect(profile).toHaveAttribute('aria-invalid', 'true');
+    expect(from).toHaveAttribute('aria-invalid', 'true');
+    await user.type(from, '2026-09-01T08:00');
+    expect(from).not.toHaveAttribute('aria-invalid', 'true');
+    expect(profile).toHaveAttribute('aria-invalid', 'true');
+    expect(assignTechnician).not.toHaveBeenCalled();
+  });
+
   it('puts the inactive-technician refusal beside the technician control', async () => {
     // `assign()` runs the eligibility check before the write, and an inactive
     // profile comes back on `body.technicianProfileId` — the control this form

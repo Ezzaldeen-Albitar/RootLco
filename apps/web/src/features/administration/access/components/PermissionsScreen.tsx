@@ -7,7 +7,8 @@ import type { Messages } from '@/i18n/get-messages';
 import { translate } from '@/i18n/get-messages';
 import { IDLE, type ActionState } from '@/lib/forms/action-result';
 import { FormFeedback } from '@/features/authentication/components/FormFeedback';
-import { readPermissionCatalogue } from '../api';
+import { ReadBoundary } from '../../shared/components/ScreenStates';
+import { readPermissionCatalogue, type PermissionCatalogue } from '../api';
 import type { PermissionRow, RolePermissionRow, RoleRow } from '../types';
 import { addRolePermissionAction, removeRolePermissionAction } from '../actions';
 
@@ -47,7 +48,8 @@ export function PermissionsScreen({
     readonly key: string;
     readonly permissions: readonly PermissionRow[];
     readonly mappings: readonly RolePermissionRow[];
-    readonly status: string;
+    readonly status: PermissionCatalogue['status'];
+    readonly correlationId: string | null;
   } | null>(null);
   const [state, setState] = useState<ActionState>(IDLE);
   const [removing, setRemoving] = useState<{
@@ -68,6 +70,7 @@ export function PermissionsScreen({
         permissions: result.permissions,
         mappings: result.mappings,
         status: result.status,
+        correlationId: result.correlationId,
       });
     })();
     return () => {
@@ -137,6 +140,19 @@ export function PermissionsScreen({
         <p role="status" className="text-body text-text-muted">
           {t('state.loading')}
         </p>
+      ) : held.status !== 'ok' ? (
+        /*
+         * A refused or failed read was stored and never drawn, so the page
+         * showed nothing under the role — which reads as "this role has no
+         * permissions". It is drawn through the shared states now, with the
+         * reference the backend logged (route sweep B3).
+         */
+        <ReadBoundary
+          state={{ status: held.status, correlationId: held.correlationId }}
+          messages={messages}
+        >
+          {() => null}
+        </ReadBoundary>
       ) : (
         grouped.map(([domain, permissions]) => (
           <section key={domain} className="rounded-xl border border-border-subtle bg-surface p-4">

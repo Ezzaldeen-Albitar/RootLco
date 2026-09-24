@@ -21,6 +21,7 @@ import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic } from '@/i18n/get-messages';
 import type { ActionState } from '@/lib/forms/action-result';
 import { useFocusFirstInvalid } from '@/lib/forms/use-focus-first-invalid';
+import { useLocalRefusal } from '@/lib/forms/use-local-refusal';
 
 import { createQuotation, listQuotations } from '../api';
 import { RequesterPicker, type ChosenRequester } from './RequesterPicker';
@@ -29,6 +30,7 @@ import {
   Figure,
   LinesEditor,
   lineErrors,
+  lineValues,
   OutcomeNote,
   PRIMARY_BUTTON,
   QuotationStatusBadge,
@@ -212,6 +214,10 @@ function ChooseWorkOrder({
    * in was to copy one out of another page's address bar. `wo.work-order-list`
    * answers the question the form was really asking (Owner directive,
    * `P1-32-PRE-OD-UX`).
+   *
+   * The chosen job is not unsaved work: this form writes nothing, it opens the
+   * quotation page for the job, so a branch switch forgets the choice without
+   * asking — the rule the invoice desk's chooser follows (route sweep B3).
    */
   const [chosen, setChosen] = useState<WorkOrderListEntry | null>(null);
   // An attempt counter rather than a flag: the focus hook moves the cursor to
@@ -273,6 +279,7 @@ function ChooseWorkOrder({
         error={error}
         canSearch={canSearchWorkOrders}
         needsBranchId={needsBranchId}
+        countsAsUnsaved={false}
       />
       {canSearchWorkOrders ? (
         <div>
@@ -426,12 +433,23 @@ function QuotationBuilder({
   const [customerClass, setCustomerClass] = useState('');
   const [requestedBy, setRequestedBy] = useState<ChosenRequester | null>(null);
   const [lines, setLines] = useState<readonly DraftLine[]>([newLine()]);
-  const [errors, setErrors] = useState<Readonly<Record<string, string>>>({});
+  // Question f: the cursor goes to the first thing to fix, and a complaint is
+  // withdrawn once its field changes (route sweep B3).
+  const {
+    errorKey: localErrorKey,
+    errors: localErrors,
+    formRef: localFormRef,
+    refuse: localRefuse,
+  } = useLocalRefusal({
+    ...lineValues(lines),
+    payerPartnerRef: payerReference,
+    customerClass,
+  });
   const [busy, setBusy] = useState(false);
   const [outcome, setOutcome] = useState<ActionState | null>(null);
 
   const errorFor = (name: string): string | undefined => {
-    const key = errors[name] ?? outcome?.fieldErrors?.[name];
+    const key = localErrorKey(name) ?? outcome?.fieldErrors?.[name];
     return key ? translateDynamic(messages, key) : undefined;
   };
 
@@ -444,7 +462,7 @@ function QuotationBuilder({
     if (klass.length > 0 && !INTERNAL_CODE.test(klass))
       found['customerClass'] = 'quotations.common.classFormat';
     const requester = requestedBy?.id ?? '';
-    setErrors(found);
+    localRefuse(found);
     if (Object.keys(found).length > 0) return;
 
     setBusy(true);
@@ -465,6 +483,7 @@ function QuotationBuilder({
 
   return (
     <form
+      ref={localFormRef}
       onSubmit={(event) => {
         event.preventDefault();
         void submit();
@@ -505,14 +524,7 @@ function QuotationBuilder({
           autoComplete="off"
           dir="ltr"
           value={payerReference}
-          onChange={(event) => {
-            setPayerReference(event.target.value);
-            setErrors((current) =>
-              Object.fromEntries(
-                Object.entries(current).filter(([name]) => name !== 'payerPartnerRef')
-              )
-            );
-          }}
+          onChange={(event) => setPayerReference(event.target.value)}
           error={errorFor('payerPartnerRef')}
         />
       )}
@@ -546,7 +558,7 @@ function QuotationBuilder({
         lines={lines}
         onChange={setLines}
         canReadServices={canReadServices}
-        errors={lineErrors(errors, outcome)}
+        errors={lineErrors(localErrors, outcome)}
       />
       <OutcomeNote
         messages={messages}

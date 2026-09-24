@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useActionState, useCallback, useId, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { FailureExplanation } from '@/components/states/States';
@@ -434,9 +435,13 @@ function ProfileHeader({
       {vehicle.mergedIntoId ? (
         <p className="mt-3 text-body text-text-secondary" lang={locale}>
           {translate(messages, 'vehicles.profile.mergedInto')}{' '}
-          <code className="font-mono text-caption" dir="ltr">
-            {vehicle.mergedIntoId}
-          </code>
+          {/* The surviving vehicle by a link in words, never its bare reference (route sweep B3). */}
+          <Link
+            href={`/${locale}/vehicles/${vehicle.mergedIntoId}`}
+            className="text-primary underline-offset-2 hover:underline"
+          >
+            {translate(messages, 'vehicles.profile.openMergedInto')}
+          </Link>
         </p>
       ) : null}
     </header>

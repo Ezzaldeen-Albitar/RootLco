@@ -15,6 +15,7 @@ import {
 import type { OrganizationDetail } from '../types';
 import { PRIMARY_BUTTON, SECONDARY_BUTTON, Section, SECTION_HINT } from './ui';
 import { useConsoleAction } from './use-console-action';
+import { useStateRefusal } from '@/lib/forms/use-local-refusal';
 
 /**
  * Growing an organisation that is already running (P1-32-PRE-151).
@@ -149,7 +150,16 @@ function CompanyDialog({
   const [baseCurrency, setBaseCurrency] = useState('');
   const [registrationNumber, setRegistrationNumber] = useState('');
   const [taxRegistrationNumber, setTaxRegistrationNumber] = useState('');
-  const errors = action.state.fieldErrors ?? {};
+  // Question f: the cursor goes to the first refused field, and a complaint
+  // goes once its field changes (route sweep B3).
+  const { errors: refusalErrors, formRef: refusalFormRef } = useStateRefusal(action.state, {
+    code,
+    legalName,
+    baseCurrency,
+    registrationNumber,
+    taxRegistrationNumber,
+  });
+  const errors = refusalErrors;
   const error = (name: string) => (errors[name] ? t(errors[name] as string) : undefined);
 
   return (
@@ -161,6 +171,7 @@ function CompanyDialog({
       description={t('platform.growth.addCompanyHint')}
     >
       <form
+        ref={refusalFormRef}
         noValidate
         className="flex flex-col gap-3"
         onSubmit={(event) => {
@@ -246,7 +257,17 @@ function BranchDialog({
   const [timezone, setTimezone] = useState('');
   const [city, setCity] = useState('');
   const [countryCode, setCountryCode] = useState('');
-  const errors = action.state.fieldErrors ?? {};
+  // Question f: the cursor goes to the first refused field, and a complaint
+  // goes once its field changes (route sweep B3).
+  const { errors: refusalErrors, formRef: refusalFormRef } = useStateRefusal(action.state, {
+    companyId,
+    code,
+    name,
+    timezone,
+    city,
+    countryCode,
+  });
+  const errors = refusalErrors;
   const error = (field: string) => (errors[field] ? t(errors[field] as string) : undefined);
 
   return (
@@ -258,6 +279,7 @@ function BranchDialog({
       description={t('platform.growth.addBranchHint')}
     >
       <form
+        ref={refusalFormRef}
         noValidate
         className="flex flex-col gap-3"
         onSubmit={(event) => {
@@ -351,7 +373,14 @@ function AdministratorDialog({
   const [displayName, setDisplayName] = useState('');
   const [additional, setAdditional] = useState(false);
   const [reason, setReason] = useState('');
-  const errors = action.state.fieldErrors ?? {};
+  // Question f: the cursor goes to the first refused field, and a complaint
+  // goes once its field changes (route sweep B3).
+  const { errors: refusalErrors, formRef: refusalFormRef } = useStateRefusal(action.state, {
+    email,
+    displayName,
+    reason,
+  });
+  const errors = refusalErrors;
   const error = (field: string) => (errors[field] ? t(errors[field] as string) : undefined);
 
   return (
@@ -363,6 +392,7 @@ function AdministratorDialog({
       description={t('platform.growth.inviteHint')}
     >
       <form
+        ref={refusalFormRef}
         noValidate
         className="flex flex-col gap-3"
         onSubmit={(event) => {
@@ -442,7 +472,12 @@ function ResendDialog({
   const t = (key: string) => translateDynamic(messages, key);
   const action = useConsoleAction(messages);
   const [email, setEmail] = useState('');
-  const errors = action.state.fieldErrors ?? {};
+  // Question f: the cursor goes to the first refused field, and a complaint
+  // goes once its field changes (route sweep B3).
+  const { errors: refusalErrors, formRef: refusalFormRef } = useStateRefusal(action.state, {
+    email,
+  });
+  const errors = refusalErrors;
 
   return (
     <Dialog
@@ -453,6 +488,7 @@ function ResendDialog({
       description={t('platform.growth.resendHint')}
     >
       <form
+        ref={refusalFormRef}
         noValidate
         className="flex flex-col gap-3"
         onSubmit={(event) => {

@@ -23,6 +23,7 @@ import {
   StatusBadge,
 } from './ui';
 import { useConsoleAction } from './use-console-action';
+import { useStateRefusal } from '@/lib/forms/use-local-refusal';
 
 /**
  * The billing panel of an organisation (P1-32-PRE-067).
@@ -371,12 +372,22 @@ function ChargeDialog({
   const [dueOn, setDueOn] = useState('');
   const [description, setDescription] = useState('');
   const [subscriptionId, setSubscriptionId] = useState('');
-  const errors = action.state.fieldErrors ?? {};
+  // Question f: the cursor goes to the first refused field, and a complaint
+  // goes once its field changes (route sweep B3).
+  const { errors: refusalErrors, formRef: refusalFormRef } = useStateRefusal(action.state, {
+    amount,
+    currencyCode,
+    dueOn,
+    description,
+    subscriptionId,
+  });
+  const errors = refusalErrors;
   const error = (name: string) => (errors[name] ? t(errors[name] as string) : undefined);
 
   return (
     <Dialog open onClose={onClose} messages={messages} title={t('platform.billing.recordCharge')}>
       <form
+        ref={refusalFormRef}
         noValidate
         className="flex flex-col gap-3"
         onSubmit={(event) => {
@@ -473,7 +484,16 @@ function ReceiptDialog({
   const [method, setMethod] = useState('');
   const [reference, setReference] = useState('');
   const [notes, setNotes] = useState('');
-  const errors = action.state.fieldErrors ?? {};
+  // Question f: the cursor goes to the first refused field, and a complaint
+  // goes once its field changes (route sweep B3).
+  const { errors: refusalErrors, formRef: refusalFormRef } = useStateRefusal(action.state, {
+    amount,
+    receivedOn,
+    method,
+    reference,
+    notes,
+  });
+  const errors = refusalErrors;
   const error = (name: string) => (errors[name] ? t(errors[name] as string) : undefined);
 
   return (
@@ -485,6 +505,7 @@ function ReceiptDialog({
       description={charge.description}
     >
       <form
+        ref={refusalFormRef}
         noValidate
         className="flex flex-col gap-3"
         onSubmit={(event) => {

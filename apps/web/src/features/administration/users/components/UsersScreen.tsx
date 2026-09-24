@@ -28,6 +28,7 @@ import {
   inviteUserAction,
   revokeUserSessionsAction,
 } from '../actions';
+import { useActionRefusal } from '@/lib/forms/use-action-refusal';
 
 /**
  * The Users screen.
@@ -463,8 +464,17 @@ function InviteDialog({
   const [roleIds, setRoleIds] = useState<readonly string[]>([]);
   const [draft, setDraft] = useState<Record<string, string>>({});
   const retained = (name: string) => draft[name] ?? '';
-  const retain = (name: string) => (event: { target: { value: string } }) =>
+  // Question f: the cursor goes to the refused field, and its complaint goes
+  // once the operator edits it (route sweep B3).
+  const {
+    edited: refusalEdited,
+    errorKey: refusalErrorKey,
+    formRef: refusalFormRef,
+  } = useActionRefusal(state);
+  const retain = (name: string) => (event: { target: { value: string } }) => {
+    refusalEdited(name);
     setDraft((current) => ({ ...current, [name]: event.target.value }));
+  };
   const t = (key: string) => translate(messages, key as keyof Messages);
 
   return (
@@ -475,7 +485,7 @@ function InviteDialog({
       title={t('users.invite.title')}
       description={t('users.invite.description')}
     >
-      <form action={formAction} className="flex flex-col gap-4" noValidate>
+      <form ref={refusalFormRef} action={formAction} className="flex flex-col gap-4" noValidate>
         <FormFeedback state={state} messages={messages} />
 
         {/*
@@ -492,7 +502,7 @@ function InviteDialog({
           spellCheck={false}
           defaultValue={retained('email')}
           onChange={retain('email')}
-          error={state.fieldErrors?.email ? t(state.fieldErrors.email) : undefined}
+          error={refusalErrorKey('email') ? t(refusalErrorKey('email') as string) : undefined}
         />
         <TextField
           key={`displayName-${state.attempt ?? 0}`}
@@ -502,7 +512,9 @@ function InviteDialog({
           autoComplete="off"
           defaultValue={retained('displayName')}
           onChange={retain('displayName')}
-          error={state.fieldErrors?.displayName ? t(state.fieldErrors.displayName) : undefined}
+          error={
+            refusalErrorKey('displayName') ? t(refusalErrorKey('displayName') as string) : undefined
+          }
         />
         {/*
           `key` + a default + `onChange`, the shape this repository has now had

@@ -9,6 +9,7 @@ import { FormFeedback } from '@/features/authentication/components/FormFeedback'
 import { SubmitButton } from '@/features/authentication/components/SubmitButton';
 import { updateTenantAction } from '../actions';
 import type { TenantView } from '../types';
+import { useActionRefusal } from '@/lib/forms/use-action-refusal';
 
 /**
  * The three tenant fields the contract lets an administrator change.
@@ -46,9 +47,23 @@ export function TenantForm({
     defaultTimezone: tenant.defaultTimezone,
   });
   const retained = (name: string) => draft[name] ?? '';
-  const retain = (name: string) => (event: { target: { value: string } }) =>
+  // Question f: the cursor goes to the refused field, and its complaint goes
+  // once the operator edits it (route sweep B3).
+  const {
+    edited: refusalEdited,
+    errorKey: refusalErrorKey,
+    formRef: refusalFormRef,
+  } = useActionRefusal(state);
+  const retain = (name: string) => (event: { target: { value: string } }) => {
+    refusalEdited(name);
     setDraft((current) => ({ ...current, [name]: event.target.value }));
+  };
   const t = (key: string) => translate(messages, key as keyof Messages);
+  // The refusal is said on the field it is about, not only in the banner.
+  const fieldError = (name: string) => {
+    const key = refusalErrorKey(name);
+    return key ? t(key) : undefined;
+  };
 
   if (!canWrite) {
     return (
@@ -66,7 +81,12 @@ export function TenantForm({
   }
 
   return (
-    <form action={formAction} className="flex max-w-xl flex-col gap-4" noValidate>
+    <form
+      ref={refusalFormRef}
+      action={formAction}
+      className="flex max-w-xl flex-col gap-4"
+      noValidate
+    >
       {/*
         The version the operator was actually looking at. `If-Match` is refused
         outright by the backend when absent, and defaulting it would turn a
@@ -94,6 +114,7 @@ export function TenantForm({
         label={t('organization.displayName')}
         defaultValue={retained('displayName')}
         onChange={retain('displayName')}
+        error={fieldError('displayName')}
         required
       />
       <TextField
@@ -103,6 +124,7 @@ export function TenantForm({
         description={t('organization.defaultLocaleHint')}
         defaultValue={retained('defaultLocale')}
         onChange={retain('defaultLocale')}
+        error={fieldError('defaultLocale')}
         spellCheck={false}
       />
       <TextField
@@ -112,6 +134,7 @@ export function TenantForm({
         description={t('organization.defaultTimezoneHint')}
         defaultValue={retained('defaultTimezone')}
         onChange={retain('defaultTimezone')}
+        error={fieldError('defaultTimezone')}
         spellCheck={false}
       />
 

@@ -59,7 +59,13 @@ export default async function ApprovalLimitsPage({
         crumbs={crumbs}
       />
       <PageBody fill>
-        <ApprovalLimitsScreen locale={locale} messages={messages} roles={roles} canManage />
+        <ApprovalLimitsScreen
+          locale={locale}
+          messages={messages}
+          roles={roles}
+          canManage
+          canReadUsers={holds(session.permissions, PERMISSIONS.userRead)}
+        />
       </PageBody>
     </>
   );

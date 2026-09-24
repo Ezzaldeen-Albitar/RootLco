@@ -338,7 +338,11 @@ function ChooseWorkOrder({
    * the box they had before the picker: a labelled job reference, explained in
    * both languages and checked against the server's own identifier rule before
    * the page is opened on it (route sweep B2, the parts desk precedent).
-   * Choosing where to look is not a write, so it is not unsaved work.
+   *
+   * Neither control is unsaved work, and that is one rule for both: this form
+   * writes nothing — it only opens the invoice page for the job — so a job
+   * chosen in the picker is forgotten on a branch switch without a question,
+   * exactly as a typed reference is kept without one (route sweep B3).
    */
   const [chosen, setChosen] = useState<WorkOrderListEntry | null>(null);
   const [reference, setReference] = useState('');
@@ -416,6 +420,7 @@ function ChooseWorkOrder({
           error={error}
           canSearch
           needsBranchId={needsBranchId}
+          countsAsUnsaved={false}
         />
       ) : (
         <TextField

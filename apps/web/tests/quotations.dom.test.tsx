@@ -15,7 +15,6 @@ import {
   branchSnapshot,
 } from './render';
 import {
-  discardAndSwitch,
   forgetRememberedBranch,
   heldBranch,
   stayOnBranch,
@@ -443,7 +442,7 @@ describe('the job picker and the working context', () => {
     expect(listWorkOrders).toHaveBeenCalledTimes(1);
   });
 
-  it('a chosen job is unsaved work: the switch asks, staying keeps it, discarding clears it', async () => {
+  it('a chosen job is not unsaved work — the form only opens a page — so the switch does not ask, and forgets it (route sweep B3)', async () => {
     listWorkOrders.mockResolvedValue(found([workOrder]));
     const user = userEvent.setup();
     renderWith(branchSnapshot([TEST_BRANCH, OTHER_BRANCH]));
@@ -452,11 +451,7 @@ describe('the job picker and the working context', () => {
     await user.click(await screen.findByRole('button', { name: /WO-000042/ }));
     expect(screen.getByTestId('work-order-picker-chosen')).toHaveTextContent('WO-000042');
 
-    await stayOnBranch(user, await switchExpectingQuestion(user, 'second'));
-    expect(heldBranch()).toBe(TEST_BRANCH.id);
-    expect(screen.getByTestId('work-order-picker-chosen')).toHaveTextContent('WO-000042');
-
-    await discardAndSwitch(user, await switchExpectingQuestion(user, 'second'));
+    await switchWithoutQuestion(user, 'second');
     await waitFor(() => expect(heldBranch()).toBe(OTHER_BRANCH.id));
     await waitFor(() => expect(screen.queryByTestId('work-order-picker-chosen')).toBeNull());
     expect(box()).toHaveValue('');
@@ -610,6 +605,73 @@ describe('the builder names its people rather than asking for references', () =>
     } finally {
       forgetRememberedBranch();
     }
+  });
+});
+
+describe('the payer the builder opened on', () => {
+  it('putting back the payer it opened on is unsaved work, as a different payer is (route sweep B3)', async () => {
+    const user = userEvent.setup();
+    renderLtr(
+      inBranch(
+        <>
+          <BranchSwitch to={TEST_BRANCH.id} label="first" />
+          <BranchSwitch to={OTHER_BRANCH.id} label="second" />
+          <WorkingBranchProbe />
+          <QuotationsScreen
+            locale="en"
+            messages={en}
+            workOrderId={WORK_ORDER_ID}
+            workOrder={workOrder as never}
+            canManage={true}
+            canReadServices={false}
+            canReadCustomers={true}
+          />
+        </>,
+        { snapshot: branchSnapshot([TEST_BRANCH, OTHER_BRANCH]) }
+      )
+    );
+    await user.click(screen.getByRole('button', { name: 'first' }));
+    await user.click(screen.getByRole('button', { name: EN['quotations.list.create'] as string }));
+    const form = await builderForm();
+    try {
+      const picker = within(form).getByTestId('quotation-payer-picker');
+      expect(within(picker).getByTestId('quotation-payer-picker-chosen')).toHaveTextContent(
+        'Layla Haddad'
+      );
+      // Opened on the work order's customer: holding it is not unsaved work.
+      await switchWithoutQuestion(user, 'second');
+      await waitFor(() => expect(heldBranch()).toBe(OTHER_BRANCH.id));
+      // The switch forgot it; the form now holds none where it opened on one.
+      await waitFor(() =>
+        expect(within(form).queryByTestId('quotation-payer-picker-chosen')).toBeNull()
+      );
+      await stayOnBranch(user, await switchExpectingQuestion(user, 'first'));
+      expect(heldBranch()).toBe(OTHER_BRANCH.id);
+    } finally {
+      forgetRememberedBranch();
+    }
+  });
+});
+
+describe('the builder points at what to fix (route sweep B3)', () => {
+  it('moves the cursor to the first refused field of the line, and withdraws its complaint once corrected', async () => {
+    const user = userEvent.setup();
+    renderScreen({ canManage: true, canReadCustomers: true });
+    await user.click(screen.getByRole('button', { name: EN['quotations.list.create'] as string }));
+    const form = await builderForm();
+    const service = within(form).getByLabelText(labelled('quotations.picker.serviceIdField'));
+    const quantity = within(form).getByLabelText(labelled('quotations.lines.quantity'));
+    await user.click(
+      within(form).getByRole('button', { name: EN['quotations.build.submit'] as string })
+    );
+    // The line's service is the first thing to fix, so the cursor goes there.
+    await waitFor(() => expect(service).toHaveFocus());
+    expect(quantity).toHaveAttribute('aria-invalid', 'true');
+    await user.type(quantity, '2');
+    // Corrected: that complaint goes; the service's stays until it is fixed too.
+    expect(quantity).not.toHaveAttribute('aria-invalid', 'true');
+    expect(service).toHaveAttribute('aria-invalid', 'true');
+    expect(createQuotation).not.toHaveBeenCalled();
   });
 });
 

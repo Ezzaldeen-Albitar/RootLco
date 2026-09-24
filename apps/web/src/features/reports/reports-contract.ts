@@ -51,7 +51,7 @@
  * one dataset that has it. So a measure is rendered as the characters the server
  * sent. That is recorded in `docs/phase-1/phase-1-31/report-screens.md`.
  */
-import type { CursorPage } from '@/lib/api/read-operation';
+import type { CursorPage, ReadState } from '@/lib/api/read-operation';
 import type { ActionState } from '@/lib/forms/action-result';
 
 /**
@@ -194,6 +194,22 @@ export interface ReportStateCount {
  * no cache behind them). A client must not present that as something else, and
  * must not present a future value as `live`.
  */
+/**
+ * A run's answer as the screens receive it.
+ *
+ * A throttled run is still `unavailable` — a 429 is "try again shortly", not a
+ * fault — and additionally says so, with the wait the server advised when it
+ * advised a usable one, so a screen can say how long rather than only "later".
+ */
+export type ReportRunState =
+  | ReadState<ReportRun>
+  | {
+      readonly status: 'unavailable';
+      readonly correlationId: string | null;
+      readonly throttled: true;
+      readonly retryAfterSeconds: number | null;
+    };
+
 export interface ReportRun {
   readonly reportCode: string;
   readonly titleKey: string;

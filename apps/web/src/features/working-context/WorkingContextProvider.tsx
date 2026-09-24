@@ -5,15 +5,17 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useId,
   useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
   type ReactNode,
 } from 'react';
 import { ConfirmDialog } from '@/components/overlays/Overlays';
 import type { Messages } from '@/i18n/get-messages';
-import { translate } from '@/i18n/get-messages';
-import { usePersistedPreference } from '@/lib/use-persisted-flag';
+import { formatMessage, translate } from '@/i18n/get-messages';
+import { readPreference, usePersistedPreference } from '@/lib/use-persisted-flag';
 import {
   ALL_BRANCHES,
   preferenceKeyFor,
@@ -63,6 +65,11 @@ import {
  * that form's write. Screens declare their unsaved work with `useUnsavedGuard`,
  * and a switch with any guard dirty asks first. Nothing is discarded without an
  * answer, and nothing is switched behind the operator's back.
+ *
+ * A change another tab makes while work is unsaved here is held the same way
+ * (see `held`). "Stay" is this tab's answer for as long as the page lives and is
+ * not written anywhere: a reload starts from the remembered branch — the other
+ * tab's — and the header shows that branch, which is the truth after a reload.
  */
 
 export type WorkingContextSelection =
@@ -185,6 +192,55 @@ export function useWorkingContextChange(onChange: () => void): void {
   }, [version]);
 }
 
+interface Epoch {
+  readonly version: number;
+  readonly controller: AbortController;
+  /** The effective selection this epoch was issued for — see `keyOf`. */
+  readonly key: string;
+}
+
+/**
+ * The selection a snapshot and a remembered choice produce. Pure, so the
+ * provider and `apply` derive the same answer from the same inputs.
+ */
+function deriveSelection(
+  status: WorkingContextStatus,
+  branches: readonly WorkingContextBranch[],
+  stored: string | null
+): WorkingContextSelection | null {
+  if (status !== 'ready') return null;
+  // Exactly one: chosen for them, and never asked about.
+  if (branches.length === 1) {
+    const only = branches[0] as WorkingContextBranch;
+    return { companyId: only.companyId, branchId: only.id, allBranches: false };
+  }
+  if (stored === null) return null;
+  if (stored === ALL_BRANCHES) {
+    const spans = new Set(branches.map((branch) => branch.companyId));
+    return {
+      companyId:
+        spans.size === 1 ? ((branches[0] as WorkingContextBranch).companyId ?? null) : null,
+      branchId: null,
+      allBranches: true,
+    };
+  }
+  const match = branches.find((branch) => branch.id === stored);
+  // Remembered, then revoked. Discarded rather than sent — see the provider.
+  if (match === undefined) return null;
+  return { companyId: match.companyId, branchId: match.id, allBranches: false };
+}
+
+/** Nothing to subscribe to: whether this is the browser never changes once it is. */
+const noSubscription = () => () => undefined;
+const browserSnapshot = () => true;
+const serverSnapshot = () => false;
+
+/** One string per effective selection: none, every branch, or one branch. */
+function keyOf(selection: WorkingContextSelection | null): string {
+  if (selection === null) return '';
+  return selection.allBranches ? ALL_BRANCHES : selection.branchId;
+}
+
 export function WorkingContextProvider({
   snapshot,
   messages,
@@ -207,6 +263,88 @@ export function WorkingContextProvider({
   const [stored, setStored] = usePersistedPreference(preferenceKey);
 
   /*
+   * The switch waiting on the discard question. Wrapped, because "switch to no
+   * branch at all" is a real answer when it is another tab's change being taken
+   * (see `held`), and a bare `null` already means "nothing is waiting".
+   */
+  const [pending, setPending] = useState<{ readonly next: string | null } | null>(null);
+
+  // A Set, created once. The registry identity must be stable: every guard
+  // registers against it in an effect keyed on that identity.
+  const [guards] = useState<GuardRegistry>(() => new Set());
+
+  const usable = preferenceKey.length > 0;
+
+  /*
+   * ## A change from another tab does not re-address unsaved work either
+   *
+   * The header's select asks before it discards (`select`, below). Another tab
+   * writing the remembered branch did not pass through `select` at all: the
+   * storage notification re-read the preference, the selection moved, and every
+   * picker holding a chosen record in a half-filled form cleared it without a
+   * word (route sweep B3 review).
+   *
+   * So an outside write that would change this tab's branch while any screen
+   * holds unsaved work is HELD: this tab keeps the value it was using, and a
+   * notice offers the two answers — switch now (through the same guarded
+   * question the header asks) or stay. With nothing unsaved it is applied at
+   * once, exactly as before, so tabs still follow each other.
+   *
+   * `seenStored` is the stored value this tab last rendered with. `apply`
+   * advances it together with its own write, so the only difference left for
+   * the render below to find is a write this tab did not make.
+   *
+   * Hydration is not such a write. A reload renders with the server's snapshot
+   * — nothing stored, because storage does not exist there — and the remembered
+   * value arrives on the first render after hydration. Taken as a change, a
+   * screen already holding unsaved work by then would hold "nothing chosen" and
+   * report a change from another tab that never happened. So the first value
+   * read in the browser is where this tab STARTS, not something it was told:
+   * `inBrowser` is false exactly while the server snapshot is in use, and the
+   * render that turns it true adopts `stored` without comparing it.
+   */
+  const inBrowser = useSyncExternalStore(noSubscription, browserSnapshot, serverSnapshot);
+  const [seenStored, setSeenStored] = useState<string | null>(stored);
+  const [baselined, setBaselined] = useState(inBrowser);
+  const [held, setHeld] = useState<{ readonly value: string | null } | null>(null);
+  /** The outside value the operator chose to stay against — asked about once. */
+  const [declined, setDeclined] = useState<{ readonly value: string | null } | null>(null);
+
+  let heldNow = held;
+  if (!baselined) {
+    if (inBrowser) {
+      setBaselined(true);
+      setSeenStored(stored);
+    }
+  } else if (stored !== seenStored) {
+    setSeenStored(stored);
+    const anyDirty = Array.from(guards).some((guard) => guard.dirty);
+    if (heldNow === null) {
+      const before = keyOf(deriveSelection(status, branches, usable ? seenStored : null));
+      const after = keyOf(deriveSelection(status, branches, usable ? stored : null));
+      if (anyDirty && before !== after) heldNow = { value: seenStored };
+    } else if (stored === heldNow.value || !anyDirty) {
+      // The other tab came back to this one's branch, or the work here was
+      // saved or cleared since: nothing is at stake any more, so this change is
+      // followed like any other and the tabs agree again. Saving alone does not
+      // move this tab — it waits for the other tab's next change, because a
+      // switch at the moment of saving would be one nobody asked for.
+      heldNow = null;
+    }
+    if (heldNow !== held) {
+      setHeld(heldNow);
+      setDeclined(null);
+    }
+  }
+  const effectiveStored = heldNow !== null ? heldNow.value : stored;
+
+  const selection = useMemo<WorkingContextSelection | null>(
+    () => deriveSelection(status, branches, usable ? effectiveStored : null),
+    [status, branches, effectiveStored, usable]
+  );
+  const selectionKey = keyOf(selection);
+
+  /*
    * The version and the controller move TOGETHER, as one value.
    *
    * They were two pieces of state, and that is a bug waiting to happen: a
@@ -217,41 +355,52 @@ export function WorkingContextProvider({
    * It is state rather than a ref because the signal is READ during render —
    * every consumer takes it off the context value — and a ref read during
    * render is not guaranteed to be the value the render is about.
+   *
+   * `key` is the effective selection the epoch was issued for. See below.
    */
-  const [epoch, setEpoch] = useState<{
-    readonly version: number;
-    readonly controller: AbortController;
-  }>(() => ({ version: 0, controller: new AbortController() }));
-  const [pending, setPending] = useState<string | null>(null);
+  const [epoch, setEpoch] = useState<Epoch>(() => ({
+    version: 0,
+    controller: new AbortController(),
+    key: selectionKey,
+  }));
 
-  // A Set, created once. The registry identity must be stable: every guard
-  // registers against it in an effect keyed on that identity.
-  const [guards] = useState<GuardRegistry>(() => new Set());
+  /*
+   * EVERY change of the effective selection moves the epoch, whoever made it.
+   *
+   * The header's own select goes through `apply`, which moves it at once. Two
+   * other paths change the selection without passing through `apply`: another
+   * tab writing the preference (the storage notification re-reads it), and a
+   * reload whose remembered branch arrives after hydration, when the server
+   * snapshot (nothing chosen) gives way to the stored one. Both used to change
+   * the selection with the version and the signal untouched, so a screen that
+   * seeds state from the branch through `useWorkingContextChange` kept naming
+   * the previous branch, and a read in flight was never aborted.
+   *
+   * The adjustment is made DURING render — React's pattern for state that
+   * follows a value — so no child ever renders the new selection under the old
+   * version. The updater is pure; the retired controller is aborted after the
+   * commit, below.
+   */
+  if (epoch.key !== selectionKey) {
+    setEpoch((previous) =>
+      previous.key === selectionKey
+        ? previous
+        : { version: previous.version + 1, controller: new AbortController(), key: selectionKey }
+    );
+  }
 
-  const usable = preferenceKey.length > 0;
-
-  const selection = useMemo<WorkingContextSelection | null>(() => {
-    if (status !== 'ready') return null;
-    // Exactly one: chosen for them, and never asked about.
-    if (branches.length === 1) {
-      const only = branches[0] as WorkingContextBranch;
-      return { companyId: only.companyId, branchId: only.id, allBranches: false };
-    }
-    if (!usable || stored === null) return null;
-    if (stored === ALL_BRANCHES) {
-      const spans = new Set(branches.map((branch) => branch.companyId));
-      return {
-        companyId:
-          spans.size === 1 ? ((branches[0] as WorkingContextBranch).companyId ?? null) : null,
-        branchId: null,
-        allBranches: true,
-      };
-    }
-    const match = branches.find((branch) => branch.id === stored);
-    // Remembered, then revoked. Discarded rather than sent — see the effect below.
-    if (match === undefined) return null;
-    return { companyId: match.companyId, branchId: match.id, allBranches: false };
-  }, [status, branches, stored, usable]);
+  /*
+   * The controller a render-time adjustment retired is aborted once the new
+   * epoch commits. `apply` aborts its own synchronously, and a second `abort()`
+   * on the same controller does nothing. Tracked by a ref rather than by an
+   * effect cleanup, so a Strict Mode re-run cannot abort the controller in use.
+   */
+  const retired = useRef(epoch.controller);
+  useEffect(() => {
+    if (retired.current === epoch.controller) return;
+    retired.current.abort();
+    retired.current = epoch.controller;
+  }, [epoch.controller]);
 
   /*
    * A stored choice the server no longer publishes is REMOVED, not merely
@@ -274,8 +423,17 @@ export function WorkingContextProvider({
   }, [usable, status, stored, branches, setStored]);
 
   const apply = useCallback(
-    (next: string) => {
-      if (usable) setStored(next);
+    (next: string | null) => {
+      // This tab's own write, marked as seen in the same batch as it lands so
+      // it is never mistaken for another tab's, and whatever was held is
+      // answered by it. What is marked is what storage now holds — a blocked
+      // store keeps the old value, and that is not an outside change either.
+      setHeld(null);
+      setDeclined(null);
+      if (usable) {
+        setStored(next);
+        setSeenStored(readPreference(preferenceKey));
+      }
       /*
        * FUNCTIONAL, and the abort happens INSIDE the update.
        *
@@ -298,25 +456,47 @@ export function WorkingContextProvider({
        * twice with no second effect. The spare controller the discarded call
        * creates is never handed out.
        */
+      /*
+       * The epoch is issued for the selection `next` produces, so the
+       * render-time adjustment above finds nothing left to do and a switch
+       * made here moves the version exactly once.
+       */
+      const nextKey = keyOf(deriveSelection(status, branches, usable ? next : null));
       setEpoch((previous) => {
         previous.controller.abort();
-        return { version: previous.version + 1, controller: new AbortController() };
+        return { version: previous.version + 1, controller: new AbortController(), key: nextKey };
       });
     },
-    [usable, setStored]
+    [usable, setStored, preferenceKey, status, branches]
   );
 
-  const select = useCallback(
-    (next: string) => {
+  /** The one guarded path: every switch this tab makes, whoever proposed it. */
+  const requestSwitch = useCallback(
+    (next: string | null) => {
       const dirty = Array.from(guards).some((guard) => guard.dirty);
       if (dirty) {
-        setPending(next);
+        setPending({ next });
         return;
       }
       apply(next);
     },
     [apply, guards]
   );
+
+  const select = useCallback((next: string) => requestSwitch(next), [requestSwitch]);
+
+  /*
+   * The notice for a held change: shown while another tab's value differs from
+   * the one this tab stayed on, until the operator answers it. "Stay" is an
+   * answer for THAT value; a later, different change from the other tab asks
+   * again.
+   */
+  const outside =
+    heldNow !== null &&
+    stored !== heldNow.value &&
+    !(declined !== null && declined.value === stored)
+      ? { value: stored }
+      : null;
 
   const value = useMemo<WorkingContext>(() => {
     return {
@@ -347,9 +527,9 @@ export function WorkingContextProvider({
           open={pending !== null}
           onCancel={() => setPending(null)}
           onConfirm={() => {
-            const next = pending;
+            const waiting = pending;
             setPending(null);
-            if (next !== null) apply(next);
+            if (waiting !== null) apply(waiting.next);
           }}
           title={translate(messages, 'workingContext.discard.title')}
           description={translate(messages, 'workingContext.discard.description')}
@@ -357,7 +537,117 @@ export function WorkingContextProvider({
           messages={messages}
           destructive
         />
+        <CrossTabNotice
+          messages={messages}
+          current={labelFor(selection, branches, messages)}
+          incoming={
+            outside === null
+              ? null
+              : labelFor(
+                  deriveSelection(status, branches, usable ? outside.value : null),
+                  branches,
+                  messages
+                )
+          }
+          open={outside !== null}
+          onSwitch={() => {
+            if (outside !== null) requestSwitch(outside.value);
+          }}
+          onStay={() => {
+            if (outside !== null) setDeclined({ value: outside.value });
+          }}
+        />
       </GuardRegistryValue.Provider>
     </WorkingContextValue.Provider>
+  );
+}
+
+/** What a person calls a selection: a branch's name, every branch, or nothing. */
+function labelFor(
+  selection: WorkingContextSelection | null,
+  branches: readonly WorkingContextBranch[],
+  messages: Messages
+): string | null {
+  if (selection === null) return null;
+  if (selection.allBranches) return translate(messages, 'workingContext.allBranches');
+  return branches.find((branch) => branch.id === selection.branchId)?.name ?? null;
+}
+
+/**
+ * Says that another tab changed the working branch, and asks what this one
+ * should do, while a screen here holds unsaved work.
+ *
+ * Not a dialog: nothing is lost by leaving it open, and this tab keeps working
+ * on the branch it was on. The polite live region around it is rendered
+ * whether or not there is anything to say, because a region born with its
+ * content is not announced; it carries no role of its own, so an empty one is
+ * not a second status on every page. The notice inside it is the status.
+ * "Switch now" goes through the same discard question the header asks, so the
+ * answer that loses work is still given on purpose.
+ */
+function CrossTabNotice({
+  messages,
+  current,
+  incoming,
+  open,
+  onSwitch,
+  onStay,
+}: {
+  readonly messages: Messages;
+  readonly current: string | null;
+  readonly incoming: string | null;
+  readonly open: boolean;
+  readonly onSwitch: () => void;
+  readonly onStay: () => void;
+}) {
+  const titleId = useId();
+  return (
+    <div
+      aria-live="polite"
+      data-testid="working-context-cross-tab-live"
+      className="pointer-events-none fixed bottom-4 end-4 z-toast flex max-w-[calc(100vw-2rem)] flex-col items-end"
+    >
+      {open ? (
+        <div
+          role="status"
+          aria-labelledby={titleId}
+          data-testid="working-context-cross-tab"
+          className="pointer-events-auto flex w-full max-w-md flex-col gap-3 break-words rounded-md border border-border bg-surface p-3 shadow-md"
+        >
+          <div className="flex flex-col gap-1">
+            <p id={titleId} className="text-body font-medium text-text-primary">
+              {translate(messages, 'workingContext.crossTab.title')}
+            </p>
+            {incoming !== null ? (
+              <p className="text-supporting text-text-secondary">
+                {formatMessage(translate(messages, 'workingContext.crossTab.description'), {
+                  branch: incoming,
+                })}
+              </p>
+            ) : null}
+          </div>
+          <div className="flex flex-wrap justify-end gap-2">
+            <button
+              type="button"
+              onClick={onStay}
+              className="rounded-md border border-border bg-surface px-4 py-2 text-button text-text-secondary hover:bg-surface-subtle"
+            >
+              {current !== null
+                ? formatMessage(translate(messages, 'workingContext.crossTab.stay'), {
+                    branch: current,
+                  })
+                : translate(messages, 'workingContext.crossTab.stayHere')}
+            </button>
+            <button
+              type="button"
+              onClick={onSwitch}
+              className="rounded-md bg-primary px-4 py-2 text-button font-medium text-text-inverse transition-colors duration-fast ease-standard hover:bg-primary-hover"
+            >
+              {translate(messages, 'workingContext.crossTab.switch')}
+            </button>
+          </div>
+        </div>
+      ) : null}
+    </div>
   );
 }

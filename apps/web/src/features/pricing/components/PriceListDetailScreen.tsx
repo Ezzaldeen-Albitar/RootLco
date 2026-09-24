@@ -11,6 +11,7 @@ import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic } from '@/i18n/get-messages';
 import type { ReadState } from '@/lib/api/read-operation';
 import type { ActionState } from '@/lib/forms/action-result';
+import { useLocalRefusal } from '@/lib/forms/use-local-refusal';
 import { formatMoney } from '@/lib/money';
 
 import {
@@ -595,12 +596,26 @@ function RecordRuleForm({
   const [customerClass, setCustomerClass] = useState('');
   const [taxClassId, setTaxClassId] = useState('');
   const [priority, setPriority] = useState('');
-  const [errors, setErrors] = useState<Readonly<Record<string, string>>>({});
+  // Question f: the cursor goes to the first thing to fix, and a complaint is
+  // withdrawn once its field no longer holds the refused value (route sweep B3).
+  const {
+    errorKey: localErrorKey,
+    formRef: localFormRef,
+    refuse: localRefuse,
+  } = useLocalRefusal({
+    serviceId,
+    amount,
+    companyId: pair.companyId,
+    branchId: pair.branchId,
+    customerClass,
+    taxClassId,
+    priority,
+  });
   const [busy, setBusy] = useState(false);
   const [outcome, setOutcome] = useState<ActionState | null>(null);
 
   const errorFor = (name: string): string | undefined => {
-    const key = errors[name] ?? outcome?.fieldErrors?.[name];
+    const key = localErrorKey(name) ?? outcome?.fieldErrors?.[name];
     return key ? translateDynamic(messages, key) : undefined;
   };
 
@@ -638,7 +653,7 @@ function RecordRuleForm({
     } else if (priorityText.length > 0 && Number(priorityText) > MAX_PRIORITY) {
       found['priority'] = 'pricing.rule.priorityFormat';
     }
-    setErrors(found);
+    localRefuse(found);
     if (Object.keys(found).length > 0) return;
 
     setBusy(true);
@@ -663,6 +678,7 @@ function RecordRuleForm({
 
   return (
     <form
+      ref={localFormRef}
       onSubmit={(event) => {
         event.preventDefault();
         void submit();
@@ -776,12 +792,16 @@ function CreateVersionPanel({
   readonly onCreated: () => void;
 }) {
   const [form, setForm] = useState({ effectiveFrom: '', notes: '' });
-  const [errors, setErrors] = useState<Readonly<Record<string, string>>>({});
+  const {
+    errorKey: localErrorKey,
+    formRef: localFormRef,
+    refuse: localRefuse,
+  } = useLocalRefusal(form);
   const [busy, setBusy] = useState(false);
   const [outcome, setOutcome] = useState<ActionState | null>(null);
 
   const errorFor = (name: string): string | undefined => {
-    const key = errors[name] ?? outcome?.fieldErrors?.[name];
+    const key = localErrorKey(name) ?? outcome?.fieldErrors?.[name];
     return key ? translateDynamic(messages, key) : undefined;
   };
 
@@ -791,7 +811,7 @@ function CreateVersionPanel({
     if (!ISO_DATE.test(effectiveFrom)) found['effectiveFrom'] = 'pricing.common.dateFormat';
     const notes = form.notes.trim();
     if (notes.length > MAX_NOTES) found['notes'] = 'pricing.version.notesTooLong';
-    setErrors(found);
+    localRefuse(found);
     if (Object.keys(found).length > 0) return;
 
     setBusy(true);
@@ -821,6 +841,7 @@ function CreateVersionPanel({
         {translate(messages, 'pricing.version.createHeading')}
       </h2>
       <form
+        ref={localFormRef}
         onSubmit={(event) => {
           event.preventDefault();
           void submit();
@@ -886,12 +907,16 @@ function PublishPanel({
   );
   const [versionId, setVersionId] = useState(drafts[0]?.id ?? '');
   const [effectiveFrom, setEffectiveFrom] = useState('');
-  const [errors, setErrors] = useState<Readonly<Record<string, string>>>({});
+  const {
+    errorKey: localErrorKey,
+    formRef: localFormRef,
+    refuse: localRefuse,
+  } = useLocalRefusal({ versionId, effectiveFrom });
   const [busy, setBusy] = useState(false);
   const [outcome, setOutcome] = useState<ActionState | null>(null);
 
   const errorFor = (name: string): string | undefined => {
-    const key = errors[name] ?? outcome?.fieldErrors?.[name];
+    const key = localErrorKey(name) ?? outcome?.fieldErrors?.[name];
     return key ? translateDynamic(messages, key) : undefined;
   };
 
@@ -900,7 +925,7 @@ function PublishPanel({
     if (!versionId) found['versionId'] = 'field.required';
     const from = effectiveFrom.trim();
     if (!ISO_DATE.test(from)) found['effectiveFrom'] = 'pricing.common.dateFormat';
-    setErrors(found);
+    localRefuse(found);
     if (Object.keys(found).length > 0) return;
 
     setBusy(true);
@@ -938,6 +963,7 @@ function PublishPanel({
         </p>
       ) : (
         <form
+          ref={localFormRef}
           onSubmit={(event) => {
             event.preventDefault();
             void submit();
@@ -1001,13 +1027,24 @@ function AssignmentPanel({
   const [priority, setPriority] = useState('');
   const [effectiveFrom, setEffectiveFrom] = useState('');
   const [effectiveTo, setEffectiveTo] = useState('');
-  const [errors, setErrors] = useState<Readonly<Record<string, string>>>({});
+  const {
+    errorKey: localErrorKey,
+    formRef: localFormRef,
+    refuse: localRefuse,
+  } = useLocalRefusal({
+    companyId: pair.companyId,
+    branchId: pair.branchId,
+    customerClass,
+    priority,
+    effectiveFrom,
+    effectiveTo,
+  });
   const [busy, setBusy] = useState(false);
   const [outcome, setOutcome] = useState<ActionState | null>(null);
   const [recorded, setRecorded] = useState<string | null>(null);
 
   const errorFor = (name: string): string | undefined => {
-    const key = errors[name] ?? outcome?.fieldErrors?.[name];
+    const key = localErrorKey(name) ?? outcome?.fieldErrors?.[name];
     return key ? translateDynamic(messages, key) : undefined;
   };
 
@@ -1036,7 +1073,7 @@ function AssignmentPanel({
     const to = effectiveTo.trim();
     if (to.length > 0 && !ISO_DATE.test(to)) found['effectiveTo'] = 'pricing.common.dateFormat';
     else if (to.length > 0 && to <= from) found['effectiveTo'] = 'pricing.assignment.rangeOrder';
-    setErrors(found);
+    localRefuse(found);
     if (Object.keys(found).length > 0) return;
 
     setBusy(true);
@@ -1074,6 +1111,7 @@ function AssignmentPanel({
         {translate(messages, 'pricing.assignment.noRead')}
       </p>
       <form
+        ref={localFormRef}
         onSubmit={(event) => {
           event.preventDefault();
           void submit();

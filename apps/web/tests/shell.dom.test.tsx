@@ -3,6 +3,7 @@ import { join, relative, sep } from 'node:path';
 import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { useEffect, useState, type ReactNode } from 'react';
+import { renderToString } from 'react-dom/server';
 import ts from 'typescript';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { axe } from 'vitest-axe';
@@ -11,6 +12,7 @@ import { INITIAL_REQUEST, type TableRequest } from '@/components/data-table/tabl
 import { MoneyField } from '@/components/forms/MoneyField';
 import { RecordForm } from '@/components/forms/RecordForm';
 import { TextField } from '@/components/forms/Field';
+import { SearchPicker } from '@/components/search/SearchPicker';
 import { PageHeader } from '@/components/shell/PageHeader';
 import { LocaleSwitcher, swapLocale } from '@/components/shell/LocaleSwitcher';
 import { Sidebar } from '@/components/shell/Sidebar';
@@ -22,6 +24,7 @@ import {
   WorkingContextProvider,
   useUnsavedGuard,
   useWorkingContext,
+  useWorkingContextChange,
   type WorkingContext,
 } from '@/features/working-context/WorkingContextProvider';
 import {
@@ -941,6 +944,18 @@ function Probe({ onContext }: { readonly onContext: (context: WorkingContext) =>
   return null;
 }
 
+/** Reports every change the way a screen seeding state from the branch sees it. */
+function ChangeProbe({ onChange }: { readonly onChange: (branchId: string | null) => void }) {
+  const { selection } = useWorkingContext();
+  useWorkingContextChange(() => onChange(selection?.branchId ?? null));
+  return null;
+}
+
+function SelectionText() {
+  const { selection } = useWorkingContext();
+  return <p>{`selection:${selection?.branchId ?? 'none'}`}</p>;
+}
+
 function DirtyScreen({ dirty }: { readonly dirty: boolean }) {
   useUnsavedGuard(dirty);
   return null;
@@ -1187,6 +1202,127 @@ describe('the remembered branch, revoked and re-read', () => {
       expect(seen().selection).toEqual({ companyId: 'c-1', branchId: 'b-2', allBranches: false })
     );
   });
+
+  it('moves the version and aborts the signal when ANOTHER TAB changes the branch', async () => {
+    /*
+     * The header's own select moved the version; a change arriving from
+     * another tab changed the selection with the version and the signal
+     * untouched, so every `useWorkingContextChange` consumer kept the state it
+     * had seeded from the previous branch and a read in flight committed.
+     */
+    window.localStorage.setItem(WC_KEY, 'b-1');
+    const onContext = vi.fn();
+    const onChange = vi.fn();
+    renderLtr(
+      <WorkingContextProvider snapshot={wcSnapshot([MAIN, SECOND])} messages={messages}>
+        <Probe onContext={onContext} />
+        <ChangeProbe onChange={onChange} />
+      </WorkingContextProvider>
+    );
+    const seen = () => onContext.mock.calls[onContext.mock.calls.length - 1]?.[0] as WorkingContext;
+    const before = seen();
+    expect(before.selection).toMatchObject({ branchId: 'b-1' });
+
+    window.localStorage.setItem(WC_KEY, 'b-2');
+    window.dispatchEvent(new Event('storage'));
+
+    await waitFor(() => expect(seen().selection).toMatchObject({ branchId: 'b-2' }));
+    expect(seen().version).toBe(before.version + 1);
+    expect(before.signal.aborted).toBe(true);
+    expect(seen().signal.aborted).toBe(false);
+    expect(onChange).toHaveBeenCalledTimes(1);
+    expect(onChange).toHaveBeenLastCalledWith('b-2');
+  });
+
+  it('moves the version once, not twice, when the header select makes the change', async () => {
+    const user = userEvent.setup();
+    const onChange = vi.fn();
+    const { seen } = (() => {
+      const onContext = vi.fn();
+      renderLtr(
+        <WorkingContextProvider snapshot={wcSnapshot([MAIN, SECOND])} messages={messages}>
+          <Probe onContext={onContext} />
+          <ChangeProbe onChange={onChange} />
+          <WorkingContextControl messages={messages} />
+        </WorkingContextProvider>
+      );
+      return {
+        seen: () => onContext.mock.calls[onContext.mock.calls.length - 1]?.[0] as WorkingContext,
+      };
+    })();
+    const before = seen();
+    await user.selectOptions(screen.getByTestId('working-context-select'), 'b-2');
+    await waitFor(() => expect(seen().selection).toMatchObject({ branchId: 'b-2' }));
+    expect(seen().version).toBe(before.version + 1);
+    expect(onChange).toHaveBeenCalledTimes(1);
+  });
+
+  it('takes a restored branch as where this tab starts, even over unsaved work', async () => {
+    /*
+     * The same reload, with a screen that already holds unsaved work when the
+     * remembered branch arrives. The first value read in the browser is where
+     * this tab starts: it is not another tab's change, so nothing is held and
+     * nobody is told a change happened (route sweep B3 review).
+     */
+    const onContext = vi.fn();
+    const onChange = vi.fn();
+    const tree = (
+      <WorkingContextProvider snapshot={wcSnapshot([MAIN, SECOND])} messages={messages}>
+        <Probe onContext={onContext} />
+        <ChangeProbe onChange={onChange} />
+        <DirtyScreen dirty />
+        <SelectionText />
+      </WorkingContextProvider>
+    );
+    const container = document.createElement('div');
+    container.innerHTML = renderToString(tree);
+    document.body.appendChild(container);
+    expect(container).toHaveTextContent('selection:none');
+
+    window.localStorage.setItem(WC_KEY, 'b-2');
+    renderLtr(tree, { container, hydrate: true });
+
+    const seen = () => onContext.mock.calls[onContext.mock.calls.length - 1]?.[0] as WorkingContext;
+    await waitFor(() => expect(seen().selection).toMatchObject({ branchId: 'b-2' }));
+    expect(container).toHaveTextContent('selection:b-2');
+    expect(screen.queryByTestId('working-context-cross-tab')).toBeNull();
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+    expect(onChange).toHaveBeenCalledTimes(1);
+    expect(onChange).toHaveBeenLastCalledWith('b-2');
+    // Still what storage holds: nothing was written back over it.
+    expect(window.localStorage.getItem(WC_KEY)).toBe('b-2');
+  });
+
+  it('moves the version when a reload restores the remembered branch after hydration', async () => {
+    /*
+     * A reload renders on the server with nothing chosen — storage does not
+     * exist there — and the remembered branch arrives when hydration gives way
+     * to the client snapshot. That is a change of branch for every screen that
+     * mounted under "nothing chosen", and it must reach them as one.
+     */
+    const onContext = vi.fn();
+    const onChange = vi.fn();
+    const tree = (
+      <WorkingContextProvider snapshot={wcSnapshot([MAIN, SECOND])} messages={messages}>
+        <Probe onContext={onContext} />
+        <ChangeProbe onChange={onChange} />
+        <SelectionText />
+      </WorkingContextProvider>
+    );
+    const container = document.createElement('div');
+    container.innerHTML = renderToString(tree);
+    document.body.appendChild(container);
+    expect(container).toHaveTextContent('selection:none');
+
+    window.localStorage.setItem(WC_KEY, 'b-2');
+    renderLtr(tree, { container, hydrate: true });
+
+    const seen = () => onContext.mock.calls[onContext.mock.calls.length - 1]?.[0] as WorkingContext;
+    await waitFor(() => expect(seen().selection).toMatchObject({ branchId: 'b-2' }));
+    expect(seen().version).toBe(1);
+    expect(onChange).toHaveBeenCalledTimes(1);
+    expect(onChange).toHaveBeenLastCalledWith('b-2');
+  });
 });
 
 describe('a form with unsaved work blocks a branch switch', () => {
@@ -1224,5 +1360,264 @@ describe('a form with unsaved work blocks a branch switch', () => {
 
     const dialog = await screen.findByRole('alertdialog');
     expect(within(dialog).getByText(messages['workingContext.discard.title'])).toBeInTheDocument();
+  });
+});
+
+describe('a branch change made in ANOTHER TAB does not discard unsaved work', () => {
+  /*
+   * The header's select asks before it discards; a change arriving from another
+   * tab used to be applied straight away, so a record chosen in a half-filled
+   * form was cleared without a word (route sweep B3 review). With unsaved work
+   * on screen the change is now held and the operator is asked; with none it is
+   * followed as before.
+   */
+  beforeEach(() => {
+    window.localStorage.clear();
+  });
+
+  interface Chosen {
+    readonly id: string;
+    readonly name: string;
+  }
+
+  /** A write form holding one chosen record — the case the review reproduced. */
+  function PickerForm({ onCleared }: { readonly onCleared: () => void }) {
+    const [value, setValue] = useState<Chosen | null>({ id: 'r-1', name: 'Chosen record' });
+    return (
+      <SearchPicker<Chosen>
+        messages={messages}
+        label="Record"
+        value={value}
+        onChange={(next) => {
+          if (next === null) onCleared();
+          setValue(next);
+        }}
+        labelOf={(row) => row.name}
+        load={async () => ({
+          status: 'ok',
+          data: { items: [], nextCursor: null, hasMore: false },
+          correlationId: null,
+        })}
+        canSearch
+        notPermitted="Not permitted"
+        minLength={2}
+        maxLength={40}
+        placeholder=""
+        example=""
+        tooShort=""
+        resultsLabel="Matches"
+        change="Change record"
+        testId="record-picker"
+      />
+    );
+  }
+
+  /** A screen whose unsaved work the operator can save, which clears its guard. */
+  function SaveableScreen() {
+    const [dirty, setDirty] = useState(true);
+    useUnsavedGuard(dirty);
+    return (
+      <button type="button" onClick={() => setDirty(false)}>
+        save the work
+      </button>
+    );
+  }
+
+  function renderWith(
+    extra: ReactNode,
+    locale: 'en' | 'ar' = 'en',
+    branches: readonly ReturnType<typeof wcBranch>[] = [MAIN, SECOND]
+  ) {
+    const onContext = vi.fn();
+    const onChange = vi.fn();
+    const render = locale === 'ar' ? renderRtl : renderLtr;
+    render(
+      <WorkingContextProvider
+        snapshot={wcSnapshot(branches)}
+        messages={locale === 'ar' ? arabic : messages}
+      >
+        <Probe onContext={onContext} />
+        <ChangeProbe onChange={onChange} />
+        {extra}
+        <WorkingContextControl messages={locale === 'ar' ? arabic : messages} />
+      </WorkingContextProvider>
+    );
+    return {
+      onChange,
+      seen: () => onContext.mock.calls[onContext.mock.calls.length - 1]?.[0] as WorkingContext,
+    };
+  }
+
+  /** Exactly what another tab does: write the preference, then notify this one. */
+  function otherTabChooses(branchId: string) {
+    window.localStorage.setItem(WC_KEY, branchId);
+    window.dispatchEvent(new Event('storage'));
+  }
+
+  it("keeps a chosen record and this tab's branch, and says what happened", async () => {
+    window.localStorage.setItem(WC_KEY, 'b-1');
+    const onCleared = vi.fn();
+    const { seen, onChange } = renderWith(<PickerForm onCleared={onCleared} />);
+    const before = seen();
+    expect(screen.getByTestId('record-picker-chosen')).toHaveTextContent('Chosen record');
+
+    otherTabChooses('b-2');
+
+    const notice = await screen.findByTestId('working-context-cross-tab');
+    expect(within(notice).getByText(messages['workingContext.crossTab.title'])).toBeInTheDocument();
+    expect(notice).toHaveTextContent('Another tab is now working in Second workshop.');
+    expect(notice).toHaveAccessibleName(messages['workingContext.crossTab.title']);
+    // A status, announced through a live region that was there before it was.
+    expect(notice).toHaveAttribute('role', 'status');
+    expect(screen.getByTestId('working-context-cross-tab-live')).toHaveAttribute(
+      'aria-live',
+      'polite'
+    );
+    expect(screen.getByTestId('working-context-cross-tab-live')).toContainElement(notice);
+    expect(
+      within(notice).getByRole('button', { name: 'Stay on Main workshop' })
+    ).toBeInTheDocument();
+    expect(
+      within(notice).getByRole('button', { name: messages['workingContext.crossTab.switch'] })
+    ).toBeInTheDocument();
+
+    // Nothing moved: not the branch, not the version, not the signal, not the record.
+    expect(seen().selection).toMatchObject({ branchId: 'b-1' });
+    expect(seen().version).toBe(before.version);
+    expect(before.signal.aborted).toBe(false);
+    expect(onChange).not.toHaveBeenCalled();
+    expect(onCleared).not.toHaveBeenCalled();
+    expect(screen.getByTestId('record-picker-chosen')).toHaveTextContent('Chosen record');
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+  });
+
+  it('"Switch now" asks the same discard question the header asks, then switches', async () => {
+    const user = userEvent.setup();
+    window.localStorage.setItem(WC_KEY, 'b-1');
+    const onCleared = vi.fn();
+    const { seen } = renderWith(<PickerForm onCleared={onCleared} />);
+    otherTabChooses('b-2');
+    const notice = await screen.findByTestId('working-context-cross-tab');
+
+    await user.click(
+      within(notice).getByRole('button', { name: messages['workingContext.crossTab.switch'] })
+    );
+    const dialog = await screen.findByRole('alertdialog');
+    expect(within(dialog).getByText(messages['workingContext.discard.title'])).toBeInTheDocument();
+    // Still on this tab's branch while the question is open.
+    expect(seen().selection).toMatchObject({ branchId: 'b-1' });
+    expect(onCleared).not.toHaveBeenCalled();
+
+    await user.click(
+      within(dialog).getByRole('button', { name: messages['workingContext.discard.confirm'] })
+    );
+    await waitFor(() => expect(seen().selection).toMatchObject({ branchId: 'b-2' }));
+    expect(onCleared).toHaveBeenCalledTimes(1);
+    expect(screen.queryByTestId('working-context-cross-tab')).toBeNull();
+    expect(window.localStorage.getItem(WC_KEY)).toBe('b-2');
+  });
+
+  it('"Stay" keeps this tab on its branch and keeps what was typed', async () => {
+    const user = userEvent.setup();
+    window.localStorage.setItem(WC_KEY, 'b-1');
+    const { seen, onChange } = renderWith(
+      <RecordForm
+        messages={messages}
+        fields={[{ name: 'reason', kind: 'text', labelKey: 'crm.customers.notes.body' }]}
+        action={async () => ({ status: 'success', messageKey: 'action.succeeded', attempt: 1 })}
+        submitKey="form.submit"
+        titleKey="crm.customers.notes.add"
+      />
+    );
+    await user.type(screen.getByLabelText(messages['crm.customers.notes.body']), 'a note');
+    otherTabChooses('b-2');
+    const notice = await screen.findByTestId('working-context-cross-tab');
+
+    await user.click(within(notice).getByRole('button', { name: 'Stay on Main workshop' }));
+
+    expect(screen.queryByTestId('working-context-cross-tab')).toBeNull();
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+    expect(seen().selection).toMatchObject({ branchId: 'b-1' });
+    expect(onChange).not.toHaveBeenCalled();
+    expect(screen.getByLabelText(messages['crm.customers.notes.body'])).toHaveValue('a note');
+  });
+
+  it('asks again when, after "Stay", the other tab makes a DIFFERENT change', async () => {
+    /*
+     * "Stay" answers the change that was offered, and only that one. A later
+     * change to another branch is a new question while the work is still
+     * unsaved, and it is asked; until it is answered this tab stays put.
+     */
+    const user = userEvent.setup();
+    window.localStorage.setItem(WC_KEY, 'b-1');
+    const { seen, onChange } = renderWith(<DirtyScreen dirty />, 'en', [MAIN, SECOND, COAST]);
+    const before = seen();
+    otherTabChooses('b-2');
+    const first = await screen.findByTestId('working-context-cross-tab');
+    await user.click(within(first).getByRole('button', { name: 'Stay on Main workshop' }));
+    expect(screen.queryByTestId('working-context-cross-tab')).toBeNull();
+
+    otherTabChooses('b-3');
+
+    const again = await screen.findByTestId('working-context-cross-tab');
+    expect(again).toHaveTextContent('Another tab is now working in Coastal workshop.');
+    expect(within(again).getByRole('button', { name: 'Stay on Main workshop' })).toBeVisible();
+    expect(seen().selection).toMatchObject({ branchId: 'b-1' });
+    expect(seen().version).toBe(before.version);
+    expect(before.signal.aborted).toBe(false);
+    expect(onChange).not.toHaveBeenCalled();
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+  });
+
+  it('follows the next change at once after the work here was saved, and not before', async () => {
+    /*
+     * The hold exists only while something is at stake. Once the work is saved
+     * the next change from the other tab is followed without a word, like any
+     * other. Saving alone does not move this tab: a switch at that moment would
+     * be one nobody asked for, so it waits for the other tab's next change.
+     */
+    const user = userEvent.setup();
+    window.localStorage.setItem(WC_KEY, 'b-1');
+    const { seen, onChange } = renderWith(<SaveableScreen />, 'en', [MAIN, SECOND, COAST]);
+    const before = seen();
+    otherTabChooses('b-2');
+    const notice = await screen.findByTestId('working-context-cross-tab');
+    await user.click(within(notice).getByRole('button', { name: 'Stay on Main workshop' }));
+
+    await user.click(screen.getByRole('button', { name: 'save the work' }));
+    expect(seen().selection).toMatchObject({ branchId: 'b-1' });
+    expect(onChange).not.toHaveBeenCalled();
+
+    otherTabChooses('b-3');
+
+    await waitFor(() => expect(seen().selection).toMatchObject({ branchId: 'b-3' }));
+    expect(seen().version).toBe(before.version + 1);
+    expect(before.signal.aborted).toBe(true);
+    expect(onChange).toHaveBeenCalledTimes(1);
+    expect(onChange).toHaveBeenLastCalledWith('b-3');
+    expect(screen.queryByTestId('working-context-cross-tab')).toBeNull();
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+  });
+
+  it('follows the other tab at once when nothing on screen is unsaved', async () => {
+    window.localStorage.setItem(WC_KEY, 'b-1');
+    const { seen, onChange } = renderWith(<DirtyScreen dirty={false} />);
+    otherTabChooses('b-2');
+    await waitFor(() => expect(seen().selection).toMatchObject({ branchId: 'b-2' }));
+    expect(onChange).toHaveBeenCalledTimes(1);
+    expect(screen.queryByTestId('working-context-cross-tab')).toBeNull();
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+  });
+
+  it('says it in Arabic too', async () => {
+    window.localStorage.setItem(WC_KEY, 'b-1');
+    renderWith(<DirtyScreen dirty />, 'ar');
+    otherTabChooses('b-2');
+    const notice = await screen.findByTestId('working-context-cross-tab');
+    expect(notice).toHaveTextContent(arabic['workingContext.crossTab.title']);
+    expect(
+      within(notice).getByRole('button', { name: arabic['workingContext.crossTab.switch'] })
+    ).toBeInTheDocument();
+    expect(document.documentElement.dir).toBe('rtl');
   });
 });
