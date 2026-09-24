@@ -26,7 +26,15 @@ import {
   type Socket,
 } from 'node:net';
 import { EventEmitter, once } from 'node:events';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, unlinkSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  unlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
@@ -1944,5 +1952,100 @@ describe('check-smtp redacts the longest secret first', () => {
     }
     expect(out.text()).toContain('MAIL FROM: 250 2.1.0 <[redacted]> sender ok');
     expect(out.text() + err.text()).not.toContain('[redacted]@');
+  });
+});
+
+/**
+ * The two mails that set a password lead to a page that can spend them
+ * (QA row U.S2, and CC-OD-23 before it).
+ *
+ * Left at the provider's default, an invitation or a recovery mail links to the
+ * provider's own verify endpoint (`{{ .ConfirmationURL }}`), which spends the
+ * single-use token there and redirects with a session in the URL fragment. The
+ * application redeems neither half: the password pages read a token HASH from
+ * the query, and the completion operation spends it with `verifyOtp`. Measured
+ * on the local stack: the invitation, still at the default, landed an invited
+ * person on the sign-in page with no way to choose a password.
+ *
+ * So each password-setting mail is declared in `supabase/config.toml`, and its
+ * template addresses a page that exists in the web tier, allow-listed as a
+ * redirect, carrying `{{ .TokenHash }}` under the first name the page reads.
+ *
+ * Kept in this suite rather than a file of its own for the reason the SMTP cases
+ * are: it is the suite that owns the local harness's mail, where a single-use
+ * credential is involved.
+ */
+const TEMPLATE_ROOT = join(__dirname, '..', '..');
+const readTracked = (path: string): string => readFileSync(join(TEMPLATE_ROOT, path), 'utf8');
+
+const SUPABASE_CONFIG = readTracked('supabase/config.toml');
+
+/** The body of one `[section]` of the TOML file, up to the next section header. */
+function tomlSection(name: string): string | null {
+  const header = `[${name}]`;
+  const lines = SUPABASE_CONFIG.split(/\r?\n/);
+  const start = lines.findIndex((line) => line.trim() === header);
+  if (start === -1) return null;
+  const body: string[] = [];
+  for (const line of lines.slice(start + 1)) {
+    if (/^\s*\[/.test(line)) break;
+    body.push(line);
+  }
+  return body.join('\n');
+}
+
+/** `key = "value"` inside a section body, ignoring commented lines. */
+function tomlValue(body: string, key: string): string | null {
+  const match = new RegExp(`^\\s*${key}\\s*=\\s*"([^"]*)"`, 'm').exec(body);
+  return match?.[1] ?? null;
+}
+
+/** The first query parameter the web tier reads a password-setting token from. */
+function firstTokenParam(): string {
+  const source = readTracked('apps/web/src/features/authentication/api/recovery-token.ts');
+  const match = /TOKEN_PARAMS\s*=\s*\[\s*'([a-z_]+)'/.exec(source);
+  if (match?.[1] === undefined) throw new Error('TOKEN_PARAMS was not found');
+  return match[1];
+}
+
+const PASSWORD_MAILS = [
+  { template: 'invite', page: 'activate-account' },
+  { template: 'recovery', page: 'reset-password' },
+] as const;
+
+describe('password-setting mails address a page that can spend them', () => {
+  it.each(PASSWORD_MAILS)(
+    'the $template mail is declared, and its template file exists',
+    (mail) => {
+      const body = tomlSection(`auth.email.template.${mail.template}`);
+      expect(body, `[auth.email.template.${mail.template}] is not declared`).not.toBeNull();
+      const path = tomlValue(body ?? '', 'content_path');
+      expect(path).toBe(`./supabase/templates/${mail.template}.html`);
+      expect(existsSync(join(TEMPLATE_ROOT, (path ?? '').replace(/^\.\//, '')))).toBe(true);
+    }
+  );
+
+  it.each(PASSWORD_MAILS)(
+    'the $template template links to /en/$page with the token hash, never the verify endpoint',
+    (mail) => {
+      const template = readTracked(`supabase/templates/${mail.template}.html`);
+      const param = firstTokenParam();
+      expect(template).not.toContain('.ConfirmationURL');
+      expect(template).not.toContain('/auth/v1/verify');
+      expect(template).toContain(`href="{{ .SiteURL }}/en/${mail.page}?${param}={{ .TokenHash }}"`);
+    }
+  );
+
+  it.each(PASSWORD_MAILS)('the $page page exists in the web tier and is allow-listed', (mail) => {
+    expect(
+      existsSync(join(TEMPLATE_ROOT, `apps/web/src/app/[locale]/(auth)/${mail.page}/page.tsx`)),
+      `${mail.page} has no page`
+    ).toBe(true);
+    const auth = tomlSection('auth') ?? '';
+    const siteUrl = tomlValue(auth, 'site_url');
+    expect(siteUrl).not.toBeNull();
+    for (const locale of ['en', 'ar']) {
+      expect(auth).toContain(`"${siteUrl ?? ''}/${locale}/${mail.page}"`);
+    }
   });
 });
