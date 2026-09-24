@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { useLocalRefusal } from '@/lib/forms/use-local-refusal';
 import { SelectField, TextField } from '@/components/forms/Field';
 import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
@@ -65,7 +66,18 @@ export function ReportScopeForm({
 }) {
   const { companies, branches } = options;
   const [draft, setDraft] = useState<ReportScopeSelection>(initial);
-  const [errors, setErrors] = useState<Readonly<Record<string, string>>>({});
+  // Question f: the cursor goes to the first control to correct, and a
+  // complaint goes once its control changes (route sweep B3).
+  const {
+    errorKey: refusalErrorKey,
+    formRef: refusalFormRef,
+    refuse,
+  } = useLocalRefusal({
+    companyId: draft.companyId,
+    branchId: draft.branchId,
+    from: draft.from,
+    to: draft.to,
+  });
   const fixed = fixedBranchId !== null;
 
   const submit = () => {
@@ -88,18 +100,19 @@ export function ReportScopeForm({
       // to name the day after it.
       found['to'] = 'reports.run.toAfterFrom';
     }
-    setErrors(found);
+    refuse(found);
     if (Object.keys(found).length > 0) return;
     onSubmit({ ...draft });
   };
 
   const errorFor = (name: string): string | undefined => {
-    const key = errors[name];
+    const key = refusalErrorKey(name);
     return key === undefined ? undefined : translate(messages, key as keyof Messages);
   };
 
   return (
     <form
+      ref={refusalFormRef}
       noValidate
       aria-label={translate(messages, 'reports.run.formLabel')}
       className="rounded-lg border border-border bg-surface p-4"

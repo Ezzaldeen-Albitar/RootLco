@@ -31,6 +31,7 @@ import {
 } from '../actions';
 import type { AccessGrant, RoleOption, UserRow } from '../api';
 import { scopeSummaryKey, type GrantScopeView, type ScopeMode, type ScopeRequest } from '../types';
+import { useActionRefusal } from '@/lib/forms/use-action-refusal';
 
 /**
  * One user's access: which roles they hold, and where each role applies.
@@ -458,6 +459,13 @@ function ScopeDialog({
     ...(canReadDepartments ? (['departments'] as const) : []),
   ];
 
+  // Question f: the cursor goes to the refused role, and the complaint goes once
+  // another is chosen (route sweep B3).
+  const {
+    edited: refusalEdited,
+    errorKey: refusalErrorKey,
+    formRef: refusalFormRef,
+  } = useActionRefusal(outcome);
   const scopes = mode === 'organisation' ? [] : [...chosen.values()];
   const summary = formatMessage(t(scopeSummaryKey(mode, scopes.length)), {
     count: String(scopes.length),
@@ -466,6 +474,7 @@ function ScopeDialog({
   return (
     <Dialog open onClose={onCancel} messages={messages} title={title} width="lg">
       <form
+        ref={refusalFormRef}
         className="flex flex-col gap-4"
         noValidate
         onSubmit={(event) => {
@@ -485,9 +494,12 @@ function ScopeDialog({
             required
             placeholder={t('field.selectPlaceholder')}
             value={roleId}
-            onChange={(event) => setRoleId(event.target.value)}
+            onChange={(event) => {
+              refusalEdited('roleId');
+              setRoleId(event.target.value);
+            }}
             options={roles.map((role) => ({ value: role.id, label: role.name }))}
-            error={outcome.fieldErrors?.roleId ? t(outcome.fieldErrors.roleId) : undefined}
+            error={refusalErrorKey('roleId') ? t(refusalErrorKey('roleId') as string) : undefined}
           />
         ) : null}
 

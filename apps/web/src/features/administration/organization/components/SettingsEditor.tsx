@@ -11,6 +11,7 @@ import { useWorkingContext } from '@/features/working-context/WorkingContextProv
 import { readSettings } from '../api';
 import type { SettingValueType, SettingView, SettingsScope } from '../types';
 import { writeSettingAction } from '../actions';
+import { useHeldRefusal } from '@/lib/forms/use-local-refusal';
 
 /**
  * The settings editor.
@@ -52,6 +53,9 @@ export interface SuggestedKey {
   readonly valueType: SettingValueType;
   readonly hintKey?: string;
 }
+
+/** A stable empty set, so the refusal hook sees no new attempt on every render. */
+const NO_ERRORS: Readonly<Record<string, string>> = Object.freeze({});
 
 export function SettingsEditor({
   messages,
@@ -101,6 +105,12 @@ export function SettingsEditor({
     settingValue: '',
     isSensitive: false,
   });
+  // Question f: the cursor goes to the refused value, and its complaint goes once
+  // the value changes (route sweep B3).
+  const { errors: refusalErrors, formRef: refusalFormRef } = useHeldRefusal(
+    state.fieldErrors ?? NO_ERRORS,
+    { settingValue: form.settingValue }
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -207,6 +217,7 @@ export function SettingsEditor({
 
       {canWrite ? (
         <form
+          ref={refusalFormRef}
           className="flex max-w-xl flex-col gap-4 rounded-xl border border-border-subtle p-4"
           onSubmit={(event) => {
             event.preventDefault();
@@ -295,7 +306,7 @@ export function SettingsEditor({
             onChange={(event) =>
               setForm((current) => ({ ...current, settingValue: event.target.value }))
             }
-            error={state.fieldErrors?.settingValue ? t(state.fieldErrors.settingValue) : undefined}
+            error={refusalErrors['settingValue'] ? t(refusalErrors['settingValue']) : undefined}
           />
 
           <CheckboxField

@@ -464,6 +464,14 @@ describe('a merged vehicle withdraws everything', () => {
   it('replaces both overview panels with the frozen note', () => {
     render({ lifecycleStatus: 'merged', mergedIntoId: 'a1b2c3d4-0000-4000-8000-000000000002' });
     expect(screen.getByText(FROZEN_NOTE)).toBeTruthy();
+    // The surviving vehicle is a link in words, never its bare reference (route sweep B3).
+    expect(
+      screen.getByRole('link', { name: en['vehicles.profile.openMergedInto'] as string })
+    ).toHaveAttribute(
+      'href',
+      expect.stringContaining('/vehicles/a1b2c3d4-0000-4000-8000-000000000002')
+    );
+    expect(screen.queryByText('a1b2c3d4-0000-4000-8000-000000000002')).toBeNull();
     expect(screen.queryByRole('heading', { name: EDIT_HEADING })).toBeNull();
     expect(screen.queryByRole('heading', { name: STATUS_HEADING })).toBeNull();
     // The scrapped note is for a vehicle that is still partly editable. Showing

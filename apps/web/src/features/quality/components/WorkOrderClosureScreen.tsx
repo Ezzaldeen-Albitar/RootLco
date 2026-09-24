@@ -30,6 +30,7 @@
  * holds is renewed. Submit-for-QA is not here: it is `wo.work-order-transition`
  * on the detail, to whichever state the catalogue permits.
  */
+import Link from 'next/link';
 import { useCallback, useEffect, useState } from 'react';
 import { SelectField, TextAreaField, TextField } from '@/components/forms/Field';
 import { notifyActionResult } from '@/components/notifications/action-notifications';
@@ -1080,9 +1081,17 @@ function ReworkRow({
             ? `${translate(messages, 'quality.closure.signedOff')} ${formatDateTime(link.signOffAt, locale)}`
             : translate(messages, 'quality.closure.notSignedOff')}
         </span>
-        <code className="ms-auto font-mono text-caption" dir="ltr">
-          {link.reworkWorkOrderId}
-        </code>
+        {/*
+          The rework order by a link in words: no rework read publishes the
+          order's number, and a bare reference read as the record's own number
+          (route sweep B3).
+        */}
+        <Link
+          href={`/${locale}/work-orders/${link.reworkWorkOrderId}`}
+          className="ms-auto text-caption text-primary underline-offset-2 hover:underline"
+        >
+          {translate(messages, 'quality.closure.openReworkOrder')}
+        </Link>
       </div>
       {capabilities.canViewSensitive ? (
         <p className="mt-1 text-caption text-text-secondary">

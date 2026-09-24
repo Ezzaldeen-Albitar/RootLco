@@ -410,6 +410,23 @@ describe('the report screen requests nothing until it has a branch and a period'
     expect(runReport).not.toHaveBeenCalled();
   });
 
+  it('moves the cursor to the first control to correct, and withdraws its complaint once it changes (route sweep B3)', async () => {
+    await renderReportPage();
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('button', { name: EN['reports.run.show'] as string }));
+    // One company and one branch are filled in for this caller; the first gap is the start day.
+    const from = screen.getByLabelText(labelled('reports.run.from'));
+    await waitFor(() => expect(from).toHaveFocus());
+    expect(from).toHaveAttribute('aria-invalid', 'true');
+    await user.type(from, '2026-09-01');
+    expect(from).not.toHaveAttribute('aria-invalid', 'true');
+    expect(screen.getByLabelText(labelled('reports.run.to'))).toHaveAttribute(
+      'aria-invalid',
+      'true'
+    );
+    expect(runReport).not.toHaveBeenCalled();
+  });
+
   it('states the half-open rule beside the two controls', async () => {
     await renderReportPage();
     expect(await screen.findByText(EN['reports.run.periodRule'] as string)).toBeVisible();
