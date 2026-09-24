@@ -20,6 +20,13 @@ Database tests run **only** against throwaway databases:
 | Local       | Supabase local stack (PostgreSQL 17.6, port 54322)    | `npm run supabase:reset` — clean recreate, all migrations, seed        |
 | CI          | `postgres:17-alpine` service container, fresh per run | `scripts/db/apply-migrations.mjs` — **refuses** any non-empty database |
 
+> **Warning — `npm run supabase:reset` deletes every row in the local database, the
+> acceptance database included.** Run it only on a disposable database
+> ([CONTRIBUTING.md](../../CONTRIBUTING.md) section 8, _Pre-push step for schema and seed
+> changes_) or on a brand-new, empty stack per section 19.5 of
+> [environment-configuration.md](../platform/environment-configuration.md); a database that
+> already holds data is brought forward with section 19.4 instead.
+
 A shared, long-lived, or production database is never a test target. **No production
 data and no production secrets, ever.** Harness credentials are the public Supabase
 local-dev defaults, overridable via `DB_HOST` / `DB_PORT` / `DB_NAME` / `DB_USER` /
@@ -81,6 +88,14 @@ behind and **is itself evidence** that the session-context contract is transacti
 
 - Locally, `supabase db reset` recreates the database, applies every migration in
   filename order, and runs `supabase/seed.sql` (which contains no rows by design).
+
+  > **Warning — `npm run supabase:reset` deletes every row in the local database, the
+  > acceptance database included.** Run it only on a disposable database
+  > ([CONTRIBUTING.md](../../CONTRIBUTING.md) section 8, _Pre-push step for schema and seed
+  > changes_) or on a brand-new, empty stack per section 19.5 of
+  > [environment-configuration.md](../platform/environment-configuration.md); a database that
+  > already holds data is brought forward with section 19.4 instead.
+
 - In CI, the runner applies migrations to the fresh service container and **fails** if
   any module schema already exists — a test can never silently run against leftovers.
 - The foundation suite verifies the migration files themselves (naming rule, ordered

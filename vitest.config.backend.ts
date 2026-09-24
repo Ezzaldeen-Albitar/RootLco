@@ -9,6 +9,7 @@ import { API_SRC_ROOT, API_SRC_PATH } from './scripts/lib/repository-paths.mjs';
 // is what makes the unit tier usable during ordinary development.
 //
 //   local: npm run supabase:start && npm run supabase:reset
+//          (on a disposable database — never the shared acceptance stack; see CONTRIBUTING §8)
 //   CI:    the postgres service container + scripts/db/apply-migrations.mjs
 //
 // Connection comes from DB_HOST/DB_PORT/DB_NAME/DB_USER/DB_PASSWORD, shared with

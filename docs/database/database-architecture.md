@@ -485,6 +485,13 @@ intentionally empty of rows (governance comments only) and stays that way in Pha
 - Local workflow: `npm run supabase:start`, then `npm run supabase:reset` (applies
   migrations in filename order plus `seed.sql`).
 
+  > **Warning — `npm run supabase:reset` deletes every row in the local database, the
+  > acceptance database included.** Run it only on a disposable database
+  > ([CONTRIBUTING.md](../../CONTRIBUTING.md) section 8, _Pre-push step for schema and seed
+  > changes_) or on a brand-new, empty stack per section 19.5 of
+  > [environment-configuration.md](../platform/environment-configuration.md); a database that
+  > already holds data is brought forward with section 19.4 instead.
+
 ### 12.2 Known gaps and deferred work (accepted, not hidden)
 
 | Gap                                                                      | Detail                                                                                                                                                                           | Resolution                                                                                                   |

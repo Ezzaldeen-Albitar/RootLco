@@ -246,7 +246,9 @@ async function ensureRole(client, { id, tenantId, code, name, description, permi
   if (present.rows[0].n !== permissions.length) {
     throw new Error(
       `Only ${present.rows[0].n} of ${permissions.length} permission codes exist in the ` +
-        'catalogue. Run `npm run supabase:reset` so seed 04 is applied.'
+        'catalogue: the database is behind this checkout. Bring it forward without deleting ' +
+        'data (docs/platform/environment-configuration.md section 19.4). Only a brand-new, ' +
+        'empty local stack is rebuilt instead, per section 19.5 - never the acceptance database.'
     );
   }
   return mapped.rowCount;
@@ -358,7 +360,10 @@ async function main() {
     const catalogue = await client.query('SELECT count(*)::int AS n FROM iam.permissions');
     if (catalogue.rows[0].n === 0) {
       throw new Error(
-        'iam.permissions is empty. Run `npm run supabase:reset` so the platform catalogue is seeded.'
+        'iam.permissions is empty: the platform catalogue has not been seeded. If this database ' +
+          'already holds data, bring it forward without deleting it ' +
+          '(docs/platform/environment-configuration.md section 19.4). Only a brand-new, empty ' +
+          'local stack is rebuilt instead, per section 19.5 - never the acceptance database.'
       );
     }
 

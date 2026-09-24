@@ -301,6 +301,13 @@ re-runs the same suite against plain `postgres:17-alpine`; the known
 difference in Supabase-managed role attributes there is documented and
 accepted in the [Role and Grant Standard](./role-and-grant-standard.md).
 
+> **Warning — `npm run supabase:reset` deletes every row in the local database, the
+> acceptance database included.** Run it only on a disposable database
+> ([CONTRIBUTING.md](../../CONTRIBUTING.md) section 8, _Pre-push step for schema and seed
+> changes_) or on a brand-new, empty stack per section 19.5 of
+> [environment-configuration.md](../platform/environment-configuration.md); a database that
+> already holds data is brought forward with section 19.4 instead.
+
 ## 7. Period reset semantics and formatting
 
 Period keys are computed **in UTC** (`clock_timestamp() AT TIME ZONE 'UTC'`) at
