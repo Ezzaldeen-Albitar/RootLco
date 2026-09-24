@@ -89,8 +89,14 @@ export async function verifyReceiverWithEvidence(
   }
 
   const file = formData.get(FIELD);
-  // A browser submits an empty file part when nothing was chosen: no name and
-  // no bytes. That, and only that, is "no document".
+  // No part at all is "no document": the panel removes the part when its own
+  // status line says none is chosen. An unnamed, empty part is "no document"
+  // too — it is what a browser submits for an untouched file control. What
+  // arrives here is NOT always what the browser built, though: the Server
+  // Action transport gives an unnamed file part the name "blob", so an
+  // untouched control reached this line as a named, empty file and was refused
+  // as an empty document (QA row 3.4). That is why the panel, which knows what
+  // the operator chose, decides the part before it is sent.
   const chosen = file instanceof File && (file.name !== '' || file.size > 0);
 
   if (!chosen) {
