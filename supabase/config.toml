@@ -389,10 +389,48 @@ admin_email = "env(SMTP_ADMIN_EMAIL)"
 # The display name shown beside the From address.
 sender_name = "env(SMTP_SENDER_NAME)"
 
-# Uncomment to customize email template
-# [auth.email.template.invite]
-# subject = "You have been invited"
-# content_path = "./supabase/templates/invite.html"
+# The invitation mail is CUSTOMISED, for the reason the recovery mail below is.
+#
+# Left at the default, its body is `{{ .ConfirmationURL }}`: the provider's own
+# verify endpoint, `/auth/v1/verify?token=<hash>&type=invite`. Following it
+# SPENDS the single-use invitation at the provider and redirects to the first
+# allow-listed destination with a session in the URL FRAGMENT, which nothing in
+# the application redeems. Measured on the local stack, 2026-09-24 (QA row
+# U.S2): an invited person landed on the sign-in page, with no way to choose a
+# password, and the invitation was already spent.
+#
+# The page that finishes an invitation exists: `/{locale}/activate-account`
+# reads a token from the QUERY under the same `TOKEN_PARAMS` the reset page
+# reads, and `POST /api/v1/auth/password-reset/completion` spends it as a TOKEN
+# HASH — `modules/iam/provider/supabase-provider.ts` asks `verifyOtp` for a
+# `recovery` hash first and an `invite` hash second, precisely so one page
+# serves both mails. The template below addresses that page directly and carries
+# `{{ .TokenHash }}` as `token`, exactly as the recovery template does, so
+# nothing is invented and no allow-list is widened. Locale `en` for the same
+# reason as below: a mail carries no locale.
+#
+# Why not something locale-aware, checked 2026-09-24: `{{ .RedirectTo }}` is not
+# the invited person's language — the web tier sends no `redirectTo`, so the API
+# hands the provider the FIRST entry of AUTH_REDIRECT_ALLOWLIST, whatever page
+# and locale that is; the invitation writes no language into the user's
+# metadata (`data: {}` in the provider adapter), so `{{ .Data }}` has none to
+# branch on; and the web tier has no locale-neutral `/activate-account` route
+# to redirect by preference (every page lives under `[locale]`, and the
+# harness may not add one — the web tree is another lane's review). So an
+# invited person who reads Arabic lands on the English page. That is a known
+# limit, stated here rather than hidden; the Arabic page stays allow-listed
+# above so a later, locale-aware sender can address it.
+#
+# A running local stack reads this only when its auth container starts, so a
+# change here needs that container restarted to take effect.
+#
+# LOCAL HARNESS VALUE, like everything else in this file: a deployed
+# environment configures its invitation mail at the provider, and it must
+# address the same page with the same token — see
+# `docs/user-manual/01-access-and-account-recovery.md`, section 1.5.
+[auth.email.template.invite]
+subject = "You have been invited"
+content_path = "./supabase/templates/invite.html"
 
 # The recovery mail is CUSTOMISED, and it has to be.
 #
