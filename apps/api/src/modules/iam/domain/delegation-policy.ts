@@ -116,6 +116,47 @@ export class DelegationPolicy extends DomainService {
   }
 
   /**
+   * Refuses an approval limit whose subject is the administrator themselves.
+   *
+   * Separation of duties: whoever sets a ceiling must not be the person who
+   * approves against it. Named, so the screen can say that this is the reason
+   * rather than a missing permission (QA row 7.1c) — the caller DOES hold
+   * `iam.approval.manage`, and a sentence saying otherwise sends them to ask for
+   * access that would not help.
+   */
+  assertApprovalLimitNotForSelf(facts: GrantFacts, targetUserId: string): void {
+    if (facts.actorUserId === targetUserId) {
+      throw new AppFailure('ERR-IAM-001', {
+        message:
+          'An administrator may not set an approval limit for their own account. ' +
+          'Another administrator must set it.',
+        safeDetails: { violations: [{ path: 'body', rule: 'approval_limit_for_yourself' }] },
+      });
+    }
+  }
+
+  /**
+   * Refuses an approval limit for a role the administrator holds.
+   *
+   * The person-level refusal above was the whole rule, and it was one step
+   * short (QA row 7.1d): a limit put on a role reaches every holder of the
+   * role, so an administrator who holds it could set the ceiling on the role
+   * and then approve against it — the same self-approval, one indirection away.
+   * The caller supplies whether they hold the role, read in the command's own
+   * transaction; this layer reads nothing.
+   */
+  assertApprovalLimitNotForHeldRole(actorHoldsRole: boolean): void {
+    if (actorHoldsRole) {
+      throw new AppFailure('ERR-IAM-001', {
+        message:
+          'An administrator may not set an approval limit for a role they hold. ' +
+          'Another administrator who does not hold the role must set it.',
+        safeDetails: { violations: [{ path: 'body', rule: 'approval_limit_for_own_role' }] },
+      });
+    }
+  }
+
+  /**
    * Refuses delegating a permission the actor does not hold.
    *
    * `deny` mappings are exempt, and deliberately so: refusing to let an

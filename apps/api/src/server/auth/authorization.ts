@@ -466,6 +466,18 @@ export async function callerHoldsPermissionAnywhere(
  * granularity there is to match, and a branch-scoped approver keeps the ceiling their
  * company grants them.
  *
+ * ## A ceiling the caller set authorizes nothing for the caller
+ *
+ * `al.created_by <> caller` is separation of duties at the point of use (QA row
+ * 7.1d). The administration service refuses a limit for yourself and for a role
+ * you hold when the limit is SET, but that check sees the moment of creation
+ * only: a limit put on a role the administrator did not yet hold reaches them
+ * once they are granted it, and a limit set before that refusal existed is still
+ * on file. Excluding the rows the caller created closes both without a second
+ * rule to keep in step — whoever set a ceiling is never the person approving
+ * against it. A ceiling set by somebody else is unaffected, and the same row
+ * still authorizes every other holder of the role.
+ *
  * `null` means the actor has **no** ceiling, which callers must treat as no
  * authority and never as unlimited.
  */
@@ -481,6 +493,7 @@ export async function callerApprovalCeiling(
       WHERE al.tenant_id = $1 AND al.company_id = $2 AND al.limit_type = $3
         AND al.effective_from <= $5::date
         AND (al.effective_to IS NULL OR al.effective_to > $5::date)
+        AND al.created_by <> $4
         AND (al.user_id = $4
              OR (al.user_id IS NULL AND al.role_id IN (
                    SELECT g.role_id

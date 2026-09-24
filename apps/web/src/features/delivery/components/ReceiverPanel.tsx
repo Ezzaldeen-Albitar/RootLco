@@ -275,6 +275,9 @@ function firstFieldError(fieldErrors: Readonly<Record<string, string>> | undefin
   return first ?? null;
 }
 
+/** The form part the identity document travels in; `receiver-capture.ts` reads the same name. */
+const EVIDENCE_FIELD = 'identityEvidenceFile';
+
 /** Bytes in the unit the ceiling is stated in. A unit conversion, not a limit. */
 const BYTES_PER_MEGABYTE = 1_048_576;
 
@@ -423,6 +426,15 @@ function VerifyForm({
     // Taken before the transition starts: the controls are disabled while it
     // runs, and a disabled control contributes nothing to a form's data.
     const formData = new FormData(event.currentTarget);
+    // No document chosen means no document part at all (QA row 3.4). A browser
+    // still adds an empty file part for an untouched file control, and the
+    // Server Action transport renames that part's empty name to "blob" on its
+    // way to the server, so the action received an unnamed, empty part dressed
+    // as a chosen file and refused it as an empty document: the receiver the
+    // panel had just promised to confirm without a document was never
+    // confirmed. The panel's own status line is the operator's answer to
+    // "is a document chosen?", so that answer is what decides the part.
+    if (!chosen) formData.delete(EVIDENCE_FIELD);
     setRefusal(null);
     // An ASYNC transition, so `pending` holds for the whole chain — category,
     // capture, link and verification — rather than for the instant it started.
@@ -486,7 +498,7 @@ function VerifyForm({
           <CaptureFileField
             key={`identity-evidence-${String(fileKey)}`}
             id={fileId}
-            name="identityEvidenceFile"
+            name={EVIDENCE_FIELD}
             label={translate(messages, 'delivery.receiver.evidenceLabel')}
             describedBy={`${hintId} ${limitsId}`}
             disabled={pending}

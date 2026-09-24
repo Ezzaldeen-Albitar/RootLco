@@ -628,6 +628,92 @@ describe('an approval limit’s effective window', () => {
   });
 });
 
+describe('an approval limit refused for separation of duties says why (QA rows 7.1c, 7.1d)', () => {
+  /*
+   * `iam/domain/delegation-policy.ts` refuses a limit for yourself and a limit
+   * for a role you hold with 403 and a named rule. The screen used to answer
+   * both with "You do not have permission for this", which is false — the
+   * caller holds the approval permission — and sends them to ask for access
+   * that would change nothing. Built as the client builds a 403, so the case
+   * exercises the real rule-to-sentence translation.
+   */
+  const forbidden = (rule: string) => ({
+    ok: false as const,
+    kind: 'forbidden' as const,
+    status: 403,
+    problem: {
+      type: 'urn:rootlco:error:ERR-IAM-001',
+      title: 'Forbidden',
+      status: 403,
+      code: 'ERR-IAM-001',
+      correlationId: 'corr-sod',
+      violations: [{ path: 'body', rule }],
+    },
+    correlationId: 'corr-sod',
+  });
+
+  async function submitRefused(rule: string, locale: 'en' | 'ar', text: (key: string) => string) {
+    get.mockResolvedValue({
+      ok: true,
+      status: 200,
+      data: { items: [], nextCursor: null },
+      correlationId: 'corr-page',
+    });
+    send.mockResolvedValue(forbidden(rule));
+    const user = userEvent.setup();
+    const render = locale === 'en' ? renderLtr : renderRtl;
+    render(
+      inBranch(
+        <ApprovalLimitsScreen
+          locale={locale}
+          messages={locale === 'en' ? en : ar}
+          roles={[
+            {
+              id: ROLE.id,
+              roleCode: ROLE.roleCode,
+              name: ROLE.name,
+              description: null,
+              isSystem: false,
+              recordVersion: 1,
+            },
+          ]}
+          canManage
+        />
+      )
+    );
+    await user.click(await screen.findByRole('button', { name: text('approvalLimits.create') }));
+    const dialog = await screen.findByRole('dialog');
+    const field = (key: string) => within(dialog).getByLabelText(new RegExp(`^${text(key)}`));
+    await user.type(field('approvalLimits.field.limitType'), 'discount');
+    await user.type(field('approvalLimits.field.amount'), '10.0000');
+    await user.type(field('approvalLimits.field.currency'), 'JOD');
+    await user.type(field('approvalLimits.field.effectiveFrom'), '2026-10-01');
+    await user.click(within(dialog).getByRole('button', { name: text('admin.create') }));
+    await waitFor(() => expect(send).toHaveBeenCalledTimes(1));
+    return dialog;
+  }
+
+  it.each(['approval_limit_for_own_role', 'approval_limit_for_yourself'])(
+    'states the %s reason, never a missing permission',
+    async (rule) => {
+      const dialog = await submitRefused(rule, 'en', EN);
+      expect(await within(dialog).findByText(EN(`form.violation.${rule}`))).toBeVisible();
+      expect(within(dialog).queryByText(EN('state.denied.message'))).toBeNull();
+      expect(within(dialog).queryByText(new RegExp(EN('state.denied.title')))).toBeNull();
+    }
+  );
+
+  it('says the same thing in Arabic, in Arabic script', async () => {
+    const dialog = await submitRefused('approval_limit_for_own_role', 'ar', AR);
+    const sentence = await within(dialog).findByText(
+      AR('form.violation.approval_limit_for_own_role')
+    );
+    expect(sentence).toBeVisible();
+    expect(sentence.textContent ?? '').toMatch(/[؀-ۿ]/);
+    expect(AR('form.violation.approval_limit_for_yourself')).toMatch(/[؀-ۿ]/);
+  });
+});
+
 describe('an approval limit’s person is found by name (route sweep B3)', () => {
   /*
    * The dialog took a pasted account reference for "Person". It now finds the

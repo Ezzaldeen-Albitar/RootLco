@@ -25,10 +25,12 @@
  *
  * ## Maker ≠ approver
  *
- * `maker_approver_distinct` defaults to `true` and is the invariant flag the
- * P1-10 contract names. When it is set, the actor requesting the discount may not
- * be the actor authorizing it — a request cannot grant its own approval. This
- * service refuses; it never quietly self-approves.
+ * Whenever a discount needs approval, the actor requesting it may not be the actor
+ * authorizing it — a request cannot grant its own approval. This service refuses;
+ * it never quietly self-approves. The separation is unconditional: under the
+ * Owner's decision of 2026-09-24 there is no sole-administrator exception and no
+ * configuration that switches it off. `maker_approver_distinct` on
+ * `svc.pricing_approval_policies` is a legacy column that this service ignores.
  *
  * ## Fail-closed
  *
@@ -75,8 +77,8 @@ export interface DiscountRequest {
   readonly asOf: string;
   /**
    * Who asked for the discount, when that is someone other than the caller.
-   * `null` when the caller is both maker and approver, which
-   * `maker_approver_distinct` then refuses.
+   * `null` when the caller is both maker and approver, which the maker/approver
+   * separation then refuses whenever approval is required.
    */
   readonly requestedBy: string | null;
   /** The caller's own user id, for the maker≠approver comparison. */
@@ -163,6 +165,11 @@ export class DiscountAuthorizationService {
     const overThreshold =
       policy === null || this.exceedsThreshold(policy, discount, base, request.currency);
 
+    // `policy.makerApproverDistinct` is deliberately NOT read. The column is legacy
+    // and ignored under the Owner's decision of 2026-09-24: the maker/approver
+    // separation below applies whenever approval is required, and no configuration
+    // row can switch it off. See the separation below.
+
     let permissionCode: string | null = null;
     if (overThreshold) {
       permissionCode = policy?.requiredPermissionCode ?? 'svc.price.manage';
@@ -183,15 +190,31 @@ export class DiscountAuthorizationService {
        *
        * An absent requester now means "the caller is requesting it themselves",
        * which is the only honest reading: nobody else has been recorded as asking.
+       *
+       * ## The separation is unconditional
+       *
+       * The flag used to be read as `policy?.makerApproverDistinct === true`, so a
+       * company with no policy row — where every non-zero discount needs approval,
+       * because the threshold is zero — was the one case where the separation did
+       * not run at all; later a policy row saying `false` still turned it off. Under
+       * the Owner's decision of 2026-09-24 neither applies: whenever approval is
+       * required, requester and approver must differ, with no sole-administrator
+       * exception and no configuration that disables the rule. The
+       * `maker_approver_distinct` column is legacy and has no effect here.
+       *
+       * Named (`discount_approver_must_differ`, on the requester field) so the
+       * screen can say what to do rather than report a missing permission.
        */
-      if (
-        policy?.makerApproverDistinct === true &&
-        (request.requestedBy === null || request.requestedBy === request.actorId)
-      ) {
+      if (request.requestedBy === null || request.requestedBy === request.actorId) {
         throw new AppFailure('ERR-IAM-001', {
           message:
-            'This company requires the approver of a discount to be someone other than the ' +
-            'person who requested it, and that other person must be named',
+            'The approver of a discount must be someone other than the person who ' +
+            'requested it, and that other person must be named',
+          safeDetails: {
+            violations: [
+              { path: 'body.discountRequestedBy', rule: 'discount_approver_must_differ' },
+            ],
+          },
         });
       }
       /**
@@ -204,15 +227,13 @@ export class DiscountAuthorizationService {
        * trace to find afterwards; both halves are fixed, here and in the audit record.
        */
       if (
-        policy?.makerApproverDistinct === true &&
         request.requestedBy !== null &&
         !(await this.repository.isActiveUserInTenant(db, request.requestedBy))
       ) {
         throw new AppFailure('ERR-IAM-001', {
           message:
             `The named discount requester ${request.requestedBy} is not an active user in ` +
-            'this tenant, so it cannot satisfy the maker/approver separation this company ' +
-            'requires',
+            'this tenant, so it cannot satisfy the maker/approver separation',
         });
       }
     }
@@ -226,8 +247,12 @@ export class DiscountAuthorizationService {
 
     if (overThreshold) {
       if (ceiling === null) {
+        // Named, because since `callerApprovalCeiling` stopped counting a limit the
+        // caller set (QA row 7.1d) an administrator can hold a limit on file and
+        // still have none that counts — the screen has to say why.
         throw new AppFailure('ERR-IAM-001', {
           message: 'You have no discount approval limit for this company',
+          safeDetails: { violations: [{ path: 'body', rule: 'discount_no_approval_limit' }] },
         });
       }
       const allowed = Money.of(ceiling.amount, ceiling.currencyCode);

@@ -70,8 +70,8 @@ export const Body = z
     customerClass: z.string().regex(INTERNAL_CODE, 'must be a lower-snake class code').optional(),
     lines: z.array(Line).min(1).max(MAX_ITEMS_PER_REVISION),
     // Who ASKED for a discount, when that is someone other than the caller. The
-    // maker/approver separation in `svc.pricing_approval_policies` compares this
-    // against the actor, and a company with the flag set refuses them being equal.
+    // maker/approver separation compares this against the actor and refuses them
+    // being equal whenever the discount needs approval; no policy flag turns it off.
     discountRequestedBy: schemas.uuid.optional(),
   })
   .strict();
