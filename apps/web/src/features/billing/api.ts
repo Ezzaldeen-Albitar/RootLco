@@ -307,18 +307,24 @@ export async function createCounterSale(
  *
  * The term travels to the server and nowhere else: it is not written to the
  * browser's address, and the screen holds it in memory only. `status` narrows to
- * one state — the payment desk asks for `issued`, the only state money can be
- * applied to.
+ * one state; `allocatable` narrows to the invoices money can still be applied to
+ * — `issued` or `credited` with a balance still open, which the SERVER decides —
+ * and is what the payment desk's allocation form asks for.
  */
 export async function listInvoices(
   target: BranchTarget,
-  filter: { readonly q?: string | undefined; readonly status?: InvoiceStatus | undefined },
+  filter: {
+    readonly q?: string | undefined;
+    readonly status?: InvoiceStatus | undefined;
+    readonly allocatable?: boolean | undefined;
+  },
   cursor: string | null
 ): Promise<ReadState<CursorPage<InvoiceListEntry>>> {
   return readOperation<CursorPage<InvoiceListEntry>>(
     '/api/v1/invoices' +
       branchTargetQuery(target, {
         status: filter.status ?? null,
+        allocatable: filter.allocatable === true ? 'true' : null,
         q: filter.q ?? null,
         cursor,
         limit: 10,

@@ -9448,7 +9448,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": ["sal.invoice.manage"],
+        "x-required-permissions": ["sal.finance.view"],
         "x-scope": "branch",
         "x-audit-class": "none",
         "x-rate-limit-policy": "expensive-read",

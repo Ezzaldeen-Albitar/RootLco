@@ -17,12 +17,43 @@
  * cross a branch boundary, so a page spanning branches would offer invoices the
  * very next write refuses.
  *
- * It declares `sal.invoice.manage`, the code `sal.invoice-detail` declares, and
- * NOT `sal.finance.view`: the header is branch-scoped only, and a caller without
- * the finance code reads every row with `totals` and `outstanding` null —
- * omitted, never zeroed. `status` is validated against the invoice vocabulary at
- * the boundary, so an unknown value is refused rather than answered with a page
- * that reads as "none".
+ * ## Why the gate is `sal.finance.view`, and only that
+ *
+ * The read exists for the payment desk, and every person who uses it there holds
+ * `sal.finance.view`: it is the `/payments` page's own gate, the only code the
+ * receipt reads and `sal.invoice-outstanding-read` declare, and half of what
+ * `sal.payment-allocate` declares. A declaration is a CONJUNCTION — the registry
+ * has no "any of" (`operation-registry.ts`) — so the choice was one code, and the
+ * two other candidates each take a workflow away:
+ *
+ * - `sal.invoice.manage` is a WRITE code. Declaring it refused the picker to a
+ *   cashier holding `sal.payment.allocate` and `sal.finance.view` — exactly the
+ *   caller the allocation route admits — and would have pushed an organisation to
+ *   hand invoice authorship to its cash desk to get the picker back.
+ * - `sal.payment.allocate` would refuse the receipt list's invoice filter to a
+ *   finance viewer who does not allocate.
+ *
+ * `sal.finance.view` is the least authority every caller of the picker already
+ * holds, and it removes nothing: before this read no invoice list existed for
+ * anyone, so an invoice clerk without the finance code loses nothing it had. Nor
+ * does it reveal what the code did not already reveal — the same caller reads the
+ * open balance of any invoice in the branch through `sal.invoice-outstanding-read`
+ * and the payer of every receipt through `sal.receipt-list`.
+ *
+ * The finance split stays in the read regardless: `totals` and `outstanding` are
+ * null — omitted, never zeroed — wherever the amounts row is not visible, so a
+ * change to the policies underneath can hide money but never report a zero.
+ * `status` is validated against the invoice vocabulary at the boundary, so an
+ * unknown value is refused rather than answered with a page that reads as "none".
+ *
+ * ## `allocatable`
+ *
+ * `allocatable=true` narrows to the invoices money can still be applied to: the
+ * two states `sal.payment-allocate` accepts — `issued` AND `credited`, because a
+ * credit note can leave a receivable open — with an open receivable above zero as
+ * `sal.invoice_open_receivable` computes it. It combines with `status` as a
+ * conjunction. Spelled `'true' | 'false'`, as the other boolean query parameters
+ * are, so a misspelling is refused rather than read as false.
  *
  * ## Client totals are not ignored — they are unexpressible
  *
@@ -130,6 +161,8 @@ const ListQuery = z
     companyId: schemas.uuid,
     branchId: schemas.uuid,
     status: z.enum(INVOICE_STATUSES).optional(),
+    /** Only the invoices a receipt can still be applied to. See the file header. */
+    allocatable: z.enum(['true', 'false']).optional(),
     /**
      * One free-text box: part of the invoice number, part of the payer's name,
      * or part of any plate or the VIN of the job's vehicle.
@@ -146,7 +179,7 @@ export const INVOICE_LIST_OPERATION = defineOperation({
   method: 'GET',
   path: '/invoices',
   summary: "List a branch's invoices by number, payer or vehicle, newest first.",
-  permissions: ['sal.invoice.manage'],
+  permissions: ['sal.finance.view'],
   scope: 'branch',
   auditClass: 'none',
   rateLimitPolicy: 'expensive-read',
@@ -169,6 +202,7 @@ export async function GET(request: Request): Promise<Response> {
             companyId: query.companyId,
             branchId: query.branchId,
             ...(query.status === undefined ? {} : { status: query.status }),
+            ...(query.allocatable === 'true' ? { allocatable: true } : {}),
             ...(query.q === undefined ? {} : { q: query.q }),
           },
           {

@@ -46,11 +46,16 @@
  * The branch read the payment desk chooses an invoice from. Proved below: the
  * named pair is the authorization target (a caller granted only in another
  * branch is refused, another tenant is refused, and row-level security hides
- * the row on the runtime pool with a positive control first); the finance split
- * omits `totals` and `outstanding` rather than zeroing them; the box reaches the
- * invoice number (Arabic-Indic digits folded) and the payer's name and treats a
- * LIKE metacharacter as a literal; a page walked by cursor never repeats a row;
- * and the statements sent do not grow with the page.
+ * the row on the runtime pool with a positive control first); the gate is
+ * `sal.finance.view` — a cashier holding only that and `sal.payment.allocate`
+ * finds an invoice and allocates to it, and an invoice clerk without the finance
+ * code is refused; `totals` and `outstanding` are omitted rather than zeroed
+ * wherever the amounts row is not visible, and a draft's balance is the true zero;
+ * a retired payer is neither named nor found by name; `allocatable` keeps the
+ * issued and credited invoices with money still open; the box reaches the invoice
+ * number (Arabic-Indic digits folded) and the payer's name and treats a LIKE
+ * metacharacter as a literal; a page walked by cursor never repeats a row; and
+ * the statements sent do not grow with the page.
  */
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { Pool, PoolClient } from 'pg';
@@ -66,6 +71,8 @@ import {
 import { establishP1_19Fixtures } from './p1-19-helpers';
 import {
   PARTNER_A,
+  PAYMENT_METHOD_A,
+  SAL_CASHIER,
   SAL_FULL,
   SAL_NO_FINANCE,
   SAL_PERMISSION_ELSEWHERE,
@@ -93,6 +100,8 @@ import {
 import { GET as DETAIL } from '@/app/api/v1/invoices/[invoiceId]/route';
 import { POST as ISSUE } from '@/app/api/v1/invoices/[invoiceId]/issuance/route';
 import { GET as OUTSTANDING } from '@/app/api/v1/invoices/[invoiceId]/outstanding/route';
+import { POST as RECORD } from '@/app/api/v1/payments/route';
+import { POST as ALLOCATE } from '@/app/api/v1/payments/[paymentId]/allocations/route';
 import { POST as CANCEL } from '@/app/api/v1/invoices/[invoiceId]/cancellation/route';
 
 let admin: Pool;
@@ -837,31 +846,38 @@ describe('sal.invoice-list', () => {
     expect(page.items.some((item) => item.id === second.invoiceId)).toBe(false);
   });
 
-  it('omits every amount for a caller without finance view, and never answers zero', async () => {
+  it('refuses a caller without finance view, even one holding every invoice-writing code', async () => {
+    // SAL_NO_FINANCE holds sal.invoice.manage and every other sal code except
+    // sal.finance.view: the gate is the finance code, and nothing else admits.
     authAs(SAL_NO_FINANCE);
-    const response = await listInvoices(
+    const refused = await listInvoices(
       `${pair}&q=${encodeURIComponent(first.invoiceNumber)}&limit=100`
     );
-    expect(response.status).toBe(200);
-    const raw = await response.text();
-    const page = JSON.parse(raw) as ListPage;
-    const row = page.items.find((item) => item.id === first.invoiceId);
-    expect(row).toMatchObject({ status: 'issued', invoiceNumber: first.invoiceNumber });
-    expect(row?.totals).toBeNull();
-    expect(row?.outstanding).toBeNull();
-    expect(raw).not.toContain(first.gross);
-  });
-
-  it('refuses a caller without the invoice code, and a malformed query by its rule', async () => {
-    authAs(SAL_READER);
-    const refused = await listInvoices(pair);
     expect(refused.status).toBe(403);
     expect(await codeOf(refused)).toBe('ERR-IAM-001');
+    expect(await listInvoices(pair).then((response) => response.text())).not.toContain(
+      first.invoiceId
+    );
+  });
+
+  it('answers a finance viewer holding no invoice code, and refuses a malformed query by its rule', async () => {
+    // SAL_READER holds sal.finance.view and no sal.invoice.* code at all.
+    authAs(SAL_READER);
+    const read = await listInvoices(
+      `${pair}&q=${encodeURIComponent(first.invoiceNumber)}&limit=100`
+    );
+    expect(read.status).toBe(200);
+    const row = (await bodyOf<ListPage>(read)).items.find((item) => item.id === first.invoiceId);
+    expect(row).toMatchObject({
+      status: 'issued',
+      outstanding: { amount: first.gross, currency: 'USD' },
+    });
 
     authAs(SAL_FULL);
     for (const query of [
       `companyId=${scope.companyId}`,
       `${pair}&status=paid`,
+      `${pair}&allocatable=yes`,
       `${pair}&q=x`,
       `${pair}&payerPartnerId=${PARTNER_A}`,
       `${pair}&limit=0`,
@@ -964,5 +980,275 @@ describe('sal.invoice-list', () => {
     expect(one.statements.filter(readsInvoices)).toHaveLength(1);
     expect(three.statements.length).toBe(one.statements.length);
     expect(three.statements.filter(readsInvoices)).toHaveLength(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// sal.invoice-list — who can choose an invoice, and what a row may say
+// ---------------------------------------------------------------------------
+
+/** One admin transaction with the actor and tenant GUCs the `sal`/`crm` triggers read. */
+async function asTenantA<T>(work: (client: PoolClient) => Promise<T>): Promise<T> {
+  const client = await admin.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query(
+      `SELECT set_config('app.user_id',$1,true), set_config('app.tenant_id',$2,true)`,
+      [USER_A, TENANT_A]
+    );
+    const value = await work(client);
+    await client.query('COMMIT');
+    return value;
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+const recordReceipt = (payload: unknown): Promise<Response> =>
+  RECORD(
+    new Request('http://localhost/api/v1/payments', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'idempotency-key': randomUUID() },
+      body: JSON.stringify(payload),
+    })
+  );
+const allocateReceipt = (paymentId: string, payload: unknown): Promise<Response> =>
+  ALLOCATE(
+    new Request(`http://localhost/api/v1/payments/${paymentId}/allocations`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'idempotency-key': randomUUID() },
+      body: JSON.stringify(payload),
+    }),
+    { params: Promise.resolve({ paymentId }) }
+  );
+
+describe('sal.invoice-list — the cash desk, the balance and the payer', () => {
+  let open: Awaited<ReturnType<typeof seedIssuedInvoice>>;
+  let credited: Awaited<ReturnType<typeof seedIssuedInvoice>>;
+  let settled: Awaited<ReturnType<typeof seedIssuedInvoice>>;
+  let draft: Awaited<ReturnType<typeof seedIssuedInvoice>>;
+  let hiddenAmounts: Awaited<ReturnType<typeof seedIssuedInvoice>>;
+  let retiredPayer: Awaited<ReturnType<typeof seedIssuedInvoice>>;
+  const retiredPartnerId = randomUUID();
+  const retiredPartnerName = 'Retired Payer Wsix';
+  let scope: { readonly companyId: string; readonly branchId: string };
+  let pair: string;
+
+  beforeAll(async () => {
+    open = await seedIssuedInvoice('w6_desk_open', { net: '80.0000' });
+    credited = await seedIssuedInvoice('w6_desk_credited', { net: '60.0000' });
+    settled = await seedIssuedInvoice('w6_desk_settled', { net: '10.0000' });
+    draft = await seedIssuedInvoice('w6_desk_draft', { net: '30.0000', draft: true });
+    hiddenAmounts = await seedIssuedInvoice('w6_desk_hidden', { net: '45.0000' });
+
+    await asTenantA((client) =>
+      client.query(
+        `INSERT INTO crm.business_partners
+           (id, tenant_id, party_type, display_name, lifecycle_status, created_by)
+         VALUES ($1,$2,'organization',$3,'active',$4)`,
+        [retiredPartnerId, TENANT_A, retiredPartnerName, USER_A]
+      )
+    );
+    retiredPayer = await seedIssuedInvoice('w6_desk_retired', {
+      payerPartnerId: retiredPartnerId,
+    });
+    // Retired AFTER the invoice named it: the invoice keeps the id, the partner
+    // leaves the live set.
+    await asTenantA((client) =>
+      client.query(
+        `UPDATE crm.business_partners SET deleted_at = now() WHERE tenant_id = $1 AND id = $2`,
+        [TENANT_A, retiredPartnerId]
+      )
+    );
+
+    // `issued -> credited` is the transition `sal.guard_invoice_freeze` permits;
+    // no credit note is approved, so the whole gross is still open.
+    await asTenantA((client) =>
+      client.query(`UPDATE sal.invoices SET status = 'credited' WHERE id = $1`, [
+        credited.invoiceId,
+      ])
+    );
+
+    // The amounts row of ONE issued invoice is taken out of the visible set with
+    // triggers suspended for that statement alone — the superuser-only fixture
+    // act `p1-31-report-engine-invoice-payment.test.ts` documents. No shipped
+    // path does this; it stands in for a policy that hides the row, so the read's
+    // refusal to report a zero can be observed by a caller who HOLDS finance view.
+    const client = await admin.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query(`SET LOCAL session_replication_role = 'replica'`);
+      const hidden = await client.query(
+        `UPDATE sal.invoice_amounts SET deleted_at = now()
+          WHERE tenant_id = $1 AND invoice_id = $2 AND deleted_at IS NULL`,
+        [TENANT_A, hiddenAmounts.invoiceId]
+      );
+      if (hidden.rowCount !== 1) {
+        throw new Error(`fixture touched ${String(hidden.rowCount)} amounts rows, not 1`);
+      }
+      await client.query('COMMIT');
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+
+    const where = await admin.query<{ company_id: string; branch_id: string }>(
+      `SELECT company_id, branch_id FROM sal.invoices WHERE id = $1`,
+      [open.invoiceId]
+    );
+    scope = {
+      companyId: where.rows[0]?.company_id ?? '',
+      branchId: where.rows[0]?.branch_id ?? '',
+    };
+    pair = `companyId=${scope.companyId}&branchId=${scope.branchId}`;
+
+    // `settled` is paid in full through the shipped routes, so its open balance
+    // is a real zero rather than a fixture's.
+    authAs(SAL_FULL);
+    const receipt = await recordReceipt({
+      ...scope,
+      paymentMethodId: PAYMENT_METHOD_A,
+      payerPartnerId: PARTNER_A,
+      currency: 'USD',
+      amount: settled.gross,
+    });
+    if (receipt.status !== 201) throw new Error(`fixture receipt answered ${receipt.status}`);
+    const receiptId = (await bodyOf<{ id: string }>(receipt)).id;
+    const paid = await allocateReceipt(receiptId, {
+      invoiceId: settled.invoiceId,
+      amount: settled.gross,
+      currency: 'USD',
+    });
+    if (paid.status !== 201) throw new Error(`fixture allocation answered ${paid.status}`);
+    __resetAuthenticatorForTests();
+  }, 180_000);
+
+  beforeEach(() => {
+    __resetRateLimitForTests();
+  });
+
+  const rowFor = async (invoiceId: string, query: string): Promise<ListRow | undefined> => {
+    const response = await listInvoices(`${pair}&${query}&limit=100`);
+    expect(response.status, query).toBe(200);
+    return (await bodyOf<ListPage>(response)).items.find((item) => item.id === invoiceId);
+  };
+
+  it('lets a cashier without sal.invoice.manage find an invoice and allocate to it', async () => {
+    expect(SAL_CASHIER.permissions).not.toContain('sal.invoice.manage');
+    authAs(SAL_FULL);
+    const receipt = await recordReceipt({
+      ...scope,
+      paymentMethodId: PAYMENT_METHOD_A,
+      payerPartnerId: PARTNER_A,
+      currency: 'USD',
+      amount: '5.0000',
+    });
+    expect(receipt.status).toBe(201);
+    const receiptId = (await bodyOf<{ id: string }>(receipt)).id;
+
+    // The gate and the write agree: without the finance code neither answers,
+    // so the picker takes nothing from a caller that the write would have served.
+    authAs(SAL_NO_FINANCE);
+    expect((await listInvoices(pair)).status).toBe(403);
+    const refused = await allocateReceipt(receiptId, {
+      invoiceId: open.invoiceId,
+      amount: '5.0000',
+      currency: 'USD',
+    });
+    expect(refused.status).toBe(403);
+
+    authAs(SAL_CASHIER);
+    const found = await rowFor(
+      open.invoiceId,
+      `allocatable=true&q=${encodeURIComponent(open.invoiceNumber)}`
+    );
+    expect(found).toMatchObject({
+      status: 'issued',
+      invoiceNumber: open.invoiceNumber,
+      outstanding: { amount: open.gross, currency: 'USD' },
+    });
+
+    const applied = await allocateReceipt(receiptId, {
+      invoiceId: found?.id,
+      amount: '5.0000',
+      currency: 'USD',
+    });
+    expect(applied.status).toBe(201);
+    expect(await bodyOf<{ invoiceId: string }>(applied)).toMatchObject({
+      invoiceId: open.invoiceId,
+    });
+  });
+
+  it('keeps issued and credited invoices with money open, and drops drafts and settled ones', async () => {
+    authAs(SAL_CASHIER);
+    const response = await listInvoices(`${pair}&allocatable=true&limit=100`);
+    expect(response.status).toBe(200);
+    const ids = (await bodyOf<ListPage>(response)).items.map((item) => item.id);
+    expect(ids).toEqual(expect.arrayContaining([open.invoiceId, credited.invoiceId]));
+    expect(ids).not.toContain(draft.invoiceId);
+    expect(ids).not.toContain(settled.invoiceId);
+
+    const creditedRow = await rowFor(credited.invoiceId, 'allocatable=true&status=credited');
+    expect(creditedRow).toMatchObject({
+      status: 'credited',
+      outstanding: { amount: credited.gross, currency: 'USD' },
+    });
+    // `allocatable=false` narrows nothing.
+    expect(await rowFor(draft.invoiceId, 'allocatable=false&status=draft')).toBeDefined();
+    expect(await rowFor(settled.invoiceId, 'allocatable=false')).toMatchObject({
+      outstanding: { amount: '0.0000', currency: 'USD' },
+    });
+  });
+
+  it("answers a draft's balance as the true zero, with no totals before issue", async () => {
+    authAs(SAL_FULL);
+    const row = await rowFor(draft.invoiceId, 'status=draft');
+    expect(row).toMatchObject({ status: 'draft', invoiceNumber: null });
+    // `sal.invoice_open_receivable` short-circuits a draft to zero before it
+    // reads anything, so the zero is believable; the header amounts are written
+    // at issue, so there are none to show yet.
+    expect(row?.outstanding).toEqual({ amount: '0.0000', currency: 'USD' });
+    expect(row?.totals).toBeNull();
+  });
+
+  it('omits the balance, never zeroes it, when a finance viewer cannot see the amounts row', async () => {
+    authAs(SAL_FULL);
+    const response = await listInvoices(
+      `${pair}&q=${encodeURIComponent(hiddenAmounts.invoiceNumber)}&limit=100`
+    );
+    expect(response.status).toBe(200);
+    const raw = await response.text();
+    const row = (JSON.parse(raw) as ListPage).items.find(
+      (item) => item.id === hiddenAmounts.invoiceId
+    );
+    expect(row).toMatchObject({ status: 'issued', invoiceNumber: hiddenAmounts.invoiceNumber });
+    expect(row?.totals).toBeNull();
+    expect(row?.outstanding).toBeNull();
+    expect(raw).not.toContain(hiddenAmounts.gross);
+  });
+
+  it('names no retired payer, and the box cannot find the name the row does not show', async () => {
+    authAs(SAL_FULL);
+    const row = await rowFor(
+      retiredPayer.invoiceId,
+      `q=${encodeURIComponent(retiredPayer.invoiceNumber)}`
+    );
+    expect(row).toMatchObject({
+      payerPartnerId: retiredPartnerId,
+      payer: { displayName: null, displayNumber: null, partyType: null },
+    });
+
+    const byName = await listInvoices(
+      `${pair}&q=${encodeURIComponent(retiredPartnerName)}&limit=100`
+    );
+    expect(byName.status).toBe(200);
+    expect((await bodyOf<ListPage>(byName)).items.map((item) => item.id)).not.toContain(
+      retiredPayer.invoiceId
+    );
   });
 });

@@ -142,8 +142,9 @@ export interface InvoicePayer {
  * `P1-32-PRE-OD-UX`).
  *
  * `outstanding` is `null` whenever the balance cannot be believed for this
- * caller — an issued invoice read without `sal.finance.view` — and is never a
- * zero standing in for "not shown".
+ * caller — an issued or credited invoice whose amounts it cannot see — and is
+ * never a zero standing in for "not shown". A draft's zero IS the true answer, and
+ * the picker still shows no balance beside it (`InvoicePicker`).
  */
 export interface InvoiceListEntry extends Invoice {
   readonly payer: InvoicePayer;

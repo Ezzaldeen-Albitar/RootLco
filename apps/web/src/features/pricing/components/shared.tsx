@@ -192,11 +192,6 @@ export interface BranchPair {
 export const EMPTY_PAIR: BranchPair = { companyId: '', branchId: '' };
 
 /**
- * A branch as a list — choosing a branch fills its company too — and a sentence
- * saying why in every case where this screen has no list to narrow to. A read
- * in flight is a WAIT, not a refusal.
- */
-/**
  * The company a price rule is narrowed to, NAMED from the working context
  * (Owner directive, `P1-32-PRE-OD-UX`).
  *
@@ -255,6 +250,11 @@ export function CompanyPicker({
   );
 }
 
+/**
+ * A branch as a list — choosing a branch fills its company too — and a sentence
+ * saying why in every case where this screen has no list to narrow to. A read
+ * in flight is a WAIT, not a refusal.
+ */
 export function BranchPairPicker({
   messages,
   branches,

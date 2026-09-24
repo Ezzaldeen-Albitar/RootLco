@@ -14041,7 +14041,7 @@
       "domain": "billing",
       "method": "GET",
       "route": "/api/v1/invoices",
-      "permissions": ["sal.invoice.manage"],
+      "permissions": ["sal.finance.view"],
       "public": false,
       "scope": "branch",
       "transaction": "read (no business mutation)",

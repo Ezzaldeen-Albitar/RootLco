@@ -495,6 +495,37 @@ describe('a half-filled form and a branch switch', () => {
       'Layla Haddad'
     );
   });
+
+  it('discarding a chosen payer switches the branch and leaves the picker empty', async () => {
+    const user = userEvent.setup();
+    const form = await openTwoBranches(user);
+    await choosePayer(user, form);
+    await discardAndSwitch(user, await switchExpectingQuestion(user, 'second'));
+    await waitFor(() => expect(heldBranch()).toBe(OTHER_BRANCH.id));
+    const reopened = await screen.findByRole('form', {
+      name: EN['payments.record.formLabel'] as string,
+    });
+    expect(within(reopened).queryByTestId('payments-payer-picker-chosen')).toBeNull();
+    expect(within(reopened).getByLabelText(labelled('payments.record.payer'))).toHaveValue('');
+    // Nothing is left to lose, so the next switch does not ask.
+    await switchWithoutQuestion(user, 'first');
+    await waitFor(() => expect(heldBranch()).toBe(TEST_BRANCH.id));
+  });
+
+  it('a list filter chosen by name is not unsaved work: the switch does not ask', async () => {
+    const user = userEvent.setup();
+    await openTwoBranches(user);
+    const filters = screen.getByRole('form', {
+      name: EN['payments.list.filtersLabel'] as string,
+    });
+    await choosePayer(user, filters, labelled('payments.list.payerFilter'));
+    await chooseInvoice(user, filters, labelled('payments.list.invoiceFilter'));
+    expect(within(filters).getByTestId('payments-invoice-filter-chosen')).toHaveTextContent(
+      'INV-000123'
+    );
+    await switchWithoutQuestion(user, 'second');
+    await waitFor(() => expect(heldBranch()).toBe(OTHER_BRANCH.id));
+  });
 });
 
 describe('the receipts of the branch', () => {
@@ -558,7 +589,11 @@ describe('the receipts of the branch', () => {
       companyId: COMPANY_ID,
       branchId: BRANCH_ID,
     });
-    expect(listInvoices.mock.calls.at(-1)?.[1]).toEqual({ q: 'INV-0001', status: undefined });
+    expect(listInvoices.mock.calls.at(-1)?.[1]).toEqual({
+      q: 'INV-0001',
+      status: undefined,
+      allocatable: false,
+    });
     await user.click(
       within(filters).getByRole('button', { name: EN['payments.list.apply'] as string })
     );
@@ -926,21 +961,84 @@ describe('the payer is found by name, and the form says when it cannot be', () =
     expect(within(form).queryByText(EN['payments.record.payerRequired'] as string)).toBeNull();
   });
 
-  it('without the customer read offers no box, and the held submit says why', async () => {
+  it('with the customer read offers no reference box at all', async () => {
+    renderScreen();
+    await chooseBranch();
+    const form = await screen.findByRole('form', {
+      name: EN['payments.record.formLabel'] as string,
+    });
+    expect(within(form).queryByLabelText(labelled('payments.record.payerReference'))).toBeNull();
+  });
+
+  it('without the customer read a recorder STILL records, through the labelled payer reference', async () => {
+    // `sal.payment-record` declares the recording and finance codes only, so a
+    // recorder without `crm.customer.read` must not lose the payment the server
+    // accepts from them.
+    const user = userEvent.setup();
     renderScreen({ canReadCustomers: false });
     await chooseBranch();
     const form = await screen.findByRole('form', {
       name: EN['payments.record.formLabel'] as string,
     });
     expect(within(form).queryByRole('searchbox')).toBeNull();
+    expect(
+      within(form).getByText(EN['payments.record.payerReferenceHelp'] as string)
+    ).toBeVisible();
     const submit = within(form).getByRole('button', {
       name: EN['payments.record.submit'] as string,
     });
-    expect(submit).toBeDisabled();
-    const reason = document.getElementById(submit.getAttribute('aria-describedby') ?? '');
-    expect(reason).not.toBeNull();
-    expect(reason).toHaveTextContent(EN['customerPicker.notPermitted'] as string);
+    expect(submit).toBeEnabled();
+
+    const box = within(form).getByLabelText(labelled('payments.record.payerReference'));
+    await user.type(box, 'not-a-reference');
+    await user.type(within(form).getByLabelText(labelled('payments.record.currency')), 'USD');
+    await user.type(within(form).getByLabelText(labelled('payments.record.amount')), '10.0000');
+    await user.click(submit);
+    expect(
+      await within(form).findByText(EN['payments.record.payerReferenceFormat'] as string)
+    ).toBeVisible();
+    expect(box).toHaveAttribute('aria-invalid', 'true');
+    expect(recordPayment).not.toHaveBeenCalled();
+
+    await user.clear(box);
+    await user.type(box, PARTNER_ID);
+    await user.click(submit);
+    await waitFor(() => expect(recordPayment).toHaveBeenCalledTimes(1));
+    expect(recordPayment.mock.calls[0]?.[0]).toMatchObject({
+      payerPartnerId: PARTNER_ID,
+      currency: 'USD',
+      amount: '10.0000',
+    });
     expect(searchCustomerDirectory).not.toHaveBeenCalled();
+  });
+
+  it('a typed payer reference is unsaved work: a branch switch asks first', async () => {
+    const user = userEvent.setup();
+    renderLtr(
+      inBranch(
+        <>
+          <BranchSwitch to={TEST_BRANCH.id} label="first" />
+          <BranchSwitch to={OTHER_BRANCH.id} label="second" />
+          <WorkingBranchProbe />
+          {screenFor({ canReadCustomers: false })}
+        </>,
+        { snapshot: branchSnapshot([TEST_BRANCH, OTHER_BRANCH]) }
+      )
+    );
+    await user.click(screen.getByRole('button', { name: 'first' }));
+    const form = await screen.findByRole('form', {
+      name: EN['payments.record.formLabel'] as string,
+    });
+    await user.type(
+      within(form).getByLabelText(labelled('payments.record.payerReference')),
+      PARTNER_ID
+    );
+    try {
+      await stayOnBranch(user, await switchExpectingQuestion(user, 'second'));
+      expect(heldBranch()).toBe(TEST_BRANCH.id);
+    } finally {
+      forgetRememberedBranch();
+    }
   });
 });
 
@@ -1045,7 +1143,7 @@ describe('applying a receipt to an invoice', () => {
     ).toBeNull();
   });
 
-  it('searches the RECEIPT’s own branch for issued invoices and names each by number, payer and balance', async () => {
+  it('searches the RECEIPT’s own branch for allocatable invoices and names each by number, payer and balance', async () => {
     const user = userEvent.setup();
     await openReceipt(user);
     const form = await screen.findByRole('form', {
@@ -1057,9 +1155,76 @@ describe('applying a receipt to an invoice', () => {
       companyId: COMPANY_ID,
       branchId: BRANCH_ID,
     });
-    expect(listInvoices.mock.calls.at(-1)?.[1]).toEqual({ q: 'INV-0001', status: 'issued' });
+    // The SERVER decides what can still take money — issued, or credited with a
+    // balance open — so no single status is asked for.
+    expect(listInvoices.mock.calls.at(-1)?.[1]).toEqual({
+      q: 'INV-0001',
+      status: undefined,
+      allocatable: true,
+    });
     expect(option).toHaveTextContent('Layla Haddad');
-    expect(option).toHaveTextContent('40.0000 USD');
+    // Formatted as every money figure is, never the raw wire string.
+    expect(option).toHaveTextContent(money('40.0000'));
+    expect(option).not.toHaveTextContent('40.0000 USD');
+  });
+
+  it('offers a credited invoice with money open, and names its balance', async () => {
+    listInvoices.mockResolvedValue(
+      okRead({
+        items: [
+          {
+            ...invoiceEntry,
+            status: 'credited',
+            outstanding: { amount: '15.5000', currency: 'USD' },
+          },
+        ],
+        nextCursor: null,
+        hasMore: false,
+      })
+    );
+    const user = userEvent.setup();
+    await openReceipt(user);
+    const form = await screen.findByRole('form', {
+      name: EN['payments.allocate.formLabel'] as string,
+    });
+    await user.type(within(form).getByLabelText(labelled('payments.allocate.invoice')), 'INV-0001');
+    const option = await within(form).findByRole('button', { name: /INV-000123/ });
+    expect(option).toHaveTextContent(EN['invoices.status.credited'] as string);
+    expect(option).toHaveTextContent(money('15.5000'));
+    expect(within(form).getByText(EN['payments.allocate.invoiceHelp'] as string)).toBeVisible();
+  });
+
+  it('shows no balance beside a draft, whose zero would read as paid', async () => {
+    listInvoices.mockResolvedValue(
+      okRead({
+        items: [
+          {
+            ...invoiceEntry,
+            status: 'draft',
+            invoiceNumber: null,
+            outstanding: { amount: '0.0000', currency: 'USD' },
+          },
+        ],
+        nextCursor: null,
+        hasMore: false,
+      })
+    );
+    const user = userEvent.setup();
+    renderScreen();
+    await chooseBranch();
+    const filters = screen.getByRole('form', {
+      name: EN['payments.list.filtersLabel'] as string,
+    });
+    await user.type(
+      within(filters).getByLabelText(labelled('payments.list.invoiceFilter')),
+      'Layla'
+    );
+    const option = await within(filters).findByRole('button', {
+      name: new RegExp(escape(EN['invoices.picker.unnumbered'] as string)),
+    });
+    expect(option).toHaveTextContent(EN['invoices.status.draft'] as string);
+    expect(option).not.toHaveTextContent(EN['invoices.picker.open'] as string);
+    expect(option).not.toHaveTextContent(money('0.0000'));
   });
 
   it('says nothing about money for an invoice whose balance the server withheld', async () => {
@@ -1353,14 +1518,20 @@ describe('the route page decides before it reads', () => {
     });
     // The malformed reference is not taken as a choice…
     expect(within(form).queryByTestId('payments-invoice-from-address')).toBeNull();
-    // …and without `sal.invoice.manage` nothing can be searched: the picker says
-    // so and the submit is held, described by that sentence.
+    // …and a cashier holding finance view and the allocation code — no
+    // `sal.invoice.manage` — still FINDS the invoice and applies to it.
+    expect(PERMISSIONS).not.toContain('sal.invoice.manage');
+    expect(within(form).queryByText(EN['invoices.picker.notPermitted'] as string)).toBeNull();
+    const user = userEvent.setup();
+    await chooseInvoice(user, form);
+    await user.type(within(form).getByLabelText(labelled('payments.allocate.amount')), '5.0000');
     const submit = within(form).getByRole('button', {
       name: EN['payments.allocate.submit'] as string,
     });
-    expect(submit).toBeDisabled();
-    const reason = document.getElementById(submit.getAttribute('aria-describedby') ?? '');
-    expect(reason).toHaveTextContent(EN['invoices.picker.notPermitted'] as string);
+    expect(submit).toBeEnabled();
+    await user.click(submit);
+    await waitFor(() => expect(allocatePayment).toHaveBeenCalled());
+    expect(allocatePayment.mock.calls[0]?.[1]).toMatchObject({ invoiceId: INVOICE_ID });
   });
 });
 

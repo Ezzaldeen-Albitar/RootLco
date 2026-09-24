@@ -128,8 +128,10 @@ export interface InvoiceView {
 /**
  * Who an invoice bills, by name (Owner directive, P1-32-PRE-OD-UX).
  *
- * Every field is `null` exactly when the payer row is not visible; the id is
- * `payerPartnerId` on the header and is not repeated here.
+ * Every field is `null` exactly when the payer is not a live partner — retired
+ * since the invoice was written, or not visible — and the box then cannot reach
+ * that name either, so the list never names a payer it would not find by name.
+ * The id is `payerPartnerId` on the header and is not repeated here.
  */
 export interface InvoicePayerView {
   readonly displayName: string | null;
@@ -143,8 +145,10 @@ export interface InvoicePayerView {
  *
  * `outstanding` is `null` whenever `balanceIsTrustworthy` says the zero
  * `sal.invoice_open_receivable` would compute cannot be believed — that is, for
- * an issued or credited invoice read by a caller without `sal.finance.view`.
- * Omitted, never zeroed, for the reason `totals` is.
+ * an issued or credited invoice whose amounts row this caller cannot see. The
+ * route's gate is `sal.finance.view`, so that is no longer the ordinary case;
+ * the guard stays because a policy change underneath must hide money, never
+ * report a zero. Omitted, never zeroed, for the reason `totals` is.
  */
 export interface InvoiceListEntryView extends InvoiceView {
   readonly payer: InvoicePayerView;
@@ -851,6 +855,8 @@ export class BillingReadService {
       readonly companyId: string;
       readonly branchId: string;
       readonly status?: string | undefined;
+      /** Only the invoices money can still be applied to (`issued`/`credited`, open above zero). */
+      readonly allocatable?: boolean | undefined;
       /** The raw free-text box; reduced here, once, by the shared rule. */
       readonly q?: string | undefined;
     },
@@ -865,6 +871,7 @@ export class BillingReadService {
         companyId: filter.companyId,
         branchId: filter.branchId,
         ...(filter.status === undefined ? {} : { status: filter.status }),
+        ...(filter.allocatable === true ? { allocatable: true } : {}),
         search: terms.present ? { ...terms, phoneDigits: '', phoneSuffixEligible: false } : terms,
       },
       pageRequest(INVOICE_LIST_ORDER, page)

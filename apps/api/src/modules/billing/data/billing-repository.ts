@@ -2123,6 +2123,19 @@ export class BillingRepository extends Repository {
    * its vehicle anchor is NULL and those two arms cannot match it. The service
    * switches the phone arm off before this is called.
    *
+   * The payer is NAMED from the same set the box SEARCHES: the shared name arm
+   * reads live partners only (`bp.deleted_at IS NULL`), so the join carries the
+   * same predicate. A payer retired since the invoice was written is therefore
+   * neither shown nor found by name — the row still shows its number and is
+   * still found by it — rather than shown under a name the box cannot reach.
+   *
+   * ## Allocatable
+   *
+   * `allocatable` keeps the two states `assertAllocatable` admits and asks
+   * `sal.invoice_open_receivable` whether anything is still open, in the query,
+   * before the keyset window, so a page of allocatable invoices is never short.
+   * The comparison is PostgreSQL's `numeric`; nothing here parses an amount.
+   *
    * ## No index and no migration
    *
    * The branch predicate is served by the table's tenant/company/branch-leading
@@ -2136,6 +2149,11 @@ export class BillingRepository extends Repository {
       readonly companyId: string;
       readonly branchId: string;
       readonly status?: string | undefined;
+      /**
+       * Only `issued`/`credited` invoices whose open receivable is above zero —
+       * the invoices `sal.payment-allocate` could still apply money to.
+       */
+      readonly allocatable?: boolean | undefined;
       /** Already reduced by `toEntitySearchTerms`. */
       readonly search?: EntitySearchTerms | undefined;
     },
@@ -2147,6 +2165,7 @@ export class BillingRepository extends Repository {
       filter.companyId,
       filter.branchId,
       filter.status ?? null,
+      filter.allocatable === true,
     ];
     const search = searchFragment(
       filter.search ?? NO_SEARCH_TERMS,
@@ -2195,9 +2214,13 @@ export class BillingRepository extends Repository {
           AND a.deleted_at IS NULL
          LEFT JOIN crm.business_partners pp
            ON pp.tenant_id = i.tenant_id AND pp.id = i.payer_partner_id
+          AND pp.deleted_at IS NULL
         WHERE i.tenant_id = $1 AND i.company_id = $2 AND i.branch_id = $3
           AND i.deleted_at IS NULL
           AND ($4::text IS NULL OR i.status = $4)
+          AND (NOT $5::boolean
+               OR (i.status IN ('issued', 'credited')
+                   AND sal.invoice_open_receivable(i.id) > 0))
           ${search.predicate}
           ${keyset.predicate}
         ${keyset.order}

@@ -61,6 +61,10 @@
  *    stamps the maker from the session and `sal.guard_dual_control_approval` refuses
  *    `approved_by = requested_by`, so maker ≠ approver has to be satisfiable by two
  *    real accounts rather than by one account used twice.
+ *  - `SAL_CASHIER` holds `sal.finance.view` and `sal.payment.allocate` ONLY — the
+ *    cash desk that applies receipts to invoices and authors none. It exists to prove
+ *    that finding an invoice to allocate to never demands an invoice-writing code
+ *    (Owner directive, P1-32-PRE-OD-UX, the branch invoice list).
  *  - `SAL_READER` holds `sal.finance.view` and `sal.delivery.view` only. It is the
  *    403 probe for every command: a principal that holds NEITHER
  *    `sal.payment.record` nor `wty.warranty.issue`, in a tenant where the rows are
@@ -273,6 +277,15 @@ export const SAL_NO_FINANCE: Principal = {
   permissions: ALL_SAL_WTY.filter((code) => code !== FINANCE_VIEW),
 };
 
+/** The cash desk: finance view and allocation, and no invoice-writing code. See the file header. */
+export const SAL_CASHIER: Principal = {
+  roleId: 'f1220000-0000-4000-8000-000000000171',
+  userId: 'f1220000-0000-4000-8000-000000000172',
+  subject: 'fx_p1_22_cashier',
+  tenantId: TENANT_A,
+  permissions: [FINANCE_VIEW, PAYMENT_ALLOCATE],
+};
+
 /** Reads only. A command refusal from it is about authority, not tenancy. */
 export const SAL_READER: Principal = {
   roleId: 'f1220000-0000-4000-8000-000000000131',
@@ -330,6 +343,7 @@ export const P1_22_PRINCIPALS: readonly Principal[] = [
   SAL_FULL,
   SAL_APPROVER,
   SAL_NO_FINANCE,
+  SAL_CASHIER,
   SAL_READER,
   SAL_SCOPED_A2,
   SAL_PERMISSION_ELSEWHERE,

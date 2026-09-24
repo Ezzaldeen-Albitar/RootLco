@@ -92,9 +92,17 @@ import {
  *
  * The payer is chosen among customers and the invoice among the branch's
  * invoices, each through a search the server answers (Owner directive,
- * `P1-32-PRE-OD-UX`); no box on this screen asks for a reference. Without the
- * code a search needs, the picker says so and the submit it would feed is held,
- * described by that sentence.
+ * `P1-32-PRE-OD-UX`). The invoice search needs `sal.finance.view`, which every
+ * caller of this page holds, so it is always offered.
+ *
+ * The payer search needs `crm.customer.read`, and recording a payment does NOT:
+ * `sal.payment-record` declares `sal.payment.record` and `sal.finance.view`
+ * only. So a recorder without the customer read is not held — that would take
+ * away a payment the server accepts from them. For that caller alone the form
+ * keeps the one box it had before, a pasted payer reference, labelled as the
+ * fallback it is, checked for shape before it is sent, and explained in the
+ * same sentence that says how to choose by name instead. It is never the
+ * ordinary path: with the customer read there is no box at all.
  *
  * ## Recording needs a method this tenant owns
  *
@@ -156,7 +164,7 @@ export function PaymentsScreen({
   readonly canReadBranches?: boolean;
   /** `crm.customer.read` — whether a payer can be found by name. */
   readonly canReadCustomers?: boolean;
-  /** `sal.invoice.manage` — whether the branch's invoices can be searched. */
+  /** `sal.finance.view` — whether the branch's invoices can be searched. */
   readonly canListInvoices?: boolean;
 }) {
   const [target, setTarget] = useState<Target | null>(null);
@@ -466,6 +474,8 @@ function RecordForm({
    * picker declares a chosen payer as unsaved work itself.
    */
   const [payer, setPayer] = useState<ChosenCustomer | null>(null);
+  // The fallback for a recorder without the customer read — see the file header.
+  const [payerReference, setPayerReference] = useState('');
   /*
    * Unsaved work, declared to the shell. The panel is keyed on the branch, so a
    * switch would drop a half-filled payment and address the next one to a
@@ -476,7 +486,8 @@ function RecordForm({
   useUnsavedGuard(
     draft.paymentMethodId !== (methods[0]?.id ?? '') ||
       draft.currency.trim().length > 0 ||
-      draft.amount.trim().length > 0
+      draft.amount.trim().length > 0 ||
+      payerReference.trim().length > 0
   );
   const [errors, setErrors] = useState<Readonly<Record<string, string>>>({});
   const [outcome, setOutcome] = useState<ActionState | null>(null);
@@ -488,7 +499,6 @@ function RecordForm({
     fieldErrors: { ...(outcome?.fieldErrors ?? {}), ...errors },
     attempt,
   });
-  const payerUnavailableId = useId();
 
   /** A field's own error, then the server's violation for the same field. */
   const errorFor = (name: string): string | undefined => {
@@ -517,12 +527,16 @@ function RecordForm({
         const found: Record<string, string> = {};
         if (!UUID.test(draft.paymentMethodId))
           found['paymentMethodId'] = 'payments.common.required';
-        if (payer === null) found['payerPartnerId'] = 'payments.record.payerRequired';
+        const payerPartnerId = canReadCustomers ? (payer?.id ?? null) : payerReference.trim();
+        if (canReadCustomers && payerPartnerId === null)
+          found['payerPartnerId'] = 'payments.record.payerRequired';
+        if (!canReadCustomers && !UUID.test(payerReference.trim()))
+          found['payerPartnerId'] = 'payments.record.payerReferenceFormat';
         if (!CURRENCY.test(draft.currency.trim().toUpperCase()))
           found['currency'] = 'payments.common.currencyFormat';
         if (!isPayableAmount(draft.amount)) found['amount'] = 'payments.common.amountFormat';
         setErrors(found);
-        if (Object.keys(found).length > 0 || payer === null) {
+        if (Object.keys(found).length > 0 || payerPartnerId === null) {
           setAttempt((n) => n + 1);
           return;
         }
@@ -532,7 +546,7 @@ function RecordForm({
             companyId: target.companyId,
             branchId: target.branchId,
             paymentMethodId: draft.paymentMethodId,
-            payerPartnerId: payer.id,
+            payerPartnerId,
             currency: draft.currency.trim().toUpperCase(),
             amount: draft.amount.trim(),
           },
@@ -567,20 +581,36 @@ function RecordForm({
         error={errorFor('paymentMethodId')}
       />
       <div className="sm:col-span-2">
-        <CustomerPicker
-          messages={messages}
-          locale={locale}
-          label={translate(messages, 'payments.record.payer')}
-          value={payer}
-          onChange={(next) => {
-            setPayer(next);
-            if (next !== null) clearError('payerPartnerId');
-          }}
-          canSearch={canReadCustomers}
-          error={errorFor('payerPartnerId')}
-          unavailableId={payerUnavailableId}
-          testId="payments-payer-picker"
-        />
+        {canReadCustomers ? (
+          <CustomerPicker
+            messages={messages}
+            locale={locale}
+            label={translate(messages, 'payments.record.payer')}
+            value={payer}
+            onChange={(next) => {
+              setPayer(next);
+              if (next !== null) clearError('payerPartnerId');
+            }}
+            canSearch
+            error={errorFor('payerPartnerId')}
+            testId="payments-payer-picker"
+          />
+        ) : (
+          <TextField
+            label={translate(messages, 'payments.record.payerReference')}
+            description={translate(messages, 'payments.record.payerReferenceHelp')}
+            required
+            spellCheck={false}
+            autoComplete="off"
+            dir="ltr"
+            value={payerReference}
+            onChange={(event) => {
+              setPayerReference(event.target.value);
+              clearError('payerPartnerId');
+            }}
+            error={errorFor('payerPartnerId')}
+          />
+        )}
       </div>
       <TextField
         label={translate(messages, 'payments.record.currency')}
@@ -611,14 +641,7 @@ function RecordForm({
         <p className="text-body text-text-secondary">
           {translate(messages, 'payments.record.explain')}
         </p>
-        <button
-          type="submit"
-          className={`${PRIMARY_BUTTON} mt-2`}
-          // Without the customer read no payer can be chosen, so the submit is
-          // held and described by the sentence that says why.
-          disabled={busy || !canReadCustomers}
-          aria-describedby={canReadCustomers ? undefined : payerUnavailableId}
-        >
+        <button type="submit" className={`${PRIMARY_BUTTON} mt-2`} disabled={busy}>
           {translate(messages, 'payments.record.submit')}
         </button>
         <OutcomeNote messages={messages} outcome={outcome} />
@@ -768,6 +791,7 @@ function ReceiptsPanel({
           value={draft.payer}
           onChange={(payer) => setDraft((d) => ({ ...d, payer }))}
           canSearch={canReadCustomers}
+          countsAsUnsaved={false}
           testId="payments-payer-filter"
         />
         <SelectField
@@ -807,6 +831,7 @@ function ReceiptsPanel({
             value={draft.invoice}
             onChange={(invoice) => setDraft((d) => ({ ...d, invoice }))}
             canSearch={canListInvoices}
+            countsAsUnsaved={false}
             testId="payments-invoice-filter"
           />
         )}
@@ -1036,8 +1061,9 @@ function AllocateForm({
   // One transport key per opened form, as on the record form.
   const [attemptKey] = useState(() => crypto.randomUUID());
   /*
-   * The invoice is FOUND among the receipt's own branch's issued invoices and
-   * chosen by its number and payer (Owner directive, `P1-32-PRE-OD-UX`); it used
+   * The invoice is FOUND among the receipt's own branch's invoices that can still
+   * take money — issued, or credited with a balance open — and chosen by its
+   * number and payer (Owner directive, `P1-32-PRE-OD-UX`); it used
    * to be a box asking for an invoice reference. One reached from an invoice
    * arrives named in the address and stays the choice until it is changed.
    */
@@ -1162,7 +1188,7 @@ function AllocateForm({
                 locale={locale}
                 label={translate(messages, 'payments.allocate.invoice')}
                 target={{ companyId: receipt.companyId, branchId: receipt.branchId }}
-                status="issued"
+                allocatable
                 value={invoice}
                 onChange={(next) => {
                   setInvoice(next);

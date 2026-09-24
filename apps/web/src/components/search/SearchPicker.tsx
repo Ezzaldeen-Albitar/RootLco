@@ -28,7 +28,8 @@ import { useSearchRequest } from '@/lib/api/use-search-request';
  *   `useSearchRequest` sends one read per pause and drops a superseded answer;
  *   the term lives in memory only.
  * - **A working-context switch forgets the term and the choice**, asking first
- *   when something was chosen: every change of the working context increments
+ *   when something was chosen inside a form that writes (`countsAsUnsaved`; a
+ *   list filter forgets without asking): every change of the working context increments
  *   `version`, and the term remembers the version it was typed under, so the
  *   render on which the version moves already treats an old term as empty.
  * - **Permission-aware.** Without the read's code the picker offers no box and
@@ -60,6 +61,7 @@ export function SearchPicker<Row extends { readonly id: string }>({
   resultsLabel,
   change,
   pristineId = null,
+  countsAsUnsaved = true,
   testId,
 }: {
   readonly messages: Messages;
@@ -96,6 +98,12 @@ export function SearchPicker<Row extends { readonly id: string }>({
    * order, for instance). Holding it is not unsaved work; changing it is.
    */
   readonly pristineId?: string | null;
+  /**
+   * Whether a choice is work the operator would lose. True for a picker inside a
+   * form that writes; a LIST FILTER passes false, because narrowing a list is
+   * not something a branch switch should stop to ask about.
+   */
+  readonly countsAsUnsaved?: boolean;
   readonly testId: string;
 }) {
   const base = useId();
@@ -105,8 +113,9 @@ export function SearchPicker<Row extends { readonly id: string }>({
   const term = typed.version === context.version ? typed.text : '';
   const setTerm = (text: string) => setTyped({ text, version: context.version });
 
-  // A chosen record is work the operator would lose: a branch switch asks first.
-  useUnsavedGuard(value !== null && value.id !== pristineId);
+  // A chosen record in a write form is work the operator would lose: a branch
+  // switch asks first. A filter's choice is not.
+  useUnsavedGuard(countsAsUnsaved && value !== null && value.id !== pristineId);
 
   // Forget the choice and the term when the working context changes.
   useWorkingContextChange(() => {
