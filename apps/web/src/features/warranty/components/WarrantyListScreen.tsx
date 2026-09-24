@@ -27,7 +27,14 @@ import {
   type WarrantyListCriteria,
   type WarrantyListRow,
 } from '../warranty-contract';
-import { Distance, SECONDARY_BUTTON, Section, WarrantyStatusLabel } from './shared';
+import {
+  CustomerWords,
+  Distance,
+  SECONDARY_BUTTON,
+  Section,
+  VehicleWords,
+  WarrantyStatusLabel,
+} from './shared';
 
 /**
  * A branch's warranty records (P1-31, FE-008 entry point, FE-009 partial;
@@ -62,12 +69,13 @@ import { Distance, SECONDARY_BUTTON, Section, WarrantyStatusLabel } from './shar
  * shown as a filter in force with a control that lifts it, and the reference is
  * never printed at the operator.
  *
- * ## What this read still cannot say
+ * ## The car and the customer are named
  *
- * `wty.warranty-list` publishes no vehicle display number, plate or VIN on a
- * row, so the vehicle column is a bare reference. That is recorded as a backend
- * prerequisite rather than papered over: resolving a name here would mean a read
- * per row, and inventing one is not available.
+ * `wty.warranty-list` carries a `vehicle` block and a `customer` block on every
+ * row, resolved by the backend for the whole page (route sweep B2). The vehicle
+ * column says the plate and the make and model — or the display number — and
+ * the customer column the party who brought the car in. Both say in words when
+ * the value is withheld or absent, and neither ever prints a reference.
  *
  * ## A refusal is never drawn as an empty branch
  *
@@ -215,16 +223,13 @@ export function WarrantyListScreen({
       {
         id: 'vehicle',
         headerKey: 'warranty.list.columnVehicle',
+        cell: (row) => <VehicleWords messages={messages} vehicle={row.vehicle} />,
+      },
+      {
+        id: 'customer',
+        headerKey: 'warranty.list.columnCustomer',
         cell: (row) => (
-          /*
-           * A bare reference, because this read publishes no plate, chassis
-           * number or display number for the vehicle. Showing what there is and
-           * recording the gap beats leaving the column blank or resolving a name
-           * with one read per row — see the docblock.
-           */
-          <code className="font-mono text-caption" dir="ltr">
-            {row.vehicleId}
-          </code>
+          <CustomerWords locale={locale} messages={messages} customer={row.customer} />
         ),
       },
     ],

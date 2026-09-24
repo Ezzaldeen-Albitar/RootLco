@@ -33,7 +33,19 @@
  * state. A second person approves it elsewhere. Nothing here claims the customer
  * has been refunded.
  *
- * Permissions: `inv.stock.read` gates the page and both reads;
+ * ## A part handed to a job is found by name (route sweep B2)
+ *
+ * A part that left on a WORK ORDER used to be named by a typed reference, because
+ * issued parts were listed per job and not per branch. `inv.part-issue-list` now
+ * lists the branch's issued parts, so the clerk finds the line by the item's name
+ * or code, the job's number, a plate or a chassis number, and each match says how
+ * much left and how much may still come back. The read needs `inv.stock.read`,
+ * the page's own gate, so everyone who reaches the form may search. Should the
+ * read be refused for the working branch anyway, the typed reference returns
+ * beside the refusal, as it does for the sale picker, so the desk is never left
+ * without a way to name the line.
+ *
+ * Permissions: `inv.stock.read` gates the page and every read;
  * `inv.stock.operate` with `sal.finance.view` offers the write.
  */
 
@@ -57,6 +69,7 @@ import {
   MAX_REASON,
   RETURN_CONDITIONS,
   SALES_RETURN_SOURCE_KINDS,
+  type IssuedPart,
   type ReturnCondition,
   type ReturnableQuantity,
   type SalesReturnRow,
@@ -82,6 +95,7 @@ import {
   outcomeField,
   useBranchList,
 } from './stock-operations';
+import { IssuedPartPicker } from './pickers';
 
 export function CustomerReturnsScreen({
   locale,
@@ -277,6 +291,10 @@ function ReceiveForm({
 }) {
   const [sourceKind, setSourceKind] = useState<SalesReturnSourceKind>('invoice_line');
   const [sourceId, setSourceId] = useState('');
+  // The part handed to a job, chosen by name; and whether that search was refused here.
+  const [issuedPart, setIssuedPart] = useState<IssuedPart | null>(null);
+  const [issuesRefused, setIssuesRefused] = useState(false);
+  const refuseIssues = useCallback(() => setIssuesRefused(true), []);
   const [returnable, setReturnable] = useState<ReturnableQuantity | null>(null);
   const [sourceNote, setSourceNote] = useState<string | null>(null);
   const [form, setForm] = useState<{
@@ -351,7 +369,9 @@ function ReceiveForm({
   const submit = async () => {
     const found: Record<string, string> = {};
     const id = sourceId.trim();
-    if (!UUID.test(id)) found['sourceId'] = 'inventory.common.idFormat';
+    if (sourceKind === 'part_issue' && !issuesRefused && issuedPart === null) {
+      found['sourceId'] = 'inventory.returns.issue.required';
+    } else if (!UUID.test(id)) found['sourceId'] = 'inventory.common.idFormat';
     const quantity = form.quantity.trim();
     if (!isQuantity(quantity)) {
       found['quantity'] = 'inventory.stockOps.quantityFormat';
@@ -398,6 +418,7 @@ function ReceiveForm({
       });
       setReturnable(null);
       setSourceId('');
+      setIssuedPart(null);
       setAttemptKey(crypto.randomUUID());
       setOutcome(null);
       onReceived(
@@ -434,6 +455,7 @@ function ReceiveForm({
         onChange={(event) => {
           setSourceKind(event.target.value as SalesReturnSourceKind);
           setSourceId('');
+          setIssuedPart(null);
           setSourceNote(null);
           setReturnable(null);
         }}
@@ -496,33 +518,55 @@ function ReceiveForm({
           }
         />
       ) : (
-        <div className="grid gap-3 sm:grid-cols-3">
-          <div className="sm:col-span-2">
-            <TextField
-              label={translate(messages, 'inventory.returns.source.id')}
-              description={translate(messages, 'inventory.returns.source.issueHelp')}
-              required
-              dir="ltr"
-              value={sourceId}
-              onChange={(event) => {
-                setSourceId(event.target.value);
-                setReturnable(null);
-              }}
-              error={errorFor('sourceId')}
-            />
-          </div>
-          <div className="flex items-end">
-            <button
-              type="button"
-              className={SECONDARY_BUTTON}
-              onClick={() => {
-                void look();
-              }}
-            >
-              {translate(messages, 'inventory.returns.source.look')}
-            </button>
-          </div>
-        </div>
+        <>
+          <IssuedPartPicker
+            messages={messages}
+            locale={locale}
+            target={target}
+            value={issuedPart}
+            onChange={(next) => {
+              setIssuedPart(next);
+              setSourceId(next?.id ?? '');
+              setReturnable(null);
+              setSourceNote(null);
+              if (next !== null) void lookAt('part_issue', next.id);
+            }}
+            error={issuesRefused ? undefined : errorFor('sourceId')}
+            onRefused={refuseIssues}
+          />
+          {issuesRefused && issuedPart === null ? (
+            <div className="grid gap-3 sm:grid-cols-3">
+              <p role="status" className="text-caption text-text-muted sm:col-span-3">
+                {translate(messages, 'inventory.returns.issue.fallback')}
+              </p>
+              <div className="sm:col-span-2">
+                <TextField
+                  label={translate(messages, 'inventory.returns.source.id')}
+                  description={translate(messages, 'inventory.returns.source.issueHelp')}
+                  required
+                  dir="ltr"
+                  value={sourceId}
+                  onChange={(event) => {
+                    setSourceId(event.target.value);
+                    setReturnable(null);
+                  }}
+                  error={errorFor('sourceId')}
+                />
+              </div>
+              <div className="flex items-end">
+                <button
+                  type="button"
+                  className={SECONDARY_BUTTON}
+                  onClick={() => {
+                    void look();
+                  }}
+                >
+                  {translate(messages, 'inventory.returns.source.look')}
+                </button>
+              </div>
+            </div>
+          ) : null}
+        </>
       )}
 
       {sourceNote !== null ? (

@@ -122,6 +122,8 @@ export function WorkOrderPicker({
   error,
   canSearch,
   needsBranchId,
+  countsAsUnsaved = true,
+  pristineId = null,
   testId = 'work-order-picker',
 }: {
   readonly messages: Messages;
@@ -136,9 +138,21 @@ export function WorkOrderPicker({
   readonly canSearch: boolean;
   /**
    * The id given to the sentence shown when there is nothing to search, so a
-   * caller can describe its disabled submit with it.
+   * caller can describe its disabled submit with it. The sentence shown without
+   * `wo.work_order.read` carries the same id, so a control a caller points at it
+   * never names an element that is not there.
    */
   readonly needsBranchId?: string | undefined;
+  /**
+   * Whether a chosen job is work the operator would lose. True inside a form
+   * that writes; a LIST FILTER passes false, as `SearchPicker` callers do.
+   */
+  readonly countsAsUnsaved?: boolean;
+  /**
+   * The id of a job the form OPENED with (the one the page was reached from).
+   * Holding it is not unsaved work; changing it is.
+   */
+  readonly pristineId?: string | null;
   readonly testId?: string;
 }) {
   const base = useId();
@@ -156,7 +170,8 @@ export function WorkOrderPicker({
   const setTerm = (text: string) => setTyped({ text, version: context.version });
 
   // A chosen job is work the operator would lose: a branch switch asks first.
-  useUnsavedGuard(value !== null);
+  // A filter's choice, or the job the form opened with, is not.
+  useUnsavedGuard(countsAsUnsaved && value !== null && value.id !== pristineId);
 
   // Forget the choice and the term when the working context changes.
   useWorkingContextChange(() => {
@@ -214,7 +229,7 @@ export function WorkOrderPicker({
     return (
       <div className="flex flex-col gap-1.5" data-testid={testId}>
         {heading}
-        <p role="status" className="text-supporting text-text-secondary">
+        <p id={needsBranchId} role="status" className="text-supporting text-text-secondary">
           {translate(messages, 'workOrders.picker.notPermitted')}
         </p>
       </div>

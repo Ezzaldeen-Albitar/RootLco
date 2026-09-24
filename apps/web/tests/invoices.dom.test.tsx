@@ -435,6 +435,9 @@ describe('finding the job when none is named (WorkOrderPicker)', () => {
     expect(
       screen.queryByRole('button', { name: EN['invoices.choose.submit'] as string })
     ).toBeNull();
+    // The sentence carries the id a caller may describe a control with, so no
+    // control ever points at an element that is not there (route sweep B2).
+    expect(screen.getByText(EN['workOrders.picker.notPermitted'] as string).id).not.toBe('');
   });
 
   it('with several branches and none chosen, asks for the branch and reads nothing', () => {

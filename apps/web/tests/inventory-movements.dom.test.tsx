@@ -46,13 +46,14 @@ import {
 /**
  * Stock movements, rendered (P1-30, `W5`, FE-013).
  *
- * The properties under test: the ledger is NEVER read on first paint nor on
- * naming a branch — only on "Show movements", and the screen says the read is
- * recorded; every read is addressed to the named branch; the rows render in
- * the order served with `sequence`, `quantity` and `signedQuantity` as the
- * server's strings; a location is an identifier and the screen says no code
- * is published; instants travel as full ISO strings; and the route page
- * decides before it reads.
+ * The properties under test: the ledger reads the working branch's last seven
+ * days on arrival (route sweep B2) and says the reading is recorded; every read
+ * is addressed to the named branch; the rows render in the order served with
+ * `sequence`, `quantity` and `signedQuantity` as the server's strings; a
+ * location is named from the branch's own list; the item and the job are found
+ * by name, or given as labelled references by a caller without the read; applied
+ * filters are not unsaved work; instants travel as full ISO strings; and the
+ * route page decides before it reads.
  */
 
 const EN = en as Record<string, string>;
@@ -64,13 +65,14 @@ const labelled = (key: string) => new RegExp(`^${escape(EN[key] as string)}`);
 const listMovements = vi.fn();
 const listLocations = vi.fn();
 const listBranches = vi.fn();
+const listItems = vi.fn();
 vi.mock('@/features/inventory/api', () => ({
   listMovements: (...args: unknown[]) => listMovements(...args),
   listLocations: (...args: unknown[]) => listLocations(...args),
   listBranches: (...args: unknown[]) => listBranches(...args),
   // `./shared` names this export; this screen never calls it.
   listItemCategories: vi.fn(),
-  listItems: vi.fn(),
+  listItems: (...args: unknown[]) => listItems(...args),
   listAvailability: vi.fn(),
   listReservations: vi.fn(),
   listPartIssues: vi.fn(),
@@ -79,6 +81,13 @@ vi.mock('@/features/inventory/api', () => ({
   releaseReservation: vi.fn(),
   createIssue: vi.fn(),
   createReturn: vi.fn(),
+}));
+
+const listWorkOrders = vi.fn();
+const readWorkOrderDetail = vi.fn();
+vi.mock('@/features/work-orders/api', () => ({
+  listWorkOrders: (...args: unknown[]) => listWorkOrders(...args),
+  readWorkOrderDetail: (...args: unknown[]) => readWorkOrderDetail(...args),
 }));
 
 vi.mock('next/navigation', () => ({
@@ -143,6 +152,46 @@ function page(rows: readonly unknown[]) {
 }
 const okRead = (data: unknown) => ({ status: 'ok' as const, data, correlationId: 'corr' });
 
+const item = {
+  id: ITEM_ID,
+  itemCategoryId: 'cat',
+  sku: 'BRK-001',
+  name: 'Brake pad',
+  description: null,
+  unitOfMeasure: { id: 'u', code: 'EA' },
+  itemType: 'part',
+  isStockTracked: true,
+  isSerialized: false,
+  lifecycleStatus: 'active',
+  recordVersion: 1,
+};
+const workOrder = {
+  id: WORK_ORDER_ID,
+  companyId: COMPANY_ID,
+  branchId: BRANCH_ID,
+  receptionVisitId: 'r',
+  vehicleId: 'v',
+  kind: 'ordinary',
+  state: 'open',
+  partsForwardState: 'none',
+  displayNumber: 'WO-000042',
+  openedAt: '2026-09-01T08:00:00Z',
+  recordVersion: 2,
+  customer: {
+    partnerId: 'p',
+    displayName: 'Layla Haddad',
+    relationshipRole: 'vehicle_owner',
+    hasAdditionalParties: false,
+  },
+  vehicle: { vehicleId: 'v', registrationPlate: '12-34567', makeModel: 'Toyota Corolla' },
+};
+
+/** The instant the ledger's arrival window starts: local midnight, six days before today. */
+function recentStart(): number {
+  const now = new Date();
+  return new Date(now.getFullYear(), now.getMonth(), now.getDate() - 6).getTime();
+}
+
 function renderScreen(over: Record<string, unknown> = {}) {
   return renderLtr(
     <MovementsScreen
@@ -183,6 +232,11 @@ async function chooseBranch() {
 const showButton = () =>
   within(ledger()).getByRole('button', { name: EN['inventory.movements.show'] as string });
 
+/** The read made on arrival, before anything is touched. */
+async function firstRead() {
+  await waitFor(() => expect(listMovements).toHaveBeenCalledTimes(1));
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   PERMISSIONS = [];
@@ -204,42 +258,47 @@ beforeEach(() => {
   );
   listLocations.mockResolvedValue(okRead({ items: [location], nextCursor: null, hasMore: false }));
   listBranches.mockResolvedValue(okRead({ items: [branch] }));
+  listItems.mockResolvedValue(page([item]));
+  listWorkOrders.mockResolvedValue(page([workOrder]));
+  readWorkOrderDetail.mockResolvedValue(
+    okRead({ workOrder, jobs: [], nextStates: [], reachableStates: [] })
+  );
 });
 
-describe('the ledger is read only when asked', () => {
-  it('reads nothing on first paint, and only on Show movements', async () => {
-    const user = userEvent.setup();
+describe('the ledger reads the recent movements on arrival (route sweep B2)', () => {
+  it('reads the working branch\u2019s last seven days on first paint, and says the reading is recorded', async () => {
     renderScreen();
     await chooseBranch();
+    await firstRead();
     // The shell holds the named branches, so no directory is requested.
     expect(listBranches).not.toHaveBeenCalled();
-    expect(listMovements).not.toHaveBeenCalled();
-    expect(within(ledger()).getByText(EN['inventory.movements.notAsked'] as string)).toBeVisible();
-    expect(within(ledger()).getByText(EN['inventory.movements.audited'] as string)).toBeVisible();
-    await user.click(showButton());
-    await waitFor(() => expect(listMovements).toHaveBeenCalledTimes(1));
     expect(listMovements.mock.calls[0]?.[0]).toEqual({
       companyId: COMPANY_ID,
       branchId: BRANCH_ID,
     });
-    expect(listMovements.mock.calls[0]?.[1]).toEqual({});
+    const criteria = listMovements.mock.calls[0]?.[1] as Record<string, string>;
+    expect(Object.keys(criteria)).toEqual(['occurredFrom']);
+    expect(Date.parse(criteria['occurredFrom'] as string)).toBe(recentStart());
+    // The window is stated where it can be changed, not hidden.
+    expect(within(ledger()).getByLabelText(labelled('inventory.movements.from'))).not.toHaveValue(
+      ''
+    );
+    expect(within(ledger()).getByText(EN['inventory.movements.audited'] as string)).toBeVisible();
+    expect(await within(ledger()).findByRole('table')).toBeVisible();
   });
 
   it('asking again with the same filters reads again — each read is the operator’s own act', async () => {
     const user = userEvent.setup();
     renderScreen();
     await chooseBranch();
-    await user.click(showButton());
-    await waitFor(() => expect(listMovements).toHaveBeenCalledTimes(1));
+    await firstRead();
     await user.click(showButton());
     await waitFor(() => expect(listMovements).toHaveBeenCalledTimes(2));
   });
 
-  it('renders the rows in the order served with the server’s strings, and names the location by identifier', async () => {
-    const user = userEvent.setup();
+  it('renders the rows in the order served with the server’s strings, and names the location from the branch list', async () => {
     renderScreen();
     await chooseBranch();
-    await user.click(showButton());
     const table = await within(ledger()).findByRole('table');
     const rows = within(table).getAllByRole('row').slice(1);
     expect(within(rows[0] as HTMLElement).getByText('1041')).toBeVisible();
@@ -251,21 +310,45 @@ describe('the ledger is read only when asked', () => {
     expect(
       within(table).getByText(EN['inventory.referenceKind.part_return'] as string)
     ).toBeVisible();
-    expect(within(table).getAllByText(LOCATION_ID)).toHaveLength(2);
+    await waitFor(() => expect(within(table).getAllByText('Main warehouse')).toHaveLength(2));
+    expect(within(table).getAllByText('WH-1')).toHaveLength(2);
+    expect(within(table).queryByText(LOCATION_ID)).toBeNull();
     expect(
       within(ledger()).getByText(EN['inventory.movements.locationNote'] as string)
     ).toBeVisible();
   });
 
-  it('sends the filters, with instants as full ISO strings', async () => {
-    const user = userEvent.setup();
-    renderScreen({ initialWorkOrderId: WORK_ORDER_ID });
+  it('a location the branch list does not hold is shown as the reference it is, never a name', async () => {
+    const OTHER_LOCATION = '45454545-4545-4545-8545-454545454545';
+    listMovements.mockResolvedValue(page([movement({ locationId: OTHER_LOCATION })]));
+    renderScreen();
     await chooseBranch();
+    const table = await within(ledger()).findByRole('table');
+    expect(within(table).getByText(OTHER_LOCATION)).toHaveAttribute('dir', 'ltr');
+  });
+
+  it('sends the filters found by name, with instants as full ISO strings', async () => {
+    const user = userEvent.setup();
+    renderScreen({
+      initialWorkOrderId: WORK_ORDER_ID,
+      initialWorkOrder: workOrder,
+      canReadWorkOrders: true,
+      canReadItems: true,
+    });
+    await chooseBranch();
+    await firstRead();
     const panel = ledger();
-    expect(within(panel).getByLabelText(labelled('inventory.movements.workOrderId'))).toHaveValue(
+    expect(within(panel).getByTestId('movements-work-order-picker-chosen')).toHaveTextContent(
+      'WO-000042'
+    );
+    expect((listMovements.mock.calls[0]?.[1] as Record<string, string>)['workOrderId']).toBe(
       WORK_ORDER_ID
     );
-    await user.type(within(panel).getByLabelText(labelled('inventory.movements.itemId')), ITEM_ID);
+    await user.type(
+      within(panel).getByLabelText(EN['inventory.movements.item'] as string),
+      'BRK{Enter}'
+    );
+    await user.click(await within(panel).findByRole('button', { name: 'BRK-001 — Brake pad' }));
     // The panel itself is named "Movements", which an anchored "Movement" would match; the role narrows it.
     await user.selectOptions(
       within(panel).getByRole('combobox', { name: labelled('inventory.movements.type') }),
@@ -280,13 +363,12 @@ describe('the ledger is read only when asked', () => {
       within(panel).getByLabelText(labelled('inventory.movements.location')),
       LOCATION_ID
     );
-    await user.type(
-      within(panel).getByLabelText(labelled('inventory.movements.from')),
-      '2026-09-01T08:00'
-    );
+    const from = within(panel).getByLabelText(labelled('inventory.movements.from'));
+    await user.clear(from);
+    await user.type(from, '2026-09-01T08:00');
     await user.click(showButton());
-    await waitFor(() => expect(listMovements).toHaveBeenCalled());
-    const criteria = listMovements.mock.calls[0]?.[1] as Record<string, string>;
+    await waitFor(() => expect(listMovements).toHaveBeenCalledTimes(2));
+    const criteria = listMovements.mock.calls[1]?.[1] as Record<string, string>;
     expect(criteria).toMatchObject({
       workOrderId: WORK_ORDER_ID,
       itemId: ITEM_ID,
@@ -300,23 +382,32 @@ describe('the ledger is read only when asked', () => {
     expect(criteria['occurredTo']).toBeUndefined();
   });
 
-  it('refuses a malformed identifier before asking', async () => {
+  it('without the item and job reads, keeps two labelled reference boxes and refuses a malformed one before asking', async () => {
     const user = userEvent.setup();
     renderScreen();
     await chooseBranch();
-    await user.type(
-      within(ledger()).getByLabelText(labelled('inventory.movements.itemId')),
-      'nope'
-    );
+    await firstRead();
+    const itemBox = within(ledger()).getByLabelText(labelled('inventory.itemPicker.reference'));
+    expect(
+      within(ledger()).getByLabelText(labelled('inventory.workOrderReference.label'))
+    ).toBeVisible();
+    await user.type(itemBox, 'nope');
     await user.click(showButton());
     expect(
-      await within(ledger()).findByText(EN['inventory.common.idFormat'] as string)
+      await within(ledger()).findByText(EN['inventory.itemPicker.referenceFormat'] as string)
     ).toBeVisible();
-    expect(listMovements).not.toHaveBeenCalled();
+    expect(listMovements).toHaveBeenCalledTimes(1);
+    await user.clear(itemBox);
+    await user.type(itemBox, ITEM_ID);
+    await user.click(showButton());
+    await waitFor(() => expect(listMovements).toHaveBeenCalledTimes(2));
+    expect((listMovements.mock.calls[1]?.[1] as Record<string, string>)['itemId']).toBe(ITEM_ID);
+    // Neither lookup is attempted for a caller who may not make it.
+    expect(listItems).not.toHaveBeenCalled();
+    expect(listWorkOrders).not.toHaveBeenCalled();
   });
 
   it('a refused read is a refusal, never an empty ledger', async () => {
-    const user = userEvent.setup();
     listMovements.mockResolvedValue({
       status: 'denied',
       rows: [],
@@ -326,17 +417,14 @@ describe('the ledger is read only when asked', () => {
     });
     renderScreen();
     await chooseBranch();
-    await user.click(showButton());
     expect(await within(ledger()).findByText(EN['state.denied.title'] as string)).toBeVisible();
     expect(within(ledger()).queryByText(EN['inventory.movements.none'] as string)).toBeNull();
   });
 
   it('says there are none when the server answers none', async () => {
-    const user = userEvent.setup();
     listMovements.mockResolvedValue(page([]));
     renderScreen();
     await chooseBranch();
-    await user.click(showButton());
     expect(
       await within(ledger()).findByText(EN['inventory.movements.none'] as string)
     ).toBeVisible();
@@ -372,7 +460,7 @@ describe('filters being set and a branch switch', () => {
     await screen.findByRole('region', { name: EN['inventory.movements.heading'] as string });
   }
   const field = () =>
-    within(ledger()).getByLabelText(labelled('inventory.movements.itemId')) as HTMLInputElement;
+    within(ledger()).getByLabelText(labelled('inventory.itemPicker.reference')) as HTMLInputElement;
 
   it('asks before switching; staying keeps what was typed and the branch', async () => {
     const user = userEvent.setup();
@@ -393,6 +481,56 @@ describe('filters being set and a branch switch', () => {
     expect(field().value).toBe('');
   });
 
+  it('filters that were applied are not unsaved work: the switch goes through', async () => {
+    const user = userEvent.setup();
+    await openTwoBranches(user);
+    await user.selectOptions(
+      within(ledger()).getByRole('combobox', { name: labelled('inventory.movements.type') }),
+      'issue'
+    );
+    await user.click(showButton());
+    await waitFor(() =>
+      expect(listMovements.mock.calls.at(-1)?.[1]).toMatchObject({ movementType: 'issue' })
+    );
+    await switchWithoutQuestion(user, 'second');
+    await waitFor(() => expect(heldBranch()).toBe(OTHER_BRANCH.id));
+  });
+
+  it('a filter found by name and not yet applied still asks', async () => {
+    const user = userEvent.setup();
+    renderInLtr(
+      inBranch(
+        <>
+          <BranchSwitch to={TEST_BRANCH.id} label="first" />
+          <BranchSwitch to={OTHER_BRANCH.id} label="second" />
+          <WorkingBranchProbe />
+          <MovementsScreen
+            locale="en"
+            messages={en}
+            initialWorkOrderId={null}
+            canReadItems={true}
+          />
+        </>,
+        { snapshot: branchSnapshot([TEST_BRANCH, OTHER_BRANCH]) }
+      )
+    );
+    await user.click(screen.getByRole('button', { name: 'first' }));
+    await screen.findByRole('region', { name: EN['inventory.movements.heading'] as string });
+    await user.type(
+      within(ledger()).getByLabelText(EN['inventory.movements.item'] as string),
+      'BRK{Enter}'
+    );
+    await user.click(await within(ledger()).findByRole('button', { name: 'BRK-001 — Brake pad' }));
+    await stayOnBranch(user, await switchExpectingQuestion(user, 'second'));
+    expect(heldBranch()).toBe(TEST_BRANCH.id);
+    await user.click(showButton());
+    await waitFor(() =>
+      expect(listMovements.mock.calls.at(-1)?.[1]).toMatchObject({ itemId: ITEM_ID })
+    );
+    await switchWithoutQuestion(user, 'second');
+    await waitFor(() => expect(heldBranch()).toBe(OTHER_BRANCH.id));
+  });
+
   it('an untouched form switches without asking', async () => {
     const user = userEvent.setup();
     await openTwoBranches(user);
@@ -410,23 +548,53 @@ describe('the /inventory/movements route page decides before it reads', () => {
     expect(listMovements).not.toHaveBeenCalled();
   });
 
-  it('with inv.stock.read alone, offers the target as identifiers and reads no ledger', async () => {
+  it('with inv.stock.read alone, states the branch and reads its recent movements', async () => {
     PERMISSIONS = ['inv.stock.read'];
     await renderPage({ locale: 'en' });
     expect(targetForm()).toBeVisible();
+    await firstRead();
     expect(listBranches).not.toHaveBeenCalled();
-    expect(listMovements).not.toHaveBeenCalled();
+    expect(readWorkOrderDetail).not.toHaveBeenCalled();
   });
 
-  it('a well-formed work order in the address prefills the filter, and no directory is read', async () => {
+  it('a well-formed work order in the address prefills the labelled reference without the job read', async () => {
     PERMISSIONS = ['inv.stock.read', 'org.branch.read'];
     await renderPage({ locale: 'en' }, { workOrderId: WORK_ORDER_ID });
     await chooseBranch();
     expect(listBranches).not.toHaveBeenCalled();
     expect(
-      within(ledger()).getByLabelText(labelled('inventory.movements.workOrderId'))
+      within(ledger()).getByLabelText(labelled('inventory.workOrderReference.label'))
     ).toHaveValue(WORK_ORDER_ID);
-    expect(listMovements).not.toHaveBeenCalled();
+    await firstRead();
+    expect((listMovements.mock.calls[0]?.[1] as Record<string, string>)['workOrderId']).toBe(
+      WORK_ORDER_ID
+    );
+    expect(readWorkOrderDetail).not.toHaveBeenCalled();
+  });
+
+  it('with the job and item reads, names the address\u2019s job and offers the item search', async () => {
+    PERMISSIONS = ['inv.stock.read', 'inv.item.read', 'wo.work_order.read'];
+    await renderPage({ locale: 'en' }, { workOrderId: WORK_ORDER_ID });
+    await chooseBranch();
+    expect(readWorkOrderDetail).toHaveBeenCalledWith(WORK_ORDER_ID);
+    expect(await screen.findByTestId('movements-work-order-picker-chosen')).toHaveTextContent(
+      'WO-000042'
+    );
+    expect(within(ledger()).getByLabelText(EN['inventory.movements.item'] as string)).toBeVisible();
+  });
+
+  it('a job the page could not read narrows nothing, and says so', async () => {
+    PERMISSIONS = ['inv.stock.read', 'wo.work_order.read'];
+    readWorkOrderDetail.mockResolvedValue({ status: 'denied', correlationId: 'corr' });
+    await renderPage({ locale: 'en' }, { workOrderId: WORK_ORDER_ID });
+    await chooseBranch();
+    await firstRead();
+    expect((listMovements.mock.calls[0]?.[1] as Record<string, string>)['workOrderId']).toBe(
+      undefined
+    );
+    expect(
+      within(ledger()).getByText(EN['inventory.workOrderLink.unreadable'] as string)
+    ).toBeVisible();
   });
 
   it('a locale it does not serve is not found', async () => {
@@ -465,7 +633,6 @@ describe('every movement vocabulary value has a label in both languages', () => 
   });
 
   it('renders a counter-sale row as words rather than as its keys', async () => {
-    const user = userEvent.setup();
     listMovements.mockResolvedValue(
       page([
         movement({
@@ -479,7 +646,6 @@ describe('every movement vocabulary value has a label in both languages', () => 
     );
     renderScreen();
     await chooseBranch();
-    await user.click(showButton());
     const table = await within(ledger()).findByRole('table');
     expect(within(table).getByText(EN['inventory.movementType.sale'] as string)).toBeVisible();
     expect(
@@ -509,6 +675,7 @@ describe('every movement vocabulary value has a label in both languages', () => 
 
 describe('Arabic, right to left', () => {
   it('renders in Arabic with the same behaviour', async () => {
+    // The Arabic screen reads on arrival too, and states the window in Arabic.
     renderRtl(
       <MovementsScreen
         locale="ar"
@@ -523,6 +690,7 @@ describe('Arabic, right to left', () => {
     expect(
       screen.getByRole('region', { name: AR['inventory.target.formLabel'] as string })
     ).toBeVisible();
-    expect(listMovements).not.toHaveBeenCalled();
+    await waitFor(() => expect(listMovements).toHaveBeenCalledTimes(1));
+    expect(screen.getByText(AR['inventory.movements.fromHelp'] as string)).toBeVisible();
   });
 });
