@@ -196,11 +196,62 @@ No local aggregate runs the Database tier. `npm run verify:workspaces` deliberat
 
 **Standing verification policy, recorded 2026-09-09 (Owner).** The sentence above describes what `verify:workspaces` is _for_; it is not a per-commit prerequisite. A contributor runs the targeted local checks relevant to the change — the typecheck, lint and format commands for the workspaces touched, the affected test tiers, and the validators the change activates — and relies on the required hosted checks, which run the production builds and the browser smoke, for the aggregate. The full local aggregate remains available and is recommended before a promotion, or whenever a change is wide enough that no targeted set covers it. This qualifies the convention; it removes no check. A check that was not run is reported as not run, and nothing in this policy permits stating that a gate passed when it was not executed.
 
-So any change touching `supabase/seeds/**` or `supabase/migrations/**` runs this before pushing, with the local stack up:
+So any change touching `supabase/seeds/**` or `supabase/migrations/**` runs `verify:database` before pushing, against a **disposable** database — never against the shared local Supabase stack that holds the acceptance database.
+
+> **Never run `npm run supabase:reset` (`supabase db reset`) on the shared local stack.** It deletes every row in the local database, including the acceptance tenant, the Owner account and every fixture. An existing acceptance database is brought forward only with the non-destructive path in section 19.4 of [`docs/platform/environment-configuration.md`](docs/platform/environment-configuration.md); a reset is permitted only under its section 19.5, when an empty database is being rebuilt on purpose.
+
+The disposable path mirrors the hosted `database` job: a throwaway `postgres:17-alpine` container on a port of its own (55440 here, so it can never be confused with the stack on 54322 or with the isolated clusters earlier phase records name on 55432), `npm run db:apply-migrations` to replay every migration into it — that runner refuses any database that already holds module schemas — and then `verify:database`. The container uses `trust` authentication, so no password is involved; its port is published on loopback only (`127.0.0.1`), so nothing else on the network can reach it; and `--rm` deletes it when it stops. Each form waits, up to 30 tries one second apart, until `pg_isready` inside the container accepts a **TCP** connection — the image's first-start initialisation runs a temporary server on a socket only, so a socket probe can report ready too early — and fails clearly if it never does. Each form stops at the first failing step, and always clears `DB_PORT` and stops the container, whether it succeeded or not.
+
+PowerShell:
+
+```powershell
+& {
+  $ErrorActionPreference = 'Stop'
+  docker run --rm -d --name rootlco-migration-check -e POSTGRES_HOST_AUTH_METHOD=trust -p 127.0.0.1:55440:5432 postgres:17-alpine
+  if ($LASTEXITCODE -ne 0) { throw "docker run failed (exit $LASTEXITCODE)" }
+  try {
+    $ready = $false
+    foreach ($attempt in 1..30) {
+      docker exec rootlco-migration-check pg_isready -h 127.0.0.1 -p 5432 -U postgres
+      if ($LASTEXITCODE -eq 0) { $ready = $true; break }
+      Start-Sleep -Seconds 1
+    }
+    if (-not $ready) { throw 'PostgreSQL did not accept TCP connections within 30 seconds' }
+    $env:DB_PORT = '55440'
+    npm run db:apply-migrations
+    if ($LASTEXITCODE -ne 0) { throw "db:apply-migrations failed (exit $LASTEXITCODE)" }
+    npm run verify:database
+    if ($LASTEXITCODE -ne 0) { throw "verify:database failed (exit $LASTEXITCODE)" }
+  } finally {
+    Remove-Item Env:DB_PORT -ErrorAction SilentlyContinue
+    docker stop rootlco-migration-check
+  }
+}
+```
+
+bash:
 
 ```bash
-npm run supabase:start && npm run supabase:reset && npm run verify:database
+(
+  set -eu
+  docker run --rm -d --name rootlco-migration-check -e POSTGRES_HOST_AUTH_METHOD=trust -p 127.0.0.1:55440:5432 postgres:17-alpine
+  trap 'docker stop rootlco-migration-check' EXIT
+  tries=0
+  until docker exec rootlco-migration-check pg_isready -h 127.0.0.1 -p 5432 -U postgres; do
+    tries=$((tries + 1))
+    if [ "$tries" -ge 30 ]; then
+      echo 'PostgreSQL did not accept TCP connections within 30 seconds' >&2
+      exit 1
+    fi
+    sleep 1
+  done
+  export DB_PORT=55440
+  npm run db:apply-migrations
+  npm run verify:database
+)
 ```
+
+`DB_PORT` is cleared on purpose — the bash form sets it only inside the subshell, the PowerShell form removes it in `finally` — because while it is set, every database command in that shell targets the throwaway container. The container is plain PostgreSQL, not the Supabase stack, so role attributes differ exactly as they do in the hosted job (`docs/database/migration-standard.md` section 15).
 
 `verify:database` is the local mirror of the hosted `database` job in `ci.yml`, in that job’s own order: `validate:seed-state`, the six `verify:classifications` validators, then `test:db`.
 

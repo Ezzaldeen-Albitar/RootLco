@@ -1840,3 +1840,109 @@ describe('check-smtp redacts an echoed mailbox in any letter case', () => {
     expect(out.text()).toContain('ACCEPTED : 250 2.0.0 queued for [redacted]');
   });
 });
+
+describe('check-smtp redacts the longest secret first', () => {
+  it('does not let a password that is part of an address split that address', () => {
+    const mailbox = 'noreply@example.com';
+    // Listed password-first on purpose: the order a caller chooses must not matter.
+    expect(
+      redactRelayText('250 2.1.0 <noreply@example.com> sender ok', [
+        'noreply',
+        mailboxSecret(mailbox),
+      ])
+    ).toBe('250 2.1.0 <[redacted]> sender ok');
+    expect(
+      redactRelayText('250 2.1.0 <noreply@example.com> sender ok', [
+        mailboxSecret(mailbox),
+        'noreply',
+      ])
+    ).toBe('250 2.1.0 <[redacted]> sender ok');
+  });
+
+  it('does not let an address that is part of a password split that password', () => {
+    const password = 'x-ab@example.com-1';
+    expect(
+      redactRelayText(`535 echo ${password}`, [mailboxSecret('ab@example.com'), password])
+    ).toBe('535 echo [redacted]');
+    expect(
+      redactRelayText(`535 echo ${password}`, [password, mailboxSecret('ab@example.com')])
+    ).toBe('535 echo [redacted]');
+  });
+
+  it('does not let a password inside a mailbox base64 encoding split that encoding', () => {
+    const mailbox = 'ab@example.com';
+    const encoded = Buffer.from(mailbox, 'utf8').toString('base64');
+    // Longer than the mailbox as written, shorter than its encoding, and inside it.
+    const password = encoded.slice(1, 16);
+    expect(password.length).toBeGreaterThan(mailbox.length);
+    expect(encoded).toContain(password);
+    for (const secrets of [
+      [password, mailboxSecret(mailbox)],
+      [mailboxSecret(mailbox), password],
+    ]) {
+      const redacted = redactRelayText(`535 echo ${encoded} end`, secrets);
+      expect(redacted).toBe('535 echo [redacted] end');
+      expect(redacted).not.toContain(encoded.slice(-4));
+    }
+  });
+
+  it('prints no fragment of the sender during --send when the password is part of it', async () => {
+    const recipient = 'recipient@example.com';
+    let authStep = 0;
+    let inData = false;
+    const relay = await startScriptedRelay((line, socket) => {
+      if (inData) {
+        if (line === '.') {
+          inData = false;
+          socket.write('250 2.0.0 queued\r\n');
+        }
+        return;
+      }
+      if (authStep === 1) {
+        authStep = 2;
+        socket.write('334 UGFzc3dvcmQ6\r\n');
+        return;
+      }
+      if (authStep === 2) {
+        authStep = 0;
+        socket.write('235 2.7.0 Accepted\r\n');
+        return;
+      }
+      const upper = line.toUpperCase();
+      if (upper.startsWith('EHLO')) socket.write('250-scripted relay\r\n250 AUTH LOGIN\r\n');
+      else if (upper.startsWith('AUTH LOGIN')) {
+        authStep = 1;
+        socket.write('334 VXNlcm5hbWU6\r\n');
+      } else if (upper.startsWith('MAIL FROM')) {
+        socket.write(`250 2.1.0 <${RELAY_SENDER}> sender ok\r\n`);
+      } else if (upper.startsWith('RCPT TO')) {
+        socket.write('250 2.1.5 recipient ok\r\n');
+      } else if (upper === 'DATA') {
+        inData = true;
+        socket.write('354 go ahead\r\n');
+      } else if (upper === 'QUIT') {
+        socket.write('221 2.0.0 Bye\r\n');
+        socket.end();
+      }
+    });
+    const out = collector();
+    const err = collector();
+    // The local part of the sender address, so the password is a substring of it.
+    const password = RELAY_SENDER.slice(0, RELAY_SENDER.indexOf('@'));
+    try {
+      const code = await run({
+        argv: ['--send', '--to', recipient],
+        env: { ...RELAY_ENVIRONMENT, SMTP_PASS: password, SMTP_PORT: String(IMPLICIT_TLS_PORT) },
+        envFile: NO_ENV_FILE,
+        transport: transportFor(relay, { called: false }),
+        stdout: out.write,
+        stderr: err.write,
+      });
+      expect(code).toBe(0);
+    } finally {
+      await relay.close();
+    }
+    expect(out.text()).toContain('MAIL FROM: 250 2.1.0 <[redacted]> sender ok');
+    expect(out.text() + err.text()).not.toContain('[redacted]@');
+  });
+});

@@ -126,6 +126,14 @@ PostgreSQL supports transactional DDL, and this platform relies on it:
 - **Local: `supabase db reset`** (wrapped as `npm run supabase:reset`) recreates the
   local database and applies all migrations in filename order, then applies
   `supabase/seed.sql`. It is the local equivalent of the clean-database replay.
+
+  > **Warning — `npm run supabase:reset` rebuilds the project's local stack and deletes all its
+  > data — including the acceptance database when the stack holds it.** To verify migrations use
+  > the disposable database in [CONTRIBUTING.md](../../CONTRIBUTING.md) section 8, _Pre-push step
+  > for schema and seed changes_ (no reset involved); to move an existing stack forward use section
+  > 19.4 of [environment-configuration.md](../platform/environment-configuration.md); reset only
+  > per its section 19.5, on a stack with no data you need.
+
 - Consequently, a migration file must not contain its own `BEGIN`/`COMMIT`
   statements, and must not use statements that cannot run inside a transaction
   (e.g. `CREATE INDEX CONCURRENTLY`, `ALTER TYPE … ADD VALUE` on enums — which the
@@ -236,6 +244,14 @@ and the checklist must be completed in the PR description.
       allowlisted line carries `pragma: allowlist secret` with a justification.
 - [ ] **Clean-database replay passes** — locally via `npm run supabase:reset` and in
       CI via the migration runner (section 9).
+
+  > **Warning — `npm run supabase:reset` rebuilds the project's local stack and deletes all its
+  > data — including the acceptance database when the stack holds it.** To verify migrations use
+  > the disposable database in [CONTRIBUTING.md](../../CONTRIBUTING.md) section 8, _Pre-push step
+  > for schema and seed changes_ (no reset involved); to move an existing stack forward use section
+  > 19.4 of [environment-configuration.md](../platform/environment-configuration.md); reset only
+  > per its section 19.5, on a stack with no data you need.
+
 - [ ] **Tests updated** — the database test suite covers the new objects' isolation,
       constraints, and grants; the full suite passes (`npm run test:db`).
 - [ ] **Data dictionary updated** — every new/changed object is recorded, including
@@ -253,6 +269,14 @@ A migration is accepted only if the **entire chain** applies to an empty databas
   `supabase db reset` drops and recreates the local database, applies every migration
   in filename order, then applies `supabase/seed.sql` (which is intentionally empty of
   rows in Phase 1-2 — governance comments only — and must stay that way).
+
+  > **Warning — `npm run supabase:reset` rebuilds the project's local stack and deletes all its
+  > data — including the acceptance database when the stack holds it.** To verify migrations use
+  > the disposable database in [CONTRIBUTING.md](../../CONTRIBUTING.md) section 8, _Pre-push step
+  > for schema and seed changes_ (no reset involved); to move an existing stack forward use section
+  > 19.4 of [environment-configuration.md](../platform/environment-configuration.md); reset only
+  > per its section 19.5, on a stack with no data you need.
+
 - **In CI:** the `Database migrations and RLS tests` job starts a fresh
   `postgres:17-alpine` service container and runs `npm run db:apply-migrations`
   (`scripts/db/apply-migrations.mjs`), followed by the 68-test database suite
@@ -297,6 +321,13 @@ imply otherwise in any migration or document. The promotion path today is exactl
 | 1    | Local (Supabase stack, PostgreSQL 17.6, DB port 54322) | `npm run supabase:reset`                          |
 | 2    | CI (`postgres:17-alpine` service container)            | `npm run db:apply-migrations` + `npm run test:db` |
 
+> **Warning — `npm run supabase:reset` rebuilds the project's local stack and deletes all its
+> data — including the acceptance database when the stack holds it.** To verify migrations use
+> the disposable database in [CONTRIBUTING.md](../../CONTRIBUTING.md) section 8, _Pre-push step
+> for schema and seed changes_ (no reset involved); to move an existing stack forward use section
+> 19.4 of [environment-configuration.md](../platform/environment-configuration.md); reset only
+> per its section 19.5, on a stack with no data you need.
+
 Local and CI databases are separate instances with separate non-production
 credentials; production data is prohibited in both. There is no production database to
 edit, which is precisely why the disciplines in this standard (immutability, replay
@@ -334,6 +365,13 @@ a shared environment first exists, not learned on it.
   selectively.
 - **Local loop:** `npm run supabase:start` (start the stack) →
   `npm run supabase:reset` (replay from clean) → `npm run test:db` (assert behaviour).
+
+  > **Warning — `npm run supabase:reset` rebuilds the project's local stack and deletes all its
+  > data — including the acceptance database when the stack holds it.** To verify migrations use
+  > the disposable database in [CONTRIBUTING.md](../../CONTRIBUTING.md) section 8, _Pre-push step
+  > for schema and seed changes_ (no reset involved); to move an existing stack forward use section
+  > 19.4 of [environment-configuration.md](../platform/environment-configuration.md); reset only
+  > per its section 19.5, on a stack with no data you need.
 
 ## 14. Migration ownership and evidence
 

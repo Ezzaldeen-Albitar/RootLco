@@ -122,8 +122,9 @@
  * below so that every stage uses exactly the value the auth container would
  * receive:
  *
- *   - unquoted: trimmed, cut at the last ` #` or tab-`#`, `$NAME` and `${NAME}`
- *     expanded from names defined earlier in the same file;
+ *   - unquoted: cut at the last `#` that is preceded by a space or a tab (that
+ *     `#` and everything after it dropped), then trimmed, then `$NAME` and
+ *     `${NAME}` expanded from names defined earlier in the same file;
  *   - double-quoted: `\n`, `\r` and backslash escapes processed, then `$NAME`
  *     expanded; `\$` is a literal dollar sign;
  *   - single-quoted: literal, nothing processed;
@@ -428,7 +429,11 @@ export function parseDotenv(text) {
  */
 export function unquotedValueHazards(raw) {
   const hazards = [];
-  if (raw.includes('#')) hazards.push('a "#" (text after " #" is cut as a comment)');
+  if (raw.includes('#')) {
+    hazards.push(
+      'a "#" (the value is cut at the last "#" preceded by a space or a tab, then trimmed)'
+    );
+  }
   if (raw.includes('$')) hazards.push('a "$" (expanded as a variable reference)');
   if (raw.includes("'") || raw.includes('"')) hazards.push('a quote character');
   if (raw.length > 0 && (/^\s/.test(raw) || /\s$/.test(raw))) {
@@ -591,19 +596,35 @@ function escapeRegExp(text) {
  * configured secret (exactly as written, or base64-encoded), and any occurrence
  * of a mailbox marked by `mailboxSecret` (in any letter case, or as its
  * base64 encoding) becomes `[redacted]`.
+ *
+ * Every form of every secret — each mailbox as written (matched in any letter
+ * case), the password as written (matched exactly), and the base64 encoding of
+ * each — goes into ONE list, and the longest form is replaced first, whatever
+ * its kind and whatever order the caller listed them in. Replacing a shorter
+ * form first could split a longer one that contains it: a password that is a
+ * substring of a mailbox address would leave the rest of that address in
+ * clear, a mailbox address inside a password would leave the rest of the
+ * password, and a password that occurs inside a mailbox's base64 encoding
+ * would leave the rest of that encoding.
+ *
+ * @param {unknown} text
+ * @param {Array<string | { mailbox: string }>} [secrets]
  */
 export function redactRelayText(text, secrets = []) {
-  let safe = String(text);
+  const forms = [];
   for (const secret of secrets) {
     const isMailbox = secret !== null && typeof secret === 'object';
     const value = isMailbox ? secret.mailbox : secret;
     if (typeof value !== 'string' || value.length === 0) continue;
-    if (isMailbox) {
-      safe = safe.replace(new RegExp(escapeRegExp(value), 'gi'), '[redacted]');
-    } else {
-      safe = safe.split(value).join('[redacted]');
-    }
-    safe = safe.split(Buffer.from(value, 'utf8').toString('base64')).join('[redacted]');
+    forms.push({ ignoreCase: isMailbox, form: value });
+    forms.push({ ignoreCase: false, form: Buffer.from(value, 'utf8').toString('base64') });
+  }
+  forms.sort((a, b) => b.form.length - a.form.length);
+  let safe = String(text);
+  for (const { ignoreCase, form } of forms) {
+    safe = ignoreCase
+      ? safe.replace(new RegExp(escapeRegExp(form), 'gi'), '[redacted]')
+      : safe.split(form).join('[redacted]');
   }
   return safe.replace(BASE64_LOOKING, '[redacted]');
 }
@@ -937,11 +958,14 @@ export function advertisesStartTls(ehloText) {
  * Stage 2. Connect, negotiate encryption for the port, and return a session
  * that is ready for AUTH. No credential is touched here.
  *
+ * `secrets` is what `redactRelayText` takes: the password as a string, and each
+ * mailbox as the `{ mailbox }` object `mailboxSecret()` returns.
+ *
  * @param {{
  *   host: string,
  *   port: number,
  *   transport?: typeof nodeTransport,
- *   secrets?: string[],
+ *   secrets?: Array<string | { mailbox: string }>,
  *   readTimeoutMs?: number,
  * }} target
  */
@@ -1306,10 +1330,13 @@ export async function run({
   const loginUser = environment.SMTP_USER;
   const sender = environment.SMTP_ADMIN_EMAIL;
   // Relay text that echoes a mailbox has it redacted, like any credential. A
-  // mailbox is matched in any letter case; the password only exactly.
+  // mailbox is matched in any letter case; the password only exactly. The
+  // mailboxes are listed first, and `redactRelayText` replaces the longest
+  // secret first in any case, so a password that is part of an address cannot
+  // split that address and leave the rest of it in clear.
   const secrets = [
-    environment.SMTP_PASS,
     ...[loginUser, sender, recipient].map((address) => mailboxSecret(address)),
+    environment.SMTP_PASS,
   ];
   const target = STAGES[STAGE_OF_MODE[mode] - 1];
 

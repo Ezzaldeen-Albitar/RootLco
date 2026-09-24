@@ -2,14 +2,20 @@
 
 **Status:** descriptive. Every row below was read out of the code it cites.
 
-**Measured at:** `develop` `5b2c7840da1821f973438d5429665ef4448132f2`, on 2026-09-18.
+**Measured at:** `develop` `01d467ad6033949c4a86d9e8046bbcbd41758b4a`, on 2026-09-24. First
+written at `5b2c7840da1821f973438d5429665ef4448132f2`, on 2026-09-18.
 
-**Re-checked for this head, and unchanged.** None of the five merges that followed the one which
-introduced this document touched any of the three configuration schemas. The API schema still holds
-**49** names (counted from `schema.shape` in `apps/api/src/server/config/backend-config.ts`), the
-older Supabase subset still holds 6, and the web schema still holds 4. No name was added, removed or
-re-bounded. One script surface did change, and section 12 records it: a second platform script now
-sits beside the genesis one and reads its own `GRANT_*` family.
+**Re-measured from the consumers at this head.** Every name below was found by searching the code
+that reads it — `process.env` reads, the three schemas, the launcher, `env(...)` in
+`supabase/config.toml`, the relay check, the browser and acceptance harness, and the CI scripts —
+and not by reading a template. None of the three configuration schemas changed: the API schema
+still holds **49** names (counted from `schema.shape` in
+`apps/api/src/server/config/backend-config.ts`), the older Supabase subset still holds 6, and the
+web schema still holds 4. What did change is outside them: a revocation script with its own
+`REVOKE_OPERATOR_*` family, two backfill scripts with a third `ROOTLCO_ENV` vocabulary, the
+platform-console browser credentials, and the six outbound-mail names of section 17. Section 12
+carries all of them, section 18 counts every group and says which template lists each name, and
+section 19 is the supported local launch path.
 
 **The three things this document is most often opened for**
 
@@ -35,27 +41,55 @@ deployment **would** require, not a place that exists.
 
 Four mechanisms, and they do not overlap as much as people assume.
 
-**The two application tiers each read their own `.env.local`.** Next.js loads `.env.local` from the
-application directory it is given, and `scripts/dev/start-local.mjs` starts them as
-`next dev apps/api` and `next dev apps/web` (`tierArgs()`). So `apps/api/.env.local` configures the
+**The two application tiers each read their own `.env.local`.** Next.js loads its env files from
+the application directory it is given, and `scripts/dev/start-local.mjs` starts the tiers on
+`apps/api` and `apps/web` (`tierArgs()`): `next dev` under `npm run dev:all`, and `next build`
+followed by `next start` under `npm run acceptance:serve`. So `apps/api/.env.local` configures the
 API process and `apps/web/.env.local` configures the web process. Neither reads the repository-root
 file.
 
-**The repository-root `.env.local` has exactly one consumer:** the `env_file:` entry in
-`docker-compose.yml` (marked `required: false`, so a fresh clone without one still builds). It
-configures the container, nothing else.
+**Which file wins, and when a file loses to the process.** The pinned `@next/env` reads, in this
+order, `.env.<mode>.local`, `.env.local`, `.env.<mode>` and `.env`, where `<mode>` is `development`
+under `next dev` and `production` under `next build` and `next start`; a name is taken from the
+first file that defines it. **A name the process environment already holds is never taken from any
+file.** That matters on the launcher path, because `tierEnv()` hands each tier the launcher's own
+environment: `NEXT_PUBLIC_API_BASE_URL` and `ROOTLCO_ENABLE_GALLERY` are always placed there
+(`start-local.mjs:725-727`), `NEXT_PUBLIC_APP_ENV` is placed there under `acceptance:serve`
+(`start-local.mjs:735`). For those three names a value written in an app's `.env.local` does not
+reach a tier the launcher started; a value exported in your shell does, because the launcher only
+fills a name the shell left unset. **The seven `STORAGE_*` names follow a different order.**
+`tierEnv()` builds the child environment as `...process.env` first and the tier's own
+`spec.env[mode]` last (`start-local.mjs:252-259`), and for the API tier that fragment is the storage
+set derived from the running stack (`start-local.mjs:197-198`). So for those seven the precedence
+is: the launcher's derived value, then your shell, then a file — a value exported in your shell is
+overridden by the launcher whenever it derives one, and reaches the tier only when the stack could
+not be read and the fragment is empty.
 
-**Repository scripts load no dotenv file at all.** Everything under `scripts/**` reads
-`process.env` directly and falls back to a hard-coded local default — `scripts/db/apply-migrations.mjs`
-is the pattern: `process.env.DB_HOST ?? '127.0.0.1'`, port `54322`, database/user/password
-`postgres`. A value set in any `.env.local` reaches a script only if your shell already exported it.
+**The repository-root `.env.local` has two consumers, and no application process is one.** The
+`env_file:` entry in `docker-compose.yml` (marked `required: false`, so a fresh clone without one
+still builds) hands every line of it to the container. The Supabase CLI also reads it, together with
+the root `.env`, when it expands the `env(...)` references in `supabase/config.toml` — the precedence
+is in 17.1. The only such references that matter locally are the six outbound-mail names, and they
+belong in the root `.env`, not in `.env.local`, precisely because compose would otherwise hand a
+mailbox password to the container.
+
+**Repository scripts load no dotenv file into their environment.** Everything under `scripts/**`
+reads `process.env` directly and falls back to a hard-coded local default —
+`scripts/db/apply-migrations.mjs` is the pattern: `process.env.DB_HOST ?? '127.0.0.1'`, port
+`54322`, database/user/password `postgres`. A value set in any `.env.local` reaches a script only if
+your shell already exported it. Two scripts READ a dotenv file without loading it: the relay check
+(`scripts/dev/check-smtp.mjs`) reads the six mail names from the files the Supabase CLI reads, by
+the CLI's own rules, and the launcher reads `apps/web/.env.local` only to warn about the API origin
+line (`start-local.mjs:142-165`).
 
 **Some values are derived at launch rather than written down.** `scripts/dev/storage-env.mjs` reads
 the running stack with `supabase status -o env` and renames four of its keys into the
 `STORAGE_S3_*` shape; `scripts/dev/start-local.mjs` passes that fragment to the API tier only, so
 the web tier holds no storage credential. `scripts/dev/owner-acceptance/create-owner-account.mjs`
-writes `SUPABASE_SERVICE_ROLE_KEY`, `AUTH_JWT_SECRET` and `AUTH_JWT_ISSUER` into
-`apps/api/.env.local` for you.
+writes four names into `apps/api/.env.local` for you — `SUPABASE_SERVICE_ROLE_KEY`,
+`AUTH_JWT_SECRET`, `AUTH_JWT_ISSUER` and `DATABASE_URL` (`ensureApiEnvironment()`), the last for a
+login role it creates as a member of `app_runtime` without BYPASSRLS. It never overwrites a line
+already present, except a `DATABASE_URL` whose role cannot log in, which it repairs.
 
 ### Two schemas on the backend, one on the frontend
 
@@ -101,7 +135,7 @@ they are written down.
 | `NEXT_PUBLIC_API_BASE_URL`            | — (no equivalent)                                                                          | Web-only.                                                | The origin the BROWSER calls, and the origin `src/proxy.ts` puts in the CSP `connect-src`.                                                  | Any absolute URL. Inlined at build time.                                                                                            |
 | `NEXT_PUBLIC_CLIENT_MONITORING_URL`   | — (no equivalent)                                                                          | Web-only.                                                | Where client diagnostics are delivered, if a collector is ever operated.                                                                    | Absolute URL, or unset.                                                                                                             |
 | `NEXT_PUBLIC_CLIENT_MONITORING_LEVEL` | — (no equivalent)                                                                          | Web-only.                                                | Severity threshold for what leaves the browser.                                                                                             | `debug \| info \| warn \| error`, or unset (means `error`).                                                                         |
-| `ROOTLCO_ENABLE_GALLERY`              | — (no equivalent)                                                                          | Web-only, server-side.                                   | Opens the internal component gallery.                                                                                                       | Any value opens it; unset is off.                                                                                                   |
+| `ROOTLCO_ENABLE_GALLERY`              | — (no equivalent)                                                                          | Web-only, server-side.                                   | Opens the internal component gallery.                                                                                                       | Exactly `true` opens it. Any other value, or none, leaves it open only when `NODE_ENV` is not `production`.                         |
 | — (never on the web tier)             | `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`                                | API-only, despite the browser-safe prefix.               | Identity-provider URL and public project key, handed to the iam adapter.                                                                    | URL and opaque key.                                                                                                                 |
 | — (never on the web tier)             | `SUPABASE_SERVICE_ROLE_KEY`, `DATABASE_URL`, `PLATFORM_DATABASE_URL`, every `STORAGE_S3_*` | API-only, and **by design unavailable to the web tier**. | Server credentials. The web tier reaches the API over HTTP and holds no credential at all.                                                  | See sections 6–11.                                                                                                                  |
 | — (no web equivalent)                 | `AUTH_REDIRECT_ALLOWLIST`                                                                  | API-only, but its VALUE is web URLs.                     | The exact absolute reset and invitation destinations on the public web origin.                                                              | Comma-separated absolute URLs.                                                                                                      |
@@ -164,7 +198,10 @@ consumer. **Three names have none.**
 
 **What "reserved" commits to.** Each name stays in the schema, so a deployment that already sets it
 starts exactly as before; none is in `REQUIRED_WHEN_DEPLOYED`; none can fail readiness; and each is
-carried in the templates **commented out**, with the same note.
+carried **commented out**, with the same note, in `apps/api/.env.example` — which must keep it,
+because `scripts/ci/check-env-contract.mjs` counts every schema key as read and fails on one that no
+template documents. The production template names the three only in its closing RESERVED list and
+carries no line to fill in for any of them, because a deployment has nothing to supply.
 
 **The guard.** `tests/foundation/reserved-settings.test.ts` derives the accepted names from
 `schema.shape` — not from this document and not from any list maintained beside the schema — and
@@ -184,33 +221,33 @@ tree, so a name validated-but-unread is caught in all three places rather than o
 Every `NEXT_PUBLIC_*` value is inlined by Next during `next build`. It is a **build-time** input:
 changing one on a running deployment changes nothing until the next build.
 
-| Name                                  | Consumer (path:line)          | Purpose                                                                         | local / staging / production | Requirement       | Secret?      | Valid source and how to set it                                  | Local value available?              |
-| ------------------------------------- | ----------------------------- | ------------------------------------------------------------------------------- | ---------------------------- | ----------------- | ------------ | --------------------------------------------------------------- | ----------------------------------- |
-| `NEXT_PUBLIC_APP_ENV`                 | `apps/web/src/lib/env.ts:49`  | Decides whether the session cookie carries `Secure`. Defaults to `production`.  | `set` / n/a / `required`     | required          | browser-safe | `apps/web/.env.local`; the launcher sets `local` when unset     | you write it in apps/web/.env.local |
-| `NEXT_PUBLIC_API_BASE_URL`            | `apps/web/src/lib/env.ts:64`  | The origin the BROWSER calls; `src/proxy.ts` derives CSP `connect-src` from it. | `set` / n/a / `required`     | required          | browser-safe | Owner decision in production; locally `http://localhost:3000`   | you write it in apps/web/.env.local |
-| `NEXT_PUBLIC_CLIENT_MONITORING_URL`   | `apps/web/src/lib/env.ts:94`  | Where client diagnostics are delivered, if a deployment operates a sink.        | `unset` / `unset` / `unset`  | feature-dependent | browser-safe | Owner, only if a collector is ever operated. None exists.       | not needed locally                  |
-| `NEXT_PUBLIC_CLIENT_MONITORING_LEVEL` | `apps/web/src/lib/env.ts:128` | Severity threshold for what leaves the browser. Unset means `error`.            | `unset` / `unset` / `unset`  | feature-dependent | browser-safe | Set only alongside the sink URL; invalid values refuse to boot. | not needed locally                  |
+| Name                                  | Consumer (path:line)          | Purpose                                                                         | local / staging / production | Requirement       | Secret?      | Valid source and how to set it                                                                                              | Local value available?                                                                      |
+| ------------------------------------- | ----------------------------- | ------------------------------------------------------------------------------- | ---------------------------- | ----------------- | ------------ | --------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| `NEXT_PUBLIC_APP_ENV`                 | `apps/web/src/lib/env.ts:49`  | Decides whether the session cookie carries `Secure`. Defaults to `production`.  | `set` / n/a / `required`     | required          | browser-safe | `apps/web/.env.local` under `dev:all`; under `acceptance:serve` the launcher sets `local` unless your shell exports another | `acceptance:serve`: derived by the launcher; `dev:all`: you write it in apps/web/.env.local |
+| `NEXT_PUBLIC_API_BASE_URL`            | `apps/web/src/lib/env.ts:64`  | The origin the BROWSER calls; `src/proxy.ts` derives CSP `connect-src` from it. | `set` / n/a / `required`     | required          | browser-safe | Owner decision in production; locally the launcher sets `http://localhost:3000` unless your shell exports another           | derived by the launcher                                                                     |
+| `NEXT_PUBLIC_CLIENT_MONITORING_URL`   | `apps/web/src/lib/env.ts:94`  | Where client diagnostics are delivered, if a deployment operates a sink.        | `unset` / `unset` / `unset`  | feature-dependent | browser-safe | Owner, only if a collector is ever operated. None exists.                                                                   | not needed locally                                                                          |
+| `NEXT_PUBLIC_CLIENT_MONITORING_LEVEL` | `apps/web/src/lib/env.ts:128` | Severity threshold for what leaves the browser. Unset means `error`.            | `unset` / `unset` / `unset`  | feature-dependent | browser-safe | Set only alongside the sink URL; invalid values refuse to boot.                                                             | not needed locally                                                                          |
 
 ## 5. Inventory — web tier, server-only
 
 Read on the server at request or build time. The web tier holds **no** database URL, service-role
 key or storage credential, by design.
 
-| Name                     | Consumer (path:line)                    | Purpose                                                                 | local / staging / production      | Requirement       | Secret?     | Valid source and how to set it                            | Local value available?              |
-| ------------------------ | --------------------------------------- | ----------------------------------------------------------------------- | --------------------------------- | ----------------- | ----------- | --------------------------------------------------------- | ----------------------------------- |
-| `ROOTLCO_ENABLE_GALLERY` | `apps/web/src/lib/gallery-access.ts:22` | Opens the internal component gallery at `/<locale>/gallery`.            | `set` / `unset` / `unset`         | feature-dependent | server-only | `apps/web/.env.local`; the launcher defaults it to `true` | you write it in apps/web/.env.local |
-| `ROOTLCO_DIST_DIR`       | `apps/web/next.config.ts:31`            | Build output directory. Defaults to `.next`.                            | `set` / `unset` / `unset`         | optional          | server-only | SET BY THE LAUNCHER only, and only for the dev server     | derived by the launcher             |
-| `NODE_ENV`               | `apps/web/src/lib/gallery-access.ts`    | Runtime mode. Provided by Node and Next; never written into a template. | `default` / `default` / `default` | provided          | server-only | The toolchain sets it                                     | not needed locally                  |
+| Name                     | Consumer (path:line)                    | Purpose                                                                                                                              | local / staging / production      | Requirement       | Secret?     | Valid source and how to set it                                                             | Local value available?  |
+| ------------------------ | --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------- | ----------------- | ----------- | ------------------------------------------------------------------------------------------ | ----------------------- |
+| `ROOTLCO_ENABLE_GALLERY` | `apps/web/src/lib/gallery-access.ts:22` | Opens the internal component gallery at `/<locale>/gallery` when exactly `true`; without that, open only outside a production build. | `set` / `unset` / `unset`         | feature-dependent | server-only | The launcher sets it (`true` unless your shell exports another); a file cannot override it | derived by the launcher |
+| `ROOTLCO_DIST_DIR`       | `apps/web/next.config.ts:31`            | Build output directory. Defaults to `.next`.                                                                                         | `set` / `unset` / `unset`         | optional          | server-only | SET BY THE LAUNCHER only, and only for the dev server                                      | derived by the launcher |
+| `NODE_ENV`               | `apps/web/src/lib/gallery-access.ts`    | Runtime mode. Provided by Node and Next; never written into a template.                                                              | `default` / `default` / `default` | provided          | server-only | The toolchain sets it                                                                      | not needed locally      |
 
 ## 6. Inventory — API tier, browser-safe
 
-| Name                            | Consumer (path:line)                        | Purpose                                                                                                                                                                                                                                                 | local / staging / production    | Requirement | Secret?      | Valid source and how to set it                                      | Local value available?              |
-| ------------------------------- | ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------- | ----------- | ------------ | ------------------------------------------------------------------- | ----------------------------------- |
-| `NEXT_PUBLIC_SUPABASE_URL`      | `apps/api/src/config/env.ts:72`             | Identity provider API URL, handed to the adapter by `modules/iam/index.ts:147`.                                                                                                                                                                         | `set` / `required` / `required` | required    | browser-safe | `npm run supabase:status` locally; the hosted project in production | you write it in apps/api/.env.local |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | `apps/api/src/config/env.ts:73`             | Public project key. Safe only because RLS is enabled and forced on every tenant table.                                                                                                                                                                  | `set` / `required` / `required` | required    | browser-safe | `npm run supabase:status` locally; the hosted project in production | you write it in apps/api/.env.local |
-| `NEXT_PUBLIC_APP_ENV`           | `backend-config.ts:210`, `config/env.ts:74` | First segment of every storage key (immutable once written); selects bucket auto-creation; switches the production-required check on. **Absent, it defaults to `local` and that check does not run at all** — nothing refuses its absence (section 16). | `set` / `required` / `required` | required    | browser-safe | Written in `apps/api/.env.local`                                    | you write it in apps/api/.env.local |
-| `NEXT_PUBLIC_APP_VERSION`       | `apps/api/src/shared/constants/app.ts:30`   | Build identity surfaced by `/api/health`. Defaults to `0.1.0`.                                                                                                                                                                                          | `unset` / optional / optional   | optional    | browser-safe | Injected at image build by CI                                       | not needed locally                  |
-| `NEXT_PUBLIC_COMMIT_SHA`        | `apps/api/src/shared/constants/app.ts:31`   | Build identity. Defaults to `unknown`.                                                                                                                                                                                                                  | `unset` / optional / optional   | optional    | browser-safe | Injected at image build by CI                                       | not needed locally                  |
+| Name                            | Consumer (path:line)                        | Purpose                                                                                                                                                                                                                                                 | local / staging / production    | Requirement | Secret?      | Valid source and how to set it                                                                                                                        | Local value available?                                                           |
+| ------------------------------- | ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------- | ----------- | ------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
+| `NEXT_PUBLIC_SUPABASE_URL`      | `apps/api/src/config/env.ts:72`             | Identity provider API URL, handed to the adapter by `modules/iam/index.ts:183`.                                                                                                                                                                         | `set` / `required` / `required` | required    | browser-safe | `npm run supabase:status` locally; the hosted project in production                                                                                   | you write it in apps/api/.env.local                                              |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | `apps/api/src/config/env.ts:73`             | Public project key. Safe only because RLS is enabled and forced on every tenant table.                                                                                                                                                                  | `set` / `required` / `required` | required    | browser-safe | `npm run supabase:status` locally; the hosted project in production                                                                                   | you write it in apps/api/.env.local                                              |
+| `NEXT_PUBLIC_APP_ENV`           | `backend-config.ts:210`, `config/env.ts:74` | First segment of every storage key (immutable once written); selects bucket auto-creation; switches the production-required check on. **Absent, it defaults to `local` and that check does not run at all** — nothing refuses its absence (section 16). | `set` / `required` / `required` | required    | browser-safe | Written in `apps/api/.env.local` (the template carries `local`); under `acceptance:serve` the launcher sets `local` unless your shell exports another | `acceptance:serve`: derived by the launcher; `dev:all`: from apps/api/.env.local |
+| `NEXT_PUBLIC_APP_VERSION`       | `apps/api/src/shared/constants/app.ts:30`   | Build identity surfaced by `/api/health`. Defaults to `0.1.0`.                                                                                                                                                                                          | `unset` / optional / optional   | optional    | browser-safe | Injected at image build by CI                                                                                                                         | not needed locally                                                               |
+| `NEXT_PUBLIC_COMMIT_SHA`        | `apps/api/src/shared/constants/app.ts:31`   | Build identity, returned as `commit` by `/api/health`. Defaults to `unknown`, which is what the local launcher path reports unless it is exported.                                                                                                      | `unset` / optional / optional   | optional    | browser-safe | Injected at image build by CI; locally, exported in your shell before `acceptance:serve` (section 19)                                                 | optional; your shell only                                                        |
 
 ## 7. Inventory — API tier, database
 
@@ -219,16 +256,16 @@ roles are mandatory**: PostgreSQL resolves membership at the login role, so one 
 `app_runtime` and `app_platform` would carry both authorities on one connection and the containment
 would buy nothing.
 
-| Name                       | Consumer (path:line)                         | Purpose                                                                        | local / staging / production      | Requirement | Secret? | Valid source and how to set it                                   | Local value available?              |
-| -------------------------- | -------------------------------------------- | ------------------------------------------------------------------------------ | --------------------------------- | ----------- | ------- | ---------------------------------------------------------------- | ----------------------------------- |
-| `DATABASE_URL`             | `apps/api/src/server/db/pool.ts:70`          | Request-path pool. Login role: `app_runtime` member, no BYPASSRLS.             | `set` / `required` / `required`   | required    | secret  | Composed from `supabase status`; from the provider in production | you write it in apps/api/.env.local |
-| `PLATFORM_DATABASE_URL`    | `apps/api/src/server/db/pool.ts:130`         | Control plane. NO fallback to `DATABASE_URL` — the platform path fails closed. | `set` / `required` / `required`   | required    | secret  | Composed from `supabase status`; from the provider in production | you write it in apps/api/.env.local |
-| `WORKER_DATABASE_URL`      | `apps/api/src/server/worker/worker-db.ts:55` | Outbox worker pool. Falls back to `DATABASE_URL` when unset.                   | `unset` / optional / optional     | optional    | secret  | Its own `app_worker` login role                                  | not needed locally                  |
-| `DATABASE_REPLICA_URL`     | **none — RESERVED** (`backend-config.ts:45`) | Accepted so topology can be expressed. Setting it has NO effect (section 3).   | `unset` / `unset` / `unset`       | reserved    | secret  | Nothing to set; no replica is provisioned                        | not needed locally                  |
-| `DB_POOL_MAX`              | `apps/api/src/server/db/pool.ts:33`          | Pool size. Default 10, bounded 1..50.                                          | `default` / `default` / `default` | optional    | n/a     | Override only with a measured reason                             | not needed locally                  |
-| `DB_POOL_IDLE_TIMEOUT_MS`  | `apps/api/src/server/db/pool.ts:34`          | Idle connection reaping. Default 30000, bounded 1000..300000.                  | `default` / `default` / `default` | optional    | n/a     | Override only with a measured reason                             | not needed locally                  |
-| `DB_CONNECTION_TIMEOUT_MS` | `apps/api/src/server/db/pool.ts:35`          | Connect timeout. Default 5000, bounded 500..60000.                             | `default` / `default` / `default` | optional    | n/a     | Override only with a measured reason                             | not needed locally                  |
-| `DB_STATEMENT_TIMEOUT_MS`  | `apps/api/src/server/db/pool.ts:38`          | Server-side statement timeout. Default 15000, bounded 100..120000.             | `default` / `default` / `default` | optional    | n/a     | Override only with a measured reason                             | not needed locally                  |
+| Name                       | Consumer (path:line)                         | Purpose                                                                        | local / staging / production      | Requirement | Secret? | Valid source and how to set it                                                              | Local value available?              |
+| -------------------------- | -------------------------------------------- | ------------------------------------------------------------------------------ | --------------------------------- | ----------- | ------- | ------------------------------------------------------------------------------------------- | ----------------------------------- |
+| `DATABASE_URL`             | `apps/api/src/server/db/pool.ts:70`          | Request-path pool. Login role: `app_runtime` member, no BYPASSRLS.             | `set` / `required` / `required`   | required    | secret  | Written locally by the Owner-account helper; from the provider in production                | written by the Owner-account helper |
+| `PLATFORM_DATABASE_URL`    | `apps/api/src/server/db/pool.ts:130`         | Control plane. NO fallback to `DATABASE_URL` — the platform path fails closed. | `set` / `required` / `required`   | required    | secret  | Composed for the `app_platform` login role genesis creates; from the provider in production | you write it in apps/api/.env.local |
+| `WORKER_DATABASE_URL`      | `apps/api/src/server/worker/worker-db.ts:55` | Outbox worker pool. Falls back to `DATABASE_URL` when unset.                   | `unset` / optional / optional     | optional    | secret  | Its own `app_worker` login role                                                             | not needed locally                  |
+| `DATABASE_REPLICA_URL`     | **none — RESERVED** (`backend-config.ts:45`) | Accepted so topology can be expressed. Setting it has NO effect (section 3).   | `unset` / `unset` / `unset`       | reserved    | secret  | Nothing to set; no replica is provisioned                                                   | not needed locally                  |
+| `DB_POOL_MAX`              | `apps/api/src/server/db/pool.ts:33`          | Pool size. Default 10, bounded 1..50.                                          | `default` / `default` / `default` | optional    | n/a     | Override only with a measured reason                                                        | not needed locally                  |
+| `DB_POOL_IDLE_TIMEOUT_MS`  | `apps/api/src/server/db/pool.ts:34`          | Idle connection reaping. Default 30000, bounded 1000..300000.                  | `default` / `default` / `default` | optional    | n/a     | Override only with a measured reason                                                        | not needed locally                  |
+| `DB_CONNECTION_TIMEOUT_MS` | `apps/api/src/server/db/pool.ts:35`          | Connect timeout. Default 5000, bounded 500..60000.                             | `default` / `default` / `default` | optional    | n/a     | Override only with a measured reason                                                        | not needed locally                  |
+| `DB_STATEMENT_TIMEOUT_MS`  | `apps/api/src/server/db/pool.ts:38`          | Server-side statement timeout. Default 15000, bounded 100..120000.             | `default` / `default` / `default` | optional    | n/a     | Override only with a measured reason                                                        | not needed locally                  |
 
 ## 8. Inventory — API tier, outbox worker
 
@@ -246,25 +283,25 @@ would buy nothing.
 
 ## 9. Inventory — API tier, HTTP edge and authentication
 
-| Name                               | Consumer (path:line)                                                 | Purpose                                                                                          | local / staging / production      | Requirement                           | Secret? | Valid source and how to set it                                               | Local value available?              |
-| ---------------------------------- | -------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ | --------------------------------- | ------------------------------------- | ------- | ---------------------------------------------------------------------------- | ----------------------------------- |
-| `TRUSTED_PROXY_IPS`                | `apps/api/src/server/http/trusted-proxy.ts`                          | Exact remote addresses whose `X-Forwarded-For` may be believed. Empty ignores the header.        | `unset` / `required` / `required` | required when deployed behind a proxy | n/a     | The hosting topology, once one exists                                        | not needed locally                  |
-| `CORS_ALLOWED_ORIGINS`             | **none — RESERVED** (`backend-config.ts:185`)                        | Intended allow-list of cross-origin callers. Setting it has NO effect (section 3).               | `unset` / `unset` / `unset`       | reserved                              | n/a     | Nothing to set until a CORS layer exists                                     | not needed locally                  |
-| `RATE_LIMIT_ENABLED`               | `apps/api/src/server/http/route-handler.ts:312`                      | Master switch for the limiter. Default `true`. `false` is refused in a deployed environment.     | `default` / `true` / `true`       | required                              | n/a     | Leave at the default                                                         | not needed locally                  |
-| `CACHE_DEFAULT_TTL_SECONDS`        | **none — RESERVED** (`backend-config.ts:108`)                        | Intended default cache TTL. Setting it has NO effect (section 3).                                | `default` / `default` / `default` | reserved                              | n/a     | Nothing to set; every caller passes its own TTL                              | not needed locally                  |
-| `CACHE_MAX_ENTRIES`                | `apps/api/src/server/cache/cache.ts:172`                             | In-process cache ceiling. Default 5000, bounded 16..100000.                                      | `default` / `default` / `default` | optional                              | n/a     | Override only with a measured reason                                         | not needed locally                  |
-| `SUPABASE_SERVICE_ROLE_KEY`        | `apps/api/src/config/env.ts:102`, `modules/iam/index.ts:137`         | Privileged provider key. **Bypasses RLS entirely.** iam refuses to compose without it.           | `set` / `required` / `required`   | required                              | secret  | `supabase status` locally; the hosted project in production                  | you write it in apps/api/.env.local |
-| `AUTH_IDENTITY_PROVIDER`           | `apps/api/src/modules/iam/index.ts:156`                              | Written to and matched against `iam.user_accounts.identity_provider`. Default `supabase`.        | `default` / `default` / `default` | optional                              | n/a     | Leave at the default unless a second provider exists                         | not needed locally                  |
-| `AUTH_JWT_ISSUER`                  | `apps/api/src/modules/iam/index.ts:139`                              | Expected `iss`. A token from any other issuer is rejected.                                       | `set` / `required` / `required`   | required                              | n/a     | The project URL with `/auth/v1`; written locally by the Owner-account helper | you write it in apps/api/.env.local |
-| `AUTH_JWT_SECRET`                  | `apps/api/src/modules/iam/index.ts:138`                              | HS\* verification secret. Absent means nobody can authenticate.                                  | `set` / `required` / `required`   | required                              | secret  | The project's JWT secret; written locally by the Owner-account helper        | you write it in apps/api/.env.local |
-| `AUTH_JWT_AUDIENCE`                | `apps/api/src/modules/iam/index.ts:153`                              | Expected `aud`. Default `authenticated`, which is what GoTrue issues.                            | `default` / `default` / `default` | optional                              | n/a     | Leave at the default                                                         | not needed locally                  |
-| `AUTH_JWT_ALGORITHMS`              | `apps/api/src/modules/iam/index.ts:154`                              | Algorithm ALLOW-LIST. Default `HS256`. This is what stops `alg: none` and RS256→HS256 confusion. | `default` / `default` / `default` | optional                              | n/a     | Widen only deliberately                                                      | not needed locally                  |
-| `AUTH_CLOCK_SKEW_SECONDS`          | `apps/api/src/modules/iam/index.ts:155`                              | Tolerated drift. Default 60, bounded 0..300.                                                     | `default` / `default` / `default` | optional                              | n/a     | Override only with a measured reason                                         | not needed locally                  |
-| `SESSION_IDLE_TIMEOUT_MINUTES`     | `apps/api/src/server/context/resolve-context.ts:286`                 | Server-enforced idle timeout. Default 30, bounded 1..1440.                                       | `default` / `default` / `default` | optional                              | n/a     | A policy decision, once one is made                                          | not needed locally                  |
-| `SESSION_ACTIVITY_REFRESH_SECONDS` | `apps/api/src/server/context/resolve-context.ts:287`                 | Throttle on `last_seen_at` writes. Default 60, bounded 5..3600.                                  | `default` / `default` / `default` | optional                              | n/a     | Override only with a measured reason                                         | not needed locally                  |
-| `AUTH_REDIRECT_ALLOWLIST`          | `apps/api/src/app/api/v1/auth/password-reset/route.ts:9`             | Exact absolute redirect destinations for reset and invitation links. Empty rejects every one.    | `set` / `required` / `required`   | required                              | n/a     | The public web origin's own URLs (Owner decision)                            | you write it in apps/api/.env.local |
-| `LOGIN_MAX_FAILED_ATTEMPTS`        | `apps/api/src/modules/iam/application/authentication-service.ts:413` | Consecutive failures before lockout. Default 5, bounded 1..100.                                  | `default` / `default` / `default` | optional                              | n/a     | A policy decision, once one is made                                          | not needed locally                  |
-| `LOGIN_FAILURE_WINDOW_MINUTES`     | `apps/api/src/modules/iam/application/authentication-service.ts:409` | Window over which failures are counted. Default 15, bounded 1..1440.                             | `default` / `default` / `default` | optional                              | n/a     | A policy decision, once one is made                                          | not needed locally                  |
+| Name                               | Consumer (path:line)                                                                              | Purpose                                                                                          | local / staging / production      | Requirement                           | Secret? | Valid source and how to set it                                                | Local value available?              |
+| ---------------------------------- | ------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ | --------------------------------- | ------------------------------------- | ------- | ----------------------------------------------------------------------------- | ----------------------------------- |
+| `TRUSTED_PROXY_IPS`                | `apps/api/src/server/http/trusted-proxy.ts`                                                       | Exact remote addresses whose `X-Forwarded-For` may be believed. Empty ignores the header.        | `unset` / `required` / `required` | required when deployed behind a proxy | n/a     | The hosting topology, once one exists                                         | not needed locally                  |
+| `CORS_ALLOWED_ORIGINS`             | **none — RESERVED** (`backend-config.ts:185`)                                                     | Intended allow-list of cross-origin callers. Setting it has NO effect (section 3).               | `unset` / `unset` / `unset`       | reserved                              | n/a     | Nothing to set until a CORS layer exists                                      | not needed locally                  |
+| `RATE_LIMIT_ENABLED`               | `apps/api/src/server/http/route-handler.ts:329`                                                   | Master switch for the limiter. Default `true`. `false` is refused in a deployed environment.     | `default` / `true` / `true`       | required                              | n/a     | Leave at the default                                                          | not needed locally                  |
+| `CACHE_DEFAULT_TTL_SECONDS`        | **none — RESERVED** (`backend-config.ts:108`)                                                     | Intended default cache TTL. Setting it has NO effect (section 3).                                | `default` / `default` / `default` | reserved                              | n/a     | Nothing to set; every caller passes its own TTL                               | not needed locally                  |
+| `CACHE_MAX_ENTRIES`                | `apps/api/src/server/cache/cache.ts:172`                                                          | In-process cache ceiling. Default 5000, bounded 16..100000.                                      | `default` / `default` / `default` | optional                              | n/a     | Override only with a measured reason                                          | not needed locally                  |
+| `SUPABASE_SERVICE_ROLE_KEY`        | `apps/api/src/config/env.ts:102`, `modules/iam/index.ts:172,185`                                  | Privileged provider key. **Bypasses RLS entirely.** iam refuses to compose without it.           | `set` / `required` / `required`   | required                              | secret  | Written locally by the Owner-account helper; the hosted project in production | written by the Owner-account helper |
+| `AUTH_IDENTITY_PROVIDER`           | `apps/api/src/modules/iam/index.ts:191`                                                           | Written to and matched against `iam.user_accounts.identity_provider`. Default `supabase`.        | `default` / `default` / `default` | optional                              | n/a     | Leave at the default unless a second provider exists                          | not needed locally                  |
+| `AUTH_JWT_ISSUER`                  | `apps/api/src/modules/iam/index.ts:174,187`                                                       | Expected `iss`. A token from any other issuer is rejected.                                       | `set` / `required` / `required`   | required                              | n/a     | The project URL with `/auth/v1`; written locally by the Owner-account helper  | written by the Owner-account helper |
+| `AUTH_JWT_SECRET`                  | `apps/api/src/modules/iam/index.ts:173,186`                                                       | HS\* verification secret. Absent means nobody can authenticate.                                  | `set` / `required` / `required`   | required                              | secret  | The project's JWT secret; written locally by the Owner-account helper         | written by the Owner-account helper |
+| `AUTH_JWT_AUDIENCE`                | `apps/api/src/modules/iam/index.ts:188`                                                           | Expected `aud`. Default `authenticated`, which is what GoTrue issues.                            | `default` / `default` / `default` | optional                              | n/a     | Leave at the default                                                          | not needed locally                  |
+| `AUTH_JWT_ALGORITHMS`              | `apps/api/src/modules/iam/index.ts:189`                                                           | Algorithm ALLOW-LIST. Default `HS256`. This is what stops `alg: none` and RS256→HS256 confusion. | `default` / `default` / `default` | optional                              | n/a     | Widen only deliberately                                                       | not needed locally                  |
+| `AUTH_CLOCK_SKEW_SECONDS`          | `apps/api/src/modules/iam/index.ts:190`                                                           | Tolerated drift. Default 60, bounded 0..300.                                                     | `default` / `default` / `default` | optional                              | n/a     | Override only with a measured reason                                          | not needed locally                  |
+| `SESSION_IDLE_TIMEOUT_MINUTES`     | `apps/api/src/server/context/resolve-context.ts:286`                                              | Server-enforced idle timeout. Default 30, bounded 1..1440.                                       | `default` / `default` / `default` | optional                              | n/a     | A policy decision, once one is made                                           | not needed locally                  |
+| `SESSION_ACTIVITY_REFRESH_SECONDS` | `apps/api/src/server/context/resolve-context.ts:287`                                              | Throttle on `last_seen_at` writes. Default 60, bounded 5..3600.                                  | `default` / `default` / `default` | optional                              | n/a     | Override only with a measured reason                                          | not needed locally                  |
+| `AUTH_REDIRECT_ALLOWLIST`          | `apps/api/src/modules/iam/application/authentication-service.ts:613`, `invitation-service.ts:148` | Exact absolute redirect destinations for reset and invitation links. Empty rejects every one.    | `set` / `required` / `required`   | required                              | n/a     | The public web origin's own URLs (Owner decision)                             | you write it in apps/api/.env.local |
+| `LOGIN_MAX_FAILED_ATTEMPTS`        | `apps/api/src/modules/iam/application/authentication-service.ts:464`                              | Consecutive failures before lockout. Default 5, bounded 1..100.                                  | `default` / `default` / `default` | optional                              | n/a     | A policy decision, once one is made                                           | not needed locally                  |
+| `LOGIN_FAILURE_WINDOW_MINUTES`     | `apps/api/src/modules/iam/application/authentication-service.ts:460`                              | Window over which failures are counted. Default 15, bounded 1..1440.                             | `default` / `default` / `default` | optional                              | n/a     | A policy decision, once one is made                                           | not needed locally                  |
 
 ## 10. Inventory — API tier, object storage
 
@@ -285,7 +322,7 @@ would buy nothing.
 
 | Name                               | Consumer (path:line)                                                           | Purpose                                                                                    | local / staging / production      | Requirement       | Secret? | Valid source and how to set it                      | Local value available? |
 | ---------------------------------- | ------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------ | --------------------------------- | ----------------- | ------- | --------------------------------------------------- | ---------------------- |
-| `NOTIFICATION_PROVIDER`            | `apps/api/src/modules/shared-services/application/message-dispatcher.ts:138`   | Delivery adapter. Default `unconfigured`, which refuses. **No adapter is implemented.**    | `default` / `default` / `default` | feature-dependent | n/a     | Nothing to select until an adapter exists           | not needed locally     |
+| `NOTIFICATION_PROVIDER`            | `apps/api/src/modules/shared-services/index.ts:268`                            | Delivery adapter. Default `unconfigured`, which refuses. **No adapter is implemented.**    | `default` / `default` / `default` | feature-dependent | n/a     | Nothing to select until an adapter exists           | not needed locally     |
 | `NOTIFICATION_PROVIDER_TIMEOUT_MS` | `apps/api/src/modules/shared-services/application/message-dispatcher.ts:138`   | Per-attempt timeout. Default 5000, bounded 100..60000.                                     | `default` / `default` / `default` | optional          | n/a     | Override only with a measured reason                | not needed locally     |
 | `NOTIFICATION_MAX_RENDERED_CHARS`  | `apps/api/src/modules/shared-services/application/notification-service.ts:173` | Rendered message ceiling. Default 20000, bounded 256..262144.                              | `default` / `default` / `default` | optional          | n/a     | Override only with a measured reason                | not needed locally     |
 | `READINESS_TIMEOUT_MS`             | `apps/api/src/modules/shared-services/application/health-service.ts:72`        | Budget for the whole readiness probe. Default 2000, bounded 50..10000.                     | `default` / `default` / `default` | optional          | n/a     | Match it to the balancer's own probe timeout        | not needed locally     |
@@ -295,38 +332,58 @@ would buy nothing.
 
 ## 12. Inventory — scripts, CI and the database harness
 
-None of these is read by application code, and none is loaded from a dotenv file. They are shell
-inputs to a command you run by hand or that CI runs for you.
+None of these is read by application code. With two exceptions they are shell inputs to a command
+you run by hand or that CI runs for you, and no dotenv file supplies them: the six outbound-mail
+names are read from the files the Supabase CLI reads (section 17), and the harness names are read by
+the browser and acceptance suites from the shell that starts them. **No template lists any name in
+this section except the six mail names**, which the root `.env.example` carries commented out
+(section 18). `CI-only` in the Requirement column means the name is set by the Actions runner or by a
+workflow step and is not an input anybody supplies locally.
 
-| Name                                                                                                                                           | Consumer                                                             | Purpose                                                                                                                                                                                                                                                                                                                           | Requirement               | Secret?                                    | Valid source                                       | Local value available? |
-| ---------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------- | ------------------------------------------ | -------------------------------------------------- | ---------------------- |
-| `DB_HOST` `DB_PORT` `DB_NAME` `DB_USER` `DB_PASSWORD`                                                                                          | `scripts/db/*.mjs` (e.g. `apply-migrations.mjs:84`)                  | Direct connection for the migration and seed harness. Hard-coded local defaults.                                                                                                                                                                                                                                                  | optional                  | secret (`DB_PASSWORD`)                     | Your shell, only when overriding the local default | not needed locally     |
-| `PGHOST` `PGPORT` `PGDATABASE` `PGUSER` `PGPASSWORD`                                                                                           | `scripts/**` via `pg`                                                | The `libpq` family, honoured when the explicit names above are absent.                                                                                                                                                                                                                                                            | optional                  | secret (`PGPASSWORD`)                      | Your shell                                         | not needed locally     |
-| `ROOTLCO_ENV`                                                                                                                                  | `scripts/db/provision-organization.mjs:76`, `scripts/platform/*.mjs` | Fail-closed guard, and **the accepted values differ by script**: `local-pilot`/`production-pilot` for provisioning, `local-acceptance`/`production-genesis` for the three platform scripts. Nothing reconciles the two vocabularies.                                                                                              | required for that command | n/a                                        | Your shell, deliberately, per invocation           | not needed locally     |
-| `ROOTLCO_ACCEPTANCE_CONFIRM`                                                                                                                   | `scripts/dev/owner-acceptance/*`                                     | Explicit confirmation before a destructive acceptance step runs.                                                                                                                                                                                                                                                                  | required for that command | n/a                                        | Your shell, deliberately                           | not needed locally     |
-| `ROOTLCO_API_BASE_URL`                                                                                                                         | `scripts/**`, `apps/web/tests/**`                                    | Where an acceptance or browser run should send HTTP.                                                                                                                                                                                                                                                                              | optional                  | n/a                                        | Your shell; defaults to the local API origin       | not needed locally     |
-| `ROOTLCO_E2E_AUTH` `ROOTLCO_E2E_EMAIL` `ROOTLCO_E2E_PASSWORD` `ROOTLCO_E2E_READER_EMAIL` `ROOTLCO_E2E_READER_PASSWORD` `ROOTLCO_E2E_TENANT_ID` | `apps/web/tests/**`                                                  | Credentials and tenant for the browser tier, created by the acceptance helper.                                                                                                                                                                                                                                                    | required for that tier    | secret (the two passwords)                 | Created locally by the acceptance helper           | not needed locally     |
-| `ROOTLCO_CYCLE_SKIP_BROWSER` `ROOTLCO_CYCLE_SKIP_DB`                                                                                           | `scripts/**`                                                         | Narrow a record cycle to the tiers an environment can actually run.                                                                                                                                                                                                                                                               | optional                  | n/a                                        | Your shell                                         | not needed locally     |
-| `GENESIS_*` (7 names)                                                                                                                          | `scripts/platform/genesis-platform-operator.mjs`                     | Inputs to the first-operator bootstrap: operator email, display name, provider subject, home tenant code, platform login role and password, evidence path.                                                                                                                                                                        | required for that command | secret (`GENESIS_PLATFORM_LOGIN_PASSWORD`) | Owner-supplied, per invocation                     | not needed locally     |
-| `GRANT_OPERATOR_EMAIL` `GRANT_EVIDENCE_PATH`                                                                                                   | `scripts/platform/grant-platform-authority.mjs`                      | Completing an EXISTING platform operator's authority: whose authority, and where to write the evidence. The script cannot mint an operator.                                                                                                                                                                                       | required for that command | n/a                                        | Owner-supplied, per invocation                     | not needed locally     |
-| `ADD_OPERATOR_*` (7 names)                                                                                                                     | `scripts/platform/add-platform-operator.mjs`                         | Adding ANOTHER platform operator: the new operator's address and display name, the grantor's address and their transient password, the identity provider, the home tenant code and the evidence path. The grantor's password is read from a no-echo prompt when the variable is absent, is never an argument and is never logged. | required for that command | secret (`ADD_OPERATOR_GRANTOR_PASSWORD`)   | Owner-supplied, per invocation                     | not needed locally     |
-| `BACKFILL_OPERATOR_EMAIL` `BACKFILL_EVIDENCE_PATH`                                                                                             | `scripts/db/backfill-*.mjs`                                          | Attribution and evidence destination for a one-off backfill.                                                                                                                                                                                                                                                                      | required for that command | n/a                                        | Owner-supplied, per invocation                     | not needed locally     |
-| `EXPORT_FIXTURE_OPERATOR_EMAIL`                                                                                                                | `scripts/**`                                                         | Attribution for an export fixture run.                                                                                                                                                                                                                                                                                            | required for that command | n/a                                        | Your shell                                         | not needed locally     |
-| `UM_OUT_DIR`                                                                                                                                   | `docs/user-manual/tools/build-pdf.mjs:53`                            | Output directory for the user-manual PDF. Must be OUTSIDE the repository; refuses when unset.                                                                                                                                                                                                                                     | required for that command | n/a                                        | Your shell                                         | not needed locally     |
-| `PLAYWRIGHT_PORT`                                                                                                                              | `apps/web/tests/**`                                                  | Port the browser tier serves on.                                                                                                                                                                                                                                                                                                  | optional                  | n/a                                        | Your shell                                         | not needed locally     |
-| `PHASE_OWNERSHIP_PROFILE` `PHASE_OWNERSHIP_BASE` `OWNERSHIP_EVENT_NAME` `OWNERSHIP_REF_NAME`                                                   | `scripts/ci/check-phase-ownership.mjs`                               | Which ownership profile a branch is judged under, and against what base.                                                                                                                                                                                                                                                          | required in CI            | n/a                                        | CI, from the workflow                              | not needed locally     |
-| `P1_29_*` `P1_30_*` `P1_31_*` `P1_23_BASE_REF` `*_CLASSIFICATION_REGISTRY` `UPDATE_OPENAPI`                                                    | `tests/**`, `scripts/**`                                             | Regeneration and pinning switches for phase inventories and registries.                                                                                                                                                                                                                                                           | optional                  | n/a                                        | Your shell, when regenerating an artefact          | not needed locally     |
-| `GITHUB_*` `GH_TOKEN` `BASE_REF` `HEAD_REF` `HEAD_BRANCH` `CI`                                                                                 | `scripts/ci/**`                                                      | Provided by GitHub Actions. Never written into a template.                                                                                                                                                                                                                                                                        | provided in CI            | secret (`GH_TOKEN`, `GITHUB_TOKEN`)        | The Actions runner                                 | not needed locally     |
+| Name                                                                                                                                        | Consumer                                                                                                                                                                                                 | Purpose                                                                                                                                                                                                                                                                                                                                                                                         | Requirement                                                                              | Secret?                                     | Valid source                                               | Local value available? |
+| ------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- | ------------------------------------------- | ---------------------------------------------------------- | ---------------------- |
+| `DB_HOST` `DB_PORT` `DB_NAME` `DB_USER` `DB_PASSWORD`                                                                                       | `scripts/db/*.mjs` (e.g. `apply-migrations.mjs:84`), `scripts/check-*-classification.mjs`, `scripts/platform/*.mjs`, `scripts/dev/owner-acceptance/context.mjs:466`, the backend and database test tiers | Direct connection for the migration, seed, classification, platform and acceptance scripts. Hard-coded local defaults; the acceptance context refuses a non-loopback host.                                                                                                                                                                                                                      | optional                                                                                 | secret (`DB_PASSWORD`)                      | Your shell, only when overriding the local default         | not needed locally     |
+| `PGHOST` `PGPORT` `PGDATABASE` `PGUSER` `PGPASSWORD`                                                                                        | `scripts/db/{baseline-manifest,perf-baseline,phase-upgrade-matrix,schema-inventory,structural-review}.mjs`                                                                                               | The `libpq` family, honoured by these five when the explicit names above are absent.                                                                                                                                                                                                                                                                                                            | optional                                                                                 | secret (`PGPASSWORD`)                       | Your shell                                                 | not needed locally     |
+| `ROOTLCO_ENV`                                                                                                                               | `scripts/db/provision-organization.mjs:76`, `scripts/dev/owner-acceptance/context.mjs:459`, `scripts/platform/*.mjs`                                                                                     | Fail-closed guard, and **the accepted values differ by script**: `local-pilot`/`production-pilot` for provisioning; `local-acceptance`/`production-genesis` for the genesis, grant, add and revoke operator scripts; `local-acceptance`/`production-maintenance` for the two backfills; exactly `local-acceptance` for the Owner-acceptance helpers. Nothing reconciles the three vocabularies. | required for that command                                                                | n/a                                         | Your shell, deliberately, per invocation                   | not needed locally     |
+| `ROOTLCO_ACCEPTANCE_CONFIRM`                                                                                                                | `scripts/dev/owner-acceptance/export-fixture-setup.mjs:453`                                                                                                                                              | Explicit confirmation before a destructive acceptance step runs.                                                                                                                                                                                                                                                                                                                                | required for that command                                                                | n/a                                         | Your shell, deliberately                                   | not needed locally     |
+| `ROOTLCO_API_BASE_URL`                                                                                                                      | `scripts/dev/owner-acceptance/provision-acceptance-fixtures.mjs:57`, `status-owner-account.mjs:37`, `apps/web/tests/e2e/origin.ts:36`                                                                    | Where an acceptance or browser run should send HTTP.                                                                                                                                                                                                                                                                                                                                            | optional                                                                                 | n/a                                         | Your shell; defaults to the local API origin               | not needed locally     |
+| `NEXT_PUBLIC_SUPABASE_URL` `NEXT_PUBLIC_SUPABASE_ANON_KEY` `SUPABASE_SERVICE_ROLE_KEY`                                                      | `scripts/platform/genesis-platform-operator.mjs:189-190`, `add-platform-operator.mjs:366-368`, `revoke-platform-operator.mjs:391-392`                                                                    | The same identity-provider values the API reads, read here from the SHELL: these scripts do not open `apps/api/.env.local`.                                                                                                                                                                                                                                                                     | required for that command                                                                | secret (`SUPABASE_SERVICE_ROLE_KEY`)        | `npm run supabase:status` locally; exported per invocation | your shell only        |
+| `GENESIS_*` (8 names)                                                                                                                       | `scripts/platform/genesis-platform-operator.mjs:177-218`                                                                                                                                                 | Inputs to the first-operator bootstrap: operator email, display name, identity provider, provider subject, home tenant code, platform login role and password, evidence path.                                                                                                                                                                                                                   | required for that command                                                                | secret (`GENESIS_PLATFORM_LOGIN_PASSWORD`)  | Owner-supplied, per invocation                             | not needed locally     |
+| `GRANT_OPERATOR_EMAIL` `GRANT_EVIDENCE_PATH`                                                                                                | `scripts/platform/grant-platform-authority.mjs:137`                                                                                                                                                      | Completing an EXISTING platform operator's authority: whose authority, and where to write the evidence. The script cannot mint an operator.                                                                                                                                                                                                                                                     | required for that command                                                                | n/a                                         | Owner-supplied, per invocation                             | not needed locally     |
+| `ADD_OPERATOR_*` (7 names)                                                                                                                  | `scripts/platform/add-platform-operator.mjs`                                                                                                                                                             | Adding ANOTHER platform operator: the new operator's address and display name, the grantor's address and their transient password, the identity provider, the home tenant code and the evidence path. The grantor's password is read from a no-echo prompt when the variable is absent, is never an argument and is never logged.                                                               | required for that command                                                                | secret (`ADD_OPERATOR_GRANTOR_PASSWORD`)    | Owner-supplied, per invocation                             | not needed locally     |
+| `REVOKE_OPERATOR_*` (7 names)                                                                                                               | `scripts/platform/revoke-platform-operator.mjs:354-395`                                                                                                                                                  | Revoking a platform operator: whose authority, the reason, the revoking operator's address and password, the identity provider, the home tenant code and the evidence path.                                                                                                                                                                                                                     | required for that command                                                                | secret (`REVOKE_OPERATOR_GRANTOR_PASSWORD`) | Owner-supplied, per invocation                             | not needed locally     |
+| `BACKFILL_OPERATOR_EMAIL` `BACKFILL_EVIDENCE_PATH`                                                                                          | `scripts/platform/backfill-delivering-employee-identity.mjs:260`, `scripts/platform/backfill-tenant-administrator-bundle.mjs:248`                                                                        | Attribution and evidence destination for a one-off backfill.                                                                                                                                                                                                                                                                                                                                    | required for that command                                                                | n/a                                         | Owner-supplied, per invocation                             | not needed locally     |
+| `EXPORT_FIXTURE_OPERATOR_EMAIL`                                                                                                             | `scripts/dev/owner-acceptance/export-fixture-setup.mjs:432`                                                                                                                                              | Attribution for an export fixture run.                                                                                                                                                                                                                                                                                                                                                          | required for that command                                                                | n/a                                         | Your shell                                                 | not needed locally     |
+| `SMTP_HOST` `SMTP_PORT` `SMTP_USER` `SMTP_PASS` `SMTP_ADMIN_EMAIL` `SMTP_SENDER_NAME`                                                       | `supabase/config.toml:370-390` (five of them, through `env(...)`), `scripts/dev/check-smtp.mjs:164` (all six)                                                                                            | Outbound authentication mail. `SMTP_PORT` is read by the relay check only; the auth service uses the literal port. Section 17.                                                                                                                                                                                                                                                                  | required only to send auth mail; `[auth.email.smtp]` is committed with `enabled = false` | secret (`SMTP_PASS`)                        | The root `.env`, typed by the Owner (17.7)                 | the root `.env`        |
+| `SUPABASE_ENV`                                                                                                                              | `scripts/dev/check-smtp.mjs:482`, and the Supabase CLI                                                                                                                                                   | Which `.env.<name>` files the CLI and the relay check read. Unset means `development`.                                                                                                                                                                                                                                                                                                          | optional                                                                                 | n/a                                         | Your shell                                                 | not needed locally     |
+| `SUPABASE_AUTH_EMAIL_SMTP_*` (7 names)                                                                                                      | `scripts/dev/check-smtp.mjs:179-185`, and the Supabase CLI                                                                                                                                               | Direct overrides of the `[auth.email.smtp]` keys. The relay check reports the settings as not ready while any is set, because an override bypasses the six names above.                                                                                                                                                                                                                         | must be unset                                                                            | secret (`SUPABASE_AUTH_EMAIL_SMTP_PASS`)    | Nothing should set them                                    | not needed locally     |
+| `ROOTLCO_E2E_AUTH`                                                                                                                          | `apps/web/playwright.config.ts:63`                                                                                                                                                                       | Turns the authenticated browser tier on. `scripts/dev/owner-acceptance/full-cycle.mjs:329` sets it for its own browser step.                                                                                                                                                                                                                                                                    | required for that tier                                                                   | n/a                                         | Your shell, or the full cycle                              | not needed locally     |
+| `ROOTLCO_E2E_EMAIL` `ROOTLCO_E2E_PASSWORD` `ROOTLCO_E2E_READER_EMAIL` `ROOTLCO_E2E_READER_PASSWORD` `ROOTLCO_E2E_TENANT_ID`                 | `apps/web/tests/e2e/authenticated/auth.setup.ts:65-66`, `isolation.spec.ts:71-73`, `appointments-and-receptions.spec.ts:275-291`                                                                         | Credentials and tenant for the authenticated browser tier. The accounts are created by the acceptance helper; nothing writes these names for you.                                                                                                                                                                                                                                               | required for that tier                                                                   | secret (the two passwords)                  | Your shell                                                 | your shell only        |
+| `ROOTLCO_E2E_PLATFORM_EMAIL` `ROOTLCO_E2E_PLATFORM_PASSWORD`                                                                                | `apps/web/tests/e2e/platform-console.spec.ts:41-42`                                                                                                                                                      | The platform operator the platform-console spec signs in as. Unset, the spec reports that there is no operator to sign in as.                                                                                                                                                                                                                                                                   | required for that spec                                                                   | secret (the password)                       | Your shell                                                 | your shell only        |
+| `ROOTLCO_E2E_CHANNEL`                                                                                                                       | `apps/web/playwright.config.ts:141`                                                                                                                                                                      | Runs the browser tier on an installed browser channel instead of the pinned Chromium.                                                                                                                                                                                                                                                                                                           | optional                                                                                 | n/a                                         | Your shell                                                 | not needed locally     |
+| `ROOTLCO_P131_HANDOFF` `ROOTLCO_P131_EXPORT_HANDOFF`                                                                                        | `apps/web/tests/e2e/authenticated/p1-31-handoff.ts:318,598`                                                                                                                                              | Paths of the hand-off documents the P1-31 acceptance specs write outside the repository.                                                                                                                                                                                                                                                                                                        | optional                                                                                 | n/a                                         | Your shell                                                 | not needed locally     |
+| `ROOTLCO_P131_MONITOR_REHEARSAL_DIR`                                                                                                        | `tests/unit/p1-31-monitor-alerts.test.ts:74`                                                                                                                                                             | Directory of a recorded monitor rehearsal for that suite to read.                                                                                                                                                                                                                                                                                                                               | optional                                                                                 | n/a                                         | Your shell                                                 | not needed locally     |
+| `ROOTLCO_CYCLE_SKIP_BROWSER` `ROOTLCO_CYCLE_SKIP_DB`                                                                                        | `scripts/dev/owner-acceptance/full-cycle.mjs:48-49`                                                                                                                                                      | Narrow a record cycle to the tiers an environment can actually run.                                                                                                                                                                                                                                                                                                                             | optional                                                                                 | n/a                                         | Your shell                                                 | not needed locally     |
+| `PLAYWRIGHT_PORT`                                                                                                                           | `apps/web/tests/e2e/origin.ts:24`                                                                                                                                                                        | Port the browser tier serves on. Default 3210.                                                                                                                                                                                                                                                                                                                                                  | optional                                                                                 | n/a                                         | Your shell                                                 | not needed locally     |
+| `UM_OUT_DIR` `UM_CHROMIUM`                                                                                                                  | `docs/user-manual/tools/build-pdf.mjs:54,285`                                                                                                                                                            | Output directory for the user-manual PDF (must be OUTSIDE the repository; refuses when unset), and an optional Chromium executable.                                                                                                                                                                                                                                                             | required for that command (`UM_OUT_DIR`)                                                 | n/a                                         | Your shell                                                 | not needed locally     |
+| `PHASE_OWNERSHIP_PROFILE` `PHASE_OWNERSHIP_BASE`                                                                                            | `scripts/ci/check-phase-ownership.mjs`                                                                                                                                                                   | Which ownership profile a hand run judges the branch under, and against what base.                                                                                                                                                                                                                                                                                                              | optional                                                                                 | n/a                                         | Your shell, or the workflow                                | not needed locally     |
+| `P1_29_*` `P1_30_*` `P1_31_*` `P1_23_BASE_REF` `*_CLASSIFICATION_REGISTRY` `UPDATE_OPENAPI` `TZ`                                            | `tests/**`, `scripts/**`                                                                                                                                                                                 | Regeneration and pinning switches for phase inventories and registries; `TZ` is pinned by one backend suite.                                                                                                                                                                                                                                                                                    | optional                                                                                 | n/a                                         | Your shell, when regenerating an artefact                  | not needed locally     |
+| `OWNERSHIP_EVENT_NAME` `OWNERSHIP_REF_NAME` `HEAD_BRANCH` `BASE_REF` `HEAD_REF`                                                             | `scripts/ci/check-phase-ownership.mjs`, `scripts/ci/check-promotion-source.mjs`                                                                                                                          | The pull-request or push context the ownership and promotion gates judge.                                                                                                                                                                                                                                                                                                                       | CI-only                                                                                  | n/a                                         | A workflow step                                            | not needed locally     |
+| `GITHUB_EVENT_NAME` `GITHUB_REF_NAME` `GITHUB_OUTPUT` `GITHUB_STEP_SUMMARY` `GITHUB_REPOSITORY` `GITHUB_SHA` `GITHUB_TOKEN` `GH_TOKEN` `CI` | `scripts/ci/**`, `apps/web/playwright.config.ts:123`                                                                                                                                                     | Provided by GitHub Actions. Never written into a template.                                                                                                                                                                                                                                                                                                                                      | CI-only                                                                                  | secret (`GH_TOKEN`, `GITHUB_TOKEN`)         | The Actions runner                                         | not needed locally     |
+
+`ACCEPTANCE_DB_LOGIN` and `ACCEPTANCE_DB_PASSWORD` look like names in this family and are not: they
+are constants exported by `scripts/dev/owner-acceptance/context.mjs:447,450` for the local acceptance
+login role, and no code reads either from the environment.
 
 ## 13. Inventory — values that are not the application's
 
-| Name                                                                         | Where                          | Status                                                                                                         |
-| ---------------------------------------------------------------------------- | ------------------------------ | -------------------------------------------------------------------------------------------------------------- |
-| `SUPABASE_INTERNAL_URL`                                                      | `docker-compose.yml:53`        | **Dead.** Substituted into the container's environment; **no source file reads it**. Compose-level only.       |
-| `OPENAI_API_KEY`                                                             | `supabase/config.toml:110`     | Supabase Studio's assistant feature. Not the application's, and the feature is not used.                       |
-| `SUPABASE_AUTH_SMS_TWILIO_AUTH_TOKEN`, `SUPABASE_AUTH_EXTERNAL_APPLE_SECRET` | `supabase/config.toml:476,508` | Supabase features that are **not enabled**. No code path reaches either of them.                               |
-| `S3_HOST`, `S3_REGION`, `S3_ACCESS_KEY`, `S3_SECRET_KEY`                     | `supabase/config.toml:586-592` | The Supabase CLI's own storage settings, not the application's. The app's names are the `STORAGE_S3_*` family. |
-| `SECRET_VALUE`                                                               | `supabase/config.toml:57,568`  | An illustrative `env()` reference in the CLI's own documentation comments.                                     |
+| Name                                                                         | Where                          | Status                                                                                                                         |
+| ---------------------------------------------------------------------------- | ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------ |
+| `SUPABASE_INTERNAL_URL`                                                      | `docker-compose.yml:53`        | **Dead.** Substituted into the container's environment; **no source file reads it**. Compose-level only; no template lists it. |
+| `OPENAI_API_KEY`                                                             | `supabase/config.toml:110`     | Supabase Studio's assistant feature. Not the application's, and the feature is not used.                                       |
+| `SUPABASE_AUTH_SMS_TWILIO_AUTH_TOKEN`, `SUPABASE_AUTH_EXTERNAL_APPLE_SECRET` | `supabase/config.toml:476,508` | Supabase features that are **not enabled**. No code path reaches either of them.                                               |
+| `S3_HOST`, `S3_REGION`, `S3_ACCESS_KEY`, `S3_SECRET_KEY`                     | `supabase/config.toml:586-592` | The Supabase CLI's own storage settings, not the application's. The app's names are the `STORAGE_S3_*` family.                 |
+| `SECRET_VALUE`                                                               | `supabase/config.toml:57,568`  | An illustrative `env()` reference in the CLI's own documentation comments.                                                     |
 
 ---
 
@@ -369,7 +426,7 @@ inputs to a command you run by hand or that CI runs for you.
    `database.role.no-bypassrls` from `preflightPrivileges()`, and a failure there is blocking. A
    connection that can see every tenant's rows is not a working deployment, it is a breach waiting
    to be noticed.
-6. **`apps/api/src/modules/iam/index.ts:137-139` refuses to compose** the identity provider unless
+6. **`apps/api/src/modules/iam/index.ts:172-174` refuses to compose** the identity provider unless
    `SUPABASE_SERVICE_ROLE_KEY`, `AUTH_JWT_SECRET` and `AUTH_JWT_ISSUER` are all present. It throws
    with the missing NAMES rather than degrading, because a partly configured provider fails at the
    first login with an opaque error instead of at boot with a precise one.
@@ -448,7 +505,11 @@ which is why the three names in section 3 do not appear here.
   not one that declares nothing.
 - **`SUPABASE_INTERNAL_URL` is set by compose and read by nothing** (`docker-compose.yml:53`). It is
   not in section 3 because it is not in any application schema: compose substitutes it, and no code
-  accepts it either.
+  accepts it either. Compose takes its value from the shell or the root `.env`, never from the
+  `.env.local` its `env_file:` names: `${...}` interpolation reads only those two, and an
+  `environment:` entry takes precedence over `env_file:` for the same name (the compose file says so
+  itself beside that line). So the root template's line for it could not have changed anything, and
+  it was removed from `.env.example` on 2026-09-24; the compose line itself is left alone.
 - **The two `NEXT_PUBLIC_APP_ENV` vocabularies disagree, and nothing compares them.** The difference
   is now documented rather than merely noted — section 2 has the mapping, the valid pairs and what a
   value with no equivalent does at runtime. The gap that remains is the absence of a cross-tier
@@ -458,12 +519,20 @@ which is why the three names in section 3 do not appear here.
   `.github/workflows/_reusable-node-quality.yml` only, so a local `npm run verify:repository` does
   not exercise it. `tests/foundation/env-contract.test.ts` covers the extraction and the set comparison in
   the unit tier, which is what makes the check reachable locally at all.
-- **The two `ROOTLCO_ENV` vocabularies disagree.** `scripts/db/provision-organization.mjs` accepts
-  `local-pilot` and `production-pilot`; `scripts/platform/genesis-platform-operator.mjs`,
-  `scripts/platform/add-platform-operator.mjs` and `scripts/platform/grant-platform-authority.mjs`
-  accept `local-acceptance` and `production-genesis`. Each fails closed on a value it does not recognise, so nothing runs by
-  accident — but an operator who exports one value and then runs the other script meets a refusal
-  rather than a translation, and no document other than this line records that both spellings exist.
+- **The three `ROOTLCO_ENV` vocabularies disagree.** `scripts/db/provision-organization.mjs` accepts
+  `local-pilot` and `production-pilot`; the genesis, grant, add and revoke scripts under
+  `scripts/platform/` accept `local-acceptance` and `production-genesis`; the two backfills under
+  `scripts/platform/` accept `local-acceptance` and `production-maintenance`. Each fails closed on
+  a value it does not recognise, so nothing runs by accident — but an operator who exports one value
+  and then runs a script from another family meets a refusal rather than a translation, and no
+  document other than this line and section 12 records that the spellings differ.
+- **The launcher's warning about `apps/web/.env.local` is broader than what Next.js does.**
+  `start-local.mjs:142-165` warns that a `NEXT_PUBLIC_API_BASE_URL` line in that file "overrides the
+  API origin the launcher configures". The launcher now always places that name in the process
+  environment first (`start-local.mjs:727`), and the pinned `@next/env` never replaces a name the
+  process already holds (section 1), so under the launcher the line does not reach the tier. It
+  still reaches a tier started any other way — `npm run dev:web`, or `next` directly — which is the
+  case the warning is worth keeping for. Its wording is left unchanged here.
 - **The schema-key extractor is a regex, not a parse.** It matches an indented SCREAMING_SNAKE key
   followed by `z.` or by the local `bounded(` helper. A future helper with a third spelling would be
   invisible to it, which is why its test asserts the extracted COUNT against an independently
@@ -492,15 +561,17 @@ the two stop commands is safe to use, and a signing-key finding that returns eve
 recorded 2026-09-23 and written out in 17.3. That selection lives in prose and in the comments
 beside the block; it does not live in a value. **The code stays provider-neutral**: no hostname, no
 port default, no username convention and no provider name appears in `scripts/dev/check-smtp.mjs`,
-and `supabase/config.toml` names the provider only in a comment. A provider that requires a
-specially generated password and a provider that takes the mailbox's ordinary one are the same case
-to every file here, so a later change of provider costs the repository one `.env` edit and no code.
+and `supabase/config.toml` names the provider only in a comment and in the host it expects. A later
+change of provider costs the repository one `.env` edit and no code.
 
 The five string values are `env(...)` references, so the account and its password are not in this
 repository and cannot be. The Supabase CLI expands them from an **untracked `.env`**, matched by the
-`.env` rule in `.gitignore`. There is no template for this file and no example value: whoever
-configures a machine writes it there and nowhere else. Two properties of that expansion are worth
-knowing before the flag is flipped.
+`.env` rule in `.gitignore`. The root `.env.example` lists the six names **commented out**, with the
+documented relay's host and port, `RootLco` as the sender name, and placeholders in angle brackets
+for the mailbox and its password — never an account and never a password. Whoever configures a
+machine writes the real lines in the root `.env` and nowhere else; not in `.env.local`, which the
+CLI would also read but which `docker-compose.yml` hands to the container in full. Two properties
+of that expansion are worth knowing before the flag is flipped.
 
 - **The env file is resolved from the directory the CLI is run in**, not from `--workdir`. Starting
   the stack from anywhere other than the root of the checkout leaves the references unexpanded.
@@ -755,7 +826,9 @@ code, its enhanced status code and a fixed classification such as "credentials r
 the relay's own words. Any other relay text is redacted before it is printed: base64-looking tokens,
 the configured password (exactly as written, or base64-encoded) and the login, sender and recipient
 mailboxes (in any letter case, so an upper-cased echo is caught too) are replaced by `[redacted]`.
-The sender, recipient and login mailboxes are never printed in clear in any output of any mode:
+The longest of those secrets is replaced first, whatever its kind, so a password that is part of a
+mailbox address cannot split the address and leave the rest of it in clear, and an address inside a
+password cannot leave the rest of the password. The sender, recipient and login mailboxes are never printed in clear in any output of any mode:
 where the script names one itself it prints it masked, as the first character of the local part and
 the domain (`n***@example.com`).
 
@@ -773,7 +846,9 @@ Those properties are asserted by
 
 Open the `.env` file at the root of the checkout that starts the local stack (the directory where
 `npx supabase start` runs) in a plain-text editor and write these six lines, one per line, each as
-`NAME=value` with no spaces around the `=`:
+`NAME=value` with no spaces around the `=`. The last block of the root `.env.example` holds the same
+six lines commented out, with placeholders where the mailbox and its password go; copying them into
+`.env`, removing the leading `# ` and replacing each placeholder is the same thing.
 
 - `SMTP_HOST` takes the relay hostname from the hosting account's email section, expected to be
   `smtp.hostinger.com`.
@@ -783,8 +858,9 @@ Open the `.env` file at the root of the checkout that starts the local stack (th
 - `SMTP_PASS` takes that mailbox's own password exactly as the account screen shows it, **written
   between single quotes**: `SMTP_PASS='...'`. Inside single quotes the CLI takes every character
   literally — `#`, `$`, spaces at either end, and backslashes included — whereas an unquoted value
-  is trimmed, cut at ` #` and has `$` references expanded, and the auth container would then receive
-  a different password from the one typed.
+  is cut at the last `#` that is preceded by a space or a tab (that `#` and everything after it are
+  dropped), then trimmed, and then has `$` references expanded, and the auth container would then
+  receive a different password from the one typed.
 - If the password itself contains a single quote, single quotes cannot carry it: write it between
   double quotes instead, putting a backslash before every `"`, every `\` and every `$` in the
   password. A password that contains a backslash followed by `n` or `r`, ends with a backslash, or
@@ -901,3 +977,306 @@ and watching for a delivery-failure notice. Until a message is seen to arrive, r
 account should be treated as unverified — a relay accepting a message is not a mailbox receiving
 one, and an account whose recovery mail silently disappears is recoverable only by a database-level
 intervention.
+
+---
+
+## 18. The inventory at a glance, and which template lists each name
+
+Every count below is of distinct names found in the consumer named, measured at the head in the
+header. A name is counted in every group whose code reads it, so the rows overlap and are not meant to be summed. Sections 4 to 13 and 17 carry each name with its
+consumer, requirement, default and secrecy; this section only adds the totals and the template
+coverage.
+
+| Consumer group                                                                                                                               | Names | Detail          | Template that lists them                                                                                                                                                                                                                          |
+| -------------------------------------------------------------------------------------------------------------------------------------------- | ----- | --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| API application (`apps/api/src`)                                                                                                             | 56    | sections 6–11   | `apps/api/.env.example` lists 55 — every one except `NODE_ENV`, which the toolchain provides. 22 of them are in `apps/api/.env.production.example`, 20 as lines to fill in and 2 commented out; the three reserved names are named only in prose. |
+| Web application (`apps/web/src`, `apps/web/next.config.ts`)                                                                                  | 7     | sections 4–5    | `apps/web/.env.example` and `apps/web/.env.production.example` each list 6 — every one except `NODE_ENV`.                                                                                                                                         |
+| Local launcher (`scripts/dev/start-local.mjs`, `storage-env.mjs`)                                                                            | 13    | sections 1, 19  | The 11 application names among them are in the tier templates above. `PORT` and `NEXT_TELEMETRY_DISABLED` are set for the child and listed nowhere, as runtime-provided names.                                                                    |
+| Owner-account helper (`scripts/dev/owner-acceptance/create-owner-account.mjs`)                                                               | 4     | section 1       | Writes `SUPABASE_SERVICE_ROLE_KEY`, `AUTH_JWT_SECRET`, `AUTH_JWT_ISSUER` and `DATABASE_URL` into `apps/api/.env.local`; all four are in `apps/api/.env.example`.                                                                                  |
+| `env(...)` in `supabase/config.toml`                                                                                                         | 13    | sections 13, 17 | The five SMTP names are in the root `.env.example`, commented out. The other eight are the CLI's own or belong to features that are not enabled, and no template lists them, on purpose.                                                          |
+| Relay check (`scripts/dev/check-smtp.mjs`)                                                                                                   | 14    | sections 12, 17 | The six `SMTP_*` names, commented out in the root `.env.example`. `SUPABASE_ENV` and the seven `SUPABASE_AUTH_EMAIL_SMTP_*` overrides are listed nowhere; the overrides must stay unset.                                                          |
+| Browser and acceptance harness (`apps/web/playwright.config.ts`, `apps/web/tests/e2e`, `scripts/dev/owner-acceptance`, one P1-31 unit suite) | 25    | section 12      | None — each is a shell input for one run, and several are credentials that belong in no file. The one exception is `NEXT_PUBLIC_APP_ENV`, which the API template lists for the API tier; the acceptance helpers read it from the shell.           |
+| Operator and database scripts (`scripts/platform`, `scripts/db`, the classification checks, the PDF build)                                   | 47    | section 12      | None of the names only these scripts read, for the same reason. The three identity-provider names they share with the API tier are in the API template, but these scripts read them from the shell.                                               |
+| CI-only (`scripts/ci`, `apps/web/playwright.config.ts`)                                                                                      | 14    | section 12      | None. The runner or a workflow step sets them.                                                                                                                                                                                                    |
+
+After this reconciliation `scripts/ci/check-env-contract.mjs` reports **56** names read and **61** documented
+across the root and API templates, **0** undocumented, and — as its non-blocking warning — the six
+`SMTP_*` names as "documented but read by nothing". That warning is a limit of its scope, not a
+stale entry: it searches `apps/api/src` only, and the six are read by the Supabase CLI and the relay
+check. Before this reconciliation the same warning named `SUPABASE_INTERNAL_URL`, which really was
+read by nothing.
+
+### 18.1 What the 2026-09-24 reconciliation changed in the templates
+
+- **Added, commented out:** the six `SMTP_*` names in the root `.env.example`, with Hostinger's host
+  and port, `RootLco` as the sender name, and angle-bracket placeholders for the mailbox and its
+  password. They were the only names a consumer reads on the local path that no template listed.
+- **Removed:** `SUPABASE_INTERNAL_URL` from the root `.env.example` — no source file reads it, and
+  compose never reads it from `.env.local` (section 16). The commented `CORS_ALLOWED_ORIGINS` line
+  in `apps/api/.env.production.example`, whose closing RESERVED list still names it — a deployment
+  checklist has nothing to ask for a name nothing reads.
+- **Kept, although nothing reads them:** `CORS_ALLOWED_ORIGINS`, `CACHE_DEFAULT_TTL_SECONDS` and
+  `DATABASE_REPLICA_URL`, commented out in `apps/api/.env.example`. Beyond the schema that accepts
+  them they appear only in tests, documentation and the templates (section 3). They stay because the
+  schema still declares them: `check-env-contract.mjs` counts every schema key as read, and
+  `tests/foundation/env-contract.test.ts` fails when a template drops one. Removing them from the
+  templates first requires removing them from `backend-config.ts` and from `RESERVED_SETTINGS`, which
+  is a change to the API's configuration contract and is not taken here.
+- **Corrected in prose:** every template now states how `npm run acceptance:serve` loads it, that
+  the process environment beats every file, and which names the launcher supplies; the API template
+  says which four lines the Owner-account helper writes, that nothing writes `PLATFORM_DATABASE_URL`
+  locally, and that the launcher (not `npm run dev:up`) derives the storage names.
+
+## 19. The supported local launch path
+
+**One path is supported for acceptance: `npm run acceptance:serve`**, which is
+`node scripts/dev/start-local.mjs --production` — `next build` for both tiers, then `next start`, on
+API `http://localhost:3000` and web `http://localhost:3100`. `npm run dev:all` is the development
+mode and is not an acceptance environment (`docs/phase-1/phase-1-26/local-acceptance-account-runbook.md`
+section 3c says why).
+
+### 19.1 Commands, in order
+
+Run every one from the root of the checkout that is to be served. The Supabase CLI resolves its env
+files from the directory it is run in, and the launcher serves the checkout it is started from.
+Nothing in this block deletes data, and it is safe to run against the acceptance database.
+
+```
+npm run supabase:start
+$env:ROOTLCO_ENV = 'local-acceptance'
+npm run acceptance:create-owner
+npm run acceptance:serve
+npm run dev:status
+npm run acceptance:status-owner
+```
+
+1. `npm run supabase:start` — the local stack: API gateway 54321, database 54322, mailbox 54324.
+   It starts the stack on the data volumes it already has. If the checkout carries migrations the
+   database has not yet applied, bring the database forward with 19.4 before step 3; never with the
+   destructive rebuild of 19.5.
+2. `ROOTLCO_ENV` set to `local-acceptance` in the shell (the line above is PowerShell; in bash it
+   is `export ROOTLCO_ENV=local-acceptance`). The acceptance helpers refuse without it.
+3. `npm run acceptance:create-owner` — creates or reconciles the Owner account, aligns the local
+   token signing with what the API verifies (`align-local-jwt.mjs`, finding `P1-26-F-045`), and
+   writes the four names of section 1 into `apps/api/.env.local`. After any later restart of the
+   stack that is not followed by this step, run `node scripts/dev/owner-acceptance/align-local-jwt.mjs`
+   on its own.
+4. `npm run acceptance:serve` — settles `NEXT_PUBLIC_API_BASE_URL`, `NEXT_PUBLIC_APP_ENV` and
+   `ROOTLCO_ENABLE_GALLERY` in its own environment, derives the seven storage names from the running
+   stack, builds both tiers with that environment, and starts them. It prints the two public values
+   and the storage summary before it builds.
+5. `npm run dev:status` — read-only; reports the checkout, branch, `HEAD`, the mode, and whether the
+   processes on 3000 and 3100 belong to this checkout.
+6. `npm run acceptance:status-owner` — proves the Owner account can sign in through the running API.
+
+### 19.2 Which files must exist, and which names they hold
+
+Names only. No value is written here or anywhere else in the repository.
+
+| File                  | Must exist?                                           | Names                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| --------------------- | ----------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `apps/api/.env.local` | **yes** — copy `apps/api/.env.example` to create it   | Written by you: `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY` (both from `npm run supabase:status`), `NEXT_PUBLIC_APP_ENV` (`local`, already in the template); `AUTH_REDIRECT_ALLOWLIST` for password reset and invitation; `PLATFORM_DATABASE_URL` only when the platform console is used. Written by `acceptance:create-owner`: `SUPABASE_SERVICE_ROLE_KEY`, `AUTH_JWT_SECRET`, `AUTH_JWT_ISSUER`, `DATABASE_URL`. |
+| `apps/web/.env.local` | no                                                    | Under the launcher the web tier needs nothing from it: the launcher supplies `NEXT_PUBLIC_API_BASE_URL`, `NEXT_PUBLIC_APP_ENV` and `ROOTLCO_ENABLE_GALLERY`, and a file cannot override them. `NEXT_PUBLIC_CLIENT_MONITORING_*` stay unset.                                                                                                                                                                                        |
+| root `.env`           | only to send auth mail through the relay (section 17) | `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `SMTP_ADMIN_EMAIL`, `SMTP_SENDER_NAME`. With `[auth.email.smtp]` at `enabled = false`, as committed, none is needed.                                                                                                                                                                                                                                                           |
+| root `.env.local`     | no                                                    | Read by docker compose and, for `env(...)` expansion, by the Supabase CLI; neither application tier reads it, so this path needs nothing in it.                                                                                                                                                                                                                                                                                    |
+| the shell             | per command                                           | `ROOTLCO_ENV` for the acceptance helpers; `NEXT_PUBLIC_COMMIT_SHA` if the served revision is to be reported (19.3); the harness names of section 12 for a browser run.                                                                                                                                                                                                                                                             |
+
+The storage names are never written by hand on this path: they come from the running stack at each
+launch, and they take precedence over any value in `apps/api/.env.local` and over one exported in
+your shell (section 1).
+
+### 19.3 How to confirm the running revision
+
+- **`npm run dev:status`** prints the checkout path, its branch and its `HEAD` commit, the mode it
+  proves from the running command lines, and whether each port is held by a process of this
+  checkout. That is the revision of the files on disk. It is also the revision being served only if
+  nothing was committed or checked out in that checkout after `acceptance:serve` built it; if in
+  doubt, `npm run dev:stop` and start it again.
+- **`GET http://localhost:3000/api/health`** returns `commit` and `version` from
+  `NEXT_PUBLIC_COMMIT_SHA` and `NEXT_PUBLIC_APP_VERSION` (`apps/api/src/shared/constants/app.ts:30-31`).
+  The launcher sets neither, so on this path it answers `unknown` and `0.1.0` unless you export the
+  commit first. `tierEnv()` hands the launcher's environment to both the build and the start, so
+  exporting it in the same shell is enough — in PowerShell,
+  `$env:NEXT_PUBLIC_COMMIT_SHA = git rev-parse HEAD`, then `npm run acceptance:serve`. The value is
+  fixed at build time, so the health answer then names the commit that was built, which is the
+  stronger statement of the two.
+- `git rev-parse HEAD` in the served checkout gives the same answer as the `HEAD` line of
+  `dev:status`, with the same caveat.
+
+### 19.4 Bringing an existing acceptance database forward
+
+This is the only supported way to give a database that already holds acceptance data the migrations
+a newer checkout carries. It keeps every row. Run every command from the root of the checkout, with
+the stack running (`npm run supabase:start`).
+
+**What does not work here, and why.** `npm run db:apply-migrations` refuses a database that already
+holds module schemas (`scripts/db/apply-migrations.mjs:98`); it is the
+clean-database runner CI uses. `npm run supabase:reset` rebuilds the database from nothing and is
+section 19.5. `scripts/db/backup-restore-drill.sh` is a drill, not a backup: its first step is
+`supabase db reset`, so it must never be pointed at an acceptance database.
+
+**Step 1 — stop the application tiers.** `npm run dev:stop`, so nothing writes while the backup is
+taken and the schema moves.
+
+**Step 2 — see what is pending.** Read-only; it changes nothing.
+
+```
+npx supabase migration list --local
+```
+
+The pinned CLI (`supabase@2.110.0`, section 17.2) describes `--local` on this command as "Lists
+migrations applied to the local database." Each row pairs a file in `supabase/migrations/` with the
+local database's migration ledger. A version the files have and the ledger lacks is pending. If the
+ledger holds a version with no file, or a file is pending that is older than the newest version the
+ledger holds, the history is out of sync: stop at this step and see "When the history is out of
+sync" below.
+
+**Step 3 — take a backup, outside the repository.** No npm script takes a backup of the local
+database. The command below is the one the recovery runbook documents
+(`docs/phase-1/phase-1-12/evidence/recovery-runbook.md` section 2) and the drill executes
+(`scripts/db/backup-restore-drill.sh:39,43`): a custom-format `pg_dump`, as the local `postgres`
+role against the `postgres` database, run INSIDE the database container so the client matches the
+server (a host `pg_dump` older than the server aborts), then copied out. It adds `--create`, because
+an archive taken without it does not carry the database-level settings a restore needs
+(`docs/phase-1/phase-1-12/evidence/backup-evidence.md`, the dated addendum).
+
+PowerShell:
+
+```powershell
+New-Item -ItemType Directory -Force -Path "C:/RootLco-backups"
+docker exec supabase_db_RootLco pg_dump -U postgres -d postgres -Fc --create -f /tmp/rootlco-before-migrate.dump
+docker exec supabase_db_RootLco pg_restore --list /tmp/rootlco-before-migrate.dump
+docker cp supabase_db_RootLco:/tmp/rootlco-before-migrate.dump "C:/RootLco-backups/rootlco-before-migrate.dump"
+docker exec supabase_db_RootLco rm /tmp/rootlco-before-migrate.dump
+```
+
+bash (Git Bash on Windows):
+
+```bash
+export MSYS_NO_PATHCONV=1   # stops Git Bash rewriting the container's /tmp paths into Windows ones
+mkdir -p "C:/RootLco-backups"
+docker exec supabase_db_RootLco pg_dump -U postgres -d postgres -Fc --create -f /tmp/rootlco-before-migrate.dump
+docker exec supabase_db_RootLco pg_restore --list /tmp/rootlco-before-migrate.dump
+docker cp supabase_db_RootLco:/tmp/rootlco-before-migrate.dump "C:/RootLco-backups/rootlco-before-migrate.dump"
+docker exec supabase_db_RootLco rm /tmp/rootlco-before-migrate.dump
+```
+
+`C:/RootLco-backups/rootlco-before-migrate.dump` is an example destination; replace it, in both
+the folder line and the `docker cp` line, with any path that is not inside a checkout — a dump
+holds every tenant's rows and must never be committed. The forward slashes and the double quotes
+are deliberate: the path then parses the same way in PowerShell and in bash. Use a new file name
+for each backup so an earlier archive is never overwritten. `pg_restore --list` reads the archive's
+table of contents and touches no database; if it fails, the backup is not usable and nothing below
+may run. Do not continue until the copied file exists and is not empty.
+
+**Step 4 — apply the pending migrations, and nothing else.**
+
+```
+npx supabase migration up --local
+npx supabase migration list --local
+```
+
+The pinned CLI describes `migration up --local` as "Applies pending migrations to the local
+database." It applies only the versions the ledger lacks and records each one in the ledger; it
+drops nothing and runs no seed. It refuses rather than guesses when the history is out of sync — it
+stops on a ledger version with no file ("Remote migration versions not found in local migrations
+directory.") and on a pending file older than the newest applied one, where it asks to be rerun with
+`--include-all`. Do not add `--include-all` on the strength of that message; treat it as the
+out-of-sync case below. The second `list` must show no pending version.
+
+**Step 5 — restart and verify.**
+
+PowerShell:
+
+```powershell
+$env:ROOTLCO_ENV = "local-acceptance"
+npm run acceptance:serve
+npm run dev:status
+npm run acceptance:status-owner
+```
+
+bash:
+
+```bash
+export ROOTLCO_ENV=local-acceptance
+npm run acceptance:serve
+npm run dev:status
+npm run acceptance:status-owner
+```
+
+`migration up` does not restart the stack, so `align-local-jwt.mjs` does not need to run again. If
+`acceptance:status-owner` fails, or a migration failed part-way, stop: the step 3 archive is the way
+back, and restoring it is a deliberate recovery (`recovery-runbook.md`), not a routine step.
+
+**When the history is out of sync.** This happens when a migration was applied by hand, file by
+file, as `docs/phase-1/phase-1-31/operator-runbook.md` section 4 does on an established database.
+That runbook records the applied version with `supabase migration repair --status applied <version>`,
+which writes the ledger row and runs no SQL; the pinned CLI describes `migration repair --local` as
+"Repairs the migration history of the local database." Use it only for a version whose SQL is
+proved to be in the database already, one version at a time, and only after the step 3 backup —
+marking a version applied that never ran hides a missing change for good. If the cause is not that,
+stop and ask; do not reset.
+
+### 19.4a Load the permission catalogue on an existing database
+
+Permission codes reach a database only through `supabase/seeds/04_iam_permission_catalog.sql`; no
+migration writes to `iam.permissions`. Section 19.4 runs no seed, so a database brought forward
+with it can still lack codes a newer checkout needs, and `npm run acceptance:create-owner` then
+refuses with "the permission catalogue is behind this checkout" or "iam.permissions is empty". The
+procedure below is the one `docs/phase-1/phase-1-31/operator-runbook.md` section 3 documents and
+records; that section is the authority for its verification queries and rollback criterion.
+
+**Why it is safe to re-run.** The file is one `INSERT INTO iam.permissions ... ON CONFLICT
+(permission_code) DO NOTHING` followed by a block that only prints a count. It adds codes that are
+absent and never changes or deletes a row that exists. Re-read the file before applying it: if it
+ever holds anything other than that insert and notice, do not use this procedure and stop.
+
+**Step 1 — stop the application tiers and take a backup.** `npm run dev:stop`, then section 19.4
+step 3, with a new archive name. Do not continue until the archive exists and `pg_restore --list`
+read it.
+
+**Step 2 — apply the seed file as it stands.** Never transcribe rows by hand; a second copy of the
+catalogue drifts.
+
+PowerShell:
+
+```powershell
+docker cp supabase/seeds/04_iam_permission_catalog.sql supabase_db_RootLco:/tmp/04_iam_permission_catalog.sql
+docker exec supabase_db_RootLco psql -U postgres -d postgres -v ON_ERROR_STOP=1 --echo-errors -f /tmp/04_iam_permission_catalog.sql
+docker exec supabase_db_RootLco rm /tmp/04_iam_permission_catalog.sql
+```
+
+bash (Git Bash on Windows):
+
+```bash
+export MSYS_NO_PATHCONV=1   # stops Git Bash rewriting the container's /tmp paths into Windows ones
+docker cp supabase/seeds/04_iam_permission_catalog.sql supabase_db_RootLco:/tmp/04_iam_permission_catalog.sql
+docker exec supabase_db_RootLco psql -U postgres -d postgres -v ON_ERROR_STOP=1 --echo-errors -f /tmp/04_iam_permission_catalog.sql
+docker exec supabase_db_RootLco rm /tmp/04_iam_permission_catalog.sql
+```
+
+If `psql` reports an error, stop: `ON_ERROR_STOP` ends the run and the insert is one statement, so
+nothing was added. **Step 3 — verify**, with the queries in the runbook's section 3: the catalogue
+count rose by exactly the number of codes that were absent and every pre-existing row is unchanged.
+Then restart with section 19.4 step 5 and run `npm run acceptance:create-owner` again.
+
+### 19.5 Destructive: rebuild an empty local database
+
+> **WARNING — this deletes every row in the local database.** That includes the acceptance tenant,
+> the Owner account, every fixture and everything a campaign has produced and not yet recorded.
+> **Never run it against the acceptance database. Never run it as part of a routine start.** A
+> database that already holds data is brought forward with 19.4, never with this.
+
+Use it only for a local stack that is being built from nothing on purpose — a fresh clone, or a
+database that is already lost — and only after deciding that nothing in it is wanted.
+
+```
+npm run supabase:reset
+```
+
+`npm run supabase:reset` is `supabase db reset` (`package.json`): it recreates the local database
+and applies every migration and seed to it. On a database that held acceptance data, that data is
+gone; restoring the 19.4 step 3 archive is the only way back, and only if one was taken. After a
+rebuild, continue with 19.1 from step 2: the Owner account and its `apps/api/.env.local` lines are
+created again by `npm run acceptance:create-owner`, and the fixtures by
+`npm run acceptance:provision-fixtures`.

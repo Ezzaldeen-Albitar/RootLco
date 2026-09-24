@@ -3,7 +3,10 @@ import { API_SRC_ROOT } from './scripts/lib/repository-paths.mjs';
 
 // Database test harness configuration (P1-02-QA-001..005).
 // Requires a running PostgreSQL with migrations applied:
-//   local: `npm run supabase:start && npm run supabase:reset`
+//   local: a disposable database, per CONTRIBUTING §8 "Pre-push step for schema
+//          and seed changes": a throwaway postgres:17-alpine container on
+//          127.0.0.1:55440, then DB_PORT=55440 with `npm run db:apply-migrations`.
+//          Never `supabase:reset` the shared stack that holds the acceptance data.
 //   CI:    the postgres service container + scripts/db/apply-migrations.mjs
 // Connection comes from DB_HOST/DB_PORT/DB_NAME/DB_USER/DB_PASSWORD
 // (defaults match the Supabase local stack). See tests/db/helpers.ts.

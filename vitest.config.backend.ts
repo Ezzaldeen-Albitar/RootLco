@@ -8,7 +8,10 @@ import { API_SRC_ROOT, API_SRC_PATH } from './scripts/lib/repository-paths.mjs';
 // Keeping them separate means `npm test` stays runnable with no database, which
 // is what makes the unit tier usable during ordinary development.
 //
-//   local: npm run supabase:start && npm run supabase:reset
+//   local: a disposable database, per CONTRIBUTING §8 "Pre-push step for schema
+//          and seed changes": a throwaway postgres:17-alpine container on
+//          127.0.0.1:55440, then DB_PORT=55440 with `npm run db:apply-migrations`.
+//          Never `supabase:reset` the shared stack that holds the acceptance data.
 //   CI:    the postgres service container + scripts/db/apply-migrations.mjs
 //
 // Connection comes from DB_HOST/DB_PORT/DB_NAME/DB_USER/DB_PASSWORD, shared with
