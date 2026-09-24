@@ -825,7 +825,7 @@ describe('billing', () => {
   it('moves the cursor to a refused charge field and withdraws the complaint once it is edited (route sweep B3)', async () => {
     recordChargeAction.mockResolvedValue({
       status: 'invalid',
-      messageKey: 'form.invalid',
+      messageKey: 'form.violation.invalid',
       fieldErrors: { dueOn: 'platform.error.required' },
       attempt: 1,
     });

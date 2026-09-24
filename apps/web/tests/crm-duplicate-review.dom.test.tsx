@@ -353,6 +353,25 @@ describe('a decision that does not go through', () => {
     ).toHaveValue('');
   });
 
+  it('moves the cursor to a refused reason and withdraws the complaint once it is edited (route sweep B3)', async () => {
+    reviewDuplicateAction.mockResolvedValue({
+      status: 'invalid',
+      messageKey: 'form.violation.invalid',
+      fieldErrors: { reason: 'form.violation.invalid' },
+      attempt: 1,
+    });
+    const user = userEvent.setup();
+    panel();
+    await dismiss(user);
+    const reason = screen.getByLabelText(en['crm.customers.restrictions.reason'], {
+      exact: false,
+    });
+    await waitFor(() => expect(reason).toHaveFocus());
+    expect(reason).toHaveAttribute('aria-invalid', 'true');
+    await user.type(reason, ' and more');
+    expect(reason).not.toHaveAttribute('aria-invalid', 'true');
+  });
+
   it('keeps the reason on screen when the write fails, so it need not be written twice', async () => {
     reviewDuplicateAction.mockResolvedValue({
       status: 'unavailable',
