@@ -742,6 +742,17 @@ describe('FE-014 — no invoice yet: the preview and creating one', () => {
     expect(box).toHaveAttribute('aria-invalid', 'true');
     expect(createInvoice).not.toHaveBeenCalled();
 
+    // Eight-four-four-four-twelve hex with no RFC version digit or variant: the
+    // server's `z.string().uuid()` refuses it, so the box refuses it first.
+    await user.clear(box);
+    await user.type(box, '12345678-1234-0234-7234-123456789abc');
+    await user.click(submit);
+    expect(
+      await within(form).findByText(EN['invoices.create.payerReferenceFormat'] as string)
+    ).toBeVisible();
+    expect(box).toHaveAttribute('aria-invalid', 'true');
+    expect(createInvoice).not.toHaveBeenCalled();
+
     await user.clear(box);
     await user.type(box, OTHER_PAYER);
     await user.click(submit);

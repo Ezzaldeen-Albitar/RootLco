@@ -130,7 +130,11 @@ export interface Invoice {
   readonly totals: InvoiceTotals | null;
 }
 
-/** Who an invoice bills, by name — `InvoicePayerView`; every field `null` when the payer is not visible. */
+/**
+ * Who an invoice bills, by name — `InvoicePayerView`. Every field is `null` when
+ * the payer is not named to this caller: withheld without `crm.customer.read`, or
+ * retired since the invoice was written.
+ */
 export interface InvoicePayer {
   readonly displayName: string | null;
   readonly displayNumber: string | null;

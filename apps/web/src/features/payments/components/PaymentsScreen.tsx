@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { DataTable, type Column } from '@/components/data-table/DataTable';
 import { INITIAL_REQUEST, type TableRequest } from '@/components/data-table/table-state';
@@ -103,6 +103,12 @@ import {
  * fallback it is, checked for shape before it is sent, and explained in the
  * same sentence that says how to choose by name instead. It is never the
  * ordinary path: with the customer read there is no box at all.
+ *
+ * The receipt list's payer filter is the same case. `sal.receipt-list` accepts
+ * `payerPartnerId` with `sal.finance.view` alone, and before the pickers the
+ * filter was a typed box; so a finance viewer without the customer read keeps a
+ * labelled, shape-checked payer reference there too. It is a list filter, so it
+ * is never counted as unsaved work.
  *
  * ## Recording needs a method this tenant owns
  *
@@ -694,6 +700,10 @@ function ReceiptsPanel({
     readonly invoice: InvoiceListEntry | null;
     readonly fromAddress: string | null;
   }>({ payer: null, status: '', invoice: null, fromAddress: initialInvoiceId });
+  // The fallback for a finance viewer without the customer read — see the file
+  // header. A list filter: never declared as unsaved work.
+  const [payerReference, setPayerReference] = useState('');
+  const [payerReferenceError, setPayerReferenceError] = useState<string | null>(null);
 
   const load = useCallback(
     (request: TableRequest, cursor: string | null) =>
@@ -777,23 +787,53 @@ function ReceiptsPanel({
         className="mt-3 grid gap-3 sm:grid-cols-3"
         onSubmit={(event) => {
           event.preventDefault();
+          const typed = payerReference.trim();
+          if (!canReadCustomers && typed.length > 0 && !UUID.test(typed)) {
+            // A malformed reference is said on its box, and nothing is applied:
+            // silently dropping it would show every payer's receipts under a
+            // filter the operator believes is narrowing them.
+            setPayerReferenceError('payments.record.payerReferenceFormat');
+            return;
+          }
           setCriteria({
-            payerPartnerId: draft.payer?.id ?? null,
+            payerPartnerId: canReadCustomers
+              ? (draft.payer?.id ?? null)
+              : typed.length > 0
+                ? typed
+                : null,
             status: draft.status ? (draft.status as ReceiptStatus) : null,
             invoiceId: draft.invoice?.id ?? draft.fromAddress,
           });
         }}
       >
-        <CustomerPicker
-          messages={messages}
-          locale={locale}
-          label={translate(messages, 'payments.list.payerFilter')}
-          value={draft.payer}
-          onChange={(payer) => setDraft((d) => ({ ...d, payer }))}
-          canSearch={canReadCustomers}
-          countsAsUnsaved={false}
-          testId="payments-payer-filter"
-        />
+        {canReadCustomers ? (
+          <CustomerPicker
+            messages={messages}
+            locale={locale}
+            label={translate(messages, 'payments.list.payerFilter')}
+            value={draft.payer}
+            onChange={(payer) => setDraft((d) => ({ ...d, payer }))}
+            canSearch
+            countsAsUnsaved={false}
+            testId="payments-payer-filter"
+          />
+        ) : (
+          <TextField
+            label={translate(messages, 'payments.list.payerReference')}
+            description={translate(messages, 'payments.list.payerReferenceHelp')}
+            spellCheck={false}
+            autoComplete="off"
+            dir="ltr"
+            value={payerReference}
+            onChange={(event) => {
+              setPayerReference(event.target.value);
+              setPayerReferenceError(null);
+            }}
+            error={
+              payerReferenceError ? translateDynamic(messages, payerReferenceError) : undefined
+            }
+          />
+        )}
         <SelectField
           label={translate(messages, 'payments.list.statusFilter')}
           value={draft.status}
@@ -1082,9 +1122,7 @@ function AllocateForm({
     fieldErrors: { ...(outcome?.fieldErrors ?? {}), ...errors },
     attempt,
   });
-  const invoiceUnavailableId = useId();
   const invoiceId = invoice?.id ?? fromAddress;
-  const blocked = invoiceId === null && !canListInvoices;
 
   /** A field's own error, then the server's violation for the same field. */
   const errorFor = (name: string): string | undefined => {
@@ -1196,7 +1234,6 @@ function AllocateForm({
                 }}
                 canSearch={canListInvoices}
                 error={errorFor('invoiceId')}
-                unavailableId={invoiceUnavailableId}
                 testId="payments-invoice-picker"
               />
             )}
@@ -1218,12 +1255,7 @@ function AllocateForm({
             error={errorFor('amount')}
           />
           <div className="sm:col-span-2">
-            <button
-              type="submit"
-              className={`${PRIMARY_BUTTON}`}
-              disabled={busy || blocked}
-              aria-describedby={blocked ? invoiceUnavailableId : undefined}
-            >
+            <button type="submit" className={`${PRIMARY_BUTTON}`} disabled={busy}>
               {translate(messages, 'payments.allocate.submit')}
             </button>
             <OutcomeNote messages={messages} outcome={outcome} />

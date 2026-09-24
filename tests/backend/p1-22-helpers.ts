@@ -65,6 +65,12 @@
  *    cash desk that applies receipts to invoices and authors none. It exists to prove
  *    that finding an invoice to allocate to never demands an invoice-writing code
  *    (Owner directive, P1-32-PRE-OD-UX, the branch invoice list).
+ *  - `SAL_FINANCE_NAMES` holds `sal.finance.view`, `crm.customer.read` and
+ *    `veh.vehicle.read` ONLY — the finance viewer who may also read customers and
+ *    vehicles. It is the positive control for the invoice list's least-privilege
+ *    rule: it is told the payer's name and its box matches a payer name, a plate and
+ *    a VIN, where `SAL_READER` and `SAL_CASHIER` (finance view without those reads)
+ *    are told nothing and match by invoice number alone.
  *  - `SAL_READER` holds `sal.finance.view` and `sal.delivery.view` only. It is the
  *    403 probe for every command: a principal that holds NEITHER
  *    `sal.payment.record` nor `wty.warranty.issue`, in a tenant where the rows are
@@ -130,6 +136,14 @@ export const WARRANTY_READ = 'wty.warranty.read';
  * warranty against a work order it may not read would be an odd grant to model.
  */
 export const WORK_ORDER_READ = 'wo.work_order.read';
+
+/**
+ * The customer and vehicle read codes, held ONLY by `SAL_FINANCE_NAMES`. Both are
+ * seeded platform codes (`supabase/seeds/04_iam_permission_catalog.sql`); nothing
+ * here invents one.
+ */
+export const CUSTOMER_READ = 'crm.customer.read';
+export const VEHICLE_READ = 'veh.vehicle.read';
 
 const ALL_SAL_WTY = [
   INVOICE_MANAGE,
@@ -286,6 +300,15 @@ export const SAL_CASHIER: Principal = {
   permissions: [FINANCE_VIEW, PAYMENT_ALLOCATE],
 };
 
+/** Finance view plus the customer and vehicle reads, and nothing else. See the file header. */
+export const SAL_FINANCE_NAMES: Principal = {
+  roleId: 'f1220000-0000-4000-8000-000000000181',
+  userId: 'f1220000-0000-4000-8000-000000000182',
+  subject: 'fx_p1_22_finance_names',
+  tenantId: TENANT_A,
+  permissions: [FINANCE_VIEW, CUSTOMER_READ, VEHICLE_READ],
+};
+
 /** Reads only. A command refusal from it is about authority, not tenancy. */
 export const SAL_READER: Principal = {
   roleId: 'f1220000-0000-4000-8000-000000000131',
@@ -344,6 +367,7 @@ export const P1_22_PRINCIPALS: readonly Principal[] = [
   SAL_APPROVER,
   SAL_NO_FINANCE,
   SAL_CASHIER,
+  SAL_FINANCE_NAMES,
   SAL_READER,
   SAL_SCOPED_A2,
   SAL_PERMISSION_ELSEWHERE,

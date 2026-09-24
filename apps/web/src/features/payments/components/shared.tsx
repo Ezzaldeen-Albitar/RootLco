@@ -1,5 +1,7 @@
 'use client';
 
+import { regexes } from 'zod';
+
 import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic } from '@/i18n/get-messages';
@@ -17,7 +19,14 @@ import type { MoneyView, ReceiptStatus } from '../payments-contract';
  * computed and this application repeats.
  */
 
-export const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+/**
+ * An identifier exactly as the server's `z.string().uuid()` accepts it — zod's own
+ * pattern, not a copy: an RFC 9562 version digit (1-8) and variant (8, 9, a or b),
+ * or the all-zero and all-f identifiers zod also admits. A looser 8-4-4-4-12 hex
+ * check passed values the route then refused, so the box said nothing and the
+ * submit failed on the server instead.
+ */
+export const UUID = regexes.uuid();
 
 /** The boundary both payment routes declare: unsigned, ≤14 integer digits, ≤4 decimals. */
 export const DECIMAL = /^\d{1,14}(\.\d{1,4})?$/;

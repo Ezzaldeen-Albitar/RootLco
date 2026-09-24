@@ -554,6 +554,17 @@ describe('the builder names its people rather than asking for references', () =>
     expect(box).toHaveAttribute('aria-invalid', 'true');
     expect(createQuotation).not.toHaveBeenCalled();
 
+    // Eight-four-four-four-twelve hex with no RFC version digit or variant: the
+    // server's `z.string().uuid()` refuses it, so the box refuses it first.
+    await user.clear(box);
+    await user.type(box, '12345678-1234-0234-7234-123456789abc');
+    await user.click(submit);
+    expect(
+      await within(form).findByText(EN['quotations.build.payerReferenceFormat'] as string)
+    ).toBeVisible();
+    expect(box).toHaveAttribute('aria-invalid', 'true');
+    expect(createQuotation).not.toHaveBeenCalled();
+
     await user.clear(box);
     await user.type(box, OTHER_PAYER);
     await user.click(submit);

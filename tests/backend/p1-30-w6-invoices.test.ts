@@ -52,10 +52,18 @@
  * code is refused; `totals` and `outstanding` are omitted rather than zeroed
  * wherever the amounts row is not visible, and a draft's balance is the true zero;
  * a retired payer is neither named nor found by name; `allocatable` keeps the
- * issued and credited invoices with money still open; the box reaches the invoice
- * number (Arabic-Indic digits folded) and the payer's name and treats a LIKE
- * metacharacter as a literal; a page walked by cursor never repeats a row; and
- * the statements sent do not grow with the page.
+ * issued and credited invoices with money still open, and `true` is the only
+ * value it accepts; the box reaches the invoice number (Arabic-Indic digits
+ * folded) and the payer's name and treats a LIKE metacharacter as a literal; a
+ * page walked by cursor never repeats a row; and the statements sent do not grow
+ * with the page.
+ *
+ * Least privilege: the finance code reaches money, never a customer's name or a
+ * vehicle's registration. A finance viewer without `crm.customer.read` is told
+ * the payer block with every field null and cannot match by payer name; without
+ * `veh.vehicle.read` it cannot match by plate or VIN; it always matches by the
+ * invoice number. `SAL_FINANCE_NAMES`, holding both reads, is the positive
+ * control: named, and matched by payer name, plate and VIN.
  */
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { Pool, PoolClient } from 'pg';
@@ -73,6 +81,7 @@ import {
   PARTNER_A,
   PAYMENT_METHOD_A,
   SAL_CASHIER,
+  SAL_FINANCE_NAMES,
   SAL_FULL,
   SAL_NO_FINANCE,
   SAL_PERMISSION_ELSEWHERE,
@@ -823,7 +832,8 @@ describe('sal.invoice-list', () => {
 
   it('finds an invoice by its number and names its payer, status and open balance', async () => {
     expect(INVOICE_LIST_OPERATION.id).toBe('sal.invoice-list');
-    authAs(SAL_FULL);
+    // The payer is named only to a caller holding `crm.customer.read`.
+    authAs(SAL_FINANCE_NAMES);
     const response = await listInvoices(
       `${pair}&q=${encodeURIComponent(first.invoiceNumber)}&limit=100`
     );
@@ -878,6 +888,9 @@ describe('sal.invoice-list', () => {
       `companyId=${scope.companyId}`,
       `${pair}&status=paid`,
       `${pair}&allocatable=yes`,
+      // `true` is the only value: a `false` that narrowed nothing would read as
+      // a filter that had been applied.
+      `${pair}&allocatable=false`,
       `${pair}&q=x`,
       `${pair}&payerPartnerId=${PARTNER_A}`,
       `${pair}&limit=0`,
@@ -931,12 +944,15 @@ describe('sal.invoice-list', () => {
     );
     expect(folded.items.map((item) => item.id)).toContain(first.invoiceId);
 
+    // The name arm is on only for a caller holding `crm.customer.read`.
+    authAs(SAL_FINANCE_NAMES);
     const byName = await bodyOf<ListPage>(
       await listInvoices(`${pair}&q=${encodeURIComponent('reception requester')}&limit=100`)
     );
     expect(byName.items.map((item) => item.id)).toEqual(
       expect.arrayContaining([first.invoiceId, second.invoiceId, third.invoiceId])
     );
+    authAs(SAL_FULL);
 
     const wildcard = await listInvoices(`${pair}&q=${encodeURIComponent('%%')}&limit=100`);
     expect(wildcard.status).toBe(200);
@@ -1198,11 +1214,17 @@ describe('sal.invoice-list — the cash desk, the balance and the payer', () => 
       status: 'credited',
       outstanding: { amount: credited.gross, currency: 'USD' },
     });
-    // `allocatable=false` narrows nothing.
-    expect(await rowFor(draft.invoiceId, 'allocatable=false&status=draft')).toBeDefined();
-    expect(await rowFor(settled.invoiceId, 'allocatable=false')).toMatchObject({
+    // Without the parameter nothing is narrowed; `allocatable=false` is refused
+    // rather than accepted and ignored.
+    expect(await rowFor(draft.invoiceId, 'status=draft')).toBeDefined();
+    expect(
+      await rowFor(settled.invoiceId, `q=${encodeURIComponent(settled.invoiceNumber)}`)
+    ).toMatchObject({
       outstanding: { amount: '0.0000', currency: 'USD' },
     });
+    const refused = await listInvoices(`${pair}&allocatable=false&limit=100`);
+    expect(refused.status).toBe(422);
+    expect(await codeOf(refused)).toBe('ERR-VAL-001');
   });
 
   it("answers a draft's balance as the true zero, with no totals before issue", async () => {
@@ -1233,7 +1255,9 @@ describe('sal.invoice-list — the cash desk, the balance and the payer', () => 
   });
 
   it('names no retired payer, and the box cannot find the name the row does not show', async () => {
-    authAs(SAL_FULL);
+    // A caller who MAY read customers, so the null below is the retirement's and
+    // not the least-privilege rule's.
+    authAs(SAL_FINANCE_NAMES);
     const row = await rowFor(
       retiredPayer.invoiceId,
       `q=${encodeURIComponent(retiredPayer.invoiceNumber)}`
@@ -1250,5 +1274,125 @@ describe('sal.invoice-list — the cash desk, the balance and the payer', () => 
     expect((await bodyOf<ListPage>(byName)).items.map((item) => item.id)).not.toContain(
       retiredPayer.invoiceId
     );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// sal.invoice-list — least privilege: money, not people or vehicles
+// ---------------------------------------------------------------------------
+
+describe('sal.invoice-list — the payer and the vehicle need their own reads', () => {
+  let named: Awaited<ReturnType<typeof seedIssuedInvoice>>;
+  let pair: string;
+  let vin = '';
+  // Distinct per run, so a plate left by an earlier run cannot answer for this one.
+  const plateTail = String(Date.now()).slice(-6);
+  const plate = `WSX-${plateTail}`;
+  const plateTerm = `WSX${plateTail}`;
+  const payerName = 'reception requester';
+
+  beforeAll(async () => {
+    named = await seedIssuedInvoice('w6_least_privilege');
+    const where = await admin.query<{ company_id: string; branch_id: string; vehicle_id: string }>(
+      `SELECT i.company_id, i.branch_id, w.vehicle_id
+         FROM sal.invoices i
+         JOIN wo.work_orders w ON w.tenant_id = i.tenant_id AND w.id = i.work_order_id
+        WHERE i.id = $1`,
+      [named.invoiceId]
+    );
+    const row = where.rows[0];
+    if (row === undefined) throw new Error('fixture invoice has no work-order vehicle');
+    pair = `companyId=${row.company_id}&branchId=${row.branch_id}`;
+    const vehicle = await admin.query<{ vin_raw: string }>(
+      `SELECT vin_raw FROM veh.vehicles WHERE tenant_id = $1 AND id = $2`,
+      [TENANT_A, row.vehicle_id]
+    );
+    vin = vehicle.rows[0]?.vin_raw ?? '';
+    if (vin.length === 0) throw new Error('fixture vehicle has no VIN');
+    await admin.query(
+      `INSERT INTO veh.plate_history
+         (tenant_id, vehicle_id, country_code, plate_raw, valid_from, created_by)
+       VALUES ($1,$2,'JO',$3,current_date,$4)`,
+      [TENANT_A, row.vehicle_id, plate, USER_A]
+    );
+  }, 120_000);
+
+  beforeEach(() => {
+    __resetRateLimitForTests();
+  });
+
+  const idsFor = async (term: string): Promise<readonly string[]> => {
+    const response = await listInvoices(`${pair}&q=${encodeURIComponent(term)}&limit=100`);
+    expect(response.status, term).toBe(200);
+    return (await bodyOf<ListPage>(response)).items.map((item) => item.id);
+  };
+
+  for (const [label, principal] of [
+    ['a finance viewer', SAL_READER],
+    ['a cashier', SAL_CASHIER],
+  ] as const) {
+    it(`withholds the payer from ${label} without the customer read, and matches by number only`, async () => {
+      expect(principal.permissions).not.toContain('crm.customer.read');
+      expect(principal.permissions).not.toContain('veh.vehicle.read');
+      authAs(principal);
+      const response = await listInvoices(
+        `${pair}&q=${encodeURIComponent(named.invoiceNumber)}&limit=100`
+      );
+      expect(response.status).toBe(200);
+      const raw = await response.text();
+      const row = (JSON.parse(raw) as ListPage).items.find((item) => item.id === named.invoiceId);
+      // Found by its number, with the money the finance code already reaches…
+      expect(row).toMatchObject({
+        status: 'issued',
+        invoiceNumber: named.invoiceNumber,
+        outstanding: { amount: named.gross, currency: 'USD' },
+      });
+      // …and the payer block keeps its shape with nothing in it.
+      expect(row?.payer).toEqual({ displayName: null, displayNumber: null, partyType: null });
+      expect(raw).not.toContain('Reception Requester');
+
+      // Nor can the box be used to learn what the row withholds.
+      expect(await idsFor(payerName)).not.toContain(named.invoiceId);
+      expect(await idsFor(plateTerm)).not.toContain(named.invoiceId);
+      expect(await idsFor(vin)).not.toContain(named.invoiceId);
+    });
+  }
+
+  it('names the payer and matches by payer name, plate and VIN for a caller holding both reads', async () => {
+    authAs(SAL_FINANCE_NAMES);
+    const response = await listInvoices(
+      `${pair}&q=${encodeURIComponent(named.invoiceNumber)}&limit=100`
+    );
+    expect(response.status).toBe(200);
+    const row = (await bodyOf<ListPage>(response)).items.find(
+      (item) => item.id === named.invoiceId
+    );
+    expect(row?.payer).toMatchObject({ displayName: 'Reception Requester' });
+    expect(row?.payer.partyType).not.toBeNull();
+
+    expect(await idsFor(payerName)).toContain(named.invoiceId);
+    expect(await idsFor(plateTerm)).toContain(named.invoiceId);
+    expect(await idsFor(vin)).toContain(named.invoiceId);
+  });
+
+  it('asks the same statements with a box for one row as for three', async () => {
+    authAs(SAL_FINANCE_NAMES);
+    const query = (limit: number) =>
+      `${pair}&q=${encodeURIComponent(payerName)}&limit=${String(limit)}`;
+    // Warm, then measure, as the unfiltered case does.
+    await listInvoices(query(1)).then((response) => response.text());
+    await listInvoices(query(3)).then((response) => response.text());
+    const one = await measureList(query(1));
+    const three = await measureList(query(3));
+    expect(one.status).toBe(200);
+    expect(three.status).toBe(200);
+    expect(one.page.items).toHaveLength(1);
+    expect(three.page.items).toHaveLength(3);
+    const readsInvoices = (text: string): boolean => /FROM\s+sal\.invoices\s+i\b/i.test(text);
+    const asksPermission = (text: string): boolean => /iam\.has_permission\(/i.test(text);
+    // Anti-vacuity: the read and both permission questions were observed.
+    expect(one.statements.filter(readsInvoices)).toHaveLength(1);
+    expect(one.statements.filter(asksPermission).length).toBeGreaterThanOrEqual(2);
+    expect(three.statements.length).toBe(one.statements.length);
   });
 });

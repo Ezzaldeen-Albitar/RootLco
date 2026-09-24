@@ -2121,7 +2121,11 @@ export class BillingRepository extends Repository {
    * the payer's name, and the plate and VIN of the job's vehicle. The payer is
    * the invoice's own `payer_partner_id`; a counter sale has no work order, so
    * its vehicle anchor is NULL and those two arms cannot match it. The service
-   * switches the phone arm off before this is called.
+   * switches the phone arm off before this is called, and switches the name arm
+   * off for a caller without `crm.customer.read` and the plate and VIN arms off
+   * for a caller without `veh.vehicle.read` — an empty fragment disables its arm
+   * in `searchFragment`. The payer's name is still read here; whether it is
+   * PUBLISHED is the service's decision, made on the same customer answer.
    *
    * The payer is NAMED from the same set the box SEARCHES: the shared name arm
    * reads live partners only (`bp.deleted_at IS NULL`), so the join carries the
@@ -2135,6 +2139,19 @@ export class BillingRepository extends Repository {
    * `sal.invoice_open_receivable` whether anything is still open, in the query,
    * before the keyset window, so a page of allocatable invoices is never short.
    * The comparison is PostgreSQL's `numeric`; nothing here parses an amount.
+   *
+   * The function reads the invoice's amounts, credit notes and allocations, so it
+   * is the expensive predicate, and the statement is shaped so it runs LAST. The
+   * `candidates` CTE applies every cheap narrowing first — tenant, company,
+   * branch, live rows, the status filter, the two allocatable STATES, the box and
+   * the keyset position — and is `MATERIALIZED`, which PostgreSQL treats as an
+   * optimisation fence: the outer query cannot push the function into it or run
+   * it ahead of those predicates. The function is therefore called only for a
+   * live `issued`/`credited` invoice of this branch that the box and the cursor
+   * already admit. It is NOT confined to the page window: the window is counted
+   * AFTER the filter, which is what keeps an allocatable page full, so every
+   * candidate past the cursor is asked once. Without `allocatable` the outer
+   * predicate is `NOT false` and the function is not called in the filter at all.
    *
    * ## No index and no migration
    *
@@ -2198,7 +2215,17 @@ export class BillingRepository extends Repository {
       }
     >(
       db,
-      `SELECT ${INVOICE_COLUMNS},
+      `WITH candidates AS MATERIALIZED (
+         SELECT i.id
+           FROM sal.invoices i
+          WHERE i.tenant_id = $1 AND i.company_id = $2 AND i.branch_id = $3
+            AND i.deleted_at IS NULL
+            AND ($4::text IS NULL OR i.status = $4)
+            AND (NOT $5::boolean OR i.status IN ('issued', 'credited'))
+            ${search.predicate}
+            ${keyset.predicate}
+       )
+       SELECT ${INVOICE_COLUMNS},
               a.net_total::text   AS net_total,
               a.tax_total::text   AS tax_total,
               a.gross_total::text AS gross_total,
@@ -2207,7 +2234,9 @@ export class BillingRepository extends Repository {
               pp.display_number AS payer_display_number,
               pp.party_type     AS payer_party_type,
               ${cursorTimestamp('i.created_at')} AS sort_value
-         FROM sal.invoices i
+         FROM candidates c
+         JOIN sal.invoices i
+           ON i.tenant_id = $1 AND i.id = c.id
          LEFT JOIN sal.invoice_amounts a
            ON a.tenant_id = i.tenant_id AND a.company_id = i.company_id
           AND a.branch_id = i.branch_id AND a.invoice_id = i.id
@@ -2215,14 +2244,7 @@ export class BillingRepository extends Repository {
          LEFT JOIN crm.business_partners pp
            ON pp.tenant_id = i.tenant_id AND pp.id = i.payer_partner_id
           AND pp.deleted_at IS NULL
-        WHERE i.tenant_id = $1 AND i.company_id = $2 AND i.branch_id = $3
-          AND i.deleted_at IS NULL
-          AND ($4::text IS NULL OR i.status = $4)
-          AND (NOT $5::boolean
-               OR (i.status IN ('issued', 'credited')
-                   AND sal.invoice_open_receivable(i.id) > 0))
-          ${search.predicate}
-          ${keyset.predicate}
+        WHERE (NOT $5::boolean OR sal.invoice_open_receivable(i.id) > 0)
         ${keyset.order}
         ${keyset.limitClause}`,
       [...values, ...search.values, ...keyset.values]

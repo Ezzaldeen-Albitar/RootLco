@@ -1042,6 +1042,137 @@ describe('the payer is found by name, and the form says when it cannot be', () =
   });
 });
 
+/**
+ * Eight-four-four-four-twelve hexadecimal, and still not an identifier the server
+ * accepts: the third group has no RFC version digit and the fourth no variant, so
+ * `z.string().uuid()` refuses it. The boxes must refuse it too, on the box.
+ */
+const HEX_BUT_NOT_UUID = '12345678-1234-0234-7234-123456789abc';
+
+describe('without the customer read: the typed payer boxes', () => {
+  it('the receipt list keeps a labelled, shape-checked payer reference as its filter', async () => {
+    // `sal.receipt-list` accepts a payer with `sal.finance.view` alone, and the
+    // filter was a typed box before the pickers: a finance viewer without
+    // `crm.customer.read` must not lose it.
+    const user = userEvent.setup();
+    renderScreen({ canReadCustomers: false });
+    await chooseBranch();
+    await waitFor(() => expect(listReceipts).toHaveBeenCalled());
+    const filters = screen.getByRole('form', {
+      name: EN['payments.list.filtersLabel'] as string,
+    });
+    expect(within(filters).queryByTestId('payments-payer-filter')).toBeNull();
+    expect(
+      within(filters).getByText(EN['payments.list.payerReferenceHelp'] as string)
+    ).toBeVisible();
+    const box = within(filters).getByLabelText(labelled('payments.list.payerReference'));
+    const apply = within(filters).getByRole('button', {
+      name: EN['payments.list.apply'] as string,
+    });
+    const readsBefore = listReceipts.mock.calls.length;
+
+    await user.type(box, HEX_BUT_NOT_UUID);
+    await user.click(apply);
+    expect(
+      await within(filters).findByText(EN['payments.record.payerReferenceFormat'] as string)
+    ).toBeVisible();
+    expect(box).toHaveAttribute('aria-invalid', 'true');
+    // Nothing was applied: the list was not re-read under a filter it ignored.
+    expect(listReceipts.mock.calls.length).toBe(readsBefore);
+
+    await user.clear(box);
+    expect(
+      within(filters).queryByText(EN['payments.record.payerReferenceFormat'] as string)
+    ).toBeNull();
+    await user.type(box, PARTNER_ID);
+    await user.click(apply);
+    await waitFor(() =>
+      expect(listReceipts.mock.calls.at(-1)?.[1]).toEqual({
+        payerPartnerId: PARTNER_ID,
+        status: null,
+        invoiceId: null,
+      })
+    );
+    expect(searchCustomerDirectory).not.toHaveBeenCalled();
+  });
+
+  it('a typed filter reference is not unsaved work: the switch does not ask', async () => {
+    const user = userEvent.setup();
+    renderLtr(
+      inBranch(
+        <>
+          <BranchSwitch to={TEST_BRANCH.id} label="first" />
+          <BranchSwitch to={OTHER_BRANCH.id} label="second" />
+          <WorkingBranchProbe />
+          {screenFor({ canReadCustomers: false })}
+        </>,
+        { snapshot: branchSnapshot([TEST_BRANCH, OTHER_BRANCH]) }
+      )
+    );
+    await user.click(screen.getByRole('button', { name: 'first' }));
+    const filters = await screen.findByRole('form', {
+      name: EN['payments.list.filtersLabel'] as string,
+    });
+    await user.type(
+      within(filters).getByLabelText(labelled('payments.list.payerReference')),
+      PARTNER_ID
+    );
+    await switchWithoutQuestion(user, 'second');
+    await waitFor(() => expect(heldBranch()).toBe(OTHER_BRANCH.id));
+  });
+
+  it('the record form refuses a reference the server would refuse, on the box', async () => {
+    const user = userEvent.setup();
+    renderScreen({ canReadCustomers: false });
+    await chooseBranch();
+    const form = await screen.findByRole('form', {
+      name: EN['payments.record.formLabel'] as string,
+    });
+    const box = within(form).getByLabelText(labelled('payments.record.payerReference'));
+    await user.type(box, HEX_BUT_NOT_UUID);
+    await user.type(within(form).getByLabelText(labelled('payments.record.currency')), 'USD');
+    await user.type(within(form).getByLabelText(labelled('payments.record.amount')), '10.0000');
+    await user.click(
+      within(form).getByRole('button', { name: EN['payments.record.submit'] as string })
+    );
+    expect(
+      await within(form).findByText(EN['payments.record.payerReferenceFormat'] as string)
+    ).toBeVisible();
+    expect(box).toHaveAttribute('aria-invalid', 'true');
+    expect(recordPayment).not.toHaveBeenCalled();
+  });
+});
+
+describe('an invoice whose payer is withheld', () => {
+  it('is chosen by its number and says the customer is not shown, never a blank', async () => {
+    // A finance viewer without `crm.customer.read` is sent the payer block with
+    // every field null; the choice names the invoice and says so.
+    listInvoices.mockResolvedValue(
+      okRead({
+        items: [
+          {
+            ...invoiceEntry,
+            payer: { displayName: null, displayNumber: null, partyType: null },
+          },
+        ],
+        nextCursor: null,
+        hasMore: false,
+      })
+    );
+    const user = userEvent.setup();
+    renderScreen({ canReadCustomers: false });
+    await chooseBranch();
+    const filters = screen.getByRole('form', {
+      name: EN['payments.list.filtersLabel'] as string,
+    });
+    await chooseInvoice(user, filters, labelled('payments.list.invoiceFilter'));
+    const chosen = within(filters).getByTestId('payments-invoice-filter-chosen');
+    expect(chosen).toHaveTextContent('INV-000123');
+    expect(chosen).toHaveTextContent(EN['invoices.picker.payerHidden'] as string);
+    expect(chosen).not.toHaveTextContent('Layla');
+  });
+});
+
 describe('the receipt and its allocations', () => {
   async function openReceipt(user: ReturnType<typeof userEvent.setup>) {
     renderScreen();

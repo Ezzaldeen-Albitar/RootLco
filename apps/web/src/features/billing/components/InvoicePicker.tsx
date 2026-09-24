@@ -21,6 +21,11 @@ import {
  * of the job's vehicle, and chosen by what it says — never typed as a reference
  * (Owner directive, `P1-32-PRE-OD-UX`).
  *
+ * The number is always searchable. The payer's name is searched, and shown, only
+ * for a caller who may read customers, and the plate or VIN only for one who may
+ * read vehicles — the server decides both. A withheld name arrives as `null` and
+ * the choice says "customer not shown" in its place, never a blank.
+ *
  * `sal.invoice-list` requires the company AND the branch, and so does this
  * picker: an allocation cannot cross a branch boundary, so the caller passes the
  * branch the receipt belongs to rather than whatever the header happens to say.
