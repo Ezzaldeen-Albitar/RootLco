@@ -134,6 +134,7 @@ function discountApproval(over: Record<string, unknown> = {}) {
     companyId: 'company-1',
     branchId: 'b',
     status: 'pending',
+    origin: 'requested',
     currency: 'JOD',
     discountTotal: '40.0000',
     discountBase: '400.0000',
@@ -143,10 +144,12 @@ function discountApproval(over: Record<string, unknown> = {}) {
     requestedBy: { id: 'aaaaaaaa-0000-4000-8000-000000000001', displayName: 'Omar Saleh' },
     requestedAt: '2026-09-20T09:00:00Z',
     requestedByCaller: false,
+    canDecide: false,
+    cannotDecideReason: 'missing_permission',
     decidedBy: null,
     decidedAt: null,
     decisionReason: null,
-    approverLimit: null,
+    supersededAt: null,
     recordVersion: 1,
     ...over,
   };
@@ -765,6 +768,29 @@ describe('a discount waiting for approval is shown, and holds the draft back fro
     );
   });
 
+  it('a request a newer draft replaced says so, and this draft is not offered for issue', () => {
+    renderDetail(
+      {},
+      draftWith({
+        status: 'superseded',
+        supersededAt: '2026-09-22T09:00:00Z',
+        canDecide: false,
+        cannotDecideReason: 'not_pending',
+      })
+    );
+    expect(
+      within(screen.getByTestId('discount-approval-note')).getByText(
+        EN['quotations.discountApproval.status.superseded'] as string
+      )
+    ).toBeVisible();
+    expect(screen.getByTestId('issue-blocked-by-discount')).toHaveTextContent(
+      EN['quotations.issue.discountSuperseded'] as string
+    );
+    expect(
+      screen.queryByRole('button', { name: EN['quotations.issue.submit'] as string })
+    ).toBeNull();
+  });
+
   it('an approved discount lets the draft be issued', () => {
     renderDetail(
       {},
@@ -772,7 +798,8 @@ describe('a discount waiting for approval is shown, and holds the draft back fro
         status: 'approved',
         decidedBy: { id: 'bbbbbbbb-0000-4000-8000-000000000002', displayName: 'Nadia Karim' },
         decidedAt: '2026-09-21T09:00:00Z',
-        approverLimit: { amount: '1000.0000', currency: 'JOD' },
+        canDecide: false,
+        cannotDecideReason: 'not_pending',
       })
     );
     expect(

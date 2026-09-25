@@ -320,6 +320,7 @@ const APPROVAL_STATUS_KEY = {
   pending: 'quotations.discountApproval.status.pending',
   approved: 'quotations.discountApproval.status.approved',
   rejected: 'quotations.discountApproval.status.rejected',
+  superseded: 'quotations.discountApproval.status.superseded',
 } as const;
 
 function DiscountApprovalNote({
@@ -1048,7 +1049,9 @@ function IssuePanel({
             messages,
             blockedBy === 'rejected'
               ? 'quotations.issue.discountRejected'
-              : 'quotations.issue.discountPending'
+              : blockedBy === 'superseded'
+                ? 'quotations.issue.discountSuperseded'
+                : 'quotations.issue.discountPending'
           )}
         </p>
       ) : (

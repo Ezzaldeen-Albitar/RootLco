@@ -87,7 +87,6 @@ export default async function QuotationsPage({
           canSearchWorkOrders={holds(session.permissions, QUOTATION_PERMISSIONS.workOrderRead)}
           canReadCustomers={holds(session.permissions, QUOTATION_PERMISSIONS.customerRead)}
           canReadApprovals
-          canDecideDiscounts={holds(session.permissions, QUOTATION_PERMISSIONS.approveDiscount)}
         />
       </PageBody>
     </>

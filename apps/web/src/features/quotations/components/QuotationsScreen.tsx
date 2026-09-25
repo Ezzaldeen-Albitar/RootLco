@@ -76,7 +76,6 @@ export function QuotationsScreen({
   canSearchWorkOrders = false,
   canReadCustomers = false,
   canReadApprovals = false,
-  canDecideDiscounts = false,
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
@@ -92,10 +91,11 @@ export function QuotationsScreen({
   readonly canSearchWorkOrders?: boolean;
   /** `crm.customer.read` — whether the paying customer can be found by name. */
   readonly canReadCustomers?: boolean;
-  /** `quo.quotation.read` — whether the discounts waiting for approval are listed. */
+  /**
+   * `quo.quotation.read` — whether the discounts waiting for approval are listed.
+   * Whether each one can be decided is the server's per-row answer.
+   */
   readonly canReadApprovals?: boolean;
-  /** `svc.price.manage` — whether a discount request can be decided here. */
-  readonly canDecideDiscounts?: boolean;
 }) {
   const [building, setBuilding] = useState(false);
 
@@ -107,13 +107,7 @@ export function QuotationsScreen({
           messages={messages}
           canSearchWorkOrders={canSearchWorkOrders}
         />
-        {canReadApprovals ? (
-          <DiscountApprovalsPanel
-            locale={locale}
-            messages={messages}
-            canDecide={canDecideDiscounts}
-          />
-        ) : null}
+        {canReadApprovals ? <DiscountApprovalsPanel locale={locale} messages={messages} /> : null}
       </div>
     );
   }

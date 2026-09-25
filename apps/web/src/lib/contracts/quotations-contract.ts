@@ -96,8 +96,9 @@ export interface QuotationRevisionCreateBody {
 /**
  * `quo.discount-approval-decide` — `POST /discount-approvals/{approvalId}/decision`.
  *
- * The approver is whoever is signed in and is never the requester. A reason is
- * required to turn a request down.
+ * The approver is whoever is signed in and is never the requester. The route is
+ * gated by `quo.quotation.read`; the permission the request recorded is checked on
+ * the row. A reason is required to turn a request down.
  */
 export interface DiscountApprovalDecideBody {
   readonly decision: 'approved' | 'rejected';

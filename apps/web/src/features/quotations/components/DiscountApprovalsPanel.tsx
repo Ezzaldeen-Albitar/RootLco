@@ -22,7 +22,11 @@ import { useLocalRefusal } from '@/lib/forms/use-local-refusal';
 import { formatDateTime } from '@/lib/format';
 
 import { decideDiscountApproval, listDiscountApprovals } from '../api';
-import { MAX_DISCOUNT_DECISION_REASON, type DiscountApproval } from '../quotations-contract';
+import {
+  MAX_DISCOUNT_DECISION_REASON,
+  type DiscountApproval,
+  type DiscountDecisionBlock,
+} from '../quotations-contract';
 import { Money, OutcomeNote, PRIMARY_BUTTON, SECONDARY_BUTTON } from './shared';
 
 /**
@@ -33,18 +37,17 @@ import { Money, OutcomeNote, PRIMARY_BUTTON, SECONDARY_BUTTON } from './shared';
  * approves it. This panel is where that somebody finds it: the branch's pending
  * requests, most recently asked for first.
  *
- * ## The requester never decides
+ * ## A decision is offered only where the server says it can succeed
  *
- * A request the signed-in person made is listed — they can see it is waiting —
- * but is marked "waiting for another approver" and offers no decision. The server
- * refuses the requester anyway (`discount_approver_must_differ`); the panel simply
- * does not offer what would be refused.
- *
- * ## The other refusals are named
- *
- * An approver with no limit that counts, or one below the discount, is refused by
- * the server with a named rule, which renders here as a sentence in the operator's
- * language. Turning a request down needs a reason, asked for at the reason box.
+ * Every row carries the server's `canDecide` for the signed-in person, and
+ * `cannotDecideReason` when not: their own request (it waits for another
+ * approver), a missing permission, no limit that counts, or a limit below the
+ * discount. The panel offers Approve and Turn down only on `canDecide`, and
+ * otherwise says why in the operator's language — never with an amount, because
+ * no approver limit is ever sent. The server refuses the same cases anyway, by
+ * name; a refusal that still arrives (a limit changed in between) renders as a
+ * sentence above the list. Turning a request down needs a reason, asked for at the
+ * reason box.
  *
  * ## One branch at a time
  *
@@ -52,15 +55,21 @@ import { Money, OutcomeNote, PRIMARY_BUTTON, SECONDARY_BUTTON } from './shared';
  * pair. Under "All my branches", or before a branch is chosen, the panel says so
  * and reads nothing.
  */
+/** Why the operator cannot decide a row, in words — never an amount. */
+const CANNOT_DECIDE_KEY: Readonly<Record<DiscountDecisionBlock, string>> = {
+  not_pending: 'quotations.approvals.blocked.notPending',
+  own_request: 'quotations.approvals.waitingForAnother',
+  missing_permission: 'quotations.approvals.blocked.missingPermission',
+  no_approval_limit: 'quotations.approvals.blocked.noApprovalLimit',
+  over_approval_limit: 'quotations.approvals.blocked.overApprovalLimit',
+};
+
 export function DiscountApprovalsPanel({
   locale,
   messages,
-  canDecide,
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
-  /** `svc.price.manage` — whether decisions are offered at all. */
-  readonly canDecide: boolean;
 }) {
   const branch = useBranchTarget();
   const context = useWorkingContext();
@@ -84,7 +93,6 @@ export function DiscountApprovalsPanel({
           locale={locale}
           messages={messages}
           target={branch.target}
-          canDecide={canDecide}
         />
       ) : (
         <p className="text-body text-text-secondary">
@@ -99,12 +107,10 @@ function ApprovalsTable({
   locale,
   messages,
   target,
-  canDecide,
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
   readonly target: BranchTarget;
-  readonly canDecide: boolean;
 }) {
   const load = useCallback(
     (request: TableRequest, cursor: string | null) =>
@@ -171,11 +177,7 @@ function ApprovalsTable({
         id: 'decision',
         headerKey: 'quotations.approvals.column.decision',
         cell: (row) =>
-          row.requestedByCaller ? (
-            <span className="text-caption text-text-secondary">
-              {translate(messages, 'quotations.approvals.waitingForAnother')}
-            </span>
-          ) : canDecide ? (
+          row.canDecide ? (
             <span className="flex flex-wrap gap-2">
               <button
                 type="button"
@@ -204,13 +206,18 @@ function ApprovalsTable({
               </button>
             </span>
           ) : (
-            <span className="text-caption text-text-muted">
-              {translate(messages, 'quotations.approvals.cannotDecide')}
+            <span className="text-caption text-text-secondary" data-testid="discount-cannot-decide">
+              {translateDynamic(
+                messages,
+                CANNOT_DECIDE_KEY[
+                  row.cannotDecideReason ?? (row.requestedByCaller ? 'own_request' : 'not_pending')
+                ]
+              )}
             </span>
           ),
       },
     ],
-    [approve, busyId, canDecide, locale, messages]
+    [approve, busyId, locale, messages]
   );
 
   return (

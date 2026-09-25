@@ -15,7 +15,7 @@
  * | `quo.quotation-revision-decide`          | POST   | `/quotation-revisions/{revisionId}/decisions` | `quo.decision.record`  |
  * | `quo.quotation-item-decide`              | POST   | `/quotation-items/{itemId}/decisions`         | `quo.decision.record`  |
  * | `quo.discount-approval-list`             | GET    | `/discount-approvals`                         | `quo.quotation.read`   |
- * | `quo.discount-approval-decide`           | POST   | `/discount-approvals/{approvalId}/decision`   | `svc.price.manage`     |
+ * | `quo.discount-approval-decide`           | POST   | `/discount-approvals/{approvalId}/decision`   | `quo.quotation.read`   |
  *
  * Typed from the routes that own the shapes and from the views in
  * `apps/api/src/modules/quotation/application/*`. Nothing here is invented;
@@ -53,6 +53,15 @@
  * the request is the signed-in person's own, which is waiting for another
  * approver and is never offered to them to decide.
  *
+ * Who may decide is the SERVER's answer, per row: `canDecide` is true only when
+ * the request is pending, the signed-in person did not ask for it, holds the
+ * permission the request recorded, and has a limit that counts and covers it;
+ * `cannotDecideReason` says which of those failed. No approver limit is ever part
+ * of a request — the decision route is gated by the quotation read code and the
+ * recorded permission is checked on the row (P1-32-PRE-OD-DISC-04). A quotation
+ * revised while it holds an open request keeps that request's threshold: the old
+ * request becomes `superseded` and is never offered for a decision.
+ *
  * ## Reads the backend does not publish, said here rather than hidden
  *
  * - No quotation list wider than one work order: quotations are reached FROM a
@@ -79,16 +88,24 @@ export const QUOTATION_PERMISSIONS = {
   workOrderRead: 'wo.work_order.read',
   /** The paying customer is FOUND among customers, which `crm.customer-search` answers. */
   customerRead: 'crm.customer.read',
-  /**
-   * Deciding a discount request — the code `quo.discount-approval-decide`
-   * declares. The policy version may name another, which the server checks too.
-   */
-  approveDiscount: 'svc.price.manage',
 } as const;
 
 /** `ck_discount_approvals_status`, mirrored. */
-export const DISCOUNT_APPROVAL_STATES = ['pending', 'approved', 'rejected'] as const;
+export const DISCOUNT_APPROVAL_STATES = ['pending', 'approved', 'rejected', 'superseded'] as const;
 export type DiscountApprovalState = (typeof DISCOUNT_APPROVAL_STATES)[number];
+
+/**
+ * Why the signed-in person cannot approve a request, as the server names it —
+ * never with an amount. Mirrored from `DISCOUNT_DECISION_BLOCKS`.
+ */
+export const DISCOUNT_DECISION_BLOCKS = [
+  'not_pending',
+  'own_request',
+  'missing_permission',
+  'no_approval_limit',
+  'over_approval_limit',
+] as const;
+export type DiscountDecisionBlock = (typeof DISCOUNT_DECISION_BLOCKS)[number];
 
 /** The two decisions an approver records, mirrored from the decision route. */
 export const DISCOUNT_APPROVAL_DECISIONS = ['approved', 'rejected'] as const;
@@ -228,6 +245,8 @@ export interface DiscountApproval {
   readonly companyId: string;
   readonly branchId: string;
   readonly status: DiscountApprovalState;
+  /** `requested`, or `backfilled` for a draft written before the two-step flow. */
+  readonly origin: 'requested' | 'backfilled';
   readonly currency: string;
   readonly discountTotal: string;
   readonly discountBase: string;
@@ -238,11 +257,15 @@ export interface DiscountApproval {
   readonly requestedAt: string;
   /** True for the signed-in person's own request: it waits for ANOTHER approver. */
   readonly requestedByCaller: boolean;
+  /** The server's answer: may the signed-in person approve this request now. */
+  readonly canDecide: boolean;
+  /** Why not, when `canDecide` is false; `null` when it is true. */
+  readonly cannotDecideReason: DiscountDecisionBlock | null;
   readonly decidedBy: DiscountApprovalPerson | null;
   readonly decidedAt: string | null;
   readonly decisionReason: string | null;
-  /** The approver's limit the approval was within. Only on an approved request. */
-  readonly approverLimit: { readonly amount: string; readonly currency: string } | null;
+  /** When a newer revision replaced this request, or `null`. */
+  readonly supersededAt: string | null;
   readonly recordVersion: number;
 }
 
