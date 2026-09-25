@@ -112,6 +112,33 @@ describe('the theme gate can still fail', () => {
     expect(findings).toEqual([]);
   });
 
+  it('does not read a CSS keyword in a Material style object as a utility (ADR-022)', () => {
+    // `border-box` and `text-top` are values a Material `sx` object writes;
+    // neither is a Tailwind class, and before ADR-022 both were reported.
+    const findings = inspect(
+      'x.tsx',
+      "const sx = { boxSizing: 'border-box', verticalAlign: 'text-top', caption: 'text-bottom' };",
+      new Set(['primary'])
+    );
+    expect(findings).toEqual([]);
+  });
+
+  it('still reports a colour utility beside the keywords it now accepts', () => {
+    // The exemption is per prefix and per exact name: it must not open `bg-box`,
+    // a longer name that merely starts with a keyword, or another prefix.
+    const findings = inspect(
+      'x.tsx',
+      '<p className="bg-box text-topaz border-boxed ring-top" />',
+      new Set(['primary'])
+    ) as { utility: string }[];
+    expect(findings.map((f) => f.utility)).toEqual([
+      'bg-box',
+      'text-topaz',
+      'border-boxed',
+      'ring-top',
+    ]);
+  });
+
   it('does not read a comment or a route template as a class', () => {
     // Both were reported on this gate's first run. A text scanner cannot tell
     // code from a sentence about code unless it is made to.

@@ -98,8 +98,16 @@ export const NON_COLOUR = {
     'clip',
     'balance',
     'pretty',
+    // CSS keywords, not utilities: `verticalAlign: 'text-top'` in a Material
+    // style object (ADR-022) reads as `text-top` to the pattern below.
+    'top',
+    'bottom',
   ]),
   border: new Set([
+    // `boxSizing: 'border-box'` in a Material style object (ADR-022) — a CSS
+    // keyword that reads as `border-box` to the pattern below. No colour is
+    // named `box`.
+    'box',
     'solid',
     'dashed',
     'dotted',
@@ -298,6 +306,21 @@ export function selfTest() {
   );
   if (good.length !== 0) {
     return `self-test: a legal line was rejected (${good.map((f) => f.utility).join(', ')})`;
+  }
+
+  // The CSS keywords a Material style object writes are not utilities...
+  const keywords = inspect(
+    'x.tsx',
+    "const sx = { boxSizing: 'border-box', verticalAlign: 'text-top' };",
+    known
+  );
+  if (keywords.length !== 0) {
+    return `self-test: a CSS keyword was read as a utility (${keywords.map((f) => f.utility).join(', ')})`;
+  }
+  // ...and naming them did not open the colour positions beside them.
+  const near = inspect('x.tsx', '<p className="bg-box text-topaz border-boxed" />', known);
+  if (near.length !== 3) {
+    return 'self-test: a keyword exemption swallowed an unresolvable colour utility';
   }
 
   // The two false-positive classes the first run of this gate produced.

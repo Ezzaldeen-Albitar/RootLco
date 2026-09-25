@@ -29,6 +29,7 @@
  * `TS2307` in `typecheck:web` — the same reason `p1-27-security.test.ts` computes
  * its specifier.
  */
+import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { describe, expect, it } from 'vitest';
@@ -43,6 +44,7 @@ const GATE = (await import(
   pathToFileURL(join(process.cwd(), 'scripts', 'check-api-boundary.mjs')).href
 )) as {
   readonly RULES: readonly { readonly id: string; readonly what: string }[];
+  readonly COMPONENT_LIBRARY_RULES: readonly { readonly id: string; readonly what: string }[];
   readonly NETWORK_OWNERS: readonly string[];
   readonly STORE_UPLOAD_OWNER: string;
   readonly moduleSpecifiers: (source: string) => string[];
@@ -161,5 +163,110 @@ describe('the API boundary gate reads imports, not text', () => {
       'supabase-import',
       'unsafe-html',
     ]);
+  });
+});
+
+/**
+ * The Material UI / MUI X boundary ADR-022 draws — rules 6 to 8.
+ *
+ * Every case is a sample the gate must refuse, beside the legal spelling it
+ * must accept, so each rule is proven able to fail.
+ */
+describe('the component-library boundary (ADR-022)', () => {
+  const GRID = `import { DataGrid } from '@mui/x-data-grid';`;
+
+  it('declares the rules it documents', () => {
+    expect(GATE.COMPONENT_LIBRARY_RULES.map((rule) => rule.id).sort()).toEqual([
+      'grid-default-toolbar',
+      'grid-derived-total',
+      'grid-export-surface',
+      'mui-commercial-edition',
+    ]);
+  });
+
+  it('refuses every commercial, deferred or excluded MUI X package', () => {
+    for (const spec of [
+      '@mui/x-data-grid-pro',
+      '@mui/x-data-grid-premium',
+      '@mui/x-date-pickers-pro',
+      '@mui/x-charts-pro',
+      '@mui/x-tree-view-pro',
+      '@mui/x-license',
+      '@mui/x-scheduler',
+      '@mui/x-chat',
+    ]) {
+      expect(rulesOf(`import { X } from '${spec}'; export { X };`), spec).toContain(
+        'mui-commercial-edition'
+      );
+    }
+    expect(rulesOf(`export const load = () => import('@mui/x-data-grid-pro');`)).toContain(
+      'mui-commercial-edition'
+    );
+  });
+
+  it('accepts the MIT editions the ADR adopts', () => {
+    for (const spec of [
+      '@mui/x-data-grid',
+      '@mui/x-date-pickers/DatePicker',
+      '@mui/x-charts/BarChart',
+      '@mui/x-tree-view/SimpleTreeView',
+      '@mui/material/Button',
+    ]) {
+      expect(rulesOf(`import X from '${spec}'; export { X };`), spec).toEqual([]);
+    }
+  });
+
+  it('refuses the default toolbar and every export or print name', () => {
+    expect(
+      rulesOf(`${GRID} export const G = () => <DataGrid rows={[]} columns={[]} showToolbar />;`)
+    ).toContain('grid-default-toolbar');
+    expect(
+      rulesOf(
+        `import { DataGrid, GridToolbar } from '@mui/x-data-grid'; export const G = () => <DataGrid rows={[]} columns={[]} slots={{ toolbar: GridToolbar }} />;`
+      )
+    ).toContain('grid-default-toolbar');
+    for (const sample of [
+      `import { GridToolbarExport } from '@mui/x-data-grid'; export { GridToolbarExport };`,
+      `export const save = (api: { current: { exportDataAsCsv(): void } }) => api.current.exportDataAsCsv();`,
+      `export const print = (api: { current: { exportDataAsPrint(): void } }) => api.current.exportDataAsPrint();`,
+      `export const props = { slotProps: { toolbar: { csvOptions: { fileName: 'x' } } } };`,
+      `export const props = { 'printOptions': { hideFooter: true } };`,
+    ]) {
+      expect(rulesOf(sample), sample).toContain('grid-export-surface');
+    }
+  });
+
+  it('refuses a row count that is not unknown, and an estimated total', () => {
+    const refused = [
+      `${GRID} export const G = ({ rows }: { rows: unknown[] }) => <DataGrid rows={rows} columns={[]} rowCount={rows.length} />;`,
+      `${GRID} export const G = ({ total }: { total: number }) => <DataGrid rows={[]} columns={[]} rowCount={total} />;`,
+      `${GRID} export const G = () => <DataGrid rows={[]} columns={[]} paginationMode="server" />;`,
+      `${GRID} export const G = () => <DataGrid rows={[]} columns={[]} rowCount={-1} paginationMeta={{ hasNextPage: true, estimatedRowCount: 500 }} />;`,
+      // An alias does not hide the grid.
+      `import { DataGrid as Table } from '@mui/x-data-grid'; export const G = () => <Table rows={[]} columns={[]} rowCount={10} />;`,
+      `import * as X from '@mui/x-data-grid'; export const G = () => <X.DataGrid rows={[]} columns={[]} rowCount={10} />;`,
+    ];
+    for (const sample of refused) expect(rulesOf(sample), sample).toContain('grid-derived-total');
+  });
+
+  it('accepts a server-paged grid with an unknown count and no toolbar', () => {
+    const legal = `${GRID} export const G = ({ more }: { more: boolean }) => (
+      <DataGrid rows={[]} columns={[]} paginationMode="server" rowCount={-1} paginationMeta={{ hasNextPage: more }} />
+    );`;
+    expect(rulesOf(legal)).toEqual([]);
+  });
+
+  it('does not read a comment or a string value as a grid surface', () => {
+    const source = `// exportDataAsCsv is refused here, and so is showToolbar\nexport const label = 'csvOptions';`;
+    expect(rulesOf(source)).toEqual([]);
+  });
+
+  it('passes the gallery grid the next pull requests copy', () => {
+    const gallery = readFileSync(
+      join(process.cwd(), 'src', 'components', 'gallery', 'MuiFoundationSection.tsx'),
+      'utf8'
+    );
+    expect(gallery).toContain('rowCount={-1}');
+    expect(rulesOf(gallery, 'src/components/gallery/MuiFoundationSection.tsx')).toEqual([]);
   });
 });
