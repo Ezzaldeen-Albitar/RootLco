@@ -16,6 +16,59 @@ import type { CursorPage, ReadState } from '@/lib/api/read-operation';
 import { useSearchRequest } from '@/lib/api/use-search-request';
 
 /**
+ * The props of a server-searched record picker.
+ *
+ * Exported so the Material UI picker (`components/pickers/EntityPicker`) takes
+ * exactly these props: a call site moves from one to the other by changing its
+ * import, and a prop added to one without the other is a type error here.
+ */
+export interface SearchPickerProps<Row extends { readonly id: string }> {
+  readonly messages: Messages;
+  readonly locale?: Locale | undefined;
+  /** The question this picker asks. */
+  readonly label: string;
+  /** The chosen record, or null. */
+  readonly value: Row | null;
+  readonly onChange: (next: Row | null) => void;
+  /** What a person recognises the record by. Never its identifier. */
+  readonly labelOf: (row: Row) => string;
+  /** One page of the read for a term already long enough to send. */
+  readonly load: (term: string, cursor: string | null) => Promise<ReadState<CursorPage<Row>>>;
+  /** Whether the read can be answered at all for this caller. */
+  readonly canSearch: boolean;
+  /** Why there is no box, when `canSearch` is false. */
+  readonly notPermitted: string;
+  /** The id given to that sentence, so a caller can describe a disabled submit with it. */
+  readonly unavailableId?: string | undefined;
+  /** The caller's own refusal — nothing chosen yet, for instance. */
+  readonly error?: string | undefined;
+  readonly minLength: number;
+  readonly maxLength: number;
+  readonly placeholder: string;
+  readonly example: string;
+  /** Said on the box while the term is shorter than the read accepts. */
+  readonly tooShort: string;
+  /** The accessible name of the list of matches. */
+  readonly resultsLabel: string;
+  /** The words on the control that puts a choice back. */
+  readonly change: string;
+  /**
+   * The id of a choice the form OPENED with (a payer taken from the work
+   * order, for instance). Holding it is not unsaved work; changing it is.
+   */
+  readonly pristineId?: string | null;
+  /**
+   * Whether a choice is work the operator would lose. True for a picker inside a
+   * form that writes; a LIST FILTER passes false, because narrowing a list is
+   * not something a branch switch should stop to ask about.
+   */
+  readonly countsAsUnsaved?: boolean;
+  /** Further ids describing the choice, added to the box or the change control. */
+  readonly describedBy?: string | undefined;
+  readonly testId: string;
+}
+
+/**
  * One record, FOUND by what a person holds and chosen by name — never typed as
  * a reference (Owner directive, `P1-32-PRE-OD-UX`).
  *
@@ -70,51 +123,7 @@ export function SearchPicker<Row extends { readonly id: string }>({
   countsAsUnsaved = true,
   describedBy,
   testId,
-}: {
-  readonly messages: Messages;
-  readonly locale?: Locale | undefined;
-  /** The question this picker asks. */
-  readonly label: string;
-  /** The chosen record, or null. */
-  readonly value: Row | null;
-  readonly onChange: (next: Row | null) => void;
-  /** What a person recognises the record by. Never its identifier. */
-  readonly labelOf: (row: Row) => string;
-  /** One page of the read for a term already long enough to send. */
-  readonly load: (term: string, cursor: string | null) => Promise<ReadState<CursorPage<Row>>>;
-  /** Whether the read can be answered at all for this caller. */
-  readonly canSearch: boolean;
-  /** Why there is no box, when `canSearch` is false. */
-  readonly notPermitted: string;
-  /** The id given to that sentence, so a caller can describe a disabled submit with it. */
-  readonly unavailableId?: string | undefined;
-  /** The caller's own refusal — nothing chosen yet, for instance. */
-  readonly error?: string | undefined;
-  readonly minLength: number;
-  readonly maxLength: number;
-  readonly placeholder: string;
-  readonly example: string;
-  /** Said on the box while the term is shorter than the read accepts. */
-  readonly tooShort: string;
-  /** The accessible name of the list of matches. */
-  readonly resultsLabel: string;
-  /** The words on the control that puts a choice back. */
-  readonly change: string;
-  /**
-   * The id of a choice the form OPENED with (a payer taken from the work
-   * order, for instance). Holding it is not unsaved work; changing it is.
-   */
-  readonly pristineId?: string | null;
-  /**
-   * Whether a choice is work the operator would lose. True for a picker inside a
-   * form that writes; a LIST FILTER passes false, because narrowing a list is
-   * not something a branch switch should stop to ask about.
-   */
-  readonly countsAsUnsaved?: boolean;
-  /** Further ids describing the choice, added to the box or the change control. */
-  readonly describedBy?: string | undefined;
-  readonly testId: string;
-}) {
+}: SearchPickerProps<Row>) {
   const base = useId();
   const errorId = `${base}-error`;
   const chosenId = `${base}-chosen`;
