@@ -18,7 +18,10 @@ import {
   useWorkOrderSearchScope,
 } from '@/features/work-orders/components/WorkOrderPicker';
 import { useBranchTarget } from '@/features/working-context/use-branch-target';
-import { useWorkingContext } from '@/features/working-context/WorkingContextProvider';
+import {
+  useUnsavedGuard,
+  useWorkingContext,
+} from '@/features/working-context/WorkingContextProvider';
 import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic, translateWithValues } from '@/i18n/get-messages';
@@ -896,6 +899,14 @@ function IssueForm({
     reservationId: '',
     requiredPartRef: prefill?.requiredPartRef ?? '',
   });
+  /*
+   * A quantity the operator typed is a draw in progress, so a branch switch
+   * asks before it goes. The confirmed discard needs no callback here: the
+   * form is keyed on the working-context version, so the switch remounts it
+   * empty. Measured against the value it OPENED with, so a draw started from a
+   * requirement's row does not ask until the operator has changed something.
+   */
+  useUnsavedGuard(form.quantity.trim() !== (prefill?.quantity ?? '').trim());
   const requiredParts = useRequiredParts(canReadWorkOrder ? workOrderId : null);
   /*
    * The required part the form was started from ("Issue" on its row), for as
@@ -1323,6 +1334,9 @@ function ReserveForm({
     locationId: '',
     quantity: '',
   });
+  // As in the issue form: a typed quantity asks before a switch, and the
+  // version key on this form is what empties it once the operator confirms.
+  useUnsavedGuard(form.quantity.trim() !== '');
   const [errors, setErrors] = useState<Readonly<Record<string, string>>>({});
   const [busy, setBusy] = useState(false);
   const [outcome, setOutcome] = useState<ActionState | null>(null);

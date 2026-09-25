@@ -717,6 +717,52 @@ describe('a confirmed "Discard and change branch" opens the draw forms empty', (
       forgetRememberedBranch();
     }
   });
+
+  /*
+   * A quantity is a draw in progress on its own. Before QA round three only the
+   * typed item reference asked: a quantity typed alone went silently on a
+   * switch, which is losing entries without the question.
+   */
+  it.each([
+    ['issue', 'inventory.issue.open', 'inventory.issue.heading', 'inventory.issue.quantity'],
+    [
+      'reserve',
+      'inventory.parts.reserve.open',
+      'inventory.parts.reserve.heading',
+      'inventory.reserve.quantity',
+    ],
+  ] as const)(
+    'a quantity typed alone in the %s form asks first, and the discard empties it',
+    async (_name, open, heading, label) => {
+      const user = userEvent.setup();
+      renderInTwo();
+      await user.click(screen.getByRole('button', { name: 'first' }));
+      await user.click(await screen.findByRole('button', { name: EN[open] as string }));
+      const quantity = async () =>
+        within(await screen.findByRole('form', { name: EN[heading] as string })).getByLabelText(
+          labelled(label)
+        );
+      try {
+        // Nothing typed yet: an open, empty form is not unsaved work.
+        await switchWithoutQuestion(user, 'second');
+        await waitFor(() => expect(heldBranch()).toBe(OTHER_BRANCH.id));
+
+        await user.type(await quantity(), '4');
+        await stayOnBranch(user, await switchExpectingQuestion(user, 'first'));
+        expect(heldBranch()).toBe(OTHER_BRANCH.id);
+        expect(await quantity()).toHaveValue('4');
+
+        await discardAndSwitch(user, await switchExpectingQuestion(user, 'first'));
+        await waitFor(() => expect(heldBranch()).toBe(TEST_BRANCH.id));
+        await waitFor(async () => expect(await quantity()).toHaveValue(''));
+        await switchWithoutQuestion(user, 'second');
+        expect(createIssue).not.toHaveBeenCalled();
+        expect(createReservation).not.toHaveBeenCalled();
+      } finally {
+        forgetRememberedBranch();
+      }
+    }
+  );
 });
 
 describe('FE-011 — issuing', () => {
