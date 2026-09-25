@@ -63,19 +63,40 @@
  *   - **idempotent.** The work is the set difference `bundle − mapped`. A second
  *     run computes an empty difference, writes nothing, and appends no audit
  *     record — `unchanged`, exit 0.
- *   - **narrow.** It touches exactly one role per organisation, the one whose
- *     `role_code` is `tenant_administrator`. Every other role in the tenant —
- *     including every role the tenant has built for itself — is never read for
- *     writing and never written. An organisation with no such role is REPORTED
- *     and SKIPPED; the role is not created, because creating one would be
- *     provisioning, not a backfill.
- *   - **respects a customisation.** A tenant that has deliberately mapped a
- *     bundle code as `effect = 'deny'` on its own administrator role has made a
- *     decision. `uq_role_permissions_map` makes the mapping identity unique, so
- *     "adding" the allow would mean re-deciding that deny by UPDATE. The code is
- *     LEFT ALONE and reported as `blockedByDeny`. Extra codes the tenant mapped
- *     beyond the bundle are simply not in the difference, so they survive
- *     untouched by construction.
+ *   - **narrow.** It touches exactly one role per organisation: the STANDARD
+ *     administrator role the provisioning path wrote. That role is identified by
+ *     its server-owned `role_code` (`tenant_administrator`) — immutable and unique
+ *     among an organisation's live roles, unlike the display name, which a tenant
+ *     may edit through `iam.role-update` — and by having been created by a
+ *     principal OUTSIDE the organisation (the platform operator the provisioning
+ *     and administrator-establishing paths act as). Every other role in the
+ *     tenant — cashier, employee and every role the tenant has built for itself —
+ *     is never read for writing and never written. An organisation with no such
+ *     role is REPORTED and SKIPPED; the role is not created, because creating one
+ *     would be provisioning, not a backfill.
+ *   - **never overwrites a customised role.** The Owner's rule, recorded with the
+ *     `sal.credit.manage` widening: a backfill completes the STANDARD role and
+ *     does not re-decide a tenant's own choices about it. So an administrator role
+ *     showing ANY sign of having been customised is SKIPPED WHOLE — nothing is
+ *     added to it, not even the codes it lacks — and REPORTED as `customised`,
+ *     with every reason found:
+ *       · `created-inside-organisation` — the role was created by one of the
+ *         organisation's own principals, so it is the tenant's role wearing the
+ *         standard code, not the one provisioning wrote;
+ *       · `deny:<code>` — the tenant mapped a code as `effect = 'deny'`;
+ *       · `beyond-bundle:<code>` — the role allows a code the bundle does not
+ *         carry, which provisioning never writes;
+ *       · `tenant-edit:<action>` — the organisation's own audit trail records a
+ *         mapping on this role added, re-decided or removed through the shipped
+ *         role-management operations (`iam.role.permission_added`,
+ *         `iam.role.permission_changed`, `iam.role.permission_removed`). This is
+ *         the one signal that also catches a bundle code the tenant REMOVED, which
+ *         the role's current rows alone cannot tell apart from a role that was
+ *         simply provisioned on an older bundle.
+ *     Whether a customised role should gain a newly approved code is the tenant's
+ *     own decision, taken through the role editor by an administrator who holds
+ *     it — or, where nobody does, an explicit operator act this tool refuses to
+ *     take implicitly.
  *
  * ## Scope is explicit
  *
@@ -125,6 +146,17 @@ export const TARGET_ROLE_CODE = 'tenant_administrator';
 
 /** The audit action every changed organisation gets, in its own tenant. */
 export const BACKFILL_AUDIT_ACTION = 'platform.tenant_administrator_bundle.backfilled';
+
+/**
+ * The audit actions the shipped role-management operations append when a tenant
+ * principal changes a role's mappings. Any one of them against the administrator
+ * role marks that role as customised.
+ */
+export const ROLE_MAPPING_EDIT_ACTIONS = Object.freeze([
+  'iam.role.permission_added',
+  'iam.role.permission_changed',
+  'iam.role.permission_removed',
+]);
 
 /** The bundle's single definition, read from the source the provisioning path uses. */
 const BOOTSTRAP_ROLES_SOURCE = join(API_SRC_ROOT, 'modules', 'iam', 'domain', 'bootstrap-roles.ts');
@@ -323,6 +355,7 @@ export async function runBackfill(client, input, bundle) {
       widened: organisations.filter((o) => o.outcome === 'widened').length,
       unchanged: organisations.filter((o) => o.outcome === 'unchanged').length,
       skipped: organisations.filter((o) => o.outcome === 'no-administrator-role').length,
+      customised: organisations.filter((o) => o.outcome === 'customised').length,
       organisations,
     };
 
@@ -379,9 +412,14 @@ async function resolveTargets(client, input) {
  * DELETE and no UPDATE in this function, and none anywhere in this file.
  */
 async function widenOne(client, input, bundle, target, operatorAccountId) {
+  // The creator's home organisation is read alongside the role: a role created
+  // by one of this organisation's own principals is the tenant's role, not the
+  // one provisioning wrote, whatever code it carries.
   const roles = await client.query(
-    `SELECT id FROM iam.roles
-      WHERE tenant_id = $1 AND role_code = $2 AND deleted_at IS NULL`,
+    `SELECT r.id, COALESCE(a.tenant_id = r.tenant_id, false) AS created_inside
+       FROM iam.roles r
+       LEFT JOIN iam.user_accounts a ON a.id = r.created_by
+      WHERE r.tenant_id = $1 AND r.role_code = $2 AND r.deleted_at IS NULL`,
     [target.id, TARGET_ROLE_CODE]
   );
   if (roles.rowCount === 0) {
@@ -397,6 +435,7 @@ async function widenOne(client, input, bundle, target, operatorAccountId) {
       heldAfter: 0,
       added: [],
       blockedByDeny: [],
+      customisations: [],
     };
   }
   if (roles.rowCount > 1) {
@@ -406,6 +445,7 @@ async function widenOne(client, input, bundle, target, operatorAccountId) {
     );
   }
   const roleId = roles.rows[0].id;
+  const createdInside = roles.rows[0].created_inside === true;
 
   const mapped = await client.query(
     `SELECT p.permission_code, rp.effect
@@ -426,6 +466,58 @@ async function widenOne(client, input, bundle, target, operatorAccountId) {
   const blockedByDeny = bundle.filter((code) => deny.has(code)).sort();
   const missing = bundle.filter((code) => !allow.has(code) && !deny.has(code)).sort();
 
+  // Every sign that the tenant has customised this role. Any one of them means
+  // the role is skipped whole and reported; see "never overwrites a customised
+  // role" above.
+  const edits = await client.query(
+    `SELECT DISTINCT r.action
+       FROM iam.audit_records r
+      WHERE r.tenant_id = $1
+        AND r.action = ANY($3::text[])
+        AND (
+          EXISTS (
+            SELECT 1 FROM iam.audit_record_details d
+             WHERE d.tenant_id = r.tenant_id
+               AND d.audit_record_id = r.id
+               AND d.field_name = 'role_id'
+               AND (d.new_value_masked = $2::text OR d.old_value_masked = $2::text)
+          )
+          OR r.entity_id IN (
+            SELECT rp.id FROM iam.role_permissions rp
+             WHERE rp.tenant_id = $1 AND rp.role_id = $2::uuid
+          )
+        )
+      ORDER BY r.action`,
+    [target.id, roleId, [...ROLE_MAPPING_EDIT_ACTIONS]]
+  );
+  const customisations = [
+    ...(createdInside ? ['created-inside-organisation'] : []),
+    ...[...deny].sort().map((code) => `deny:${code}`),
+    ...[...allow]
+      .filter((code) => !bundle.includes(code))
+      .sort()
+      .map((code) => `beyond-bundle:${code}`),
+    ...edits.rows.map((row) => `tenant-edit:${row.action}`),
+  ];
+
+  if (customisations.length > 0) {
+    // Reported, not written. `missing` is what the standard role would have
+    // gained, recorded so the Owner can see exactly what was withheld and why.
+    return {
+      tenantId: target.id,
+      tenantCode: target.tenant_code,
+      status: target.status,
+      outcome: 'customised',
+      roleId,
+      heldBefore: allow.size,
+      heldAfter: allow.size,
+      added: [],
+      withheld: missing,
+      blockedByDeny,
+      customisations,
+    };
+  }
+
   if (missing.length === 0) {
     return {
       tenantId: target.id,
@@ -437,6 +529,7 @@ async function widenOne(client, input, bundle, target, operatorAccountId) {
       heldAfter: allow.size,
       added: [],
       blockedByDeny,
+      customisations,
     };
   }
 
@@ -500,6 +593,7 @@ async function widenOne(client, input, bundle, target, operatorAccountId) {
     heldAfter: allow.size + missing.length,
     added: missing,
     blockedByDeny,
+    customisations,
     auditRecordId: audit.rows[0].id,
   };
 }
@@ -549,7 +643,7 @@ async function main() {
   console.log(`  operator account  ${result.operatorAccountId}`);
   console.log(`  bundle            ${result.bundleSize} codes`);
   console.log(
-    `  organisations     ${result.considered} considered, ${result.widened} widened, ${result.unchanged} already current, ${result.skipped} without a ${TARGET_ROLE_CODE} role`
+    `  organisations     ${result.considered} considered, ${result.widened} widened, ${result.unchanged} already current, ${result.customised} customised and left alone, ${result.skipped} without a ${TARGET_ROLE_CODE} role`
   );
   for (const organisation of result.organisations) {
     const detail =
@@ -557,12 +651,14 @@ async function main() {
         ? `${organisation.heldBefore} -> ${organisation.heldAfter} (+${organisation.added.length}: ${organisation.added.join(', ')})`
         : organisation.outcome === 'unchanged'
           ? `${organisation.heldBefore} codes, already current`
-          : `no ${TARGET_ROLE_CODE} role`;
+          : organisation.outcome === 'customised'
+            ? `${organisation.heldBefore} codes, customised, nothing written (would have added: ${organisation.withheld.join(', ') || 'nothing'})`
+            : `no ${TARGET_ROLE_CODE} role`;
     console.log(
       `    ${organisation.tenantCode.padEnd(24)} ${organisation.outcome.padEnd(22)} ${detail}`
     );
-    if (organisation.blockedByDeny.length > 0) {
-      console.log(`      left alone (tenant deny): ${organisation.blockedByDeny.join(', ')}`);
+    if (organisation.customisations.length > 0) {
+      console.log(`      customised: ${organisation.customisations.join(', ')}`);
     }
   }
   console.log(`  evidence          ${path}`);

@@ -184,3 +184,34 @@ The residual the backfill leaves behind is its own shape: an organisation provis
 widening will need this run again. That is not a defect of the tool but the reason it is repeatable
 and idempotent — the bundle is still written once at provisioning, and this is the sanctioned way to
 re-apply it.
+
+---
+
+## 7. Addendum — a customised administrator role is skipped whole (credit-note decision)
+
+Recorded with the Owner's decision to carry `sal.credit.manage` in the tenant administrator bundle.
+The Owner's rule for existing organisations is that the backfill completes the **standard**
+administrator role and never overwrites one the organisation has customised. The tool was changed
+to hold that rule, and the **customisations** row of the property table in section 2 is superseded
+by it:
+
+| property                               | how it is held now                                                                                                                                                                                                                                                                                                                                                                                                        |
+| -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **the standard role**                  | the organisation's live role with the server-owned `role_code` `tenant_administrator` (immutable; the display name is editable and is never used), created by a principal outside the organisation — the platform operator the provisioning path acts as                                                                                                                                                                  |
+| **customised roles are skipped whole** | a role with a `deny` mapping, an `allow` for a code outside the bundle, a mapping added, re-decided or removed through the shipped role editor (read from the organisation's own audit trail), or created by one of the organisation's own principals is reported as `customised` with each reason and is **not written at all** — not even the codes it lacks. `withheld` lists what the standard role would have gained |
+
+A role that is still the standard one is widened exactly as before. The customised outcome replaces
+the earlier behaviour recorded in section 2 and in **BF-3**, where a role with a tenant `deny` was
+widened around the denied code: under the Owner's rule the tenant's own decision about its role is
+not completed by an operator run, and the evidence file names it instead.
+
+Proof, in the same suite: **BF-3** (a role with an extra allow and a deny is skipped whole, every row
+kept by id, both reasons reported), **BF-11** (an organisation on the 88-code bundle is offered
+exactly `sal.credit.manage`; the dry run writes nothing; the applied run adds it to the standard
+role only — a cashier role in the same organisation is untouched — with one audit record; a second
+run is a no-op) and **BF-12** (a role edited through the shipped remove operation, and a role the
+organisation created itself under the standard code, are both skipped and reported, and gain
+nothing).
+
+Applying it to an existing database is the same operator act as before, run as a dry run first and
+read before anything is written. This addendum does not claim the run was performed anywhere.

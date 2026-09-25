@@ -23,9 +23,11 @@
  *   BF-1  an organisation on the OLD bundle gains exactly the missing codes and
  *         no others, and every mapping row it already had survives by id
  *   BF-2  running it again changes nothing: `unchanged`, no row, no audit record
- *   BF-3  a role customised beyond the bundle keeps its customisations — an
- *         extra allow survives, and a tenant's own `deny` is left alone and
- *         reported rather than re-decided
+ *   BF-3  a role customised beyond the bundle is NOT WRITTEN AT ALL — every row
+ *         it had survives by id, it gains nothing (not even the codes it lacks),
+ *         and it is reported as `customised` with each reason (the Owner's rule
+ *         recorded with the `sal.credit.manage` widening: never overwrite a
+ *         customised role)
  *   BF-4  after the backfill a principal of that organisation performs reads the
  *         stale bundle refused, including `wty.warranty-detail` — the read the
  *         P-7 re-pointing took away (CC-08)
@@ -44,8 +46,19 @@
  *         active tenant, which is why no migration is added
  *   BF-10 the claim that a widening needs no edit to the script, measured for the
  *         Owner directive of 2026-09-17: an organisation on the 85-code bundle is
- *         offered EXACTLY the three codes that directive added, by a dry run that
- *         writes nothing, and then by the applied run
+ *         offered EXACTLY the codes widened since — that directive's three and
+ *         `sal.credit.manage` — by a dry run that writes nothing, and then by the
+ *         applied run
+ *   BF-11 the `sal.credit.manage` widening: an organisation on the 88-code bundle
+ *         is offered exactly that ONE code; the dry run writes nothing; the applied
+ *         run adds it to the standard administrator role and to no other role — a
+ *         cashier role in the same organisation is untouched — with one audit
+ *         record; and a second run is a no-op
+ *   BF-12 an administrator role the tenant customised through the SHIPPED role
+ *         editor (a bundle code removed) is skipped and reported as
+ *         `tenant-edit:iam.role.permission_removed`, and one created by the
+ *         organisation's own principal as `created-inside-organisation` — neither
+ *         gains `sal.credit.manage`, and neither is written
  *
  * ## Where it runs
  *
@@ -57,7 +70,8 @@
  * reproduces the 67-code bundle those organisations really hold.
  *
  * Operations exercised: platform.organization-provision, iam.role-create,
- * iam.role-permission-add, wty.warranty-list, wty.warranty-detail.
+ * iam.role-permission-add, iam.role-permission-remove, wty.warranty-list,
+ * wty.warranty-detail.
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { Pool } from 'pg';
@@ -98,6 +112,7 @@ import {
 import { POST as organizationProvisionRoute } from '@/app/api/v1/platform/organizations/route';
 import { POST as roleCreateRoute } from '@/app/api/v1/iam/roles/route';
 import { POST as rolePermissionAddRoute } from '@/app/api/v1/iam/roles/[roleId]/permissions/route';
+import { DELETE as rolePermissionRemoveRoute } from '@/app/api/v1/iam/roles/[roleId]/permissions/[mappingId]/route';
 import { WARRANTY_LIST_OPERATION, GET as warrantyListRoute } from '@/app/api/v1/warranties/route';
 import {
   WARRANTY_DETAIL_OPERATION,
@@ -189,8 +204,17 @@ const OD_QA_ADDED = Object.freeze([
   'rec.reception.evidence.manage',
 ]);
 
+/**
+ * The Owner's credit-note decision: `sal.credit.manage` for the standard tenant
+ * administrator. It is the reason this backfill owes a SEVENTH operator run — and the
+ * first under the rule that a customised administrator role is skipped whole rather
+ * than completed (BF-3, BF-12). In an organisation provisioned on the 88-code bundle a
+ * customer return raises a credit note and nobody can read, request or approve one.
+ */
+const CREDIT_ADDED = Object.freeze(['sal.credit.manage']);
+
 /** Every code widened onto the 67-code bundle since: what a stale organisation lacks. */
-const WIDENED = Object.freeze([...BACKFILLED, ...P1_32_ADDED, ...OD_QA_ADDED]);
+const WIDENED = Object.freeze([...BACKFILLED, ...P1_32_ADDED, ...OD_QA_ADDED, ...CREDIT_ADDED]);
 
 /** A real catalogue code the bundle deliberately does NOT carry (P1-31 CC-04). */
 const CUSTOMISATION_CODE = 'rpt.export';
@@ -396,12 +420,14 @@ interface BackfillOrganisation {
   readonly tenantId: string;
   readonly tenantCode: string;
   readonly status: string;
-  readonly outcome: 'widened' | 'unchanged' | 'no-administrator-role';
+  readonly outcome: 'widened' | 'unchanged' | 'no-administrator-role' | 'customised';
   readonly roleId: string | null;
   readonly heldBefore: number;
   readonly heldAfter: number;
   readonly added: readonly string[];
   readonly blockedByDeny: readonly string[];
+  readonly customisations: readonly string[];
+  readonly withheld?: readonly string[];
   readonly auditRecordId?: string;
 }
 
@@ -413,6 +439,7 @@ interface BackfillReport {
   readonly widened: number;
   readonly unchanged: number;
   readonly skipped: number;
+  readonly customised: number;
   readonly organisations: readonly BackfillOrganisation[];
 }
 
@@ -676,23 +703,34 @@ describe('P1-31 D-2 — the five obligations, on real rows', () => {
     expect(await backfillAuditCount(stale.tenantId)).toBe(auditBefore);
   });
 
-  it('BF-3 a role customised beyond the bundle keeps its customisations and loses nothing', async () => {
+  it('BF-3 a customised role is skipped whole: nothing written, every row kept, each reason reported', async () => {
     const before = await mappingRows(customised.tenantAdministratorRoleId);
+    const auditBefore = await backfillAuditCount(customised.tenantId);
     expect(await codesOfRole(customised.tenantAdministratorRoleId)).toContain(CUSTOMISATION_CODE);
 
     const result = await backfill({ tenants: [customised.tenantId] });
     const organisation = only(result);
-    expect(organisation).toMatchObject({ outcome: 'widened' });
-    // The denied code is LEFT ALONE and reported, never re-decided by update.
+    expect(organisation).toMatchObject({ outcome: 'customised', added: [] });
+    expect(result.customised).toBe(1);
+    expect(result.widened).toBe(0);
+    // Both of the tenant's own decisions are named, and nothing else is.
+    expect(organisation.customisations).toEqual([
+      `deny:${DENIED_CODE}`,
+      `beyond-bundle:${CUSTOMISATION_CODE}`,
+    ]);
     expect(organisation.blockedByDeny).toEqual([DENIED_CODE]);
-    expect(organisation.added).toEqual([...WIDENED].filter((code) => code !== DENIED_CODE).sort());
+    // What the standard role WOULD have gained is reported, and was not written.
+    expect(organisation.withheld).toEqual(
+      [...WIDENED].filter((code) => code !== DENIED_CODE).sort()
+    );
+    expect(organisation.withheld).toContain('sal.credit.manage');
 
-    const after = await mappingRows(customised.tenantAdministratorRoleId);
-    // Every row it had — the extra allow and the deny included — survives by id.
-    for (const row of before) expect(after).toContain(row);
-    const codes = await codesOfRole(customised.tenantAdministratorRoleId);
-    expect(codes).toContain(CUSTOMISATION_CODE);
-    expect(codes).not.toContain(DENIED_CODE);
+    // Row for row, id for id: the extra allow and the deny included, nothing added.
+    expect(await mappingRows(customised.tenantAdministratorRoleId)).toEqual(before);
+    expect(await codesOfRole(customised.tenantAdministratorRoleId)).not.toContain(
+      'sal.credit.manage'
+    );
+    expect(await backfillAuditCount(customised.tenantId)).toBe(auditBefore);
     const { rows: effect } = await admin.query<{ effect: string }>(
       `SELECT rp.effect FROM iam.role_permissions rp
          JOIN iam.permissions p ON p.id = rp.permission_id
@@ -823,24 +861,25 @@ describe('P1-31 D-2 — the five obligations, on real rows', () => {
     expect(rows[0]?.n).toBe(0);
   });
 
-  it('BF-10 an organisation on the 85-code bundle is offered exactly the three codes of the 2026-09-17 directive, and a dry run offers them without writing', async () => {
+  it('BF-10 an organisation on the 85-code bundle is offered exactly the codes widened since (the three of the 2026-09-17 directive and sal.credit.manage), and a dry run offers them without writing', async () => {
     // The script parses `bootstrap-roles.ts` at run time rather than carrying a
     // copy of the list, so a widening needs no edit to it — which is a claim, and
     // this is the measurement of it for THIS widening. The organisation is put on
     // the 85-code bundle the shipped operation wrote the day before, not on the
     // 67-code one BF-1 uses, so the difference the script computes can only be
-    // the three codes the directive added.
+    // the three codes the directive added and the one the credit-note decision added.
+    const since85 = [...OD_QA_ADDED, ...CREDIT_ADDED];
     const organisation = await provision('odqa');
     await admin.query(
       `DELETE FROM iam.role_permissions
         WHERE role_id = $1
           AND permission_id IN (SELECT id FROM iam.permissions WHERE permission_code = ANY($2::text[]))`,
-      [organisation.tenantAdministratorRoleId, [...OD_QA_ADDED]]
+      [organisation.tenantAdministratorRoleId, since85]
     );
     const before = await codesOfRole(organisation.tenantAdministratorRoleId);
-    expect(before).toHaveLength(parsedBundle.length - OD_QA_ADDED.length);
+    expect(before).toHaveLength(parsedBundle.length - since85.length);
     expect(before).toHaveLength(85);
-    for (const code of OD_QA_ADDED) expect(before).not.toContain(code);
+    for (const code of since85) expect(before).not.toContain(code);
 
     const beforeRows = await mappingRows(organisation.tenantAdministratorRoleId);
     const auditBefore = await backfillAuditCount(organisation.tenantId);
@@ -857,7 +896,7 @@ describe('P1-31 D-2 — the five obligations, on real rows', () => {
     // EXACTLY the three, and no other code: the whole point of the case. In
     // particular `inv.cost.view` is not offered, because CC-12 keeps it out of the
     // bundle the script reads.
-    expect(only(dryRun).added).toEqual([...OD_QA_ADDED].sort());
+    expect(only(dryRun).added).toEqual([...since85].sort());
     expect(only(dryRun).added).not.toContain('inv.cost.view');
     // A dry run writes nothing, so the offer above is an offer and not a report
     // of something that has already happened.
@@ -865,9 +904,171 @@ describe('P1-31 D-2 — the five obligations, on real rows', () => {
     expect(await backfillAuditCount(organisation.tenantId)).toBe(auditBefore);
 
     const applied = await backfill({ tenants: [organisation.tenantId] });
-    expect(only(applied).added).toEqual([...OD_QA_ADDED].sort());
+    expect(only(applied).added).toEqual([...since85].sort());
     expect(await codesOfRole(organisation.tenantAdministratorRoleId)).toEqual(
       [...TENANT_ADMINISTRATOR_ROLE.permissionCodes].sort()
     );
+  });
+
+  it('BF-11 an organisation on the 88-code bundle is offered exactly sal.credit.manage, and only its standard administrator role gains it', async () => {
+    const organisation = await provision('crn');
+
+    // A cashier role the organisation built for itself through the shipped role
+    // editor. Its mappings append `iam.role.permission_added` records naming THIS
+    // role, which must not be read as a customisation of the administrator role.
+    asOwnerOf(organisation);
+    const cashier = await call<{ id: string }>(roleCreateRoute, {
+      path: '/iam/roles',
+      body: { roleCode: `cashier_${RUN}`, name: 'Cashier', description: 'Takes payments' },
+      idempotencyKey: randomUUID(),
+    });
+    expect(cashier.status).toBe(201);
+    const cashierRoleId = cashier.body.id;
+    for (const permissionCode of ['sal.invoice.manage', 'sal.finance.view', 'sal.payment.record']) {
+      asOwnerOf(organisation);
+      const mapped = await call(rolePermissionAddRoute, {
+        path: `/iam/roles/${cashierRoleId}/permissions`,
+        params: { roleId: cashierRoleId },
+        body: { permissionCode, effect: 'allow' },
+        idempotencyKey: randomUUID(),
+      });
+      expect(mapped.status).toBe(201);
+    }
+    const cashierBefore = await mappingRows(cashierRoleId);
+
+    // The standard role, put on the 88-code bundle every organisation provisioned
+    // before the credit-note decision holds.
+    const roleId = organisation.tenantAdministratorRoleId;
+    await admin.query(
+      `DELETE FROM iam.role_permissions
+        WHERE role_id = $1
+          AND permission_id IN (SELECT id FROM iam.permissions WHERE permission_code = ANY($2::text[]))`,
+      [roleId, [...CREDIT_ADDED]]
+    );
+    expect(await codesOfRole(roleId)).toHaveLength(88);
+    const beforeRows = await mappingRows(roleId);
+    const auditBefore = await backfillAuditCount(organisation.tenantId);
+
+    // Named by tenant CODE, the form an operator types.
+    const dryRun = await backfill({ tenants: [organisation.tenantCode], dryRun: true });
+    expect(dryRun.outcome).toBe('dry-run');
+    expect(only(dryRun)).toMatchObject({
+      tenantId: organisation.tenantId,
+      outcome: 'widened',
+      heldBefore: 88,
+      heldAfter: parsedBundle.length,
+      customisations: [],
+    });
+    expect(only(dryRun).added).toEqual(['sal.credit.manage']);
+    expect(await mappingRows(roleId)).toEqual(beforeRows);
+    expect(await backfillAuditCount(organisation.tenantId)).toBe(auditBefore);
+
+    const applied = await backfill({ tenants: [organisation.tenantCode] });
+    expect(only(applied)).toMatchObject({ outcome: 'widened', added: ['sal.credit.manage'] });
+    expect(await codesOfRole(roleId)).toEqual(
+      [...TENANT_ADMINISTRATOR_ROLE.permissionCodes].sort()
+    );
+    const afterRows = await mappingRows(roleId);
+    for (const row of beforeRows) expect(afterRows).toContain(row);
+    expect(afterRows).toHaveLength(beforeRows.length + 1);
+    expect(await backfillAuditCount(organisation.tenantId)).toBe(auditBefore + 1);
+
+    // The cashier role gained nothing: not broadened, not even read for writing.
+    expect(await mappingRows(cashierRoleId)).toEqual(cashierBefore);
+    expect(await codesOfRole(cashierRoleId)).not.toContain('sal.credit.manage');
+
+    // Idempotent: a second run writes nothing and records nothing.
+    const again = await backfill({ tenants: [organisation.tenantCode] });
+    expect(only(again)).toMatchObject({ outcome: 'unchanged', added: [] });
+    expect(await mappingRows(roleId)).toEqual(afterRows);
+    expect(await backfillAuditCount(organisation.tenantId)).toBe(auditBefore + 1);
+  });
+
+  it('BF-12 an administrator role the tenant edited through the role editor, or created itself, is skipped and reported, and gains nothing', async () => {
+    // (a) EDITED. The organisation's own administrator removes a bundle code from its
+    // own role through the shipped remove operation. From the rows alone that role is
+    // indistinguishable from one provisioned on an older bundle; its audit trail is
+    // what tells them apart.
+    const edited = await provision('edit');
+    const editedRoleId = edited.tenantAdministratorRoleId;
+    await admin.query(
+      `DELETE FROM iam.role_permissions
+        WHERE role_id = $1
+          AND permission_id IN (SELECT id FROM iam.permissions WHERE permission_code = ANY($2::text[]))`,
+      [editedRoleId, [...CREDIT_ADDED]]
+    );
+    const { rows: mapping } = await admin.query<{ id: string }>(
+      `SELECT rp.id FROM iam.role_permissions rp
+         JOIN iam.permissions p ON p.id = rp.permission_id
+        WHERE rp.role_id = $1 AND p.permission_code = 'rpt.report.read'`,
+      [editedRoleId]
+    );
+    const mappingId = mapping[0]?.id ?? '';
+    expect(mappingId).not.toBe('');
+    asOwnerOf(edited);
+    const removed = await call(rolePermissionRemoveRoute, {
+      path: `/iam/roles/${editedRoleId}/permissions/${mappingId}`,
+      method: 'DELETE',
+      params: { roleId: editedRoleId, mappingId },
+    });
+    expect(removed.status).toBe(200);
+    const editedRows = await mappingRows(editedRoleId);
+
+    // (b) CREATED INSIDE. The organisation archived the provisioned role and built its
+    // own under the same code through the shipped role-create operation. It wears the
+    // standard code and is not the standard role.
+    const inside = await provision('inside');
+    const client = await admin.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query(
+        `SELECT set_config('app.user_id',$1,true), set_config('app.tenant_id',$2,true)`,
+        [inside.ownerAccountId, inside.tenantId]
+      );
+      await client.query('UPDATE iam.roles SET deleted_at = now() WHERE id = $1', [
+        inside.tenantAdministratorRoleId,
+      ]);
+      await client.query('COMMIT');
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+    asOwnerOf(inside);
+    const recreated = await call<{ id: string }>(roleCreateRoute, {
+      path: '/iam/roles',
+      body: { roleCode: TARGET_ROLE_CODE, name: 'Administrator', description: 'Our own' },
+      idempotencyKey: randomUUID(),
+    });
+    expect(recreated.status).toBe(201);
+    const insideRows = await mappingRows(recreated.body.id);
+
+    const result = await backfill({ tenants: [edited.tenantId, inside.tenantId] });
+    expect(result.customised).toBe(2);
+    expect(result.widened).toBe(0);
+    const [first, second] = result.organisations;
+    expect(first).toMatchObject({
+      tenantId: edited.tenantId,
+      outcome: 'customised',
+      added: [],
+      customisations: ['tenant-edit:iam.role.permission_removed'],
+    });
+    expect(first?.withheld).toEqual(['rpt.report.read', 'sal.credit.manage']);
+    expect(second).toMatchObject({
+      tenantId: inside.tenantId,
+      roleId: recreated.body.id,
+      outcome: 'customised',
+      added: [],
+      customisations: ['created-inside-organisation'],
+    });
+    expect(second?.withheld).toContain('sal.credit.manage');
+
+    // Neither was written, and neither gained an audit record.
+    expect(await mappingRows(editedRoleId)).toEqual(editedRows);
+    expect(await mappingRows(recreated.body.id)).toEqual(insideRows);
+    expect(await codesOfRole(editedRoleId)).not.toContain('sal.credit.manage');
+    expect(await backfillAuditCount(edited.tenantId)).toBe(0);
+    expect(await backfillAuditCount(inside.tenantId)).toBe(0);
   });
 });
