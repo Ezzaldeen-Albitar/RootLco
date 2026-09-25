@@ -60,6 +60,7 @@ import type {
   DiscountApprovalRow,
   ItemRow,
   NewItemInput,
+  QuotationDiscountPolicyRow,
   QuotationRepository,
   QuotationRow,
   RevisionRow,
@@ -87,11 +88,12 @@ export interface CreateQuotationInput {
 }
 
 /**
- * What a revision's discounts need, measured against the policy in force.
+ * What a revision's discounts need, measured against the policy version its
+ * quotation is held to.
  *
- * Collected while pricing the lines because that is the only place the policy is
- * read; recorded after the revision exists, because the approval request has to
- * name the revision it is about.
+ * Measured once the quotation exists, because the database pins that version when
+ * the quotation is written; recorded after the revision exists, because the
+ * approval request has to name the revision it is about.
  */
 interface DiscountSummary {
   /** `numeric(18,4)` STRING: every line's discount, summed by PostgreSQL. */
@@ -107,6 +109,15 @@ interface DiscountSummary {
   readonly permissionCode: string | null;
   /** The policy version measured against; `null` when none was configured. */
   readonly threshold: DiscountThresholdSnapshot | null;
+}
+
+/** One priced line's discount and the base it applies to, ready to be measured. */
+interface LineDiscount {
+  readonly lineNumber: number;
+  /** `numeric(18,4)` decimal STRING. */
+  readonly discount: string;
+  /** `unit * quantity`, exact at scale 4, as a `numeric(18,4)` decimal STRING. */
+  readonly base: string;
 }
 
 export interface IssueQuotationInput {
@@ -375,6 +386,19 @@ export class QuotationService {
       payerPartnerRef: input.payerPartnerRef ?? null,
     });
 
+    // The database pinned the discount policy in force as it wrote the quotation
+    // (`quo.pin_quotation_discount_policy`), and every revision of it — this first
+    // one included — is measured against that version for the quotation's whole
+    // life. A threshold change is prospective: this is where it takes effect.
+    const pinned = await this.pinnedDiscountPolicy(db, quotation.id);
+    const discount = await this.measureDiscount(db, {
+      companyId: quotation.companyId,
+      currency,
+      lines: priced.discounts,
+      asOf,
+      pinned,
+    });
+
     const revision = await this.repository.insertRevision(db, {
       id: quotation.id,
       companyId: quotation.companyId,
@@ -387,9 +411,7 @@ export class QuotationService {
       items.push(await this.repository.insertItem(db, revision, item));
     }
 
-    // A NEW quotation is measured against the policy in force now: a threshold
-    // change is prospective, and this is where it takes effect.
-    const approval = await this.recordDiscountRequest(db, revision, priced.discount, asOf, []);
+    const approval = await this.recordDiscountRequest(db, revision, discount, asOf, []);
 
     await appendAudit(db, {
       action: 'quo.quotation.created',
@@ -402,6 +424,14 @@ export class QuotationService {
         { field: 'workOrderId', classification: 'internal', value: workOrder.id },
         { field: 'currency', classification: 'public', value: currency },
         { field: 'lineCount', classification: 'public', value: String(items.length) },
+        {
+          field: 'discountPolicyVersion',
+          classification: 'internal',
+          value:
+            pinned.threshold === null
+              ? 'unconfigured'
+              : `${pinned.threshold.policyId}:${pinned.threshold.versionNo}`,
+        },
       ],
     });
 
@@ -437,17 +467,17 @@ export class QuotationService {
    * revision an immutable snapshot. So a revision is how a price change reaches a
    * customer, and the previous issued revision stays exactly as it was presented.
    *
-   * ## A quotation with an open discount request keeps its snapshot
+   * ## Every revision is held to the quotation's pinned policy
    *
-   * While the quotation holds a pending or rejected discount request, the new
-   * revision's discount is measured against THAT request's policy snapshot, not the
-   * company threshold of the moment (P1-32-PRE-OD-DISC-04). Every open request is
-   * superseded by the new revision — it can no longer be approved — and, when the
-   * discount still needs approval under the snapshot, a new pending request is
-   * recorded under the same snapshot with the signed-in person as its requester. So
-   * a requester who raises the threshold and then revises gains nothing: the same
-   * discount still waits for somebody else. Bringing the discount under the snapshot
-   * threshold, or an approval, is what releases it.
+   * The new revision's discount is measured against the policy version the database
+   * pinned when the QUOTATION was written, never against the company threshold of
+   * the moment (P1-32-PRE-OD-DISC-07). Every open request is superseded by the new
+   * revision — it can no longer be approved — and, when the discount needs approval
+   * under the pinned version, a new pending request is recorded under it with the
+   * signed-in person as its requester. So a requester who raises the threshold gains
+   * nothing by revising, in one step or several: revising the discount away and back
+   * again is measured against the same version each time, and the same discount still
+   * waits for somebody else. A threshold change reaches new quotations only.
    */
   public async revise(
     db: DbHandle,
@@ -477,18 +507,16 @@ export class QuotationService {
     this.assertQuotationOpen(quotation);
 
     const asOf = await this.repository.businessDate(db);
-    // Under the quotation lock: the open requests and the snapshot they hold it to.
+    // Under the quotation lock: the open requests this revision supersedes, and the
+    // policy version the quotation is held to.
     const open = await this.repository.lockOpenDiscountApprovals(db, quotation.id);
-    const lock = open[0];
-    const pinned: PinnedDiscountPolicy | undefined =
-      lock === undefined ? undefined : pinnedPolicyOf(lock);
+    const pinned = await this.pinnedDiscountPolicy(db, quotation.id);
     const priced = await this.priceLines(db, {
       lines: input.lines,
       companyId: quotation.companyId,
       branchId: quotation.branchId,
       customerClass: input.customerClass ?? null,
       asOf,
-      pinned,
     });
 
     // The new revision inherits the quotation's immutable currency. A revision
@@ -501,6 +529,13 @@ export class QuotationService {
           `list is in ${priced.currency}. Currency conversion is not performed.`,
       });
     }
+    const discount = await this.measureDiscount(db, {
+      companyId: quotation.companyId,
+      currency: priced.currency,
+      lines: priced.discounts,
+      asOf,
+      pinned,
+    });
 
     const revision = await this.repository.insertRevision(db, {
       id: quotation.id,
@@ -515,20 +550,14 @@ export class QuotationService {
     }
 
     // The open requests are replaced by this revision first — the database refuses
-    // a new request while one is open — and a new one is recorded under the same
-    // snapshot when the discount still needs it.
+    // a new request while one is open — and a new one is recorded under the pinned
+    // version when the discount needs it.
     const superseded = await this.repository.supersedeDiscountApprovals(
       db,
       open.map((row) => row.id),
       revision.id
     );
-    const approval = await this.recordDiscountRequest(
-      db,
-      revision,
-      priced.discount,
-      asOf,
-      superseded
-    );
+    const approval = await this.recordDiscountRequest(db, revision, discount, asOf, superseded);
 
     await appendAudit(db, {
       action: 'quo.quotation_revision.created',
@@ -556,9 +585,7 @@ export class QuotationService {
                 field: 'discountPolicySnapshot',
                 classification: 'internal' as const,
                 value:
-                  lock?.policyVersionNo === null || lock === undefined
-                    ? 'unconfigured'
-                    : String(lock.policyVersionNo),
+                  pinned.threshold === null ? 'unconfigured' : String(pinned.threshold.versionNo),
               },
             ]),
       ],
@@ -626,10 +653,11 @@ export class QuotationService {
      * discount against the policy in force now: a later raise of the company
      * threshold must not let a pending discount through, and a later lowering must
      * not undo an approval. A revision with NO record is measured at the database
-     * (`quo.revision_discount_needs_approval`): against the snapshot of the request it
-     * replaced, or — for a draft written before the two-step flow — the policy in
-     * force now. `quo.guard_revision_discount_approval` refuses the same transition
-     * whatever reaches the database; this names the reason for the screen.
+     * (`quo.revision_discount_needs_approval`) against the policy version its
+     * quotation is held to (P1-32-PRE-OD-DISC-07).
+     * `quo.guard_revision_discount_approval` refuses the same transition whatever
+     * reaches the database, summing the lines itself; this names the reason for the
+     * screen.
      */
     const approvalRow = await this.repository.findDiscountApprovalForRevision(db, revision.id);
     await this.assertDiscountIssuable(db, revision, approvalRow);
@@ -1177,10 +1205,9 @@ export class QuotationService {
    * first line and every subsequent line must match it; a mismatch is a hard
    * failure, never a conversion.
    *
-   * The discount is MEASURED here, not authorized: whether it needs approval under
-   * the policy in force today, and which policy version said so. Approval is a
-   * separate act by a different person (`DiscountApprovalService`), so nothing
-   * about the caller's own authority is consulted.
+   * Each line's discount and base are collected here and MEASURED afterwards
+   * (`measureDiscount`), once the quotation — and so the policy version it is held
+   * to — exists.
    */
   private async priceLines(
     db: DbHandle,
@@ -1190,29 +1217,18 @@ export class QuotationService {
       branchId: string;
       customerClass: string | null;
       asOf: string;
-      /** The snapshot an open request holds the quotation to; absent = the policy in force. */
-      pinned?: PinnedDiscountPolicy | undefined;
     }
   ): Promise<{
     currency: string;
     items: readonly NewItemInput[];
-    discount: DiscountSummary;
+    discounts: readonly LineDiscount[];
   }> {
     const catalog = serviceCatalogModule().services;
     const pricing = pricingModule();
     const items: NewItemInput[] = [];
+    const discounts: LineDiscount[] = [];
     let currency: string | null = null;
     let lineNumber = 0;
-    // Document-level discount accounting. A per-line threshold check is defeated by
-    // splitting one large discount across many lines, so the aggregate is measured
-    // once at the end against the same policy.
-    let totalDiscount = '0.0000';
-    // The document's pre-discount base, so the aggregate is measured against the
-    // same ratio a single line of that size would be.
-    let totalBase = '0.0000';
-    let elevatedLines = 0;
-    let appliedThreshold: DiscountThresholdSnapshot | null = null;
-    let requiredPermission: string | null = null;
 
     for (const line of context.lines) {
       lineNumber += 1;
@@ -1271,26 +1287,7 @@ export class QuotationService {
       // The base a percentage discount applies to. Computed by the database, and
       // refused unless it is exact at scale 4 — see `lineBase`.
       const base = await this.lineBase(db, lineNumber, price.unitPrice, line.quantity);
-      const assessment = await pricing.discounts.assess(
-        db,
-        {
-          companyId: context.companyId,
-          discountAmount: discount,
-          currency: price.currency,
-          lineBase: base,
-          asOf: context.asOf,
-        },
-        context.pinned
-      );
-      totalDiscount = await this.addMoney(db, totalDiscount, discount);
-      totalBase = await this.addMoney(db, totalBase, base);
-      if (assessment.requiresApproval) {
-        elevatedLines += 1;
-        // Every line of one document resolves the same company policy, so the last
-        // write is the policy that applied — not a choice between different ones.
-        appliedThreshold = assessment.threshold;
-        requiredPermission = assessment.permissionCode;
-      }
+      discounts.push({ lineNumber, discount, base });
 
       items.push({
         lineNumber,
@@ -1311,6 +1308,90 @@ export class QuotationService {
 
     if (currency === null) {
       throw new QuotationRuleError('No line resolved a currency');
+    }
+    return { currency, items, discounts };
+  }
+
+  /**
+   * The policy version a quotation is held to, as the pricing module measures it:
+   * `threshold: null` is "none was in force when it was written" — a threshold of
+   * zero — and its approver needs the default permission.
+   */
+  private async pinnedDiscountPolicy(
+    db: DbHandle,
+    quotationId: string
+  ): Promise<PinnedDiscountPolicy> {
+    const row: QuotationDiscountPolicyRow | null = await this.repository.quotationDiscountPolicy(
+      db,
+      quotationId
+    );
+    if (row === null) {
+      return { threshold: null, permissionCode: DEFAULT_DISCOUNT_APPROVAL_PERMISSION };
+    }
+    return {
+      threshold: {
+        policyId: row.policyId,
+        versionNo: row.versionNo,
+        kind: row.kind,
+        value: row.value,
+        currency: row.currency,
+      },
+      permissionCode: row.requiredPermissionCode,
+    };
+  }
+
+  /**
+   * Measures a revision's discounts against the version its quotation is held to.
+   *
+   * MEASURED, not authorized: whether the discount needs approval, and which policy
+   * version said so. Approval is a separate act by a different person
+   * (`DiscountApprovalService`), so nothing about the caller's own authority is
+   * consulted. A malformed discount — negative, or larger than its line — is refused
+   * here, whoever would approve it.
+   */
+  private async measureDiscount(
+    db: DbHandle,
+    context: {
+      companyId: string;
+      currency: string;
+      lines: readonly LineDiscount[];
+      asOf: string;
+      pinned: PinnedDiscountPolicy;
+    }
+  ): Promise<DiscountSummary> {
+    const pricing = pricingModule();
+    // Document-level discount accounting. A per-line threshold check is defeated by
+    // splitting one large discount across many lines, so the aggregate is measured
+    // once at the end against the same version.
+    let totalDiscount = '0.0000';
+    // The document's pre-discount base, so the aggregate is measured against the
+    // same ratio a single line of that size would be.
+    let totalBase = '0.0000';
+    let elevatedLines = 0;
+    let appliedThreshold: DiscountThresholdSnapshot | null = null;
+    let requiredPermission: string | null = null;
+
+    for (const line of context.lines) {
+      const assessment = await pricing.discounts.assess(
+        db,
+        {
+          companyId: context.companyId,
+          discountAmount: line.discount,
+          currency: context.currency,
+          lineBase: line.base,
+          asOf: context.asOf,
+        },
+        context.pinned
+      );
+      totalDiscount = await this.addMoney(db, totalDiscount, line.discount);
+      totalBase = await this.addMoney(db, totalBase, line.base);
+      if (assessment.requiresApproval) {
+        elevatedLines += 1;
+        // Every line of one document is measured against the same pinned version, so
+        // the last write is the version that applied — not a choice between several.
+        appliedThreshold = assessment.threshold;
+        requiredPermission = assessment.permissionCode;
+      }
     }
 
     /**
@@ -1333,7 +1414,7 @@ export class QuotationService {
         {
           companyId: context.companyId,
           discountAmount: totalDiscount,
-          currency,
+          currency: context.currency,
           lineBase: totalBase,
           asOf: context.asOf,
         },
@@ -1347,17 +1428,13 @@ export class QuotationService {
     }
 
     return {
-      currency,
-      items,
-      discount: {
-        total: totalDiscount,
-        base: totalBase,
-        currency,
-        requiresApproval,
-        elevatedLines,
-        permissionCode: requiredPermission,
-        threshold: appliedThreshold,
-      },
+      total: totalDiscount,
+      base: totalBase,
+      currency: context.currency,
+      requiresApproval,
+      elevatedLines,
+      permissionCode: requiredPermission,
+      threshold: appliedThreshold,
     };
   }
 
@@ -1368,8 +1445,9 @@ export class QuotationService {
    * One request per revision: the approval is of the DOCUMENT's discount, because
    * the aggregate is what a split cannot hide. The requester is the signed-in person
    * — the repository takes it from the request context and row security refuses any
-   * other — and the policy version it was measured against is copied onto the row,
-   * so a later change to the company threshold cannot move it.
+   * other — and the quotation's pinned policy version it was measured against is
+   * copied onto the row; the database refuses any other snapshot, and any total the
+   * lines do not carry.
    *
    * Nothing is written when no approval is needed: a discount under the threshold is
    * an ordinary edit anyone who may write the quotation may make.
@@ -1576,30 +1654,6 @@ export class QuotationService {
       currentRevision: revision === null ? null : toRevisionView(revision, items, discountApproval),
     };
   }
-}
-
-/**
- * The snapshot an open request holds its quotation to: the threshold it was measured
- * against (`null` = none was configured, a threshold of zero) and the permission its
- * approver must hold.
- */
-function pinnedPolicyOf(row: DiscountApprovalRow): PinnedDiscountPolicy {
-  return {
-    threshold:
-      row.policyId === null ||
-      row.policyVersionNo === null ||
-      row.thresholdKind === null ||
-      row.thresholdValue === null
-        ? null
-        : {
-            policyId: row.policyId,
-            versionNo: row.policyVersionNo,
-            kind: row.thresholdKind,
-            value: row.thresholdValue,
-            currency: row.thresholdCurrencyCode,
-          },
-    permissionCode: row.requiredPermissionCode,
-  };
 }
 
 /** Re-exported so callers can reason about terminal revisions without the domain. */

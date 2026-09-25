@@ -1,9 +1,12 @@
 -- ============================================================================
 -- Phase: 1-32 (preparatory) — discount approval: a recorded request, a separate
---        approval by another person, and a versioned company threshold
--- Migration: quo.discount_approvals; svc.pricing_approval_policies.version_no
--- Tasks: P1-32-PRE-OD-DISC-01, P1-32-PRE-OD-DISC-04
--- Owner module: quo (discount approvals), svc (policy versions)
+--        approval by another person, and a versioned company threshold that
+--        every quotation is held to from the moment it is written
+-- Migration: quo.discount_approvals; quo.quotations.discount_policy_*;
+--            svc.pricing_approval_policies.version_no
+-- Tasks: P1-32-PRE-OD-DISC-01, P1-32-PRE-OD-DISC-04, P1-32-PRE-OD-DISC-07
+-- Owner module: quo (discount approvals, the quotation's policy pin), svc (policy
+--               versions)
 --
 -- Rollback classification: ROLL-FORWARD-ONLY once a discount approval has been
 --   recorded: it is the only evidence of who asked for a discount and who approved
@@ -17,57 +20,72 @@
 --   active colleague satisfied it, so a person could approve their own discount by
 --   typing somebody else's name. Nothing about the request was stored.
 --
+--     * EVERY QUOTATION IS HELD TO THE POLICY IT WAS WRITTEN UNDER. `quo.quotations`
+--       gains `discount_policy_id`, `discount_policy_version_no` and
+--       `discount_policy_pinned_at`. `quo.pin_quotation_discount_policy` fills them
+--       when the quotation is inserted, from the company's discount policy in force
+--       that day (`svc.discount_policy_in_force`) — whatever the writer supplied —
+--       and refuses any later change. Every revision of that quotation, for its
+--       whole life, is measured against that pinned version: by the application
+--       when the revision is written, and by the database when it is issued. A
+--       threshold change therefore reaches only quotations written after it — it
+--       is prospective — and no sequence of revisions of an existing quotation can
+--       reach it. A NULL `discount_policy_id` means no policy was in force when the
+--       quotation was written: its threshold is zero, as it is for a company that
+--       configured none. A pinned version is read by its id whatever its later
+--       status: its content is immutable (section 1), and a version that cannot be
+--       read is treated as none — a threshold of zero, never a higher one.
+--
 --     * A DISCOUNT THAT NEEDS APPROVAL IS A RECORDED REQUEST. `quo.discount_approvals`
 --       holds one row per quotation revision whose discount needs approval.
 --       `requested_by` is the signed-in person who created the revision —
 --       `ins_discount_approvals_scope` refuses any other value — so the requester is
---       a server fact, never a claim.
+--       a server fact, never a claim. The row copies the quotation's pinned policy
+--       (`quo.guard_discount_approval` refuses any other snapshot) and the discount
+--       the revision's lines carry (it refuses any other total). `requested_by` and
+--       `decided_by` are foreign keys into `iam.user_accounts` of the same tenant.
 --
---     * APPROVAL IS A SEPARATE ACT BY ANOTHER PERSON. The row is born `pending`
---       (`quo.guard_discount_approval`); it becomes `approved` or `rejected` only by
---       an UPDATE whose `decided_by` is the signed-in person
---       (`upd_discount_approvals_scope`), and `ck_discount_approvals_separation`
---       refuses a decider who is the requester. There is no exception for a sole
+--     * APPROVAL IS A SEPARATE ACT BY ANOTHER PERSON, CHECKED BY THE DATABASE. The
+--       row is born `pending`; it becomes `approved` or `rejected` only by an UPDATE
+--       that `quo.guard_discount_approval` checks itself, whoever issues it: the
+--       decider is the signed-in person (`decided_by = iam.current_user_id()`), is
+--       not the requester, and holds the permission the request recorded in the
+--       request's company and branch (`iam.has_permission_in_scope`). An approval
+--       also needs an approval limit that counts — computed here from
+--       `iam.approval_limits` by the same rule as the application's
+--       `callerApprovalCeiling`: the approver's own limit before a role's, the
+--       largest role limit whose grant reaches the company, never a limit the
+--       approver created — in the discount's currency and not below it. The limit is
+--       written onto the row BY THE DATABASE (`approver_limit_amount`); a value the
+--       caller supplies is overwritten. `ck_discount_approvals_separation` repeats
+--       the separation as a constraint. There is no exception for a sole
 --       administrator and no column that switches the rule off.
 --
---     * AN APPROVAL IS OF AN AMOUNT. The approval records the discount total and
---       currency it approved (`approved_discount_total`, `approved_currency_code`),
---       and the issue guard compares them with the discount `quo.issue_revision`
---       sums from the lines. A revision whose discount is not the one approved is
---       not issued.
+--     * AN APPROVAL IS OF AN AMOUNT, AND THE LINES STOP MOVING. The approval records
+--       the discount total and currency it approved (`approved_discount_total`,
+--       `approved_currency_code`). Once a revision holds a request that is not
+--       superseded, its lines are frozen (`quo.guard_discount_request_item_freeze`):
+--       no line is added, changed or removed — revising the quotation is the way to
+--       change it. The issue guard still sums the revision's live lines itself and
+--       refuses a revision whose summed discount is not the amount approved.
 --
 --     * A DISCOUNT THAT NEEDS APPROVAL IS NOT ISSUED WITHOUT ONE.
 --       `quo.guard_revision_discount_approval` refuses the draft -> issued transition
 --       of a revision whose approval is not `approved`. A revision with NO approval
---       row is measured at the database (`quo.revision_discount_needs_approval`):
---       against the snapshot of the request it replaced when there was one, and
---       otherwise against the policy in force at issue — so a legacy draft that was
---       discounted under the single-request flow, or a row written around the
---       application, cannot be issued merely because no request exists.
+--       row is measured at the database (`quo.revision_discount_needs_approval`)
+--       against its quotation's pinned policy, so a legacy draft, or a row written
+--       around the application, cannot be issued merely because no request exists.
 --
---     * LEGACY DRAFTS ASK AGAIN. Draft revisions written before this migration whose
---       discount needs approval under the policy in force now are given a PENDING
---       request (`origin = 'backfilled'`), requested by the revision's own creator,
---       so a different person must approve them. Issued and closed revisions are
---       not touched.
---
---     * THE POLICY IN FORCE AT THE REQUEST IS SNAPSHOTTED, AND IT STAYS IN FORCE FOR
---       THE QUOTATION. The row copies the policy version it was measured against —
---       id, version number, kind, value, currency and the permission an approver
---       must hold. While a quotation holds a pending or rejected request, every new
---       revision of it is measured against that snapshot, not against the company
---       threshold of the moment: the request it replaces becomes `superseded` (never
---       approvable), and a new pending request is recorded under the same snapshot
---       when the discount still needs it. Raising the threshold after asking
---       therefore approves nothing, and revising does not escape it; the snapshot is
---       released only by an approval or by bringing the discount under it. New
---       quotations are measured against the policy in force when they are written —
---       a threshold change is prospective.
---
---     * AN APPROVAL RECORDS THE LIMIT IT WAS WITHIN. `approver_limit_amount` and its
---       currency are the approver's limit at the moment of approval, and
---       `ck_discount_approvals_within_limit` refuses an approval whose limit is in
---       another currency or below the discount.
+--     * EXISTING ROWS ARE BROUGHT UNDER THE SAME RULES (`quo.backfill_discount_approvals`,
+--       called once below; idempotent). Every quotation written before this
+--       migration is pinned to the discount policy in force when the migration runs
+--       (the pin write advances each such quotation's record_version once). Then
+--       every DRAFT revision whose discount needs approval under its quotation's pin,
+--       and which has no request yet, is given a PENDING request
+--       (`origin = 'backfilled'`), requested by the revision's own creator, so a
+--       different person must approve it. A draft whose creator is not a user account
+--       of its tenant gets no request, and the issue guard keeps refusing it until
+--       the quotation is revised. Issued and closed revisions are not touched.
 --
 --     * A THRESHOLD CHANGE IS A NEW VERSION. `svc.pricing_approval_policies` gains
 --       `version_no`, unique per (tenant, company, policy type) over every row,
@@ -83,10 +101,11 @@
 --
 -- Dependencies
 --   quo.quotations, quo.quotation_revisions, quo.quotation_items (20260723096000);
---   svc.pricing_approval_policies (20260723092000); iam.permissions;
---   shared.currencies; iam.current_tenant_id, iam.current_user_id,
---   iam.allowed_company_ids, iam.allowed_branch_ids (0002_base_schemas);
---   shared.touch_row_metadata; org.guard_immutable_columns.
+--   svc.pricing_approval_policies (20260723092000); iam.permissions,
+--   iam.user_accounts, iam.approval_limits, iam.role_grants, iam.grant_scopes,
+--   iam.has_permission_in_scope; shared.currencies; iam.current_tenant_id,
+--   iam.current_user_id, iam.allowed_company_ids, iam.allowed_branch_ids
+--   (0002_base_schemas); shared.touch_row_metadata; org.guard_immutable_columns.
 -- ============================================================================
 
 -- ----------------------------------------------------------------------------
@@ -188,8 +207,82 @@ $$;
 REVOKE EXECUTE ON FUNCTION svc.discount_policy_in_force(uuid, uuid, date) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION svc.discount_policy_in_force(uuid, uuid, date) TO app_runtime;
 
+
 -- ----------------------------------------------------------------------------
--- 2. Measuring a revision's discount against a threshold — at the database.
+-- 2. quo.quotations — every quotation is held to the discount policy in force
+--    when it was written.
+-- ----------------------------------------------------------------------------
+-- A reference, not a foreign key, like quo.discount_approvals.policy_id: a
+-- version's content never changes after it is written, and a version that cannot
+-- be read is treated as none (a threshold of zero) — the fail-closed reading.
+ALTER TABLE quo.quotations
+  ADD COLUMN discount_policy_id         uuid        NULL,
+  ADD COLUMN discount_policy_version_no integer     NULL,
+  ADD COLUMN discount_policy_pinned_at  timestamptz NULL;
+ALTER TABLE quo.quotations
+  ADD CONSTRAINT ck_quotations_discount_policy_pin CHECK (
+    (discount_policy_id IS NULL) = (discount_policy_version_no IS NULL)
+    AND (discount_policy_id IS NULL OR discount_policy_pinned_at IS NOT NULL));
+COMMENT ON COLUMN quo.quotations.discount_policy_id IS
+  'The svc.pricing_approval_policies discount version this quotation is held to for its whole life, pinned by the database when the quotation was written (quo.pin_quotation_discount_policy) and never changed. NULL with discount_policy_pinned_at set means no policy was in force then: the threshold is zero.';
+COMMENT ON COLUMN quo.quotations.discount_policy_version_no IS
+  'The version number of discount_policy_id, copied when it was pinned.';
+COMMENT ON COLUMN quo.quotations.discount_policy_pinned_at IS
+  'When the discount policy was pinned: the insert for a quotation written after migration 20260925090000, the backfill (quo.backfill_discount_approvals) for one written before it. Set for every row the database writes; never changed.';
+
+-- Pins the policy in force on insert — whatever the writer supplied — and refuses
+-- any later change. A row written before this migration (pinned_at NULL) is pinned
+-- the same way, from the policy in force, when the backfill sets its pinned_at.
+CREATE OR REPLACE FUNCTION quo.pin_quotation_discount_policy()
+RETURNS trigger LANGUAGE plpgsql SECURITY INVOKER SET search_path = '' AS $$
+DECLARE v_policy svc.pricing_approval_policies%ROWTYPE;
+BEGIN
+  IF TG_OP = 'UPDATE' THEN
+    IF OLD.discount_policy_pinned_at IS NOT NULL THEN
+      IF NEW.discount_policy_id IS DISTINCT FROM OLD.discount_policy_id
+         OR NEW.discount_policy_version_no IS DISTINCT FROM OLD.discount_policy_version_no
+         OR NEW.discount_policy_pinned_at IS DISTINCT FROM OLD.discount_policy_pinned_at THEN
+        RAISE EXCEPTION 'quotation_discount_policy_pinned: quotation % is held to the discount policy it was written under', OLD.id
+          USING ERRCODE = 'check_violation';
+      END IF;
+      RETURN NEW;
+    END IF;
+    IF NEW.discount_policy_pinned_at IS NULL THEN
+      IF NEW.discount_policy_id IS NOT NULL OR NEW.discount_policy_version_no IS NOT NULL THEN
+        RAISE EXCEPTION 'quotation_discount_policy_pinned: a discount policy is pinned only by the database'
+          USING ERRCODE = 'check_violation';
+      END IF;
+      RETURN NEW;
+    END IF;
+  END IF;
+  SELECT * INTO v_policy FROM svc.discount_policy_in_force(NEW.tenant_id, NEW.company_id, current_date);
+  NEW.discount_policy_id := v_policy.id;
+  NEW.discount_policy_version_no := v_policy.version_no;
+  NEW.discount_policy_pinned_at := now();
+  RETURN NEW;
+END; $$;
+REVOKE EXECUTE ON FUNCTION quo.pin_quotation_discount_policy() FROM PUBLIC;
+CREATE TRIGGER tg_quotations_discount_policy_pin BEFORE INSERT OR UPDATE ON quo.quotations
+  FOR EACH ROW EXECUTE FUNCTION quo.pin_quotation_discount_policy();
+
+-- The version a quotation is held to, or NULL: none was in force when it was
+-- written, it has not been pinned, or the version cannot be read. Every NULL is
+-- read as a threshold of zero.
+CREATE OR REPLACE FUNCTION quo.quotation_discount_policy(p_tenant uuid, p_quotation uuid)
+RETURNS svc.pricing_approval_policies LANGUAGE sql STABLE SECURITY INVOKER SET search_path = '' AS $$
+  SELECT p.*
+    FROM quo.quotations q
+    JOIN svc.pricing_approval_policies p
+      ON p.tenant_id = q.tenant_id AND p.id = q.discount_policy_id
+   WHERE q.tenant_id = p_tenant AND q.id = p_quotation
+     AND q.discount_policy_pinned_at IS NOT NULL
+     AND p.version_no = q.discount_policy_version_no;
+$$;
+REVOKE EXECUTE ON FUNCTION quo.quotation_discount_policy(uuid, uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION quo.quotation_discount_policy(uuid, uuid) TO app_runtime;
+
+-- ----------------------------------------------------------------------------
+-- 3. Measuring a revision's discount against a threshold — at the database.
 -- ----------------------------------------------------------------------------
 -- The application measures a discount when the revision is written
 -- (DiscountAuthorizationService.assess); this is the same measurement, so the
@@ -233,8 +326,28 @@ $$;
 REVOKE EXECUTE ON FUNCTION quo.revision_discount_assessment(uuid, uuid, boolean, text, numeric, text) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION quo.revision_discount_assessment(uuid, uuid, boolean, text, numeric, text) TO app_runtime;
 
+-- Whether a revision's discount needs approval, measured against its QUOTATION's
+-- pinned policy — never against the policy in force today.
+CREATE OR REPLACE FUNCTION quo.revision_discount_needs_approval(p_revision uuid)
+RETURNS boolean LANGUAGE plpgsql STABLE SECURITY INVOKER SET search_path = '' AS $$
+DECLARE rev quo.quotation_revisions%ROWTYPE; v_policy svc.pricing_approval_policies%ROWTYPE;
+        v_needs boolean;
+BEGIN
+  SELECT * INTO rev FROM quo.quotation_revisions WHERE id = p_revision;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'quotation revision % not found', p_revision USING ERRCODE = 'foreign_key_violation';
+  END IF;
+  SELECT * INTO v_policy FROM quo.quotation_discount_policy(rev.tenant_id, rev.quotation_id);
+  SELECT a.needs_approval INTO v_needs
+    FROM quo.revision_discount_assessment(rev.tenant_id, rev.id, v_policy.id IS NOT NULL,
+           v_policy.threshold_kind, v_policy.threshold_value, v_policy.currency_code) a;
+  RETURN v_needs;
+END; $$;
+REVOKE EXECUTE ON FUNCTION quo.revision_discount_needs_approval(uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION quo.revision_discount_needs_approval(uuid) TO app_runtime;
+
 -- ----------------------------------------------------------------------------
--- 3. quo.discount_approvals — one recorded request per revision that needs it.
+-- 4. quo.discount_approvals — one recorded request per revision that needs it.
 -- ----------------------------------------------------------------------------
 CREATE TABLE quo.discount_approvals (
   id                           uuid    NOT NULL DEFAULT gen_random_uuid(),
@@ -282,6 +395,10 @@ CREATE TABLE quo.discount_approvals (
     REFERENCES quo.quotation_revisions (tenant_id, company_id, branch_id, id) ON DELETE RESTRICT,
   CONSTRAINT fk_discount_approvals_superseded_by FOREIGN KEY (tenant_id, company_id, branch_id, superseded_by_revision_id)
     REFERENCES quo.quotation_revisions (tenant_id, company_id, branch_id, id) ON DELETE RESTRICT,
+  CONSTRAINT fk_discount_approvals_requested_by FOREIGN KEY (tenant_id, requested_by)
+    REFERENCES iam.user_accounts (tenant_id, id) ON DELETE RESTRICT,
+  CONSTRAINT fk_discount_approvals_decided_by FOREIGN KEY (tenant_id, decided_by)
+    REFERENCES iam.user_accounts (tenant_id, id) ON DELETE RESTRICT,
   CONSTRAINT fk_discount_approvals_currency FOREIGN KEY (currency_code) REFERENCES shared.currencies (code) ON DELETE RESTRICT,
   CONSTRAINT fk_discount_approvals_threshold_currency FOREIGN KEY (threshold_currency_code) REFERENCES shared.currencies (code) ON DELETE RESTRICT,
   CONSTRAINT fk_discount_approvals_limit_currency FOREIGN KEY (approver_limit_currency_code) REFERENCES shared.currencies (code) ON DELETE RESTRICT,
@@ -329,18 +446,20 @@ CREATE TABLE quo.discount_approvals (
     (status = 'superseded') = (superseded_at IS NOT NULL)
     AND (superseded_at IS NULL) = (superseded_by_revision_id IS NULL))
 );
-COMMENT ON TABLE quo.discount_approvals IS 'A quotation revision whose discount needs approval: who asked (requested_by, always the signed-in person), the discount and its base, a snapshot of the policy version it was measured against, and the decision by a DIFFERENT person with the limit that decision was within and the amount it approved. A revision whose approval is not approved cannot be issued (quo.guard_revision_discount_approval); a request replaced by a newer revision of its quotation is superseded and can no longer be decided.';
-COMMENT ON COLUMN quo.discount_approvals.origin IS 'requested: recorded when the revision was written. backfilled: recorded by migration 20260925090000 for a draft written under the single-request flow whose discount needs approval under the policy in force at that migration; requested_by is then the revision''s creator.';
-COMMENT ON COLUMN quo.discount_approvals.policy_id IS 'The svc.pricing_approval_policies version the request was measured against, or NULL when the company had no policy (the threshold was then zero). A reference, not a foreign key: the snapshot columns beside it are the evidence.';
-COMMENT ON COLUMN quo.discount_approvals.required_permission_code IS 'The permission an approver had to hold, copied from the policy version (svc.price.manage when none was configured).';
-COMMENT ON COLUMN quo.discount_approvals.approver_limit_amount IS 'The approver''s discount approval limit at the moment of approval, in approver_limit_currency_code. Never a limit the approver set for themselves. Restricted: readers of the request never see it.';
-COMMENT ON COLUMN quo.discount_approvals.approved_discount_total IS 'The discount total the approval was given for, in approved_currency_code. The issue guard refuses a revision whose summed discount is not this amount.';
+COMMENT ON TABLE quo.discount_approvals IS 'A quotation revision whose discount needs approval: who asked (requested_by, always the signed-in person), the discount and its base, the quotation''s pinned policy version it was measured against, and the decision by a DIFFERENT person — checked by quo.guard_discount_approval for the recorded permission and an approval limit the database computes — with the amount it approved. A revision whose approval is not approved cannot be issued (quo.guard_revision_discount_approval); its lines are frozen while the request is not superseded; a request replaced by a newer revision of its quotation is superseded and can no longer be decided.';
+COMMENT ON COLUMN quo.discount_approvals.origin IS 'requested: recorded when the revision was written. backfilled: recorded by quo.backfill_discount_approvals (migration 20260925090000) for a draft written under the single-request flow whose discount needs approval under its quotation''s pinned policy; requested_by is then the revision''s creator.';
+COMMENT ON COLUMN quo.discount_approvals.policy_id IS 'The svc.pricing_approval_policies version the request was measured against — always its quotation''s pinned version — or NULL when none was pinned (the threshold was then zero). A reference, not a foreign key: the snapshot columns beside it are the evidence.';
+COMMENT ON COLUMN quo.discount_approvals.required_permission_code IS 'The permission an approver had to hold, copied from the policy version (svc.price.manage when none was configured). quo.guard_discount_approval checks it for the decider in the request''s company and branch.';
+COMMENT ON COLUMN quo.discount_approvals.approver_limit_amount IS 'The approver''s discount approval limit at the moment of approval, in approver_limit_currency_code, computed by quo.guard_discount_approval from iam.approval_limits — never a value the caller wrote, and never a limit the approver created. Restricted: readers of the request never see it.';
+COMMENT ON COLUMN quo.discount_approvals.approved_discount_total IS 'The discount total the approval was given for, in approved_currency_code. The issue guard refuses a revision whose live lines do not sum to this amount.';
 COMMENT ON COLUMN quo.discount_approvals.superseded_by_revision_id IS 'The newer revision of the same quotation that replaced this pending or rejected request. A superseded request can no longer be decided.';
 
 CREATE INDEX ix_discount_approvals_branch_status ON quo.discount_approvals (tenant_id, company_id, branch_id, status, requested_at DESC);
 CREATE INDEX ix_discount_approvals_quotation ON quo.discount_approvals (tenant_id, company_id, branch_id, quotation_id);
 CREATE INDEX ix_discount_approvals_revision ON quo.discount_approvals (tenant_id, company_id, branch_id, quotation_revision_id);
 CREATE INDEX ix_discount_approvals_superseded_by ON quo.discount_approvals (tenant_id, company_id, branch_id, superseded_by_revision_id);
+CREATE INDEX ix_discount_approvals_requested_by ON quo.discount_approvals (tenant_id, requested_by);
+CREATE INDEX ix_discount_approvals_decided_by ON quo.discount_approvals (tenant_id, decided_by);
 CREATE INDEX ix_discount_approvals_currency ON quo.discount_approvals (currency_code);
 CREATE INDEX ix_discount_approvals_threshold_currency ON quo.discount_approvals (threshold_currency_code);
 CREATE INDEX ix_discount_approvals_limit_currency ON quo.discount_approvals (approver_limit_currency_code);
@@ -349,15 +468,17 @@ CREATE INDEX ix_discount_approvals_permission ON quo.discount_approvals (require
 CREATE OR REPLACE FUNCTION quo.guard_discount_approval()
 RETURNS trigger LANGUAGE plpgsql SECURITY INVOKER SET search_path = '' AS $$
 DECLARE v_revision_status text; v_revision_quotation uuid; v_revision_number integer;
-        v_successor_quotation uuid; v_successor_number integer;
-        v_open integer; v_prior quo.discount_approvals%ROWTYPE;
+        v_revision_currency text; v_successor_quotation uuid; v_successor_number integer;
+        v_open integer; v_policy svc.pricing_approval_policies%ROWTYPE; v_carried numeric;
+        v_decider uuid; v_limit_amount numeric; v_limit_currency text;
 BEGIN
   IF TG_OP = 'INSERT' THEN
     IF NEW.status <> 'pending' THEN
       RAISE EXCEPTION 'quo.discount_approvals: a discount approval is born pending; approving it is a separate act by another person'
         USING ERRCODE = 'check_violation';
     END IF;
-    SELECT status, quotation_id INTO v_revision_status, v_revision_quotation
+    SELECT status, quotation_id, currency_code
+      INTO v_revision_status, v_revision_quotation, v_revision_currency
       FROM quo.quotation_revisions
      WHERE tenant_id = NEW.tenant_id AND company_id = NEW.company_id AND branch_id = NEW.branch_id
        AND id = NEW.quotation_revision_id;
@@ -374,10 +495,8 @@ BEGIN
         USING ERRCODE = 'check_violation';
     END IF;
     IF NEW.origin = 'requested' THEN
-      -- A quotation holding an open (pending or rejected) request keeps its
-      -- snapshot: the open request is superseded first, and the new one is measured
-      -- under the SAME policy snapshot — a threshold changed since cannot be reached
-      -- by asking again.
+      -- The open request of a quotation is superseded by the revision that
+      -- replaces it before that revision asks again.
       SELECT count(*)::integer INTO v_open
         FROM quo.discount_approvals
        WHERE tenant_id = NEW.tenant_id AND quotation_id = NEW.quotation_id
@@ -386,22 +505,28 @@ BEGIN
         RAISE EXCEPTION 'discount_approval_open: quotation % already holds an open discount request; supersede it first', NEW.quotation_id
           USING ERRCODE = 'check_violation';
       END IF;
-      SELECT * INTO v_prior
-        FROM quo.discount_approvals
-       WHERE tenant_id = NEW.tenant_id AND quotation_id = NEW.quotation_id
-         AND superseded_by_revision_id = NEW.quotation_revision_id
-       ORDER BY requested_at DESC, id DESC
-       LIMIT 1;
-      IF FOUND AND (
-           NEW.policy_id IS DISTINCT FROM v_prior.policy_id
-           OR NEW.policy_version_no IS DISTINCT FROM v_prior.policy_version_no
-           OR NEW.threshold_kind IS DISTINCT FROM v_prior.threshold_kind
-           OR NEW.threshold_value IS DISTINCT FROM v_prior.threshold_value
-           OR NEW.threshold_currency_code IS DISTINCT FROM v_prior.threshold_currency_code
-           OR NEW.required_permission_code IS DISTINCT FROM v_prior.required_permission_code) THEN
-        RAISE EXCEPTION 'discount_approval_snapshot_changed: a request replacing % must carry its policy snapshot', v_prior.id
-          USING ERRCODE = 'check_violation';
-      END IF;
+    END IF;
+    -- The snapshot is the QUOTATION's pinned policy and nothing else: a threshold
+    -- changed since the quotation was written cannot be reached by asking again.
+    SELECT * INTO v_policy FROM quo.quotation_discount_policy(NEW.tenant_id, NEW.quotation_id);
+    IF NEW.policy_id IS DISTINCT FROM v_policy.id
+       OR NEW.policy_version_no IS DISTINCT FROM v_policy.version_no
+       OR NEW.threshold_kind IS DISTINCT FROM v_policy.threshold_kind
+       OR NEW.threshold_value IS DISTINCT FROM v_policy.threshold_value
+       OR NEW.threshold_currency_code IS DISTINCT FROM v_policy.currency_code
+       OR NEW.required_permission_code IS DISTINCT FROM COALESCE(v_policy.required_permission_code, 'svc.price.manage') THEN
+      RAISE EXCEPTION 'discount_approval_snapshot_mismatch: a request on quotation % carries the discount policy the quotation is held to', NEW.quotation_id
+        USING ERRCODE = 'check_violation';
+    END IF;
+    -- The request is for the discount the revision's lines carry.
+    SELECT COALESCE(sum(i.captured_discount), 0) INTO v_carried
+      FROM quo.quotation_items i
+     WHERE i.tenant_id = NEW.tenant_id AND i.quotation_revision_id = NEW.quotation_revision_id
+       AND i.deleted_at IS NULL;
+    IF NEW.discount_total IS DISTINCT FROM v_carried OR NEW.currency_code IS DISTINCT FROM v_revision_currency THEN
+      RAISE EXCEPTION 'discount_approval_total_mismatch: revision % carries a discount of % %, not % %',
+        NEW.quotation_revision_id, v_carried, v_revision_currency, NEW.discount_total, NEW.currency_code
+        USING ERRCODE = 'check_violation';
     END IF;
     RETURN NEW;
   END IF;
@@ -414,7 +539,9 @@ BEGIN
         USING ERRCODE = 'check_violation';
     END IF;
     IF NEW.decided_by IS DISTINCT FROM OLD.decided_by OR NEW.decided_at IS DISTINCT FROM OLD.decided_at
-       OR NEW.decision_reason IS DISTINCT FROM OLD.decision_reason THEN
+       OR NEW.decision_reason IS DISTINCT FROM OLD.decision_reason
+       OR NEW.approver_limit_amount IS DISTINCT FROM OLD.approver_limit_amount
+       OR NEW.approver_limit_currency_code IS DISTINCT FROM OLD.approver_limit_currency_code THEN
       RAISE EXCEPTION 'quo.discount_approvals: superseding a request records no decision'
         USING ERRCODE = 'check_violation';
     END IF;
@@ -441,6 +568,69 @@ BEGIN
     RAISE EXCEPTION 'quo.discount_approvals: a pending approval changes only by being approved, rejected or superseded'
       USING ERRCODE = 'check_violation';
   END IF;
+
+  -- A decision. Checked here, whatever role issues it, with the same rules and in
+  -- the same order the application names them.
+  v_decider := iam.current_user_id();
+  IF v_decider IS NULL OR NEW.decided_by IS DISTINCT FROM v_decider THEN
+    RAISE EXCEPTION 'discount_approval_decider_mismatch: a decision on discount approval % is recorded by the signed-in person, in their own name', OLD.id
+      USING ERRCODE = 'check_violation';
+  END IF;
+  IF v_decider = OLD.requested_by THEN
+    RAISE EXCEPTION 'discount_approver_must_differ: discount approval % is decided by someone other than the person who requested it', OLD.id
+      USING ERRCODE = 'check_violation';
+  END IF;
+  IF NOT iam.has_permission_in_scope(OLD.required_permission_code, OLD.company_id, OLD.branch_id, NULL) THEN
+    RAISE EXCEPTION 'discount_approval_permission_missing: deciding discount approval % requires %', OLD.id, OLD.required_permission_code
+      USING ERRCODE = 'check_violation';
+  END IF;
+  IF NEW.status = 'approved' THEN
+    -- The approver's ceiling, by the rule of callerApprovalCeiling: a limit on the
+    -- approver before a role's, the largest role limit whose active grant reaches
+    -- the company, in force today, and never one the approver created.
+    SELECT al.amount, al.currency_code INTO v_limit_amount, v_limit_currency
+      FROM iam.approval_limits al
+     WHERE al.tenant_id = OLD.tenant_id AND al.company_id = OLD.company_id
+       AND al.limit_type = 'discount'
+       AND al.effective_from <= current_date
+       AND (al.effective_to IS NULL OR al.effective_to > current_date)
+       AND al.created_by <> v_decider
+       AND (al.user_id = v_decider
+            OR (al.user_id IS NULL AND al.role_id IN (
+                  SELECT g.role_id
+                    FROM iam.role_grants g
+                   WHERE g.tenant_id = OLD.tenant_id AND g.user_id = v_decider
+                     AND g.status = 'active'
+                     AND g.valid_from <= now()
+                     AND (g.valid_to IS NULL OR g.valid_to > now())
+                     AND (
+                       g.scope_mode = 'unrestricted'
+                       OR EXISTS (
+                         SELECT 1 FROM iam.grant_scopes s
+                          WHERE s.tenant_id = g.tenant_id AND s.grant_id = g.id
+                            AND s.company_id = OLD.company_id
+                       )
+                     ))))
+     ORDER BY (al.user_id IS NOT NULL) DESC, al.amount DESC
+     LIMIT 1;
+    IF NOT FOUND THEN
+      RAISE EXCEPTION 'discount_no_approval_limit: the approver of discount approval % has no discount approval limit that counts in this company', OLD.id
+        USING ERRCODE = 'check_violation';
+    END IF;
+    IF v_limit_currency <> OLD.currency_code THEN
+      RAISE EXCEPTION 'discount_limit_currency_mismatch: the approver''s limit is in %, and discount approval % is in %', v_limit_currency, OLD.id, OLD.currency_code
+        USING ERRCODE = 'check_violation';
+    END IF;
+    IF v_limit_amount < OLD.discount_total THEN
+      RAISE EXCEPTION 'discount_over_approval_limit: discount approval % exceeds the approver''s limit', OLD.id
+        USING ERRCODE = 'check_violation';
+    END IF;
+    NEW.approver_limit_amount := v_limit_amount;
+    NEW.approver_limit_currency_code := v_limit_currency;
+  ELSE
+    NEW.approver_limit_amount := NULL;
+    NEW.approver_limit_currency_code := NULL;
+  END IF;
   RETURN NEW;
 END; $$;
 REVOKE EXECUTE ON FUNCTION quo.guard_discount_approval() FROM PUBLIC;
@@ -463,7 +653,7 @@ CREATE POLICY sel_discount_approvals_scope ON quo.discount_approvals FOR SELECT 
     AND (iam.allowed_company_ids() IS NULL OR company_id = ANY (iam.allowed_company_ids()))
     AND (iam.allowed_branch_ids() IS NULL OR branch_id = ANY (iam.allowed_branch_ids())));
 -- The requester is the signed-in person, never a value the caller chose, and only
--- this migration writes a backfilled request.
+-- the backfill writes a backfilled request.
 CREATE POLICY ins_discount_approvals_scope ON quo.discount_approvals FOR INSERT TO app_runtime
   WITH CHECK (tenant_id = iam.current_tenant_id()
     AND (iam.allowed_company_ids() IS NULL OR company_id = ANY (iam.allowed_company_ids()))
@@ -471,8 +661,8 @@ CREATE POLICY ins_discount_approvals_scope ON quo.discount_approvals FOR INSERT 
     AND requested_by = iam.current_user_id()
     AND origin = 'requested'
     AND decided_by IS NULL);
--- The decider is the signed-in person; the separation CHECK keeps them apart from
--- the requester. Superseding records no decision, which the guard holds.
+-- The decider is the signed-in person; quo.guard_discount_approval checks the rest
+-- of a decision. Superseding records no decision, which the guard holds.
 CREATE POLICY upd_discount_approvals_scope ON quo.discount_approvals FOR UPDATE TO app_runtime
   USING (tenant_id = iam.current_tenant_id()
     AND (iam.allowed_company_ids() IS NULL OR company_id = ANY (iam.allowed_company_ids()))
@@ -483,50 +673,45 @@ GRANT SELECT, INSERT, UPDATE ON quo.discount_approvals TO app_runtime;
 GRANT SELECT ON quo.discount_approvals TO app_readonly;
 
 -- ----------------------------------------------------------------------------
--- 4. Whether a revision with NO request may be issued.
+-- 5. quo.quotation_items — a revision that asked for a discount approval keeps
+--    the lines it asked about.
 -- ----------------------------------------------------------------------------
--- The snapshot a revision without a request is held to: the request it replaced
--- (superseded_by_revision_id = the revision), else an open request elsewhere on
--- its quotation, else — for a legacy draft or a quotation that never asked — the
--- policy in force on p_as_of.
-CREATE OR REPLACE FUNCTION quo.revision_discount_needs_approval(p_revision uuid, p_as_of date)
-RETURNS boolean LANGUAGE plpgsql STABLE SECURITY INVOKER SET search_path = '' AS $$
-DECLARE rev quo.quotation_revisions%ROWTYPE; v_lock quo.discount_approvals%ROWTYPE;
-        v_policy svc.pricing_approval_policies%ROWTYPE; v_needs boolean;
+-- While a revision holds a request that is not superseded — pending, approved or
+-- rejected — no line of it is added, changed or removed, by any role. Changing the
+-- quotation means revising it, which supersedes an open request.
+CREATE OR REPLACE FUNCTION quo.guard_discount_request_item_freeze()
+RETURNS trigger LANGUAGE plpgsql SECURITY INVOKER SET search_path = '' AS $$
+DECLARE v_tenant uuid; v_revisions uuid[];
 BEGIN
-  SELECT * INTO rev FROM quo.quotation_revisions WHERE id = p_revision;
-  IF NOT FOUND THEN
-    RAISE EXCEPTION 'quotation revision % not found', p_revision USING ERRCODE = 'foreign_key_violation';
+  IF TG_OP = 'INSERT' THEN
+    v_tenant := NEW.tenant_id; v_revisions := ARRAY[NEW.quotation_revision_id];
+  ELSIF TG_OP = 'DELETE' THEN
+    v_tenant := OLD.tenant_id; v_revisions := ARRAY[OLD.quotation_revision_id];
+  ELSE
+    v_tenant := OLD.tenant_id; v_revisions := ARRAY[OLD.quotation_revision_id, NEW.quotation_revision_id];
   END IF;
-  SELECT * INTO v_lock
-    FROM quo.discount_approvals
-   WHERE tenant_id = rev.tenant_id AND quotation_id = rev.quotation_id
-     AND quotation_revision_id <> rev.id
-     AND (superseded_by_revision_id = rev.id OR status IN ('pending', 'rejected'))
-   ORDER BY requested_at DESC, id DESC
-   LIMIT 1;
-  IF FOUND THEN
-    SELECT a.needs_approval INTO v_needs
-      FROM quo.revision_discount_assessment(rev.tenant_id, rev.id, v_lock.policy_id IS NOT NULL,
-             v_lock.threshold_kind, v_lock.threshold_value, v_lock.threshold_currency_code) a;
-    RETURN v_needs;
+  IF EXISTS (
+    SELECT 1 FROM quo.discount_approvals a
+     WHERE a.tenant_id = v_tenant AND a.quotation_revision_id = ANY (v_revisions)
+       AND a.status <> 'superseded'
+  ) THEN
+    RAISE EXCEPTION 'discount_request_freezes_items: a revision that asked for a discount approval keeps its lines; revise the quotation to change them'
+      USING ERRCODE = 'check_violation';
   END IF;
-  SELECT * INTO v_policy FROM svc.discount_policy_in_force(rev.tenant_id, rev.company_id, p_as_of);
-  SELECT a.needs_approval INTO v_needs
-    FROM quo.revision_discount_assessment(rev.tenant_id, rev.id, v_policy.id IS NOT NULL,
-           v_policy.threshold_kind, v_policy.threshold_value, v_policy.currency_code) a;
-  RETURN v_needs;
+  IF TG_OP = 'DELETE' THEN RETURN OLD; END IF;
+  RETURN NEW;
 END; $$;
-REVOKE EXECUTE ON FUNCTION quo.revision_discount_needs_approval(uuid, date) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION quo.revision_discount_needs_approval(uuid, date) TO app_runtime;
+REVOKE EXECUTE ON FUNCTION quo.guard_discount_request_item_freeze() FROM PUBLIC;
+CREATE TRIGGER tg_quotation_items_discount_freeze BEFORE INSERT OR UPDATE OR DELETE ON quo.quotation_items
+  FOR EACH ROW EXECUTE FUNCTION quo.guard_discount_request_item_freeze();
 
 -- ----------------------------------------------------------------------------
--- 5. quo.quotation_revisions — a discount that needs approval is issued only
+-- 6. quo.quotation_revisions — a discount that needs approval is issued only
 --    once it is approved, and only for the amount approved.
 -- ----------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION quo.guard_revision_discount_approval()
 RETURNS trigger LANGUAGE plpgsql SECURITY INVOKER SET search_path = '' AS $$
-DECLARE a quo.discount_approvals%ROWTYPE;
+DECLARE a quo.discount_approvals%ROWTYPE; v_carried numeric;
 BEGIN
   SELECT * INTO a FROM quo.discount_approvals
    WHERE tenant_id = NEW.tenant_id AND quotation_revision_id = NEW.id;
@@ -536,17 +721,21 @@ BEGIN
         a.status, NEW.id, a.status
         USING ERRCODE = 'check_violation';
     END IF;
-    -- The approval is of an amount: `quo.issue_revision` has just summed the lines
-    -- into captured_discount_total, and it must be the discount that was approved.
+    -- The approval is of an amount, and the amount is summed here from the live
+    -- lines — never read from a captured total a writer could have set.
+    SELECT COALESCE(sum(i.captured_discount), 0) INTO v_carried
+      FROM quo.quotation_items i
+     WHERE i.tenant_id = NEW.tenant_id AND i.quotation_revision_id = NEW.id
+       AND i.deleted_at IS NULL;
     IF a.approved_currency_code IS DISTINCT FROM NEW.currency_code
-       OR a.approved_discount_total IS DISTINCT FROM NEW.captured_discount_total THEN
+       OR a.approved_discount_total IS DISTINCT FROM v_carried THEN
       RAISE EXCEPTION 'discount_approval_amount_mismatch: revision % carries a discount of % %, and % % was approved',
-        NEW.id, NEW.captured_discount_total, NEW.currency_code, a.approved_discount_total, a.approved_currency_code
+        NEW.id, v_carried, NEW.currency_code, a.approved_discount_total, a.approved_currency_code
         USING ERRCODE = 'check_violation';
     END IF;
     RETURN NEW;
   END IF;
-  IF quo.revision_discount_needs_approval(NEW.id, current_date) THEN
+  IF quo.revision_discount_needs_approval(NEW.id) THEN
     RAISE EXCEPTION 'discount_approval_required: revision % carries a discount that needs approval and none was requested', NEW.id
       USING ERRCODE = 'check_violation';
   END IF;
@@ -558,25 +747,57 @@ CREATE TRIGGER tg_quotation_revisions_discount_approval BEFORE UPDATE OF status 
   EXECUTE FUNCTION quo.guard_revision_discount_approval();
 
 -- ----------------------------------------------------------------------------
--- 6. Legacy drafts: a discount that needs approval asks for it.
+-- 7. Existing rows: pinned, and a legacy draft that needs approval asks for it.
 -- ----------------------------------------------------------------------------
--- Every DRAFT revision written before this migration whose discount needs approval
--- under the policy in force today gets a PENDING request, requested by the person
--- who created the revision and marked `backfilled`, so somebody else has to approve
--- it before it can be issued. Issued, superseded, rejected and expired revisions are
--- left exactly as they are: they are the record of what was presented.
-INSERT INTO quo.discount_approvals
-  (tenant_id, company_id, branch_id, quotation_id, quotation_revision_id, status, origin,
-   currency_code, discount_total, discount_base, elevated_line_count, policy_id,
-   policy_version_no, threshold_kind, threshold_value, threshold_currency_code,
-   required_permission_code, requested_by, requested_at, created_by)
-SELECT r.tenant_id, r.company_id, r.branch_id, r.quotation_id, r.id, 'pending', 'backfilled',
-       r.currency_code, a.discount_total, round(a.discount_base, 4), a.elevated_lines, p.id,
-       p.version_no, p.threshold_kind, p.threshold_value, p.currency_code,
-       COALESCE(p.required_permission_code, 'svc.price.manage'), r.created_by, r.created_at,
-       r.created_by
-  FROM quo.quotation_revisions r
-  LEFT JOIN LATERAL svc.discount_policy_in_force(r.tenant_id, r.company_id, current_date) p ON true
- CROSS JOIN LATERAL quo.revision_discount_assessment(r.tenant_id, r.id, p.id IS NOT NULL,
-         p.threshold_kind, p.threshold_value, p.currency_code) a
- WHERE r.status = 'draft' AND r.deleted_at IS NULL AND a.needs_approval;
+-- Idempotent and deterministic: a second call finds every quotation pinned and
+-- every qualifying draft already carrying a request, and changes nothing.
+--   1. Every quotation not yet pinned is pinned to the discount policy in force
+--      today (pin_quotation_discount_policy chooses it, as it does on insert).
+--   2. Every DRAFT revision, not deleted, with no request yet, whose discount needs
+--      approval under its quotation's pin and whose creator is a user account of
+--      its tenant, gets a PENDING request requested by that creator and marked
+--      `backfilled`, so somebody else has to approve it before it can be issued.
+--      A draft whose creator is not a user account gets no request; the issue
+--      guard keeps refusing it until the quotation is revised. Issued, superseded,
+--      rejected and expired revisions are left exactly as they are: they are the
+--      record of what was presented.
+-- Only the migration role runs it: EXECUTE is granted to no application role.
+CREATE OR REPLACE FUNCTION quo.backfill_discount_approvals()
+RETURNS TABLE (pinned_quotations integer, backfilled_requests integer)
+LANGUAGE plpgsql SECURITY INVOKER SET search_path = '' AS $$
+DECLARE v_pinned integer; v_requested integer;
+BEGIN
+  UPDATE quo.quotations
+     SET discount_policy_pinned_at = now()
+   WHERE discount_policy_pinned_at IS NULL;
+  GET DIAGNOSTICS v_pinned = ROW_COUNT;
+
+  INSERT INTO quo.discount_approvals
+    (tenant_id, company_id, branch_id, quotation_id, quotation_revision_id, status, origin,
+     currency_code, discount_total, discount_base, elevated_line_count, policy_id,
+     policy_version_no, threshold_kind, threshold_value, threshold_currency_code,
+     required_permission_code, requested_by, requested_at, created_by)
+  SELECT r.tenant_id, r.company_id, r.branch_id, r.quotation_id, r.id, 'pending', 'backfilled',
+         r.currency_code, a.discount_total, round(a.discount_base, 4), a.elevated_lines, p.id,
+         p.version_no, p.threshold_kind, p.threshold_value, p.currency_code,
+         COALESCE(p.required_permission_code, 'svc.price.manage'), r.created_by, r.created_at,
+         r.created_by
+    FROM quo.quotation_revisions r
+    LEFT JOIN LATERAL quo.quotation_discount_policy(r.tenant_id, r.quotation_id) p ON true
+   CROSS JOIN LATERAL quo.revision_discount_assessment(r.tenant_id, r.id, p.id IS NOT NULL,
+           p.threshold_kind, p.threshold_value, p.currency_code) a
+   WHERE r.status = 'draft' AND r.deleted_at IS NULL AND a.needs_approval
+     AND NOT EXISTS (
+       SELECT 1 FROM quo.discount_approvals x
+        WHERE x.tenant_id = r.tenant_id AND x.quotation_revision_id = r.id)
+     AND EXISTS (
+       SELECT 1 FROM iam.user_accounts u
+        WHERE u.tenant_id = r.tenant_id AND u.id = r.created_by)
+   ORDER BY r.tenant_id, r.quotation_id, r.revision_number, r.id;
+  GET DIAGNOSTICS v_requested = ROW_COUNT;
+
+  RETURN QUERY SELECT v_pinned, v_requested;
+END; $$;
+REVOKE EXECUTE ON FUNCTION quo.backfill_discount_approvals() FROM PUBLIC;
+
+SELECT pinned_quotations, backfilled_requests FROM quo.backfill_discount_approvals();

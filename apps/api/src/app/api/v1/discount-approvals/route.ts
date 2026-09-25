@@ -7,9 +7,10 @@
  * requester to decide it. Only requests on a quotation's CURRENT draft revision are
  * listed. The approvals screen reads this list for the branch the operator is
  * working in; each row says whether the signed-in person asked for it
- * (`requestedByCaller`) and whether they could approve it (`canDecide`, with
- * `cannotDecideReason` when not) — computed by the server, so no approval limit is
- * ever part of the answer.
+ * (`requestedByCaller`), whether they could approve it (`canApprove`, with
+ * `cannotApproveReason` when not) and whether they could turn it down
+ * (`canReject`) — computed by the server, so no approval limit is ever part of the
+ * answer.
  *
  * ## Scope
  *

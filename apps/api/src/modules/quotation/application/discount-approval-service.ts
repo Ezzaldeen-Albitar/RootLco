@@ -19,22 +19,34 @@
  * `discount_approval_permission_missing`, `discount_no_approval_limit`,
  * `discount_limit_currency_mismatch`, `discount_over_approval_limit`.
  *
+ * The database checks the same decision again, whatever writes it
+ * (`quo.guard_discount_approval`, P1-32-PRE-OD-DISC-07): the decider is the
+ * signed-in person and not the requester, holds the recorded permission in the
+ * request's scope, and — to approve — has a limit that counts, which the database
+ * computes from `iam.approval_limits` by the same rule and writes onto the row
+ * itself. Turning a request down needs no limit, so a person may be able to turn a
+ * request down and not approve it; the list says so per row (`canApprove`,
+ * `canReject`).
+ *
  * ## What a reader sees
  *
  * The request, its snapshot and its decision — never an approver's limit. Limits are
  * readable only through the approval-limit administration. Instead, every row says
- * whether the signed-in person could approve it (`canDecide`) and, if not, why
- * (`cannotDecideReason`), computed by the same `evaluateApproval` a decision runs,
- * so the screen never offers what the server would refuse and never shows an amount
- * it should not.
+ * whether the signed-in person could approve it (`canApprove`) and, if not, why
+ * (`cannotApproveReason`), computed by the same `evaluateApproval` an approval runs,
+ * and whether they could turn it down (`canReject`), computed by the same rule a
+ * rejection runs — so the screen never offers what the server would refuse and never
+ * shows an amount it should not.
  *
- * ## Why the snapshot, and not the policy in force now
+ * ## Why the quotation's pinned policy, and not the policy in force now
  *
- * The request carries the threshold, the permission and the policy version it was
- * measured against. Raising the company threshold afterwards therefore does not
- * approve it, and revising the quotation does not escape it: a new revision is
- * measured against the same snapshot and supersedes it (`superseded`, never
- * decidable). Lowering the threshold does not undo an approval already given.
+ * A quotation is held to the policy version in force when it was written, for its
+ * whole life (P1-32-PRE-OD-DISC-07), and the request copies that version. Raising
+ * the company threshold afterwards therefore does not approve it, and no sequence of
+ * revisions escapes it: every revision of the quotation is measured against the same
+ * version, and a new revision supersedes an open request (`superseded`, never
+ * decidable). Lowering the threshold neither undoes an approval already given nor
+ * blocks an existing draft: both stay under the version they were written under.
  *
  * ## Lock order and concurrency
  *
@@ -155,9 +167,16 @@ export interface DiscountApprovalView {
    * they did not ask for it, they hold the recorded permission, and a limit that
    * counts covers it. Computed by the server; no limit is ever returned.
    */
-  readonly canDecide: boolean;
-  /** Why `canDecide` is false, or `null` when it is true. */
-  readonly cannotDecideReason: DiscountDecisionBlock | null;
+  readonly canApprove: boolean;
+  /** Why `canApprove` is false, or `null` when it is true. */
+  readonly cannotApproveReason: DiscountDecisionBlock | null;
+  /**
+   * Whether the signed-in person could turn this request down now: it is pending,
+   * they did not ask for it, and they hold the recorded permission. No limit is
+   * needed to refuse money being given away, so this can be true while `canApprove`
+   * is false.
+   */
+  readonly canReject: boolean;
   readonly decidedBy: DiscountApprovalPerson | null;
   readonly decidedAt: string | null;
   readonly decisionReason: string | null;
@@ -247,9 +266,19 @@ export async function describeDiscountApprovals(
   const views: DiscountApprovalView[] = [];
   for (const row of rows) {
     let reason: DiscountDecisionBlock | null;
+    let canReject = false;
     if (row.status !== 'pending') {
       reason = 'not_pending';
     } else {
+      const probe = permissionProbe(db, row.companyId, row.branchId, permissions);
+      canReject = await discounts.mayReject(
+        {
+          requestedBy: row.requestedBy,
+          approverId: caller,
+          requiredPermissionCode: row.requiredPermissionCode,
+        },
+        probe
+      );
       const standing = await discounts.evaluateApproval(
         db,
         {
@@ -261,7 +290,7 @@ export async function describeDiscountApprovals(
           approverId: caller,
           requiredPermissionCode: row.requiredPermissionCode,
         },
-        permissionProbe(db, row.companyId, row.branchId, permissions),
+        probe,
         ceilings
       );
       reason = standing.canApprove ? null : BLOCK_REASON[standing.block];
@@ -297,8 +326,9 @@ export async function describeDiscountApprovals(
       requestedBy: person(row.requestedBy),
       requestedAt: row.requestedAt.toISOString(),
       requestedByCaller: row.requestedBy === caller,
-      canDecide: reason === null,
-      cannotDecideReason: reason,
+      canApprove: reason === null,
+      cannotApproveReason: reason,
+      canReject,
       decidedBy: row.decidedBy === null ? null : person(row.decidedBy),
       decidedAt: row.decidedAt === null ? null : row.decidedAt.toISOString(),
       decisionReason: row.decisionReason,
@@ -403,9 +433,10 @@ export class DiscountApprovalService {
     const approverId = db.context.principal.userId;
     const probePermission = permissionProbe(db, approval.companyId, approval.branchId);
     const discounts = pricingModule().discounts;
-    let limit: { amount: string; currency: string } | null = null;
     if (input.decision === 'approved') {
-      const authorization = await discounts.authorizeApproval(
+      // The application's check names the refusal; the database checks the same
+      // decision again and computes the limit it records.
+      await discounts.authorizeApproval(
         db,
         {
           companyId: approval.companyId,
@@ -418,7 +449,6 @@ export class DiscountApprovalService {
         },
         probePermission
       );
-      limit = authorization.ceiling;
     } else {
       await discounts.authorizeRejection(
         {
@@ -434,10 +464,8 @@ export class DiscountApprovalService {
       approvalId: approval.id,
       status: input.decision,
       reason: input.decision === 'rejected' ? (reason ?? null) : null,
-      limitAmount: limit?.amount ?? null,
-      limitCurrencyCode: limit?.currency ?? null,
     });
-    if (!decided) {
+    if (decided === null) {
       refuse(
         'ERR-TRN-001',
         'body',
@@ -452,7 +480,7 @@ export class DiscountApprovalService {
       });
     }
 
-    await this.auditDecision(db, after, limit);
+    await this.auditDecision(db, after, decided.limit);
     return describeDiscountApproval(db, after, await this.repository.businessDate(db));
   }
 
@@ -463,7 +491,8 @@ export class DiscountApprovalService {
    * An approval also records `svc.discount.authorized` against the REVISION — the
    * fact the trail has always held for a discount given away over the threshold,
    * now naming the approver's limit and the person who asked for it. The limit is
-   * classified `restricted`: the trail keeps it, readers of the request never see it.
+   * the one the DATABASE computed and wrote onto the approval, and it is classified
+   * `restricted`: the trail keeps it, readers of the request never see it.
    */
   private async auditDecision(
     db: DbHandle,

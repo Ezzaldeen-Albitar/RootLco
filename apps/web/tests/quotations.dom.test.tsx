@@ -209,8 +209,9 @@ function approvalRow(over: Record<string, unknown> = {}) {
     requestedBy: { id: 'aaaaaaaa-0000-4000-8000-000000000001', displayName: 'Omar Saleh' },
     requestedAt: '2026-09-20T09:00:00Z',
     requestedByCaller: false,
-    canDecide: true,
-    cannotDecideReason: null,
+    canApprove: true,
+    cannotApproveReason: null,
+    canReject: true,
     decidedBy: null,
     decidedAt: null,
     decisionReason: null,
@@ -907,8 +908,9 @@ describe('the discounts waiting for approval, decided on the working branch', ()
           id: '77777777-0000-4000-8000-000000000002',
           quotationNumber: 'QUO-000078',
           requestedByCaller: true,
-          canDecide: false,
-          cannotDecideReason: 'own_request',
+          canApprove: false,
+          cannotApproveReason: 'own_request',
+          canReject: false,
           requestedBy: { id: 'me', displayName: 'Nadia Karim' },
         }),
       ])
@@ -1011,7 +1013,7 @@ describe('the discounts waiting for approval, decided on the working branch', ()
     '%s: a row the server says the operator cannot decide (%s) offers no decision and says why, without an amount',
     async (locale, reason, key, dictionary, render) => {
       listDiscountApprovals.mockResolvedValue(
-        page([approvalRow({ canDecide: false, cannotDecideReason: reason })])
+        page([approvalRow({ canApprove: false, cannotApproveReason: reason, canReject: false })])
       );
       renderPanel(render, locale);
       await screen.findByText('QUO-000077');
@@ -1028,6 +1030,30 @@ describe('the discounts waiting for approval, decided on the working branch', ()
         ).toHaveLength(0);
       }
       expect(listDiscountApprovals).toHaveBeenCalled();
+    }
+  );
+
+  it.each(['no_approval_limit', 'over_approval_limit'] as const)(
+    'a row the operator may turn down but not approve (%s) offers Turn down only, and says why approving is not offered',
+    async (reason) => {
+      listDiscountApprovals.mockResolvedValue(
+        page([approvalRow({ canApprove: false, cannotApproveReason: reason, canReject: true })])
+      );
+      renderPanel();
+      await screen.findByText('QUO-000077');
+      expect(screen.getByTestId('discount-cannot-decide')).toHaveTextContent(
+        EN[
+          reason === 'no_approval_limit'
+            ? 'quotations.approvals.blocked.noApprovalLimit'
+            : 'quotations.approvals.blocked.overApprovalLimit'
+        ] as string
+      );
+      expect(
+        screen.queryByRole('button', { name: /Approve the discount on QUO-000077/ })
+      ).toBeNull();
+      expect(
+        screen.getByRole('button', { name: /Turn down the discount on QUO-000077/ })
+      ).toBeVisible();
     }
   );
 
@@ -1139,7 +1165,13 @@ describe('the /quotations route page decides before it reads', () => {
   it('without a work order, lists the discounts waiting for approval, and offers a decision only where the server says the operator can make it', async () => {
     // The session's own permissions no longer decide it: the server answers per row.
     listDiscountApprovals.mockResolvedValue(
-      page([approvalRow({ canDecide: false, cannotDecideReason: 'missing_permission' })])
+      page([
+        approvalRow({
+          canApprove: false,
+          cannotApproveReason: 'missing_permission',
+          canReject: false,
+        }),
+      ])
     );
     PERMISSIONS = ['quo.quotation.read', 'svc.price.manage'];
     const cannot = await renderPageInBranch({ locale: 'en' });

@@ -10,10 +10,11 @@
  *     the quotation may apply it. At or over it, the discount is recorded as a
  *     PENDING request, and the policy version it was measured against is returned
  *     so the caller can snapshot it. Nothing about the requester's own authority is
- *     checked here: asking is not approving. When the quotation already holds an
- *     open request, the caller PINS that request's snapshot and the discount is
- *     measured against it instead of the policy in force (P1-32-PRE-OD-DISC-04), so
- *     a threshold raised after asking cannot be reached by revising.
+ *     checked here: asking is not approving. A quotation is held to the policy
+ *     version the database pinned when it was written, so the caller PINS that
+ *     version and the discount is measured against it instead of the policy in
+ *     force (P1-32-PRE-OD-DISC-07): a threshold change reaches only quotations
+ *     written after it, and no revision of an existing quotation can reach it.
  *
  *  2. **When somebody approves it — may THIS person approve it?** `authorizeApproval`
  *     is called by the approver, against the snapshot. Three gates, all of which must
@@ -102,8 +103,8 @@ export interface DiscountThresholdSnapshot {
 }
 
 /**
- * A policy snapshot a quotation is held to while it carries an open discount
- * request (P1-32-PRE-OD-DISC-04).
+ * The policy version a quotation is held to for its whole life, pinned by the
+ * database when the quotation was written (P1-32-PRE-OD-DISC-07).
  *
  * `threshold: null` is the snapshot of "nothing was configured" — a threshold of
  * zero — and is NOT the same as passing no pin at all, which measures against the
@@ -111,7 +112,7 @@ export interface DiscountThresholdSnapshot {
  */
 export interface PinnedDiscountPolicy {
   readonly threshold: DiscountThresholdSnapshot | null;
-  /** The permission an approver of the pinned request had to hold. */
+  /** The permission an approver of a request under this version must hold. */
   readonly permissionCode: string;
 }
 
@@ -249,9 +250,9 @@ export class DiscountAuthorizationService {
 
     if (pinned !== undefined) {
       /**
-       * Measured against the SNAPSHOT the quotation is held to, never the policy in
-       * force: a threshold raised after a request was recorded must not let the same
-       * discount through by revising the quotation (P1-32-PRE-OD-DISC-04).
+       * Measured against the version the quotation is held to, never the policy in
+       * force: a threshold changed after the quotation was written must not reach it,
+       * however it is revised (P1-32-PRE-OD-DISC-07).
        */
       const snapshot = pinned.threshold;
       const needs =
@@ -464,6 +465,21 @@ export class DiscountAuthorizationService {
         `Deciding this discount requires ${snapshotPermission(request.requiredPermissionCode)}`
       );
     }
+  }
+
+  /**
+   * Whether the signed-in person may TURN DOWN a recorded discount request, without
+   * throwing: the same separation and the same recorded permission
+   * `authorizeRejection` names, and no limit. The approvals list reports it per row
+   * (`canReject`) beside the approval standing, because a person with the permission
+   * and no limit that covers the discount may refuse it but not approve it.
+   */
+  public async mayReject(
+    request: Pick<DiscountApprovalRequest, 'requestedBy' | 'approverId' | 'requiredPermissionCode'>,
+    hasPermission: PermissionProbe
+  ): Promise<boolean> {
+    if (request.requestedBy === request.approverId) return false;
+    return holdsSnapshotPermission(request.requiredPermissionCode, hasPermission);
   }
 
   /**

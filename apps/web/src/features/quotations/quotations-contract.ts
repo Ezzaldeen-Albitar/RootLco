@@ -53,14 +53,17 @@
  * the request is the signed-in person's own, which is waiting for another
  * approver and is never offered to them to decide.
  *
- * Who may decide is the SERVER's answer, per row: `canDecide` is true only when
- * the request is pending, the signed-in person did not ask for it, holds the
- * permission the request recorded, and has a limit that counts and covers it;
- * `cannotDecideReason` says which of those failed. No approver limit is ever part
- * of a request — the decision route is gated by the quotation read code and the
- * recorded permission is checked on the row (P1-32-PRE-OD-DISC-04). A quotation
- * revised while it holds an open request keeps that request's threshold: the old
- * request becomes `superseded` and is never offered for a decision.
+ * Who may decide is the SERVER's answer, per row, and approving and turning down
+ * are answered apart. `canApprove` is true only when the request is pending, the
+ * signed-in person did not ask for it, holds the permission the request recorded,
+ * and has a limit that counts and covers it; `cannotApproveReason` says which of
+ * those failed. `canReject` needs the same first three and no limit — refusing money
+ * being given away needs no ceiling. No approver limit is ever part of a request —
+ * the decision route is gated by the quotation read code and the recorded
+ * permission is checked on the row. Every revision of a quotation is measured
+ * against the threshold in force when the quotation was written
+ * (P1-32-PRE-OD-DISC-07): a revision supersedes an open request, which is never
+ * offered for a decision again.
  *
  * ## Reads the backend does not publish, said here rather than hidden
  *
@@ -258,9 +261,11 @@ export interface DiscountApproval {
   /** True for the signed-in person's own request: it waits for ANOTHER approver. */
   readonly requestedByCaller: boolean;
   /** The server's answer: may the signed-in person approve this request now. */
-  readonly canDecide: boolean;
-  /** Why not, when `canDecide` is false; `null` when it is true. */
-  readonly cannotDecideReason: DiscountDecisionBlock | null;
+  readonly canApprove: boolean;
+  /** Why not, when `canApprove` is false; `null` when it is true. */
+  readonly cannotApproveReason: DiscountDecisionBlock | null;
+  /** The server's answer: may the signed-in person turn this request down now. */
+  readonly canReject: boolean;
   readonly decidedBy: DiscountApprovalPerson | null;
   readonly decidedAt: string | null;
   readonly decisionReason: string | null;

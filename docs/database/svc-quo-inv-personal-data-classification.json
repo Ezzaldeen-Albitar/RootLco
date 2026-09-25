@@ -2,7 +2,7 @@
   "$schema": "./classification.schema.json",
   "description": "P1-10-SEC — Service Catalog / Pricing / Quotation / Inventory personal-and-financial-data classification registry. Restricted = cost/margin fields gated by inv.cost.view. Prices and quotation totals are operational (internal). No restricted column is searchable.",
   "allowedClassifications": ["public", "internal", "restricted", "secret"],
-  "columnCount": 943,
+  "columnCount": 946,
   "columns": {
     "inv.customer_supplied_parts.branch_id": {
       "classification": "internal",
@@ -3783,6 +3783,21 @@
       "classification": "internal",
       "searchable": false,
       "dataType": "uuid"
+    },
+    "quo.quotations.discount_policy_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "quo.quotations.discount_policy_pinned_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "quo.quotations.discount_policy_version_no": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "integer"
     },
     "quo.quotations.id": {
       "classification": "internal",

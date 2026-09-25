@@ -39,12 +39,13 @@ import { Money, OutcomeNote, PRIMARY_BUTTON, SECONDARY_BUTTON } from './shared';
  *
  * ## A decision is offered only where the server says it can succeed
  *
- * Every row carries the server's `canDecide` for the signed-in person, and
- * `cannotDecideReason` when not: their own request (it waits for another
- * approver), a missing permission, no limit that counts, or a limit below the
- * discount. The panel offers Approve and Turn down only on `canDecide`, and
- * otherwise says why in the operator's language — never with an amount, because
- * no approver limit is ever sent. The server refuses the same cases anyway, by
+ * Every row carries the server's two answers for the signed-in person, apart:
+ * `canApprove`, with `cannotApproveReason` when not — their own request (it waits
+ * for another approver), a missing permission, no limit that counts, or a limit
+ * below the discount — and `canReject`, which needs no limit. The panel offers
+ * Approve only on `canApprove` and Turn down only on `canReject`, and says why
+ * approving is not offered in the operator's language — never with an amount,
+ * because no approver limit is ever sent. The server refuses the same cases anyway, by
  * name; a refusal that still arrives (a limit changed in between) renders as a
  * sentence above the list. Turning a request down needs a reason, asked for at the
  * reason box.
@@ -176,9 +177,9 @@ function ApprovalsTable({
       {
         id: 'decision',
         headerKey: 'quotations.approvals.column.decision',
-        cell: (row) =>
-          row.canDecide ? (
-            <span className="flex flex-wrap gap-2">
+        cell: (row) => (
+          <span className="flex flex-wrap items-center gap-2">
+            {row.canApprove ? (
               <button
                 type="button"
                 className={PRIMARY_BUTTON}
@@ -190,6 +191,21 @@ function ApprovalsTable({
               >
                 {translate(messages, 'quotations.approvals.approve')}
               </button>
+            ) : (
+              <span
+                className="text-caption text-text-secondary"
+                data-testid="discount-cannot-decide"
+              >
+                {translateDynamic(
+                  messages,
+                  CANNOT_DECIDE_KEY[
+                    row.cannotApproveReason ??
+                      (row.requestedByCaller ? 'own_request' : 'not_pending')
+                  ]
+                )}
+              </span>
+            )}
+            {row.canReject ? (
               <button
                 type="button"
                 className={SECONDARY_BUTTON}
@@ -204,17 +220,9 @@ function ApprovalsTable({
               >
                 {translate(messages, 'quotations.approvals.reject')}
               </button>
-            </span>
-          ) : (
-            <span className="text-caption text-text-secondary" data-testid="discount-cannot-decide">
-              {translateDynamic(
-                messages,
-                CANNOT_DECIDE_KEY[
-                  row.cannotDecideReason ?? (row.requestedByCaller ? 'own_request' : 'not_pending')
-                ]
-              )}
-            </span>
-          ),
+            ) : null}
+          </span>
+        ),
       },
     ],
     [approve, busyId, locale, messages]

@@ -377,11 +377,28 @@ describe('discount rejection — the same separation, no limit needed', () => {
     ).resolves.toBeUndefined();
     expect(ceilingReads()).toBe(0);
   });
+
+  it('answers the per-row canReject by the same two gates, without throwing and without a limit', async () => {
+    const { service, ceilingReads } = build({ ceiling: null });
+    const request = {
+      requestedBy: 'u1',
+      approverId: 'u2',
+      requiredPermissionCode: 'svc.price.manage',
+    };
+    // Another person with the recorded permission may turn it down with no limit at all...
+    await expect(service.mayReject(request, allow)).resolves.toBe(true);
+    // ...the requester may not, whatever they hold...
+    await expect(service.mayReject({ ...request, approverId: 'u1' }, allow)).resolves.toBe(false);
+    // ...and nor may a person without the recorded permission.
+    await expect(service.mayReject(request, deny)).resolves.toBe(false);
+    expect(ceilingReads()).toBe(0);
+  });
 });
 
 /**
- * A quotation holding an open request is measured against that request's snapshot
- * (P1-32-PRE-OD-DISC-04): a threshold raised since cannot be reached by revising.
+ * Every revision of a quotation is measured against the policy version pinned when the
+ * quotation was written (P1-32-PRE-OD-DISC-07): a threshold changed since cannot be
+ * reached by revising.
  */
 describe('discount assessment — a pinned snapshot, not the policy in force', () => {
   const snapshot = {
@@ -436,7 +453,7 @@ describe('discount assessment — a pinned snapshot, not the policy in force', (
 });
 
 /**
- * `evaluateApproval` is the per-row `canDecide` answer: the same order and the same
+ * `evaluateApproval` is the per-row `canApprove` answer: the same order and the same
  * gates as `authorizeApproval`, returned as a named block instead of thrown — and never
  * carrying the approver's limit (P1-32-PRE-OD-DISC-04).
  */

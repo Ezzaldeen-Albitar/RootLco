@@ -144,8 +144,9 @@ function discountApproval(over: Record<string, unknown> = {}) {
     requestedBy: { id: 'aaaaaaaa-0000-4000-8000-000000000001', displayName: 'Omar Saleh' },
     requestedAt: '2026-09-20T09:00:00Z',
     requestedByCaller: false,
-    canDecide: false,
-    cannotDecideReason: 'missing_permission',
+    canApprove: false,
+    cannotApproveReason: 'missing_permission',
+    canReject: false,
     decidedBy: null,
     decidedAt: null,
     decisionReason: null,
@@ -774,8 +775,9 @@ describe('a discount waiting for approval is shown, and holds the draft back fro
       draftWith({
         status: 'superseded',
         supersededAt: '2026-09-22T09:00:00Z',
-        canDecide: false,
-        cannotDecideReason: 'not_pending',
+        canApprove: false,
+        cannotApproveReason: 'not_pending',
+        canReject: false,
       })
     );
     expect(
@@ -798,8 +800,9 @@ describe('a discount waiting for approval is shown, and holds the draft back fro
         status: 'approved',
         decidedBy: { id: 'bbbbbbbb-0000-4000-8000-000000000002', displayName: 'Nadia Karim' },
         decidedAt: '2026-09-21T09:00:00Z',
-        canDecide: false,
-        cannotDecideReason: 'not_pending',
+        canApprove: false,
+        cannotApproveReason: 'not_pending',
+        canReject: false,
       })
     );
     expect(
