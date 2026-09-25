@@ -506,9 +506,10 @@ describe('every non-answer reads as itself', () => {
     await waitFor(() => expect(load).toHaveBeenCalled());
     expect(screen.queryByTestId('state-no-results')).toBeNull();
     reply.resolve(page([]));
-    expect(await screen.findByTestId('state-no-results')).toHaveTextContent(
-      en['state.noResults.title']
-    );
+    const none = await screen.findByTestId('state-no-results');
+    expect(none).toHaveTextContent(en['state.noSearchMatches.title']);
+    expect(none).toHaveTextContent(en['state.noSearchMatches.description']);
+    expect(none).not.toHaveTextContent(en['state.noResults.description']);
   });
 
   it('without the read it offers no box and names the reason by id', () => {
@@ -680,7 +681,8 @@ describe('both languages', () => {
 
     reply.resolve(page([]));
     const none = await screen.findByTestId('state-no-results');
-    expect(none).toHaveTextContent(ar['state.noResults.title']);
+    expect(none).toHaveTextContent(ar['state.noSearchMatches.title']);
+    expect(none).not.toHaveTextContent(ar['state.noResults.description']);
     expect(screen.queryByText(ar['state.loading'])).toBeNull();
     const shown = screen.getByTestId('entity-picker').textContent ?? '';
     for (const english of [

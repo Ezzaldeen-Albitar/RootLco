@@ -341,7 +341,7 @@ export function MuiSearchStates({
     case 'loading':
       return <MuiLoadingState messages={messages} variant="inline" />;
     case 'empty':
-      return <MuiNoResultsState messages={messages} action={onClearFilters} />;
+      return <MuiNoResultsState messages={messages} action={onClearFilters} reason="search" />;
     case 'unavailable':
       return (
         <MuiUnavailableState messages={messages} onRetry={onRetry} correlationId={correlationId} />

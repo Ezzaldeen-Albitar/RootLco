@@ -554,6 +554,9 @@ The one place the MUI X data grid is rendered with props a caller supplies.
   "no matches" are different sentences; loading keeps the header over skeleton rows. The grid is
   one tab stop with arrow-key movement, and every row action is a real link or button whose name
   includes what it acts on.
+- G10. Queue boards migrating to `OperationalGrid` via `useSearchRequest` MUST pass
+  `narrows(criteria)` so a scoped-but-unsearched empty queue shows its empty state, not "no
+  matches".
 
 **`EntityPicker`** (`apps/web/src/components/pickers/EntityPicker.tsx`) is `SearchPicker` on
 Material UI's Autocomplete. It takes exactly `SearchPickerProps`; the module also exports it as

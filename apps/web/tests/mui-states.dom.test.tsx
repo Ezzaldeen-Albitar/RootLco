@@ -195,6 +195,18 @@ describe('MuiSearchStates keeps SearchStates’ decisions', () => {
     );
   });
 
+  it('says a search found nothing, not that filters did, when a search comes back empty', () => {
+    const messages = getMessages('en');
+    mount(<MuiSearchStates messages={messages} phase="empty" />);
+    const state = screen.getByTestId('state-no-results');
+    expect(within(state).getByText(messages['state.noSearchMatches.title'])).toBeInTheDocument();
+    expect(
+      within(state).getByText(messages['state.noSearchMatches.description'])
+    ).toBeInTheDocument();
+    expect(within(state).queryByText(messages['state.noResults.title'])).toBeNull();
+    expect(within(state).queryByText(messages['state.noResults.description'])).toBeNull();
+  });
+
   it('renders nothing for an answer and the caller’s words before one', () => {
     const messages = getMessages('en');
     const { unmount } = mount(<MuiSearchStates messages={messages} phase="ready" />);
