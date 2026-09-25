@@ -1,15 +1,27 @@
-import { screen, waitFor, within } from '@testing-library/react';
+import { act, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { SearchBox } from '@/components/search/SearchBox';
 import { SearchStates } from '@/components/search/SearchStates';
 import { DataTable, type Column } from '@/components/data-table/DataTable';
+import { useServerTable, type ServerPage } from '@/components/data-table/use-server-table';
 import {
   INITIAL_REQUEST,
   type TableRequest,
   type TableResponse,
 } from '@/components/data-table/table-state';
-import { useSearchRequest } from '@/lib/api/use-search-request';
+import { DEFAULT_READ_RETRIES, DEFAULT_TIMEOUT_MS, MAX_READ_RETRIES } from '@/lib/api/client';
+import * as readBudget from '@/lib/api/read-budget';
+import { clientReadTimeoutMs } from '@/lib/api/read-budget';
+import {
+  CLIENT_READ_QUEUE_MARGIN_MS,
+  CLIENT_READ_TIMEOUT_MS,
+  SERVER_READ_WORST_CASE_MS,
+  settleRead,
+  useSearchRequest,
+} from '@/lib/api/use-search-request';
 import { useDebouncedValue } from '@/lib/use-debounced-value';
 import en from '../src/i18n/messages/en.json';
 import { renderLtr } from './render';
@@ -213,10 +225,22 @@ interface Found {
   readonly id: string;
 }
 
+function TableHarness({
+  load,
+  serverReads,
+}: {
+  readonly load: (request: TableRequest, cursor: string | null) => Promise<ServerPage<Found>>;
+  readonly serverReads?: number;
+}) {
+  const table = useServerTable<Found>(load, serverReads === undefined ? {} : { serverReads });
+  return <p data-testid="table-status">{table.status}</p>;
+}
+
 function SearchHarness({
   term,
   load,
   version = 0,
+  serverReads,
 }: {
   readonly term: string;
   readonly load: (
@@ -225,12 +249,14 @@ function SearchHarness({
     signal: AbortSignal
   ) => Promise<unknown>;
   readonly version?: number;
+  readonly serverReads?: number;
 }) {
   const settled = useDebouncedValue(term, 20);
   const outcome = useSearchRequest<Found, { q: string }>({
     criteria: settled.length >= 2 ? { q: settled } : null,
     load: load as never,
     version,
+    ...(serverReads === undefined ? {} : { serverReads }),
     // Short, so a case is not a second long. The INTERVAL is not what these
     // cases are about — the settling, the abandoning and the ordering are.
     debounceMs: 20,
@@ -471,6 +497,345 @@ describe('a search request', () => {
       expect(screen.getByTestId('error')).toHaveTextContent(key);
       view.unmount();
     }
+  });
+});
+
+describe('a search that fails never stays "Loading" (browser QA part 7, rows 2.6 and 1c.1b)', () => {
+  /*
+   * The reads behind every search are Server Action calls. When that call
+   * fails — the connection drops, or the web tier answers 503 — it REJECTS
+   * rather than resolving a failure state, and the hook used to await it with
+   * nothing to catch the rejection: no answer was ever held, so the phase was
+   * derived as `loading` for good. QA watched three screens read "Loading"
+   * twelve seconds after the read had failed, with no sentence and no retry.
+   */
+  it('settles a read that fails at the NETWORK as an outage, not as Loading', async () => {
+    const load = vi.fn(async () => {
+      throw new TypeError('Failed to fetch');
+    });
+    renderLtr(<SearchHarness term="network" load={load} />);
+    await waitFor(() => expect(screen.getByTestId('phase')).toHaveTextContent('unavailable'));
+    expect(screen.getByTestId('error')).toHaveTextContent('state.unavailable.title');
+    expect(load).toHaveBeenCalledTimes(1);
+  });
+
+  it('settles a web-tier 503 as an outage, and a retry asks again and recovers', async () => {
+    // What the Server Action client throws for a response that is not a
+    // Server Action answer — a 503 from a proxy in front of the web tier.
+    const load = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('An unexpected response was received from the server.'))
+      .mockResolvedValue(okPage([{ id: 'recovered' }]));
+    const user = userEvent.setup();
+    renderLtr(<SearchHarness term="outage" load={load} />);
+    await waitFor(() => expect(screen.getByTestId('phase')).toHaveTextContent('unavailable'));
+
+    await user.click(screen.getByRole('button', { name: 'ask now' }));
+    await waitFor(() => expect(screen.getByTestId('phase')).toHaveTextContent('ready'));
+    expect(screen.getByTestId('rows')).toHaveTextContent('recovered');
+    expect(load).toHaveBeenCalledTimes(2);
+  });
+
+  it('keeps a fault the service ANSWERED apart from one that never arrived', async () => {
+    // A resolved `error` is the service saying something broke — a fault with
+    // a reference. Only a read with no readable answer is an outage.
+    const load = vi.fn(async () => failure('error'));
+    renderLtr(<SearchHarness term="fault" load={load} />);
+    await waitFor(() => expect(screen.getByTestId('phase')).toHaveTextContent('failed'));
+    expect(screen.getByTestId('error')).toHaveTextContent('state.error.title');
+  });
+
+  it('gives up on a read that never answers at the client ceiling, as an outage', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const load = vi.fn(() => new Promise<never>(() => undefined));
+      renderLtr(<SearchHarness term="hangs" load={load} />);
+      await waitFor(() => expect(load).toHaveBeenCalledTimes(1));
+      expect(screen.getByTestId('phase')).toHaveTextContent('loading');
+
+      // Still waiting at the server's own worst case: a read the server may
+      // still be retrying is not abandoned over an answer about to arrive.
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(SERVER_READ_WORST_CASE_MS);
+      });
+      expect(screen.getByTestId('phase')).toHaveTextContent('loading');
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(CLIENT_READ_TIMEOUT_MS - SERVER_READ_WORST_CASE_MS);
+      });
+      await waitFor(() => expect(screen.getByTestId('phase')).toHaveTextContent('unavailable'));
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('sets the client ceiling above the server path and its queueing, never below it', () => {
+    // Derived from the server client's own constants: every read there makes
+    // at most MAX_READ_RETRIES + 1 attempts of DEFAULT_TIMEOUT_MS each.
+    expect(SERVER_READ_WORST_CASE_MS).toBe(DEFAULT_TIMEOUT_MS * (MAX_READ_RETRIES + 1));
+    expect(SERVER_READ_WORST_CASE_MS).toBeGreaterThanOrEqual(
+      DEFAULT_TIMEOUT_MS * (DEFAULT_READ_RETRIES + 1)
+    );
+    // The queueing allowance is one more per-attempt timeout, and the ceiling
+    // is exactly the two added — no hand-picked figure beside them.
+    expect(CLIENT_READ_QUEUE_MARGIN_MS).toBe(DEFAULT_TIMEOUT_MS);
+    expect(CLIENT_READ_TIMEOUT_MS).toBe(SERVER_READ_WORST_CASE_MS + CLIENT_READ_QUEUE_MARGIN_MS);
+    expect(CLIENT_READ_TIMEOUT_MS).toBeGreaterThan(SERVER_READ_WORST_CASE_MS);
+  });
+
+  it('settles a rejected read at once, with no timer left behind (network and 503 alike)', async () => {
+    // The ceiling is a safety net, not how a failure is noticed. Time does not
+    // move in this case at all: a rejection must settle on its own, and the
+    // ceiling timer it armed must be cleared rather than left to fire later.
+    vi.useFakeTimers();
+    try {
+      const failed = { status: 'unavailable' } as const;
+      for (const reason of [
+        new TypeError('Failed to fetch'),
+        new Error('An unexpected response was received from the server.'),
+      ]) {
+        await expect(settleRead(() => Promise.reject(reason), failed)).resolves.toBe(failed);
+        expect(vi.getTimerCount()).toBe(0);
+      }
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('holds a silent read until exactly the derived ceiling, and not one millisecond less', async () => {
+    vi.useFakeTimers();
+    try {
+      const failed = { status: 'unavailable' } as const;
+      let settled = false;
+      const pending = settleRead(() => new Promise<never>(() => undefined), failed).then(
+        (value) => {
+          settled = true;
+          return value;
+        }
+      );
+      await vi.advanceTimersByTimeAsync(CLIENT_READ_TIMEOUT_MS - 1);
+      expect(settled).toBe(false);
+      await vi.advanceTimersByTimeAsync(1);
+      await expect(pending).resolves.toBe(failed);
+      expect(settled).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('shows NO outage when a branch switch abandons the read in flight', async () => {
+    /*
+     * Abandoning a read settles it with the failure value — and that value
+     * must never reach the screen. The switch is the operator moving on, not
+     * the service failing: every phase painted between the switch and the new
+     * answer is recorded, and "unavailable" is not among them. Two defences
+     * hold it — the continuation refuses an aborted or superseded read, and the
+     * answer is filed under the key it was asked for, which the new version no
+     * longer matches — and this case pins the outcome, not either one alone.
+     */
+    let release: (value: unknown) => void = () => undefined;
+    const load = vi.fn(() =>
+      load.mock.calls.length === 1
+        ? new Promise<never>(() => undefined)
+        : new Promise((resolve) => {
+            release = resolve;
+          })
+    );
+    const { rerender } = renderLtr(<SearchHarness term="same" load={load} version={0} />);
+    await waitFor(() => expect(load).toHaveBeenCalledTimes(1));
+
+    const painted: string[] = [];
+    const phase = screen.getByTestId('phase');
+    const observer = new MutationObserver(() => painted.push(phase.textContent ?? ''));
+    observer.observe(phase, { childList: true, characterData: true, subtree: true });
+    try {
+      rerender(<SearchHarness term="same" load={load} version={1} />);
+      await waitFor(() => expect(load).toHaveBeenCalledTimes(2));
+      // Give the abandoned read every chance to commit its failure value.
+      await act(async () => {
+        await Promise.resolve();
+      });
+      expect(phase).toHaveTextContent('loading');
+
+      await act(async () => {
+        release(okPage([{ id: 'switched' }]));
+      });
+      await waitFor(() => expect(screen.getByTestId('rows')).toHaveTextContent('switched'));
+      expect(painted).not.toContain('unavailable');
+    } finally {
+      observer.disconnect();
+    }
+  });
+
+  it('applies the SAME ceiling to a server table: rejection at once, silence only after the bound', async () => {
+    const rejected = vi.fn(() => Promise.reject(new TypeError('Failed to fetch')));
+    const first = renderLtr(<TableHarness load={rejected} />);
+    await waitFor(() =>
+      expect(screen.getByTestId('table-status')).toHaveTextContent('unavailable')
+    );
+    first.unmount();
+
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const silent = vi.fn(() => new Promise<never>(() => undefined));
+      renderLtr(<TableHarness load={silent} />);
+      await waitFor(() => expect(silent).toHaveBeenCalledTimes(1));
+      expect(screen.getByTestId('table-status')).toHaveTextContent('loading');
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(SERVER_READ_WORST_CASE_MS);
+      });
+      expect(screen.getByTestId('table-status')).toHaveTextContent('loading');
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(CLIENT_READ_TIMEOUT_MS - SERVER_READ_WORST_CASE_MS);
+      });
+      await waitFor(() =>
+        expect(screen.getByTestId('table-status')).toHaveTextContent('unavailable')
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('abandons the read in flight on a branch switch and asks for the new branch at once', async () => {
+    /*
+     * Row 1c.1b: a switch must not leave the new branch's read waiting on the
+     * old one. The old read here NEVER answers; the new branch's read is still
+     * issued, its answer rendered, and the old read's signal is aborted — the
+     * signal is what `settleRead` stops waiting on, and what a loader that
+     * reaches a real `fetch` passes on.
+     */
+    const seen: AbortSignal[] = [];
+    const load = vi.fn((_criteria: { q: string }, _cursor: string | null, signal: AbortSignal) => {
+      seen.push(signal);
+      return seen.length === 1
+        ? new Promise<never>(() => undefined)
+        : Promise.resolve(okPage([{ id: 'new-branch' }]));
+    });
+    const { rerender } = renderLtr(<SearchHarness term="same" load={load} version={0} />);
+    await waitFor(() => expect(load).toHaveBeenCalledTimes(1));
+    expect(seen[0]?.aborted).toBe(false);
+
+    rerender(<SearchHarness term="same" load={load} version={1} />);
+    await waitFor(() => expect(load).toHaveBeenCalledTimes(2));
+    expect(seen[0]?.aborted).toBe(true);
+    expect(seen[1]?.aborted).toBe(false);
+    await waitFor(() => expect(screen.getByTestId('rows')).toHaveTextContent('new-branch'));
+  });
+
+  it('sizes the ceiling by the loader’s sequential reads: one read keeps 60 s, two get two worst cases', () => {
+    // One read: the server's worst case plus the queueing margin — 60 s today.
+    expect(clientReadTimeoutMs()).toBe(CLIENT_READ_TIMEOUT_MS);
+    expect(clientReadTimeoutMs(1)).toBe(CLIENT_READ_TIMEOUT_MS);
+    expect(CLIENT_READ_TIMEOUT_MS).toBe(60_000);
+    // Two reads in sequence: the server may spend its whole worst case on EACH,
+    // and the margin for waiting in the queue is added once, before either.
+    expect(clientReadTimeoutMs(2)).toBe(
+      2 * SERVER_READ_WORST_CASE_MS + CLIENT_READ_QUEUE_MARGIN_MS
+    );
+    expect(clientReadTimeoutMs(2)).toBeGreaterThan(
+      CLIENT_READ_TIMEOUT_MS + CLIENT_READ_QUEUE_MARGIN_MS
+    );
+    // A mistyped count can only leave the single-read ceiling in place.
+    for (const odd of [0, -1, 1.5, Number.NaN]) {
+      expect(clientReadTimeoutMs(odd)).toBe(CLIENT_READ_TIMEOUT_MS);
+    }
+  });
+
+  it('holds a TWO-read loader past the single-read ceiling, until exactly two worst cases and the margin', async () => {
+    vi.useFakeTimers();
+    try {
+      const failed = { status: 'unavailable' } as const;
+      let settled = false;
+      const pending = settleRead(() => new Promise<never>(() => undefined), failed, {
+        serverReads: 2,
+      }).then((value) => {
+        settled = true;
+        return value;
+      });
+      // Past the ceiling a one-read loader gets: the second read may still be running.
+      await vi.advanceTimersByTimeAsync(CLIENT_READ_TIMEOUT_MS);
+      expect(settled).toBe(false);
+      await vi.advanceTimersByTimeAsync(
+        2 * SERVER_READ_WORST_CASE_MS + CLIENT_READ_QUEUE_MARGIN_MS - CLIENT_READ_TIMEOUT_MS - 1
+      );
+      expect(settled).toBe(false);
+      await vi.advanceTimersByTimeAsync(1);
+      await expect(pending).resolves.toBe(failed);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('carries a two-read count through the server table and the search alike', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const silentTable = vi.fn(() => new Promise<never>(() => undefined));
+      const table = renderLtr(<TableHarness load={silentTable} serverReads={2} />);
+      await waitFor(() => expect(silentTable).toHaveBeenCalledTimes(1));
+      // Two whole server worst cases — well past the one-read ceiling — and
+      // still waiting.
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(2 * SERVER_READ_WORST_CASE_MS);
+      });
+      expect(screen.getByTestId('table-status')).toHaveTextContent('loading');
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(CLIENT_READ_QUEUE_MARGIN_MS);
+      });
+      await waitFor(() =>
+        expect(screen.getByTestId('table-status')).toHaveTextContent('unavailable')
+      );
+      table.unmount();
+
+      const silentSearch = vi.fn(() => new Promise<never>(() => undefined));
+      renderLtr(<SearchHarness term="twice" load={silentSearch} serverReads={2} />);
+      await waitFor(() => expect(silentSearch).toHaveBeenCalledTimes(1));
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(2 * SERVER_READ_WORST_CASE_MS);
+      });
+      expect(screen.getByTestId('phase')).toHaveTextContent('loading');
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(CLIENT_READ_QUEUE_MARGIN_MS);
+      });
+      await waitFor(() => expect(screen.getByTestId('phase')).toHaveTextContent('unavailable'));
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('keeps the browser hook off the server API client: the budget is its own import-free module', () => {
+    const source = (file: string) => readFileSync(join(process.cwd(), 'src', file), 'utf8');
+    const hook = source('lib/api/use-search-request.ts');
+    // The client carries the English catalogue and the operation table; the
+    // hook needs a handful of numbers from it and nothing else.
+    expect(hook).not.toMatch(/from\s+['"](?:\.\/client|@\/lib\/api\/client)['"]/);
+    expect(hook).toMatch(/from\s+['"]\.\/read-budget['"]/);
+    expect(source('lib/api/read-budget.ts')).not.toMatch(/^\s*import\s/m);
+    // One set of figures: the client's re-exports ARE the budget's.
+    expect(readBudget.DEFAULT_TIMEOUT_MS).toBe(DEFAULT_TIMEOUT_MS);
+    expect(readBudget.DEFAULT_READ_RETRIES).toBe(DEFAULT_READ_RETRIES);
+    expect(readBudget.MAX_READ_RETRIES).toBe(MAX_READ_RETRIES);
+  });
+
+  it('settleRead: its own answer, or the failure — for a rejection, a timeout and an abort', async () => {
+    type Answer = { readonly status: 'ok' | 'unavailable' };
+    const failed: Answer = { status: 'unavailable' };
+    const answered: Answer = { status: 'ok' };
+    await expect(settleRead(async () => answered, failed)).resolves.toBe(answered);
+    await expect(
+      settleRead(() => Promise.reject(new TypeError('Failed to fetch')), failed)
+    ).resolves.toBe(failed);
+    await expect(
+      settleRead(() => new Promise<never>(() => undefined), failed, { timeoutMs: 10 })
+    ).resolves.toBe(failed);
+
+    const controller = new AbortController();
+    const pending = settleRead(() => new Promise<never>(() => undefined), failed, {
+      signal: controller.signal,
+    });
+    controller.abort();
+    await expect(pending).resolves.toBe(failed);
   });
 });
 

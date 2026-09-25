@@ -1110,13 +1110,19 @@ function AllocateForm({
   const [invoice, setInvoice] = useState<InvoiceListEntry | null>(null);
   const [fromAddress, setFromAddress] = useState<string | null>(initialInvoiceId);
   const [amount, setAmount] = useState('');
-  // A branch switch closes the previous branch's receipt, and this form with it.
-  // The picker declares a chosen invoice itself.
-  useUnsavedGuard(amount.trim().length > 0);
   const [errors, setErrors] = useState<Readonly<Record<string, string>>>({});
   const [outcome, setOutcome] = useState<ActionState | null>(null);
   const [busy, setBusy] = useState(false);
   const [attempt, setAttempt] = useState(0);
+  // A branch switch closes the previous branch's receipt, and this form with it.
+  // The picker declares a chosen invoice itself. A receipt named in the address
+  // is not closed by the FIRST choice of a branch, so a confirmed discard also
+  // empties the amount here rather than relying on the receipt closing.
+  useUnsavedGuard(amount.trim().length > 0, () => {
+    setAmount('');
+    setErrors({});
+    setOutcome(null);
+  });
   const formRef = useFocusFirstInvalid({
     status: 'invalid',
     fieldErrors: { ...(outcome?.fieldErrors ?? {}), ...errors },

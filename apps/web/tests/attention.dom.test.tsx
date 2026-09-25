@@ -8,6 +8,7 @@ import ar from '../src/i18n/messages/ar.json';
 import { PermissionDeniedState } from '@/components/states/States';
 import { flattenNavigation } from '@/config/navigation';
 import { formatMessage } from '@/i18n/get-messages';
+import { CLIENT_READ_TIMEOUT_MS, SERVER_READ_WORST_CASE_MS } from '@/lib/api/use-search-request';
 import {
   BranchSwitch,
   OTHER_BRANCH,
@@ -1137,6 +1138,117 @@ describe('the dashboard reads once for the branch it is addressed to', () => {
       { companyId: TEST_COMPANY.id, branchId: OTHER_BRANCH.id },
       { period: 'today' }
     );
+  });
+
+  /*
+   * Browser QA part 7, row 7.4: a refresh whose call failed left the figures
+   * gone and the header reading "Reading the figures for this period." eight
+   * seconds later — no sentence, no retry. The Server Action call REJECTED
+   * (a 503 from the web tier), nothing caught it, and no answer was ever held.
+   */
+  it('says a failed refresh is unavailable, stops "Reading", and offers the read again', async () => {
+    const user = userEvent.setup();
+    renderLtr(inBranch(<DashboardScreen locale="en" messages={messagesFor('en')} />));
+    await screen.findByText('7');
+
+    readDashboardSummary.mockRejectedValueOnce(
+      new Error('An unexpected response was received from the server.')
+    );
+    await user.click(screen.getByRole('button', { name: EN['dashboard.refresh'] as string }));
+
+    expect(await screen.findByText(EN['state.unavailable.title'] as string)).toBeTruthy();
+    expect(screen.queryByText(EN['dashboard.period.pending'] as string)).toBeNull();
+    expect(screen.queryByText('7')).toBeNull();
+
+    await user.click(screen.getByRole('button', { name: EN['state.retry'] as string }));
+    await screen.findByText('7');
+    expect(readDashboardSummary).toHaveBeenCalledTimes(3);
+  });
+
+  it('says a read that failed at the network is unavailable, not still being read', async () => {
+    readDashboardSummary.mockReset();
+    readDashboardSummary.mockRejectedValue(new TypeError('Failed to fetch'));
+    renderLtr(inBranch(<DashboardScreen locale="en" messages={messagesFor('en')} />));
+
+    expect(await screen.findByText(EN['state.unavailable.title'] as string)).toBeTruthy();
+    expect(screen.queryByText(EN['dashboard.period.pending'] as string)).toBeNull();
+    expect(screen.getByRole('button', { name: EN['state.retry'] as string })).toBeTruthy();
+  });
+
+  it('offers the read again beside a fault the service answered', async () => {
+    readDashboardSummary.mockReset();
+    readDashboardSummary.mockResolvedValue({ status: 'error', correlationId: 'corr-dash' });
+    renderLtr(inBranch(<DashboardScreen locale="en" messages={messagesFor('en')} />));
+
+    expect(await screen.findByText(EN['state.error.title'] as string)).toBeTruthy();
+    expect(screen.getByText('corr-dash')).toBeTruthy();
+    expect(screen.getByRole('button', { name: EN['state.retry'] as string })).toBeTruthy();
+  });
+
+  it('shows no outage while a branch switch abandons the read in flight', async () => {
+    // Abandoning the old branch's read settles it with the failure value. That
+    // is the operator moving on, not the service failing, so the new branch
+    // reads "Reading the figures" — never "unavailable", not even for a frame.
+    const user = userEvent.setup();
+    renderLtr(
+      inBranch(
+        <>
+          <BranchSwitch to={TEST_BRANCH.id} label="first branch" />
+          <BranchSwitch to={OTHER_BRANCH.id} label="second branch" />
+          <DashboardScreen locale="en" messages={messagesFor('en')} />
+        </>,
+        { snapshot: branchSnapshot([TEST_BRANCH, OTHER_BRANCH]) }
+      )
+    );
+    readDashboardSummary.mockReturnValueOnce(new Promise(() => undefined));
+    await user.click(screen.getByRole('button', { name: 'first branch' }));
+    await waitFor(() => expect(readDashboardSummary).toHaveBeenCalledTimes(1));
+
+    const unavailable = EN['state.unavailable.title'] as string;
+    let flashed = false;
+    const observer = new MutationObserver(() => {
+      if (document.body.textContent?.includes(unavailable)) flashed = true;
+    });
+    observer.observe(document.body, { childList: true, characterData: true, subtree: true });
+    try {
+      readDashboardSummary.mockReturnValueOnce(new Promise(() => undefined));
+      await user.click(screen.getByRole('button', { name: 'second branch' }));
+      await waitFor(() => expect(readDashboardSummary).toHaveBeenCalledTimes(2));
+      await act(async () => {
+        await Promise.resolve();
+      });
+      expect(screen.getByText(EN['dashboard.period.pending'] as string)).toBeTruthy();
+      expect(screen.queryByText(unavailable)).toBeNull();
+      expect(flashed).toBe(false);
+    } finally {
+      observer.disconnect();
+    }
+  });
+
+  it('gives up on a read that never answers at the client ceiling', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      readDashboardSummary.mockReset();
+      readDashboardSummary.mockReturnValue(new Promise(() => undefined));
+      renderLtr(inBranch(<DashboardScreen locale="en" messages={messagesFor('en')} />));
+      await waitFor(() => expect(readDashboardSummary).toHaveBeenCalledTimes(1));
+      expect(screen.getByText(EN['dashboard.period.pending'] as string)).toBeTruthy();
+
+      // Not abandoned while the server may still be retrying it.
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(SERVER_READ_WORST_CASE_MS);
+      });
+      expect(screen.getByText(EN['dashboard.period.pending'] as string)).toBeTruthy();
+      expect(screen.queryByText(EN['state.unavailable.title'] as string)).toBeNull();
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(CLIENT_READ_TIMEOUT_MS - SERVER_READ_WORST_CASE_MS);
+      });
+      expect(await screen.findByText(EN['state.unavailable.title'] as string)).toBeTruthy();
+      expect(screen.queryByText(EN['dashboard.period.pending'] as string)).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('asks for nothing, and says why, when the branches span two companies', async () => {

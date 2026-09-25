@@ -1196,6 +1196,43 @@ describe('the receipt and its allocations', () => {
     expect(listReceipts).not.toHaveBeenCalled();
   });
 
+  it('a confirmed discard empties the allocation amount on a receipt the first branch choice keeps open', async () => {
+    /*
+     * A receipt named in the address survives the FIRST choice of a branch —
+     * that choice is what its reads were waiting for, not a move away from it.
+     * So nothing closes the allocation form, and the amount typed before the
+     * question has to be emptied by the discard itself.
+     */
+    const user = userEvent.setup();
+    renderLtr(
+      inBranch(
+        <>
+          <BranchSwitch to={TEST_BRANCH.id} label="first" />
+          <WorkingBranchProbe />
+          {screenFor({ initialReceiptId: RECEIPT_ID })}
+        </>,
+        { snapshot: branchSnapshot([TEST_BRANCH, OTHER_BRANCH]) }
+      )
+    );
+    const form = await screen.findByRole('form', {
+      name: EN['payments.allocate.formLabel'] as string,
+    });
+    const amount = () => within(form).getByLabelText(labelled('payments.allocate.amount'));
+    try {
+      await user.type(amount(), '10.0000');
+      await discardAndSwitch(user, await switchExpectingQuestion(user, 'first'));
+      await waitFor(() => expect(heldBranch()).toBe(TEST_BRANCH.id));
+      // The receipt is still open, and its form is empty.
+      expect(
+        screen.getByRole('region', { name: EN['payments.receipt.heading'] as string })
+      ).toBeVisible();
+      await waitFor(() => expect(amount()).toHaveValue(''));
+      expect(allocatePayment).not.toHaveBeenCalled();
+    } finally {
+      forgetRememberedBranch();
+    }
+  });
+
   it('renders the receipt’s figures and its allocation history', async () => {
     const user = userEvent.setup();
     const region = await openReceipt(user);

@@ -652,6 +652,219 @@ describe('the job picker and the working context', () => {
   });
 });
 
+describe('a confirmed "Discard and change branch" opens the draw forms empty', () => {
+  /*
+   * The typed item reference is what makes the issue form unsaved work, and the
+   * quantity beside it is part of the same draw. Neither lives in a picker that
+   * forgets its choice on a switch, so without a reset the form would keep the
+   * previous branch's draw on screen, ready to send, after the operator had
+   * answered that it could go.
+   */
+  function renderInTwo() {
+    renderInLtr(
+      inBranch(
+        <>
+          <BranchSwitch to={TEST_BRANCH.id} label="first" />
+          <BranchSwitch to={OTHER_BRANCH.id} label="second" />
+          <WorkingBranchProbe />
+          <PartsScreen
+            locale="en"
+            messages={en}
+            workOrderId={WORK_ORDER_ID}
+            workOrder={workOrder as never}
+            workOrderRefused={false}
+            canOperate={true}
+            canReadWorkOrder={true}
+            canReadBranches={false}
+            currentUserId={USER_ID}
+            canRequestMaterial={false}
+            canApproveMaterial={false}
+            canDecideMaterialException={false}
+          />
+        </>,
+        { snapshot: branchSnapshot([TEST_BRANCH, OTHER_BRANCH]) }
+      )
+    );
+  }
+
+  it('empties the typed item reference and the quantity once the operator confirms', async () => {
+    const user = userEvent.setup();
+    renderInTwo();
+    await user.click(screen.getByRole('button', { name: 'first' }));
+    await user.click(
+      await screen.findByRole('button', { name: EN['inventory.issue.open'] as string })
+    );
+    const reference = async () =>
+      within(await issueForm()).getByLabelText(labelled('inventory.itemPicker.reference'));
+    const quantity = async () =>
+      within(await issueForm()).getByLabelText(labelled('inventory.issue.quantity'));
+    try {
+      await user.type(await reference(), ITEM_ID);
+      await user.type(await quantity(), '3');
+
+      await stayOnBranch(user, await switchExpectingQuestion(user, 'second'));
+      expect(heldBranch()).toBe(TEST_BRANCH.id);
+      expect(await reference()).toHaveValue(ITEM_ID);
+
+      await discardAndSwitch(user, await switchExpectingQuestion(user, 'second'));
+      await waitFor(() => expect(heldBranch()).toBe(OTHER_BRANCH.id));
+      await waitFor(async () => expect(await reference()).toHaveValue(''));
+      expect(await quantity()).toHaveValue('');
+      // Nothing is left to lose, so the next switch asks nothing.
+      await switchWithoutQuestion(user, 'first');
+      expect(createIssue).not.toHaveBeenCalled();
+    } finally {
+      forgetRememberedBranch();
+    }
+  });
+
+  /*
+   * A quantity is a draw in progress on its own. Before QA round three only the
+   * typed item reference asked: a quantity typed alone went silently on a
+   * switch, which is losing entries without the question.
+   */
+  it.each([
+    ['issue', 'inventory.issue.open', 'inventory.issue.heading', 'inventory.issue.quantity'],
+    [
+      'reserve',
+      'inventory.parts.reserve.open',
+      'inventory.parts.reserve.heading',
+      'inventory.reserve.quantity',
+    ],
+  ] as const)(
+    'a quantity typed alone in the %s form asks first, and the discard empties it',
+    async (_name, open, heading, label) => {
+      const user = userEvent.setup();
+      renderInTwo();
+      await user.click(screen.getByRole('button', { name: 'first' }));
+      await user.click(await screen.findByRole('button', { name: EN[open] as string }));
+      const quantity = async () =>
+        within(await screen.findByRole('form', { name: EN[heading] as string })).getByLabelText(
+          labelled(label)
+        );
+      try {
+        // Nothing typed yet: an open, empty form is not unsaved work.
+        await switchWithoutQuestion(user, 'second');
+        await waitFor(() => expect(heldBranch()).toBe(OTHER_BRANCH.id));
+
+        await user.type(await quantity(), '4');
+        await stayOnBranch(user, await switchExpectingQuestion(user, 'first'));
+        expect(heldBranch()).toBe(OTHER_BRANCH.id);
+        expect(await quantity()).toHaveValue('4');
+
+        await discardAndSwitch(user, await switchExpectingQuestion(user, 'first'));
+        await waitFor(() => expect(heldBranch()).toBe(TEST_BRANCH.id));
+        await waitFor(async () => expect(await quantity()).toHaveValue(''));
+        await switchWithoutQuestion(user, 'second');
+        expect(createIssue).not.toHaveBeenCalled();
+        expect(createReservation).not.toHaveBeenCalled();
+      } finally {
+        forgetRememberedBranch();
+      }
+    }
+  );
+});
+
+describe('any choice in a draw form is a draw in progress, not only the quantity', () => {
+  /*
+   * The guard used to watch the quantity alone. An operator who had found the
+   * location — or the part — and not yet typed a number lost it to a branch
+   * switch without being asked. Each case below makes ONE choice and nothing
+   * else, so a guard that still watched only the quantity lets the switch
+   * through without the question and fails here.
+   */
+  function renderInTwo() {
+    renderInLtr(
+      inBranch(
+        <>
+          <BranchSwitch to={TEST_BRANCH.id} label="first" />
+          <BranchSwitch to={OTHER_BRANCH.id} label="second" />
+          <WorkingBranchProbe />
+          <PartsScreen
+            locale="en"
+            messages={en}
+            workOrderId={WORK_ORDER_ID}
+            workOrder={workOrder as never}
+            workOrderRefused={false}
+            canOperate={true}
+            canReadWorkOrder={true}
+            canReadBranches={false}
+            currentUserId={USER_ID}
+            canRequestMaterial={false}
+            canApproveMaterial={false}
+            canDecideMaterialException={false}
+          />
+        </>,
+        { snapshot: branchSnapshot([TEST_BRANCH, OTHER_BRANCH]) }
+      )
+    );
+  }
+
+  it.each([
+    ['issue', 'inventory.issue.open', 'inventory.issue.heading', 'inventory.issue.location'],
+    [
+      'reserve',
+      'inventory.parts.reserve.open',
+      'inventory.parts.reserve.heading',
+      'inventory.reserve.location',
+    ],
+  ] as const)(
+    'a location chosen alone in the %s form asks first, and the discard empties it',
+    async (_name, open, heading, label) => {
+      const user = userEvent.setup();
+      renderInTwo();
+      await user.click(screen.getByRole('button', { name: 'first' }));
+      await user.click(await screen.findByRole('button', { name: EN[open] as string }));
+      const where = async () =>
+        within(await screen.findByRole('form', { name: EN[heading] as string })).getByLabelText(
+          labelled(label)
+        );
+      try {
+        expect(
+          await within(await where()).findByRole('option', { name: /WH-1/ })
+        ).toBeInTheDocument();
+        await user.selectOptions(await where(), LOCATION_ID);
+        expect(await where()).toHaveValue(LOCATION_ID);
+
+        await stayOnBranch(user, await switchExpectingQuestion(user, 'second'));
+        expect(heldBranch()).toBe(TEST_BRANCH.id);
+        expect(await where()).toHaveValue(LOCATION_ID);
+
+        await discardAndSwitch(user, await switchExpectingQuestion(user, 'second'));
+        await waitFor(() => expect(heldBranch()).toBe(OTHER_BRANCH.id));
+        await waitFor(async () => expect(await where()).toHaveValue(''));
+        await switchWithoutQuestion(user, 'first');
+        expect(createIssue).not.toHaveBeenCalled();
+        expect(createReservation).not.toHaveBeenCalled();
+      } finally {
+        forgetRememberedBranch();
+      }
+    }
+  );
+
+  it('a part typed alone in the reserve form asks first', async () => {
+    const user = userEvent.setup();
+    renderInTwo();
+    await user.click(screen.getByRole('button', { name: 'first' }));
+    await user.click(
+      await screen.findByRole('button', { name: EN['inventory.parts.reserve.open'] as string })
+    );
+    const form = await screen.findByRole('form', {
+      name: EN['inventory.parts.reserve.heading'] as string,
+    });
+    try {
+      await user.type(
+        within(form).getByLabelText(labelled('inventory.itemPicker.reference')),
+        ITEM_ID
+      );
+      await stayOnBranch(user, await switchExpectingQuestion(user, 'second'));
+      expect(heldBranch()).toBe(TEST_BRANCH.id);
+    } finally {
+      forgetRememberedBranch();
+    }
+  });
+});
+
 describe('FE-011 — issuing', () => {
   it('offers neither issuing nor returning without inv.stock.operate', async () => {
     renderScreen({ canOperate: false });

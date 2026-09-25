@@ -3,10 +3,13 @@
 import { useActionState, useState } from 'react';
 import Link from 'next/link';
 import { Icon } from '@/components/primitives/Icon';
+import { controlClass } from '@/components/forms/Field';
 import { FailureExplanation } from '@/components/states/States';
 import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic, translateWithValues } from '@/i18n/get-messages';
 import type { Locale } from '@/i18n/config';
+import { useClearOnCorrect } from '@/lib/forms/use-clear-on-correct';
+import { useFocusFirstInvalid } from '@/lib/forms/use-focus-first-invalid';
 import {
   createCompanyAction,
   createIndividualAction,
@@ -84,15 +87,30 @@ export function CustomerCreateScreen({ locale, messages, kind }: Props) {
    * the server and back purely to redraw a form.
    */
   const [values, setValues] = useState<Record<string, string>>({});
-  const set = (name: string) => (value: string) =>
+
+  /*
+   * The two shared refusal behaviours (browser QA part 7, rows 6.3 and 6.5).
+   *
+   * A refused save left the cursor on the submit button — or, after Enter, on
+   * the box it was pressed in while a DIFFERENT box was the one refused — and a
+   * corrected name went on saying "This field is required." until the next
+   * submission. `useFocusFirstInvalid` moves the cursor to the first control
+   * the refusal marked; `useClearOnCorrect` retires a complaint the moment the
+   * value it was about changes.
+   */
+  const formRef = useFocusFirstInvalid(state);
+  const corrections = useClearOnCorrect(state);
+  const set = (name: string) => (value: string) => {
+    corrections.noteEdited(name);
     setValues((current) => ({ ...current, [name]: value }));
+  };
 
   if (state.status === 'success' && state.created) {
     return <CreationOutcome locale={locale} messages={messages} state={state} />;
   }
 
   return (
-    <form action={action} className="flex max-w-content flex-col gap-4">
+    <form ref={formRef} action={action} className="flex max-w-content flex-col gap-4">
       {/*
         `role="alert"` and `key` on the attempt: submitting the same wrong value
         twice produces an identical state object, React sees no change, and the
@@ -128,7 +146,7 @@ export function CustomerCreateScreen({ locale, messages, kind }: Props) {
             messages={messages}
             maxLength={MAX_PERSON_NAME}
             required
-            error={state.fieldErrors?.['givenName']}
+            error={corrections.errorFor('givenName')}
           />
           <TextField
             name="familyName"
@@ -138,7 +156,7 @@ export function CustomerCreateScreen({ locale, messages, kind }: Props) {
             messages={messages}
             maxLength={MAX_PERSON_NAME}
             required
-            error={state.fieldErrors?.['familyName']}
+            error={corrections.errorFor('familyName')}
           />
           <TextField
             name="preferredLocale"
@@ -148,7 +166,7 @@ export function CustomerCreateScreen({ locale, messages, kind }: Props) {
             hintKey="crm.customers.create.preferredLocaleHint"
             messages={messages}
             maxLength={10}
-            error={state.fieldErrors?.['preferredLocale']}
+            error={corrections.errorFor('preferredLocale')}
           />
         </>
       ) : (
@@ -161,7 +179,7 @@ export function CustomerCreateScreen({ locale, messages, kind }: Props) {
             messages={messages}
             maxLength={MAX_COMPANY_NAME}
             required
-            error={state.fieldErrors?.['legalName']}
+            error={corrections.errorFor('legalName')}
           />
           <TextField
             name="tradeName"
@@ -171,7 +189,7 @@ export function CustomerCreateScreen({ locale, messages, kind }: Props) {
             hintKey="crm.customers.create.tradeNameHint"
             messages={messages}
             maxLength={MAX_COMPANY_NAME}
-            error={state.fieldErrors?.['tradeName']}
+            error={corrections.errorFor('tradeName')}
           />
         </>
       )}
@@ -398,11 +416,15 @@ function TextField({
         maxLength={maxLength}
         value={value}
         onChange={(event) => onValueChange(event.target.value)}
-        // `aria-invalid` and a described error, rather than a red border alone —
-        // a colour is not an announcement.
+        // `aria-invalid` and a described error AND the red edge — a colour is
+        // not an announcement, and an announcement is not a mark a sighted
+        // operator can find (browser QA part 7, row 6.2: the refused box kept
+        // the same grey edge as a valid one). `controlClass` is the edge every
+        // `FieldFrame` control carries, so this box is marked the same way.
         aria-invalid={error ? true : undefined}
+        aria-errormessage={errorId}
         aria-describedby={describedBy}
-        className="rounded-md border border-border bg-surface px-3 py-2 text-body"
+        className={controlClass(Boolean(error))}
       />
       {hintKey ? (
         <span id={hintId} className="text-caption text-text-muted">
@@ -410,9 +432,18 @@ function TextField({
         </span>
       ) : null}
       {error ? (
-        <span id={errorId} className="text-caption text-error">
-          {translateDynamic(messages, error)}
-        </span>
+        // The same shape-and-colour cue `FieldFrame` gives every refused field.
+        // The id is on the sentence, not the paragraph, so what the control
+        // points at is the sentence alone and never the decorative mark.
+        <p role="alert" className="flex items-start gap-1.5 text-caption text-error">
+          <span
+            aria-hidden="true"
+            className="mt-px inline-flex size-4 shrink-0 items-center justify-center rounded-full border border-error text-caption font-bold leading-none"
+          >
+            !
+          </span>
+          <span id={errorId}>{translateDynamic(messages, error)}</span>
+        </p>
       ) : null}
     </div>
   );

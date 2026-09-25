@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useId, useMemo, useState } from 'react';
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { INITIAL_REQUEST } from '@/components/data-table/table-state';
 import { TextField, SelectField } from '@/components/forms/Field';
 import { PartyLabel } from '@/components/party/PartyLabel';
@@ -102,6 +102,23 @@ import {
  *
  * The operation publishes `{ items, nextCursor, hasMore }` and accepts no `sort`.
  * The list offers Previous/Next and no range, and no column ordering.
+ *
+ * ## A refusal about the choice is drawn ON the choice
+ *
+ * The caller's complaint — nothing chosen yet, for instance — arrives as
+ * `error` and lands on the free-text box (`aria-invalid`, a red edge, the
+ * sentence beneath it) or, once a customer is chosen, on the control that
+ * changes it. It used to be drawn beside the caller's submit button, some
+ * 460 px below the selector, with the selector itself unmarked (browser QA
+ * part 7, row 6.6); marking the control is also what lets
+ * `useFocusFirstInvalid` bring the cursor here.
+ *
+ * ## Choosing keeps the cursor
+ *
+ * The pressed match leaves the page when the list collapses, and a focused
+ * element that leaves the page drops the cursor to the document body (row
+ * 10.4). The cursor moves to the Change control instead, which is described by
+ * the chosen customer's name, so what was chosen is announced.
  */
 
 /** What the caller gets back: an id to submit and a label already resolved. */
@@ -206,6 +223,8 @@ export function CustomerSelector({
   onChange,
   required = false,
   attempt = 0,
+  error,
+  describedBy,
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
@@ -231,9 +250,36 @@ export function CustomerSelector({
    * inside a form to pass it.
    */
   readonly attempt?: number;
+  /** The caller's refusal about the choice, already translated. */
+  readonly error?: string | undefined;
+  /** Further ids describing the choice, added to the box or the change control. */
+  readonly describedBy?: string | undefined;
 }) {
   const base = useId();
+  const chosenId = `${base}-chosen`;
+  const errorId = `${base}-error`;
   const [draft, setDraft] = useState<CustomerSearchCriteria>({});
+
+  /*
+   * The cursor after a choice — see the docblock. A ref flag set by the click
+   * that chose, so a value the CALLER supplies (a walk-in handed over with its
+   * customer) moves nobody's cursor on arrival.
+   */
+  const changeRef = useRef<HTMLButtonElement | null>(null);
+  const focusChosen = useRef(false);
+  /*
+   * The flag answers ONE commit — the one the press produced. A caller that
+   * refuses the choice keeps the value null, so an effect keyed on the value
+   * alone never ran and the flag outlived the press: a customer the caller set
+   * later (a walk-in handed over) then pulled the cursor away from wherever the
+   * operator had gone (QA round three). `SearchPicker` follows the same rule.
+   */
+  const [pressed, setPressed] = useState(0);
+  useEffect(() => {
+    if (!focusChosen.current) return;
+    focusChosen.current = false;
+    if (value !== null) changeRef.current?.focus();
+  }, [value, pressed]);
 
   /*
    * What is asked for, or `null` for "nothing yet".
@@ -282,6 +328,8 @@ export function CustomerSelector({
   );
 
   const choose = (hit: CustomerSearchHit) => {
+    focusChosen.current = true;
+    setPressed((count) => count + 1);
     onChange(toSelectedCustomer(hit));
     // Collapse the list. Leaving it open invites a second click that silently
     // replaces the choice the operator just made. Clearing the draft is what
@@ -301,22 +349,46 @@ export function CustomerSelector({
           {translateDynamic(messages, labelKey)}
         </span>
         <div className="flex items-center justify-between gap-3 rounded-md border border-border bg-surface-subtle px-3 py-2">
-          <PartyLabel
-            messages={messages}
-            party={{
-              partnerName: value.displayName,
-              partnerNumber: value.displayNumber,
-              partnerType: value.partyType,
-            }}
-          />
+          <span id={chosenId}>
+            <PartyLabel
+              messages={messages}
+              party={{
+                partnerName: value.displayName,
+                partnerNumber: value.displayNumber,
+                partnerType: value.partyType,
+              }}
+            />
+          </span>
           <button
+            ref={changeRef}
             type="button"
             onClick={clear}
-            className="shrink-0 rounded-md border border-border px-3 py-1.5 text-body text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+            // Not `aria-invalid`: ARIA 1.2 does not support it on the button
+            // role. The control is DESCRIBED by the refusal, which is itself a
+            // `role="alert"`; `data-invalid` is the non-ARIA marker
+            // `useFocusFirstInvalid` also finds, so a refused submit still
+            // brings the cursor here. `SearchPicker` does the same.
+            data-invalid={error ? 'true' : undefined}
+            aria-describedby={
+              [chosenId, error ? errorId : undefined, describedBy].filter(Boolean).join(' ') ||
+              undefined
+            }
+            className={`shrink-0 rounded-md border ${error ? 'border-error' : 'border-border'} px-3 py-1.5 text-body text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring`}
           >
             {translate(messages, 'customerSelector.change')}
           </button>
         </div>
+        {error ? (
+          <p role="alert" className="flex items-start gap-1.5 text-supporting text-error">
+            <span
+              aria-hidden="true"
+              className="mt-px inline-flex size-4 shrink-0 items-center justify-center rounded-full border border-error text-caption font-bold leading-none"
+            >
+              !
+            </span>
+            <span id={errorId}>{error}</span>
+          </p>
+        ) : null}
         {/* The uuid, submitted and never shown. This is the whole reason the
             component exists: the contract needs an identifier, and an operator
             must never be asked to know one. */}
@@ -380,7 +452,15 @@ export function CustomerSelector({
             inlineSubmit={false}
             onSubmit={search.submit}
             onChange={(next) => setDraft({ ...draft, q: next })}
-            {...(tooShort ? { error: translate(messages, 'crm.customers.search.qTooShort') } : {})}
+            describedBy={describedBy}
+            // The length refusal is about what was typed and wins while it
+            // stands; the caller's refusal is about the choice, and the box is
+            // where the choice is made — so it is the control marked for it.
+            {...(tooShort
+              ? { error: translate(messages, 'crm.customers.search.qTooShort') }
+              : error
+                ? { error }
+                : {})}
           />
           <DigitsEcho messages={messages} value={draft.q} />
         </div>

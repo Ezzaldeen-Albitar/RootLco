@@ -48,6 +48,7 @@ export function SearchBox({
   error,
   maxLength,
   inlineSubmit = true,
+  describedBy: extraDescribedBy,
   testId = 'search-box',
 }: {
   readonly messages: Messages;
@@ -80,13 +81,18 @@ export function SearchBox({
    * exist there.
    */
   readonly inlineSubmit?: boolean;
+  /**
+   * Further ids that describe this box — a sentence the caller renders
+   * elsewhere about the same choice. Added to the box's own example and error.
+   */
+  readonly describedBy?: string | undefined;
   readonly testId?: string;
 }) {
   const base = useId();
   const inputId = `${base}-search`;
   const exampleId = example ? `${base}-example` : undefined;
   const errorId = error ? `${base}-error` : undefined;
-  const describedBy = [exampleId, errorId].filter(Boolean).join(' ') || undefined;
+  const describedBy = [exampleId, errorId, extraDescribedBy].filter(Boolean).join(' ') || undefined;
 
   const onKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
     if (event.key === 'Enter') {
@@ -132,7 +138,9 @@ export function SearchBox({
           placeholder={placeholder}
           onChange={(event) => onChange(event.target.value)}
           onKeyDown={onKeyDown}
-          className="h-11 w-full rounded-md border border-border bg-surface ps-3 pe-20 text-body text-text-primary transition-colors duration-fast ease-standard placeholder:text-text-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+          // The same red edge `controlClass` gives every other refused field:
+          // the box itself is marked, not only the sentence beneath it.
+          className={`h-11 w-full rounded-md border ${error ? 'border-error' : 'border-border'} bg-surface ps-3 pe-20 text-body text-text-primary transition-colors duration-fast ease-standard placeholder:text-text-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring`}
         />
         <div className="absolute end-1 flex items-center gap-1">
           {value.length > 0 ? (

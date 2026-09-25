@@ -41,12 +41,18 @@ export function JobBlockersPanel({
   const reload = useCallback(() => setReloadCount((n) => n + 1), []);
   const [note, setNote] = useState('');
 
+  const [resolutions, setResolutions] = useState<Readonly<Record<string, string>>>({});
   /*
    * Unsaved work, declared to the shell, so a branch changed in the header asks
-   * before it discards what is typed here.
+   * before it discards what is typed here. The job is not addressed to the
+   * working branch and nothing here is keyed on it, so a confirmed discard
+   * empties the note and the resolution notes itself — the question said they
+   * would go.
    */
-  useUnsavedGuard(note.trim().length > 0);
-  const [resolutions, setResolutions] = useState<Readonly<Record<string, string>>>({});
+  useUnsavedGuard(note.trim().length > 0, () => {
+    setNote('');
+    setResolutions({});
+  });
   const [pending, setPending] = useState<string | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
   /**

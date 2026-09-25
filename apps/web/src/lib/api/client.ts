@@ -34,6 +34,7 @@
 import englishCatalogue from '@/i18n/messages/en.json';
 import { report, type LogLevel } from '../observability/client-log';
 import { requiresIdempotencyKey } from './operation-contract';
+import { DEFAULT_READ_RETRIES, DEFAULT_TIMEOUT_MS, MAX_READ_RETRIES } from './read-budget';
 
 export const PROBLEM_CONTENT_TYPE = 'application/problem+json';
 
@@ -176,7 +177,12 @@ export interface ApiSuccess<T> {
 export type ApiResult<T> = ApiSuccess<T> | ApiFailure;
 
 export const CORRELATION_HEADER = 'x-correlation-id';
-export const DEFAULT_TIMEOUT_MS = 15_000;
+/*
+ * The timeout and the retry clamp live in `read-budget.ts`, a module with no
+ * imports, so the browser's read ceiling can be derived from them without the
+ * browser importing this client. Re-exported so every existing import holds.
+ */
+export { DEFAULT_READ_RETRIES, DEFAULT_TIMEOUT_MS, MAX_READ_RETRIES };
 
 export interface ApiClientOptions {
   readonly baseUrl: string;
@@ -293,7 +299,10 @@ export class ApiClient {
     path: string,
     options: { readonly signal?: AbortSignal; readonly retries?: number } = {}
   ): Promise<ApiResult<T>> {
-    const retries = Math.max(0, Math.min(options.retries ?? 1, 2));
+    const retries = Math.max(
+      0,
+      Math.min(options.retries ?? DEFAULT_READ_RETRIES, MAX_READ_RETRIES)
+    );
     let last: ApiFailure | null = null;
     for (let attempt = 0; attempt <= retries; attempt += 1) {
       const result = await this.#request<T>('GET', path, undefined, options.signal);

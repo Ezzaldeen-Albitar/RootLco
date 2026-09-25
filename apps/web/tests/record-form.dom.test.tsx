@@ -774,6 +774,136 @@ describe('after a refusal the cursor lands on the first thing to fix', () => {
   });
 });
 
+describe('the focus a frame later never takes the cursor from where the operator went', () => {
+  /*
+   * The hook focuses one animation frame after the refusal. In that frame the
+   * operator may already have clicked into another field and begun typing;
+   * moving the cursor then would send their next keystrokes into the refused
+   * field. The frame is HELD here — queued, not run — so the operator's move
+   * can be made inside it, deterministically.
+   */
+  function FrameHarness({ state }: { readonly state: ActionState }) {
+    const formRef = useFocusFirstInvalid(state);
+    const refused = (name: string) => state.fieldErrors?.[name] !== undefined;
+    return (
+      <form ref={formRef} onSubmit={(event) => event.preventDefault()}>
+        <input aria-label="other field" />
+        <input aria-label="refused field" aria-invalid={refused('refused') ? true : undefined} />
+        <button type="button" data-invalid={refused('choice') ? 'true' : undefined}>
+          change the choice
+        </button>
+        <button type="submit">send it</button>
+      </form>
+    );
+  }
+
+  function holdFrames() {
+    const queued: FrameRequestCallback[] = [];
+    const spy = vi.spyOn(window, 'requestAnimationFrame').mockImplementation((callback) => {
+      queued.push(callback);
+      return queued.length;
+    });
+    return {
+      run: () => {
+        for (const callback of queued.splice(0)) callback(0);
+      },
+      restore: () => spy.mockRestore(),
+    };
+  }
+
+  it('leaves the cursor, and the text, where the operator typed before the frame', async () => {
+    const frames = holdFrames();
+    try {
+      const user = userEvent.setup();
+      const { rerender } = renderLtr(<FrameHarness state={refusal({}, 0)} />);
+      screen.getByRole('button', { name: 'send it' }).focus();
+      rerender(<FrameHarness state={refusal({ refused: 'field.required' }, 1)} />);
+
+      const other = screen.getByLabelText('other field');
+      await user.type(other, 'still typing');
+      frames.run();
+
+      expect(document.activeElement).toBe(other);
+      expect(other).toHaveValue('still typing');
+      expect(screen.getByLabelText('refused field')).toHaveAttribute('aria-invalid', 'true');
+    } finally {
+      frames.restore();
+    }
+  });
+
+  it('still moves the cursor to the first thing to fix when the operator has not moved', async () => {
+    const frames = holdFrames();
+    try {
+      const { rerender } = renderLtr(<FrameHarness state={refusal({}, 0)} />);
+      screen.getByRole('button', { name: 'send it' }).focus();
+      rerender(<FrameHarness state={refusal({ refused: 'field.required' }, 1)} />);
+      frames.run();
+      expect(document.activeElement).toBe(screen.getByLabelText('refused field'));
+    } finally {
+      frames.restore();
+    }
+  });
+
+  it('remembers where the cursor was at SUBMIT: a field chosen during a slow save keeps it', async () => {
+    /*
+     * The save is slow. The operator presses Send, then clicks into another
+     * field and types while the request is out. The refusal arrives with the
+     * cursor ALREADY in that field — so a position taken at the refusal is the
+     * operator's new field, and "focus has not moved since" is true of it. The
+     * position is the one at submission, and the operator has left it.
+     */
+    const frames = holdFrames();
+    try {
+      const user = userEvent.setup();
+      const { rerender } = renderLtr(<FrameHarness state={refusal({}, 0)} />);
+      await user.click(screen.getByRole('button', { name: 'send it' }));
+
+      const other = screen.getByLabelText('other field');
+      await user.type(other, 'while it saves');
+      expect(document.activeElement).toBe(other);
+
+      rerender(<FrameHarness state={refusal({ refused: 'field.required' }, 1)} />);
+      frames.run();
+
+      expect(document.activeElement).toBe(other);
+      expect(other).toHaveValue('while it saves');
+      expect(screen.getByLabelText('refused field')).toHaveAttribute('aria-invalid', 'true');
+    } finally {
+      frames.restore();
+    }
+  });
+
+  it('still moves the cursor after a submit when the operator stayed on the submitting control', async () => {
+    const frames = holdFrames();
+    try {
+      const user = userEvent.setup();
+      const { rerender } = renderLtr(<FrameHarness state={refusal({}, 0)} />);
+      const send = screen.getByRole('button', { name: 'send it' });
+      await user.click(send);
+      expect(document.activeElement).toBe(send);
+      rerender(<FrameHarness state={refusal({ refused: 'field.required' }, 1)} />);
+      frames.run();
+      expect(document.activeElement).toBe(screen.getByLabelText('refused field'));
+    } finally {
+      frames.restore();
+    }
+  });
+
+  it('reaches a refused choice marked without aria-invalid, which a button may not carry', async () => {
+    const frames = holdFrames();
+    try {
+      const { rerender } = renderLtr(<FrameHarness state={refusal({}, 0)} />);
+      rerender(<FrameHarness state={refusal({ choice: 'field.required' }, 1)} />);
+      frames.run();
+      const change = screen.getByRole('button', { name: 'change the choice' });
+      expect(change).not.toHaveAttribute('aria-invalid');
+      expect(document.activeElement).toBe(change);
+    } finally {
+      frames.restore();
+    }
+  });
+});
+
 describe('a corrected field stops complaining before the next submission', () => {
   it('clears the error for the field the operator edits, and only that one', async () => {
     const action = vi.fn(async (): Promise<ActionState> =>
@@ -785,9 +915,16 @@ describe('a corrected field stops complaining before the next submission', () =>
     await waitFor(() => expect(action).toHaveBeenCalled());
     expect(screen.getAllByRole('alert').length).toBeGreaterThanOrEqual(2);
 
-    await user.type(screen.getByLabelText(en['crm.customers.notes.body'], { exact: false }), 'ok');
-
+    // The refusal moves the cursor to the first refused box one frame later
+    // (`useFocusFirstInvalid`), and the operator sees it land before typing; so
+    // does this test. Typing earlier races that frame: the first keystroke
+    // withdraws this box's complaint, the second box becomes the first refused
+    // one, and a frame landing then moves the cursor there mid-word.
     const reason = screen.getByLabelText(en['crm.customers.notes.body'], { exact: false });
+    await waitFor(() => expect(reason).toHaveFocus());
+    await user.type(reason, 'ok');
+    expect(reason).toHaveValue('ok');
+
     await waitFor(() => expect(reason).not.toHaveAttribute('aria-invalid'));
     // The one the operator has NOT touched still says so: a correction must
     // never quieten a complaint about a different field.

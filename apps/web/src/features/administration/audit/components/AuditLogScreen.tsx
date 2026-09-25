@@ -124,8 +124,14 @@ export function AuditLogScreen({
   // for the same reason, and they must also reset the page: page four of an
   // unfiltered set is not page four of a filtered one, and a cursor taken from
   // the first is meaningless against the second.
+  //
+  // With a branch applied, `listAuditEvents` re-reads the caller's companies and
+  // branches before it reads the events — two server reads in sequence — so the
+  // table waits for both rather than for one (`settleRead`). Without a branch it
+  // reads once.
   const table = useServerTable<AuditRow>(load, {
     loadKey: `${range.from}..${range.to}#${applied.action}#${applied.entityType}#${applied.actorId}#${appliedTarget?.companyId ?? ''}#${appliedTarget?.branchId ?? ''}`,
+    serverReads: appliedTarget === null ? 1 : 2,
   });
 
   const columns: readonly Column<AuditRow>[] = [

@@ -4,6 +4,12 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import en from '../src/i18n/messages/en.json';
 import ar from '../src/i18n/messages/ar.json';
 import { BranchSwitch, branchSnapshot, inBranch, renderLtr, renderRtl } from './render';
+import {
+  discardAndSwitch,
+  forgetRememberedBranch,
+  stayOnBranch,
+  switchExpectingQuestion,
+} from './support/branch-switch';
 import type { CheckInStepProps } from '@/features/receptions/check-in/wizard';
 import type { ReceptionDetail } from '@/features/receptions/receptions-contract';
 
@@ -2009,6 +2015,207 @@ describe('F1 — the three states a paged read can report', () => {
         AR['receptions.checkIn.vehiclesTruncated']!
       );
     });
+  });
+});
+
+describe('the start screen puts each complaint on its own control (browser QA part 7)', () => {
+  /*
+   * Rows 6.6 and 6.7b: "Choose the service requester." was drawn beside the
+   * submit button, some 460 px below the customer selector, with the selector
+   * unmarked; an EV charge of "abc" left the charge box grey, unfocused and
+   * described only by its hint. Row 10.4: after choosing a customer the cursor
+   * fell to the document body.
+   */
+  const LAYLA = {
+    id: 'partner-1',
+    displayNumber: 'C-0001',
+    displayName: 'Layla Haddad',
+    partyType: 'individual',
+    lifecycleStatus: 'active',
+    createdAt: '2026-08-01T00:00:00.000Z',
+    primaryPhone: null,
+    phoneMasked: false,
+    vehicleCount: 1,
+  };
+  const HER_VEHICLE = {
+    id: 'link-9',
+    vehicleId: 'veh-9',
+    relationshipRole: 'owner',
+    validFrom: '2026-08-01',
+    validTo: null,
+    active: true,
+    createdAt: '2026-08-01T00:00:00.000Z',
+    vehicleDisplayNumber: 'V-9',
+    vin: null,
+    makeId: null,
+    modelId: null,
+    modelYear: null,
+    color: null,
+    vehicleLifecycleStatus: 'active',
+  };
+  const handoff = {
+    requester: {
+      id: 'partner-1',
+      displayName: 'Layla Haddad',
+      displayNumber: 'C-0001',
+      partyType: 'individual',
+    },
+    vehicleId: 'veh-9',
+  };
+
+  for (const locale of ['en', 'ar'] as const) {
+    const T = locale === 'en' ? EN : AR;
+    const view = locale === 'en' ? renderLtr : renderRtl;
+    const mount = (over: Record<string, unknown> = {}) =>
+      view(
+        inBranch(
+          <CheckInStartScreen
+            {...startProps({ locale, messages: (locale === 'en' ? en : ar) as typeof en, ...over })}
+          />,
+          { snapshot: CHECKIN_CONTEXT, locale }
+        )
+      );
+
+    it(`marks the customer search itself when no requester is chosen, and moves the cursor there (${locale})`, async () => {
+      const user = userEvent.setup();
+      mount();
+      await user.click(screen.getByRole('button', { name: T['receptions.checkIn.submit']! }));
+
+      const box = screen.getByLabelText(T['customerSelector.q']!);
+      await waitFor(() => expect(box).toHaveFocus());
+      expect(box).toHaveAttribute('aria-invalid', 'true');
+      expect(box).toHaveClass('border-error');
+      expect(box).toHaveAccessibleDescription(
+        expect.stringContaining(T['receptions.checkIn.error.requesterRequired']!)
+      );
+      // Drawn inside the selector, not at the foot of the form.
+      expect(
+        within(screen.getByTestId('customer-selector')).getByText(
+          T['receptions.checkIn.error.requesterRequired']!
+        )
+      ).toBeInTheDocument();
+      expect(createReception).not.toHaveBeenCalled();
+    });
+
+    it(`withdraws that complaint once a customer is chosen, and keeps the cursor on the choice (${locale})`, async () => {
+      searchCustomerDirectory.mockResolvedValue(page([LAYLA]));
+      const user = userEvent.setup();
+      mount();
+      await user.click(screen.getByRole('button', { name: T['receptions.checkIn.submit']! }));
+      const box = screen.getByLabelText(T['customerSelector.q']!);
+      await waitFor(() => expect(box).toHaveFocus());
+
+      await user.type(box, 'Layla{Enter}');
+      await user.click(await screen.findByRole('button', { name: /Layla Haddad/ }));
+
+      const change = await screen.findByRole('button', { name: T['customerSelector.change']! });
+      // Row 10.4: the cursor is on the control that changes the choice, which
+      // is described by the chosen customer's name — so the choice is announced.
+      await waitFor(() => expect(change).toHaveFocus());
+      expect(change).toHaveAccessibleDescription(expect.stringContaining('Layla Haddad'));
+      expect(change).not.toHaveAttribute('aria-invalid');
+      expect(screen.queryByText(T['receptions.checkIn.error.requesterRequired']!)).toBeNull();
+    });
+
+    it(`marks the EV charge box, describes it by the complaint and focuses it (${locale})`, async () => {
+      listCustomerVehicles.mockResolvedValue(page([HER_VEHICLE]));
+      const user = userEvent.setup();
+      mount({ walkInHandoff: handoff });
+      // The pair is pre-selected only once the vehicle list has answered.
+      await waitFor(() =>
+        expect(
+          within(
+            screen.getByRole('group', { name: T['receptions.checkIn.vehicleLabel']! })
+          ).getByRole('button', { pressed: true })
+        ).toBeInTheDocument()
+      );
+
+      const charge = screen.getByLabelText(T['receptions.checkIn.evSoc']!, { exact: false });
+      await user.type(charge, 'abc');
+      await user.click(screen.getByRole('button', { name: T['receptions.checkIn.submit']! }));
+
+      await waitFor(() => expect(charge).toHaveFocus());
+      expect(charge).toHaveAttribute('aria-invalid', 'true');
+      expect(charge).toHaveClass('border-error');
+      expect(charge).toHaveAccessibleDescription(
+        expect.stringContaining(T['receptions.checkIn.error.socInvalid']!)
+      );
+      expect(createReception).not.toHaveBeenCalled();
+
+      await user.clear(charge);
+      await user.type(charge, '55');
+      expect(charge).not.toHaveAttribute('aria-invalid');
+      expect(screen.queryByText(T['receptions.checkIn.error.socInvalid']!)).toBeNull();
+    });
+  }
+});
+
+describe('a requester complaint without the customer read', () => {
+  it('still stands, beside the sentence that says why there is no selector', async () => {
+    const user = userEvent.setup();
+    renderLtr(
+      inBranch(<CheckInStartScreen {...startProps({ canSearchCustomers: false })} />, {
+        snapshot: CHECKIN_CONTEXT,
+      })
+    );
+    await user.click(screen.getByRole('button', { name: EN['receptions.checkIn.submit']! }));
+
+    const refusal = await screen.findByTestId('check-in-refusal-serviceRequesterPartnerId');
+    expect(refusal).toHaveTextContent(EN['receptions.checkIn.error.requesterRequired']!);
+    expect(
+      refusal.closest('fieldset')?.textContent?.includes(EN['receptions.checkIn.customersDenied']!)
+    ).toBe(true);
+    expect(createReception).not.toHaveBeenCalled();
+  });
+});
+
+describe('"Discard and change branch" discards what the question said it would (row 1c.3)', () => {
+  const TWO = branchSnapshot([
+    CHECKIN_BRANCH,
+    { ...CHECKIN_BRANCH, id: 'branch-2', name: 'Second workshop' },
+  ]);
+
+  function mountInTwo() {
+    return renderLtr(
+      inBranch(
+        <>
+          <BranchSwitch to="branch-1" label="first" />
+          <BranchSwitch to="branch-2" label="second" />
+          <CheckInStartScreen {...startProps()} />
+        </>,
+        { snapshot: TWO }
+      )
+    );
+  }
+
+  const note = () => screen.getByLabelText(EN['receptions.checkIn.walkInNote']!, { exact: false });
+  const charge = () => screen.getByLabelText(EN['receptions.checkIn.evSoc']!, { exact: false });
+
+  it('keeps the typed note when the operator stays', async () => {
+    const user = userEvent.setup();
+    mountInTwo();
+    await user.click(screen.getByRole('button', { name: 'first' }));
+    await user.type(note(), 'unsaved walk-in note');
+
+    await stayOnBranch(user, await switchExpectingQuestion(user, 'second'));
+    expect(note()).toHaveValue('unsaved walk-in note');
+    forgetRememberedBranch();
+  });
+
+  it('empties the note and the intake facts once the operator confirms the discard', async () => {
+    const user = userEvent.setup();
+    mountInTwo();
+    await user.click(screen.getByRole('button', { name: 'first' }));
+    await user.type(note(), 'unsaved walk-in note');
+    await user.type(charge(), '40');
+
+    await discardAndSwitch(user, await switchExpectingQuestion(user, 'second'));
+    await waitFor(() => expect(note()).toHaveValue(''));
+    expect(charge()).toHaveValue('');
+    // Nothing is left to lose, so the next switch asks nothing.
+    await user.click(screen.getByRole('button', { name: 'first' }));
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+    forgetRememberedBranch();
   });
 });
 

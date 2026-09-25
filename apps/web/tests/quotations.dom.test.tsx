@@ -15,6 +15,7 @@ import {
   branchSnapshot,
 } from './render';
 import {
+  discardAndSwitch,
   forgetRememberedBranch,
   heldBranch,
   stayOnBranch,
@@ -631,6 +632,46 @@ describe('the builder names its people rather than asking for references', () =>
       await user.type(box, '66666666-6666-4666-8666-666666666666');
       await stayOnBranch(user, await switchExpectingQuestion(user, 'first'));
       expect(heldBranch()).toBe(OTHER_BRANCH.id);
+    } finally {
+      forgetRememberedBranch();
+    }
+  });
+
+  it('a confirmed discard puts the payer reference back to the one the builder opened on', async () => {
+    const user = userEvent.setup();
+    renderLtr(
+      inBranch(
+        <>
+          <BranchSwitch to={TEST_BRANCH.id} label="first" />
+          <BranchSwitch to={OTHER_BRANCH.id} label="second" />
+          <WorkingBranchProbe />
+          <QuotationsScreen
+            locale="en"
+            messages={en}
+            workOrderId={WORK_ORDER_ID}
+            workOrder={workOrder as never}
+            canManage={true}
+            canReadServices={false}
+            canReadCustomers={false}
+          />
+        </>,
+        { snapshot: branchSnapshot([TEST_BRANCH, OTHER_BRANCH]) }
+      )
+    );
+    await user.click(screen.getByRole('button', { name: 'first' }));
+    await user.click(screen.getByRole('button', { name: EN['quotations.list.create'] as string }));
+    const form = await builderForm();
+    const box = () => within(form).getByLabelText(labelled('quotations.build.payerReference'));
+    try {
+      const opened = (box() as HTMLInputElement).value;
+      await user.clear(box());
+      await user.type(box(), '66666666-6666-4666-8666-666666666666');
+      await discardAndSwitch(user, await switchExpectingQuestion(user, 'second'));
+      await waitFor(() => expect(heldBranch()).toBe(OTHER_BRANCH.id));
+      await waitFor(() => expect(box()).toHaveValue(opened));
+      expect(opened).not.toBe('66666666-6666-4666-8666-666666666666');
+      // Nothing is left to lose, so the next switch asks nothing.
+      await switchWithoutQuestion(user, 'first');
     } finally {
       forgetRememberedBranch();
     }

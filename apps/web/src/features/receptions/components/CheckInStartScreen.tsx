@@ -114,6 +114,28 @@ import {
 
 const IDLE: ActionState = { status: 'idle' };
 
+/**
+ * The control each of the form's own refusals is about.
+ *
+ * `buildCreateInput` names the first thing missing as a sentence key. The
+ * sentence used to be drawn once, beside the submit button — for "Choose the
+ * service requester." some 460 px below the customer selector, with the
+ * selector itself unmarked; for an EV charge of "abc", with the charge box
+ * still grey and unfocused (browser QA part 7, rows 6.6 and 6.7b). Each key is
+ * filed here under the name of the value it is about, which is the name the
+ * service's own refusal of that value arrives under, so a local refusal and a
+ * server one land in the same place, are marked the same way and clear the
+ * same way.
+ */
+const LOCAL_REFUSAL_FIELD: Readonly<Record<string, string>> = {
+  'receptions.checkIn.error.targetRequired': 'branchId',
+  'receptions.checkIn.error.employeeRequired': 'receivingEmployeeId',
+  'receptions.checkIn.error.appointmentRequired': 'appointmentId',
+  'receptions.checkIn.error.requesterRequired': 'serviceRequesterPartnerId',
+  'receptions.checkIn.error.vehicleRequired': 'vehicleId',
+  'receptions.checkIn.error.socInvalid': 'evSocPercent',
+};
+
 const UNASKED = {
   status: 'ok',
   rows: [],
@@ -551,8 +573,9 @@ export function CheckInStartScreen({
    */
   const formRef = useFocusFirstInvalid(state);
   const corrections = useClearOnCorrect(state);
-  const [localError, setLocalError] = useState<string | null>(null);
   const [created, setCreated] = useState<ReceptionCreated | null>(null);
+  /** Bumped when the operator discards this form; remounts the customer search. */
+  const [discarded, setDiscarded] = useState(0);
   const [pending, startTransition] = useTransition();
 
   /*
@@ -576,7 +599,28 @@ export function CheckInStartScreen({
         walkInVehicle !== null ||
         fuelLevelId.length > 0 ||
         evSocPercent.length > 0 ||
-        origin !== INITIAL_ORIGIN)
+        origin !== INITIAL_ORIGIN),
+    /*
+     * "Discard and change branch" discards (browser QA part 7, row 1c.3). The
+     * question promises the entries go, and this form holds its entries itself
+     * rather than following the branch, so it throws them away here: the
+     * origin and its note, the appointment, the customer and the search typed
+     * for one, the vehicle, the intake facts, the hand-over that pre-filled
+     * them and the complaints about any of it. The attempt counter is kept, so
+     * the next refusal is still a NEW attempt for the refusal hooks.
+     */
+    () => {
+      setOrigin(INITIAL_ORIGIN);
+      setAppointment(null);
+      setAppointmentsAsked(false);
+      setRequester(null);
+      setWalkInVehicle(null);
+      setHandoff(null);
+      setFuelLevelId('');
+      setEvSocPercent('');
+      setState((current) => ({ status: 'idle', attempt: current.attempt ?? 0 }));
+      setDiscarded((current) => current + 1);
+    }
   );
 
   const submit = () => {
@@ -592,10 +636,19 @@ export function CheckInStartScreen({
       evSocPercent,
     });
     if (!draft.ok) {
-      setLocalError(draft.messageKey);
+      // Refused here, and filed under the control it is about: marked on that
+      // control, the cursor moved to it, and cleared once it is corrected — the
+      // same path a refusal from the service takes. A key with no control of
+      // its own (none today) still reaches the operator through the banner.
+      const field = LOCAL_REFUSAL_FIELD[draft.messageKey];
+      const attempt = (state.attempt ?? 0) + 1;
+      setState(
+        field === undefined
+          ? { status: 'invalid', messageKey: draft.messageKey, attempt }
+          : { status: 'invalid', fieldErrors: { [field]: draft.messageKey }, attempt }
+      );
       return;
     }
-    setLocalError(null);
     startTransition(async () => {
       const result = await createReception(draft.input, (state.attempt ?? 0) + 1);
       setState(result);
@@ -660,6 +713,13 @@ export function CheckInStartScreen({
       </p>
     );
   };
+
+  const translatedErrorFor = (name: string): string | undefined => {
+    const key = corrections.errorFor(name);
+    return key === undefined ? undefined : translateDynamic(messages, key);
+  };
+  const requesterError = translatedErrorFor('serviceRequesterPartnerId');
+  const evSocError = translatedErrorFor('evSocPercent');
 
   if (created !== null) {
     return (
@@ -824,11 +884,13 @@ export function CheckInStartScreen({
                         label: appointmentLabel(messages, locale, entry),
                       });
                       setOrigin({ kind: 'appointment', appointmentId: entry.id });
+                      corrections.noteEdited('appointmentId');
                     }}
                   />
                 ) : null}
               </>
             )}
+            {refusalFor('appointmentId')}
           </div>
         ) : (
           <div className="mt-3 flex flex-col gap-3">
@@ -849,18 +911,25 @@ export function CheckInStartScreen({
               </p>
             ) : null}
             {!canSearchCustomers ? (
-              <p className="text-caption text-text-muted" lang={locale}>
-                {translate(messages, 'receptions.checkIn.customersDenied')}
-              </p>
+              <>
+                <p className="text-caption text-text-muted" lang={locale}>
+                  {translate(messages, 'receptions.checkIn.customersDenied')}
+                </p>
+                {/* No selector to mark: the complaint still stands beside the
+                    sentence that says why there is none. */}
+                {refusalFor('serviceRequesterPartnerId')}
+              </>
             ) : (
               <>
                 <CustomerSelector
+                  key={`requester-${discarded}`}
                   locale={locale}
                   messages={messages}
                   name="serviceRequesterPartnerId"
                   labelKey="receptions.checkIn.requester"
                   value={requester}
                   onChange={(next) => {
+                    corrections.noteEdited('serviceRequesterPartnerId');
                     setRequester(next);
                     setWalkInVehicle(null);
                     // The handoff belonged to the customer it named.
@@ -868,6 +937,9 @@ export function CheckInStartScreen({
                   }}
                   required
                   attempt={state.attempt ?? 0}
+                  // The complaint about the requester is drawn ON the
+                  // selector, which is marked invalid and receives the cursor.
+                  {...(requesterError === undefined ? {} : { error: requesterError })}
                 />
                 {requester !== null ? (
                   <VehicleChoice
@@ -1029,19 +1101,19 @@ export function CheckInStartScreen({
             description={translate(messages, 'receptions.checkIn.evSocHint')}
             optionalHint={translate(messages, 'form.optional')}
             value={evSocPercent}
-            onChange={(event) => setEvSocPercent(event.target.value)}
+            // Marked, described by its complaint and given the cursor, where
+            // it used to be left grey and described only by its hint.
+            {...(evSocError === undefined ? {} : { error: evSocError })}
+            onChange={(event) => {
+              corrections.noteEdited('evSocPercent');
+              setEvSocPercent(event.target.value);
+            }}
             inputMode="decimal"
             dir="ltr"
             maxLength={6}
           />
         </div>
       </fieldset>
-
-      {localError !== null ? (
-        <p role="alert" className="text-body text-error">
-          {translateDynamic(messages, localError)}
-        </p>
-      ) : null}
 
       {state.status === 'conflict' ? (
         <div role="alert" className="rounded-lg border border-border bg-surface-subtle p-4">

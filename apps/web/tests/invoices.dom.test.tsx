@@ -18,6 +18,7 @@ import {
   WorkingBranchProbe,
 } from './render';
 import {
+  discardAndSwitch,
   forgetRememberedBranch,
   heldBranch,
   stayOnBranch,
@@ -894,6 +895,60 @@ describe('FE-014 — no invoice yet: the preview and creating one', () => {
       );
       await stayOnBranch(user, await switchExpectingQuestion(user, 'first'));
       expect(heldBranch()).toBe(OTHER_BRANCH.id);
+    } finally {
+      forgetRememberedBranch();
+    }
+  });
+
+  it('a confirmed discard empties the typed payer reference, so nothing typed before the switch is sent after it', async () => {
+    /*
+     * The form is the work order's and nothing on it is keyed on the branch, so
+     * the switch alone would leave the reference where it was — on a form the
+     * question had just said was being thrown away.
+     */
+    const user = userEvent.setup();
+    createInvoice.mockResolvedValue({
+      state: { status: 'success', messageKey: 'invoices.create.success', attempt: 1 },
+      created: { ...detail(), replayed: false },
+    });
+    renderInLtr(
+      inBranch(
+        <>
+          <BranchSwitch to={TEST_BRANCH.id} label="first" />
+          <BranchSwitch to={OTHER_BRANCH.id} label="second" />
+          <WorkingBranchProbe />
+          <InvoiceScreen
+            locale="en"
+            messages={en}
+            workOrderId={WORK_ORDER_ID}
+            workOrder={workOrder as never}
+            workOrderRefused={null}
+            initialInvoice={okRead({ workOrderId: WORK_ORDER_ID, invoice: null }) as never}
+            canViewFinance={true}
+            canIssue={false}
+            canReadCustomers={false}
+          />
+        </>,
+        { snapshot: branchSnapshot([TEST_BRANCH, OTHER_BRANCH]) }
+      )
+    );
+    await user.click(screen.getByRole('button', { name: 'first' }));
+    const form = await screen.findByRole('form', { name: EN['invoices.create.heading'] as string });
+    const box = () => within(form).getByLabelText(labelled('invoices.create.payerReference'));
+    try {
+      await user.type(box(), OTHER_PAYER);
+      await discardAndSwitch(user, await switchExpectingQuestion(user, 'second'));
+      await waitFor(() => expect(heldBranch()).toBe(OTHER_BRANCH.id));
+      await waitFor(() => expect(box()).toHaveValue(''));
+      // Nothing is left to lose, so the next switch asks nothing.
+      await switchWithoutQuestion(user, 'first');
+      await waitFor(() => expect(heldBranch()).toBe(TEST_BRANCH.id));
+      // And a create sent now names no payer: the discarded one is gone.
+      await user.click(
+        within(form).getByRole('button', { name: EN['invoices.create.submit'] as string })
+      );
+      await waitFor(() => expect(createInvoice).toHaveBeenCalled());
+      expect(createInvoice.mock.calls[0]?.[0]).toEqual({ workOrderId: WORK_ORDER_ID });
     } finally {
       forgetRememberedBranch();
     }

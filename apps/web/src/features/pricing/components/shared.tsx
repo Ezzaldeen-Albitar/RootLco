@@ -424,6 +424,7 @@ export function ServicePicker({
   onChange,
   error,
   countsAsUnsaved = false,
+  onDiscard,
 }: {
   readonly messages: Messages;
   readonly canRead: boolean;
@@ -431,6 +432,12 @@ export function ServicePicker({
   readonly value: string;
   readonly onChange: (serviceId: string) => void;
   readonly error?: string | undefined;
+  /**
+   * Empties the surrounding form when the operator confirms "Discard and change
+   * branch". Without it only the reference is emptied: the value belongs to the
+   * caller, so the picker can clear its own part and no more.
+   */
+  readonly onDiscard?: (() => void) | undefined;
   /**
    * Whether a typed reference is unsaved work: true inside a form that writes,
    * false beside a read such as the price lookup.
@@ -467,7 +474,13 @@ export function ServicePicker({
     [found]
   );
 
-  useUnsavedGuard(countsAsUnsaved && !canRead && value.trim().length > 0);
+  useUnsavedGuard(countsAsUnsaved && !canRead && value.trim().length > 0, () => {
+    setTerm('');
+    setFound(null);
+    setNote(null);
+    if (onDiscard) onDiscard();
+    else onChange('');
+  });
 
   /*
    * Without the catalogue read there is nothing to choose from. Recording a rule

@@ -31,6 +31,35 @@ import type { ActionState } from './action-result';
  * It follows that `aria-invalid` must be present ONLY when a field really is
  * invalid, which is what `FieldFrame` guarantees.
  *
+ * ## `data-invalid`, for a control ARIA will not let say it
+ *
+ * ARIA 1.2 does not support `aria-invalid` on the button role, and a choice
+ * made in a picker is changed through a button — the "Change" control beside a
+ * chosen record. Such a control carries `data-invalid="true"` instead, is
+ * described by the refusal, and the refusal is its own `role="alert"`. The
+ * query matches either marker, in document order, so the cursor still reaches
+ * the thing to fix without an ARIA attribute the role does not allow.
+ *
+ * ## Never stealing the cursor from where the operator has gone
+ *
+ * The operator can move on long before the refusal arrives. A slow save gives
+ * them the whole round trip to click into another field and start typing, and
+ * moving the cursor then drops their keystrokes into the refused field.
+ *
+ * So the position is taken when the form is SUBMITTED, not when the refusal
+ * lands: the element focused at submission, and the control that submitted it.
+ * Noting it at the refusal instead recorded wherever the operator had already
+ * gone during the wait — and then "focus is still where it was" was true of
+ * their new field, and the cursor was taken from it anyway. The frame after the
+ * refusal focuses the first invalid control ONLY if focus is still where it was
+ * at submission, is on the submitting control, or has fallen to the document
+ * body (a submit button that was disabled while the write ran drops it there).
+ * Anywhere else is the operator's own choice, and it is left alone.
+ *
+ * A form refused WITHOUT a submit event of its own — a state handed in by a
+ * parent, a write started from a button's click handler — has no submission to
+ * remember, and falls back to the element focused when the refusal arrived.
+ *
  * ## Revealing before focusing
  *
  * Focusing an element inside a closed `<details>` scrolls nowhere and announces
@@ -51,7 +80,7 @@ import type { ActionState } from './action-result';
  * the query is repeated on the next frame against whatever is there then.
  */
 
-const INVALID = '[aria-invalid="true"]';
+const INVALID = '[aria-invalid="true"], [data-invalid="true"]';
 
 function openEnclosingDetails(element: Element): void {
   let node: Element | null = element.parentElement;
@@ -113,6 +142,31 @@ export function useFocusFirstInvalid(
    */
   const bornAt = useRef(attempt);
 
+  /*
+   * Where the cursor was when the operator SUBMITTED, and what submitted.
+   *
+   * Listened for on the document, in the capture phase, and matched against
+   * the form by identity: the listener is added once, sees the event before any
+   * handler on the form can stop it, and still finds a form that was replaced
+   * under the same ref. The latest submission wins; a refusal consumes it.
+   */
+  const atSubmit = useRef<{
+    readonly focused: Element | null;
+    readonly submitter: Element | null;
+  } | null>(null);
+  useEffect(() => {
+    const onSubmit = (event: Event) => {
+      const form = formRef.current;
+      if (form === null || event.target !== form) return;
+      atSubmit.current = {
+        focused: document.activeElement,
+        submitter: 'submitter' in event ? (event as SubmitEvent).submitter : null,
+      };
+    };
+    document.addEventListener('submit', onSubmit, true);
+    return () => document.removeEventListener('submit', onSubmit, true);
+  }, []);
+
   useEffect(() => {
     if (!enabled || !hasFieldErrors) return undefined;
     if (attempt <= bornAt.current) return undefined;
@@ -126,7 +180,20 @@ export function useFocusFirstInvalid(
       if (section !== undefined) reveal.current?.(section);
     }
 
+    // Where the cursor was when the operator submitted — or, for a refusal no
+    // submission of this form produced, where it is now.
+    const submitted = atSubmit.current;
+    atSubmit.current = null;
+    const anchor = submitted === null ? document.activeElement : submitted.focused;
+    const trigger = submitted?.submitter ?? null;
     const frame = window.requestAnimationFrame(() => {
+      const now = document.activeElement;
+      const untouched =
+        now === null ||
+        now === document.body ||
+        now === anchor ||
+        (trigger !== null && now === trigger);
+      if (!untouched) return;
       const live = formRef.current?.querySelector<HTMLElement>(INVALID);
       if (!live) return;
       openEnclosingDetails(live);

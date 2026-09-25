@@ -24,6 +24,7 @@ import { formatDayInZone, isCalendarDay } from '@/lib/branch-time';
 import { IDLE, invalid, type ActionState } from '@/lib/forms/action-result';
 import { useClearOnCorrect } from '@/lib/forms/use-clear-on-correct';
 import { useFocusFirstInvalid } from '@/lib/forms/use-focus-first-invalid';
+import { UNANSWERED_READ, settleRead } from '@/lib/api/use-search-request';
 import { formatDateTime, formatInteger, intlLocale } from '@/lib/format';
 import { readDashboardSummary } from '../api';
 import {
@@ -198,7 +199,20 @@ export function DashboardScreen({
       periodKind === 'custom'
         ? { period: periodKind, from: askedFrom, to: askedTo }
         : { period: periodKind };
-    void readDashboardSummary({ companyId, branchId }, criteria).then((read) => {
+    /*
+     * Settled, never left hanging. A refresh whose call REJECTED — the web tier
+     * answering 503, the connection dropping — used to leave the held answer
+     * where the new key could not match it, so the figures vanished and the
+     * header read "Reading the figures" for good, with no sentence and no retry
+     * (browser QA part 7, row 7.4). `settleRead` turns a rejection, and a read
+     * that outlives the client ceiling, into `unavailable`, which renders the
+     * outage and its Try again.
+     */
+    void settleRead<ReadState<DashboardSummary>>(
+      () => readDashboardSummary({ companyId, branchId }, criteria),
+      UNANSWERED_READ,
+      { signal }
+    ).then((read) => {
       // Two guards, and they answer different questions: `live` is "this effect
       // is still the current one", `signal.aborted` is "the branch has moved on
       // since this was asked". A Server Action call cannot be cancelled across
@@ -370,9 +384,16 @@ export function DashboardScreen({
         </p>
       ) : null}
 
+      {/*
+        "Reading the figures" only while there is no answer yet. A read that
+        answered with a failure is not being read any more, and saying it is
+        was the whole of what the operator saw after a failed refresh.
+      */}
       <p className="text-supporting text-text-secondary">
         {summary === null
-          ? t('dashboard.period.pending')
+          ? answer === null
+            ? t('dashboard.period.pending')
+            : null
           : formatMessage(t('dashboard.period.covering'), {
               from: formatDayInZone(summary.period.from, intlLocale(locale), zone),
               to: formatDayInZone(summary.period.to, intlLocale(locale), zone),
@@ -415,10 +436,25 @@ export function DashboardScreen({
       );
     }
     if (answer.status === 'expired') return <SessionExpiredState messages={messages} />;
+    // An outage and a fault both offer the same read again, here beside the
+    // sentence rather than only as the header's Refresh, which an operator
+    // looking at the failure has no reason to connect with it.
+    const retry = (
+      <button
+        type="button"
+        onClick={() => {
+          setAsAt((previous) => previous + 1);
+        }}
+        className="rounded-md border border-border px-3 py-1.5 text-body text-text-primary transition-colors duration-fast ease-standard hover:bg-surface-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+      >
+        {t('state.retry')}
+      </button>
+    );
     if (answer.status === 'unavailable') {
       return (
         <BackendUnavailableState
           messages={messages}
+          action={retry}
           {...(answer.correlationId === null ? {} : { correlationId: answer.correlationId })}
         />
       );
@@ -427,6 +463,7 @@ export function DashboardScreen({
       return (
         <ErrorState
           messages={messages}
+          action={retry}
           {...(answer.correlationId === null ? {} : { correlationId: answer.correlationId })}
         />
       );

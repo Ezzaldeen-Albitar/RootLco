@@ -5,7 +5,7 @@ import userEvent from '@testing-library/user-event';
 import { useEffect, useState, type ReactNode } from 'react';
 import { renderToString } from 'react-dom/server';
 import ts from 'typescript';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { axe } from 'vitest-axe';
 import { DataTable, type Column, type TableStatus } from '@/components/data-table/DataTable';
 import { INITIAL_REQUEST, type TableRequest } from '@/components/data-table/table-state';
@@ -31,7 +31,25 @@ import {
   preferenceKeyFor,
   type WorkingContextSnapshot,
 } from '@/features/working-context/working-context-contract';
-import { BOTH_DIRECTIONS, renderLtr, renderRtl } from './render';
+import {
+  BOTH_DIRECTIONS,
+  BranchSwitch,
+  OTHER_BRANCH,
+  TEST_BRANCH,
+  WorkingBranchProbe,
+  branchSnapshot,
+  inBranch,
+  renderLtr,
+  renderRtl,
+} from './render';
+import {
+  discardAndSwitch,
+  forgetRememberedBranch,
+  heldBranch,
+  stayOnBranch,
+  switchExpectingQuestion,
+  switchWithoutQuestion,
+} from './support/branch-switch';
 
 // `useSearchParams` joined the mock when the locale switcher began preserving
 // safe query parameters. An empty instance is the honest default: these cases
@@ -1619,5 +1637,198 @@ describe('a branch change made in ANOTHER TAB does not discard unsaved work', ()
       within(notice).getByRole('button', { name: arabic['workingContext.crossTab.switch'] })
     ).toBeInTheDocument();
     expect(document.documentElement.dir).toBe('rtl');
+  });
+});
+
+/**
+ * "Discard and change branch" has to be true.
+ *
+ * The question tells the operator that the entries on the screen will be lost.
+ * A screen whose state does not follow the branch by itself — a form keyed on
+ * something else, or one that belongs to a record rather than to the branch —
+ * passes `onDiscard` to `useUnsavedGuard`, and the provider calls it for every
+ * guard that was dirty when the operator confirmed. These cases pin the
+ * provider's half of that promise; each feature's own suite pins its screen.
+ */
+
+const DISCARD_TWO = branchSnapshot([TEST_BRANCH, OTHER_BRANCH]);
+
+/** One guard, dirty on demand, with the discard it was given. */
+function DiscardGuard({
+  id,
+  dirty,
+  onDiscard,
+}: {
+  readonly id: string;
+  readonly dirty: boolean;
+  readonly onDiscard?: () => void;
+}) {
+  useUnsavedGuard(dirty, onDiscard);
+  return <span data-testid={`guard-${id}`}>{dirty ? 'dirty' : 'clean'}</span>;
+}
+
+function renderGuards(guards: React.ReactNode) {
+  return renderLtr(
+    inBranch(
+      <>
+        <BranchSwitch to={TEST_BRANCH.id} label="first" />
+        <BranchSwitch to={OTHER_BRANCH.id} label="second" />
+        <WorkingBranchProbe />
+        {guards}
+      </>,
+      { snapshot: DISCARD_TWO }
+    )
+  );
+}
+
+describe('the provider calls onDiscard for every guard the question was about', () => {
+  afterEach(forgetRememberedBranch);
+
+  it('calls each dirty guard once on a confirmed discard, and never a clean one', async () => {
+    const first = vi.fn();
+    const second = vi.fn();
+    const clean = vi.fn();
+    const user = userEvent.setup();
+    renderGuards(
+      <>
+        <DiscardGuard id="a" dirty onDiscard={first} />
+        <DiscardGuard id="b" dirty onDiscard={second} />
+        <DiscardGuard id="c" dirty={false} onDiscard={clean} />
+      </>
+    );
+
+    await discardAndSwitch(user, await switchExpectingQuestion(user, 'second'));
+    await waitFor(() => expect(heldBranch()).toBe(OTHER_BRANCH.id));
+    expect(first).toHaveBeenCalledTimes(1);
+    expect(second).toHaveBeenCalledTimes(1);
+    expect(clean).not.toHaveBeenCalled();
+  });
+
+  it('calls nothing when the operator stays', async () => {
+    const discard = vi.fn();
+    const user = userEvent.setup();
+    renderGuards(<DiscardGuard id="a" dirty onDiscard={discard} />);
+
+    await stayOnBranch(user, await switchExpectingQuestion(user, 'second'));
+    // Nothing was chosen before the question, and nothing is now.
+    expect(heldBranch()).toBe('');
+    expect(discard).not.toHaveBeenCalled();
+  });
+
+  it('calls nothing on a switch that asked nothing', async () => {
+    const discard = vi.fn();
+    const user = userEvent.setup();
+    renderGuards(<DiscardGuard id="a" dirty={false} onDiscard={discard} />);
+    await user.click(screen.getByRole('button', { name: 'first' }));
+    await switchWithoutQuestion(user, 'second');
+    await waitFor(() => expect(heldBranch()).toBe(OTHER_BRANCH.id));
+    expect(discard).not.toHaveBeenCalled();
+  });
+
+  it('a guard declared without onDiscard is still asked about and does not break the switch', async () => {
+    const user = userEvent.setup();
+    renderGuards(<DiscardGuard id="a" dirty />);
+    await discardAndSwitch(user, await switchExpectingQuestion(user, 'second'));
+    await waitFor(() => expect(heldBranch()).toBe(OTHER_BRANCH.id));
+  });
+
+  it('reaches the callback of the latest render, not the one the guard registered with', async () => {
+    const seen: string[] = [];
+    function Typed() {
+      const [text, setText] = useState('');
+      useUnsavedGuard(text.length > 0, () => {
+        seen.push(text);
+        setText('');
+      });
+      return (
+        <label>
+          Draft
+          <input value={text} onChange={(event) => setText(event.target.value)} />
+        </label>
+      );
+    }
+    const user = userEvent.setup();
+    renderGuards(<Typed />);
+    await user.click(screen.getByRole('button', { name: 'first' }));
+    await user.type(screen.getByLabelText('Draft'), 'abc');
+
+    await discardAndSwitch(user, await switchExpectingQuestion(user, 'second'));
+    await waitFor(() => expect(screen.getByLabelText('Draft')).toHaveValue(''));
+    expect(seen).toEqual(['abc']);
+    // Emptied, so the next switch has nothing to ask about.
+    await switchWithoutQuestion(user, 'first');
+  });
+});
+
+describe('RecordForm empties itself on a confirmed discard', () => {
+  afterEach(forgetRememberedBranch);
+
+  /*
+   * Eleven write surfaces render through `RecordForm`, most of them on a
+   * customer's or a vehicle's own page where nothing is keyed on the branch.
+   * The text is controlled; the select is seeded through `defaultValue`, so it
+   * shows an emptied value only once it is remounted.
+   */
+  function renderRecordForm() {
+    return renderLtr(
+      inBranch(
+        <>
+          <BranchSwitch to={TEST_BRANCH.id} label="first" />
+          <BranchSwitch to={OTHER_BRANCH.id} label="second" />
+          <WorkingBranchProbe />
+          <RecordForm
+            messages={messages}
+            fields={[
+              { name: 'body', kind: 'text', labelKey: 'crm.customers.notes.body' },
+              {
+                name: 'status',
+                kind: 'select',
+                labelKey: 'crm.customers.status.newStatus',
+                options: [
+                  { value: 'active', label: 'Active' },
+                  { value: 'blocked', label: 'Blocked' },
+                ],
+              },
+            ]}
+            action={async () => ({ status: 'success', messageKey: 'action.succeeded', attempt: 1 })}
+            submitKey="form.submit"
+            titleKey="crm.customers.notes.add"
+          />
+        </>,
+        { snapshot: DISCARD_TWO }
+      )
+    );
+  }
+
+  const text = () => screen.getByLabelText(messages['crm.customers.notes.body']);
+  const select = () =>
+    screen.getByLabelText(messages['crm.customers.status.newStatus']) as HTMLSelectElement;
+
+  it('keeps both entries when the operator stays', async () => {
+    const user = userEvent.setup();
+    renderRecordForm();
+    await user.click(screen.getByRole('button', { name: 'first' }));
+    await user.type(text(), 'a note');
+    await user.selectOptions(select(), 'blocked');
+
+    await stayOnBranch(user, await switchExpectingQuestion(user, 'second'));
+    expect(text()).toHaveValue('a note');
+    expect(select().value).toBe('blocked');
+  });
+
+  it('empties the text and the select once the operator confirms the discard', async () => {
+    const user = userEvent.setup();
+    renderRecordForm();
+    await user.click(screen.getByRole('button', { name: 'first' }));
+    await user.type(text(), 'a note');
+    await user.selectOptions(select(), 'blocked');
+
+    await discardAndSwitch(user, await switchExpectingQuestion(user, 'second'));
+    await waitFor(() => expect(heldBranch()).toBe(OTHER_BRANCH.id));
+    await waitFor(() => expect(text()).toHaveValue(''));
+    expect(select().value).toBe('');
+    // Nothing is left to lose, so the next switch asks nothing.
+    await switchWithoutQuestion(user, 'first');
+    expect(within(document.body).queryByRole('alertdialog')).toBeNull();
   });
 });

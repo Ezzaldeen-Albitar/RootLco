@@ -422,9 +422,11 @@ function QcPanel({
 
   /*
    * Unsaved work, declared to the shell, so a branch changed in the header asks
-   * before it discards what is typed here.
+   * before it discards what is typed here. The work order is not addressed to
+   * the working branch and nothing here is keyed on it, so a confirmed discard
+   * empties the draft itself — the question said it would go.
    */
-  useUnsavedGuard(notes.trim().length > 0);
+  useUnsavedGuard(notes.trim().length > 0, () => setNotes(''));
   const { pending, problem, run } = useCommand(messages, () => {
     reload();
     onChanged();
@@ -689,9 +691,16 @@ function CheckAnswerForm({
 
   /*
    * Unsaved work, declared to the shell, so a branch changed in the header asks
-   * before it discards what is typed here.
+   * before it discards what is typed here. The work order is not addressed to
+   * the working branch and nothing here is keyed on it, so a confirmed discard
+   * puts back the recorded result and empties the note — the question said it would go.
    */
-  useUnsavedGuard(result !== (savedResult ?? '') || note.trim().length > 0);
+  useUnsavedGuard(result !== (savedResult ?? '') || note.trim().length > 0, () => {
+    setResult(savedResult ?? '');
+    setNote('');
+    // The select is seeded through `defaultValue`: only a remount shows the reset.
+    setAttempt((n) => n + 1);
+  });
 
   return (
     <form
@@ -743,14 +752,22 @@ function FinalizeForm({
   const [overallResult, setOverallResult] = useState('');
   const [notes, setNotes] = useState('');
 
-  /*
-   * Unsaved work, declared to the shell, so a branch changed in the header asks
-   * before it discards what is typed here.
-   */
-  useUnsavedGuard(overallResult.length > 0 || notes.trim().length > 0);
   const [pending, setPending] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
+  /*
+   * Unsaved work, declared to the shell, so a branch changed in the header asks
+   * before it discards what is typed here. The work order is not addressed to
+   * the working branch and nothing here is keyed on it, so a confirmed discard
+   * empties the draft itself — the question said it would go.
+   */
+  useUnsavedGuard(overallResult.length > 0 || notes.trim().length > 0, () => {
+    setOverallResult('');
+    setNotes('');
+    setProblem(null);
+    // The select is seeded through `defaultValue`: only a remount shows the reset.
+    setAttempt((n) => n + 1);
+  });
   return (
     <form
       action={async () => {
@@ -830,15 +847,27 @@ function ReworkPanel({
   const [reloadCount, reload] = useReload();
   const [rootCause, setRootCause] = useState('');
 
-  /*
-   * Unsaved work, declared to the shell, so a branch changed in the header asks
-   * before it discards what is typed here.
-   */
-  useUnsavedGuard(rootCause.trim().length > 0);
   const [correctiveAction, setCorrectiveAction] = useState('');
   const [responsibility, setResponsibility] = useState('');
   const [safetyCritical, setSafetyCritical] = useState('');
   const [leadTechnicianId, setLeadTechnicianId] = useState('');
+  // Confirmed discards, part of the safety select's key: it is seeded through
+  // `defaultValue`, so only a remount shows it emptied.
+  const [discards, setDiscards] = useState(0);
+  /*
+   * Unsaved work, declared to the shell, so a branch changed in the header asks
+   * before it discards what is typed here. The work order is not addressed to
+   * the working branch and nothing here is keyed on it, so a confirmed discard
+   * empties the draft itself — the question said it would go.
+   */
+  useUnsavedGuard(rootCause.trim().length > 0, () => {
+    setRootCause('');
+    setCorrectiveAction('');
+    setResponsibility('');
+    setSafetyCritical('');
+    setLeadTechnicianId('');
+    setDiscards((n) => n + 1);
+  });
   const { pending, problem, attempt, run } = useCommand(messages, () => {
     reload();
     onChanged();
@@ -922,7 +951,7 @@ function ReworkPanel({
             dir="ltr"
           />
           <SelectField
-            key={`safetyCritical-${attempt}`}
+            key={`safetyCritical-${attempt}-${discards}`}
             name="safetyCritical"
             label={translate(messages, 'quality.closure.safetyCritical')}
             defaultValue={safetyCritical}

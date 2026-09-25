@@ -99,8 +99,17 @@ export function CreditNoteRequestForm({
   const [busy, setBusy] = useState(false);
   const [attempt, setAttempt] = useState(0);
   // Unsaved work, declared to the shell: a branch switch asks before it drops
-  // a half-written credit. The picker declares its own choice.
-  useUnsavedGuard(amount.trim().length > 0 || reason.trim().length > 0);
+  // a half-written credit. The picker declares its own choice. A confirmed
+  // discard empties the draft here too: on an invoice's own page nothing is
+  // keyed on the branch, so the form would otherwise keep what the question
+  // said would be lost. The next draft is a new request, with a new key.
+  useUnsavedGuard(amount.trim().length > 0 || reason.trim().length > 0, () => {
+    setAmount('');
+    setReason('');
+    setErrors({});
+    setOutcome(null);
+    setAttemptKey(crypto.randomUUID());
+  });
 
   const formRef = useFocusFirstInvalid({
     status: 'invalid',

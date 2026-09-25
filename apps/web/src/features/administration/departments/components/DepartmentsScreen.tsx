@@ -212,6 +212,7 @@ export function DepartmentsScreen({
             setCreating(false);
             reload(branch);
           }}
+          onDiscard={() => setCreating(false)}
         />
       ) : null}
 
@@ -283,17 +284,22 @@ function CreateDepartmentDialog({
   messages,
   branch,
   onClose,
+  onDiscard,
 }: {
   readonly messages: Messages;
   readonly branch: BranchView;
   readonly onClose: () => void;
+  /** Closes the dialog without a re-read, when a branch switch discards it. */
+  readonly onDiscard: () => void;
 }) {
   const [state, formAction] = useActionState<ActionState, FormData>(createDepartmentAction, IDLE);
   const [draft, setDraft] = useState<Record<string, string>>({});
   const t = (key: string) => translate(messages, key as keyof Messages);
   // Typed and not yet created is work a branch switch would throw away with
   // the dialog, so the switch asks first. A created department is saved work.
-  useUnsavedGuard(hasTyped(draft) && state.status !== 'success');
+  // A confirmed discard closes the dialog itself: following the header closes
+  // it only for a branch in this register, and "all my branches" is not one.
+  useUnsavedGuard(hasTyped(draft) && state.status !== 'success', onDiscard);
   // Question f: the cursor goes to the refused field, and its complaint goes
   // once the operator edits it (route sweep B3).
   const {
@@ -383,8 +389,9 @@ function RenameDialog({
 }) {
   const t = (key: string) => translate(messages, key as keyof Messages);
   const [name, setName] = useState(department.name);
-  // A name changed and not yet saved is lost if a branch switch closes this.
-  useUnsavedGuard(name !== department.name);
+  // A name changed and not yet saved is lost if a branch switch closes this,
+  // and a confirmed discard closes it whichever selection the switch made.
+  useUnsavedGuard(name !== department.name, onCancel);
   const {
     edited: refusalEdited,
     errorKey: refusalErrorKey,

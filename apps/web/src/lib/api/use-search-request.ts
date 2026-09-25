@@ -6,6 +6,12 @@ import { INITIAL_REQUEST, withPage, type TableRequest } from '@/components/data-
 import { useCursorPages, type CursorPages } from '@/components/data-table/use-cursor-pages';
 import type { ServerTable } from '@/components/data-table/use-server-table';
 import { SEARCH_DEBOUNCE_MS, useDebouncedValue } from '../use-debounced-value';
+import {
+  CLIENT_READ_QUEUE_MARGIN_MS,
+  CLIENT_READ_TIMEOUT_MS,
+  SERVER_READ_WORST_CASE_MS,
+  clientReadTimeoutMs,
+} from './read-budget';
 import type { CursorPage, ReadState } from './read-operation';
 
 /**
@@ -125,6 +131,130 @@ export interface SearchResult<Row> extends SearchOutcome<Row> {
   readonly submit: () => void;
 }
 
+/**
+ * How long a screen waits for one read before calling it unavailable.
+ *
+ * ## Why there is a client-side bound at all
+ *
+ * The API client on the server already times out, and an answer it gives up on
+ * arrives here as an ordinary `unavailable`. What it cannot bound is the hop in
+ * front of it: the Server Action call from this browser to the web tier. When
+ * that call fails — the connection drops, or the web tier answers 503 — the call
+ * REJECTS instead of resolving, and when it hangs it does neither. Browser QA
+ * found both: the reception board, the work-order board and customer search
+ * still read "Loading" twelve seconds after the read had failed, with no
+ * sentence and no way to try again (rows 2.6 and 7.4 of the part-7 matrix).
+ *
+ * The rejection is the real defect, and `settleRead` closes it the moment it
+ * happens — no timer is involved. This ceiling is only the SAFETY NET for a call
+ * that neither resolves nor rejects.
+ *
+ * ## Why it must sit ABOVE the server's own worst case
+ *
+ * A ceiling below the server path would abandon reads the server is still
+ * legitimately working on, and show an outage over an answer that was about to
+ * arrive. So it is derived from the server client's own constants rather than
+ * chosen: every read there is at most `MAX_READ_RETRIES + 1` attempts of
+ * `DEFAULT_TIMEOUT_MS` each (`get` clamps to that), which is
+ * `SERVER_READ_WORST_CASE_MS`.
+ *
+ * It must also absorb QUEUEING. The timer starts when this browser asks, not
+ * when the server starts working: Server Action calls from one page are sent one
+ * at a time, so a read can wait behind an earlier action before its own attempts
+ * begin. `CLIENT_READ_QUEUE_MARGIN_MS` — one further per-attempt timeout — is
+ * that allowance. No figure here is chosen by hand: change the server client's
+ * timeout or its retry clamp and the ceiling moves with it. With today's values
+ * that is 15 s × 3 attempts + 15 s = 60 s.
+ *
+ * ## A loader that reads twice gets twice the server's time
+ *
+ * The worst case above is for ONE read. Some loaders make two in sequence — the
+ * delivery-readiness queue and the audit log re-read the caller's scope before
+ * they read the page — and on those a single-read ceiling equals the server's
+ * whole worst case with no room left for queueing: the browser could give up
+ * while the second read was still legitimately running. So the ceiling is a
+ * function of the loader's sequential read count, `serverReads`, which a
+ * caller states beside the loader: `serverReads × SERVER_READ_WORST_CASE_MS +
+ * CLIENT_READ_QUEUE_MARGIN_MS` (`clientReadTimeoutMs`). One is the default;
+ * reads made in parallel count once.
+ *
+ * ## One formula, for every read that uses it
+ *
+ * `settleRead` derives its ceiling from `serverReads`, and the three read paths
+ * that need a ceiling — this hook, `useServerTable` and the dashboard — all go
+ * through `settleRead` without naming a number. The figures themselves live in
+ * `read-budget.ts`, which imports nothing, so this browser module does not pull
+ * in the server API client to read them. There is no second copy to drift.
+ */
+export { CLIENT_READ_QUEUE_MARGIN_MS, CLIENT_READ_TIMEOUT_MS, SERVER_READ_WORST_CASE_MS };
+
+/**
+ * A read that always SETTLES — with its own answer, or with `failure`.
+ *
+ * ## The rule it enforces
+ *
+ * A loader's contract is to resolve a view state for every answer the server
+ * gives. A rejection therefore means no readable answer arrived at all — the
+ * transport failed, or the web tier answered with something that is not a
+ * Server Action response — so it becomes `failure`, which every caller makes an
+ * `unavailable` state with a retry. The same holds for a read that outlives
+ * `timeoutMs`, and for one whose `signal` is aborted: the caller has moved on,
+ * so waiting for it any longer only holds the screen.
+ *
+ * Nothing here can cancel the work the server already started — a Server
+ * Action call carries no `AbortSignal` across the boundary — so an aborted or
+ * timed-out read is ABANDONED here and its late answer, when it comes, is
+ * dropped by the settled flag. The timer is always cleared, so a read that
+ * answers promptly leaves nothing behind.
+ *
+ * `serverReads` is how many server reads `run` makes in sequence, and sets the
+ * ceiling (`clientReadTimeoutMs`). An explicit `timeoutMs` overrides it.
+ */
+export function settleRead<T>(
+  run: () => Promise<T>,
+  failure: T,
+  options: {
+    readonly signal?: AbortSignal;
+    readonly timeoutMs?: number;
+    readonly serverReads?: number;
+  } = {}
+): Promise<T> {
+  const { signal, serverReads = 1, timeoutMs = clientReadTimeoutMs(serverReads) } = options;
+  return new Promise<T>((resolve) => {
+    if (signal?.aborted) {
+      resolve(failure);
+      return;
+    }
+    let settled = false;
+    // Every path into `finish` runs after `timer` exists: the timer itself, the
+    // abort listener added below it, and the read started after both.
+    const finish = (value: T) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      signal?.removeEventListener('abort', onAbort);
+      resolve(value);
+    };
+    const onAbort = () => finish(failure);
+    const timer = setTimeout(() => finish(failure), timeoutMs);
+    signal?.addEventListener('abort', onAbort, { once: true });
+    let pending: Promise<T>;
+    try {
+      pending = run();
+    } catch {
+      finish(failure);
+      return;
+    }
+    pending.then(finish, () => finish(failure));
+  });
+}
+
+/** What a read that never answered is, as far as a screen is concerned. */
+export const UNANSWERED_READ = Object.freeze({
+  status: 'unavailable',
+  correlationId: null,
+} as const);
+
 const IDLE: SearchOutcome<never> = {
   phase: 'idle',
   rows: [],
@@ -205,8 +335,14 @@ export function useSearchRequest<Row, Criteria>(options: {
    */
   readonly version?: number;
   readonly debounceMs?: number;
+  /**
+   * How many server reads `load` makes one after another. Sets how long the
+   * screen waits before calling the read unavailable (`settleRead`). One
+   * unless the loader re-reads something before it reads the page.
+   */
+  readonly serverReads?: number;
 }): SearchResult<Row> {
-  const { criteria, load, version = 0, debounceMs = SEARCH_DEBOUNCE_MS } = options;
+  const { criteria, load, version = 0, debounceMs = SEARCH_DEBOUNCE_MS, serverReads = 1 } = options;
 
   /*
    * The criteria, serialised.
@@ -304,11 +440,13 @@ export function useSearchRequest<Row, Criteria>(options: {
    */
   const box = useRef<{
     load: typeof load;
+    serverReads: number;
     seen: Map<string, Criteria>;
     cursors: CursorPages | null;
-  }>({ load, seen: new Map(), cursors: null });
+  }>({ load, serverReads, seen: new Map(), cursors: null });
   useEffect(() => {
     box.current.load = load;
+    box.current.serverReads = serverReads;
     if (key === null || criteria === null) return;
     const seen = box.current.seen;
     seen.set(key, criteria);
@@ -377,8 +515,17 @@ export function useSearchRequest<Row, Criteria>(options: {
     const mine = sequence.current;
     void (async () => {
       // Awaited before any state write, so nothing here is a synchronous
-      // setState inside an effect body.
-      const state = await box.current.load(asked, cursor, controller.signal);
+      // setState inside an effect body. Settled, never left hanging: a load
+      // that rejects or outlives the ceiling is an outage with a retry, not a
+      // screen that reads "Loading" for ever (`settleRead`). The controller's
+      // signal abandons it the moment this effect is torn down — a branch
+      // switch among them — so nothing here waits on a superseded read.
+      const load = box.current.load;
+      const state = await settleRead<ReadState<CursorPage<Row>>>(
+        () => load(asked, cursor, controller.signal),
+        UNANSWERED_READ,
+        { signal: controller.signal, serverReads: box.current.serverReads }
+      );
       // Two guards, not one. The abort covers this effect being cleaned up; the
       // sequence covers a slower SIBLING request that was started earlier and is
       // still in flight. The key carries the criteria AND the page, so a late

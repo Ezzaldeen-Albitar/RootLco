@@ -529,6 +529,7 @@ describe('a branch switch asks before it closes a dialog holding typed work (rou
         <>
           <BranchSwitch to={BRANCH.id} label="first" />
           <BranchSwitch to={SECOND.id} label="second" />
+          <BranchSwitch to="all" label="everywhere" />
           {screenUnderTest}
         </>,
         { snapshot }
@@ -651,6 +652,75 @@ describe('a branch switch asks before it closes a dialog holding typed work (rou
     await user.click(screen.getByRole('button', { name: 'first' }));
     await user.click(await screen.findByRole('button', { name: EN('employees.add') }));
     await switchWithoutQuestion(user, 'second');
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+  });
+
+  /*
+   * "All my branches" is not a row of the register, so following the header
+   * does not close the dialog for it. The discard the operator confirmed must
+   * still happen: a dialog left open would keep the typed entry, addressed to
+   * the branch it was opened for, after the question said it would go.
+   */
+  it('departments: a confirmed discard towards "all my branches" closes the dialog holding typed work', async () => {
+    get.mockResolvedValue({ ok: true, status: 200, data: { items: [] }, correlationId: 'c' });
+    const user = userEvent.setup();
+    renderInContext(
+      <DepartmentsScreen messages={en} branches={both} companies={[COMPANY]} canManage />
+    );
+    await user.click(screen.getByRole('button', { name: 'first' }));
+    await user.click(await screen.findByRole('button', { name: EN('departments.add') }));
+    await user.type(within(screen.getByRole('dialog')).getByLabelText(/^Code/), 'parts_desk');
+
+    await discardAndSwitch(user, await switchExpectingQuestion(user, 'everywhere'));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    // Opened again, it is empty: nothing typed before the discard survived it.
+    await user.click(await screen.findByRole('button', { name: EN('departments.add') }));
+    expect(within(screen.getByRole('dialog')).getByLabelText(/^Code/)).toHaveValue('');
+  });
+
+  it('departments: a confirmed discard towards "all my branches" closes the rename dialog', async () => {
+    get.mockResolvedValue({
+      ok: true,
+      status: 200,
+      data: { items: [DEPARTMENT] },
+      correlationId: 'c',
+    });
+    const user = userEvent.setup();
+    renderInContext(
+      <DepartmentsScreen messages={en} branches={both} companies={[COMPANY]} canManage />
+    );
+    await user.click(screen.getByRole('button', { name: 'first' }));
+    await user.click(
+      await screen.findByRole('button', { name: `${EN('departments.rename')}: Service` })
+    );
+    await user.type(within(screen.getByRole('dialog')).getByLabelText(/^Department name/), ' desk');
+
+    await discardAndSwitch(user, await switchExpectingQuestion(user, 'everywhere'));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+  });
+
+  it('employees: a confirmed discard towards "all my branches" closes the dialog holding typed work', async () => {
+    get.mockResolvedValue({
+      ok: true,
+      status: 200,
+      data: { items: [], nextCursor: null, hasMore: false },
+      correlationId: 'c',
+    });
+    const user = userEvent.setup();
+    renderInContext(
+      <EmployeesScreen
+        messages={en}
+        branches={both}
+        companies={[COMPANY]}
+        loginAccounts={[ACCOUNT]}
+        canManage
+      />
+    );
+    await user.click(screen.getByRole('button', { name: 'first' }));
+    await user.click(await screen.findByRole('button', { name: EN('employees.add') }));
+    await user.type(within(screen.getByRole('dialog')).getByLabelText(/^Name/), 'New Clerk');
+
+    await discardAndSwitch(user, await switchExpectingQuestion(user, 'everywhere'));
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
   });
 });
