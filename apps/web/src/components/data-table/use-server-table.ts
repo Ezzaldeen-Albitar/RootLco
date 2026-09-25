@@ -82,6 +82,13 @@ export function useServerTable<Row>(
      * The caller states what actually varies.
      */
     readonly loadKey?: string;
+    /**
+     * How many server reads `load` makes one after another — two for a loader
+     * that re-reads the caller's scope before it reads the page. Sets how long
+     * the table waits before calling the read unavailable (`settleRead`).
+     * One unless stated.
+     */
+    readonly serverReads?: number;
   } = {}
 ): ServerTable<Row> {
   const [request, setRequest] = useState<TableRequest>(options.initial ?? INITIAL_REQUEST);
@@ -93,6 +100,7 @@ export function useServerTable<Row>(
 
   const ordering = orderingKeyOf(request);
   const loadKey = options.loadKey ?? '';
+  const serverReads = options.serverReads ?? 1;
 
   /*
    * A `loadKey` change resets the page as well as the cursor stack.
@@ -137,13 +145,17 @@ export function useServerTable<Row>(
       // outlives the ceiling is an outage with a retry rather than a table that
       // reads "Loading" for ever (`settleRead`, browser QA part 7 row 2.6).
       const cursor = cursors.cursorFor(request.page);
-      const page = await settleRead<ServerPage<Row>>(() => load(request, cursor), {
-        status: 'unavailable',
-        rows: [],
-        nextCursor: null,
-        hasMore: false,
-        correlationId: null,
-      });
+      const page = await settleRead<ServerPage<Row>>(
+        () => load(request, cursor),
+        {
+          status: 'unavailable',
+          rows: [],
+          nextCursor: null,
+          hasMore: false,
+          correlationId: null,
+        },
+        { serverReads }
+      );
       if (cancelled) return;
       setHeld({ key: wanted, page });
       if (page.status === 'ok') cursors.remember(request.page, page.nextCursor);

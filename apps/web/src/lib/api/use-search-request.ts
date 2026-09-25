@@ -6,7 +6,12 @@ import { INITIAL_REQUEST, withPage, type TableRequest } from '@/components/data-
 import { useCursorPages, type CursorPages } from '@/components/data-table/use-cursor-pages';
 import type { ServerTable } from '@/components/data-table/use-server-table';
 import { SEARCH_DEBOUNCE_MS, useDebouncedValue } from '../use-debounced-value';
-import { DEFAULT_TIMEOUT_MS, MAX_READ_RETRIES } from './client';
+import {
+  CLIENT_READ_QUEUE_MARGIN_MS,
+  CLIENT_READ_TIMEOUT_MS,
+  SERVER_READ_WORST_CASE_MS,
+  clientReadTimeoutMs,
+} from './read-budget';
 import type { CursorPage, ReadState } from './read-operation';
 
 /**
@@ -161,15 +166,27 @@ export interface SearchResult<Row> extends SearchOutcome<Row> {
  * timeout or its retry clamp and the ceiling moves with it. With today's values
  * that is 15 s × 3 attempts + 15 s = 60 s.
  *
- * ## One ceiling, for every read that uses it
+ * ## A loader that reads twice gets twice the server's time
  *
- * `settleRead` defaults to this value, and the three read paths that need a
- * ceiling — this hook, `useServerTable` and the dashboard — all go through
- * `settleRead` without naming a number. There is no second copy to drift.
+ * The worst case above is for ONE read. Some loaders make two in sequence — the
+ * delivery-readiness queue and the audit log re-read the caller's scope before
+ * they read the page — and on those a single-read ceiling equals the server's
+ * whole worst case with no room left for queueing: the browser could give up
+ * while the second read was still legitimately running. So the ceiling is a
+ * function of the loader's sequential read count, `serverReads`, which a
+ * caller states beside the loader: `serverReads × SERVER_READ_WORST_CASE_MS +
+ * CLIENT_READ_QUEUE_MARGIN_MS` (`clientReadTimeoutMs`). One is the default;
+ * reads made in parallel count once.
+ *
+ * ## One formula, for every read that uses it
+ *
+ * `settleRead` derives its ceiling from `serverReads`, and the three read paths
+ * that need a ceiling — this hook, `useServerTable` and the dashboard — all go
+ * through `settleRead` without naming a number. The figures themselves live in
+ * `read-budget.ts`, which imports nothing, so this browser module does not pull
+ * in the server API client to read them. There is no second copy to drift.
  */
-export const SERVER_READ_WORST_CASE_MS = DEFAULT_TIMEOUT_MS * (MAX_READ_RETRIES + 1);
-export const CLIENT_READ_QUEUE_MARGIN_MS = DEFAULT_TIMEOUT_MS;
-export const CLIENT_READ_TIMEOUT_MS = SERVER_READ_WORST_CASE_MS + CLIENT_READ_QUEUE_MARGIN_MS;
+export { CLIENT_READ_QUEUE_MARGIN_MS, CLIENT_READ_TIMEOUT_MS, SERVER_READ_WORST_CASE_MS };
 
 /**
  * A read that always SETTLES — with its own answer, or with `failure`.
@@ -189,13 +206,20 @@ export const CLIENT_READ_TIMEOUT_MS = SERVER_READ_WORST_CASE_MS + CLIENT_READ_QU
  * timed-out read is ABANDONED here and its late answer, when it comes, is
  * dropped by the settled flag. The timer is always cleared, so a read that
  * answers promptly leaves nothing behind.
+ *
+ * `serverReads` is how many server reads `run` makes in sequence, and sets the
+ * ceiling (`clientReadTimeoutMs`). An explicit `timeoutMs` overrides it.
  */
 export function settleRead<T>(
   run: () => Promise<T>,
   failure: T,
-  options: { readonly signal?: AbortSignal; readonly timeoutMs?: number } = {}
+  options: {
+    readonly signal?: AbortSignal;
+    readonly timeoutMs?: number;
+    readonly serverReads?: number;
+  } = {}
 ): Promise<T> {
-  const { signal, timeoutMs = CLIENT_READ_TIMEOUT_MS } = options;
+  const { signal, serverReads = 1, timeoutMs = clientReadTimeoutMs(serverReads) } = options;
   return new Promise<T>((resolve) => {
     if (signal?.aborted) {
       resolve(failure);
@@ -311,8 +335,14 @@ export function useSearchRequest<Row, Criteria>(options: {
    */
   readonly version?: number;
   readonly debounceMs?: number;
+  /**
+   * How many server reads `load` makes one after another. Sets how long the
+   * screen waits before calling the read unavailable (`settleRead`). One
+   * unless the loader re-reads something before it reads the page.
+   */
+  readonly serverReads?: number;
 }): SearchResult<Row> {
-  const { criteria, load, version = 0, debounceMs = SEARCH_DEBOUNCE_MS } = options;
+  const { criteria, load, version = 0, debounceMs = SEARCH_DEBOUNCE_MS, serverReads = 1 } = options;
 
   /*
    * The criteria, serialised.
@@ -410,11 +440,13 @@ export function useSearchRequest<Row, Criteria>(options: {
    */
   const box = useRef<{
     load: typeof load;
+    serverReads: number;
     seen: Map<string, Criteria>;
     cursors: CursorPages | null;
-  }>({ load, seen: new Map(), cursors: null });
+  }>({ load, serverReads, seen: new Map(), cursors: null });
   useEffect(() => {
     box.current.load = load;
+    box.current.serverReads = serverReads;
     if (key === null || criteria === null) return;
     const seen = box.current.seen;
     seen.set(key, criteria);
@@ -492,7 +524,7 @@ export function useSearchRequest<Row, Criteria>(options: {
       const state = await settleRead<ReadState<CursorPage<Row>>>(
         () => load(asked, cursor, controller.signal),
         UNANSWERED_READ,
-        { signal: controller.signal }
+        { signal: controller.signal, serverReads: box.current.serverReads }
       );
       // Two guards, not one. The abort covers this effect being cleaned up; the
       // sequence covers a slower SIBLING request that was started earlier and is

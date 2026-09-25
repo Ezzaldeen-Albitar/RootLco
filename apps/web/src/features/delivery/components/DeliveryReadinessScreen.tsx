@@ -150,7 +150,13 @@ function ReadinessResults({
       }),
     [submitted]
   );
-  const table = useServerTable<DeliveryReadinessRow>(load, { initial: INITIAL_REQUEST });
+  // Two server reads in sequence: `listDeliveryReadiness` re-reads the
+  // caller's companies and branches before it reads the queue, so the table
+  // waits for both rather than for one (`settleRead`).
+  const table = useServerTable<DeliveryReadinessRow>(load, {
+    initial: INITIAL_REQUEST,
+    serverReads: 2,
+  });
 
   const columns = useMemo<readonly Column<DeliveryReadinessRow>[]>(
     () => [

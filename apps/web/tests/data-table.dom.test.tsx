@@ -1,5 +1,7 @@
 import { act, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { SearchBox } from '@/components/search/SearchBox';
 import { SearchStates } from '@/components/search/SearchStates';
@@ -11,6 +13,8 @@ import {
   type TableResponse,
 } from '@/components/data-table/table-state';
 import { DEFAULT_READ_RETRIES, DEFAULT_TIMEOUT_MS, MAX_READ_RETRIES } from '@/lib/api/client';
+import * as readBudget from '@/lib/api/read-budget';
+import { clientReadTimeoutMs } from '@/lib/api/read-budget';
 import {
   CLIENT_READ_QUEUE_MARGIN_MS,
   CLIENT_READ_TIMEOUT_MS,
@@ -223,10 +227,12 @@ interface Found {
 
 function TableHarness({
   load,
+  serverReads,
 }: {
   readonly load: (request: TableRequest, cursor: string | null) => Promise<ServerPage<Found>>;
+  readonly serverReads?: number;
 }) {
-  const table = useServerTable<Found>(load);
+  const table = useServerTable<Found>(load, serverReads === undefined ? {} : { serverReads });
   return <p data-testid="table-status">{table.status}</p>;
 }
 
@@ -234,6 +240,7 @@ function SearchHarness({
   term,
   load,
   version = 0,
+  serverReads,
 }: {
   readonly term: string;
   readonly load: (
@@ -242,12 +249,14 @@ function SearchHarness({
     signal: AbortSignal
   ) => Promise<unknown>;
   readonly version?: number;
+  readonly serverReads?: number;
 }) {
   const settled = useDebouncedValue(term, 20);
   const outcome = useSearchRequest<Found, { q: string }>({
     criteria: settled.length >= 2 ? { q: settled } : null,
     load: load as never,
     version,
+    ...(serverReads === undefined ? {} : { serverReads }),
     // Short, so a case is not a second long. The INTERVAL is not what these
     // cases are about — the settling, the abandoning and the ordering are.
     debounceMs: 20,
@@ -713,6 +722,100 @@ describe('a search that fails never stays "Loading" (browser QA part 7, rows 2.6
     expect(seen[0]?.aborted).toBe(true);
     expect(seen[1]?.aborted).toBe(false);
     await waitFor(() => expect(screen.getByTestId('rows')).toHaveTextContent('new-branch'));
+  });
+
+  it('sizes the ceiling by the loader’s sequential reads: one read keeps 60 s, two get two worst cases', () => {
+    // One read: the server's worst case plus the queueing margin — 60 s today.
+    expect(clientReadTimeoutMs()).toBe(CLIENT_READ_TIMEOUT_MS);
+    expect(clientReadTimeoutMs(1)).toBe(CLIENT_READ_TIMEOUT_MS);
+    expect(CLIENT_READ_TIMEOUT_MS).toBe(60_000);
+    // Two reads in sequence: the server may spend its whole worst case on EACH,
+    // and the margin for waiting in the queue is added once, before either.
+    expect(clientReadTimeoutMs(2)).toBe(
+      2 * SERVER_READ_WORST_CASE_MS + CLIENT_READ_QUEUE_MARGIN_MS
+    );
+    expect(clientReadTimeoutMs(2)).toBeGreaterThan(
+      CLIENT_READ_TIMEOUT_MS + CLIENT_READ_QUEUE_MARGIN_MS
+    );
+    // A mistyped count can only leave the single-read ceiling in place.
+    for (const odd of [0, -1, 1.5, Number.NaN]) {
+      expect(clientReadTimeoutMs(odd)).toBe(CLIENT_READ_TIMEOUT_MS);
+    }
+  });
+
+  it('holds a TWO-read loader past the single-read ceiling, until exactly two worst cases and the margin', async () => {
+    vi.useFakeTimers();
+    try {
+      const failed = { status: 'unavailable' } as const;
+      let settled = false;
+      const pending = settleRead(() => new Promise<never>(() => undefined), failed, {
+        serverReads: 2,
+      }).then((value) => {
+        settled = true;
+        return value;
+      });
+      // Past the ceiling a one-read loader gets: the second read may still be running.
+      await vi.advanceTimersByTimeAsync(CLIENT_READ_TIMEOUT_MS);
+      expect(settled).toBe(false);
+      await vi.advanceTimersByTimeAsync(
+        2 * SERVER_READ_WORST_CASE_MS + CLIENT_READ_QUEUE_MARGIN_MS - CLIENT_READ_TIMEOUT_MS - 1
+      );
+      expect(settled).toBe(false);
+      await vi.advanceTimersByTimeAsync(1);
+      await expect(pending).resolves.toBe(failed);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('carries a two-read count through the server table and the search alike', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const silentTable = vi.fn(() => new Promise<never>(() => undefined));
+      const table = renderLtr(<TableHarness load={silentTable} serverReads={2} />);
+      await waitFor(() => expect(silentTable).toHaveBeenCalledTimes(1));
+      // Two whole server worst cases — well past the one-read ceiling — and
+      // still waiting.
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(2 * SERVER_READ_WORST_CASE_MS);
+      });
+      expect(screen.getByTestId('table-status')).toHaveTextContent('loading');
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(CLIENT_READ_QUEUE_MARGIN_MS);
+      });
+      await waitFor(() =>
+        expect(screen.getByTestId('table-status')).toHaveTextContent('unavailable')
+      );
+      table.unmount();
+
+      const silentSearch = vi.fn(() => new Promise<never>(() => undefined));
+      renderLtr(<SearchHarness term="twice" load={silentSearch} serverReads={2} />);
+      await waitFor(() => expect(silentSearch).toHaveBeenCalledTimes(1));
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(2 * SERVER_READ_WORST_CASE_MS);
+      });
+      expect(screen.getByTestId('phase')).toHaveTextContent('loading');
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(CLIENT_READ_QUEUE_MARGIN_MS);
+      });
+      await waitFor(() => expect(screen.getByTestId('phase')).toHaveTextContent('unavailable'));
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('keeps the browser hook off the server API client: the budget is its own import-free module', () => {
+    const source = (file: string) => readFileSync(join(process.cwd(), 'src', file), 'utf8');
+    const hook = source('lib/api/use-search-request.ts');
+    // The client carries the English catalogue and the operation table; the
+    // hook needs a handful of numbers from it and nothing else.
+    expect(hook).not.toMatch(/from\s+['"](?:\.\/client|@\/lib\/api\/client)['"]/);
+    expect(hook).toMatch(/from\s+['"]\.\/read-budget['"]/);
+    expect(source('lib/api/read-budget.ts')).not.toMatch(/^\s*import\s/m);
+    // One set of figures: the client's re-exports ARE the budget's.
+    expect(readBudget.DEFAULT_TIMEOUT_MS).toBe(DEFAULT_TIMEOUT_MS);
+    expect(readBudget.DEFAULT_READ_RETRIES).toBe(DEFAULT_READ_RETRIES);
+    expect(readBudget.MAX_READ_RETRIES).toBe(MAX_READ_RETRIES);
   });
 
   it('settleRead: its own answer, or the failure — for a rejection, a timeout and an abort', async () => {

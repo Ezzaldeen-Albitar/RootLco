@@ -34,6 +34,7 @@
 import englishCatalogue from '@/i18n/messages/en.json';
 import { report, type LogLevel } from '../observability/client-log';
 import { requiresIdempotencyKey } from './operation-contract';
+import { DEFAULT_READ_RETRIES, DEFAULT_TIMEOUT_MS, MAX_READ_RETRIES } from './read-budget';
 
 export const PROBLEM_CONTENT_TYPE = 'application/problem+json';
 
@@ -176,15 +177,12 @@ export interface ApiSuccess<T> {
 export type ApiResult<T> = ApiSuccess<T> | ApiFailure;
 
 export const CORRELATION_HEADER = 'x-correlation-id';
-export const DEFAULT_TIMEOUT_MS = 15_000;
-/** Retries a read makes when the caller does not say. One, not a loop — see `get`. */
-export const DEFAULT_READ_RETRIES = 1;
-/**
- * The most retries any read may ask for. `get` clamps to it, so no read on the
- * server ever makes more than `MAX_READ_RETRIES + 1` attempts of
- * `DEFAULT_TIMEOUT_MS` each — the bound a client-side ceiling must sit above.
+/*
+ * The timeout and the retry clamp live in `read-budget.ts`, a module with no
+ * imports, so the browser's read ceiling can be derived from them without the
+ * browser importing this client. Re-exported so every existing import holds.
  */
-export const MAX_READ_RETRIES = 2;
+export { DEFAULT_READ_RETRIES, DEFAULT_TIMEOUT_MS, MAX_READ_RETRIES };
 
 export interface ApiClientOptions {
   readonly baseUrl: string;

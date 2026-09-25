@@ -1,8 +1,9 @@
-import { screen, waitFor, within } from '@testing-library/react';
+import { act, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import en from '../src/i18n/messages/en.json';
 import ar from '../src/i18n/messages/ar.json';
+import { CLIENT_READ_TIMEOUT_MS, clientReadTimeoutMs } from '@/lib/api/read-budget';
 import type { captureDeliverySignature as RealCaptureDeliverySignature } from '@/features/delivery/signature-capture';
 import { verifyReceiverWithEvidence } from '@/features/delivery/receiver-capture';
 import {
@@ -3194,6 +3195,31 @@ describe('the queue renders the verdict it was given and derives none of it', ()
     // "Nothing is ready" and "you may not see this" are different sentences.
     expect(await within(container).findByText(EN['state.denied.title'] as string)).toBeVisible();
     expect(within(container).queryByText(EN['delivery.queue.noneMatching'] as string)).toBeNull();
+  });
+
+  it('waits for BOTH of its server reads before calling the queue unavailable', async () => {
+    /*
+     * `listDeliveryReadiness` re-reads the caller's companies and branches and
+     * only then reads the queue: two server reads, one after the other. A
+     * one-read ceiling abandoned it with the second read still running, and
+     * printed an outage over an answer about to arrive.
+     */
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      listDeliveryReadiness.mockImplementation(() => new Promise<never>(() => undefined));
+      const { container } = await showQueue();
+      const unavailable = EN['state.unavailable.title'] as string;
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(CLIENT_READ_TIMEOUT_MS);
+      });
+      expect(within(container).queryByText(unavailable)).toBeNull();
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(clientReadTimeoutMs(2) - CLIENT_READ_TIMEOUT_MS);
+      });
+      expect(await within(container).findByText(unavailable)).toBeVisible();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('states an empty branch as an empty branch', async () => {

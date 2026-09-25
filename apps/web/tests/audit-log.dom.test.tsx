@@ -1,8 +1,9 @@
-import { screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import en from '../src/i18n/messages/en.json';
 import ar from '../src/i18n/messages/ar.json';
+import { CLIENT_READ_TIMEOUT_MS, clientReadTimeoutMs } from '@/lib/api/read-budget';
 import { renderLtr, renderRtl } from './render';
 
 /**
@@ -435,6 +436,58 @@ describe('authorized company and branch selection', () => {
       within(filterForm()).getByRole('button', { name: EN['audit.filter.clear'] as string })
     );
     await waitFor(() => expect(listAuditEvents.mock.calls.at(-1)?.[4]).toBeNull());
+  });
+
+  it('waits one read for the unfiltered log, and both reads once a branch is applied', async () => {
+    /*
+     * With a branch applied, `listAuditEvents` re-reads the caller's companies
+     * and branches before it reads the events — two server reads in sequence —
+     * so a one-read ceiling would abandon it while the second was still running.
+     * Without a branch it reads once and keeps the one-read ceiling.
+     */
+    const unavailable = EN['state.unavailable.title'] as string;
+    const user = userEvent.setup();
+    renderScreen({ scopeOptions });
+    await waitFor(() => expect(listAuditEvents).toHaveBeenCalled());
+    await user.selectOptions(screen.getByLabelText(labelled('audit.filter.company')), 'company-a');
+    await user.selectOptions(screen.getByLabelText(labelled('audit.filter.branch')), 'branch-a');
+
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      listAuditEvents.mockImplementation(() => new Promise<never>(() => undefined));
+      const before = listAuditEvents.mock.calls.length;
+      fireEvent.click(
+        within(filterForm()).getByRole('button', { name: EN['audit.filter.apply'] as string })
+      );
+      await waitFor(() => expect(listAuditEvents.mock.calls.length).toBeGreaterThan(before));
+      expect(listAuditEvents.mock.calls.at(-1)?.[4]).toEqual({
+        companyId: 'company-a',
+        branchId: 'branch-a',
+      });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(CLIENT_READ_TIMEOUT_MS);
+      });
+      expect(screen.queryByText(unavailable)).toBeNull();
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(clientReadTimeoutMs(2) - CLIENT_READ_TIMEOUT_MS);
+      });
+      expect(await screen.findByText(unavailable)).toBeVisible();
+
+      // Back to the unfiltered log: one read, and the one-read ceiling.
+      const cleared = listAuditEvents.mock.calls.length;
+      fireEvent.click(
+        within(filterForm()).getByRole('button', { name: EN['audit.filter.clear'] as string })
+      );
+      await waitFor(() => expect(listAuditEvents.mock.calls.length).toBeGreaterThan(cleared));
+      expect(listAuditEvents.mock.calls.at(-1)?.[4]).toBeNull();
+      expect(screen.queryByText(unavailable)).toBeNull();
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(CLIENT_READ_TIMEOUT_MS);
+      });
+      expect(await screen.findByText(unavailable)).toBeVisible();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('keeps audit search usable when directory permission is absent', async () => {
