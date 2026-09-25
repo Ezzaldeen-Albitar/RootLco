@@ -121,17 +121,25 @@ export function SearchPicker<Row extends { readonly id: string }>({
 
   /*
    * The cursor, after a choice. A ref flag rather than state: it is set by the
-   * click that chose, read once by the effect that follows the new value, and
+   * click that chose, read once by the effect that follows that click, and
    * never rendered. A choice the PARENT makes (a form opening on a payer) does
    * not set it, so arriving on a pre-filled form moves nobody's cursor.
+   *
+   * The flag lives for ONE commit — the one the press produced, counted by
+   * `pressed`. A parent may refuse the choice and keep the value null; keyed on
+   * the value alone the effect never ran, the flag survived, and whatever value
+   * the parent set LATER — a form re-opened on a record, say — pulled the cursor
+   * away from wherever the operator had gone since (QA round three). Now the
+   * press is answered once, accepted or not, and then forgotten.
    */
   const changeRef = useRef<HTMLButtonElement | null>(null);
   const focusChosen = useRef(false);
+  const [pressed, setPressed] = useState(0);
   useEffect(() => {
-    if (!focusChosen.current || value === null) return;
+    if (!focusChosen.current) return;
     focusChosen.current = false;
-    changeRef.current?.focus();
-  }, [value]);
+    if (value !== null) changeRef.current?.focus();
+  }, [value, pressed]);
   const context = useWorkingContext();
   const [typed, setTyped] = useState(() => ({ text: '', version: context.version }));
   const term = typed.version === context.version ? typed.text : '';
@@ -186,10 +194,19 @@ export function SearchPicker<Row extends { readonly id: string }>({
           >
             {labelOf(value)}
           </bdi>
+          {/*
+            A refused choice is marked WITHOUT `aria-invalid`: ARIA 1.2 does not
+            support it on the button role, so it would be announced nowhere and
+            is an error in itself. The refusal instead reaches assistive
+            technology twice over — this control is DESCRIBED by the sentence,
+            and the sentence is its own `role="alert"` — and `data-invalid` is
+            the non-ARIA marker `useFocusFirstInvalid` also looks for, so the
+            cursor still lands here after a refused submit.
+          */}
           <button
             ref={changeRef}
             type="button"
-            aria-invalid={error ? true : undefined}
+            data-invalid={error ? 'true' : undefined}
             aria-describedby={
               [chosenId, error ? errorId : undefined, describedBy].filter(Boolean).join(' ') ||
               undefined
@@ -268,6 +285,7 @@ export function SearchPicker<Row extends { readonly id: string }>({
                     type="button"
                     onClick={() => {
                       focusChosen.current = true;
+                      setPressed((count) => count + 1);
                       onChange(row);
                       setTerm('');
                     }}

@@ -31,6 +31,25 @@ import type { ActionState } from './action-result';
  * It follows that `aria-invalid` must be present ONLY when a field really is
  * invalid, which is what `FieldFrame` guarantees.
  *
+ * ## `data-invalid`, for a control ARIA will not let say it
+ *
+ * ARIA 1.2 does not support `aria-invalid` on the button role, and a choice
+ * made in a picker is changed through a button — the "Change" control beside a
+ * chosen record. Such a control carries `data-invalid="true"` instead, is
+ * described by the refusal, and the refusal is its own `role="alert"`. The
+ * query matches either marker, in document order, so the cursor still reaches
+ * the thing to fix without an ARIA attribute the role does not allow.
+ *
+ * ## Never stealing the cursor from where the operator has gone
+ *
+ * The focus happens a frame after the refusal, and in that frame the operator
+ * may already have moved on — clicked into another field and started typing.
+ * Moving the cursor then drops their keystrokes into the refused field. So the
+ * element focused at the refusal is noted, and the frame focuses the first
+ * invalid control ONLY if focus is still there, or has fallen to the document
+ * body (a submit button that was disabled while the write ran drops it there).
+ * Anywhere else is the operator's own choice, and it is left alone.
+ *
  * ## Revealing before focusing
  *
  * Focusing an element inside a closed `<details>` scrolls nowhere and announces
@@ -51,7 +70,7 @@ import type { ActionState } from './action-result';
  * the query is repeated on the next frame against whatever is there then.
  */
 
-const INVALID = '[aria-invalid="true"]';
+const INVALID = '[aria-invalid="true"], [data-invalid="true"]';
 
 function openEnclosingDetails(element: Element): void {
   let node: Element | null = element.parentElement;
@@ -126,7 +145,11 @@ export function useFocusFirstInvalid(
       if (section !== undefined) reveal.current?.(section);
     }
 
+    // Where the cursor was when the refusal arrived — normally the submit.
+    const atRefusal = document.activeElement;
     const frame = window.requestAnimationFrame(() => {
+      const now = document.activeElement;
+      if (now !== null && now !== atRefusal && now !== document.body) return;
       const live = formRef.current?.querySelector<HTMLElement>(INVALID);
       if (!live) return;
       openEnclosingDetails(live);

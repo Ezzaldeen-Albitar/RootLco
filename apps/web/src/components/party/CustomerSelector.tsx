@@ -267,11 +267,19 @@ export function CustomerSelector({
    */
   const changeRef = useRef<HTMLButtonElement | null>(null);
   const focusChosen = useRef(false);
+  /*
+   * The flag answers ONE commit — the one the press produced. A caller that
+   * refuses the choice keeps the value null, so an effect keyed on the value
+   * alone never ran and the flag outlived the press: a customer the caller set
+   * later (a walk-in handed over) then pulled the cursor away from wherever the
+   * operator had gone (QA round three). `SearchPicker` follows the same rule.
+   */
+  const [pressed, setPressed] = useState(0);
   useEffect(() => {
-    if (!focusChosen.current || value === null) return;
+    if (!focusChosen.current) return;
     focusChosen.current = false;
-    changeRef.current?.focus();
-  }, [value]);
+    if (value !== null) changeRef.current?.focus();
+  }, [value, pressed]);
 
   /*
    * What is asked for, or `null` for "nothing yet".
@@ -321,6 +329,7 @@ export function CustomerSelector({
 
   const choose = (hit: CustomerSearchHit) => {
     focusChosen.current = true;
+    setPressed((count) => count + 1);
     onChange(toSelectedCustomer(hit));
     // Collapse the list. Leaving it open invites a second click that silently
     // replaces the choice the operator just made. Clearing the draft is what
@@ -354,7 +363,12 @@ export function CustomerSelector({
             ref={changeRef}
             type="button"
             onClick={clear}
-            aria-invalid={error ? true : undefined}
+            // Not `aria-invalid`: ARIA 1.2 does not support it on the button
+            // role. The control is DESCRIBED by the refusal, which is itself a
+            // `role="alert"`; `data-invalid` is the non-ARIA marker
+            // `useFocusFirstInvalid` also finds, so a refused submit still
+            // brings the cursor here. `SearchPicker` does the same.
+            data-invalid={error ? 'true' : undefined}
             aria-describedby={
               [chosenId, error ? errorId : undefined, describedBy].filter(Boolean).join(' ') ||
               undefined

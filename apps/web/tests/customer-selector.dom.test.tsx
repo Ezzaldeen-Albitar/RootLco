@@ -510,10 +510,133 @@ describe('CustomerPicker', () => {
     rerender(<PickerHarness error="This customer cannot pay this invoice." />);
 
     const change = screen.getByRole('button', { name: en['customerSelector.change'] });
-    expect(change).toHaveAttribute('aria-invalid', 'true');
+    // ARIA 1.2 does not support aria-invalid on a button, so the refusal is
+    // associated rather than asserted: see `expectRefusalAssociated`.
+    expectRefusalAssociated(change, 'This customer cannot pay this invoice.');
     expect(change).toHaveClass('border-error');
     expect(change).toHaveAccessibleDescription(
       expect.stringContaining('This customer cannot pay this invoice.')
+    );
+  });
+});
+
+/**
+ * How a refused CHOICE is marked (QA round three).
+ *
+ * The control that changes a choice is a button, and ARIA 1.2 does not support
+ * `aria-invalid` on the button role. The refusal is instead reached through
+ * the button's own description, and the sentence is a live `alert`;
+ * `data-invalid` is the non-ARIA marker that brings the cursor back to it.
+ */
+function expectRefusalAssociated(change: HTMLElement, sentence: string) {
+  expect(change).not.toHaveAttribute('aria-invalid');
+  expect(change).toHaveAttribute('data-invalid', 'true');
+  const ids = (change.getAttribute('aria-describedby') ?? '').split(' ').filter(Boolean);
+  const described = ids
+    .map((id) => document.getElementById(id))
+    .find((element) => element?.textContent?.includes(sentence));
+  expect(described).toBeTruthy();
+  expect(described?.closest('[role="alert"]')).not.toBeNull();
+}
+
+describe('a choice the caller REFUSES leaves no cursor move waiting (QA round three)', () => {
+  /*
+   * The press asks for the cursor to follow the choice to its Change control.
+   * A caller may refuse the choice and keep nothing chosen. That request must
+   * end with the press: a record the caller sets LATER — handed over by the
+   * screen, not chosen here — must not pull the cursor from where the operator
+   * has gone since.
+   */
+  function Refusing({ selector }: { readonly selector: boolean }) {
+    const [value, setValue] = useState<SelectedCustomer | ChosenCustomer | null>(null);
+    const [candidate, setCandidate] = useState<SelectedCustomer | ChosenCustomer | null>(null);
+    const refuse = (next: SelectedCustomer | ChosenCustomer | null) => {
+      if (next !== null) setCandidate(next);
+      else setValue(null);
+    };
+    return (
+      <>
+        {selector ? (
+          <CustomerSelector
+            locale="en"
+            messages={en}
+            name="partnerId"
+            labelKey="vehicles.ownership.newOwner"
+            value={value as SelectedCustomer | null}
+            onChange={refuse}
+          />
+        ) : (
+          <CustomerPicker
+            messages={en}
+            locale="en"
+            label="Paying customer"
+            value={value as ChosenCustomer | null}
+            onChange={refuse}
+            canSearch
+            unavailableId="picker-unavailable"
+          />
+        )}
+        <button type="button" disabled={candidate === null} onClick={() => setValue(candidate)}>
+          hand the record over
+        </button>
+      </>
+    );
+  }
+
+  it.each([
+    ['SearchPicker', false],
+    ['CustomerSelector', true],
+  ] as const)(
+    '%s: a refused choice, then a record the caller sets, moves nobody',
+    async (_name, selector) => {
+      searchCustomerDirectory.mockResolvedValue(page([HIT]));
+      const user = userEvent.setup();
+      renderLtr(<Refusing selector={selector} />);
+      if (selector) await searchFor('Layla');
+      else await user.type(screen.getByLabelText(/^Paying customer/), 'Layla');
+      await user.click(await screen.findByRole('button', { name: /Layla Haddad/ }));
+
+      // Refused: nothing is chosen, so there is no Change control to move to.
+      expect(screen.queryByRole('button', { name: en['customerSelector.change'] })).toBeNull();
+
+      const handOver = screen.getByRole('button', { name: 'hand the record over' });
+      await waitFor(() => expect(handOver).toBeEnabled());
+      await user.click(handOver);
+      const change = await screen.findByRole('button', { name: en['customerSelector.change'] });
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      expect(change).not.toHaveFocus();
+      expect(handOver).toHaveFocus();
+    }
+  );
+});
+
+describe('CustomerSelector marks a refused choice the way ARIA allows', () => {
+  function Chosen({ error }: { readonly error?: string }) {
+    const [value, setValue] = useState<SelectedCustomer | null>(null);
+    return (
+      <CustomerSelector
+        locale="en"
+        messages={en}
+        name="partnerId"
+        labelKey="vehicles.ownership.newOwner"
+        value={value}
+        onChange={setValue}
+        error={error}
+      />
+    );
+  }
+
+  it('describes the Change control by the refusal, an alert, with no aria-invalid', async () => {
+    const { rerender } = renderLtr(<Chosen />);
+    const user = await searchFor('Layla');
+    await user.click(await screen.findByRole('button', { name: /Layla Haddad/ }));
+    const change = await screen.findByRole('button', { name: en['customerSelector.change'] });
+    expect(change).not.toHaveAttribute('data-invalid');
+
+    rerender(<Chosen error="This customer cannot own this vehicle." />);
+    expectRefusalAssociated(change, 'This customer cannot own this vehicle.');
+    expect(change).toHaveAccessibleDescription(
+      expect.stringContaining('This customer cannot own this vehicle.')
     );
   });
 });
