@@ -37,8 +37,8 @@
  *   9. **No grid the rules above cannot read.** Rules 7 and 8 read the grid's
  *      literal attributes, so a `{...props}` spread, `createElement(DataGrid,
  *      …)`, an alias, a re-export or a dynamic import of the grid module is
- *      refused everywhere except the shared wrapper path (`GRID_WRAPPER_PATHS`,
- *      reserved for OperationalGrid).
+ *      refused everywhere except the shared wrapper (`GRID_WRAPPER_PATHS`, an exact
+ *      allow-list: `OperationalGrid.tsx` or the `OperationalGrid/` directory).
  *
  * Usage: node scripts/check-api-boundary.mjs [--json]
  * Exit codes: 0 clean · 1 a violation · 2 the check could not run.
@@ -230,11 +230,25 @@ export const COMPONENT_LIBRARY_RULES = [
  * place that spreads its caller's props onto the grid. Everywhere else the
  * grid's props must be literal attributes, or rules 7 and 8 read nothing.
  */
-export const GRID_WRAPPER_PATHS = ['src/components/data/OperationalGrid'];
+export const GRID_WRAPPER_PATHS = [
+  'src/components/data/OperationalGrid.tsx',
+  'src/components/data/OperationalGrid/',
+];
+
+/**
+ * An exact allow-list: an entry ending in `/` admits that directory, any other
+ * entry admits that one file. A bare prefix would admit a sibling that merely
+ * shares the name (`OperationalGridAnything.tsx`).
+ */
+export function matchesAllowList(relPath, entries) {
+  const normalised = relPath.split(sep).join('/');
+  return entries.some((entry) =>
+    entry.endsWith('/') ? normalised.startsWith(entry) : normalised === entry
+  );
+}
 
 function isGridWrapper(relPath) {
-  const normalised = relPath.split(sep).join('/');
-  return GRID_WRAPPER_PATHS.some((prefix) => normalised.startsWith(prefix));
+  return matchesAllowList(relPath, GRID_WRAPPER_PATHS);
 }
 
 function inTypePosition(node) {

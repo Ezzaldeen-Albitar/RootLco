@@ -146,6 +146,13 @@ describe('the theme gate can still fail', () => {
         "const TONE = { quiet: 'text-top' };\nexport const P = () => <p className={TONE.quiet} />;"
       )
     ).toEqual(['text-top']);
+    // A class map that shares its name with an sx const in ANOTHER scope is
+    // still a class map: style objects resolve by scope, not by name alone.
+    expect(
+      utilities(
+        "export function P() { const tone = { quiet: 'text-top' }; return <p className={tone.quiet} />; }\nexport function Q() { const tone = { boxSizing: 'border-box' }; return <div sx={tone} />; }"
+      )
+    ).toEqual(['text-top']);
     // A class position inside a style object is read again.
     expect(
       utilities(

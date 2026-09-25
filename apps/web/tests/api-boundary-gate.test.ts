@@ -214,6 +214,17 @@ describe('the component-library boundary (ADR-022)', () => {
     expect(rulesOf(wrapper, 'src/features/x/Grid.tsx')).toContain('grid-indirect-render');
   });
 
+  it('exempts only the exact wrapper file and directory, never a name-sharing sibling', () => {
+    const wrapper = `${GRID} export const G = (props: object) => <DataGrid rowCount={-1} paginationMode="server" {...props} />;`;
+    for (const sibling of [
+      'src/components/data/OperationalGridAnything.tsx',
+      'src/components/data/OperationalGrid.test.tsx',
+      'src/components/data/OperationalGridX/index.tsx',
+    ]) {
+      expect(rulesOf(wrapper, sibling), sibling).toContain('grid-indirect-render');
+    }
+  });
+
   it('does not treat a type-only reference to the grid as a render', () => {
     const typed = `import type { ComponentProps } from 'react'; ${GRID} export type P = ComponentProps<typeof DataGrid>; export const G = () => <DataGrid rows={[]} columns={[]} rowCount={-1} paginationMode="server" />;`;
     expect(rulesOf(typed)).toEqual([]);

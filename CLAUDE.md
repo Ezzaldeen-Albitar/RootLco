@@ -174,10 +174,17 @@ and must be registered in `supabase/config.toml`, or it is never applied.
   `modularCssLayers`, and the two must agree.
 - `sx`, `styled()` and theme objects take tokens only (`var(--…)` or the generated module),
   logical properties only (`marginInlineStart`, `insetInlineEnd`, never `ml`/`left`), and no
-  raw length, duration or colour; `validate:web-tokens` enforces this, including a style object
-  passed by reference.
+  raw length, duration or colour. `validate:web-tokens` reads every style position (`sx`/`css`
+  attributes, `GlobalStyles` `styles`, an `sx` value, each `styleOverrides` slot, the arguments
+  of `createTheme()`, `extendTheme()`, `css()`, `keyframes()` and `styled(X)()`, and inside a
+  style object a spread or a selector key's value) and follows a reference there to its
+  same-file declaration by scope; one it cannot follow (an import, a parameter, a call) is a
+  finding outside `components/ui-foundation/` and the grid wrapper. A theme member a style
+  callback receives is a token. A value under a CSS-property key is checked when it is a
+  same-file `const`, and otherwise taken as a token without being read.
 - Shared RootLco wrappers over Material live in `apps/web/src/components/`: the foundation in
-  `components/ui-foundation/`, the operational grid at `components/data/OperationalGrid*`.
+  `components/ui-foundation/`, the operational grid at `components/data/OperationalGrid.tsx`
+  or `components/data/OperationalGrid/` (an exact allow-list, not a name prefix).
   Feature code uses the wrappers; only the wrapper spreads props onto the data grid.
 - No competing design system and no second utility framework. Base UI only where Material has
   no primitive. MUI X Pro or Premium packages and `@mui/x-license` are forbidden without a

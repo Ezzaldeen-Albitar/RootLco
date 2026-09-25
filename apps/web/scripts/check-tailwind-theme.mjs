@@ -41,7 +41,9 @@
  * The one context excluded is a STYLE OBJECT — an `sx`, `css` or `style`
  * attribute, a `createTheme()`/`styled()` argument, a `styleOverrides` value —
  * by the definition `check-design-tokens.mjs` exports (`styleObjectRoots`),
- * including a same-file `const` an `sx` names. A string there is a CSS value:
+ * including the same-file `const` a style position names (resolved by scope, so
+ * a class map in another function that shares its name is still scanned). A
+ * string there is a CSS value:
  * `boxSizing: 'border-box'` and `verticalAlign: 'text-top'` are keywords, not
  * utilities. A class-name position INSIDE one (`defaultProps: { className }`,
  * a `cn()` call) is scanned again. No exclusion list is widened for this, so
