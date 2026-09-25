@@ -323,7 +323,7 @@ and payments" report has a "Credit notes" <!-- reports.field.creditNotes --> col
 There is no ledger, no chart of accounts and no accounting module of any kind. Nothing beyond
 invoices, credit notes, receipts and allocations exists.
 
-## 6.2a The Credit notes screen — IMPLEMENTED (UI), and out of reach of a new organisation
+## 6.2a The Credit notes screen — IMPLEMENTED (UI)
 
 **Label** — **Credit notes** <!-- creditNotes.page.title --> (navigation: **Credit
 notes** <!-- nav.creditNotes --> ), described as "What has been credited back to a customer, and
@@ -335,18 +335,37 @@ Neither read answers without both.
 **Where** — its own navigation entry, at `/{language}/credit-notes`, and from **Open the credit
 note** <!-- inventory.returns.openCredit --> on a customer return that raised one (Part 5, §5.23.3).
 
-**Read this before looking for the screen.** `sal.credit.manage` is **not** in the set of
-permissions a new organisation's first administrator is given, and a permission nobody holds cannot
-be granted to anybody. So in a freshly provisioned organisation:
+**Who holds it, and who can raise a credit note.** By Owner decision, `sal.credit.manage` is in the
+set of permissions a new organisation's first administrator is given, beside `sal.finance.view`,
+which was already there. So in a freshly provisioned organisation:
 
-- the **Credit notes** entry is **not shown** in the navigation at all;
-- opening the address directly gives **"Credit notes — You do not have access. Your account does not
-  have permission for this. An administrator can grant it."**;
-- a customer return still raises a credit note, still says a second person must approve it, and
-  **there is nobody in the organisation who can be that person**.
+- the first administrator sees the **Credit notes** entry and the list opens;
+- the first administrator may **raise** (request) a credit note against an issued invoice in a
+  branch it is allowed to work in — a customer return of a counter-sale part raises one on its
+  behalf (Part 5, §5.23.3); no screen raises one directly from an invoice at this version;
+- the first administrator can **give both permissions to somebody else** — for example a finance
+  approver role, granted only for one branch — because an administrator may hand on a permission it
+  holds itself. Nobody else gains them automatically: a cashier or any other role holds them only if
+  an administrator maps them onto that role.
 
-Whether that permission joins the set is an Owner decision, and it has not been taken. Until it is,
-treat a counter-sale return as: the part comes back and the stock moves, the money does not.
+**The controls that still apply.** Holding the permission does not remove any of them:
+
+- **Branch.** Every credit-note action is limited to the branches the person's grant covers. A
+  person granted one branch cannot see or raise credit notes in another, and nobody can reach another
+  organisation's invoices at all.
+- **Second person.** A credit note is raised as **Waiting for a second person** and credits nothing.
+  The person who raised it can never approve it; a different person who also holds both permissions
+  must. Only then does the amount the customer owes go down.
+- **Audit.** Raising a credit note and approving one are each recorded in the organisation's audit
+  log.
+
+**An organisation created before this change** keeps the set it was given until the platform
+operator runs the administrator backfill for it. That run adds the permission only to an
+administrator role that is still the standard one; a role the organisation has changed for itself is
+left exactly as it is and named in the run's report, so that organisation decides for itself.
+Until then, in such an organisation the entry is hidden, the address answers **"Credit notes — You
+do not have access. Your account does not have permission for this. An administrator can grant
+it."**, and a counter-sale return moves the stock but not the money.
 
 **What the screen does, for somebody who does hold both permissions**
 
@@ -1287,4 +1306,18 @@ report-overview-en-answered.png, report-overview-ar.png, report-overview-ar-answ
 audit-log-en-answered.png, audit-log-ar.png, audit-log-ar-answered.png (all fourteen confirmed present on
 disk). No screenshot exists for the invoice or payment screens.
 No command, gate, build or test was run for this part.
+-->
+
+<!--
+REVISION 2026-09-25 — section 6.2a was re-read and rewritten on branch
+feature/owner-directive-credit-note-authority (cut from develop
+57d0a95d2c52763470e1552c60c4487ee4a12904), against
+apps/api/src/modules/iam/domain/bootstrap-roles.ts (sal.credit.manage now carried by the tenant
+administrator bundle), apps/api/src/app/api/v1/invoices/[invoiceId]/credit-notes/route.ts and
+apps/api/src/app/api/v1/credit-notes/** (every credit-note operation declares sal.credit.manage and
+sal.finance.view and is branch-scoped), supabase/migrations/20260724092000_sal_payments.sql
+(ck_credit_notes_approved_distinct: the approver must differ from the requester) and
+scripts/platform/backfill-tenant-administrator-bundle.mjs (customised administrator roles are
+skipped and reported). The approval step still has no screen at this version. Nothing here states
+that a check was run in a browser.
 -->
