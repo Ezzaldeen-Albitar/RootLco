@@ -12,6 +12,7 @@ import {
   renderLtr,
 } from './render';
 import {
+  discardAndSwitch,
   forgetRememberedBranch,
   heldBranch,
   stayOnBranch,
@@ -653,6 +654,48 @@ describe('a rule narrowed to a company is named, never typed', () => {
       );
       await stayOnBranch(user, await switchExpectingQuestion(user, 'first'));
       expect(heldBranch()).toBe(OTHER_BRANCH.id);
+    } finally {
+      forgetRememberedBranch();
+    }
+  });
+
+  it('a confirmed discard empties the whole rule, not just the service reference', async () => {
+    /*
+     * A price list is not addressed to the working branch, so nothing on the
+     * rule form follows a switch by itself. The question said the entries go;
+     * a discard that kept the amount and the priority would leave half a rule
+     * ready to be recorded under the next branch.
+     */
+    const user = userEvent.setup();
+    renderLtr(
+      inBranch(
+        <>
+          <BranchSwitch to={TEST_BRANCH.id} label="first" />
+          <BranchSwitch to={OTHER_BRANCH.id} label="second" />
+          <WorkingBranchProbe />
+          {detailFor({ canReadServices: false })}
+        </>,
+        { snapshot: branchSnapshot([TEST_BRANCH, OTHER_BRANCH]) }
+      )
+    );
+    await user.click(screen.getByRole('button', { name: 'first' }));
+    const form = await within(rulesRegion()).findByRole('form', {
+      name: EN['pricing.rule.heading'] as string,
+    });
+    const service = () => within(form).getByLabelText(labelled('pricing.picker.serviceReference'));
+    const amount = () => within(form).getByLabelText(labelled('pricing.rule.amount'));
+    const priority = () => within(form).getByLabelText(labelled('pricing.rule.priority'));
+    try {
+      await user.type(service(), SERVICE_ID);
+      await user.type(amount(), '12.5');
+      await user.type(priority(), '5');
+      await discardAndSwitch(user, await switchExpectingQuestion(user, 'second'));
+      await waitFor(() => expect(heldBranch()).toBe(OTHER_BRANCH.id));
+      await waitFor(() => expect(service()).toHaveValue(''));
+      expect((amount() as HTMLInputElement).value).toBe('');
+      expect(priority()).toHaveValue('');
+      await switchWithoutQuestion(user, 'first');
+      expect(recordPriceRule).not.toHaveBeenCalled();
     } finally {
       forgetRememberedBranch();
     }

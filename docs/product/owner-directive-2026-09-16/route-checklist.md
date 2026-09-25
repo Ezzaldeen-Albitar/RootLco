@@ -426,3 +426,17 @@ control — a button that cannot work for somebody whose session has ended. The 
 `table.status` still distinguishes the two, so the appointment calendar and the warranty list
 render the expired case themselves and leave the shared component untouched. A shared `expired`
 arm is the right home for it; both files belong to other work in flight.
+
+## Known limitations
+
+**A branch switch cannot cancel a read already in flight.** The screens read through Server
+Actions, and Next.js runs the Server Actions of one page one at a time. When the operator changes
+branch while a read for the previous branch is still out, the working context moves its version
+and aborts its signal at once, and the screens drop the superseded answer when it arrives — so
+the previous branch's rows are never shown under the new branch's name. What the switch cannot do
+is stop the request itself: the read for the new branch waits behind it, and on a slow connection
+the new branch's data arrives late. It is late, never wrong.
+
+Technical follow-up: move the branch-addressed reads from Server Actions to `fetch` route calls
+that take the working context's `AbortSignal`, so a switch cancels the request on the wire instead
+of discarding its answer.

@@ -996,3 +996,61 @@ describe('the unsaved-work guard stands down once a check is recorded', () => {
     expect(screen.queryByRole('alertdialog')).toBeNull();
   });
 });
+
+describe('a confirmed "Discard and change branch" empties the rework draft', () => {
+  /*
+   * The closure view is the work order's, and nothing on it is keyed on the
+   * branch. The discard question says the typed entries go; without a reset
+   * the rework draft — including the safety answer, a select seeded through its
+   * default — would stay on screen after the operator agreed to lose it.
+   */
+  it('empties the root cause, the corrective action and the safety answer', async () => {
+    readClosureEligibility.mockResolvedValue(
+      ok({ ...eligibility, eligible: false, blockers: [], alreadyTerminal: true })
+    );
+    const user = userEvent.setup();
+    renderLtr(
+      inBranch(
+        <>
+          <BranchSwitch to={TEST_BRANCH.id} label="use main" />
+          <BranchSwitch to={OTHER_BRANCH.id} label="use second" />
+          <WorkOrderClosureScreen
+            locale="en"
+            messages={en}
+            workOrderId={WORK_ORDER}
+            capabilities={everything}
+          />
+        </>,
+        { snapshot: branchSnapshot([TEST_BRANCH, OTHER_BRANCH]) }
+      )
+    );
+    await user.click(screen.getByRole('button', { name: 'use main' }));
+    await screen.findByText(t('quality.closure.openRework'));
+    const rootCause = () => screen.getByLabelText(new RegExp(`^${t('quality.closure.rootCause')}`));
+    const corrective = () =>
+      screen.getByLabelText(new RegExp(`^${t('quality.closure.correctiveAction')}`));
+    const safety = () =>
+      screen.getByLabelText(
+        new RegExp(`^${t('quality.closure.safetyCritical')}`)
+      ) as HTMLSelectElement;
+
+    await user.type(rootCause(), 'Caliper refitted out of true');
+    await user.type(corrective(), 'Refit and torque');
+    await user.selectOptions(safety(), 'yes');
+
+    await user.click(screen.getByRole('button', { name: 'use second' }));
+    const dialog = await screen.findByRole('alertdialog');
+    await user.click(
+      within(dialog).getByRole('button', { name: t('workingContext.discard.confirm') })
+    );
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
+
+    await waitFor(() => expect(rootCause()).toHaveValue(''));
+    expect(corrective()).toHaveValue('');
+    expect(safety().value).toBe('');
+    // Nothing is left to lose, so the next switch asks nothing.
+    await user.click(screen.getByRole('button', { name: 'use main' }));
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+    window.localStorage.clear();
+  });
+});

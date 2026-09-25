@@ -652,6 +652,73 @@ describe('the job picker and the working context', () => {
   });
 });
 
+describe('a confirmed "Discard and change branch" opens the draw forms empty', () => {
+  /*
+   * The typed item reference is what makes the issue form unsaved work, and the
+   * quantity beside it is part of the same draw. Neither lives in a picker that
+   * forgets its choice on a switch, so without a reset the form would keep the
+   * previous branch's draw on screen, ready to send, after the operator had
+   * answered that it could go.
+   */
+  function renderInTwo() {
+    renderInLtr(
+      inBranch(
+        <>
+          <BranchSwitch to={TEST_BRANCH.id} label="first" />
+          <BranchSwitch to={OTHER_BRANCH.id} label="second" />
+          <WorkingBranchProbe />
+          <PartsScreen
+            locale="en"
+            messages={en}
+            workOrderId={WORK_ORDER_ID}
+            workOrder={workOrder as never}
+            workOrderRefused={false}
+            canOperate={true}
+            canReadWorkOrder={true}
+            canReadBranches={false}
+            currentUserId={USER_ID}
+            canRequestMaterial={false}
+            canApproveMaterial={false}
+            canDecideMaterialException={false}
+          />
+        </>,
+        { snapshot: branchSnapshot([TEST_BRANCH, OTHER_BRANCH]) }
+      )
+    );
+  }
+
+  it('empties the typed item reference and the quantity once the operator confirms', async () => {
+    const user = userEvent.setup();
+    renderInTwo();
+    await user.click(screen.getByRole('button', { name: 'first' }));
+    await user.click(
+      await screen.findByRole('button', { name: EN['inventory.issue.open'] as string })
+    );
+    const reference = async () =>
+      within(await issueForm()).getByLabelText(labelled('inventory.itemPicker.reference'));
+    const quantity = async () =>
+      within(await issueForm()).getByLabelText(labelled('inventory.issue.quantity'));
+    try {
+      await user.type(await reference(), ITEM_ID);
+      await user.type(await quantity(), '3');
+
+      await stayOnBranch(user, await switchExpectingQuestion(user, 'second'));
+      expect(heldBranch()).toBe(TEST_BRANCH.id);
+      expect(await reference()).toHaveValue(ITEM_ID);
+
+      await discardAndSwitch(user, await switchExpectingQuestion(user, 'second'));
+      await waitFor(() => expect(heldBranch()).toBe(OTHER_BRANCH.id));
+      await waitFor(async () => expect(await reference()).toHaveValue(''));
+      expect(await quantity()).toHaveValue('');
+      // Nothing is left to lose, so the next switch asks nothing.
+      await switchWithoutQuestion(user, 'first');
+      expect(createIssue).not.toHaveBeenCalled();
+    } finally {
+      forgetRememberedBranch();
+    }
+  });
+});
+
 describe('FE-011 — issuing', () => {
   it('offers neither issuing nor returning without inv.stock.operate', async () => {
     renderScreen({ canOperate: false });

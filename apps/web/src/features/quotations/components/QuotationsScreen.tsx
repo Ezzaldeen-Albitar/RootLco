@@ -434,7 +434,6 @@ function QuotationBuilder({
    */
   const [payer, setPayer] = useState<ChosenCustomer | null>(initialPayer);
   const [payerReference, setPayerReference] = useState(initialPayer?.id ?? '');
-  useUnsavedGuard(!canReadCustomers && payerReference.trim() !== (initialPayer?.id ?? ''));
   const [customerClass, setCustomerClass] = useState('');
   const [lines, setLines] = useState<readonly DraftLine[]>([newLine()]);
   // Question f: the cursor goes to the first thing to fix, and a complaint is
@@ -451,6 +450,19 @@ function QuotationBuilder({
   });
   const [busy, setBusy] = useState(false);
   const [outcome, setOutcome] = useState<ActionState | null>(null);
+  /*
+   * A confirmed "Discard and change branch" opens the builder again as it first
+   * opened: the work order's own customer as payer and one empty line. The
+   * quotation is the work order's, nothing here is keyed on the branch, and the
+   * question told the operator what was typed would go.
+   */
+  useUnsavedGuard(!canReadCustomers && payerReference.trim() !== (initialPayer?.id ?? ''), () => {
+    setPayer(initialPayer);
+    setPayerReference(initialPayer?.id ?? '');
+    setCustomerClass('');
+    setLines([newLine()]);
+    setOutcome(null);
+  });
 
   const errorFor = (name: string): string | undefined => {
     const key = localErrorKey(name) ?? outcome?.fieldErrors?.[name];

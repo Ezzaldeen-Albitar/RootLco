@@ -596,6 +596,8 @@ function RecordRuleForm({
   const [customerClass, setCustomerClass] = useState('');
   const [taxClassId, setTaxClassId] = useState('');
   const [priority, setPriority] = useState('');
+  // Confirmed discards: part of the amount box's key (see the box).
+  const [discards, setDiscards] = useState(0);
   // Question f: the cursor goes to the first thing to fix, and a complaint is
   // withdrawn once its field no longer holds the refused value (route sweep B3).
   const {
@@ -702,9 +704,26 @@ function RecordRuleForm({
           onChange={setServiceId}
           error={errorFor('serviceId')}
           countsAsUnsaved
+          // A price list is not addressed to the working branch, so nothing
+          // here follows a switch on its own: a confirmed discard empties the
+          // whole rule, which is what the question said would be lost.
+          onDiscard={() => {
+            setServiceId('');
+            setAmount('');
+            setAmountValid(true);
+            setPair(EMPTY_PAIR);
+            setCustomerClass('');
+            setTaxClassId('');
+            setPriority('');
+            setOutcome(null);
+            setDiscards((count) => count + 1);
+          }}
         />
       </div>
       <MoneyField
+        // The amount box keeps its own text once mounted, so only a remount
+        // shows it emptied after a discard.
+        key={`amount-${discards}`}
         messages={messages}
         label={translate(messages, 'pricing.rule.amount')}
         currency={priceList.currency}

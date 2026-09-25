@@ -69,18 +69,40 @@ interface SelectedVehicle {
   readonly label: string;
 }
 
-export function AppointmentBookingScreen({
-  locale,
-  messages,
-  types,
-  channels,
-}: {
+interface BookingProps {
   readonly locale: Locale;
   readonly messages: Messages;
   /** `apt.catalogue-appointment-type-list`, read once on the server. */
   readonly types: IntakeCatalogueResult;
   /** `apt.catalogue-source-channel-list`, read once on the server. */
   readonly channels: IntakeCatalogueResult;
+}
+
+/**
+ * The booking form, opened again empty after a confirmed "Discard and change
+ * branch".
+ *
+ * The form holds its customer, vehicle, type, channel and window itself, and the
+ * selects among them are seeded through `defaultValue`, so emptying the state
+ * one setter at a time would still leave a discarded choice showing. A new
+ * mount under a new key is the one reset that reaches every control, and it is
+ * made only when the operator answered the question that promised it.
+ */
+export function AppointmentBookingScreen(props: BookingProps) {
+  const [opened, setOpened] = useState(0);
+  const reopen = useCallback(() => setOpened((count) => count + 1), []);
+  return <BookingForm key={opened} {...props} onDiscard={reopen} />;
+}
+
+function BookingForm({
+  locale,
+  messages,
+  types,
+  channels,
+  onDiscard,
+}: BookingProps & {
+  /** Called when the operator confirms a branch switch that discards this form. */
+  readonly onDiscard: () => void;
 }) {
   const router = useRouter();
   const [companyId, setCompanyId] = useState('');
@@ -114,7 +136,7 @@ export function AppointmentBookingScreen({
     channelId.length > 0 ||
     windowDraft.from.length > 0 ||
     windowDraft.to.length > 0;
-  useUnsavedGuard(dirty);
+  useUnsavedGuard(dirty, onDiscard);
 
   // Booking is impossible without a type to book: the id is a mandatory,
   // catalogued reference. An empty catalogue disables the form honestly below.

@@ -220,6 +220,7 @@ export function EmployeesScreen({
             setCreating(false);
             reload(branch);
           }}
+          onDiscard={() => setCreating(false)}
         />
       ) : null}
 
@@ -283,18 +284,23 @@ function CreateEmployeeDialog({
   branch,
   loginAccounts,
   onClose,
+  onDiscard,
 }: {
   readonly messages: Messages;
   readonly branch: BranchView;
   readonly loginAccounts: readonly LoginAccountOption[];
   readonly onClose: () => void;
+  /** Closes the dialog without a re-read, when a branch switch discards it. */
+  readonly onDiscard: () => void;
 }) {
   const [state, formAction] = useActionState<ActionState, FormData>(createEmployeeAction, IDLE);
   const [draft, setDraft] = useState<Record<string, string>>({});
   const t = (key: string) => translate(messages, key as keyof Messages);
   // Typed and not yet created is work a branch switch would throw away with
   // the dialog, so the switch asks first. A created employee is saved work.
-  useUnsavedGuard(hasTyped(draft) && state.status !== 'success');
+  // A confirmed discard closes the dialog itself: following the header closes
+  // it only for a branch in this register, and "all my branches" is not one.
+  useUnsavedGuard(hasTyped(draft) && state.status !== 'success', onDiscard);
   // Question f: the cursor goes to the refused field, and its complaint goes
   // once the operator edits it (route sweep B3).
   const {

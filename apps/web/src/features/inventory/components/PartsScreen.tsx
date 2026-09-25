@@ -18,6 +18,7 @@ import {
   useWorkOrderSearchScope,
 } from '@/features/work-orders/components/WorkOrderPicker';
 import { useBranchTarget } from '@/features/working-context/use-branch-target';
+import { useWorkingContext } from '@/features/working-context/WorkingContextProvider';
 import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic, translateWithValues } from '@/i18n/get-messages';
@@ -183,6 +184,15 @@ export function PartsScreen({
   readonly canDecideMaterialException: boolean;
 }) {
   const [epoch, setEpoch] = useState(0);
+  /*
+   * The working context's version, part of both draw forms' keys. The issue
+   * form seeds its fallback branch from the working branch, and both forms hold
+   * a typed quantity and references the picker inside them does not: kept
+   * across a switch, a confirmed "Discard and change branch" would leave the
+   * previous branch's draw on screen, ready to send. A new mount per version
+   * opens them empty and addressed to the branch now named.
+   */
+  const { version } = useWorkingContext();
   const [notice, setNotice] = useState<WriteNotice | null>(null);
   const [drawing, setDrawing] = useState<'reserve' | 'issue' | null>(null);
   const [prefill, setPrefill] = useState<IssuePrefill | null>(null);
@@ -367,6 +377,7 @@ export function PartsScreen({
 
       {canOperate && drawing === 'reserve' ? (
         <ReserveForm
+          key={`reserve-${version}`}
           messages={messages}
           locale={locale}
           workOrderId={workOrderId}
@@ -387,7 +398,7 @@ export function PartsScreen({
 
       {canOperate && drawing === 'issue' ? (
         <IssueForm
-          key={prefill ? `${prefill.requiredPartRef}` : 'blank'}
+          key={`${prefill ? prefill.requiredPartRef : 'blank'}:${version}`}
           locale={locale}
           messages={messages}
           workOrderId={workOrderId}

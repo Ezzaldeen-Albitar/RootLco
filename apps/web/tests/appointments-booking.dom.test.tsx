@@ -439,3 +439,54 @@ describe('a booking cannot be addressed to "all my branches"', () => {
     );
   });
 });
+
+describe('a confirmed "Discard and change branch" opens the booking empty', () => {
+  /*
+   * The form follows the header for its branch, but the customer, the vehicle,
+   * the type and the window are its own. Kept across a confirmed discard, they
+   * would book the previous branch's appointment into the next one.
+   */
+  const second = { ...TEST_BRANCH, id: '88888888-8888-4888-8888-888888888888', name: 'Second' };
+
+  function renderInTwo() {
+    return renderLtr(
+      inBranch(
+        <>
+          <BranchSwitch to={TEST_BRANCH.id} label="first" />
+          <BranchSwitch to={second.id} label="second" />
+          <AppointmentBookingScreen locale="en" messages={en} types={TYPES} channels={CHANNELS} />
+        </>,
+        { snapshot: branchSnapshot([TEST_BRANCH, second]) }
+      )
+    );
+  }
+
+  it('empties the customer, the vehicle, the type and the window once the operator confirms', async () => {
+    const user = userEvent.setup();
+    renderInTwo();
+    await user.click(screen.getByRole('button', { name: 'first' }));
+    await fillForm(user);
+    const type = () =>
+      screen.getByLabelText(new RegExp(en['appointments.book.type'])) as HTMLSelectElement;
+    const from = () =>
+      screen.getByLabelText(new RegExp(en['appointments.window.from'])) as HTMLInputElement;
+    expect(type().value).toBe(TYPES.options[0]!.id);
+
+    await user.click(screen.getByRole('button', { name: 'second' }));
+    const dialog = await screen.findByRole('alertdialog');
+    await user.click(
+      within(dialog).getByRole('button', { name: en['workingContext.discard.confirm'] })
+    );
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
+
+    await waitFor(() => expect(type().value).toBe(''));
+    expect(from().value).toBe('');
+    expect(screen.queryByRole('button', { name: /V-0100/ })).toBeNull();
+    expect(screen.getByText(en['appointments.book.vehicleAfterCustomer'])).toBeVisible();
+    // Nothing is left to lose, so the next switch asks nothing.
+    await user.click(screen.getByRole('button', { name: 'first' }));
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+    expect(createAppointment).not.toHaveBeenCalled();
+    window.localStorage.clear();
+  });
+});

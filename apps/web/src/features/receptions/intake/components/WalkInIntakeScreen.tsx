@@ -136,7 +136,14 @@ export function WalkInIntakeScreen({
    * that is already stored, and a guard that fires on a finished screen teaches
    * them to dismiss the question without reading it.
    */
-  useUnsavedGuard(step !== 'done' && (customer !== null || vehicle !== null));
+  useUnsavedGuard(step !== 'done' && (customer !== null || vehicle !== null), () => {
+    // A confirmed discard starts the wizard again. The customer and the vehicle
+    // are the tenant's, not the branch's, so nothing here follows a switch on
+    // its own — and the question said the pair would go.
+    setCustomer(null);
+    setVehicle(null);
+    setLinkOutcome(null);
+  });
 
   const chooseVehicle = (chosen: ChosenVehicle) => {
     setVehicle(chosen);

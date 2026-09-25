@@ -682,7 +682,6 @@ function CreateForm({
    */
   const [payer, setPayer] = useState<ChosenCustomer | null>(null);
   const [payerReference, setPayerReference] = useState('');
-  useUnsavedGuard(!canReadCustomers && payerReference.trim().length > 0);
   // ONE transport key per opened form, kept across a refusal or a lost answer:
   // pressing again replays the stored answer instead of asking for a second
   // invoice (which the server would refuse as a conflict).
@@ -690,6 +689,14 @@ function CreateForm({
   const [errors, setErrors] = useState<Readonly<Record<string, string>>>({});
   const [busy, setBusy] = useState(false);
   const [outcome, setOutcome] = useState<ActionState | null>(null);
+  // A confirmed "Discard and change branch" empties the box: the form is the
+  // work order's, nothing here is keyed on the branch, and the question told
+  // the operator the reference would go.
+  useUnsavedGuard(!canReadCustomers && payerReference.trim().length > 0, () => {
+    setPayerReference('');
+    setErrors({});
+    setOutcome(null);
+  });
   // One per refusal the server files under a field, so the cursor moves there once.
   const [attempt, setAttempt] = useState(0);
   const formRef = useFocusFirstInvalid({

@@ -5,7 +5,17 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import en from '../src/i18n/messages/en.json';
 import ar from '../src/i18n/messages/ar.json';
-import { renderLtr, renderRtl } from './render';
+import {
+  BranchSwitch,
+  OTHER_BRANCH,
+  TEST_BRANCH,
+  WorkingBranchProbe,
+  branchSnapshot,
+  inBranch,
+  renderLtr,
+  renderRtl,
+} from './render';
+import { forgetRememberedBranch, heldBranch, switchWithoutQuestion } from './support/branch-switch';
 import {
   CREATABLE_LIFECYCLE_STATUSES,
   MAX_COMPANY_NAME,
@@ -712,5 +722,37 @@ describe('the field errors a real 422 carries reach the CRM controls it names', 
       expect(message.length).toBeGreaterThan(0);
     }
     expect(new Set(messages).size).toBe(messages.length);
+  });
+});
+
+describe('a branch switch neither asks about nor empties a customer being created', () => {
+  /*
+   * A customer is the tenant's, not a branch's: the create request names no
+   * branch, and nothing typed here is re-addressed by a switch. So the form
+   * does not declare unsaved work — the question "Changing branch now will lose
+   * them" would be untrue here — and a switch leaves every entry where it was.
+   */
+  it('switches without a question and keeps what was typed', async () => {
+    const user = userEvent.setup();
+    renderLtr(
+      inBranch(
+        <>
+          <BranchSwitch to={TEST_BRANCH.id} label="first" />
+          <BranchSwitch to={OTHER_BRANCH.id} label="second" />
+          <WorkingBranchProbe />
+          <CustomerCreateScreen locale="en" messages={en} kind="individual" />
+        </>,
+        { snapshot: branchSnapshot([TEST_BRANCH, OTHER_BRANCH]) }
+      )
+    );
+    try {
+      await user.click(screen.getByRole('button', { name: 'first' }));
+      await user.type(screen.getByLabelText(/Given name/), 'Layla');
+      await switchWithoutQuestion(user, 'second');
+      await waitFor(() => expect(heldBranch()).toBe(OTHER_BRANCH.id));
+      expect(screen.getByLabelText(/Given name/)).toHaveValue('Layla');
+    } finally {
+      forgetRememberedBranch();
+    }
   });
 });

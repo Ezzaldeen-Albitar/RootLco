@@ -349,7 +349,13 @@ export function RecordForm({
    * — so the work is still unsaved and the question still has to be asked.
    */
   const [dirty, setDirty] = useState(false);
-  useUnsavedGuard(dirty);
+  /*
+   * Counts confirmed discards, and is part of the key of every control seeded
+   * through `defaultValue` below. Emptying `values` alone would leave a
+   * select or a checkbox showing the discarded choice, because an uncontrolled
+   * control is only re-seeded by a remount.
+   */
+  const [discards, setDiscards] = useState(0);
   // Per-instance, because the vehicle profile renders more than one of these on
   // one screen. The id used to be `record-${field.name}`, which is stable and
   // therefore duplicated across instances — two `id="record-effectiveDate"`
@@ -383,6 +389,19 @@ export function RecordForm({
    * each branch remembering.
    */
   const corrections = useClearOnCorrect(state);
+
+  /*
+   * A confirmed "Discard and change branch" empties the form. The question told
+   * the operator their entries would go, so they go: back to the values the form
+   * opened with, with no complaint left standing about a value no longer shown.
+   * A `prelude` is the caller's own state and is not counted as unsaved here.
+   */
+  useUnsavedGuard(dirty, () => {
+    setValues(seedValues(fields, initialValues));
+    setDirty(false);
+    setDiscards((count) => count + 1);
+    for (const field of fields) corrections.noteEdited(field.name);
+  });
 
   /*
    * The ref goes on the `<form>`. The hook does nothing until an attempt
@@ -460,7 +479,7 @@ export function RecordForm({
                  * changed blind; this is that follow-up, now with a test.
                  */
                 <select
-                  key={`${field.name}-${state.attempt ?? 0}`}
+                  key={`${field.name}-${state.attempt ?? 0}-${discards}`}
                   id={id}
                   name={field.name}
                   defaultValue={values[field.name] ?? ''}
@@ -508,7 +527,7 @@ export function RecordForm({
                    * Save again — having changed nothing they can see — sends no
                    * `highVoltageWarning` at all, which the adapter maps to false.
                    */
-                  key={`${field.name}-${state.attempt ?? 0}`}
+                  key={`${field.name}-${state.attempt ?? 0}-${discards}`}
                   id={id}
                   name={field.name}
                   type="checkbox"
