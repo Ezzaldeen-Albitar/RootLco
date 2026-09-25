@@ -10,6 +10,7 @@ import {
 } from '@/lib/api/read-operation';
 import type {
   CounterSaleCreateBody,
+  CreditNoteCreateBody,
   InvoiceCancelBody,
   InvoiceCreateBody,
 } from '@/lib/contracts/billing-contract';
@@ -18,7 +19,6 @@ import type {
   CreatedInvoice,
   CreditNote,
   CreditNoteEcho,
-  CreditNoteRequestBody,
   CreditNoteState,
   Invoice,
   InvoiceDetail,
@@ -283,7 +283,7 @@ export async function readCreditNote(creditNoteId: string): Promise<ReadState<Cr
  */
 export async function requestCreditNote(
   invoiceId: string,
-  body: CreditNoteRequestBody,
+  body: CreditNoteCreateBody,
   idempotencyKey: string,
   attempt = 1
 ): Promise<CreateOutcome<CreditNoteEcho>> {

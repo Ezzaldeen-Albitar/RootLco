@@ -296,24 +296,11 @@ export interface CreditNote {
   readonly recordVersion: number;
 }
 
-/**
- * `sal.credit-note-create` — `POST /invoices/{invoiceId}/credit-notes`.
- *
- * An amount and a reason, and nothing else a screen sends: the currency is the
- * invoice's (the route only checks one if it is given), the requester is the
- * session, and the note is born pending. The amount is a decimal string of at
- * most fourteen integer digits and four decimals, strictly positive; the server
- * bounds it by the invoice's open receivable.
- *
- * Declared here rather than in `lib/contracts/billing-contract.ts`: that file is
- * a P1-30 payload-parity mirror, and `sal.credit-note-create` is still recorded
- * there as a mirror a later phase owes. Moving the shape into the mirror retires
- * that record, which is a change to the gate itself.
+/*
+ * The request body of `sal.credit-note-create` is `CreditNoteCreateBody` in
+ * `lib/contracts/billing-contract.ts`, the payload-parity mirror the P1-30 gate
+ * holds against the route's zod schema.
  */
-export interface CreditNoteRequestBody {
-  readonly amount: string;
-  readonly reason: string;
-}
 
 /** The echo of `sal.credit-note-create` and `sal.credit-note-approve` — `CreditNoteResult`. */
 export interface CreditNoteEcho {
