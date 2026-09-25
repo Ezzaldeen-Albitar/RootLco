@@ -6,6 +6,7 @@ import { INITIAL_REQUEST, withPage, type TableRequest } from '@/components/data-
 import { useCursorPages, type CursorPages } from '@/components/data-table/use-cursor-pages';
 import type { ServerTable } from '@/components/data-table/use-server-table';
 import { SEARCH_DEBOUNCE_MS, useDebouncedValue } from '../use-debounced-value';
+import { DEFAULT_TIMEOUT_MS, MAX_READ_RETRIES } from './client';
 import type { CursorPage, ReadState } from './read-operation';
 
 /**
@@ -130,21 +131,45 @@ export interface SearchResult<Row> extends SearchOutcome<Row> {
  *
  * ## Why there is a client-side bound at all
  *
- * The API client on the server already times out (`DEFAULT_TIMEOUT_MS`, with
- * one retry for a read), and an answer it gives up on arrives here as an
- * ordinary `unavailable`. What it cannot bound is the hop in front of it: the
- * Server Action call from this browser to the web tier. When that call fails —
- * the connection drops, or the web tier answers 503 — the call REJECTS instead
- * of resolving, and when it hangs it does neither. Browser QA found both: the
- * reception board, the work-order board and customer search still read
- * "Loading" twelve seconds after the read had failed, with no sentence and no
- * way to try again (rows 2.6 and 7.4 of the part-7 matrix).
+ * The API client on the server already times out, and an answer it gives up on
+ * arrives here as an ordinary `unavailable`. What it cannot bound is the hop in
+ * front of it: the Server Action call from this browser to the web tier. When
+ * that call fails — the connection drops, or the web tier answers 503 — the call
+ * REJECTS instead of resolving, and when it hangs it does neither. Browser QA
+ * found both: the reception board, the work-order board and customer search
+ * still read "Loading" twelve seconds after the read had failed, with no
+ * sentence and no way to try again (rows 2.6 and 7.4 of the part-7 matrix).
  *
- * Twenty seconds sits above the server's own worst case for one attempt and
- * well below the point an operator gives up on the screen. It is a ceiling,
- * not an expectation: every ordinary failure resolves as soon as it happens.
+ * The rejection is the real defect, and `settleRead` closes it the moment it
+ * happens — no timer is involved. This ceiling is only the SAFETY NET for a call
+ * that neither resolves nor rejects.
+ *
+ * ## Why it must sit ABOVE the server's own worst case
+ *
+ * A ceiling below the server path would abandon reads the server is still
+ * legitimately working on, and show an outage over an answer that was about to
+ * arrive. So it is derived from the server client's own constants rather than
+ * chosen: every read there is at most `MAX_READ_RETRIES + 1` attempts of
+ * `DEFAULT_TIMEOUT_MS` each (`get` clamps to that), which is
+ * `SERVER_READ_WORST_CASE_MS`.
+ *
+ * It must also absorb QUEUEING. The timer starts when this browser asks, not
+ * when the server starts working: Server Action calls from one page are sent one
+ * at a time, so a read can wait behind an earlier action before its own attempts
+ * begin. `CLIENT_READ_QUEUE_MARGIN_MS` — one further per-attempt timeout — is
+ * that allowance. No figure here is chosen by hand: change the server client's
+ * timeout or its retry clamp and the ceiling moves with it. With today's values
+ * that is 15 s × 3 attempts + 15 s = 60 s.
+ *
+ * ## One ceiling, for every read that uses it
+ *
+ * `settleRead` defaults to this value, and the three read paths that need a
+ * ceiling — this hook, `useServerTable` and the dashboard — all go through
+ * `settleRead` without naming a number. There is no second copy to drift.
  */
-export const CLIENT_READ_TIMEOUT_MS = 20_000;
+export const SERVER_READ_WORST_CASE_MS = DEFAULT_TIMEOUT_MS * (MAX_READ_RETRIES + 1);
+export const CLIENT_READ_QUEUE_MARGIN_MS = DEFAULT_TIMEOUT_MS;
+export const CLIENT_READ_TIMEOUT_MS = SERVER_READ_WORST_CASE_MS + CLIENT_READ_QUEUE_MARGIN_MS;
 
 /**
  * A read that always SETTLES — with its own answer, or with `failure`.

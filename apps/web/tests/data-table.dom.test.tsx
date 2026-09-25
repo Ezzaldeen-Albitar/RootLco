@@ -4,12 +4,20 @@ import { describe, expect, it, vi } from 'vitest';
 import { SearchBox } from '@/components/search/SearchBox';
 import { SearchStates } from '@/components/search/SearchStates';
 import { DataTable, type Column } from '@/components/data-table/DataTable';
+import { useServerTable, type ServerPage } from '@/components/data-table/use-server-table';
 import {
   INITIAL_REQUEST,
   type TableRequest,
   type TableResponse,
 } from '@/components/data-table/table-state';
-import { CLIENT_READ_TIMEOUT_MS, settleRead, useSearchRequest } from '@/lib/api/use-search-request';
+import { DEFAULT_READ_RETRIES, DEFAULT_TIMEOUT_MS, MAX_READ_RETRIES } from '@/lib/api/client';
+import {
+  CLIENT_READ_QUEUE_MARGIN_MS,
+  CLIENT_READ_TIMEOUT_MS,
+  SERVER_READ_WORST_CASE_MS,
+  settleRead,
+  useSearchRequest,
+} from '@/lib/api/use-search-request';
 import { useDebouncedValue } from '@/lib/use-debounced-value';
 import en from '../src/i18n/messages/en.json';
 import { renderLtr } from './render';
@@ -211,6 +219,15 @@ function failure(status: 'denied' | 'unavailable' | 'expired' | 'error' | 'not-f
 
 interface Found {
   readonly id: string;
+}
+
+function TableHarness({
+  load,
+}: {
+  readonly load: (request: TableRequest, cursor: string | null) => Promise<ServerPage<Found>>;
+}) {
+  const table = useServerTable<Found>(load);
+  return <p data-testid="table-status">{table.status}</p>;
 }
 
 function SearchHarness({
@@ -527,10 +544,146 @@ describe('a search that fails never stays "Loading" (browser QA part 7, rows 2.6
       await waitFor(() => expect(load).toHaveBeenCalledTimes(1));
       expect(screen.getByTestId('phase')).toHaveTextContent('loading');
 
+      // Still waiting at the server's own worst case: a read the server may
+      // still be retrying is not abandoned over an answer about to arrive.
       await act(async () => {
-        await vi.advanceTimersByTimeAsync(CLIENT_READ_TIMEOUT_MS);
+        await vi.advanceTimersByTimeAsync(SERVER_READ_WORST_CASE_MS);
+      });
+      expect(screen.getByTestId('phase')).toHaveTextContent('loading');
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(CLIENT_READ_TIMEOUT_MS - SERVER_READ_WORST_CASE_MS);
       });
       await waitFor(() => expect(screen.getByTestId('phase')).toHaveTextContent('unavailable'));
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('sets the client ceiling above the server path and its queueing, never below it', () => {
+    // Derived from the server client's own constants: every read there makes
+    // at most MAX_READ_RETRIES + 1 attempts of DEFAULT_TIMEOUT_MS each.
+    expect(SERVER_READ_WORST_CASE_MS).toBe(DEFAULT_TIMEOUT_MS * (MAX_READ_RETRIES + 1));
+    expect(SERVER_READ_WORST_CASE_MS).toBeGreaterThanOrEqual(
+      DEFAULT_TIMEOUT_MS * (DEFAULT_READ_RETRIES + 1)
+    );
+    // The queueing allowance is one more per-attempt timeout, and the ceiling
+    // is exactly the two added — no hand-picked figure beside them.
+    expect(CLIENT_READ_QUEUE_MARGIN_MS).toBe(DEFAULT_TIMEOUT_MS);
+    expect(CLIENT_READ_TIMEOUT_MS).toBe(SERVER_READ_WORST_CASE_MS + CLIENT_READ_QUEUE_MARGIN_MS);
+    expect(CLIENT_READ_TIMEOUT_MS).toBeGreaterThan(SERVER_READ_WORST_CASE_MS);
+  });
+
+  it('settles a rejected read at once, with no timer left behind (network and 503 alike)', async () => {
+    // The ceiling is a safety net, not how a failure is noticed. Time does not
+    // move in this case at all: a rejection must settle on its own, and the
+    // ceiling timer it armed must be cleared rather than left to fire later.
+    vi.useFakeTimers();
+    try {
+      const failed = { status: 'unavailable' } as const;
+      for (const reason of [
+        new TypeError('Failed to fetch'),
+        new Error('An unexpected response was received from the server.'),
+      ]) {
+        await expect(settleRead(() => Promise.reject(reason), failed)).resolves.toBe(failed);
+        expect(vi.getTimerCount()).toBe(0);
+      }
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('holds a silent read until exactly the derived ceiling, and not one millisecond less', async () => {
+    vi.useFakeTimers();
+    try {
+      const failed = { status: 'unavailable' } as const;
+      let settled = false;
+      const pending = settleRead(() => new Promise<never>(() => undefined), failed).then(
+        (value) => {
+          settled = true;
+          return value;
+        }
+      );
+      await vi.advanceTimersByTimeAsync(CLIENT_READ_TIMEOUT_MS - 1);
+      expect(settled).toBe(false);
+      await vi.advanceTimersByTimeAsync(1);
+      await expect(pending).resolves.toBe(failed);
+      expect(settled).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('shows NO outage when a branch switch abandons the read in flight', async () => {
+    /*
+     * Abandoning a read settles it with the failure value — and that value
+     * must never reach the screen. The switch is the operator moving on, not
+     * the service failing: every phase painted between the switch and the new
+     * answer is recorded, and "unavailable" is not among them. Two defences
+     * hold it — the continuation refuses an aborted or superseded read, and the
+     * answer is filed under the key it was asked for, which the new version no
+     * longer matches — and this case pins the outcome, not either one alone.
+     */
+    let release: (value: unknown) => void = () => undefined;
+    const load = vi.fn(() =>
+      load.mock.calls.length === 1
+        ? new Promise<never>(() => undefined)
+        : new Promise((resolve) => {
+            release = resolve;
+          })
+    );
+    const { rerender } = renderLtr(<SearchHarness term="same" load={load} version={0} />);
+    await waitFor(() => expect(load).toHaveBeenCalledTimes(1));
+
+    const painted: string[] = [];
+    const phase = screen.getByTestId('phase');
+    const observer = new MutationObserver(() => painted.push(phase.textContent ?? ''));
+    observer.observe(phase, { childList: true, characterData: true, subtree: true });
+    try {
+      rerender(<SearchHarness term="same" load={load} version={1} />);
+      await waitFor(() => expect(load).toHaveBeenCalledTimes(2));
+      // Give the abandoned read every chance to commit its failure value.
+      await act(async () => {
+        await Promise.resolve();
+      });
+      expect(phase).toHaveTextContent('loading');
+
+      await act(async () => {
+        release(okPage([{ id: 'switched' }]));
+      });
+      await waitFor(() => expect(screen.getByTestId('rows')).toHaveTextContent('switched'));
+      expect(painted).not.toContain('unavailable');
+    } finally {
+      observer.disconnect();
+    }
+  });
+
+  it('applies the SAME ceiling to a server table: rejection at once, silence only after the bound', async () => {
+    const rejected = vi.fn(() => Promise.reject(new TypeError('Failed to fetch')));
+    const first = renderLtr(<TableHarness load={rejected} />);
+    await waitFor(() =>
+      expect(screen.getByTestId('table-status')).toHaveTextContent('unavailable')
+    );
+    first.unmount();
+
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const silent = vi.fn(() => new Promise<never>(() => undefined));
+      renderLtr(<TableHarness load={silent} />);
+      await waitFor(() => expect(silent).toHaveBeenCalledTimes(1));
+      expect(screen.getByTestId('table-status')).toHaveTextContent('loading');
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(SERVER_READ_WORST_CASE_MS);
+      });
+      expect(screen.getByTestId('table-status')).toHaveTextContent('loading');
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(CLIENT_READ_TIMEOUT_MS - SERVER_READ_WORST_CASE_MS);
+      });
+      await waitFor(() =>
+        expect(screen.getByTestId('table-status')).toHaveTextContent('unavailable')
+      );
     } finally {
       vi.useRealTimers();
     }

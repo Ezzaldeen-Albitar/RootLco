@@ -177,6 +177,14 @@ export type ApiResult<T> = ApiSuccess<T> | ApiFailure;
 
 export const CORRELATION_HEADER = 'x-correlation-id';
 export const DEFAULT_TIMEOUT_MS = 15_000;
+/** Retries a read makes when the caller does not say. One, not a loop — see `get`. */
+export const DEFAULT_READ_RETRIES = 1;
+/**
+ * The most retries any read may ask for. `get` clamps to it, so no read on the
+ * server ever makes more than `MAX_READ_RETRIES + 1` attempts of
+ * `DEFAULT_TIMEOUT_MS` each — the bound a client-side ceiling must sit above.
+ */
+export const MAX_READ_RETRIES = 2;
 
 export interface ApiClientOptions {
   readonly baseUrl: string;
@@ -293,7 +301,10 @@ export class ApiClient {
     path: string,
     options: { readonly signal?: AbortSignal; readonly retries?: number } = {}
   ): Promise<ApiResult<T>> {
-    const retries = Math.max(0, Math.min(options.retries ?? 1, 2));
+    const retries = Math.max(
+      0,
+      Math.min(options.retries ?? DEFAULT_READ_RETRIES, MAX_READ_RETRIES)
+    );
     let last: ApiFailure | null = null;
     for (let attempt = 0; attempt <= retries; attempt += 1) {
       const result = await this.#request<T>('GET', path, undefined, options.signal);
