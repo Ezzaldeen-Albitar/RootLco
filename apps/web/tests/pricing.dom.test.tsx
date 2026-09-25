@@ -949,7 +949,14 @@ describe('the company discount threshold', () => {
       within(form).getByText(EN['discountThreshold.currencyRequired'] as string)
     ).toBeVisible();
     expect(setDiscountThreshold).not.toHaveBeenCalled();
-    await user.type(within(form).getByLabelText(labelled('discountThreshold.amount')), '25');
+    // The refusal moves the cursor to the first box to fix one frame later
+    // (`useFocusFirstInvalid`). The user sees the cursor land before typing; so
+    // does this test. Typing earlier races that frame: landing after the first
+    // keystroke, it moves the cursor to the currency box, which then takes the
+    // rest of the amount and the save is refused again, with nothing sent.
+    const amount = within(form).getByLabelText(labelled('discountThreshold.amount'));
+    await waitFor(() => expect(amount).toHaveFocus());
+    await user.type(amount, '25');
     await user.type(within(form).getByLabelText(labelled('discountThreshold.currency')), 'jod');
     await user.click(
       within(form).getByRole('button', { name: EN['discountThreshold.save'] as string })
