@@ -43,6 +43,7 @@ import {
   pricingModule,
   DEFAULT_DISCOUNT_APPROVAL_PERMISSION,
   type DiscountThresholdSnapshot,
+  type PinnedDiscountPolicy,
 } from '@/modules/pricing';
 import { sharedServicesModule } from '@/modules/shared-services';
 import { workOrderModule } from '@/modules/work-order';
@@ -56,6 +57,7 @@ import {
 } from '../domain/quotation';
 import { QUOTATION_LIST_ORDERING, REVISION_LIST_ORDERING } from '../data/quotation-repository';
 import type {
+  DiscountApprovalRow,
   ItemRow,
   NewItemInput,
   QuotationRepository,
@@ -385,7 +387,9 @@ export class QuotationService {
       items.push(await this.repository.insertItem(db, revision, item));
     }
 
-    const approval = await this.recordDiscountRequest(db, revision, priced.discount);
+    // A NEW quotation is measured against the policy in force now: a threshold
+    // change is prospective, and this is where it takes effect.
+    const approval = await this.recordDiscountRequest(db, revision, priced.discount, asOf, []);
 
     await appendAudit(db, {
       action: 'quo.quotation.created',
@@ -432,6 +436,18 @@ export class QuotationService {
    * refuses item writes on a non-draft parent, which is what makes an issued
    * revision an immutable snapshot. So a revision is how a price change reaches a
    * customer, and the previous issued revision stays exactly as it was presented.
+   *
+   * ## A quotation with an open discount request keeps its snapshot
+   *
+   * While the quotation holds a pending or rejected discount request, the new
+   * revision's discount is measured against THAT request's policy snapshot, not the
+   * company threshold of the moment (P1-32-PRE-OD-DISC-04). Every open request is
+   * superseded by the new revision — it can no longer be approved — and, when the
+   * discount still needs approval under the snapshot, a new pending request is
+   * recorded under the same snapshot with the signed-in person as its requester. So
+   * a requester who raises the threshold and then revises gains nothing: the same
+   * discount still waits for somebody else. Bringing the discount under the snapshot
+   * threshold, or an approval, is what releases it.
    */
   public async revise(
     db: DbHandle,
@@ -461,12 +477,18 @@ export class QuotationService {
     this.assertQuotationOpen(quotation);
 
     const asOf = await this.repository.businessDate(db);
+    // Under the quotation lock: the open requests and the snapshot they hold it to.
+    const open = await this.repository.lockOpenDiscountApprovals(db, quotation.id);
+    const lock = open[0];
+    const pinned: PinnedDiscountPolicy | undefined =
+      lock === undefined ? undefined : pinnedPolicyOf(lock);
     const priced = await this.priceLines(db, {
       lines: input.lines,
       companyId: quotation.companyId,
       branchId: quotation.branchId,
       customerClass: input.customerClass ?? null,
       asOf,
+      pinned,
     });
 
     // The new revision inherits the quotation's immutable currency. A revision
@@ -492,7 +514,21 @@ export class QuotationService {
       items.push(await this.repository.insertItem(db, revision, item));
     }
 
-    const approval = await this.recordDiscountRequest(db, revision, priced.discount);
+    // The open requests are replaced by this revision first — the database refuses
+    // a new request while one is open — and a new one is recorded under the same
+    // snapshot when the discount still needs it.
+    const superseded = await this.repository.supersedeDiscountApprovals(
+      db,
+      open.map((row) => row.id),
+      revision.id
+    );
+    const approval = await this.recordDiscountRequest(
+      db,
+      revision,
+      priced.discount,
+      asOf,
+      superseded
+    );
 
     await appendAudit(db, {
       action: 'quo.quotation_revision.created',
@@ -508,6 +544,23 @@ export class QuotationService {
           value: String(revision.revisionNumber),
         },
         { field: 'lineCount', classification: 'public', value: String(items.length) },
+        ...(superseded.length === 0
+          ? []
+          : [
+              {
+                field: 'supersededDiscountApprovalIds',
+                classification: 'internal' as const,
+                value: superseded.join(','),
+              },
+              {
+                field: 'discountPolicySnapshot',
+                classification: 'internal' as const,
+                value:
+                  lock?.policyVersionNo === null || lock === undefined
+                    ? 'unconfigured'
+                    : String(lock.policyVersionNo),
+              },
+            ]),
       ],
     });
 
@@ -566,33 +619,20 @@ export class QuotationService {
 
     /**
      * A discount that needs approval is issued only once somebody other than the
-     * requester has approved it (P1-32-PRE-OD-DISC-01).
+     * requester has approved it, and only for the amount approved
+     * (P1-32-PRE-OD-DISC-01, -04).
      *
-     * Decided by the approval RECORD, never by re-measuring the discount against the
-     * policy in force now: a later raise of the company threshold must not let a
-     * pending discount through, and a later lowering must not undo an approval.
-     * `quo.guard_revision_discount_approval` refuses the same transition whatever
-     * reaches the database; this names the reason for the screen.
+     * Decided by the approval RECORD when there is one — never by re-measuring the
+     * discount against the policy in force now: a later raise of the company
+     * threshold must not let a pending discount through, and a later lowering must
+     * not undo an approval. A revision with NO record is measured at the database
+     * (`quo.revision_discount_needs_approval`): against the snapshot of the request it
+     * replaced, or — for a draft written before the two-step flow — the policy in
+     * force now. `quo.guard_revision_discount_approval` refuses the same transition
+     * whatever reaches the database; this names the reason for the screen.
      */
     const approvalRow = await this.repository.findDiscountApprovalForRevision(db, revision.id);
-    if (approvalRow !== null && approvalRow.status !== 'approved') {
-      const rejected = approvalRow.status === 'rejected';
-      throw new AppFailure('ERR-TRN-001', {
-        message: rejected
-          ? `Revision ${revision.revisionNumber} carries a discount that was turned down`
-          : `Revision ${revision.revisionNumber} carries a discount still waiting for approval`,
-        safeDetails: {
-          violations: [
-            // The whole request, not a control: the revision was chosen correctly, and
-            // what stops it is the approval, which the screen states in its banner.
-            {
-              path: 'body',
-              rule: rejected ? 'discount_approval_rejected' : 'discount_approval_pending',
-            },
-          ],
-        },
-      });
-    }
+    await this.assertDiscountIssuable(db, revision, approvalRow);
 
     const expiresAt = input.expiresAt ?? null;
     if (expiresAt !== null && hasExpired(expiresAt, new Date())) {
@@ -660,8 +700,75 @@ export class QuotationService {
     return toRevisionView(
       issued,
       items,
-      approvalRow === null ? null : await describeDiscountApproval(db, approvalRow)
+      approvalRow === null
+        ? null
+        : await describeDiscountApproval(db, approvalRow, await this.repository.businessDate(db))
     );
+  }
+
+  /**
+   * Refuses, by name, a revision whose discount is not approved for issue.
+   *
+   * `discount_approval_pending` / `_rejected` / `_superseded` — the recorded request
+   * is not approved; `discount_approval_amount_mismatch` — the lines no longer carry
+   * the discount that was approved; `discount_approval_required` — no request exists
+   * and the discount needs one.
+   */
+  private async assertDiscountIssuable(
+    db: DbHandle,
+    revision: RevisionRow,
+    approvalRow: DiscountApprovalRow | null
+  ): Promise<void> {
+    const refuseIssue = (rule: string, message: string): never => {
+      throw new AppFailure('ERR-TRN-001', {
+        message,
+        // The whole request, not a control: the revision was chosen correctly, and
+        // what stops it is the approval, which the screen states in its banner.
+        safeDetails: { violations: [{ path: 'body', rule }] },
+      });
+    };
+    if (approvalRow === null) {
+      if (await this.repository.revisionDiscountNeedsApproval(db, revision.id)) {
+        refuseIssue(
+          'discount_approval_required',
+          `Revision ${revision.revisionNumber} carries a discount that needs approval and none ` +
+            'was requested. Revise the quotation to record a request for somebody else to approve.'
+        );
+      }
+      return;
+    }
+    if (approvalRow.status === 'rejected') {
+      refuseIssue(
+        'discount_approval_rejected',
+        `Revision ${revision.revisionNumber} carries a discount that was turned down`
+      );
+    }
+    if (approvalRow.status === 'superseded') {
+      refuseIssue(
+        'discount_approval_superseded',
+        `Revision ${revision.revisionNumber} carries a discount request a newer revision replaced`
+      );
+    }
+    if (approvalRow.status !== 'approved') {
+      refuseIssue(
+        'discount_approval_pending',
+        `Revision ${revision.revisionNumber} carries a discount still waiting for approval`
+      );
+    }
+    const carried = await this.repository.revisionDiscountTotal(db, revision.id);
+    if (
+      carried === null ||
+      approvalRow.approvedDiscountTotal === null ||
+      approvalRow.approvedCurrencyCode !== carried.currency ||
+      !Decimal.parse(carried.total, MONEY).equals(
+        Decimal.parse(approvalRow.approvedDiscountTotal, MONEY)
+      )
+    ) {
+      refuseIssue(
+        'discount_approval_amount_mismatch',
+        `Revision ${revision.revisionNumber} no longer carries the discount that was approved`
+      );
+    }
   }
 
   /**
@@ -901,7 +1008,9 @@ export class QuotationService {
   /** The discount approval recorded for one revision, rendered, or `null`. */
   private async approvalOf(db: DbHandle, revisionId: string): Promise<DiscountApprovalView | null> {
     const row = await this.repository.findDiscountApprovalForRevision(db, revisionId);
-    return row === null ? null : describeDiscountApproval(db, row);
+    return row === null
+      ? null
+      : describeDiscountApproval(db, row, await this.repository.businessDate(db));
   }
 
   /**
@@ -1081,6 +1190,8 @@ export class QuotationService {
       branchId: string;
       customerClass: string | null;
       asOf: string;
+      /** The snapshot an open request holds the quotation to; absent = the policy in force. */
+      pinned?: PinnedDiscountPolicy | undefined;
     }
   ): Promise<{
     currency: string;
@@ -1160,13 +1271,17 @@ export class QuotationService {
       // The base a percentage discount applies to. Computed by the database, and
       // refused unless it is exact at scale 4 — see `lineBase`.
       const base = await this.lineBase(db, lineNumber, price.unitPrice, line.quantity);
-      const assessment = await pricing.discounts.assess(db, {
-        companyId: context.companyId,
-        discountAmount: discount,
-        currency: price.currency,
-        lineBase: base,
-        asOf: context.asOf,
-      });
+      const assessment = await pricing.discounts.assess(
+        db,
+        {
+          companyId: context.companyId,
+          discountAmount: discount,
+          currency: price.currency,
+          lineBase: base,
+          asOf: context.asOf,
+        },
+        context.pinned
+      );
       totalDiscount = await this.addMoney(db, totalDiscount, discount);
       totalBase = await this.addMoney(db, totalBase, base);
       if (assessment.requiresApproval) {
@@ -1213,13 +1328,17 @@ export class QuotationService {
      */
     let requiresApproval = elevatedLines > 0;
     if (!Decimal.parse(totalDiscount, MONEY).isZero) {
-      const aggregate = await pricing.discounts.assess(db, {
-        companyId: context.companyId,
-        discountAmount: totalDiscount,
-        currency,
-        lineBase: totalBase,
-        asOf: context.asOf,
-      });
+      const aggregate = await pricing.discounts.assess(
+        db,
+        {
+          companyId: context.companyId,
+          discountAmount: totalDiscount,
+          currency,
+          lineBase: totalBase,
+          asOf: context.asOf,
+        },
+        context.pinned
+      );
       if (aggregate.requiresApproval) {
         requiresApproval = true;
         appliedThreshold = aggregate.threshold;
@@ -1258,7 +1377,9 @@ export class QuotationService {
   private async recordDiscountRequest(
     db: DbHandle,
     revision: RevisionRow,
-    summary: DiscountSummary
+    summary: DiscountSummary,
+    asOf: string,
+    supersedes: readonly string[]
   ): Promise<DiscountApprovalView | null> {
     if (!summary.requiresApproval) return null;
     const approval = await this.repository.insertDiscountApproval(db, {
@@ -1325,9 +1446,18 @@ export class QuotationService {
           classification: 'internal',
           value: approval.thresholdValue ?? '0',
         },
+        ...(supersedes.length === 0
+          ? []
+          : [
+              {
+                field: 'supersedesDiscountApprovalIds',
+                classification: 'internal' as const,
+                value: supersedes.join(','),
+              },
+            ]),
       ],
     });
-    return describeDiscountApproval(db, approval);
+    return describeDiscountApproval(db, approval, asOf);
   }
 
   /**
@@ -1446,6 +1576,30 @@ export class QuotationService {
       currentRevision: revision === null ? null : toRevisionView(revision, items, discountApproval),
     };
   }
+}
+
+/**
+ * The snapshot an open request holds its quotation to: the threshold it was measured
+ * against (`null` = none was configured, a threshold of zero) and the permission its
+ * approver must hold.
+ */
+function pinnedPolicyOf(row: DiscountApprovalRow): PinnedDiscountPolicy {
+  return {
+    threshold:
+      row.policyId === null ||
+      row.policyVersionNo === null ||
+      row.thresholdKind === null ||
+      row.thresholdValue === null
+        ? null
+        : {
+            policyId: row.policyId,
+            versionNo: row.policyVersionNo,
+            kind: row.thresholdKind,
+            value: row.thresholdValue,
+            currency: row.thresholdCurrencyCode,
+          },
+    permissionCode: row.requiredPermissionCode,
+  };
 }
 
 /** Re-exported so callers can reason about terminal revisions without the domain. */

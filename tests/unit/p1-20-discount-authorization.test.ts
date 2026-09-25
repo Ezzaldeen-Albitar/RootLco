@@ -378,3 +378,133 @@ describe('discount rejection — the same separation, no limit needed', () => {
     expect(ceilingReads()).toBe(0);
   });
 });
+
+/**
+ * A quotation holding an open request is measured against that request's snapshot
+ * (P1-32-PRE-OD-DISC-04): a threshold raised since cannot be reached by revising.
+ */
+describe('discount assessment — a pinned snapshot, not the policy in force', () => {
+  const snapshot = {
+    policyId: 'policy-1',
+    versionNo: 1,
+    kind: 'amount',
+    value: '10.0000',
+    currency: 'JOD',
+  };
+
+  it('measures against the pinned threshold and never reads the policy in force', async () => {
+    // The policy in force was raised to 100: a 40 discount would pass it.
+    const { service } = build({
+      policy: {
+        thresholdKind: 'amount',
+        thresholdValue: '100.0000',
+        currencyCode: 'JOD',
+        requiredPermissionCode: 'svc.price.manage',
+        makerApproverDistinct: true,
+      },
+    });
+    const pinned = { threshold: snapshot, permissionCode: 'svc.price.publish' };
+    const result = await service.assess(db, assessment({ discountAmount: '40.0000' }), pinned);
+    expect(result).toEqual({
+      requiresApproval: true,
+      permissionCode: 'svc.price.publish',
+      threshold: snapshot,
+    });
+    // Control: the same discount measured against the policy in force needs nothing.
+    const free = await service.assess(db, assessment({ discountAmount: '40.0000' }));
+    expect(free.requiresApproval).toBe(false);
+  });
+
+  it('releases the pin for a discount brought under the snapshot threshold', async () => {
+    const { service } = build({});
+    const result = await service.assess(db, assessment({ discountAmount: '9.9999' }), {
+      threshold: snapshot,
+      permissionCode: 'svc.price.manage',
+    });
+    expect(result.requiresApproval).toBe(false);
+    expect(result.permissionCode).toBeNull();
+  });
+
+  it('keeps a snapshot of "nothing configured" at a threshold of zero', async () => {
+    const { service } = build({});
+    const result = await service.assess(db, assessment({ discountAmount: '0.0001' }), {
+      threshold: null,
+      permissionCode: 'svc.price.manage',
+    });
+    expect(result.requiresApproval).toBe(true);
+  });
+});
+
+/**
+ * `evaluateApproval` is the per-row `canDecide` answer: the same order and the same
+ * gates as `authorizeApproval`, returned as a named block instead of thrown — and never
+ * carrying the approver's limit (P1-32-PRE-OD-DISC-04).
+ */
+describe('discount approval — the standing a reader is shown', () => {
+  it.each([
+    [
+      'the requester',
+      { approverId: 'user-maker' },
+      allow,
+      { amount: '999.0000', currencyCode: 'JOD' },
+      'discount_approver_must_differ',
+    ],
+    [
+      'no recorded permission',
+      {},
+      deny,
+      { amount: '999.0000', currencyCode: 'JOD' },
+      'discount_approval_permission_missing',
+    ],
+    ['no limit that counts', {}, allow, null, 'discount_no_approval_limit'],
+    [
+      'a limit in another currency',
+      {},
+      allow,
+      { amount: '999.0000', currencyCode: 'USD' },
+      'discount_limit_currency_mismatch',
+    ],
+    [
+      'a limit below the discount',
+      {},
+      allow,
+      { amount: '59.9999', currencyCode: 'JOD' },
+      'discount_over_approval_limit',
+    ],
+  ] as const)('blocks %s by name', async (_label, over, probe, ceiling, block) => {
+    const { service } = build({ ceiling });
+    const standing = await service.evaluateApproval(db, approval(over), probe);
+    expect(standing.canApprove).toBe(false);
+    expect(standing.canApprove ? null : standing.block).toBe(block);
+  });
+
+  it('lets a different approver with the recorded permission and a covering limit through', async () => {
+    const { service } = build({ ceiling: { amount: '60.0000', currencyCode: 'JOD' } });
+    const standing = await service.evaluateApproval(db, approval(), allow);
+    expect(standing).toEqual({ canApprove: true, ceiling: { amount: '60.0000', currency: 'JOD' } });
+  });
+
+  it('reads the ceiling once per company for a whole page of requests', async () => {
+    const { service, ceilingReads } = build({
+      ceiling: { amount: '999.0000', currencyCode: 'JOD' },
+    });
+    const memo = new Map();
+    for (let index = 0; index < 5; index += 1) {
+      await service.evaluateApproval(db, approval(), allow, memo);
+    }
+    expect(ceilingReads()).toBe(1);
+  });
+
+  it('names the missing RECORDED permission when approving and when turning down', async () => {
+    const { service } = build({ ceiling: { amount: '999.0000', currencyCode: 'JOD' } });
+    const approving = await refusal(service.authorizeApproval(db, approval(), deny));
+    expect(rulesOf(approving)).toEqual(['discount_approval_permission_missing']);
+    const rejecting = await refusal(
+      service.authorizeRejection(
+        { requestedBy: 'u1', approverId: 'u2', requiredPermissionCode: 'svc.price.manage' },
+        deny
+      )
+    );
+    expect(rulesOf(rejecting)).toEqual(['discount_approval_permission_missing']);
+  });
+});

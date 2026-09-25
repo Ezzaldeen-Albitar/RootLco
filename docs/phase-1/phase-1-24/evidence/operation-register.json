@@ -9724,7 +9724,7 @@
       "domain": "quotation",
       "method": "POST",
       "route": "/api/v1/discount-approvals/{approvalId}/decision",
-      "permissions": ["svc.price.manage"],
+      "permissions": ["quo.quotation.read"],
       "public": false,
       "scope": "branch",
       "transaction": "transactional write",
@@ -9743,11 +9743,13 @@
         "idempotency",
         "audit",
         "isolation",
-        "denial"
+        "denial",
+        "concurrency"
       ],
       "providedEvidence": [
         "audit",
         "authorization",
+        "concurrency",
         "cross-tenant",
         "denial",
         "idempotency",

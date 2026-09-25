@@ -8,11 +8,14 @@
  * whatever reaches the database. There is no sole-administrator exception and no
  * setting that turns the rule off.
  *
- * To APPROVE, the approver also needs the permission the policy version names and a
- * discount approval limit — never one they set for themselves — that covers the
- * whole discount: `discount_no_approval_limit` and `discount_over_approval_limit`
- * say which of the two is missing. To TURN DOWN, a reason is required and no limit
- * is needed.
+ * The operation is gated by the quotation READ code only. The decider must hold the
+ * permission the REQUEST recorded (`discount_approval_permission_missing` when not),
+ * and to APPROVE also a discount approval limit — never one they set for themselves —
+ * that covers the whole discount: `discount_no_approval_limit` and
+ * `discount_over_approval_limit` say which is missing. To TURN DOWN, a reason is
+ * required and no limit is needed. A request a newer revision replaced is
+ * `discount_approval_superseded`; one already decided — including by a concurrent
+ * request that got the lock first — is `discount_approval_already_decided`.
  *
  * The decision is measured against the policy version SNAPSHOTTED when the discount
  * was asked for, so a threshold raised in the meantime neither approves the request
@@ -50,9 +53,13 @@ export const DISCOUNT_APPROVAL_DECIDE_OPERATION = defineOperation({
   method: 'POST',
   path: '/discount-approvals/{approvalId}/decision',
   summary: 'Approve or turn down a discount requested by someone else.',
-  // The code a discount approver has always needed. The policy version may name a
-  // different one; the service checks that one too, against the row's own scope.
-  permissions: ['svc.price.manage'],
+  // The least-privileged gate: the caller must be able to read the quotation. The
+  // approval authority is the permission the REQUEST recorded (a value copied from
+  // the policy version, so no declaration can name it); the service checks exactly
+  // that one against the row's own scope and refuses without it by name
+  // (`discount_approval_permission_missing`). Gating on a fixed approval code as well
+  // would narrow the approver population to holders of BOTH.
+  permissions: ['quo.quotation.read'],
   scope: 'branch',
   auditClass: 'approval',
   auditAction: 'quo.discount_approval.approved',

@@ -6297,7 +6297,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": ["svc.price.manage"],
+        "x-required-permissions": ["quo.quotation.read"],
         "x-scope": "branch",
         "x-audit-class": "approval",
         "x-rate-limit-policy": "standard-command",

@@ -525,41 +525,37 @@ export class PricingRepository extends Repository {
   }
 
   /**
-   * Retires a company's current discount-threshold version, IF it is still the
-   * version the caller read.
+   * The highest version number a company's discount threshold has EVER used —
+   * counted over every row of the scope, deleted and inactive ones included — or
+   * `0` when it has none.
    *
-   * The version number is the optimistic guard: a caller who read version 3 while
-   * somebody else recorded version 4 matches no row, and `null` is returned so the
-   * service can answer a conflict instead of silently overwriting the newer value.
+   * `uq_pricing_approval_policies_version` is unique over all of those rows, so the
+   * next version is always one above this number. Counting only live rows would
+   * hand out a number a soft-deleted or retired row already holds, and every later
+   * write would collide on the index forever.
    */
-  public async retireDiscountPolicyVersion(
-    db: DbHandle,
-    companyId: string,
-    expectedVersionNo: number
-  ): Promise<{ id: string; requiredPermissionCode: string } | null> {
+  public async latestDiscountPolicyVersionNo(db: DbHandle, companyId: string): Promise<number> {
     const context = this.assertContext(db);
-    const row = await this.runOne<{ id: string; required_permission_code: string }>(
+    const row = await this.runOne<{ latest: number | null }>(
       db,
-      `UPDATE svc.pricing_approval_policies
-          SET status = 'inactive'
-        WHERE tenant_id = $1 AND company_id = $2 AND policy_type = 'discount'
-          AND status = 'active' AND deleted_at IS NULL AND version_no = $3
-        RETURNING id, required_permission_code`,
-      [context.principal.tenantId, companyId, expectedVersionNo]
+      `SELECT max(version_no) AS latest
+         FROM svc.pricing_approval_policies
+        WHERE tenant_id = $1 AND company_id = $2 AND policy_type = 'discount'`,
+      [context.principal.tenantId, companyId]
     );
-    return row === null
-      ? null
-      : { id: row.id, requiredPermissionCode: row.required_permission_code };
+    return row?.latest ?? 0;
   }
 
   /**
    * Records the next version of a company's discount threshold, effective from the
    * database's business date — prospectively, for requests made from now on.
    *
-   * `uq_pricing_approval_policies_scope` admits one ACTIVE row per company and
-   * `uq_pricing_approval_policies_version` one row per version number, so two
-   * concurrent writers cannot both land version N: the second fails on the index
-   * and its transaction rolls back.
+   * Recording it is also what retires the version it replaces:
+   * `svc.record_pricing_approval_policy_version` refuses any number but the next one
+   * and marks the previous active version inactive inside the same INSERT, and no
+   * other write may change a version's status. `uq_pricing_approval_policies_version`
+   * admits one row per version number, so two concurrent writers cannot both land
+   * version N: the second fails with a unique violation and rolls back.
    */
   public async insertDiscountPolicyVersion(
     db: DbHandle,

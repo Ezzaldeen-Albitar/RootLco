@@ -162,14 +162,24 @@ export const SVC_PERMISSION_ELSEWHERE: Principal = {
  * May create a quotation, but holds NO discount approval ceiling.
  *
  * Exists to prove the fail-closed path: with no `iam.approval_limits` row, any
- * non-zero discount is refused. Deliberately NOT given a ceiling anywhere.
+ * non-zero discount is refused. Deliberately NOT given a ceiling anywhere. It reads
+ * quotations, because the discount decision is gated by the quotation READ code
+ * (P1-32-PRE-OD-DISC-04): without it the decision would be refused at the gate and
+ * the missing LIMIT — the thing this principal proves — would never be reached.
  */
 export const SVC_NO_CEILING: Principal = {
   roleId: 'd2900000-0000-4000-8000-000000000111',
   userId: 'd2900000-0000-4000-8000-000000000112',
   subject: 'fx_p1_20_no_ceiling',
   tenantId: TENANT_A,
-  permissions: [SERVICE_READ, PRICE_READ, PRICE_MANAGE, QUOTATION_MANAGE, WORK_ORDER_READ],
+  permissions: [
+    SERVICE_READ,
+    PRICE_READ,
+    PRICE_MANAGE,
+    QUOTATION_READ,
+    QUOTATION_MANAGE,
+    WORK_ORDER_READ,
+  ],
 };
 
 const WIDENING_ROLE = 'd2900000-0000-4000-8000-0000000000f1';
@@ -384,6 +394,42 @@ export const SVC_TENANT_B_APPROVER: Principal = {
   permissions: [PRICE_READ, PRICE_MANAGE, QUOTATION_READ, WORK_ORDER_READ],
 };
 
+/**
+ * Reads quotations and holds `svc.price.publish` — NOT `svc.price.manage` — with a
+ * limit set by somebody else (P1-32-PRE-OD-DISC-04).
+ *
+ * The discount decision is gated by the quotation read code and then requires ONLY
+ * the permission the request recorded. Against a request recording the default
+ * `svc.price.manage` this principal is refused by name
+ * (`discount_approval_permission_missing`); against one whose policy named
+ * `svc.price.publish` it approves — which a route that still demanded
+ * `svc.price.manage` would refuse. Its limit is seeded by the suites that use it.
+ */
+export const SVC_RECORDED_APPROVER: Principal = {
+  roleId: 'd2900000-0000-4000-8000-0000000001c1',
+  userId: 'd2900000-0000-4000-8000-0000000001c2',
+  subject: 'fx_p1_20_recorded_approver',
+  tenantId: TENANT_A,
+  permissions: [PRICE_READ, PRICE_PUBLISH, QUOTATION_READ, WORK_ORDER_READ],
+};
+
+/**
+ * Every authority a discount approver needs — quotation read, `svc.price.manage` —
+ * granted only inside COMPANY_A2 (P1-32-PRE-OD-DISC-04), plus the unrelated widening
+ * grant in branch A1 so an A1 request is VISIBLE to it. A refusal of its decision on
+ * an A1 request is therefore the company boundary of the scoped check, and nothing
+ * else.
+ */
+export const SVC_APPROVER_COMPANY_A2: Principal = {
+  roleId: 'd2900000-0000-4000-8000-0000000001d1',
+  userId: 'd2900000-0000-4000-8000-0000000001d2',
+  subject: 'fx_p1_20_approver_company_a2',
+  tenantId: TENANT_A,
+  permissions: [PRICE_READ, PRICE_MANAGE, QUOTATION_READ, WORK_ORDER_READ],
+  grantId: 'd2900000-0000-4000-8000-0000000001d3',
+  scope: { companyId: COMPANY_A2, branchId: BRANCH_A2_OF_COMPANY_A2 },
+};
+
 export const P1_20_PRINCIPALS: readonly Principal[] = [
   SVC_FULL,
   SVC_READER,
@@ -402,6 +448,8 @@ export const P1_20_PRINCIPALS: readonly Principal[] = [
   WO_APPROVER_NO_QUOTATION_READ,
   SVC_DISCOUNT_APPROVER,
   SVC_TENANT_B_APPROVER,
+  SVC_RECORDED_APPROVER,
+  SVC_APPROVER_COMPANY_A2,
 ];
 
 let admin: Pool;
@@ -589,6 +637,23 @@ async function seedTax(
 export async function establishP1_20Fixtures(pool: Pool): Promise<void> {
   admin = pool;
 
+  // The second tenant-A company and its branch. See COMPANY_A2 above. Seeded before the
+  // principals, because SVC_APPROVER_COMPANY_A2 holds a grant scoped inside it.
+  await admin.query(
+    `INSERT INTO org.legal_companies
+       (id, tenant_id, company_code, legal_name, base_currency_code, created_by)
+     VALUES ($1,$2,'fx_p120_company_a2','P1-20 Fixture Company A2','JOD',$3)
+     ON CONFLICT (id) DO NOTHING`,
+    [COMPANY_A2, TENANT_A, USER_A]
+  );
+  await admin.query(
+    `INSERT INTO org.branches
+       (id, tenant_id, company_id, branch_code, name, timezone_name, created_by)
+     VALUES ($1,$2,$3,'fx_p120_branch_a2c2','P1-20 Fixture Branch (company A2)','UTC',$4)
+     ON CONFLICT (id) DO NOTHING`,
+    [BRANCH_A2_OF_COMPANY_A2, TENANT_A, COMPANY_A2, USER_A]
+  );
+
   for (const principal of P1_20_PRINCIPALS) await seedPrincipal(principal);
 
   /**
@@ -622,6 +687,7 @@ export async function establishP1_20Fixtures(pool: Pool): Promise<void> {
     { userId: SVC_PRICE_SCOPED_A2.userId, grantId: 'd2900000-0000-4000-8000-0000000000f3' },
     { userId: SVC_QUO_SCOPED_A2.userId, grantId: 'd2900000-0000-4000-8000-0000000000f4' },
     { userId: SVC_CATALOG_SCOPED_A2.userId, grantId: 'd2900000-0000-4000-8000-0000000000f5' },
+    { userId: SVC_APPROVER_COMPANY_A2.userId, grantId: 'd2900000-0000-4000-8000-0000000001d4' },
   ];
   for (const target of WIDENED) {
     const widening = await admin.connect();
@@ -650,22 +716,6 @@ export async function establishP1_20Fixtures(pool: Pool): Promise<void> {
       widening.release();
     }
   }
-
-  // The second tenant-A company and its branch. See COMPANY_A2 above.
-  await admin.query(
-    `INSERT INTO org.legal_companies
-       (id, tenant_id, company_code, legal_name, base_currency_code, created_by)
-     VALUES ($1,$2,'fx_p120_company_a2','P1-20 Fixture Company A2','JOD',$3)
-     ON CONFLICT (id) DO NOTHING`,
-    [COMPANY_A2, TENANT_A, USER_A]
-  );
-  await admin.query(
-    `INSERT INTO org.branches
-       (id, tenant_id, company_id, branch_code, name, timezone_name, created_by)
-     VALUES ($1,$2,$3,'fx_p120_branch_a2c2','P1-20 Fixture Branch (company A2)','UTC',$4)
-     ON CONFLICT (id) DO NOTHING`,
-    [BRANCH_A2_OF_COMPANY_A2, TENANT_A, COMPANY_A2, USER_A]
-  );
 
   await seedCatalog({
     tenantId: TENANT_A,

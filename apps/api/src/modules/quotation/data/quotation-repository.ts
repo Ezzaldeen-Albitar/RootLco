@@ -169,6 +169,8 @@ export interface DiscountApprovalRow {
   readonly quotationRevisionId: string;
   readonly revisionNumber: number;
   readonly status: string;
+  /** `requested`, or `backfilled` for a legacy draft given a request by migration. */
+  readonly origin: string;
   readonly currencyCode: string;
   readonly discountTotal: string;
   readonly discountBase: string;
@@ -184,8 +186,11 @@ export interface DiscountApprovalRow {
   readonly decidedBy: string | null;
   readonly decidedAt: Date | null;
   readonly decisionReason: string | null;
-  readonly approverLimitAmount: string | null;
-  readonly approverLimitCurrencyCode: string | null;
+  /** The amount an approval was given for; `null` unless approved. */
+  readonly approvedDiscountTotal: string | null;
+  readonly approvedCurrencyCode: string | null;
+  readonly supersededAt: Date | null;
+  readonly supersededByRevisionId: string | null;
   readonly recordVersion: number;
 }
 
@@ -305,14 +310,14 @@ const ITEM_COLUMNS = `id, company_id, branch_id, quotation_revision_id, line_num
        record_version`;
 
 const DISCOUNT_APPROVAL_COLUMNS = `a.id, a.company_id, a.branch_id, a.quotation_id,
-       q.quotation_number, a.quotation_revision_id, r.revision_number, a.status,
+       q.quotation_number, a.quotation_revision_id, r.revision_number, a.status, a.origin,
        a.currency_code, a.discount_total::text AS discount_total,
        a.discount_base::text AS discount_base, a.elevated_line_count, a.policy_id,
        a.policy_version_no, a.threshold_kind, a.threshold_value::text AS threshold_value,
        a.threshold_currency_code, a.required_permission_code, a.requested_by, a.requested_at,
        a.decided_by, a.decided_at, a.decision_reason,
-       a.approver_limit_amount::text AS approver_limit_amount,
-       a.approver_limit_currency_code, a.record_version`;
+       a.approved_discount_total::text AS approved_discount_total, a.approved_currency_code,
+       a.superseded_at, a.superseded_by_revision_id, a.record_version`;
 
 const DISCOUNT_APPROVAL_FROM = `quo.discount_approvals a
          JOIN quo.quotations q
@@ -329,6 +334,7 @@ interface DiscountApprovalSql {
   quotation_revision_id: string;
   revision_number: number;
   status: string;
+  origin: string;
   currency_code: string;
   discount_total: string;
   discount_base: string;
@@ -344,8 +350,10 @@ interface DiscountApprovalSql {
   decided_by: string | null;
   decided_at: Date | null;
   decision_reason: string | null;
-  approver_limit_amount: string | null;
-  approver_limit_currency_code: string | null;
+  approved_discount_total: string | null;
+  approved_currency_code: string | null;
+  superseded_at: Date | null;
+  superseded_by_revision_id: string | null;
   record_version: number;
 }
 
@@ -358,6 +366,7 @@ const toDiscountApproval = (row: DiscountApprovalSql): DiscountApprovalRow => ({
   quotationRevisionId: row.quotation_revision_id,
   revisionNumber: row.revision_number,
   status: row.status,
+  origin: row.origin,
   currencyCode: row.currency_code,
   discountTotal: row.discount_total,
   discountBase: row.discount_base,
@@ -373,8 +382,10 @@ const toDiscountApproval = (row: DiscountApprovalSql): DiscountApprovalRow => ({
   decidedBy: row.decided_by,
   decidedAt: row.decided_at,
   decisionReason: row.decision_reason,
-  approverLimitAmount: row.approver_limit_amount,
-  approverLimitCurrencyCode: row.approver_limit_currency_code,
+  approvedDiscountTotal: row.approved_discount_total,
+  approvedCurrencyCode: row.approved_currency_code,
+  supersededAt: row.superseded_at,
+  supersededByRevisionId: row.superseded_by_revision_id,
   recordVersion: row.record_version,
 });
 
@@ -1322,7 +1333,9 @@ export class QuotationRepository extends Repository {
    *
    * `decided_by` comes from the request context; `upd_discount_approvals_scope`
    * refuses any other value and `ck_discount_approvals_separation` refuses the
-   * requester. `false` means the row was no longer pending.
+   * requester. An approval also records the amount it approved — the request's own
+   * discount and currency, which `ck_discount_approvals_approved_amount` holds and the
+   * issue guard compares with the lines. `false` means the row was no longer pending.
    */
   public async decideDiscountApproval(
     db: DbHandle,
@@ -1339,7 +1352,9 @@ export class QuotationRepository extends Repository {
       db,
       `UPDATE quo.discount_approvals
           SET status = $3, decided_by = $4, decided_at = now(), decision_reason = $5,
-              approver_limit_amount = $6::numeric(18,4), approver_limit_currency_code = $7
+              approver_limit_amount = $6::numeric(18,4), approver_limit_currency_code = $7,
+              approved_discount_total = CASE WHEN $3 = 'approved' THEN discount_total END,
+              approved_currency_code = CASE WHEN $3 = 'approved' THEN currency_code END
         WHERE tenant_id = $1 AND id = $2 AND status = 'pending'
         RETURNING id`,
       [
@@ -1356,9 +1371,100 @@ export class QuotationRepository extends Repository {
   }
 
   /**
-   * One branch's discount approvals in one status, most recently asked for first.
+   * The OPEN discount requests of one quotation — pending or rejected — newest first,
+   * locked.
    *
-   * The caller has authorized the named company and branch; `sel_discount_approvals_scope`
+   * While any exists the quotation is held to the newest one's policy snapshot: a
+   * new revision is measured against it and supersedes every open request. Callers
+   * hold the quotation lock (the module's lock order: quotation, then approval).
+   */
+  public async lockOpenDiscountApprovals(
+    db: DbHandle,
+    quotationId: string
+  ): Promise<readonly DiscountApprovalRow[]> {
+    const context = this.assertContext(db);
+    const result = await this.run<DiscountApprovalSql>(
+      db,
+      `SELECT ${DISCOUNT_APPROVAL_COLUMNS}
+         FROM ${DISCOUNT_APPROVAL_FROM}
+        WHERE a.tenant_id = $1 AND a.quotation_id = $2 AND a.status IN ('pending', 'rejected')
+        ORDER BY a.requested_at DESC, a.id DESC
+        FOR UPDATE OF a`,
+      [context.principal.tenantId, quotationId]
+    );
+    return result.rows.map(toDiscountApproval);
+  }
+
+  /**
+   * Marks open requests as replaced by a newer revision of their quotation.
+   *
+   * A superseded request records no decision and can never be decided
+   * (`quo.guard_discount_approval`); the revision that replaced it is named on it.
+   * Returns the ids that moved.
+   */
+  public async supersedeDiscountApprovals(
+    db: DbHandle,
+    approvalIds: readonly string[],
+    revisionId: string
+  ): Promise<readonly string[]> {
+    if (approvalIds.length === 0) return [];
+    const context = this.assertContext(db);
+    const result = await this.run<{ id: string }>(
+      db,
+      `UPDATE quo.discount_approvals
+          SET status = 'superseded', superseded_at = now(), superseded_by_revision_id = $3
+        WHERE tenant_id = $1 AND id = ANY($2::uuid[]) AND status IN ('pending', 'rejected')
+        RETURNING id`,
+      [context.principal.tenantId, [...approvalIds], revisionId]
+    );
+    return result.rows.map((row) => row.id);
+  }
+
+  /**
+   * Whether a revision WITHOUT a request carries a discount that needs one, asked of
+   * the database (`quo.revision_discount_needs_approval`) — the same measurement the
+   * issue guard makes, so the service can name the refusal before the guard raises.
+   */
+  public async revisionDiscountNeedsApproval(db: DbHandle, revisionId: string): Promise<boolean> {
+    this.assertContext(db);
+    const row = await this.runOne<{ needs: boolean }>(
+      db,
+      `SELECT quo.revision_discount_needs_approval($1, current_date) AS needs`,
+      [revisionId]
+    );
+    return row?.needs === true;
+  }
+
+  /**
+   * The revision's discount as `quo.issue_revision` will sum it — every live line's
+   * captured discount — as a `numeric(18,4)` STRING, with the revision's currency.
+   */
+  public async revisionDiscountTotal(
+    db: DbHandle,
+    revisionId: string
+  ): Promise<{ total: string; currency: string } | null> {
+    const context = this.assertContext(db);
+    return this.runOne<{ total: string; currency: string }>(
+      db,
+      `SELECT COALESCE(sum(i.captured_discount), 0)::numeric(18,4)::text AS total,
+              r.currency_code AS currency
+         FROM quo.quotation_revisions r
+         LEFT JOIN quo.quotation_items i
+           ON i.tenant_id = r.tenant_id AND i.quotation_revision_id = r.id
+          AND i.deleted_at IS NULL
+        WHERE r.tenant_id = $1 AND r.id = $2
+        GROUP BY r.currency_code`,
+      [context.principal.tenantId, revisionId]
+    );
+  }
+
+  /**
+   * One branch's discount approvals in one status, most recently asked for first —
+   * only requests on a quotation's CURRENT draft revision.
+   *
+   * A request on an older revision is either superseded (and never listed) or about a
+   * revision the quotation has moved past, so it is not offered for a decision. The
+   * caller has authorized the named company and branch; `sel_discount_approvals_scope`
    * is the second layer. `ix_discount_approvals_branch_status` covers the equality
    * prefix and the order.
    */
@@ -1386,6 +1492,11 @@ export class QuotationRepository extends Repository {
               ${cursorTimestamp('a.requested_at')} AS sort_value
          FROM ${DISCOUNT_APPROVAL_FROM}
         WHERE a.tenant_id = $1 AND a.company_id = $2 AND a.branch_id = $3 AND a.status = $4
+          AND a.status <> 'superseded' AND r.status = 'draft'
+          AND r.revision_number = (
+                SELECT max(latest.revision_number)
+                  FROM quo.quotation_revisions latest
+                 WHERE latest.tenant_id = a.tenant_id AND latest.quotation_id = a.quotation_id)
           ${keyset.predicate}
         ${keyset.order}
         ${keyset.limitClause}`,

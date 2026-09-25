@@ -10,7 +10,10 @@
  *     the quotation may apply it. At or over it, the discount is recorded as a
  *     PENDING request, and the policy version it was measured against is returned
  *     so the caller can snapshot it. Nothing about the requester's own authority is
- *     checked here: asking is not approving.
+ *     checked here: asking is not approving. When the quotation already holds an
+ *     open request, the caller PINS that request's snapshot and the discount is
+ *     measured against it instead of the policy in force (P1-32-PRE-OD-DISC-04), so
+ *     a threshold raised after asking cannot be reached by revising.
  *
  *  2. **When somebody approves it — may THIS person approve it?** `authorizeApproval`
  *     is called by the approver, against the snapshot. Three gates, all of which must
@@ -22,7 +25,8 @@
  *       configuration that switches it off; `maker_approver_distinct` is a legacy
  *       column that nothing reads.
  *     - **The permission** the snapshotted policy names (`svc.price.manage` when the
- *       company had none).
+ *       company had none) — the ONLY approval permission: the decision route itself is
+ *       gated by the quotation read code.
  *     - **The approver's own limit** — `iam.approval_limits`, read through the
  *       foundation helper `callerApprovalCeiling` in `@/server/auth/authorization`,
  *       NOT through `@/modules/iam`. That helper records why routing it through the
@@ -97,6 +101,20 @@ export interface DiscountThresholdSnapshot {
   readonly currency: string | null;
 }
 
+/**
+ * A policy snapshot a quotation is held to while it carries an open discount
+ * request (P1-32-PRE-OD-DISC-04).
+ *
+ * `threshold: null` is the snapshot of "nothing was configured" — a threshold of
+ * zero — and is NOT the same as passing no pin at all, which measures against the
+ * policy in force.
+ */
+export interface PinnedDiscountPolicy {
+  readonly threshold: DiscountThresholdSnapshot | null;
+  /** The permission an approver of the pinned request had to hold. */
+  readonly permissionCode: string;
+}
+
 export interface DiscountAssessment {
   /** Whether this discount must be approved by somebody other than the requester. */
   readonly requiresApproval: boolean;
@@ -126,12 +144,70 @@ export interface DiscountApprovalAuthorization {
   readonly ceiling: { readonly amount: string; readonly currency: string };
 }
 
+/**
+ * Why a person may not approve a recorded discount, named so the screen can say it
+ * without showing any amount: their own request, a missing permission, no limit that
+ * counts (or only one in another currency), or a limit below the discount.
+ */
+export type DiscountApprovalBlock =
+  | 'discount_approver_must_differ'
+  | 'discount_approval_permission_missing'
+  | 'discount_no_approval_limit'
+  | 'discount_limit_currency_mismatch'
+  | 'discount_over_approval_limit';
+
+/** Whether the signed-in person could approve a request, and if not, why. */
+export type DiscountApprovalStanding =
+  | { readonly canApprove: true; readonly ceiling: DiscountApprovalAuthorization['ceiling'] }
+  | {
+      readonly canApprove: false;
+      readonly block: DiscountApprovalBlock;
+      /** Set for a currency mismatch so the refusal can name the limit's currency. */
+      readonly ceilingCurrency?: string;
+      /** The `CurrencyMismatchError` behind a currency mismatch, kept for the log. */
+      readonly cause?: unknown;
+    };
+
+/**
+ * Memo for one read of many requests: the caller's ceiling per company, read once.
+ * Keyed by `companyId|asOf`.
+ */
+export type ApprovalCeilingMemo = Map<
+  string,
+  Promise<{ amount: string; currencyCode: string } | null>
+>;
+
 /** A named refusal the screen can put next to the decision. */
 function refuse(rule: string, message: string, path = 'body'): never {
   throw new AppFailure('ERR-IAM-001', {
     message,
     safeDetails: { violations: [{ path, rule }] },
   });
+}
+
+/**
+ * The permission a decision consults: the one the snapshot recorded.
+ *
+ * The code is a value copied from a policy version, so no operation declaration can
+ * name it; it is proven instead by the foreign keys on
+ * `svc.pricing_approval_policies.required_permission_code` and
+ * `quo.discount_approvals.required_permission_code`, both into `iam.permissions`.
+ * The fallback is the literal an unconfigured company's request records.
+ */
+function snapshotPermission(requiredPermissionCode: string): string {
+  return requiredPermissionCode || DEFAULT_DISCOUNT_APPROVAL_PERMISSION;
+}
+
+/**
+ * The ONE place a decision asks whether the caller holds the recorded permission —
+ * approving and turning down alike — so the permission-parity gate sees a single
+ * declared dynamic site.
+ */
+function holdsSnapshotPermission(
+  requiredPermissionCode: string,
+  hasPermission: PermissionProbe
+): Promise<boolean> {
+  return hasPermission(snapshotPermission(requiredPermissionCode));
 }
 
 export class DiscountAuthorizationService {
@@ -150,7 +226,8 @@ export class DiscountAuthorizationService {
    */
   public async assess(
     db: DbHandle,
-    request: DiscountAssessmentRequest
+    request: DiscountAssessmentRequest,
+    pinned?: PinnedDiscountPolicy
   ): Promise<DiscountAssessment> {
     const discount = Decimal.parse(request.discountAmount, MONEY);
     if (discount.isNegative) {
@@ -168,6 +245,32 @@ export class DiscountAuthorizationService {
       // Nothing is being given away, so there is nothing to approve. Returning
       // early keeps a zero discount from demanding a configured policy.
       return { requiresApproval: false, permissionCode: null, threshold: null };
+    }
+
+    if (pinned !== undefined) {
+      /**
+       * Measured against the SNAPSHOT the quotation is held to, never the policy in
+       * force: a threshold raised after a request was recorded must not let the same
+       * discount through by revising the quotation (P1-32-PRE-OD-DISC-04).
+       */
+      const snapshot = pinned.threshold;
+      const needs =
+        snapshot === null ||
+        this.exceedsThreshold(
+          {
+            thresholdKind: snapshot.kind,
+            thresholdValue: snapshot.value,
+            currencyCode: snapshot.currency,
+          },
+          discount,
+          base,
+          request.currency
+        );
+      return {
+        requiresApproval: needs,
+        permissionCode: needs ? pinned.permissionCode : null,
+        threshold: snapshot,
+      };
     }
 
     const policy = await this.repository.findApprovalPolicy(
@@ -204,18 +307,21 @@ export class DiscountAuthorizationService {
   }
 
   /**
-   * Authorizes the signed-in approver to approve a recorded discount request, or
-   * throws a named refusal.
+   * Whether the signed-in person could approve a recorded discount request, and if
+   * not, the ONE reason — without throwing and without exposing their limit.
    *
    * The order is the order a person would want to be told: first whether they may
    * approve this at all (they asked for it), then whether they hold the kind of
-   * authority it needs, then whether they hold enough of it.
+   * authority it needs, then whether they hold enough of it. `authorizeApproval`
+   * turns a block into a named refusal; the approvals list turns it into the
+   * per-row `canDecide` answer, so the two can never disagree.
    */
-  public async authorizeApproval(
+  public async evaluateApproval(
     db: DbHandle,
     request: DiscountApprovalRequest,
-    hasPermission: PermissionProbe
-  ): Promise<DiscountApprovalAuthorization> {
+    hasPermission: PermissionProbe,
+    memo?: ApprovalCeilingMemo
+  ): Promise<DiscountApprovalStanding> {
     /**
      * Maker ≠ approver, unconditionally.
      *
@@ -225,65 +331,113 @@ export class DiscountAuthorizationService {
      * refuses the same thing whatever reaches the database.
      */
     if (request.requestedBy === request.approverId) {
-      refuse(
-        'discount_approver_must_differ',
-        'The approver of a discount must be someone other than the person who requested it'
-      );
+      return { canApprove: false, block: 'discount_approver_must_differ' };
     }
 
     /**
      * The permission comes from the SNAPSHOT, so a later change to the company's
-     * policy cannot change who may approve a request already made. The fallback is
-     * the same literal `assess` records when no policy exists.
+     * policy cannot change who may approve a request already made. It is the ONLY
+     * permission a decision needs beyond reading quotations: the operation's own
+     * gate is the read code, so the approver population is exactly the holders of
+     * the recorded permission.
      */
-    await this.requireSnapshotPermission(request.requiredPermissionCode, hasPermission);
+    if (!(await holdsSnapshotPermission(request.requiredPermissionCode, hasPermission))) {
+      return { canApprove: false, block: 'discount_approval_permission_missing' };
+    }
 
-    const ceiling = await this.ceilings.callerApprovalCeiling(
-      db,
-      request.companyId,
-      DISCOUNT_LIMIT_TYPE,
-      request.asOf
-    );
+    const key = `${request.companyId}|${request.asOf}`;
+    let pending = memo?.get(key);
+    if (pending === undefined) {
+      pending = this.ceilings.callerApprovalCeiling(
+        db,
+        request.companyId,
+        DISCOUNT_LIMIT_TYPE,
+        request.asOf
+      );
+      memo?.set(key, pending);
+    }
+    const ceiling = await pending;
     if (ceiling === null) {
       // Named, because since `callerApprovalCeiling` stopped counting a limit the
       // caller set (QA row 7.1d) an administrator can hold a limit on file and
       // still have none that counts — the screen has to say why.
-      refuse('discount_no_approval_limit', 'You have no discount approval limit for this company');
+      return { canApprove: false, block: 'discount_no_approval_limit' };
     }
     const allowed = Money.of(ceiling.amount, ceiling.currencyCode);
     const requested = Money.of(request.discountAmount, request.currency);
     /**
-     * Currency mismatch is a hard REFUSAL, never a conversion — and it has to be a
-     * refusal the caller can read.
+     * Currency mismatch is a hard REFUSAL, never a conversion.
      *
-     * `Money.greaterThan` throws `CurrencyMismatchError`, which is a plain `Error`
-     * and therefore classified `ERR-SYS-001` — an HTTP 500 — by the route handler.
-     * That is reachable from ordinary configuration: an approval limit denominated
-     * in USD against a price list in JOD is a mismatch, not a bug. The comparison is
-     * intentionally left able to throw (silent FX is the thing `Money` exists to
-     * make unexpressible); it is translated here instead.
+     * `Money.greaterThan` throws `CurrencyMismatchError`; a limit denominated in USD
+     * against a price list in JOD is a mismatch, not a bug, and it authorizes
+     * nothing here. Silent FX is the thing `Money` exists to make unexpressible.
      */
     let overCeiling: boolean;
     try {
       overCeiling = requested.greaterThan(allowed, 'discount approval limit');
     } catch (cause) {
       if (cause instanceof CurrencyMismatchError) {
-        throw new AppFailure('ERR-IAM-001', {
-          message:
-            `Your discount approval limit is denominated in ${ceiling.currencyCode} and ` +
-            `this discount is in ${request.currency}. A limit in another currency ` +
-            'authorizes nothing here, and no conversion is performed.',
+        return {
+          canApprove: false,
+          block: 'discount_limit_currency_mismatch',
+          ceilingCurrency: ceiling.currencyCode,
           cause,
-        });
+        };
       }
       throw cause;
     }
     if (overCeiling) {
-      // Named since P1-32-PRE-OD-DISC-01: an approver who holds a limit that is too
-      // small is told so, rather than being left to guess which gate refused them.
-      refuse('discount_over_approval_limit', 'The discount exceeds your approval limit');
+      return { canApprove: false, block: 'discount_over_approval_limit' };
     }
-    return { ceiling: { amount: ceiling.amount, currency: ceiling.currencyCode } };
+    return {
+      canApprove: true,
+      ceiling: { amount: ceiling.amount, currency: ceiling.currencyCode },
+    };
+  }
+
+  /**
+   * Authorizes the signed-in approver to approve a recorded discount request, or
+   * throws a named refusal (`evaluateApproval` decides; this names it).
+   */
+  public async authorizeApproval(
+    db: DbHandle,
+    request: DiscountApprovalRequest,
+    hasPermission: PermissionProbe
+  ): Promise<DiscountApprovalAuthorization> {
+    const standing = await this.evaluateApproval(db, request, hasPermission);
+    if (standing.canApprove) return { ceiling: standing.ceiling };
+    switch (standing.block) {
+      case 'discount_approver_must_differ':
+        return refuse(
+          'discount_approver_must_differ',
+          'The approver of a discount must be someone other than the person who requested it'
+        );
+      case 'discount_approval_permission_missing':
+        return refuse(
+          'discount_approval_permission_missing',
+          `Deciding this discount requires ${snapshotPermission(request.requiredPermissionCode)}`
+        );
+      case 'discount_no_approval_limit':
+        return refuse(
+          'discount_no_approval_limit',
+          'You have no discount approval limit for this company'
+        );
+      case 'discount_limit_currency_mismatch':
+        // Named, and a refusal the caller can read rather than an internal error; the
+        // mismatch stays the CAUSE so the operational log keeps the exact detail.
+        throw new AppFailure('ERR-IAM-001', {
+          message:
+            `Your discount approval limit is denominated in ${standing.ceilingCurrency ?? 'another currency'} ` +
+            `and this discount is in ${request.currency}. A limit in another currency ` +
+            'authorizes nothing here, and no conversion is performed.',
+          cause: standing.cause,
+          safeDetails: { violations: [{ path: 'body', rule: 'discount_limit_currency_mismatch' }] },
+        });
+      case 'discount_over_approval_limit':
+        // Named since P1-32-PRE-OD-DISC-01: an approver who holds a limit that is too
+        // small is told so, rather than being left to guess which gate refused them.
+        return refuse('discount_over_approval_limit', 'The discount exceeds your approval limit');
+    }
   }
 
   /**
@@ -304,27 +458,11 @@ export class DiscountAuthorizationService {
         'A discount request is decided by someone other than the person who requested it'
       );
     }
-    await this.requireSnapshotPermission(request.requiredPermissionCode, hasPermission);
-  }
-
-  /**
-   * The ONE place a decision consults the permission the snapshot names.
-   *
-   * The code is a value copied from a policy version, so no operation declaration
-   * can name it; it is proven instead by the foreign keys on
-   * `svc.pricing_approval_policies.required_permission_code` and
-   * `quo.discount_approvals.required_permission_code`, both into `iam.permissions`.
-   * The fallback is the literal an unconfigured company's request records.
-   */
-  private async requireSnapshotPermission(
-    requiredPermissionCode: string,
-    hasPermission: PermissionProbe
-  ): Promise<void> {
-    const permissionCode = requiredPermissionCode || DEFAULT_DISCOUNT_APPROVAL_PERMISSION;
-    if (!(await hasPermission(permissionCode))) {
-      throw new AppFailure('ERR-IAM-001', {
-        message: `Deciding this discount requires ${permissionCode}`,
-      });
+    if (!(await holdsSnapshotPermission(request.requiredPermissionCode, hasPermission))) {
+      refuse(
+        'discount_approval_permission_missing',
+        `Deciding this discount requires ${snapshotPermission(request.requiredPermissionCode)}`
+      );
     }
   }
 

@@ -29,7 +29,15 @@
         "audit",
         "isolation"
       ],
-      "declared": ["success", "denial", "cross-tenant", "audit", "idempotency", "isolation"],
+      "declared": [
+        "success",
+        "denial",
+        "cross-tenant",
+        "audit",
+        "idempotency",
+        "isolation",
+        "concurrency"
+      ],
       "required": [
         "route",
         "service",
@@ -39,11 +47,13 @@
         "idempotency",
         "audit",
         "isolation",
-        "denial"
+        "denial",
+        "concurrency"
       ],
       "provided": [
         "audit",
         "authorization",
+        "concurrency",
         "cross-tenant",
         "denial",
         "idempotency",

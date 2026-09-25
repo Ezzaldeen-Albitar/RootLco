@@ -4,10 +4,12 @@
  *
  * A discount at or over the company threshold is recorded as a request when the
  * quotation revision is created, and it waits here for somebody OTHER than the
- * requester to decide it. The approvals screen reads this list for the branch the
- * operator is working in; each row says whether the signed-in person asked for it
- * (`requestedByCaller`), because such a request is waiting for another approver and
- * the screen must not offer its own requester a decision.
+ * requester to decide it. Only requests on a quotation's CURRENT draft revision are
+ * listed. The approvals screen reads this list for the branch the operator is
+ * working in; each row says whether the signed-in person asked for it
+ * (`requestedByCaller`) and whether they could approve it (`canDecide`, with
+ * `cannotDecideReason` when not) — computed by the server, so no approval limit is
+ * ever part of the answer.
  *
  * ## Scope
  *
@@ -29,7 +31,7 @@ import {
   scopeTargetOption,
   searchParamsToObject,
 } from '@/server/http/validation';
-import { DISCOUNT_APPROVAL_STATES, quotationModule } from '@/modules/quotation';
+import { LISTABLE_DISCOUNT_APPROVAL_STATES, quotationModule } from '@/modules/quotation';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -38,8 +40,12 @@ const ListQuery = z
   .object({
     companyId: schemas.uuid,
     branchId: schemas.uuid,
-    /** Defaults to `pending` — the requests still waiting for a decision. */
-    status: z.enum(DISCOUNT_APPROVAL_STATES).optional(),
+    /**
+     * Defaults to `pending` — the requests still waiting for a decision. A
+     * `superseded` request belongs to a revision the quotation moved past and is
+     * never listed.
+     */
+    status: z.enum(LISTABLE_DISCOUNT_APPROVAL_STATES).optional(),
     cursor: schemas.cursor.optional(),
     limit: schemas.limit.optional(),
   })

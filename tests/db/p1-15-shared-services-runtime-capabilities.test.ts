@@ -548,10 +548,11 @@ describe('P1-15 / global security posture', () => {
     // defining a function of its own — and no grant, role or policy on a `shared`
     // relation, so every shared-surface assertion in this file is unchanged by it.
     expect(files.at(-2)).toBe('20260918090000_inv_item_reorder_levels.sql');
-    // 160 is the discount approval record (P1-32-PRE-OD-DISC-01):
-    // quo.discount_approvals, the issue guard on quo.quotation_revisions, and
-    // svc.pricing_approval_policies.version_no with its two version guards. One
-    // table, three policies, six triggers and three functions, all in `quo` and
+    // 160 is the discount approval record (P1-32-PRE-OD-DISC-01, -04):
+    // quo.discount_approvals with its legacy-draft backfill, the issue guard on
+    // quo.quotation_revisions with the database-side discount measurement, and
+    // svc.pricing_approval_policies.version_no with its three version triggers. One
+    // table, three policies, seven triggers and seven functions, all in `quo` and
     // `svc` — and no grant, role or policy on a `shared` relation, so every
     // shared-surface assertion in this file is unchanged by it.
     expect(files.at(-1)).toBe('20260925090000_quo_discount_approvals.sql');

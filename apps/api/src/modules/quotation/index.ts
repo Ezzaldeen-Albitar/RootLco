@@ -40,14 +40,18 @@ export type {
   DecideDiscountInput,
   DiscountApprovalDecision,
   DiscountApprovalListQuery,
+  DiscountDecisionBlock,
   DiscountApprovalPerson,
   DiscountApprovalState,
   DiscountApprovalThresholdView,
   DiscountApprovalView,
+  ListableDiscountApprovalState,
 } from './application/discount-approval-service';
 export {
   DISCOUNT_APPROVAL_DECISIONS,
   DISCOUNT_APPROVAL_STATES,
+  DISCOUNT_DECISION_BLOCKS,
+  LISTABLE_DISCOUNT_APPROVAL_STATES,
   MAX_DISCOUNT_DECISION_REASON,
 } from './application/discount-approval-service';
 import { DiscountApprovalService } from './application/discount-approval-service';

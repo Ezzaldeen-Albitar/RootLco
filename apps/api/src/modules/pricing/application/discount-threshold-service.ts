@@ -7,8 +7,10 @@
  *
  * ## A change is a new version, and it applies from now on
  *
- * Writing a threshold never edits the current row. The current version is retired
- * and the next one is recorded, effective from the database's business date. A
+ * Writing a threshold never edits the current row. The next version is recorded,
+ * effective from the database's business date, and recording it retires the current
+ * one at the database (`svc.record_pricing_approval_policy_version`) — no other write
+ * may change a version's status, validity or deletion. A
  * discount already asked for keeps the version it was measured against — the
  * quotation module copies it into the request — so raising the threshold does not
  * approve a pending request, and lowering it does not undo an approval. That is the
@@ -26,7 +28,8 @@
  *
  * The company's threshold setting has a record version of its own: `1` before any
  * version is recorded, and one more with every version recorded after that — the
- * latest version number plus one. It is published as `recordVersion` and as the
+ * highest version number the company has ever used, deleted and retired rows
+ * included, plus one. It is published as `recordVersion` and as the
  * ETag, and `If-Match` must carry it on every write. A stale value is a conflict,
  * so two administrators editing at once cannot overwrite each other unseen, and a
  * first write proves it saw "nothing set yet" by sending `1`.
@@ -130,7 +133,9 @@ export class DiscountThresholdService {
       current: current === null ? null : view(current),
       tenantDefault: tenantDefault === null ? null : view(tenantDefault),
       history: history.map(view),
-      recordVersion: (history[0]?.versionNo ?? 0) + 1,
+      // Counted over EVERY version the company ever recorded, deleted and retired
+      // ones included, so the next write never reuses a number.
+      recordVersion: (await this.repository.latestDiscountPolicyVersionNo(db, companyId)) + 1,
     };
   }
 
@@ -150,31 +155,32 @@ export class DiscountThresholdService {
       refuseField('body.currency', 'unknown_currency', `Currency ${currency} is not registered`);
     }
 
-    const history = await this.repository.listDiscountPolicyVersions(db, input.companyId, 1);
-    const latest = history[0] ?? null;
-    const current = latest !== null && latest.status === 'active' ? latest : null;
-    const recordVersion = (latest?.versionNo ?? 0) + 1;
+    // The next version is one above every number the company has used — deleted and
+    // retired rows included — which is exactly what `recordVersion` publishes.
+    const latestVersionNo = await this.repository.latestDiscountPolicyVersionNo(
+      db,
+      input.companyId
+    );
+    const recordVersion = latestVersionNo + 1;
     if (expectedVersion !== recordVersion) {
       throw new AppFailure('ERR-CON-001', {
         message: `The discount threshold is at record version ${recordVersion}, not ${expectedVersion}`,
       });
     }
+    const current =
+      (
+        await this.repository.listDiscountPolicyVersions(
+          db,
+          input.companyId,
+          DISCOUNT_THRESHOLD_HISTORY_LIMIT
+        )
+      ).find((row) => row.status === 'active') ?? null;
 
+    // A new version carries the permission of the version it replaces (or of the
+    // tenant default, or `svc.price.manage`). It is never a field of the request.
     let requiredPermissionCode: string;
     if (current !== null) {
-      // Retired only if it is STILL the current version: a concurrent writer that got
-      // here first leaves nothing to retire, and this write becomes a conflict.
-      const retired = await this.repository.retireDiscountPolicyVersion(
-        db,
-        input.companyId,
-        current.versionNo
-      );
-      if (retired === null) {
-        throw new AppFailure('ERR-CON-001', {
-          message: 'The discount threshold was changed by another request',
-        });
-      }
-      requiredPermissionCode = retired.requiredPermissionCode;
+      requiredPermissionCode = current.requiredPermissionCode;
     } else {
       const tenantDefault = (await this.repository.listDiscountPolicyVersions(db, null, 1)).find(
         (row) => row.status === 'active'
@@ -187,16 +193,16 @@ export class DiscountThresholdService {
     try {
       recorded = await this.repository.insertDiscountPolicyVersion(db, {
         companyId: input.companyId,
-        versionNo: (latest?.versionNo ?? 0) + 1,
+        versionNo: recordVersion,
         thresholdKind: input.thresholdKind,
         thresholdValue: input.thresholdValue,
         currencyCode: currency,
         requiredPermissionCode,
       });
     } catch (error) {
-      // Two first writes raced, or two writers read the same version: the loser
-      // collides on the version or active-scope unique index. That is a conflict,
-      // never a second active threshold.
+      // Two writers read the same latest version: the loser collides on the version
+      // index (or on `svc.record_pricing_approval_policy_version`, with the same
+      // SQLSTATE). That is a conflict, never a second active threshold.
       if (isSqlState(error, SQLSTATE.uniqueViolation)) {
         throw new AppFailure('ERR-CON-001', {
           message: 'The discount threshold was changed by another request',

@@ -1,5 +1,5 @@
 /**
- * Discount approvals — the second step (P1-32-PRE-OD-DISC-01).
+ * Discount approvals — the second step (P1-32-PRE-OD-DISC-01, -04).
  *
  * A discount at or over the company's threshold is not decided by the person who
  * asks for it. `QuotationService` records the request (`quo.discount_approvals`,
@@ -11,26 +11,46 @@
  *
  * Anyone who is not the requester, who holds the permission the snapshotted policy
  * names, and — to approve — whose own discount approval limit covers the whole
- * discount. The limit is read at the moment of approval and never counts a limit the
- * approver set for themselves. Each of the three refusals is named so the screen can
- * say which one applies: `discount_approver_must_differ`,
- * `discount_no_approval_limit`, `discount_over_approval_limit`.
+ * discount. The operation itself is gated only by the quotation READ code; the
+ * recorded permission is the one that decides who approves, checked here against
+ * the request's own company and branch. The limit is read at the moment of approval
+ * and never counts a limit the approver set for themselves. Each refusal is named
+ * so the screen can say which one applies: `discount_approver_must_differ`,
+ * `discount_approval_permission_missing`, `discount_no_approval_limit`,
+ * `discount_limit_currency_mismatch`, `discount_over_approval_limit`.
+ *
+ * ## What a reader sees
+ *
+ * The request, its snapshot and its decision — never an approver's limit. Limits are
+ * readable only through the approval-limit administration. Instead, every row says
+ * whether the signed-in person could approve it (`canDecide`) and, if not, why
+ * (`cannotDecideReason`), computed by the same `evaluateApproval` a decision runs,
+ * so the screen never offers what the server would refuse and never shows an amount
+ * it should not.
  *
  * ## Why the snapshot, and not the policy in force now
  *
  * The request carries the threshold, the permission and the policy version it was
  * measured against. Raising the company threshold afterwards therefore does not
- * approve it — it is still pending and still needs another person — and lowering it
- * does not undo an approval already given. A policy change is prospective.
+ * approve it, and revising the quotation does not escape it: a new revision is
+ * measured against the same snapshot and supersedes it (`superseded`, never
+ * decidable). Lowering the threshold does not undo an approval already given.
  *
- * ## Lock order
+ * ## Lock order and concurrency
  *
  * The quotation, then the approval — the module's rule. `quo.issue_revision` locks
  * the quotation first, so an approval and an issue of the same document serialize
- * on it rather than deadlocking.
+ * on it rather than deadlocking; two decisions on one request serialize on the same
+ * lock, and the second finds the request decided and is refused by name
+ * (`discount_approval_already_decided`).
  */
 import { iamDirectory } from '@/modules/iam';
-import { pricingModule, type PermissionProbe } from '@/modules/pricing';
+import {
+  pricingModule,
+  type ApprovalCeilingMemo,
+  type DiscountApprovalBlock,
+  type PermissionProbe,
+} from '@/modules/pricing';
 import { appendAudit } from '@/server/audit/audit';
 import { callerHoldsPermission, type ScopeAuthorizer } from '@/server/auth/authorization';
 import { pageRequest, type Page } from '@/server/db/pagination';
@@ -43,12 +63,44 @@ import {
 } from '../data/quotation-repository';
 
 /** `ck_discount_approvals_status`. */
-export const DISCOUNT_APPROVAL_STATES = Object.freeze(['pending', 'approved', 'rejected'] as const);
+export const DISCOUNT_APPROVAL_STATES = Object.freeze([
+  'pending',
+  'approved',
+  'rejected',
+  'superseded',
+] as const);
 export type DiscountApprovalState = (typeof DISCOUNT_APPROVAL_STATES)[number];
+
+/**
+ * The states the approvals list may be asked for. A superseded request belongs to a
+ * revision the quotation has moved past, and is never listed.
+ */
+export const LISTABLE_DISCOUNT_APPROVAL_STATES = Object.freeze([
+  'pending',
+  'approved',
+  'rejected',
+] as const);
+export type ListableDiscountApprovalState = (typeof LISTABLE_DISCOUNT_APPROVAL_STATES)[number];
 
 /** The two decisions an approver may record. */
 export const DISCOUNT_APPROVAL_DECISIONS = Object.freeze(['approved', 'rejected'] as const);
 export type DiscountApprovalDecision = (typeof DISCOUNT_APPROVAL_DECISIONS)[number];
+
+/**
+ * Why the signed-in person cannot approve a request, without an amount:
+ * `not_pending` — it is not waiting for a decision; `own_request` — they asked for it;
+ * `missing_permission` — they lack the permission it records; `no_approval_limit` —
+ * no limit that counts (a self-set one, or one in another currency, does not);
+ * `over_approval_limit` — their limit is below the discount.
+ */
+export const DISCOUNT_DECISION_BLOCKS = Object.freeze([
+  'not_pending',
+  'own_request',
+  'missing_permission',
+  'no_approval_limit',
+  'over_approval_limit',
+] as const);
+export type DiscountDecisionBlock = (typeof DISCOUNT_DECISION_BLOCKS)[number];
 
 /** Longest reason a decision may carry. */
 export const MAX_DISCOUNT_DECISION_REASON = 500;
@@ -78,8 +130,10 @@ export interface DiscountApprovalView {
   readonly revisionNumber: number;
   readonly companyId: string;
   readonly branchId: string;
-  /** `pending`, `approved` or `rejected`. */
+  /** `pending`, `approved`, `rejected` or `superseded`. */
   readonly status: string;
+  /** `requested`, or `backfilled` for a draft written before the two-step flow. */
+  readonly origin: string;
   readonly currency: string;
   /** The whole revision's discount, `numeric(18,4)` STRING. */
   readonly discountTotal: string;
@@ -96,11 +150,19 @@ export interface DiscountApprovalView {
    * waiting for ANOTHER approver: the requester can never decide it.
    */
   readonly requestedByCaller: boolean;
+  /**
+   * Whether the signed-in person could approve this request now: it is pending,
+   * they did not ask for it, they hold the recorded permission, and a limit that
+   * counts covers it. Computed by the server; no limit is ever returned.
+   */
+  readonly canDecide: boolean;
+  /** Why `canDecide` is false, or `null` when it is true. */
+  readonly cannotDecideReason: DiscountDecisionBlock | null;
   readonly decidedBy: DiscountApprovalPerson | null;
   readonly decidedAt: string | null;
   readonly decisionReason: string | null;
-  /** The approver's limit the approval was within. Only on an approved request. */
-  readonly approverLimit: { readonly amount: string; readonly currency: string } | null;
+  /** When a newer revision replaced this request, or `null`. */
+  readonly supersededAt: string | null;
   readonly recordVersion: number;
 }
 
@@ -113,7 +175,7 @@ export interface DecideDiscountInput {
 export interface DiscountApprovalListQuery {
   readonly companyId: string;
   readonly branchId: string;
-  readonly status: DiscountApprovalState;
+  readonly status: ListableDiscountApprovalState;
 }
 
 function refuse(
@@ -125,16 +187,46 @@ function refuse(
   throw new AppFailure(code, { message, safeDetails: { violations: [{ path, rule }] } });
 }
 
+/** The approval-side block, as the reason the screen states. */
+const BLOCK_REASON: Readonly<Record<DiscountApprovalBlock, DiscountDecisionBlock>> = {
+  discount_approver_must_differ: 'own_request',
+  discount_approval_permission_missing: 'missing_permission',
+  discount_no_approval_limit: 'no_approval_limit',
+  // A limit in another currency authorizes nothing: to the reader it is no limit.
+  discount_limit_currency_mismatch: 'no_approval_limit',
+  discount_over_approval_limit: 'over_approval_limit',
+};
+
+/** A permission probe bound to one company and branch, memoised for one read. */
+function permissionProbe(
+  db: DbHandle,
+  companyId: string,
+  branchId: string,
+  memo?: Map<string, Promise<boolean>>
+): PermissionProbe {
+  return (permissionCode: string) => {
+    const key = `${companyId}|${branchId}|${permissionCode}`;
+    let answer = memo?.get(key);
+    if (answer === undefined) {
+      answer = callerHoldsPermission(db, permissionCode, { companyId, branchId });
+      memo?.set(key, answer);
+    }
+    return answer;
+  };
+}
+
 /**
- * Names the people on a set of approvals and renders them for the wire.
+ * Names the people on a set of approvals, works out whether the signed-in person
+ * could decide each one, and renders them for the wire.
  *
- * One directory read for the whole set. The directory hands back no name to a
- * caller who may not read users; such a caller still sees the ids and whether the
- * request is their own.
+ * One directory read for the whole set, and each permission and ceiling asked once.
+ * The directory hands back no name to a caller who may not read users; such a caller
+ * still sees the ids and whether the request is their own.
  */
 export async function describeDiscountApprovals(
   db: DbHandle,
-  rows: readonly DiscountApprovalRow[]
+  rows: readonly DiscountApprovalRow[],
+  asOf: string
 ): Promise<readonly DiscountApprovalView[]> {
   if (rows.length === 0) return [];
   const ids = new Set<string>();
@@ -148,53 +240,82 @@ export async function describeDiscountApprovals(
     displayName: names.get(id)?.displayName ?? null,
   });
   const caller = db.context.principal.userId;
-  return rows.map((row) => ({
-    id: row.id,
-    quotationId: row.quotationId,
-    quotationNumber: row.quotationNumber,
-    revisionId: row.quotationRevisionId,
-    revisionNumber: row.revisionNumber,
-    companyId: row.companyId,
-    branchId: row.branchId,
-    status: row.status,
-    currency: row.currencyCode,
-    discountTotal: row.discountTotal,
-    discountBase: row.discountBase,
-    elevatedLineCount: row.elevatedLineCount,
-    threshold:
-      row.policyId === null ||
-      row.policyVersionNo === null ||
-      row.thresholdKind === null ||
-      row.thresholdValue === null
-        ? null
-        : {
-            policyId: row.policyId,
-            versionNo: row.policyVersionNo,
-            kind: row.thresholdKind,
-            value: row.thresholdValue,
-            currency: row.thresholdCurrencyCode,
-          },
-    requiredPermission: row.requiredPermissionCode,
-    requestedBy: person(row.requestedBy),
-    requestedAt: row.requestedAt.toISOString(),
-    requestedByCaller: row.requestedBy === caller,
-    decidedBy: row.decidedBy === null ? null : person(row.decidedBy),
-    decidedAt: row.decidedAt === null ? null : row.decidedAt.toISOString(),
-    decisionReason: row.decisionReason,
-    approverLimit:
-      row.approverLimitAmount === null || row.approverLimitCurrencyCode === null
-        ? null
-        : { amount: row.approverLimitAmount, currency: row.approverLimitCurrencyCode },
-    recordVersion: row.recordVersion,
-  }));
+  const discounts = pricingModule().discounts;
+  const permissions = new Map<string, Promise<boolean>>();
+  const ceilings: ApprovalCeilingMemo = new Map();
+
+  const views: DiscountApprovalView[] = [];
+  for (const row of rows) {
+    let reason: DiscountDecisionBlock | null;
+    if (row.status !== 'pending') {
+      reason = 'not_pending';
+    } else {
+      const standing = await discounts.evaluateApproval(
+        db,
+        {
+          companyId: row.companyId,
+          discountAmount: row.discountTotal,
+          currency: row.currencyCode,
+          asOf,
+          requestedBy: row.requestedBy,
+          approverId: caller,
+          requiredPermissionCode: row.requiredPermissionCode,
+        },
+        permissionProbe(db, row.companyId, row.branchId, permissions),
+        ceilings
+      );
+      reason = standing.canApprove ? null : BLOCK_REASON[standing.block];
+    }
+    views.push({
+      id: row.id,
+      quotationId: row.quotationId,
+      quotationNumber: row.quotationNumber,
+      revisionId: row.quotationRevisionId,
+      revisionNumber: row.revisionNumber,
+      companyId: row.companyId,
+      branchId: row.branchId,
+      status: row.status,
+      origin: row.origin,
+      currency: row.currencyCode,
+      discountTotal: row.discountTotal,
+      discountBase: row.discountBase,
+      elevatedLineCount: row.elevatedLineCount,
+      threshold:
+        row.policyId === null ||
+        row.policyVersionNo === null ||
+        row.thresholdKind === null ||
+        row.thresholdValue === null
+          ? null
+          : {
+              policyId: row.policyId,
+              versionNo: row.policyVersionNo,
+              kind: row.thresholdKind,
+              value: row.thresholdValue,
+              currency: row.thresholdCurrencyCode,
+            },
+      requiredPermission: row.requiredPermissionCode,
+      requestedBy: person(row.requestedBy),
+      requestedAt: row.requestedAt.toISOString(),
+      requestedByCaller: row.requestedBy === caller,
+      canDecide: reason === null,
+      cannotDecideReason: reason,
+      decidedBy: row.decidedBy === null ? null : person(row.decidedBy),
+      decidedAt: row.decidedAt === null ? null : row.decidedAt.toISOString(),
+      decisionReason: row.decisionReason,
+      supersededAt: row.supersededAt === null ? null : row.supersededAt.toISOString(),
+      recordVersion: row.recordVersion,
+    });
+  }
+  return views;
 }
 
 /** One approval rendered for the wire. */
 export async function describeDiscountApproval(
   db: DbHandle,
-  row: DiscountApprovalRow
+  row: DiscountApprovalRow,
+  asOf: string
 ): Promise<DiscountApprovalView> {
-  const [view] = await describeDiscountApprovals(db, [row]);
+  const [view] = await describeDiscountApprovals(db, [row], asOf);
   if (view === undefined) throw new Error('quotation: an approval rendered to nothing');
   return view;
 }
@@ -203,7 +324,8 @@ export class DiscountApprovalService {
   public constructor(private readonly repository: QuotationRepository) {}
 
   /**
-   * One branch's discount approvals in one status, most recently asked for first.
+   * One branch's discount approvals in one status, most recently asked for first —
+   * only those on a quotation's current draft revision.
    *
    * The company and branch are named by the caller and authorized before anything
    * is read, so an empty page means "none here", never "not allowed to know".
@@ -217,7 +339,14 @@ export class DiscountApprovalService {
     await authorizeScope({ companyId: query.companyId, branchId: query.branchId });
     const request = pageRequest(DISCOUNT_APPROVAL_LIST_ORDERING, page);
     const result = await this.repository.listDiscountApprovals(db, query, request);
-    return { ...result, items: await describeDiscountApprovals(db, result.items) };
+    return {
+      ...result,
+      items: await describeDiscountApprovals(
+        db,
+        result.items,
+        await this.repository.businessDate(db)
+      ),
+    };
   }
 
   /** Approves or turns down a discount somebody else asked for. */
@@ -234,7 +363,9 @@ export class DiscountApprovalService {
       });
     }
     // Deferred scoped authorization against the ROW's own scope: the path names no
-    // branch, so the declared scope would otherwise be inert (P1-18-A-01).
+    // branch, so the declared scope would otherwise be inert (P1-18-A-01). The
+    // declared code is the quotation READ code; the approval authority is the
+    // permission the request recorded, checked below against the same scope.
     await authorizeScope({ companyId: probe.companyId, branchId: probe.branchId });
 
     const reason = input.reason?.trim();
@@ -242,7 +373,8 @@ export class DiscountApprovalService {
       refuse('ERR-VAL-001', 'body.reason', 'required', 'Turning a discount down states why');
     }
 
-    // Lock order: the quotation, then the approval.
+    // Lock order: the quotation, then the approval. A concurrent decision on the same
+    // request waits here, and then finds it decided.
     const quotation = await this.repository.lockQuotation(db, probe.quotationId);
     const approval =
       quotation === null ? null : await this.repository.lockDiscountApproval(db, approvalId);
@@ -250,6 +382,14 @@ export class DiscountApprovalService {
       throw new AppFailure('ERR-RES-001', {
         message: `Discount approval ${approvalId} is not visible`,
       });
+    }
+    if (approval.status === 'superseded') {
+      refuse(
+        'ERR-TRN-001',
+        'body',
+        'discount_approval_superseded',
+        `Discount approval ${approvalId} was replaced by a newer revision and cannot be decided`
+      );
     }
     if (approval.status !== 'pending') {
       refuse(
@@ -261,7 +401,7 @@ export class DiscountApprovalService {
     }
 
     const approverId = db.context.principal.userId;
-    const probePermission = this.permissionProbe(db, approval.companyId, approval.branchId);
+    const probePermission = permissionProbe(db, approval.companyId, approval.branchId);
     const discounts = pricingModule().discounts;
     let limit: { amount: string; currency: string } | null = null;
     if (input.decision === 'approved') {
@@ -313,7 +453,7 @@ export class DiscountApprovalService {
     }
 
     await this.auditDecision(db, after, limit);
-    return describeDiscountApproval(db, after);
+    return describeDiscountApproval(db, after, await this.repository.businessDate(db));
   }
 
   /**
@@ -322,7 +462,8 @@ export class DiscountApprovalService {
    * `quo.discount_approval.approved` / `.rejected` record the decision on the request.
    * An approval also records `svc.discount.authorized` against the REVISION — the
    * fact the trail has always held for a discount given away over the threshold,
-   * now naming the approver's limit and the person who asked for it.
+   * now naming the approver's limit and the person who asked for it. The limit is
+   * classified `restricted`: the trail keeps it, readers of the request never see it.
    */
   private async auditDecision(
     db: DbHandle,
@@ -351,6 +492,7 @@ export class DiscountApprovalService {
         { field: 'discountTotal', classification: 'restricted', value: approval.discountTotal },
         { field: 'currency', classification: 'public', value: approval.currencyCode },
         { field: 'requestedBy', classification: 'internal', value: approval.requestedBy },
+        { field: 'origin', classification: 'internal', value: approval.origin },
         {
           field: 'policyVersionNo',
           classification: 'internal',
@@ -359,6 +501,11 @@ export class DiscountApprovalService {
         },
         ...(approved
           ? [
+              {
+                field: 'approvedDiscountTotal',
+                classification: 'restricted' as const,
+                value: approval.approvedDiscountTotal,
+              },
               {
                 field: 'approverLimitAmount',
                 classification: 'restricted' as const,
@@ -429,17 +576,5 @@ export class DiscountApprovalService {
         { field: 'ceilingCurrency', classification: 'public', value: limit?.currency ?? 'none' },
       ],
     });
-  }
-
-  /**
-   * A permission probe bound to the approval's own company and branch.
-   *
-   * The permission is a value copied from the policy version, so no operation
-   * declaration can name it; the probe always names a concrete company and branch,
-   * so the answer consults grant scope rather than a scope-blind check.
-   */
-  private permissionProbe(db: DbHandle, companyId: string, branchId: string): PermissionProbe {
-    return (permissionCode: string) =>
-      callerHoldsPermission(db, permissionCode, { companyId, branchId });
   }
 }

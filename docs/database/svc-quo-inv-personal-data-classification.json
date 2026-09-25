@@ -2,7 +2,7 @@
   "$schema": "./classification.schema.json",
   "description": "P1-10-SEC — Service Catalog / Pricing / Quotation / Inventory personal-and-financial-data classification registry. Restricted = cost/margin fields gated by inv.cost.view. Prices and quotation totals are operational (internal). No restricted column is searchable.",
   "allowedClassifications": ["public", "internal", "restricted", "secret"],
-  "columnCount": 938,
+  "columnCount": 943,
   "columns": {
     "inv.customer_supplied_parts.branch_id": {
       "classification": "internal",
@@ -3264,8 +3264,18 @@
       "searchable": false,
       "dataType": "uuid"
     },
-    "quo.discount_approvals.approver_limit_amount": {
+    "quo.discount_approvals.approved_currency_code": {
       "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "quo.discount_approvals.approved_discount_total": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "numeric"
+    },
+    "quo.discount_approvals.approver_limit_amount": {
+      "classification": "restricted",
       "searchable": false,
       "dataType": "numeric"
     },
@@ -3334,6 +3344,11 @@
       "searchable": false,
       "dataType": "uuid"
     },
+    "quo.discount_approvals.origin": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
     "quo.discount_approvals.policy_id": {
       "classification": "internal",
       "searchable": false,
@@ -3378,6 +3393,16 @@
       "classification": "internal",
       "searchable": false,
       "dataType": "text"
+    },
+    "quo.discount_approvals.superseded_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "quo.discount_approvals.superseded_by_revision_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
     },
     "quo.discount_approvals.tenant_id": {
       "classification": "internal",

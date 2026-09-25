@@ -61,13 +61,17 @@ export type {
   PriceListAssignmentView,
 } from './application/price-list-service';
 export type {
+  ApprovalCeilingMemo,
   ApprovalCeilingReader,
   DiscountApprovalAuthorization,
+  DiscountApprovalBlock,
+  DiscountApprovalStanding,
   DiscountApprovalRequest,
   DiscountAssessment,
   DiscountAssessmentRequest,
   DiscountThresholdSnapshot,
   PermissionProbe,
+  PinnedDiscountPolicy,
 } from './application/discount-authorization-service';
 export { DEFAULT_DISCOUNT_APPROVAL_PERMISSION } from './application/discount-authorization-service';
 export type {

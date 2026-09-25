@@ -284,6 +284,52 @@ async function inTenantTransaction<T>(work: (client: PoolClient) => Promise<T>):
   }
 }
 
+/**
+ * The discount approval an issued, discounted revision owes (P1-32-PRE-OD-DISC-04).
+ *
+ * `quo.guard_revision_discount_approval` refuses the draft -> issued transition of a
+ * revision whose discount needs approval and has none approved — with no policy row the
+ * threshold is zero, so this fixture's discounted line needs one. The fixture therefore
+ * records what the two-step flow would have: a request by `USER_A` and an approval of
+ * exactly that amount by a DIFFERENT person within a limit, both summed from the lines
+ * by PostgreSQL. A revision with no discount records nothing, exactly like the service.
+ */
+async function recordFixtureDiscountApproval(
+  client: PoolClient,
+  revisionId: string
+): Promise<void> {
+  const requested = await client.query<{ id: string }>(
+    `INSERT INTO quo.discount_approvals
+       (tenant_id, company_id, branch_id, quotation_id, quotation_revision_id, currency_code,
+        discount_total, discount_base, elevated_line_count, required_permission_code,
+        requested_by, created_by)
+     SELECT r.tenant_id, r.company_id, r.branch_id, r.quotation_id, r.id, r.currency_code,
+            sum(i.captured_discount), round(sum(i.captured_unit_price * i.captured_quantity), 4),
+            count(*) FILTER (WHERE i.captured_discount > 0), 'svc.price.manage', $2, $2
+       FROM quo.quotation_revisions r
+       JOIN quo.quotation_items i
+         ON i.tenant_id = r.tenant_id AND i.quotation_revision_id = r.id AND i.deleted_at IS NULL
+      WHERE r.id = $1
+      GROUP BY r.tenant_id, r.company_id, r.branch_id, r.quotation_id, r.id, r.currency_code
+     HAVING sum(i.captured_discount) > 0
+     RETURNING id`,
+    [revisionId, USER_A]
+  );
+  const approvalId = requested.rows[0]?.id;
+  if (approvalId === undefined) return;
+  await client.query(
+    `UPDATE quo.discount_approvals
+        SET status = 'approved', decided_by = $2, decided_at = now(),
+            approver_limit_amount = discount_total, approver_limit_currency_code = currency_code,
+            approved_discount_total = discount_total, approved_currency_code = currency_code
+      WHERE id = $1`,
+    [approvalId, FIXTURE_DISCOUNT_APPROVER]
+  );
+}
+
+/** Somebody other than `USER_A`, so the approval above is a separate person's act. */
+const FIXTURE_DISCOUNT_APPROVER = 'f1220000-0000-4000-8000-00000000da01';
+
 /** 100.0000 × 2.000 = 200.0000; less 50.0000 = 150.0000 net; tax 0.100000 on the net = 15.0000; gross 165.0000. */
 const LINE = {
   unitPrice: '100.0000',
@@ -354,6 +400,7 @@ async function seedBillable(
       ]
     );
     const itemId = item.rows[0]?.id ?? '';
+    await recordFixtureDiscountApproval(client, revisionId);
     await client.query(
       `UPDATE quo.quotation_revisions r
           SET status = 'issued', issued_at = now(),
