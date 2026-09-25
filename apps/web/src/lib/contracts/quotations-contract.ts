@@ -63,16 +63,15 @@ export interface QuotationRevisionDecideBody {
 /**
  * `quo.quotation-create` — `POST /quotations`.
  *
- * No company or branch: the scope comes from the work order. `discountRequestedBy`
- * names the user who asked for a discount when the company's policy keeps the
- * requester and the approver distinct.
+ * No company or branch: the scope comes from the work order. There is no
+ * requester field: a discount that needs approval is requested by whoever is
+ * signed in, and approved by somebody else (`DiscountApprovalDecideBody`).
  */
 export interface QuotationCreateBody {
   readonly workOrderId: string;
   readonly payerPartnerRef?: string;
   readonly customerClass?: string;
   readonly lines: readonly QuotationLineBody[];
-  readonly discountRequestedBy?: string;
 }
 
 /**
@@ -92,5 +91,15 @@ export interface QuotationIssueBody {
 export interface QuotationRevisionCreateBody {
   readonly lines: readonly QuotationLineBody[];
   readonly customerClass?: string;
-  readonly discountRequestedBy?: string;
+}
+
+/**
+ * `quo.discount-approval-decide` — `POST /discount-approvals/{approvalId}/decision`.
+ *
+ * The approver is whoever is signed in and is never the requester. A reason is
+ * required to turn a request down.
+ */
+export interface DiscountApprovalDecideBody {
+  readonly decision: 'approved' | 'rejected';
+  readonly reason?: string;
 }

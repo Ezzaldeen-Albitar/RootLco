@@ -28,7 +28,6 @@ import {
   readRevision,
   readRevisionDecisions,
 } from '../api';
-import { RequesterPicker, type ChosenRequester } from './RequesterPicker';
 import {
   DECISIONS,
   DECISION_CHANNELS,
@@ -36,6 +35,7 @@ import {
   INTERNAL_CODE,
   MAX_REFERENCE_NOTE,
   type ApprovalLimit,
+  type DiscountApproval,
   type QuotationDetail,
   type QuotationRevision,
   type QuotationRevisionHeader,
@@ -84,6 +84,14 @@ import {
  * is recorded against the revision the customer was shown, and the server
  * refuses one against a revision that is no longer current.
  *
+ * ## A discount over the threshold waits for somebody else
+ *
+ * When the current revision carries a discount request, the page says whether it
+ * is waiting, approved or turned down, who asked for it and when — and, when the
+ * signed-in person asked, that it is waiting for ANOTHER approver. Issuing is not
+ * offered while the request is waiting or was turned down; the server refuses it
+ * in any case (P1-32-PRE-OD-DISC-01).
+ *
  * ## Approval limits need their own code
  *
  * The discount ceiling that decides a refusal lives in the approval limits,
@@ -100,7 +108,6 @@ export function QuotationDetailScreen({
   canDecide,
   canReadLimits,
   canReadServices,
-  canReadUsers = false,
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
@@ -113,8 +120,6 @@ export function QuotationDetailScreen({
   readonly canReadLimits: boolean;
   /** `svc.service.read` — whether a service can be found by code in the revision builder. */
   readonly canReadServices: boolean;
-  /** `iam.user.read` — whether the discount requester can be found by name. */
-  readonly canReadUsers?: boolean;
 }) {
   const router = useRouter();
   const open = quotation.status === 'draft' || quotation.status === 'active';
@@ -187,7 +192,16 @@ export function QuotationDetailScreen({
           {translate(messages, 'quotations.current.heading')}
         </h2>
         {current ? (
-          <RevisionBody locale={locale} messages={messages} revision={current} />
+          <>
+            <RevisionBody locale={locale} messages={messages} revision={current} />
+            {current.discountApproval ? (
+              <DiscountApprovalNote
+                locale={locale}
+                messages={messages}
+                approval={current.discountApproval}
+              />
+            ) : null}
+          </>
         ) : (
           <p className="text-body text-text-secondary">
             {translate(messages, 'quotations.current.none')}
@@ -227,7 +241,6 @@ export function QuotationDetailScreen({
           messages={messages}
           quotation={quotation}
           canReadServices={canReadServices}
-          canReadUsers={canReadUsers}
           onCreated={() => router.refresh()}
         />
       ) : null}
@@ -296,6 +309,96 @@ function RevisionBody({
         {translate(messages, 'quotations.totals.note')}
       </p>
     </>
+  );
+}
+
+/* ------------------------------------------------------------------ *
+ * The discount request a revision carries
+ * ------------------------------------------------------------------ */
+
+const APPROVAL_STATUS_KEY = {
+  pending: 'quotations.discountApproval.status.pending',
+  approved: 'quotations.discountApproval.status.approved',
+  rejected: 'quotations.discountApproval.status.rejected',
+} as const;
+
+function DiscountApprovalNote({
+  locale,
+  messages,
+  approval,
+}: {
+  readonly locale: Locale;
+  readonly messages: Messages;
+  readonly approval: DiscountApproval;
+}) {
+  const requester =
+    approval.requestedBy.displayName ?? translate(messages, 'quotations.approvals.someoneElse');
+  return (
+    <section
+      aria-labelledby="quotation-discount-approval-heading"
+      className="flex flex-col gap-2 rounded-md border border-border p-3"
+      data-testid="discount-approval-note"
+    >
+      <h3
+        id="quotation-discount-approval-heading"
+        className="text-body font-medium text-text-primary"
+      >
+        {translate(messages, 'quotations.discountApproval.heading')}
+      </h3>
+      <dl className="grid gap-3 sm:grid-cols-3">
+        <Figure label={translate(messages, 'quotations.discountApproval.statusLabel')}>
+          {translate(messages, APPROVAL_STATUS_KEY[approval.status])}
+        </Figure>
+        <Figure label={translate(messages, 'quotations.discountApproval.discount')}>
+          <Money amount={approval.discountTotal} currency={approval.currency} locale={locale} />
+        </Figure>
+        <Figure label={translate(messages, 'quotations.discountApproval.requestedBy')}>
+          <bdi>{requester}</bdi>
+          <span className="block text-caption text-text-muted" dir="ltr">
+            {formatDateTime(approval.requestedAt, locale)}
+          </span>
+        </Figure>
+        {approval.decidedBy ? (
+          <Figure label={translate(messages, 'quotations.discountApproval.decidedBy')}>
+            <bdi>
+              {approval.decidedBy.displayName ??
+                translate(messages, 'quotations.approvals.someoneElse')}
+            </bdi>
+            {approval.decidedAt ? (
+              <span className="block text-caption text-text-muted" dir="ltr">
+                {formatDateTime(approval.decidedAt, locale)}
+              </span>
+            ) : null}
+          </Figure>
+        ) : null}
+        {approval.decisionReason ? (
+          <Figure label={translate(messages, 'quotations.discountApproval.reason')} wide>
+            <bdi>{approval.decisionReason}</bdi>
+          </Figure>
+        ) : null}
+      </dl>
+      {approval.status === 'pending' ? (
+        <p className="text-caption text-text-secondary">
+          {translate(
+            messages,
+            approval.requestedByCaller
+              ? 'quotations.discountApproval.waitingForAnother'
+              : 'quotations.discountApproval.waiting'
+          )}{' '}
+          <Link
+            href={`/${locale}/quotations`}
+            className="text-primary underline-offset-2 hover:underline"
+          >
+            {translate(messages, 'quotations.discountApproval.openApprovals')}
+          </Link>
+        </p>
+      ) : null}
+      {approval.status === 'rejected' ? (
+        <p className="text-caption text-text-secondary">
+          {translate(messages, 'quotations.discountApproval.rejectedNext')}
+        </p>
+      ) : null}
+    </section>
   );
 }
 
@@ -875,6 +978,12 @@ function IssuePanel({
     quotation.currentRevision && quotation.currentRevision.status === 'draft'
       ? quotation.currentRevision
       : null;
+  // A draft whose discount is waiting or was turned down is not offered for issue:
+  // the server refuses it, and the page says why instead of offering the button.
+  const blockedBy =
+    draft?.discountApproval && draft.discountApproval.status !== 'approved'
+      ? draft.discountApproval.status
+      : null;
   const [expiresAt, setExpiresAt] = useState('');
   const {
     errorKey: localErrorKey,
@@ -933,6 +1042,15 @@ function IssuePanel({
         <p className="text-body text-text-secondary">
           {translate(messages, 'quotations.issue.noDraft')}
         </p>
+      ) : blockedBy !== null ? (
+        <p className="text-body text-text-secondary" data-testid="issue-blocked-by-discount">
+          {translate(
+            messages,
+            blockedBy === 'rejected'
+              ? 'quotations.issue.discountRejected'
+              : 'quotations.issue.discountPending'
+          )}
+        </p>
       ) : (
         <form
           ref={localFormRef}
@@ -986,20 +1104,16 @@ function NewRevisionPanel({
   messages,
   quotation,
   canReadServices,
-  canReadUsers,
   onCreated,
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
   readonly quotation: QuotationDetail;
   readonly canReadServices: boolean;
-  readonly canReadUsers: boolean;
   readonly onCreated: () => void;
 }) {
   const [lines, setLines] = useState<readonly DraftLine[]>([newLine()]);
   const [customerClass, setCustomerClass] = useState('');
-  // FOUND and chosen by name (Owner directive, `P1-32-PRE-OD-UX`), never typed.
-  const [requestedBy, setRequestedBy] = useState<ChosenRequester | null>(null);
   const {
     errorKey: localErrorKey,
     errors: localErrors,
@@ -1019,7 +1133,6 @@ function NewRevisionPanel({
     const klass = customerClass.trim();
     if (klass.length > 0 && !INTERNAL_CODE.test(klass))
       found['customerClass'] = 'quotations.common.classFormat';
-    const requester = requestedBy?.id ?? '';
     localRefuse(found);
     if (Object.keys(found).length > 0) return;
 
@@ -1029,7 +1142,6 @@ function NewRevisionPanel({
       {
         lines: bodies,
         ...(klass ? { customerClass: klass } : {}),
-        ...(requester ? { discountRequestedBy: requester } : {}),
       },
       quotation.recordVersion
     );
@@ -1080,20 +1192,10 @@ function NewRevisionPanel({
             onChange={(event) => setCustomerClass(event.target.value)}
             error={errorFor('customerClass')}
           />
-          <div className="flex flex-col gap-1.5">
-            <RequesterPicker
-              messages={messages}
-              locale={locale}
-              value={requestedBy}
-              onChange={setRequestedBy}
-              canSearch={canReadUsers}
-              error={errorFor('discountRequestedBy')}
-            />
-            <p className="text-caption text-text-muted">
-              {translate(messages, 'quotations.build.requestedByHelp')}
-            </p>
-          </div>
         </div>
+        <p className="text-caption text-text-muted">
+          {translate(messages, 'quotations.build.discountApprovalHelp')}
+        </p>
         <LinesEditor
           messages={messages}
           currency={quotation.currency}
