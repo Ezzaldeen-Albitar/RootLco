@@ -1404,7 +1404,35 @@ export const AUDIT_ACTIONS: readonly AuditActionDefinition[] = Object.freeze([
     // unqueryable from the document the discount was actually applied to.
     entityType: 'quo.quotation_revision',
     description:
-      'A discount over the configured approval threshold was authorized against the actor’s own iam.approval_limits ceiling. Written once per revision that needed elevated authority, naming the policy that applied (or recording that none was configured, which means threshold zero), the permission required, the document-level discount total, and the ceiling checked — because "authorized" with no reason is not an auditable fact.',
+      'A discount over the configured approval threshold was authorized against the APPROVER’s own iam.approval_limits ceiling. Since P1-32-PRE-OD-DISC-01 it is written when somebody other than the requester approves the recorded request — once per revision that needed approval — naming the policy version the request was measured against (or recording that none was configured, which means threshold zero), the permission required, the document-level discount total, who asked, who approved, and the ceiling checked — because "authorized" with no reason is not an auditable fact.',
+  },
+  {
+    code: 'svc.discount_threshold.versioned',
+    class: 'privileged',
+    entityType: 'svc.pricing_approval_policy',
+    description:
+      'A company’s discount approval threshold changed: the current version was retired and the next one recorded, effective for discount requests made from that business date on. Requests already made keep the version they were measured against, so the change neither approves a pending request nor undoes an approval.',
+  },
+  {
+    code: 'quo.discount_approval.requested',
+    class: 'financial',
+    entityType: 'quo.discount_approval',
+    description:
+      'A quotation revision’s discount reached the company threshold, so it was recorded as a request waiting for approval by somebody other than the signed-in requester. Names the policy version it was measured against, or records that none was configured (threshold zero). The revision cannot be issued until the request is approved.',
+  },
+  {
+    code: 'quo.discount_approval.approved',
+    class: 'approval',
+    entityType: 'quo.discount_approval',
+    description:
+      'A person other than the requester approved a recorded discount request, holding the permission its policy version names and a discount approval limit — never one they set themselves — that covers the whole discount. The revision may now be issued.',
+  },
+  {
+    code: 'quo.discount_approval.rejected',
+    class: 'approval',
+    entityType: 'quo.discount_approval',
+    description:
+      'A person other than the requester turned down a recorded discount request, with a reason. The revision carrying it can no longer be issued; a new revision is how the quotation moves on.',
   },
   {
     code: 'quo.quotation.created',

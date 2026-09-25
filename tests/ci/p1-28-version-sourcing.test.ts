@@ -1041,7 +1041,7 @@ function withExtra(adapter: string, screen: string = SEAL_SCREEN) {
 }
 
 describe('an adapter the contract places outside apt/rec is excluded from the count, and only it', () => {
-  it('on the live tree, excludes exactly the three inventory adapters by their guarded operations', () => {
+  it('on the live tree, excludes exactly the four inventory and pricing adapters by their guarded operations', () => {
     const live = run() as Report & {
       outsideByContract: { name: string; operations: string[] }[];
     };
@@ -1051,19 +1051,23 @@ describe('an adapter the contract places outside apt/rec is excluded from the co
     // that. The adapter names are the claim; the namespace is what places them
     // outside an apt/rec subject.
     // The third arrived with the Owner directive's reorder-level retirement, which
-    // is an inv operation reached from the setup screen.
+    // is an inv operation reached from the setup screen. The fourth is the company
+    // discount threshold (P1-32-PRE-OD-DISC-01), a pricing operation reached from
+    // the administration screen.
     expect(live.outsideByContract.map((one) => one.name)).toEqual([
       'postGoodsReceipt',
       'recordStockCountLine',
       'retireReorderLevel',
+      'setDiscountThreshold',
     ]);
     for (const entry of live.outsideByContract) {
       expect(entry.operations).toHaveLength(1);
-      expect(entry.operations[0]).toMatch(/^inv[.]/);
+      expect(entry.operations[0]).toMatch(/^(inv|svc)[.]/);
     }
     expect(live.accountedFor).not.toContain('postGoodsReceipt');
     expect(live.accountedFor).not.toContain('recordStockCountLine');
     expect(live.accountedFor).not.toContain('retireReorderLevel');
+    expect(live.accountedFor).not.toContain('setDiscountThreshold');
   });
 
   it('does not count an adapter whose every versioned send reaches a guarded wo operation', () => {

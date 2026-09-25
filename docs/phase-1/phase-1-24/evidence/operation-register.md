@@ -9,14 +9,14 @@ Regenerate with `node scripts/p1-24-operation-register.mjs`; CI runs it with `--
 
 | Measure                  | Value |
 | ------------------------ | ----- |
-| Public operations        | 499   |
+| Public operations        | 503   |
 | Domains (modules)        | 21    |
-| OpenAPI paths            | 390   |
-| OpenAPI operations       | 499   |
+| OpenAPI paths            | 393   |
+| OpenAPI operations       | 503   |
 | OpenAPI schemas          | 3     |
 | OpenAPI security schemes | 1     |
 | Permission codes seeded  | 132   |
-| Audit actions catalogued | 285   |
+| Audit actions catalogued | 289   |
 | Domain events catalogued | 50    |
 | Structured error codes   | 34    |
 
@@ -24,7 +24,7 @@ Regenerate with `node scripts/p1-24-operation-register.mjs`; CI runs it with `--
 
 | Classification    | Operations |
 | ----------------- | ---------- |
-| Covered           | 499        |
+| Covered           | 503        |
 | Partially covered | 0          |
 | Uncovered         | 0          |
 | Not applicable    | 0          |
@@ -44,9 +44,9 @@ Regenerate with `node scripts/p1-24-operation-register.mjs`; CI runs it with `--
 | overview        | 1          | 1       | 0      | 0       | 0          | 0               |
 | payments        | 5          | 5       | 2      | 2       | 2          | 0               |
 | platform        | 19         | 19      | 12     | 12      | 11         | 1               |
-| pricing         | 9          | 9       | 5      | 5       | 5          | 2               |
+| pricing         | 11         | 11      | 6      | 6       | 6          | 3               |
 | quality         | 15         | 15      | 7      | 8       | 7          | 2               |
-| quotation       | 10         | 10      | 5      | 5       | 5          | 2               |
+| quotation       | 12         | 12      | 6      | 6       | 6          | 2               |
 | reception       | 71         | 71      | 43     | 43      | 36         | 22              |
 | reporting       | 11         | 11      | 6      | 6       | 3          | 3               |
 | service-catalog | 9          | 9       | 6      | 6       | 6          | 2               |
@@ -307,6 +307,8 @@ Regenerate with `node scripts/p1-24-operation-register.mjs`; CI runs it with `--
 | `qms.rework-detail`                                 | GET    | `/api/v1/rework-links/{reworkLinkId}`                                                   | branch  | `qms.quality_control.read`                                           | —                                              | —    | —   | authorization cross-tenant denial isolation route service success                                                             | Covered |
 | `qms.rework-list`                                   | GET    | `/api/v1/work-orders/{workOrderId}/rework`                                              | branch  | `qms.quality_control.read`                                           | —                                              | —    | —   | authorization cross-tenant denial isolation route service success                                                             | Covered |
 | `qms.rework-sign-off`                               | POST   | `/api/v1/rework-links/{reworkLinkId}/sign-off`                                          | branch  | `qms.rework.sign_off`                                                | qms.rework.signed_off                          | yes  | yes | audit authorization cross-tenant denial idempotency isolation route service stale-version success                             | Covered |
+| `quo.discount-approval-decide`                      | POST   | `/api/v1/discount-approvals/{approvalId}/decision`                                      | branch  | `svc.price.manage`                                                   | quo.discount_approval.approved                 | yes  | —   | audit authorization cross-tenant denial idempotency isolation route service success                                           | Covered |
+| `quo.discount-approval-list`                        | GET    | `/api/v1/discount-approvals`                                                            | branch  | `quo.quotation.read`                                                 | —                                              | —    | —   | authorization cross-tenant denial isolation route service success                                                             | Covered |
 | `quo.quotation-create`                              | POST   | `/api/v1/quotations`                                                                    | branch  | `quo.quotation.manage`<br>`wo.work_order.read`                       | quo.quotation.created                          | yes  | —   | audit authorization cross-tenant denial idempotency isolation outbox rollback route service success                           | Covered |
 | `quo.quotation-detail`                              | GET    | `/api/v1/quotations/{quotationId}`                                                      | branch  | `quo.quotation.read`                                                 | —                                              | —    | —   | authorization cross-tenant denial isolation route service success                                                             | Covered |
 | `quo.quotation-issue`                               | POST   | `/api/v1/quotations/{quotationId}/issue`                                                | branch  | `quo.quotation.manage`                                               | quo.quotation_revision.issued                  | yes  | yes | audit authorization concurrency cross-tenant denial idempotency isolation outbox rollback route service stale-version success | Covered |
@@ -448,6 +450,8 @@ Regenerate with `node scripts/p1-24-operation-register.mjs`; CI runs it with `--
 | `shared.template-version-retire`                    | POST   | `/api/v1/template-versions/{versionId}/retirement`                                      | tenant  | `org.settings.manage`                                                | shared.template.version_retired                | —    | yes | audit authorization cross-tenant denial outbox route service stale-version success                                            | Covered |
 | `shared.template-version-revise`                    | PATCH  | `/api/v1/template-versions/{versionId}`                                                 | tenant  | `org.settings.manage`                                                | shared.template.version_created                | —    | yes | audit authorization cross-tenant denial route service stale-version success                                                   | Covered |
 | `svc.branch-availability-set`                       | POST   | `/api/v1/services/{serviceId}/branch-availability`                                      | branch  | `svc.service.manage`                                                 | svc.branch_availability.changed                | yes  | —   | audit authorization cross-tenant denial idempotency isolation route service success                                           | Covered |
+| `svc.discount-threshold-read`                       | GET    | `/api/v1/discount-thresholds/{companyId}`                                               | company | `svc.price.read`                                                     | —                                              | —    | —   | authorization cross-tenant denial isolation route service success                                                             | Covered |
+| `svc.discount-threshold-set`                        | POST   | `/api/v1/discount-thresholds/{companyId}`                                               | company | `svc.price.manage`                                                   | svc.discount_threshold.versioned               | yes  | yes | audit authorization cross-tenant denial idempotency isolation route service stale-version success                             | Covered |
 | `svc.price-list-assignment-create`                  | POST   | `/api/v1/price-list-assignments`                                                        | branch  | `svc.price.manage`                                                   | svc.price_list_assignment.created              | yes  | —   | audit authorization cross-tenant denial idempotency isolation route service success                                           | Covered |
 | `svc.price-list-create`                             | POST   | `/api/v1/price-lists`                                                                   | tenant  | `svc.price.manage`                                                   | svc.price_list.created                         | yes  | —   | audit authorization cross-tenant denial idempotency route service success                                                     | Covered |
 | `svc.price-list-detail`                             | GET    | `/api/v1/price-lists/{priceListId}`                                                     | tenant  | `svc.price.read`                                                     | —                                              | —    | —   | authorization cross-tenant denial route service success                                                                       | Covered |

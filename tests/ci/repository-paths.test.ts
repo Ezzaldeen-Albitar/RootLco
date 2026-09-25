@@ -310,7 +310,10 @@ describe('the API application lives in the workspace', () => {
     // disjoint paths, so the counts add rather than collide.
     // 390 with the Owner directive issued-parts read: one new route module,
     // `part-issues`, carrying one operation.
-    expect(routeFiles.length).toBe(390);
+    // 393 with the discount approval record (P1-32-PRE-OD-DISC-01): three new route
+    // modules — `discount-approvals`, `discount-approvals/{approvalId}/decision`
+    // and `discount-thresholds/{companyId}`.
+    expect(routeFiles.length).toBe(393);
 
     // Non-vacuity. A discovery assertion that only checks a count would pass
     // against a set with one route swapped for another, so the comparison that
@@ -331,7 +334,7 @@ describe('the API application lives in the workspace', () => {
     }
   });
 
-  it('discovers the same 499 operations from the root, apps/api and apps/web', () => {
+  it('discovers the same 503 operations from the root, apps/api and apps/web', () => {
     // The decisive cwd proof, run against a REAL validator rather than the
     // helper alone: `check-authorization-coverage.mjs` derived the repository
     // from `process.cwd()` until this migration, so its answer used to depend on
@@ -425,7 +428,9 @@ describe('the API application lives in the workspace', () => {
     // route module, for the same reason.
     // 499 with the Owner directive invoice list: one operation added to the
     // EXISTING `invoices` route module, so the route-module count does not move.
-    expect(report.operations).toHaveLength(499);
+    // 503 with the discount approval record: four operations over three new route
+    // modules — the threshold read and write share one.
+    expect(report.operations).toHaveLength(503);
 
     // Three node processes, each loading the whole route surface, so the cost
     // grows with the surface. The budget was 30 s and began timing out inside the

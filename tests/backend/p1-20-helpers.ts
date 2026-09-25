@@ -354,6 +354,36 @@ export const SVC_CATALOG_TENANT_B: Principal = {
   permissions: [SERVICE_READ, SERVICE_MANAGE],
 };
 
+/**
+ * A discount APPROVER who is not `SVC_FULL` (P1-32-PRE-OD-DISC-01).
+ *
+ * Since discount approval became two steps, the person who creates a discounted
+ * revision is the requester and can never approve it. Most suites create their
+ * quotations as `SVC_FULL`, so they need somebody else to approve — and that person
+ * must hold exactly what an approver needs and nothing about quoting: the pricing
+ * permission the default policy names, and the quotation read. Its limit is seeded
+ * by the suites that use it, by `USER_A`, so it is never a limit the approver set.
+ */
+export const SVC_DISCOUNT_APPROVER: Principal = {
+  roleId: 'd2900000-0000-4000-8000-0000000001a1',
+  userId: 'd2900000-0000-4000-8000-0000000001a2',
+  subject: 'fx_p1_20_discount_approver',
+  tenantId: TENANT_A,
+  permissions: [PRICE_READ, PRICE_MANAGE, QUOTATION_READ, WORK_ORDER_READ],
+};
+
+/**
+ * Tenant B's approver, for the cross-tenant proof on the decision: it holds every
+ * authority an approver needs, so a refusal it collects is the tenant boundary.
+ */
+export const SVC_TENANT_B_APPROVER: Principal = {
+  roleId: 'd2900000-0000-4000-8000-0000000001b1',
+  userId: 'd2900000-0000-4000-8000-0000000001b2',
+  subject: 'fx_p1_20_tenant_b_approver',
+  tenantId: TENANT_B,
+  permissions: [PRICE_READ, PRICE_MANAGE, QUOTATION_READ, WORK_ORDER_READ],
+};
+
 export const P1_20_PRINCIPALS: readonly Principal[] = [
   SVC_FULL,
   SVC_READER,
@@ -370,6 +400,8 @@ export const P1_20_PRINCIPALS: readonly Principal[] = [
   SVC_CATALOG_TENANT_B,
   WO_APPROVER_WITH_QUOTATION_READ,
   WO_APPROVER_NO_QUOTATION_READ,
+  SVC_DISCOUNT_APPROVER,
+  SVC_TENANT_B_APPROVER,
 ];
 
 let admin: Pool;

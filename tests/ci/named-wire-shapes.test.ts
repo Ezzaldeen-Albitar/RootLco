@@ -202,8 +202,12 @@ describe('every route body serialises a named type', () => {
     // 499 with the Owner directive invoice list: `GET /invoices` serialises a
     // `Page<InvoiceListEntryView>` through the same generic, so `named` moves
     // by one and `composed` still does not move.
-    expect(summary.bodies).toBe(499);
-    expect(summary.named).toBe(447);
+    // 503 with the discount approval record (P1-32-PRE-OD-DISC-01): four
+    // operations, each serialising a NAMED view — `Page<DiscountApprovalView>`,
+    // `DiscountApprovalView`, and `DiscountThresholdView` twice — so `named` moves
+    // by four and `composed` still does not move.
+    expect(summary.bodies).toBe(503);
+    expect(summary.named).toBe(451);
     expect(summary.composed).toBe(52);
     expect(summary.anonymous).toBe(0);
     expect(summary.unresolved).toBe(0);

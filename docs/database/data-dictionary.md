@@ -4036,6 +4036,48 @@ Generated from the live catalog (svc / quo / inv). Money is `numeric(18,4)`; qua
 | 10  | `created_at`           | timestamp with time zone | no       |
 | 11  | `created_by`           | uuid                     | no       |
 
+#### quo.discount_approvals
+
+P1-32-PRE-OD-DISC-01. One row per quotation revision whose discount reached the company threshold
+in force when it was asked for. Born `pending` with `requested_by` = the signed-in person
+(`ins_discount_approvals_scope`); decided `approved` or `rejected` only by a different person
+(`upd_discount_approvals_scope`, `ck_discount_approvals_separation`); an approval records the
+approver's limit and must be within it (`ck_discount_approvals_within_limit`). The policy version
+measured against is copied into the row and immutable. `quo.guard_revision_discount_approval`
+refuses to issue a revision whose approval is not `approved`.
+
+| #   | Column                         | Type                     | Nullable |
+| --- | ------------------------------ | ------------------------ | -------- |
+| 1   | `id`                           | uuid                     | no       |
+| 2   | `tenant_id`                    | uuid                     | no       |
+| 3   | `company_id`                   | uuid                     | no       |
+| 4   | `branch_id`                    | uuid                     | no       |
+| 5   | `quotation_id`                 | uuid                     | no       |
+| 6   | `quotation_revision_id`        | uuid                     | no       |
+| 7   | `status`                       | text                     | no       |
+| 8   | `currency_code`                | text                     | no       |
+| 9   | `discount_total`               | numeric                  | no       |
+| 10  | `discount_base`                | numeric                  | no       |
+| 11  | `elevated_line_count`          | integer                  | no       |
+| 12  | `policy_id`                    | uuid                     | yes      |
+| 13  | `policy_version_no`            | integer                  | yes      |
+| 14  | `threshold_kind`               | text                     | yes      |
+| 15  | `threshold_value`              | numeric                  | yes      |
+| 16  | `threshold_currency_code`      | text                     | yes      |
+| 17  | `required_permission_code`     | text                     | no       |
+| 18  | `requested_by`                 | uuid                     | no       |
+| 19  | `requested_at`                 | timestamp with time zone | no       |
+| 20  | `decided_by`                   | uuid                     | yes      |
+| 21  | `decided_at`                   | timestamp with time zone | yes      |
+| 22  | `decision_reason`              | text                     | yes      |
+| 23  | `approver_limit_amount`        | numeric                  | yes      |
+| 24  | `approver_limit_currency_code` | text                     | yes      |
+| 25  | `record_version`               | integer                  | no       |
+| 26  | `created_at`                   | timestamp with time zone | no       |
+| 27  | `created_by`                   | uuid                     | no       |
+| 28  | `updated_at`                   | timestamp with time zone | yes      |
+| 29  | `updated_by`                   | uuid                     | yes      |
+
 #### quo.quotation_items
 
 | #   | Column                     | Type                     | Nullable |
@@ -4289,6 +4331,14 @@ Generated from the live catalog (svc / quo / inv). Money is `numeric(18,4)`; qua
 | 17  | `updated_by`               | uuid                     | yes      |
 | 18  | `deleted_at`               | timestamp with time zone | yes      |
 | 19  | `deleted_by`               | uuid                     | yes      |
+| 20  | `version_no`               | integer                  | no       |
+
+`version_no` (P1-32-PRE-OD-DISC-01) numbers the versions of one (company, policy type) policy
+from 1 (`uq_pricing_approval_policies_version`). A threshold change retires the current version
+and records the next one; the versioned columns are immutable
+(`tg_pricing_approval_policies_version_immutable`) and a superseded version cannot be made
+active again (`tg_pricing_approval_policies_status`). `maker_approver_distinct` is a legacy
+column that nothing reads: separation of duties cannot be configured off.
 
 #### svc.service_categories
 

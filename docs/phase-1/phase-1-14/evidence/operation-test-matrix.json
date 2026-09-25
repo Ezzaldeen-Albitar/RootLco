@@ -1,10 +1,10 @@
 {
   "generatedFrom": "scripts/check-operation-test-coverage.mjs",
   "counts": {
-    "registered": 499,
-    "publicApi": 499,
+    "registered": 503,
+    "publicApi": 503,
     "internal": 0,
-    "withRequiredEvidence": 499,
+    "withRequiredEvidence": 503,
     "invocationOnly": 0,
     "p1_15": {
       "registered": 28,
@@ -57,9 +57,9 @@
       "metadataOnly": 0
     },
     "p1_20": {
-      "registered": 28,
-      "publicApi": 28,
-      "operationDepth": 28,
+      "registered": 32,
+      "publicApi": 32,
+      "operationDepth": 32,
       "invocationOnly": 0,
       "pending": 0,
       "unitOnly": 0,
@@ -8571,6 +8571,75 @@
       "unitOnly": false
     },
     {
+      "id": "quo.discount-approval-decide",
+      "surface": "public-api",
+      "method": "POST",
+      "path": "/discount-approvals/{approvalId}/decision",
+      "public": false,
+      "files": ["tests/backend/p1-20-quotation.test.ts"],
+      "referenced": true,
+      "derived": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "audit",
+        "isolation"
+      ],
+      "declared": ["success", "denial", "cross-tenant", "audit", "idempotency", "isolation"],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "audit",
+        "isolation",
+        "denial"
+      ],
+      "provided": [
+        "audit",
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "idempotency",
+        "isolation",
+        "route",
+        "service",
+        "success"
+      ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "quo.discount-approval-list",
+      "surface": "public-api",
+      "method": "GET",
+      "path": "/discount-approvals",
+      "public": false,
+      "files": ["tests/backend/p1-20-quotation.test.ts"],
+      "referenced": true,
+      "derived": ["route", "service", "success", "authorization", "isolation"],
+      "declared": ["success", "denial", "isolation"],
+      "required": ["route", "service", "success", "authorization", "isolation", "denial"],
+      "provided": [
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "isolation",
+        "route",
+        "service",
+        "success"
+      ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
       "id": "quo.quotation-create",
       "surface": "public-api",
       "method": "POST",
@@ -13654,6 +13723,86 @@
         "isolation",
         "route",
         "service",
+        "success"
+      ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "svc.discount-threshold-read",
+      "surface": "public-api",
+      "method": "GET",
+      "path": "/discount-thresholds/{companyId}",
+      "public": false,
+      "files": ["tests/backend/p1-20-quotation.test.ts"],
+      "referenced": true,
+      "derived": ["route", "service", "success", "authorization", "cross-tenant", "isolation"],
+      "declared": ["success", "denial", "isolation"],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "isolation",
+        "denial"
+      ],
+      "provided": [
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "isolation",
+        "route",
+        "service",
+        "success"
+      ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "svc.discount-threshold-set",
+      "surface": "public-api",
+      "method": "POST",
+      "path": "/discount-thresholds/{companyId}",
+      "public": false,
+      "files": ["tests/backend/p1-20-quotation.test.ts"],
+      "referenced": true,
+      "derived": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "stale-version",
+        "audit",
+        "isolation"
+      ],
+      "declared": ["success", "denial", "audit", "stale-version", "idempotency", "isolation"],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "stale-version",
+        "audit",
+        "isolation",
+        "denial"
+      ],
+      "provided": [
+        "audit",
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "idempotency",
+        "isolation",
+        "route",
+        "service",
+        "stale-version",
         "success"
       ],
       "missing": [],

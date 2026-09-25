@@ -10,7 +10,7 @@
  * The backend requires an `Idempotency-Key` header on every operation it
  * registers as idempotent, and answers `400 ERR-INT-002` without one — before
  * authorization is evaluated. That set is NOT "the POST operations": it is
- * currently 218 operations (PATCH 4, POST 207, PUT 7).
+ * currently 220 operations (PATCH 4, POST 209, PUT 7).
  *
  * The client used to infer the answer from the HTTP method, which was wrong for
  * every non-POST member of that set. This table is the contract instead of a
@@ -24,7 +24,7 @@
  * thirteen of them stating which class a write declares, none of them checkable
  * — because the Web tier held no data from which one could be derived.
  *
- * Currently approval 17, export 2, financial 15, none 218, privileged 233, security 14.
+ * Currently approval 18, export 2, financial 15, none 220, privileged 234, security 14.
  *
  * `(absent)` above would mean an operation the document publishes with NO audit
  * class. It is emitted as the empty string rather than defaulted to `none`,
@@ -49,7 +49,7 @@ export interface PublishedOperation {
   readonly auditClass: string;
 }
 
-/** Every operation the contract publishes. 499 of them. */
+/** Every operation the contract publishes. 503 of them. */
 export const PUBLISHED_OPERATIONS: readonly PublishedOperation[] = Object.freeze([
   {
     template: '/additional-work/{requestId}/approval',
@@ -806,6 +806,34 @@ export const PUBLISHED_OPERATIONS: readonly PublishedOperation[] = Object.freeze
     operationId: 'dia.diagnostic-type-list',
     idempotent: false,
     auditClass: 'none',
+  },
+  {
+    template: '/discount-approvals',
+    method: 'GET',
+    operationId: 'quo.discount-approval-list',
+    idempotent: false,
+    auditClass: 'none',
+  },
+  {
+    template: '/discount-approvals/{approvalId}/decision',
+    method: 'POST',
+    operationId: 'quo.discount-approval-decide',
+    idempotent: true,
+    auditClass: 'approval',
+  },
+  {
+    template: '/discount-thresholds/{companyId}',
+    method: 'GET',
+    operationId: 'svc.discount-threshold-read',
+    idempotent: false,
+    auditClass: 'none',
+  },
+  {
+    template: '/discount-thresholds/{companyId}',
+    method: 'POST',
+    operationId: 'svc.discount-threshold-set',
+    idempotent: true,
+    auditClass: 'privileged',
   },
   {
     template: '/exports/authorizations',

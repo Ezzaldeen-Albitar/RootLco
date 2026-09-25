@@ -2501,6 +2501,26 @@ export const MANIFEST = {
     required: ['success', 'denial', 'audit', 'outbox', 'rollback'],
     note: 'an ORCHESTRATION over the per-item function, not a second store — there is no revision-level decision row in quo and this creates none; all-or-nothing in one transaction, so a line already carrying the OPPOSITE decision aborts the whole command rather than discarding a recorded choice; the quotation-level outcome is recomputed from the item rows every time, and any rejected line means rejected because treating a partial rejection as acceptance would authorize work the customer declined',
   },
+  'quo.discount-approval-list': {
+    files: ['tests/backend/p1-20-quotation.test.ts'],
+    required: ['success', 'denial', 'isolation'],
+    note: 'P1-32-PRE-OD-DISC-01: companyId and branchId are REQUIRED and are the authorizationTarget, so the list is judged against the branch actually read; each row says whether the signed-in person asked for it (requestedByCaller), because such a request waits for ANOTHER approver; another tenant sees none of the rows',
+  },
+  'quo.discount-approval-decide': {
+    files: ['tests/backend/p1-20-quotation.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'audit', 'idempotency', 'isolation'],
+    note: 'P1-32-PRE-OD-DISC-01: the requester is recorded by the server when the revision is created, so the approver can never be the requester (discount_approver_must_differ, and ck_discount_approvals_separation whatever reaches the database); approving needs the snapshotted permission and a limit the approver did not set that covers the whole discount (discount_no_approval_limit / discount_over_approval_limit); the decision is measured against the policy version snapshotted at the request, so raising the company threshold afterwards neither approves a pending request nor lets its requester decide it',
+  },
+  'svc.discount-threshold-read': {
+    files: ['tests/backend/p1-20-quotation.test.ts'],
+    required: ['success', 'denial', 'isolation'],
+    note: 'P1-32-PRE-OD-DISC-01: companyId is the authorizationTarget; the read says which threshold new requests are measured against (company, tenant default, or none — every discount needs approval) and lists the company versions',
+  },
+  'svc.discount-threshold-set': {
+    files: ['tests/backend/p1-20-quotation.test.ts'],
+    required: ['success', 'denial', 'audit', 'stale-version', 'idempotency', 'isolation'],
+    note: 'P1-32-PRE-OD-DISC-01: a threshold change retires the current version and records the next one, effective prospectively; If-Match carries the current version number and a stale one is a conflict; there is no field that switches separation of duties off and none that changes the approver permission',
+  },
   'svc.price-resolve': {
     files: ['tests/backend/p1-20-pricing.test.ts'],
     required: ['denial', 'cross-tenant', 'isolation'],

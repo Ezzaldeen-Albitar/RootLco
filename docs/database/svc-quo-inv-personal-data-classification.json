@@ -2,7 +2,7 @@
   "$schema": "./classification.schema.json",
   "description": "P1-10-SEC — Service Catalog / Pricing / Quotation / Inventory personal-and-financial-data classification registry. Restricted = cost/margin fields gated by inv.cost.view. Prices and quotation totals are operational (internal). No restricted column is searchable.",
   "allowedClassifications": ["public", "internal", "restricted", "secret"],
-  "columnCount": 908,
+  "columnCount": 938,
   "columns": {
     "inv.customer_supplied_parts.branch_id": {
       "classification": "internal",
@@ -3264,6 +3264,151 @@
       "searchable": false,
       "dataType": "uuid"
     },
+    "quo.discount_approvals.approver_limit_amount": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "numeric"
+    },
+    "quo.discount_approvals.approver_limit_currency_code": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "quo.discount_approvals.branch_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "quo.discount_approvals.company_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "quo.discount_approvals.created_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "quo.discount_approvals.created_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "quo.discount_approvals.currency_code": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "quo.discount_approvals.decided_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "quo.discount_approvals.decided_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "quo.discount_approvals.decision_reason": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "quo.discount_approvals.discount_base": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "numeric"
+    },
+    "quo.discount_approvals.discount_total": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "numeric"
+    },
+    "quo.discount_approvals.elevated_line_count": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "integer"
+    },
+    "quo.discount_approvals.id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "quo.discount_approvals.policy_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "quo.discount_approvals.policy_version_no": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "integer"
+    },
+    "quo.discount_approvals.quotation_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "quo.discount_approvals.quotation_revision_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "quo.discount_approvals.record_version": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "integer"
+    },
+    "quo.discount_approvals.requested_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "quo.discount_approvals.requested_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "quo.discount_approvals.required_permission_code": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "quo.discount_approvals.status": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "quo.discount_approvals.tenant_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "quo.discount_approvals.threshold_currency_code": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "quo.discount_approvals.threshold_kind": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "quo.discount_approvals.threshold_value": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "numeric"
+    },
+    "quo.discount_approvals.updated_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "quo.discount_approvals.updated_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
     "quo.quotation_items.branch_id": {
       "classification": "internal",
       "searchable": false,
@@ -4248,6 +4393,11 @@
       "classification": "internal",
       "searchable": false,
       "dataType": "uuid"
+    },
+    "svc.pricing_approval_policies.version_no": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "integer"
     },
     "svc.service_categories.code": {
       "classification": "internal",

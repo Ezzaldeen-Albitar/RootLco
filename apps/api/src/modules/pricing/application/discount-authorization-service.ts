@@ -1,43 +1,44 @@
 /**
- * Discount authorization (Phase 1-20, P1-20-BE-006).
+ * Discount authorization (Phase 1-20, P1-20-BE-006; two-step since
+ * P1-32-PRE-OD-DISC-01).
  *
- * Answers one question before a discount may go on a quotation line: *is this
- * actor allowed to give away this much?*
+ * Answers two questions, at two different moments, asked of two different people.
  *
- * Two independent gates, and both must pass:
+ *  1. **When the discount is asked for — does it need approval?** `assess` measures
+ *     the discount against the company's policy in force at that moment
+ *     (`svc.pricing_approval_policies`). Under the threshold, anyone who may edit
+ *     the quotation may apply it. At or over it, the discount is recorded as a
+ *     PENDING request, and the policy version it was measured against is returned
+ *     so the caller can snapshot it. Nothing about the requester's own authority is
+ *     checked here: asking is not approving.
  *
- *  1. **The policy threshold** — `svc.pricing_approval_policies` says how large a
- *     discount may be before it needs a specific permission. Under the threshold,
- *     any actor who may edit the quotation may apply it. At or over it, the actor
- *     must hold `required_permission_code`.
- *  2. **The actor's own ceiling** — `iam.approval_limits`, read through the
- *     foundation helper `callerApprovalCeiling` in `@/server/auth/authorization`,
- *     NOT through `@/modules/iam`. That helper records why routing it through the iam
- *     module was rejected, and foundation reads of `iam.*` have precedent in
- *     `resolve-context.ts`. Saying "the iam module's public surface" — as this comment
- *     and three others in this module did — sends a rule-3 audit to the wrong file:
- *     there are TWO readers of `iam.approval_limits` and only one is inside the
- *     owning module.
+ *  2. **When somebody approves it — may THIS person approve it?** `authorizeApproval`
+ *     is called by the approver, against the snapshot. Three gates, all of which must
+ *     pass:
+ *
+ *     - **Separation of duties.** The approver is never the requester. The requester
+ *       is the person who created the revision, recorded by the server — the client
+ *       cannot name one. There is no sole-administrator exception and no
+ *       configuration that switches it off; `maker_approver_distinct` is a legacy
+ *       column that nothing reads.
+ *     - **The permission** the snapshotted policy names (`svc.price.manage` when the
+ *       company had none).
+ *     - **The approver's own limit** — `iam.approval_limits`, read through the
+ *       foundation helper `callerApprovalCeiling` in `@/server/auth/authorization`,
+ *       NOT through `@/modules/iam`. That helper records why routing it through the
+ *       iam module was rejected. It never counts a limit the approver created, for
+ *       their own account or for a role they hold.
  *
  *     A permission says *what kind* of thing you may approve; a limit says *how
- *     much*. Holding the permission does not raise the ceiling, and having a large
- *     ceiling does not grant the permission.
- *
- * ## Maker ≠ approver
- *
- * Whenever a discount needs approval, the actor requesting it may not be the actor
- * authorizing it — a request cannot grant its own approval. This service refuses;
- * it never quietly self-approves. The separation is unconditional: under the
- * Owner's decision of 2026-09-24 there is no sole-administrator exception and no
- * configuration that switches it off. `maker_approver_distinct` on
- * `svc.pricing_approval_policies` is a legacy column that this service ignores.
+ *     much*. Holding the permission does not raise the limit, and having a large
+ *     limit does not grant the permission.
  *
  * ## Fail-closed
  *
  * No policy configured means the threshold is **zero**, not infinite: an
- * unconfigured tenant cannot discount without the permission. No ceiling
- * configured means **no authority**, not unlimited. Both defaults were chosen so
- * that a missing row can never widen access.
+ * unconfigured company needs approval for every non-zero discount. No limit means
+ * **no authority**, not unlimited. Both defaults were chosen so that a missing row
+ * can never widen access.
  */
 import type { DbHandle } from '@/server/db/transaction';
 import { AppFailure } from '@/server/errors/app-failure';
@@ -59,56 +60,78 @@ export interface ApprovalCeilingReader {
 /**
  * Checks whether the CALLER holds a permission code.
  *
- * Supplied by the calling APPLICATION service, not the route — `QuotationService`
- * binds it to the work order's own company and branch. A route-supplied probe would be
- * a B11 violation, and it would also have to read a scope from the request, which is
- * the bypass this phase spent its authorization budget removing.
+ * Supplied by the calling APPLICATION service, not the route — the quotation
+ * module binds it to the quotation's own company and branch. A route-supplied probe
+ * would be a B11 violation, and it would also have to read a scope from the
+ * request, which is the bypass this phase spent its authorization budget removing.
  */
 export type PermissionProbe = (permissionCode: string) => Promise<boolean>;
 
-export interface DiscountRequest {
+/** The permission an approver needs when the company has configured no policy. */
+export const DEFAULT_DISCOUNT_APPROVAL_PERMISSION = 'svc.price.manage';
+
+/** What is asked for, measured against the policy in force. */
+export interface DiscountAssessmentRequest {
   readonly companyId: string;
-  readonly branchId: string;
   /** The discount amount in the line's currency, as a `numeric(18,4)` STRING. */
   readonly discountAmount: string;
   readonly currency: string;
   /** `(unit_price * quantity)` for the line — the base a percentage applies to. */
   readonly lineBase: string;
   readonly asOf: string;
-  /**
-   * Who asked for the discount, when that is someone other than the caller.
-   * `null` when the caller is both maker and approver, which the maker/approver
-   * separation then refuses whenever approval is required.
-   */
-  readonly requestedBy: string | null;
-  /** The caller's own user id, for the maker≠approver comparison. */
-  readonly actorId: string;
 }
 
-export interface DiscountAuthorization {
-  readonly authorized: true;
-  /** Whether clearing the policy threshold required the elevated permission. */
-  readonly requiredElevatedPermission: boolean;
+/**
+ * The policy version a request was measured against.
+ *
+ * `null` in `DiscountAssessment.threshold` means **no policy row existed**, which is
+ * not the same as "no threshold": an unconfigured company is treated as threshold
+ * zero, so a null beside `requiresApproval: true` says the discount needs approval
+ * *because nothing was configured*.
+ */
+export interface DiscountThresholdSnapshot {
+  readonly policyId: string;
+  readonly versionNo: number;
+  readonly kind: string;
+  readonly value: string;
+  readonly currency: string | null;
+}
+
+export interface DiscountAssessment {
+  /** Whether this discount must be approved by somebody other than the requester. */
+  readonly requiresApproval: boolean;
+  /** The permission an approver must hold. `null` when no approval is required. */
   readonly permissionCode: string | null;
-  /** The ceiling that was checked, for the audit record. `null` when none applied. */
-  readonly ceiling: { amount: string; currency: string } | null;
-  /**
-   * The threshold that applied, for the audit record.
-   *
-   * `null` means **no policy row existed**, which is not the same as "no threshold":
-   * an unconfigured company is treated as threshold zero, so a null here recorded
-   * beside `requiredElevatedPermission: true` says the discount was elevated *because
-   * nothing was configured*. That distinction is the whole reason the field carries
-   * the policy id rather than only the number.
-   */
-  /** The requester the maker/approver control was satisfied by, for the audit record. */
-  readonly requestedBy: string | null;
-  readonly threshold: {
-    readonly policyId: string;
-    readonly kind: string;
-    readonly value: string;
-    readonly currency: string | null;
-  } | null;
+  readonly threshold: DiscountThresholdSnapshot | null;
+}
+
+/** An approval being given, against the snapshot recorded with the request. */
+export interface DiscountApprovalRequest {
+  readonly companyId: string;
+  /** The recorded discount total, `numeric(18,4)` STRING, in `currency`. */
+  readonly discountAmount: string;
+  readonly currency: string;
+  /** The approver's business date: the limit that counts is the one in force now. */
+  readonly asOf: string;
+  /** Recorded by the server when the discount was asked for. */
+  readonly requestedBy: string;
+  /** The signed-in approver. */
+  readonly approverId: string;
+  /** Copied from the policy version the request was measured against. */
+  readonly requiredPermissionCode: string;
+}
+
+export interface DiscountApprovalAuthorization {
+  /** The approver's limit that the discount was within, for the record. */
+  readonly ceiling: { readonly amount: string; readonly currency: string };
+}
+
+/** A named refusal the screen can put next to the decision. */
+function refuse(rule: string, message: string, path = 'body'): never {
+  throw new AppFailure('ERR-IAM-001', {
+    message,
+    safeDetails: { violations: [{ path, rule }] },
+  });
 }
 
 export class DiscountAuthorizationService {
@@ -118,16 +141,17 @@ export class DiscountAuthorizationService {
   ) {}
 
   /**
-   * Authorizes a discount, or throws.
+   * Whether a discount needs approval under the policy in force on `asOf`.
    *
-   * Returns a record of *why* it was allowed so the caller can put that in the
-   * audit trail — "authorized" with no reason is not an auditable fact.
+   * Refuses only what is malformed — a negative discount, or one larger than the
+   * line — because those are wrong whoever approves them. Everything else is an
+   * answer, never a refusal: a discount that needs approval is recorded as a
+   * request, not rejected.
    */
-  public async authorize(
+  public async assess(
     db: DbHandle,
-    request: DiscountRequest,
-    hasPermission: PermissionProbe
-  ): Promise<DiscountAuthorization> {
+    request: DiscountAssessmentRequest
+  ): Promise<DiscountAssessment> {
     const discount = Decimal.parse(request.discountAmount, MONEY);
     if (discount.isNegative) {
       throw new AppFailure('ERR-VAL-001', { message: 'A discount may not be negative' });
@@ -141,16 +165,9 @@ export class DiscountAuthorizationService {
       });
     }
     if (discount.isZero) {
-      // Nothing is being given away, so there is nothing to authorize. Returning
+      // Nothing is being given away, so there is nothing to approve. Returning
       // early keeps a zero discount from demanding a configured policy.
-      return {
-        authorized: true,
-        requiredElevatedPermission: false,
-        permissionCode: null,
-        ceiling: null,
-        requestedBy: null,
-        threshold: null,
-      };
+      return { requiresApproval: false, permissionCode: null, threshold: null };
     }
 
     const policy = await this.repository.findApprovalPolicy(
@@ -160,83 +177,66 @@ export class DiscountAuthorizationService {
       request.asOf
     );
 
-    // No policy → threshold zero → any non-zero discount needs the elevated
-    // permission. Fail-closed: an unconfigured tenant cannot discount freely.
-    const overThreshold =
+    // No policy → threshold zero → any non-zero discount needs approval.
+    // Fail-closed: an unconfigured company cannot discount freely.
+    const requiresApproval =
       policy === null || this.exceedsThreshold(policy, discount, base, request.currency);
 
-    // `policy.makerApproverDistinct` is deliberately NOT read. The column is legacy
-    // and ignored under the Owner's decision of 2026-09-24: the maker/approver
-    // separation below applies whenever approval is required, and no configuration
-    // row can switch it off. See the separation below.
+    // `policy.makerApproverDistinct` is deliberately NOT read. The column is legacy:
+    // the separation in `authorizeApproval` applies whenever approval is required,
+    // and no configuration row can switch it off.
+    return {
+      requiresApproval,
+      permissionCode: requiresApproval
+        ? (policy?.requiredPermissionCode ?? DEFAULT_DISCOUNT_APPROVAL_PERMISSION)
+        : null,
+      threshold:
+        policy === null
+          ? null
+          : {
+              policyId: policy.id,
+              versionNo: policy.versionNo,
+              kind: policy.thresholdKind,
+              value: policy.thresholdValue,
+              currency: policy.currencyCode,
+            },
+    };
+  }
 
-    let permissionCode: string | null = null;
-    if (overThreshold) {
-      permissionCode = policy?.requiredPermissionCode ?? 'svc.price.manage';
-      if (!(await hasPermission(permissionCode))) {
-        throw new AppFailure('ERR-IAM-001', {
-          message: `Authorizing this discount requires ${permissionCode}`,
-        });
-      }
-      /**
-       * Maker ≠ approver, including the case where no maker was named.
-       *
-       * The original condition was `requestedBy === actorId`, which never fired when
-       * `discountRequestedBy` was omitted — `null === '<uuid>'` is false. Omitting an
-       * optional field therefore bypassed the entire separation control, and the
-       * caller became both maker and approver silently. That is exactly what the
-       * field's own contract says must be refused, and two independent reviews found
-       * it before it shipped.
-       *
-       * An absent requester now means "the caller is requesting it themselves",
-       * which is the only honest reading: nobody else has been recorded as asking.
-       *
-       * ## The separation is unconditional
-       *
-       * The flag used to be read as `policy?.makerApproverDistinct === true`, so a
-       * company with no policy row — where every non-zero discount needs approval,
-       * because the threshold is zero — was the one case where the separation did
-       * not run at all; later a policy row saying `false` still turned it off. Under
-       * the Owner's decision of 2026-09-24 neither applies: whenever approval is
-       * required, requester and approver must differ, with no sole-administrator
-       * exception and no configuration that disables the rule. The
-       * `maker_approver_distinct` column is legacy and has no effect here.
-       *
-       * Named (`discount_approver_must_differ`, on the requester field) so the
-       * screen can say what to do rather than report a missing permission.
-       */
-      if (request.requestedBy === null || request.requestedBy === request.actorId) {
-        throw new AppFailure('ERR-IAM-001', {
-          message:
-            'The approver of a discount must be someone other than the person who ' +
-            'requested it, and that other person must be named',
-          safeDetails: {
-            violations: [
-              { path: 'body.discountRequestedBy', rule: 'discount_approver_must_differ' },
-            ],
-          },
-        });
-      }
-      /**
-       * The named requester must EXIST. Distinctness alone is not separation of duties.
-       *
-       * `discountRequestedBy` arrives from the request body and was previously compared
-       * against the actor's id and nothing else — so any well-formed UUID cleared the
-       * control, and an actor could authorize their own over-threshold discount by inventing
-       * a colleague. It was also never persisted and never audited, so the invention left no
-       * trace to find afterwards; both halves are fixed, here and in the audit record.
-       */
-      if (
-        request.requestedBy !== null &&
-        !(await this.repository.isActiveUserInTenant(db, request.requestedBy))
-      ) {
-        throw new AppFailure('ERR-IAM-001', {
-          message:
-            `The named discount requester ${request.requestedBy} is not an active user in ` +
-            'this tenant, so it cannot satisfy the maker/approver separation',
-        });
-      }
+  /**
+   * Authorizes the signed-in approver to approve a recorded discount request, or
+   * throws a named refusal.
+   *
+   * The order is the order a person would want to be told: first whether they may
+   * approve this at all (they asked for it), then whether they hold the kind of
+   * authority it needs, then whether they hold enough of it.
+   */
+  public async authorizeApproval(
+    db: DbHandle,
+    request: DiscountApprovalRequest,
+    hasPermission: PermissionProbe
+  ): Promise<DiscountApprovalAuthorization> {
+    /**
+     * Maker ≠ approver, unconditionally.
+     *
+     * `requestedBy` is a server fact — the person who created the revision — so this
+     * comparison cannot be satisfied by naming somebody else, which is how the
+     * single-request design could be bypassed. `ck_discount_approvals_separation`
+     * refuses the same thing whatever reaches the database.
+     */
+    if (request.requestedBy === request.approverId) {
+      refuse(
+        'discount_approver_must_differ',
+        'The approver of a discount must be someone other than the person who requested it'
+      );
     }
+
+    /**
+     * The permission comes from the SNAPSHOT, so a later change to the company's
+     * policy cannot change who may approve a request already made. The fallback is
+     * the same literal `assess` records when no policy exists.
+     */
+    await this.requireSnapshotPermission(request.requiredPermissionCode, hasPermission);
 
     const ceiling = await this.ceilings.callerApprovalCeiling(
       db,
@@ -244,69 +244,88 @@ export class DiscountAuthorizationService {
       DISCOUNT_LIMIT_TYPE,
       request.asOf
     );
-
-    if (overThreshold) {
-      if (ceiling === null) {
-        // Named, because since `callerApprovalCeiling` stopped counting a limit the
-        // caller set (QA row 7.1d) an administrator can hold a limit on file and
-        // still have none that counts — the screen has to say why.
-        throw new AppFailure('ERR-IAM-001', {
-          message: 'You have no discount approval limit for this company',
-          safeDetails: { violations: [{ path: 'body', rule: 'discount_no_approval_limit' }] },
-        });
-      }
-      const allowed = Money.of(ceiling.amount, ceiling.currencyCode);
-      const requested = Money.of(request.discountAmount, request.currency);
-      /**
-       * Currency mismatch is a hard REFUSAL, never a conversion — and it has to be a
-       * refusal the caller can read.
-       *
-       * `Money.greaterThan` throws `CurrencyMismatchError`, which is a plain `Error`
-       * and therefore classified `ERR-SYS-001` — an HTTP 500 — by the route handler.
-       * That is reachable from ordinary configuration: an approval limit denominated
-       * in USD against a price list in JOD is a mismatch, not a bug, and answering it
-       * with "internal server error" tells an operator nothing about the row they need
-       * to fix. The comparison is intentionally left able to throw (silent FX is the
-       * thing `Money` exists to make unexpressible); it is translated here instead.
-       */
-      let overCeiling: boolean;
-      try {
-        overCeiling = requested.greaterThan(allowed, 'discount approval limit');
-      } catch (cause) {
-        if (cause instanceof CurrencyMismatchError) {
-          throw new AppFailure('ERR-IAM-001', {
-            message:
-              `Your discount approval limit is denominated in ${ceiling.currencyCode} and ` +
-              `this discount is in ${request.currency}. A limit in another currency ` +
-              'authorizes nothing here, and no conversion is performed.',
-            cause,
-          });
-        }
-        throw cause;
-      }
-      if (overCeiling) {
-        throw new AppFailure('ERR-IAM-001', {
-          message: 'The discount exceeds your approval limit',
-        });
-      }
+    if (ceiling === null) {
+      // Named, because since `callerApprovalCeiling` stopped counting a limit the
+      // caller set (QA row 7.1d) an administrator can hold a limit on file and
+      // still have none that counts — the screen has to say why.
+      refuse('discount_no_approval_limit', 'You have no discount approval limit for this company');
     }
+    const allowed = Money.of(ceiling.amount, ceiling.currencyCode);
+    const requested = Money.of(request.discountAmount, request.currency);
+    /**
+     * Currency mismatch is a hard REFUSAL, never a conversion — and it has to be a
+     * refusal the caller can read.
+     *
+     * `Money.greaterThan` throws `CurrencyMismatchError`, which is a plain `Error`
+     * and therefore classified `ERR-SYS-001` — an HTTP 500 — by the route handler.
+     * That is reachable from ordinary configuration: an approval limit denominated
+     * in USD against a price list in JOD is a mismatch, not a bug. The comparison is
+     * intentionally left able to throw (silent FX is the thing `Money` exists to
+     * make unexpressible); it is translated here instead.
+     */
+    let overCeiling: boolean;
+    try {
+      overCeiling = requested.greaterThan(allowed, 'discount approval limit');
+    } catch (cause) {
+      if (cause instanceof CurrencyMismatchError) {
+        throw new AppFailure('ERR-IAM-001', {
+          message:
+            `Your discount approval limit is denominated in ${ceiling.currencyCode} and ` +
+            `this discount is in ${request.currency}. A limit in another currency ` +
+            'authorizes nothing here, and no conversion is performed.',
+          cause,
+        });
+      }
+      throw cause;
+    }
+    if (overCeiling) {
+      // Named since P1-32-PRE-OD-DISC-01: an approver who holds a limit that is too
+      // small is told so, rather than being left to guess which gate refused them.
+      refuse('discount_over_approval_limit', 'The discount exceeds your approval limit');
+    }
+    return { ceiling: { amount: ceiling.amount, currency: ceiling.currencyCode } };
+  }
 
-    return {
-      authorized: true,
-      requiredElevatedPermission: overThreshold,
-      permissionCode,
-      requestedBy: request.requestedBy,
-      ceiling: ceiling === null ? null : { amount: ceiling.amount, currency: ceiling.currencyCode },
-      threshold:
-        policy === null
-          ? null
-          : {
-              policyId: policy.id,
-              kind: policy.thresholdKind,
-              value: policy.thresholdValue,
-              currency: policy.currencyCode,
-            },
-    };
+  /**
+   * Authorizes the signed-in person to TURN DOWN a recorded discount request.
+   *
+   * The same separation and the same permission as an approval: turning a request
+   * down is a decision on it, and the person who asked does not decide their own
+   * request either way — they change the quotation instead. No limit is needed to
+   * refuse money being given away.
+   */
+  public async authorizeRejection(
+    request: Pick<DiscountApprovalRequest, 'requestedBy' | 'approverId' | 'requiredPermissionCode'>,
+    hasPermission: PermissionProbe
+  ): Promise<void> {
+    if (request.requestedBy === request.approverId) {
+      refuse(
+        'discount_approver_must_differ',
+        'A discount request is decided by someone other than the person who requested it'
+      );
+    }
+    await this.requireSnapshotPermission(request.requiredPermissionCode, hasPermission);
+  }
+
+  /**
+   * The ONE place a decision consults the permission the snapshot names.
+   *
+   * The code is a value copied from a policy version, so no operation declaration
+   * can name it; it is proven instead by the foreign keys on
+   * `svc.pricing_approval_policies.required_permission_code` and
+   * `quo.discount_approvals.required_permission_code`, both into `iam.permissions`.
+   * The fallback is the literal an unconfigured company's request records.
+   */
+  private async requireSnapshotPermission(
+    requiredPermissionCode: string,
+    hasPermission: PermissionProbe
+  ): Promise<void> {
+    const permissionCode = requiredPermissionCode || DEFAULT_DISCOUNT_APPROVAL_PERMISSION;
+    if (!(await hasPermission(permissionCode))) {
+      throw new AppFailure('ERR-IAM-001', {
+        message: `Deciding this discount requires ${permissionCode}`,
+      });
+    }
   }
 
   /**
@@ -353,7 +372,7 @@ export class DiscountAuthorizationService {
        * A percentage threshold outside `0..100` is treated as EXCEEDED.
        *
        * `ck_pricing_approval_policies_threshold_value` bounds the value only at
-       * `>= 0` — there is no upper bound for the percentage case. Since `authorize`
+       * `>= 0` — there is no upper bound for the percentage case. Since `assess`
        * already guarantees `discount <= base`, the ratio can never exceed 100%, so a
        * threshold above 100 made `overThreshold` permanently false: no elevated
        * permission, no maker/approver check, and the ceiling block skipped entirely.
@@ -368,7 +387,7 @@ export class DiscountAuthorizationService {
       } catch {
         return true;
       }
-      // `base` cannot be zero here: `authorize` returns early on a zero discount
+      // `base` cannot be zero here: `assess` returns early on a zero discount
       // and refuses any discount greater than the base, so reaching this line
       // means `base >= discount > 0`. A zero-base guard would be unreachable
       // code, and unreachable code is a claim nothing tests.

@@ -550,7 +550,13 @@ describe('the coverage include lists are pinned, because they are the denominato
     // count by nothing. The baseline percentage floors are untouched:
     // re-establishing them needs a hosted measurement run, which neither line
     // performed and neither claims.
-    expect(files.length).toBe(320);
+    // 322 with the discount approval record (P1-32-PRE-OD-DISC-01), which adds TWO:
+    // `modules/quotation/application/discount-approval-service.ts` (the second step,
+    // decided by somebody other than the requester) and
+    // `modules/pricing/application/discount-threshold-service.ts` (the versioned
+    // company threshold). The routes live under `src/app`, which this include list
+    // does not admit. The floors are untouched for the reason above.
+    expect(files.length).toBe(322);
     expect(backendCoverage?.exclude).toContain(`${API_SRC_PATH}/server/openapi/**`);
     const instrumented = files.filter(
       (file) => !file.startsWith(`${API_SRC_PATH}/server/openapi/`)
@@ -657,7 +663,8 @@ describe('the coverage include lists are pinned, because they are the denominato
     // measurement run, which this slice did not perform and does not claim.
     // 319 with the Owner directive UX backend, whose four added files are not
     // under `server/openapi/` either, so the two numbers move by four together
-    // for the same reason.
-    expect(instrumented.length).toBe(319);
+    // for the same reason. 321 with the discount approval record's two, for the
+    // same reason again.
+    expect(instrumented.length).toBe(321);
   });
 });

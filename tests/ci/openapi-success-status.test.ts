@@ -99,7 +99,9 @@ describe('every operation publishes the success status it returns', () => {
     // route module, a GET that answers 200.
     // 499 with the Owner directive invoice list: one operation added beside
     // `sal.invoice-create` in an EXISTING route module, a GET that answers 200.
-    expect(actual.size).toBe(499);
+    // 503 with the discount approval record (P1-32-PRE-OD-DISC-01): four operations
+    // over three new route modules — three answer 200 and the threshold write 201.
+    expect(actual.size).toBe(503);
   });
 
   it('agrees with the committed contract for every operation', () => {
@@ -169,7 +171,9 @@ describe('every operation publishes the success status it returns', () => {
     // returns 200 and moves the count below instead.
     // 131 + 124 - 117 = 138 at the integration of the two lines: the console's
     // seven 201s and this branch's fourteen land on disjoint route modules.
-    expect(counts[201]).toBe(138);
+    // 139 with the discount approval record: the threshold write records a new
+    // version and answers a literal 201; the approval decision answers 200.
+    expect(counts[201]).toBe(139);
     expect(counts[202]).toBe(1);
     // The two P1-30 opening-batch reads (S-17) are GETs returning 200, so
     // 264 -> 266 while 201 and 202 are unchanged.
@@ -238,7 +242,9 @@ describe('every operation publishes the success status it returns', () => {
     // 358 -> 359 with the Owner directive issued-parts read, a GET returning 200,
     // so the 201 count does not move either.
     // 359 -> 360 with the Owner directive invoice list, a GET returning 200.
-    expect(counts[200]).toBe(360);
+    // 360 -> 363 with the discount approval record: the approvals list, the
+    // approval decision and the threshold read each answer 200.
+    expect(counts[200]).toBe(363);
   });
 
   it('reads the handler, not the declaration', () => {
