@@ -6,6 +6,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { SelectField, TextAreaField, TextField } from '@/components/forms/Field';
 import { MoneyField } from '@/components/forms/MoneyField';
 import { notifyActionResult } from '@/components/notifications/action-notifications';
+import { useUnsavedGuard } from '@/features/working-context/WorkingContextProvider';
 import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic } from '@/i18n/get-messages';
@@ -596,7 +597,7 @@ function RecordRuleForm({
   const [customerClass, setCustomerClass] = useState('');
   const [taxClassId, setTaxClassId] = useState('');
   const [priority, setPriority] = useState('');
-  // Confirmed discards: part of the amount box's key (see the box).
+  // Confirmed discards: part of the amount box's and the picker's keys.
   const [discards, setDiscards] = useState(0);
   // Question f: the cursor goes to the first thing to fix, and a complaint is
   // withdrawn once its field no longer holds the refused value (route sweep B3).
@@ -615,6 +616,39 @@ function RecordRuleForm({
   });
   const [busy, setBusy] = useState(false);
   const [outcome, setOutcome] = useState<ActionState | null>(null);
+  /*
+   * The rule is unsaved work the moment ANY of its fields holds something, and
+   * the form says so itself. It used to lean on the service picker's guard,
+   * which only counts a pasted reference — so with the catalogue read, or with
+   * nothing but an amount typed, a branch switch went through without asking
+   * and the rule was lost unasked (QA round three).
+   *
+   * A price list is not addressed to the working branch, so nothing here
+   * follows a switch on its own: a confirmed discard empties the whole rule,
+   * which is what the question said would be lost. The amount box and the
+   * picker keep their own text once mounted, so both are keyed on the discard
+   * count and remount empty.
+   */
+  const ruleTyped = [
+    serviceId,
+    amount,
+    pair.companyId,
+    pair.branchId,
+    customerClass,
+    taxClassId,
+    priority,
+  ].some((field) => field.trim().length > 0);
+  useUnsavedGuard(ruleTyped, () => {
+    setServiceId('');
+    setAmount('');
+    setAmountValid(true);
+    setPair(EMPTY_PAIR);
+    setCustomerClass('');
+    setTaxClassId('');
+    setPriority('');
+    setOutcome(null);
+    setDiscards((count) => count + 1);
+  });
 
   const errorFor = (name: string): string | undefined => {
     const key = localErrorKey(name) ?? outcome?.fieldErrors?.[name];
@@ -697,27 +731,15 @@ function RecordRuleForm({
       </p>
       <div className="sm:col-span-2">
         <ServicePicker
+          // Not `countsAsUnsaved`: the form's own guard above covers the
+          // reference with every other field, whichever way the service is named.
+          key={`service-${discards}`}
           messages={messages}
           canRead={canReadServices}
           label={translate(messages, 'pricing.rule.service')}
           value={serviceId}
           onChange={setServiceId}
           error={errorFor('serviceId')}
-          countsAsUnsaved
-          // A price list is not addressed to the working branch, so nothing
-          // here follows a switch on its own: a confirmed discard empties the
-          // whole rule, which is what the question said would be lost.
-          onDiscard={() => {
-            setServiceId('');
-            setAmount('');
-            setAmountValid(true);
-            setPair(EMPTY_PAIR);
-            setCustomerClass('');
-            setTaxClassId('');
-            setPriority('');
-            setOutcome(null);
-            setDiscards((count) => count + 1);
-          }}
         />
       </div>
       <MoneyField

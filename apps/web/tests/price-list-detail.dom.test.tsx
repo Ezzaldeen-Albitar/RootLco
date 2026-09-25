@@ -700,6 +700,64 @@ describe('a rule narrowed to a company is named, never typed', () => {
       forgetRememberedBranch();
     }
   });
+
+  /*
+   * The form guards the rule itself, whichever way the service is named. It
+   * used to lean on the service picker, which counted only a pasted reference:
+   * with the catalogue read, or with only an amount typed, the switch went
+   * through unasked and the rule was lost (QA round three).
+   */
+  it.each([
+    ['with', true],
+    ['without', false],
+  ] as const)(
+    '%s the service catalogue, an amount typed alone asks first, and a discard empties the rule',
+    async (_variant, canReadServices) => {
+      const user = userEvent.setup();
+      renderLtr(
+        inBranch(
+          <>
+            <BranchSwitch to={TEST_BRANCH.id} label="first" />
+            <BranchSwitch to={OTHER_BRANCH.id} label="second" />
+            <WorkingBranchProbe />
+            {detailFor({ canReadServices })}
+          </>,
+          { snapshot: branchSnapshot([TEST_BRANCH, OTHER_BRANCH]) }
+        )
+      );
+      await user.click(screen.getByRole('button', { name: 'first' }));
+      const form = await within(rulesRegion()).findByRole('form', {
+        name: EN['pricing.rule.heading'] as string,
+      });
+      const amount = () => within(form).getByLabelText(labelled('pricing.rule.amount'));
+      const customerClass = () =>
+        within(form).getByLabelText(labelled('pricing.rule.customerClass'));
+      const search = () => within(form).getByLabelText(labelled('pricing.picker.serviceSearch'));
+      try {
+        // An untouched rule is not unsaved work.
+        await switchWithoutQuestion(user, 'second');
+        await waitFor(() => expect(heldBranch()).toBe(OTHER_BRANCH.id));
+
+        await user.type(amount(), '12.5');
+        if (canReadServices) await user.type(search(), 'OIL');
+        await stayOnBranch(user, await switchExpectingQuestion(user, 'first'));
+        expect(heldBranch()).toBe(OTHER_BRANCH.id);
+        expect((amount() as HTMLInputElement).value).toMatch(/^12\.5(000)?$/);
+
+        // Stayed, then a second field: still one rule, still asked about.
+        await user.type(customerClass(), 'FLEET');
+        await discardAndSwitch(user, await switchExpectingQuestion(user, 'first'));
+        await waitFor(() => expect(heldBranch()).toBe(TEST_BRANCH.id));
+        await waitFor(() => expect((amount() as HTMLInputElement).value).toBe(''));
+        expect(customerClass()).toHaveValue('');
+        if (canReadServices) expect(search()).toHaveValue('');
+        await switchWithoutQuestion(user, 'second');
+        expect(recordPriceRule).not.toHaveBeenCalled();
+      } finally {
+        forgetRememberedBranch();
+      }
+    }
+  );
 });
 
 describe('an assignment is recorded, and the absence of a read is said', () => {
