@@ -1,4 +1,4 @@
-import { createElement, Fragment, type ReactNode } from 'react';
+import { createElement, Fragment, type ComponentProps, type ReactNode } from 'react';
 import { renderToString } from 'react-dom/server';
 import Button from '@mui/material/Button';
 import TextField from '@mui/material/TextField';
@@ -37,16 +37,15 @@ function serverRender(locale: Locale): { head: string; body: string } {
     createElement(
       ServerInsertedHTMLContext.Provider,
       { value: (callback: () => ReactNode) => flushes.push(callback) },
-      createElement(UiFoundationProvider, {
-        locale,
-        text: muiTextOf(getMessages(locale)),
-        children: createElement(
-          Fragment,
-          null,
-          createElement(Button, { variant: 'contained' }, 'save'),
-          createElement(TextField, { label: 'reference' })
-        ),
-      })
+      createElement(
+        UiFoundationProvider,
+        // `children` arrives as the arguments below, which the props type cannot see.
+        { locale, text: muiTextOf(getMessages(locale)) } as ComponentProps<
+          typeof UiFoundationProvider
+        >,
+        createElement(Button, { variant: 'contained' }, 'save'),
+        createElement(TextField, { label: 'reference' })
+      )
     )
   );
   const head = flushes
