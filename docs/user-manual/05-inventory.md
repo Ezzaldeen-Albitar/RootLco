@@ -1568,8 +1568,8 @@ the part back.** The first administrator of an organisation holds the credit per
 it, with the finance-view permission, to a second person for the branch; the person who raised a
 credit note can never approve it. Until that second person approves, the note credits nothing. An
 organisation provisioned before this permission joined the set gets it only when the platform
-operator runs the administrator backfill for it. Approving has no screen at this version. Part 6,
-§6.2a states what the screens do.
+operator runs the administrator backfill for it. That second person approves it on the **Credit
+notes** screen. Part 6, §6.2a states what the screens do.
 
 **Restrictions**
 
