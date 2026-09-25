@@ -1,6 +1,8 @@
 import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { useState, type FormEvent, type ReactElement } from 'react';
+import Autocomplete from '@mui/material/Autocomplete';
+import TextField from '@mui/material/TextField';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { EntityPicker, SearchPicker as AdaptedPicker } from '@/components/pickers/EntityPicker';
 import type { SearchPickerProps } from '@/components/search/SearchPicker';
@@ -284,6 +286,44 @@ describe('choosing', () => {
     expect(box()).toHaveValue('');
   });
 
+  it('the change control is a visible button next in the tab order, and Enter on it puts the choice back', async () => {
+    const load = vi.fn<Load>().mockResolvedValue(page([LAYLA, OMAR]));
+    const user = userEvent.setup();
+    mount(<Harness load={load} />);
+    await user.type(box(), 'La');
+    await screen.findByRole('option', { name: 'Omar Saleh' });
+    await user.keyboard('{ArrowDown}{ArrowDown}{Enter}');
+    expect(screen.getByTestId('picker-value')).toHaveTextContent(OMAR.id);
+    await waitFor(() => expect(box()).toHaveFocus());
+
+    // Material's own clear icon is hover-only and out of the tab order; it is
+    // not the control here.
+    expect(document.querySelector('.MuiAutocomplete-clearIndicator')).toBeNull();
+    await user.tab();
+    const change = screen.getByRole('button', { name: 'Change customer' });
+    expect(change).toHaveFocus();
+    expect(change).toBeVisible();
+    expect(change).not.toHaveAttribute('tabindex', '-1');
+
+    await user.keyboard('{Enter}');
+    expect(screen.getByTestId('picker-value')).toHaveTextContent('');
+    expect(box()).toHaveValue('');
+    expect(box()).toHaveFocus();
+    expect(screen.queryByRole('button', { name: 'Change customer' })).toBeNull();
+  });
+
+  it('Escape on the box still puts a chosen record back', async () => {
+    const load = vi.fn<Load>().mockResolvedValue(page([LAYLA]));
+    const user = userEvent.setup();
+    mount(<Harness load={load} />);
+    await user.type(box(), 'Layla');
+    await user.click(await screen.findByRole('option', { name: 'Layla Haddad' }));
+    await waitFor(() => expect(box()).toHaveFocus());
+    await user.keyboard('{Escape}');
+    expect(screen.getByTestId('picker-value')).toHaveTextContent('');
+    expect(box()).toHaveValue('');
+  });
+
   it('Escape clears what was typed', async () => {
     const load = vi.fn<Load>().mockResolvedValue(page([LAYLA]));
     const user = userEvent.setup();
@@ -477,6 +517,53 @@ describe('every non-answer reads as itself', () => {
     expect(document.getElementById('picker-unavailable')).toHaveTextContent(
       'You may not look up customers.'
     );
+    expect(screen.queryByTestId('entity-picker-chosen')).toBeNull();
+  });
+
+  it('without the read it still shows the record it holds, read-only, before the reason', () => {
+    const load = vi.fn<Load>();
+    mount(<Harness load={load} canSearch={false} opened={OMAR} />);
+    const chosen = screen.getByTestId('entity-picker-chosen');
+    expect(chosen).toHaveTextContent('Omar Saleh');
+    expect(screen.getByRole('group', { name: 'Paying customer' })).toContainElement(chosen);
+    const reason = document.getElementById('picker-unavailable');
+    expect(reason).toHaveTextContent('You may not look up customers.');
+    // The held record comes first, then why it cannot be changed here.
+    expect(
+      chosen.compareDocumentPosition(reason as HTMLElement) & Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy();
+    // Read-only: no box, no control to put it back, and no read.
+    expect(screen.queryByRole('combobox')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Change customer' })).toBeNull();
+    expect(screen.getByTestId('entity-picker')).not.toHaveTextContent(OMAR.id);
+    expect(load).not.toHaveBeenCalled();
+  });
+
+  it('announces loading once — in the state under the box, never again in the list', async () => {
+    const reply = deferred<ReadState<CursorPage<Rec>>>();
+    const load = vi.fn<Load>().mockReturnValue(reply.promise);
+    const user = userEvent.setup();
+    mount(<Harness load={load} />);
+    await user.type(box(), 'La');
+    await waitFor(() => expect(load).toHaveBeenCalled());
+
+    const loading = await screen.findAllByText(en['state.loading']);
+    expect(loading).toHaveLength(1);
+    expect(screen.queryByText(en['mui.material.autocompleteLoading'])).toBeNull();
+    expect(document.querySelector('.MuiAutocomplete-loading')).toBeNull();
+    expect(screen.queryByRole('listbox')).toBeNull();
+    // Exactly one live region carries it: no region nested inside another.
+    const regions: Element[] = [];
+    for (let node: Element | null = loading[0] ?? null; node !== null; node = node.parentElement) {
+      if (node.getAttribute('aria-live') || node.getAttribute('role') === 'status') {
+        regions.push(node);
+      }
+    }
+    expect(regions).toHaveLength(1);
+
+    reply.resolve(page([LAYLA]));
+    expect(await screen.findByRole('option', { name: 'Layla Haddad' })).toBeInTheDocument();
+    expect(screen.queryByText(en['state.loading'])).toBeNull();
   });
 });
 
@@ -580,5 +667,55 @@ describe('both languages', () => {
     expect(
       screen.getByRole('button', { name: ar['mui.material.autocompleteClose'] })
     ).toBeInTheDocument();
+  });
+
+  it('says loading and no matches in Arabic, once each, and no English leaks', async () => {
+    const reply = deferred<ReadState<CursorPage<Rec>>>();
+    const load = vi.fn<Load>().mockReturnValue(reply.promise);
+    const user = userEvent.setup();
+    mount(<Harness load={load} locale="ar" />, 'ar');
+    await user.type(box(), 'La');
+    await waitFor(() => expect(load).toHaveBeenCalled());
+    expect(await screen.findAllByText(ar['state.loading'])).toHaveLength(1);
+
+    reply.resolve(page([]));
+    const none = await screen.findByTestId('state-no-results');
+    expect(none).toHaveTextContent(ar['state.noResults.title']);
+    expect(screen.queryByText(ar['state.loading'])).toBeNull();
+    const shown = screen.getByTestId('entity-picker').textContent ?? '';
+    for (const english of [
+      en['state.loading'],
+      en['mui.material.autocompleteLoading'],
+      en['mui.material.autocompleteNoOptions'],
+      'No options',
+    ]) {
+      expect(shown).not.toContain(english);
+    }
+  });
+
+  it('the list’s own loading and no-options texts are the catalogue’s Arabic', () => {
+    // The texts Material's list would show, from the theme the picker inherits.
+    // The picker opens its list only on an answer with rows; these are what any
+    // list under this theme says in the other two cases.
+    mount(
+      <>
+        <Autocomplete
+          open
+          loading
+          options={[]}
+          renderInput={(params) => <TextField {...params} label="loading list" />}
+        />
+        <Autocomplete
+          open
+          options={[]}
+          renderInput={(params) => <TextField {...params} label="empty list" />}
+        />
+      </>,
+      'ar'
+    );
+    expect(screen.getByText(ar['mui.material.autocompleteLoading'])).toBeInTheDocument();
+    expect(screen.getByText(ar['mui.material.autocompleteNoOptions'])).toBeInTheDocument();
+    expect(screen.queryByText('Loading…')).toBeNull();
+    expect(screen.queryByText('No options')).toBeNull();
   });
 });

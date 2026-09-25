@@ -45,7 +45,8 @@ import { useSearchRequest } from '@/lib/api/use-search-request';
  *   with is a change too).
  * - **Permission-aware.** Without `canSearch` there is no box, and the reason is
  *   a sentence with `unavailableId`, which a caller may describe a disabled
- *   submit with.
+ *   submit with. A record already held is still shown, read-only, above that
+ *   sentence: the operator may not look records up, not "nothing is chosen".
  * - **Errors are the field's own.** The caller's refusal marks the combobox
  *   (`aria-invalid`, `data-invalid`, described by the sentence, which is its own
  *   `role="alert"`) whether or not something is chosen — the combobox role, unlike
@@ -56,10 +57,14 @@ import { useSearchRequest } from '@/lib/api/use-search-request';
  *   submits the caller's form with nothing chosen. Enter on a highlighted option
  *   chooses it. Every button is `type="button"`.
  * - **Choosing keeps the cursor** on the combobox, which now reads the chosen
- *   record's name. `change` names the control that puts the choice back.
+ *   record's name. `change` names the control that puts the choice back — a
+ *   real, always-visible button next in the tab order, not Material's clear
+ *   icon, which shows only on hover or focus and is out of the tab order.
+ *   Escape on the box still clears.
  * - **Every non-answer reads as itself** — loading, no matches, unavailable
- *   with a retry, refused, ended session — through `MuiSearchStates`, in a live
- *   region under the box.
+ *   with a retry, refused, ended session — through `MuiSearchStates` under the
+ *   box, each its own `role="status"`. The list opens only on an answer with
+ *   rows, so "Loading" is said once, there, and never again inside the list.
  * - **Pages are the server's.** When the server says more exist, Previous and
  *   Next walk the cursor stack and reopen the list.
  */
@@ -92,6 +97,7 @@ export function EntityPicker<Row extends { readonly id: string }>({
   const errorId = `${base}-error`;
   const exampleId = `${base}-example`;
 
+  const chosenId = `${base}-chosen`;
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [open, setOpen] = useState(false);
 
@@ -138,7 +144,26 @@ export function EntityPicker<Row extends { readonly id: string }>({
   if (!canSearch) {
     return (
       <div className="flex flex-col gap-1.5" data-testid={testId}>
-        <span className="text-label font-medium text-text-primary">{label}</span>
+        <span id={`${base}-label`} className="text-label font-medium text-text-primary">
+          {label}
+        </span>
+        {value !== null ? (
+          // What the form holds, read-only: without the read there is no way to
+          // choose another, so no control is offered to put this one back.
+          <div
+            role="group"
+            aria-labelledby={`${base}-label`}
+            className="rounded-md border border-border bg-surface-subtle px-3 py-2"
+          >
+            <bdi
+              id={chosenId}
+              className="text-body text-text-primary"
+              data-testid={testId ? `${testId}-chosen` : undefined}
+            >
+              {labelOf(value)}
+            </bdi>
+          </div>
+        ) : null}
         <p id={unavailableId} role="status" className="text-supporting text-text-secondary">
           {notPermitted}
         </p>
@@ -165,17 +190,25 @@ export function EntityPicker<Row extends { readonly id: string }>({
     inputRef.current?.focus();
   };
 
+  const putBack = () => {
+    onChange(null);
+    setTerm('');
+    inputRef.current?.focus();
+  };
+
   return (
     <div className="flex flex-col gap-2" data-testid={testId}>
-      <Autocomplete<Row, false, false, false>
+      {/* `boolean` for the clear flag: the value may still be null. */}
+      <Autocomplete<Row, false, boolean, false>
         id={boxId}
         options={listed}
         value={value}
         inputValue={value !== null ? labelOf(value) : term}
-        open={open && (search.phase === 'ready' || search.phase === 'loading')}
+        // Only an answer with rows opens the list. Loading and "no matches"
+        // are said once, by the state under the box, never again in the list.
+        open={open && search.phase === 'ready'}
         onOpen={() => setOpen(true)}
         onClose={() => setOpen(false)}
-        loading={search.phase === 'loading'}
         // The server's list, in the server's order. Never narrowed here.
         filterOptions={(options) => options}
         getOptionLabel={labelOf}
@@ -220,7 +253,8 @@ export function EntityPicker<Row extends { readonly id: string }>({
             setOpen(true);
           }
         }}
-        clearText={change}
+        // The explicit Change button below replaces the hover-only clear icon.
+        disableClearable
         clearOnEscape
         handleHomeEndKeys
         slotProps={{
@@ -265,13 +299,20 @@ export function EntityPicker<Row extends { readonly id: string }>({
           />
         )}
       />
+      {value !== null ? (
+        <div>
+          <Button type="button" size="small" variant="outlined" onClick={putBack}>
+            {change}
+          </Button>
+        </div>
+      ) : null}
       {example ? (
         <p id={exampleId} className="text-caption text-text-muted">
           {example}
         </p>
       ) : null}
       {search.phase === 'idle' || search.phase === 'ready' ? null : (
-        <div aria-live="polite">
+        <div>
           <MuiSearchStates
             messages={messages}
             locale={locale}
