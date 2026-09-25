@@ -2,7 +2,12 @@
 
 ## Status
 
-**Accepted** — 2026-08-01, by Product Owner instruction at the start of Phase 1-25.
+**Superseded by [ADR-022](./ADR-022-adopt-material-ui-and-mui-x-community.md)** — 2026-09-25, by the
+Owner directive of that date adopting Material UI and MUI X (Community, MIT). ADR-022 restates the
+rules of this record that stay binding (Sass as the token authority, Tailwind holding only
+references); this record is retained unchanged below as the history of the earlier decision.
+
+Previously: **Accepted** — 2026-08-01, by Product Owner instruction at the start of Phase 1-25.
 
 This ADR is the **companion ADR that ADR-002 required**. ADR-002 recorded the
 styling-framework selection as **Open** and stated its own resolution condition:
