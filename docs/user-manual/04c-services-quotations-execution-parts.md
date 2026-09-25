@@ -583,16 +583,18 @@ In the example, Mr. Faris Al-Hamdan (example) prepares the quotation.
 
 1. Read the explanation, which tells you exactly how much of this is yours and how much is the
    service's: "Add the services to quote. The server prices every line, applies tax, and captures
-   the totals; nothing is calculated on this screen. A discount is checked against your approval
-   limit and the company policy when the quotation is created." <!-- quotations.build.explain -->
+   the totals; nothing is calculated on this screen. A discount that reaches the company's discount
+   threshold is sent for approval: another person has to approve it before the quotation can be
+   issued." <!-- quotations.build.explain -->
 2. **Paying customer identifier** (optional, but see below) <!-- quotations.build.payer --> —
    "Optional. Filled from the work order when it could be read. Needed before a decision can be
    attributed to the customer." <!-- quotations.build.payerHelp -->
-3. **Customer class** (optional) <!-- quotations.build.customerClass --> .
-4. **Discount requested by** (optional when the discount needs no approval; required when it does) <!-- quotations.build.requestedBy -->
-   — "When the discount needs approval, name the colleague who asked for it. The approver must be
-   a different person." <!-- quotations.build.requestedByHelp -->
-5. Under **Lines** <!-- quotations.lines.heading --> : "One line per service. The quantity may have
+3. **Customer class** (optional) <!-- quotations.build.customerClass --> . Below it the form says
+   who a discount is recorded against: "You do not name anyone for a discount. If it needs approval,
+   it is recorded as asked for by you, and a different person approves it before the quotation can
+   be issued." <!-- quotations.build.discountApprovalHelp --> There is no field for naming anyone
+   else as the person who asked.
+4. Under **Lines** <!-- quotations.lines.heading --> : "One line per service. The quantity may have
    up to three decimal places; a discount is an amount in the quotation currency with up to four." <!-- quotations.lines.explain -->
    For each line press **Add a line** <!-- quotations.lines.add --> and give:
    - **Service** (required) — through **Find a service** <!-- quotations.picker.serviceSearch --> →
@@ -603,18 +605,25 @@ In the example, Mr. Faris Al-Hamdan (example) prepares the quotation.
      percentage." <!-- quotations.lines.discountHelp --> ;
    - **Description** (optional) <!-- quotations.lines.description --> . **Remove this line** <!-- quotations.lines.remove -->
      takes a line back out.
-6. Press **Create quotation** <!-- quotations.build.submit --> , or **Cancel** <!-- quotations.build.cancel -->
+5. Press **Create quotation** <!-- quotations.build.submit --> , or **Cancel** <!-- quotations.build.cancel -->
    .
 
 **Result** — "The quotation was created." <!-- quotations.create.success --> A quotation is created
-with a **Draft** <!-- quotations.status.draft --> revision.
+with a **Draft** <!-- quotations.status.draft --> revision. If its discount reached the company's
+discount threshold, the draft also shows a **Discount approval** <!-- quotations.discountApproval.heading -->
+section in the state **Waiting for approval** <!-- quotations.discountApproval.status.pending --> ,
+naming you as the one who asked for it and saying "You asked for this discount, so it is waiting
+for another approver. The draft cannot be issued until they approve it." <!-- quotations.discountApproval.waitingForAnother -->
 
 **Restrictions**
 
 - **A quotation holds at most 200 lines.** <!-- quotations.lines.tooMany --> and needs at least one:
   "Add at least one line." <!-- quotations.lines.atLeastOne -->
-- **A discount is an amount, never a percentage**, and it is authorized at the moment the quotation
-  is created (see 4C.4).
+- **A discount is an amount, never a percentage.** Whether it needs approval is decided when the
+  quotation is created, against the company's discount threshold in force at that moment (4C.4.7).
+  One that needs approval is recorded as a request from you and must be approved by somebody else
+  before the draft can be issued (4C.4.6). The discount of the whole draft is what is measured, so
+  spreading one large discount over many small lines does not avoid approval.
 - **A draft has no totals.** This surprises people, so the screen says it twice: "The totals are
   captured when this revision is issued; until then there is no total to show." <!-- quotations.totals.draftNote -->
   and, in the revision table, **Captured on issue** <!-- quotations.totals.draftShort --> . Do not
@@ -623,21 +632,10 @@ with a **Draft** <!-- quotations.status.draft --> revision.
 
 **If it goes wrong**
 
-- **The whole quotation is refused when a discount is out of reach.** The hint under the form says
-  what to look at: "If a discount was asked for, it may exceed your approval limit or need a
-  colleague with a higher one." <!-- quotations.build.discountRefusedHint --> The quotation is not
-  created with the discount silently dropped; nothing is created at all. Either reduce the discount,
-  or ask a colleague with a higher limit to create the quotation.
-- **No colleague named as the requester, or you named yourself.** "This discount needs approval, and
-  the person who approves it must not be the person who asked for it. Choose the colleague who
-  asked for the discount under Discount requested by, then try again. If nobody else asks for
-  discounts in your company, remove the discount or keep it below your company's discount
-  threshold; a company with no threshold needs approval for every discount." <!-- form.violation.discount_approver_must_differ -->
-  See 4C.4.3 for a company with a single administrator.
-- **No limit that counts for you.** "You have no discount approval limit that counts for this
-  company, so you cannot approve this discount. A limit you set yourself, for your own account or
-  for a role you hold, never counts. Ask another administrator to set your limit, or keep the
-  discount below your company's discount threshold." <!-- form.violation.discount_no_approval_limit -->
+- **A refused quotation says so with its reference.** The hint under the form says what to look
+  at: "Check the lines, including any discount, and try again." <!-- quotations.build.discountRefusedHint -->
+  Nothing is created with a line silently dropped. A discount no longer refuses the quotation: one
+  that needs approval is recorded as a request instead.
 - "Enter a quantity above zero with up to three decimal places." <!-- quotations.lines.quantityFormat -->
   / "Enter a discount of zero or more with up to four decimal places." <!-- quotations.lines.discountFormat -->
 - "The description is limited to 2000 characters." <!-- quotations.lines.descriptionTooLong -->
@@ -657,7 +655,11 @@ heading **Quotation** <!-- quotations.detail.title --> .
 **Steps**
 
 1. Read what issuing does: "Issuing freezes the current draft and makes it the revision the customer
-   decides on. An expiry is optional." <!-- quotations.issue.explain -->
+   decides on. An expiry is optional." <!-- quotations.issue.explain --> If the draft carries a
+   discount that is waiting for approval, the section offers no issue button and says instead "This
+   draft carries a discount that is waiting for approval by another person, so it cannot be issued
+   yet." <!-- quotations.issue.discountPending --> If the discount was turned down, it says "The
+   discount on this draft was turned down, so it cannot be issued. Make a new draft first." <!-- quotations.issue.discountRejected -->
 2. Check **Draft revision** <!-- quotations.issue.draftLabel --> is the one you mean.
 3. **Expires** (optional) <!-- quotations.issue.expiresAt --> — "Optional. Leave empty for no
    expiry." <!-- quotations.issue.expiresAtHelp -->
@@ -826,9 +828,9 @@ entered is already taken.
 - **No cancel action.** A quotation can reach the statuses **Cancelled** <!-- quotations.status.cancelled -->
   and **Expired** <!-- quotations.status.expired --> , but the screens publish no action that
   cancels a quotation. Supersede it with a new revision, or let an expiry pass.
-- **No discount request-and-approve workflow.** A discount is a field on a line, authorized at the
-  moment the quotation is created. There is no queue of pending discount requests and no screen on
-  which a manager approves one.
+- **No discount approval on the quotation screen itself.** A discount waiting for approval is decided
+  on the **Discounts waiting for approval** list on the Quotations page (4C.4.6); the quotation
+  screen shows its state and links there.
 - **No quotation printout.** Of the four printable documents in this release — invoice, receipt,
   vehicle handover document, reception acknowledgement — none is a quotation.
 - **No emailing of a quotation to a customer.** Issuing records that the quotation was issued; how
@@ -842,9 +844,11 @@ entered is already taken.
 ### 4C.4.1 What an approval limit is — IMPLEMENTED (UI)
 
 An **approval limit** is the most a role or a person may approve, per company. In the commercial
-chain its visible effect is on **discounts**: when a quotation is created with a discount, the
-service checks the discount against the company's policy and against the approval limit of the
-account creating it, and refuses the whole quotation if it is out of reach.
+chain its visible effect is on **discounts**. When a quotation is created with a discount that
+reaches the company's discount threshold (4C.4.7), the discount is recorded as a request from the
+person who created the quotation. **Somebody else** then approves it or turns it down (4C.4.6), and
+to approve it they need a limit — set by someone other than themselves — that covers the whole
+discount. Until it is approved, the quotation cannot be issued.
 
 The limits are administered on one screen and displayed, read-only, on another.
 
@@ -925,20 +929,18 @@ per company." <!-- approvalLimits.description -->
   for their own account, or for a role they hold, is still listed, and it still counts for every
   other holder of that role. It no longer counts when that administrator approves a discount. Check
   the list for such limits and ask another administrator to set yours again.
-- **Nobody can approve their own discount.** Whenever a discount needs approval, the account
-  creating the quotation is the approver, and a different, active colleague must be named under
-  **Discount requested by**. The approver also needs a limit, set by someone else, that covers the
-  discount. There is no exception for a company with a single administrator, and no setting turns
-  this rule off.
+- **Nobody can approve their own discount.** Whenever a discount needs approval, the person who
+  created the quotation or revision is recorded, by the server, as the one who asked for it — nobody
+  types a name — and a different person must approve it (4C.4.6). The approver also needs a limit,
+  set by someone else, that covers the whole discount. There is no exception for a company with a
+  single administrator, and no setting turns this rule off.
 - **When a discount needs approval.** A company can have a discount threshold: a discount below it
   needs no approval, and a discount at or above it does. A company with no threshold needs approval
-  for every discount above zero. This release has no screen for the company discount threshold;
-  whoever operates your installation sets it up, and a management screen is planned.
-- **So a company with a single administrator cannot approve its own discounts.** Nobody else can set
-  that administrator's limit, and nobody else can ask for the discount. The supported paths are to
-  keep discounts below a configured company threshold, or to add a second person: one who asks for
-  discounts, plus another administrator who sets the approver's limit. Without either, quote
-  without a discount that needs approval.
+  for every discount above zero. The threshold is set on the **Discount threshold** screen (4C.4.7).
+- **So a company with a single person cannot approve its own discounts.** The one person who asks
+  for a discount can never approve it. The supported paths are to keep discounts below the company
+  threshold, or to have a second person with a limit (set by another administrator) who approves
+  them. Without either, quote without a discount that needs approval.
 - **The meaning of a limit type is yours to define.** The application does not interpret it; your
   organisation decides what each type means and must use the same spelling everywhere.
 - **Company, role and person are named by reference, not by name.** There is no company or branch
@@ -987,6 +989,112 @@ and `wo.additional_work.approve` to record the answer.
 
 That screen is covered in part 4B (quality, rework and closure). It is mentioned here so that you
 know the quotation is not the only place a customer's "yes" is captured.
+
+**Screenshot** — no screenshot available at this version.
+
+### 4C.4.6 Approve or turn down a discount — IMPLEMENTED (UI)
+
+**Label** — **Discounts waiting for approval** <!-- quotations.approvals.heading -->
+
+**Who** — anyone holding `quo.quotation.read` sees the list. To decide a request you need
+`svc.price.manage` (or the permission the company's threshold names) and, to approve, a discount
+approval limit that covers the whole discount and that somebody else set for you. The person who
+asked for the discount can never decide it.
+
+**Where** — **Commerce** → **Quotations**, before you choose a work order. The list is for the
+branch chosen at the top of the page; under "All my branches" it asks you to choose one branch.
+
+**Steps**
+
+1. Read the explanation: "Discounts on this branch that reached the company's discount threshold.
+   Nobody approves their own discount: a discount you asked for waits for another approver." <!-- quotations.approvals.explain -->
+2. Each row shows the **Quotation** <!-- quotations.approvals.column.quotation --> (open it to see
+   the lines), the **Discount** <!-- quotations.approvals.column.discount --> , who it was **Asked
+   for by** <!-- quotations.approvals.column.requestedBy --> and when, and the **Decision** <!-- quotations.approvals.column.decision -->
+   column.
+3. On a request somebody else made, press **Approve** <!-- quotations.approvals.approve --> , or
+   **Turn down** <!-- quotations.approvals.reject --> . Turning down asks for a **Reason** <!-- quotations.approvals.reason -->
+   — "Say why, so the person who asked can change the quotation." <!-- quotations.approvals.reasonHelp -->
+   — then **Turn down the discount** <!-- quotations.approvals.confirmReject --> .
+4. On a request you made yourself, the row says "Waiting for another approver: you asked for this
+   discount." <!-- quotations.approvals.waitingForAnother --> and offers no decision.
+
+**Result** — "The discount was approved." <!-- quotations.approvals.approvedSuccess --> or "The
+discount was turned down." <!-- quotations.approvals.rejectedSuccess --> The request leaves the list.
+An approved draft can now be issued (4C.3.3). A turned-down draft can never be issued; the quotation
+screen says "This discount was turned down, so this draft cannot be issued. Make a new draft without
+it, or with a smaller one." <!-- quotations.discountApproval.rejectedNext -->
+
+**Restrictions**
+
+- The request is measured against the company threshold **in force when the discount was asked
+  for**. Raising the threshold afterwards does not approve a request that is already waiting, and it
+  still needs somebody other than the person who asked. Lowering the threshold afterwards does not
+  undo an approval already given.
+- Only approval needs a limit. Turning a request down needs the permission, not a limit.
+- With nothing waiting, the list says "No discounts are waiting for approval on this branch." <!-- quotations.approvals.none -->
+
+**If it goes wrong**
+
+- **You asked for it.** "You asked for this discount, so you cannot approve it or turn it down.
+  Another person with a discount approval limit has to decide it. Nobody approves their own
+  discount." <!-- form.violation.discount_approver_must_differ -->
+- **No limit that counts for you.** "You have no discount approval limit that counts for this
+  company, so you cannot approve this discount. A limit you set yourself, for your own account or
+  for a role you hold, never counts. Ask another administrator to set your limit, or leave the
+  discount for another approver." <!-- form.violation.discount_no_approval_limit -->
+- **Your limit is too small.** "This discount is larger than your approval limit, so you cannot
+  approve it. Leave it for an approver whose limit covers the whole discount, or turn it down so the
+  quotation can be changed." <!-- form.violation.discount_over_approval_limit -->
+- **Someone decided it first.** "This discount has already been approved or turned down, so it
+  cannot be decided again. Refresh the page to see the decision that was recorded." <!-- form.violation.discount_approval_already_decided -->
+- **No reason given when turning down.** "Say why the discount is turned down." <!-- quotations.approvals.reasonRequired -->
+
+**Screenshot** — no screenshot available at this version.
+
+### 4C.4.7 Set the company discount threshold — IMPLEMENTED (UI)
+
+**Label** — **Discount threshold** <!-- discountThreshold.title -->
+
+**Who** — anyone holding `svc.price.read` sees the threshold; `svc.price.manage` is needed to set a
+new one. Both are in the tenant-administrator bundle.
+
+**Where** — **Administration** <!-- nav.group.administration --> → **Discount threshold** <!-- nav.discountThreshold -->
+, at `/{locale}/administration/discount-threshold`, for the company of the branch chosen at the top
+of the page. The description reads "The point at which a discount needs approval by someone other
+than the person who asked for it." <!-- discountThreshold.description -->
+
+**Steps**
+
+1. Read the threshold that applies now: the company's own, the organisation's default, or — when
+   nothing is set — "No threshold is set for this company, so every discount needs approval by
+   another person." <!-- discountThreshold.none -->
+2. Under **Set a new threshold** <!-- discountThreshold.formHeading --> choose **Measured as** <!-- discountThreshold.kind -->
+   : **An amount of money** <!-- discountThreshold.kind.amount --> or **A share of the line** <!-- discountThreshold.kind.percentage -->
+   .
+3. Enter the **Amount** <!-- discountThreshold.amount --> and its **Currency** <!-- discountThreshold.currency -->
+   , or the **Percentage** <!-- discountThreshold.percentage --> (between 0 and 100).
+4. Press **Save the new threshold** <!-- discountThreshold.save --> .
+
+**Result** — "The new threshold was saved. It applies to discounts asked for from now on." <!-- discountThreshold.saved -->
+The earlier threshold stays listed under **Earlier thresholds** <!-- discountThreshold.historyHeading -->
+as **Replaced** <!-- discountThreshold.state.replaced --> , with who set it.
+
+**Restrictions**
+
+- "A new threshold applies to discounts asked for from today. Discounts already waiting keep the
+  threshold they were asked under, so raising it does not approve them and lowering it does not undo
+  an approval." <!-- discountThreshold.prospectiveNote -->
+- "Nobody approves their own discount. That rule cannot be switched off, here or anywhere else." <!-- discountThreshold.separationNote -->
+  The screen has no setting for it.
+- Every change is recorded in the audit trail with the old and the new threshold.
+
+**If it goes wrong**
+
+- "Someone changed the threshold while you were editing. Reload the page to see the latest one,
+  then save again." <!-- discountThreshold.conflict -->
+- "A percentage threshold must be between 0 and 100." <!-- form.violation.discount_threshold_percentage_range -->
+- "Enter the currency of the amount." <!-- discountThreshold.currencyRequired -->
 
 **Screenshot** — no screenshot available at this version.
 
@@ -1375,8 +1483,8 @@ Stated here in one place, and repeated above where you meet them.
    question, not a list.
 2. **No quotation printout and no quotation email.** Issuing records the issue; delivering it to the
    customer is your own procedure.
-3. **No cancel action on a quotation**, no edit of a recorded decision, and no discount
-   request-and-approve queue.
+3. **No cancel action on a quotation**, and no edit of a recorded decision. Discounts waiting for
+   approval are decided on the Quotations page (4C.4.6), not on the quotation itself.
 4. **A draft revision has no totals.** They are captured on issue.
 5. **A price-list rule cannot be edited or removed**, a published version is frozen, and there is
    **no list of price-list assignments** at all.
