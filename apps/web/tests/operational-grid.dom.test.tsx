@@ -82,6 +82,7 @@ function Harness({
   initial,
   rowActions,
   suppressEmptyState,
+  columns = COLUMNS,
 }: {
   readonly load: Loader;
   readonly locale?: Locale;
@@ -89,6 +90,7 @@ function Harness({
   readonly initial?: TableRequest;
   readonly rowActions?: (row: Doc) => readonly RowAction[];
   readonly suppressEmptyState?: boolean;
+  readonly columns?: readonly OperationalColumn<Doc>[];
 }) {
   const table = useServerTable(load, {
     initial: initial ?? { ...INITIAL_REQUEST, pageSize: 10 },
@@ -99,7 +101,7 @@ function Harness({
       messages={getMessages(locale)}
       locale={locale}
       label="Documents"
-      columns={COLUMNS}
+      columns={columns}
       rowId={(row) => row.id}
       table={table}
       filterDefinitions={[
@@ -131,6 +133,15 @@ function deferred<T>() {
     resolve = settle;
   });
   return { promise, resolve };
+}
+
+/** Every declaration the emitted styles give a grid class, joined. */
+function declaredFor(className: string): string {
+  const sheet = [...document.head.querySelectorAll<HTMLStyleElement>('style[data-emotion]')]
+    .map((style) => style.textContent ?? '')
+    .join('\n');
+  const rule = new RegExp(`\\.${className}\\{([^}]*)\\}`, 'g');
+  return [...sheet.matchAll(rule)].map((match) => match[1]).join(';');
 }
 
 const pageLabel = () => screen.getByTestId('operational-grid-page');
@@ -290,8 +301,10 @@ describe('no total, anywhere', () => {
 
     const region = screen.getByTestId('operational-grid');
     expect(pageLabel()).toHaveTextContent(/^Page 2$/);
-    // A page of ten, then three here: the only "total" the grid could derive
-    // is 13, and neither it nor a range nor a size claim is printed.
+    // The page size is ten and this second page holds three rows, so the only
+    // "total" the grid could derive is 10 + 3 = 13 — it counts page one as a
+    // full page of ten, though that page held two. Neither it nor a range nor
+    // a size claim is printed.
     const nav = screen.getByRole('navigation', { name: en['table.pagination'] });
     expect(nav.textContent).not.toMatch(/13|\bof\b|–|more than/);
     expect(region.textContent).not.toMatch(/\bof\b|–|more than/);
@@ -578,6 +591,128 @@ describe('a working-context switch isolates the read', () => {
   });
 });
 
+type SearchLoader = (
+  term: string,
+  cursor: string | null,
+  signal: AbortSignal
+) => Promise<ReadState<CursorPage<Doc>>>;
+
+function found(
+  items: readonly Doc[],
+  nextCursor: string | null = null
+): ReadState<CursorPage<Doc>> {
+  return {
+    status: 'ok',
+    data: { items, nextCursor, hasMore: nextCursor !== null },
+    correlationId: 'corr-1',
+  };
+}
+
+function TermHarness({
+  load,
+  term,
+  narrows,
+}: {
+  readonly load: SearchLoader;
+  readonly term: string;
+  readonly narrows?: (criteria: string) => boolean;
+}) {
+  const search = useSearchRequest<Doc, string>({
+    criteria: term,
+    load,
+    debounceMs: 0,
+    ...(narrows ? { narrows } : {}),
+  });
+  return (
+    <OperationalGrid
+      messages={en}
+      label="Documents"
+      columns={COLUMNS}
+      rowId={(row) => row.id}
+      table={search.table}
+    />
+  );
+}
+
+describe('a search source: only the controls it honours, and its own "no matches"', () => {
+  it('offers no rows-per-page choice and no header sort over a search, and a click reads nothing', async () => {
+    const load = vi.fn<SearchLoader>().mockResolvedValue(found([doc(1)], 'c-2'));
+    const user = userEvent.setup();
+    const { unmount } = mount(<TermHarness load={load} term="DOC" />);
+    await screen.findByRole('gridcell', { name: 'DOC-0001' });
+
+    expect(screen.queryByLabelText(en['table.rowsPerPage'])).toBeNull();
+    const header = screen.getByRole('columnheader', { name: /Reference/ });
+    expect(within(header).queryByRole('button')).toBeNull();
+    await user.click(header);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(load).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole('columnheader', { name: /Reference/ })).not.toHaveAttribute(
+      'aria-sort',
+      'ascending'
+    );
+    // Paging IS honoured: Next still spends the cursor page one returned.
+    await user.click(next());
+    await waitFor(() => expect(load).toHaveBeenCalledTimes(2));
+    expect(load.mock.calls[1]?.[1]).toBe('c-2');
+    unmount();
+
+    // FALSIFICATION: the same columns over `useServerTable`, which honours
+    // both, DO offer the choice and the sort — the absence above is the source's.
+    const table = vi.fn<Loader>().mockResolvedValue(ok([doc(1)], null));
+    mount(<Harness load={table} />);
+    await screen.findByRole('gridcell', { name: 'DOC-0001' });
+    expect(screen.getByLabelText(en['table.rowsPerPage'])).toBeInTheDocument();
+    expect(
+      within(screen.getByRole('columnheader', { name: /Reference/ })).queryAllByRole('button')
+        .length
+    ).toBeGreaterThan(0);
+  });
+
+  it('a search that matched nothing says so for the search, never "nothing here yet"', async () => {
+    const load = vi.fn<SearchLoader>().mockResolvedValue(found([]));
+    mount(<TermHarness load={load} term="zz" />);
+    const none = await screen.findByTestId('state-no-results');
+    expect(none).toHaveTextContent(en['state.noSearchMatches.title']);
+    expect(none).toHaveTextContent(en['state.noSearchMatches.description']);
+    expect(screen.queryByTestId('state-empty')).toBeNull();
+    expect(screen.getByTestId('operational-grid')).not.toHaveTextContent(en['state.empty.title']);
+    // Its criteria are not the request's, so there is no filter to clear.
+    expect(screen.queryByRole('button', { name: en['table.clearFilters'] })).toBeNull();
+  });
+
+  it('FALSIFICATION: criteria the caller says do not narrow read as an empty set', async () => {
+    const load = vi.fn<SearchLoader>().mockResolvedValue(found([]));
+    mount(<TermHarness load={load} term="scope" narrows={() => false} />);
+    const empty = await screen.findByTestId('state-empty');
+    expect(empty).toHaveTextContent(en['state.empty.title']);
+    expect(screen.queryByTestId('state-no-results')).toBeNull();
+  });
+
+  it('names a filter it was not told about generically, never by its key or value', async () => {
+    const load = vi.fn<Loader>().mockResolvedValue(ok([doc(1)], null));
+    mount(
+      <Harness
+        load={load}
+        initial={{
+          ...INITIAL_REQUEST,
+          pageSize: 10,
+          filters: [
+            { key: 'status', value: 'open' },
+            { key: 'internalBucket', value: 'bucket-7' },
+          ],
+        }}
+      />
+    );
+    await screen.findByRole('gridcell', { name: 'DOC-0001' });
+    const region = screen.getByTestId('operational-grid');
+    expect(region).toHaveTextContent(en['table.filterApplied']);
+    expect(region.textContent).not.toMatch(/internalBucket|bucket-7/);
+    // The filter it WAS told about keeps its own name.
+    expect(region).toHaveTextContent(en['column.status']);
+  });
+});
+
 describe('texts, direction and keyboard', () => {
   it.each([
     ['en', en],
@@ -662,6 +797,107 @@ describe('texts, direction and keyboard', () => {
     expect(document.activeElement?.tagName).toBe('A');
     expect(document.activeElement).toHaveAttribute('href', '/docs/doc-1');
   });
+
+  it('reaches a SECOND action in the same cell by Tab, and runs it from the keyboard', async () => {
+    const load = vi.fn<Loader>().mockResolvedValue(ok([doc(1), doc(2)], null));
+    const release = vi.fn();
+    const user = userEvent.setup();
+    mount(
+      <>
+        <button type="button">before</button>
+        <Harness
+          load={load}
+          rowActions={(row) => [
+            ...OPEN_ACTION(row),
+            {
+              kind: 'button',
+              label: 'Release',
+              onClick: () => release(row.id),
+              about: row.reference,
+            },
+          ]}
+        />
+      </>
+    );
+    await screen.findByRole('gridcell', { name: 'DOC-0001' });
+    screen.getByRole('button', { name: 'before' }).focus();
+    await user.tab();
+    await user.keyboard('{ArrowDown}{ArrowRight}{ArrowRight}');
+    expect(document.activeElement).toHaveAccessibleName('Open DOC-0001');
+
+    await user.tab();
+    expect(document.activeElement).toHaveAccessibleName('Release DOC-0001');
+    expect(document.activeElement?.tagName).toBe('BUTTON');
+    await user.keyboard('{Enter}');
+    expect(release).toHaveBeenCalledWith('doc-1');
+  });
+
+  it('renders a page of one hundred rows and walks it end to end by keyboard', async () => {
+    const hundred = Array.from({ length: 100 }, (_, index) => doc(index + 1));
+    const load = vi.fn<Loader>().mockResolvedValue(ok(hundred, null));
+    const user = userEvent.setup();
+    const started = performance.now();
+    mount(
+      <>
+        <button type="button">before</button>
+        <Harness load={load} initial={{ ...INITIAL_REQUEST, pageSize: 100 }} />
+      </>
+    );
+    await screen.findByRole('gridcell', { name: 'DOC-0100' });
+    // A smoke bound, deliberately loose: it catches a render gone
+    // pathological, never a slow machine.
+    expect(performance.now() - started).toBeLessThan(20_000);
+    // The header row and every one of the hundred.
+    expect(screen.getAllByRole('row')).toHaveLength(101);
+
+    screen.getByRole('button', { name: 'before' }).focus();
+    await user.tab();
+    await user.keyboard('{ArrowDown}');
+    expect(document.activeElement).toHaveTextContent('DOC-0001');
+    await user.keyboard('{Control>}{End}{/Control}');
+    expect(document.activeElement).toHaveAttribute('role', 'gridcell');
+    expect(document.activeElement?.closest('[role="row"]')).toHaveTextContent('DOC-0100');
+    await user.keyboard('{Control>}{Home}{/Control}');
+    expect(document.activeElement).toHaveTextContent('DOC-0001');
+  });
+
+  it.each([
+    ['en', 'right', 'left'],
+    ['ar', 'left', 'right'],
+  ] as const)(
+    'aligns a numeric column to the logical end and text to the start (%s)',
+    async (locale, endSide, startSide) => {
+      const load = vi.fn<Loader>().mockResolvedValue(ok([doc(1)], null));
+      mount(
+        <Harness
+          load={load}
+          locale={locale}
+          columns={[
+            { id: 'reference', headerKey: 'column.reference', cell: (row) => row.reference },
+            { id: 'amount', headerKey: 'column.amount', numeric: true, cell: () => '12.50' },
+          ]}
+        />,
+        locale
+      );
+      const amount = await screen.findByRole('gridcell', { name: '12.50' });
+      const reference = screen.getByRole('gridcell', { name: 'DOC-0001' });
+      // The column declares the END: the cell carries the grid's end class and
+      // tabular figures, the text column the start class.
+      expect(amount).toHaveClass('MuiDataGrid-cell--textRight', 'tabular-nums');
+      expect(reference).toHaveClass('MuiDataGrid-cell--textLeft');
+      // The styles the page actually has (jsdom does not cascade them, so they
+      // are read from the emitted sheet). Under Arabic the physical sides swap,
+      // so the end is on the LEFT; the flex end stays the logical end.
+      const end = declaredFor('MuiDataGrid-cell--textRight');
+      const start = declaredFor('MuiDataGrid-cell--textLeft');
+      expect(end).toContain(`text-align:${endSide}`);
+      expect(end).toContain('justify-content:flex-end');
+      expect(end).not.toContain(`text-align:${startSide}`);
+      expect(start).toContain(`text-align:${startSide}`);
+      expect(start).toContain('justify-content:flex-start');
+      expect(start).not.toContain(`text-align:${endSide}`);
+    }
+  );
 
   it('names every row action by what it acts on, and a button action runs', async () => {
     const load = vi.fn<Loader>().mockResolvedValue(ok([doc(1), doc(2)], null));

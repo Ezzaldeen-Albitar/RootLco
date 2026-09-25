@@ -58,6 +58,10 @@ import { LAYOUT_PX, SPACE_PX } from '@/styles/tokens/generated/tokens';
  * The grid is driven by a `ServerTable` — what `useServerTable` returns, or a
  * search's `useSearchRequest(...).table` — and nothing else. Pagination, sorting
  * and filtering are all `'server'`: the grid is handed ONE page and shows it.
+ * A control is offered only when the source honours it (`ServerTable.honours`):
+ * a search's loaders take a cursor and nothing else, so over a search there is
+ * no rows-per-page choice and no sortable header — never a control that does
+ * nothing.
  * Sorting a header changes the REQUEST (back to page one, the cursor stack
  * dropped); the quick filter, the column filter panel and the column menu are
  * off, because a filter the grid applied to the rows in hand would be a
@@ -114,8 +118,10 @@ import { LAYOUT_PX, SPACE_PX } from '@/styles/tokens/generated/tokens';
  * A refusal is rendered INSTEAD of the grid, never over it (rows painted under
  * an overlay have already reached the browser). An outage and a fault offer a
  * retry and the correlation reference; an ended session offers the way back to
- * signing in and no retry; "nothing exists yet" and "your filters excluded
- * everything" are different sentences. Loading keeps the header and draws
+ * signing in and no retry; "nothing exists yet", "your filters excluded
+ * everything" and "this search matched nothing" are different sentences — the
+ * last whenever the source reports criteria outside the request
+ * (`ServerTable.narrowed`), as a search does (P1-27-FE-002). Loading keeps the header and draws
  * skeleton rows the height of a real row.
  *
  * ## Keyboard
@@ -276,6 +282,8 @@ export function OperationalGrid<Row>({
   const belowLg = useMediaQuery(theme.breakpoints.down('lg'));
 
   const { request, response, status, correlationId } = table;
+  const honoursSort = table.honours?.sort !== false;
+  const honoursPageSize = table.honours?.pageSize !== false;
   const loading = status === 'loading';
   const hasMore = response?.hasMore;
   // Only a page that was READ may say what lies beyond it. While a page loads
@@ -297,7 +305,7 @@ export function OperationalGrid<Row>({
     const mapped: GridColDef<GridValidRowModel>[] = columns.map((column) => ({
       field: column.id,
       headerName: translateDynamic(messages, column.headerKey),
-      sortable: column.sortable === true,
+      sortable: honoursSort && column.sortable === true,
       filterable: false,
       hideable: false,
       disableColumnMenu: true,
@@ -330,7 +338,7 @@ export function OperationalGrid<Row>({
       });
     }
     return mapped;
-  }, [columns, messages, rowActions]);
+  }, [columns, messages, rowActions, honoursSort]);
 
   const columnVisibilityModel = useMemo<GridColumnVisibilityModel>(() => {
     const model: GridColumnVisibilityModel = {};
@@ -399,11 +407,13 @@ export function OperationalGrid<Row>({
             const option = definition?.options.find(
               (candidate) => candidate.value === filter.value
             );
+            // A filter this grid was not told about is named generically: its
+            // key and value are wire vocabulary, never words for an operator.
             const chipLabel = definition
               ? `${translateDynamic(messages, definition.labelKey)}: ${
                   option ? translateDynamic(messages, option.labelKey) : filter.value
                 }`
-              : `${filter.key}: ${filter.value}`;
+              : translate(messages, 'table.filterApplied');
             return (
               <Chip
                 key={`${filter.key}:${filter.value}`}
@@ -465,7 +475,11 @@ export function OperationalGrid<Row>({
       </div>
 
       {status === 'idle' && rows.length === 0 && !suppressEmptyState ? (
-        isNarrowed(request) ? (
+        table.narrowed === true && !isNarrowed(request) ? (
+          // The criteria live outside the request, so "Clear all filters"
+          // would clear nothing: the sentence names the search and stops.
+          <MuiNoResultsState messages={messages} reason="search" />
+        ) : isNarrowed(request) ? (
           <MuiNoResultsState
             messages={messages}
             action={
@@ -494,23 +508,25 @@ export function OperationalGrid<Row>({
           {pageLabel(translate(messages, 'mui.pagination.page'), request.page - 1)}
         </p>
         <div className="flex flex-wrap items-center gap-2">
-          <TextField
-            select
-            size="small"
-            fullWidth={false}
-            label={translate(messages, 'table.rowsPerPage')}
-            value={String(request.pageSize)}
-            onChange={(event) =>
-              table.setRequest(withPageSize(request, Number.parseInt(event.target.value, 10)))
-            }
-            slotProps={{ select: { native: true }, inputLabel: { shrink: true } }}
-          >
-            {PAGE_SIZES.map((size) => (
-              <option key={size} value={size}>
-                {size}
-              </option>
-            ))}
-          </TextField>
+          {honoursPageSize ? (
+            <TextField
+              select
+              size="small"
+              fullWidth={false}
+              label={translate(messages, 'table.rowsPerPage')}
+              value={String(request.pageSize)}
+              onChange={(event) =>
+                table.setRequest(withPageSize(request, Number.parseInt(event.target.value, 10)))
+              }
+              slotProps={{ select: { native: true }, inputLabel: { shrink: true } }}
+            >
+              {PAGE_SIZES.map((size) => (
+                <option key={size} value={size}>
+                  {size}
+                </option>
+              ))}
+            </TextField>
+          ) : null}
           <Button
             type="button"
             variant="outlined"

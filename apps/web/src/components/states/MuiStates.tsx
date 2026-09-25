@@ -105,14 +105,26 @@ export function MuiEmptyState({ messages, action, testId }: StateProps) {
   );
 }
 
-/** A completed read matched nothing. Reached only from an answer, never while loading. */
-export function MuiNoResultsState({ messages, action, testId }: StateProps) {
+/**
+ * A completed read matched nothing. Reached only from an answer, never while
+ * loading. `reason` says what narrowed it: the request's filters, or a search
+ * whose criteria the table does not hold — whose sentence offers no filter to
+ * clear.
+ */
+export function MuiNoResultsState({
+  messages,
+  action,
+  testId,
+  reason = 'filters',
+}: StateProps & { readonly reason?: 'filters' | 'search' }) {
   return (
     <StateAlert
       messages={messages}
       severity="info"
-      titleKey="state.noResults.title"
-      descriptionKey="state.noResults.description"
+      titleKey={reason === 'search' ? 'state.noSearchMatches.title' : 'state.noResults.title'}
+      descriptionKey={
+        reason === 'search' ? 'state.noSearchMatches.description' : 'state.noResults.description'
+      }
       action={action}
       testId={testId ?? 'state-no-results'}
     />
