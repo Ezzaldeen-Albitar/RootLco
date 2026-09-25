@@ -94,8 +94,9 @@ Not installed: `@mui/icons-material` (the product has its own icon set), `@mui/l
    `var(--…)` references. The few numbers Material needs as JavaScript (breakpoints, the radius
    base, z-index layers, transition timeouts, row heights, the chart height) are read from
    `src/styles/tokens/generated/tokens.ts`, GENERATED from the Sass maps by
-   `apps/web/scripts/generate-design-tokens.mjs` and drift-checked by
-   `apps/web/tests/design-tokens-generated.test.ts`.
+   `apps/web/scripts/generate-design-tokens.mjs` and drift-checked by `validate:web-tokens`
+   and `apps/web/tests/design-tokens-generated.test.ts`. It emits no colours: a colour read in
+   JavaScript is a fixed value a `[data-theme]` remap cannot reach.
 3. **Tailwind stays**, for layout and composition. It coexists with Material for the whole
    migration and afterwards; a colour utility must still be registered in `tailwind.config.ts`.
 4. **The vendored primitives stay** until each screen is migrated; nothing is removed by this
@@ -140,7 +141,8 @@ the date picker, the bar chart and the tree view render on the `var(--…)` pale
 directions without Material's "unsupported colour" error, and the palette reaches the emitted CSS
 as references (`--mui-palette-primary-main: var(--color-primary)`).
 `apps/web/tests/ui-foundation.dom.test.tsx` and `ui-foundation-ssr.test.ts` keep that proof. The
-concrete-value fallback (reading `COLOR` from the generated module) was therefore not needed.
+concrete-value fallback (reading colours from the generated module) was therefore not needed, and
+the generated module no longer emits colours at all.
 Limit of the evidence: jsdom and the server renderer prove that Material's JavaScript accepts the
 palette; that browsers resolve `color-mix()` and `oklch(from var(--…) …)` is a real-browser check,
 and relative colour syntax needs Chrome 119, Firefox 128 or Safari 18 and later.
@@ -182,7 +184,9 @@ Results:
   `_reset.scss` stay unlayered because no Material rule competes with them and the print sheet's
   override of them must keep working.
 - Not proven here: the computed appearance in a real browser. jsdom does not parse `@layer`
-  (its test output for layered sheets is filtered in `tests/setup.dom.ts`, that one message only).
+  (its report for Material's layered sheets is dropped by `tests/support/jsdom-layer-filter.ts`:
+  a `css parsing` error, jsdom's exact message, and a sheet that begins `@layer mui`; every other
+  report still reaches the console, which `tests/ui-foundation.dom.test.tsx` proves).
   Browser review of buttons and inputs on existing screens is owed before the first screen moves.
 
 ### 7. Right-to-left and locale
@@ -226,12 +230,12 @@ sets one spreads the theme's first (the gallery shows how).
 
 ### 10. Gates
 
-| Gate                    | Change                                                                                                                                                                                                                                                                                    | Negative tests                                                   |
-| ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------- |
-| `validate:web-tokens`   | Reads style objects (`sx`, `css`, `styled()`, `createTheme()`, `styleOverrides`, `GlobalStyles`) on the TypeScript syntax tree: raw lengths and durations in strings, raw pixel and millisecond numbers, and physical properties and values are refused; an unparseable file is a finding | `apps/web/tests/design-token-style-objects.test.ts`              |
-| `validate:web-theme`    | `border-box`, `text-top` and `text-bottom` are CSS keywords, not colour utilities                                                                                                                                                                                                         | `tests/ci/tailwind-theme-gate.test.ts`, and the gate's self-test |
-| `validate:web-boundary` | MIT editions only; no grid export or print name; no default toolbar; a grid's `rowCount` must be `-1`, a server-paginated grid must declare it, and `estimatedRowCount` is refused                                                                                                        | `apps/web/tests/api-boundary-gate.test.ts`                       |
-| Generated tokens        | Drift between the Sass maps and `tokens/generated/tokens.ts` fails the web test tier                                                                                                                                                                                                      | `apps/web/tests/design-tokens-generated.test.ts`                 |
+| Gate                    | Change                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | Negative tests                                                   |
+| ----------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------- |
+| `validate:web-tokens`   | Reads style objects (`sx`, `css`, `styled()`, `createTheme()`, `styleOverrides`, `GlobalStyles`) on the TypeScript syntax tree: raw lengths and durations in strings, raw pixel and millisecond numbers, and physical properties and values are refused; an unparseable file is a finding. A style object passed by reference (`sx={cardSx}`, `styles.card`, a spread) is followed to its same-file `const`; one it cannot follow is a finding outside the shared wrapper paths. Also runs the generated-token drift check | `apps/web/tests/design-token-style-objects.test.ts`              |
+| `validate:web-theme`    | Parses the source: every string is scanned except inside a style object (the design-token gate's definition, plus `style`), so `boxSizing: 'border-box'` is a CSS value while `className="border-box"` is still a finding. No exclusion list was widened                                                                                                                                                                                                                                                                   | `tests/ci/tailwind-theme-gate.test.ts`, and the gate's self-test |
+| `validate:web-boundary` | MIT editions only; no grid export or print name; no default toolbar; a grid's `rowCount` must be `-1`, a server-paginated grid must declare it, and `estimatedRowCount` is refused; outside `components/data/OperationalGrid*`, a grid rendered through a spread, `createElement`, an alias, a re-export or a dynamic import is refused                                                                                                                                                                                    | `apps/web/tests/api-boundary-gate.test.ts`                       |
+| Generated tokens        | Committed, like `src/lib/api/idempotent-operations.ts`; drift between the Sass maps and `tokens/generated/tokens.ts` fails `validate:web-tokens` and the web test tier. The module carries no colours                                                                                                                                                                                                                                                                                                                      | `apps/web/tests/design-tokens-generated.test.ts`                 |
 
 The P1-27 frontend gate's `MODULE_DISPOSITION` is unchanged: it records the modules a scanned
 tree imports, and no scanned tree imports `components/ui-foundation` yet (an entry would fail as

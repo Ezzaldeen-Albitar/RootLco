@@ -160,12 +160,28 @@ and must be registered in `supabase/config.toml`, or it is never applied.
 - SCSS: `@use` and `@forward` only, relative paths rather than the `@/` alias, CSS logical
   properties only, maximum nesting depth 2, and `!important` only with a documented
   suppression.
-- Tailwind and vendored primitives are adopted by ADR-020. Sass owns every design value and
-  emits CSS custom properties; the Tailwind theme holds only `var(--…)` references, so a raw
-  literal in the Tailwind configuration is a defect. A colour utility that is not registered in
-  the theme renders nothing while every test still passes — never invent a utility name. Do not
-  introduce a second utility framework or an installed component library, and do not invent
-  brand colours.
+- Styling and components follow ADR-022, which supersedes ADR-020. Material UI and the MUI X
+  Community (MIT) editions are the component layer; Tailwind coexists for layout and spacing
+  utilities. Sass owns every design value and emits CSS custom properties; the Tailwind theme
+  and the Material theme hold only `var(--…)` references (the few numbers Material needs come
+  from the generated `src/styles/tokens/generated/tokens.ts`, which is drift-checked and never
+  hand-edited), so a raw literal in either is a defect. A colour utility that is not registered
+  in the Tailwind theme renders nothing while every test still passes — never invent a utility
+  name.
+- Cascade layers (`styles/_layers.scss`, ADR-022 section 6): `rootlco-reset`, then `mui`
+  (every Material rule), then unlayered Tailwind utilities and SCSS modules, which therefore
+  win over Material. The order is declared in that one file and in the theme's
+  `modularCssLayers`, and the two must agree.
+- `sx`, `styled()` and theme objects take tokens only (`var(--…)` or the generated module),
+  logical properties only (`marginInlineStart`, `insetInlineEnd`, never `ml`/`left`), and no
+  raw length, duration or colour; `validate:web-tokens` enforces this, including a style object
+  passed by reference.
+- Shared RootLco wrappers over Material live in `apps/web/src/components/`: the foundation in
+  `components/ui-foundation/`, the operational grid at `components/data/OperationalGrid*`.
+  Feature code uses the wrappers; only the wrapper spreads props onto the data grid.
+- No competing design system and no second utility framework. Base UI only where Material has
+  no primitive. MUI X Pro or Premium packages and `@mui/x-license` are forbidden without a
+  recorded licence entitlement. Do not invent brand colours.
 - A `'use server'` module exports async functions and nothing else.
 - The product name has exactly two authorities, one for the web tier and one for the API tier.
   They move in lockstep: either both hold a recognised placeholder or both hold the same

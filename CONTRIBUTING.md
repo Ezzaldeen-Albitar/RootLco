@@ -123,10 +123,22 @@ are enforced by Stylelint where a machine can enforce them, and by review otherw
 - Maximum nesting depth is 2. `!important` requires a documented `stylelint-disable`
   comment explaining why.
 - `npm run style:check` must pass (zero warnings) before every pull request.
-- Do not introduce Tailwind CSS, shadcn/ui, or any other utility framework or component
-  library without an owner decision — their adoption is Open (ADR-002). If adopted, the
+- The component layer is Material UI with the MUI X Community (MIT) editions, and Tailwind
+  CSS coexists for layout and spacing utilities (ADR-022, which supersedes ADR-020). The
   division of responsibility recorded in ADR-013 applies, and the same rule must not be
-  duplicated across Sass, the framework, and inline styles without a documented reason.
+  duplicated across Sass, Tailwind, Material style objects and inline styles without a
+  documented reason.
+  - Cascade layers (`src/styles/_layers.scss`): `rootlco-reset`, then `mui`, then unlayered
+    Tailwind utilities and SCSS Modules, which win over Material.
+  - `sx`, `styled()` and theme objects use tokens only (`var(--…)` or the generated
+    `src/styles/tokens/generated/tokens.ts`), logical properties only, and no raw length,
+    duration or colour. `npm run validate:web-tokens` enforces it.
+  - Shared RootLco wrappers live in `apps/web/src/components/` — the foundation in
+    `components/ui-foundation/`, the operational grid at `components/data/OperationalGrid*`.
+    Feature code uses the wrappers.
+  - No competing design system and no second utility framework. Base UI only where Material
+    has no primitive. MUI X Pro or Premium packages and `@mui/x-license` are forbidden without a
+    recorded licence entitlement.
 - Brand colours are not approved. All colour tokens are neutral defaults pending design
   approval; do not invent brand values.
 
