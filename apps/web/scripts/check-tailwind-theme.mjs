@@ -30,11 +30,34 @@
  * It parses the config as text rather than importing it, so the check runs
  * without a bundler and cannot be defeated by a config that fails to load.
  *
+ * ## What is scanned (ADR-022)
+ *
+ * The source is PARSED, and every string and template-literal text in it is
+ * scanned — a class list can live in a `className`, a `cn()`/`clsx()`/`cva()`
+ * argument, or a constant or variant map read by one, so no narrower set of
+ * positions would be complete. Comments and JSX text are not code and are
+ * never scanned.
+ *
+ * The one context excluded is a STYLE OBJECT — an `sx`, `css` or `style`
+ * attribute, a `createTheme()`/`styled()` argument, a `styleOverrides` value —
+ * by the definition `check-design-tokens.mjs` exports (`styleObjectRoots`),
+ * including a same-file `const` an `sx` names. A string there is a CSS value:
+ * `boxSizing: 'border-box'` and `verticalAlign: 'text-top'` are keywords, not
+ * utilities. A class-name position INSIDE one (`defaultProps: { className }`,
+ * a `cn()` call) is scanned again. No exclusion list is widened for this, so
+ * `className="border-box"` or `"text-top"` is still a finding.
+ *
+ * A file the parser cannot read is a finding, not a skip.
+ *
  * Exit: 0 clean · 1 an unresolvable utility · 2 the check could not run.
  */
 import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+
+import ts from 'typescript';
+
+import { styleObjectRoots } from './check-design-tokens.mjs';
 
 const ROOT = process.cwd();
 
@@ -98,16 +121,8 @@ export const NON_COLOUR = {
     'clip',
     'balance',
     'pretty',
-    // CSS keywords, not utilities: `verticalAlign: 'text-top'` in a Material
-    // style object (ADR-022) reads as `text-top` to the pattern below.
-    'top',
-    'bottom',
   ]),
   border: new Set([
-    // `boxSizing: 'border-box'` in a Material style object (ADR-022) — a CSS
-    // keyword that reads as `border-box` to the pattern below. No colour is
-    // named `box`.
-    'box',
     'solid',
     'dashed',
     'dotted',
@@ -233,38 +248,110 @@ const UTILITY = new RegExp(
   'g'
 );
 
-/**
- * Removes comments before scanning.
- *
- * This phase has now written four absence sweeps that matched their own
- * explanatory prose, so the rule is written down: a text scanner cannot tell
- * code from a sentence about code, and it must be given only the code.
- *
- * `(^|\s)//` rather than `//`, so a `https://` inside a string survives.
+/*
+ * Comments are not stripped by pattern any more: only the string tokens of the
+ * syntax tree are scanned, so a comment is never read. This phase wrote four
+ * absence sweeps that matched their own explanatory prose; a text scanner
+ * cannot tell code from a sentence about code, and a parser can.
  */
-export function stripComments(source) {
-  return source.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/(^|\s)\/\/.*$/gm, '$1');
-}
 
 /** A width utility such as `border-b-2` or `divide-x-4`, not a colour. */
 const EDGE_WIDTH = /^[tblrsexy](-\d+)?$/;
 
+/** JSX attributes and object keys whose value is a class list. */
+const CLASS_NAME = /^(?:class|classes|className|[A-Za-z]+ClassName)$/;
+
+/** Calls whose arguments are class lists. */
+export const CLASS_CALLS = new Set([
+  'cn',
+  'clsx',
+  'cx',
+  'cva',
+  'tv',
+  'twMerge',
+  'twJoin',
+  'classNames',
+]);
+
+/** Style-object JSX attributes beyond the design-token gate's (`sx`, `css`). */
+const STYLE_ATTRIBUTES = new Set(['style']);
+
+function nameOf(node) {
+  const name = node.name;
+  return name && (ts.isIdentifier(name) || ts.isStringLiteral(name)) ? name.text : null;
+}
+
+/** A position whose strings are class lists, even inside a style object. */
+function isClassContext(node) {
+  if (ts.isJsxAttribute(node) || ts.isPropertyAssignment(node)) {
+    return CLASS_NAME.test(nameOf(node) ?? '');
+  }
+  if (ts.isCallExpression(node)) {
+    const callee = node.expression;
+    const name = ts.isIdentifier(callee)
+      ? callee.text
+      : ts.isPropertyAccessExpression(callee)
+        ? callee.name.text
+        : null;
+    return name !== null && CLASS_CALLS.has(name);
+  }
+  return false;
+}
+
+function isStyleAttribute(node) {
+  return ts.isJsxAttribute(node) && STYLE_ATTRIBUTES.has(nameOf(node) ?? '');
+}
+
+/** Every token that carries string text in source. */
+function isStringText(node) {
+  return (
+    ts.isStringLiteral(node) ||
+    ts.isNoSubstitutionTemplateLiteral(node) ||
+    ts.isTemplateHead(node) ||
+    ts.isTemplateMiddle(node) ||
+    ts.isTemplateTail(node)
+  );
+}
+
+function checkName(prefix, name, known) {
+  if (NON_COLOUR[prefix]?.has(name)) return true;
+  if ((prefix === 'border' || prefix === 'divide') && EDGE_WIDTH.test(name)) return true;
+  // A bare numeric width such as `border-2` never reaches here (the pattern
+  // requires a leading letter), and an arbitrary value `bg-[#fff]` is the
+  // design-token gate's job, not this one.
+  return known.has(name) || BUILT_IN.has(name);
+}
+
 export function inspect(relPath, source, known) {
+  const kind = relPath.endsWith('.tsx') ? ts.ScriptKind.TSX : ts.ScriptKind.TS;
+  const file = ts.createSourceFile(relPath, source, ts.ScriptTarget.Latest, true, kind);
+  if ((file.parseDiagnostics ?? []).length > 0) {
+    return [{ path: relPath, line: 1, utility: '(a source file this check could not parse)' }];
+  }
+
+  const styleRoots = new Set(styleObjectRoots(file).roots);
   const findings = [];
-  for (const [index, line] of stripComments(source).split(/\r?\n/).entries()) {
-    for (const match of line.matchAll(UTILITY)) {
+  const scan = (node) => {
+    // The raw source text keeps line positions; the quotes around it are not
+    // word characters, so the pattern's leading guard still holds.
+    const start = node.getStart(file);
+    for (const match of node.getText(file).matchAll(UTILITY)) {
       const prefix = match[1];
       const name = match[2];
-      if (!prefix || !name) continue;
-      if (NON_COLOUR[prefix]?.has(name)) continue;
-      if ((prefix === 'border' || prefix === 'divide') && EDGE_WIDTH.test(name)) continue;
-      // A bare numeric width such as `border-2` never reaches here (the pattern
-      // requires a leading letter), and an arbitrary value `bg-[#fff]` is the
-      // design-token gate's job, not this one.
-      if (known.has(name) || BUILT_IN.has(name)) continue;
-      findings.push({ path: relPath, line: index + 1, utility: `${prefix}-${name}` });
+      if (!prefix || !name || checkName(prefix, name, known)) continue;
+      const line = file.getLineAndCharacterOfPosition(start + match.index).line + 1;
+      findings.push({ path: relPath, line, utility: `${prefix}-${name}` });
     }
-  }
+  };
+  const visit = (node, inStyle) => {
+    let style = inStyle;
+    if (styleRoots.has(node)) style = true;
+    if (ts.isJsxAttribute(node) && isStyleAttribute(node)) style = true;
+    if (isClassContext(node)) style = false;
+    if (!style && isStringText(node)) scan(node);
+    ts.forEachChild(node, (child) => visit(child, style));
+  };
+  visit(file, false);
   return findings;
 }
 
@@ -308,19 +395,19 @@ export function selfTest() {
     return `self-test: a legal line was rejected (${good.map((f) => f.utility).join(', ')})`;
   }
 
-  // The CSS keywords a Material style object writes are not utilities...
-  const keywords = inspect(
+  // A CSS keyword in a style object is not a utility (ADR-022)...
+  const style = inspect(
     'x.tsx',
-    "const sx = { boxSizing: 'border-box', verticalAlign: 'text-top' };",
+    "export const A = () => <div sx={{ boxSizing: 'border-box', verticalAlign: 'text-top' }} />;",
     known
   );
-  if (keywords.length !== 0) {
-    return `self-test: a CSS keyword was read as a utility (${keywords.map((f) => f.utility).join(', ')})`;
+  if (style.length !== 0) {
+    return `self-test: a style-object value was read as a class (${style.map((f) => f.utility).join(', ')})`;
   }
-  // ...and naming them did not open the colour positions beside them.
-  const near = inspect('x.tsx', '<p className="bg-box text-topaz border-boxed" />', known);
-  if (near.length !== 3) {
-    return 'self-test: a keyword exemption swallowed an unresolvable colour utility';
+  // ...and the same words in a class position are still findings.
+  const classes = inspect('x.tsx', '<p className="border-box text-top" />', known);
+  if (classes.length !== 2) {
+    return 'self-test: a class list was skipped as if it were a style object';
   }
 
   // The two false-positive classes the first run of this gate produced.
@@ -328,7 +415,11 @@ export function selfTest() {
   if (prose.length !== 0) {
     return `self-test: a comment was scanned (${prose.map((f) => f.utility).join(', ')})`;
   }
-  const route = inspect('x.tsx', "  template: '/receptions/{id}/convert-to-work-order',", known);
+  const route = inspect(
+    'x.tsx',
+    "export const r = { template: '/receptions/{id}/convert-to-work-order' };",
+    known
+  );
   if (route.length !== 0) {
     return `self-test: a route template was read as a class (${route.map((f) => f.utility).join(', ')})`;
   }

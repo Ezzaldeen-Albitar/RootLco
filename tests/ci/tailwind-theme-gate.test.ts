@@ -113,30 +113,50 @@ describe('the theme gate can still fail', () => {
   });
 
   it('does not read a CSS keyword in a Material style object as a utility (ADR-022)', () => {
-    // `border-box` and `text-top` are values a Material `sx` object writes;
-    // neither is a Tailwind class, and before ADR-022 both were reported.
-    const findings = inspect(
-      'x.tsx',
-      "const sx = { boxSizing: 'border-box', verticalAlign: 'text-top', caption: 'text-bottom' };",
-      new Set(['primary'])
-    );
-    expect(findings).toEqual([]);
+    // `border-box` and `text-top` are values a style object writes. The
+    // scanner PARSES the file and skips style objects (`sx`, `style`,
+    // `createTheme()`, a same-file const an `sx` names); no exclusion list
+    // was widened to make this pass.
+    const known = new Set(['primary']);
+    for (const source of [
+      "export const A = () => <div sx={{ boxSizing: 'border-box', verticalAlign: 'text-top' }} />;",
+      "export const A = () => <div style={{ boxSizing: 'border-box', verticalAlign: 'text-bottom' }} />;",
+      "const cardSx = { boxSizing: 'border-box' } as const;\nexport const A = () => <div sx={cardSx} />;",
+      "export const t = createTheme({ components: { MuiCard: { styleOverrides: { root: { boxSizing: 'border-box' } } } } });",
+    ]) {
+      expect(inspect('x.tsx', source, known), source).toEqual([]);
+    }
   });
 
-  it('still reports a colour utility beside the keywords it now accepts', () => {
-    // The exemption is per prefix and per exact name: it must not open `bg-box`,
-    // a longer name that merely starts with a keyword, or another prefix.
-    const findings = inspect(
-      'x.tsx',
-      '<p className="bg-box text-topaz border-boxed ring-top" />',
-      new Set(['primary'])
-    ) as { utility: string }[];
-    expect(findings.map((f) => f.utility)).toEqual([
-      'bg-box',
-      'text-topaz',
-      'border-boxed',
-      'ring-top',
+  it('still reports the same words in a class position', () => {
+    // Negative controls: the words the style objects write are NOT exempt as
+    // classes, wherever a class list is written.
+    const known = new Set(['primary']);
+    const utilities = (source: string) =>
+      (inspect('x.tsx', source, known) as { utility: string }[]).map((f) => f.utility);
+    expect(utilities('<p className="text-top" />')).toEqual(['text-top']);
+    expect(utilities('<p className="border-box" />')).toEqual(['border-box']);
+    expect(utilities("export const c = cn('text-bottom', { 'border-box': true });")).toEqual([
+      'text-bottom',
+      'border-box',
     ]);
+    // A class list held in a constant is still read, wherever it is used.
+    expect(
+      utilities(
+        "const TONE = { quiet: 'text-top' };\nexport const P = () => <p className={TONE.quiet} />;"
+      )
+    ).toEqual(['text-top']);
+    // A class position inside a style object is read again.
+    expect(
+      utilities(
+        "export const t = createTheme({ components: { MuiButton: { defaultProps: { className: 'border-box' } } } });"
+      )
+    ).toEqual(['border-box']);
+  });
+
+  it('refuses a file it cannot parse rather than skipping it', () => {
+    const findings = inspect('x.tsx', '<p className="bg-brand-primary" ', new Set(['primary']));
+    expect(findings).toHaveLength(1);
   });
 
   it('does not read a comment or a route template as a class', () => {
@@ -145,7 +165,7 @@ describe('the theme gate can still fail', () => {
     const prose = inspect('x.tsx', '// reads left-to-right in Arabic too\n', new Set([]));
     const route = inspect(
       'x.ts',
-      "  template: '/receptions/{id}/convert-to-work-order',",
+      "export const r = { template: '/receptions/{id}/convert-to-work-order' };",
       new Set([])
     );
     expect(prose).toEqual([]);
