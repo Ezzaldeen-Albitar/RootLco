@@ -56,9 +56,25 @@
  *         record; and a second run is a no-op
  *   BF-12 an administrator role the tenant customised through the SHIPPED role
  *         editor (a bundle code removed) is skipped and reported as
- *         `tenant-edit:iam.role.permission_removed`, and one created by the
- *         organisation's own principal as `created-inside-organisation` — neither
- *         gains `sal.credit.manage`, and neither is written
+ *         `tenant-edit:iam.role.permission_removed`, one the organisation archived
+ *         and re-created itself through the SHIPPED role operations as
+ *         `created-inside-organisation`, and one it renamed through
+ *         `iam.role-update` as `tenant-edit:iam.role.updated` — none gains
+ *         `sal.credit.manage`, and none is written
+ *   BF-13 the creator check fails closed and is keyed on platform authority: a
+ *         role whose creator names no account is `creator-unknown`, one written
+ *         by another organisation's account holding no platform grant is
+ *         `creator-not-platform-operator`, and one written by a platform operator
+ *         whose HOME is this very organisation is still the standard role and is
+ *         widened
+ *   BF-14 granting the standard role to a second account is reported
+ *         (`holders`, `tenantGrantedHolders`) and is not a reason to skip
+ *   BF-15 two runs against the same organisation at once: exactly one widens,
+ *         the other finds nothing missing, one audit record, no failure
+ *   BF-16 a run waits on the organisation's advisory lock and computes its
+ *         difference only after the holder has committed
+ *   BF-17 one organisation's failure is rolled back and reported as `failed`
+ *         while the next organisation in the same run is widened and committed
  *
  * ## Where it runs
  *
@@ -70,11 +86,11 @@
  * reproduces the 67-code bundle those organisations really hold.
  *
  * Operations exercised: platform.organization-provision, iam.role-create,
- * iam.role-permission-add, iam.role-permission-remove, wty.warranty-list,
- * wty.warranty-detail.
+ * iam.role-update, iam.role-permission-add, iam.role-permission-remove,
+ * iam.grant-issue, wty.warranty-list, wty.warranty-detail.
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import type { Pool } from 'pg';
+import type { Pool, PoolClient } from 'pg';
 import { randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -108,9 +124,12 @@ import {
   TARGET_ROLE_CODE,
   readTenantAdministratorBundle,
   runBackfill,
+  tenantLockKey,
 } from '../../scripts/platform/backfill-tenant-administrator-bundle.mjs';
 import { POST as organizationProvisionRoute } from '@/app/api/v1/platform/organizations/route';
 import { POST as roleCreateRoute } from '@/app/api/v1/iam/roles/route';
+import { PATCH as roleUpdateRoute } from '@/app/api/v1/iam/roles/[roleId]/route';
+import { POST as grantIssueRoute } from '@/app/api/v1/iam/grants/route';
 import { POST as rolePermissionAddRoute } from '@/app/api/v1/iam/roles/[roleId]/permissions/route';
 import { DELETE as rolePermissionRemoveRoute } from '@/app/api/v1/iam/roles/[roleId]/permissions/[mappingId]/route';
 import { WARRANTY_LIST_OPERATION, GET as warrantyListRoute } from '@/app/api/v1/warranties/route';
@@ -259,10 +278,12 @@ async function call<T>(
     readonly body?: unknown;
     readonly params?: Record<string, string>;
     readonly idempotencyKey?: string;
+    readonly ifMatch?: number;
   }
 ): Promise<CallResult<T>> {
   const headers: Record<string, string> = { 'content-type': 'application/json' };
   if (input.idempotencyKey !== undefined) headers['idempotency-key'] = input.idempotencyKey;
+  if (input.ifMatch !== undefined) headers['if-match'] = String(input.ifMatch);
   const init: RequestInit = { method: input.method ?? 'POST', headers };
   if (input.body !== undefined) init.body = JSON.stringify(input.body);
   const request = new Request(`http://localhost/api/v1${input.path}`, init);
@@ -420,7 +441,7 @@ interface BackfillOrganisation {
   readonly tenantId: string;
   readonly tenantCode: string;
   readonly status: string;
-  readonly outcome: 'widened' | 'unchanged' | 'no-administrator-role' | 'customised';
+  readonly outcome: 'widened' | 'unchanged' | 'no-administrator-role' | 'customised' | 'failed';
   readonly roleId: string | null;
   readonly heldBefore: number;
   readonly heldAfter: number;
@@ -428,6 +449,9 @@ interface BackfillOrganisation {
   readonly blockedByDeny: readonly string[];
   readonly customisations: readonly string[];
   readonly withheld?: readonly string[];
+  readonly holders?: number;
+  readonly tenantGrantedHolders?: number;
+  readonly failure?: string;
   readonly auditRecordId?: string;
 }
 
@@ -440,6 +464,7 @@ interface BackfillReport {
   readonly unchanged: number;
   readonly skipped: number;
   readonly customised: number;
+  readonly failed: number;
   readonly organisations: readonly BackfillOrganisation[];
 }
 
@@ -451,6 +476,120 @@ async function backfill(overrides: Record<string, unknown>): Promise<BackfillRep
   } finally {
     client.release();
   }
+}
+
+/** The same, on a client the caller holds — for the concurrency cases. */
+async function backfillOn(
+  client: PoolClient,
+  overrides: Record<string, unknown>
+): Promise<BackfillReport> {
+  return (await runBackfill(client, backfillInput(overrides), parsedBundle)) as BackfillReport;
+}
+
+/** The current record version of a role, for `iam.role-update`'s If-Match. */
+async function roleVersion(roleId: string): Promise<number> {
+  const { rows } = await admin.query<{ record_version: number }>(
+    'SELECT record_version FROM iam.roles WHERE id = $1',
+    [roleId]
+  );
+  const version = rows[0]?.record_version;
+  if (version === undefined) throw new Error(`role ${roleId} has no record version`);
+  return version;
+}
+
+/** Puts a freshly provisioned standard role on the 88-code bundle (no sal.credit.manage). */
+async function withoutCreditCode(roleId: string): Promise<void> {
+  await admin.query(
+    `DELETE FROM iam.role_permissions
+      WHERE role_id = $1
+        AND permission_id IN (SELECT id FROM iam.permissions WHERE permission_code = ANY($2::text[]))`,
+    [roleId, [...CREDIT_ADDED]]
+  );
+}
+
+/** Mapping rows of one role that grant `sal.credit.manage`. */
+async function creditMappings(roleId: string): Promise<number> {
+  const { rows } = await admin.query<{ n: number }>(
+    `SELECT count(*)::int AS n FROM iam.role_permissions rp
+       JOIN iam.permissions p ON p.id = rp.permission_id
+      WHERE rp.role_id = $1 AND p.permission_code = 'sal.credit.manage'`,
+    [roleId]
+  );
+  return rows[0]?.n ?? 0;
+}
+
+/** An account of a provisioned organisation that is NOT its first administrator. */
+async function seedMember(tenant: Provisioned, label: string): Promise<string> {
+  const userId = randomUUID();
+  const subject = `fx_p31bf_${label}_${RUN}`;
+  await admin.query(
+    `INSERT INTO iam.user_accounts
+       (id, tenant_id, identity_provider, provider_subject, email, display_name, status, created_by)
+     VALUES ($1, $2, $3, $4, $5, $6, 'active', $7)`,
+    [
+      userId,
+      tenant.tenantId,
+      IDENTITY_PROVIDER,
+      subject,
+      `${subject}@fixture.test`,
+      `P31 backfill ${label}`,
+      tenant.ownerAccountId,
+    ]
+  );
+  return userId;
+}
+
+/**
+ * Replaces an organisation's standard role with one WRITTEN BY `creatorId` — the one
+ * row this suite constructs directly rather than through an operation, because what
+ * it varies is exactly the column no operation lets a test choose: `created_by` is
+ * the session principal on every write path and immutable afterwards
+ * (`tg_roles_immutable`). The provisioned role is archived, and the replacement is
+ * mapped to the same allow-codes minus `sal.credit.manage`, so the only thing that
+ * differs from a stale standard role is who wrote it.
+ */
+async function replaceStandardRole(tenant: Provisioned, creatorId: string): Promise<string> {
+  const client = await admin.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query('UPDATE iam.roles SET deleted_at = now() WHERE id = $1', [
+      tenant.tenantAdministratorRoleId,
+    ]);
+    const role = await client.query<{ id: string }>(
+      `INSERT INTO iam.roles (tenant_id, role_code, name, description, is_system, created_by)
+       VALUES ($1, $2, 'Administrator', 'Replacement', false, $3) RETURNING id`,
+      [tenant.tenantId, TARGET_ROLE_CODE, creatorId]
+    );
+    const roleId = role.rows[0]?.id ?? '';
+    await client.query(
+      `INSERT INTO iam.role_permissions (tenant_id, role_id, permission_id, effect, created_by)
+       SELECT $1, $2, rp.permission_id, 'allow', $4
+         FROM iam.role_permissions rp
+         JOIN iam.permissions p ON p.id = rp.permission_id
+        WHERE rp.role_id = $3 AND rp.effect = 'allow' AND p.permission_code <> 'sal.credit.manage'`,
+      [tenant.tenantId, roleId, tenant.tenantAdministratorRoleId, creatorId]
+    );
+    await client.query('COMMIT');
+    return roleId;
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+/** Waits until some backend is blocked on an advisory lock, or gives up. */
+async function someoneWaitsOnAdvisoryLock(): Promise<boolean> {
+  for (let attempt = 0; attempt < 50; attempt += 1) {
+    const { rows } = await admin.query<{ n: number }>(
+      `SELECT count(*)::int AS n FROM pg_stat_activity
+        WHERE wait_event_type = 'Lock' AND wait_event = 'advisory'`
+    );
+    if ((rows[0]?.n ?? 0) > 0) return true;
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  return false;
 }
 
 /** The first organisation in a report, refusing an empty one rather than reading undefined. */
@@ -583,7 +722,8 @@ describe('P1-31 D-2 — the mechanism', () => {
     expect(statements.length).toBeGreaterThan(6);
     for (const statement of statements) {
       expect(statement).not.toMatch(/\bDELETE\b/i);
-      expect(statement).not.toMatch(/\bUPDATE\b/i);
+      // `FOR UPDATE` is a row LOCK (BF-15, BF-16), not a write; any other UPDATE is.
+      expect(statement.replace(/\bFOR\s+UPDATE\b/gi, 'FOR ROW-LOCK')).not.toMatch(/\bUPDATE\b/i);
       expect(statement).not.toMatch(/\bTRUNCATE\b/i);
       expect(statement).not.toMatch(/\bREVOKE\b/i);
     }
@@ -936,6 +1076,18 @@ describe('P1-31 D-2 — the five obligations, on real rows', () => {
     }
     const cashierBefore = await mappingRows(cashierRoleId);
 
+    // BF-14: the organisation gives its standard role to a SECOND account through the
+    // shipped grant operation. That does not customise the role, so it is still
+    // widened — but the report says how many accounts the widening reaches.
+    const deputy = await seedMember(organisation, 'deputy');
+    asOwnerOf(organisation);
+    const granted = await call(grantIssueRoute, {
+      path: '/iam/grants',
+      body: { userId: deputy, roleId: organisation.tenantAdministratorRoleId },
+      idempotencyKey: randomUUID(),
+    });
+    expect(granted.status).toBe(201);
+
     // The standard role, put on the 88-code bundle every organisation provisioned
     // before the credit-note decision holds.
     const roleId = organisation.tenantAdministratorRoleId;
@@ -958,6 +1110,10 @@ describe('P1-31 D-2 — the five obligations, on real rows', () => {
       heldBefore: 88,
       heldAfter: parsedBundle.length,
       customisations: [],
+      // The first owner (granted by the platform operator) and the deputy (granted by
+      // the organisation itself).
+      holders: 2,
+      tenantGrantedHolders: 1,
     });
     expect(only(dryRun).added).toEqual(['sal.credit.manage']);
     expect(await mappingRows(roleId)).toEqual(beforeRows);
@@ -1014,27 +1170,20 @@ describe('P1-31 D-2 — the five obligations, on real rows', () => {
     expect(removed.status).toBe(200);
     const editedRows = await mappingRows(editedRoleId);
 
-    // (b) CREATED INSIDE. The organisation archived the provisioned role and built its
-    // own under the same code through the shipped role-create operation. It wears the
-    // standard code and is not the standard role.
+    // (b) CREATED INSIDE. The organisation archives the provisioned role through the
+    // shipped role-update operation and builds its own under the same code through
+    // the shipped role-create operation. It wears the standard code and is not the
+    // standard role.
     const inside = await provision('inside');
-    const client = await admin.connect();
-    try {
-      await client.query('BEGIN');
-      await client.query(
-        `SELECT set_config('app.user_id',$1,true), set_config('app.tenant_id',$2,true)`,
-        [inside.ownerAccountId, inside.tenantId]
-      );
-      await client.query('UPDATE iam.roles SET deleted_at = now() WHERE id = $1', [
-        inside.tenantAdministratorRoleId,
-      ]);
-      await client.query('COMMIT');
-    } catch (error) {
-      await client.query('ROLLBACK');
-      throw error;
-    } finally {
-      client.release();
-    }
+    asOwnerOf(inside);
+    const archived = await call(roleUpdateRoute, {
+      path: `/iam/roles/${inside.tenantAdministratorRoleId}`,
+      method: 'PATCH',
+      params: { roleId: inside.tenantAdministratorRoleId },
+      body: { archive: true },
+      ifMatch: await roleVersion(inside.tenantAdministratorRoleId),
+    });
+    expect(archived.status).toBe(200);
     asOwnerOf(inside);
     const recreated = await call<{ id: string }>(roleCreateRoute, {
       path: '/iam/roles',
@@ -1044,10 +1193,28 @@ describe('P1-31 D-2 — the five obligations, on real rows', () => {
     expect(recreated.status).toBe(201);
     const insideRows = await mappingRows(recreated.body.id);
 
-    const result = await backfill({ tenants: [edited.tenantId, inside.tenantId] });
-    expect(result.customised).toBe(2);
+    // (c) RENAMED. The organisation repurposes its standard role through the shipped
+    // role-update operation, changing nothing but its name.
+    const renamed = await provision('renamed');
+    const renamedRoleId = renamed.tenantAdministratorRoleId;
+    await withoutCreditCode(renamedRoleId);
+    asOwnerOf(renamed);
+    const rename = await call(roleUpdateRoute, {
+      path: `/iam/roles/${renamedRoleId}`,
+      method: 'PATCH',
+      params: { roleId: renamedRoleId },
+      body: { name: 'Front desk' },
+      ifMatch: await roleVersion(renamedRoleId),
+    });
+    expect(rename.status).toBe(200);
+    const renamedRows = await mappingRows(renamedRoleId);
+
+    const result = await backfill({
+      tenants: [edited.tenantId, inside.tenantId, renamed.tenantId],
+    });
+    expect(result.customised).toBe(3);
     expect(result.widened).toBe(0);
-    const [first, second] = result.organisations;
+    const [first, second, third] = result.organisations;
     expect(first).toMatchObject({
       tenantId: edited.tenantId,
       outcome: 'customised',
@@ -1063,12 +1230,188 @@ describe('P1-31 D-2 — the five obligations, on real rows', () => {
       customisations: ['created-inside-organisation'],
     });
     expect(second?.withheld).toContain('sal.credit.manage');
+    expect(third).toMatchObject({
+      tenantId: renamed.tenantId,
+      roleId: renamedRoleId,
+      outcome: 'customised',
+      added: [],
+      customisations: ['tenant-edit:iam.role.updated'],
+      withheld: ['sal.credit.manage'],
+    });
 
-    // Neither was written, and neither gained an audit record.
+    // None was written, and none gained an audit record.
     expect(await mappingRows(editedRoleId)).toEqual(editedRows);
     expect(await mappingRows(recreated.body.id)).toEqual(insideRows);
+    expect(await mappingRows(renamedRoleId)).toEqual(renamedRows);
     expect(await codesOfRole(editedRoleId)).not.toContain('sal.credit.manage');
     expect(await backfillAuditCount(edited.tenantId)).toBe(0);
     expect(await backfillAuditCount(inside.tenantId)).toBe(0);
+    expect(await backfillAuditCount(renamed.tenantId)).toBe(0);
+  });
+
+  it('BF-13 the creator check fails closed, and is keyed on platform authority rather than on the creator home organisation', async () => {
+    // (a) A creator that names no account at all.
+    const unknown = await provision('crunk');
+    const unknownRoleId = await replaceStandardRole(unknown, randomUUID());
+    // (b) A creator of ANOTHER organisation holding no platform grant.
+    const foreign = await provision('crfor');
+    const foreignRoleId = await replaceStandardRole(foreign, USER_STRANGER);
+    // (c) A platform operator whose HOME is this very organisation. The old test —
+    // "is the creator's organisation this one?" — would have called this the
+    // tenant's own role; what makes it the standard role is the platform grant.
+    const home = await provision('crhome');
+    const homeOperator = await seedMember(home, 'home_operator');
+    await admin.query(
+      `INSERT INTO iam.platform_grants (account_id, permission_code, granted_by, created_by)
+       VALUES ($1, 'platform.organization.manage', $2, $2)`,
+      [homeOperator, SYSTEM_ACTOR]
+    );
+    const homeRoleId = await replaceStandardRole(home, homeOperator);
+    try {
+      const before = await Promise.all(
+        [unknownRoleId, foreignRoleId].map((roleId) => mappingRows(roleId))
+      );
+
+      const result = await backfill({
+        tenants: [unknown.tenantId, foreign.tenantId, home.tenantId],
+      });
+      const [first, second, third] = result.organisations;
+      expect(first).toMatchObject({
+        roleId: unknownRoleId,
+        outcome: 'customised',
+        added: [],
+        customisations: ['creator-unknown'],
+        withheld: ['sal.credit.manage'],
+      });
+      expect(second).toMatchObject({
+        roleId: foreignRoleId,
+        outcome: 'customised',
+        added: [],
+        customisations: ['creator-not-platform-operator'],
+        withheld: ['sal.credit.manage'],
+      });
+      expect(third).toMatchObject({
+        roleId: homeRoleId,
+        outcome: 'widened',
+        added: ['sal.credit.manage'],
+        customisations: [],
+      });
+      expect(result.failed).toBe(0);
+
+      // The two it refused were not written; the one it recognised was.
+      expect(await mappingRows(unknownRoleId)).toEqual(before[0]);
+      expect(await mappingRows(foreignRoleId)).toEqual(before[1]);
+      expect(await backfillAuditCount(unknown.tenantId)).toBe(0);
+      expect(await backfillAuditCount(foreign.tenantId)).toBe(0);
+      expect(await codesOfRole(homeRoleId)).toContain('sal.credit.manage');
+      expect(await backfillAuditCount(home.tenantId)).toBe(1);
+    } finally {
+      await admin.query('DELETE FROM iam.platform_grants WHERE account_id = $1', [homeOperator]);
+    }
+  });
+
+  it('BF-15 two runs against the same organisation at once: one widens, the other finds nothing missing, and nothing fails', async () => {
+    const organisation = await provision('race');
+    const roleId = organisation.tenantAdministratorRoleId;
+    await withoutCreditCode(roleId);
+    const auditBefore = await backfillAuditCount(organisation.tenantId);
+
+    const left = await admin.connect();
+    const right = await admin.connect();
+    try {
+      const [a, b] = await Promise.all([
+        backfillOn(left, { tenants: [organisation.tenantId] }),
+        backfillOn(right, { tenants: [organisation.tenantId] }),
+      ]);
+      const outcomes = [only(a).outcome, only(b).outcome].sort();
+      expect(outcomes).toEqual(['unchanged', 'widened']);
+      expect(a.failed + b.failed).toBe(0);
+    } finally {
+      left.release();
+      right.release();
+    }
+    // Exactly one mapping, exactly one audit record.
+    expect(await creditMappings(roleId)).toBe(1);
+    expect(await backfillAuditCount(organisation.tenantId)).toBe(auditBefore + 1);
+  });
+
+  it('BF-16 a run waits on the organisation advisory lock and computes its difference only after the holder commits', async () => {
+    const organisation = await provision('lock');
+    const roleId = organisation.tenantAdministratorRoleId;
+    await withoutCreditCode(roleId);
+
+    const holder = await admin.connect();
+    const runner = await admin.connect();
+    try {
+      await holder.query('BEGIN');
+      await holder.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [
+        tenantLockKey(organisation.tenantId),
+      ]);
+      const pending = backfillOn(runner, { tenants: [organisation.tenantId] });
+      // The run is BLOCKED on the lock rather than reading the role.
+      expect(await someoneWaitsOnAdvisoryLock()).toBe(true);
+      // Meanwhile the holder completes the role — as a concurrent run would have.
+      await holder.query(
+        `INSERT INTO iam.role_permissions (tenant_id, role_id, permission_id, effect, created_by)
+         SELECT $1, $2, p.id, 'allow', $3 FROM iam.permissions p
+          WHERE p.permission_code = 'sal.credit.manage'`,
+        [organisation.tenantId, roleId, USER_HOLDER]
+      );
+      await holder.query('COMMIT');
+
+      const report = await pending;
+      expect(only(report)).toMatchObject({ outcome: 'unchanged', added: [] });
+      expect(report.failed).toBe(0);
+    } finally {
+      await holder.query('ROLLBACK').catch(() => undefined);
+      holder.release();
+      runner.release();
+    }
+    expect(await creditMappings(roleId)).toBe(1);
+    expect(await backfillAuditCount(organisation.tenantId)).toBe(0);
+  });
+
+  it('BF-17 one organisation failing is rolled back and reported, and the next one in the same run is still widened', async () => {
+    const blocked = await provision('fail');
+    const healthy = await provision('ok');
+    await withoutCreditCode(blocked.tenantAdministratorRoleId);
+    await withoutCreditCode(healthy.tenantAdministratorRoleId);
+    const blockedBefore = await mappingRows(blocked.tenantAdministratorRoleId);
+
+    const holder = await admin.connect();
+    const runner = await admin.connect();
+    try {
+      // The first organisation cannot be locked within the run's statement budget.
+      await holder.query('BEGIN');
+      await holder.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [
+        tenantLockKey(blocked.tenantId),
+      ]);
+      await runner.query("SET statement_timeout = '1500ms'");
+      const report = await backfillOn(runner, { tenants: [blocked.tenantId, healthy.tenantId] });
+      await runner.query('RESET statement_timeout');
+
+      expect(report.outcome).toBe('applied');
+      expect(report.failed).toBe(1);
+      expect(report.widened).toBe(1);
+      const [first, second] = report.organisations;
+      expect(first).toMatchObject({ tenantId: blocked.tenantId, outcome: 'failed', added: [] });
+      // The reason is stated, as the SQLSTATE the database gave.
+      expect(first?.failure).toMatch(/^57014: /);
+      expect(second).toMatchObject({
+        tenantId: healthy.tenantId,
+        outcome: 'widened',
+        added: ['sal.credit.manage'],
+      });
+    } finally {
+      await holder.query('ROLLBACK').catch(() => undefined);
+      await runner.query('RESET statement_timeout').catch(() => undefined);
+      holder.release();
+      runner.release();
+    }
+    // The failed organisation is exactly as it was; the healthy one was committed.
+    expect(await mappingRows(blocked.tenantAdministratorRoleId)).toEqual(blockedBefore);
+    expect(await backfillAuditCount(blocked.tenantId)).toBe(0);
+    expect(await codesOfRole(healthy.tenantAdministratorRoleId)).toContain('sal.credit.manage');
+    expect(await backfillAuditCount(healthy.tenantId)).toBe(1);
   });
 });

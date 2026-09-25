@@ -3578,7 +3578,8 @@
         "tests/backend/iam-access-administration.test.ts",
         "tests/backend/p1-14-idempotency-replay.test.ts",
         "tests/backend/p1-24-iam-route-depth.test.ts",
-        "tests/backend/p1-31-provisioning-bundle.test.ts"
+        "tests/backend/p1-31-provisioning-bundle.test.ts",
+        "tests/backend/p1-31-tenant-administrator-bundle-backfill.test.ts"
       ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/iam/grants/route.ts"
@@ -4136,7 +4137,8 @@
       "missingEvidence": [],
       "tests": [
         "tests/backend/iam-admin-writes.test.ts",
-        "tests/backend/p1-24-iam-route-depth.test.ts"
+        "tests/backend/p1-24-iam-route-depth.test.ts",
+        "tests/backend/p1-31-tenant-administrator-bundle-backfill.test.ts"
       ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/iam/roles/[roleId]/route.ts"

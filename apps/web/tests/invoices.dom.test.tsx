@@ -1746,7 +1746,9 @@ describe('raising and approving a credit note', () => {
     renderLtr(notesScreen(SIGNED_IN));
     const form = await requestForm();
     await chooseInvoice(user, form);
-    await user.type(amountBox(form), '500');
+    // Within the open receivable the form knows of, so it is SENT — and the server,
+    // which also counts what is already credited, refuses it.
+    await user.type(amountBox(form), '90');
     await user.type(reasonBox(form), 'Too much');
     await user.click(submitIn(form));
 
@@ -1755,16 +1757,47 @@ describe('raising and approving a credit note', () => {
     ).toBeInTheDocument();
     expect(amountBox(form)).toHaveAttribute('aria-invalid', 'true');
     await waitFor(() => expect(amountBox(form)).toHaveFocus());
-    expect(amountBox(form).value).toBe('500');
+    expect(amountBox(form).value).toBe('90');
     expect(reasonBox(form).value).toBe('Too much');
     expect(within(form).getByText('ref-409')).toBeInTheDocument();
 
     await user.clear(amountBox(form));
     expect(amountBox(form)).not.toHaveAttribute('aria-invalid');
-    await user.type(amountBox(form), '100');
+    await user.type(amountBox(form), '60');
     await user.click(submitIn(form));
     await waitFor(() => expect(requestCreditNote).toHaveBeenCalledTimes(2));
     expect(requestCreditNote.mock.calls[1]?.[2]).toBe(requestCreditNote.mock.calls[0]?.[2]);
+  });
+
+  it('refuses an amount above the open receivable before sending, and says pending notes may lower what can be approved', async () => {
+    const user = userEvent.setup();
+    renderLtr(notesScreen(SIGNED_IN));
+    const form = await requestForm();
+    await chooseInvoice(user, form);
+    // The open receivable the server stated, and the sentence beside it: the form
+    // does not subtract pending notes, it says they may reduce what can be approved.
+    expect(within(form).getByText(money('100.0000'))).toBeVisible();
+    expect(
+      within(form).getByText(EN['creditNotes.request.pendingMayReduce'] as string)
+    ).toBeVisible();
+
+    // One ten-thousandth above the open amount, compared digit by digit.
+    await user.type(amountBox(form), '100.0001');
+    await user.type(reasonBox(form), 'Too much');
+    await user.click(submitIn(form));
+    expect(requestCreditNote).not.toHaveBeenCalled();
+    await waitFor(() => expect(amountBox(form)).toHaveAttribute('aria-invalid', 'true'));
+    expect(
+      within(form).getByText(EN['creditNotes.request.aboveOpen'] as string)
+    ).toBeInTheDocument();
+    await waitFor(() => expect(amountBox(form)).toHaveFocus());
+
+    // Exactly the open amount is allowed through; the server remains the authority.
+    await user.clear(amountBox(form));
+    await user.type(amountBox(form), '100');
+    await user.click(submitIn(form));
+    await waitFor(() => expect(requestCreditNote).toHaveBeenCalledTimes(1));
+    expect(requestCreditNote.mock.calls[0]?.[1]).toEqual({ amount: '100', reason: 'Too much' });
   });
 
   it('a half-written credit is unsaved work: a branch switch asks first', async () => {

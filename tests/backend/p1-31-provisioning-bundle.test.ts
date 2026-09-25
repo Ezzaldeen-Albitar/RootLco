@@ -107,6 +107,13 @@
  *           refused this organisation's invoice (404, nothing written)
  *   P31-B20 a cashier role the administrator builds without the code is refused
  *           (403 ERR-IAM-001 naming the code, nothing written)
+ *   P31-B21 an approver the administrator gives both codes in ANOTHER branch only
+ *           is refused approving this branch's note (404 ERR-RES-001: the note is
+ *           outside every branch it may act in), while it reads its own branch —
+ *           the note stays pending, the receivable and the audit trail unmoved
+ *   P31-B22 another organisation's administrator, holding both approval codes there
+ *           and not the requester, is refused approving this organisation's note
+ *           with the same 404 an unknown id gets, and nothing moves
  *
  * Operations exercised: platform.organization-provision, iam.role-create,
  * iam.role-permission-add, iam.audit-event-list, rpt.report-catalogue,
@@ -1521,6 +1528,46 @@ function issuedInvoice(): Promise<CreditInvoice> {
   return creditInvoice;
 }
 
+/**
+ * A SECOND provisioned organisation, shared by B19 and B22: its administrator holds
+ * the same codes in its own organisation, so a refusal of it here is isolation and
+ * not a missing grant.
+ */
+let otherOrganisationPromise: Promise<Provisioned> | undefined;
+function otherOrganisation(): Promise<Provisioned> {
+  otherOrganisationPromise ??= provision('crn_other');
+  return otherOrganisationPromise;
+}
+
+/** A pending credit note the provisioned administrator raises on the shared invoice. */
+async function raiseCreditNote(
+  invoice: CreditInvoice,
+  amount: string,
+  reason: string
+): Promise<NonNullable<CreditNoteReply['creditNote']>> {
+  asOwnerOf(probe);
+  const requested = await call<CreditNoteReply>(creditNoteCreateRoute, {
+    path: `/invoices/${invoice.invoiceId}/credit-notes`,
+    params: { invoiceId: invoice.invoiceId },
+    body: { amount, reason },
+    idempotencyKey: randomUUID(),
+  });
+  expect(requested.status).toBe(201);
+  const note = requested.body.creditNote;
+  if (note === undefined) throw new Error('the credit-note request answered no credit note');
+  expect(note.approvalState).toBe('pending');
+  return note;
+}
+
+async function isStillPending(creditNoteId: string): Promise<boolean> {
+  const { rows } = await admin.query<{ n: number }>(
+    `SELECT count(*)::int AS n FROM sal.credit_notes
+      WHERE id = $1 AND approval_state = 'pending' AND approved_by IS NULL`,
+    [creditNoteId]
+  );
+  return rows[0]?.n === 1;
+}
+
 async function openReceivable(invoiceId: string): Promise<string> {
   const { rows } = await admin.query<{ open: string }>(
     'SELECT sal.invoice_open_receivable($1)::text AS open',
@@ -1710,7 +1757,7 @@ describe('Owner decision — sal.credit.manage: credit notes in a provisioned or
 
   it('P31-B19 the administrator of ANOTHER organisation, holding the same code, cannot credit this organisation invoice', async () => {
     const invoice = await issuedInvoice();
-    const other = await provision('crn_other');
+    const other = await otherOrganisation();
     // It holds the code in its own organisation, so the refusal below is isolation and
     // not a missing grant.
     expect(await codesHeldBy(other.ownerAccountId)).toContain('sal.credit.manage');
@@ -1761,5 +1808,101 @@ describe('Owner decision — sal.credit.manage: credit notes in a provisioned or
     expect(refused.body.code).toBe('ERR-IAM-001');
     expect(refused.body.requiredPermissions).toContain('sal.credit.manage');
     expect(await creditNotesOn(invoice.invoiceId)).toBe(before);
+  });
+
+  it('P31-B21 an approver whose credit grant is confined to ANOTHER branch cannot approve this branch credit note, and nothing moves', async () => {
+    const invoice = await issuedInvoice();
+
+    // A second branch of the same company, created by the administrator through the
+    // shipped operation, and a member given the finance-approver codes THERE only.
+    asOwnerOf(probe);
+    const created = await call<{ branch?: { id: string } }>(branchCreateRoute, {
+      path: '/org/branches',
+      body: { companyId: invoice.companyId, code: 'crnelse', name: 'Elsewhere', timezone: 'UTC' },
+      idempotencyKey: randomUUID(),
+    });
+    expect(created.status).toBe(201);
+    const elsewhere = { companyId: invoice.companyId, branchId: created.body.branch?.id ?? '' };
+    expect(elsewhere.branchId).not.toBe('');
+    expect(elsewhere.branchId).not.toBe(invoice.branchId);
+
+    const note = await raiseCreditNote(invoice, '10.000', 'Branch-scope probe');
+    const openBefore = await openReceivable(invoice.invoiceId);
+
+    const approver = await seedMember(probe, 'approver_elsewhere');
+    await grantBranchRole(
+      probe,
+      'finance_approver_elsewhere',
+      ['sal.credit.manage', 'sal.finance.view'],
+      approver.userId,
+      elsewhere
+    );
+    // The grant is real where it applies: the approver reads its own branch's notes,
+    // so the refusal below is the branch scope and not a missing code.
+    asMember(probe, approver.subject);
+    const ownBranch = await call<{ items: unknown[] }>(creditNoteListRoute, {
+      path: `/credit-notes?companyId=${elsewhere.companyId}&branchId=${elsewhere.branchId}`,
+      method: 'GET',
+    });
+    expect(ownBranch.status).toBe(200);
+    // And the note's branch is outside it: the list there is refused.
+    asMember(probe, approver.subject);
+    const noteBranch = await call<{ code?: string }>(creditNoteListRoute, {
+      path: `/credit-notes?companyId=${invoice.companyId}&branchId=${invoice.branchId}`,
+      method: 'GET',
+    });
+    expect(noteBranch.status).toBe(403);
+
+    asMember(probe, approver.subject);
+    const refused = await call<{ code?: string }>(creditNoteApproveRoute, {
+      path: `/credit-notes/${note.id}/approval`,
+      params: { creditNoteId: note.id },
+      idempotencyKey: randomUUID(),
+    });
+    // The note is in no branch this approver may act in: refused, never approved.
+    expect(refused.status).toBe(404);
+    expect(refused.body.code).toBe('ERR-RES-001');
+
+    expect(await isStillPending(note.id)).toBe(true);
+    expect(await openReceivable(invoice.invoiceId)).toBe(openBefore);
+    expect(await auditRecordsFor(probe.tenantId, 'sal.credit_note.approved', note.id)).toBe(0);
+  });
+
+  it('P31-B22 the administrator of ANOTHER organisation, holding the approval codes there, cannot approve this organisation credit note', async () => {
+    const invoice = await issuedInvoice();
+    const other = await otherOrganisation();
+    expect(await codesHeldBy(other.ownerAccountId)).toEqual(
+      expect.arrayContaining(['sal.credit.manage', 'sal.finance.view'])
+    );
+    const note = await raiseCreditNote(invoice, '10.000', 'Cross-organisation probe');
+    const openBefore = await openReceivable(invoice.invoiceId);
+
+    // Not the requester, so dual control is not what refuses it.
+    expect(other.ownerAccountId).not.toBe(note.requestedBy);
+    asOwnerOf(other);
+    const refused = await call<{ code?: string }>(creditNoteApproveRoute, {
+      path: `/credit-notes/${note.id}/approval`,
+      params: { creditNoteId: note.id },
+      idempotencyKey: randomUUID(),
+    });
+    expect(refused.status).toBe(404);
+    expect(refused.body.code).toBe('ERR-RES-001');
+
+    // An id that exists nowhere gets the identical answer, so the refusal discloses
+    // nothing about this organisation.
+    asOwnerOf(other);
+    const unknownId = randomUUID();
+    const unknown = await call<{ code?: string }>(creditNoteApproveRoute, {
+      path: `/credit-notes/${unknownId}/approval`,
+      params: { creditNoteId: unknownId },
+      idempotencyKey: randomUUID(),
+    });
+    expect(unknown.status).toBe(404);
+    expect(unknown.body.code).toBe('ERR-RES-001');
+
+    expect(await isStillPending(note.id)).toBe(true);
+    expect(await openReceivable(invoice.invoiceId)).toBe(openBefore);
+    expect(await auditRecordsFor(probe.tenantId, 'sal.credit_note.approved', note.id)).toBe(0);
+    expect(await auditRecordsFor(other.tenantId, 'sal.credit_note.approved', note.id)).toBe(0);
   });
 });

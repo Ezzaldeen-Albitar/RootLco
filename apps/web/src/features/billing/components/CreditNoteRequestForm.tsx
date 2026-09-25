@@ -19,10 +19,17 @@
  *
  * The amount is checked for shape before it is sent — a decimal string, more
  * than zero, at most four decimals — because that is what the route accepts and
- * a refusal the form can predict should not cost a round trip. Whether the
- * amount fits what is still open is the SERVER's answer, taken under the
- * invoice lock, and a refusal of it is filed under the amount. No arithmetic is
- * done here.
+ * a refusal the form can predict should not cost a round trip. It is also
+ * compared, digit by digit (`compareMoney`), with the open receivable the server
+ * published, and an amount above it is refused here: no credit can exceed it.
+ *
+ * What the form does NOT show is "open minus the credit notes still pending on
+ * this invoice". No read states that sum, and computing it here would mean paging
+ * the pending notes and ADDING money in the browser — a second money engine. So
+ * the form shows the open receivable the server states and says, beside it, that
+ * pending notes may reduce what can be approved. Whether the amount still fits
+ * when it is approved is the SERVER's answer, taken under the invoice lock, and a
+ * refusal of it is filed under the amount. No arithmetic is done here.
  *
  * ## Born pending
  *
@@ -40,6 +47,8 @@ import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic } from '@/i18n/get-messages';
 import type { ActionState } from '@/lib/forms/action-result';
 import { useFocusFirstInvalid } from '@/lib/forms/use-focus-first-invalid';
+
+import { compareMoney } from '@/lib/money';
 
 import { requestCreditNote } from '../api';
 import {
@@ -130,6 +139,10 @@ export function CreditNoteRequestForm({
     if (typed.length === 0) found['amount'] = 'field.required';
     else if (!CREDIT_AMOUNT.test(typed) || !/[1-9]/.test(typed)) {
       found['amount'] = 'creditNotes.request.amountFormat';
+    } else if (open !== null && compareMoney(typed, open.amount) > 0) {
+      // Never above what the server says is still open. Pending notes can lower the
+      // ceiling further; that is the server's answer at approval, not a sum made here.
+      found['amount'] = 'creditNotes.request.aboveOpen';
     }
     const why = reason.trim();
     if (why.length === 0) found['reason'] = 'field.required';
@@ -198,10 +211,17 @@ export function CreditNoteRequestForm({
         </div>
       ) : null}
       {open !== null ? (
-        <p className="text-body">
-          <span className="text-text-muted">{translate(messages, 'creditNotes.request.open')}</span>{' '}
-          <Money money={open} locale={locale} />
-        </p>
+        <div className="flex flex-col gap-1">
+          <p className="text-body">
+            <span className="text-text-muted">
+              {translate(messages, 'creditNotes.request.open')}
+            </span>{' '}
+            <Money money={open} locale={locale} />
+          </p>
+          <p className="text-caption text-text-muted">
+            {translate(messages, 'creditNotes.request.pendingMayReduce')}
+          </p>
+        </div>
       ) : null}
       <div className="sm:max-w-xs">
         <TextField

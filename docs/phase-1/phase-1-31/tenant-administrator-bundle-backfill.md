@@ -215,3 +215,41 @@ nothing).
 
 Applying it to an existing database is the same operator act as before, run as a dry run first and
 read before anything is written. This addendum does not claim the run was performed anywhere.
+
+---
+
+## 8. Addendum — who wrote the role, what else marks it customised, and one tenant at a time
+
+Three corrections to section 7, made on review of the credit-note change.
+
+**The creator check fails closed and is keyed on platform authority.** The standard role is the
+one a platform operator wrote, and what marks a platform operator is a platform grant it held when
+the role was written — not the organisation its account lives in, so an operator whose home is the
+organisation being checked still wrote the standard role. A role whose `created_by` names no
+account is reported as `creator-unknown`; one written by an account of another organisation holding
+no platform grant as `creator-not-platform-operator`; and one written by an account of the
+organisation holding no platform grant, or whose own trail records it through `iam.role-create`
+(`iam.role.created`, which provisioning never writes), as `created-inside-organisation`. Each is
+skipped whole and written to not at all.
+
+**A rename is a customisation; another holder is not.** A role the organisation renamed or
+re-described through `iam.role-update` (`iam.role.updated`) is reported as
+`tenant-edit:iam.role.updated` and skipped. Granting the standard role to more accounts does not
+customise the role, so it is not skipped for that, but every organisation's line reports `holders`
+(accounts holding an active grant of it) and `tenantGrantedHolders` (those granted by an account
+holding no platform grant), because widening the role widens each of them.
+
+**One organisation, one transaction, one lock.** Each organisation is handled in its own
+transaction, which takes a transaction-scoped advisory lock keyed on the organisation and then locks
+the role row before reading its mappings. Two runs against one organisation serialise, and the
+second finds nothing missing. A failure in one organisation rolls back that organisation alone: the
+run carries on, reports it as `failed` with its reason, and exits 6.
+
+Proof, in the same suite: **BF-12** (a role archived and re-created through the shipped role
+operations, and a role renamed through `iam.role-update`, are skipped and reported), **BF-13**
+(`creator-unknown`, `creator-not-platform-operator`, and the home-organisation operator's role
+widened), **BF-14** inside BF-11 (two holders reported, one granted by the organisation, still
+widened), **BF-15** (two concurrent runs: one widened, one unchanged, one audit record), **BF-16**
+(a run blocked on the advisory lock computes its difference after the holder commits) and **BF-17**
+(one organisation failed and rolled back, the next widened and committed, in one run). This
+addendum does not claim the run was performed anywhere.
