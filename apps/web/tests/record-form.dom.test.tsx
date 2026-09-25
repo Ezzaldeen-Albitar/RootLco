@@ -785,9 +785,16 @@ describe('a corrected field stops complaining before the next submission', () =>
     await waitFor(() => expect(action).toHaveBeenCalled());
     expect(screen.getAllByRole('alert').length).toBeGreaterThanOrEqual(2);
 
-    await user.type(screen.getByLabelText(en['crm.customers.notes.body'], { exact: false }), 'ok');
-
+    // The refusal moves the cursor to the first refused box one frame later
+    // (`useFocusFirstInvalid`), and the operator sees it land before typing; so
+    // does this test. Typing earlier races that frame: the first keystroke
+    // withdraws this box's complaint, the second box becomes the first refused
+    // one, and a frame landing then moves the cursor there mid-word.
     const reason = screen.getByLabelText(en['crm.customers.notes.body'], { exact: false });
+    await waitFor(() => expect(reason).toHaveFocus());
+    await user.type(reason, 'ok');
+    expect(reason).toHaveValue('ok');
+
     await waitFor(() => expect(reason).not.toHaveAttribute('aria-invalid'));
     // The one the operator has NOT touched still says so: a correction must
     // never quieten a complaint about a different field.
