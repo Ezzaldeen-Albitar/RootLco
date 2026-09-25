@@ -127,6 +127,21 @@ const DEFAULT_INVOICE_SEQUENCE = 'invoice';
  */
 const NO_WARRANTY_SHARE = Decimal.zero(MONEY).toString();
 
+/**
+ * The named refusal of a requester approving their own credit note.
+ *
+ * The sentence on the failure's `message` never reaches a caller — the problem
+ * document is built from the catalogue entry and `safeDetails` alone — so an
+ * `ERR-TRN-001` without this token could not be told apart from "this note was
+ * already decided". The token is what lets a screen say the one thing the
+ * operator can act on: another authorised person has to approve it. Filed under
+ * the path parameter because the approval sends no body; the note is the only
+ * thing the caller named.
+ */
+const SELF_APPROVAL_REFUSAL = {
+  violations: [{ path: 'path.creditNoteId', rule: 'credit_note_self_approval' }],
+} as const;
+
 export interface CreateInvoiceInput {
   readonly workOrderId: string;
   /**
@@ -1450,6 +1465,7 @@ export class InvoiceService {
         message:
           'The approver of a credit note must differ from the requester. Ask a second ' +
           'authorised person to approve this request.',
+        safeDetails: SELF_APPROVAL_REFUSAL,
       });
     }
 
@@ -1481,6 +1497,7 @@ export class InvoiceService {
           message:
             'The approver of a credit note must differ from the requester. Ask a second ' +
             'authorised person to approve this request.',
+          safeDetails: SELF_APPROVAL_REFUSAL,
           cause: error,
         });
       }

@@ -774,11 +774,25 @@ describe('sal.credit-note-approve', () => {
     );
     expect(refusal.message).toContain('Ask a second');
     expect(refusal.message).not.toMatch(/ck_|uq_|tg_|guard_|check_violation|23514|UPDATE/);
+    // Named, because the message never reaches a caller: without the token a screen
+    // cannot tell "you raised this yourself" from "this note was already decided".
+    expect(refusal.safeDetails.violations).toEqual([
+      { path: 'path.creditNoteId', rule: 'credit_note_self_approval' },
+    ]);
 
-    // The same attempt through the route: a controlled 409 leaking no constraint name.
+    // The same attempt through the route: a controlled 409 leaking no constraint name,
+    // carrying the named rule and nothing else beyond the standard refusal keys.
     authAs(SAL_FULL);
     const response = await approveCreditNote(note.id);
-    await expectCallerSafeConflict(response);
+    expect(response.status).toBe(409);
+    const raw = await response.text();
+    expect(raw).not.toMatch(/ck_|uq_|tg_|guard_|check_violation|23514|sal\./);
+    const problem = JSON.parse(raw) as ProblemBody;
+    expect(problem.code).toBe('ERR-TRN-001');
+    expect(Object.keys(problem).sort()).toEqual([...REFUSAL_KEYS, 'violations'].sort());
+    expect(problem.violations).toEqual([
+      { path: 'path.creditNoteId', rule: 'credit_note_self_approval' },
+    ]);
 
     // Still pending — which is the safe outcome, because a pending credit note
     // credits nothing.
