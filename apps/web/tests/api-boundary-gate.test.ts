@@ -180,8 +180,43 @@ describe('the component-library boundary (ADR-022)', () => {
       'grid-default-toolbar',
       'grid-derived-total',
       'grid-export-surface',
+      'grid-indirect-render',
       'mui-commercial-edition',
     ]);
+  });
+
+  it('refuses a grid whose props it cannot read, outside the wrapper path', () => {
+    const refused = [
+      // A spread can carry `showToolbar` or a `rowCount` no attribute rule sees.
+      `${GRID} export const G = (props: object) => <DataGrid rows={[]} columns={[]} rowCount={-1} {...props} />;`,
+      // createElement renders it with no JSX attributes at all.
+      `import { createElement } from 'react'; ${GRID} export const G = () => createElement(DataGrid, { rows: [], columns: [], rowCount: 10 });`,
+      `import * as React from 'react'; ${GRID} export const G = () => React.createElement(DataGrid, { rows: [], columns: [] });`,
+      // An alias assigned at runtime, or the grid handed on as a component.
+      `${GRID} const Table = DataGrid; export const G = () => <Table rows={[]} columns={[]} rowCount={10} />;`,
+      `${GRID} export const G = ({ Slot }: { Slot: (p: { component: unknown }) => null }) => <Slot component={DataGrid} />;`,
+      `import * as X from '@mui/x-data-grid'; export const Grid = X.DataGrid;`,
+      `import * as X from '@mui/x-data-grid'; export const all = X;`,
+      // A re-export or a dynamic import moves the grid out of this file's sight.
+      `export { DataGrid } from '@mui/x-data-grid';`,
+      `export * from '@mui/x-data-grid';`,
+      `export const load = () => import('@mui/x-data-grid');`,
+    ];
+    for (const sample of refused) {
+      expect(rulesOf(sample), sample).toContain('grid-indirect-render');
+    }
+  });
+
+  it('lets the shared OperationalGrid wrapper spread its props onto the grid', () => {
+    const wrapper = `${GRID} export const OperationalGrid = (props: object) => <DataGrid rowCount={-1} paginationMode="server" {...props} />;`;
+    expect(rulesOf(wrapper, 'src/components/data/OperationalGrid.tsx')).toEqual([]);
+    expect(rulesOf(wrapper, 'src/components/data/OperationalGrid/index.tsx')).toEqual([]);
+    expect(rulesOf(wrapper, 'src/features/x/Grid.tsx')).toContain('grid-indirect-render');
+  });
+
+  it('does not treat a type-only reference to the grid as a render', () => {
+    const typed = `import type { ComponentProps } from 'react'; ${GRID} export type P = ComponentProps<typeof DataGrid>; export const G = () => <DataGrid rows={[]} columns={[]} rowCount={-1} paginationMode="server" />;`;
+    expect(rulesOf(typed)).toEqual([]);
   });
 
   it('refuses every commercial, deferred or excluded MUI X package', () => {

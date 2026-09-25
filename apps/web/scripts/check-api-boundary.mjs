@@ -34,6 +34,11 @@
  *      and no count (P1-26-F-001). A data grid's `rowCount`, when given, must be
  *      the literal `-1` (unknown), a server-paginated grid must say so, and an
  *      `estimatedRowCount` is an invented total by another name.
+ *   9. **No grid the rules above cannot read.** Rules 7 and 8 read the grid's
+ *      literal attributes, so a `{...props}` spread, `createElement(DataGrid,
+ *      …)`, an alias, a re-export or a dynamic import of the grid module is
+ *      refused everywhere except the shared wrapper path (`GRID_WRAPPER_PATHS`,
+ *      reserved for OperationalGrid).
  *
  * Usage: node scripts/check-api-boundary.mjs [--json]
  * Exit codes: 0 clean · 1 a violation · 2 the check could not run.
@@ -194,7 +199,7 @@ export const RULES = [
   },
 ];
 
-/** Rules 6–8: the Material UI / MUI X boundary (ADR-022). */
+/** Rules 6–9: the Material UI / MUI X boundary (ADR-022). */
 export const COMPONENT_LIBRARY_RULES = [
   {
     id: 'mui-commercial-edition',
@@ -212,7 +217,44 @@ export const COMPONENT_LIBRARY_RULES = [
     id: 'grid-derived-total',
     what: 'gives the data grid a row count other than unknown (-1), or an estimated total',
   },
+  {
+    id: 'grid-indirect-render',
+    what: 'renders or passes the data grid in a form whose props this gate cannot read (a spread, createElement, an alias, a re-export or a dynamic import) — use the shared OperationalGrid wrapper',
+  },
 ];
+
+/**
+ * Where the data grid may be rendered with props the gate cannot read.
+ *
+ * Reserved for the ADR-022 PR1 wrapper (`OperationalGrid`), the one reviewed
+ * place that spreads its caller's props onto the grid. Everywhere else the
+ * grid's props must be literal attributes, or rules 7 and 8 read nothing.
+ */
+export const GRID_WRAPPER_PATHS = ['src/components/data/OperationalGrid'];
+
+function isGridWrapper(relPath) {
+  const normalised = relPath.split(sep).join('/');
+  return GRID_WRAPPER_PATHS.some((prefix) => normalised.startsWith(prefix));
+}
+
+function inTypePosition(node) {
+  for (let current = node.parent; current; current = current.parent) {
+    if (ts.isTypeNode(current)) return true;
+    if (ts.isStatement(current) || ts.isSourceFile(current)) return false;
+  }
+  return false;
+}
+
+function isTagName(node) {
+  const parent = node.parent;
+  return (
+    parent !== undefined &&
+    (ts.isJsxOpeningElement(parent) ||
+      ts.isJsxSelfClosingElement(parent) ||
+      ts.isJsxClosingElement(parent)) &&
+    parent.tagName === node
+  );
+}
 
 /** Packages outside ADR-022's scope, however they are imported. */
 const COMMERCIAL_OR_DEFERRED =
@@ -268,7 +310,7 @@ function isServerMode(initializer) {
 }
 
 /**
- * Rules 6–8, read from the syntax tree.
+ * Rules 6–9, read from the syntax tree.
  *
  * The grid is recognised by its BINDING, not by a tag spelling: whatever local
  * name `DataGrid` is imported under from `@mui/x-data-grid` (or a namespace
@@ -289,23 +331,83 @@ export function componentLibraryFindings(relPath, source) {
   }
 
   const gridTags = new Set();
+  const gridNames = new Set();
+  const gridNamespaces = new Set();
+  const wrapper = isGridWrapper(relPath);
   for (const statement of file.statements) {
-    if (!ts.isImportDeclaration(statement) || !ts.isStringLiteral(statement.moduleSpecifier)) {
+    if (
+      !(ts.isImportDeclaration(statement) || ts.isExportDeclaration(statement)) ||
+      !statement.moduleSpecifier ||
+      !ts.isStringLiteral(statement.moduleSpecifier)
+    ) {
       continue;
     }
     if (!GRID_MODULE.test(statement.moduleSpecifier.text)) continue;
+    if (ts.isExportDeclaration(statement)) {
+      // `export { DataGrid } from …` / `export * from …` hands the grid to a
+      // module this file's rules never see.
+      const clause = statement.exportClause;
+      const exportsGrid =
+        !clause ||
+        ts.isNamespaceExport(clause) ||
+        clause.elements.some(
+          (element) => (element.propertyName ?? element.name).text === 'DataGrid'
+        );
+      if (exportsGrid && !wrapper) found.add('grid-indirect-render');
+      continue;
+    }
     const bindings = statement.importClause?.namedBindings;
     if (bindings && ts.isNamedImports(bindings)) {
       for (const element of bindings.elements) {
         if ((element.propertyName ?? element.name).text === 'DataGrid') {
           gridTags.add(element.name.text);
+          gridNames.add(element.name.text);
         }
       }
     }
-    if (bindings && ts.isNamespaceImport(bindings)) gridTags.add(`${bindings.name.text}.DataGrid`);
+    if (bindings && ts.isNamespaceImport(bindings)) {
+      gridTags.add(`${bindings.name.text}.DataGrid`);
+      gridNamespaces.add(bindings.name.text);
+    }
   }
 
   const visit = (node) => {
+    // A dynamic import of the grid module yields a binding this gate cannot follow.
+    if (
+      !wrapper &&
+      ts.isCallExpression(node) &&
+      (node.expression.kind === ts.SyntaxKind.ImportKeyword ||
+        (ts.isIdentifier(node.expression) && node.expression.text === 'require')) &&
+      node.arguments[0] &&
+      ts.isStringLiteralLike(node.arguments[0]) &&
+      GRID_MODULE.test(node.arguments[0].text)
+    ) {
+      found.add('grid-indirect-render');
+    }
+    // The grid used as a VALUE — `createElement(DataGrid, props)`, an alias,
+    // `component={DataGrid}` — renders it with props no attribute rule reads.
+    if (!wrapper && ts.isIdentifier(node) && !inTypePosition(node)) {
+      const parent = node.parent;
+      const isBinding =
+        parent !== undefined &&
+        (ts.isImportSpecifier(parent) || ts.isNamespaceImport(parent) || ts.isImportClause(parent));
+      if (gridNames.has(node.text) && !isBinding && !isTagName(node)) {
+        found.add('grid-indirect-render');
+      }
+      if (gridNamespaces.has(node.text) && !isBinding) {
+        const member =
+          parent !== undefined &&
+          ts.isPropertyAccessExpression(parent) &&
+          parent.expression === node
+            ? parent
+            : null;
+        // `X.DataGrid` as a tag is read below; as a value, or the namespace
+        // itself handed on, it is not.
+        if (!member || (member.name.text === 'DataGrid' && !isTagName(member))) {
+          found.add('grid-indirect-render');
+        }
+      }
+    }
     if (ts.isIdentifier(node)) {
       if (GRID_EXPORT_NAMES.has(node.text)) found.add('grid-export-surface');
       if (node.text === 'GridToolbar') found.add('grid-default-toolbar');
@@ -324,6 +426,10 @@ export function componentLibraryFindings(relPath, source) {
       gridTags.has(node.tagName.getText(file))
     ) {
       const attributes = new Map();
+      // `{...props}` can carry `showToolbar` or a `rowCount` no rule below sees.
+      if (!wrapper && node.attributes.properties.some((p) => ts.isJsxSpreadAttribute(p))) {
+        found.add('grid-indirect-render');
+      }
       for (const attribute of node.attributes.properties) {
         const name = attributeName(attribute, file);
         if (name) attributes.set(name, attribute.initializer);
