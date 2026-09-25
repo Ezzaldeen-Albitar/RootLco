@@ -36,8 +36,8 @@
       "class": "DERIVABLE_LOCAL",
       "standing": "CURRENT",
       "document": "docs/phase-1/phase-1-27/clean-room-evidence.md",
-      "locator": "the current tree executes **5688** tests",
-      "value": "5688",
+      "locator": "the current tree executes **5743** tests",
+      "value": "5743",
       "binding": {
         "kind": "run",
         "tier": "web",
@@ -50,8 +50,8 @@
       "class": "DERIVABLE_LOCAL",
       "standing": "CURRENT",
       "document": "docs/phase-1/phase-1-27/clean-room-evidence.md",
-      "locator": "**The 5688 is HOSTED, and it is the binding measurement.**",
-      "value": "5688",
+      "locator": "**The 5743 is HOSTED, and it is the binding measurement.**",
+      "value": "5743",
       "binding": {
         "kind": "run",
         "tier": "web",
@@ -77,8 +77,8 @@
       "class": "DERIVABLE_LOCAL",
       "standing": "CURRENT",
       "document": "docs/phase-1/phase-1-27/clean-room-evidence.md",
-      "locator": "| Web tier \u2014 tests executed                   | 5688  | `--record web`, from the `vitest` JSON report                      |",
-      "value": "5688",
+      "locator": "| Web tier \u2014 tests executed                   | 5743  | `--record web`, from the `vitest` JSON report                      |",
+      "value": "5743",
       "binding": {
         "kind": "run",
         "tier": "web",
@@ -104,8 +104,8 @@
       "class": "DERIVABLE_LOCAL",
       "standing": "CURRENT",
       "document": "docs/phase-1/phase-1-27/clean-room-evidence.md",
-      "locator": "| Root unit tier \u2014 tests executed             | 3717  | `--record unit`, from the `vitest` JSON report                     |",
-      "value": "3717",
+      "locator": "| Root unit tier \u2014 tests executed             | 3728  | `--record unit`, from the `vitest` JSON report                     |",
+      "value": "3728",
       "binding": {
         "kind": "run",
         "tier": "unit",
