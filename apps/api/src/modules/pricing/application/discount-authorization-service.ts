@@ -315,7 +315,8 @@ export class DiscountAuthorizationService {
    * approve this at all (they asked for it), then whether they hold the kind of
    * authority it needs, then whether they hold enough of it. `authorizeApproval`
    * turns a block into a named refusal; the approvals list turns it into the
-   * per-row `canDecide` answer, so the two can never disagree.
+   * per-row `canApprove` / `cannotApproveReason` answer, so the two can never
+   * disagree.
    */
   public async evaluateApproval(
     db: DbHandle,

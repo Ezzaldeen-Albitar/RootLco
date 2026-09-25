@@ -4,9 +4,10 @@
 --        every quotation is held to from the moment it is written
 -- Migration: quo.discount_approvals; quo.quotations.discount_policy_*;
 --            svc.pricing_approval_policies.version_no
--- Tasks: P1-32-PRE-OD-DISC-01, P1-32-PRE-OD-DISC-04, P1-32-PRE-OD-DISC-07
+-- Tasks: P1-32-PRE-OD-DISC-01, P1-32-PRE-OD-DISC-04, P1-32-PRE-OD-DISC-07,
+--        P1-32-PRE-OD-DISC-09
 -- Owner module: quo (discount approvals, the quotation's policy pin), svc (policy
---               versions)
+--               versions), iam (who set an approval limit)
 --
 -- Rollback classification: ROLL-FORWARD-ONLY once a discount approval has been
 --   recorded: it is the only evidence of who asked for a discount and who approved
@@ -86,6 +87,21 @@
 --       different person must approve it. A draft whose creator is not a user account
 --       of its tenant gets no request, and the issue guard keeps refusing it until
 --       the quotation is revised. Issued and closed revisions are not touched.
+--       A backfilled request can land on a draft a later revision has overtaken, or
+--       on a quotation that is no longer open. It is inert there: the approvals list
+--       shows only a quotation's latest draft revision, so no approver is offered
+--       it, and a pending request grants nothing — the issue guard refuses its
+--       revision until a different person approves it. It is left as it is rather
+--       than guessed at.
+--
+--     * A REVISION IS WRITTEN AS A DRAFT (`quo.guard_revision_written_as_draft`). The
+--       issue guard watches the draft -> issued UPDATE, so no role may INSERT a
+--       revision past draft and step around it.
+--
+--     * A LIMIT IS RECORDED AS SET BY THE SIGNED-IN PERSON
+--       (`iam.stamp_approval_limit_creator`). "Never a limit the approver created"
+--       reads `iam.approval_limits.created_by`, so that column is now the signed-in
+--       person: stamped when omitted, and refused when it names anybody else.
 --
 --     * A THRESHOLD CHANGE IS A NEW VERSION. `svc.pricing_approval_policies` gains
 --       `version_no`, unique per (tenant, company, policy type) over every row,
@@ -747,7 +763,72 @@ CREATE TRIGGER tg_quotation_revisions_discount_approval BEFORE UPDATE OF status 
   EXECUTE FUNCTION quo.guard_revision_discount_approval();
 
 -- ----------------------------------------------------------------------------
--- 7. Existing rows: pinned, and a legacy draft that needs approval asks for it.
+-- 7. quo.quotation_revisions — a revision is written as a draft.
+-- ----------------------------------------------------------------------------
+-- The issue guard above watches the draft -> issued UPDATE. A revision INSERTED
+-- already issued (or in any other state past draft) would never pass through it,
+-- and app_runtime holds INSERT on the table. So a revision is written only as a
+-- draft, by whatever role, and becomes issued through quo.issue_revision, whose
+-- UPDATE the issue guard checks — the rule sal.guard_invoice_freeze already holds
+-- for an invoice (20260917093000).
+CREATE OR REPLACE FUNCTION quo.guard_revision_written_as_draft()
+RETURNS trigger LANGUAGE plpgsql SECURITY INVOKER SET search_path = '' AS $$
+BEGIN
+  IF NEW.status IS DISTINCT FROM 'draft' THEN
+    RAISE EXCEPTION 'quotation_revision_written_as_draft: a quotation revision is written as a draft and issued through quo.issue_revision, never written %', NEW.status
+      USING ERRCODE = 'check_violation';
+  END IF;
+  RETURN NEW;
+END; $$;
+REVOKE EXECUTE ON FUNCTION quo.guard_revision_written_as_draft() FROM PUBLIC;
+CREATE TRIGGER tg_quotation_revisions_written_as_draft BEFORE INSERT ON quo.quotation_revisions
+  FOR EACH ROW EXECUTE FUNCTION quo.guard_revision_written_as_draft();
+
+-- ----------------------------------------------------------------------------
+-- 8. iam.approval_limits — a limit is recorded as set by the signed-in person.
+-- ----------------------------------------------------------------------------
+-- The approver's ceiling in section 4 never counts a limit the approver created,
+-- so `created_by` is what tells "a limit somebody else gave me" from "a limit I
+-- gave myself". Until now it was whatever the writer supplied: a person holding
+-- iam.approval.manage could set a limit for themselves under a colleague's name
+-- and approve against it. Now, whenever a person is signed in
+-- (`iam.current_user_id()`, the attribution `decided_by` is held to), whatever
+-- role writes the limit:
+--   * an omitted `created_by` is stamped with that person, and
+--   * an explicit `created_by` naming anybody else is refused.
+-- With nobody signed in, a limit is refused unless the role bypasses row level
+-- security (the migration, seed and provisioning roles), so nothing on the request
+-- path writes a limit it cannot attribute. `created_by` never changes afterwards:
+-- tg_approval_limits_immutable (20260718093000) already refuses it, and
+-- app_runtime's UPDATE grant on the table covers effective_to alone.
+CREATE OR REPLACE FUNCTION iam.stamp_approval_limit_creator()
+RETURNS trigger LANGUAGE plpgsql SECURITY INVOKER SET search_path = '' AS $$
+DECLARE v_actor uuid := iam.current_user_id();
+BEGIN
+  IF v_actor IS NULL THEN
+    IF NOT EXISTS (
+      SELECT 1 FROM pg_catalog.pg_roles
+       WHERE rolname = current_user AND (rolsuper OR rolbypassrls)
+    ) THEN
+      RAISE EXCEPTION 'approval_limit_creator_unattributed: an approval limit is written by a signed-in person'
+        USING ERRCODE = 'check_violation';
+    END IF;
+    RETURN NEW;
+  END IF;
+  IF NEW.created_by IS NULL THEN
+    NEW.created_by := v_actor;
+  ELSIF NEW.created_by <> v_actor THEN
+    RAISE EXCEPTION 'approval_limit_creator_mismatch: an approval limit is recorded as set by the signed-in person, in their own name'
+      USING ERRCODE = 'check_violation';
+  END IF;
+  RETURN NEW;
+END; $$;
+REVOKE EXECUTE ON FUNCTION iam.stamp_approval_limit_creator() FROM PUBLIC;
+CREATE TRIGGER tg_approval_limits_creator BEFORE INSERT ON iam.approval_limits
+  FOR EACH ROW EXECUTE FUNCTION iam.stamp_approval_limit_creator();
+
+-- ----------------------------------------------------------------------------
+-- 9. Existing rows: pinned, and a legacy draft that needs approval asks for it.
 -- ----------------------------------------------------------------------------
 -- Idempotent and deterministic: a second call finds every quotation pinned and
 -- every qualifying draft already carrying a request, and changes nothing.

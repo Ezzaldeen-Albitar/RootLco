@@ -2504,7 +2504,7 @@ export const MANIFEST = {
   'quo.discount-approval-list': {
     files: ['tests/backend/p1-20-quotation.test.ts'],
     required: ['success', 'denial', 'isolation'],
-    note: 'P1-32-PRE-OD-DISC-01/-04: companyId and branchId are REQUIRED and are the authorizationTarget, so the list is judged against the branch actually read; only requests on a quotation CURRENT draft revision are listed and a superseded request never is; each row says whether the signed-in person asked for it (requestedByCaller) and whether they could approve it (canDecide, with cannotDecideReason naming own request, missing recorded permission, no counting limit or limit too low) computed by the server, and no approver limit is ever returned; another tenant sees none of the rows',
+    note: 'P1-32-PRE-OD-DISC-01/-04: companyId and branchId are REQUIRED and are the authorizationTarget, so the list is judged against the branch actually read; only requests on a quotation CURRENT draft revision are listed and a superseded request never is; each row says whether the signed-in person asked for it (requestedByCaller) and whether they could approve it (canApprove, with cannotApproveReason naming own request, missing recorded permission, no counting limit or limit too low) and whether they could turn it down (canReject), both computed by the server, and no approver limit is ever returned; another tenant sees none of the rows',
   },
   'quo.discount-approval-decide': {
     files: ['tests/backend/p1-20-quotation.test.ts'],
@@ -2517,7 +2517,7 @@ export const MANIFEST = {
       'isolation',
       'concurrency',
     ],
-    note: 'P1-32-PRE-OD-DISC-01/-04: the route is gated by quo.quotation.read and the decision needs ONLY the permission the request recorded (discount_approval_permission_missing), checked against the row own company and branch; the requester is recorded by the server when the revision is created, so the approver can never be the requester (discount_approver_must_differ, and ck_discount_approvals_separation whatever reaches the database); approving needs a limit the approver did not set that covers the whole discount (discount_no_approval_limit / discount_over_approval_limit) and records the approved amount the issue guard compares with the lines; the decision is measured against the policy version snapshotted at the request, a request a newer revision replaced is discount_approval_superseded, and two concurrent decisions serialize on the quotation lock so the second is discount_approval_already_decided',
+    note: 'P1-32-PRE-OD-DISC-01/-04: the route is gated by quo.quotation.read and the decision needs ONLY the permission the request recorded (discount_approval_permission_missing), checked against the row own company and branch; the requester is recorded by the server when the revision is created, so the approver can never be the requester (discount_approver_must_differ, and ck_discount_approvals_separation whatever reaches the database); approving needs a limit the approver did not set that covers the whole discount (discount_no_approval_limit / discount_over_approval_limit) and records the approved amount the issue guard compares with the lines; the decision is measured against the policy version pinned on the quotation when it was written, which the request copies, a request a newer revision replaced is discount_approval_superseded, and two concurrent decisions serialize on the quotation lock so the second is discount_approval_already_decided',
   },
   'svc.discount-threshold-read': {
     files: ['tests/backend/p1-20-quotation.test.ts'],
@@ -2527,7 +2527,7 @@ export const MANIFEST = {
   'svc.discount-threshold-set': {
     files: ['tests/backend/p1-20-quotation.test.ts'],
     required: ['success', 'denial', 'audit', 'stale-version', 'idempotency', 'isolation'],
-    note: 'P1-32-PRE-OD-DISC-01/-04: a threshold change records the next version, numbered above every version the company ever used (deleted and retired rows included), and recording it retires the current one at the database, which refuses any other status, validity or deletion change; effective prospectively, so a quotation holding an open request stays measured against that request snapshot; If-Match carries the next version number and a stale one is a conflict; there is no field that switches separation of duties off and none that changes the approver permission',
+    note: 'P1-32-PRE-OD-DISC-01/-04: a threshold change records the next version, numbered above every version the company ever used (deleted and retired rows included), and recording it retires the current one at the database, which refuses any other status, validity or deletion change; effective prospectively, so it reaches only quotations written after it and a quotation already written stays measured against the policy version pinned on it; If-Match carries the next version number and a stale one is a conflict; there is no field that switches separation of duties off and none that changes the approver permission',
   },
   'svc.price-resolve': {
     files: ['tests/backend/p1-20-pricing.test.ts'],

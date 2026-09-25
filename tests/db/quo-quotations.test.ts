@@ -866,6 +866,60 @@ describe('quo discount approvals', () => {
     });
   });
 
+  /**
+   * P1-32-PRE-OD-DISC-09: the issue guard watches the draft -> issued UPDATE, so a
+   * revision written already issued would never meet it. `tg_quotation_revisions_written_as_draft`
+   * refuses any revision written past draft — on the request path and by a role that
+   * bypasses row level security alike.
+   */
+  it('writes a revision only as a draft, so no revision reaches issued around the issue guard', async () => {
+    const writePastDraft = `INSERT INTO quo.quotation_revisions
+         (tenant_id, company_id, branch_id, quotation_id, revision_number, status, issued_at,
+          currency_code, created_by)
+       VALUES ($1, $2, $3, $4, $5, $6, now(), 'USD', $7)`;
+    await withRolledBackTx(runtime, ctxA, async (c) => {
+      const { wo } = await quotable(c, 'd9');
+      const quotation = (
+        await c.query<{ id: string }>(
+          `INSERT INTO quo.quotations (tenant_id, company_id, branch_id, work_order_id, quotation_number, currency_code, created_by)
+           VALUES ($1, $2, $3, $4, 'Q-d9', 'USD', $5) RETURNING id`,
+          [TENANT_A, COMPANY_A1, BRANCH_A1, wo, USER_A]
+        )
+      ).rows[0]!.id;
+      for (const status of ['issued', 'superseded', 'rejected', 'expired']) {
+        await expectRefusal(c, '23514', /quotation_revision_written_as_draft/, writePastDraft, [
+          TENANT_A,
+          COMPANY_A1,
+          BRANCH_A1,
+          quotation,
+          1,
+          status,
+          USER_A,
+        ]);
+      }
+      // Positive control: the same row written as a draft is accepted.
+      const draft = await c.query(
+        `INSERT INTO quo.quotation_revisions
+           (tenant_id, company_id, branch_id, quotation_id, revision_number, status, currency_code, created_by)
+         VALUES ($1, $2, $3, $4, 1, 'draft', 'USD', $5)`,
+        [TENANT_A, COMPANY_A1, BRANCH_A1, quotation, USER_A]
+      );
+      expect(draft.rowCount).toBe(1);
+      // A role that bypasses row level security is held to it too.
+      await withRolledBackTx(admin, ctxA, async (a) => {
+        await expectRefusal(a, '23514', /quotation_revision_written_as_draft/, writePastDraft, [
+          TENANT_A,
+          COMPANY_A1,
+          BRANCH_A1,
+          quotation,
+          2,
+          'issued',
+          USER_A,
+        ]);
+      });
+    });
+  });
+
   it('holds every revision to its quotation’s pinned policy: raising the threshold, revising the discount away and back, still needs another approver', async () => {
     await withRolledBackTx(runtime, ctxA, async (c) => {
       const v1 = await insertPolicy(c, 1, 'amount', '10', 'USD');
