@@ -1,6 +1,7 @@
 import { notFound } from 'next/navigation';
 import { ApiReadinessPanel } from '@/components/gallery/ApiReadinessPanel';
 import { GalleryClient } from '@/components/gallery/GalleryClient';
+import { MuiFoundationSection } from '@/components/gallery/MuiFoundationSection';
 import { PageBody, PageHeader } from '@/components/shell/PageHeader';
 import { isLocale } from '@/i18n/config';
 import { getMessages } from '@/i18n/get-messages';
@@ -50,6 +51,7 @@ export default async function GalleryPage({
       <PageBody>
         <ApiReadinessPanel messages={messages} />
         <GalleryClient locale={locale} messages={messages} />
+        <MuiFoundationSection locale={locale} messages={messages} />
       </PageBody>
     </>
   );
