@@ -161,6 +161,31 @@ describe('the theme gate can still fail', () => {
     ).toEqual(['border-box']);
   });
 
+  it('does not read a style scalar held in a const as a class, unless a class position reads it', () => {
+    const known = new Set(['primary']);
+    const utilities = (source: string) =>
+      (inspect('x.tsx', source, known) as { utility: string }[]).map((f) => f.utility);
+    expect(
+      utilities("const B = 'border-box';\nexport const A = () => <div sx={{ boxSizing: B }} />;")
+    ).toEqual([]);
+    expect(
+      utilities(
+        "const S = { box: 'border-box' };\nexport const A = () => <div sx={{ boxSizing: S.box }} />;"
+      )
+    ).toEqual([]);
+    // The same constant read by a class position is a class list again.
+    expect(
+      utilities(
+        "const B = 'border-box';\nexport const A = () => <><div sx={{ boxSizing: B }} /><p className={B} /></>;"
+      )
+    ).toEqual(['border-box']);
+    expect(
+      utilities(
+        "const S = { box: 'border-box' };\nexport const A = () => <><div sx={{ boxSizing: S.box }} /><p className={S.box} /></>;"
+      )
+    ).toEqual(['border-box']);
+  });
+
   it('refuses a file it cannot parse rather than skipping it', () => {
     const findings = inspect('x.tsx', '<p className="bg-brand-primary" ', new Set(['primary']));
     expect(findings).toHaveLength(1);

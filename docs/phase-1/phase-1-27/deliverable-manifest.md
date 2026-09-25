@@ -521,7 +521,7 @@ claim, and the count was the only part that could rot.
 | `apps/web/tests/crm-customer-search.test.ts`         | runtime-built  | The header creation actions (`M-OA-15`)                                                                                                                                                                                                                               |
 | `apps/web/tests/vehicle-screens.dom.test.tsx`        | **36** derived | The vehicle match explanation, with a `<pre>` count of zero (`M-OA-13`)                                                                                                                                                                                               |
 | `tests/ci/plain-language-gate.test.ts`               | runtime-built  | That `validate:plain-language` can still fail (`M-OA-16`, `M-OA-17`)                                                                                                                                                                                                  |
-| `tests/ci/tailwind-theme-gate.test.ts`               | **11** derived | That `validate:web-theme` can still fail (`M-OA-18`)                                                                                                                                                                                                                  |
+| `tests/ci/tailwind-theme-gate.test.ts`               | **12** derived | That `validate:web-theme` can still fail (`M-OA-18`)                                                                                                                                                                                                                  |
 | `tests/ci/eslint-global-ignores.test.ts`             | runtime-built  | `P1-27-F-001` — and the opposite failure too: `src/**`, `scripts/**`, `tests/**` and `**/*` must never appear in the ignore list                                                                                                                                      |
 | `apps/web/tests/navigation.test.ts`                  | **25** derived | The exact `available` and `planned` lists, so drift in either direction fails                                                                                                                                                                                         |
 | `apps/web/tests/server-vocabularies.test.ts`         | runtime-built  | Server vocabularies read out of the migrations and compared to both catalogues, in both directions                                                                                                                                                                    |
@@ -1003,7 +1003,7 @@ returns an explicit `OWNER ACCEPTANCE: PASS`. Silence is not Pass.**
 <!-- derived: commands reachable = 97 -->
 <!-- derived: commands hosted-ci = 97 -->
 <!-- derived: cases vehicle-screens.dom.test.tsx = 51 -->
-<!-- derived: cases tailwind-theme-gate.test.ts = 11 -->
+<!-- derived: cases tailwind-theme-gate.test.ts = 12 -->
 <!-- derived: cases navigation.test.ts = 25 -->
 <!-- LINE-COUNT MARKERS. Regenerated, never typed. -->
 

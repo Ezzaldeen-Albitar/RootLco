@@ -180,8 +180,22 @@ and must be registered in `supabase/config.toml`, or it is never applied.
   style object a spread or a selector key's value) and follows a reference there to its
   same-file declaration by scope; one it cannot follow (an import, a parameter, a call) is a
   finding outside `components/ui-foundation/` and the grid wrapper. A theme member a style
-  callback receives is a token. A value under a CSS-property key is checked when it is a
-  same-file `const`, and otherwise taken as a token without being read.
+  callback receives is a token. The value of a CSS-property key is read whole — conditional
+  branches, `||`/`??`/`&&`, arithmetic operands, template `${…}`, call arguments (`px(12)`),
+  array and responsive-object members, through `as`/`satisfies`/`!` — following same-file
+  `const`s and functions, so `width: open ? W : 0`, `width: W * 2` and `fontSize: 13 as const`
+  are refused; a raw number in CSS text (`${W}px`, a helper argument) is refused, and
+  `theme.spacing(n)` is a token multiple. `styled`, `css` and `keyframes` are recognised through
+  import aliases, the `@emotion/styled` default import, namespace members and `styled.div`; a
+  tagged template has its static text scanned for raw lengths, durations and colours and each
+  `${…}` read strictly (only the theme or a token-layer import may stay unresolved). A raw
+  length or duration held in any module-level declaration outside the token layer (tests
+  excepted) is refused, so a value imported into a style has been checked where it was declared;
+  its exact allow-list (`RAW_CONSTANT_ALLOWED`, path and name with a reason) is empty. Residual
+  limits, not enforced: a value computed at run time from data; under a plain CSS-property key
+  an import, parameter or call result is taken as a token (an imported bare number such as
+  `export const W = 320` is not refused where declared); a raw string built inside another
+  file's function body; and the React `style` attribute.
 - Shared RootLco wrappers over Material live in `apps/web/src/components/`: the foundation in
   `components/ui-foundation/`, the operational grid at `components/data/OperationalGrid.tsx`
   or `components/data/OperationalGrid/` (an exact allow-list, not a name prefix).

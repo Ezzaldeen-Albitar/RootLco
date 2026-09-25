@@ -42,8 +42,11 @@
  * attribute, a `createTheme()`/`styled()` argument, a `styleOverrides` value —
  * by the definition `check-design-tokens.mjs` exports (`styleObjectRoots`),
  * including the same-file `const` a style position names (resolved by scope, so
- * a class map in another function that shares its name is still scanned). A
- * string there is a CSS value:
+ * a class map in another function that shares its name is still scanned), and
+ * the SCALAR a CSS-property key reads from a same-file const
+ * (`const B = 'border-box'; sx={{ boxSizing: B }}`) — unless a class position
+ * reads that const too (`className={B}`), when it is scanned. A string there
+ * is a CSS value:
  * `boxSizing: 'border-box'` and `verticalAlign: 'text-top'` are keywords, not
  * utilities. A class-name position INSIDE one (`defaultProps: { className }`,
  * a `cn()` call) is scanned again. No exclusion list is widened for this, so
@@ -59,7 +62,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import ts from 'typescript';
 
-import { styleObjectRoots } from './check-design-tokens.mjs';
+import { constResolver, styleObjectRoots } from './check-design-tokens.mjs';
 
 const ROOT = process.cwd();
 
@@ -331,7 +334,36 @@ export function inspect(relPath, source, known) {
     return [{ path: relPath, line: 1, utility: '(a source file this check could not parse)' }];
   }
 
-  const styleRoots = new Set(styleObjectRoots(file).roots);
+  const { roots, scalars } = styleObjectRoots(file);
+  const styleRoots = new Set(roots);
+  // Every node a class position reaches — written there, or in the same-file
+  // const it names (`className={TONE.quiet}`) — is a class list, even when a
+  // style object reads the same constant.
+  const resolve = constResolver(file);
+  const classUsed = new Set();
+  const followed = new Set();
+  const markClass = (node) => {
+    classUsed.add(node);
+    if (ts.isIdentifier(node)) {
+      const initializer = resolve(node);
+      if (initializer && !followed.has(initializer)) {
+        followed.add(initializer);
+        markClass(initializer);
+      }
+    }
+    ts.forEachChild(node, markClass);
+  };
+  const findClassContexts = (node) => {
+    if (isClassContext(node)) markClass(node);
+    ts.forEachChild(node, findClassContexts);
+  };
+  findClassContexts(file);
+  // The scalar values a style object reads from a same-file const
+  // (`const B = 'border-box'; sx={{ boxSizing: B }}`) are CSS values, not
+  // class lists — unless a class position reads them too.
+  const styleScalars = new Set(
+    scalars.map((scalar) => scalar.node).filter((node) => !classUsed.has(node))
+  );
   const findings = [];
   const scan = (node) => {
     // The raw source text keeps line positions; the quotes around it are not
@@ -347,10 +379,10 @@ export function inspect(relPath, source, known) {
   };
   const visit = (node, inStyle) => {
     let style = inStyle;
-    if (styleRoots.has(node)) style = true;
+    if (styleRoots.has(node) || styleScalars.has(node)) style = true;
     if (ts.isJsxAttribute(node) && isStyleAttribute(node)) style = true;
     if (isClassContext(node)) style = false;
-    if (!style && isStringText(node)) scan(node);
+    if ((!style || classUsed.has(node)) && isStringText(node)) scan(node);
     ts.forEachChild(node, (child) => visit(child, style));
   };
   visit(file, false);

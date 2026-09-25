@@ -26,6 +26,12 @@ const GATE = (await import(
   readonly inspectStyleObjects: (relPath: string, source: string) => Finding[];
 };
 
+const SOURCE_GATE = GATE as unknown as {
+  readonly inspectSource: (relPath: string, source: string) => Finding[];
+  readonly inspectRawConstants: (relPath: string, source: string) => Finding[];
+  readonly RAW_CONSTANT_ALLOWED: readonly { path: string; name: string; reason: string }[];
+};
+
 const rulesOf = (source: string, path = 'src/components/thing.tsx') =>
   GATE.inspectStyleObjects(path, source).map((finding) => finding.rule);
 
@@ -372,5 +378,168 @@ describe('the gate reads the real theme', () => {
         `const t = createTheme({ spacing: '8px' });`
       )
     ).toEqual([]);
+  });
+});
+
+describe('the whole value expression is read (final gate round)', () => {
+  it('refuses a raw value reached through a branch, an operand, a template or a call', () => {
+    const cases: readonly (readonly [string, string])[] = [
+      [
+        `const W = 320;\nexport const A = ({ open }: { open: boolean }) => <div sx={{ width: open ? W : 0 }} />;`,
+        'a raw size "width: 320"',
+      ],
+      [
+        `const W = 320;\nexport const A = () => <div sx={{ width: W * 2 }} />;`,
+        'a raw size "width: 320"',
+      ],
+      [
+        'const W = 320;\nexport const A = () => <div sx={{ padding: `${W}px` }} />;',
+        'a raw number "320" computed into a style value',
+      ],
+      [
+        `import { px } from './px';\nexport const A = () => <div sx={{ padding: px(12) }} />;`,
+        'a raw number "12" computed into a style value',
+      ],
+      [
+        `export const A = ({ dense }: { dense: boolean }) => <div sx={{ fontSize: dense ? 13 : 14 }} />;`,
+        'a raw number "fontSize: 13"',
+      ],
+      [
+        `export const A = () => <div sx={{ fontSize: 13 as const }} />;`,
+        'a raw number "fontSize: 13"',
+      ],
+      [
+        `export const A = () => <div sx={{ fontSize: (13 satisfies number)! }} />;`,
+        'a raw number "fontSize: 13"',
+      ],
+      [
+        `export const A = () => <div sx={{ width: { xs: 320, md: 0.5 } }} />;`,
+        'a raw size "width: 320"',
+      ],
+      [
+        `const pad = () => '12px';\nexport const A = () => <div sx={{ padding: pad() }} />;`,
+        'a raw value "12px" in a style object',
+      ],
+      [
+        `const Z = 10;\nexport const A = ({ on }: { on: boolean }) => <div sx={{ zIndex: on && Z }} />;`,
+        'a raw number "zIndex: 10"',
+      ],
+    ];
+    for (const [source, what] of cases) {
+      const found = GATE.inspectStyleObjects('src/x.tsx', source).map((finding) => finding.what);
+      expect(found, source).toContain(what);
+    }
+    // Both branches are read, not only the first.
+    expect(
+      rulesOf(
+        `export const A = ({ dense }: { dense: boolean }) => <div sx={{ fontSize: dense ? 13 : 14 }} />;`
+      )
+    ).toEqual(['style-object-raw-length', 'style-object-raw-length']);
+  });
+
+  it('accepts a token, a theme spacing multiple and zero inside an expression', () => {
+    const legal = [
+      `import { FONT_SIZE_PX } from '@/styles/tokens/generated/tokens';\nexport const A = ({ d }: { d: boolean }) => <div sx={{ fontSize: d ? FONT_SIZE_PX.body : FONT_SIZE_PX.label }} />;`,
+      `export const A = () => <div sx={(theme) => ({ padding: theme.spacing(2), mt: 1 })} />;`,
+      `export const A = ({ open }: { open: boolean }) => <div sx={{ width: open ? 'var(--layout-sidebar)' : 0 }} />;`,
+      'export const A = () => <div sx={{ padding: `calc(${0} * var(--space-2))` }} />;',
+    ];
+    for (const source of legal) expect(rulesOf(source), source).toEqual([]);
+  });
+});
+
+describe('the style API is recognised through its import (final gate round)', () => {
+  it('reads aliased, default, namespace and member forms of styled, css and keyframes', () => {
+    const raw = [
+      `import { styled as s } from '@mui/material/styles';\nconst B = s('div')({ padding: '12px' });`,
+      `import { styled as s } from '@mui/material';\nconst B = s('div')({ padding: '12px' });`,
+      `import s from '@emotion/styled';\nconst B = s('div')({ padding: '12px' });`,
+      `import * as mui from '@mui/material/styles';\nconst B = mui.styled('div')({ padding: '12px' });`,
+      `import styled from '@emotion/styled';\nconst B = styled.div({ padding: '12px' });`,
+      `import s from '@emotion/styled';\nconst B = s.div({ padding: '12px' });`,
+      `import { css as c } from '@emotion/react';\nconst x = c({ padding: '12px' });`,
+      `import { keyframes as k } from '@mui/material/styles';\nconst x = k({ from: { width: '12px' } });`,
+    ];
+    for (const source of raw) {
+      expect(rulesOf(source, 'src/x.tsx'), source).toEqual(['style-object-raw-length']);
+    }
+    expect(
+      rulesOf(
+        `import { styled as s } from '@mui/material/styles';\nimport { base } from './base';\nconst B = s('div')(base);`,
+        'src/x.tsx'
+      )
+    ).toEqual(['style-object-unresolved']);
+  });
+});
+
+describe('tagged templates (final gate round)', () => {
+  it('reads each substitution like a value and the static text for raw values', () => {
+    const cases: readonly (readonly [string, readonly string[]])[] = [
+      ['const W = 12;\nconst B = styled.div`padding: ${W}px;`;', ['style-object-raw-length']],
+      ["const PAD = '12px';\nconst B = styled.div`padding: ${PAD};`;", ['style-object-raw-length']],
+      [
+        "import { W } from './w';\nconst B = styled.div`padding: ${W};`;",
+        ['style-object-unresolved'],
+      ],
+      [
+        "import s from '@emotion/styled';\nconst B = s.div`transition: opacity 200ms;`;",
+        ['style-object-raw-duration'],
+      ],
+      [
+        "import { css as c } from '@emotion/react';\nconst x = c`margin-block: 8px;`;",
+        ['style-object-raw-length'],
+      ],
+      ['const x = keyframes`from { inline-size: 4rem; }`;', ['style-object-raw-length']],
+      ['const B = styled.div`color: #fff;`;', ['style-object-raw-colour']],
+      ['const B = styled.div`${({ open }) => (open ? 13 : 0)}px`;', ['style-object-raw-length']],
+    ];
+    for (const [source, rules] of cases) {
+      expect(rulesOf(source, 'src/x.tsx'), source).toEqual(rules);
+    }
+  });
+
+  it('accepts the theme and token imports inside a template', () => {
+    const legal = [
+      "import { SPACE } from '@/styles/tokens/generated/tokens';\nconst B = styled.div`padding: ${SPACE.md};`;",
+      'const B = styled.div`padding: ${({ theme }) => theme.spacing(2)};`;',
+      'const B = styled.div`color: var(--color-primary);`;',
+    ];
+    for (const source of legal) expect(rulesOf(source, 'src/x.tsx'), source).toEqual([]);
+  });
+
+  it('reports a template colour once across the line rule and the template rule', () => {
+    const findings = SOURCE_GATE.inspectSource('src/x.tsx', 'const B = styled.div`color: #fff;`;');
+    expect(findings.map((finding) => finding.rule)).toEqual(['hex-colour']);
+  });
+});
+
+describe('raw values held in module-level constants (final gate round)', () => {
+  const constRules = (source: string, path = 'src/features/x/sizes.ts') =>
+    SOURCE_GATE.inspectRawConstants(path, source).map((finding) => finding.what);
+
+  it('refuses a raw length or duration another file could import into a style', () => {
+    expect(constRules(`export const W = '320px';`)).toEqual([
+      'a raw value "320px" held in the module-level const "W"',
+    ]);
+    expect(constRules(`export const FADE = { enter: 'opacity 200ms' };`)).toEqual([
+      'a raw value "200ms" held in the module-level const "FADE"',
+    ]);
+    expect(constRules(`export const H = wide ? '100vh' : '0px';`)).toEqual([
+      'a raw value "100vh" held in the module-level const "H"',
+    ]);
+    expect(constRules(`const GAP = ['1.5rem', '2vw'];`)).toHaveLength(2);
+  });
+
+  it('accepts zero, token references, the token layer and tests', () => {
+    expect(constRules(`export const Z = '0px';`)).toEqual([]);
+    expect(constRules(`export const W = 'var(--layout-sidebar)';`)).toEqual([]);
+    expect(
+      constRules(`export const W = '320px';`, 'src/styles/tokens/generated/tokens.ts')
+    ).toEqual([]);
+    expect(constRules(`export const W = '320px';`, 'src/features/x/sizes.test.ts')).toEqual([]);
+  });
+
+  it('holds no allow-list entries today', () => {
+    expect(SOURCE_GATE.RAW_CONSTANT_ALLOWED).toEqual([]);
   });
 });
