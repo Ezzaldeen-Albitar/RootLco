@@ -494,7 +494,7 @@ Original measurement, by command 8, run twice with identical results:
 | 19    | `gallery-and-print.dom.test.tsx`       |     | 24    | `vehicle-profile.test.ts`                 |
 | 10    | `i18n.test.ts`                         |     | 18    | `vehicle-relations.test.ts`               |
 | 4     | `loading-boundary.dom.test.tsx`        |     | 24    | `vehicle-screens.dom.test.tsx`            |
-| 37    | `money.test.ts`                        |     | 24    | `navigation.test.ts`                      |
+| 37    | `money.test.ts`                        |     | 25    | `navigation.test.ts`                      |
 | 12    | `observability.test.ts`                |     | 21    | `overlays.dom.test.tsx`                   |
 | 27    | `operation-contract.test.ts`           |     |       |                                           |
 
@@ -523,7 +523,7 @@ claim, and the count was the only part that could rot.
 | `tests/ci/plain-language-gate.test.ts`               | runtime-built  | That `validate:plain-language` can still fail (`M-OA-16`, `M-OA-17`)                                                                                                                                                                                                  |
 | `tests/ci/tailwind-theme-gate.test.ts`               | **8** derived  | That `validate:web-theme` can still fail (`M-OA-18`)                                                                                                                                                                                                                  |
 | `tests/ci/eslint-global-ignores.test.ts`             | runtime-built  | `P1-27-F-001` — and the opposite failure too: `src/**`, `scripts/**`, `tests/**` and `**/*` must never appear in the ignore list                                                                                                                                      |
-| `apps/web/tests/navigation.test.ts`                  | **24** derived | The exact `available` and `planned` lists, so drift in either direction fails                                                                                                                                                                                         |
+| `apps/web/tests/navigation.test.ts`                  | **25** derived | The exact `available` and `planned` lists, so drift in either direction fails                                                                                                                                                                                         |
 | `apps/web/tests/server-vocabularies.test.ts`         | runtime-built  | Server vocabularies read out of the migrations and compared to both catalogues, in both directions                                                                                                                                                                    |
 
 ### 6.3 Browser tiers
@@ -1004,7 +1004,7 @@ returns an explicit `OWNER ACCEPTANCE: PASS`. Silence is not Pass.**
 <!-- derived: commands hosted-ci = 97 -->
 <!-- derived: cases vehicle-screens.dom.test.tsx = 51 -->
 <!-- derived: cases tailwind-theme-gate.test.ts = 8 -->
-<!-- derived: cases navigation.test.ts = 24 -->
+<!-- derived: cases navigation.test.ts = 25 -->
 <!-- LINE-COUNT MARKERS. Regenerated, never typed. -->
 
 <!-- derived: lines docs/phase-1/phase-1-27/adversarial-round-five.md = 857 -->

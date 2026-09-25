@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import en from '../src/i18n/messages/en.json';
 import ar from '../src/i18n/messages/ar.json';
 import { formatMoney } from '../src/lib/money';
+import accountManifest from './e2e/authenticated/account-manifest.json';
 import type { ReactElement } from 'react';
 import {
   OTHER_BRANCH,
@@ -1457,6 +1458,26 @@ describe('credit notes are reachable', () => {
       })) as React.ReactElement
     );
     await waitFor(() => expect(readCreditNote).toHaveBeenCalledWith(CREDIT_NOTE_ID));
+  });
+
+  it('opens the list for the first administrator of a newly provisioned organisation, on the set it is given', async () => {
+    /*
+     * QA result matrix part 7 row 5.9: the administrator of a provisioned
+     * organisation met the refusal here, because the set it is given did not
+     * carry the credit code. The set below is GENERATED from that bundle
+     * (emit-account-manifest.mjs) rather than typed, so taking the code out of
+     * the bundle takes it out of this case and the page refuses again.
+     */
+    PERMISSIONS = accountManifest['org-administrator'];
+    renderLtr(
+      (await CreditNotesPage({
+        params: Promise.resolve({ locale: 'en' }),
+        searchParams: Promise.resolve({}),
+      })) as React.ReactElement
+    );
+    expect(await screen.findByText('A part was billed twice on the same job')).toBeTruthy();
+    expect(listCreditNotes).toHaveBeenCalled();
+    expect(screen.queryByText(EN['creditNotes.list.refused'] as string)).toBeNull();
   });
 
   it('ignores an address that names something that is not a reference', async () => {

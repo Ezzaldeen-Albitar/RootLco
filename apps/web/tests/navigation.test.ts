@@ -11,6 +11,7 @@ import {
 import { NO_CAPABILITIES, hasPermission, visibleNavigation } from '../src/lib/permissions';
 import en from '../src/i18n/messages/en.json';
 import ar from '../src/i18n/messages/ar.json';
+import accountManifest from './e2e/authenticated/account-manifest.json';
 
 const ALL = flattenNavigation();
 
@@ -389,5 +390,26 @@ describe('permission filtering — unknown means denied', () => {
     expect(shown(['a.b.c', 'd.e.f'])).toBe(false);
     expect(shown(['d.e.f', 'g.h.i'])).toBe(false);
     expect(shown(['a.b.c'])).toBe(false);
+  });
+
+  it('offers credit notes to the first administrator of a provisioned organisation, and moves nothing else', () => {
+    /*
+     * The administrator's set is GENERATED from the provisioning bundle
+     * (emit-account-manifest.mjs), so this is the navigation that administrator
+     * is actually given. The credit code is the only difference the bundle
+     * change makes, so exactly one entry may appear or disappear with it.
+     */
+    const administrator = accountManifest['org-administrator'];
+    const keysFor = (permissions: readonly string[]) =>
+      flattenNavigation(visibleNavigation(NAVIGATION, { permissions })).map((entry) => entry.key);
+    const withCode = keysFor(administrator);
+    const withoutCode = keysFor(administrator.filter((code) => code !== 'sal.credit.manage'));
+    expect(withCode).toContain('creditNotes');
+    expect(withCode.filter((key) => !withoutCode.includes(key))).toEqual(['creditNotes']);
+    expect(withoutCode.filter((key) => !withCode.includes(key))).toEqual([]);
+
+    // A cashier built from payment and invoice codes is not offered the entry.
+    const cashier = ['sal.invoice.manage', 'sal.finance.view', 'sal.payment.record'];
+    expect(keysFor(cashier)).not.toContain('creditNotes');
   });
 });
