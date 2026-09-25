@@ -546,9 +546,15 @@ async function seedMember(tenant: Provisioned, label: string): Promise<string> {
  * the session principal on every write path and immutable afterwards
  * (`tg_roles_immutable`). The provisioned role is archived, and the replacement is
  * mapped to the same allow-codes minus `sal.credit.manage`, so the only thing that
- * differs from a stale standard role is who wrote it.
+ * differs from a stale standard role is who wrote it. `writtenAt`, when given, pins
+ * the role's `created_at` (microsecond text) instead of the transaction clock, so a
+ * case can place the role a set distance from the grant that authorised it.
  */
-async function replaceStandardRole(tenant: Provisioned, creatorId: string): Promise<string> {
+async function replaceStandardRole(
+  tenant: Provisioned,
+  creatorId: string,
+  writtenAt?: string
+): Promise<string> {
   const client = await admin.connect();
   try {
     await client.query('BEGIN');
@@ -556,9 +562,10 @@ async function replaceStandardRole(tenant: Provisioned, creatorId: string): Prom
       tenant.tenantAdministratorRoleId,
     ]);
     const role = await client.query<{ id: string }>(
-      `INSERT INTO iam.roles (tenant_id, role_code, name, description, is_system, created_by)
-       VALUES ($1, $2, 'Administrator', 'Replacement', false, $3) RETURNING id`,
-      [tenant.tenantId, TARGET_ROLE_CODE, creatorId]
+      `INSERT INTO iam.roles (tenant_id, role_code, name, description, is_system, created_by, created_at)
+       VALUES ($1, $2, 'Administrator', 'Replacement', false, $3, COALESCE($4::timestamptz, now()))
+       RETURNING id`,
+      [tenant.tenantId, TARGET_ROLE_CODE, creatorId, writtenAt ?? null]
     );
     const roleId = role.rows[0]?.id ?? '';
     await client.query(
@@ -579,12 +586,19 @@ async function replaceStandardRole(tenant: Provisioned, creatorId: string): Prom
   }
 }
 
-/** Waits until some backend is blocked on an advisory lock, or gives up. */
-async function someoneWaitsOnAdvisoryLock(): Promise<boolean> {
+/**
+ * Waits until some backend is blocked on THIS script's advisory lock for `lockKey`,
+ * or gives up. A 64-bit advisory key shows in `pg_locks` split across `classid`
+ * (high half) and `objid` (low half) with `objsubid = 1`; any other suite's
+ * advisory wait on the shared database is a different key and does not count.
+ */
+async function someoneWaitsOnAdvisoryLock(lockKey: string): Promise<boolean> {
   for (let attempt = 0; attempt < 50; attempt += 1) {
     const { rows } = await admin.query<{ n: number }>(
-      `SELECT count(*)::int AS n FROM pg_stat_activity
-        WHERE wait_event_type = 'Lock' AND wait_event = 'advisory'`
+      `SELECT count(*)::int AS n FROM pg_locks l
+        WHERE l.locktype = 'advisory' AND NOT l.granted AND l.objsubid = 1
+          AND ((l.classid::bigint << 32) | l.objid::bigint) = hashtextextended($1, 0)`,
+      [lockKey]
     );
     if ((rows[0]?.n ?? 0) > 0) return true;
     await new Promise((resolve) => setTimeout(resolve, 100));
@@ -1259,14 +1273,25 @@ describe('P1-31 D-2 — the five obligations, on real rows', () => {
     // (c) A platform operator whose HOME is this very organisation. The old test —
     // "is the creator's organisation this one?" — would have called this the
     // tenant's own role; what makes it the standard role is the platform grant.
+    // The grant is pinned half a millisecond past a millisecond boundary and the role
+    // one microsecond after it: a comparison that loses the timestamps' microseconds
+    // on the way through the client (a JavaScript Date keeps milliseconds) would place
+    // the role BEFORE the grant and call it the organisation's own. A fast runner hits
+    // that by chance; this case hits it every time.
     const home = await provision('crhome');
     const homeOperator = await seedMember(home, 'home_operator');
-    await admin.query(
-      `INSERT INTO iam.platform_grants (account_id, permission_code, granted_by, created_by)
-       VALUES ($1, 'platform.organization.manage', $2, $2)`,
+    const { rows: pinned } = await admin.query<{ role_written_at: string }>(
+      `INSERT INTO iam.platform_grants (account_id, permission_code, granted_by, granted_at, created_by)
+       VALUES ($1, 'platform.organization.manage', $2,
+               date_trunc('milliseconds', now()) + interval '500 microseconds', $2)
+       RETURNING (granted_at + interval '1 microsecond')::text AS role_written_at`,
       [homeOperator, SYSTEM_ACTOR]
     );
-    const homeRoleId = await replaceStandardRole(home, homeOperator);
+    const homeRoleId = await replaceStandardRole(
+      home,
+      homeOperator,
+      pinned[0]?.role_written_at ?? ''
+    );
     try {
       const before = await Promise.all(
         [unknownRoleId, foreignRoleId].map((roleId) => mappingRows(roleId))
@@ -1349,7 +1374,7 @@ describe('P1-31 D-2 — the five obligations, on real rows', () => {
       ]);
       const pending = backfillOn(runner, { tenants: [organisation.tenantId] });
       // The run is BLOCKED on the lock rather than reading the role.
-      expect(await someoneWaitsOnAdvisoryLock()).toBe(true);
+      expect(await someoneWaitsOnAdvisoryLock(tenantLockKey(organisation.tenantId))).toBe(true);
       // Meanwhile the holder completes the role — as a concurrent run would have.
       await holder.query(
         `INSERT INTO iam.role_permissions (tenant_id, role_id, permission_id, effect, created_by)

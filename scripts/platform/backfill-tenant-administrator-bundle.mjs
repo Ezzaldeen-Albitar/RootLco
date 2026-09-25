@@ -490,7 +490,7 @@ async function widenOne(client, input, bundle, target, operatorAccountId) {
   // The role row is LOCKED before anything about it is read, so the mappings, the
   // edit trail and the difference below all describe one state of it.
   const roles = await client.query(
-    `SELECT r.id, r.created_by, r.created_at
+    `SELECT r.id, r.created_by
        FROM iam.roles r
       WHERE r.tenant_id = $1 AND r.role_code = $2 AND r.deleted_at IS NULL
       FOR UPDATE`,
@@ -691,6 +691,12 @@ async function widenOne(client, input, bundle, target, operatorAccountId) {
  * platform grant it held when the role was written, not the organisation its
  * account lives in: an operator whose home is this very organisation still wrote
  * the standard role. Everything else fails closed.
+ *
+ * The grant's window is compared with the role's `created_at` INSIDE the
+ * database, joined on the role row itself. The timestamp is never passed back as
+ * a parameter: `pg` hands a `timestamptz` to JavaScript as a `Date`, which keeps
+ * milliseconds only, so a role written in the same millisecond as the grant that
+ * authorised it would read as written BEFORE that grant.
  */
 async function classifyCreator(client, tenantId, role) {
   const reasons = [];
@@ -702,12 +708,13 @@ async function classifyCreator(client, tenantId, role) {
               EXISTS (
                 SELECT 1 FROM iam.platform_grants g
                  WHERE g.account_id = a.id
-                   AND g.granted_at <= $2
-                   AND (g.revoked_at IS NULL OR g.revoked_at > $2)
+                   AND g.granted_at <= r.created_at
+                   AND (g.revoked_at IS NULL OR g.revoked_at > r.created_at)
               ) AS platform_operator
-         FROM iam.user_accounts a
-        WHERE a.id = $1`,
-      [role.created_by, role.created_at]
+         FROM iam.roles r
+         JOIN iam.user_accounts a ON a.id = r.created_by
+        WHERE r.id = $1 AND r.tenant_id = $2`,
+      [role.id, tenantId]
     );
     const account = creator.rows[0];
     if (account === undefined) reasons.push('creator-unknown');
@@ -736,14 +743,19 @@ async function classifyCreator(client, tenantId, role) {
 /**
  * Who holds the administrator role — reported, never a reason to skip. Granting
  * the standard role to more accounts does not customise the role, but widening it
- * widens every one of them, so the Owner sees how many.
+ * widens every one of them, so the Owner sees how many. A holder counts as
+ * tenant-granted when its granter held no platform grant WHEN the role grant was
+ * written — the same window, compared in the database, as `classifyCreator`.
  */
 async function holdersOf(client, tenantId, roleId) {
   const { rows } = await client.query(
     `SELECT count(DISTINCT g.user_id)::int AS holders,
             count(DISTINCT g.user_id) FILTER (
               WHERE NOT EXISTS (
-                SELECT 1 FROM iam.platform_grants pg WHERE pg.account_id = g.granted_by
+                SELECT 1 FROM iam.platform_grants pg
+                 WHERE pg.account_id = g.granted_by
+                   AND pg.granted_at <= g.created_at
+                   AND (pg.revoked_at IS NULL OR pg.revoked_at > g.created_at)
               )
             )::int AS tenant_granted
        FROM iam.role_grants g
