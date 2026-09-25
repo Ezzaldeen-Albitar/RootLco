@@ -619,8 +619,9 @@ for another approver. The draft cannot be issued until they approve it." <!-- qu
 
 - **A quotation holds at most 200 lines.** <!-- quotations.lines.tooMany --> and needs at least one:
   "Add at least one line." <!-- quotations.lines.atLeastOne -->
-- **A discount is an amount, never a percentage.** Whether it needs approval is decided when the
-  quotation is created, against the company's discount threshold in force at that moment (4C.4.7).
+- **A discount is an amount, never a percentage.** Whether it needs approval is measured against
+  the company's discount threshold in force when the quotation was created (4C.4.7) — for that
+  draft and for every later draft of the same quotation.
   One that needs approval is recorded as a request from you and must be approved by somebody else
   before the draft can be issued (4C.4.6). The discount of the whole draft is what is measured, so
   spreading one large discount over many small lines does not avoid approval.
@@ -688,8 +689,8 @@ above was captured by the server when the revision was created; this screen show
 - **The discount needs approval and nobody asked.** "This draft carries a discount that needs
   approval, and nobody has asked for it yet. Make a new draft with the same discount, so another
   person can approve it." <!-- form.violation.discount_approval_required --> This happens to a
-  draft whose discount did not need approval when it was written but does under the threshold in
-  force now.
+  draft written before the approval step existed whose creator could not be named as the person
+  asking.
 - **The discount changed after it was approved.** "The discount on this draft is no longer the one
   that was approved, so it cannot be issued. Make a new draft so the discount can be approved
   again." <!-- form.violation.discount_approval_amount_mismatch -->
@@ -1030,11 +1031,13 @@ branch chosen at the top of the page; under "All my branches" it asks you to cho
    — then **Turn down the discount** <!-- quotations.approvals.confirmReject --> .
 4. On a request you made yourself, the row says "Waiting for another approver: you asked for this
    discount." <!-- quotations.approvals.waitingForAnother --> and offers no decision.
-5. On a request you cannot approve for another reason, the row offers no decision and says why,
+5. On a request you cannot approve for another reason, the row offers no **Approve** and says why,
    without showing any limit: "You cannot decide this discount: it needs a permission you do not
    hold." <!-- quotations.approvals.blocked.missingPermission --> , "You cannot approve this
    discount: you have no approval limit that counts for this company." <!-- quotations.approvals.blocked.noApprovalLimit -->
    or "You cannot approve this discount: it is larger than your approval limit." <!-- quotations.approvals.blocked.overApprovalLimit -->
+   When you hold the permission and only the limit stops you, **Turn down** is still offered:
+   turning a request down needs no limit.
 
 **Result** — "The discount was approved." <!-- quotations.approvals.approvedSuccess --> or "The
 discount was turned down." <!-- quotations.approvals.rejectedSuccess --> The request leaves the list.
@@ -1044,22 +1047,26 @@ it, or with a smaller one." <!-- quotations.discountApproval.rejectedNext -->
 
 **Restrictions**
 
-- The request is measured against the company threshold **in force when the discount was asked
-  for**. Raising the threshold afterwards does not approve a request that is already waiting, and it
-  still needs somebody other than the person who asked. Lowering the threshold afterwards does not
-  undo an approval already given.
-- **Revising does not escape the request.** While a quotation has a discount waiting or turned
-  down, a new draft of it is measured against the SAME threshold the request was asked under, not a
-  threshold changed since. The older request is replaced — its state becomes **Replaced by a newer
-  draft** <!-- quotations.discountApproval.status.superseded --> and it can no longer be decided —
-  and, if the discount still reaches that threshold, a new request is recorded from you for somebody
-  else to approve. Only a new quotation is measured against the threshold in force today.
-- **The approval is of an amount.** A draft is issued only with the discount that was approved; if
-  its discount is no longer that amount it is refused, and a new draft asks again.
+- Every draft of a quotation is measured against the company threshold **in force when the
+  quotation was created**, for as long as the quotation exists. Raising the threshold afterwards
+  does not approve a request that is already waiting, and it still needs somebody other than the
+  person who asked. Lowering the threshold afterwards neither undoes an approval already given nor
+  holds up a draft that did not need one.
+- **Revising does not escape the request.** A new draft of the quotation is measured against the
+  SAME threshold as every earlier draft of it, not a threshold changed since — also when an earlier
+  draft took the discount away and a later one puts it back. The older request is replaced — its
+  state becomes **Replaced by a newer draft** <!-- quotations.discountApproval.status.superseded -->
+  and it can no longer be decided — and, if the discount reaches that threshold, a new request is
+  recorded from you for somebody else to approve. Only a new quotation is measured against the
+  threshold in force today.
+- **The approval is of an amount.** Once a draft has asked for approval its lines cannot change;
+  a new draft is the way to change them, and it asks again. A draft is issued only with the
+  discount that was approved.
 - Only requests on a quotation's latest draft are listed.
-- Drafts written before this approval step existed that carry a discount needing approval were
-  given a waiting request in the name of the person who created them, so somebody else has to
-  approve them before they can be issued.
+- Quotations written before this approval step existed keep the threshold that was in force when
+  the step was introduced. Their drafts that carry a discount needing approval under it were given
+  a waiting request in the name of the person who created them, so somebody else has to approve
+  them before they can be issued.
 - Only approval needs a limit. Turning a request down needs the permission, not a limit.
 - With nothing waiting, the list says "No discounts are waiting for approval on this branch." <!-- quotations.approvals.none -->
 
@@ -1111,15 +1118,15 @@ than the person who asked for it." <!-- discountThreshold.description -->
    , or the **Percentage** <!-- discountThreshold.percentage --> (between 0 and 100).
 4. Press **Save the new threshold** <!-- discountThreshold.save --> .
 
-**Result** — "The new threshold was saved. It applies to discounts asked for from now on." <!-- discountThreshold.saved -->
+**Result** — "The new threshold was saved. It applies to quotations written from now on." <!-- discountThreshold.saved -->
 The earlier threshold stays listed under **Earlier thresholds** <!-- discountThreshold.historyHeading -->
 as **Replaced** <!-- discountThreshold.state.replaced --> , with who set it.
 
 **Restrictions**
 
-- "A new threshold applies to discounts asked for from today. Discounts already waiting keep the
-  threshold they were asked under, so raising it does not approve them and lowering it does not undo
-  an approval." <!-- discountThreshold.prospectiveNote -->
+- "A new threshold applies to quotations written from today. Every quotation already written
+  keeps the threshold it was written under, whenever it is changed, so raising the threshold
+  approves none of its discounts and lowering it neither blocks it nor undoes an approval." <!-- discountThreshold.prospectiveNote -->
 - "Nobody approves their own discount. That rule cannot be switched off, here or anywhere else." <!-- discountThreshold.separationNote -->
   The screen has no setting for it.
 - Every change is recorded in the audit trail with the old and the new threshold.
