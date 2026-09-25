@@ -786,7 +786,7 @@ describe('the focus a frame later never takes the cursor from where the operator
     const formRef = useFocusFirstInvalid(state);
     const refused = (name: string) => state.fieldErrors?.[name] !== undefined;
     return (
-      <form ref={formRef}>
+      <form ref={formRef} onSubmit={(event) => event.preventDefault()}>
         <input aria-label="other field" />
         <input aria-label="refused field" aria-invalid={refused('refused') ? true : undefined} />
         <button type="button" data-invalid={refused('choice') ? 'true' : undefined}>
@@ -836,6 +836,51 @@ describe('the focus a frame later never takes the cursor from where the operator
     try {
       const { rerender } = renderLtr(<FrameHarness state={refusal({}, 0)} />);
       screen.getByRole('button', { name: 'send it' }).focus();
+      rerender(<FrameHarness state={refusal({ refused: 'field.required' }, 1)} />);
+      frames.run();
+      expect(document.activeElement).toBe(screen.getByLabelText('refused field'));
+    } finally {
+      frames.restore();
+    }
+  });
+
+  it('remembers where the cursor was at SUBMIT: a field chosen during a slow save keeps it', async () => {
+    /*
+     * The save is slow. The operator presses Send, then clicks into another
+     * field and types while the request is out. The refusal arrives with the
+     * cursor ALREADY in that field — so a position taken at the refusal is the
+     * operator's new field, and "focus has not moved since" is true of it. The
+     * position is the one at submission, and the operator has left it.
+     */
+    const frames = holdFrames();
+    try {
+      const user = userEvent.setup();
+      const { rerender } = renderLtr(<FrameHarness state={refusal({}, 0)} />);
+      await user.click(screen.getByRole('button', { name: 'send it' }));
+
+      const other = screen.getByLabelText('other field');
+      await user.type(other, 'while it saves');
+      expect(document.activeElement).toBe(other);
+
+      rerender(<FrameHarness state={refusal({ refused: 'field.required' }, 1)} />);
+      frames.run();
+
+      expect(document.activeElement).toBe(other);
+      expect(other).toHaveValue('while it saves');
+      expect(screen.getByLabelText('refused field')).toHaveAttribute('aria-invalid', 'true');
+    } finally {
+      frames.restore();
+    }
+  });
+
+  it('still moves the cursor after a submit when the operator stayed on the submitting control', async () => {
+    const frames = holdFrames();
+    try {
+      const user = userEvent.setup();
+      const { rerender } = renderLtr(<FrameHarness state={refusal({}, 0)} />);
+      const send = screen.getByRole('button', { name: 'send it' });
+      await user.click(send);
+      expect(document.activeElement).toBe(send);
       rerender(<FrameHarness state={refusal({ refused: 'field.required' }, 1)} />);
       frames.run();
       expect(document.activeElement).toBe(screen.getByLabelText('refused field'));

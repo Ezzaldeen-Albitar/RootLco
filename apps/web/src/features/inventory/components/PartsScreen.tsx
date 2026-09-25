@@ -791,6 +791,19 @@ function RequiredPartsPanel({
  * FE-011 — the issue form
  * ------------------------------------------------------------------ */
 
+/**
+ * Whether any text value of a draw form differs from what the form opened with.
+ *
+ * Compared trimmed, so a stray space is not a draw in progress. Every value on
+ * these forms is a string — a quantity is a decimal string, a choice an id.
+ */
+function drawDiffers<Key extends string>(
+  now: Readonly<Record<Key, string>>,
+  opened: Readonly<Record<Key, string>>
+): boolean {
+  return (Object.keys(opened) as Key[]).some((key) => now[key].trim() !== opened[key].trim());
+}
+
 function IssueForm({
   locale,
   messages,
@@ -892,21 +905,30 @@ function IssueForm({
         : null
   );
   const [item, setItem] = useState<ItemChoice | null>(openedItem);
-  const [form, setForm] = useState({
+  const [openedForm] = useState(() => ({
     itemReference: openedItem?.id ?? '',
     locationId: '',
     quantity: prefill?.quantity ?? '',
     reservationId: '',
     requiredPartRef: prefill?.requiredPartRef ?? '',
-  });
+  }));
+  const [form, setForm] = useState(openedForm);
+  const [openedPair] = useState(pair);
   /*
-   * A quantity the operator typed is a draw in progress, so a branch switch
-   * asks before it goes. The confirmed discard needs no callback here: the
-   * form is keyed on the working-context version, so the switch remounts it
-   * empty. Measured against the value it OPENED with, so a draw started from a
-   * requirement's row does not ask until the operator has changed something.
+   * ANY choice the operator made is a draw in progress, so a branch switch
+   * asks before it goes — the part, the location, the reservation, the linked
+   * line and the branch as much as the quantity. Guarding the quantity alone let
+   * a switch throw away a part and a location the operator had already found.
+   * The confirmed discard needs no callback here: the form is keyed on the
+   * working-context version, so the switch remounts it empty. Measured against
+   * what it OPENED with, so a draw started from a requirement's row does not
+   * ask until the operator has changed something.
    */
-  useUnsavedGuard(form.quantity.trim() !== (prefill?.quantity ?? '').trim());
+  useUnsavedGuard(
+    drawDiffers(form, openedForm) ||
+      (item?.id ?? null) !== (openedItem?.id ?? null) ||
+      drawDiffers(pair, openedPair)
+  );
   const requiredParts = useRequiredParts(canReadWorkOrder ? workOrderId : null);
   /*
    * The required part the form was started from ("Issue" on its row), for as
@@ -1329,14 +1351,20 @@ function ReserveForm({
       : null
   );
   const [item, setItem] = useState<ItemChoice | null>(openedItem);
-  const [form, setForm] = useState({
+  const [openedForm] = useState(() => ({
     itemReference: openedItem?.id ?? '',
     locationId: '',
     quantity: '',
-  });
-  // As in the issue form: a typed quantity asks before a switch, and the
-  // version key on this form is what empties it once the operator confirms.
-  useUnsavedGuard(form.quantity.trim() !== '');
+  }));
+  const [form, setForm] = useState(openedForm);
+  // As in the issue form: ANY choice made — part, location, quantity or branch —
+  // asks before a switch, and the version key on this form is what empties it
+  // once the operator confirms.
+  useUnsavedGuard(
+    drawDiffers(form, openedForm) ||
+      (item?.id ?? null) !== (openedItem?.id ?? null) ||
+      drawDiffers(pair, EMPTY_PAIR)
+  );
   const [errors, setErrors] = useState<Readonly<Record<string, string>>>({});
   const [busy, setBusy] = useState(false);
   const [outcome, setOutcome] = useState<ActionState | null>(null);

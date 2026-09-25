@@ -42,13 +42,23 @@ import type { ActionState } from './action-result';
  *
  * ## Never stealing the cursor from where the operator has gone
  *
- * The focus happens a frame after the refusal, and in that frame the operator
- * may already have moved on — clicked into another field and started typing.
- * Moving the cursor then drops their keystrokes into the refused field. So the
- * element focused at the refusal is noted, and the frame focuses the first
- * invalid control ONLY if focus is still there, or has fallen to the document
+ * The operator can move on long before the refusal arrives. A slow save gives
+ * them the whole round trip to click into another field and start typing, and
+ * moving the cursor then drops their keystrokes into the refused field.
+ *
+ * So the position is taken when the form is SUBMITTED, not when the refusal
+ * lands: the element focused at submission, and the control that submitted it.
+ * Noting it at the refusal instead recorded wherever the operator had already
+ * gone during the wait — and then "focus is still where it was" was true of
+ * their new field, and the cursor was taken from it anyway. The frame after the
+ * refusal focuses the first invalid control ONLY if focus is still where it was
+ * at submission, is on the submitting control, or has fallen to the document
  * body (a submit button that was disabled while the write ran drops it there).
  * Anywhere else is the operator's own choice, and it is left alone.
+ *
+ * A form refused WITHOUT a submit event of its own — a state handed in by a
+ * parent, a write started from a button's click handler — has no submission to
+ * remember, and falls back to the element focused when the refusal arrived.
  *
  * ## Revealing before focusing
  *
@@ -132,6 +142,31 @@ export function useFocusFirstInvalid(
    */
   const bornAt = useRef(attempt);
 
+  /*
+   * Where the cursor was when the operator SUBMITTED, and what submitted.
+   *
+   * Listened for on the document, in the capture phase, and matched against
+   * the form by identity: the listener is added once, sees the event before any
+   * handler on the form can stop it, and still finds a form that was replaced
+   * under the same ref. The latest submission wins; a refusal consumes it.
+   */
+  const atSubmit = useRef<{
+    readonly focused: Element | null;
+    readonly submitter: Element | null;
+  } | null>(null);
+  useEffect(() => {
+    const onSubmit = (event: Event) => {
+      const form = formRef.current;
+      if (form === null || event.target !== form) return;
+      atSubmit.current = {
+        focused: document.activeElement,
+        submitter: 'submitter' in event ? (event as SubmitEvent).submitter : null,
+      };
+    };
+    document.addEventListener('submit', onSubmit, true);
+    return () => document.removeEventListener('submit', onSubmit, true);
+  }, []);
+
   useEffect(() => {
     if (!enabled || !hasFieldErrors) return undefined;
     if (attempt <= bornAt.current) return undefined;
@@ -145,11 +180,20 @@ export function useFocusFirstInvalid(
       if (section !== undefined) reveal.current?.(section);
     }
 
-    // Where the cursor was when the refusal arrived — normally the submit.
-    const atRefusal = document.activeElement;
+    // Where the cursor was when the operator submitted — or, for a refusal no
+    // submission of this form produced, where it is now.
+    const submitted = atSubmit.current;
+    atSubmit.current = null;
+    const anchor = submitted === null ? document.activeElement : submitted.focused;
+    const trigger = submitted?.submitter ?? null;
     const frame = window.requestAnimationFrame(() => {
       const now = document.activeElement;
-      if (now !== null && now !== atRefusal && now !== document.body) return;
+      const untouched =
+        now === null ||
+        now === document.body ||
+        now === anchor ||
+        (trigger !== null && now === trigger);
+      if (!untouched) return;
       const live = formRef.current?.querySelector<HTMLElement>(INVALID);
       if (!live) return;
       openEnclosingDetails(live);

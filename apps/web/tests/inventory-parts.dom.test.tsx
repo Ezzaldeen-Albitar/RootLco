@@ -765,6 +765,106 @@ describe('a confirmed "Discard and change branch" opens the draw forms empty', (
   );
 });
 
+describe('any choice in a draw form is a draw in progress, not only the quantity', () => {
+  /*
+   * The guard used to watch the quantity alone. An operator who had found the
+   * location — or the part — and not yet typed a number lost it to a branch
+   * switch without being asked. Each case below makes ONE choice and nothing
+   * else, so a guard that still watched only the quantity lets the switch
+   * through without the question and fails here.
+   */
+  function renderInTwo() {
+    renderInLtr(
+      inBranch(
+        <>
+          <BranchSwitch to={TEST_BRANCH.id} label="first" />
+          <BranchSwitch to={OTHER_BRANCH.id} label="second" />
+          <WorkingBranchProbe />
+          <PartsScreen
+            locale="en"
+            messages={en}
+            workOrderId={WORK_ORDER_ID}
+            workOrder={workOrder as never}
+            workOrderRefused={false}
+            canOperate={true}
+            canReadWorkOrder={true}
+            canReadBranches={false}
+            currentUserId={USER_ID}
+            canRequestMaterial={false}
+            canApproveMaterial={false}
+            canDecideMaterialException={false}
+          />
+        </>,
+        { snapshot: branchSnapshot([TEST_BRANCH, OTHER_BRANCH]) }
+      )
+    );
+  }
+
+  it.each([
+    ['issue', 'inventory.issue.open', 'inventory.issue.heading', 'inventory.issue.location'],
+    [
+      'reserve',
+      'inventory.parts.reserve.open',
+      'inventory.parts.reserve.heading',
+      'inventory.reserve.location',
+    ],
+  ] as const)(
+    'a location chosen alone in the %s form asks first, and the discard empties it',
+    async (_name, open, heading, label) => {
+      const user = userEvent.setup();
+      renderInTwo();
+      await user.click(screen.getByRole('button', { name: 'first' }));
+      await user.click(await screen.findByRole('button', { name: EN[open] as string }));
+      const where = async () =>
+        within(await screen.findByRole('form', { name: EN[heading] as string })).getByLabelText(
+          labelled(label)
+        );
+      try {
+        expect(
+          await within(await where()).findByRole('option', { name: /WH-1/ })
+        ).toBeInTheDocument();
+        await user.selectOptions(await where(), LOCATION_ID);
+        expect(await where()).toHaveValue(LOCATION_ID);
+
+        await stayOnBranch(user, await switchExpectingQuestion(user, 'second'));
+        expect(heldBranch()).toBe(TEST_BRANCH.id);
+        expect(await where()).toHaveValue(LOCATION_ID);
+
+        await discardAndSwitch(user, await switchExpectingQuestion(user, 'second'));
+        await waitFor(() => expect(heldBranch()).toBe(OTHER_BRANCH.id));
+        await waitFor(async () => expect(await where()).toHaveValue(''));
+        await switchWithoutQuestion(user, 'first');
+        expect(createIssue).not.toHaveBeenCalled();
+        expect(createReservation).not.toHaveBeenCalled();
+      } finally {
+        forgetRememberedBranch();
+      }
+    }
+  );
+
+  it('a part typed alone in the reserve form asks first', async () => {
+    const user = userEvent.setup();
+    renderInTwo();
+    await user.click(screen.getByRole('button', { name: 'first' }));
+    await user.click(
+      await screen.findByRole('button', { name: EN['inventory.parts.reserve.open'] as string })
+    );
+    const form = await screen.findByRole('form', {
+      name: EN['inventory.parts.reserve.heading'] as string,
+    });
+    try {
+      await user.type(
+        within(form).getByLabelText(labelled('inventory.itemPicker.reference')),
+        ITEM_ID
+      );
+      await stayOnBranch(user, await switchExpectingQuestion(user, 'second'));
+      expect(heldBranch()).toBe(TEST_BRANCH.id);
+    } finally {
+      forgetRememberedBranch();
+    }
+  });
+});
+
 describe('FE-011 — issuing', () => {
   it('offers neither issuing nor returning without inv.stock.operate', async () => {
     renderScreen({ canOperate: false });
