@@ -162,11 +162,11 @@ fact in words did not, which is the gap this revision closes.
 | Source files under the P1-27 ownership gate                            | **145** (43 feature source + 53 route + 49 adopted reception)      | derived from the gate's own scan roots                                     |
 | Router pages (CRM and Vehicle)                                         | **8**                                                              | command 1                                                                  |
 | Shared-foundation source files changed by the phase or its remediation | **13** named in §5.5                                               | command 1, cross-read against the task register and the remediation record |
-| Web unit and component test files                                      | **168**                                                            | derived                                                                    |
+| Web unit and component test files                                      | **173**                                                            | derived                                                                    |
 | Playwright specification files                                         | **9** (2 anonymous, 7 authenticated)                               | commands 11 and 12 — **not re-measured**, §1.1.1                           |
 | Root CI-contract test files                                            | **46**                                                             | derived                                                                    |
 | CI gate scripts under `scripts/ci`                                     | **66** in the directory, **8** introduced or changed by this phase | derived; the eight are the `scripts/ci` rows of §7.1                       |
-| Web gate scripts under `apps/web/scripts`                              | **4** in the directory, **1** introduced by this phase             | derived                                                                    |
+| Web gate scripts under `apps/web/scripts`                              | **5** in the directory, **1** introduced by this phase             | derived                                                                    |
 | Phase documentation under `docs/phase-1/phase-1-27`                    | **38** tracked, of which **30** are `.md`                          | derived from `git ls-files` — see §9.1                                     |
 | Product planning documentation under `docs/product`                    | **13** tracked                                                     | derived from `git ls-files` — see §9.2                                     |
 | Local acceptance tooling under `scripts/dev/owner-acceptance`          | **8**                                                              | command 1                                                                  |
@@ -407,7 +407,7 @@ records.
 
 ## 6. Test files
 
-### 6.1 Web unit and component — `apps/web/tests` (168 files, and no case total — `E-03`)
+### 6.1 Web unit and component — `apps/web/tests` (173 files, and no case total — `E-03`)
 
 **`E-03` is closed by DELETING the number, not by correcting it.** The heading
 used to read `(70 files, 1493 cases, 0 failed)`, and before that `(66 files, 1231
@@ -521,7 +521,7 @@ claim, and the count was the only part that could rot.
 | `apps/web/tests/crm-customer-search.test.ts`         | runtime-built  | The header creation actions (`M-OA-15`)                                                                                                                                                                                                                               |
 | `apps/web/tests/vehicle-screens.dom.test.tsx`        | **36** derived | The vehicle match explanation, with a `<pre>` count of zero (`M-OA-13`)                                                                                                                                                                                               |
 | `tests/ci/plain-language-gate.test.ts`               | runtime-built  | That `validate:plain-language` can still fail (`M-OA-16`, `M-OA-17`)                                                                                                                                                                                                  |
-| `tests/ci/tailwind-theme-gate.test.ts`               | **8** derived  | That `validate:web-theme` can still fail (`M-OA-18`)                                                                                                                                                                                                                  |
+| `tests/ci/tailwind-theme-gate.test.ts`               | **10** derived | That `validate:web-theme` can still fail (`M-OA-18`)                                                                                                                                                                                                                  |
 | `tests/ci/eslint-global-ignores.test.ts`             | runtime-built  | `P1-27-F-001` — and the opposite failure too: `src/**`, `scripts/**`, `tests/**` and `**/*` must never appear in the ignore list                                                                                                                                      |
 | `apps/web/tests/navigation.test.ts`                  | **25** derived | The exact `available` and `planned` lists, so drift in either direction fails                                                                                                                                                                                         |
 | `apps/web/tests/server-vocabularies.test.ts`         | runtime-built  | Server vocabularies read out of the migrations and compared to both catalogues, in both directions                                                                                                                                                                    |
@@ -982,10 +982,10 @@ returns an explicit `OWNER ACCEPTANCE: PASS`. Silence is not Pass.**
      an earlier revision put them in the label column and broke two other gates
      whose regexes read the label and the number as adjacent cells. -->
 
-<!-- derived: files apps/web/tests = 168 -->
+<!-- derived: files apps/web/tests = 173 -->
 <!-- derived: files tests/ci = 77 -->
 <!-- derived: files scripts/ci = 66 -->
-<!-- derived: files apps/web/scripts = 4 -->
+<!-- derived: files apps/web/scripts = 5 -->
 <!-- derived: files supabase/migrations = 160 -->
 <!-- derived: files tests/db = 155 -->
 <!-- derived: files tests/db:all = 159 -->
@@ -1003,7 +1003,7 @@ returns an explicit `OWNER ACCEPTANCE: PASS`. Silence is not Pass.**
 <!-- derived: commands reachable = 97 -->
 <!-- derived: commands hosted-ci = 97 -->
 <!-- derived: cases vehicle-screens.dom.test.tsx = 51 -->
-<!-- derived: cases tailwind-theme-gate.test.ts = 8 -->
+<!-- derived: cases tailwind-theme-gate.test.ts = 10 -->
 <!-- derived: cases navigation.test.ts = 25 -->
 <!-- LINE-COUNT MARKERS. Regenerated, never typed. -->
 
