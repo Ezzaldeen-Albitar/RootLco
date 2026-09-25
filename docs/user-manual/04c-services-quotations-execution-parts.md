@@ -659,7 +659,9 @@ heading **Quotation** <!-- quotations.detail.title --> .
    discount that is waiting for approval, the section offers no issue button and says instead "This
    draft carries a discount that is waiting for approval by another person, so it cannot be issued
    yet." <!-- quotations.issue.discountPending --> If the discount was turned down, it says "The
-   discount on this draft was turned down, so it cannot be issued. Make a new draft first." <!-- quotations.issue.discountRejected -->
+   discount on this draft was turned down, so it cannot be issued. Make a new draft first." <!-- quotations.issue.discountRejected --> If a
+   newer draft replaced its discount request, it says "The discount request on this draft was
+   replaced by a newer draft, so this draft cannot be issued. Issue the newer draft instead." <!-- quotations.issue.discountSuperseded -->
 2. Check **Draft revision** <!-- quotations.issue.draftLabel --> is the one you mean.
 3. **Expires** (optional) <!-- quotations.issue.expiresAt --> — "Optional. Leave empty for no
    expiry." <!-- quotations.issue.expiresAtHelp -->
@@ -683,6 +685,14 @@ above was captured by the server when the revision was created; this screen show
 - "Enter a valid date and time." <!-- quotations.issue.dateFormat -->
 - "Someone else changed this quotation first. Reload the page to see the latest, then try again." <!-- quotations.detail.conflict -->
   — see 4C.3.7.
+- **The discount needs approval and nobody asked.** "This draft carries a discount that needs
+  approval, and nobody has asked for it yet. Make a new draft with the same discount, so another
+  person can approve it." <!-- form.violation.discount_approval_required --> This happens to a
+  draft whose discount did not need approval when it was written but does under the threshold in
+  force now.
+- **The discount changed after it was approved.** "The discount on this draft is no longer the one
+  that was approved, so it cannot be issued. Make a new draft so the discount can be approved
+  again." <!-- form.violation.discount_approval_amount_mismatch -->
 
 **Screenshot** — no screenshot available at this version.
 
@@ -996,10 +1006,12 @@ know the quotation is not the only place a customer's "yes" is captured.
 
 **Label** — **Discounts waiting for approval** <!-- quotations.approvals.heading -->
 
-**Who** — anyone holding `quo.quotation.read` sees the list. To decide a request you need
-`svc.price.manage` (or the permission the company's threshold names) and, to approve, a discount
-approval limit that covers the whole discount and that somebody else set for you. The person who
-asked for the discount can never decide it.
+**Who** — anyone holding `quo.quotation.read` sees the list. To decide a request you need the
+permission the request recorded — `svc.price.manage`, or the one the company's threshold named when
+the discount was asked for — and, to approve, a discount approval limit that covers the whole
+discount and that somebody else set for you. The person who asked for the discount can never decide
+it. The server works out, row by row, whether you can approve it, and the list shows the buttons
+only where you can.
 
 **Where** — **Commerce** → **Quotations**, before you choose a work order. The list is for the
 branch chosen at the top of the page; under "All my branches" it asks you to choose one branch.
@@ -1018,6 +1030,11 @@ branch chosen at the top of the page; under "All my branches" it asks you to cho
    — then **Turn down the discount** <!-- quotations.approvals.confirmReject --> .
 4. On a request you made yourself, the row says "Waiting for another approver: you asked for this
    discount." <!-- quotations.approvals.waitingForAnother --> and offers no decision.
+5. On a request you cannot approve for another reason, the row offers no decision and says why,
+   without showing any limit: "You cannot decide this discount: it needs a permission you do not
+   hold." <!-- quotations.approvals.blocked.missingPermission --> , "You cannot approve this
+   discount: you have no approval limit that counts for this company." <!-- quotations.approvals.blocked.noApprovalLimit -->
+   or "You cannot approve this discount: it is larger than your approval limit." <!-- quotations.approvals.blocked.overApprovalLimit -->
 
 **Result** — "The discount was approved." <!-- quotations.approvals.approvedSuccess --> or "The
 discount was turned down." <!-- quotations.approvals.rejectedSuccess --> The request leaves the list.
@@ -1031,6 +1048,18 @@ it, or with a smaller one." <!-- quotations.discountApproval.rejectedNext -->
   for**. Raising the threshold afterwards does not approve a request that is already waiting, and it
   still needs somebody other than the person who asked. Lowering the threshold afterwards does not
   undo an approval already given.
+- **Revising does not escape the request.** While a quotation has a discount waiting or turned
+  down, a new draft of it is measured against the SAME threshold the request was asked under, not a
+  threshold changed since. The older request is replaced — its state becomes **Replaced by a newer
+  draft** <!-- quotations.discountApproval.status.superseded --> and it can no longer be decided —
+  and, if the discount still reaches that threshold, a new request is recorded from you for somebody
+  else to approve. Only a new quotation is measured against the threshold in force today.
+- **The approval is of an amount.** A draft is issued only with the discount that was approved; if
+  its discount is no longer that amount it is refused, and a new draft asks again.
+- Only requests on a quotation's latest draft are listed.
+- Drafts written before this approval step existed that carry a discount needing approval were
+  given a waiting request in the name of the person who created them, so somebody else has to
+  approve them before they can be issued.
 - Only approval needs a limit. Turning a request down needs the permission, not a limit.
 - With nothing waiting, the list says "No discounts are waiting for approval on this branch." <!-- quotations.approvals.none -->
 
@@ -1048,6 +1077,12 @@ it, or with a smaller one." <!-- quotations.discountApproval.rejectedNext -->
   quotation can be changed." <!-- form.violation.discount_over_approval_limit -->
 - **Someone decided it first.** "This discount has already been approved or turned down, so it
   cannot be decided again. Refresh the page to see the decision that was recorded." <!-- form.violation.discount_approval_already_decided -->
+- **A newer draft replaced it.** "This discount request was replaced by a newer draft of the same
+  quotation, so it can no longer be decided. Decide the request on the newer draft instead." <!-- form.violation.discount_approval_superseded -->
+- **You lack the permission it recorded.** "You cannot decide this discount: it needs a permission
+  you do not hold. Leave it for an approver who holds it." <!-- form.violation.discount_approval_permission_missing -->
+- **Your limit is in another currency.** "Your discount approval limit is in another currency, so it
+  does not cover this discount. Leave it for an approver whose limit is in the same currency." <!-- form.violation.discount_limit_currency_mismatch -->
 - **No reason given when turning down.** "Say why the discount is turned down." <!-- quotations.approvals.reasonRequired -->
 
 **Screenshot** — no screenshot available at this version.
