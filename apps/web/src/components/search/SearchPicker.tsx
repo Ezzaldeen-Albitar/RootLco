@@ -1,6 +1,6 @@
 'use client';
 
-import { useId, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 
 import { SearchBox } from '@/components/search/SearchBox';
 import { SearchStates } from '@/components/search/SearchStates';
@@ -40,6 +40,12 @@ import { useSearchRequest } from '@/lib/api/use-search-request';
  *   to the thing to fix, and the refusal disappears once it is corrected.
  * - **It is not a `<form>`.** Every button is `type="button"`, and Enter in the
  *   box searches rather than submitting the caller's form with nothing chosen.
+ * - **Choosing keeps the cursor.** The match that was pressed is replaced by
+ *   the chosen record, and a focused element that leaves the page drops the
+ *   cursor to the document body — the next Tab starts again at the top (browser
+ *   QA part 7, row 10.4). So the cursor moves to the control that changes the
+ *   choice, which is described by the chosen record's name and therefore
+ *   announces what was chosen.
  */
 export function SearchPicker<Row extends { readonly id: string }>({
   messages,
@@ -62,6 +68,7 @@ export function SearchPicker<Row extends { readonly id: string }>({
   change,
   pristineId = null,
   countsAsUnsaved = true,
+  describedBy,
   testId,
 }: {
   readonly messages: Messages;
@@ -104,10 +111,27 @@ export function SearchPicker<Row extends { readonly id: string }>({
    * not something a branch switch should stop to ask about.
    */
   readonly countsAsUnsaved?: boolean;
+  /** Further ids describing the choice, added to the box or the change control. */
+  readonly describedBy?: string | undefined;
   readonly testId: string;
 }) {
   const base = useId();
   const errorId = `${base}-error`;
+  const chosenId = `${base}-chosen`;
+
+  /*
+   * The cursor, after a choice. A ref flag rather than state: it is set by the
+   * click that chose, read once by the effect that follows the new value, and
+   * never rendered. A choice the PARENT makes (a form opening on a payer) does
+   * not set it, so arriving on a pre-filled form moves nobody's cursor.
+   */
+  const changeRef = useRef<HTMLButtonElement | null>(null);
+  const focusChosen = useRef(false);
+  useEffect(() => {
+    if (!focusChosen.current || value === null) return;
+    focusChosen.current = false;
+    changeRef.current?.focus();
+  }, [value]);
   const context = useWorkingContext();
   const [typed, setTyped] = useState(() => ({ text: '', version: context.version }));
   const term = typed.version === context.version ? typed.text : '';
@@ -155,18 +179,26 @@ export function SearchPicker<Row extends { readonly id: string }>({
           role="group"
           className="flex items-center justify-between gap-3 rounded-md border border-border bg-surface-subtle px-3 py-2"
         >
-          <bdi className="text-body text-text-primary" data-testid={`${testId}-chosen`}>
+          <bdi
+            id={chosenId}
+            className="text-body text-text-primary"
+            data-testid={`${testId}-chosen`}
+          >
             {labelOf(value)}
           </bdi>
           <button
+            ref={changeRef}
             type="button"
             aria-invalid={error ? true : undefined}
-            aria-describedby={error ? errorId : undefined}
+            aria-describedby={
+              [chosenId, error ? errorId : undefined, describedBy].filter(Boolean).join(' ') ||
+              undefined
+            }
             onClick={() => {
               onChange(null);
               setTerm('');
             }}
-            className="shrink-0 rounded-md border border-border px-3 py-1.5 text-body text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+            className={`shrink-0 rounded-md border ${error ? 'border-error' : 'border-border'} px-3 py-1.5 text-body text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring`}
           >
             {change}
           </button>
@@ -211,6 +243,7 @@ export function SearchPicker<Row extends { readonly id: string }>({
         busy={search.phase === 'loading'}
         maxLength={maxLength}
         error={short ? tooShort : error}
+        describedBy={describedBy}
         testId={`${testId}-search`}
       />
       {search.phase === 'idle' ? null : (
@@ -234,6 +267,7 @@ export function SearchPicker<Row extends { readonly id: string }>({
                     // Choosing a record must not submit the caller's form.
                     type="button"
                     onClick={() => {
+                      focusChosen.current = true;
                       onChange(row);
                       setTerm('');
                     }}

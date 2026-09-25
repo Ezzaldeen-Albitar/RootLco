@@ -408,9 +408,11 @@ describe('this file is not vacuous', () => {
 function PickerHarness({
   canSearch = true,
   error,
+  describedBy,
 }: {
   readonly canSearch?: boolean;
   readonly error?: string;
+  readonly describedBy?: string;
 }) {
   const [value, setValue] = useState<ChosenCustomer>(null);
   return (
@@ -424,6 +426,7 @@ function PickerHarness({
         canSearch={canSearch}
         error={error}
         unavailableId="picker-unavailable"
+        describedBy={describedBy}
       />
       <output data-testid="picker-value">{value?.id ?? ''}</output>
     </>
@@ -466,5 +469,51 @@ describe('CustomerPicker', () => {
     renderLtr(<PickerHarness error="Choose the paying customer." />);
     expect(screen.getByLabelText(/^Paying customer/)).toHaveAttribute('aria-invalid', 'true');
     expect(screen.getByText('Choose the paying customer.')).toBeVisible();
+  });
+
+  it('gives the refused box the red edge and the caller’s description (browser QA row 6.6)', () => {
+    renderLtr(
+      <>
+        <p id="picker-note">Only customers of this branch are offered.</p>
+        <PickerHarness error="Choose the paying customer." describedBy="picker-note" />
+      </>
+    );
+    const box = screen.getByLabelText(/^Paying customer/);
+    expect(box).toHaveClass('border-error');
+    expect(box).not.toHaveClass('border-border');
+    expect(box).toHaveAccessibleDescription(
+      expect.stringContaining('Only customers of this branch are offered.')
+    );
+    expect(box).toHaveAccessibleDescription(expect.stringContaining('Choose the paying customer.'));
+  });
+
+  it('keeps the cursor after a choice, on the control that changes it (browser QA row 10.4)', async () => {
+    searchCustomerDirectory.mockResolvedValue(page([HIT]));
+    const user = userEvent.setup();
+    renderLtr(<PickerHarness />);
+    await user.type(screen.getByLabelText(/^Paying customer/), 'Layla');
+    await user.click(await screen.findByRole('button', { name: /Layla Haddad/ }));
+
+    const change = screen.getByRole('button', { name: en['customerSelector.change'] });
+    await waitFor(() => expect(change).toHaveFocus());
+    // Announced with what was chosen, not as a bare "change" control.
+    expect(change).toHaveAccessibleDescription(expect.stringContaining('Layla Haddad'));
+    expect(document.activeElement).not.toBe(document.body);
+  });
+
+  it('marks the change control, not the chosen name, when the choice itself is refused', async () => {
+    searchCustomerDirectory.mockResolvedValue(page([HIT]));
+    const user = userEvent.setup();
+    const { rerender } = renderLtr(<PickerHarness />);
+    await user.type(screen.getByLabelText(/^Paying customer/), 'Layla');
+    await user.click(await screen.findByRole('button', { name: /Layla Haddad/ }));
+    rerender(<PickerHarness error="This customer cannot pay this invoice." />);
+
+    const change = screen.getByRole('button', { name: en['customerSelector.change'] });
+    expect(change).toHaveAttribute('aria-invalid', 'true');
+    expect(change).toHaveClass('border-error');
+    expect(change).toHaveAccessibleDescription(
+      expect.stringContaining('This customer cannot pay this invoice.')
+    );
   });
 });

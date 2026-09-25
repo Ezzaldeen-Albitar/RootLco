@@ -70,6 +70,7 @@ export function CustomerPicker({
   unavailableId,
   pristineId,
   countsAsUnsaved = true,
+  describedBy,
   testId = 'customer-picker',
 }: {
   readonly messages: Messages;
@@ -84,6 +85,8 @@ export function CustomerPicker({
   readonly pristineId?: string | null;
   /** False for a list filter — see `SearchPicker`. */
   readonly countsAsUnsaved?: boolean;
+  /** Further ids describing the choice — see `SearchPicker`. */
+  readonly describedBy?: string | undefined;
   readonly testId?: string;
 }) {
   return (
@@ -108,6 +111,7 @@ export function CustomerPicker({
       change={translate(messages, 'customerSelector.change')}
       pristineId={pristineId ?? null}
       countsAsUnsaved={countsAsUnsaved}
+      describedBy={describedBy}
       testId={testId}
     />
   );

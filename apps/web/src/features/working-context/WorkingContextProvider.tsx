@@ -116,6 +116,8 @@ export interface WorkingContext {
 /** One screen's declaration that it holds unsaved work. */
 interface DirtyGuard {
   readonly dirty: boolean;
+  /** Throws the unsaved work away. Called when the operator confirms the discard. */
+  readonly discard: () => void;
 }
 
 type GuardRegistry = Set<DirtyGuard>;
@@ -156,11 +158,36 @@ export function useWorkingContext(): WorkingContext {
  * Registered with the provider for as long as the component is mounted, so a
  * branch switch asks before it discards. Unregistered on unmount, which is what
  * stops a closed form blocking every later switch.
+ *
+ * ## `onDiscard`: the question's answer has to be true
+ *
+ * The question says "Changing branch now will lose them", and an operator who
+ * answers "Discard and change branch" has been told their entries go. Browser
+ * QA found the check-in form keeping its typed walk-in note after exactly that
+ * answer (part 7, row 1c.3): the header moved, the note stayed, and the form
+ * was now addressed to a branch it had not been filled in for.
+ *
+ * A screen whose state does not already follow the branch on its own — by a
+ * `key` on the branch, or through `useWorkingContextChange` — passes
+ * `onDiscard`, and the provider calls it for every guard that was dirty when
+ * the operator confirmed, in the same update as the switch. It is not called
+ * for a switch that asked nothing: with nothing unsaved there is nothing the
+ * question promised to throw away.
  */
-export function useUnsavedGuard(isDirty: boolean): void {
+export function useUnsavedGuard(isDirty: boolean, onDiscard?: () => void): void {
   const registry = useContext(GuardRegistryValue);
+  /*
+   * The latest callback, kept OUT of the registration's dependencies: a screen
+   * passes it inline, and re-registering on every render would churn the
+   * registry for nothing. Refreshed by an effect declared first, so the entry
+   * below always reaches the callback of the latest committed render.
+   */
+  const latest = useRef(onDiscard);
   useEffect(() => {
-    const entry: DirtyGuard = { dirty: isDirty };
+    latest.current = onDiscard;
+  });
+  useEffect(() => {
+    const entry: DirtyGuard = { dirty: isDirty, discard: () => latest.current?.() };
     registry.add(entry);
     return () => {
       registry.delete(entry);
@@ -529,7 +556,13 @@ export function WorkingContextProvider({
           onConfirm={() => {
             const waiting = pending;
             setPending(null);
-            if (waiting !== null) apply(waiting.next);
+            if (waiting === null) return;
+            // Taken BEFORE the switch: these are the guards the question was
+            // about. Called in the same update as the switch, so no frame shows
+            // the new branch over the work that was just declared lost.
+            const discarded = Array.from(guards).filter((guard) => guard.dirty);
+            apply(waiting.next);
+            for (const guard of discarded) guard.discard();
           }}
           title={translate(messages, 'workingContext.discard.title')}
           description={translate(messages, 'workingContext.discard.description')}
