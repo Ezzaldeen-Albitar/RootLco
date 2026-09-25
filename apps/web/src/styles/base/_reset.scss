@@ -1,10 +1,21 @@
-// Minimal reset. Tailwind's preflight handles most of it; this covers what the
-// application needs beyond preflight and nothing more.
+// Minimal reset. The vendored preflight (`_preflight.scss`) handles most of it;
+// this covers what the application needs beyond preflight and nothing more.
+//
+// ADR-022: the ELEMENT-level rules here — `*`, `html` and `body` — sit in the
+// `rootlco-reset` cascade layer, below Material UI. Unlayered, `* { box-sizing:
+// border-box }` would beat Material's layered `box-sizing: content-box` on its
+// input and collapse every text field's height. Inside the layer they keep the
+// order they always had relative to preflight, so the computed result on the
+// existing screens is unchanged. The document-scroll rules stay unlayered: no
+// Material rule targets them, and the print sheet's override of them is
+// untouched.
 
-*,
-*::before,
-*::after {
-  box-sizing: border-box;
+@layer rootlco-reset {
+  *,
+  *::before,
+  *::after {
+    box-sizing: border-box;
+  }
 }
 
 // The document is not a scroll container.
@@ -61,29 +72,31 @@ body.app-viewport {
   scrollbar-gutter: stable;
 }
 
-html {
-  // Never disable user zoom. Browser zoom at 200% is an accessibility
-  // requirement, not an edge case. 100% means "do not adjust", so iOS Safari
-  // stops inflating text after an orientation change while the user's own zoom
-  // keeps working.
-  //
-  // The prefixed property is the ONE that iOS Safari implements; the unprefixed
-  // form is declared first so the prefix disappears on its own once Safari
-  // ships it. This is the documented exception the vendor-prefix rule asks for,
-  // and it is scoped to a single declaration rather than the file.
-  text-size-adjust: 100%;
-  /* stylelint-disable-next-line property-no-vendor-prefix -- iOS Safari implements only the prefixed form; see comment above. */
-  -webkit-text-size-adjust: 100%;
-}
+@layer rootlco-reset {
+  html {
+    // Never disable user zoom. Browser zoom at 200% is an accessibility
+    // requirement, not an edge case. 100% means "do not adjust", so iOS Safari
+    // stops inflating text after an orientation change while the user's own zoom
+    // keeps working.
+    //
+    // The prefixed property is the ONE that iOS Safari implements; the unprefixed
+    // form is declared first so the prefix disappears on its own once Safari
+    // ships it. This is the documented exception the vendor-prefix rule asks for,
+    // and it is scoped to a single declaration rather than the file.
+    text-size-adjust: 100%;
+    /* stylelint-disable-next-line property-no-vendor-prefix -- iOS Safari implements only the prefixed form; see comment above. */
+    -webkit-text-size-adjust: 100%;
+  }
 
-body {
-  margin: 0;
-  background-color: var(--color-app-background);
-  color: var(--color-text-primary);
-  font-family: var(--font-family-sans);
-  font-size: var(--font-size-body);
-  line-height: var(--line-height-body);
-  -webkit-font-smoothing: antialiased;
+  body {
+    margin: 0;
+    background-color: var(--color-app-background);
+    color: var(--color-text-primary);
+    font-family: var(--font-family-sans);
+    font-size: var(--font-size-body);
+    line-height: var(--line-height-body);
+    -webkit-font-smoothing: antialiased;
+  }
 }
 
 // The application renders both scripts; neither may be italicised by a default.
