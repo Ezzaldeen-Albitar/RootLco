@@ -40,6 +40,13 @@
  * Zero is never a finding. Values come from `var(--…)` or from the generated
  * token module, exactly as in the Sass and Tailwind layers.
  *
+ * A style object passed BY REFERENCE (`sx={cardSx}`, `sx={styles.card}`, a
+ * spread `{ ...base }`) is followed to the same-file `const` it names and read
+ * there. A reference that cannot be followed — an import, a parameter, a call
+ * result — is itself a finding (`style-object-unresolved`), except in the
+ * shared wrappers listed in `STYLE_FORWARDING_PATHS`, which forward the `sx`
+ * their callers wrote and checked.
+ *
  * Exit: 0 clean · 1 a violation · 2 the check could not run.
  */
 import { readFileSync, readdirSync } from 'node:fs';
@@ -251,9 +258,154 @@ function rawUnits(text) {
     .map((match) => ({ value: match[0], unit: match[2] }));
 }
 
-/** The expressions a style-object walk starts from. */
-function styleRoots(file) {
-  const roots = [];
+/**
+ * Files that may pass a style object through by reference.
+ *
+ * A shared wrapper forwards the `sx` its caller gave it (`sx={sx}`), and that
+ * object is written — and checked — where the caller wrote it. Anywhere else a
+ * reference the gate cannot follow is a finding (below). The operational grid
+ * path is reserved for the ADR-022 PR1 wrapper; `check-api-boundary.mjs`
+ * reserves the same path for the one place the data grid may be spread.
+ */
+export const STYLE_FORWARDING_PATHS = [
+  'src/components/ui-foundation/',
+  'src/components/data/OperationalGrid',
+];
+
+export function forwardsStyles(relPath) {
+  const normalised = relPath.split(sep).join('/');
+  return STYLE_FORWARDING_PATHS.some((prefix) => normalised.startsWith(prefix));
+}
+
+/** Parentheses, `as`, `satisfies` and `!` change a type, never the object. */
+function unwrap(node) {
+  let current = node;
+  while (
+    ts.isParenthesizedExpression(current) ||
+    ts.isAsExpression(current) ||
+    ts.isSatisfiesExpression(current) ||
+    ts.isNonNullExpression(current) ||
+    ts.isTypeAssertionExpression(current)
+  ) {
+    current = current.expression;
+  }
+  return current;
+}
+
+/** Every `const name = …` in the file, by name. A name bound twice resolves to both. */
+function constInitializers(file) {
+  const out = new Map();
+  const visit = (node) => {
+    if (
+      ts.isVariableDeclaration(node) &&
+      ts.isIdentifier(node.name) &&
+      node.initializer &&
+      ts.isVariableDeclarationList(node.parent) &&
+      (node.parent.flags & ts.NodeFlags.Const) !== 0
+    ) {
+      const list = out.get(node.name.text) ?? [];
+      list.push(node.initializer);
+      out.set(node.name.text, list);
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(file);
+  return out;
+}
+
+const isEmptyValue = (node) =>
+  node.kind === ts.SyntaxKind.NullKeyword ||
+  node.kind === ts.SyntaxKind.TrueKeyword ||
+  node.kind === ts.SyntaxKind.FalseKeyword ||
+  (ts.isIdentifier(node) && node.text === 'undefined');
+
+/**
+ * Follows a reference to the style object it names, in the same file.
+ *
+ * `sx={cardSx}` with `const cardSx = { … }` resolves to that literal, and so
+ * do `styles.card`, a conditional's branches, `cond && {…}` and the members of
+ * an `sx` array. What cannot be followed — an import, a parameter, a call — is
+ * pushed to `unresolved`: the gate never reports clean over an object it did
+ * not read.
+ */
+function resolveStyle(expression, context) {
+  const { consts, roots, unresolved, seen } = context;
+  const node = unwrap(expression);
+  if (seen.has(node)) return;
+  seen.add(node);
+  if (isEmptyValue(node)) return;
+  if (ts.isObjectLiteralExpression(node) || ts.isArrowFunction(node)) {
+    // `sx={(theme) => ({ … })}`: the returned object is read where it is written.
+    roots.push(node);
+    return;
+  }
+  if (ts.isFunctionExpression(node)) {
+    roots.push(node);
+    return;
+  }
+  if (ts.isArrayLiteralExpression(node)) {
+    for (const element of node.elements) {
+      resolveStyle(ts.isSpreadElement(element) ? element.expression : element, context);
+    }
+    return;
+  }
+  if (ts.isConditionalExpression(node)) {
+    resolveStyle(node.whenTrue, context);
+    resolveStyle(node.whenFalse, context);
+    return;
+  }
+  if (ts.isBinaryExpression(node)) {
+    const operator = node.operatorToken.kind;
+    if (operator === ts.SyntaxKind.AmpersandAmpersandToken) {
+      resolveStyle(node.right, context);
+      return;
+    }
+    if (
+      operator === ts.SyntaxKind.BarBarToken ||
+      operator === ts.SyntaxKind.QuestionQuestionToken
+    ) {
+      resolveStyle(node.left, context);
+      resolveStyle(node.right, context);
+      return;
+    }
+  }
+  if (ts.isIdentifier(node) && consts.has(node.text)) {
+    for (const initializer of consts.get(node.text)) resolveStyle(initializer, context);
+    return;
+  }
+  if (ts.isPropertyAccessExpression(node) && ts.isIdentifier(node.expression)) {
+    const found = [];
+    for (const initializer of consts.get(node.expression.text) ?? []) {
+      const target = unwrap(initializer);
+      if (!ts.isObjectLiteralExpression(target)) continue;
+      for (const property of target.properties) {
+        if (ts.isPropertyAssignment(property) && propertyKey(property) === node.name.text) {
+          found.push(property.initializer);
+        }
+      }
+    }
+    if (found.length > 0) {
+      for (const initializer of found) resolveStyle(initializer, context);
+      return;
+    }
+  }
+  unresolved.push(node);
+}
+
+/**
+ * The expressions a style-object walk starts from, and the references in a
+ * style position it could not follow.
+ *
+ * Exported so `check-tailwind-theme.mjs` reads "a style object" by the same
+ * definition: a CSS keyword inside one (`boxSizing: 'border-box'`) is not a
+ * Tailwind class.
+ */
+export function styleObjectRoots(file) {
+  const context = { consts: constInitializers(file), roots: [], unresolved: [], seen: new Set() };
+  const { roots, unresolved } = context;
+  // A reference in a style position — an `sx`/`css` attribute, an `sx` or
+  // `styleOverrides` value, a spread inside a style object — must resolve.
+  const follow = (expression) => resolveStyle(expression, context);
   const visit = (node) => {
     if (ts.isJsxAttribute(node) && node.initializer && ts.isJsxExpression(node.initializer)) {
       const name = node.name.getText(file);
@@ -262,12 +414,14 @@ function styleRoots(file) {
         element && (ts.isJsxOpeningElement(element) || ts.isJsxSelfClosingElement(element))
           ? element.tagName.getText(file)
           : '';
-      const styleAttribute =
-        STYLE_OBJECT_ATTRIBUTES.has(name) || (name === 'styles' && /GlobalStyles$/.test(tag));
-      if (styleAttribute && node.initializer.expression) roots.push(node.initializer.expression);
+      if (STYLE_OBJECT_ATTRIBUTES.has(name) && node.initializer.expression) {
+        follow(node.initializer.expression);
+      } else if (name === 'styles' && /GlobalStyles$/.test(tag) && node.initializer.expression) {
+        roots.push(node.initializer.expression);
+      }
     }
     if (ts.isPropertyAssignment(node) && STYLE_OBJECT_KEYS.has(propertyKey(node) ?? '')) {
-      roots.push(node.initializer);
+      follow(node.initializer);
     }
     if (ts.isCallExpression(node)) {
       const callee = node.expression;
@@ -293,7 +447,28 @@ function styleRoots(file) {
     ts.forEachChild(node, visit);
   };
   visit(file);
-  return roots;
+
+  // A spread nested anywhere inside a style object is a reference too, and a
+  // same-file object named as a value (`'&:focus': FOCUS_RING`) is read where
+  // it is written. The work list grows as references resolve.
+  for (let index = 0; index < roots.length; index += 1) {
+    const inner = (node) => {
+      if (ts.isSpreadAssignment(node)) follow(node.expression);
+      if (ts.isPropertyAssignment(node)) {
+        const value = unwrap(node.initializer);
+        if (ts.isIdentifier(value) || ts.isPropertyAccessExpression(value)) {
+          // A scalar token (`fontSize: FONT_SIZE_PX.body`) is a value, not a
+          // style object: only a reference that RESOLVES widens the walk.
+          const before = unresolved.length;
+          follow(value);
+          unresolved.splice(before);
+        }
+      }
+      ts.forEachChild(node, inner);
+    };
+    ts.forEachChild(roots[index], inner);
+  }
+  return { roots, unresolved };
 }
 
 /**
@@ -372,7 +547,18 @@ export function inspectStyleObjects(relPath, source) {
     }
     ts.forEachChild(node, visit);
   };
-  for (const root of styleRoots(file)) visit(root);
+  const { roots, unresolved } = styleObjectRoots(file);
+  for (const root of roots) visit(root);
+  if (!forwardsStyles(relPath)) {
+    for (const node of unresolved) {
+      report(
+        node,
+        'style-object-unresolved',
+        `a style object passed by a reference this file does not define ("${node.getText(file)}"); ` +
+          'write it in this file, or pass it through a shared wrapper (ADR-022)'
+      );
+    }
+  }
   return findings;
 }
 

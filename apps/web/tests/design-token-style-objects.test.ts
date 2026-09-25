@@ -91,6 +91,68 @@ describe('raw values inside style objects', () => {
   });
 });
 
+describe('style objects passed by reference', () => {
+  it('follows sx={identifier} to a same-file const and reads it there', () => {
+    expect(
+      rulesOf(
+        `const cardSx = { padding: '12px' } as const;\nexport const A = () => <div sx={cardSx} />;`
+      )
+    ).toEqual(['style-object-raw-length']);
+    expect(
+      rulesOf(
+        `const styles = { card: { marginLeft: 1 } };\nexport const A = () => <div sx={styles.card} />;`
+      )
+    ).toEqual(['style-object-physical-property']);
+    expect(
+      rulesOf(
+        `const base = { transition: 'opacity 200ms' };\nexport const A = ({ on }: { on: boolean }) => <div sx={on ? base : undefined} />;`
+      )
+    ).toEqual(['style-object-raw-duration']);
+  });
+
+  it('follows a spread inside a style object, and a same-file object named as a value', () => {
+    expect(
+      rulesOf(
+        `const base = { fontSize: 13 };\nexport const A = () => <div sx={{ ...base, mt: 1 }} />;`
+      )
+    ).toEqual(['style-object-raw-length']);
+    expect(
+      rulesOf(
+        `const RING = { outlineOffset: '2px' };\nconst t = createTheme({ components: { MuiButton: { styleOverrides: { root: { '&:focus': RING } } } } });`,
+        'src/x.ts'
+      )
+    ).toEqual(['style-object-raw-length']);
+  });
+
+  it('refuses a reference it cannot follow rather than reporting clean over it', () => {
+    const unresolved = [
+      `import { cardSx } from './styles';\nexport const A = () => <div sx={cardSx} />;`,
+      `export const A = ({ sx }: { sx: object }) => <div sx={sx} />;`,
+      `const make = () => ({});\nexport const A = () => <div sx={make()} />;`,
+      `import { base } from './styles';\nexport const A = () => <div sx={{ ...base, mt: 1 }} />;`,
+      `import { base } from './styles';\nexport const A = () => <div sx={[base, { mt: 1 }]} />;`,
+    ];
+    for (const source of unresolved) {
+      expect(rulesOf(source), source).toEqual(['style-object-unresolved']);
+    }
+  });
+
+  it('lets a shared wrapper forward the sx its caller wrote', () => {
+    const forward = `export const W = ({ sx }: { sx: object }) => <div sx={sx} />;`;
+    expect(rulesOf(forward, 'src/components/data/OperationalGrid.tsx')).toEqual([]);
+    expect(rulesOf(forward, 'src/components/ui-foundation/Wrapper.tsx')).toEqual([]);
+    expect(rulesOf(forward, 'src/features/x/Wrapper.tsx')).toEqual(['style-object-unresolved']);
+  });
+
+  it('does not treat a scalar token as an unresolved style object', () => {
+    expect(
+      rulesOf(
+        `import { FONT_SIZE_PX } from '@/styles/tokens/generated/tokens';\nexport const A = () => <div sx={{ fontSize: FONT_SIZE_PX.body, color: 'var(--color-primary)' }} />;`
+      )
+    ).toEqual([]);
+  });
+});
+
 describe('physical properties inside style objects (ADR-013)', () => {
   it('refuses physical properties, their Material shorthands and kebab spellings', () => {
     for (const property of [
