@@ -1,6 +1,13 @@
-import { screen } from '@testing-library/react';
+import { EventEmitter } from 'node:events';
+import type { ReactElement } from 'react';
+import { screen, within } from '@testing-library/react';
 import Button from '@mui/material/Button';
+import Dialog from '@mui/material/Dialog';
+import Menu from '@mui/material/Menu';
+import MenuItem from '@mui/material/MenuItem';
+import Popover from '@mui/material/Popover';
 import { useTheme, type Theme } from '@mui/material/styles';
+import { DesktopDatePicker } from '@mui/x-date-pickers/DesktopDatePicker';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { MuiFoundationSection } from '@/components/gallery/MuiFoundationSection';
 import { UiFoundationProvider } from '@/components/ui-foundation/UiFoundationProvider';
@@ -9,6 +16,12 @@ import { LAYER_ORDER } from '@/components/ui-foundation/theme';
 import type { Locale } from '@/i18n/config';
 import { getMessages } from '@/i18n/get-messages';
 import { BOTH_DIRECTIONS, renderLtr, renderRtl } from './render';
+import {
+  filterMuiLayerSheetErrors,
+  isMuiLayerSheetError,
+  type JsdomError,
+  type JsdomVirtualConsole,
+} from './support/jsdom-layer-filter';
 
 /**
  * The Material UI foundation (ADR-022), mounted the way the locale layout
@@ -149,5 +162,199 @@ describe('the Material UI foundation', () => {
       unmount();
     }
     expect(new Set(directions)).toEqual(new Set(['ltr', 'rtl']));
+  });
+});
+
+/**
+ * Portals in Arabic (ADR-022 section 7).
+ *
+ * Dialogs, menus, popovers and the picker popup mount on `<body>`, outside the
+ * tree that rendered them. They must still be right-to-left: `dir` inherited
+ * from `<html>` (nothing on the way sets its own), the theme's direction
+ * inside the portal, and their styles written by the right-to-left cache
+ * (`muirtl`), whose plugin mirrors Material's physical properties.
+ *
+ * jsdom performs no layout, so the popover's computed position is a browser
+ * check; what is asserted here is every input to it that jsdom can see.
+ */
+describe('portals in the right-to-left document', () => {
+  function DirectionProbe({ label }: { readonly label: string }) {
+    return <span data-testid={`probe-${label}`} data-direction={useTheme().direction} />;
+  }
+
+  function mountAr(ui: ReactElement) {
+    return renderRtl(
+      <UiFoundationProvider locale="ar" text={muiTextOf(getMessages('ar'))}>
+        {ui}
+      </UiFoundationProvider>
+    );
+  }
+
+  function expectRightToLeftPortal(node: HTMLElement, container: HTMLElement, label: string) {
+    // Mounted outside the component tree, on <body>.
+    expect(container.contains(node), `${label} rendered inline, not in a portal`).toBe(false);
+    expect(document.body.contains(node)).toBe(true);
+    // No element between it and <html> overrides the direction.
+    const owner = node.closest('[dir]');
+    expect(owner, `${label}: an element on the way sets its own dir`).toBe(
+      document.documentElement
+    );
+    expect(document.documentElement.dir).toBe('rtl');
+    // The theme inside the portal is right-to-left.
+    expect(within(node).getByTestId(`probe-${label}`).dataset.direction).toBe('rtl');
+    // Its classes come from the right-to-left cache, never the left-to-right one.
+    const classes = [...node.querySelectorAll<HTMLElement>('[class]'), node]
+      .flatMap((element) => [...element.classList])
+      .filter((name) => /^mui(?:rtl)?-/.test(name));
+    expect(classes.length, `${label} carries no Emotion class`).toBeGreaterThan(0);
+    for (const name of classes) expect(name, label).toMatch(/^muirtl-/);
+  }
+
+  /** Every Emotion sheet was written by the right-to-left cache (muirtl, muirtl-global). */
+  function expectOnlyRightToLeftCache() {
+    const keys = [...document.head.querySelectorAll<HTMLStyleElement>('style[data-emotion]')].map(
+      (style) => (style.dataset.emotion ?? '').split(' ')[0] ?? ''
+    );
+    expect(keys.length, 'no Emotion sheet was written').toBeGreaterThan(0);
+    for (const key of keys) expect(key).toMatch(/^muirtl(?:-global)?$/);
+  }
+
+  it('mounts a dialog on body, right-to-left', () => {
+    const { container } = mountAr(
+      <Dialog open aria-label="dialog">
+        <DirectionProbe label="dialog" />
+      </Dialog>
+    );
+    expectRightToLeftPortal(screen.getByRole('dialog'), container, 'dialog');
+    expectOnlyRightToLeftCache();
+  });
+
+  it('mounts a menu on body, right-to-left', () => {
+    const anchor = document.createElement('button');
+    document.body.appendChild(anchor);
+    const { container } = mountAr(
+      <Menu open anchorEl={anchor}>
+        <MenuItem>
+          <DirectionProbe label="menu" />
+        </MenuItem>
+      </Menu>
+    );
+    const menu = screen.getByRole('menu').closest<HTMLElement>('.MuiPopover-root');
+    expect(menu).not.toBeNull();
+    expectRightToLeftPortal(menu as HTMLElement, container, 'menu');
+    expectOnlyRightToLeftCache();
+    anchor.remove();
+  });
+
+  it('mounts a popover on body, right-to-left', () => {
+    const anchor = document.createElement('button');
+    document.body.appendChild(anchor);
+    const { container } = mountAr(
+      <Popover open anchorEl={anchor}>
+        <DirectionProbe label="popover" />
+      </Popover>
+    );
+    const root = screen.getByTestId('probe-popover').closest<HTMLElement>('.MuiPopover-root');
+    expect(root).not.toBeNull();
+    expectRightToLeftPortal(root as HTMLElement, container, 'popover');
+    expectOnlyRightToLeftCache();
+    anchor.remove();
+  });
+
+  it('opens the date picker popup on body, right-to-left, with its styles mirrored', () => {
+    const { container } = mountAr(
+      <DesktopDatePicker
+        open
+        label="date"
+        slotProps={{ toolbar: { hidden: false } }}
+        slots={{ toolbar: () => <DirectionProbe label="picker" /> }}
+      />
+    );
+    const popup = screen.getByRole('dialog');
+    expectRightToLeftPortal(popup, container, 'picker');
+    expectOnlyRightToLeftCache();
+    // Material pads the calendar header 24px on its physical LEFT and 12px on
+    // its right; the right-to-left cache mirrors both, so the wide side is the
+    // start (right) edge in Arabic.
+    const css = emotionCss('muirtl');
+    const header = /MuiPickersCalendarHeader-root\{[^}]*padding[^}]*\}/.exec(css)?.[0] ?? '';
+    expect(header, 'the calendar header wrote no padding rule').not.toBe('');
+    expect(header).toMatch(/padding-right:24px;padding-left:12px/);
+    expect(header).not.toMatch(/padding-left:24px/);
+  });
+});
+
+/**
+ * The DOM tier drops ONE jsdom report — Material's layered sheets — and
+ * nothing else (`tests/support/jsdom-layer-filter.ts`).
+ */
+describe('the jsdom CSS report filter', () => {
+  function cssError(detail: string, message = 'Could not parse CSS stylesheet'): JsdomError {
+    return Object.assign(new Error(message), { type: 'css parsing', detail });
+  }
+
+  function filtered() {
+    const emitter = new EventEmitter();
+    const forwarded: JsdomError[] = [];
+    emitter.on('jsdomError', (error: JsdomError) => forwarded.push(error));
+    filterMuiLayerSheetErrors(emitter as unknown as JsdomVirtualConsole);
+    return { emit: (error: JsdomError) => emitter.emit('jsdomError', error), forwarded };
+  }
+
+  it('drops the report for a Material layer sheet', () => {
+    const { emit, forwarded } = filtered();
+    emit(cssError('@layer mui{@layer components{.muirtl-1-MuiButton-root{color:red;}}}'));
+    emit(cssError('@layer mui{:root{--mui-spacing:var(--space-2);}}'));
+    expect(forwarded).toEqual([]);
+  });
+
+  it('still reports every other CSS parse error, and every other jsdom error', () => {
+    const { emit, forwarded } = filtered();
+    const reported = [
+      // A broken product stylesheet.
+      cssError('.a { color: red; } }}} @media {'),
+      // A layer that is not Material's.
+      cssError('@layer rootlco-reset{html{color:red;}}'),
+      cssError('@layer muiish{.a{color:red;}}'),
+      // Material's layer, but not at the start of the sheet.
+      cssError('.a{color:red;}@layer mui{.b{color:red;}}'),
+      // The same text under another message or another error type.
+      cssError('@layer mui{.a{color:red;}}', 'Some other failure'),
+      Object.assign(new Error('Could not parse CSS stylesheet'), {
+        type: 'unhandled exception',
+        detail: '@layer mui{.a{color:red;}}',
+      }),
+    ];
+    for (const error of reported) emit(error);
+    expect(forwarded).toEqual(reported);
+  });
+
+  it('classifies the reports a real jsdom raises', async () => {
+    // A separate jsdom, so a deliberately broken sheet is not printed by this
+    // tier's own console. `jsdom` ships no types; the runtime specifier keeps
+    // TS7016 out of typecheck:web.
+    const specifier = 'jsdom';
+    const { JSDOM, VirtualConsole } = (await import(specifier)) as {
+      JSDOM: new (html: string, options: { virtualConsole: unknown }) => { window: Window };
+      VirtualConsole: new () => JsdomVirtualConsole;
+    };
+    const virtualConsole = new VirtualConsole();
+    const forwarded: JsdomError[] = [];
+    virtualConsole.on('jsdomError', (error) => forwarded.push(error));
+    filterMuiLayerSheetErrors(virtualConsole);
+    const { window } = new JSDOM('<!doctype html><html><head></head></html>', { virtualConsole });
+    const sheet = (text: string) => {
+      const style = window.document.createElement('style');
+      style.textContent = text;
+      window.document.head.appendChild(style);
+    };
+
+    sheet('@layer mui{@layer components{.muirtl-1-MuiButton-root{color:red;}}}');
+    expect(forwarded).toEqual([]);
+
+    sheet('.a { color: red; } }}} @media {');
+    expect(forwarded).toHaveLength(1);
+    expect(forwarded[0]?.type).toBe('css parsing');
+    expect(isMuiLayerSheetError(forwarded[0] as JsdomError)).toBe(false);
   });
 });

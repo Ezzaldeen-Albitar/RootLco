@@ -2,6 +2,7 @@ import '@testing-library/jest-dom/vitest';
 import { cleanup } from '@testing-library/react';
 import { afterEach, expect, vi } from 'vitest';
 import * as axeMatchers from 'vitest-axe/matchers';
+import { filterMuiLayerSheetErrors, type JsdomVirtualConsole } from './support/jsdom-layer-filter';
 
 /**
  * DOM tier setup.
@@ -68,43 +69,14 @@ if (typeof window.ResizeObserver === 'undefined') {
 }
 
 /**
- * jsdom's CSS parser predates cascade layers, so every stylesheet Material UI
- * writes inside `@layer mui { … }` (ADR-022) is reported as "Could not parse
- * CSS stylesheet" — once per style insertion, hundreds of lines per test file.
- * The styles are still WRITTEN (the foundation tests read them back from the
- * `<style>` elements); jsdom only declines to build a CSSOM from them, which it
- * would not use for layout anyway.
- *
- * Exactly that report is dropped, at jsdom's own virtual console: an error of
- * type `css parsing` whose stylesheet body contains `@layer`. Every other
- * jsdom error — any other parse failure, an uncaught exception, a "not
- * implemented" — is handed to the listeners that were already registered,
- * unchanged.
+ * jsdom's CSS parser predates cascade layers, so every Material UI stylesheet
+ * Emotion writes inside `@layer mui{…}` (ADR-022) is reported as a parse
+ * failure. Exactly that report is dropped — see `support/jsdom-layer-filter.ts`
+ * for the three conditions; every other jsdom error reaches the listeners that
+ * were already registered, unchanged.
  */
 {
-  type JsdomError = Error & { type?: string; detail?: unknown };
-  type Listener = (error: JsdomError) => void;
-  const virtualConsole = (
-    globalThis as {
-      jsdom?: {
-        virtualConsole?: {
-          listeners(event: string): Listener[];
-          removeAllListeners(event: string): void;
-          on(event: string, listener: Listener): void;
-        };
-      };
-    }
-  ).jsdom?.virtualConsole;
-  if (virtualConsole) {
-    const forward = virtualConsole.listeners('jsdomError');
-    virtualConsole.removeAllListeners('jsdomError');
-    virtualConsole.on('jsdomError', (error) => {
-      const layeredStylesheet =
-        error.type === 'css parsing' &&
-        typeof error.detail === 'string' &&
-        error.detail.includes('@layer');
-      if (layeredStylesheet) return;
-      for (const listener of forward) listener(error);
-    });
-  }
+  const virtualConsole = (globalThis as { jsdom?: { virtualConsole?: JsdomVirtualConsole } }).jsdom
+    ?.virtualConsole;
+  if (virtualConsole) filterMuiLayerSheetErrors(virtualConsole);
 }
