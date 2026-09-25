@@ -1,4 +1,4 @@
-import { screen, waitFor, within } from '@testing-library/react';
+import { act, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { SearchBox } from '@/components/search/SearchBox';
@@ -9,7 +9,7 @@ import {
   type TableRequest,
   type TableResponse,
 } from '@/components/data-table/table-state';
-import { useSearchRequest } from '@/lib/api/use-search-request';
+import { CLIENT_READ_TIMEOUT_MS, settleRead, useSearchRequest } from '@/lib/api/use-search-request';
 import { useDebouncedValue } from '@/lib/use-debounced-value';
 import en from '../src/i18n/messages/en.json';
 import { renderLtr } from './render';
@@ -471,6 +471,115 @@ describe('a search request', () => {
       expect(screen.getByTestId('error')).toHaveTextContent(key);
       view.unmount();
     }
+  });
+});
+
+describe('a search that fails never stays "Loading" (browser QA part 7, rows 2.6 and 1c.1b)', () => {
+  /*
+   * The reads behind every search are Server Action calls. When that call
+   * fails — the connection drops, or the web tier answers 503 — it REJECTS
+   * rather than resolving a failure state, and the hook used to await it with
+   * nothing to catch the rejection: no answer was ever held, so the phase was
+   * derived as `loading` for good. QA watched three screens read "Loading"
+   * twelve seconds after the read had failed, with no sentence and no retry.
+   */
+  it('settles a read that fails at the NETWORK as an outage, not as Loading', async () => {
+    const load = vi.fn(async () => {
+      throw new TypeError('Failed to fetch');
+    });
+    renderLtr(<SearchHarness term="network" load={load} />);
+    await waitFor(() => expect(screen.getByTestId('phase')).toHaveTextContent('unavailable'));
+    expect(screen.getByTestId('error')).toHaveTextContent('state.unavailable.title');
+    expect(load).toHaveBeenCalledTimes(1);
+  });
+
+  it('settles a web-tier 503 as an outage, and a retry asks again and recovers', async () => {
+    // What the Server Action client throws for a response that is not a
+    // Server Action answer — a 503 from a proxy in front of the web tier.
+    const load = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('An unexpected response was received from the server.'))
+      .mockResolvedValue(okPage([{ id: 'recovered' }]));
+    const user = userEvent.setup();
+    renderLtr(<SearchHarness term="outage" load={load} />);
+    await waitFor(() => expect(screen.getByTestId('phase')).toHaveTextContent('unavailable'));
+
+    await user.click(screen.getByRole('button', { name: 'ask now' }));
+    await waitFor(() => expect(screen.getByTestId('phase')).toHaveTextContent('ready'));
+    expect(screen.getByTestId('rows')).toHaveTextContent('recovered');
+    expect(load).toHaveBeenCalledTimes(2);
+  });
+
+  it('keeps a fault the service ANSWERED apart from one that never arrived', async () => {
+    // A resolved `error` is the service saying something broke — a fault with
+    // a reference. Only a read with no readable answer is an outage.
+    const load = vi.fn(async () => failure('error'));
+    renderLtr(<SearchHarness term="fault" load={load} />);
+    await waitFor(() => expect(screen.getByTestId('phase')).toHaveTextContent('failed'));
+    expect(screen.getByTestId('error')).toHaveTextContent('state.error.title');
+  });
+
+  it('gives up on a read that never answers at the client ceiling, as an outage', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const load = vi.fn(() => new Promise<never>(() => undefined));
+      renderLtr(<SearchHarness term="hangs" load={load} />);
+      await waitFor(() => expect(load).toHaveBeenCalledTimes(1));
+      expect(screen.getByTestId('phase')).toHaveTextContent('loading');
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(CLIENT_READ_TIMEOUT_MS);
+      });
+      await waitFor(() => expect(screen.getByTestId('phase')).toHaveTextContent('unavailable'));
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('abandons the read in flight on a branch switch and asks for the new branch at once', async () => {
+    /*
+     * Row 1c.1b: a switch must not leave the new branch's read waiting on the
+     * old one. The old read here NEVER answers; the new branch's read is still
+     * issued, its answer rendered, and the old read's signal is aborted — the
+     * signal is what `settleRead` stops waiting on, and what a loader that
+     * reaches a real `fetch` passes on.
+     */
+    const seen: AbortSignal[] = [];
+    const load = vi.fn((_criteria: { q: string }, _cursor: string | null, signal: AbortSignal) => {
+      seen.push(signal);
+      return seen.length === 1
+        ? new Promise<never>(() => undefined)
+        : Promise.resolve(okPage([{ id: 'new-branch' }]));
+    });
+    const { rerender } = renderLtr(<SearchHarness term="same" load={load} version={0} />);
+    await waitFor(() => expect(load).toHaveBeenCalledTimes(1));
+    expect(seen[0]?.aborted).toBe(false);
+
+    rerender(<SearchHarness term="same" load={load} version={1} />);
+    await waitFor(() => expect(load).toHaveBeenCalledTimes(2));
+    expect(seen[0]?.aborted).toBe(true);
+    expect(seen[1]?.aborted).toBe(false);
+    await waitFor(() => expect(screen.getByTestId('rows')).toHaveTextContent('new-branch'));
+  });
+
+  it('settleRead: its own answer, or the failure — for a rejection, a timeout and an abort', async () => {
+    type Answer = { readonly status: 'ok' | 'unavailable' };
+    const failed: Answer = { status: 'unavailable' };
+    const answered: Answer = { status: 'ok' };
+    await expect(settleRead(async () => answered, failed)).resolves.toBe(answered);
+    await expect(
+      settleRead(() => Promise.reject(new TypeError('Failed to fetch')), failed)
+    ).resolves.toBe(failed);
+    await expect(
+      settleRead(() => new Promise<never>(() => undefined), failed, { timeoutMs: 10 })
+    ).resolves.toBe(failed);
+
+    const controller = new AbortController();
+    const pending = settleRead(() => new Promise<never>(() => undefined), failed, {
+      signal: controller.signal,
+    });
+    controller.abort();
+    await expect(pending).resolves.toBe(failed);
   });
 });
 

@@ -125,6 +125,87 @@ export interface SearchResult<Row> extends SearchOutcome<Row> {
   readonly submit: () => void;
 }
 
+/**
+ * How long a screen waits for one read before calling it unavailable.
+ *
+ * ## Why there is a client-side bound at all
+ *
+ * The API client on the server already times out (`DEFAULT_TIMEOUT_MS`, with
+ * one retry for a read), and an answer it gives up on arrives here as an
+ * ordinary `unavailable`. What it cannot bound is the hop in front of it: the
+ * Server Action call from this browser to the web tier. When that call fails —
+ * the connection drops, or the web tier answers 503 — the call REJECTS instead
+ * of resolving, and when it hangs it does neither. Browser QA found both: the
+ * reception board, the work-order board and customer search still read
+ * "Loading" twelve seconds after the read had failed, with no sentence and no
+ * way to try again (rows 2.6 and 7.4 of the part-7 matrix).
+ *
+ * Twenty seconds sits above the server's own worst case for one attempt and
+ * well below the point an operator gives up on the screen. It is a ceiling,
+ * not an expectation: every ordinary failure resolves as soon as it happens.
+ */
+export const CLIENT_READ_TIMEOUT_MS = 20_000;
+
+/**
+ * A read that always SETTLES — with its own answer, or with `failure`.
+ *
+ * ## The rule it enforces
+ *
+ * A loader's contract is to resolve a view state for every answer the server
+ * gives. A rejection therefore means no readable answer arrived at all — the
+ * transport failed, or the web tier answered with something that is not a
+ * Server Action response — so it becomes `failure`, which every caller makes an
+ * `unavailable` state with a retry. The same holds for a read that outlives
+ * `timeoutMs`, and for one whose `signal` is aborted: the caller has moved on,
+ * so waiting for it any longer only holds the screen.
+ *
+ * Nothing here can cancel the work the server already started — a Server
+ * Action call carries no `AbortSignal` across the boundary — so an aborted or
+ * timed-out read is ABANDONED here and its late answer, when it comes, is
+ * dropped by the settled flag. The timer is always cleared, so a read that
+ * answers promptly leaves nothing behind.
+ */
+export function settleRead<T>(
+  run: () => Promise<T>,
+  failure: T,
+  options: { readonly signal?: AbortSignal; readonly timeoutMs?: number } = {}
+): Promise<T> {
+  const { signal, timeoutMs = CLIENT_READ_TIMEOUT_MS } = options;
+  return new Promise<T>((resolve) => {
+    if (signal?.aborted) {
+      resolve(failure);
+      return;
+    }
+    let settled = false;
+    // Every path into `finish` runs after `timer` exists: the timer itself, the
+    // abort listener added below it, and the read started after both.
+    const finish = (value: T) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      signal?.removeEventListener('abort', onAbort);
+      resolve(value);
+    };
+    const onAbort = () => finish(failure);
+    const timer = setTimeout(() => finish(failure), timeoutMs);
+    signal?.addEventListener('abort', onAbort, { once: true });
+    let pending: Promise<T>;
+    try {
+      pending = run();
+    } catch {
+      finish(failure);
+      return;
+    }
+    pending.then(finish, () => finish(failure));
+  });
+}
+
+/** What a read that never answered is, as far as a screen is concerned. */
+export const UNANSWERED_READ = Object.freeze({
+  status: 'unavailable',
+  correlationId: null,
+} as const);
+
 const IDLE: SearchOutcome<never> = {
   phase: 'idle',
   rows: [],
@@ -377,8 +458,17 @@ export function useSearchRequest<Row, Criteria>(options: {
     const mine = sequence.current;
     void (async () => {
       // Awaited before any state write, so nothing here is a synchronous
-      // setState inside an effect body.
-      const state = await box.current.load(asked, cursor, controller.signal);
+      // setState inside an effect body. Settled, never left hanging: a load
+      // that rejects or outlives the ceiling is an outage with a retry, not a
+      // screen that reads "Loading" for ever (`settleRead`). The controller's
+      // signal abandons it the moment this effect is torn down — a branch
+      // switch among them — so nothing here waits on a superseded read.
+      const load = box.current.load;
+      const state = await settleRead<ReadState<CursorPage<Row>>>(
+        () => load(asked, cursor, controller.signal),
+        UNANSWERED_READ,
+        { signal: controller.signal }
+      );
       // Two guards, not one. The abort covers this effect being cleaned up; the
       // sequence covers a slower SIBLING request that was started earlier and is
       // still in flight. The key carries the criteria AND the page, so a late
