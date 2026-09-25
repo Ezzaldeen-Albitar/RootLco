@@ -2,7 +2,9 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { COLOR, LAYOUT_PX, SPACE_PX } from '@/styles/tokens/generated/tokens';
+import * as TOKENS from '@/styles/tokens/generated/tokens';
+
+const { LAYOUT_PX, SPACE_PX } = TOKENS;
 
 // Imported at RUNTIME: this workspace sets `allowJs: false`, so a static
 // `../scripts/*.mjs` specifier is TS2307 (see `api-boundary-gate.test.ts`).
@@ -31,11 +33,16 @@ describe('the generated design tokens', () => {
     expect(readFileSync(OUTPUT_PATH, 'utf8')).toBe(expected);
   });
 
-  it('carry the approved anchors and the measures the theme reads', () => {
-    expect(COLOR['--color-primary']).toBe('#1f6b52');
-    expect(COLOR['--color-sidebar-background']).toBe('#0f2742');
+  it('carry the measures the theme reads', () => {
     expect(SPACE_PX['2']).toBe(8);
     expect(LAYOUT_PX['table-row-height']).toBe(48);
+  });
+
+  it('carry no colour, so a [data-theme] remap is never bypassed by a raw value', () => {
+    // A colour read in JavaScript is a fixed hex string; the Material theme
+    // references var(--color-…) instead, as tailwind.config.ts does.
+    expect(Object.keys(TOKENS)).not.toContain('COLOR');
+    expect(readFileSync(OUTPUT_PATH, 'utf8')).not.toMatch(/#[0-9a-f]{3,8}\b|rgba?\(|hsla?\(/i);
   });
 });
 
