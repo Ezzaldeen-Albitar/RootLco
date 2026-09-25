@@ -4036,6 +4036,67 @@ Generated from the live catalog (svc / quo / inv). Money is `numeric(18,4)`; qua
 | 10  | `created_at`           | timestamp with time zone | no       |
 | 11  | `created_by`           | uuid                     | no       |
 
+#### quo.discount_approvals
+
+P1-32-PRE-OD-DISC-01, -04, -07. One row per quotation revision whose discount needs approval.
+Born `pending` with `requested_by` = the signed-in person (`ins_discount_approvals_scope`, which
+also refuses `origin = 'backfilled'`), carrying its quotation's pinned policy version and the
+discount its lines carry (`quo.guard_discount_approval` refuses any other snapshot or total).
+`requested_by` and `decided_by` are foreign keys into `iam.user_accounts` of the same tenant. A
+decision is checked by `quo.guard_discount_approval` whoever writes it: `decided_by` is the
+signed-in person, is not the requester (also `ck_discount_approvals_separation`), and holds the
+recorded permission in the request's company and branch (`iam.has_permission_in_scope`); an
+approval also needs a limit that counts, which the guard computes from `iam.approval_limits` (the
+approver's own before a role's, the largest role limit whose grant reaches the company, never a
+limit the approver created) and writes into `approver_limit_amount` itself (restricted, never
+returned to a reader). An approval records the amount it approved, which must be the discount
+asked for (`ck_discount_approvals_approved_amount`). While a request is not superseded its
+revision's lines are frozen (`tg_quotation_items_discount_freeze`). A new revision of the
+quotation supersedes an open request (`superseded_at`, `superseded_by_revision_id`), after which it
+can never be decided. `quo.guard_revision_discount_approval` refuses to issue a revision whose
+approval is not `approved`, whose live lines do not sum to the approved amount, or which has no
+request although its discount needs one under its quotation's pinned policy
+(`quo.revision_discount_needs_approval`). `origin = 'backfilled'` marks a request
+`quo.backfill_discount_approvals` recorded for a draft written under the single-request flow,
+requested by that draft's creator.
+
+| #   | Column                         | Type                     | Nullable |
+| --- | ------------------------------ | ------------------------ | -------- |
+| 1   | `id`                           | uuid                     | no       |
+| 2   | `tenant_id`                    | uuid                     | no       |
+| 3   | `company_id`                   | uuid                     | no       |
+| 4   | `branch_id`                    | uuid                     | no       |
+| 5   | `quotation_id`                 | uuid                     | no       |
+| 6   | `quotation_revision_id`        | uuid                     | no       |
+| 7   | `status`                       | text                     | no       |
+| 8   | `origin`                       | text                     | no       |
+| 9   | `currency_code`                | text                     | no       |
+| 10  | `discount_total`               | numeric                  | no       |
+| 11  | `discount_base`                | numeric                  | no       |
+| 12  | `elevated_line_count`          | integer                  | no       |
+| 13  | `policy_id`                    | uuid                     | yes      |
+| 14  | `policy_version_no`            | integer                  | yes      |
+| 15  | `threshold_kind`               | text                     | yes      |
+| 16  | `threshold_value`              | numeric                  | yes      |
+| 17  | `threshold_currency_code`      | text                     | yes      |
+| 18  | `required_permission_code`     | text                     | no       |
+| 19  | `requested_by`                 | uuid                     | no       |
+| 20  | `requested_at`                 | timestamp with time zone | no       |
+| 21  | `decided_by`                   | uuid                     | yes      |
+| 22  | `decided_at`                   | timestamp with time zone | yes      |
+| 23  | `decision_reason`              | text                     | yes      |
+| 24  | `approver_limit_amount`        | numeric                  | yes      |
+| 25  | `approver_limit_currency_code` | text                     | yes      |
+| 26  | `approved_discount_total`      | numeric                  | yes      |
+| 27  | `approved_currency_code`       | text                     | yes      |
+| 28  | `superseded_at`                | timestamp with time zone | yes      |
+| 29  | `superseded_by_revision_id`    | uuid                     | yes      |
+| 30  | `record_version`               | integer                  | no       |
+| 31  | `created_at`                   | timestamp with time zone | no       |
+| 32  | `created_by`                   | uuid                     | no       |
+| 33  | `updated_at`                   | timestamp with time zone | yes      |
+| 34  | `updated_by`                   | uuid                     | yes      |
+
 #### quo.quotation_items
 
 | #   | Column                     | Type                     | Nullable |
@@ -4115,25 +4176,37 @@ Generated from the live catalog (svc / quo / inv). Money is `numeric(18,4)`; qua
 
 #### quo.quotations
 
-| #   | Column                | Type                     | Nullable |
-| --- | --------------------- | ------------------------ | -------- |
-| 1   | `id`                  | uuid                     | no       |
-| 2   | `tenant_id`           | uuid                     | no       |
-| 3   | `company_id`          | uuid                     | no       |
-| 4   | `branch_id`           | uuid                     | no       |
-| 5   | `work_order_id`       | uuid                     | no       |
-| 6   | `quotation_number`    | text                     | no       |
-| 7   | `currency_code`       | text                     | no       |
-| 8   | `payer_partner_ref`   | uuid                     | yes      |
-| 9   | `current_revision_id` | uuid                     | yes      |
-| 10  | `status`              | text                     | no       |
-| 11  | `record_version`      | integer                  | no       |
-| 12  | `created_at`          | timestamp with time zone | no       |
-| 13  | `created_by`          | uuid                     | no       |
-| 14  | `updated_at`          | timestamp with time zone | yes      |
-| 15  | `updated_by`          | uuid                     | yes      |
-| 16  | `deleted_at`          | timestamp with time zone | yes      |
-| 17  | `deleted_by`          | uuid                     | yes      |
+| #   | Column                       | Type                     | Nullable |
+| --- | ---------------------------- | ------------------------ | -------- |
+| 1   | `id`                         | uuid                     | no       |
+| 2   | `tenant_id`                  | uuid                     | no       |
+| 3   | `company_id`                 | uuid                     | no       |
+| 4   | `branch_id`                  | uuid                     | no       |
+| 5   | `work_order_id`              | uuid                     | no       |
+| 6   | `quotation_number`           | text                     | no       |
+| 7   | `currency_code`              | text                     | no       |
+| 8   | `payer_partner_ref`          | uuid                     | yes      |
+| 9   | `current_revision_id`        | uuid                     | yes      |
+| 10  | `status`                     | text                     | no       |
+| 11  | `record_version`             | integer                  | no       |
+| 12  | `created_at`                 | timestamp with time zone | no       |
+| 13  | `created_by`                 | uuid                     | no       |
+| 14  | `updated_at`                 | timestamp with time zone | yes      |
+| 15  | `updated_by`                 | uuid                     | yes      |
+| 16  | `deleted_at`                 | timestamp with time zone | yes      |
+| 17  | `deleted_by`                 | uuid                     | yes      |
+| 18  | `discount_policy_id`         | uuid                     | yes      |
+| 19  | `discount_policy_version_no` | integer                  | yes      |
+| 20  | `discount_policy_pinned_at`  | timestamp with time zone | yes      |
+
+`discount_policy_id`, `discount_policy_version_no` and `discount_policy_pinned_at`
+(P1-32-PRE-OD-DISC-07) pin the discount policy version the quotation is held to for its whole
+life. `tg_quotations_discount_policy_pin` sets them on insert from the policy in force
+(`svc.discount_policy_in_force`), whatever the writer supplied, and refuses any later change; a
+quotation written before migration 20260925090000 was pinned by `quo.backfill_discount_approvals`.
+Every revision's discount is measured against this version, by the application and at issue, so a
+threshold change reaches only quotations written after it. A NULL `discount_policy_id` beside a
+set `discount_policy_pinned_at` means no policy was in force: the threshold is zero.
 
 ### Service Catalog & Pricing (`svc`)
 
@@ -4289,6 +4362,16 @@ Generated from the live catalog (svc / quo / inv). Money is `numeric(18,4)`; qua
 | 17  | `updated_by`               | uuid                     | yes      |
 | 18  | `deleted_at`               | timestamp with time zone | yes      |
 | 19  | `deleted_by`               | uuid                     | yes      |
+| 20  | `version_no`               | integer                  | no       |
+
+`version_no` (P1-32-PRE-OD-DISC-01, -04) numbers the versions of one (company, policy type)
+policy from 1, unique over every row of the scope including deleted and inactive ones
+(`uq_pricing_approval_policies_version`). A version is written only as the next number, and
+writing an active one retires the current version (`tg_pricing_approval_policies_record_version`).
+Nothing else changes a version: its content, `effective_to` and `deleted_at` are immutable
+(`tg_pricing_approval_policies_version_immutable`) and its status moves only through that
+retirement (`tg_pricing_approval_policies_status`). `maker_approver_distinct` is a legacy column
+that nothing reads: separation of duties cannot be configured off.
 
 #### svc.service_categories
 

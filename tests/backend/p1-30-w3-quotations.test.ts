@@ -8,8 +8,10 @@
  * canonical plan's W3 row says this wave proves: "totals are captured
  * figures; an approval-limit refusal renders as refusal". On the wire that
  * means every total and line figure is a decimal STRING the database
- * captured, `outcome` is the server's roll-up, and a discount beyond the
- * actor's approval limit is a 403 the screen renders as a refusal.
+ * captured, `outcome` is the server's roll-up, and — since discount approval
+ * became two steps — a discount that needs approval is a pending request in
+ * the mirror's shape, and an approver without a limit is a named 403 the
+ * screen renders as a refusal.
  *
  * ## The mirror is PARSED, not trusted
  *
@@ -49,9 +51,9 @@ import {
 import { PARTNER_A, createOpenWorkOrder, establishP1_19Fixtures } from './p1-19-helpers';
 import {
   SERVICE_A,
+  SVC_DISCOUNT_APPROVER,
   SVC_FULL,
   SVC_NO_CEILING,
-  SVC_READER,
   SVC_TENANT_B,
   SVC_UNPERMITTED,
   TAX_CLASS_A,
@@ -80,6 +82,7 @@ import {
   POST as DECIDE_REVISION,
 } from '@/app/api/v1/quotation-revisions/[revisionId]/decisions/route';
 import { GET as WORK_ORDER_QUOTATIONS } from '@/app/api/v1/work-orders/[workOrderId]/quotations/route';
+import { POST as DECIDE_DISCOUNT } from '@/app/api/v1/discount-approvals/[approvalId]/decision/route';
 
 const CONTRACT = join(
   process.cwd(),
@@ -292,6 +295,13 @@ beforeAll(async () => {
     amount: '1000.0000',
     currencyCode: 'JOD',
   });
+  await seedDiscountCeiling({
+    tenantId: TENANT_A,
+    companyId: COMPANY_A1,
+    roleId: SVC_DISCOUNT_APPROVER.roleId,
+    amount: '1000.0000',
+    currencyCode: 'JOD',
+  });
   const opened = await createOpenWorkOrder();
   workOrderId = opened.workOrderId;
 
@@ -475,42 +485,62 @@ describe('P1-30 W3 — the quotation reads answer a real actor with real rows', 
     );
   });
 
-  it('W3-9 a discount beyond the actor’s approval limit is a 403 — the refusal the screen renders', async () => {
+  it('W3-9 a discount that needs approval is a pending request in the mirror’s shape; an approver without a limit is a named 403', async () => {
     const opened = await createOpenWorkOrder();
-    // A colleague other than the approver is named as the one who asked for the
-    // discount in both requests: whenever approval is required the approver and the
-    // requester must differ, and this case is about the LIMIT, not that separation.
-    authAs(SVC_NO_CEILING);
-    const refused = await createQuotation({
-      workOrderId: opened.workOrderId,
-      discountRequestedBy: SVC_READER.userId,
-      lines: [{ serviceId: SERVICE_A, quantity: '1.000', discount: '1.0000' }],
-    });
-    expect(refused.status).toBe(403);
-    const refusedBody = await json<{
-      code: string;
-      violations?: readonly { path: string; rule: string }[];
-    }>(refused);
-    expect(refusedBody.code).toBe('ERR-IAM-001');
-    // The no-ceiling rule BY NAME: the named requester satisfies the separation, so
-    // this refusal is the limit and nothing else — the rule the screen renders.
-    expect(refusedBody.violations).toEqual([{ path: 'body', rule: 'discount_no_approval_limit' }]);
-    // With a ceiling above the discount, the same document is created and the
-    // discount is a captured figure on the line.
+    // Since P1-32-PRE-OD-DISC-01 the person who adds the discount ASKS for it: the
+    // revision is created with a pending request recorded against them, in the shape the
+    // web mirror declares.
     authAs(SVC_FULL);
     const created = await createQuotation({
       workOrderId: opened.workOrderId,
-      discountRequestedBy: SVC_READER.userId,
       lines: [{ serviceId: SERVICE_A, quantity: '1.000', discount: '5.0000' }],
     });
     expect(created.status).toBe(201);
     const body = await json<{
       id: string;
       recordVersion: number;
-      currentRevision: { id: string; lines: { discount: string }[] };
+      currentRevision: {
+        id: string;
+        lines: { discount: string }[];
+        discountApproval: Record<string, unknown> & { id: string; status: string };
+      };
     }>(created);
     expect(body.currentRevision.lines[0]?.discount).toBe('5.0000');
-    // Issued, the discount is captured into the revision total.
+    const approval = body.currentRevision.discountApproval;
+    expect(keysOf(approval)).toEqual(mirror('DiscountApproval'));
+    expect(approval.status).toBe('pending');
+    expect(approval['requestedByCaller']).toBe(true);
+
+    // An approver with the permission and NO limit is refused by name — the rule the
+    // screen renders next to the decision.
+    authAs(SVC_NO_CEILING);
+    const refused = await DECIDE_DISCOUNT(
+      jsonPost(`http://localhost/api/v1/discount-approvals/${approval.id}/decision`, {
+        decision: 'approved',
+      }),
+      { params: Promise.resolve({ approvalId: approval.id }) }
+    );
+    expect(refused.status).toBe(403);
+    const refusedBody = await json<{
+      code: string;
+      violations?: readonly { path: string; rule: string }[];
+    }>(refused);
+    expect(refusedBody.code).toBe('ERR-IAM-001');
+    expect(refusedBody.violations).toEqual([{ path: 'body', rule: 'discount_no_approval_limit' }]);
+
+    // Another person within their limit approves it, and issue captures the discount.
+    authAs(SVC_DISCOUNT_APPROVER);
+    const approved = await DECIDE_DISCOUNT(
+      jsonPost(`http://localhost/api/v1/discount-approvals/${approval.id}/decision`, {
+        decision: 'approved',
+      }),
+      { params: Promise.resolve({ approvalId: approval.id }) }
+    );
+    expect(approved.status).toBe(200);
+    expect(keysOf(await json<Record<string, unknown>>(approved))).toEqual(
+      mirror('DiscountApproval')
+    );
+    authAs(SVC_FULL);
     const issued = await issue(
       body.id,
       { revisionId: body.currentRevision.id },

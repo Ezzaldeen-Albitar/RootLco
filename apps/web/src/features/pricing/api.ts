@@ -12,6 +12,7 @@ import {
 } from '@/lib/api/read-operation';
 import { fromFailure, success, type ActionState } from '@/lib/forms/action-result';
 import type {
+  DiscountThresholdSetBody,
   PriceListAssignmentCreateBody,
   PriceListCreateBody,
   PriceListVersionCreateBody,
@@ -21,6 +22,7 @@ import type {
 import type { BranchOption } from '@/features/services/services-contract';
 import {
   LIST_BOUND,
+  type DiscountThreshold,
   type PriceListAssignment,
   type PriceListDetail,
   type PriceListRules,
@@ -267,6 +269,48 @@ export async function createPriceListAssignment(
   return {
     state: {
       ...success('pricing.assignment.success', attempt),
+      correlationId: result.correlationId,
+    },
+    created: result.data,
+  };
+}
+
+/**
+ * A company's discount approval threshold (`svc.discount-threshold-read`): what
+ * applies now, where it comes from, and the company's recent versions. The
+ * company is the resource in the path, authorized server-side.
+ */
+export async function readDiscountThreshold(
+  companyId: string
+): Promise<ReadState<DiscountThreshold>> {
+  return readOperation<DiscountThreshold>(
+    `/api/v1/discount-thresholds/${encodeURIComponent(companyId)}`
+  );
+}
+
+/**
+ * Record the next version of a company's discount threshold
+ * (`svc.discount-threshold-set`), `If-Match` REQUIRED and carrying the
+ * `recordVersion` the read returned — never one this application computed.
+ */
+export async function setDiscountThreshold(
+  companyId: string,
+  body: DiscountThresholdSetBody,
+  ifMatch: number,
+  attempt = 1
+): Promise<CreateOutcome<DiscountThreshold>> {
+  const client = await authorizedClient();
+  if (!client) return { state: expired(attempt), created: null };
+  const result = await client.send<DiscountThreshold>(
+    'POST',
+    `/api/v1/discount-thresholds/${encodeURIComponent(companyId)}`,
+    body,
+    { ifMatch }
+  );
+  if (!result.ok) return { state: fromFailure(result, attempt), created: null };
+  return {
+    state: {
+      ...success('discountThreshold.saved', attempt),
       correlationId: result.correlationId,
     },
     created: result.data,

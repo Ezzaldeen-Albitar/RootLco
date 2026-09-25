@@ -86,3 +86,18 @@ export interface PriceRuleRecordBody {
   readonly taxClassId?: string;
   readonly priority?: number;
 }
+
+/**
+ * `svc.discount-threshold-set` — `POST /discount-thresholds/{companyId}` (P1-32-PRE-OD-DISC-01).
+ *
+ * Records the NEXT version of a company's discount approval threshold, effective
+ * for discount requests made from then on. `thresholdValue` is a decimal STRING;
+ * `currency` is required for an amount and refused for a percentage. `If-Match`
+ * is required and carries the threshold setting's `recordVersion` from the read. There is no field that lets a person approve their own
+ * discount, and none that changes the permission an approver needs.
+ */
+export interface DiscountThresholdSetBody {
+  readonly thresholdKind: 'amount' | 'percentage';
+  readonly thresholdValue: string;
+  readonly currency?: string;
+}

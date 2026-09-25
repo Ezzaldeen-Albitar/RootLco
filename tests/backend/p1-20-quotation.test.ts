@@ -18,9 +18,16 @@
  * quotation `rejected`, because treating it otherwise would authorize work the
  * customer declined.
  *
+ * **A discount that needs approval is approved by somebody else** (P1-32-PRE-OD-DISC-01,
+ * -04). The revision is created with the discount recorded as a PENDING request by the
+ * signed-in person; it cannot be issued until a different person, within their own limit,
+ * approves that amount; a later change to the company threshold neither approves it, nor
+ * lets its requester decide it, nor lets a revision of the same quotation escape it.
+ *
  * Operations exercised here: quo.quotation-create, quo.quotation-detail,
  * quo.quotation-revision-create, quo.quotation-issue, quo.quotation-item-decide,
- * quo.quotation-revision-decide.
+ * quo.quotation-revision-decide, quo.discount-approval-list, quo.discount-approval-decide,
+ * svc.discount-threshold-read, svc.discount-threshold-set.
  *
  * COVERAGE-EVIDENCE (parsed by scripts/check-operation-test-coverage.mjs):
  *   quo.quotation-create: route service authorization success denial cross-tenant isolation audit outbox idempotency rollback
@@ -29,6 +36,10 @@
  *   quo.quotation-issue: route service authorization success denial audit outbox stale-version concurrency rollback cross-tenant idempotency isolation
  *   quo.quotation-item-decide: route service authorization success denial cross-tenant audit outbox concurrency idempotency isolation
  *   quo.quotation-revision-decide: route service authorization success denial audit outbox rollback cross-tenant idempotency isolation
+ *   quo.discount-approval-list: route service authorization success denial cross-tenant isolation
+ *   quo.discount-approval-decide: route service authorization success denial cross-tenant audit idempotency isolation concurrency
+ *   svc.discount-threshold-read: route service authorization success denial cross-tenant isolation
+ *   svc.discount-threshold-set: route service authorization success denial audit stale-version idempotency cross-tenant isolation
  */
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import type { Pool } from 'pg';
@@ -36,6 +47,7 @@ import {
   BRANCH_A1,
   COMPANY_A1,
   TENANT_A,
+  TENANT_B,
   USER_A,
   adminPool,
   cleanBackendFixtures,
@@ -47,6 +59,7 @@ import {
 } from './helpers';
 import {
   BRANCH_A2,
+  COMPANY_B1,
   PARTNER_A,
   PARTNER_B,
   createOpenWorkOrder,
@@ -63,6 +76,12 @@ import {
   SVC_QUO_SCOPED_A2,
   SVC_TENANT_B,
   SVC_TENANT_B_FULL,
+  SVC_DISCOUNT_APPROVER,
+  SVC_PRICE_SCOPED_A2,
+  SVC_TENANT_B_APPROVER,
+  SVC_RECORDED_APPROVER,
+  SVC_APPROVER_COMPANY_A2,
+  COMPANY_A2,
   TAX_CLASS_A,
   assignPriceList,
   auditCountFor,
@@ -90,6 +109,12 @@ import { POST as CREATE_REVISION } from '@/app/api/v1/quotations/[quotationId]/r
 import { POST as ISSUE } from '@/app/api/v1/quotations/[quotationId]/issue/route';
 import { POST as DECIDE_ITEM } from '@/app/api/v1/quotation-items/[quotationItemId]/decisions/route';
 import { POST as DECIDE_REVISION } from '@/app/api/v1/quotation-revisions/[revisionId]/decisions/route';
+import { GET as LIST_DISCOUNT_APPROVALS } from '@/app/api/v1/discount-approvals/route';
+import { POST as DECIDE_DISCOUNT } from '@/app/api/v1/discount-approvals/[approvalId]/decision/route';
+import {
+  GET as READ_THRESHOLD,
+  POST as SET_THRESHOLD,
+} from '@/app/api/v1/discount-thresholds/[companyId]/route';
 
 let admin: Pool;
 let runtime: Pool;
@@ -178,6 +203,84 @@ function decideRevision(revisionId: string, body: unknown, key?: string): Promis
   );
 }
 
+function decideDiscount(approvalId: string, body: unknown, key?: string): Promise<Response> {
+  return DECIDE_DISCOUNT(
+    jsonPost(
+      `http://localhost/api/v1/discount-approvals/${approvalId}/decision`,
+      body,
+      undefined,
+      key
+    ),
+    { params: Promise.resolve({ approvalId }) }
+  );
+}
+function listDiscountApprovals(query: Record<string, string>): Promise<Response> {
+  const search = new URLSearchParams(query).toString();
+  return LIST_DISCOUNT_APPROVALS(
+    new Request(`http://localhost/api/v1/discount-approvals?${search}`)
+  );
+}
+function readThreshold(companyId: string): Promise<Response> {
+  return READ_THRESHOLD(new Request(`http://localhost/api/v1/discount-thresholds/${companyId}`), {
+    params: Promise.resolve({ companyId }),
+  });
+}
+/** `body.companyId` names the company in the PATH; the rest is the request body. */
+function setThreshold(
+  body: { readonly companyId: string } & Record<string, unknown>,
+  ifMatch?: number,
+  key?: string
+): Promise<Response> {
+  const { companyId, ...payload } = body;
+  return SET_THRESHOLD(
+    jsonPost(`http://localhost/api/v1/discount-thresholds/${companyId}`, payload, ifMatch, key),
+    { params: Promise.resolve({ companyId }) }
+  );
+}
+
+interface DiscountApproval {
+  readonly id: string;
+  readonly revisionId: string;
+  readonly status: string;
+  readonly discountTotal: string;
+  readonly discountBase: string;
+  readonly elevatedLineCount: number;
+  readonly requiredPermission: string;
+  readonly requestedBy: { readonly id: string; readonly displayName: string | null };
+  readonly requestedByCaller: boolean;
+  readonly canApprove: boolean;
+  readonly cannotApproveReason: string | null;
+  readonly canReject: boolean;
+  readonly origin: string;
+  readonly decidedBy: { readonly id: string } | null;
+  readonly decisionReason: string | null;
+  readonly threshold: {
+    readonly policyId: string;
+    readonly versionNo: number;
+    readonly kind: string;
+    readonly value: string;
+    readonly currency: string | null;
+  } | null;
+}
+interface ThresholdView {
+  readonly source: string;
+  readonly recordVersion: number;
+  readonly current: {
+    readonly id: string;
+    readonly versionNo: number;
+    readonly thresholdKind: string;
+    readonly thresholdValue: string;
+    readonly currency: string | null;
+    readonly requiredPermission: string;
+    readonly status: string;
+  } | null;
+  readonly history: readonly { readonly versionNo: number; readonly status: string }[];
+}
+interface Problem {
+  readonly code: string;
+  readonly violations?: readonly { readonly path: string; readonly rule: string }[];
+}
+
 interface Line {
   readonly id: string;
   readonly lineNumber: number;
@@ -199,6 +302,7 @@ interface Revision {
   readonly grandTotal: string;
   readonly recordVersion: number;
   readonly lines: readonly Line[];
+  readonly discountApproval: DiscountApproval | null;
 }
 interface Quotation {
   readonly id: string;
@@ -282,13 +386,18 @@ async function seedQuotation(
         ...(options.discount === undefined ? {} : { discount: options.discount }),
       },
     ],
-    // With no policy row every non-zero discount needs approval, and the approver
-    // (the caller) must name a different colleague as the one who asked for it.
-    // `SVC_READER` is a real, active user in tenant A who is not `SVC_FULL`.
-    ...(options.discount === undefined ? {} : { discountRequestedBy: SVC_READER.userId }),
   });
   expect(response.status).toBe(201);
-  return (await response.json()) as Quotation;
+  const created = (await response.json()) as Quotation;
+  if (options.discount === undefined) return created;
+  // With no policy row every non-zero discount needs approval. `SVC_FULL` asked for it,
+  // so somebody ELSE approves it before any case that goes on to issue.
+  const approval = created.currentRevision?.discountApproval;
+  expect(approval?.status).toBe('pending');
+  authAs(SVC_DISCOUNT_APPROVER);
+  const decided = await decideDiscount(approval?.id as string, { decision: 'approved' });
+  expect(decided.status).toBe(200);
+  return reread(created.id);
 }
 
 /** Issues the quotation's current draft revision. */
@@ -308,6 +417,29 @@ async function issueCurrent(quotation: Quotation, expiresAt?: string): Promise<R
 async function reread(quotationId: string): Promise<Quotation> {
   authAs(SVC_FULL);
   return (await (await detail(quotationId)).json()) as Quotation;
+}
+
+/**
+ * Runs `body` while one role holds NO discount limit, then puts the limit back.
+ *
+ * The fixtures' limits are per role; lifting one for the length of a case is how a
+ * "no limit" refusal is proved against a principal that otherwise approves.
+ */
+async function clearCeilingOf(roleId: string, body: () => Promise<void>): Promise<void> {
+  const saved = await admin.query<{ id: string }>(
+    `UPDATE iam.approval_limits SET effective_to = effective_from + 1
+      WHERE tenant_id = $1 AND role_id = $2 AND limit_type = 'discount' AND effective_to IS NULL
+      RETURNING id`,
+    [TENANT_A, roleId]
+  );
+  try {
+    await body();
+  } finally {
+    await admin.query(
+      `UPDATE iam.approval_limits SET effective_to = NULL WHERE id = ANY($1::uuid[])`,
+      [saved.rows.map((row) => row.id)]
+    );
+  }
 }
 
 beforeAll(async () => {
@@ -330,6 +462,34 @@ beforeAll(async () => {
     amount: '1000.0000',
     currencyCode: 'JOD',
   });
+  // The approver every two-step case uses: a limit set by the fixtures' administrator,
+  // never by the approver, so it counts.
+  await seedDiscountCeiling({
+    tenantId: TENANT_A,
+    companyId: COMPANY_A1,
+    roleId: SVC_DISCOUNT_APPROVER.roleId,
+    amount: '1000.0000',
+    currencyCode: 'JOD',
+  });
+  await seedDiscountCeiling({
+    tenantId: TENANT_B,
+    companyId: COMPANY_B1,
+    roleId: SVC_TENANT_B_APPROVER.roleId,
+    amount: '1000.0000',
+    currencyCode: 'JOD',
+  });
+  // The approver whose authority is only the RECORDED permission, and the one scoped to
+  // another company: both hold a limit that counts in COMPANY_A1, so a refusal they
+  // collect is the permission or the scope, never the limit.
+  for (const principal of [SVC_RECORDED_APPROVER, SVC_APPROVER_COMPANY_A2]) {
+    await seedDiscountCeiling({
+      tenantId: TENANT_A,
+      companyId: COMPANY_A1,
+      roleId: principal.roleId,
+      amount: '1000.0000',
+      currencyCode: 'JOD',
+    });
+  }
 });
 
 afterEach(() => __resetAuthenticatorForTests());
@@ -415,6 +575,13 @@ describe('quo.quotation-create — the server computes the money', () => {
       'ceilingAmount',
       'discountTotal',
     ]);
+    // WHO asked and WHO approved — two different people, both recorded by the server.
+    expect(details).toContain('requestedBy');
+    expect(details).toContain('approvedBy');
+    // The request and the decision are on the trail too, once each.
+    const approvalId = quotation.currentRevision?.discountApproval?.id as string;
+    expect(await auditCountFor('quo.discount_approval.requested', approvalId)).toBe(1);
+    expect(await auditCountFor('quo.discount_approval.approved', approvalId)).toBe(1);
 
     // A quotation with NO discount records nothing: an ordinary edit is not an
     // authorization, and auditing it as one would misstate what happened.
@@ -424,28 +591,32 @@ describe('quo.quotation-create — the server computes the money', () => {
     ).toBe(0);
   });
 
-  it('refuses a discount when the actor has NO approval ceiling', async () => {
-    // SVC_NO_CEILING holds the elevated permission but no discount ceiling.
-    // Fail-closed: no ceiling is no authority, never unlimited.
-    //
-    // A colleague other than the approver is named as the requester, so the
-    // maker/approver separation PASSES and the refusal below is the no-ceiling rule
-    // itself. Without the requester the separation would refuse first, and this case
-    // would stay green for the wrong reason.
+  it('records a discount from an actor with NO approval limit as a request, and refuses an approver with none', async () => {
+    // Asking is not approving: SVC_NO_CEILING may quote, so its discount is recorded as
+    // a pending request rather than refused.
     const order = await createOpenWorkOrder();
     authAs(SVC_NO_CEILING);
     const response = await createQuotation({
       workOrderId: order.workOrderId,
-      discountRequestedBy: SVC_READER.userId,
       lines: [{ serviceId: SERVICE_A, quantity: '1.000', discount: '1.0000' }],
     });
-    expect(response.status).toBe(403);
-    const body = (await response.json()) as {
-      code: string;
-      violations?: readonly { path: string; rule: string }[];
-    };
-    expect(body.code).toBe('ERR-IAM-001');
-    expect(body.violations).toEqual([{ path: 'body', rule: 'discount_no_approval_limit' }]);
+    expect(response.status).toBe(201);
+    const created = (await response.json()) as Quotation;
+    const approval = created.currentRevision?.discountApproval as DiscountApproval;
+    expect(approval.status).toBe('pending');
+    expect(approval.requestedBy.id).toBe(SVC_NO_CEILING.userId);
+
+    // An approver who holds the permission but no limit: fail-closed, and named. The
+    // approver is not the requester, so the separation PASSES and this refusal is the
+    // missing limit itself.
+    authAs(SVC_FULL);
+    await clearCeilingOf(SVC_FULL.roleId, async () => {
+      const refused = await decideDiscount(approval.id, { decision: 'approved' });
+      expect(refused.status).toBe(403);
+      const body = (await refused.json()) as Problem;
+      expect(body.code).toBe('ERR-IAM-001');
+      expect(body.violations).toEqual([{ path: 'body', rule: 'discount_no_approval_limit' }]);
+    });
   });
 
   it('REJECTS a client-supplied price, tax or total rather than ignoring it', async () => {
@@ -1974,20 +2145,19 @@ describe('QuotationService.expireLapsed', () => {
  *
  * The hole this closes: the document-level check ran only `if (elevatedLines > 0)`, which
  * is exactly the case splitting avoids. With a threshold of 50, lines of 49 are each
- * individually under it — so before this the actor needed no elevated permission, faced no
- * maker/approver check, and had their ceiling compared against nothing at all. The block's
- * own comment claimed to add "the aggregate the ceiling actually means" while leaving that
- * open, which is what made the gap hard to see.
+ * individually under it — so before this the actor needed no approval at all and had no
+ * limit compared against the total. The document is measured through the same policy a
+ * single line of that size would be, so a split discount needs approval exactly when the
+ * whole would, and the approver's limit is compared against the WHOLE.
  *
- * The fix authorizes the DOCUMENT through the same `authorize` call a single line of that
- * size would go through — same policy, same ceiling, same maker/approver rule — so the
- * two cannot disagree about what the limits mean.
+ * Since P1-32-PRE-OD-DISC-01 "needs approval" means a recorded request that somebody other
+ * than the requester approves, so these cases approve as `SVC_DISCOUNT_APPROVER`.
  *
  * These cases need a real `svc.pricing_approval_policies` row: with no policy the threshold
- * is zero, every non-zero discount is already elevated, and splitting is inexpressible.
+ * is zero, every non-zero discount already needs approval, and splitting is inexpressible.
  * The policy is torn down afterwards so the rest of the suite keeps the zero default.
  */
-describe('discount splitting defeats neither the threshold nor the ceiling', () => {
+describe('discount splitting defeats neither the threshold nor the approver limit', () => {
   const POLICY_THRESHOLD = '50.0000';
 
   beforeAll(async () => {
@@ -1997,9 +2167,8 @@ describe('discount splitting defeats neither the threshold nor the ceiling', () 
       thresholdKind: 'amount',
       thresholdValue: POLICY_THRESHOLD,
       currencyCode: 'JOD',
-      // The LEGACY flag set to false. Under the Owner's decision of 2026-09-24 it no
-      // longer switches the maker/approver separation off, so every elevated request
-      // below names a colleague as requester, and one case asserts the refusal.
+      // The LEGACY flag set to false. Nothing reads it: the separation applies whenever
+      // approval is required, and one case below asserts the refusal.
       makerApproverDistinct: false,
     });
   });
@@ -2008,11 +2177,28 @@ describe('discount splitting defeats neither the threshold nor the ceiling', () 
     await clearDiscountPolicy(TENANT_A);
   });
 
-  it('allows a single under-threshold discount with no elevated authority at all', async () => {
-    // The control case. 40 is under the 50 threshold, so this is an ordinary edit and must
-    // stay one — a fix that refused this would have broken the feature, not secured it.
+  const createSplit = async (count: number, each: string): Promise<Quotation> => {
     const order = await createOpenWorkOrder();
-    authAs(SVC_NO_CEILING); // holds quo.quotation.manage; has NO approval ceiling
+    authAs(SVC_FULL);
+    const response = await createQuotation({
+      workOrderId: order.workOrderId,
+      payerPartnerRef: PARTNER_A,
+      lines: Array.from({ length: count }, (_unused, index) => ({
+        serviceId: SERVICE_A,
+        quantity: '1.000',
+        discount: each,
+        description: `Line ${index + 1}`,
+      })),
+    });
+    expect(response.status).toBe(201);
+    return (await response.json()) as Quotation;
+  };
+
+  it('allows a single under-threshold discount with no approval at all', async () => {
+    // The control case. 40 is under the 50 threshold, so this is an ordinary edit and must
+    // stay one — a fix that asked for approval here would have broken the feature.
+    const order = await createOpenWorkOrder();
+    authAs(SVC_NO_CEILING); // holds quo.quotation.manage; has NO approval limit
     const response = await createQuotation({
       workOrderId: order.workOrderId,
       payerPartnerRef: PARTNER_A,
@@ -2021,147 +2207,101 @@ describe('discount splitting defeats neither the threshold nor the ceiling', () 
     expect(response.status).toBe(201);
     const created = (await response.json()) as Quotation;
     expect(created.currentRevision?.lines[0]?.discount).toBe('40.0000');
-    // Nothing was elevated, so nothing is audited as an authorization.
+    expect(created.currentRevision?.discountApproval).toBeNull();
+    // Nothing needed approving, so nothing is audited as an authorization.
     expect(
       await auditCountFor('svc.discount.authorized', created.currentRevision?.id as string)
     ).toBe(0);
+    // And it issues straight away.
+    authAs(SVC_FULL);
+    const issued = await issue(
+      created.id,
+      { revisionId: created.currentRevision?.id },
+      created.recordVersion
+    );
+    expect(issued.status).toBe(200);
   });
 
-  it('refuses SPLIT discounts that clear the threshold only in aggregate', async () => {
+  it('asks for approval of SPLIT discounts that clear the threshold only in aggregate', async () => {
     /**
      * Three lines of 40 = 120, over the 50 threshold in aggregate while no single line
-     * reaches it. `SVC_NO_CEILING` holds no `iam.approval_limits` row, so once the
-     * aggregate is elevated the ceiling gate refuses it — which is the same answer a
-     * single 120 line has always received.
+     * reaches it. The request is recorded with no elevated LINE — the aggregate is what
+     * needs approval — and the revision cannot be issued until it is approved.
      */
-    const order = await createOpenWorkOrder();
+    const created = await createSplit(3, '40.0000');
+    const approval = created.currentRevision?.discountApproval as DiscountApproval;
+    expect(approval.status).toBe('pending');
+    expect(approval.discountTotal).toBe('120.0000');
+    expect(approval.elevatedLineCount).toBe(0);
+    expect(approval.threshold?.value).toBe(POLICY_THRESHOLD);
+
+    const refused = await issue(
+      created.id,
+      { revisionId: created.currentRevision?.id },
+      created.recordVersion
+    );
+    expect(refused.status).toBe(409);
+    expect(((await refused.json()) as Problem).violations).toEqual([
+      { path: 'body', rule: 'discount_approval_pending' },
+    ]);
+
+    // An approver with no limit cannot clear it; the aggregate is what is measured.
     authAs(SVC_NO_CEILING);
-    const response = await createQuotation({
-      workOrderId: order.workOrderId,
-      payerPartnerRef: PARTNER_A,
-      discountRequestedBy: SVC_READER.userId,
-      lines: [
-        { serviceId: SERVICE_A, quantity: '1.000', discount: '40.0000' },
-        { serviceId: SERVICE_A, quantity: '1.000', discount: '40.0000', description: 'Two' },
-        { serviceId: SERVICE_A, quantity: '1.000', discount: '40.0000', description: 'Three' },
-      ],
-    });
-    expect(response.status).toBe(403);
-    const refusedBody = (await response.json()) as {
-      code: string;
-      violations?: readonly { path: string; rule: string }[];
-    };
-    expect(refusedBody.code).toBe('ERR-IAM-001');
-    // The ceiling gate, by name — the requester is a colleague, so the separation passed.
-    expect(refusedBody.violations).toEqual([{ path: 'body', rule: 'discount_no_approval_limit' }]);
-    // The whole request is refused, so no partial quotation survives.
-    expect(
-      await countRows(admin, 'quo.quotations', 'work_order_id = $1', [order.workOrderId])
-    ).toBe(0);
+    const noLimit = await decideDiscount(approval.id, { decision: 'approved' });
+    expect(noLimit.status).toBe(403);
+    expect(((await noLimit.json()) as Problem).violations).toEqual([
+      { path: 'body', rule: 'discount_no_approval_limit' },
+    ]);
   });
 
-  it('refuses SPLIT discounts that exceed the actor ceiling only in aggregate', async () => {
+  it('measures the approver limit against the WHOLE split discount, by name', async () => {
     /**
-     * The ceiling case, with an actor that HAS one. `SVC_FULL`'s ceiling is 1000 (seeded in
-     * beforeAll of this suite), so six lines of 40 = 240 is comfortably inside it and must
-     * pass, while twenty-six lines of 40 = 1040 exceeds it and must not — even though every
-     * single line is under both the 50 threshold and the 1000 ceiling.
+     * `SVC_DISCOUNT_APPROVER`'s limit is 1000. Six lines of 40 = 240 is inside it and is
+     * approved; twenty-six lines of 40 = 1040 exceeds it and is refused with
+     * `discount_over_approval_limit` — even though every single line is under both the
+     * 50 threshold and the 1000 limit.
      */
-    const withinOrder = await createOpenWorkOrder();
-    authAs(SVC_FULL);
-    const within = await createQuotation({
-      workOrderId: withinOrder.workOrderId,
-      payerPartnerRef: PARTNER_A,
-      discountRequestedBy: SVC_READER.userId,
-      lines: Array.from({ length: 6 }, (_unused, index) => ({
-        serviceId: SERVICE_A,
-        quantity: '1.000',
-        discount: '40.0000',
-        description: `Line ${index + 1}`,
-      })),
+    const within = await createSplit(6, '40.0000');
+    authAs(SVC_DISCOUNT_APPROVER);
+    const approved = await decideDiscount(within.currentRevision?.discountApproval?.id as string, {
+      decision: 'approved',
     });
-    expect(within.status).toBe(201);
-    const withinBody = (await within.json()) as Quotation;
-    /**
-     * The LINE discounts, not the revision total.
-     *
-     * A draft revision's `captured_discount_total` is `0.0000` by design —
-     * `quo.issue_revision` is what SUMs the four totals, so a draft carries none. The
-     * per-line values are the draft's truth, and 6 x 40 is what the aggregate control
-     * measured.
-     */
-    expect(withinBody.currentRevision?.lines).toHaveLength(6);
-    expect(withinBody.currentRevision?.lines.every((line) => line.discount === '40.0000')).toBe(
-      true
-    );
+    expect(approved.status).toBe(200);
+    const approvedBody = (await approved.json()) as DiscountApproval;
+    expect(approvedBody.status).toBe('approved');
+    // The approver's limit is never part of a request's payload.
+    expect(approvedBody).not.toHaveProperty('approverLimit');
     expect(
-      await auditCountFor('svc.discount.authorized', withinBody.currentRevision?.id as string)
+      await auditCountFor('svc.discount.authorized', within.currentRevision?.id as string)
     ).toBe(1);
 
-    const overOrder = await createOpenWorkOrder();
-    authAs(SVC_FULL);
-    const over = await createQuotation({
-      workOrderId: overOrder.workOrderId,
-      payerPartnerRef: PARTNER_A,
-      discountRequestedBy: SVC_READER.userId,
-      lines: Array.from({ length: 26 }, (_unused, index) => ({
-        serviceId: SERVICE_A,
-        quantity: '1.000',
-        discount: '40.0000',
-        description: `Line ${index + 1}`,
-      })),
+    const over = await createSplit(26, '40.0000');
+    authAs(SVC_DISCOUNT_APPROVER);
+    const refused = await decideDiscount(over.currentRevision?.discountApproval?.id as string, {
+      decision: 'approved',
     });
-    expect(over.status).toBe(403);
-    const overBody = (await over.json()) as {
-      code: string;
-      violations?: readonly { path: string; rule: string }[];
-    };
-    expect(overBody.code).toBe('ERR-IAM-001');
-    /**
-     * The approval-limit refusal, and not a different one.
-     *
-     * Exceeding the limit is refused without a named rule (the reason is in the server's
-     * own message, which never reaches the caller), so the refusal is pinned by
-     * elimination. The two named refusals on this path — `discount_approver_must_differ`
-     * and `discount_no_approval_limit` — would carry `violations`; this carries none. The
-     * other unnamed refusals — the missing permission, an inactive requester, a limit in
-     * another currency — are ruled out by the `within` request above: same actor, same
-     * requester, same currency, accepted. The amount is the only thing that changed.
-     */
-    expect(overBody.violations).toBeUndefined();
-    expect(
-      await countRows(admin, 'quo.quotations', 'work_order_id = $1', [overOrder.workOrderId])
-    ).toBe(0);
+    expect(refused.status).toBe(403);
+    const body = (await refused.json()) as Problem;
+    expect(body.code).toBe('ERR-IAM-001');
+    expect(body.violations).toEqual([{ path: 'body', rule: 'discount_over_approval_limit' }]);
+    // Refused means untouched: still pending, and not issuable.
+    const still = await reread(over.id);
+    expect(still.currentRevision?.discountApproval?.status).toBe('pending');
   });
 
-  it('audits the split authorization even when NO single line was elevated', async () => {
-    /**
-     * The audit consequence of the fix, and a hole in its own right.
-     *
-     * Keying the audit record on `elevatedLines` — how many individual lines needed
-     * elevated authority — would have left the split case unrecorded, which is the case
-     * most worth recording: an actor gave away more than the threshold and no line shows it.
-     */
-    const order = await createOpenWorkOrder();
-    authAs(SVC_FULL);
-    const response = await createQuotation({
-      workOrderId: order.workOrderId,
-      payerPartnerRef: PARTNER_A,
-      discountRequestedBy: SVC_READER.userId,
-      lines: [
-        { serviceId: SERVICE_A, quantity: '1.000', discount: '30.0000' },
-        { serviceId: SERVICE_A, quantity: '1.000', discount: '30.0000', description: 'Two' },
-      ],
-    });
-    expect(response.status).toBe(201);
-    const created = (await response.json()) as Quotation;
+  it('audits the split approval even when NO single line was elevated', async () => {
+    const created = await createSplit(2, '30.0000');
     const revisionId = created.currentRevision?.id as string;
     // Two lines of 30: 60 in aggregate, over the 50 threshold, with no single line near it.
-    // A draft's revision totals are zero until issue, so the lines are what is asserted.
     expect(created.currentRevision?.lines.map((line) => line.discount)).toEqual([
       '30.0000',
       '30.0000',
     ]);
+    authAs(SVC_DISCOUNT_APPROVER);
+    const approved = await decideDiscount(created.currentRevision?.discountApproval?.id as string, {
+      decision: 'approved',
+    });
+    expect(approved.status).toBe(200);
     expect(await auditCountFor('svc.discount.authorized', revisionId)).toBe(1);
 
     const details = await admin.query<{ field_name: string }>(
@@ -2177,44 +2317,21 @@ describe('discount splitting defeats neither the threshold nor the ceiling', () 
   });
 
   /**
-   * The rule CHANGED by Owner decision on 2026-09-24 (Option A, strict separation).
-   *
-   * This suite's policy row carries `maker_approver_distinct = false`, which used to
-   * switch the separation off so that an approver could authorize their own split
-   * discount. No configuration may switch it off any more: the same request is now a
-   * refusal, named on the requester field. This is the rule changing, not a weakening.
+   * This suite's policy row carries `maker_approver_distinct = false`. It used to switch
+   * the separation off; nothing reads it now. The requester approving their own split
+   * discount is refused by name, whatever the row says.
    */
-  it.each([
-    ['names nobody as the requester', undefined],
-    ['names themselves as the requester', SVC_FULL.userId],
-  ])(
-    'refuses a split self-approval although the legacy flag says false, when the approver %s (Owner decision 2026-09-24)',
-    async (_label, requestedBy) => {
-      const order = await createOpenWorkOrder();
-      authAs(SVC_FULL);
-      const response = await createQuotation({
-        workOrderId: order.workOrderId,
-        payerPartnerRef: PARTNER_A,
-        ...(requestedBy === undefined ? {} : { discountRequestedBy: requestedBy }),
-        lines: [
-          { serviceId: SERVICE_A, quantity: '1.000', discount: '30.0000' },
-          { serviceId: SERVICE_A, quantity: '1.000', discount: '30.0000', description: 'Two' },
-        ],
-      });
-      expect(response.status).toBe(403);
-      const body = (await response.json()) as {
-        code: string;
-        violations?: readonly { path: string; rule: string }[];
-      };
-      expect(body.code).toBe('ERR-IAM-001');
-      expect(body.violations).toEqual([
-        { path: 'body.discountRequestedBy', rule: 'discount_approver_must_differ' },
-      ]);
-      expect(
-        await countRows(admin, 'quo.quotations', 'work_order_id = $1', [order.workOrderId])
-      ).toBe(0);
-    }
-  );
+  it('refuses the requester approving their own split discount although the legacy flag says false', async () => {
+    const created = await createSplit(2, '30.0000');
+    authAs(SVC_FULL);
+    const refused = await decideDiscount(created.currentRevision?.discountApproval?.id as string, {
+      decision: 'approved',
+    });
+    expect(refused.status).toBe(403);
+    const body = (await refused.json()) as Problem;
+    expect(body.code).toBe('ERR-IAM-001');
+    expect(body.violations).toEqual([{ path: 'body', rule: 'discount_approver_must_differ' }]);
+  });
 });
 
 /**
@@ -2346,140 +2463,1145 @@ describe('quo.quotation-create — atomicity of the number it consumes', () => {
 });
 
 /**
- * The named discount requester is RESOLVED against the database (P1-20-BE-006,
- * P1-20-SEC-003).
- *
- * `4cfce7b` fixed a real control — `discountRequestedBy` arrived from the request body, was
- * compared against the actor id and nothing else, and was never persisted, so any well-formed
- * UUID cleared `maker_approver_distinct` and the invention left no trace. The final
- * verification pass then found that the fix itself had no honest coverage: the only exercise
- * of `isActiveUserInTenant` was `vi.fn().mockResolvedValue(...)` in a unit test — the mock,
- * not the SQL — and deleting the whole `requestedBy` audit detail left every suite green.
- *
- * A control proven only against a mock of itself is not proven. These cases drive the real
- * route against PostgreSQL and assert both halves: the refusal AND the record.
+ * A discounted quotation whose discount needs approval, created by `SVC_FULL` and left
+ * PENDING (P1-32-PRE-OD-DISC-01). With no policy row the threshold is zero, so any
+ * non-zero discount is a request.
  */
-describe('discount maker/approver — the requester is resolved against PostgreSQL', () => {
-  beforeAll(async () => {
-    await seedDiscountPolicy({
-      tenantId: TENANT_A,
-      companyId: COMPANY_A1,
-      thresholdKind: 'amount',
-      thresholdValue: '10.0000',
-      currencyCode: 'JOD',
-      // The schema default. The flag is legacy and ignored since the Owner's decision
-      // of 2026-09-24; this suite is about resolving the requester, not the flag.
-      makerApproverDistinct: true,
-    });
+async function seedPendingDiscount(discount = '5.0000'): Promise<Quotation> {
+  const order = await createOpenWorkOrder();
+  authAs(SVC_FULL);
+  const response = await createQuotation({
+    workOrderId: order.workOrderId,
+    payerPartnerRef: PARTNER_A,
+    lines: [{ serviceId: SERVICE_A, quantity: '1.000', discount }],
   });
-  afterAll(async () => {
+  expect(response.status).toBe(201);
+  const created = (await response.json()) as Quotation;
+  expect(created.currentRevision?.discountApproval?.status).toBe('pending');
+  return created;
+}
+
+const approvalOf = (quotation: Quotation): DiscountApproval =>
+  quotation.currentRevision?.discountApproval as DiscountApproval;
+
+/**
+ * The requester is a SERVER fact (P1-32-PRE-OD-DISC-01).
+ *
+ * The single-request design took the requester from the request body, so the only
+ * separation of duties was a colleague the caller NAMED — and naming any active colleague
+ * let a person approve their own discount. The field is gone: the schema is `.strict()`,
+ * so a client still sending it is refused by name rather than ignored, and the request is
+ * recorded against the signed-in person.
+ */
+describe('quo.quotation-create — the discount requester is the signed-in person', () => {
+  beforeAll(async () => {
     await clearDiscountPolicy(TENANT_A);
   });
 
-  const quoteWithRequester = async (requestedBy: string | undefined): Promise<Response> => {
+  it.each([
+    ['a colleague', SVC_READER.userId],
+    ['the caller themselves', SVC_FULL.userId],
+  ])('refuses a request that still names %s as the requester', async (_label, requestedBy) => {
     const order = await createOpenWorkOrder();
     authAs(SVC_FULL);
-    return createQuotation({
+    const refused = await createQuotation({
       workOrderId: order.workOrderId,
-      payerPartnerRef: PARTNER_A,
-      ...(requestedBy === undefined ? {} : { discountRequestedBy: requestedBy }),
-      lines: [{ serviceId: SERVICE_A, quantity: '1.000', discount: '40.0000' }],
+      discountRequestedBy: requestedBy,
+      lines: [{ serviceId: SERVICE_A, quantity: '1.000', discount: '5.0000' }],
     });
-  };
-
-  it('refuses a requester that resolves to no user at all', async () => {
-    // A well-formed UUID that is nobody. Before the fix this CLEARED the control, because
-    // distinctness from the actor was the only test applied.
-    const refused = await quoteWithRequester('d2999999-0000-4000-8000-00000000beef');
-    expect(refused.status).toBe(403);
-    expect(((await refused.json()) as { code: string }).code).toBe('ERR-IAM-001');
+    expect(refused.status).toBe(422);
+    const body = (await refused.json()) as Problem;
+    expect(body.code).toBe('ERR-VAL-001');
+    expect(body.violations?.map((violation) => violation.rule)).toContain('unrecognized_keys');
+    expect(
+      await countRows(admin, 'quo.quotations', 'work_order_id = $1', [order.workOrderId])
+    ).toBe(0);
   });
 
-  it('refuses a REAL user who belongs to another tenant', async () => {
-    /**
-     * The tenant filter, which the existence check alone does not give you.
-     *
-     * `SVC_TENANT_B` is a genuine, active `iam.user_accounts` row — it just belongs to tenant
-     * B. An existence-only check would accept it and let a separation of duties inside this
-     * tenant be satisfied by someone outside it.
-     */
-    const refused = await quoteWithRequester(SVC_TENANT_B.userId);
-    expect(refused.status).toBe(403);
-    expect(((await refused.json()) as { code: string }).code).toBe('ERR-IAM-001');
-  });
-
-  it('accepts a real in-tenant requester and RECORDS who it was', async () => {
-    // `SVC_READER` is a real active user in tenant A and is not the actor, which is exactly
-    // what the separation requires. It needs no permission of its own — it is the maker, not
-    // the approver.
-    const accepted = await quoteWithRequester(SVC_READER.userId);
-    expect(accepted.status).toBe(201);
-    const created = (await accepted.json()) as Quotation;
-    const revisionId = created.currentRevision?.id as string;
+  it('records the request against the signed-in person, and audits it', async () => {
+    const created = await seedPendingDiscount();
+    const approval = approvalOf(created);
+    expect(approval.requestedBy.id).toBe(SVC_FULL.userId);
+    expect(approval.requestedByCaller).toBe(true);
+    const stored = await admin.query<{ requested_by: string; status: string }>(
+      `SELECT requested_by, status FROM quo.discount_approvals WHERE id = $1`,
+      [approval.id]
+    );
+    expect(stored.rows[0]).toEqual({ requested_by: SVC_FULL.userId, status: 'pending' });
 
     const details = await admin.query<{ field_name: string; new_value_masked: string | null }>(
       `SELECT d.field_name, d.new_value_masked
          FROM iam.audit_record_details d
          JOIN iam.audit_records r ON r.id = d.audit_record_id
-        WHERE r.action = 'svc.discount.authorized' AND r.entity_id = $1`,
-      [revisionId]
+        WHERE r.action = 'quo.discount_approval.requested' AND r.entity_id = $1`,
+      [approval.id]
     );
     const requester = details.rows.find((row) => row.field_name === 'requestedBy');
-    // The second half of the fix: WHO the control was satisfied by has to be recoverable
-    // afterwards, or an invented requester is undetectable even once it is refused at write.
-    expect(requester).toBeDefined();
-    expect(requester?.new_value_masked).toContain(SVC_READER.userId);
+    expect(requester?.new_value_masked).toContain(SVC_FULL.userId);
+    // Nothing is AUTHORIZED at the request: that fact is written by the approval.
+    expect(
+      await auditCountFor('svc.discount.authorized', created.currentRevision?.id as string)
+    ).toBe(0);
   });
 });
 
 /**
- * A company with NO policy row keeps the requester and the approver apart too.
- *
- * With no `svc.pricing_approval_policies` row the threshold is zero, so every
- * non-zero discount needs approval — and the separation used to run only when a
- * row existed (`policy?.makerApproverDistinct === true`), which made the
- * unconfigured company the one place an approver could ask for their own
- * discount. Since the Owner's decision of 2026-09-24 the separation runs whenever
- * approval is required, with or without a row, and the flag is ignored.
+ * The two-step flow, end to end, and every refusal on the decision (P1-32-PRE-OD-DISC-01).
  */
-describe('discount maker/approver — a company with no policy row', () => {
+describe('quo.discount-approval-decide — a discount is approved by somebody else', () => {
   beforeAll(async () => {
     await clearDiscountPolicy(TENANT_A);
   });
 
-  const quoteAs = async (requestedBy: string | undefined): Promise<Response> => {
-    const order = await createOpenWorkOrder();
-    authAs(SVC_FULL);
-    return createQuotation({
-      workOrderId: order.workOrderId,
-      payerPartnerRef: PARTNER_A,
-      ...(requestedBy === undefined ? {} : { discountRequestedBy: requestedBy }),
-      lines: [{ serviceId: SERVICE_A, quantity: '1.000', discount: '40.0000' }],
-    });
-  };
+  it('cannot be issued while pending, is approved by another person within their limit, then issues', async () => {
+    const created = await seedPendingDiscount('40.0000');
+    const approval = approvalOf(created);
+    const revisionId = created.currentRevision?.id as string;
 
-  it.each([
-    ['names nobody as the requester', undefined],
-    ['names themselves as the requester', SVC_FULL.userId],
-  ])('refuses, by name, an approver who %s', async (_label, requestedBy) => {
-    const refused = await quoteAs(requestedBy);
-    expect(refused.status).toBe(403);
-    const body = (await refused.json()) as {
-      code: string;
-      violations?: readonly { path: string; rule: string }[];
+    authAs(SVC_FULL);
+    const early = await issue(created.id, { revisionId }, created.recordVersion);
+    expect(early.status).toBe(409);
+    expect(((await early.json()) as Problem).violations).toEqual([
+      { path: 'body', rule: 'discount_approval_pending' },
+    ]);
+
+    authAs(SVC_DISCOUNT_APPROVER);
+    const key = crypto.randomUUID();
+    const approved = await decideDiscount(approval.id, { decision: 'approved' }, key);
+    expect(approved.status).toBe(200);
+    const body = (await approved.json()) as DiscountApproval;
+    expect(body.status).toBe('approved');
+    expect(body.decidedBy?.id).toBe(SVC_DISCOUNT_APPROVER.userId);
+    expect(body.requestedBy.id).toBe(SVC_FULL.userId);
+    expect(body.requestedByCaller).toBe(false);
+    // Decided, it is no longer the approver's to decide — and no limit is returned.
+    expect(body.canApprove).toBe(false);
+    expect(body.cannotApproveReason).toBe('not_pending');
+    expect(body.canReject).toBe(false);
+    expect(body).not.toHaveProperty('approverLimit');
+    // The approval is of an amount: the one asked for, recorded on the row.
+    const bound = await admin.query<{ approved: string; currency: string }>(
+      `SELECT approved_discount_total::text AS approved, approved_currency_code AS currency
+         FROM quo.discount_approvals WHERE id = $1`,
+      [approval.id]
+    );
+    expect(bound.rows[0]).toEqual({ approved: '40.0000', currency: 'JOD' });
+
+    // A retry with the same key replays the recorded answer and records nothing twice.
+    const replay = await decideDiscount(approval.id, { decision: 'approved' }, key);
+    expect(replay.status).toBe(200);
+    expect(await replay.json()).toEqual(body);
+    expect(await auditCountFor('quo.discount_approval.approved', approval.id)).toBe(1);
+    expect(await auditCountFor('svc.discount.authorized', revisionId)).toBe(1);
+
+    authAs(SVC_FULL);
+    const issued = await issue(created.id, { revisionId }, created.recordVersion);
+    expect(issued.status).toBe(200);
+    expect(((await issued.json()) as Revision).discountTotal).toBe('40.0000');
+  });
+
+  it('refuses the requester, by name, whatever authority they hold', async () => {
+    // SVC_FULL holds svc.price.manage and a 1000 limit set by somebody else — every
+    // authority an approver needs — and still may not approve its own request.
+    const created = await seedPendingDiscount();
+    authAs(SVC_FULL);
+    for (const decision of ['approved', 'rejected'] as const) {
+      const refused = await decideDiscount(approvalOf(created).id, {
+        decision,
+        ...(decision === 'rejected' ? { reason: 'Changed my mind' } : {}),
+      });
+      expect(refused.status, decision).toBe(403);
+      expect(((await refused.json()) as Problem).violations, decision).toEqual([
+        { path: 'body', rule: 'discount_approver_must_differ' },
+      ]);
+    }
+    expect((await reread(created.id)).currentRevision?.discountApproval?.status).toBe('pending');
+  });
+
+  it('never counts a limit the approver set for themselves, and does count one somebody else set', async () => {
+    /**
+     * `SVC_NO_CEILING` holds the permission and no limit. A limit it set for its own
+     * account, or for its own role, never counts (QA row 7.1d); the identical limit set by
+     * the fixtures' administrator does — which is what makes the refusal the setter and
+     * not the amount.
+     */
+    const created = await seedPendingDiscount();
+    const inserted: string[] = [];
+    const plant = async (column: 'user_id' | 'role_id', createdBy: string): Promise<void> => {
+      const row = await admin.query<{ id: string }>(
+        `INSERT INTO iam.approval_limits
+           (tenant_id, company_id, ${column}, limit_type, amount, currency_code, effective_from, created_by)
+         VALUES ($1, $2, $3, 'discount', 9999, 'JOD', '2020-01-01'::date, $4)
+         RETURNING id`,
+        [
+          TENANT_A,
+          COMPANY_A1,
+          column === 'user_id' ? SVC_NO_CEILING.userId : SVC_NO_CEILING.roleId,
+          createdBy,
+        ]
+      );
+      inserted.push(row.rows[0]?.id as string);
     };
-    expect(body.code).toBe('ERR-IAM-001');
-    expect(body.violations).toEqual([
-      { path: 'body.discountRequestedBy', rule: 'discount_approver_must_differ' },
+    try {
+      await plant('user_id', SVC_NO_CEILING.userId);
+      await plant('role_id', SVC_NO_CEILING.userId);
+      authAs(SVC_NO_CEILING);
+      const refused = await decideDiscount(approvalOf(created).id, { decision: 'approved' });
+      expect(refused.status).toBe(403);
+      expect(((await refused.json()) as Problem).violations).toEqual([
+        { path: 'body', rule: 'discount_no_approval_limit' },
+      ]);
+
+      // The same shape of limit, set by somebody else. The self-set account limit goes
+      // first: two account limits of one type may not overlap in time.
+      await admin.query('DELETE FROM iam.approval_limits WHERE id = $1', [inserted[0]]);
+      await plant('user_id', USER_A);
+      authAs(SVC_NO_CEILING);
+      const approved = await decideDiscount(approvalOf(created).id, { decision: 'approved' });
+      expect(approved.status).toBe(200);
+      expect(((await approved.json()) as DiscountApproval).status).toBe('approved');
+      // The limit the approval was within is on the record — restricted, never returned.
+      const recorded = await admin.query<{ amount: string }>(
+        `SELECT approver_limit_amount::text AS amount FROM quo.discount_approvals WHERE id = $1`,
+        [approvalOf(created).id]
+      );
+      expect(recorded.rows[0]?.amount).toBe('9999.0000');
+    } finally {
+      await admin.query('DELETE FROM iam.approval_limits WHERE id = ANY($1::uuid[])', [inserted]);
+    }
+  });
+
+  it('turns a request down only with a reason, after which the revision can never be issued', async () => {
+    const created = await seedPendingDiscount();
+    const approval = approvalOf(created);
+    authAs(SVC_DISCOUNT_APPROVER);
+    const reasonless = await decideDiscount(approval.id, { decision: 'rejected' });
+    expect(reasonless.status).toBe(422);
+    expect(((await reasonless.json()) as Problem).violations).toEqual([
+      { path: 'body.reason', rule: 'required' },
+    ]);
+
+    const rejected = await decideDiscount(approval.id, {
+      decision: 'rejected',
+      reason: 'More than this job can carry',
+    });
+    expect(rejected.status).toBe(200);
+    const body = (await rejected.json()) as DiscountApproval;
+    expect(body.status).toBe('rejected');
+    expect(body.decisionReason).toBe('More than this job can carry');
+    expect(body).not.toHaveProperty('approverLimit');
+    expect(await auditCountFor('quo.discount_approval.rejected', approval.id)).toBe(1);
+
+    const again = await decideDiscount(approval.id, { decision: 'approved' });
+    expect(again.status).toBe(409);
+    expect(((await again.json()) as Problem).violations).toEqual([
+      { path: 'body', rule: 'discount_approval_already_decided' },
+    ]);
+
+    authAs(SVC_FULL);
+    const refused = await issue(
+      created.id,
+      { revisionId: created.currentRevision?.id },
+      created.recordVersion
+    );
+    expect(refused.status).toBe(409);
+    expect(((await refused.json()) as Problem).violations).toEqual([
+      { path: 'body', rule: 'discount_approval_rejected' },
     ]);
   });
 
-  it('lets a different approver with a sufficient limit authorize it', async () => {
-    // `SVC_FULL` approves under the 1000 JOD role limit the fixtures' administrator
-    // set, and `SVC_READER` — someone else — asked for the discount.
-    const accepted = await quoteAs(SVC_READER.userId);
-    expect(accepted.status).toBe(201);
-    const created = (await accepted.json()) as Quotation;
-    expect(created.currentRevision?.lines[0]?.discount).toBe('40.0000');
+  it('refuses a caller without quotation read (denial), without the RECORDED permission (named), and one scoped to another branch or company (isolation)', async () => {
+    const created = await seedPendingDiscount();
+    const approvalId = approvalOf(created).id;
+    // denial at the gate: no quo.quotation.read at all.
+    authAs(SVC_READER);
+    const denied = await decideDiscount(approvalId, { decision: 'approved' });
+    expect(denied.status).toBe(403);
+    // The gate passes (quotation read) but the request recorded svc.price.manage, which
+    // this caller does not hold: refused by name, for approving AND for turning down.
+    authAs(SVC_RECORDED_APPROVER);
+    for (const decision of ['approved', 'rejected'] as const) {
+      const unrecorded = await decideDiscount(approvalId, {
+        decision,
+        ...(decision === 'rejected' ? { reason: 'Not mine to decide' } : {}),
+      });
+      expect(unrecorded.status, decision).toBe(403);
+      expect(((await unrecorded.json()) as Problem).violations, decision).toEqual([
+        { path: 'body', rule: 'discount_approval_permission_missing' },
+      ]);
+    }
+    // isolation: quo.quotation.read in FULL, scoped to branch A2 — with an unrelated A1
+    // grant that makes the A1 row readable — so the only thing that refuses it is the
+    // scoped check against the approval's own branch (P1-18-A-01).
+    authAs(SVC_QUO_SCOPED_A2);
+    const scoped = await decideDiscount(approvalId, { decision: 'approved' });
+    expect(scoped.status).toBe(403);
+    // ...and every approver authority, limit included, granted only in ANOTHER company.
+    authAs(SVC_APPROVER_COMPANY_A2);
+    const otherCompany = await decideDiscount(approvalId, { decision: 'approved' });
+    expect(otherCompany.status).toBe(403);
+    expect((await reread(created.id)).currentRevision?.discountApproval?.status).toBe('pending');
+    // Positive control: an approver of the owning branch and company decides it.
+    authAs(SVC_DISCOUNT_APPROVER);
+    expect((await decideDiscount(approvalId, { decision: 'approved' })).status).toBe(200);
+  });
+
+  it('needs ONLY the permission the request recorded: a policy naming another code moves the approver population with it', async () => {
+    await seedDiscountPolicy({
+      tenantId: TENANT_A,
+      companyId: COMPANY_A1,
+      thresholdKind: 'amount',
+      thresholdValue: '1.0000',
+      currencyCode: 'JOD',
+      requiredPermissionCode: 'svc.price.publish',
+    });
+    try {
+      const created = await seedPendingDiscount('5.0000');
+      const approval = approvalOf(created);
+      expect(approval.requiredPermission).toBe('svc.price.publish');
+      // svc.price.manage without the recorded code is no authority over this request.
+      authAs(SVC_DISCOUNT_APPROVER);
+      const manageOnly = await decideDiscount(approval.id, { decision: 'approved' });
+      expect(manageOnly.status).toBe(403);
+      expect(((await manageOnly.json()) as Problem).violations).toEqual([
+        { path: 'body', rule: 'discount_approval_permission_missing' },
+      ]);
+      // The recorded code without svc.price.manage IS — the route no longer demands it.
+      authAs(SVC_RECORDED_APPROVER);
+      const recorded = await decideDiscount(approval.id, { decision: 'approved' });
+      expect(recorded.status).toBe(200);
+      expect(((await recorded.json()) as DiscountApproval).decidedBy?.id).toBe(
+        SVC_RECORDED_APPROVER.userId
+      );
+    } finally {
+      await clearDiscountPolicy(TENANT_A);
+    }
+  });
+
+  it('under a forced RACE of two decisions on one request, exactly one wins and the other is a named conflict', async () => {
+    const created = await seedPendingDiscount();
+    const approvalId = approvalOf(created).id;
+    authAs(SVC_DISCOUNT_APPROVER);
+    const [a, b] = await Promise.all([
+      decideDiscount(approvalId, { decision: 'approved' }),
+      decideDiscount(approvalId, { decision: 'rejected', reason: 'Too generous for this job' }),
+    ]);
+    const answers = [
+      { status: a.status, body: (await a.json()) as DiscountApproval & Problem },
+      { status: b.status, body: (await b.json()) as DiscountApproval & Problem },
+    ];
+    const winners = answers.filter((answer) => answer.status === 200);
+    const losers = answers.filter((answer) => answer.status !== 200);
+    expect(winners).toHaveLength(1);
+    expect(losers).toHaveLength(1);
+    expect(losers[0]?.status).toBe(409);
+    expect(losers[0]?.body.violations).toEqual([
+      { path: 'body', rule: 'discount_approval_already_decided' },
+    ]);
+    // The stored decision is the winner's, and it was recorded exactly once.
+    const stored = await admin.query<{ status: string }>(
+      `SELECT status FROM quo.discount_approvals WHERE id = $1`,
+      [approvalId]
+    );
+    expect(stored.rows[0]?.status).toBe(winners[0]?.body.status);
+    const decisions =
+      (await auditCountFor('quo.discount_approval.approved', approvalId)) +
+      (await auditCountFor('quo.discount_approval.rejected', approvalId));
+    expect(decisions).toBe(1);
+  });
+
+  it('binds the approval to its amount: the approved lines cannot be re-priced, and a change is a new revision that asks again', async () => {
+    const created = await seedPendingDiscount('5.0000');
+    const revisionId = created.currentRevision?.id as string;
+    authAs(SVC_DISCOUNT_APPROVER);
+    expect((await decideDiscount(approvalOf(created).id, { decision: 'approved' })).status).toBe(
+      200
+    );
+    // Re-pricing the approved draft's line around the application is refused by the
+    // database, by name, whoever tries — even the owner.
+    await expect(
+      admin.query(
+        `UPDATE quo.quotation_items
+            SET captured_discount = 6,
+                captured_tax_amount = round((captured_unit_price * captured_quantity - 6)
+                                            * captured_tax_rate, 4),
+                captured_line_total = round(captured_unit_price * captured_quantity - 6
+                  + round((captured_unit_price * captured_quantity - 6)
+                          * captured_tax_rate, 4), 4)
+          WHERE quotation_revision_id = $1`,
+        [revisionId]
+      )
+    ).rejects.toThrow(/discount_request_freezes_items/);
+    const lines = await admin.query<{ discount: string }>(
+      `SELECT captured_discount::text AS discount FROM quo.quotation_items
+        WHERE quotation_revision_id = $1`,
+      [revisionId]
+    );
+    expect(lines.rows).toEqual([{ discount: '5.0000' }]);
+
+    // Changing the discount is a new revision, which asks again.
+    authAs(SVC_FULL);
+    const revised = await revise(
+      created.id,
+      { lines: [{ serviceId: SERVICE_A, quantity: '1.000', discount: '6.0000' }] },
+      (await reread(created.id)).recordVersion
+    );
+    expect(revised.status).toBe(201);
+    const next = (await revised.json()) as Revision;
+    expect(next.discountApproval?.status).toBe('pending');
+    expect(next.discountApproval?.discountTotal).toBe('6.0000');
+    const refused = await issue(
+      created.id,
+      { revisionId: next.id },
+      (await reread(created.id)).recordVersion
+    );
+    expect(refused.status).toBe(409);
+    expect(((await refused.json()) as Problem).violations).toEqual([
+      { path: 'body', rule: 'discount_approval_pending' },
+    ]);
+    // Positive control: the approved draft, untouched, issues with the approved amount.
+    const issued = await issue(
+      created.id,
+      { revisionId },
+      (await reread(created.id)).recordVersion
+    );
+    expect(issued.status).toBe(200);
+    expect(((await issued.json()) as Revision).discountTotal).toBe('5.0000');
+  });
+
+  it('a legacy draft discounted before the two-step flow cannot be issued until somebody other than its creator approves it', async () => {
+    // A draft whose discount needed no approval when it was written (threshold 50)...
+    await seedDiscountPolicy({
+      tenantId: TENANT_A,
+      companyId: COMPANY_A1,
+      thresholdKind: 'amount',
+      thresholdValue: '50.0000',
+      currencyCode: 'JOD',
+    });
+    let created: Quotation;
+    try {
+      const order = await createOpenWorkOrder();
+      authAs(SVC_FULL);
+      const response = await createQuotation({
+        workOrderId: order.workOrderId,
+        payerPartnerRef: PARTNER_A,
+        lines: [{ serviceId: SERVICE_A, quantity: '1.000', discount: '40.0000' }],
+      });
+      expect(response.status).toBe(201);
+      created = (await response.json()) as Quotation;
+      expect(created.currentRevision?.discountApproval).toBeNull();
+    } finally {
+      // ...and a policy in force now under which it does (none: a threshold of zero).
+      await clearDiscountPolicy(TENANT_A);
+    }
+    const revisionId = created.currentRevision?.id as string;
+    // What the migration found: a quotation written before quotations were pinned to a
+    // policy. Only the owner can hold that state, around the pin's own trigger.
+    const client = await admin.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query(`SET LOCAL session_replication_role = 'replica'`);
+      await client.query(
+        `UPDATE quo.quotations
+            SET discount_policy_id = NULL, discount_policy_version_no = NULL,
+                discount_policy_pinned_at = NULL
+          WHERE id = $1`,
+        [created.id]
+      );
+      await client.query('COMMIT');
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+    // The migration's own backfill pins it to the policy in force now (none: a threshold
+    // of zero) and gives the draft a PENDING, backfilled request in its creator's name.
+    await admin.query(`SELECT * FROM quo.backfill_discount_approvals()`);
+    const backfilled = await admin.query<{
+      id: string;
+      origin: string;
+      requested_by: string;
+      policy_id: string | null;
+    }>(
+      `SELECT id, origin, requested_by, policy_id FROM quo.discount_approvals
+        WHERE quotation_revision_id = $1`,
+      [revisionId]
+    );
+    expect(backfilled.rows).toHaveLength(1);
+    expect(backfilled.rows[0]).toMatchObject({
+      origin: 'backfilled',
+      requested_by: SVC_FULL.userId,
+      policy_id: null,
+    });
+    const approvalId = backfilled.rows[0]?.id as string;
+    const current = await reread(created.id);
+    authAs(SVC_FULL);
+    const pending = await issue(created.id, { revisionId }, current.recordVersion);
+    expect(pending.status).toBe(409);
+    expect(((await pending.json()) as Problem).violations).toEqual([
+      { path: 'body', rule: 'discount_approval_pending' },
+    ]);
+    // Its creator is its requester, and may not approve it.
+    const self = await decideDiscount(approvalId, { decision: 'approved' });
+    expect(self.status).toBe(403);
+    expect(((await self.json()) as Problem).violations).toEqual([
+      { path: 'body', rule: 'discount_approver_must_differ' },
+    ]);
+    // Somebody else does, and only then it issues.
+    authAs(SVC_DISCOUNT_APPROVER);
+    const approved = await decideDiscount(approvalId, { decision: 'approved' });
+    expect(approved.status).toBe(200);
+    const approvedBody = (await approved.json()) as DiscountApproval;
+    expect(approvedBody.origin).toBe('backfilled');
+    expect(approvedBody.requestedBy.id).toBe(SVC_FULL.userId);
+    authAs(SVC_FULL);
+    const issued = await issue(created.id, { revisionId }, current.recordVersion);
+    expect(issued.status).toBe(200);
+  });
+
+  it('hides a request from another tenant’s approver (cross-tenant), with a positive control', async () => {
+    const created = await seedPendingDiscount();
+    const approvalId = approvalOf(created).id;
+    // SVC_TENANT_B_APPROVER holds every authority an approver needs, so this refusal is
+    // the tenant boundary and nothing else: row security does not show it the row.
+    authAs(SVC_TENANT_B_APPROVER);
+    const foreign = await decideDiscount(approvalId, { decision: 'approved' });
+    expect(foreign.status).toBe(404);
+    expect(((await foreign.json()) as Problem).code).toBe('ERR-RES-001');
+    // Positive control: an approver of the owning tenant decides the same row.
+    authAs(SVC_DISCOUNT_APPROVER);
+    const owned = await decideDiscount(approvalId, { decision: 'approved' });
+    expect(owned.status).toBe(200);
+  });
+});
+
+/**
+ * The Owner's test: a threshold change after the request cannot bypass its approval
+ * (P1-32-PRE-OD-DISC-01, -07).
+ *
+ * Every quotation is held to the policy version in force when it was written, for its
+ * whole life. Raising the company threshold above the discount afterwards does not
+ * approve it, and does not let its requester decide it — in one revision or several;
+ * the new threshold applies to quotations written from then on. Lowering the threshold
+ * neither undoes an approval nor blocks a draft written before it.
+ */
+describe('svc.discount-threshold-set — a later threshold change cannot bypass a recorded request', () => {
+  beforeAll(async () => {
+    await clearDiscountPolicy(TENANT_A);
+  });
+  afterAll(async () => {
+    await clearDiscountPolicy(TENANT_A);
+  });
+
+  it('request above the threshold → threshold raised → revised with the SAME discount → still needs another approver and cannot be issued', async () => {
+    authAs(SVC_FULL);
+    const first = await setThreshold(
+      {
+        companyId: COMPANY_A1,
+        thresholdKind: 'amount',
+        thresholdValue: '10.0000',
+        currency: 'JOD',
+      },
+      1
+    );
+    expect(first.status).toBe(201);
+    expect(((await first.json()) as ThresholdView).current?.versionNo).toBe(1);
+
+    // The request: 40 against a threshold of 10.
+    const created = await seedPendingDiscount('40.0000');
+    const approval = approvalOf(created);
+    const firstRevisionId = created.currentRevision?.id as string;
+    expect(approval.threshold).toMatchObject({ versionNo: 1, kind: 'amount', value: '10.0000' });
+
+    // The requester's side raises the threshold ABOVE the discount.
+    authAs(SVC_FULL);
+    const raised = await setThreshold(
+      {
+        companyId: COMPANY_A1,
+        thresholdKind: 'amount',
+        thresholdValue: '100.0000',
+        currency: 'JOD',
+      },
+      2
+    );
+    expect(raised.status).toBe(201);
+    const raisedBody = (await raised.json()) as ThresholdView;
+    expect(raisedBody.current).toMatchObject({ versionNo: 2, thresholdValue: '100.0000' });
+    expect(raisedBody.history.map((row) => [row.versionNo, row.status])).toEqual([
+      [2, 'active'],
+      [1, 'inactive'],
+    ]);
+    expect(
+      await auditCountFor('svc.discount_threshold.versioned', raisedBody.current?.id as string)
+    ).toBe(1);
+
+    // The request is untouched: still pending, still measured against version 1, not
+    // issuable, and not its requester's to approve.
+    const after = approvalOf(await reread(created.id));
+    expect(after.status).toBe('pending');
+    expect(after.threshold).toMatchObject({ versionNo: 1, value: '10.0000' });
+    authAs(SVC_FULL);
+    const refused = await issue(created.id, { revisionId: firstRevisionId }, created.recordVersion);
+    expect(refused.status).toBe(409);
+    expect(((await refused.json()) as Problem).violations).toEqual([
+      { path: 'body', rule: 'discount_approval_pending' },
+    ]);
+    const self = await decideDiscount(approval.id, { decision: 'approved' });
+    expect(self.status).toBe(403);
+    expect(((await self.json()) as Problem).violations).toEqual([
+      { path: 'body', rule: 'discount_approver_must_differ' },
+    ]);
+
+    // The bypass attempt: revise with the SAME discount. The quotation is held to the
+    // version pinned when it was written (10), not the raised one (100), so it is a new
+    // PENDING request under the same version — and the old one is superseded.
+    const current = await reread(created.id);
+    const revised = await revise(
+      created.id,
+      { lines: [{ serviceId: SERVICE_A, quantity: '1.000', discount: '40.0000' }] },
+      current.recordVersion
+    );
+    expect(revised.status).toBe(201);
+    const revision = (await revised.json()) as Revision;
+    const renewed = revision.discountApproval as DiscountApproval;
+    expect(renewed.status).toBe('pending');
+    expect(renewed.id).not.toBe(approval.id);
+    expect(renewed.threshold).toMatchObject({ versionNo: 1, value: '10.0000' });
+    expect(renewed.requestedBy.id).toBe(SVC_FULL.userId);
+    const old = await admin.query<{ status: string; superseded_by_revision_id: string }>(
+      `SELECT status, superseded_by_revision_id FROM quo.discount_approvals WHERE id = $1`,
+      [approval.id]
+    );
+    expect(old.rows[0]).toEqual({ status: 'superseded', superseded_by_revision_id: revision.id });
+
+    // The new revision cannot be issued, and its requester cannot approve it.
+    const latest = await reread(created.id);
+    const stillRefused = await issue(created.id, { revisionId: revision.id }, latest.recordVersion);
+    expect(stillRefused.status).toBe(409);
+    expect(((await stillRefused.json()) as Problem).violations).toEqual([
+      { path: 'body', rule: 'discount_approval_pending' },
+    ]);
+    const selfAgain = await decideDiscount(renewed.id, { decision: 'approved' });
+    expect(selfAgain.status).toBe(403);
+    expect(((await selfAgain.json()) as Problem).violations).toEqual([
+      { path: 'body', rule: 'discount_approver_must_differ' },
+    ]);
+    // Nor can the first revision be issued: its request was superseded.
+    const firstAgain = await issue(
+      created.id,
+      { revisionId: firstRevisionId },
+      latest.recordVersion
+    );
+    expect(firstAgain.status).toBe(409);
+    expect(((await firstAgain.json()) as Problem).violations).toEqual([
+      { path: 'body', rule: 'discount_approval_superseded' },
+    ]);
+
+    // A superseded request is no longer approvable, by anybody.
+    authAs(SVC_DISCOUNT_APPROVER);
+    const stale = await decideDiscount(approval.id, { decision: 'approved' });
+    expect(stale.status).toBe(409);
+    expect(((await stale.json()) as Problem).violations).toEqual([
+      { path: 'body', rule: 'discount_approval_superseded' },
+    ]);
+
+    // A different person approves the RENEWED request, against the snapshot.
+    const approved = await decideDiscount(renewed.id, { decision: 'approved' });
+    expect(approved.status).toBe(200);
+
+    // Lowering the threshold afterwards does not undo the approval.
+    authAs(SVC_FULL);
+    const lowered = await setThreshold(
+      { companyId: COMPANY_A1, thresholdKind: 'amount', thresholdValue: '1.0000', currency: 'JOD' },
+      3
+    );
+    expect(lowered.status).toBe(201);
+    const issued = await issue(
+      created.id,
+      { revisionId: revision.id },
+      (await reread(created.id)).recordVersion
+    );
+    expect(issued.status).toBe(200);
+  });
+
+  /** Records the next company threshold version, read and If-Matched first. */
+  async function setNext(value: string): Promise<ThresholdView> {
+    authAs(SVC_FULL);
+    const before = (await (await readThreshold(COMPANY_A1)).json()) as ThresholdView;
+    const response = await setThreshold(
+      { companyId: COMPANY_A1, thresholdKind: 'amount', thresholdValue: value, currency: 'JOD' },
+      before.recordVersion
+    );
+    expect(response.status).toBe(201);
+    return (await response.json()) as ThresholdView;
+  }
+
+  it('the two-step escape: request above the threshold → threshold raised → discount revised away → revised back → still needs another approver and cannot be issued', async () => {
+    const low = await setNext('10.0000');
+    const created = await seedPendingDiscount('40.0000');
+    const approval = approvalOf(created);
+    expect(approval.threshold).toMatchObject({
+      versionNo: low.current?.versionNo,
+      value: '10.0000',
+    });
+    const raised = await setNext('100.0000');
+    expect(
+      await auditCountFor('svc.discount_threshold.versioned', raised.current?.id as string)
+    ).toBe(1);
+
+    // Step one: the discount is revised away. The open request is superseded and, with
+    // no discount, none is recorded.
+    authAs(SVC_FULL);
+    const away = await revise(
+      created.id,
+      { lines: [{ serviceId: SERVICE_A, quantity: '1.000', discount: '0.0000' }] },
+      (await reread(created.id)).recordVersion
+    );
+    expect(away.status).toBe(201);
+    expect(((await away.json()) as Revision).discountApproval).toBeNull();
+    const old = await admin.query<{ status: string }>(
+      `SELECT status FROM quo.discount_approvals WHERE id = $1`,
+      [approval.id]
+    );
+    expect(old.rows[0]?.status).toBe('superseded');
+
+    // Step two: the same discount comes back. The quotation is still held to the version
+    // it was written under (10), not the raised one (100): a new PENDING request.
+    const back = await revise(
+      created.id,
+      { lines: [{ serviceId: SERVICE_A, quantity: '1.000', discount: '40.0000' }] },
+      (await reread(created.id)).recordVersion
+    );
+    expect(back.status).toBe(201);
+    const revision = (await back.json()) as Revision;
+    const renewed = revision.discountApproval as DiscountApproval;
+    expect(renewed.status).toBe('pending');
+    expect(renewed.threshold).toMatchObject({
+      versionNo: low.current?.versionNo,
+      value: '10.0000',
+    });
+    expect(renewed.requestedBy.id).toBe(SVC_FULL.userId);
+    const refused = await issue(
+      created.id,
+      { revisionId: revision.id },
+      (await reread(created.id)).recordVersion
+    );
+    expect(refused.status).toBe(409);
+    expect(((await refused.json()) as Problem).violations).toEqual([
+      { path: 'body', rule: 'discount_approval_pending' },
+    ]);
+    authAs(SVC_FULL);
+    const self = await decideDiscount(renewed.id, { decision: 'approved' });
+    expect(self.status).toBe(403);
+    expect(((await self.json()) as Problem).violations).toEqual([
+      { path: 'body', rule: 'discount_approver_must_differ' },
+    ]);
+
+    // Positive control: somebody else approves it, and only then it issues.
+    authAs(SVC_DISCOUNT_APPROVER);
+    expect((await decideDiscount(renewed.id, { decision: 'approved' })).status).toBe(200);
+    authAs(SVC_FULL);
+    const issued = await issue(
+      created.id,
+      { revisionId: revision.id },
+      (await reread(created.id)).recordVersion
+    );
+    expect(issued.status).toBe(200);
+  });
+
+  it('lowering the threshold blocks no existing draft — it keeps the version it was written under — and holds a new quotation to the lowered one', async () => {
+    await setNext('100.0000');
+    // 40 under a threshold of 100: no request.
+    const order = await createOpenWorkOrder();
+    authAs(SVC_FULL);
+    const response = await createQuotation({
+      workOrderId: order.workOrderId,
+      payerPartnerRef: PARTNER_A,
+      lines: [{ serviceId: SERVICE_A, quantity: '1.000', discount: '40.0000' }],
+    });
+    expect(response.status).toBe(201);
+    const existing = (await response.json()) as Quotation;
+    expect(existing.currentRevision?.discountApproval).toBeNull();
+
+    const lowered = await setNext('10.0000');
+
+    // A quotation written after the change is held to the lowered threshold.
+    const newOrder = await createOpenWorkOrder();
+    authAs(SVC_FULL);
+    const fresh = await createQuotation({
+      workOrderId: newOrder.workOrderId,
+      payerPartnerRef: PARTNER_A,
+      lines: [{ serviceId: SERVICE_A, quantity: '1.000', discount: '40.0000' }],
+    });
+    expect(fresh.status).toBe(201);
+    const freshBody = (await fresh.json()) as Quotation;
+    expect(freshBody.currentRevision?.discountApproval?.status).toBe('pending');
+    expect(freshBody.currentRevision?.discountApproval?.threshold).toMatchObject({
+      versionNo: lowered.current?.versionNo,
+      value: '10.0000',
+    });
+
+    // The existing quotation keeps its version: revised with the same discount it still
+    // needs no request, and it issues.
+    const revised = await revise(
+      existing.id,
+      { lines: [{ serviceId: SERVICE_A, quantity: '1.000', discount: '40.0000' }] },
+      (await reread(existing.id)).recordVersion
+    );
+    expect(revised.status).toBe(201);
+    const revision = (await revised.json()) as Revision;
+    expect(revision.discountApproval).toBeNull();
+    const issued = await issue(
+      existing.id,
+      { revisionId: revision.id },
+      (await reread(existing.id)).recordVersion
+    );
+    expect(issued.status).toBe(200);
+  });
+
+  it('positive control: a NEW quotation after a threshold change is measured against the new threshold, and the change is audited', async () => {
+    authAs(SVC_FULL);
+    const before = (await (await readThreshold(COMPANY_A1)).json()) as ThresholdView;
+    const raised = await setThreshold(
+      {
+        companyId: COMPANY_A1,
+        thresholdKind: 'amount',
+        thresholdValue: '100.0000',
+        currency: 'JOD',
+      },
+      before.recordVersion
+    );
+    expect(raised.status).toBe(201);
+    const raisedBody = (await raised.json()) as ThresholdView;
+    const versionId = raisedBody.current?.id as string;
+    expect(await auditCountFor('svc.discount_threshold.versioned', versionId)).toBe(1);
+    const trail = await admin.query<{ field_name: string; new_value_masked: string | null }>(
+      `SELECT d.field_name, d.new_value_masked
+         FROM iam.audit_record_details d
+         JOIN iam.audit_records r ON r.id = d.audit_record_id
+        WHERE r.action = 'svc.discount_threshold.versioned' AND r.entity_id = $1`,
+      [versionId]
+    );
+    expect(trail.rows.map((row) => row.field_name)).toEqual(
+      expect.arrayContaining(['versionNo', 'thresholdValue', 'effectiveFrom'])
+    );
+
+    // A brand-new quotation with the same 40 discount: prospective, so no request...
+    const order = await createOpenWorkOrder();
+    authAs(SVC_FULL);
+    const response = await createQuotation({
+      workOrderId: order.workOrderId,
+      payerPartnerRef: PARTNER_A,
+      lines: [{ serviceId: SERVICE_A, quantity: '1.000', discount: '40.0000' }],
+    });
+    expect(response.status).toBe(201);
+    const fresh = (await response.json()) as Quotation;
+    expect(fresh.currentRevision?.discountApproval).toBeNull();
+    // ...and it issues straight away.
+    const issued = await issue(
+      fresh.id,
+      { revisionId: fresh.currentRevision?.id },
+      fresh.recordVersion
+    );
+    expect(issued.status).toBe(200);
+  });
+});
+
+/**
+ * The company discount threshold, read and versioned (P1-32-PRE-OD-DISC-01).
+ */
+describe('svc.discount-threshold-read and svc.discount-threshold-set — versions, If-Match, validation', () => {
+  beforeAll(async () => {
+    await clearDiscountPolicy(TENANT_A);
+  });
+  afterAll(async () => {
+    await clearDiscountPolicy(TENANT_A);
+  });
+
+  const amount = (value: string) => ({
+    companyId: COMPANY_A1,
+    thresholdKind: 'amount',
+    thresholdValue: value,
+    currency: 'JOD',
+  });
+
+  it('reads "none" before anything is set, then the company version with its If-Match', async () => {
+    authAs(SVC_FULL);
+    const empty = await readThreshold(COMPANY_A1);
+    expect(empty.status).toBe(200);
+    const emptyBody = (await empty.json()) as ThresholdView;
+    // Nothing configured: every discount needs approval, and there is no version to match.
+    expect(emptyBody.source).toBe('none');
+    expect(emptyBody.current).toBeNull();
+    // Nothing recorded yet: the setting is at record version 1, and a first write
+    // proves it saw that by sending it.
+    expect(emptyBody.recordVersion).toBe(1);
+    expect(String(empty.headers.get('etag')).replace(/"/g, '')).toBe('1');
+
+    const key = crypto.randomUUID();
+    const created = await setThreshold(amount('25.0000'), 1, key);
+    expect(created.status).toBe(201);
+    const body = (await created.json()) as ThresholdView;
+    expect(body.source).toBe('company');
+    expect(body.current).toMatchObject({
+      versionNo: 1,
+      thresholdKind: 'amount',
+      thresholdValue: '25.0000',
+      currency: 'JOD',
+      // No field sets the approver permission: it is carried, here from the default.
+      requiredPermission: 'svc.price.manage',
+      status: 'active',
+    });
+    // A retry with the same key replays the recorded body — with 200, the status every
+    // replayed write answers with — and records ONE version and one audit record.
+    const replay = await setThreshold(amount('25.0000'), 1, key);
+    expect(replay.status).toBe(200);
+    expect(await replay.json()).toEqual(body);
+    expect(
+      await auditCountFor('svc.discount_threshold.versioned', body.current?.id as string)
+    ).toBe(1);
+
+    const read = await readThreshold(COMPANY_A1);
+    expect(String(read.headers.get('etag')).replace(/"/g, '')).toBe('2');
+  });
+
+  it('requires If-Match, and refuses a stale one', async () => {
+    authAs(SVC_FULL);
+    const missing = await setThreshold(amount('30.0000'));
+    expect(missing.status).toBe(428);
+    expect(((await missing.json()) as Problem).code).toBe('ERR-CON-002');
+    const stale = await setThreshold(amount('30.0000'), 7);
+    expect(stale.status).toBe(409);
+    expect(((await stale.json()) as Problem).code).toBe('ERR-CON-001');
+    const next = await setThreshold(amount('30.0000'), 2);
+    expect(next.status).toBe(201);
+    expect(((await next.json()) as ThresholdView).current?.versionNo).toBe(2);
+    // The record version that was current before cannot be written against again.
+    const replaced = await setThreshold(amount('31.0000'), 2);
+    expect(replaced.status).toBe(409);
+  });
+
+  it('numbers the next version above a soft-deleted, retired highest row instead of colliding with it', async () => {
+    authAs(SVC_FULL);
+    const before = (await (await readThreshold(COMPANY_A1)).json()) as ThresholdView;
+    const next = before.recordVersion;
+    // The highest number the company ever used is held by a retired, soft-deleted row —
+    // written directly, as history carried from before versions existed would be.
+    await admin.query(
+      `INSERT INTO svc.pricing_approval_policies
+         (tenant_id, company_id, policy_type, threshold_kind, threshold_value, currency_code,
+          required_permission_code, version_no, effective_from, status, created_by,
+          deleted_at, deleted_by)
+       VALUES ($1,$2,'discount','amount',77,'JOD','svc.price.manage',$3,current_date,
+               'inactive',$4,now(),$4)`,
+      [TENANT_A, COMPANY_A1, next, USER_A]
+    );
+    const read = (await (await readThreshold(COMPANY_A1)).json()) as ThresholdView;
+    // The deleted row is not history, but its number is spent.
+    expect(read.history.some((row) => row.versionNo === next)).toBe(false);
+    expect(read.recordVersion).toBe(next + 1);
+    const stale = await setThreshold(amount('40.0000'), next);
+    expect(stale.status).toBe(409);
+    const written = await setThreshold(amount('40.0000'), next + 1);
+    expect(written.status).toBe(201);
+    const body = (await written.json()) as ThresholdView;
+    expect(body.current).toMatchObject({ versionNo: next + 1, thresholdValue: '40.0000' });
+  });
+
+  it('refuses what cannot be a threshold, by name — and offers no switch for separation of duties', async () => {
+    authAs(SVC_FULL);
+    const cases: readonly [
+      { readonly companyId: string } & Record<string, unknown>,
+      string,
+      string,
+    ][] = [
+      [
+        { companyId: COMPANY_A1, thresholdKind: 'percentage', thresholdValue: '150' },
+        'body.thresholdValue',
+        'discount_threshold_percentage_range',
+      ],
+      [
+        { companyId: COMPANY_A1, thresholdKind: 'amount', thresholdValue: '10' },
+        'body.currency',
+        'discount_threshold_currency_required',
+      ],
+      [
+        {
+          companyId: COMPANY_A1,
+          thresholdKind: 'percentage',
+          thresholdValue: '10',
+          currency: 'JOD',
+        },
+        'body.currency',
+        'discount_threshold_currency_not_applicable',
+      ],
+      [
+        { companyId: COMPANY_A1, thresholdKind: 'amount', thresholdValue: '10', currency: 'ZZZ' },
+        'body.currency',
+        'unknown_currency',
+      ],
+    ];
+    for (const [body, path, rule] of cases) {
+      const refused = await setThreshold(body, 2);
+      expect(refused.status, rule).toBe(422);
+      expect(((await refused.json()) as Problem).violations, rule).toEqual([{ path, rule }]);
+    }
+    // A body that tries to switch the separation off is refused as an unknown key.
+    const switchOff = await setThreshold({ ...amount('10'), makerApproverDistinct: false }, 2);
+    expect(switchOff.status).toBe(422);
+    expect(((await switchOff.json()) as Problem).violations?.map((v) => v.rule)).toContain(
+      'unrecognized_keys'
+    );
+  });
+
+  it('refuses a caller without the pricing permissions (denial) and one without the company (isolation), and another tenant (cross-tenant)', async () => {
+    authAs(SVC_READER);
+    expect((await readThreshold(COMPANY_A1)).status).toBe(403);
+    expect((await setThreshold(amount('1'), 2)).status).toBe(403);
+    // svc.price.manage in full, granted only inside COMPANY_A1: COMPANY_A2 is refused.
+    authAs(SVC_PRICE_SCOPED_A2);
+    const otherCompany = await setThreshold({ ...amount('1'), companyId: COMPANY_A2 }, 1);
+    expect(otherCompany.status).toBe(403);
+    // Positive control: an unrestricted pricing manager sets COMPANY_A2's first version.
+    authAs(SVC_FULL);
+    const allowed = await setThreshold({ ...amount('1'), companyId: COMPANY_A2 }, 1);
+    expect(allowed.status).toBe(201);
+    // Another tenant cannot read this tenant's company threshold at all.
+    authAs(SVC_TENANT_B_FULL);
+    expect([403, 404]).toContain((await readThreshold(COMPANY_A1)).status);
+  });
+});
+
+/**
+ * The approvals list (P1-32-PRE-OD-DISC-01).
+ */
+describe('quo.discount-approval-list — a branch’s requests, with the caller’s own marked', () => {
+  beforeAll(async () => {
+    await clearDiscountPolicy(TENANT_A);
+  });
+
+  const query = (status?: string) => ({
+    companyId: COMPANY_A1,
+    branchId: BRANCH_A1,
+    ...(status === undefined ? {} : { status }),
+    limit: '100',
+  });
+
+  it('lists pending requests, marking the caller’s own as waiting for another approver', async () => {
+    const created = await seedPendingDiscount();
+    const approvalId = approvalOf(created).id;
+    const rowFor = async (): Promise<DiscountApproval | undefined> => {
+      const response = await listDiscountApprovals(query());
+      expect(response.status).toBe(200);
+      return ((await response.json()) as { items: DiscountApproval[] }).items.find(
+        (row) => row.id === approvalId
+      );
+    };
+
+    authAs(SVC_FULL);
+    const mineRow = await rowFor();
+    expect(mineRow?.requestedByCaller).toBe(true);
+    expect(mineRow?.status).toBe('pending');
+    // Whether the caller could decide it is computed by the server — and no approver
+    // limit is part of the answer, for anybody.
+    expect(mineRow?.canApprove).toBe(false);
+    expect(mineRow?.cannotApproveReason).toBe('own_request');
+    expect(mineRow?.canReject).toBe(false);
+    expect(mineRow).not.toHaveProperty('approverLimit');
+
+    authAs(SVC_DISCOUNT_APPROVER);
+    const theirsRow = await rowFor();
+    expect(theirsRow?.requestedByCaller).toBe(false);
+    expect(theirsRow?.requestedBy.id).toBe(SVC_FULL.userId);
+    expect(theirsRow?.canApprove).toBe(true);
+    expect(theirsRow?.cannotApproveReason).toBeNull();
+    expect(theirsRow?.canReject).toBe(true);
+    expect(theirsRow).not.toHaveProperty('approverLimit');
+
+    // Reads quotations, but lacks the permission the request recorded.
+    authAs(SVC_RECORDED_APPROVER);
+    const unpermitted = await rowFor();
+    expect(unpermitted?.cannotApproveReason).toBe('missing_permission');
+    // Turning down needs the same permission, so it is not offered either.
+    expect(unpermitted?.canReject).toBe(false);
+
+    // No limit that counts, then a limit below the discount — named, never shown.
+    authAs(SVC_DISCOUNT_APPROVER);
+    await clearCeilingOf(SVC_DISCOUNT_APPROVER.roleId, async () => {
+      const limitless = await rowFor();
+      expect(limitless?.cannotApproveReason).toBe('no_approval_limit');
+      // No limit is needed to turn a request down: that is still offered.
+      expect(limitless?.canReject).toBe(true);
+      const small = await admin.query<{ id: string }>(
+        `INSERT INTO iam.approval_limits
+           (tenant_id, company_id, user_id, limit_type, amount, currency_code, effective_from, created_by)
+         VALUES ($1, $2, $3, 'discount', 1, 'JOD', '2020-01-01'::date, $4)
+         RETURNING id`,
+        [TENANT_A, COMPANY_A1, SVC_DISCOUNT_APPROVER.userId, USER_A]
+      );
+      try {
+        const over = await rowFor();
+        expect(over?.canApprove).toBe(false);
+        expect(over?.cannotApproveReason).toBe('over_approval_limit');
+        expect(over?.canReject).toBe(true);
+        expect(JSON.stringify(over)).not.toContain('"1.0000"');
+      } finally {
+        await admin.query('DELETE FROM iam.approval_limits WHERE id = $1', [small.rows[0]?.id]);
+      }
+    });
+
+    // Decided, it leaves the pending list and appears under its decision.
+    expect((await decideDiscount(approvalId, { decision: 'approved' })).status).toBe(200);
+    const pending = (await (await listDiscountApprovals(query())).json()) as {
+      items: DiscountApproval[];
+    };
+    expect(pending.items.some((row) => row.id === approvalId)).toBe(false);
+    const approved = (await (await listDiscountApprovals(query('approved'))).json()) as {
+      items: DiscountApproval[];
+    };
+    expect(approved.items.some((row) => row.id === approvalId)).toBe(true);
+  });
+
+  it('lists only requests on a quotation’s CURRENT draft revision: a superseded request is gone', async () => {
+    const created = await seedPendingDiscount('5.0000');
+    const oldId = approvalOf(created).id;
+    authAs(SVC_FULL);
+    const revised = await revise(
+      created.id,
+      { lines: [{ serviceId: SERVICE_A, quantity: '1.000', discount: '5.0000' }] },
+      created.recordVersion
+    );
+    expect(revised.status).toBe(201);
+    const newId = ((await revised.json()) as Revision).discountApproval?.id as string;
+    expect(newId).not.toBe(oldId);
+
+    authAs(SVC_DISCOUNT_APPROVER);
+    const ids = (
+      (await (await listDiscountApprovals(query())).json()) as {
+        items: DiscountApproval[];
+      }
+    ).items.map((row) => row.id);
+    expect(ids).toContain(newId);
+    expect(ids).not.toContain(oldId);
+    // `superseded` is not a list the approvals screen can ask for.
+    expect((await listDiscountApprovals(query('superseded'))).status).toBe(422);
+  });
+
+  it('refuses a reader without quo.quotation.read (denial) and a caller scoped to another branch (isolation)', async () => {
+    authAs(SVC_READER);
+    expect((await listDiscountApprovals(query())).status).toBe(403);
+    // quo.quotation.read in full, scoped to A2, with an unrelated A1 grant.
+    authAs(SVC_QUO_SCOPED_A2);
+    expect((await listDiscountApprovals(query())).status).toBe(403);
+    // Positive control: the same principal reads its own branch.
+    const own = await listDiscountApprovals({ companyId: COMPANY_A1, branchId: BRANCH_A2 });
+    expect(own.status).toBe(200);
+  });
+
+  it('shows another tenant none of this tenant’s requests (cross-tenant)', async () => {
+    await seedPendingDiscount();
+    authAs(SVC_TENANT_B_APPROVER);
+    expect([403, 404]).toContain((await listDiscountApprovals(query())).status);
   });
 });

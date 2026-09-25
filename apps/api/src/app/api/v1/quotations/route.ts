@@ -69,10 +69,11 @@ export const Body = z
     payerPartnerRef: schemas.uuid.optional(),
     customerClass: z.string().regex(INTERNAL_CODE, 'must be a lower-snake class code').optional(),
     lines: z.array(Line).min(1).max(MAX_ITEMS_PER_REVISION),
-    // Who ASKED for a discount, when that is someone other than the caller. The
-    // maker/approver separation compares this against the actor and refuses them
-    // being equal whenever the discount needs approval; no policy flag turns it off.
-    discountRequestedBy: schemas.uuid.optional(),
+    // There is no requester field. A discount that needs approval is recorded as a
+    // request by the SIGNED-IN person and approved separately by somebody else
+    // (`quo.discount-approval-decide`). The schema is `.strict()`, so a client that
+    // still sends `discountRequestedBy` is refused with a 422 naming the key rather
+    // than having it silently ignored (P1-32-PRE-OD-DISC-01).
   })
   .strict();
 
@@ -116,7 +117,6 @@ export async function POST(request: Request): Promise<Response> {
           payerPartnerRef: parsed.payerPartnerRef,
           customerClass: parsed.customerClass,
           lines: parsed.lines,
-          discountRequestedBy: parsed.discountRequestedBy,
         },
         authorizeScope
       );

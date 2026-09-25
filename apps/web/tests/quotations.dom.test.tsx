@@ -30,9 +30,10 @@ import type { ApiFailure } from '@/lib/api/client';
  *
  * The properties under test: the list is reached from a work order and reads
  * on first paint; a refusal is never "no quotations"; the builder sends lines
- * as strings and prices nothing; a refused discount renders as a refusal with
- * its reference and hint, never as a quotation; and the route page decides
- * before it reads.
+ * as strings and prices nothing and names nobody for a discount; the discounts
+ * waiting for approval are listed on the working branch, with the operator's own
+ * request marked as waiting for another approver and every named refusal said in
+ * words (P1-32-PRE-OD-DISC-01); and the route page decides before it reads.
  *
  * Labels are matched ANCHORED (the field frame decorates them) and scoped.
  */
@@ -42,15 +43,19 @@ const AR = ar as Record<string, string>;
 
 const escape = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const labelled = (key: string) => new RegExp(`^${escape(EN[key] as string)}`);
-// The line discount is labelled "Discount" and the requester "Discount requested by":
-// an anchored prefix answers for both, so this one is matched whole.
+// The line discount is labelled "Discount", a prefix of longer labels elsewhere on the
+// page, so it is matched whole.
 const labelledExactly = (key: string) => new RegExp(`^${escape(EN[key] as string)}$`);
 
 const listQuotations = vi.fn();
 const createQuotation = vi.fn();
+const listDiscountApprovals = vi.fn();
+const decideDiscountApproval = vi.fn();
 vi.mock('@/features/quotations/api', () => ({
   listQuotations: (...args: unknown[]) => listQuotations(...args),
   createQuotation: (...args: unknown[]) => createQuotation(...args),
+  listDiscountApprovals: (...args: unknown[]) => listDiscountApprovals(...args),
+  decideDiscountApproval: (...args: unknown[]) => decideDiscountApproval(...args),
   readQuotation: vi.fn(),
   listRevisions: vi.fn(),
   readRevision: vi.fn(),
@@ -72,37 +77,6 @@ vi.mock('@/features/work-orders/api', () => ({
   readWorkOrderDetail: (...args: unknown[]) => readWorkOrderDetail(...args),
   listWorkOrders: (...args: unknown[]) => listWorkOrders(...args),
 }));
-
-// The discount requester is FOUND among the tenant's accounts; the adapter is
-// replaced here, never the picker.
-const listUsers = vi.fn();
-vi.mock('@/features/administration/users/api', () => ({
-  listUsers: (...args: unknown[]) => listUsers(...args),
-}));
-const COLLEAGUE_ID = '99999999-9999-4999-8999-999999999999';
-const colleaguePage = {
-  status: 'ok',
-  rows: [
-    {
-      id: COLLEAGUE_ID,
-      email: 'omar@test.local',
-      displayName: 'Omar Saleh',
-      status: 'active',
-      mfaRequired: false,
-      createdAt: '2026-01-01T00:00:00.000Z',
-      recordVersion: 1,
-    },
-  ],
-  nextCursor: null,
-  hasMore: false,
-  correlationId: 'corr-u',
-};
-
-/** The colleague who asked for the discount, found by name and chosen. */
-async function chooseRequester(user: ReturnType<typeof userEvent.setup>, form: HTMLElement) {
-  await user.type(within(form).getByLabelText(labelled('quotations.build.requestedBy')), 'Omar');
-  await user.click(await within(form).findByRole('button', { name: /Omar Saleh/ }));
-}
 
 const push = vi.fn();
 const refresh = vi.fn();
@@ -200,12 +174,60 @@ async function renderPage(params: Record<string, string>, search: Record<string,
   return renderLtr(tree as React.ReactElement);
 }
 
+/** The route page inside a working context, as the shell renders it. */
+async function renderPageInBranch(
+  params: Record<string, string>,
+  search: Record<string, string> = {}
+) {
+  const tree = await QuotationsPage({
+    params: Promise.resolve(params),
+    searchParams: Promise.resolve(search),
+  });
+  return renderLtr(inBranch(tree as React.ReactElement));
+}
+
+const APPROVAL_ID = '66666666-6666-4666-8666-666666666666';
+
+/** A pending discount request as `quo.discount-approval-list` answers it. */
+function approvalRow(over: Record<string, unknown> = {}) {
+  return {
+    id: APPROVAL_ID,
+    quotationId: QUOTATION_ID,
+    quotationNumber: 'QUO-000077',
+    revisionId: '99999999-9999-4999-8999-999999999999',
+    revisionNumber: 1,
+    companyId: TEST_COMPANY.id,
+    branchId: TEST_BRANCH.id,
+    status: 'pending',
+    origin: 'requested',
+    currency: 'JOD',
+    discountTotal: '40.0000',
+    discountBase: '200.0000',
+    elevatedLineCount: 1,
+    threshold: null,
+    requiredPermission: 'svc.price.manage',
+    requestedBy: { id: 'aaaaaaaa-0000-4000-8000-000000000001', displayName: 'Omar Saleh' },
+    requestedAt: '2026-09-20T09:00:00Z',
+    requestedByCaller: false,
+    canApprove: true,
+    cannotApproveReason: null,
+    canReject: true,
+    decidedBy: null,
+    decidedAt: null,
+    decisionReason: null,
+    supersededAt: null,
+    recordVersion: 1,
+    ...over,
+  };
+}
+
 const builderForm = () =>
   screen.findByRole('form', { name: EN['quotations.build.heading'] as string });
 
 beforeEach(() => {
   vi.clearAllMocks();
   listQuotations.mockResolvedValue(page([summary()]));
+  listDiscountApprovals.mockResolvedValue(page([]));
   readWorkOrderDetail.mockResolvedValue(
     okRead({ workOrder, jobs: [], nextStates: [], reachableStates: [] })
   );
@@ -464,58 +486,48 @@ describe('the job picker and the working context', () => {
 });
 
 describe('the builder names its people rather than asking for references', () => {
-  it('attributes the discount to a colleague found by name, and sends only the account', async () => {
-    listUsers.mockResolvedValue(colleaguePage);
+  it('names nobody for a discount: a discounted line is sent with no requester, and the help says who approves', async () => {
     const user = userEvent.setup();
     createQuotation.mockResolvedValue({
       state: { status: 'success', messageKey: 'quotations.create.success', attempt: 1 },
       created: { ...summary({ id: 'new-id' }), currentRevision: null },
     });
-    renderScreen({ canManage: true, canReadUsers: true });
+    renderScreen({ canManage: true });
     await user.click(screen.getByRole('button', { name: EN['quotations.list.create'] as string }));
     const form = await builderForm();
-    await chooseRequester(user, form);
-    // Only ACTIVE accounts are asked for: only an active one is accepted.
-    expect(listUsers.mock.calls.at(-1)?.[0]).toMatchObject({
-      search: 'Omar',
-      filters: [{ key: 'status', value: 'active' }],
-    });
-    expect(within(form).getByTestId('requester-picker-chosen')).toHaveTextContent('Omar Saleh');
+    // The help says the rule: the one who asks is recorded, somebody else approves.
+    expect(
+      within(form).getByText(EN['quotations.build.discountApprovalHelp'] as string)
+    ).toBeVisible();
+    expect(EN['quotations.build.discountApprovalHelp']).toMatch(/a different person approves/);
     await user.type(
       within(form).getByLabelText(labelled('quotations.picker.serviceIdField')),
       SERVICE_ID
     );
     await user.type(within(form).getByLabelText(labelled('quotations.lines.quantity')), '1');
+    await user.type(
+      within(form).getByLabelText(labelledExactly('quotations.lines.discount')),
+      '40'
+    );
     await user.click(
       within(form).getByRole('button', { name: EN['quotations.build.submit'] as string })
     );
     await waitFor(() => expect(createQuotation).toHaveBeenCalled());
     const body = createQuotation.mock.calls[0]?.[0] as Record<string, unknown>;
-    expect(body['discountRequestedBy']).toBe(COLLEAGUE_ID);
+    // Nobody is named: the server records whoever is signed in.
+    expect(Object.keys(body)).not.toContain('discountRequestedBy');
+    expect((body['lines'] as Record<string, unknown>[])[0]?.['discount']).toBe('40.0000');
+    expect(push).toHaveBeenCalledWith('/en/quotations/new-id');
   });
 
-  it('says the requester is needed when the discount needs approval, and never marks it optional', async () => {
-    listUsers.mockResolvedValue(colleaguePage);
+  it('offers no control that names a requester, whatever the operator may read', async () => {
     const user = userEvent.setup();
-    renderScreen({ canManage: true, canReadUsers: true });
+    renderScreen({ canManage: true, canReadCustomers: true });
     await user.click(screen.getByRole('button', { name: EN['quotations.list.create'] as string }));
     const form = await builderForm();
-    // The help names the rule with no company exception: the approver is someone else.
-    expect(within(form).getByText(EN['quotations.build.requestedByHelp'] as string)).toBeVisible();
-    expect(EN['quotations.build.requestedByHelp']).toMatch(/must be a different person/);
-    // The label is neutral: whether the field is needed depends on the discount.
-    const label = within(form).getByText(labelledExactly('quotations.build.requestedBy'));
-    expect(label.textContent).toBe(EN['quotations.build.requestedBy']);
-    expect(label.textContent).not.toMatch(/optional/i);
-  });
-
-  it('without the directory, offers no box for the requester and says why', async () => {
-    const user = userEvent.setup();
-    renderScreen({ canManage: true, canReadUsers: false });
-    await user.click(screen.getByRole('button', { name: EN['quotations.list.create'] as string }));
-    const form = await builderForm();
-    expect(within(form).getByText(EN['quotations.requester.notPermitted'] as string)).toBeVisible();
-    expect(listUsers).not.toHaveBeenCalled();
+    expect(within(form).queryByText(/requested by/i)).toBeNull();
+    expect(within(form).queryByTestId('requester-picker')).toBeNull();
+    expect(within(form).queryByLabelText(/requested by/i)).toBeNull();
   });
 
   it('with the customer read, names the payer through the search and offers no reference box', async () => {
@@ -847,107 +859,271 @@ describe('the builder sends lines as strings and prices nothing', () => {
 });
 
 /**
- * The two named discount refusals, rendered in both languages.
+ * The discounts waiting for approval, decided here (P1-32-PRE-OD-DISC-01).
  *
- * Under the Owner's decision of 2026-09-24 nobody approves their own discount
- * and a limit the approver set never counts, so these are the two refusals an
- * operator meets most. The server names each rule; the screen has to say it in
- * words. The adapter's answer is built by the REAL `fromFailure` from the wire
- * shape the API sends, so the rule-to-message mapping and the path-to-control
- * mapping are exercised, not assumed.
+ * A discount that reaches the company's threshold is recorded as a request by the
+ * person who added it; somebody ELSE decides it. The panel lists the working
+ * branch's pending requests, never offers the requester a decision on their own
+ * request, asks for a reason before turning one down, and renders every named
+ * refusal as a sentence in the operator's language. The adapter's refusals are
+ * built by the REAL `fromFailure` from the wire shape the API sends.
  */
-describe('the named discount refusals render as sentences, in English and Arabic', () => {
-  const refusedWith = (violation: { path: string; rule: string }) => {
+describe('the discounts waiting for approval, decided on the working branch', () => {
+  const renderPanel = (render: typeof renderLtr = renderLtr, locale: 'en' | 'ar' = 'en') =>
+    render(
+      inBranch(
+        <QuotationsScreen
+          locale={locale}
+          messages={locale === 'en' ? en : ar}
+          workOrderId={null}
+          workOrder={null}
+          canManage={false}
+          canReadServices={false}
+          canReadApprovals
+        />,
+        { locale }
+      )
+    );
+
+  const refusedWith = (violation: { path: string; rule: string }, status = 403) => {
     const failure: ApiFailure = {
       ok: false,
-      kind: 'forbidden',
-      status: 403,
-      problem: { status: 403, code: 'ERR-IAM-001', violations: [violation] },
+      kind: status === 409 ? 'conflict' : 'forbidden',
+      status,
+      problem: {
+        status,
+        code: status === 409 ? 'ERR-TRN-001' : 'ERR-IAM-001',
+        violations: [violation],
+      },
       correlationId: 'corr-named',
     };
     return { state: fromFailure(failure, 1), created: null };
   };
 
-  const cases = [
-    ['en', EN, renderLtr, en],
-    ['ar', AR, renderRtl, ar],
-  ] as const;
+  it('reads the working branch’s pending requests on arrival, and marks the operator’s own as waiting for another approver', async () => {
+    listDiscountApprovals.mockResolvedValue(
+      page([
+        approvalRow(),
+        approvalRow({
+          id: '77777777-0000-4000-8000-000000000002',
+          quotationNumber: 'QUO-000078',
+          requestedByCaller: true,
+          canApprove: false,
+          cannotApproveReason: 'own_request',
+          canReject: false,
+          requestedBy: { id: 'me', displayName: 'Nadia Karim' },
+        }),
+      ])
+    );
+    renderPanel();
+    await screen.findByText('QUO-000077');
+    expect(listDiscountApprovals).toHaveBeenCalledWith(
+      { companyId: TEST_BRANCH.companyId, branchId: TEST_BRANCH.id },
+      'pending',
+      expect.objectContaining({ page: 1 }),
+      null
+    );
+    // Somebody else's request: decisions offered.
+    expect(
+      screen.getByRole('button', { name: /Approve the discount on QUO-000077/ })
+    ).toBeVisible();
+    // The operator's own: listed, never offered to them to decide.
+    expect(screen.getByText('QUO-000078')).toBeVisible();
+    expect(screen.queryByRole('button', { name: /Approve the discount on QUO-000078/ })).toBeNull();
+    expect(
+      screen.queryByRole('button', { name: /Turn down the discount on QUO-000078/ })
+    ).toBeNull();
+    expect(screen.getByText(EN['quotations.approvals.waitingForAnother'] as string)).toBeVisible();
+    // The money is the server's string, rendered, never recomputed.
+    expect(screen.getByText('Omar Saleh')).toBeVisible();
+  });
 
-  async function submitDiscountedLine(
-    dictionary: Record<string, string>,
-    render: typeof renderLtr,
-    messages: typeof en,
-    locale: 'en' | 'ar'
-  ) {
-    const prefix = (key: string) => new RegExp(`^${escape(dictionary[key] as string)}`);
-    const whole = (key: string) => new RegExp(`^${escape(dictionary[key] as string)}$`);
-    const user = userEvent.setup();
-    render(
-      <QuotationsScreen
-        locale={locale}
-        messages={messages}
-        workOrderId={WORK_ORDER_ID}
-        workOrder={workOrder as never}
-        canManage
-        canReadServices={false}
-        canReadUsers
-      />
-    );
-    await user.click(
-      screen.getByRole('button', { name: dictionary['quotations.list.create'] as string })
-    );
-    const form = await screen.findByRole('form', {
-      name: dictionary['quotations.build.heading'] as string,
+  it('approves somebody else’s request and reads the list again', async () => {
+    listDiscountApprovals.mockResolvedValue(page([approvalRow()]));
+    decideDiscountApproval.mockResolvedValue({
+      state: { status: 'success', messageKey: 'quotations.approvals.approvedSuccess', attempt: 1 },
+      created: approvalRow({ status: 'approved' }),
     });
-    await user.type(
-      within(form).getByLabelText(prefix('quotations.picker.serviceIdField')),
-      SERVICE_ID
-    );
-    await user.type(within(form).getByLabelText(prefix('quotations.lines.quantity')), '1');
-    await user.type(within(form).getByLabelText(whole('quotations.lines.discount')), '5');
+    const user = userEvent.setup();
+    renderPanel();
     await user.click(
-      within(form).getByRole('button', { name: dictionary['quotations.build.submit'] as string })
+      await screen.findByRole('button', { name: /Approve the discount on QUO-000077/ })
     );
-    await waitFor(() => expect(createQuotation).toHaveBeenCalled());
-    return form;
-  }
+    await waitFor(() =>
+      expect(decideDiscountApproval).toHaveBeenCalledWith(APPROVAL_ID, { decision: 'approved' })
+    );
+    await waitFor(() => expect(listDiscountApprovals).toHaveBeenCalledTimes(2));
+  });
 
-  it.each(cases)(
-    '%s: the approver named as their own requester is told so at the requester field',
-    async (locale, dictionary, render, messages) => {
-      createQuotation.mockResolvedValue(
-        refusedWith({ path: 'body.discountRequestedBy', rule: 'discount_approver_must_differ' })
+  it('turns a request down only with a reason, pointing at the reason box, then sends it', async () => {
+    listDiscountApprovals.mockResolvedValue(page([approvalRow()]));
+    decideDiscountApproval.mockResolvedValue({
+      state: { status: 'success', messageKey: 'quotations.approvals.rejectedSuccess', attempt: 1 },
+      created: approvalRow({ status: 'rejected' }),
+    });
+    const user = userEvent.setup();
+    renderPanel();
+    await user.click(
+      await screen.findByRole('button', { name: /Turn down the discount on QUO-000077/ })
+    );
+    const form = await screen.findByRole('form', { name: /Turn down the discount on QUO-000077/ });
+    await user.click(
+      within(form).getByRole('button', {
+        name: EN['quotations.approvals.confirmReject'] as string,
+      })
+    );
+    const reason = within(form).getByLabelText(labelled('quotations.approvals.reason'));
+    expect(reason).toHaveAttribute('aria-invalid', 'true');
+    expect(
+      within(form).getByText(EN['quotations.approvals.reasonRequired'] as string)
+    ).toBeVisible();
+    expect(decideDiscountApproval).not.toHaveBeenCalled();
+    await user.type(reason, 'More than this job can carry');
+    await user.click(
+      within(form).getByRole('button', {
+        name: EN['quotations.approvals.confirmReject'] as string,
+      })
+    );
+    await waitFor(() =>
+      expect(decideDiscountApproval).toHaveBeenCalledWith(APPROVAL_ID, {
+        decision: 'rejected',
+        reason: 'More than this job can carry',
+      })
+    );
+  });
+
+  it.each(
+    (
+      [
+        ['en', EN, renderLtr],
+        ['ar', AR, renderRtl],
+      ] as const
+    ).flatMap(([locale, dictionary, render]) =>
+      (
+        [
+          ['missing_permission', 'quotations.approvals.blocked.missingPermission'],
+          ['no_approval_limit', 'quotations.approvals.blocked.noApprovalLimit'],
+          ['over_approval_limit', 'quotations.approvals.blocked.overApprovalLimit'],
+          ['own_request', 'quotations.approvals.waitingForAnother'],
+          ['not_pending', 'quotations.approvals.blocked.notPending'],
+        ] as const
+      ).map(([reason, key]) => [locale, reason, key, dictionary, render] as const)
+    )
+  )(
+    '%s: a row the server says the operator cannot decide (%s) offers no decision and says why, without an amount',
+    async (locale, reason, key, dictionary, render) => {
+      listDiscountApprovals.mockResolvedValue(
+        page([approvalRow({ canApprove: false, cannotApproveReason: reason, canReject: false })])
       );
-      const form = await submitDiscountedLine(dictionary, render, messages, locale);
-      const sentence = dictionary['form.violation.discount_approver_must_differ'] as string;
-      // Field level: the sentence sits at the requester control, not in the banner.
-      expect(await within(form).findByText(sentence)).toBeVisible();
-      const alerts = within(form).getAllByRole('alert');
-      const banner = alerts.find((node) => node.textContent?.includes('corr-named'));
-      expect(banner).toBeDefined();
-      expect(banner?.textContent).not.toContain(sentence);
-      expect(alerts.some((node) => node !== banner && node.textContent?.includes(sentence))).toBe(
-        true
-      );
-      expect(push).not.toHaveBeenCalled();
+      renderPanel(render, locale);
+      await screen.findByText('QUO-000077');
+      const why = screen.getByTestId('discount-cannot-decide');
+      expect(why).toHaveTextContent(dictionary[key] as string);
+      // The reason is words only: no limit, and no amount of any kind, is in it.
+      expect(why.textContent ?? '').not.toMatch(/\d/);
+      for (const label of [
+        dictionary['quotations.approvals.approve'],
+        dictionary['quotations.approvals.reject'],
+      ]) {
+        expect(
+          screen.queryAllByRole('button').filter((button) => button.textContent === label)
+        ).toHaveLength(0);
+      }
+      expect(listDiscountApprovals).toHaveBeenCalled();
     }
   );
 
-  it.each(cases)(
-    '%s: an approver with no limit that counts is told so in the banner',
-    async (locale, dictionary, render, messages) => {
-      createQuotation.mockResolvedValue(
-        refusedWith({ path: 'body', rule: 'discount_no_approval_limit' })
+  it.each(['no_approval_limit', 'over_approval_limit'] as const)(
+    'a row the operator may turn down but not approve (%s) offers Turn down only, and says why approving is not offered',
+    async (reason) => {
+      listDiscountApprovals.mockResolvedValue(
+        page([approvalRow({ canApprove: false, cannotApproveReason: reason, canReject: true })])
       );
-      const form = await submitDiscountedLine(dictionary, render, messages, locale);
-      const alert = await within(form).findByRole('alert');
-      // Body level: the request as a whole was refused, so the banner carries the rule.
-      expect(alert.textContent).toContain(
-        dictionary['form.violation.discount_no_approval_limit'] as string
+      renderPanel();
+      await screen.findByText('QUO-000077');
+      expect(screen.getByTestId('discount-cannot-decide')).toHaveTextContent(
+        EN[
+          reason === 'no_approval_limit'
+            ? 'quotations.approvals.blocked.noApprovalLimit'
+            : 'quotations.approvals.blocked.overApprovalLimit'
+        ] as string
       );
-      expect(alert.textContent).not.toContain(dictionary['state.denied.title'] as string);
+      expect(
+        screen.queryByRole('button', { name: /Approve the discount on QUO-000077/ })
+      ).toBeNull();
+      expect(
+        screen.getByRole('button', { name: /Turn down the discount on QUO-000077/ })
+      ).toBeVisible();
+    }
+  );
+
+  it('says when nothing is waiting', async () => {
+    renderPanel();
+    expect(await screen.findByText(EN['quotations.approvals.none'] as string)).toBeVisible();
+  });
+
+  it('before one branch is chosen, says why and reads nothing', () => {
+    render_allBranches();
+    expect(screen.getByText(EN['workingContext.chooseFirst'] as string)).toBeVisible();
+    expect(listDiscountApprovals).not.toHaveBeenCalled();
+  });
+
+  function render_allBranches() {
+    return renderLtr(
+      inBranch(
+        <QuotationsScreen
+          locale="en"
+          messages={en}
+          workOrderId={null}
+          workOrder={null}
+          canManage={false}
+          canReadServices={false}
+          canReadApprovals
+        />,
+        { snapshot: branchSnapshot([TEST_BRANCH, OTHER_BRANCH]) }
+      )
+    );
+  }
+
+  const cases = [
+    ['en', EN, renderLtr],
+    ['ar', AR, renderRtl],
+  ] as const;
+
+  it.each(
+    cases.flatMap(([locale, dictionary, render]) =>
+      (
+        [
+          ['discount_approver_must_differ', 403],
+          ['discount_no_approval_limit', 403],
+          ['discount_over_approval_limit', 403],
+          ['discount_approval_already_decided', 409],
+          ['discount_approval_superseded', 409],
+          ['discount_approval_permission_missing', 403],
+          ['discount_limit_currency_mismatch', 403],
+        ] as const
+      ).map(([rule, status]) => [locale, rule, status, dictionary, render] as const)
+    )
+  )(
+    '%s: the refusal %s is said in words above the list',
+    async (locale, rule, status, dictionary, render) => {
+      listDiscountApprovals.mockResolvedValue(page([approvalRow()]));
+      decideDiscountApproval.mockResolvedValue(refusedWith({ path: 'body', rule }, status));
+      const user = userEvent.setup();
+      renderPanel(render, locale);
+      const name = new RegExp(
+        escape(
+          (dictionary['quotations.approvals.approveFor'] as string).replace(
+            '{number}',
+            'QUO-000077'
+          )
+        )
+      );
+      await user.click(await screen.findByRole('button', { name }));
+      const alert = await screen.findByRole('alert');
+      expect(alert.textContent).toContain(dictionary[`form.violation.${rule}`] as string);
       expect(alert.textContent).toContain('corr-named');
-      expect(push).not.toHaveBeenCalled();
+      expect(alert.textContent).not.toContain(dictionary['state.denied.title'] as string);
     }
   );
 });
@@ -984,6 +1160,37 @@ describe('the /quotations route page decides before it reads', () => {
     await renderPage({ locale: 'en' });
     expect(screen.getByText(EN['quotations.choose.explain'] as string)).toBeVisible();
     expect(listQuotations).not.toHaveBeenCalled();
+  });
+
+  it('without a work order, lists the discounts waiting for approval, and offers a decision only where the server says the operator can make it', async () => {
+    // The session's own permissions no longer decide it: the server answers per row.
+    listDiscountApprovals.mockResolvedValue(
+      page([
+        approvalRow({
+          canApprove: false,
+          cannotApproveReason: 'missing_permission',
+          canReject: false,
+        }),
+      ])
+    );
+    PERMISSIONS = ['quo.quotation.read', 'svc.price.manage'];
+    const cannot = await renderPageInBranch({ locale: 'en' });
+    expect(
+      await screen.findByRole('heading', { name: EN['quotations.approvals.heading'] as string })
+    ).toBeVisible();
+    await screen.findByText('QUO-000077');
+    expect(
+      screen.getByText(EN['quotations.approvals.blocked.missingPermission'] as string)
+    ).toBeVisible();
+    expect(screen.queryByRole('button', { name: /Approve the discount on QUO-000077/ })).toBeNull();
+    cannot.unmount();
+
+    listDiscountApprovals.mockResolvedValue(page([approvalRow()]));
+    PERMISSIONS = ['quo.quotation.read'];
+    await renderPageInBranch({ locale: 'en' });
+    expect(
+      await screen.findByRole('button', { name: /Approve the discount on QUO-000077/ })
+    ).toBeVisible();
   });
 
   it('a locale it does not serve is not found', async () => {

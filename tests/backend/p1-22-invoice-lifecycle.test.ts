@@ -368,6 +368,113 @@ interface Billable {
 }
 
 /**
+ * The discount approval an issued, discounted revision owes (P1-32-PRE-OD-DISC-04, -07).
+ *
+ * `quo.guard_revision_discount_approval` refuses the draft -> issued transition of a
+ * revision whose discount needs approval and has none approved — with no policy in force
+ * when the quotation was written, the threshold is zero, so this fixture's discounted
+ * line needs one. The fixture therefore records what the two-step flow would have: a
+ * request by `USER_A`, carrying the quotation's pinned policy, and an approval of exactly
+ * that amount by a DIFFERENT, real person, both summed from the lines by PostgreSQL. The
+ * approval is recorded as that person — `quo.guard_discount_approval` checks that the
+ * decider is the signed-in user, holds the recorded permission and has a limit that
+ * counts, and `decided_by` is a foreign key into `iam.user_accounts`. A revision with no
+ * discount records nothing, exactly like the service.
+ */
+async function recordFixtureDiscountApproval(
+  client: PoolClient,
+  revisionId: string
+): Promise<void> {
+  const requested = await client.query<{ id: string; company_id: string }>(
+    `INSERT INTO quo.discount_approvals
+       (tenant_id, company_id, branch_id, quotation_id, quotation_revision_id, currency_code,
+        discount_total, discount_base, elevated_line_count, policy_id, policy_version_no,
+        threshold_kind, threshold_value, threshold_currency_code, required_permission_code,
+        requested_by, created_by)
+     SELECT r.tenant_id, r.company_id, r.branch_id, r.quotation_id, r.id, r.currency_code,
+            sum(i.captured_discount), round(sum(i.captured_unit_price * i.captured_quantity), 4),
+            count(*) FILTER (WHERE i.captured_discount > 0), p.id, p.version_no,
+            p.threshold_kind, p.threshold_value, p.currency_code,
+            COALESCE(p.required_permission_code, 'svc.price.manage'), $2, $2
+       FROM quo.quotation_revisions r
+       JOIN quo.quotation_items i
+         ON i.tenant_id = r.tenant_id AND i.quotation_revision_id = r.id AND i.deleted_at IS NULL
+       LEFT JOIN LATERAL quo.quotation_discount_policy(r.tenant_id, r.quotation_id) p ON true
+      WHERE r.id = $1
+      GROUP BY r.tenant_id, r.company_id, r.branch_id, r.quotation_id, r.id, r.currency_code,
+               p.id, p.version_no, p.threshold_kind, p.threshold_value, p.currency_code,
+               p.required_permission_code
+     HAVING sum(i.captured_discount) > 0
+     RETURNING id, company_id`,
+    [revisionId, USER_A]
+  );
+  const approval = requested.rows[0];
+  if (approval === undefined) return;
+  await ensureFixtureDiscountApprover(client, approval.company_id);
+  await client.query(`SELECT set_config('app.user_id', $1, true)`, [FIXTURE_DISCOUNT_APPROVER]);
+  await client.query(
+    `UPDATE quo.discount_approvals
+        SET status = 'approved', decided_by = $2, decided_at = now(),
+            approved_discount_total = discount_total, approved_currency_code = currency_code
+      WHERE id = $1`,
+    [approval.id, FIXTURE_DISCOUNT_APPROVER]
+  );
+  await client.query(`SELECT set_config('app.user_id', $1, true)`, [USER_A]);
+}
+
+/**
+ * Somebody other than `USER_A`, so the approval above is a separate person's act: a real
+ * tenant-A user account, granted `svc.price.manage` through an unrestricted role, with a
+ * discount approval limit that `USER_A` — not they — set in the revision's company.
+ * Committed with the fixture and removed with the tenant by the suite's cleanup.
+ */
+const FIXTURE_DISCOUNT_APPROVER = 'f1220000-0000-4000-8000-00000000da01';
+const FIXTURE_DISCOUNT_APPROVER_ROLE = 'f1220000-0000-4000-8000-00000000da02';
+
+async function ensureFixtureDiscountApprover(client: PoolClient, companyId: string): Promise<void> {
+  await client.query(
+    `INSERT INTO iam.user_accounts
+       (id, tenant_id, identity_provider, provider_subject, email, display_name, status, created_by)
+     VALUES ($1::uuid, $2::uuid, 'test_harness', 'fx_p1_22_discount_approver', 'fx-p1-22-discount-approver@example.test',
+             'Fixture discount approver', 'active', $3::uuid)
+     ON CONFLICT (id) DO NOTHING`,
+    [FIXTURE_DISCOUNT_APPROVER, TENANT_A, USER_A]
+  );
+  await client.query(
+    `INSERT INTO iam.roles (id, tenant_id, role_code, name, created_by)
+     VALUES ($1::uuid, $2::uuid, 'fx_p1_22_discount_approver', 'Fixture discount approver', $3::uuid)
+     ON CONFLICT (id) DO NOTHING`,
+    [FIXTURE_DISCOUNT_APPROVER_ROLE, TENANT_A, USER_A]
+  );
+  await client.query(
+    `INSERT INTO iam.role_permissions (tenant_id, role_id, permission_id, effect, created_by)
+     SELECT $1::uuid, $2::uuid, p.id, 'allow', $3::uuid
+       FROM iam.permissions p WHERE p.permission_code = 'svc.price.manage'
+     ON CONFLICT (tenant_id, role_id, permission_id) DO NOTHING`,
+    [TENANT_A, FIXTURE_DISCOUNT_APPROVER_ROLE, USER_A]
+  );
+  await client.query(
+    `INSERT INTO iam.role_grants (tenant_id, user_id, role_id, scope_mode, granted_by, created_by)
+     SELECT $1::uuid, $2::uuid, $3::uuid, 'unrestricted', $4::uuid, $4::uuid
+      WHERE NOT EXISTS (
+        SELECT 1 FROM iam.role_grants
+         WHERE tenant_id = $1::uuid AND user_id = $2::uuid AND role_id = $3::uuid
+           AND status = 'active')`,
+    [TENANT_A, FIXTURE_DISCOUNT_APPROVER, FIXTURE_DISCOUNT_APPROVER_ROLE, USER_A]
+  );
+  await client.query(
+    `INSERT INTO iam.approval_limits
+       (tenant_id, company_id, user_id, limit_type, amount, currency_code, effective_from, created_by)
+     SELECT $1::uuid, $2::uuid, $3::uuid, 'discount', 1000000, 'USD', current_date - 1, $4::uuid
+      WHERE NOT EXISTS (
+        SELECT 1 FROM iam.approval_limits
+         WHERE tenant_id = $1::uuid AND company_id = $2::uuid AND user_id = $3::uuid
+           AND limit_type = 'discount')`,
+    [TENANT_A, companyId, FIXTURE_DISCOUNT_APPROVER, USER_A]
+  );
+}
+
+/**
  * An `issued` quotation revision with a per-item customer decision.
  *
  * Built in the order the schema demands rather than the order that reads best:
@@ -463,6 +570,7 @@ async function seedAcceptedQuotation(input: {
       itemIds.push(item.rows[0]?.id ?? '');
     }
 
+    await recordFixtureDiscountApproval(client, revisionId);
     await client.query(
       `UPDATE quo.quotation_revisions r
           SET status = 'issued', issued_at = now(),

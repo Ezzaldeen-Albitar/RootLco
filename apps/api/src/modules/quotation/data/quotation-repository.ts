@@ -153,6 +153,98 @@ export interface EvidenceAuditRow {
   readonly recordedAt: Date;
 }
 
+/**
+ * A recorded discount request and its decision (P1-32-PRE-OD-DISC-01).
+ *
+ * `quotationNumber` and `revisionNumber` are joined for display; everything else is
+ * the `quo.discount_approvals` row. Money columns are `numeric(18,4)` decimal
+ * STRINGS, never numbers.
+ */
+export interface DiscountApprovalRow {
+  readonly id: string;
+  readonly companyId: string;
+  readonly branchId: string;
+  readonly quotationId: string;
+  readonly quotationNumber: string;
+  readonly quotationRevisionId: string;
+  readonly revisionNumber: number;
+  readonly status: string;
+  /** `requested`, or `backfilled` for a legacy draft given a request by migration. */
+  readonly origin: string;
+  readonly currencyCode: string;
+  readonly discountTotal: string;
+  readonly discountBase: string;
+  readonly elevatedLineCount: number;
+  readonly policyId: string | null;
+  readonly policyVersionNo: number | null;
+  readonly thresholdKind: string | null;
+  readonly thresholdValue: string | null;
+  readonly thresholdCurrencyCode: string | null;
+  readonly requiredPermissionCode: string;
+  readonly requestedBy: string;
+  readonly requestedAt: Date;
+  readonly decidedBy: string | null;
+  readonly decidedAt: Date | null;
+  readonly decisionReason: string | null;
+  /** The amount an approval was given for; `null` unless approved. */
+  readonly approvedDiscountTotal: string | null;
+  readonly approvedCurrencyCode: string | null;
+  readonly supersededAt: Date | null;
+  readonly supersededByRevisionId: string | null;
+  readonly recordVersion: number;
+}
+
+/**
+ * The discount policy version a quotation is held to (P1-32-PRE-OD-DISC-07). Money
+ * is a `numeric(18,4)` decimal STRING.
+ */
+export interface QuotationDiscountPolicyRow {
+  readonly policyId: string;
+  readonly versionNo: number;
+  readonly kind: string;
+  readonly value: string;
+  readonly currency: string | null;
+  readonly requiredPermissionCode: string;
+}
+
+/**
+ * A decision the database accepted, with the approval limit IT computed and wrote
+ * (`null` for a rejection). Restricted: it is read for the audit trail only.
+ */
+export interface DiscountDecisionRecorded {
+  readonly limit: { readonly amount: string; readonly currency: string } | null;
+}
+
+/** What a revision that needs discount approval records when it is created. */
+export interface NewDiscountApprovalInput {
+  readonly companyId: string;
+  readonly branchId: string;
+  readonly quotationId: string;
+  readonly quotationRevisionId: string;
+  readonly currencyCode: string;
+  readonly discountTotal: string;
+  readonly discountBase: string;
+  readonly elevatedLineCount: number;
+  readonly policyId: string | null;
+  readonly policyVersionNo: number | null;
+  readonly thresholdKind: string | null;
+  readonly thresholdValue: string | null;
+  readonly thresholdCurrencyCode: string | null;
+  readonly requiredPermissionCode: string;
+}
+
+/**
+ * Ordering for discount approvals — most recently asked for first.
+ *
+ * Keyed on `requested_at` at microsecond precision through `cursorTimestamp`, with
+ * the id as the tie-breaker; the qualified key keeps a cursor minted here from being
+ * replayed against another list.
+ */
+export const DISCOUNT_APPROVAL_LIST_ORDERING: OrderingContract = {
+  key: 'quo.discount_approvals:requested_at_desc',
+  direction: 'desc',
+};
+
 /** Counts used to fold per-item decisions into a quotation-level outcome. */
 export interface DecisionTally {
   readonly itemCount: number;
@@ -237,6 +329,86 @@ const ITEM_COLUMNS = `id, company_id, branch_id, quotation_revision_id, line_num
        captured_tax_amount::text AS captured_tax_amount,
        captured_line_total::text AS captured_line_total,
        record_version`;
+
+const DISCOUNT_APPROVAL_COLUMNS = `a.id, a.company_id, a.branch_id, a.quotation_id,
+       q.quotation_number, a.quotation_revision_id, r.revision_number, a.status, a.origin,
+       a.currency_code, a.discount_total::text AS discount_total,
+       a.discount_base::text AS discount_base, a.elevated_line_count, a.policy_id,
+       a.policy_version_no, a.threshold_kind, a.threshold_value::text AS threshold_value,
+       a.threshold_currency_code, a.required_permission_code, a.requested_by, a.requested_at,
+       a.decided_by, a.decided_at, a.decision_reason,
+       a.approved_discount_total::text AS approved_discount_total, a.approved_currency_code,
+       a.superseded_at, a.superseded_by_revision_id, a.record_version`;
+
+const DISCOUNT_APPROVAL_FROM = `quo.discount_approvals a
+         JOIN quo.quotations q
+           ON q.tenant_id = a.tenant_id AND q.id = a.quotation_id
+         JOIN quo.quotation_revisions r
+           ON r.tenant_id = a.tenant_id AND r.id = a.quotation_revision_id`;
+
+interface DiscountApprovalSql {
+  id: string;
+  company_id: string;
+  branch_id: string;
+  quotation_id: string;
+  quotation_number: string;
+  quotation_revision_id: string;
+  revision_number: number;
+  status: string;
+  origin: string;
+  currency_code: string;
+  discount_total: string;
+  discount_base: string;
+  elevated_line_count: number;
+  policy_id: string | null;
+  policy_version_no: number | null;
+  threshold_kind: string | null;
+  threshold_value: string | null;
+  threshold_currency_code: string | null;
+  required_permission_code: string;
+  requested_by: string;
+  requested_at: Date;
+  decided_by: string | null;
+  decided_at: Date | null;
+  decision_reason: string | null;
+  approved_discount_total: string | null;
+  approved_currency_code: string | null;
+  superseded_at: Date | null;
+  superseded_by_revision_id: string | null;
+  record_version: number;
+}
+
+const toDiscountApproval = (row: DiscountApprovalSql): DiscountApprovalRow => ({
+  id: row.id,
+  companyId: row.company_id,
+  branchId: row.branch_id,
+  quotationId: row.quotation_id,
+  quotationNumber: row.quotation_number,
+  quotationRevisionId: row.quotation_revision_id,
+  revisionNumber: row.revision_number,
+  status: row.status,
+  origin: row.origin,
+  currencyCode: row.currency_code,
+  discountTotal: row.discount_total,
+  discountBase: row.discount_base,
+  elevatedLineCount: row.elevated_line_count,
+  policyId: row.policy_id,
+  policyVersionNo: row.policy_version_no,
+  thresholdKind: row.threshold_kind,
+  thresholdValue: row.threshold_value,
+  thresholdCurrencyCode: row.threshold_currency_code,
+  requiredPermissionCode: row.required_permission_code,
+  requestedBy: row.requested_by,
+  requestedAt: row.requested_at,
+  decidedBy: row.decided_by,
+  decidedAt: row.decided_at,
+  decisionReason: row.decision_reason,
+  approvedDiscountTotal: row.approved_discount_total,
+  approvedCurrencyCode: row.approved_currency_code,
+  supersededAt: row.superseded_at,
+  supersededByRevisionId: row.superseded_by_revision_id,
+  recordVersion: row.record_version,
+});
 
 interface QuotationSql {
   id: string;
@@ -1078,5 +1250,346 @@ export class QuotationRepository extends Repository {
       [context.principal.tenantId, limit]
     );
     return result.rows.map(toRevision);
+  }
+
+  // ---- Discount approvals (P1-32-PRE-OD-DISC-01) ---------------------------
+
+  /**
+   * Records that a revision's discount needs approval.
+   *
+   * `requested_by` is the signed-in person and nothing else: it is taken from the
+   * request context here, and `ins_discount_approvals_scope` refuses any other value,
+   * so no caller can put somebody else's name on a request.
+   */
+  public async insertDiscountApproval(
+    db: DbHandle,
+    input: NewDiscountApprovalInput
+  ): Promise<DiscountApprovalRow> {
+    const context = this.assertContext(db);
+    const inserted = await this.runOne<{ id: string }>(
+      db,
+      `INSERT INTO quo.discount_approvals
+         (tenant_id, company_id, branch_id, quotation_id, quotation_revision_id, status,
+          currency_code, discount_total, discount_base, elevated_line_count, policy_id,
+          policy_version_no, threshold_kind, threshold_value, threshold_currency_code,
+          required_permission_code, requested_by, created_by)
+       VALUES ($1, $2, $3, $4, $5, 'pending', $6, $7::numeric(18,4), $8::numeric(18,4), $9, $10,
+               $11, $12, $13::numeric(18,4), $14, $15, $16, $16)
+       RETURNING id`,
+      [
+        context.principal.tenantId,
+        input.companyId,
+        input.branchId,
+        input.quotationId,
+        input.quotationRevisionId,
+        input.currencyCode,
+        input.discountTotal,
+        input.discountBase,
+        input.elevatedLineCount,
+        input.policyId,
+        input.policyVersionNo,
+        input.thresholdKind,
+        input.thresholdValue,
+        input.thresholdCurrencyCode,
+        input.requiredPermissionCode,
+        context.principal.userId,
+      ]
+    );
+    if (inserted === null) throw new Error('quotation: discount approval insert returned no row');
+    const row = await this.findDiscountApproval(db, inserted.id);
+    if (row === null) throw new Error('quotation: discount approval not readable after insert');
+    return row;
+  }
+
+  public async findDiscountApproval(
+    db: DbHandle,
+    approvalId: string
+  ): Promise<DiscountApprovalRow | null> {
+    const context = this.assertContext(db);
+    const row = await this.runOne<DiscountApprovalSql>(
+      db,
+      `SELECT ${DISCOUNT_APPROVAL_COLUMNS}
+         FROM ${DISCOUNT_APPROVAL_FROM}
+        WHERE a.tenant_id = $1 AND a.id = $2`,
+      [context.principal.tenantId, approvalId]
+    );
+    return row ? toDiscountApproval(row) : null;
+  }
+
+  /** Locks one approval. Callers must already hold the parent quotation's lock. */
+  public async lockDiscountApproval(
+    db: DbHandle,
+    approvalId: string
+  ): Promise<DiscountApprovalRow | null> {
+    const context = this.assertContext(db);
+    const row = await this.runOne<DiscountApprovalSql>(
+      db,
+      `SELECT ${DISCOUNT_APPROVAL_COLUMNS}
+         FROM ${DISCOUNT_APPROVAL_FROM}
+        WHERE a.tenant_id = $1 AND a.id = $2
+        FOR UPDATE OF a`,
+      [context.principal.tenantId, approvalId]
+    );
+    return row ? toDiscountApproval(row) : null;
+  }
+
+  /** The approval recorded for one revision, or `null` when its discount needed none. */
+  public async findDiscountApprovalForRevision(
+    db: DbHandle,
+    revisionId: string
+  ): Promise<DiscountApprovalRow | null> {
+    const context = this.assertContext(db);
+    const row = await this.runOne<DiscountApprovalSql>(
+      db,
+      `SELECT ${DISCOUNT_APPROVAL_COLUMNS}
+         FROM ${DISCOUNT_APPROVAL_FROM}
+        WHERE a.tenant_id = $1 AND a.quotation_revision_id = $2`,
+      [context.principal.tenantId, revisionId]
+    );
+    return row ? toDiscountApproval(row) : null;
+  }
+
+  /**
+   * Records the decision on a PENDING approval, by the signed-in person.
+   *
+   * `decided_by` comes from the request context; `upd_discount_approvals_scope`
+   * refuses any other value, and `quo.guard_discount_approval` checks the decision
+   * itself — not the requester, the recorded permission in the request's scope, and
+   * for an approval a limit that counts. The limit an approval was within is written
+   * BY THE DATABASE and read back here for the audit trail; nothing the application
+   * computed is stored as that limit. An approval also records the amount it
+   * approved — the request's own discount and currency, which
+   * `ck_discount_approvals_approved_amount` holds and the issue guard compares with
+   * the lines. `null` means the row was no longer pending.
+   */
+  public async decideDiscountApproval(
+    db: DbHandle,
+    input: {
+      readonly approvalId: string;
+      readonly status: 'approved' | 'rejected';
+      readonly reason: string | null;
+    }
+  ): Promise<DiscountDecisionRecorded | null> {
+    const context = this.assertContext(db);
+    const row = await this.runOne<{
+      id: string;
+      approver_limit_amount: string | null;
+      approver_limit_currency_code: string | null;
+    }>(
+      db,
+      `UPDATE quo.discount_approvals
+          SET status = $3, decided_by = $4, decided_at = now(), decision_reason = $5,
+              approved_discount_total = CASE WHEN $3 = 'approved' THEN discount_total END,
+              approved_currency_code = CASE WHEN $3 = 'approved' THEN currency_code END
+        WHERE tenant_id = $1 AND id = $2 AND status = 'pending'
+        RETURNING id, approver_limit_amount::text AS approver_limit_amount,
+                  approver_limit_currency_code`,
+      [
+        context.principal.tenantId,
+        input.approvalId,
+        input.status,
+        context.principal.userId,
+        input.reason,
+      ]
+    );
+    if (row === null) return null;
+    return {
+      limit:
+        row.approver_limit_amount === null || row.approver_limit_currency_code === null
+          ? null
+          : { amount: row.approver_limit_amount, currency: row.approver_limit_currency_code },
+    };
+  }
+
+  /**
+   * The OPEN discount requests of one quotation — pending or rejected — newest first,
+   * locked.
+   *
+   * A new revision supersedes every one of them before it asks again. Callers hold
+   * the quotation lock (the module's lock order: quotation, then approval).
+   */
+  public async lockOpenDiscountApprovals(
+    db: DbHandle,
+    quotationId: string
+  ): Promise<readonly DiscountApprovalRow[]> {
+    const context = this.assertContext(db);
+    const result = await this.run<DiscountApprovalSql>(
+      db,
+      `SELECT ${DISCOUNT_APPROVAL_COLUMNS}
+         FROM ${DISCOUNT_APPROVAL_FROM}
+        WHERE a.tenant_id = $1 AND a.quotation_id = $2 AND a.status IN ('pending', 'rejected')
+        ORDER BY a.requested_at DESC, a.id DESC
+        FOR UPDATE OF a`,
+      [context.principal.tenantId, quotationId]
+    );
+    return result.rows.map(toDiscountApproval);
+  }
+
+  /**
+   * Marks open requests as replaced by a newer revision of their quotation.
+   *
+   * A superseded request records no decision and can never be decided
+   * (`quo.guard_discount_approval`); the revision that replaced it is named on it.
+   * Returns the ids that moved.
+   */
+  public async supersedeDiscountApprovals(
+    db: DbHandle,
+    approvalIds: readonly string[],
+    revisionId: string
+  ): Promise<readonly string[]> {
+    if (approvalIds.length === 0) return [];
+    const context = this.assertContext(db);
+    const result = await this.run<{ id: string }>(
+      db,
+      `UPDATE quo.discount_approvals
+          SET status = 'superseded', superseded_at = now(), superseded_by_revision_id = $3
+        WHERE tenant_id = $1 AND id = ANY($2::uuid[]) AND status IN ('pending', 'rejected')
+        RETURNING id`,
+      [context.principal.tenantId, [...approvalIds], revisionId]
+    );
+    return result.rows.map((row) => row.id);
+  }
+
+  /**
+   * Whether a revision WITHOUT a request carries a discount that needs one, asked of
+   * the database (`quo.revision_discount_needs_approval`, against the quotation's
+   * pinned policy) — the same measurement the issue guard makes, so the service can
+   * name the refusal before the guard raises.
+   */
+  public async revisionDiscountNeedsApproval(db: DbHandle, revisionId: string): Promise<boolean> {
+    this.assertContext(db);
+    const row = await this.runOne<{ needs: boolean }>(
+      db,
+      `SELECT quo.revision_discount_needs_approval($1) AS needs`,
+      [revisionId]
+    );
+    return row?.needs === true;
+  }
+
+  /**
+   * The discount policy version one quotation is held to (P1-32-PRE-OD-DISC-07), or
+   * `null` when none was in force when it was written — a threshold of zero.
+   *
+   * Pinned by the database when the quotation was inserted
+   * (`quo.pin_quotation_discount_policy`) and never changed, and read through the
+   * same function the database's own guards read it through
+   * (`quo.quotation_discount_policy`), so the application and the issue guard can
+   * never measure one revision against two different versions.
+   */
+  public async quotationDiscountPolicy(
+    db: DbHandle,
+    quotationId: string
+  ): Promise<QuotationDiscountPolicyRow | null> {
+    const context = this.assertContext(db);
+    const row = await this.runOne<{
+      id: string | null;
+      version_no: number | null;
+      threshold_kind: string | null;
+      threshold_value: string | null;
+      currency_code: string | null;
+      required_permission_code: string | null;
+    }>(
+      db,
+      `SELECT p.id, p.version_no, p.threshold_kind, p.threshold_value::text AS threshold_value,
+              p.currency_code, p.required_permission_code
+         FROM quo.quotation_discount_policy($1, $2) p`,
+      [context.principal.tenantId, quotationId]
+    );
+    if (
+      row === null ||
+      row.id === null ||
+      row.version_no === null ||
+      row.threshold_kind === null ||
+      row.threshold_value === null ||
+      row.required_permission_code === null
+    ) {
+      return null;
+    }
+    return {
+      policyId: row.id,
+      versionNo: row.version_no,
+      kind: row.threshold_kind,
+      value: row.threshold_value,
+      currency: row.currency_code,
+      requiredPermissionCode: row.required_permission_code,
+    };
+  }
+
+  /**
+   * The revision's discount as `quo.issue_revision` will sum it — every live line's
+   * captured discount — as a `numeric(18,4)` STRING, with the revision's currency.
+   */
+  public async revisionDiscountTotal(
+    db: DbHandle,
+    revisionId: string
+  ): Promise<{ total: string; currency: string } | null> {
+    const context = this.assertContext(db);
+    return this.runOne<{ total: string; currency: string }>(
+      db,
+      `SELECT COALESCE(sum(i.captured_discount), 0)::numeric(18,4)::text AS total,
+              r.currency_code AS currency
+         FROM quo.quotation_revisions r
+         LEFT JOIN quo.quotation_items i
+           ON i.tenant_id = r.tenant_id AND i.quotation_revision_id = r.id
+          AND i.deleted_at IS NULL
+        WHERE r.tenant_id = $1 AND r.id = $2
+        GROUP BY r.currency_code`,
+      [context.principal.tenantId, revisionId]
+    );
+  }
+
+  /**
+   * One branch's discount approvals in one status, most recently asked for first —
+   * only requests on a quotation's CURRENT draft revision.
+   *
+   * A request on an older revision is either superseded (and never listed) or about a
+   * revision the quotation has moved past, so it is not offered for a decision. The
+   * caller has authorized the named company and branch; `sel_discount_approvals_scope`
+   * is the second layer. `ix_discount_approvals_branch_status` covers the equality
+   * prefix and the order.
+   */
+  public async listDiscountApprovals(
+    db: DbHandle,
+    filter: { readonly companyId: string; readonly branchId: string; readonly status: string },
+    page: PageRequest
+  ): Promise<Page<DiscountApprovalRow>> {
+    const context = this.assertContext(db);
+    const values: unknown[] = [
+      context.principal.tenantId,
+      filter.companyId,
+      filter.branchId,
+      filter.status,
+    ];
+    const keyset = keysetFragment(
+      page,
+      { sort: 'a.requested_at', id: 'a.id' },
+      DISCOUNT_APPROVAL_LIST_ORDERING,
+      values.length + 1
+    );
+    const result = await this.run<DiscountApprovalSql & { sort_value: string }>(
+      db,
+      `SELECT ${DISCOUNT_APPROVAL_COLUMNS},
+              ${cursorTimestamp('a.requested_at')} AS sort_value
+         FROM ${DISCOUNT_APPROVAL_FROM}
+        WHERE a.tenant_id = $1 AND a.company_id = $2 AND a.branch_id = $3 AND a.status = $4
+          AND a.status <> 'superseded' AND r.status = 'draft'
+          AND r.revision_number = (
+                SELECT max(latest.revision_number)
+                  FROM quo.quotation_revisions latest
+                 WHERE latest.tenant_id = a.tenant_id AND latest.quotation_id = a.quotation_id)
+          ${keyset.predicate}
+        ${keyset.order}
+        ${keyset.limitClause}`,
+      [...values, ...keyset.values]
+    );
+    return buildPageWithCursors(
+      result.rows.map((row) => ({
+        item: toDiscountApproval(row),
+        sortValue: row.sort_value,
+        id: row.id,
+      })),
+      page,
+      DISCOUNT_APPROVAL_LIST_ORDERING
+    );
   }
 }

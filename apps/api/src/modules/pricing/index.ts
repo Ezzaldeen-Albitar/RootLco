@@ -34,10 +34,12 @@ import { callerApprovalCeiling } from '@/server/auth/authorization';
 import { PricingRepository } from './data/pricing-repository';
 import { PriceResolutionService } from './application/price-resolution-service';
 import { DiscountAuthorizationService } from './application/discount-authorization-service';
+import { DiscountThresholdService } from './application/discount-threshold-service';
 import { PriceListService } from './application/price-list-service';
 
 export type {
   ApprovalPolicyRow,
+  DiscountPolicyVersionRow,
   DiscountRuleRow,
   PriceListRow,
   PriceListVersionRow,
@@ -59,11 +61,25 @@ export type {
   PriceListAssignmentView,
 } from './application/price-list-service';
 export type {
+  ApprovalCeilingMemo,
   ApprovalCeilingReader,
-  DiscountAuthorization,
-  DiscountRequest,
+  DiscountApprovalAuthorization,
+  DiscountApprovalBlock,
+  DiscountApprovalStanding,
+  DiscountApprovalRequest,
+  DiscountAssessment,
+  DiscountAssessmentRequest,
+  DiscountThresholdSnapshot,
   PermissionProbe,
+  PinnedDiscountPolicy,
 } from './application/discount-authorization-service';
+export { DEFAULT_DISCOUNT_APPROVAL_PERMISSION } from './application/discount-authorization-service';
+export type {
+  DiscountThresholdRecorder,
+  DiscountThresholdVersionView,
+  DiscountThresholdView,
+  SetDiscountThresholdInput,
+} from './application/discount-threshold-service';
 
 export {
   Decimal,
@@ -120,6 +136,7 @@ export const pricingModule = composeModule({
         callerApprovalCeiling: (db, companyId, limitType, asOf) =>
           callerApprovalCeiling(db, companyId, limitType, asOf),
       }),
+      thresholds: new DiscountThresholdService(repository),
     };
   },
 });

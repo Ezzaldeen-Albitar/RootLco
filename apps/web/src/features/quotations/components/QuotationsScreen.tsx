@@ -24,7 +24,7 @@ import { useFocusFirstInvalid } from '@/lib/forms/use-focus-first-invalid';
 import { useLocalRefusal } from '@/lib/forms/use-local-refusal';
 
 import { createQuotation, listQuotations } from '../api';
-import { RequesterPicker, type ChosenRequester } from './RequesterPicker';
+import { DiscountApprovalsPanel } from './DiscountApprovalsPanel';
 import { INTERNAL_CODE, type QuotationSummary } from '../quotations-contract';
 import {
   Figure,
@@ -57,13 +57,13 @@ import {
  * Every figure on the resulting quotation — unit price, tax, line total, the
  * four totals — is the server's, captured at creation. Nothing is priced here.
  *
- * ## The discount request is the discount field, and its refusal is shown
+ * ## A discount over the threshold is asked for, and approved by somebody else
  *
- * A discount is authorized synchronously inside the write: the company's
- * policy decides whether it needs an elevated permission and the actor's
- * approval limit decides whether the amount is within reach. A refusal comes
- * back as a denial with a reference, and it renders as that refusal — never
- * as a quotation with the discount quietly dropped.
+ * The builder asks for nobody's name. A discount that reaches the company's
+ * threshold is recorded by the server as a request from whoever is signed in,
+ * and the quotation cannot be issued until a different person approves it
+ * (P1-32-PRE-OD-DISC-01). Without a work order this page also lists the working
+ * branch's discounts waiting for approval, where an approver decides them.
  */
 
 export function QuotationsScreen({
@@ -75,7 +75,7 @@ export function QuotationsScreen({
   canReadServices,
   canSearchWorkOrders = false,
   canReadCustomers = false,
-  canReadUsers = false,
+  canReadApprovals = false,
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
@@ -91,18 +91,24 @@ export function QuotationsScreen({
   readonly canSearchWorkOrders?: boolean;
   /** `crm.customer.read` — whether the paying customer can be found by name. */
   readonly canReadCustomers?: boolean;
-  /** `iam.user.read` — whether the discount requester can be found by name. */
-  readonly canReadUsers?: boolean;
+  /**
+   * `quo.quotation.read` — whether the discounts waiting for approval are listed.
+   * Whether each one can be decided is the server's per-row answer.
+   */
+  readonly canReadApprovals?: boolean;
 }) {
   const [building, setBuilding] = useState(false);
 
   if (workOrderId === null) {
     return (
-      <ChooseWorkOrder
-        locale={locale}
-        messages={messages}
-        canSearchWorkOrders={canSearchWorkOrders}
-      />
+      <div className="flex min-h-0 flex-col gap-4">
+        <ChooseWorkOrder
+          locale={locale}
+          messages={messages}
+          canSearchWorkOrders={canSearchWorkOrders}
+        />
+        {canReadApprovals ? <DiscountApprovalsPanel locale={locale} messages={messages} /> : null}
+      </div>
     );
   }
 
@@ -180,7 +186,6 @@ export function QuotationsScreen({
           }
           canReadServices={canReadServices}
           canReadCustomers={canReadCustomers}
-          canReadUsers={canReadUsers}
           onClose={() => setBuilding(false)}
         />
       ) : null}
@@ -399,7 +404,6 @@ function QuotationBuilder({
   payer: initialPayer,
   canReadServices,
   canReadCustomers,
-  canReadUsers,
   onClose,
 }: {
   readonly locale: Locale;
@@ -409,15 +413,16 @@ function QuotationBuilder({
   readonly payer: ChosenCustomer | null;
   readonly canReadServices: boolean;
   readonly canReadCustomers: boolean;
-  readonly canReadUsers: boolean;
   readonly onClose: () => void;
 }) {
   const router = useRouter();
   /*
-   * The paying customer and the discount requester are FOUND and chosen by
-   * name (Owner directive, `P1-32-PRE-OD-UX`); both used to be boxes asking for
-   * a reference. The payer opens on the work order's own customer, which is a
-   * default rather than unsaved work.
+   * The paying customer is FOUND and chosen by name (Owner directive,
+   * `P1-32-PRE-OD-UX`); it used to be a box asking for a reference. The payer
+   * opens on the work order's own customer, which is a default rather than
+   * unsaved work. Nobody is named for a discount: the server records whoever is
+   * signed in as the one asking for it.
+   *
    *
    * The customer search needs `crm.customer.read`, and creating a quotation does
    * NOT: `quo.quotation-create` declares `quo.quotation.manage` and
@@ -431,7 +436,6 @@ function QuotationBuilder({
   const [payerReference, setPayerReference] = useState(initialPayer?.id ?? '');
   useUnsavedGuard(!canReadCustomers && payerReference.trim() !== (initialPayer?.id ?? ''));
   const [customerClass, setCustomerClass] = useState('');
-  const [requestedBy, setRequestedBy] = useState<ChosenRequester | null>(null);
   const [lines, setLines] = useState<readonly DraftLine[]>([newLine()]);
   // Question f: the cursor goes to the first thing to fix, and a complaint is
   // withdrawn once its field changes (route sweep B3).
@@ -461,7 +465,6 @@ function QuotationBuilder({
     const klass = customerClass.trim();
     if (klass.length > 0 && !INTERNAL_CODE.test(klass))
       found['customerClass'] = 'quotations.common.classFormat';
-    const requester = requestedBy?.id ?? '';
     localRefuse(found);
     if (Object.keys(found).length > 0) return;
 
@@ -471,7 +474,6 @@ function QuotationBuilder({
       ...(payerId ? { payerPartnerRef: payerId } : {}),
       ...(klass ? { customerClass: klass } : {}),
       lines: bodies,
-      ...(requester ? { discountRequestedBy: requester } : {}),
     });
     setBusy(false);
     setOutcome(result.state);
@@ -538,20 +540,10 @@ function QuotationBuilder({
           onChange={(event) => setCustomerClass(event.target.value)}
           error={errorFor('customerClass')}
         />
-        <div className="flex flex-col gap-1.5">
-          <RequesterPicker
-            messages={messages}
-            locale={locale}
-            value={requestedBy}
-            onChange={setRequestedBy}
-            canSearch={canReadUsers}
-            error={errorFor('discountRequestedBy')}
-          />
-          <p className="text-caption text-text-muted">
-            {translate(messages, 'quotations.build.requestedByHelp')}
-          </p>
-        </div>
       </div>
+      <p className="text-caption text-text-muted">
+        {translate(messages, 'quotations.build.discountApprovalHelp')}
+      </p>
       <LinesEditor
         messages={messages}
         currency={null}

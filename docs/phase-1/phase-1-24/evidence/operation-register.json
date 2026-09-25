@@ -1,9 +1,9 @@
 {
   "generatedBy": "scripts/p1-24-operation-register.mjs",
   "totals": {
-    "operations": 499,
-    "openapiPaths": 390,
-    "openapiOperations": 499,
+    "operations": 503,
+    "openapiPaths": 393,
+    "openapiOperations": 503,
     "openapiSchemas": 3,
     "events": 50,
     "eventsProduced": 47,
@@ -11,10 +11,10 @@
     "outboxForeignWriters": 0,
     "errorCodes": 34,
     "permissionCodes": 132,
-    "auditActions": 285
+    "auditActions": 289
   },
   "counts": {
-    "Covered": 499
+    "Covered": 503
   },
   "operations": [
     {
@@ -9720,6 +9720,80 @@
       "file": "apps/api/src/app/api/v1/rework-links/[reworkLinkId]/sign-off/route.ts"
     },
     {
+      "id": "quo.discount-approval-decide",
+      "domain": "quotation",
+      "method": "POST",
+      "route": "/api/v1/discount-approvals/{approvalId}/decision",
+      "permissions": ["quo.quotation.read"],
+      "public": false,
+      "scope": "branch",
+      "transaction": "transactional write",
+      "auditClass": "approval",
+      "auditAction": "quo.discount_approval.approved",
+      "idempotent": true,
+      "versionGuarded": false,
+      "openapi": "POST /api/v1/discount-approvals/{approvalId}/decision",
+      "documentedResponses": ["200", "401", "403", "404", "409", "422", "429", "500"],
+      "requiredEvidence": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "audit",
+        "isolation",
+        "denial",
+        "concurrency"
+      ],
+      "providedEvidence": [
+        "audit",
+        "authorization",
+        "concurrency",
+        "cross-tenant",
+        "denial",
+        "idempotency",
+        "isolation",
+        "route",
+        "service",
+        "success"
+      ],
+      "missingEvidence": [],
+      "tests": ["tests/backend/p1-20-quotation.test.ts"],
+      "classification": "Covered",
+      "file": "apps/api/src/app/api/v1/discount-approvals/[approvalId]/decision/route.ts"
+    },
+    {
+      "id": "quo.discount-approval-list",
+      "domain": "quotation",
+      "method": "GET",
+      "route": "/api/v1/discount-approvals",
+      "permissions": ["quo.quotation.read"],
+      "public": false,
+      "scope": "branch",
+      "transaction": "read (no business mutation)",
+      "auditClass": "none",
+      "auditAction": null,
+      "idempotent": false,
+      "versionGuarded": false,
+      "openapi": "GET /api/v1/discount-approvals",
+      "documentedResponses": ["200", "401", "403", "422", "429", "500"],
+      "requiredEvidence": ["route", "service", "success", "authorization", "isolation", "denial"],
+      "providedEvidence": [
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "isolation",
+        "route",
+        "service",
+        "success"
+      ],
+      "missingEvidence": [],
+      "tests": ["tests/backend/p1-20-quotation.test.ts"],
+      "classification": "Covered",
+      "file": "apps/api/src/app/api/v1/discount-approvals/route.ts"
+    },
+    {
       "id": "quo.quotation-create",
       "domain": "quotation",
       "method": "POST",
@@ -15634,6 +15708,88 @@
       "tests": ["tests/backend/p1-20-service-catalog.test.ts"],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/services/[serviceId]/branch-availability/route.ts"
+    },
+    {
+      "id": "svc.discount-threshold-read",
+      "domain": "pricing",
+      "method": "GET",
+      "route": "/api/v1/discount-thresholds/{companyId}",
+      "permissions": ["svc.price.read"],
+      "public": false,
+      "scope": "company",
+      "transaction": "read (no business mutation)",
+      "auditClass": "none",
+      "auditAction": null,
+      "idempotent": false,
+      "versionGuarded": false,
+      "openapi": "GET /api/v1/discount-thresholds/{companyId}",
+      "documentedResponses": ["200", "401", "403", "422", "429", "500"],
+      "requiredEvidence": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "isolation",
+        "denial"
+      ],
+      "providedEvidence": [
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "isolation",
+        "route",
+        "service",
+        "success"
+      ],
+      "missingEvidence": [],
+      "tests": ["tests/backend/p1-20-quotation.test.ts"],
+      "classification": "Covered",
+      "file": "apps/api/src/app/api/v1/discount-thresholds/[companyId]/route.ts"
+    },
+    {
+      "id": "svc.discount-threshold-set",
+      "domain": "pricing",
+      "method": "POST",
+      "route": "/api/v1/discount-thresholds/{companyId}",
+      "permissions": ["svc.price.manage"],
+      "public": false,
+      "scope": "company",
+      "transaction": "transactional write",
+      "auditClass": "privileged",
+      "auditAction": "svc.discount_threshold.versioned",
+      "idempotent": true,
+      "versionGuarded": true,
+      "openapi": "POST /api/v1/discount-thresholds/{companyId}",
+      "documentedResponses": ["201", "401", "403", "409", "422", "428", "429", "500"],
+      "requiredEvidence": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "stale-version",
+        "audit",
+        "isolation",
+        "denial"
+      ],
+      "providedEvidence": [
+        "audit",
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "idempotency",
+        "isolation",
+        "route",
+        "service",
+        "stale-version",
+        "success"
+      ],
+      "missingEvidence": [],
+      "tests": ["tests/backend/p1-20-quotation.test.ts"],
+      "classification": "Covered",
+      "file": "apps/api/src/app/api/v1/discount-thresholds/[companyId]/route.ts"
     },
     {
       "id": "svc.price-list-assignment-create",

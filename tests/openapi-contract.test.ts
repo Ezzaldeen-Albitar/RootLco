@@ -325,6 +325,10 @@ import '@/app/api/v1/work-orders/[workOrderId]/part-issues/route';
 import '@/app/api/v1/price-lists/[priceListId]/route';
 import '@/app/api/v1/quotation-items/[quotationItemId]/decisions/route';
 import '@/app/api/v1/quotation-revisions/[revisionId]/decisions/route';
+// P1-32-PRE-OD-DISC-01 — discount approval and the company discount threshold.
+import '@/app/api/v1/discount-approvals/route';
+import '@/app/api/v1/discount-approvals/[approvalId]/decision/route';
+import '@/app/api/v1/discount-thresholds/[companyId]/route';
 
 // Phase 1-21 — inventory.
 import '@/app/api/v1/items/route';

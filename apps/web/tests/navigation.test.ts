@@ -58,6 +58,9 @@ describe('the navigation model', () => {
       // P1-32 preparation: the department and employee registers, each gated on
       // its list operation's own read code.
       'administration.departments',
+      // P1-32-PRE-OD-DISC-01: the company discount threshold, gated on
+      // `svc.price.read` — the code its read declares.
+      'administration.discountThreshold',
       'administration.employees',
       // The parent row became a DISCLOSURE at Owner acceptance — it opens and
       // closes its children instead of navigating — so `/administration` needs

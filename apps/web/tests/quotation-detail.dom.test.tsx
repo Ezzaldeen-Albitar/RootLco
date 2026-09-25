@@ -52,37 +52,6 @@ vi.mock('@/features/administration/access/api', () => ({
   listApprovalLimits: (...args: unknown[]) => listApprovalLimits(...args),
 }));
 
-// The discount requester is FOUND among the tenant's accounts; the adapter is
-// replaced here, never the picker.
-const listUsers = vi.fn();
-vi.mock('@/features/administration/users/api', () => ({
-  listUsers: (...args: unknown[]) => listUsers(...args),
-}));
-const COLLEAGUE_ID = '99999999-9999-4999-8999-999999999999';
-const colleaguePage = {
-  status: 'ok',
-  rows: [
-    {
-      id: COLLEAGUE_ID,
-      email: 'omar@test.local',
-      displayName: 'Omar Saleh',
-      status: 'active',
-      mfaRequired: false,
-      createdAt: '2026-01-01T00:00:00.000Z',
-      recordVersion: 1,
-    },
-  ],
-  nextCursor: null,
-  hasMore: false,
-  correlationId: 'corr-u',
-};
-
-/** The colleague who asked for the discount, found by name and chosen. */
-async function chooseRequester(user: ReturnType<typeof userEvent.setup>, form: HTMLElement) {
-  await user.type(within(form).getByLabelText(labelled('quotations.build.requestedBy')), 'Omar');
-  await user.click(await within(form).findByRole('button', { name: /Omar Saleh/ }));
-}
-
 const push = vi.fn();
 const refresh = vi.fn();
 vi.mock('next/navigation', () => ({
@@ -149,9 +118,53 @@ function revision(over: Record<string, unknown> = {}) {
     grandTotal: '440.0000',
     recordVersion: 1,
     lines: [line(LINE_1, 1), line(LINE_2, 2)],
+    discountApproval: null,
     ...over,
   };
 }
+
+/** A discount request as the revision carries it (P1-32-PRE-OD-DISC-01). */
+function discountApproval(over: Record<string, unknown> = {}) {
+  return {
+    id: '66666666-6666-4666-8666-666666666666',
+    quotationId: QUOTATION_ID,
+    quotationNumber: 'QUO-000001',
+    revisionId: ISSUED_ID,
+    revisionNumber: 2,
+    companyId: 'company-1',
+    branchId: 'b',
+    status: 'pending',
+    origin: 'requested',
+    currency: 'JOD',
+    discountTotal: '40.0000',
+    discountBase: '400.0000',
+    elevatedLineCount: 1,
+    threshold: null,
+    requiredPermission: 'svc.price.manage',
+    requestedBy: { id: 'aaaaaaaa-0000-4000-8000-000000000001', displayName: 'Omar Saleh' },
+    requestedAt: '2026-09-20T09:00:00Z',
+    requestedByCaller: false,
+    canApprove: false,
+    cannotApproveReason: 'missing_permission',
+    canReject: false,
+    decidedBy: null,
+    decidedAt: null,
+    decisionReason: null,
+    supersededAt: null,
+    recordVersion: 1,
+    ...over,
+  };
+}
+
+/** The current revision as a DRAFT carrying a discount request in `state`. */
+const draftWith = (over: Record<string, unknown>) =>
+  quotation({
+    currentRevision: revision({
+      status: 'draft',
+      issuedAt: null,
+      discountApproval: discountApproval(over),
+    }),
+  });
 
 function quotation(over: Record<string, unknown> = {}) {
   return {
@@ -630,12 +643,14 @@ describe('guarded writes send the QUOTATION version and renew it', () => {
     await waitFor(() => expect(refresh).toHaveBeenCalled());
   });
 
-  it('attributes a revision’s discount to a colleague found by name', async () => {
-    listUsers.mockResolvedValue(colleaguePage);
+  it('sends a discounted revision with nobody named: whoever is signed in is the one asking', async () => {
     const user = userEvent.setup();
-    renderDetail({ canReadUsers: true });
+    renderDetail();
     const form = screen.getByRole('form', { name: EN['quotations.revise.heading'] as string });
-    await chooseRequester(user, form);
+    expect(within(form).queryByLabelText(/requested by/i)).toBeNull();
+    expect(
+      within(form).getByText(EN['quotations.build.discountApprovalHelp'] as string)
+    ).toBeVisible();
     await user.type(
       within(form).getByLabelText(labelled('quotations.picker.serviceIdField')),
       SERVICE_ID
@@ -645,9 +660,9 @@ describe('guarded writes send the QUOTATION version and renew it', () => {
       within(form).getByRole('button', { name: EN['quotations.revise.submit'] as string })
     );
     await waitFor(() => expect(createQuotationRevision).toHaveBeenCalled());
-    expect(createQuotationRevision.mock.calls[0]?.[1]).toMatchObject({
-      discountRequestedBy: COLLEAGUE_ID,
-    });
+    expect(Object.keys(createQuotationRevision.mock.calls[0]?.[1] as object)).not.toContain(
+      'discountRequestedBy'
+    );
   });
 
   it('states an inexact line above the lines, with the revision draft still filled in', async () => {
@@ -687,6 +702,118 @@ describe('guarded writes send the QUOTATION version and renew it', () => {
     expect(within(form).getByLabelText(labelled('quotations.picker.serviceIdField'))).toHaveValue(
       SERVICE_ID
     );
+  });
+});
+
+/**
+ * The discount a draft carries, and what it means for issuing (P1-32-PRE-OD-DISC-01).
+ *
+ * The request is shown with its state, who asked and when; the operator's own request
+ * says it waits for ANOTHER approver; and a draft whose discount is waiting or was
+ * turned down is not offered for issue — the page says why instead.
+ */
+describe('a discount waiting for approval is shown, and holds the draft back from issue', () => {
+  it('the operator’s own request says it waits for another approver, and issue is not offered', () => {
+    renderDetail({}, draftWith({ requestedByCaller: true }));
+    const note = screen.getByTestId('discount-approval-note');
+    expect(
+      within(note).getByText(EN['quotations.discountApproval.status.pending'] as string)
+    ).toBeVisible();
+    expect(within(note).getByText('Omar Saleh')).toBeVisible();
+    expect(
+      within(note).getByText(EN['quotations.discountApproval.waitingForAnother'] as string, {
+        exact: false,
+      })
+    ).toBeVisible();
+    expect(screen.getByTestId('issue-blocked-by-discount')).toHaveTextContent(
+      EN['quotations.issue.discountPending'] as string
+    );
+    expect(
+      screen.queryByRole('button', { name: EN['quotations.issue.submit'] as string })
+    ).toBeNull();
+  });
+
+  it('somebody else’s request says another person must approve it, and links to the approvals', () => {
+    renderDetail({}, draftWith({}));
+    const note = screen.getByTestId('discount-approval-note');
+    expect(
+      within(note).getByText(EN['quotations.discountApproval.waiting'] as string, {
+        exact: false,
+      })
+    ).toBeVisible();
+    expect(
+      within(note).getByRole('link', {
+        name: EN['quotations.discountApproval.openApprovals'] as string,
+      })
+    ).toHaveAttribute('href', '/en/quotations');
+  });
+
+  it('a turned-down discount says so, with who decided and why, and the draft is not offered for issue', () => {
+    renderDetail(
+      {},
+      draftWith({
+        status: 'rejected',
+        decidedBy: { id: 'bbbbbbbb-0000-4000-8000-000000000002', displayName: 'Nadia Karim' },
+        decidedAt: '2026-09-21T09:00:00Z',
+        decisionReason: 'More than this job can carry',
+      })
+    );
+    const note = screen.getByTestId('discount-approval-note');
+    expect(
+      within(note).getByText(EN['quotations.discountApproval.status.rejected'] as string)
+    ).toBeVisible();
+    expect(within(note).getByText('Nadia Karim')).toBeVisible();
+    expect(within(note).getByText('More than this job can carry')).toBeVisible();
+    expect(screen.getByTestId('issue-blocked-by-discount')).toHaveTextContent(
+      EN['quotations.issue.discountRejected'] as string
+    );
+  });
+
+  it('a request a newer draft replaced says so, and this draft is not offered for issue', () => {
+    renderDetail(
+      {},
+      draftWith({
+        status: 'superseded',
+        supersededAt: '2026-09-22T09:00:00Z',
+        canApprove: false,
+        cannotApproveReason: 'not_pending',
+        canReject: false,
+      })
+    );
+    expect(
+      within(screen.getByTestId('discount-approval-note')).getByText(
+        EN['quotations.discountApproval.status.superseded'] as string
+      )
+    ).toBeVisible();
+    expect(screen.getByTestId('issue-blocked-by-discount')).toHaveTextContent(
+      EN['quotations.issue.discountSuperseded'] as string
+    );
+    expect(
+      screen.queryByRole('button', { name: EN['quotations.issue.submit'] as string })
+    ).toBeNull();
+  });
+
+  it('an approved discount lets the draft be issued', () => {
+    renderDetail(
+      {},
+      draftWith({
+        status: 'approved',
+        decidedBy: { id: 'bbbbbbbb-0000-4000-8000-000000000002', displayName: 'Nadia Karim' },
+        decidedAt: '2026-09-21T09:00:00Z',
+        canApprove: false,
+        cannotApproveReason: 'not_pending',
+        canReject: false,
+      })
+    );
+    expect(
+      within(screen.getByTestId('discount-approval-note')).getByText(
+        EN['quotations.discountApproval.status.approved'] as string
+      )
+    ).toBeVisible();
+    expect(screen.queryByTestId('issue-blocked-by-discount')).toBeNull();
+    expect(
+      screen.getByRole('button', { name: EN['quotations.issue.submit'] as string })
+    ).toBeVisible();
   });
 });
 

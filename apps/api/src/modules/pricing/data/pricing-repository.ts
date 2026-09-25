@@ -127,9 +127,27 @@ export interface ApprovalPolicyRow {
   readonly currencyCode: string | null;
   readonly requiredPermissionCode: string;
   readonly makerApproverDistinct: boolean;
+  /** Per (company, policy type), from 1. A threshold change records the next one. */
+  readonly versionNo: number;
   readonly effectiveFrom: string;
   readonly effectiveTo: string | null;
   readonly status: string;
+}
+
+/** One recorded version of a company's discount threshold, for the history. */
+export interface DiscountPolicyVersionRow {
+  readonly id: string;
+  readonly companyId: string | null;
+  readonly versionNo: number;
+  readonly thresholdKind: string;
+  /** `numeric(18,4)` STRING. */
+  readonly thresholdValue: string;
+  readonly currencyCode: string | null;
+  readonly requiredPermissionCode: string;
+  readonly effectiveFrom: string;
+  readonly status: string;
+  readonly createdAt: Date;
+  readonly createdBy: string;
 }
 
 /** An effective tax rate. `rate` is a FRACTION in [0,1] — `numeric(9,6)` STRING. */
@@ -140,6 +158,38 @@ export interface TaxRateRow {
   readonly effectiveFrom: string;
   readonly effectiveTo: string | null;
 }
+
+interface DiscountPolicyVersionSql {
+  id: string;
+  company_id: string | null;
+  version_no: number;
+  threshold_kind: string;
+  threshold_value: string;
+  currency_code: string | null;
+  required_permission_code: string;
+  effective_from: string;
+  status: string;
+  created_at: Date;
+  created_by: string;
+}
+
+const DISCOUNT_POLICY_VERSION_COLUMNS = `id, company_id, version_no, threshold_kind,
+       threshold_value::text AS threshold_value, currency_code, required_permission_code,
+       effective_from::text AS effective_from, status, created_at, created_by`;
+
+const toDiscountPolicyVersion = (row: DiscountPolicyVersionSql): DiscountPolicyVersionRow => ({
+  id: row.id,
+  companyId: row.company_id,
+  versionNo: row.version_no,
+  thresholdKind: row.threshold_kind,
+  thresholdValue: row.threshold_value,
+  currencyCode: row.currency_code,
+  requiredPermissionCode: row.required_permission_code,
+  effectiveFrom: row.effective_from,
+  status: row.status,
+  createdAt: row.created_at,
+  createdBy: row.created_by,
+});
 
 export class PricingRepository extends Repository {
   protected readonly module = 'pricing';
@@ -161,31 +211,6 @@ export class PricingRepository extends Repository {
    * decision, and `shared-services` already reads `org.*` for the same class of
    * reason. RLS narrows it to the caller's tenant.
    */
-  /**
-   * Whether a named discount requester is a REAL, active user in this tenant.
-   *
-   * `maker_approver_distinct` is a separation-of-duties control, and a control that accepts
-   * an unverified string is not one: before this, any well-formed UUID other than the
-   * actor's own cleared it, so an actor could authorize their own over-threshold discount by
-   * inventing a requester. Nothing downstream ever resolved the value, and nothing persisted
-   * it, so the invention left no trace either.
-   *
-   * The tenant filter is the point as much as the existence check — naming a user from
-   * another tenant must not satisfy a separation of duties inside this one.
-   */
-  public async isActiveUserInTenant(db: DbHandle, userId: string): Promise<boolean> {
-    const context = this.assertContext(db);
-    const row = await this.runOne<{ ok: boolean }>(
-      db,
-      `SELECT EXISTS (
-         SELECT 1 FROM iam.user_accounts
-          WHERE tenant_id = $1 AND id = $2 AND status = 'active' AND deleted_at IS NULL
-       ) AS ok`,
-      [context.principal.tenantId, userId]
-    );
-    return row?.ok === true;
-  }
-
   public async branchBelongsToCompany(
     db: DbHandle,
     companyId: string,
@@ -412,6 +437,7 @@ export class PricingRepository extends Repository {
       currency_code: string | null;
       required_permission_code: string;
       maker_approver_distinct: boolean;
+      version_no: number;
       effective_from: string;
       effective_to: string | null;
       status: string;
@@ -419,7 +445,8 @@ export class PricingRepository extends Repository {
       db,
       `SELECT id, company_id, policy_type, threshold_kind,
               threshold_value::text AS threshold_value, currency_code,
-              required_permission_code, maker_approver_distinct, effective_from, effective_to, status
+              required_permission_code, maker_approver_distinct, version_no,
+              effective_from, effective_to, status
          FROM svc.pricing_approval_policies
         WHERE tenant_id = $1 AND policy_type = $2
           AND status = 'active' AND deleted_at IS NULL
@@ -440,11 +467,139 @@ export class PricingRepository extends Repository {
           currencyCode: row.currency_code,
           requiredPermissionCode: row.required_permission_code,
           makerApproverDistinct: row.maker_approver_distinct,
+          versionNo: row.version_no,
           effectiveFrom: row.effective_from,
           effectiveTo: row.effective_to,
           status: row.status,
         }
       : null;
+  }
+
+  /**
+   * Whether `companyId` is a live company of the caller's tenant.
+   *
+   * Asked before a threshold is written for it, so a mistyped or foreign company is
+   * a named refusal rather than an orphaned policy row. RLS on `org.legal_companies`
+   * narrows the read to the caller's tenant.
+   */
+  public async companyExists(db: DbHandle, companyId: string): Promise<boolean> {
+    const context = this.assertContext(db);
+    const row = await this.runOne<{ ok: boolean }>(
+      db,
+      `SELECT EXISTS (
+         SELECT 1 FROM org.legal_companies
+          WHERE tenant_id = $1 AND id = $2 AND deleted_at IS NULL
+       ) AS ok`,
+      [context.principal.tenantId, companyId]
+    );
+    return row?.ok === true;
+  }
+
+  /**
+   * Recorded versions of one company's discount threshold, newest first.
+   *
+   * Bounded by `limit` rather than paginated: a threshold is changed by an
+   * administrator a handful of times in a company's life, and the screen shows the
+   * recent history beside the current value.
+   *
+   * `companyId = null` reads the TENANT-WIDE versions (`company_id IS NULL`), which
+   * apply to a company that has recorded none of its own.
+   */
+  public async listDiscountPolicyVersions(
+    db: DbHandle,
+    companyId: string | null,
+    limit: number
+  ): Promise<readonly DiscountPolicyVersionRow[]> {
+    const context = this.assertContext(db);
+    const result = await this.run<DiscountPolicyVersionSql>(
+      db,
+      `SELECT ${DISCOUNT_POLICY_VERSION_COLUMNS}
+         FROM svc.pricing_approval_policies
+        WHERE tenant_id = $1 AND policy_type = 'discount' AND deleted_at IS NULL
+          AND company_id IS NOT DISTINCT FROM $2::uuid
+        ORDER BY version_no DESC, id
+        LIMIT $3`,
+      [context.principal.tenantId, companyId, limit]
+    );
+    return result.rows.map(toDiscountPolicyVersion);
+  }
+
+  /**
+   * The highest version number a company's discount threshold has EVER used —
+   * counted over every row of the scope, deleted and inactive ones included — or
+   * `0` when it has none.
+   *
+   * `uq_pricing_approval_policies_version` is unique over all of those rows, so the
+   * next version is always one above this number. Counting only live rows would
+   * hand out a number a soft-deleted or retired row already holds, and every later
+   * write would collide on the index forever.
+   */
+  public async latestDiscountPolicyVersionNo(db: DbHandle, companyId: string): Promise<number> {
+    const context = this.assertContext(db);
+    const row = await this.runOne<{ latest: number | null }>(
+      db,
+      `SELECT max(version_no) AS latest
+         FROM svc.pricing_approval_policies
+        WHERE tenant_id = $1 AND company_id = $2 AND policy_type = 'discount'`,
+      [context.principal.tenantId, companyId]
+    );
+    return row?.latest ?? 0;
+  }
+
+  /**
+   * Records the next version of a company's discount threshold, effective from the
+   * database's business date — prospectively, for requests made from now on.
+   *
+   * Recording it is also what retires the version it replaces:
+   * `svc.record_pricing_approval_policy_version` refuses any number but the next one
+   * and marks the previous active version inactive inside the same INSERT, and no
+   * other write may change a version's status. `uq_pricing_approval_policies_version`
+   * admits one row per version number, so two concurrent writers cannot both land
+   * version N: the second fails with a unique violation and rolls back.
+   */
+  public async insertDiscountPolicyVersion(
+    db: DbHandle,
+    input: {
+      readonly companyId: string;
+      readonly versionNo: number;
+      readonly thresholdKind: string;
+      readonly thresholdValue: string;
+      readonly currencyCode: string | null;
+      readonly requiredPermissionCode: string;
+    }
+  ): Promise<DiscountPolicyVersionRow> {
+    const context = this.assertContext(db);
+    const row = await this.runOne<DiscountPolicyVersionSql>(
+      db,
+      `INSERT INTO svc.pricing_approval_policies
+         (tenant_id, company_id, policy_type, threshold_kind, threshold_value, currency_code,
+          required_permission_code, version_no, effective_from, status, created_by)
+       VALUES ($1, $2, 'discount', $3, $4::numeric(18,4), $5, $6, $7, current_date, 'active', $8)
+       RETURNING ${DISCOUNT_POLICY_VERSION_COLUMNS}`,
+      [
+        context.principal.tenantId,
+        input.companyId,
+        input.thresholdKind,
+        input.thresholdValue,
+        input.currencyCode,
+        input.requiredPermissionCode,
+        input.versionNo,
+        context.principal.userId,
+      ]
+    );
+    if (row === null) throw new Error('pricing: discount policy insert returned no row');
+    return toDiscountPolicyVersion(row);
+  }
+
+  /** Whether `code` is a currency in the shared register. */
+  public async currencyExists(db: DbHandle, code: string): Promise<boolean> {
+    this.assertContext(db);
+    const row = await this.runOne<{ ok: boolean }>(
+      db,
+      `SELECT EXISTS (SELECT 1 FROM shared.currencies WHERE code = $1) AS ok`,
+      [code]
+    );
+    return row?.ok === true;
   }
 
   /** Reads a price list by id, or null outside the caller's tenant. */

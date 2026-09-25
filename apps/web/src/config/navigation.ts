@@ -847,6 +847,21 @@ export const NAVIGATION: readonly NavigationGroup[] = Object.freeze([
             status: 'available',
             scope: 'tenant',
           },
+          /*
+           * P1-32-PRE-OD-DISC-01: the company discount threshold — the point at
+           * which a discount needs approval by somebody other than the person who
+           * asked for it. Gated on `svc.price.read`, the code its read declares;
+           * changing it needs `svc.price.manage`, which the page checks.
+           */
+          {
+            key: 'administration.discountThreshold',
+            labelKey: 'nav.discountThreshold',
+            icon: 'administration',
+            href: '/administration/discount-threshold',
+            permission: 'svc.price.read',
+            status: 'available',
+            scope: 'company',
+          },
           {
             key: 'administration.auditLog',
             labelKey: 'nav.auditLog',

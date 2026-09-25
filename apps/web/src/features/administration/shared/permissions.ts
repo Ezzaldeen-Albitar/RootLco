@@ -54,6 +54,11 @@ export const PERMISSIONS = {
   departmentManage: 'org.department.manage',
   employeeRead: 'org.employee.read',
   employeeManage: 'org.employee.manage',
+  // The company discount threshold (P1-32-PRE-OD-DISC-01): read under the pricing
+  // read code, changed under the pricing manage code — the codes its two
+  // operations declare.
+  priceRead: 'svc.price.read',
+  priceManage: 'svc.price.manage',
 } as const;
 
 export type PermissionKey = keyof typeof PERMISSIONS;

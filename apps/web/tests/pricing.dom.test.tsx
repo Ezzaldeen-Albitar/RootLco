@@ -36,6 +36,8 @@ const labelled = (key: string) => new RegExp(`^${escape(EN[key] as string)}`);
 
 const listPriceLists = vi.fn();
 const createPriceList = vi.fn();
+const readDiscountThreshold = vi.fn();
+const setDiscountThreshold = vi.fn();
 const resolvePrice = vi.fn();
 const listBranches = vi.fn();
 vi.mock('@/features/pricing/api', () => ({
@@ -49,6 +51,8 @@ vi.mock('@/features/pricing/api', () => ({
   publishPriceListVersion: vi.fn(),
   recordPriceRule: vi.fn(),
   createPriceListAssignment: vi.fn(),
+  readDiscountThreshold: (...args: unknown[]) => readDiscountThreshold(...args),
+  setDiscountThreshold: (...args: unknown[]) => setDiscountThreshold(...args),
 }));
 
 const listServices = vi.fn();
@@ -90,6 +94,11 @@ vi.mock('@/components/notifications/action-notifications', () => ({
 const { PricingScreen } = await import('@/features/pricing/components/PricingScreen');
 const PricingPage = (await import('@/app/[locale]/(dashboard)/pricing/page'))
   .default as unknown as RoutePage;
+const { DiscountThresholdScreen } =
+  await import('@/features/pricing/components/DiscountThresholdScreen');
+const DiscountThresholdPage = (
+  await import('@/app/[locale]/(dashboard)/administration/discount-threshold/page')
+).default as unknown as RoutePage;
 
 const LIST_ID = '33333333-3333-4333-8333-333333333333';
 const SERVICE_ID = '55555555-5555-4555-8555-555555555555';
@@ -814,5 +823,193 @@ describe('the /pricing route page decides before it reads', () => {
   it('a locale it does not serve is not found', async () => {
     PERMISSIONS = ['svc.price.read'];
     await expect(renderPage(PricingPage, { locale: 'xx' })).rejects.toThrow('notFound');
+  });
+});
+
+/**
+ * The company discount threshold (P1-32-PRE-OD-DISC-01).
+ *
+ * The screen reads the threshold of the company in the working context, says where it
+ * comes from — the company, the organisation default, or nowhere, in which case every
+ * discount needs approval — and, for a pricing manager, records the NEXT version with
+ * the current version as `If-Match` (none on the first). It offers no control that
+ * could let anyone approve their own discount.
+ */
+describe('the company discount threshold', () => {
+  const version = (over: Record<string, unknown> = {}) => ({
+    id: '99999999-0000-4000-8000-000000000001',
+    versionNo: 3,
+    thresholdKind: 'amount',
+    thresholdValue: '100.0000',
+    currency: 'JOD',
+    requiredPermission: 'svc.price.manage',
+    effectiveFrom: '2026-09-20',
+    status: 'active',
+    recordedAt: '2026-09-20T09:00:00Z',
+    recordedBy: { id: 'aaaaaaaa-0000-4000-8000-000000000001', displayName: 'Nadia Karim' },
+    ...over,
+  });
+  const view = (over: Record<string, unknown> = {}) => ({
+    companyId: COMPANY,
+    source: 'company',
+    current: version(),
+    tenantDefault: null,
+    recordVersion: 4,
+    history: [
+      version(),
+      version({ id: 'v2', versionNo: 2, status: 'inactive', thresholdValue: '50.0000' }),
+    ],
+    ...over,
+  });
+  const renderThreshold = (canManage: boolean, locale: 'en' | 'ar' = 'en') =>
+    (locale === 'en' ? renderLtr : renderRtl)(
+      inBranch(
+        <DiscountThresholdScreen
+          locale={locale}
+          messages={locale === 'en' ? en : ar}
+          canManage={canManage}
+        />,
+        { locale }
+      )
+    );
+
+  it('reads the working company’s threshold, says it is the company’s own, and lists the versions', async () => {
+    readDiscountThreshold.mockResolvedValue(okRead(view()));
+    renderThreshold(false);
+    const current = await screen.findByTestId('discount-threshold-current');
+    expect(readDiscountThreshold).toHaveBeenCalledWith(COMPANY);
+    expect(current).toHaveTextContent('100.0000');
+    expect(current).toHaveTextContent('JOD');
+    expect(current).toHaveTextContent('Nadia Karim');
+    // The rule that no setting can change is said on the screen.
+    expect(screen.getByText(EN['discountThreshold.separationNote'] as string)).toBeVisible();
+    expect(screen.getByText(EN['discountThreshold.state.replaced'] as string)).toBeVisible();
+    // Without the manage code there is no form.
+    expect(
+      screen.queryByRole('form', { name: EN['discountThreshold.formHeading'] as string })
+    ).toBeNull();
+  });
+
+  it('with nothing configured, says every discount needs approval', async () => {
+    readDiscountThreshold.mockResolvedValue(
+      okRead(view({ source: 'none', current: null, history: [], recordVersion: 1 }))
+    );
+    renderThreshold(false);
+    expect(await screen.findByText(EN['discountThreshold.none'] as string)).toBeVisible();
+  });
+
+  it('records the next version with the read’s record version as If-Match, and offers no self-approval switch', async () => {
+    readDiscountThreshold.mockResolvedValue(okRead(view()));
+    setDiscountThreshold.mockResolvedValue({
+      state: { status: 'success', messageKey: 'discountThreshold.saved', attempt: 1 },
+      created: view({ current: version({ versionNo: 4, thresholdValue: '150.0000' }) }),
+    });
+    const user = userEvent.setup();
+    renderThreshold(true);
+    const form = await screen.findByRole('form', {
+      name: EN['discountThreshold.formHeading'] as string,
+    });
+    expect(within(form).queryByRole('checkbox')).toBeNull();
+    expect(within(form).getByText(EN['discountThreshold.prospectiveNote'] as string)).toBeVisible();
+    const amount = within(form).getByLabelText(labelled('discountThreshold.amount'));
+    await user.clear(amount);
+    await user.type(amount, '150');
+    await user.click(
+      within(form).getByRole('button', { name: EN['discountThreshold.save'] as string })
+    );
+    await waitFor(() =>
+      expect(setDiscountThreshold).toHaveBeenCalledWith(
+        COMPANY,
+        { thresholdKind: 'amount', thresholdValue: '150', currency: 'JOD' },
+        4
+      )
+    );
+    // Saved: the screen reads the threshold again.
+    await waitFor(() => expect(readDiscountThreshold).toHaveBeenCalledTimes(2));
+  });
+
+  it('sends the read’s record version on the first version too, and refuses an empty value and a missing currency at their boxes', async () => {
+    readDiscountThreshold.mockResolvedValue(
+      okRead(view({ source: 'none', current: null, history: [], recordVersion: 1 }))
+    );
+    setDiscountThreshold.mockResolvedValue({
+      state: { status: 'success', messageKey: 'discountThreshold.saved', attempt: 1 },
+      created: view(),
+    });
+    const user = userEvent.setup();
+    renderThreshold(true);
+    const form = await screen.findByRole('form', {
+      name: EN['discountThreshold.formHeading'] as string,
+    });
+    await user.click(
+      within(form).getByRole('button', { name: EN['discountThreshold.save'] as string })
+    );
+    expect(within(form).getByText(EN['discountThreshold.valueRequired'] as string)).toBeVisible();
+    expect(
+      within(form).getByText(EN['discountThreshold.currencyRequired'] as string)
+    ).toBeVisible();
+    expect(setDiscountThreshold).not.toHaveBeenCalled();
+    await user.type(within(form).getByLabelText(labelled('discountThreshold.amount')), '25');
+    await user.type(within(form).getByLabelText(labelled('discountThreshold.currency')), 'jod');
+    await user.click(
+      within(form).getByRole('button', { name: EN['discountThreshold.save'] as string })
+    );
+    await waitFor(() =>
+      expect(setDiscountThreshold).toHaveBeenCalledWith(
+        COMPANY,
+        { thresholdKind: 'amount', thresholdValue: '25', currency: 'JOD' },
+        1
+      )
+    );
+  });
+
+  it('a percentage sends no currency, and a server refusal is shown at its box, in Arabic too', async () => {
+    readDiscountThreshold.mockResolvedValue(okRead(view()));
+    setDiscountThreshold.mockResolvedValue({
+      state: {
+        status: 'invalid',
+        messageKey: 'form.formError',
+        fieldErrors: { thresholdValue: 'form.violation.discount_threshold_percentage_range' },
+        correlationId: 'corr-t',
+        attempt: 1,
+      },
+      created: null,
+    });
+    const user = userEvent.setup();
+    renderThreshold(true, 'ar');
+    const AR_LABEL = (key: string) => new RegExp(`^${escape(AR[key] as string)}`);
+    const form = await screen.findByRole('form', {
+      name: AR['discountThreshold.formHeading'] as string,
+    });
+    await user.selectOptions(
+      within(form).getByLabelText(AR_LABEL('discountThreshold.kind')),
+      'percentage'
+    );
+    expect(within(form).queryByLabelText(AR_LABEL('discountThreshold.currency'))).toBeNull();
+    const value = within(form).getByLabelText(AR_LABEL('discountThreshold.percentage'));
+    await user.clear(value);
+    await user.type(value, '150');
+    await user.click(
+      within(form).getByRole('button', { name: AR['discountThreshold.save'] as string })
+    );
+    await waitFor(() =>
+      expect(setDiscountThreshold).toHaveBeenCalledWith(
+        COMPANY,
+        { thresholdKind: 'percentage', thresholdValue: '150' },
+        4
+      )
+    );
+    expect(
+      await within(form).findByText(
+        AR['form.violation.discount_threshold_percentage_range'] as string
+      )
+    ).toBeVisible();
+  });
+
+  it('the route page refuses without svc.price.read, before any read', async () => {
+    PERMISSIONS = [];
+    await renderPage(DiscountThresholdPage, { locale: 'en' });
+    expect(screen.getByText(EN['state.denied.title'] as string)).toBeVisible();
+    expect(readDiscountThreshold).not.toHaveBeenCalled();
   });
 });

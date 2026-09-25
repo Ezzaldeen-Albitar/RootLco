@@ -406,6 +406,7 @@ export async function deleteTenantCascade(admin: Pool, tenantIds: string[]): Pro
   // quo.quotations + every wo-referencing inv row are removed before
   // wo.work_orders (below). The forward-FK TARGET catalogs (svc.services,
   // inv.item_master) are removed AFTER the wo block — see the second P1-10 block.
+  await deleteFrom('quo.discount_approvals');
   await deleteFrom('quo.approval_evidence');
   await deleteFrom('quo.approval_decisions');
   await deleteFrom('quo.quotation_status_history');

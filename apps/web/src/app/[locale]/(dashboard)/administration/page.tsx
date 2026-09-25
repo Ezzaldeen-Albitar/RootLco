@@ -50,6 +50,11 @@ const SECTIONS: readonly {
         labelKey: 'nav.approvalLimits',
         permission: PERMISSIONS.approvalManage,
       },
+      {
+        href: '/administration/discount-threshold',
+        labelKey: 'nav.discountThreshold',
+        permission: PERMISSIONS.priceRead,
+      },
     ],
   },
   {
