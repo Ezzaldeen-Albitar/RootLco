@@ -477,7 +477,12 @@ describe('W9 — the bootstrap the provisioning operation now carries', () => {
     // unit cost can be recorded by anyone in a provisioned organisation), and it
     // stays OUT: its exclusion is a recorded decision (P1-30 change control CC-12,
     // open; register gap E-14) that only the Owner may reverse.
-    expect(expected).toHaveLength(88);
+    // 89 with `sal.credit.manage`, carried by Owner decision after the QA campaign
+    // measured that nobody in a provisioned organisation could read, request or
+    // approve a credit note (result matrix part 5 row 6.19). Declared by the four
+    // credit-note operations and already a catalogue row; nothing is minted.
+    expect(expected).toHaveLength(89);
+    expect(expected).toContain('sal.credit.manage');
     expect(expected).not.toContain('inv.cost.view');
     expect(expected.some((c) => c.includes('*'))).toBe(false);
     expect(expected.some((c) => c.startsWith('platform.'))).toBe(false);

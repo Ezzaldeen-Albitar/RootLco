@@ -88,13 +88,34 @@
  *           one — DEF-T-03 as it currently stands
  *   P31-B15 it binds an exact document version to a capture requirement
  *
+ * ## The Owner decision on `sal.credit.manage`: credit notes
+ *
+ * The QA campaign measured that nobody in a platform-provisioned organisation could
+ * read, request or approve a credit note (result matrix part 5 row 6.19, part 7 row
+ * 5.9). The gap was a MISSING DEFAULT GRANT: the delegation rule treats the code like
+ * every other, and nothing else restricts it. The Owner decided the standard tenant
+ * administrator carries it, under the controls that already bind every credit note.
+ *
+ *   P31-B16 the code is in the bundle once, is declared by exactly the four
+ *           credit-note operations (each branch-scoped, each with sal.finance.view),
+ *           was already a catalogue row, and first_owner is untouched
+ *   P31-B17 the provisioned administrator holds it and can delegate it
+ *   P31-B18 it requests a credit note in its own branch — pending, crediting
+ *           nothing, audited — is refused approving its own request, and a second
+ *           person it delegated the code to approves it, audited
+ *   P31-B19 another organisation's administrator, holding the same code, is
+ *           refused this organisation's invoice (404, nothing written)
+ *   P31-B20 a cashier role the administrator builds without the code is refused
+ *           (403 ERR-IAM-001 naming the code, nothing written)
+ *
  * Operations exercised: platform.organization-provision, iam.role-create,
  * iam.role-permission-add, iam.audit-event-list, rpt.report-catalogue,
  * shared.export-catalogue, org.branch-create, crm.individual-create,
  * crm.contact-add, inv.item-category-create, inv.uom-list, inv.item-create,
  * inv.stock-location-create, inv.goods-receipt-create,
  * rec.reception-convert-to-work-order, wo.service-line-record,
- * rec.reception-evidence-binding.
+ * rec.reception-evidence-binding, iam.grant-issue, sal.credit-note-create,
+ * sal.credit-note-list, sal.credit-note-approve.
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { Pool } from 'pg';
@@ -119,6 +140,7 @@ import {
   setSessionAuthenticator,
 } from '@/server/context/principal';
 import {
+  FIRST_OWNER_ROLE,
   FakeIdentityProvider,
   TENANT_ADMINISTRATOR_ROLE,
   setIdentityProvider,
@@ -169,6 +191,20 @@ import {
   RECEPTION_EVIDENCE_BINDING_OPERATION,
   POST as evidenceBindingRoute,
 } from '@/app/api/v1/receptions/[receptionId]/evidence-bindings/route';
+import {
+  CREDIT_NOTE_CREATE_OPERATION,
+  POST as creditNoteCreateRoute,
+} from '@/app/api/v1/invoices/[invoiceId]/credit-notes/route';
+import {
+  CREDIT_NOTE_APPROVE_OPERATION,
+  POST as creditNoteApproveRoute,
+} from '@/app/api/v1/credit-notes/[creditNoteId]/approval/route';
+import {
+  CREDIT_NOTE_LIST_OPERATION,
+  GET as creditNoteListRoute,
+} from '@/app/api/v1/credit-notes/route';
+import { CREDIT_NOTE_DETAIL_OPERATION } from '@/app/api/v1/credit-notes/[creditNoteId]/route';
+import { POST as grantIssueRoute } from '@/app/api/v1/iam/grants/route';
 
 /**
  * The six codes prerequisite P-1 adds. Written out rather than derived from
@@ -346,8 +382,22 @@ const ADDED_BY_OD_QA_CAMPAIGN = Object.freeze([
  */
 const WITHHELD_BY_CC12 = Object.freeze(['inv.cost.view']);
 
+/**
+ * The third widening after P1-31, and the first carried on an explicit Owner
+ * decision about ONE code: `sal.credit.manage`. The QA campaign measured that no one
+ * in a platform-provisioned organisation could read, request or approve a credit note
+ * (result matrix part 5 row 6.19, part 7 row 5.9). The diagnosis was a missing
+ * default grant — no delegation restriction singles the code out — so the repair is
+ * one bundle entry. B16–B20 below measure it on the shipped routes. 88 + 1 = 89.
+ */
+const ADDED_BY_CREDIT_DECISION = Object.freeze(['sal.credit.manage']);
+
 /** Every code carried after P1-31 closed. */
-const ADDED_AFTER_P1_31 = Object.freeze([...ADDED_BY_P1_32_MATERIAL, ...ADDED_BY_OD_QA_CAMPAIGN]);
+const ADDED_AFTER_P1_31 = Object.freeze([
+  ...ADDED_BY_P1_32_MATERIAL,
+  ...ADDED_BY_OD_QA_CAMPAIGN,
+  ...ADDED_BY_CREDIT_DECISION,
+]);
 
 const IDENTITY_PROVIDER = 'test_harness';
 const SUBJECT_HOLDER = 'fx_p131_platform_holder';
@@ -749,6 +799,33 @@ afterAll(async () => {
     'SELECT id FROM org.tenants WHERE tenant_code LIKE $1',
     [`${TENANT_PREFIX}%`]
   );
+  // B18's issued invoice first, in ONE transaction: the invoice reconciliation
+  // trigger is deferred to commit, so a header and its line amounts deleted in two
+  // autocommit statements would be refused in between — the way
+  // `cleanP1_22Fixtures` removes the same tables.
+  const financial = await admin.connect();
+  try {
+    await financial.query('BEGIN');
+    for (const table of [
+      'sal.financial_events',
+      'sal.credit_notes',
+      'sal.invoice_status_history',
+      'sal.invoice_line_amounts',
+      'sal.invoice_lines',
+      'sal.invoice_amounts',
+      'sal.invoices',
+    ]) {
+      await financial.query(`DELETE FROM ${table} WHERE tenant_id = ANY($1::uuid[])`, [
+        provisioned.rows.map((row) => row.id),
+      ]);
+    }
+    await financial.query('COMMIT');
+  } catch (error) {
+    await financial.query('ROLLBACK');
+    throw error;
+  } finally {
+    financial.release();
+  }
   await deleteTenantCascade(
     admin,
     provisioned.rows.map((row) => row.id)
@@ -979,8 +1056,11 @@ describe('Owner directive 2026-09-17 — the codes the QA campaign found closed'
     // the bundle every organisation provisioned before 2026-09-17 was given.
     const before = BUNDLE_BEFORE + ADDED_ALL.length + ADDED_BY_P1_32_MATERIAL.length;
     expect(before).toBe(85);
-    expect(bundle).toHaveLength(before + ADDED_BY_OD_QA_CAMPAIGN.length);
-    expect(bundle).toHaveLength(88);
+    expect(before + ADDED_BY_OD_QA_CAMPAIGN.length).toBe(88);
+    // 89 since the Owner's credit-note decision; B16 owns that arithmetic.
+    expect(bundle).toHaveLength(
+      before + ADDED_BY_OD_QA_CAMPAIGN.length + ADDED_BY_CREDIT_DECISION.length
+    );
     expect(ADDED_BY_OD_QA_CAMPAIGN).toHaveLength(3);
 
     // None of the three appears in any earlier widening, so "it was absent
@@ -1274,5 +1354,412 @@ describe('Owner directive 2026-09-17 — the codes the QA campaign found closed'
       [probe.tenantId, visit.visitId]
     );
     expect(rows[0]?.n).toBe(1);
+  });
+});
+
+/** An account of a provisioned organisation that is NOT its first administrator. */
+async function seedMember(
+  tenant: Provisioned,
+  label: string
+): Promise<{ userId: string; subject: string }> {
+  const userId = randomUUID();
+  const subject = `fx_p31b_${label}_${RUN}`;
+  await admin.query(
+    `INSERT INTO iam.user_accounts
+       (id, tenant_id, identity_provider, provider_subject, email, display_name, status, created_by)
+     VALUES ($1, $2, $3, $4, $5, $6, 'active', $7)`,
+    [
+      userId,
+      tenant.tenantId,
+      IDENTITY_PROVIDER,
+      subject,
+      `${subject}@fixture.test`,
+      `P31 ${label}`,
+      tenant.ownerAccountId,
+    ]
+  );
+  return { userId, subject };
+}
+
+function asMember(tenant: Provisioned, subject: string): void {
+  setSessionAuthenticator(
+    new StaticClaimsAuthenticator({
+      identityProvider: IDENTITY_PROVIDER,
+      providerSubject: subject,
+      tenantId: tenant.tenantId,
+    })
+  );
+}
+
+/**
+ * A role the provisioned administrator BUILDS out of codes it holds, granted by it to
+ * one member and confined to one branch — the only way anybody but the administrator
+ * comes to hold a code in such an organisation.
+ */
+async function grantBranchRole(
+  tenant: Provisioned,
+  roleCode: string,
+  codes: readonly string[],
+  userId: string,
+  scope: { companyId: string; branchId: string }
+): Promise<string> {
+  const roleId = await newRole(tenant, roleCode);
+  for (const permissionCode of codes) {
+    const mapped = await mapCode(tenant, roleId, permissionCode);
+    expect({ permissionCode, status: mapped.status }).toEqual({ permissionCode, status: 201 });
+  }
+  asOwnerOf(tenant);
+  const grant = await call<{ id?: string }>(grantIssueRoute, {
+    path: '/iam/grants',
+    body: {
+      userId,
+      roleId,
+      scopes: [{ scopeType: 'branch', companyId: scope.companyId, branchId: scope.branchId }],
+    },
+    idempotencyKey: randomUUID(),
+  });
+  expect(grant.status).toBe(201);
+  return roleId;
+}
+
+interface CreditInvoice {
+  readonly invoiceId: string;
+  readonly companyId: string;
+  readonly branchId: string;
+}
+
+let creditInvoice: Promise<CreditInvoice> | undefined;
+
+/**
+ * ONE issued invoice in the provisioned organisation, shared by B18–B20.
+ *
+ * The work order is the organisation's own, produced through the shipped reception
+ * conversion exactly as B13 produces one. The invoice is built on the admin
+ * connection the way `p1-22-helpers.ts` `seedIssuedInvoice` builds one — a draft
+ * header, a line, its restricted line amount, then `sal.issue_invoice` — because
+ * pricing a work order through quotations is not what these cases measure. What
+ * they MEASURE, the credit note, runs through the shipped routes only.
+ */
+function issuedInvoice(): Promise<CreditInvoice> {
+  creditInvoice ??= (async () => {
+    const scope = await scopeOf(probe);
+    asOwnerOf(probe);
+    const customer = await call<{ customerId: string }>(individualCreateRoute, {
+      path: '/customers/individuals',
+      body: { givenName: 'Credit', familyName: 'Customer' },
+      idempotencyKey: randomUUID(),
+    });
+    expect(customer.status).toBe(201);
+    const visit = await seedVisit(probe, scope, customer.body.customerId, { authorize: true });
+    asOwnerOf(probe);
+    const converted = await call<{ workOrderId?: string }>(receptionConvertRoute, {
+      path: `/receptions/${visit.visitId}/convert-to-work-order`,
+      params: { receptionId: visit.visitId },
+      body: {},
+      idempotencyKey: randomUUID(),
+      ifMatch: visit.recordVersion,
+    });
+    expect(converted.status).toBe(200);
+    const workOrderId = converted.body.workOrderId ?? '';
+    expect(workOrderId).not.toBe('');
+
+    const client = await admin.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query(
+        `SELECT set_config('app.user_id',$1,true), set_config('app.tenant_id',$2,true)`,
+        [probe.ownerAccountId, probe.tenantId]
+      );
+      const invoice = await client.query<{ id: string }>(
+        `INSERT INTO sal.invoices
+           (tenant_id, company_id, branch_id, work_order_id, payer_partner_id, currency_code,
+            idempotency_key, created_by)
+         VALUES ($1,$2,$3,$4,$5,'JOD',$6,$7) RETURNING id`,
+        [
+          probe.tenantId,
+          scope.companyId,
+          scope.branchId,
+          workOrderId,
+          customer.body.customerId,
+          `fx-p31b-credit-invoice-${RUN}`,
+          probe.ownerAccountId,
+        ]
+      );
+      const invoiceId = invoice.rows[0]?.id ?? '';
+      const line = await client.query<{ id: string }>(
+        `INSERT INTO sal.invoice_lines
+           (tenant_id, company_id, branch_id, invoice_id, line_number, line_type, quantity,
+            currency_code, created_by)
+         VALUES ($1,$2,$3,$4,1,'service',1,'JOD',$5) RETURNING id`,
+        [probe.tenantId, scope.companyId, scope.branchId, invoiceId, probe.ownerAccountId]
+      );
+      await client.query(
+        `INSERT INTO sal.invoice_line_amounts
+           (tenant_id, company_id, branch_id, invoice_line_id, invoice_id, unit_price,
+            net_amount, tax_amount, gross_amount, customer_pay_amount, warranty_pay_amount,
+            created_by)
+         VALUES ($1,$2,$3,$4,$5,'100.0000','100.0000','0.0000','100.0000','100.0000',0,$6)`,
+        [
+          probe.tenantId,
+          scope.companyId,
+          scope.branchId,
+          line.rows[0]?.id ?? '',
+          invoiceId,
+          probe.ownerAccountId,
+        ]
+      );
+      await client.query('SELECT sal.issue_invoice($1,NULL)', [invoiceId]);
+      await client.query('COMMIT');
+      return { invoiceId, companyId: scope.companyId, branchId: scope.branchId };
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+  })();
+  return creditInvoice;
+}
+
+async function openReceivable(invoiceId: string): Promise<string> {
+  const { rows } = await admin.query<{ open: string }>(
+    'SELECT sal.invoice_open_receivable($1)::text AS open',
+    [invoiceId]
+  );
+  return rows[0]?.open ?? '';
+}
+
+async function creditNotesOn(invoiceId: string): Promise<number> {
+  const { rows } = await admin.query<{ n: number }>(
+    'SELECT count(*)::int AS n FROM sal.credit_notes WHERE invoice_id = $1',
+    [invoiceId]
+  );
+  return rows[0]?.n ?? 0;
+}
+
+async function auditRecordsFor(
+  tenantId: string,
+  action: string,
+  entityId: string
+): Promise<number> {
+  const { rows } = await admin.query<{ n: number }>(
+    `SELECT count(*)::int AS n FROM iam.audit_records
+      WHERE tenant_id = $1 AND action = $2 AND entity_id = $3`,
+    [tenantId, action, entityId]
+  );
+  return rows[0]?.n ?? 0;
+}
+
+interface CreditNoteReply {
+  readonly creditNote?: {
+    readonly id: string;
+    readonly branchId: string;
+    readonly approvalState: string;
+    readonly requestedBy: string;
+    readonly approvedBy: string | null;
+    readonly amount: { readonly amount: string; readonly currency: string };
+  };
+  readonly code?: string;
+  readonly requiredPermissions?: string[];
+}
+
+describe('Owner decision — sal.credit.manage: credit notes in a provisioned organisation', () => {
+  it('P31-B16 the bundle carries sal.credit.manage and nothing else moved; the four credit-note operations declare it with sal.finance.view; it was already a catalogue row; first_owner is untouched', () => {
+    const bundle = [...TENANT_ADMINISTRATOR_ROLE.permissionCodes];
+    expect(bundle).toHaveLength(89);
+    for (const code of ADDED_BY_CREDIT_DECISION) {
+      expect(bundle.filter((c) => c === code)).toHaveLength(1);
+      expect(ADDED_ALL).not.toContain(code);
+      expect(ADDED_BY_P1_32_MATERIAL).not.toContain(code);
+      expect(ADDED_BY_OD_QA_CAMPAIGN).not.toContain(code);
+    }
+    // Its companion read code is already carried, so the four operations are
+    // reachable on the bundle alone.
+    expect(bundle).toContain('sal.finance.view');
+
+    // NOTHING IS MINTED: a catalogue row already.
+    const seed = readFileSync(
+      join(REPOSITORY_ROOT, 'supabase/seeds/04_iam_permission_catalog.sql'),
+      'utf8'
+    );
+    expect(seed).toContain("('sal.credit.manage'");
+
+    // DECLARED by exactly the four credit-note operations, read from the register.
+    const register = JSON.parse(
+      readFileSync(
+        join(REPOSITORY_ROOT, 'docs/phase-1/phase-1-24/evidence/operation-register.json'),
+        'utf8'
+      )
+    ) as { operations: Array<{ id: string; permissions: string[] }> };
+    expect(
+      register.operations
+        .filter((op) => op.permissions.includes('sal.credit.manage'))
+        .map((op) => op.id)
+        .sort()
+    ).toEqual([
+      'sal.credit-note-approve',
+      'sal.credit-note-create',
+      'sal.credit-note-detail',
+      'sal.credit-note-list',
+    ]);
+
+    // The existing controls, by declaration: every one is branch-scoped and needs both
+    // codes, and the two writes are audited under their own actions and classes.
+    for (const operation of [
+      CREDIT_NOTE_CREATE_OPERATION,
+      CREDIT_NOTE_APPROVE_OPERATION,
+      CREDIT_NOTE_LIST_OPERATION,
+      CREDIT_NOTE_DETAIL_OPERATION,
+    ]) {
+      expect(operation.permissions).toEqual(['sal.credit.manage', 'sal.finance.view']);
+      expect(operation.scope).toBe('branch');
+    }
+    expect(CREDIT_NOTE_CREATE_OPERATION.auditAction).toBe('sal.credit_note.requested');
+    expect(CREDIT_NOTE_CREATE_OPERATION.auditClass).toBe('financial');
+    expect(CREDIT_NOTE_APPROVE_OPERATION.auditAction).toBe('sal.credit_note.approved');
+    expect(CREDIT_NOTE_APPROVE_OPERATION.auditClass).toBe('approval');
+
+    // Carried here and nowhere else: the frozen bootstrap role gains nothing.
+    expect([...FIRST_OWNER_ROLE.permissionCodes]).toEqual([
+      'iam.user.manage',
+      'iam.role.manage',
+      'iam.grant.manage',
+    ]);
+  });
+
+  it('P31-B17 the provisioned administrator effectively holds it, and can delegate it onto a role it creates', async () => {
+    expect(await codesOfRole(probe.tenantAdministratorRoleId)).toContain('sal.credit.manage');
+    expect(await codesHeldBy(probe.ownerAccountId)).toContain('sal.credit.manage');
+
+    // The act `ins_role_permissions_delegable` refused to everybody before: no
+    // delegation restriction singles this code out, so holding it is enough.
+    const roleId = await newRole(probe, 'credit_delegation_probe');
+    const mapped = await mapCode(probe, roleId, 'sal.credit.manage');
+    expect(mapped.status).toBe(201);
+    expect(await codesOfRole(roleId)).toEqual(['sal.credit.manage']);
+  });
+
+  it('P31-B18 it requests a credit note in its own branch (pending, crediting nothing, audited), cannot approve its own request, and a second person it delegated the code to approves it', async () => {
+    const invoice = await issuedInvoice();
+    expect(await openReceivable(invoice.invoiceId)).toBe('100.0000');
+
+    asOwnerOf(probe);
+    const requested = await call<CreditNoteReply>(creditNoteCreateRoute, {
+      path: `/invoices/${invoice.invoiceId}/credit-notes`,
+      params: { invoiceId: invoice.invoiceId },
+      body: { amount: '40.000', reason: 'A part was billed twice on the same job' },
+      idempotencyKey: randomUUID(),
+    });
+    expect(requested.status).toBe(201);
+    const note = requested.body.creditNote;
+    if (note === undefined) throw new Error('the credit-note request answered no credit note');
+    expect(note.branchId).toBe(invoice.branchId);
+    expect(note.approvalState).toBe('pending');
+    expect(note.requestedBy).toBe(probe.ownerAccountId);
+    expect(note.approvedBy).toBeNull();
+    expect(note.amount).toEqual({ amount: '40.0000', currency: 'JOD' });
+    // Audited once, in this organisation's own trail.
+    expect(await auditRecordsFor(probe.tenantId, 'sal.credit_note.requested', note.id)).toBe(1);
+    // A request credits nothing.
+    expect(await openReceivable(invoice.invoiceId)).toBe('100.0000');
+
+    // The administrator reads it back through the list the navigation entry opens.
+    asOwnerOf(probe);
+    const listed = await call<{ items: Array<{ id: string }> }>(creditNoteListRoute, {
+      path: `/credit-notes?companyId=${invoice.companyId}&branchId=${invoice.branchId}`,
+      method: 'GET',
+    });
+    expect(listed.status).toBe(200);
+    expect(listed.body.items.map((item) => item.id)).toContain(note.id);
+
+    // DUAL CONTROL IS UNCHANGED: holding the code does not let the requester approve.
+    asOwnerOf(probe);
+    const selfApproval = await call<{ code?: string }>(creditNoteApproveRoute, {
+      path: `/credit-notes/${note.id}/approval`,
+      params: { creditNoteId: note.id },
+      idempotencyKey: randomUUID(),
+    });
+    expect(selfApproval.status).toBe(409);
+    expect(selfApproval.body.code).toBe('ERR-TRN-001');
+    expect(await openReceivable(invoice.invoiceId)).toBe('100.0000');
+    expect(await auditRecordsFor(probe.tenantId, 'sal.credit_note.approved', note.id)).toBe(0);
+
+    // The second person: a member the administrator gives a finance-approver role it
+    // builds from the two codes it holds, confined to the invoice's branch.
+    const approver = await seedMember(probe, 'approver');
+    await grantBranchRole(
+      probe,
+      'finance_approver',
+      ['sal.credit.manage', 'sal.finance.view'],
+      approver.userId,
+      invoice
+    );
+    asMember(probe, approver.subject);
+    const approved = await call<CreditNoteReply>(creditNoteApproveRoute, {
+      path: `/credit-notes/${note.id}/approval`,
+      params: { creditNoteId: note.id },
+      idempotencyKey: randomUUID(),
+    });
+    expect(approved.status).toBe(200);
+    expect(approved.body.creditNote?.approvalState).toBe('approved');
+    expect(approved.body.creditNote?.approvedBy).toBe(approver.userId);
+    expect(await auditRecordsFor(probe.tenantId, 'sal.credit_note.approved', note.id)).toBe(1);
+    // 100.0000 minus 40.0000, as exact decimal strings.
+    expect(await openReceivable(invoice.invoiceId)).toBe('60.0000');
+  });
+
+  it('P31-B19 the administrator of ANOTHER organisation, holding the same code, cannot credit this organisation invoice', async () => {
+    const invoice = await issuedInvoice();
+    const other = await provision('crn_other');
+    // It holds the code in its own organisation, so the refusal below is isolation and
+    // not a missing grant.
+    expect(await codesHeldBy(other.ownerAccountId)).toContain('sal.credit.manage');
+    const before = await creditNotesOn(invoice.invoiceId);
+
+    asOwnerOf(other);
+    const refused = await call<{ code?: string }>(creditNoteCreateRoute, {
+      path: `/invoices/${invoice.invoiceId}/credit-notes`,
+      params: { invoiceId: invoice.invoiceId },
+      body: { amount: '10.000', reason: 'Another organisation' },
+      idempotencyKey: randomUUID(),
+    });
+    expect(refused.status).toBe(404);
+    expect(refused.body.code).toBe('ERR-RES-001');
+    expect(await creditNotesOn(invoice.invoiceId)).toBe(before);
+  });
+
+  it('P31-B20 a cashier the administrator builds WITHOUT the code is refused, with the registered refusal, and nothing is written', async () => {
+    const invoice = await issuedInvoice();
+    const cashier = await seedMember(probe, 'cashier');
+    const roleId = await grantBranchRole(
+      probe,
+      'cashier',
+      ['sal.invoice.manage', 'sal.finance.view', 'sal.payment.record'],
+      cashier.userId,
+      invoice
+    );
+    // The cashier role is exactly what the administrator built: the bundle change gave
+    // it nothing.
+    expect(await codesOfRole(roleId)).toEqual([
+      'sal.finance.view',
+      'sal.invoice.manage',
+      'sal.payment.record',
+    ]);
+    const before = await creditNotesOn(invoice.invoiceId);
+
+    asMember(probe, cashier.subject);
+    const refused = await call<{ code?: string; requiredPermissions?: string[] }>(
+      creditNoteCreateRoute,
+      {
+        path: `/invoices/${invoice.invoiceId}/credit-notes`,
+        params: { invoiceId: invoice.invoiceId },
+        body: { amount: '10.000', reason: 'A cashier trying' },
+        idempotencyKey: randomUUID(),
+      }
+    );
+    expect(refused.status).toBe(403);
+    expect(refused.body.code).toBe('ERR-IAM-001');
+    expect(refused.body.requiredPermissions).toContain('sal.credit.manage');
+    expect(await creditNotesOn(invoice.invoiceId)).toBe(before);
   });
 });

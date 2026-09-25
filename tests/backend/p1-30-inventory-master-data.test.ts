@@ -429,7 +429,10 @@ describe('declarations', () => {
     // that exclusion is a recorded decision (change control CC-12, open; register
     // gap E-14) and reversing it is the Owner's call, so DEF-T-03 — nobody in a
     // provisioned organisation can record a unit cost — stands measured and open.
-    expect(TENANT_ADMINISTRATOR_ROLE.permissionCodes).toHaveLength(88);
+    // 89 since the Owner decided the administrator carries sal.credit.manage, so
+    // that somebody in a provisioned organisation can read, request and — as a
+    // second person it delegates to — approve a credit note.
+    expect(TENANT_ADMINISTRATOR_ROLE.permissionCodes).toHaveLength(89);
     expect(TENANT_ADMINISTRATOR_ROLE.permissionCodes).not.toContain('inv.cost.view');
   });
 });
