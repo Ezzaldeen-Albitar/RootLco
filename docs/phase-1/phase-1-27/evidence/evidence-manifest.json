@@ -8,7 +8,7 @@
   "fileCount": 41,
   "files": {
     "docs/phase-1/phase-1-27/adversarial-round-five.md": {
-      "sha256": "5286b52921e49c2738bd0ea934222a360c2ae4dd7715d169367572183b930ebb",
+      "sha256": "afd2045e6567fa6613c7dc33482e2b6dd410fb1cd522e4a8a57e25374ceadda8",
       "bytes": 549224
     },
     "docs/phase-1/phase-1-27/adversarial-round-four.md": {
@@ -100,7 +100,7 @@
       "bytes": 76545
     },
     "docs/phase-1/phase-1-27/finding-phase-disposition.md": {
-      "sha256": "f2ced89b870d12c7ee517dda74a9b60787f163081f3901ccd7561e7d23aa51f2",
+      "sha256": "0734c10b2987175a2f5dc9fd3a2965997512191de3cb55cf0dcd34c53ed81863",
       "bytes": 167366
     },
     "docs/phase-1/phase-1-27/finding-task-map.json": {
@@ -116,7 +116,7 @@
       "bytes": 7737
     },
     "docs/phase-1/phase-1-27/independent-task-audit.md": {
-      "sha256": "8a64f7445f71a3701786452d100ab994e6cd3fe93ad398236edc1d44d38d9e60",
+      "sha256": "9e38d978178e8d19043a4ab4c23971cb5088c06f544a55ae3c9062332e8edffc",
       "bytes": 26611
     },
     "docs/phase-1/phase-1-27/installed-chrome-review.md": {
@@ -160,11 +160,11 @@
       "bytes": 187802
     },
     "docs/phase-1/phase-1-27/task-matrix-verdicts.json": {
-      "sha256": "e22f336f51b84382fb91cc7558b11694966d223db3ca9413a661ec1f65e86427",
+      "sha256": "50deb727eb2f493b036cf572121466a30f78023f914c7d53988bd04997fe559b",
       "bytes": 264827
     },
     "docs/phase-1/phase-1-27/task-matrix.json": {
-      "sha256": "3b9aa1d39ee669139a6a129c26e82645616e712a579dda354d9c3a89c2c278b3",
+      "sha256": "c04bd4979e807421adaa5fe8ae19fcc5259a7b19d14ee569d4330e5147552f15",
       "bytes": 284228
     },
     "docs/phase-1/phase-1-27/task-register.md": {
