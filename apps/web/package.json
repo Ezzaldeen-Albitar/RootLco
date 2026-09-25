@@ -27,14 +27,27 @@
     "validate:boundary": "node scripts/check-api-boundary.mjs",
     "validate:brand": "node scripts/check-brand-isolation.mjs",
     "validate:theme": "node scripts/check-tailwind-theme.mjs",
-    "validate:tokens": "node scripts/check-design-tokens.mjs"
+    "validate:tokens": "node scripts/generate-design-tokens.mjs --check && node scripts/check-design-tokens.mjs"
   },
   "dependencies": {
+    "@emotion/cache": "11.14.0",
+    "@emotion/react": "11.14.0",
+    "@emotion/styled": "11.14.1",
     "@hookform/resolvers": "^3.10.0",
+    "@mui/material": "9.4.0",
+    "@mui/material-nextjs": "9.4.0",
+    "@mui/stylis-plugin-rtl": "9.4.0",
+    "@mui/system": "9.4.0",
+    "@mui/x-charts": "9.14.0",
+    "@mui/x-data-grid": "9.14.0",
+    "@mui/x-date-pickers": "9.14.0",
+    "@mui/x-tree-view": "9.14.0",
+    "dayjs": "1.11.23",
     "next": "16.3.3",
     "react": "19.2.8",
     "react-dom": "19.2.8",
     "react-hook-form": "^7.84.0",
+    "stylis": "4.2.0",
     "zod": "^4.3.6"
   },
   "devDependencies": {
@@ -46,6 +59,7 @@
     "@types/node": "^22",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "@types/stylis": "4.2.7",
     "@vitejs/plugin-react": "^4.3.4",
     "autoprefixer": "^10.4.20",
     "axe-core": "^4.12.1",

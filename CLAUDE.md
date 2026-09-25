@@ -160,12 +160,49 @@ and must be registered in `supabase/config.toml`, or it is never applied.
 - SCSS: `@use` and `@forward` only, relative paths rather than the `@/` alias, CSS logical
   properties only, maximum nesting depth 2, and `!important` only with a documented
   suppression.
-- Tailwind and vendored primitives are adopted by ADR-020. Sass owns every design value and
-  emits CSS custom properties; the Tailwind theme holds only `var(--…)` references, so a raw
-  literal in the Tailwind configuration is a defect. A colour utility that is not registered in
-  the theme renders nothing while every test still passes — never invent a utility name. Do not
-  introduce a second utility framework or an installed component library, and do not invent
-  brand colours.
+- Styling and components follow ADR-022, which supersedes ADR-020. Material UI and the MUI X
+  Community (MIT) editions are the component layer; Tailwind coexists for layout and spacing
+  utilities. Sass owns every design value and emits CSS custom properties; the Tailwind theme
+  and the Material theme hold only `var(--…)` references (the few numbers Material needs come
+  from the generated `src/styles/tokens/generated/tokens.ts`, which is drift-checked and never
+  hand-edited), so a raw literal in either is a defect. A colour utility that is not registered
+  in the Tailwind theme renders nothing while every test still passes — never invent a utility
+  name.
+- Cascade layers (`styles/_layers.scss`, ADR-022 section 6): `rootlco-reset`, then `mui`
+  (every Material rule), then unlayered Tailwind utilities and SCSS modules, which therefore
+  win over Material. The order is declared in that one file and in the theme's
+  `modularCssLayers`, and the two must agree.
+- `sx`, `styled()` and theme objects take tokens only (`var(--…)` or the generated module),
+  logical properties only (`marginInlineStart`, `insetInlineEnd`, never `ml`/`left`), and no
+  raw length, duration or colour. `validate:web-tokens` reads every style position (`sx`/`css`
+  attributes, `GlobalStyles` `styles`, an `sx` value, each `styleOverrides` slot, the arguments
+  of `createTheme()`, `extendTheme()`, `css()`, `keyframes()` and `styled(X)()`, and inside a
+  style object a spread or a selector key's value) and follows a reference there to its
+  same-file declaration by scope; one it cannot follow (an import, a parameter, a call) is a
+  finding outside `components/ui-foundation/` and the grid wrapper. A theme member a style
+  callback receives is a token. The value of a CSS-property key is read whole — conditional
+  branches, `||`/`??`/`&&`, arithmetic operands, template `${…}`, call arguments (`px(12)`),
+  array and responsive-object members, through `as`/`satisfies`/`!` — following same-file
+  `const`s and functions, so `width: open ? W : 0`, `width: W * 2` and `fontSize: 13 as const`
+  are refused; a raw number in CSS text (`${W}px`, a helper argument) is refused, and
+  `theme.spacing(n)` is a token multiple. `styled`, `css` and `keyframes` are recognised through
+  import aliases, the `@emotion/styled` default import, namespace members and `styled.div`; a
+  tagged template has its static text scanned for raw lengths, durations and colours and each
+  `${…}` read strictly (only the theme or a token-layer import may stay unresolved). A raw
+  length or duration held in any module-level declaration outside the token layer (tests
+  excepted) is refused, so a value imported into a style has been checked where it was declared;
+  its exact allow-list (`RAW_CONSTANT_ALLOWED`, path and name with a reason) is empty. Residual
+  limits, not enforced: a value computed at run time from data; under a plain CSS-property key
+  an import, parameter or call result is taken as a token (an imported bare number such as
+  `export const W = 320` is not refused where declared); a raw string built inside another
+  file's function body; and the React `style` attribute.
+- Shared RootLco wrappers over Material live in `apps/web/src/components/`: the foundation in
+  `components/ui-foundation/`, the operational grid at `components/data/OperationalGrid.tsx`
+  or `components/data/OperationalGrid/` (an exact allow-list, not a name prefix).
+  Feature code uses the wrappers; only the wrapper spreads props onto the data grid.
+- No competing design system and no second utility framework. Base UI only where Material has
+  no primitive. MUI X Pro or Premium packages and `@mui/x-license` are forbidden without a
+  recorded licence entitlement. Do not invent brand colours.
 - A `'use server'` module exports async functions and nothing else.
 - The product name has exactly two authorities, one for the web tier and one for the API tier.
   They move in lockstep: either both hold a recognised placeholder or both hold the same

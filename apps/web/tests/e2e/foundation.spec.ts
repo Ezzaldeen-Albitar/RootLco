@@ -222,7 +222,15 @@ test.describe('the gallery', () => {
 
   test('the table sorts, pages and reports its range', async ({ page }) => {
     await page.goto('/en/gallery');
-    const table = page.getByRole('table', { name: 'Data table' });
+    // Every locator below is scoped to the gallery section headed "Data table".
+    // The Material UI section further down the page renders a second grid with
+    // its own pagination controls and range label, so a page-wide role or text
+    // query can resolve to both.
+    const section = page
+      .locator('section')
+      .filter({ has: page.getByRole('heading', { level: 2, name: 'Data table' }) });
+    await expect(section).toHaveCount(1);
+    const table = section.getByRole('table', { name: 'Data table' });
     await expect(table).toBeVisible();
 
     // Scoped to the data table: the print sample further down the page renders a
@@ -235,8 +243,8 @@ test.describe('the gallery', () => {
       'ascending'
     );
 
-    await expect(page.getByText(/Showing/)).toContainText('5');
-    await expect(page.getByRole('button', { name: 'Previous page' })).toBeDisabled();
+    await expect(section.getByText(/Showing/)).toContainText('5');
+    await expect(section.getByRole('button', { name: 'Previous page' })).toBeDisabled();
   });
 
   test('a dialog traps focus and restores it on Escape', async ({ page }) => {

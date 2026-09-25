@@ -32,6 +32,13 @@
   }
 }
 
-:where(a, button, input, select, textarea, [tabindex]) {
-  @include m.focus-ring;
+// The global focus ring sits in the `rootlco-reset` cascade layer (ADR-022):
+// unlayered, it would beat Material UI's layered styles and draw a second ring
+// beside every Material control's own focus indicator. The theme gives Material
+// the same ring from the same tokens (`Mui-focusVisible`), and every existing
+// control keeps this one, because nothing it competed with has moved.
+@layer rootlco-reset {
+  :where(a, button, input, select, textarea, [tabindex]) {
+    @include m.focus-ring;
+  }
 }

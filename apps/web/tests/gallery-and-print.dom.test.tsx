@@ -4,6 +4,11 @@ import { screen, within } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { axe } from 'vitest-axe';
 import { FIXTURE_ROWS, simulateServer } from '@/components/gallery/fixtures';
+import { MuiFoundationSection } from '@/components/gallery/MuiFoundationSection';
+import { UiFoundationProvider } from '@/components/ui-foundation/UiFoundationProvider';
+import { muiTextOf } from '@/components/ui-foundation/mui-text';
+import type { Locale } from '@/i18n/config';
+import { getMessages } from '@/i18n/get-messages';
 import { PrintDocument, PrintTable } from '@/components/print/PrintDocument';
 import { galleryEnabled } from '@/lib/gallery-access';
 import { BOTH_DIRECTIONS, renderLtr, renderRtl } from './render';
@@ -201,5 +206,57 @@ describe('the print stylesheet hides interactive chrome', () => {
   it('uses no raw colour, only the paper token', () => {
     expect(source).toContain('var(--color-paper)');
     expect(source).not.toMatch(/#[0-9a-fA-F]{3,8}\b/);
+  });
+});
+
+/**
+ * The gallery's Material UI section (ADR-022) — the visual reference the pull
+ * requests that move screens onto Material UI copy from. Rendered inside the
+ * foundation provider exactly as the locale layout mounts it.
+ */
+describe('the Material UI foundation section', () => {
+  function renderSection(locale: Locale) {
+    const messages = getMessages(locale);
+    const renderIn = BOTH_DIRECTIONS.find(([candidate]) => candidate === locale)?.[1] ?? renderLtr;
+    return renderIn(
+      <UiFoundationProvider locale={locale} text={muiTextOf(messages)}>
+        <MuiFoundationSection locale={locale} messages={messages} />
+      </UiFoundationProvider>
+    );
+  }
+
+  it('renders right to left in Arabic, with the Arabic component texts', () => {
+    renderSection('ar');
+    expect(document.documentElement.dir).toBe('rtl');
+    const section = screen.getByTestId('mui-foundation');
+    expect(within(section).getByRole('heading', { name: 'أساس Material UI' })).toBeInTheDocument();
+    // Upstream ships no Arabic for these; they come from the catalogue.
+    expect(within(section).getByText('عدد الصفوف في الصفحة')).toBeInTheDocument();
+    expect(within(section).getByText('الصفحة 1')).toBeInTheDocument();
+    expect(within(section).getByRole('tree', { name: 'الهيكل التنظيمي' })).toBeInTheDocument();
+  });
+
+  it('renders left to right in English, with the English component texts', () => {
+    renderSection('en');
+    expect(document.documentElement.dir).toBe('ltr');
+    const section = screen.getByTestId('mui-foundation');
+    expect(within(section).getByText('Rows per page')).toBeInTheDocument();
+    expect(within(section).getByText('Page 1')).toBeInTheDocument();
+  });
+
+  it('shows the grid with no toolbar, no export, no print and no total', () => {
+    for (const locale of ['en', 'ar'] as const) {
+      const { unmount } = renderSection(locale);
+      const grid = screen.getByRole('grid');
+      expect(grid.querySelector('.MuiDataGrid-toolbarContainer, .MuiDataGrid-toolbar')).toBeNull();
+      expect(
+        screen.queryAllByRole('button', { name: /export|print|csv|تصدير|طباعة/i }),
+        locale
+      ).toEqual([]);
+      // Five placeholder rows exist; no label may announce that number as a total.
+      const footer = grid.querySelector('.MuiDataGrid-footerContainer');
+      expect(footer?.textContent ?? '').not.toMatch(/of|من 5|total|المجموع/i);
+      unmount();
+    }
   });
 });
