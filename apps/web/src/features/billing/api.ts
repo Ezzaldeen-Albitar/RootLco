@@ -10,6 +10,7 @@ import {
 } from '@/lib/api/read-operation';
 import type {
   CounterSaleCreateBody,
+  CreditNoteCreateBody,
   InvoiceCancelBody,
   InvoiceCreateBody,
 } from '@/lib/contracts/billing-contract';
@@ -17,6 +18,7 @@ import { fromFailure, success, type ActionState } from '@/lib/forms/action-resul
 import type {
   CreatedInvoice,
   CreditNote,
+  CreditNoteEcho,
   CreditNoteState,
   Invoice,
   InvoiceDetail,
@@ -262,6 +264,94 @@ export async function listCreditNotes(
  */
 export async function readCreditNote(creditNoteId: string): Promise<ReadState<CreditNote>> {
   return readOperation<CreditNote>(`/api/v1/credit-notes/${encodeURIComponent(creditNoteId)}`);
+}
+
+/**
+ * Raise a credit note against an invoice (`sal.credit-note-create`).
+ *
+ * Born pending, and worth nothing until a second person approves it. The
+ * transport key is the one the form holds for THIS attempt: pressing again
+ * after a lost answer replays the stored request instead of raising a second
+ * note, and the echo says so with `replayed`.
+ *
+ * A 409 here is the invoice refusing the amount — more than is still open, or
+ * an invoice no longer open for credit — and the server names neither with a
+ * token. Both are about the amount the operator typed against this invoice, so
+ * the refusal is filed under the amount rather than left as the generic
+ * "this record changed" banner, which would send the operator looking for an
+ * edit nobody made.
+ */
+export async function requestCreditNote(
+  invoiceId: string,
+  body: CreditNoteCreateBody,
+  idempotencyKey: string,
+  attempt = 1
+): Promise<CreateOutcome<CreditNoteEcho>> {
+  const client = await authorizedClient();
+  if (!client) return { state: expired(attempt), created: null };
+  const result = await client.send<CreditNoteEcho>(
+    'POST',
+    invoicePath(invoiceId, '/credit-notes'),
+    body,
+    { idempotencyKey }
+  );
+  if (!result.ok) {
+    const state = fromFailure(result, attempt);
+    if (state.status === 'conflict' && (result.problem?.violations ?? []).length === 0) {
+      return {
+        state: {
+          ...state,
+          messageKey: 'form.formError',
+          fieldErrors: { ...(state.fieldErrors ?? {}), amount: 'creditNotes.request.overOpen' },
+        },
+        created: null,
+      };
+    }
+    return { state, created: null };
+  }
+  return {
+    state: {
+      ...success('creditNotes.request.success', attempt),
+      correlationId: result.correlationId,
+    },
+    created: result.data,
+  };
+}
+
+/**
+ * Approve a pending credit note (`sal.credit-note-approve`) — the moment the
+ * credit becomes real and the invoice's open receivable falls by its amount.
+ *
+ * No body: the approver is the session and the amount was fixed when the note
+ * was raised. The server refuses the person who raised it with the named rule
+ * `credit_note_self_approval`, which reaches the banner as its own sentence. Any
+ * other 409 — a note already decided, or an invoice that no longer has that much
+ * open — carries no token and is said as that, not as "someone changed it".
+ */
+export async function approveCreditNote(
+  creditNoteId: string,
+  attempt = 1
+): Promise<CreateOutcome<CreditNoteEcho>> {
+  const client = await authorizedClient();
+  if (!client) return { state: expired(attempt), created: null };
+  const result = await client.send<CreditNoteEcho>(
+    'POST',
+    `/api/v1/credit-notes/${encodeURIComponent(creditNoteId)}/approval`
+  );
+  if (!result.ok) {
+    const state = fromFailure(result, attempt);
+    if (state.status === 'conflict' && (result.problem?.violations ?? []).length === 0) {
+      return { state: { ...state, messageKey: 'creditNotes.approve.conflict' }, created: null };
+    }
+    return { state, created: null };
+  }
+  return {
+    state: {
+      ...success('creditNotes.approve.success', attempt),
+      correlationId: result.correlationId,
+    },
+    created: result.data,
+  };
 }
 
 /**

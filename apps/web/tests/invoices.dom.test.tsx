@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import en from '../src/i18n/messages/en.json';
 import ar from '../src/i18n/messages/ar.json';
 import { formatMoney } from '../src/lib/money';
+import accountManifest from './e2e/authenticated/account-manifest.json';
 import type { ReactElement } from 'react';
 import {
   OTHER_BRANCH,
@@ -65,9 +66,14 @@ const readOutstanding = vi.fn();
 const createInvoice = vi.fn();
 const issueInvoice = vi.fn();
 const cancelInvoice = vi.fn();
-// DEF-T-07: the two credit-note reads, on the same module surface.
+// DEF-T-07: the two credit-note reads, on the same module surface — and the two
+// writes that raise and approve one, with the invoice list the raise form finds
+// its invoice through.
 const listCreditNotes = vi.fn();
 const readCreditNote = vi.fn();
+const requestCreditNote = vi.fn();
+const approveCreditNote = vi.fn();
+const listInvoices = vi.fn();
 vi.mock('@/features/billing/api', () => ({
   readWorkOrderInvoice: (...args: unknown[]) => readWorkOrderInvoice(...args),
   readInvoicePreview: (...args: unknown[]) => readInvoicePreview(...args),
@@ -78,6 +84,9 @@ vi.mock('@/features/billing/api', () => ({
   cancelInvoice: (...args: unknown[]) => cancelInvoice(...args),
   listCreditNotes: (...args: unknown[]) => listCreditNotes(...args),
   readCreditNote: (...args: unknown[]) => readCreditNote(...args),
+  requestCreditNote: (...args: unknown[]) => requestCreditNote(...args),
+  approveCreditNote: (...args: unknown[]) => approveCreditNote(...args),
+  listInvoices: (...args: unknown[]) => listInvoices(...args),
 }));
 
 // A different payer is FOUND among customers; the directory adapter is replaced.
@@ -116,8 +125,14 @@ vi.mock('next/navigation', () => ({
 }));
 
 let PERMISSIONS: readonly string[] = [];
+/** The person the session names; the credit-note fixtures are raised by someone else. */
+const SIGNED_IN = 'u2';
 vi.mock('@/features/authentication/api/session', () => ({
-  requireSession: async () => ({ permissions: PERMISSIONS, email: 'operator@test.local' }),
+  requireSession: async () => ({
+    permissions: PERMISSIONS,
+    email: 'operator@test.local',
+    userId: SIGNED_IN,
+  }),
 }));
 
 const notifyActionResult = vi.fn((..._args: unknown[]): boolean => true);
@@ -1361,8 +1376,14 @@ describe('credit notes are reachable', () => {
     });
   });
 
-  const creditNotesScreen = (initial: string | null = null) => (
-    <CreditNotesScreen locale="en" messages={en} initialCreditNoteId={initial} />
+  const creditNotesScreen = (initial: string | null = null, currentUserId = SIGNED_IN) => (
+    <CreditNotesScreen
+      locale="en"
+      messages={en}
+      initialCreditNoteId={initial}
+      currentUserId={currentUserId}
+      canSearchInvoices
+    />
   );
 
   it('lists the working branch notes with the server amount and the state in words', async () => {
@@ -1379,14 +1400,42 @@ describe('credit notes are reachable', () => {
     expect(within(section).queryAllByRole('combobox')).toEqual([]);
 
     expect(await screen.findByText('A part was billed twice on the same job')).toBeTruthy();
-    expect(screen.getByText(money('40.0000'))).toBeTruthy();
-    expect(screen.getByText(EN['creditNotes.state.pending'] as string)).toBeTruthy();
+    const table = screen.getByRole('table');
+    expect(within(table).getByText(money('40.0000'))).toBeTruthy();
+    expect(within(table).getByText(EN['creditNotes.state.pending'] as string)).toBeTruthy();
     // And the read itself is addressed to that branch: both halves travel, and
-    // they are the header's, not a pair the screen made up.
-    expect(listCreditNotes).toHaveBeenCalledWith({
-      companyId: TEST_BRANCH.companyId,
-      branchId: TEST_BRANCH.id,
-    });
+    // they are the header's, not a pair the screen made up. It opens on the
+    // notes waiting for approval, which is the work the screen is for.
+    expect(listCreditNotes).toHaveBeenCalledWith(
+      { companyId: TEST_BRANCH.companyId, branchId: TEST_BRANCH.id },
+      { approvalState: 'pending' }
+    );
+  });
+
+  it('reads every state when asked, and the chosen state again when it changes', async () => {
+    const user = userEvent.setup();
+    renderLtr(creditNotesScreen());
+    await screen.findByText('A part was billed twice on the same job');
+    await user.selectOptions(
+      screen.getByLabelText(labelled('creditNotes.list.status')),
+      EN['creditNotes.list.all'] as string
+    );
+    await waitFor(() =>
+      expect(listCreditNotes).toHaveBeenLastCalledWith({
+        companyId: TEST_BRANCH.companyId,
+        branchId: TEST_BRANCH.id,
+      })
+    );
+    await user.selectOptions(
+      screen.getByLabelText(labelled('creditNotes.list.status')),
+      EN['creditNotes.state.approved'] as string
+    );
+    await waitFor(() =>
+      expect(listCreditNotes).toHaveBeenLastCalledWith(
+        { companyId: TEST_BRANCH.companyId, branchId: TEST_BRANCH.id },
+        { approvalState: 'approved' }
+      )
+    );
   });
 
   it('opens a note named in the address even when no branch can be resolved', async () => {
@@ -1417,11 +1466,20 @@ describe('credit notes are reachable', () => {
       correlationId: 'corr',
     });
     renderLtr(creditNotesScreen(CREDIT_NOTE_ID));
-    expect(await screen.findByText(EN['creditNotes.state.approved'] as string)).toBeTruthy();
-    expect(screen.queryByText(EN['creditNotes.detail.notApproved'] as string)).toBeNull();
+    const detail = await screen.findByRole('region', {
+      name: EN['creditNotes.detail.heading'] as string,
+    });
+    expect(
+      await within(detail).findByText(EN['creditNotes.state.approved'] as string)
+    ).toBeTruthy();
+    expect(within(detail).queryByText(EN['creditNotes.detail.notApproved'] as string)).toBeNull();
+    // A decided note offers no approval to anyone.
+    expect(
+      within(detail).queryByRole('button', { name: EN['creditNotes.approve.action'] as string })
+    ).toBeNull();
   });
 
-  it('claims no approval control, because approving is a second person act', async () => {
+  it('states that approving is a second person act', async () => {
     renderLtr(creditNotesScreen(CREDIT_NOTE_ID));
     expect(await screen.findByText(EN['creditNotes.detail.approvalNote'] as string)).toBeTruthy();
   });
@@ -1459,6 +1517,26 @@ describe('credit notes are reachable', () => {
     await waitFor(() => expect(readCreditNote).toHaveBeenCalledWith(CREDIT_NOTE_ID));
   });
 
+  it('opens the list for the first administrator of a newly provisioned organisation, on the set it is given', async () => {
+    /*
+     * QA result matrix part 7 row 5.9: the administrator of a provisioned
+     * organisation met the refusal here, because the set it is given did not
+     * carry the credit code. The set below is GENERATED from that bundle
+     * (emit-account-manifest.mjs) rather than typed, so taking the code out of
+     * the bundle takes it out of this case and the page refuses again.
+     */
+    PERMISSIONS = accountManifest['org-administrator'];
+    renderLtr(
+      (await CreditNotesPage({
+        params: Promise.resolve({ locale: 'en' }),
+        searchParams: Promise.resolve({}),
+      })) as React.ReactElement
+    );
+    expect(await screen.findByText('A part was billed twice on the same job')).toBeTruthy();
+    expect(listCreditNotes).toHaveBeenCalled();
+    expect(screen.queryByText(EN['creditNotes.list.refused'] as string)).toBeNull();
+  });
+
   it('ignores an address that names something that is not a reference', async () => {
     PERMISSIONS = ['sal.credit.manage', 'sal.finance.view', 'org.branch.read'];
     renderLtr(
@@ -1469,6 +1547,507 @@ describe('credit notes are reachable', () => {
     );
     await screen.findByText(EN['creditNotes.explain'] as string);
     expect(readCreditNote).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * Owner requirement: credit notes usable through the application.
+ *
+ * Before this, a credit note could be raised only by a customer return and
+ * approved only through the API. These cases hold the two acts the screens now
+ * carry: raising one against an invoice (found in the working branch on the
+ * credit-notes screen, or from the invoice itself), and approving one — by a
+ * DIFFERENT person, the one who raised it being shown the note as waiting for
+ * another approver and, if the server refuses anyway, told why in words.
+ */
+describe('raising and approving a credit note', () => {
+  const NOTE_ID = '55555555-5555-4555-8555-555555555555';
+  const RAISED_BY = 'u1';
+
+  const pendingNote = (over: Record<string, unknown> = {}) => ({
+    id: NOTE_ID,
+    invoiceId: INVOICE_ID,
+    companyId: TEST_BRANCH.companyId,
+    branchId: TEST_BRANCH.id,
+    amount: { amount: '15.5000', currency: 'USD' },
+    reason: 'Wrong part fitted',
+    approvalState: 'pending',
+    requestedBy: RAISED_BY,
+    approvedBy: null,
+    approvedAt: null,
+    issuedAt: null,
+    recordVersion: 1,
+    ...over,
+  });
+  const approvedNote = pendingNote({
+    approvalState: 'approved',
+    approvedBy: SIGNED_IN,
+    approvedAt: '2026-09-20T10:00:00Z',
+    issuedAt: '2026-09-20T10:00:00Z',
+    recordVersion: 2,
+  });
+
+  const invoiceEntry = {
+    ...invoice({
+      companyId: TEST_BRANCH.companyId,
+      branchId: TEST_BRANCH.id,
+      status: 'issued',
+      invoiceNumber: 'INV-000123',
+      issuedAt: '2026-09-04T09:00:00Z',
+    }),
+    saleKind: 'work_order',
+    payer: { displayName: 'Layla Haddad', displayNumber: 'C-000482', partyType: 'individual' },
+    outstanding: { amount: '100.0000', currency: 'USD' },
+  };
+
+  const raised = (replayed = false) => ({
+    state: { status: 'success', messageKey: 'creditNotes.request.success', attempt: 1 },
+    created: { creditNote: pendingNote(), replayed },
+  });
+
+  beforeEach(() => {
+    listCreditNotes.mockResolvedValue({
+      status: 'ok',
+      data: { items: [pendingNote()], nextCursor: null, hasMore: false },
+      correlationId: 'corr',
+    });
+    readCreditNote.mockResolvedValue({ status: 'ok', data: pendingNote(), correlationId: 'corr' });
+    listInvoices.mockResolvedValue(
+      okRead({ items: [invoiceEntry], nextCursor: null, hasMore: false })
+    );
+    requestCreditNote.mockResolvedValue(raised());
+    approveCreditNote.mockResolvedValue({
+      state: { status: 'success', messageKey: 'creditNotes.approve.success', attempt: 1 },
+      created: { creditNote: approvedNote, replayed: false },
+    });
+  });
+
+  const notesScreen = (
+    currentUserId: string,
+    initial: string | null = null,
+    canSearchInvoices = true
+  ) => (
+    <CreditNotesScreen
+      locale="en"
+      messages={en}
+      initialCreditNoteId={initial}
+      currentUserId={currentUserId}
+      canSearchInvoices={canSearchInvoices}
+    />
+  );
+
+  const requestForm = () =>
+    screen.findByRole('form', { name: EN['creditNotes.request.heading'] as string });
+  const invoiceSearch = (form: HTMLElement) =>
+    within(form).getByLabelText(labelled('creditNotes.request.invoice'));
+  const amountBox = (form: HTMLElement) =>
+    within(form).getByLabelText(labelled('creditNotes.request.amount')) as HTMLInputElement;
+  const reasonBox = (form: HTMLElement) =>
+    within(form).getByLabelText(labelled('creditNotes.request.reason')) as HTMLTextAreaElement;
+  const submitIn = (form: HTMLElement) =>
+    within(form).getByRole('button', { name: EN['creditNotes.request.submit'] as string });
+
+  async function chooseInvoice(user: ReturnType<typeof userEvent.setup>, form: HTMLElement) {
+    await user.type(invoiceSearch(form), 'INV-0001');
+    await user.click(await within(form).findByRole('button', { name: /INV-000123/ }));
+  }
+
+  it('raises a note against an invoice FOUND in the working branch, and opens it as pending', async () => {
+    const user = userEvent.setup();
+    renderLtr(notesScreen(SIGNED_IN));
+    const form = await requestForm();
+    await chooseInvoice(user, form);
+    // Found in the header's branch, among the invoices that can still be credited.
+    expect(listInvoices.mock.calls.at(-1)?.[0]).toEqual({
+      companyId: TEST_BRANCH.companyId,
+      branchId: TEST_BRANCH.id,
+    });
+    expect(listInvoices.mock.calls.at(-1)?.[1]).toEqual({
+      q: 'INV-0001',
+      status: undefined,
+      allocatable: true,
+    });
+    // The open balance the server published stands beside the amount.
+    expect(within(form).getByText(money('100.0000'))).toBeVisible();
+    await user.type(amountBox(form), '15.50');
+    await user.type(reasonBox(form), 'Wrong part fitted');
+    await user.click(submitIn(form));
+
+    await waitFor(() => expect(requestCreditNote).toHaveBeenCalledTimes(1));
+    expect(requestCreditNote.mock.calls[0]?.[0]).toBe(INVOICE_ID);
+    expect(requestCreditNote.mock.calls[0]?.[1]).toEqual({
+      amount: '15.50',
+      reason: 'Wrong part fitted',
+    });
+    expect(requestCreditNote.mock.calls[0]?.[2]).toMatch(UUID_SHAPE);
+    expect(
+      await screen.findByText(EN['creditNotes.request.recorded'] as string)
+    ).toBeInTheDocument();
+    // The new note opens, and it is the caller's own — so it is not offered to them.
+    await waitFor(() => expect(readCreditNote).toHaveBeenCalledWith(NOTE_ID));
+    expect(amountBox(form).value).toBe('');
+  });
+
+  it('marks every missing field, moves the cursor to the first, keeps what was typed, and stops complaining once corrected', async () => {
+    const user = userEvent.setup();
+    renderLtr(notesScreen(SIGNED_IN));
+    const form = await requestForm();
+    await user.type(reasonBox(form), 'Kept as typed');
+    await user.click(submitIn(form));
+
+    expect(requestCreditNote).not.toHaveBeenCalled();
+    await waitFor(() => expect(invoiceSearch(form)).toHaveAttribute('aria-invalid', 'true'));
+    expect(amountBox(form)).toHaveAttribute('aria-invalid', 'true');
+    expect(amountBox(form)).toHaveAccessibleDescription(
+      expect.stringContaining(EN['field.required'] as string)
+    );
+    await waitFor(() => expect(invoiceSearch(form)).toHaveFocus());
+    expect(reasonBox(form).value).toBe('Kept as typed');
+    expect(reasonBox(form)).not.toHaveAttribute('aria-invalid');
+
+    // A correction clears the complaint about that field alone.
+    await user.type(amountBox(form), '0');
+    expect(amountBox(form)).not.toHaveAttribute('aria-invalid');
+    expect(invoiceSearch(form)).toHaveAttribute('aria-invalid', 'true');
+
+    // Zero is not an amount to credit, and the form says what is.
+    await chooseInvoice(user, form);
+    await user.click(submitIn(form));
+    expect(requestCreditNote).not.toHaveBeenCalled();
+    await waitFor(() => expect(amountBox(form)).toHaveAttribute('aria-invalid', 'true'));
+    expect(
+      within(form).getByText(EN['creditNotes.request.amountFormat'] as string)
+    ).toBeInTheDocument();
+    await waitFor(() => expect(amountBox(form)).toHaveFocus());
+
+    await user.clear(amountBox(form));
+    await user.type(amountBox(form), '12.5');
+    await user.click(submitIn(form));
+    await waitFor(() =>
+      expect(requestCreditNote.mock.calls[0]?.[1]).toEqual({
+        amount: '12.5',
+        reason: 'Kept as typed',
+      })
+    );
+  });
+
+  it('files the server’s refusal of the amount beside it, keeps the form, and retries with the SAME key', async () => {
+    const user = userEvent.setup();
+    requestCreditNote.mockResolvedValueOnce({
+      state: {
+        status: 'conflict',
+        messageKey: 'form.formError',
+        fieldErrors: { amount: 'creditNotes.request.overOpen' },
+        correlationId: 'ref-409',
+        attempt: 1,
+      },
+      created: null,
+    });
+    renderLtr(notesScreen(SIGNED_IN));
+    const form = await requestForm();
+    await chooseInvoice(user, form);
+    // Within the open receivable the form knows of, so it is SENT — and the server,
+    // which also counts what is already credited, refuses it.
+    await user.type(amountBox(form), '90');
+    await user.type(reasonBox(form), 'Too much');
+    await user.click(submitIn(form));
+
+    expect(
+      await within(form).findByText(EN['creditNotes.request.overOpen'] as string)
+    ).toBeInTheDocument();
+    expect(amountBox(form)).toHaveAttribute('aria-invalid', 'true');
+    await waitFor(() => expect(amountBox(form)).toHaveFocus());
+    expect(amountBox(form).value).toBe('90');
+    expect(reasonBox(form).value).toBe('Too much');
+    expect(within(form).getByText('ref-409')).toBeInTheDocument();
+
+    await user.clear(amountBox(form));
+    expect(amountBox(form)).not.toHaveAttribute('aria-invalid');
+    await user.type(amountBox(form), '60');
+    await user.click(submitIn(form));
+    await waitFor(() => expect(requestCreditNote).toHaveBeenCalledTimes(2));
+    expect(requestCreditNote.mock.calls[1]?.[2]).toBe(requestCreditNote.mock.calls[0]?.[2]);
+  });
+
+  it('refuses an amount above the open receivable before sending, and says pending notes may lower what can be approved', async () => {
+    const user = userEvent.setup();
+    renderLtr(notesScreen(SIGNED_IN));
+    const form = await requestForm();
+    await chooseInvoice(user, form);
+    // The open receivable the server stated, and the sentence beside it: the form
+    // does not subtract pending notes, it says they may reduce what can be approved.
+    expect(within(form).getByText(money('100.0000'))).toBeVisible();
+    expect(
+      within(form).getByText(EN['creditNotes.request.pendingMayReduce'] as string)
+    ).toBeVisible();
+
+    // One ten-thousandth above the open amount, compared digit by digit.
+    await user.type(amountBox(form), '100.0001');
+    await user.type(reasonBox(form), 'Too much');
+    await user.click(submitIn(form));
+    expect(requestCreditNote).not.toHaveBeenCalled();
+    await waitFor(() => expect(amountBox(form)).toHaveAttribute('aria-invalid', 'true'));
+    expect(
+      within(form).getByText(EN['creditNotes.request.aboveOpen'] as string)
+    ).toBeInTheDocument();
+    await waitFor(() => expect(amountBox(form)).toHaveFocus());
+
+    // Exactly the open amount is allowed through; the server remains the authority.
+    await user.clear(amountBox(form));
+    await user.type(amountBox(form), '100');
+    await user.click(submitIn(form));
+    await waitFor(() => expect(requestCreditNote).toHaveBeenCalledTimes(1));
+    expect(requestCreditNote.mock.calls[0]?.[1]).toEqual({ amount: '100', reason: 'Too much' });
+  });
+
+  it('a half-written credit is unsaved work: a branch switch asks first', async () => {
+    const user = userEvent.setup();
+    renderInLtr(
+      inBranch(
+        <>
+          <BranchSwitch to={TEST_BRANCH.id} label="first" />
+          <BranchSwitch to={OTHER_BRANCH.id} label="second" />
+          <WorkingBranchProbe />
+          {notesScreen(SIGNED_IN)}
+        </>,
+        { snapshot: branchSnapshot([TEST_BRANCH, OTHER_BRANCH]) }
+      )
+    );
+    await user.click(screen.getByRole('button', { name: 'first' }));
+    const form = await requestForm();
+    try {
+      await user.type(amountBox(form), '10');
+      await stayOnBranch(user, await switchExpectingQuestion(user, 'second'));
+      expect(heldBranch()).toBe(TEST_BRANCH.id);
+      expect(amountBox(form).value).toBe('10');
+    } finally {
+      forgetRememberedBranch();
+    }
+  });
+
+  it('shows a note the caller raised as waiting for another approver, and offers them no approval', async () => {
+    renderLtr(notesScreen(RAISED_BY, NOTE_ID));
+    const table = await screen.findByRole('table');
+    expect(
+      await within(table).findByText(EN['creditNotes.ownRequest'] as string)
+    ).toBeInTheDocument();
+    expect(within(table).getByText(EN['creditNotes.byYou'] as string)).toBeInTheDocument();
+    const detail = await screen.findByRole('region', {
+      name: EN['creditNotes.detail.heading'] as string,
+    });
+    expect(
+      await within(detail).findByText(EN['creditNotes.detail.ownRequest'] as string)
+    ).toBeVisible();
+    expect(
+      within(detail).queryByRole('button', { name: EN['creditNotes.approve.action'] as string })
+    ).toBeNull();
+    expect(approveCreditNote).not.toHaveBeenCalled();
+  });
+
+  it('a different person approves it: the approval is sent, the note reads approved, and the list reads again', async () => {
+    const user = userEvent.setup();
+    renderLtr(notesScreen(SIGNED_IN, NOTE_ID));
+    const detail = await screen.findByRole('region', {
+      name: EN['creditNotes.detail.heading'] as string,
+    });
+    const table = await screen.findByRole('table');
+    // Nothing on the list says it is the caller's own.
+    expect(within(table).queryByText(EN['creditNotes.ownRequest'] as string)).toBeNull();
+    const reads = listCreditNotes.mock.calls.length;
+    await user.click(
+      await within(detail).findByRole('button', {
+        name: EN['creditNotes.approve.action'] as string,
+      })
+    );
+    await waitFor(() => expect(approveCreditNote).toHaveBeenCalledWith(NOTE_ID));
+    expect(await screen.findByText(EN['creditNotes.approve.done'] as string)).toBeInTheDocument();
+    expect(
+      await within(detail).findByText(EN['creditNotes.state.approved'] as string)
+    ).toBeVisible();
+    expect(
+      within(detail).queryByRole('button', { name: EN['creditNotes.approve.action'] as string })
+    ).toBeNull();
+    await waitFor(() => expect(listCreditNotes.mock.calls.length).toBeGreaterThan(reads));
+  });
+
+  const selfRefusal = {
+    state: {
+      status: 'conflict',
+      messageKey: 'form.violation.credit_note_self_approval',
+      correlationId: 'ref-409',
+      attempt: 1,
+    },
+    created: null,
+  };
+
+  it('says the server’s self-approval refusal in words, and reads the note again', async () => {
+    const user = userEvent.setup();
+    approveCreditNote.mockResolvedValueOnce(selfRefusal);
+    renderLtr(notesScreen(SIGNED_IN, NOTE_ID));
+    const detail = await screen.findByRole('region', {
+      name: EN['creditNotes.detail.heading'] as string,
+    });
+    await user.click(
+      await within(detail).findByRole('button', {
+        name: EN['creditNotes.approve.action'] as string,
+      })
+    );
+    const alert = await within(detail).findByRole('alert');
+    expect(alert).toHaveTextContent(EN['form.violation.credit_note_self_approval'] as string);
+    expect(alert).toHaveTextContent('ref-409');
+    await waitFor(() => expect(readCreditNote).toHaveBeenCalledTimes(2));
+  });
+
+  it('says the same refusal in Arabic', async () => {
+    const user = userEvent.setup();
+    approveCreditNote.mockResolvedValueOnce(selfRefusal);
+    renderRtl(
+      <CreditNotesScreen
+        locale="ar"
+        messages={ar}
+        initialCreditNoteId={NOTE_ID}
+        currentUserId={SIGNED_IN}
+      />
+    );
+    const detail = await screen.findByRole('region', {
+      name: AR['creditNotes.detail.heading'] as string,
+    });
+    await user.click(
+      await within(detail).findByRole('button', {
+        name: AR['creditNotes.approve.action'] as string,
+      })
+    );
+    expect(await within(detail).findByRole('alert')).toHaveTextContent(
+      AR['form.violation.credit_note_self_approval'] as string
+    );
+  });
+
+  it('the named rule the server sends becomes that sentence, in both catalogues', async () => {
+    const { fromFailure } = await import('@/lib/forms/action-result');
+    const state = fromFailure(
+      {
+        ok: false,
+        kind: 'conflict',
+        status: 409,
+        correlationId: 'ref-409',
+        problem: {
+          type: 'about:blank',
+          title: 'Conflict',
+          status: 409,
+          code: 'ERR-TRN-001',
+          correlationId: 'ref-409',
+          violations: [{ path: 'path.creditNoteId', rule: 'credit_note_self_approval' }],
+        },
+      } as never,
+      1
+    );
+    expect(state.messageKey).toBe('form.violation.credit_note_self_approval');
+    expect(EN['form.violation.credit_note_self_approval']).toBeTruthy();
+    expect(AR['form.violation.credit_note_self_approval']).toBeTruthy();
+  });
+
+  describe('from the invoice itself', () => {
+    const issued = () => invoice({ status: 'issued', invoiceNumber: 'INV-000123' });
+    beforeEach(() => {
+      readWorkOrderInvoice.mockImplementation(async () =>
+        okRead({ workOrderId: WORK_ORDER_ID, invoice: issued() })
+      );
+      readInvoice.mockImplementation(async () =>
+        okRead(detail({ status: 'issued', invoiceNumber: 'INV-000123' }))
+      );
+    });
+    const issuedScreen = (over: Record<string, unknown> = {}) =>
+      renderScreen({
+        initialInvoice: okRead({ workOrderId: WORK_ORDER_ID, invoice: issued() }),
+        ...over,
+      });
+    const balanceRead = async () => {
+      const balance = await screen.findByRole('region', {
+        name: EN['invoices.outstanding.heading'] as string,
+      });
+      await within(balance).findByText(money('100.0000'));
+    };
+
+    it('offers the credit on an issued invoice with money open, and raises it against that invoice', async () => {
+      const user = userEvent.setup();
+      issuedScreen({ canRaiseCredit: true });
+      const form = await requestForm();
+      // The invoice is known: nothing to find, and the open balance is the server's.
+      expect(within(form).queryByLabelText(labelled('creditNotes.request.invoice'))).toBeNull();
+      expect(within(form).getByText(money('100.0000'))).toBeVisible();
+      await user.type(amountBox(form), '40');
+      await user.type(reasonBox(form), 'Labour billed twice');
+      await user.click(submitIn(form));
+      await waitFor(() =>
+        expect(requestCreditNote).toHaveBeenCalledWith(
+          INVOICE_ID,
+          { amount: '40', reason: 'Labour billed twice' },
+          expect.stringMatching(UUID_SHAPE)
+        )
+      );
+      expect(
+        await screen.findByText(EN['creditNotes.request.recorded'] as string)
+      ).toBeInTheDocument();
+      await waitFor(() => expect(readWorkOrderInvoice).toHaveBeenCalledWith(WORK_ORDER_ID));
+    });
+
+    it('offers nothing to a cashier without the credit permission', async () => {
+      issuedScreen({ canRaiseCredit: false });
+      await balanceRead();
+      expect(
+        screen.queryByRole('form', { name: EN['creditNotes.request.heading'] as string })
+      ).toBeNull();
+    });
+
+    it('offers nothing on a settled invoice, even with the permission', async () => {
+      readOutstanding.mockImplementation(async () =>
+        okRead({
+          ...outstanding,
+          outstanding: { amount: '0.0000', currency: 'USD' },
+          isSettled: true,
+        })
+      );
+      issuedScreen({ canRaiseCredit: true });
+      const balance = await screen.findByRole('region', {
+        name: EN['invoices.outstanding.heading'] as string,
+      });
+      await within(balance).findByText(EN['invoices.outstanding.settled'] as string);
+      expect(
+        screen.queryByRole('form', { name: EN['creditNotes.request.heading'] as string })
+      ).toBeNull();
+    });
+
+    it('offers nothing on a draft, even with the permission', async () => {
+      readInvoice.mockImplementation(async () => okRead(detail()));
+      renderScreen({
+        initialInvoice: okRead({ workOrderId: WORK_ORDER_ID, invoice: invoice() }),
+        canRaiseCredit: true,
+      });
+      await balanceRead();
+      expect(
+        screen.queryByRole('form', { name: EN['creditNotes.request.heading'] as string })
+      ).toBeNull();
+    });
+
+    it('the /invoices page does not offer it to a cashier holding finance view alone', async () => {
+      PERMISSIONS = ['sal.invoice.manage', 'sal.finance.view', 'wo.work_order.read'];
+      await renderPage({ locale: 'en' }, { workOrderId: WORK_ORDER_ID });
+      await balanceRead();
+      expect(
+        screen.queryByRole('form', { name: EN['creditNotes.request.heading'] as string })
+      ).toBeNull();
+    });
+
+    it('the /invoices page offers it with the credit permission beside finance view', async () => {
+      PERMISSIONS = [
+        'sal.invoice.manage',
+        'sal.finance.view',
+        'wo.work_order.read',
+        'sal.credit.manage',
+      ];
+      await renderPage({ locale: 'en' }, { workOrderId: WORK_ORDER_ID });
+      expect(await requestForm()).toBeInTheDocument();
+    });
   });
 });
 

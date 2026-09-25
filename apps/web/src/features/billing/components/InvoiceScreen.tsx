@@ -38,6 +38,7 @@ import {
   type Outstanding,
   type WorkOrderInvoice,
 } from '../billing-contract';
+import { CreditNoteRequestForm } from './CreditNoteRequestForm';
 import { InvoiceDocument } from './InvoiceDocument';
 import {
   Figure,
@@ -96,6 +97,7 @@ export function InvoiceScreen({
   canIssue,
   canSearchWorkOrders = false,
   canReadCustomers = false,
+  canRaiseCredit = false,
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
@@ -115,6 +117,12 @@ export function InvoiceScreen({
   readonly canSearchWorkOrders?: boolean;
   /** `crm.customer.read` — whether a different payer can be found by name. */
   readonly canReadCustomers?: boolean;
+  /**
+   * `sal.credit.manage` AND `sal.finance.view` — raising a credit note against an
+   * issued invoice with money still open. Both, because `sal.credit-note-create`
+   * declares both; a cashier holding finance view alone is not offered it.
+   */
+  readonly canRaiseCredit?: boolean;
 }) {
   const router = useRouter();
   const [invoiceRead, setInvoiceRead] = useState<ReadState<WorkOrderInvoice> | null>(
@@ -243,6 +251,7 @@ export function InvoiceScreen({
           workOrderNumber={workOrder?.displayNumber ?? null}
           canViewFinance={canViewFinance}
           canIssue={canIssue}
+          canRaiseCredit={canRaiseCredit}
           onChanged={(next) => void changed(next)}
         />
       )}
@@ -805,6 +814,7 @@ function InvoicePanel({
   workOrderNumber,
   canViewFinance,
   canIssue,
+  canRaiseCredit,
   onChanged,
 }: {
   readonly locale: Locale;
@@ -813,9 +823,13 @@ function InvoicePanel({
   readonly workOrderNumber: string | null;
   readonly canViewFinance: boolean;
   readonly canIssue: boolean;
+  readonly canRaiseCredit: boolean;
   readonly onChanged: (notice: WriteNotice | null) => void;
 }) {
   const [detail, setDetail] = useState<ReadState<InvoiceDetail> | null>(null);
+  // The balance panel's own read, reported up so the credit form is offered
+  // only while money is still open — one read, not two.
+  const [balance, setBalance] = useState<Outstanding | null>(null);
   useEffect(() => {
     let live = true;
     void readInvoice(invoice.id).then((state) => {
@@ -846,6 +860,7 @@ function InvoicePanel({
         messages={messages}
         invoiceId={invoice.id}
         canViewFinance={canViewFinance}
+        onRead={setBalance}
       />
       <ActionsPanel
         locale={locale}
@@ -855,6 +870,32 @@ function InvoicePanel({
         canIssue={canIssue}
         onChanged={onChanged}
       />
+      {canRaiseCredit &&
+      canViewFinance &&
+      (detail.data.invoice.status === 'issued' || detail.data.invoice.status === 'credited') &&
+      balance !== null &&
+      !balance.isSettled ? (
+        <section
+          aria-labelledby="credit-note-request-heading"
+          className="flex min-h-0 flex-col gap-3 rounded-lg border border-border bg-surface p-4"
+          lang={locale}
+          data-print="hide"
+        >
+          <CreditNoteRequestForm
+            locale={locale}
+            messages={messages}
+            source={{ kind: 'known', invoice: { id: invoice.id, open: balance.outstanding } }}
+            onRequested={(echo) =>
+              onChanged({
+                messageKey: echo.replayed
+                  ? 'creditNotes.request.replayed'
+                  : 'creditNotes.request.recorded',
+                figure: null,
+              })
+            }
+          />
+        </section>
+      ) : null}
       <PrintPanel
         locale={locale}
         messages={messages}
@@ -1047,23 +1088,29 @@ function OutstandingPanel({
   messages,
   invoiceId,
   canViewFinance,
+  onRead,
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
   readonly invoiceId: string;
   readonly canViewFinance: boolean;
+  /** The balance as read, or `null` when it could not be — never a guessed zero. */
+  readonly onRead?: (balance: Outstanding | null) => void;
 }) {
   const [state, setState] = useState<ReadState<Outstanding> | null>(null);
   useEffect(() => {
     if (!canViewFinance) return;
     let live = true;
     void readOutstanding(invoiceId).then((next) => {
-      if (live) setState(next);
+      if (!live) return;
+      setState(next);
+      onRead?.(next.status === 'ok' ? next.data : null);
     });
     return () => {
       live = false;
     };
-  }, [invoiceId, canViewFinance]);
+    // `onRead` is the parent's state setter, so it is stable and never re-reads.
+  }, [invoiceId, canViewFinance, onRead]);
 
   return (
     <section

@@ -16,9 +16,11 @@
  * Issue and cancel carry `If-Match` = the INVOICE's `recordVersion` from
  * `sal.invoice-detail`; create does not.
  *
- * W6 mirrors these two writes. Credit notes belong to no P1-30 screen and the
- * payment writes to W7; they stay declared PENDING in the gate rather than
- * mirrored without a consumer.
+ * W6 mirrors these two writes; the payment writes belong to W7. Raising a
+ * credit note is mirrored below because the invoice screen raises one, and it
+ * is the one write here that carries an amount: the credit the operator types,
+ * as a decimal string. Approving a credit note sends no body and is declared
+ * bodyless in the gate.
  */
 
 /** `sal.invoice-create` — `POST /invoices`. Idempotent through the transport key; not version-guarded. */
@@ -32,6 +34,26 @@ export interface InvoiceCreateBody {
 export interface InvoiceCancelBody {
   /** One to two thousand characters, not blank. */
   readonly reason: string;
+}
+
+/**
+ * `sal.credit-note-create` — `POST /invoices/{invoiceId}/credit-notes`.
+ * Idempotent through the transport key; not version-guarded.
+ *
+ * The requester is the session and the note is born pending; it counts for
+ * nothing until a different person approves it (`sal.credit-note-approve`,
+ * bodyless). The server bounds the amount by the invoice's open receivable.
+ */
+export interface CreditNoteCreateBody {
+  /** A decimal string, unsigned, at most fourteen integer digits and four decimals. */
+  readonly amount: string;
+  /** One to two thousand characters, not blank. */
+  readonly reason: string;
+  /**
+   * The note's currency is always the invoice's. The route accepts this only to
+   * refuse a caller that believes otherwise; the screen never sends it.
+   */
+  readonly currency?: string;
 }
 
 /* ------------------------------------------------------------------ *

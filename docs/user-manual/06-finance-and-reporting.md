@@ -218,8 +218,9 @@ does not include." <!-- invoices.preview.needsFinance --> and no figures appear.
   cancelled; the work order can be invoiced again." <!-- invoices.cancel.recorded --> The status
   becomes "Cancelled before issue" <!-- invoices.status.void_before_issue --> .
 - **Restrictions:** the panel states the rule: "Only a draft can be cancelled. The work order can
-  then be invoiced again." <!-- invoices.cancel.explain --> **An issued invoice cannot be cancelled,
-  reversed or credited from any screen in this release.** See 6.2.10.
+  then be invoiced again." <!-- invoices.cancel.explain --> **An issued invoice cannot be cancelled
+  or reversed from any screen in this release; money is given back on it with a credit note.** See
+  6.2.10.
 - **If it goes wrong:**
   - "Shorten the reason." <!-- invoices.cancel.reasonTooLong -->
   - "This draft was already cancelled; nothing changed." <!-- invoices.cancel.replayed -->
@@ -294,28 +295,32 @@ your work requires the figures.
 
 ### 6.2.10 Credit notes, reversals and cancelling after issue
 
-**PARTLY AVAILABLE — read which half.**
+**Credit notes — IMPLEMENTED (UI). Reversals and cancelling after issue — NOT AVAILABLE.**
 
-**A credit note is now raised, by one route only: taking a part back that was sold over the
-counter.** When a customer return is recorded against a counter-sale line, the application raises a
-credit note for it, and the screen states what that does and does not mean: "A part sold over the
-counter raises a credit note when it comes back. The note waits for a second person to approve it,
-and nobody has been refunded until then." <!-- inventory.returns.creditExplain --> The return itself
-is Part 5, §5.23.3. The note is born waiting for approval, and approving it is a second person's act.
+**A credit note can be raised in three ways:**
 
-**The note can now be read, on its own screen.** §6.2a below describes it — and the permission it
-needs, which a newly provisioned organisation does not hold.
+- on the **Credit notes** screen, against an invoice found there by its number or its customer
+  (§6.2a);
+- on an issued invoice's own screen, while money is still open on it — the **Raise a credit
+  note** <!-- creditNotes.request.heading --> panel sits below the invoice's actions (§6.2a);
+- by taking back a part that was sold over the counter. When a customer return is recorded against
+  a counter-sale line, the application raises a credit note for it, and the screen states what that
+  does and does not mean: "A part sold over the counter raises a credit note when it comes back. The
+  note waits for a second person to approve it, and nobody has been refunded until then."
+  <!-- inventory.returns.creditExplain --> The return itself is Part 5, §5.23.3.
+
+Whichever way it is raised, the note is born waiting for approval and credits nothing. **Approving
+it is a second person's act, on the Credit notes screen** (§6.2a): the person who raised a note can
+never approve it.
 
 **What is still NOT AVAILABLE:**
 
-- **There is no screen that creates a credit note against an invoice directly.** An invoice that was
-  not a counter sale, or a counter-sale line nobody brought back, cannot be credited from any screen.
-- **There is no screen that approves one.** The note can be read; the approval the note is waiting
-  for has no interface at this version.
+- **There is no rejection.** A credit note nobody approves stays **Waiting for a second person**
+  and credits nothing; no screen refuses one, and the application publishes no operation that would.
 - **There is no payment-reversal screen.** A receipt can appear as "Reversed" <!-- payments.status.reversed -->
   , and no screen reverses one.
 - An **issued** invoice still cannot be cancelled from any screen. Only a draft can be cancelled
-  (6.2.6). For a counter sale, the equivalent of cancelling after issue is taking the part back.
+  (6.2.6). After issue, the way to give money back on an invoice is a credit note.
 
 The status "Credited" <!-- invoices.status.credited --> can appear on an invoice, and the "Invoices
 and payments" report has a "Credit notes" <!-- reports.field.creditNotes --> column.
@@ -323,70 +328,134 @@ and payments" report has a "Credit notes" <!-- reports.field.creditNotes --> col
 There is no ledger, no chart of accounts and no accounting module of any kind. Nothing beyond
 invoices, credit notes, receipts and allocations exists.
 
-## 6.2a The Credit notes screen — IMPLEMENTED (UI), and out of reach of a new organisation
+## 6.2a The Credit notes screen — IMPLEMENTED (UI)
 
 **Label** — **Credit notes** <!-- creditNotes.page.title --> (navigation: **Credit
 notes** <!-- nav.creditNotes --> ), described as "What has been credited back to a customer, and
 what is still waiting for a second person to approve it." <!-- creditNotes.page.description -->
 
-**Who** — `sal.credit.manage` **and** `sal.finance.view`, together, for both the list and one note.
-Neither read answers without both.
+**Who** — `sal.credit.manage` **and** `sal.finance.view`, together, for everything on the screen:
+the list, one note, raising a note and approving one. None of them answers without both. Finding an
+invoice on this screen also needs `sal.invoice.manage`, because the invoice search is the invoices
+list; without it the invoice box says so and the note can still be raised from the invoice's own
+screen by somebody who can open it.
 
 **Where** — its own navigation entry, at `/{language}/credit-notes`, and from **Open the credit
 note** <!-- inventory.returns.openCredit --> on a customer return that raised one (Part 5, §5.23.3).
+Raising is also offered on an issued invoice's own screen (6.2.7, below the open balance), to somebody holding
+both permissions, while money is still open on it.
 
-**Read this before looking for the screen.** `sal.credit.manage` is **not** in the set of
-permissions a new organisation's first administrator is given, and a permission nobody holds cannot
-be granted to anybody. So in a freshly provisioned organisation:
+**Who holds it, and who approves.** By Owner decision, `sal.credit.manage` is in the set of
+permissions a new organisation's first administrator is given, beside `sal.finance.view`, which was
+already there. So in a freshly provisioned organisation:
 
-- the **Credit notes** entry is **not shown** in the navigation at all;
-- opening the address directly gives **"Credit notes — You do not have access. Your account does not
-  have permission for this. An administrator can grant it."**;
-- a customer return still raises a credit note, still says a second person must approve it, and
-  **there is nobody in the organisation who can be that person**.
+- the first administrator sees the **Credit notes** entry and the list opens;
+- the first administrator may **raise** a credit note against an issued invoice in a branch it is
+  allowed to work in;
+- the first administrator **cannot approve a note it raised itself**. Somebody else must: the
+  administrator can **give both permissions to somebody else** — for example a finance approver
+  role, granted only for one branch — because an administrator may hand on a permission it holds
+  itself. Nobody else gains them automatically: a cashier or any other role holds them only if an
+  administrator maps them onto that role. A cashier who can see amounts but does not hold
+  `sal.credit.manage` is not offered **Raise a credit note** on an invoice.
 
-Whether that permission joins the set is an Owner decision, and it has not been taken. Until it is,
-treat a counter-sale return as: the part comes back and the stock moves, the money does not.
+**The controls that still apply.** Holding the permission does not remove any of them:
+
+- **Branch.** Every credit-note action is limited to the branches the person's grant covers. A
+  person granted one branch cannot see, raise or approve credit notes in another, and nobody can
+  reach another organisation's invoices at all.
+- **Second person.** A credit note is raised as **Waiting for a second person** and credits nothing.
+  The person who raised it can never approve it; a different person who also holds both permissions
+  must. Only then does the amount the customer owes go down.
+- **The open amount.** A note cannot credit more than is still open on its invoice. That is checked
+  when it is raised and again when it is approved.
+- **Audit.** Raising a credit note and approving one are each recorded in the organisation's audit
+  log.
+
+**An organisation created before this change** keeps the set it was given until the platform
+operator runs the administrator backfill for it. That run adds the permission only to an
+administrator role that is still the standard one; a role the organisation has changed for itself is
+left exactly as it is and named in the run's report, so that organisation decides for itself.
+Until then, in such an organisation the entry is hidden, the address answers **"Credit notes — You
+do not have access. Your account does not have permission for this. An administrator can grant
+it."**, and a counter-sale return moves the stock but not the money.
 
 **What the screen does, for somebody who does hold both permissions**
 
-**Steps**
+**Seeing what is waiting**
 
-1. Choose a branch — **"Choose the branch whose credit notes you want"** <!-- creditNotes.targetLabel -->
-   , because "A credit note belongs to the branch that raised it. Choose one to see what it has
-   credited." <!-- creditNotes.targetExplain --> — and press **Show this branch**
-   <!-- creditNotes.chooseBranch --> .
-2. Read **Credit notes at this branch** <!-- creditNotes.list.heading --> , whose columns are **Why
-   it was raised**, **Amount**, **Approval** and **Action** <!-- creditNotes.column.* --> . Approval
-   reads **Waiting for a second person**, **Approved** or **Refused**
-   <!-- creditNotes.state.pending / .approved / .rejected --> ; an unsettled note shows **Nothing
-   credited yet** <!-- creditNotes.notIssued --> in the amount column.
+1. The screen works in the branch chosen in the header — "The branch whose credit notes are
+   shown" <!-- creditNotes.targetLabel --> , because "A credit note belongs to the branch that raised
+   it. The notes shown are those of the branch you are working in." <!-- creditNotes.targetExplain -->
+2. Read **Credit notes at this branch** <!-- creditNotes.list.heading --> . It opens on the notes
+   **Waiting for a second person** <!-- creditNotes.state.pending --> ; **Show**
+   <!-- creditNotes.list.status --> changes it to **Approved**, **Refused** or **All credit notes**
+   <!-- creditNotes.state.approved / .rejected / creditNotes.list.all --> . The columns are **Why it
+   was raised**, **Amount**, **Approval** and **Action** <!-- creditNotes.column.* --> ; an unsettled
+   note shows **Nothing credited yet** <!-- creditNotes.notIssued --> under its reason. A note you
+   raised yourself is marked **Raised by you** <!-- creditNotes.byYou --> and, while it waits,
+   **Waiting for another approver** <!-- creditNotes.ownRequest --> .
 3. Choose **Open** <!-- creditNotes.open --> on a row for **The credit note**
    <!-- creditNotes.detail.heading --> , which shows **Amount**, **Approval**, **Approved on** (or
    **Not approved yet** <!-- creditNotes.detail.notApproved --> ) and **Why it was raised**
    <!-- creditNotes.detail.* --> . **Close** <!-- creditNotes.detail.close --> returns to the list.
 
+**Raising a credit note**
+
+1. Under **Raise a credit note** <!-- creditNotes.request.heading --> , find the invoice in **Invoice
+   to credit** <!-- creditNotes.request.invoice --> by its number or its customer, and choose it.
+   "Only invoices that have been issued and still have money open can be credited."
+   <!-- creditNotes.request.invoiceHelp --> What is **Still open on this invoice**
+   <!-- creditNotes.request.open --> is shown beside the amount. On an invoice's own screen the
+   invoice is already chosen and this step is skipped.
+2. Enter **Amount to credit** <!-- creditNotes.request.amount --> — in the invoice's currency, more
+   than zero, with at most four digits after the point — and **Why it is being credited**
+   <!-- creditNotes.request.reason --> .
+3. Press **Raise the credit note** <!-- creditNotes.request.submit --> . The screen says "The credit
+   note was raised. It is waiting for a second person to approve it, and nothing is credited until
+   then." <!-- creditNotes.request.recorded --> and opens the new note, marked as waiting for
+   another approver.
+
+A field that is missing or wrong is marked, the cursor moves to the first one, what you typed is
+kept, and the complaint goes as soon as you correct it. Changing branch in the header with a
+half-written credit asks first.
+
+**Approving a credit note** — by somebody other than the person who raised it
+
+1. Open the note from the list (step 3 above).
+2. Check the amount and the reason, and press **Approve this credit note**
+   <!-- creditNotes.approve.action --> . "Approving credits this amount against its invoice, so what
+   the customer owes goes down by it." <!-- creditNotes.approve.explain -->
+3. The screen says "The credit note was approved. What the customer owes on the invoice has gone
+   down by its amount." <!-- creditNotes.approve.done --> , the note reads **Approved**, and the list
+   is read again.
+
+On a note you raised yourself there is no approve button; the note says "You raised this credit
+note, so it is waiting for another approver: a different person who can manage credit notes must
+approve it." <!-- creditNotes.detail.ownRequest -->
+
 **What the screen explains about itself.** "A credit note is raised when something already billed is
 given back or corrected. A second person approves it, and nothing is credited until they
-do." <!-- creditNotes.explain -->
+do." <!-- creditNotes.explain --> — and, on every note, "Approving is a second person's step:
+whoever raised a credit note cannot approve it." <!-- creditNotes.detail.approvalNote -->
 
-**Restrictions — and the most important one is on the screen itself**
+**Restrictions**
 
-- **Nothing here approves anything.** The detail says so: "Approving a credit note is a separate
-  step taken by a second person, and it is not offered on this screen."
-  <!-- creditNotes.detail.approvalNote --> At this version approving a credit note has **no screen
-  anywhere**. **NOT AVAILABLE.**
+- **No rejection.** A note that should not be approved is simply left waiting; it credits nothing.
 - One branch at a time. There is no view across a company.
 - Only the most recent are listed: **"Only the most recent are shown."** <!-- creditNotes.list.truncated -->
 - Where none exists: **"Nothing has been credited at this branch."** <!-- creditNotes.list.none -->
 
 **If it goes wrong**
 
-| Message                                                                                                                                               | What it means                               |
-| ----------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------- |
-| **"You do not have permission to see the credit notes of this branch. That also needs permission to see amounts."** <!-- creditNotes.list.refused --> | One or both permissions are missing.        |
-| **"The credit notes could not be read just now. Try again."** <!-- creditNotes.list.unavailable -->                                                   | The service did not answer.                 |
-| **"That credit note was not found."** <!-- creditNotes.detail.missing -->                                                                             | The note is not at this branch, or is gone. |
+| Message                                                                                                                                                                    | What it means                                                                                                            |
+| -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| **"You do not have permission to see the credit notes of this branch. That also needs permission to see amounts."** <!-- creditNotes.list.refused -->                      | One or both permissions are missing.                                                                                     |
+| **"The credit notes could not be read just now. Try again."** <!-- creditNotes.list.unavailable -->                                                                        | The service did not answer.                                                                                              |
+| **"That credit note was not found."** <!-- creditNotes.detail.missing -->                                                                                                  | The note is not at this branch, or is gone.                                                                              |
+| **"The invoice cannot be credited by this amount. …"** <!-- creditNotes.request.overOpen -->                                                                               | The amount is more than is still open on the invoice, or the invoice is no longer open for credit. Enter less.           |
+| **"You raised this credit note, so you cannot approve it. Another person who can manage credit notes must approve it."** <!-- form.violation.credit_note_self_approval --> | The person who raised the note tried to approve it (for example from another window). Ask a second person.               |
+| **"This credit note could not be approved as it stands. …"** <!-- creditNotes.approve.conflict -->                                                                         | It was decided meanwhile, or its invoice no longer has that much open. The note has been read again; check what it says. |
 
 **Screenshot** — no screenshot available at this version.
 
@@ -1287,4 +1356,18 @@ report-overview-en-answered.png, report-overview-ar.png, report-overview-ar-answ
 audit-log-en-answered.png, audit-log-ar.png, audit-log-ar-answered.png (all fourteen confirmed present on
 disk). No screenshot exists for the invoice or payment screens.
 No command, gate, build or test was run for this part.
+-->
+
+<!--
+REVISION 2026-09-25 — section 6.2a was re-read and rewritten on branch
+feature/owner-directive-credit-note-authority (cut from develop
+57d0a95d2c52763470e1552c60c4487ee4a12904), against
+apps/api/src/modules/iam/domain/bootstrap-roles.ts (sal.credit.manage now carried by the tenant
+administrator bundle), apps/api/src/app/api/v1/invoices/[invoiceId]/credit-notes/route.ts and
+apps/api/src/app/api/v1/credit-notes/** (every credit-note operation declares sal.credit.manage and
+sal.finance.view and is branch-scoped), supabase/migrations/20260724092000_sal_payments.sql
+(ck_credit_notes_approved_distinct: the approver must differ from the requester) and
+scripts/platform/backfill-tenant-administrator-bundle.mjs (customised administrator roles are
+skipped and reported). The approval step still has no screen at this version. Nothing here states
+that a check was run in a browser.
 -->

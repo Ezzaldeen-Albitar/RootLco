@@ -261,6 +261,8 @@ export interface VoidedInvoice {
  * | ------------------------ | ------ | -------------------------------- | ---------------------------------------- |
  * | `sal.credit-note-list`   | GET    | `/credit-notes`                  | `sal.credit.manage`, `sal.finance.view`  |
  * | `sal.credit-note-detail` | GET    | `/credit-notes/{creditNoteId}`   | `sal.credit.manage`, `sal.finance.view`  |
+ * | `sal.credit-note-create` | POST   | `/invoices/{invoiceId}/credit-notes` | `sal.credit.manage`, `sal.finance.view` |
+ * | `sal.credit-note-approve` | POST  | `/credit-notes/{creditNoteId}/approval` | `sal.credit.manage`, `sal.finance.view` |
  *
  * Both DECLARE `sal.finance.view` rather than nulling amounts the way the
  * invoice reads do, and that asymmetry is the database's: the invoice header is
@@ -293,3 +295,19 @@ export interface CreditNote {
   readonly issuedAt: string | null;
   readonly recordVersion: number;
 }
+
+/*
+ * The request body of `sal.credit-note-create` is `CreditNoteCreateBody` in
+ * `lib/contracts/billing-contract.ts`, the payload-parity mirror the P1-30 gate
+ * holds against the route's zod schema.
+ */
+
+/** The echo of `sal.credit-note-create` and `sal.credit-note-approve` — `CreditNoteResult`. */
+export interface CreditNoteEcho {
+  readonly creditNote: CreditNote;
+  /** True when the key (create) or an already-approved note (approve) was met again. */
+  readonly replayed: boolean;
+}
+
+/** The shape `sal.credit-note-create` accepts, mirrored: unsigned, 14 integer digits, 4 decimals. */
+export const CREDIT_AMOUNT = /^\d{1,14}(\.\d{1,4})?$/;

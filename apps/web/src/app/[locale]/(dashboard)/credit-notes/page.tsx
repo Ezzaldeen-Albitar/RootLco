@@ -28,6 +28,12 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
  * One address leads in: a credit note named in the address opens straight onto
  * its detail, which is how the customer-returns screen links to the credit a
  * return raised.
+ *
+ * Raising a note and approving one declare the same two codes, so the page gate
+ * covers both. Two things are passed on: who is signed in, so a note the caller
+ * raised is shown as waiting for another approver rather than offered to them;
+ * and `sal.invoice.manage`, which the invoice list behind the raise form's
+ * invoice picker declares.
  */
 export default async function CreditNotesPage({
   params,
@@ -81,6 +87,8 @@ export default async function CreditNotesPage({
           locale={locale}
           messages={messages}
           initialCreditNoteId={named && UUID.test(named) ? named : null}
+          currentUserId={session.userId}
+          canSearchInvoices={holds(session.permissions, BILLING_PERMISSIONS.manage)}
         />
       </PageBody>
     </>

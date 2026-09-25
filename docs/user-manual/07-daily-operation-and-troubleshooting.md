@@ -625,10 +625,13 @@ Read these once. Each of them will otherwise look like a fault.
 20. **No mail leaves this machine, and the application sends none of its own.** The notification
     machinery has no delivery provider plugged into it; the only two messages produced at all come
     from the identity service and land in the local mail catcher (7.1.2 and Part 1, §1.5).
-21. **Nobody in a newly provisioned organisation can record a unit cost, and nobody can approve a
-    credit note.** Both permissions are outside the set the first administrator is given, and a
-    permission nobody holds cannot be granted to anybody. Both are open Owner decisions (Part 3,
-    §3.15; Part 5, §5.3; Part 6, §6.2a).
+21. **Nobody in a newly provisioned organisation can record a unit cost, and a credit note needs
+    two people.** The unit-cost permission is outside the set the first administrator is given, and
+    a permission nobody holds cannot be granted to anybody; that is an open Owner decision (Part 3,
+    §3.15; Part 5, §5.3). Credit notes are in the set: a note is raised on the **Credit notes**
+    screen or from an issued invoice's own screen, and it credits nothing until a different person
+    approves it on the **Credit notes** screen — the person who raised it cannot. There is no way to
+    reject a note: one nobody approves stays waiting for approval (Part 6, §6.2.10 and §6.2a).
 22. **A newly provisioned organisation has no vehicle makes or models to choose from.** The make
     chooser offers only "Not specified", the catalogue is read-only to an organisation, and no
     screen or permission adds to it — so no vehicle can carry a make or a model, searching by one

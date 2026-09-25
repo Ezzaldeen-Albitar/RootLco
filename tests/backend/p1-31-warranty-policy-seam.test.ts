@@ -1484,8 +1484,9 @@ describe('P-10 the provisioning bundle', () => {
     // Owner directive of 2026-09-17 carried three of the four codes a QA campaign
     // measured as permanently closed in every provisioned organisation — the
     // fourth, `inv.cost.view`, stays excluded because that exclusion is a recorded
-    // decision (CC-12, open; register gap E-14) only the Owner may reverse.
-    expect(TENANT_ADMINISTRATOR_ROLE.permissionCodes).toHaveLength(88);
+    // decision (CC-12, open; register gap E-14) only the Owner may reverse. 89 since
+    // the Owner decided the administrator carries sal.credit.manage (credit notes).
+    expect(TENANT_ADMINISTRATOR_ROLE.permissionCodes).toHaveLength(89);
     expect(new Set(TENANT_ADMINISTRATOR_ROLE.permissionCodes).size).toBe(
       TENANT_ADMINISTRATOR_ROLE.permissionCodes.length
     );

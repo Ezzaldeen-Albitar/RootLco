@@ -380,6 +380,48 @@
  * run time and needs no edit, so they owe ONE operator run covering all three
  * codes — one run, not one each. That run is an operator act and is not performed
  * by this slice, and this slice does not claim it was run anywhere.
+ *
+ * ## `sal.credit.manage` — credit notes, by Owner decision
+ *
+ * The sixth instance of the same closure, and the first one carried on an explicit
+ * Owner decision rather than on the "a shipped operation declares it" rule alone.
+ * Four shipped operations declare the code — `sal.credit-note-create`,
+ * `sal.credit-note-approve`, `sal.credit-note-list` and `sal.credit-note-detail`,
+ * each together with `sal.finance.view`, which this bundle already carries — and the
+ * code is already a row in the permission catalogue seed, so nothing is minted. The
+ * QA campaign measured the
+ * consequence of its absence (result matrix part 5 row 6.19, part 7 row 5.9): a
+ * customer return raises a credit note and says a second person must approve it,
+ * and nobody in a platform-provisioned organisation could read, request or approve
+ * one, because nobody held the code and `ins_role_permissions_delegable` let nobody
+ * be given it.
+ *
+ * The diagnosis was a MISSING DEFAULT GRANT and nothing else: the delegation rule
+ * applies to this code exactly as to every other — an actor maps or grants only what
+ * it holds — and there is no platform-only flag, assignable-codes list or grant
+ * ceiling that singles it out. So the repair is one entry below and no migration.
+ *
+ * The Owner decided the standard tenant administrator holds it, scoped to its own
+ * organisation and under the controls that already bind every credit note, none of
+ * which this entry relaxes: every credit-note operation is `scope: 'branch'`, so a
+ * branch-scoped grant confines it; the request is born `pending` and credits
+ * nothing (`sal.stamp_dual_control_maker`); approval is refused to the person who
+ * requested it (`ck_credit_notes_approved_distinct`), so an administrator who holds the code
+ * still needs a SECOND person — one it can now delegate the code to — before any
+ * receivable moves; and the request and the approval each append their own audit
+ * record (`sal.credit_note.requested`, `sal.credit_note.approved`).
+ *
+ * Carried here and NOWHERE else. `first_owner` stays frozen at its three IAM codes,
+ * and no cashier, employee or other role gains anything: those are tenant roles an
+ * administrator builds, and it now CAN give this code to a finance approver it
+ * chooses — which is the point.
+ *
+ * Organisations provisioned before this entry keep the set they were given.
+ * `scripts/platform/backfill-tenant-administrator-bundle.mjs` reads this list at run
+ * time, so it owes them ONE operator run; that run adds the code only to an
+ * administrator role that is still the standard one, and skips and reports every
+ * role the organisation has customised. The run is an operator act, not performed by
+ * this change.
  */
 
 export interface BootstrapRoleDefinition {
@@ -533,6 +575,10 @@ export const TENANT_ADMINISTRATOR_ROLE: BootstrapRoleDefinition = Object.freeze(
     'sal.invoice.manage',
     'sal.invoice.issue',
     'sal.finance.view',
+    // Owner decision (QA result matrix part 5 row 6.19): credit notes. Declared by the
+    // four credit-note operations, each alongside `sal.finance.view`; branch-scoped,
+    // born pending, and approved only by a second person. See the section above.
+    'sal.credit.manage',
     'sal.payment.record',
     'sal.payment.allocate',
     // The P1-31 delivery, warranty and reporting chain (prerequisite P-1). Held

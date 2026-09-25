@@ -772,8 +772,7 @@ permanently. They are:
 | managing a reception visit's condition evidence            | The organisation held the whole reception path from check-in to conversion, and could not perform the one step in the middle of it: recording the pre-service condition the workshop is answerable for. Part 4A, §4A.5.5.                                                                    |
 | managing a work order's lines                              | A work order could be created, moved through its states and closed, and could never say **what work is on it** — and since every part drawn against a job is measured against an approved requirement for a line, this one absence closed the whole material-control surface. Part 5, §5.26. |
 
-**Two gaps that are still open, and are the Owner's to decide.** Do not plan around either of them
-being closed:
+**One gap that is still open, and is the Owner's to decide.** Do not plan around it being closed:
 
 1. **Nobody can record what a part cost.** The permission to see costs (`inv.cost.view`) is
    deliberately **not** in the bundle. In a freshly provisioned organisation that means no goods
@@ -781,11 +780,13 @@ being closed:
    cannot be granted to anyone — the first administrator cannot hand the job to a colleague either.
    The exclusion is a recorded decision; reversing it is the Owner's, not an administrator's. Part
    5, §5.19.
-2. **Nobody can approve a credit note.** The credit permission (`sal.credit.manage`) is not in the
-   bundle. A customer return of a counter-sale part still raises a credit note and still says it is
-   waiting for a second person to approve it — and in a freshly provisioned organisation there is
-   no such second person, and no way to create one. The credit-note screens exist and refuse this
-   identity in plain words. Part 5, §5.23.3 and Part 6, §6.2a.
+
+**Credit notes were added by Owner decision.** The credit permission (`sal.credit.manage`) is now in
+the bundle, so the first administrator can read and raise credit notes and — this is the point —
+give the permission, together with the finance-view permission, to a second person who approves
+them. The requester of a credit note can never approve it, every credit-note action is limited to
+the branches a person's grant covers, and both steps are recorded in the audit log. No cashier or
+other role gains the permission unless an administrator gives it. Part 6, §6.2a.
 
 ---
 

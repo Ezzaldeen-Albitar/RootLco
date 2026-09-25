@@ -93,6 +93,8 @@ import {
 } from './p1-22-helpers';
 import { __resetAuthenticatorForTests } from '@/server/context/principal';
 import { billingModule } from '@/modules/billing';
+import { InvoiceService } from '@/modules/billing/application/invoice-service';
+import { BillingRepository } from '@/modules/billing/data/billing-repository';
 import { requireScopedPermissions, type ScopeAuthorizer } from '@/server/auth/authorization';
 import type { RegisteredOperation } from '@/server/auth/operation-registry';
 import { resolveRequestContext } from '@/server/context/resolve-context';
@@ -774,11 +776,25 @@ describe('sal.credit-note-approve', () => {
     );
     expect(refusal.message).toContain('Ask a second');
     expect(refusal.message).not.toMatch(/ck_|uq_|tg_|guard_|check_violation|23514|UPDATE/);
+    // Named, because the message never reaches a caller: without the token a screen
+    // cannot tell "you raised this yourself" from "this note was already decided".
+    expect(refusal.safeDetails.violations).toEqual([
+      { path: 'path.creditNoteId', rule: 'credit_note_self_approval' },
+    ]);
 
-    // The same attempt through the route: a controlled 409 leaking no constraint name.
+    // The same attempt through the route: a controlled 409 leaking no constraint name,
+    // carrying the named rule and nothing else beyond the standard refusal keys.
     authAs(SAL_FULL);
     const response = await approveCreditNote(note.id);
-    await expectCallerSafeConflict(response);
+    expect(response.status).toBe(409);
+    const raw = await response.text();
+    expect(raw).not.toMatch(/ck_|uq_|tg_|guard_|check_violation|23514|sal\./);
+    const problem = JSON.parse(raw) as ProblemBody;
+    expect(problem.code).toBe('ERR-TRN-001');
+    expect(Object.keys(problem).sort()).toEqual([...REFUSAL_KEYS, 'violations'].sort());
+    expect(problem.violations).toEqual([
+      { path: 'path.creditNoteId', rule: 'credit_note_self_approval' },
+    ]);
 
     // Still pending — which is the safe outcome, because a pending credit note
     // credits nothing.
@@ -794,6 +810,89 @@ describe('sal.credit-note-approve', () => {
     expect((await auditTotalFor('sal.credit_note.approved')) - auditBefore).toBe(0);
     expect((await outboxTotalFor('credit-note.issued')) - outboxBefore).toBe(0);
     expect(await financialEventsFor(note.id)).toBe(0);
+  });
+
+  it('names self-approval only for the database maker-approver refusal, and keeps any other check_violation generic (denial)', async () => {
+    // Two REAL database refusals of the same SQLSTATE, driven through the wired
+    // service with one repository read or write redirected so each can be reached —
+    // the service's own pre-checks otherwise stop both before the database is asked.
+    const invoice = await seedIssuedInvoice('cn_check_violation_kinds');
+
+    /** The real repository, with the named members replaced. */
+    const serviceWith = (overrides: Partial<Record<keyof BillingRepository, unknown>>) => {
+      const real = new BillingRepository();
+      const repository = new Proxy(real, {
+        get(target, property, receiver) {
+          if (typeof property === 'string' && property in overrides) {
+            return overrides[property as keyof BillingRepository];
+          }
+          const value: unknown = Reflect.get(target, property, receiver);
+          return typeof value === 'function' ? value.bind(target) : value;
+        },
+      });
+      return new InvoiceService(repository);
+    };
+
+    // (a) The trigger's maker <> approver refusal. The locked pre-read is told the
+    // note was raised by somebody else, so the service's own check passes and the
+    // DATABASE is what refuses: `sal.guard_dual_control_approval` stamps the session
+    // as approver, finds it equal to the stored requester, and raises check_violation.
+    const own = await pendingNote(invoice.invoiceId, '5.0000');
+    const real = new BillingRepository();
+    const disguised = serviceWith({
+      findCreditNoteForUpdate: async (db: DbHandle, id: string) => {
+        const row = await real.findCreditNoteForUpdate(db, id);
+        return row === null ? null : { ...row, requestedBy: randomUUID() };
+      },
+    });
+    const selfRefusal = await serviceRefusal(
+      SAL_FULL,
+      CREDIT_NOTE_APPROVE_OPERATION,
+      (db, authorizeScope) => disguised.approveCreditNote(db, own.id, authorizeScope)
+    );
+    expect(selfRefusal.code).toBe('ERR-TRN-001');
+    expect(selfRefusal.safeDetails.violations).toEqual([
+      { path: 'path.creditNoteId', rule: 'credit_note_self_approval' },
+    ]);
+    expect(selfRefusal.message).toContain('must differ from the requester');
+
+    // (b) A different check_violation from the same primitive. Two pending notes of
+    // 60.0000 each fit a 100.0000 invoice when they are raised — pending notes credit
+    // nothing — and once the first is approved the second no longer fits. The
+    // approval is sent for that second note, and `sal.approve_credit_note` refuses it
+    // under the invoice lock because it exceeds the open receivable. That is not a
+    // self-approval, so no token names it one.
+    const other = await seedIssuedInvoice('cn_check_violation_ceiling');
+    const first = await pendingNote(other.invoiceId, '60.0000');
+    const second = await pendingNote(other.invoiceId, '60.0000');
+    authAs(SAL_APPROVER);
+    expect((await approveCreditNote(first.id)).status).toBe(200);
+    expect(await invoiceOpenReceivable(other.invoiceId)).toBe('40.0000');
+    const target = await pendingNote(invoice.invoiceId, '5.0000');
+    const misdirected = serviceWith({
+      approveCreditNote: (db: DbHandle, _id: string, correlationId: string | null) =>
+        real.approveCreditNote(db, second.id, correlationId),
+    });
+    const otherRefusal = await serviceRefusal(
+      SAL_APPROVER,
+      CREDIT_NOTE_APPROVE_OPERATION,
+      (db, authorizeScope) => misdirected.approveCreditNote(db, target.id, authorizeScope)
+    );
+    expect(otherRefusal.code).toBe('ERR-TRN-001');
+    expect(otherRefusal.safeDetails.violations).toBeUndefined();
+    expect(JSON.stringify(otherRefusal.safeDetails)).not.toContain('credit_note_self_approval');
+    expect(otherRefusal.message).not.toContain('must differ from the requester');
+    expect(otherRefusal.message).toContain('would break a billing invariant');
+
+    // Neither refusal moved the note it was aimed at.
+    expect(
+      await countRowsOf(
+        `SELECT count(*)::text AS n FROM sal.credit_notes
+          WHERE id = ANY($1::uuid[]) AND approval_state = 'pending'`,
+        [[own.id, target.id, second.id]]
+      )
+    ).toBe(3);
+    expect(await invoiceOpenReceivable(other.invoiceId)).toBe('40.0000');
   });
 
   it('replays an approval without crediting the invoice twice (idempotency)', async () => {

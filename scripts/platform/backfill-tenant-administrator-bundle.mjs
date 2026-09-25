@@ -63,19 +63,73 @@
  *   - **idempotent.** The work is the set difference `bundle − mapped`. A second
  *     run computes an empty difference, writes nothing, and appends no audit
  *     record — `unchanged`, exit 0.
- *   - **narrow.** It touches exactly one role per organisation, the one whose
- *     `role_code` is `tenant_administrator`. Every other role in the tenant —
- *     including every role the tenant has built for itself — is never read for
- *     writing and never written. An organisation with no such role is REPORTED
- *     and SKIPPED; the role is not created, because creating one would be
- *     provisioning, not a backfill.
- *   - **respects a customisation.** A tenant that has deliberately mapped a
- *     bundle code as `effect = 'deny'` on its own administrator role has made a
- *     decision. `uq_role_permissions_map` makes the mapping identity unique, so
- *     "adding" the allow would mean re-deciding that deny by UPDATE. The code is
- *     LEFT ALONE and reported as `blockedByDeny`. Extra codes the tenant mapped
- *     beyond the bundle are simply not in the difference, so they survive
- *     untouched by construction.
+ *   - **narrow.** It touches exactly one role per organisation: the STANDARD
+ *     administrator role the provisioning path wrote. That role is identified by
+ *     its server-owned `role_code` (`tenant_administrator`) — immutable and unique
+ *     among an organisation's live roles, unlike the display name, which a tenant
+ *     may edit through `iam.role-update` — and by having been created by a
+ *     principal OUTSIDE the organisation (the platform operator the provisioning
+ *     and administrator-establishing paths act as — an account that held a
+ *     platform grant when the role was written; see `created-inside-organisation`
+ *     and `creator-unknown` below). Every other role in the
+ *     tenant — cashier, employee and every role the tenant has built for itself —
+ *     is never read for writing and never written. An organisation with no such
+ *     role is REPORTED and SKIPPED; the role is not created, because creating one
+ *     would be provisioning, not a backfill.
+ *   - **never overwrites a customised role.** The Owner's rule, recorded with the
+ *     `sal.credit.manage` widening: a backfill completes the STANDARD role and
+ *     does not re-decide a tenant's own choices about it. So an administrator role
+ *     showing ANY sign of having been customised is SKIPPED WHOLE — nothing is
+ *     added to it, not even the codes it lacks — and REPORTED as `customised`,
+ *     with every reason found:
+ *       · `created-inside-organisation` — the role was created by an account
+ *         of this organisation holding no platform grant at the time, or the
+ *         organisation's own trail records it created through `iam.role-create`
+ *         (`iam.role.created`, which provisioning never writes) — so it is the
+ *         tenant's role wearing the standard code, not the one provisioning wrote.
+ *         What distinguishes the platform operator is its platform grant, NOT its
+ *         home organisation: an operator whose home is this very organisation
+ *         still wrote the standard role;
+ *       · `creator-unknown` — the role's `created_by` names no account at all
+ *         (absent or unresolvable). Nothing proves provisioning wrote it, so it is
+ *         treated as not the standard role: fail closed;
+ *       · `creator-not-platform-operator` — the creator is an account of ANOTHER
+ *         organisation that held no platform grant when the role was written, so
+ *         neither provisioning nor the tenant's own editor explains it;
+ *       · `deny:<code>` — the tenant mapped a code as `effect = 'deny'`;
+ *       · `beyond-bundle:<code>` — the role allows a code the bundle does not
+ *         carry, which provisioning never writes;
+ *       · `tenant-edit:<action>` — the organisation's own audit trail records a
+ *         mapping on this role added, re-decided or removed through the shipped
+ *         role-management operations (`iam.role.permission_added`,
+ *         `iam.role.permission_changed`, `iam.role.permission_removed`), or the
+ *         role itself renamed or re-described (`iam.role.updated`) — a role the
+ *         tenant has repurposed is no longer the one provisioning wrote. The
+ *         mapping actions are the one signal that also catches a bundle code the
+ *         tenant REMOVED, which the role's current rows alone cannot tell apart
+ *         from a role that was simply provisioned on an older bundle.
+ *     Granting the standard role to MORE accounts is not a customisation of the
+ *     role, so it is not skipped for that — but widening the role widens every
+ *     holder, so each organisation's line REPORTS `holders` (accounts holding an
+ *     active grant of it) and `tenantGrantedHolders` (those whose grant was issued
+ *     by an account holding no platform grant, i.e. by the organisation itself).
+ *     Whether a customised role should gain a newly approved code is the tenant's
+ *     own decision, taken through the role editor by an administrator who holds
+ *     it — or, where nobody does, an explicit operator act this tool refuses to
+ *     take implicitly.
+ *
+ * ## Concurrency: one tenant, one transaction, one lock
+ *
+ * Every organisation is handled in its OWN transaction, which first takes a
+ * transaction-scoped advisory lock keyed on the organisation
+ * (`pg_advisory_xact_lock(hashtextextended(tenantLockKey(id), 0))`) and then locks
+ * the administrator role row `FOR UPDATE` before reading its mappings. So two runs
+ * against the same organisation serialise — the second computes its difference only
+ * after the first has committed, finds nothing missing and writes nothing — and a
+ * mapping insert by the role editor, whose foreign-key check needs a share lock on
+ * the same role row, waits for the run rather than interleaving with it. A failure
+ * in one organisation rolls back that organisation alone: a `--all` sweep carries
+ * on, reports it as `failed` with its reason, and the process exits 6.
  *
  * ## Scope is explicit
  *
@@ -125,6 +179,35 @@ export const TARGET_ROLE_CODE = 'tenant_administrator';
 
 /** The audit action every changed organisation gets, in its own tenant. */
 export const BACKFILL_AUDIT_ACTION = 'platform.tenant_administrator_bundle.backfilled';
+
+/**
+ * The audit actions the shipped role-management operations append when a tenant
+ * principal changes a role's mappings. Any one of them against the administrator
+ * role marks that role as customised.
+ */
+export const ROLE_MAPPING_EDIT_ACTIONS = Object.freeze([
+  'iam.role.permission_added',
+  'iam.role.permission_changed',
+  'iam.role.permission_removed',
+]);
+
+/**
+ * The audit actions the shipped role-management operations append against the
+ * ROLE itself (entity = the role): a rename or re-description through
+ * `iam.role-update`. Any one of them marks the administrator role as customised.
+ */
+export const ROLE_EDIT_ACTIONS = Object.freeze(['iam.role.updated']);
+
+/** What `iam.role-create` appends for a role a tenant builds. Provisioning never does. */
+export const ROLE_CREATED_ACTION = 'iam.role.created';
+
+/** The namespace of the per-organisation advisory lock. Stable: never rename it. */
+export const BACKFILL_LOCK_NAMESPACE = 'rootlco.platform.tenant-administrator-bundle-backfill';
+
+/** The advisory-lock key text for one organisation (hashed by the database). */
+export function tenantLockKey(tenantId) {
+  return `${BACKFILL_LOCK_NAMESPACE}:${tenantId}`;
+}
 
 /** The bundle's single definition, read from the source the provisioning path uses. */
 const BOOTSTRAP_ROLES_SOURCE = join(API_SRC_ROOT, 'modules', 'iam', 'domain', 'bootstrap-roles.ts');
@@ -276,70 +359,93 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
  * provisioning path imports, and prove the parser above agrees with it.
  */
 export async function runBackfill(client, input, bundle) {
-  await client.query('BEGIN');
-  try {
-    // 1. The authority. An operator account holding the platform code that
-    //    already sanctions writing this bundle — never a tenant principal.
-    const operator = await client.query(
-      `SELECT a.id, a.tenant_id
-         FROM iam.user_accounts a
-        WHERE lower(a.email) = $1 AND a.deleted_at IS NULL`,
-      [input.operator.email]
+  // 1. The authority. An operator account holding the platform code that
+  //    already sanctions writing this bundle — never a tenant principal.
+  const operator = await client.query(
+    `SELECT a.id, a.tenant_id
+       FROM iam.user_accounts a
+      WHERE lower(a.email) = $1 AND a.deleted_at IS NULL`,
+    [input.operator.email]
+  );
+  if (operator.rowCount === 0) fail(`Refused: no account exists for ${input.operator.email}`, 4);
+  if (operator.rowCount > 1) {
+    fail(
+      `Refused: ${operator.rowCount} accounts share ${input.operator.email}; name the operator unambiguously`,
+      4
     );
-    if (operator.rowCount === 0) fail(`Refused: no account exists for ${input.operator.email}`, 4);
-    if (operator.rowCount > 1) {
-      fail(
-        `Refused: ${operator.rowCount} accounts share ${input.operator.email}; name the operator unambiguously`,
-        4
-      );
-    }
-    const operatorAccountId = operator.rows[0].id;
-    const authority = await client.query(
-      `SELECT 1 FROM iam.platform_grants
-        WHERE account_id = $1 AND permission_code = $2 AND revoked_at IS NULL`,
-      [operatorAccountId, REQUIRED_PLATFORM_CODE]
-    );
-    if (authority.rowCount === 0) {
-      fail(
-        `Refused: account ${operatorAccountId} does not hold ${REQUIRED_PLATFORM_CODE}; this is platform maintenance, not a tenant action`,
-        4
-      );
-    }
-
-    // 2. The scope, resolved and named. `--all` still produces a list.
-    const targets = await resolveTargets(client, input);
-
-    // 3. One organisation at a time. Additive only; the difference is the work.
-    const organisations = [];
-    for (const target of targets) {
-      organisations.push(await widenOne(client, input, bundle, target, operatorAccountId));
-    }
-
-    const summary = {
-      operatorAccountId,
-      operatorTenantId: operator.rows[0].tenant_id,
-      bundleSize: bundle.length,
-      considered: organisations.length,
-      widened: organisations.filter((o) => o.outcome === 'widened').length,
-      unchanged: organisations.filter((o) => o.outcome === 'unchanged').length,
-      skipped: organisations.filter((o) => o.outcome === 'no-administrator-role').length,
-      organisations,
-    };
-
-    if (input.dryRun) {
-      await client.query('ROLLBACK');
-      return { outcome: 'dry-run', ...summary };
-    }
-    await client.query('COMMIT');
-    return { outcome: 'applied', ...summary };
-  } catch (error) {
-    try {
-      await client.query('ROLLBACK');
-    } catch {
-      // The connection is being discarded anyway.
-    }
-    throw error;
   }
+  const operatorAccountId = operator.rows[0].id;
+  const authority = await client.query(
+    `SELECT 1 FROM iam.platform_grants
+      WHERE account_id = $1 AND permission_code = $2 AND revoked_at IS NULL`,
+    [operatorAccountId, REQUIRED_PLATFORM_CODE]
+  );
+  if (authority.rowCount === 0) {
+    fail(
+      `Refused: account ${operatorAccountId} does not hold ${REQUIRED_PLATFORM_CODE}; this is platform maintenance, not a tenant action`,
+      4
+    );
+  }
+
+  // 2. The scope, resolved and named. `--all` still produces a list.
+  const targets = await resolveTargets(client, input);
+
+  // 3. One organisation at a time, each in its own transaction under its own
+  //    advisory lock. Additive only; the difference is the work. A failure is
+  //    that organisation's alone: it is rolled back, reported, and the sweep
+  //    carries on.
+  const organisations = [];
+  for (const target of targets) {
+    try {
+      await client.query('BEGIN');
+      await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [
+        tenantLockKey(target.id),
+      ]);
+      const organisation = await widenOne(client, input, bundle, target, operatorAccountId);
+      await client.query(input.dryRun ? 'ROLLBACK' : 'COMMIT');
+      organisations.push(organisation);
+    } catch (error) {
+      try {
+        await client.query('ROLLBACK');
+      } catch {
+        // The failure is reported below either way.
+      }
+      organisations.push({
+        tenantId: target.id,
+        tenantCode: target.tenant_code,
+        status: target.status,
+        outcome: 'failed',
+        roleId: null,
+        heldBefore: 0,
+        heldAfter: 0,
+        added: [],
+        blockedByDeny: [],
+        customisations: [],
+        failure: describeFailure(error),
+      });
+    }
+  }
+
+  return {
+    outcome: input.dryRun ? 'dry-run' : 'applied',
+    operatorAccountId,
+    operatorTenantId: operator.rows[0].tenant_id,
+    bundleSize: bundle.length,
+    considered: organisations.length,
+    widened: organisations.filter((o) => o.outcome === 'widened').length,
+    unchanged: organisations.filter((o) => o.outcome === 'unchanged').length,
+    skipped: organisations.filter((o) => o.outcome === 'no-administrator-role').length,
+    customised: organisations.filter((o) => o.outcome === 'customised').length,
+    failed: organisations.filter((o) => o.outcome === 'failed').length,
+    organisations,
+  };
+}
+
+/** One organisation's failure, as a line an operator can act on. No secret is in it. */
+function describeFailure(error) {
+  if (error instanceof BackfillRefused) return error.message;
+  const code = typeof error?.code === 'string' ? `${error.code}: ` : '';
+  return `${code}${error instanceof Error ? error.message : String(error)}`;
 }
 
 /** Every organisation named, or every organisation there is — always as a list. */
@@ -376,12 +482,18 @@ async function resolveTargets(client, input) {
  * ONE organisation's administrator role, widened by the set difference.
  *
  * Every statement below is a SELECT or an INSERT. There is deliberately no
- * DELETE and no UPDATE in this function, and none anywhere in this file.
+ * DELETE and no UPDATE in this function, and none anywhere in this file; the one
+ * `FOR UPDATE` is a row LOCK on the role, taken inside the caller's per-tenant
+ * transaction so that nothing changes the role between the read and the write.
  */
 async function widenOne(client, input, bundle, target, operatorAccountId) {
+  // The role row is LOCKED before anything about it is read, so the mappings, the
+  // edit trail and the difference below all describe one state of it.
   const roles = await client.query(
-    `SELECT id FROM iam.roles
-      WHERE tenant_id = $1 AND role_code = $2 AND deleted_at IS NULL`,
+    `SELECT r.id, r.created_by
+       FROM iam.roles r
+      WHERE r.tenant_id = $1 AND r.role_code = $2 AND r.deleted_at IS NULL
+      FOR UPDATE`,
     [target.id, TARGET_ROLE_CODE]
   );
   if (roles.rowCount === 0) {
@@ -397,6 +509,9 @@ async function widenOne(client, input, bundle, target, operatorAccountId) {
       heldAfter: 0,
       added: [],
       blockedByDeny: [],
+      customisations: [],
+      holders: 0,
+      tenantGrantedHolders: 0,
     };
   }
   if (roles.rowCount > 1) {
@@ -406,6 +521,8 @@ async function widenOne(client, input, bundle, target, operatorAccountId) {
     );
   }
   const roleId = roles.rows[0].id;
+  const creator = await classifyCreator(client, target.id, roles.rows[0]);
+  const holding = await holdersOf(client, target.id, roleId);
 
   const mapped = await client.query(
     `SELECT p.permission_code, rp.effect
@@ -426,6 +543,64 @@ async function widenOne(client, input, bundle, target, operatorAccountId) {
   const blockedByDeny = bundle.filter((code) => deny.has(code)).sort();
   const missing = bundle.filter((code) => !allow.has(code) && !deny.has(code)).sort();
 
+  // Every sign that the tenant has customised this role. Any one of them means
+  // the role is skipped whole and reported; see "never overwrites a customised
+  // role" above.
+  const edits = await client.query(
+    `SELECT DISTINCT r.action
+       FROM iam.audit_records r
+      WHERE r.tenant_id = $1
+        AND (
+          (
+            r.action = ANY($3::text[])
+            AND (
+              EXISTS (
+                SELECT 1 FROM iam.audit_record_details d
+                 WHERE d.tenant_id = r.tenant_id
+                   AND d.audit_record_id = r.id
+                   AND d.field_name = 'role_id'
+                   AND (d.new_value_masked = $2::text OR d.old_value_masked = $2::text)
+              )
+              OR r.entity_id IN (
+                SELECT rp.id FROM iam.role_permissions rp
+                 WHERE rp.tenant_id = $1 AND rp.role_id = $2::uuid
+              )
+            )
+          )
+          OR (r.action = ANY($4::text[]) AND r.entity_id = $2::uuid)
+        )
+      ORDER BY r.action`,
+    [target.id, roleId, [...ROLE_MAPPING_EDIT_ACTIONS], [...ROLE_EDIT_ACTIONS]]
+  );
+  const customisations = [
+    ...creator,
+    ...[...deny].sort().map((code) => `deny:${code}`),
+    ...[...allow]
+      .filter((code) => !bundle.includes(code))
+      .sort()
+      .map((code) => `beyond-bundle:${code}`),
+    ...edits.rows.map((row) => `tenant-edit:${row.action}`),
+  ];
+
+  if (customisations.length > 0) {
+    // Reported, not written. `missing` is what the standard role would have
+    // gained, recorded so the Owner can see exactly what was withheld and why.
+    return {
+      tenantId: target.id,
+      tenantCode: target.tenant_code,
+      status: target.status,
+      outcome: 'customised',
+      roleId,
+      heldBefore: allow.size,
+      heldAfter: allow.size,
+      added: [],
+      withheld: missing,
+      blockedByDeny,
+      customisations,
+      ...holding,
+    };
+  }
+
   if (missing.length === 0) {
     return {
       tenantId: target.id,
@@ -437,6 +612,8 @@ async function widenOne(client, input, bundle, target, operatorAccountId) {
       heldAfter: allow.size,
       added: [],
       blockedByDeny,
+      customisations,
+      ...holding,
     };
   }
 
@@ -500,8 +677,93 @@ async function widenOne(client, input, bundle, target, operatorAccountId) {
     heldAfter: allow.size + missing.length,
     added: missing,
     blockedByDeny,
+    customisations,
+    ...holding,
     auditRecordId: audit.rows[0].id,
   };
+}
+
+/**
+ * Who wrote the administrator role, as zero or more customisation reasons.
+ *
+ * The standard role is the one a PLATFORM OPERATOR wrote — provisioning, or the
+ * administrator-establishing operation — and what marks a platform operator is a
+ * platform grant it held when the role was written, not the organisation its
+ * account lives in: an operator whose home is this very organisation still wrote
+ * the standard role. Everything else fails closed.
+ *
+ * The grant's window is compared with the role's `created_at` INSIDE the
+ * database, joined on the role row itself. The timestamp is never passed back as
+ * a parameter: `pg` hands a `timestamptz` to JavaScript as a `Date`, which keeps
+ * milliseconds only, so a role written in the same millisecond as the grant that
+ * authorised it would read as written BEFORE that grant.
+ */
+async function classifyCreator(client, tenantId, role) {
+  const reasons = [];
+  if (role.created_by === null || role.created_by === undefined) {
+    reasons.push('creator-unknown');
+  } else {
+    const creator = await client.query(
+      `SELECT a.tenant_id,
+              EXISTS (
+                SELECT 1 FROM iam.platform_grants g
+                 WHERE g.account_id = a.id
+                   AND g.granted_at <= r.created_at
+                   AND (g.revoked_at IS NULL OR g.revoked_at > r.created_at)
+              ) AS platform_operator
+         FROM iam.roles r
+         JOIN iam.user_accounts a ON a.id = r.created_by
+        WHERE r.id = $1 AND r.tenant_id = $2`,
+      [role.id, tenantId]
+    );
+    const account = creator.rows[0];
+    if (account === undefined) reasons.push('creator-unknown');
+    else if (account.platform_operator !== true) {
+      reasons.push(
+        account.tenant_id === tenantId
+          ? 'created-inside-organisation'
+          : 'creator-not-platform-operator'
+      );
+    }
+  }
+  // The organisation's own trail: `iam.role-create` appends this for a role a
+  // tenant builds, and provisioning never does.
+  const created = await client.query(
+    `SELECT 1 FROM iam.audit_records
+      WHERE tenant_id = $1 AND action = $2 AND entity_id = $3::uuid
+      LIMIT 1`,
+    [tenantId, ROLE_CREATED_ACTION, role.id]
+  );
+  if (created.rowCount > 0 && !reasons.includes('created-inside-organisation')) {
+    reasons.push('created-inside-organisation');
+  }
+  return reasons;
+}
+
+/**
+ * Who holds the administrator role — reported, never a reason to skip. Granting
+ * the standard role to more accounts does not customise the role, but widening it
+ * widens every one of them, so the Owner sees how many. A holder counts as
+ * tenant-granted when its granter held no platform grant WHEN the role grant was
+ * written — the same window, compared in the database, as `classifyCreator`.
+ */
+async function holdersOf(client, tenantId, roleId) {
+  const { rows } = await client.query(
+    `SELECT count(DISTINCT g.user_id)::int AS holders,
+            count(DISTINCT g.user_id) FILTER (
+              WHERE NOT EXISTS (
+                SELECT 1 FROM iam.platform_grants pg
+                 WHERE pg.account_id = g.granted_by
+                   AND pg.granted_at <= g.created_at
+                   AND (pg.revoked_at IS NULL OR pg.revoked_at > g.created_at)
+              )
+            )::int AS tenant_granted
+       FROM iam.role_grants g
+      WHERE g.tenant_id = $1 AND g.role_id = $2 AND g.status = 'active'
+        AND g.revoked_at IS NULL`,
+    [tenantId, roleId]
+  );
+  return { holders: rows[0].holders, tenantGrantedHolders: rows[0].tenant_granted };
 }
 
 function writeEvidence(input, bundle, result) {
@@ -549,7 +811,7 @@ async function main() {
   console.log(`  operator account  ${result.operatorAccountId}`);
   console.log(`  bundle            ${result.bundleSize} codes`);
   console.log(
-    `  organisations     ${result.considered} considered, ${result.widened} widened, ${result.unchanged} already current, ${result.skipped} without a ${TARGET_ROLE_CODE} role`
+    `  organisations     ${result.considered} considered, ${result.widened} widened, ${result.unchanged} already current, ${result.customised} customised and left alone, ${result.skipped} without a ${TARGET_ROLE_CODE} role, ${result.failed} failed`
   );
   for (const organisation of result.organisations) {
     const detail =
@@ -557,15 +819,25 @@ async function main() {
         ? `${organisation.heldBefore} -> ${organisation.heldAfter} (+${organisation.added.length}: ${organisation.added.join(', ')})`
         : organisation.outcome === 'unchanged'
           ? `${organisation.heldBefore} codes, already current`
-          : `no ${TARGET_ROLE_CODE} role`;
+          : organisation.outcome === 'customised'
+            ? `${organisation.heldBefore} codes, customised, nothing written (would have added: ${organisation.withheld.join(', ') || 'nothing'})`
+            : organisation.outcome === 'failed'
+              ? `failed, rolled back: ${organisation.failure}`
+              : `no ${TARGET_ROLE_CODE} role`;
     console.log(
       `    ${organisation.tenantCode.padEnd(24)} ${organisation.outcome.padEnd(22)} ${detail}`
     );
-    if (organisation.blockedByDeny.length > 0) {
-      console.log(`      left alone (tenant deny): ${organisation.blockedByDeny.join(', ')}`);
+    if (organisation.customisations.length > 0) {
+      console.log(`      customised: ${organisation.customisations.join(', ')}`);
+    }
+    if (organisation.holders > 1 || organisation.tenantGrantedHolders > 0) {
+      console.log(
+        `      held by ${organisation.holders} account(s), ${organisation.tenantGrantedHolders} granted by the organisation itself`
+      );
     }
   }
   console.log(`  evidence          ${path}`);
+  if (result.failed > 0) process.exitCode = 6;
 }
 
 const invokedDirectly =

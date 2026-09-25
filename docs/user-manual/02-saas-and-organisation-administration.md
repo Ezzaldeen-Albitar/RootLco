@@ -874,37 +874,39 @@ just for one person. A freshly provisioned organisation can now record a custome
 addresses and preferences; record the condition evidence a reception visit asks for; and say what
 work is on a work order. Part 3, §3.15 says what each unblocks.
 
-**Two things it still cannot do, and both await an Owner decision.** They are named here because
-they are the two gaps an administrator will meet first:
+**One thing it still cannot do, and it awaits an Owner decision.** It is named here because it is
+the gap an administrator will meet first:
 
 - **Unit cost on a goods receipt.** Recording what a part cost needs the cost-visibility
   permission, which the first administrator does not hold and — since nobody can grant a permission
   they do not hold themselves — cannot obtain from inside the organisation. The receipt form says
   so: _"Unit costs can be recorded only by someone who may see costs."_ Part 5, §5.19.
-- **Approving a credit note.** The credit permission is not in the set either. A return of a part
-  sold over the counter still raises a credit note and still says it is waiting for a second person
-  — and inside a freshly provisioned organisation there is no such person and no way to make one.
-  The credit-note screen opens and says **"You do not have access. Your account does not have
-  permission for this. An administrator can grant it."** Part 6, §6.2a.
 
-| Screen                                       | Visible to the first administrator? | Why                                                                                                         |
-| -------------------------------------------- | ----------------------------------- | ----------------------------------------------------------------------------------------------------------- |
-| **Users**, **Roles**, **Permissions**        | Yes                                 | The identity and access permissions are in the set.                                                         |
-| **Approval limits**                          | Yes                                 | The approval-management permission is in the set.                                                           |
-| **Departments**, **Employees**               | Yes, and fully usable               | Their read and management permissions are both in the set.                                                  |
-| **Organization** — companies and branches    | Yes, and fully usable               | Company and branch management are both in the set.                                                          |
-| **Organization** — subscription and capacity | Yes, read-only                      | Tenant-read is in the set. Nobody inside a workspace can change a plan; that is the platform owner's (2.9). |
-| **Organization** — settings blocks           | Yes, read-only                      | Settings-management is **not** in the set, so those blocks show _"You can view this, but not change it."_   |
-| **Organization** — branch status             | **No**                              | Activating or deactivating a branch is gated on settings-management (2.5.3).                                |
-| **Languages**                                | Yes, read-only                      | Same reason as the settings blocks.                                                                         |
-| **Audit log**                                | Yes                                 | Audit-view and sensitive-view are both in the set.                                                          |
-| **Numbering rules**                          | **No**                              | Gated on settings-management, which is not in the set.                                                      |
-| **Taxes**                                    | **No**                              | Same.                                                                                                       |
-| **Currencies**                               | **No**                              | Same.                                                                                                       |
-| **System settings**                          | **No**                              | Same.                                                                                                       |
-| **Notifications**, **Documents**             | **No**                              | Planned, not built — see 2.13.                                                                              |
-| **Appointments**                             | **No**                              | No appointment permission is in the set. See Part 4A.                                                       |
-| **Credit notes**                             | **No**                              | The credit permission is not in the set, so the entry is hidden and the address refuses. Part 6, §6.2a.     |
+**Credit notes are now in the set, by Owner decision.** The first administrator can open **Credit
+notes**, and can give the credit and finance-view permissions to a second person — for one branch —
+who approves the credit notes it raises; the person who raises a credit note can never approve it.
+An organisation provisioned before this change gets the permission when the platform operator runs
+the administrator backfill for it, and only if its administrator role is still the standard one.
+Part 6, §6.2a.
+
+| Screen                                       | Visible to the first administrator? | Why                                                                                                                |
+| -------------------------------------------- | ----------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| **Users**, **Roles**, **Permissions**        | Yes                                 | The identity and access permissions are in the set.                                                                |
+| **Approval limits**                          | Yes                                 | The approval-management permission is in the set.                                                                  |
+| **Departments**, **Employees**               | Yes, and fully usable               | Their read and management permissions are both in the set.                                                         |
+| **Organization** — companies and branches    | Yes, and fully usable               | Company and branch management are both in the set.                                                                 |
+| **Organization** — subscription and capacity | Yes, read-only                      | Tenant-read is in the set. Nobody inside a workspace can change a plan; that is the platform owner's (2.9).        |
+| **Organization** — settings blocks           | Yes, read-only                      | Settings-management is **not** in the set, so those blocks show _"You can view this, but not change it."_          |
+| **Organization** — branch status             | **No**                              | Activating or deactivating a branch is gated on settings-management (2.5.3).                                       |
+| **Languages**                                | Yes, read-only                      | Same reason as the settings blocks.                                                                                |
+| **Audit log**                                | Yes                                 | Audit-view and sensitive-view are both in the set.                                                                 |
+| **Numbering rules**                          | **No**                              | Gated on settings-management, which is not in the set.                                                             |
+| **Taxes**                                    | **No**                              | Same.                                                                                                              |
+| **Currencies**                               | **No**                              | Same.                                                                                                              |
+| **System settings**                          | **No**                              | Same.                                                                                                              |
+| **Notifications**, **Documents**             | **No**                              | Planned, not built — see 2.13.                                                                                     |
+| **Appointments**                             | **No**                              | No appointment permission is in the set. See Part 4A.                                                              |
+| **Credit notes**                             | Yes                                 | The credit and finance-view permissions are both in the set. Approving still needs a second person. Part 6, §6.2a. |
 
 **You still cannot fix the gaps from inside the workspace.** A role may only be given a permission
 that the person granting it already holds, and this is enforced by the database as well as by the

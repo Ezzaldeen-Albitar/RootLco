@@ -120,24 +120,23 @@ or hides is only a convenience.
 | `inv.unit_conversion.manage`     | States and retires a unit conversion                                                                                                                                     | Yes                                      |
 | `inv.specification.manage`       | Records, confirms and retires a vehicle capacity                                                                                                                         | Yes                                      |
 | `inv.cost.view`                  | Unit costs on a goods receipt, and the cost history of an item                                                                                                           | **No** — and see below                   |
-| `sal.credit.manage`              | The **Credit notes** screen, and the credit note a customer return raises                                                                                                | **No** — and see below                   |
+| `sal.credit.manage`              | The **Credit notes** screen, and the credit note a customer return raises                                                                                                | Yes — held so it can be delegated        |
 | `sal.invoice.manage`             | Opens **Counter sales**                                                                                                                                                  | Yes                                      |
 | `sal.finance.view`               | The amounts on a counter sale and on a customer return                                                                                                                   | Yes                                      |
 | `org.branch.read`                | The branch picker on every stock screen                                                                                                                                  | Yes                                      |
 | `org.tenant.read`                | The subscription-limits card on **Attention**                                                                                                                            | Yes                                      |
 
-**The two "No" rows are worth planning around, because you cannot fix either from inside the
+**The "No" row is worth planning around, because you cannot fix it from inside the
 organisation.** A permission nobody in an organisation holds cannot be granted to anybody in it, so
-each of these is shut for everyone, not just for the first administrator:
+it is shut for everyone, not just for the first administrator:
 
 - **Without `inv.cost.view`**, no goods receipt can carry a unit cost and no cost history
   accumulates. The receipt form states it: **"Unit costs can be recorded only by someone who may see
   costs."** See 5.19.
-- **Without `sal.credit.manage`**, the **Credit notes** entry is not in the navigation and the
-  screen refuses. A customer return still raises a credit note and still says it is waiting for a
-  second person — and there is nobody who can be that person. See 5.23.3 and Part 6, §6.2a.
 
-Both are the Owner's decision to change, and neither has been changed. Part 3, §3.15 records them.
+That is the Owner's decision to change, and it has not been changed. Part 3, §3.15 records it.
+`sal.credit.manage` was added to the set by Owner decision, so the first administrator can give it
+to the second person a customer return's credit note waits for. See 5.23.3 and Part 6, §6.2a.
 
 Three further inventory codes exist in the permission catalogue and still have **no screen** —
 **OPERATOR PROCEDURE** for each. None is held by a freshly provisioned administrator.
@@ -1564,12 +1563,13 @@ carries **Open the credit note** <!-- inventory.returns.openCredit --> , which t
 itself (Part 6, §6.2a).
 
 **Read the next paragraph before you promise a customer a refund.** The credit note has a screen at
-this version, and **the second person the message names does not exist in a newly provisioned
-organisation.** Approving a credit note needs the credit permission, which is not in the set a new
-organisation's first administrator is given — and nobody can be granted a permission that nobody
-holds. So in a new organisation the note is raised, it is visible to nobody, and it stays waiting.
-Whether that permission joins the set is an Owner decision and has not been taken. Part 6, §6.2a
-states what the screens do; Part 3, §3.15 states the gap.
+this version, and **the second person the message names has to be somebody other than whoever took
+the part back.** The first administrator of an organisation holds the credit permission and can give
+it, with the finance-view permission, to a second person for the branch; the person who raised a
+credit note can never approve it. Until that second person approves, the note credits nothing. An
+organisation provisioned before this permission joined the set gets it only when the platform
+operator runs the administrator backfill for it. That second person approves it on the **Credit
+notes** screen. Part 6, §6.2a states what the screens do.
 
 **Restrictions**
 

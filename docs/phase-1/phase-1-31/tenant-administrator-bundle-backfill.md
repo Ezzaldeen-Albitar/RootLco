@@ -59,16 +59,16 @@ node scripts/platform/backfill-tenant-administrator-bundle.mjs \
 It reads the bundle from `bootstrap-roles.ts`, resolves the named organisations, and for each one
 inserts the codes its `tenant_administrator` role does not map. Nothing else.
 
-| property           | how it is held                                                                                                                                                                                                                                                           |
-| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **authority**      | refused unless the named operator account holds an unrevoked `platform.organization.provision` in `iam.platform_grants`. An **existing** platform permission; none is minted                                                                                             |
-| **additive only**  | no `DELETE`, no `UPDATE`, no `TRUNCATE`, no `REVOKE` anywhere in the file. The one mapping write is `INSERT … effect = 'allow'` for a code the role does not map at all                                                                                                  |
-| **idempotent**     | the work is the set difference `bundle − mapped`; an empty difference writes no row and appends no audit record                                                                                                                                                          |
-| **narrow**         | one role per organisation, the one whose `role_code` is `tenant_administrator`. An organisation without one is reported and skipped — never given one, because that would be provisioning                                                                                |
-| **customisations** | a bundle code the tenant has mapped `deny` on its own administrator role is left alone and reported as `blockedByDeny`. Codes mapped beyond the bundle are simply not in the difference, so they survive by construction                                                 |
-| **explicit scope** | `--tenant` names organisations; `--all` sweeps and reports every organisation it considered with its outcome. There is no silent sweep                                                                                                                                   |
-| **recorded**       | one `iam.audit_append` in each changed tenant — `platform.tenant_administrator_bundle.backfilled`, actor the operator, entity the role, details the codes added and the counts — plus an evidence JSON listing every organisation. Identifiers and permission codes only |
-| **fail closed**    | one transaction; any refusal rolls all of it back and exits non-zero. `--dry-run` rolls back deliberately and reports what it would have done                                                                                                                            |
+| property           | how it is held                                                                                                                                                                                                                                                                       |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **authority**      | refused unless the named operator account holds an unrevoked `platform.organization.provision` in `iam.platform_grants`. An **existing** platform permission; none is minted                                                                                                         |
+| **additive only**  | no `DELETE`, no `UPDATE`, no `TRUNCATE`, no `REVOKE` anywhere in the file. The one mapping write is `INSERT … effect = 'allow'` for a code the role does not map at all                                                                                                              |
+| **idempotent**     | the work is the set difference `bundle − mapped`; an empty difference writes no row and appends no audit record                                                                                                                                                                      |
+| **narrow**         | one role per organisation, the one whose `role_code` is `tenant_administrator`. An organisation without one is reported and skipped — never given one, because that would be provisioning                                                                                            |
+| **customisations** | a bundle code the tenant has mapped `deny` on its own administrator role is left alone and reported as `blockedByDeny`. Codes mapped beyond the bundle are simply not in the difference, so they survive by construction                                                             |
+| **explicit scope** | `--tenant` names organisations; `--all` sweeps and reports every organisation it considered with its outcome. There is no silent sweep                                                                                                                                               |
+| **recorded**       | one `iam.audit_append` in each changed tenant — `platform.tenant_administrator_bundle.backfilled`, actor the operator, entity the role, details the codes added and the counts — plus an evidence JSON listing every organisation. Identifiers and permission codes only             |
+| **fail closed**    | a refusal before any organisation is touched (authority, scope) exits 4 and writes nothing. Each organisation then runs in its own transaction: a failure rolls back that organisation alone, is reported as `failed`, and the run exits 6. `--dry-run` rolls each back deliberately |
 
 ### The bundle has one definition, and it is parsed
 
@@ -184,3 +184,72 @@ The residual the backfill leaves behind is its own shape: an organisation provis
 widening will need this run again. That is not a defect of the tool but the reason it is repeatable
 and idempotent — the bundle is still written once at provisioning, and this is the sanctioned way to
 re-apply it.
+
+---
+
+## 7. Addendum — a customised administrator role is skipped whole (credit-note decision)
+
+Recorded with the Owner's decision to carry `sal.credit.manage` in the tenant administrator bundle.
+The Owner's rule for existing organisations is that the backfill completes the **standard**
+administrator role and never overwrites one the organisation has customised. The tool was changed
+to hold that rule, and the **customisations** row of the property table in section 2 is superseded
+by it:
+
+| property                               | how it is held now                                                                                                                                                                                                                                                                                                                                                                                                        |
+| -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **the standard role**                  | the organisation's live role with the server-owned `role_code` `tenant_administrator` (immutable; the display name is editable and is never used), created by a principal outside the organisation — the platform operator the provisioning path acts as                                                                                                                                                                  |
+| **customised roles are skipped whole** | a role with a `deny` mapping, an `allow` for a code outside the bundle, a mapping added, re-decided or removed through the shipped role editor (read from the organisation's own audit trail), or created by one of the organisation's own principals is reported as `customised` with each reason and is **not written at all** — not even the codes it lacks. `withheld` lists what the standard role would have gained |
+
+A role that is still the standard one is widened exactly as before. The customised outcome replaces
+the earlier behaviour recorded in section 2 and in **BF-3**, where a role with a tenant `deny` was
+widened around the denied code: under the Owner's rule the tenant's own decision about its role is
+not completed by an operator run, and the evidence file names it instead.
+
+Proof, in the same suite: **BF-3** (a role with an extra allow and a deny is skipped whole, every row
+kept by id, both reasons reported), **BF-11** (an organisation on the 88-code bundle is offered
+exactly `sal.credit.manage`; the dry run writes nothing; the applied run adds it to the standard
+role only — a cashier role in the same organisation is untouched — with one audit record; a second
+run is a no-op) and **BF-12** (a role edited through the shipped remove operation, and a role the
+organisation created itself under the standard code, are both skipped and reported, and gain
+nothing).
+
+Applying it to an existing database is the same operator act as before, run as a dry run first and
+read before anything is written. This addendum does not claim the run was performed anywhere.
+
+---
+
+## 8. Addendum — who wrote the role, what else marks it customised, and one tenant at a time
+
+Three corrections to section 7, made on review of the credit-note change.
+
+**The creator check fails closed and is keyed on platform authority.** The standard role is the
+one a platform operator wrote, and what marks a platform operator is a platform grant it held when
+the role was written — not the organisation its account lives in, so an operator whose home is the
+organisation being checked still wrote the standard role. A role whose `created_by` names no
+account is reported as `creator-unknown`; one written by an account of another organisation holding
+no platform grant as `creator-not-platform-operator`; and one written by an account of the
+organisation holding no platform grant, or whose own trail records it through `iam.role-create`
+(`iam.role.created`, which provisioning never writes), as `created-inside-organisation`. Each is
+skipped whole and written to not at all.
+
+**A rename is a customisation; another holder is not.** A role the organisation renamed or
+re-described through `iam.role-update` (`iam.role.updated`) is reported as
+`tenant-edit:iam.role.updated` and skipped. Granting the standard role to more accounts does not
+customise the role, so it is not skipped for that, but every organisation's line reports `holders`
+(accounts holding an active grant of it) and `tenantGrantedHolders` (those granted by an account
+holding no platform grant), because widening the role widens each of them.
+
+**One organisation, one transaction, one lock.** Each organisation is handled in its own
+transaction, which takes a transaction-scoped advisory lock keyed on the organisation and then locks
+the role row before reading its mappings. Two runs against one organisation serialise, and the
+second finds nothing missing. A failure in one organisation rolls back that organisation alone: the
+run carries on, reports it as `failed` with its reason, and exits 6.
+
+Proof, in the same suite: **BF-12** (a role archived and re-created through the shipped role
+operations, and a role renamed through `iam.role-update`, are skipped and reported), **BF-13**
+(`creator-unknown`, `creator-not-platform-operator`, and the home-organisation operator's role
+widened), **BF-14** inside BF-11 (two holders reported, one granted by the organisation, still
+widened), **BF-15** (two concurrent runs: one widened, one unchanged, one audit record), **BF-16**
+(a run blocked on the advisory lock computes its difference after the holder commits) and **BF-17**
+(one organisation failed and rolled back, the next widened and committed, in one run). This
+addendum does not claim the run was performed anywhere.

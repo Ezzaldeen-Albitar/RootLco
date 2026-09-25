@@ -24,8 +24,10 @@ vi.mock('@/lib/api/server-client', () => ({
 }));
 
 const {
+  approveCreditNote,
   cancelInvoice,
   createInvoice,
+  requestCreditNote,
   issueInvoice,
   readInvoice,
   readInvoicePreview,
@@ -275,6 +277,89 @@ describe('issue and cancel carry the invoice’s version', () => {
     expect(issued.state.status).toBe('expired');
     expect(cancelled.state.status).toBe('expired');
     expect(created.state.status).toBe('expired');
+    expect(send).not.toHaveBeenCalled();
+  });
+});
+
+/*
+ * Credit notes, raised and approved (Owner requirement: usable through the
+ * application). The screens are DOM-tested with this module mocked, so what the
+ * two adapters SEND, and how they turn the server's 409s into words, is held here.
+ */
+describe('raising and approving a credit note', () => {
+  const NOTE_ID = '55555555-5555-4555-8555-555555555555';
+  const conflict = (violations?: readonly { path: string; rule: string }[]) => ({
+    ok: false as const,
+    kind: 'conflict',
+    status: 409,
+    correlationId: 'corr-409',
+    problem: {
+      type: 'about:blank',
+      title: 'Conflict',
+      status: 409,
+      code: 'ERR-TRN-001',
+      correlationId: 'corr-409',
+      ...(violations ? { violations } : {}),
+    },
+  });
+
+  it('both writes are published idempotent operations, so the transport carries a key', () => {
+    expect(
+      resolveOperation('POST', `/api/v1/invoices/${INVOICE_ID}/credit-notes`)?.operationId
+    ).toBe('sal.credit-note-create');
+    expect(resolveOperation('POST', `/api/v1/credit-notes/${NOTE_ID}/approval`)?.operationId).toBe(
+      'sal.credit-note-approve'
+    );
+    expect(requiresIdempotencyKey('POST', `/api/v1/invoices/${INVOICE_ID}/credit-notes`)).toBe(
+      true
+    );
+    expect(requiresIdempotencyKey('POST', `/api/v1/credit-notes/${NOTE_ID}/approval`)).toBe(true);
+  });
+
+  it('raises against the invoice in the path with the amount as typed, the reason, and the form’s own key', async () => {
+    send.mockResolvedValue(ok({ creditNote: { id: NOTE_ID }, replayed: false }));
+    const out = await requestCreditNote(INVOICE_ID, { amount: '15.50', reason: 'Wrong part' }, KEY);
+    expect(send).toHaveBeenCalledWith(
+      'POST',
+      `/api/v1/invoices/${INVOICE_ID}/credit-notes`,
+      { amount: '15.50', reason: 'Wrong part' },
+      { idempotencyKey: KEY }
+    );
+    expect(out.state.status).toBe('success');
+    expect(out.created?.creditNote.id).toBe(NOTE_ID);
+  });
+
+  it('files a 409 on raising under the amount, never as "someone changed it"', async () => {
+    send.mockResolvedValue(conflict());
+    const out = await requestCreditNote(INVOICE_ID, { amount: '900', reason: 'Too much' }, KEY);
+    expect(out.created).toBeNull();
+    expect(out.state.status).toBe('conflict');
+    expect(out.state.fieldErrors?.['amount']).toBe('creditNotes.request.overOpen');
+    expect(out.state.correlationId).toBe('corr-409');
+  });
+
+  it('approves with no body, and the named self-approval refusal reaches the banner as its sentence', async () => {
+    send.mockResolvedValue(
+      conflict([{ path: 'path.creditNoteId', rule: 'credit_note_self_approval' }])
+    );
+    const out = await approveCreditNote(NOTE_ID);
+    expect(send).toHaveBeenCalledWith('POST', `/api/v1/credit-notes/${NOTE_ID}/approval`);
+    expect(out.state.status).toBe('conflict');
+    expect(out.state.messageKey).toBe('form.violation.credit_note_self_approval');
+  });
+
+  it('any other 409 on approving says the note or its invoice moved on', async () => {
+    send.mockResolvedValue(conflict());
+    const out = await approveCreditNote(NOTE_ID);
+    expect(out.state.messageKey).toBe('creditNotes.approve.conflict');
+  });
+
+  it('an ended session is reported before either write is sent', async () => {
+    authorizedClient.mockResolvedValue(null);
+    expect(
+      (await requestCreditNote(INVOICE_ID, { amount: '1', reason: 'r' }, KEY)).state.status
+    ).toBe('expired');
+    expect((await approveCreditNote(NOTE_ID)).state.status).toBe('expired');
     expect(send).not.toHaveBeenCalled();
   });
 });
