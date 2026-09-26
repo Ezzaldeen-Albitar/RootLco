@@ -11,6 +11,7 @@ import {
   countGutter,
   lineChartProps,
   OTHER_SLICE_KEY,
+  otherSliceKey,
   PIE_MAX_SLICES,
   pieChartProps,
   pieSlices,
@@ -507,6 +508,63 @@ describe('a pie is identifiable without colour', () => {
         (slice) => slice.key === OTHER_SLICE_KEY
       )
     ).toBe(false);
+  });
+
+  it('lists the folded names with the Arabic comma in Arabic, never a Latin comma', () => {
+    panel(
+      {
+        kind: 'pie',
+        categories: EIGHT,
+        series: EIGHT_COUNTS,
+        summary: '8 kinds, 36 work orders.',
+      },
+      'ar'
+    );
+    const items = within(screen.getByTestId('chart-legend')).getAllByRole('listitem');
+    const folded = items[5]?.textContent ?? '';
+    expect(folded).toContain('Glass، وAir conditioning، وInspection');
+    expect(folded).not.toContain(', ');
+    // English keeps its own comma.
+    const english = pieSlices({
+      categories: EIGHT,
+      series: EIGHT_COUNTS,
+      locale: 'en',
+      skipAnimation: false,
+      hatchUrl: 'url(#hatch)',
+    });
+    expect(english[5]?.label).toBe('Glass, Air conditioning, Inspection');
+  });
+
+  it('keeps a category keyed like the folded slice apart from the folded slice', () => {
+    const clashing: readonly ChartCategory[] = EIGHT.map((category, index) =>
+      index === 0 ? { ...category, key: OTHER_SLICE_KEY } : category
+    );
+    const slices = pieSlices({
+      categories: clashing,
+      series: EIGHT_COUNTS,
+      locale: 'en',
+      skipAnimation: false,
+      hatchUrl: 'url(#hatch)',
+    });
+    expect(slices).toHaveLength(PIE_MAX_SLICES);
+    expect(new Set(slices.map((slice) => slice.key)).size).toBe(PIE_MAX_SLICES);
+    expect(slices[0]?.key).toBe(OTHER_SLICE_KEY);
+    expect(slices[5]?.key).toBe(otherSliceKey(clashing));
+    expect(slices[5]?.key).not.toBe(OTHER_SLICE_KEY);
+
+    panel({
+      kind: 'pie',
+      categories: clashing,
+      series: EIGHT_COUNTS,
+      summary: '8 kinds, 36 work orders.',
+    });
+    const items = within(screen.getByTestId('chart-legend')).getAllByRole('listitem');
+    expect(items).toHaveLength(PIE_MAX_SLICES);
+    expect(items[0]).toHaveAttribute('data-slice', OTHER_SLICE_KEY);
+    expect(items[0]?.querySelector('bdi')?.textContent).toBe('Brakes');
+    expect(items[0]).toHaveTextContent(/8$/);
+    expect(items[5]).not.toHaveAttribute('data-slice', OTHER_SLICE_KEY);
+    expect(items[5]).toHaveTextContent('Everything else: Glass, Air conditioning, Inspection');
   });
 });
 

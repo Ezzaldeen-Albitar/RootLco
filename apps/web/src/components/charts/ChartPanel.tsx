@@ -17,7 +17,7 @@ import { useReducedMotion } from '@/components/ui-foundation/use-reduced-motion'
 import { directionOf, type Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
 import { formatMessage, translate } from '@/i18n/get-messages';
-import { formatInteger } from '@/lib/format';
+import { formatInteger, intlLocale } from '@/lib/format';
 import { LAYOUT_PX } from '@/styles/tokens/generated/tokens';
 import { estimatedTextWidth, fitLabel } from './label-fit';
 
@@ -371,8 +371,33 @@ export function lineChartProps(input: Omit<BuildInput, 'layout'>): LineChartProp
 /** The most slices a pie draws: one per distinct slice colour. */
 export const PIE_MAX_SLICES = SLICE_COLOURS.length;
 
-/** The key of the slice the tail is folded into. Never a category's key. */
+/**
+ * The key of the slice the tail is folded into, while no category holds it.
+ * A category may: keys come from the data. Then see `otherSliceKey`.
+ */
 export const OTHER_SLICE_KEY = '__other';
+
+/**
+ * The folded slice's key for these categories: `OTHER_SLICE_KEY`, lengthened
+ * until no category holds it, so the folded slice never shares a key (and so a
+ * legend line, a React key or a drawn arc) with a category.
+ */
+export function otherSliceKey(categories: readonly ChartCategory[]): string {
+  const taken = new Set(categories.map((category) => category.key));
+  let key = OTHER_SLICE_KEY;
+  while (taken.has(key)) key = `${key}_`;
+  return key;
+}
+
+/**
+ * The categories' names as one list, joined the way the locale joins a list:
+ * a Latin comma in English, the Arabic comma in Arabic.
+ */
+export function listedNames(members: readonly ChartCategory[], locale: Locale): string {
+  return new Intl.ListFormat(intlLocale(locale), { type: 'unit', style: 'long' }).format(
+    members.map((member) => wording(member))
+  );
+}
 
 /** One slice as drawn and as listed in the legend. */
 export interface PieSlice {
@@ -416,10 +441,9 @@ export function pieSlices(input: PieInput): readonly PieSlice[] {
   }));
   if (folds) {
     const tail = categories.slice(PIE_MAX_SLICES - 1);
-    const otherWording =
-      input.otherWording ?? ((members) => members.map((member) => wording(member)).join(', '));
+    const otherWording = input.otherWording ?? ((members) => listedNames(members, locale));
     slices.push({
-      key: OTHER_SLICE_KEY,
+      key: otherSliceKey(categories),
       marker: formatInteger(PIE_MAX_SLICES, locale),
       label: otherWording(tail),
       value: tail.reduce((sum, _member, index) => sum + valueAt(PIE_MAX_SLICES - 1 + index), 0),
@@ -494,7 +518,7 @@ export function ChartPanel({
   const showsFigures = state === 'ready';
   const otherWording = (members: readonly ChartCategory[]) =>
     formatMessage(translate(messages, 'chart.otherSlice'), {
-      names: members.map((member) => wording(member)).join(', '),
+      names: listedNames(members, locale),
     });
   const input = { categories, series, locale, skipAnimation, hatchUrl, otherWording };
   const slices = kind === 'pie' ? pieSlices(input) : [];
