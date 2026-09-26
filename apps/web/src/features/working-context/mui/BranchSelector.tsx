@@ -26,10 +26,11 @@ import {
  *   - **one branch** — a sentence naming the branch and its company, never a
  *     control with one option;
  *   - **several** — ONE labelled selector, grouped by company, offering "All my
- *     branches" as a reading posture where there is more than one branch
- *     (`offerAllBranches`; the provider's rule). A screen that must address one
- *     branch refuses "all" itself and says so (`useBranchTarget`), exactly as
- *     before;
+ *     branches" as a reading posture where there is more than one branch AND
+ *     the screen's reads are server unions (`offerAllBranches`; the provider's
+ *     rule and `config/route-branch-scope.ts`). On a screen that needs one
+ *     branch, "all" is drawn as the ask (`asksForOne`), and the screen itself
+ *     refuses it and says so (`useBranchTarget`);
  *   - **nothing chosen yet** — the selector shows the ask, and the ask is
  *     ANNOUNCED (`role="status"`), because it is the first action of a session;
  *   - **not readable** — a sentence and a retry, never an empty control;
@@ -55,6 +56,11 @@ export interface BranchSelectorProps {
   readonly onRetry: () => void;
   /** Whether "All my branches" is a choice here. */
   readonly offerAllBranches: boolean;
+  /**
+   * "All my branches" is selected and this screen needs one branch. The ask
+   * says so, rather than the first-session "choose your branch to start".
+   */
+  readonly asksForOne?: boolean;
 }
 
 export function BranchSelector({
@@ -66,6 +72,7 @@ export function BranchSelector({
   onSelect,
   onRetry,
   offerAllBranches,
+  asksForOne = false,
 }: BranchSelectorProps) {
   const base = useId();
   const selectId = `${base}-select`;
@@ -184,7 +191,10 @@ export function BranchSelector({
           data-testid="working-context-prompt"
           className="hidden truncate text-supporting text-text-secondary sm:inline"
         >
-          {translate(messages, 'workingContext.prompt')}
+          {translate(
+            messages,
+            asksForOne ? 'workingContext.promptOneBranch' : 'workingContext.prompt'
+          )}
         </span>
       ) : null}
     </div>

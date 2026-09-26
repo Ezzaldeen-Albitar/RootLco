@@ -10,6 +10,10 @@ import { flattenNavigation } from '@/config/navigation';
 import { formatMessage } from '@/i18n/get-messages';
 import { CLIENT_READ_TIMEOUT_MS, SERVER_READ_WORST_CASE_MS } from '@/lib/api/use-search-request';
 import {
+  ALL_BRANCHES,
+  preferenceKeyFor,
+} from '@/features/working-context/working-context-contract';
+import {
   BranchSwitch,
   OTHER_BRANCH,
   TEST_BRANCH,
@@ -123,10 +127,6 @@ const { StockAlertIndicator } = await import('@/features/inventory/components/St
 type RoutePage = (args: { params: Promise<Record<string, string>> }) => Promise<React.ReactNode>;
 const AttentionPage = (await import('@/app/[locale]/(dashboard)/attention/page'))
   .default as unknown as RoutePage;
-type SearchedRoutePage = (args: {
-  params: Promise<Record<string, string>>;
-  searchParams?: Promise<Record<string, string | string[] | undefined>>;
-}) => Promise<React.ReactNode>;
 const DashboardPage = (await import('@/app/[locale]/(dashboard)/page'))
   .default as unknown as RoutePage;
 
@@ -298,23 +298,42 @@ beforeEach(() => {
   }
   everythingQuiet();
   PERMISSIONS = [];
+  // The working context remembers a choice in browser storage, which jsdom
+  // keeps for the whole file; every case starts with nothing remembered.
+  window.localStorage.clear();
 });
 
-function renderScreen() {
+/** Two authorized branches and none chosen yet, unless a case says otherwise. */
+const TWO_BRANCHES = branchSnapshot([TEST_BRANCH, OTHER_BRANCH]);
+
+/** The key the working context remembers this operator's choice under. */
+const REMEMBERED = preferenceKeyFor(
+  TWO_BRANCHES.tenantId as string,
+  TWO_BRANCHES.accountId as string
+);
+
+function renderScreen(snapshot = TWO_BRANCHES) {
   return renderLtr(
-    <AttentionScreen
-      locale="en"
-      messages={messagesFor('en')}
-      canReadStock
-      canReadCapacity
-      canReadBranches
-    />
+    inBranch(
+      <AttentionScreen
+        locale="en"
+        messages={messagesFor('en')}
+        canReadStock
+        canReadCapacity
+        canReadBranches
+      />,
+      { snapshot }
+    )
   );
 }
 
-/** Choose the one listed branch, which is what starts every stock read. */
+/**
+ * Name the branch in the chooser the branch section offers while none is
+ * chosen — the working context's own guarded switch, not a picker of the
+ * screen's — which is what starts every stock read.
+ */
 async function chooseTheBranch(user: ReturnType<typeof userEvent.setup>): Promise<void> {
-  const select = await screen.findByLabelText(labelled('attention.target.branch'));
+  const select = await screen.findByLabelText(labelled('workingContext.chooseHere'));
   await user.selectOptions(select, BRANCH_ID);
 }
 
@@ -326,10 +345,10 @@ function card(headingKey: string): HTMLElement {
   return section as HTMLElement;
 }
 
-describe('the branch is chosen once and every stock card is addressed to it', () => {
+describe('the branch is the working context of the shell, and every stock card is addressed to it', () => {
   it('asks for nothing until a branch is named, and says so', async () => {
     renderScreen();
-    await screen.findByLabelText(labelled('attention.target.branch'));
+    await screen.findByLabelText(labelled('workingContext.chooseHere'));
 
     expect(readLowStockAlerts).not.toHaveBeenCalled();
     expect(readCountDiscrepancyAlerts).not.toHaveBeenCalled();
@@ -354,68 +373,56 @@ describe('the branch is chosen once and every stock card is addressed to it', ()
     await waitFor(() => expect(readAgedInTransitAlerts).toHaveBeenCalledWith(pair));
   });
 
-  it('opens on the branch the address names, once its list holds it', async () => {
-    // The dashboard sends the branch its low-stock figure was counted for.
-    renderLtr(
-      <AttentionScreen
-        locale="en"
-        messages={messagesFor('en')}
-        canReadStock
-        canReadCapacity
-        canReadBranches
-        initialBranchId={BRANCH_ID}
-      />
-    );
+  it('carries no branch select of its own: an operator with one branch is never asked (QA 1a.3)', async () => {
+    renderScreen(branchSnapshot());
 
-    const pair = { companyId: COMPANY_ID, branchId: BRANCH_ID };
+    const pair = { companyId: TEST_COMPANY.id, branchId: TEST_BRANCH.id };
     await waitFor(() => expect(readLowStockAlerts).toHaveBeenCalledWith(pair));
-    expect(
-      ((await screen.findByLabelText(labelled('attention.target.branch'))) as HTMLSelectElement)
-        .value
-    ).toBe(BRANCH_ID);
-  });
-
-  it('ignores a branch its own list does not hold, and asks as it always did', async () => {
-    renderLtr(
-      <AttentionScreen
-        locale="en"
-        messages={messagesFor('en')}
-        canReadStock
-        canReadCapacity
-        canReadBranches
-        initialBranchId="99999999-9999-4999-8999-999999999999"
-      />
+    // Stated, not asked: the branch and its company, and no control anywhere.
+    expect(screen.getByTestId('attention-branch')).toHaveTextContent(
+      `${TEST_BRANCH.name} · ${TEST_COMPANY.name}`
     );
-    await screen.findByLabelText(labelled('attention.target.branch'));
-
-    expect(readLowStockAlerts).not.toHaveBeenCalled();
-    expect(
-      within(card('attention.lowStock.title')).getByText(EN['attention.state.noBranch'] as string)
-    ).toBeInTheDocument();
+    expect(screen.queryAllByRole('combobox')).toHaveLength(0);
+    expect(screen.queryByLabelText(labelled('workingContext.chooseHere'))).toBeNull();
   });
 
-  it('believes only an identifier-shaped branch from the address', async () => {
+  it('under "All my branches" asks for one named branch and never picks one for the operator', async () => {
+    window.localStorage.setItem(REMEMBERED, ALL_BRANCHES);
+    const user = userEvent.setup();
+    renderScreen();
+
+    const chooser = (await screen.findByLabelText(
+      labelled('workingContext.chooseHere')
+    )) as HTMLSelectElement;
+    // Nothing is pre-selected: the first branch is not a default.
+    expect(chooser.value).toBe('');
+    expect(screen.getByTestId('requires-concrete-branch')).toHaveTextContent(
+      EN['workingContext.needsOneBranch'] as string
+    );
+    expect(readLowStockAlerts).not.toHaveBeenCalled();
+
+    await user.selectOptions(chooser, OTHER_BRANCH.id);
+    await waitFor(() =>
+      expect(readLowStockAlerts).toHaveBeenCalledWith({
+        companyId: TEST_COMPANY.id,
+        branchId: OTHER_BRANCH.id,
+      })
+    );
+    // The choice was the working context's own: it is what is remembered now.
+    expect(window.localStorage.getItem(REMEMBERED)).toBe(OTHER_BRANCH.id);
+  });
+
+  it('reads no branch from its address: the header is the one answer', async () => {
     PERMISSIONS = ['inv.stock.read', 'org.branch.read'];
-    const page = AttentionPage as unknown as SearchedRoutePage;
-
-    const named = await page({
-      params: Promise.resolve({ locale: 'en' }),
-      searchParams: Promise.resolve({ branchId: BRANCH_ID }),
-    });
-    expect(findScreenProps(named)?.['initialBranchId']).toBe(BRANCH_ID);
-
-    for (const junk of ['brake pads', '../admin', '', ['a', 'b']]) {
-      const dropped = await page({
-        params: Promise.resolve({ locale: 'en' }),
-        searchParams: Promise.resolve({ branchId: junk }),
-      });
-      expect(findScreenProps(dropped)?.['initialBranchId'], String(junk)).toBeNull();
-    }
+    const rendered = await AttentionPage({ params: Promise.resolve({ locale: 'en' }) });
+    const props = findScreenProps(rendered);
+    expect(props).not.toBeNull();
+    expect(props).not.toHaveProperty('initialBranchId');
   });
 });
 
 describe('the stock cards open on the working branch (route sweep B3)', () => {
-  function renderIn(snapshot = branchSnapshot(), initialBranchId: string | null = null) {
+  function renderIn(snapshot = branchSnapshot()) {
     return renderLtr(
       inBranch(
         <>
@@ -427,7 +434,6 @@ describe('the stock cards open on the working branch (route sweep B3)', () => {
             canReadStock
             canReadCapacity
             canReadBranches
-            initialBranchId={initialBranchId}
           />
         </>,
         { snapshot }
@@ -440,35 +446,18 @@ describe('the stock cards open on the working branch (route sweep B3)', () => {
     const pair = { companyId: TEST_COMPANY.id, branchId: TEST_BRANCH.id };
     await waitFor(() => expect(readLowStockAlerts).toHaveBeenCalledWith(pair));
     await waitFor(() => expect(readAgedInTransitAlerts).toHaveBeenCalledWith(pair));
-    expect(
-      ((await screen.findByLabelText(labelled('attention.target.branch'))) as HTMLSelectElement)
-        .value
-    ).toBe(TEST_BRANCH.id);
+    expect(screen.getByTestId('attention-branch')).toHaveTextContent(TEST_BRANCH.name);
   });
 
   it('follows a switch of the working branch to the new branch', async () => {
     const user = userEvent.setup();
-    try {
-      renderIn(branchSnapshot([TEST_BRANCH, OTHER_BRANCH]));
-      // Several branches and none chosen in the header: nothing is read yet.
-      await screen.findByLabelText(labelled('attention.target.branch'));
-      expect(readLowStockAlerts).not.toHaveBeenCalled();
-      await user.click(screen.getByRole('button', { name: 'second' }));
-      await waitFor(() =>
-        expect(readLowStockAlerts).toHaveBeenLastCalledWith({
-          companyId: TEST_COMPANY.id,
-          branchId: OTHER_BRANCH.id,
-        })
-      );
-    } finally {
-      window.localStorage.clear();
-    }
-  });
-
-  it('an address that names a branch wins on arrival', async () => {
-    renderIn(branchSnapshot([TEST_BRANCH, OTHER_BRANCH]), OTHER_BRANCH.id);
+    renderIn(TWO_BRANCHES);
+    // Several branches and none chosen in the header: nothing is read yet.
+    await screen.findByTestId('attention-branch');
+    expect(readLowStockAlerts).not.toHaveBeenCalled();
+    await user.click(screen.getByRole('button', { name: 'second' }));
     await waitFor(() =>
-      expect(readLowStockAlerts).toHaveBeenCalledWith({
+      expect(readLowStockAlerts).toHaveBeenLastCalledWith({
         companyId: TEST_COMPANY.id,
         branchId: OTHER_BRANCH.id,
       })
@@ -686,7 +675,7 @@ describe('still on their way', () => {
      * The column asks which two branches a transfer runs between. It used to
      * answer with two stock LOCATION codes, which is a different question: the
      * read carries the branches as identifiers only, so the names come from the
-     * branch list the picker already loaded. A branch outside that list is
+     * working context's named branches. A branch outside that list is
      * named as outside it — never replaced by a shelf code, which would read as
      * an answer.
      */
@@ -699,7 +688,7 @@ describe('still on their way', () => {
 
     const frame = card('attention.inTransit.title');
     const row = await within(frame).findByRole('row', { name: /Brake pad/ });
-    expect(row).toHaveTextContent(`From ${branch.name} to a branch not in your list`);
+    expect(row).toHaveTextContent(`From ${TEST_BRANCH.name} to a branch not in your list`);
     // The shelf codes stay, below, as the detail they are.
     expect(row).toHaveTextContent('A-01');
     expect(row).toHaveTextContent('B-02');
@@ -880,20 +869,22 @@ describe('the screen in Arabic, and the page that mounts it', () => {
     readCapacityAlerts.mockResolvedValue(
       capacity([{ kind: 'branches', used: 5, limit: 5, severity: 'at-limit', headroom: 0 }])
     );
-    const user = userEvent.setup();
     const { container } = renderRtl(
-      <AttentionScreen
-        locale="ar"
-        messages={messagesFor('ar')}
-        canReadStock
-        canReadCapacity
-        canReadBranches
-      />
+      inBranch(
+        <AttentionScreen
+          locale="ar"
+          messages={messagesFor('ar')}
+          canReadStock
+          canReadCapacity
+          canReadBranches
+        />,
+        { locale: 'ar' }
+      )
     );
-    const select = await screen.findByLabelText(
-      new RegExp(`^${AR['attention.target.branch'] as string}`)
+    // One authorized branch: named in the branch section, never asked for.
+    expect(await screen.findByTestId('attention-branch')).toHaveTextContent(
+      AR['attention.target.branch'] as string
     );
-    await user.selectOptions(select, BRANCH_ID);
     await screen.findAllByText(/Brake pad/);
 
     expect(document.documentElement.dir).toBe('rtl');
@@ -1395,15 +1386,16 @@ describe('every figure opens the list it counted', () => {
     });
   });
 
-  it('sends a stock figure to that branch on the page where stock is acted on', async () => {
+  it('sends a stock figure to the page where stock is acted on, which opens on the same branch', async () => {
     const { container } = renderLtr(
       inBranch(<DashboardScreen locale="en" messages={messagesFor('en')} />)
     );
     await screen.findByText('7');
 
-    // The branch the figure was counted for travels, so the page opens on it.
     const stock = tile(container, 'lowStock');
-    expect(stock.getAttribute('href')).toBe(`/en/attention?branchId=${TEST_BRANCH.id}`);
+    // No branch travels: the page reads the same working branch the figure was
+    // counted for, so an address can never name a second one.
+    expect(stock.getAttribute('href')).toBe('/en/attention');
     // A RELATED destination, never "the list": the figure counts distinct items
     // and the page lists findings, one per reorder level, capped.
     expect(stock.textContent).toContain(EN['dashboard.card.reviewBranchStock']);
@@ -1496,7 +1488,7 @@ describe('every figure opens the list it counted', () => {
       within(panel)
         .getAllByRole('link', { name: EN['dashboard.actions.openAttention'] as string })[0]
         ?.getAttribute('href')
-    ).toBe(`/en/attention?branchId=${TEST_BRANCH.id}`);
+    ).toBe('/en/attention');
   });
 });
 

@@ -43,35 +43,9 @@ export const ATTENTION_PERMISSIONS = {
   stockRead: 'inv.stock.read',
   /** The subscription allowance — the same code `GET /org/capacity` requires. */
   tenantRead: 'org.tenant.read',
-  /** Whether a branch list is requested for the target picker. */
+  /** Whether a branch list is requested to name the branches a transfer runs between. */
   branchRead: 'org.branch.read',
 } as const;
-
-/**
- * The one address parameter the Attention page reads: the branch its stock
- * cards open on (Owner directive, P1-32-PRE-OD-UX).
- *
- * The dashboard's "items low in stock" figure is computed for the working
- * branch, and without this the reader followed it to a page that opened with no
- * branch chosen. It is an IDENTIFIER, not anything an operator typed — the same
- * kind of value `/inventory?workOrderId=` already carries — and it is believed
- * only twice over: it must have the shape of an identifier, checked by the page
- * before the screen ever sees it, and it must be one of the branches the
- * screen's own picker lists, checked by the screen. Anything else is dropped and
- * the page opens as it always did, with the choice left to the reader.
- *
- * It preselects the picker and does nothing more. The server re-authorizes the
- * pair on every stock read, so an address naming a branch the reader may not
- * read is refused there exactly as a choice from the picker would be.
- */
-export const ATTENTION_BRANCH_PARAM = 'branchId';
-
-const IDENTIFIER = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
-/** Whether a value may travel as `ATTENTION_BRANCH_PARAM`. */
-export function isAttentionBranchParam(value: string | null | undefined): value is string {
-  return typeof value === 'string' && IDENTIFIER.test(value);
-}
 
 /** One capacity kind worth telling an administrator about. */
 export interface CapacityAlertEntry {

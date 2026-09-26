@@ -852,6 +852,55 @@ describe('the work-order board reads on arrival and narrows honestly', () => {
     );
   });
 
+  it('names the set it lists under "all my branches", never the one-branch ask (QA 1b.4)', async () => {
+    /*
+     * Browser QA part 7, row 1b.4: listing both branches, the board's Branch
+     * field read "Choose one branch in the header to continue" and the strip
+     * said its figures covered "the whole branch". The read is a union the
+     * server enforces, so the board says what it is showing.
+     */
+    listWorkOrders.mockResolvedValue({
+      ...EMPTY_PAGE,
+      rows: [
+        ROW,
+        { ...ROW, id: 'other-row', displayNumber: 'WO-000999', branchId: OTHER_BRANCH.id },
+      ],
+    });
+    readDashboardSummary.mockResolvedValue(summaryWith({}));
+    const user = userEvent.setup();
+    renderLtr(
+      inBranch(
+        <>
+          <BranchSwitch to="all" label="use all" />
+          <WorkOrderQueueScreen locale="en" messages={en} />
+        </>,
+        { snapshot: branchSnapshot([TEST_BRANCH, OTHER_BRANCH]) }
+      )
+    );
+    await user.click(screen.getByRole('button', { name: 'use all' }));
+
+    expect(await screen.findByText('WO-000999')).toBeInTheDocument();
+    expect(screen.getByText('WO-000123')).toBeInTheDocument();
+    expect(screen.getByTestId('working-branch-field-all')).toHaveTextContent(
+      `${en['workingContext.allBranches']} · ${TEST_COMPANY.name}`
+    );
+    expect(screen.queryByText(en['workingContext.needsOneBranch'])).toBeNull();
+    expect(screen.queryByTestId('requires-concrete-branch')).toBeNull();
+    expect(screen.queryByTestId('work-order-queue-blocked')).toBeNull();
+    const strip = await screen.findByTestId('work-order-summary-strip');
+    expect(strip).toHaveTextContent(en['workOrders.queue.figure.noteAllBranches']);
+    expect(strip).not.toHaveTextContent(en['workOrders.queue.figure.note']);
+  });
+
+  it('names the one branch, and says the figures cover it, once one is chosen', async () => {
+    readDashboardSummary.mockResolvedValue(summaryWith({}));
+    render();
+    const strip = await screen.findByTestId('work-order-summary-strip');
+    expect(strip).toHaveTextContent(en['workOrders.queue.figure.note']);
+    expect(screen.queryByTestId('working-branch-field-all')).toBeNull();
+    expect(screen.getByTestId('working-branch-field')).toHaveTextContent(TEST_BRANCH.name);
+  });
+
   it('says so, and reads nothing, when the branches span more than one company', async () => {
     /*
      * `companyId` is mandatory on this operation and "all my branches" across

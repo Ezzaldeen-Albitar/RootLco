@@ -548,15 +548,16 @@ export function DashboardScreen({
          * branch at a time, and caps the list. No page counts this set, so the
          * link names where the items are dealt with instead.
          *
-         * For one working branch it opens that page on the SAME branch the
-         * figure was counted for. For "all my branches" there is no one branch
-         * to open on, and the words say the warnings are reviewed branch by
-         * branch rather than implying a company-wide list.
+         * For one working branch that page opens on the SAME branch the figure
+         * was counted for — it reads the working context too. For "all my
+         * branches" there is no one branch to open on, and the words say the
+         * warnings are reviewed branch by branch rather than implying a
+         * company-wide list.
          */
         id: 'lowStock',
         labelKey: 'dashboard.card.lowStock',
         section: sections.lowStock,
-        href: attentionAreaLink(locale, branchId),
+        href: attentionAreaLink(locale),
         linkLabelKey:
           branchId === null
             ? 'dashboard.card.reviewStockByBranch'
@@ -629,7 +630,7 @@ export function DashboardScreen({
           waitingOrders={sections.awaitingApproval}
           pendingRequests={sections.pendingApprovalsCount}
           lowStock={sections.lowStock}
-          attentionHref={attentionAreaLink(locale, branchId)}
+          attentionHref={attentionAreaLink(locale)}
         />
 
         {sections.workOrdersByState.status === 'ok' ? (
@@ -782,8 +783,9 @@ function FigureTile({
  * it is shown on its own line with its own words and NO link, because no list
  * on the product enumerates requests.
  *
- * The stock line links to the Attention page on the figure's own branch and is
- * worded as the page where warnings are dealt with, not as the list of what was
+ * The stock line links to the Attention page, which opens on the working
+ * branch the figure was counted for, and is worded as the page where warnings
+ * are dealt with, not as the list of what was
  * counted — see `attentionAreaLink`.
  *
  * The four stock warnings and the allowance warning are NOT read here. Each is
