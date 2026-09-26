@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { axe } from 'vitest-axe';
 import { FIXTURE_ROWS, simulateServer } from '@/components/gallery/fixtures';
 import { MuiFoundationSection } from '@/components/gallery/MuiFoundationSection';
+import { MuiWrappersSection } from '@/components/gallery/MuiWrappersSection';
 import { UiFoundationProvider } from '@/components/ui-foundation/UiFoundationProvider';
 import { muiTextOf } from '@/components/ui-foundation/mui-text';
 import type { Locale } from '@/i18n/config';
@@ -257,6 +258,75 @@ describe('the Material UI foundation section', () => {
       const footer = grid.querySelector('.MuiDataGrid-footerContainer');
       expect(footer?.textContent ?? '').not.toMatch(/of|من 5|total|المجموع/i);
       unmount();
+    }
+  });
+});
+
+/**
+ * The shared wrappers (ADR-022 PR1) in the gallery: each one, in both
+ * languages, driven by the gallery's placeholder rows through the real read
+ * hooks, with no toolbar, export or total on the grid.
+ */
+describe('the shared Material UI wrappers section', () => {
+  function renderWrappers(locale: Locale) {
+    const messages = getMessages(locale);
+    const renderIn = locale === 'ar' ? renderRtl : renderLtr;
+    return renderIn(
+      <UiFoundationProvider locale={locale} text={muiTextOf(messages)}>
+        <MuiWrappersSection locale={locale} messages={messages} />
+      </UiFoundationProvider>
+    );
+  }
+
+  it.each(['en', 'ar'] as const)('renders every wrapper in %s', async (locale) => {
+    const messages = getMessages(locale);
+    renderWrappers(locale);
+    expect(document.documentElement.dir).toBe(locale === 'ar' ? 'rtl' : 'ltr');
+    const section = screen.getByTestId('mui-wrappers');
+    expect(
+      within(section).getByRole('heading', { name: messages['gallery.muiWrappers.title'] })
+    ).toBeInTheDocument();
+
+    const grid = within(section).getByRole('grid', {
+      name: messages['gallery.muiWrappers.gridLabel'],
+    });
+    expect(await within(grid).findByRole('gridcell', { name: 'DOC-000101' })).toBeInTheDocument();
+    expect(
+      within(section).getByRole('link', {
+        name: `${messages['gallery.muiWrappers.rowOpen']} DOC-000101`,
+      })
+    ).toBeInTheDocument();
+    expect(within(section).getByTestId('gallery-operational-grid-page')).toHaveTextContent(
+      messages['mui.pagination.page'].replace('{page}', '1')
+    );
+    expect(grid.querySelector('.MuiDataGrid-toolbarContainer, .MuiDataGrid-toolbar')).toBeNull();
+    expect(section.textContent ?? '').not.toMatch(/\bof 5\b|من 5/);
+
+    expect(
+      within(section).getByRole('combobox', {
+        name: new RegExp(`^${messages['gallery.muiWrappers.pickerLabel']}`),
+      })
+    ).toBeInTheDocument();
+    expect(
+      within(section).getByRole('textbox', {
+        name: new RegExp(`^${messages['gallery.muiWrappers.fieldQuantity']}`),
+      })
+    ).toBeInTheDocument();
+    expect(
+      within(section).getByRole('textbox', { name: new RegExp(`^${messages['column.amount']}`) })
+    ).toHaveValue('1250.0000');
+    for (const testId of [
+      'state-empty',
+      'state-no-results',
+      'state-loading',
+      'state-unavailable',
+      'state-error',
+      'state-refused',
+      'state-expired',
+      'state-not-found',
+      'state-stale',
+    ]) {
+      expect(within(section).getByTestId(testId), testId).toBeInTheDocument();
     }
   });
 });

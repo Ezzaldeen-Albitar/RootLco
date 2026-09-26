@@ -255,6 +255,9 @@ export const UNANSWERED_READ = Object.freeze({
   correlationId: null,
 } as const);
 
+/** A search's table honours the page and nothing else — see `table` below. */
+const SEARCH_HONOURS = Object.freeze({ pageSize: false, sort: false } as const);
+
 const IDLE: SearchOutcome<never> = {
   phase: 'idle',
   rows: [],
@@ -341,8 +344,24 @@ export function useSearchRequest<Row, Criteria>(options: {
    * unless the loader re-reads something before it reads the page.
    */
   readonly serverReads?: number;
+  /**
+   * Whether these criteria narrow the set — a term, a filter — rather than
+   * only scope it. The table reports it (`ServerTable.narrowed`) so a zero-row
+   * answer is "no matches for this search", never "nothing here yet". Asked of
+   * the criteria the ANSWER was read for, not of the ones still settling.
+   * Every criteria narrow unless the caller says otherwise: a search that
+   * called a miss "nothing exists" would be making a claim about every record.
+   */
+  readonly narrows?: (criteria: Criteria) => boolean;
 }): SearchResult<Row> {
-  const { criteria, load, version = 0, debounceMs = SEARCH_DEBOUNCE_MS, serverReads = 1 } = options;
+  const {
+    criteria,
+    load,
+    version = 0,
+    debounceMs = SEARCH_DEBOUNCE_MS,
+    serverReads = 1,
+    narrows,
+  } = options;
 
   /*
    * The criteria, serialised.
@@ -582,13 +601,22 @@ export function useSearchRequest<Row, Criteria>(options: {
 
   const request: TableRequest = useMemo(() => withPage(INITIAL_REQUEST, wantedPage), [wantedPage]);
 
+  // The active key IS the criteria of the read being shown, serialised; its
+  // content is JSON by construction (see `key` above).
+  const narrowed =
+    activeKey !== null && (narrows ? narrows(JSON.parse(activeKey) as Criteria) : true);
+
   const table: ServerTable<Row> = useMemo(
     () => ({
       request,
       // Only the PAGE is a request parameter here. Sorting and filtering are the
       // screen's own criteria, and a table control that changed them behind the
-      // screen's back would put the two out of step.
+      // screen's back would put the two out of step. The loaders take the
+      // criteria and a cursor — no page size, no sort — so the table says so,
+      // and a renderer offers neither control (`honours`).
       setRequest: (nextRequest) => setPageNumber(Math.max(1, nextRequest.page)),
+      honours: SEARCH_HONOURS,
+      narrowed,
       response:
         outcome.phase === 'ready' || outcome.phase === 'empty'
           ? {
@@ -604,7 +632,7 @@ export function useSearchRequest<Row, Criteria>(options: {
       correlationId: outcome.correlationId ?? undefined,
       refresh: submit,
     }),
-    [request, outcome, wantedPage, hasMore, status, submit]
+    [request, outcome, wantedPage, hasMore, status, submit, narrowed]
   );
 
   return { ...outcome, submit, pageNumber: wantedPage, hasMore, next, previous, table };

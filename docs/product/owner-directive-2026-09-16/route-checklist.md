@@ -512,3 +512,196 @@ the new branch's data arrives late. It is late, never wrong.
 Technical follow-up: move the branch-addressed reads from Server Actions to `fetch` route calls
 that take the working context's `AbortSignal`, so a switch cancels the request on the wire instead
 of discarding its answer.
+
+## Material UI adoption (ADR-022)
+
+ADR-022 makes Material UI and the MUI X Community editions the component layer. Screens move onto
+it one at a time, through shared wrappers that keep the behaviour of the components they replace;
+a screen changes what it renders and nothing about how it reads, searches or refuses. This section
+records each wrapper's contract and, per route, which wrappers apply and whether the route has
+moved. Nothing has moved yet: every route below reads `not migrated`, and a verification cell says
+`not run` until a route moves and its suite is run in both languages.
+
+### The shared wrappers and what each keeps
+
+**`OperationalGrid`** (`apps/web/src/components/data/OperationalGrid.tsx`) replaces `DataTable`.
+The one place the MUI X data grid is rendered with props a caller supplies.
+
+- G1. Driven only by a `ServerTable` — `useServerTable`, or `useSearchRequest(...).table` — so the
+  read ceiling (`settleRead`), the dropped superseded reply, the aborted signal and the page and
+  cursor reset on a working-context version change all stay in the hooks.
+- G2. Pagination, sorting and filtering are `server`. A header sort changes the request, returns to
+  page one and drops the cursor stack. The quick filter, the column filter panel and the column
+  menu are off, so no client-side filter can pass for a search.
+- G3. The count is unknown (`rowCount` is `-1`) and `hasNextPage` comes from the page read.
+  Previous and Next ask for the page before or after and the hook spends the cursor that opened
+  it: no page jump and no offset. Next is offered only after a page was read and said more exist.
+- G4. No total anywhere: the grid's own footer is hidden, the label is "Page N" in the catalogue's
+  words, and the count the grid derives from a last page is reset whenever more pages exist.
+- G5. Grid texts are the theme's merged with the grid's own, never replaced
+  (`mergeGridLocaleText`).
+- G6. Page sizes are the product's `10, 25, 50, 100`, inside the Community limit of 100. No
+  toolbar, no export and no print.
+- G7. Columns are the caller's. A caller that may not see a field omits the column and does not
+  request the field; there is no "hide" for permissions, because a hidden column whose data still
+  arrives has already reached the browser.
+- G8. Narrow viewports: a column may declare `hideBelow` a breakpoint and is not drawn below it;
+  the rest scroll inside the grid. Chosen over a card layout because it keeps one structure, one set
+  of roles and one keyboard model. Only a column whose content is also on the linked record may be
+  marked.
+- G9. States: a refusal replaces the grid; an outage and a fault offer a retry and the correlation
+  reference; an ended session offers the way back to signing in and no retry; "nothing yet" and
+  "no matches" are different sentences; loading keeps the header over skeleton rows. The grid is
+  one tab stop with arrow-key movement, and every row action is a real link or button whose name
+  includes what it acts on.
+- G10. Queue boards migrating to `OperationalGrid` via `useSearchRequest` MUST pass
+  `narrows(criteria)` so a scoped-but-unsearched empty queue shows its empty state, not "no
+  matches".
+
+**`EntityPicker`** (`apps/web/src/components/pickers/EntityPicker.tsx`) is `SearchPicker` on
+Material UI's Autocomplete. It takes exactly `SearchPickerProps`; the module also exports it as
+`SearchPicker`, so a call site moves by changing its import. `SearchPicker` is kept: the two render
+different accessible structures (a search box, match buttons and a Change control; one combobox
+and a listbox), and the call sites and their suites move one at a time.
+
+- P1. One server read per pause (`useSearchRequest`), Enter searches at once, and a superseded
+  reply is dropped.
+- P2. Nothing shorter than the minimum is sent; the short term is said on the box, which is marked
+  invalid while it stands.
+- P3. The options are the server's rows in the server's order; the combobox never narrows them.
+- P4. The term goes to the server as typed, Arabic-Indic digits included.
+- P5. A working-context switch forgets the term and the choice.
+- P6. A choice in a form that writes is unsaved work and asks before a switch; a list filter's is
+  not; putting back the record the form opened with is a change.
+- P7. Without the read's permission there is no box, and the reason carries an id a caller can
+  describe a disabled submit with.
+- P8. The caller's refusal marks the combobox (`aria-invalid`, `data-invalid`, described by an
+  alert), so `useFocusFirstInvalid` lands on it.
+- P9. Enter never submits the caller's form; the cursor stays on the combobox after a choice, and a
+  refused choice moves nobody later.
+- P10. Loading, no matches, unavailable with a retry, refused and ended session each read as
+  themselves under the box; the server's pages are walked with its cursor.
+
+**Form fields** (`apps/web/src/components/forms/mui/`: `FormTextField`, `FormNumberField`,
+`FormMoneyField`, `FormSelectField`) keep `FieldFrame`'s contract.
+
+- F1. The label names the control; a required field carries a decorative asterisk and
+  `aria-required`, never the native `required`.
+- F2. `aria-invalid` only when there is an error, absent otherwise (Material alone writes
+  `"false"`, which is removed).
+- F3. `aria-describedby` lists the description, then the error, then the caller's ids;
+  `aria-errormessage` names the error, which is an alert drawn with a shape as well as a colour.
+- F4. Values are the caller's and survive a refusal; `onEdit` (`correctionFor`) withdraws a
+  complaint once its value is edited (`useClearOnCorrect`).
+- F5. Numbers and money stay strings: text boxes with a numeric keypad, never `type="number"`,
+  left to right in both languages; money is canonicalised on blur by `parseMoneyInput` and its
+  currency code is part of the field's description.
+- F6. Selects are native, keeping `<optgroup>` headings and the platform's own pickers.
+
+**States** (`apps/web/src/components/states/MuiStates.tsx`) are `States.tsx` on Material UI, with
+the same catalogue entries.
+
+- S1. One state is never drawn as another.
+- S2. A retry only where retrying can change the answer: an outage, a fault and a stale read.
+- S3. No raw code; the correlation reference is the only diagnostic.
+- S4. `role="status"`, so a state is announced politely rather than interrupting.
+
+### Route adoption
+
+"Applicable" is derived from each route's import graph at this head: `OperationalGrid` where the
+route reaches `DataTable`, `CursorPager` or `useServerTable`; `EntityPicker` where it reaches
+`SearchPicker`, `CustomerPicker` or `CustomerSelector`; form fields where it reaches `Field.tsx`,
+`MoneyField`, `RecordForm` or `SearchBox`; states where it reaches `States.tsx` or `SearchStates`.
+The preserved-behaviour cell names the contract items above that a migration must keep.
+
+| Route                                                 | Applicable MUI components                              | Preserved behaviour         | Implementation status              | Verification                              |
+| ----------------------------------------------------- | ------------------------------------------------------ | --------------------------- | ---------------------------------- | ----------------------------------------- |
+| `/activate-account`                                   | form fields, states                                    | F1–F6; S1–S4                | not migrated                       | not run — nothing migrated                |
+| `/forgot-password`                                    | form fields, states                                    | F1–F6; S1–S4                | not migrated                       | not run — nothing migrated                |
+| `/login`                                              | form fields, states                                    | F1–F6; S1–S4                | not migrated                       | not run — nothing migrated                |
+| `/reset-password`                                     | form fields, states                                    | F1–F6; S1–S4                | not migrated                       | not run — nothing migrated                |
+| `/administration/approval-limits`                     | form fields, `OperationalGrid`, `EntityPicker`, states | F1–F6; G1–G9; P1–P10; S1–S4 | not migrated                       | not run — nothing migrated                |
+| `/administration/audit-log`                           | form fields, `OperationalGrid`, `EntityPicker`, states | F1–F6; G1–G9; P1–P10; S1–S4 | not migrated                       | not run — nothing migrated                |
+| `/administration/currencies`                          | form fields, states                                    | F1–F6; S1–S4                | not migrated                       | not run — nothing migrated                |
+| `/administration/departments`                         | form fields, states                                    | F1–F6; S1–S4                | not migrated                       | not run — nothing migrated                |
+| `/administration/discount-threshold`                  | form fields, `OperationalGrid`, states                 | F1–F6; G1–G9; S1–S4         | not migrated                       | not run — nothing migrated                |
+| `/administration/employees`                           | form fields, states                                    | F1–F6; S1–S4                | not migrated                       | not run — nothing migrated                |
+| `/administration/languages`                           | form fields, states                                    | F1–F6; S1–S4                | not migrated                       | not run — nothing migrated                |
+| `/administration/numbering-rules`                     | form fields, states                                    | F1–F6; S1–S4                | not migrated                       | not run — nothing migrated                |
+| `/administration/organization`                        | form fields, states                                    | F1–F6; S1–S4                | not migrated                       | not run — nothing migrated                |
+| `/administration`                                     | none found                                             | —                           | not migrated                       | not run — nothing migrated                |
+| `/administration/permissions`                         | form fields, `OperationalGrid`, states                 | F1–F6; G1–G9; S1–S4         | not migrated                       | not run — nothing migrated                |
+| `/administration/roles`                               | form fields, `OperationalGrid`, states                 | F1–F6; G1–G9; S1–S4         | not migrated                       | not run — nothing migrated                |
+| `/administration/system-settings`                     | form fields, states                                    | F1–F6; S1–S4                | not migrated                       | not run — nothing migrated                |
+| `/administration/taxes`                               | form fields, states                                    | F1–F6; S1–S4                | not migrated                       | not run — nothing migrated                |
+| `/administration/users/[userId]`                      | form fields, `OperationalGrid`, states                 | F1–F6; G1–G9; S1–S4         | not migrated                       | not run — nothing migrated                |
+| `/administration/users`                               | form fields, `OperationalGrid`, states                 | F1–F6; G1–G9; S1–S4         | not migrated                       | not run — nothing migrated                |
+| `/appointments/[appointmentId]`                       | form fields, `OperationalGrid`, states                 | F1–F6; G1–G9; S1–S4         | not migrated                       | not run — nothing migrated                |
+| `/appointments/new`                                   | form fields, `OperationalGrid`, `EntityPicker`, states | F1–F6; G1–G9; P1–P10; S1–S4 | not migrated                       | not run — nothing migrated                |
+| `/appointments`                                       | form fields, `OperationalGrid`, states                 | F1–F6; G1–G9; S1–S4         | not migrated                       | not run — nothing migrated                |
+| `/attention`                                          | form fields, `OperationalGrid`, states                 | F1–F6; G1–G9; S1–S4         | not migrated                       | not run — nothing migrated                |
+| `/credit-notes`                                       | form fields, `OperationalGrid`, `EntityPicker`, states | F1–F6; G1–G9; P1–P10; S1–S4 | not migrated                       | not run — nothing migrated                |
+| `/crm/customer-duplicates`                            | `OperationalGrid`, states                              | G1–G9; S1–S4                | not migrated                       | not run — nothing migrated                |
+| `/crm/customers/[customerId]`                         | form fields, `OperationalGrid`, states                 | F1–F6; G1–G9; S1–S4         | not migrated                       | not run — nothing migrated                |
+| `/crm/customers/[customerId]/work-order/new`          | form fields, `OperationalGrid`, `EntityPicker`, states | F1–F6; G1–G9; P1–P10; S1–S4 | not migrated                       | not run — nothing migrated                |
+| `/crm/customers/new/[kind]`                           | form fields, states                                    | F1–F6; S1–S4                | not migrated                       | not run — nothing migrated                |
+| `/crm/customers`                                      | form fields, `OperationalGrid`, states                 | F1–F6; G1–G9; S1–S4         | not migrated                       | not run — nothing migrated                |
+| `/delivery/[deliveryId]`                              | form fields, `OperationalGrid`, `EntityPicker`, states | F1–F6; G1–G9; P1–P10; S1–S4 | not migrated                       | not run — nothing migrated                |
+| `/delivery`                                           | `OperationalGrid`, states                              | G1–G9; S1–S4                | not migrated                       | not run — nothing migrated                |
+| `/inventory/adjustments`                              | form fields, `OperationalGrid`, states                 | F1–F6; G1–G9; S1–S4         | not migrated                       | not run — nothing migrated                |
+| `/inventory/counter-sales`                            | form fields, `OperationalGrid`, states                 | F1–F6; G1–G9; S1–S4         | not migrated                       | not run — nothing migrated                |
+| `/inventory/counts`                                   | form fields, `OperationalGrid`, states                 | F1–F6; G1–G9; S1–S4         | not migrated                       | not run — nothing migrated                |
+| `/inventory/customer-returns`                         | form fields, `OperationalGrid`, `EntityPicker`, states | F1–F6; G1–G9; P1–P10; S1–S4 | not migrated                       | not run — nothing migrated                |
+| `/inventory/goods-receipts`                           | form fields, `OperationalGrid`, states                 | F1–F6; G1–G9; S1–S4         | not migrated                       | not run — nothing migrated                |
+| `/inventory/items/[itemId]`                           | form fields, `OperationalGrid`, states                 | F1–F6; G1–G9; S1–S4         | not migrated                       | not run — nothing migrated                |
+| `/inventory/labels`                                   | form fields, `OperationalGrid`, states                 | F1–F6; G1–G9; S1–S4         | not migrated                       | not run — nothing migrated                |
+| `/inventory/movements`                                | form fields, `OperationalGrid`, `EntityPicker`, states | F1–F6; G1–G9; P1–P10; S1–S4 | not migrated                       | not run — nothing migrated                |
+| `/inventory/opening-stock`                            | form fields, `OperationalGrid`, states                 | F1–F6; G1–G9; S1–S4         | not migrated                       | not run — nothing migrated                |
+| `/inventory`                                          | form fields, `OperationalGrid`, `EntityPicker`, states | F1–F6; G1–G9; P1–P10; S1–S4 | not migrated                       | not run — nothing migrated                |
+| `/inventory/parts`                                    | form fields, `OperationalGrid`, `EntityPicker`, states | F1–F6; G1–G9; P1–P10; S1–S4 | not migrated                       | not run — nothing migrated                |
+| `/inventory/setup`                                    | form fields, `OperationalGrid`, states                 | F1–F6; G1–G9; S1–S4         | not migrated                       | not run — nothing migrated                |
+| `/inventory/transfers`                                | form fields, `OperationalGrid`, states                 | F1–F6; G1–G9; S1–S4         | not migrated                       | not run — nothing migrated                |
+| `/inventory/unit-conversions`                         | form fields, `OperationalGrid`, states                 | F1–F6; G1–G9; S1–S4         | not migrated                       | not run — nothing migrated                |
+| `/inventory/vehicle-specifications`                   | form fields, `OperationalGrid`, states                 | F1–F6; G1–G9; S1–S4         | not migrated                       | not run — nothing migrated                |
+| `/invoices`                                           | form fields, `OperationalGrid`, `EntityPicker`, states | F1–F6; G1–G9; P1–P10; S1–S4 | not migrated                       | not run — nothing migrated                |
+| `/`                                                   | form fields, states                                    | F1–F6; S1–S4                | not migrated                       | not run — nothing migrated                |
+| `/payments`                                           | form fields, `OperationalGrid`, `EntityPicker`, states | F1–F6; G1–G9; P1–P10; S1–S4 | not migrated                       | not run — nothing migrated                |
+| `/pricing/[priceListId]`                              | form fields, `OperationalGrid`, states                 | F1–F6; G1–G9; S1–S4         | not migrated                       | not run — nothing migrated                |
+| `/pricing`                                            | form fields, `OperationalGrid`, states                 | F1–F6; G1–G9; S1–S4         | not migrated                       | not run — nothing migrated                |
+| `/profile`                                            | form fields, states                                    | F1–F6; S1–S4                | not migrated                       | not run — nothing migrated                |
+| `/quotations/[quotationId]`                           | form fields, `OperationalGrid`, states                 | F1–F6; G1–G9; S1–S4         | not migrated                       | not run — nothing migrated                |
+| `/quotations`                                         | form fields, `OperationalGrid`, `EntityPicker`, states | F1–F6; G1–G9; P1–P10; S1–S4 | not migrated                       | not run — nothing migrated                |
+| `/reception/walk-in`                                  | form fields, `OperationalGrid`, `EntityPicker`, states | F1–F6; G1–G9; P1–P10; S1–S4 | not migrated                       | not run — nothing migrated                |
+| `/receptions/check-in/[receptionId]/acknowledgement`  | `OperationalGrid`, states                              | G1–G9; S1–S4                | not migrated                       | not run — nothing migrated                |
+| `/receptions/check-in/[receptionId]`                  | form fields, `OperationalGrid`, `EntityPicker`, states | F1–F6; G1–G9; P1–P10; S1–S4 | not migrated                       | not run — nothing migrated                |
+| `/receptions/check-in`                                | form fields, `OperationalGrid`, `EntityPicker`, states | F1–F6; G1–G9; P1–P10; S1–S4 | not migrated                       | not run — nothing migrated                |
+| `/receptions`                                         | form fields, `OperationalGrid`, states                 | F1–F6; G1–G9; S1–S4         | not migrated                       | not run — nothing migrated                |
+| `/reports/[reportCode]`                               | form fields, states                                    | F1–F6; S1–S4                | not migrated                       | not run — nothing migrated                |
+| `/reports/overview`                                   | form fields, states                                    | F1–F6; S1–S4                | not migrated                       | not run — nothing migrated                |
+| `/reports`                                            | states                                                 | S1–S4                       | not migrated                       | not run — nothing migrated                |
+| `/services/[serviceId]`                               | form fields, `OperationalGrid`, states                 | F1–F6; G1–G9; S1–S4         | not migrated                       | not run — nothing migrated                |
+| `/services`                                           | form fields, `OperationalGrid`, states                 | F1–F6; G1–G9; S1–S4         | not migrated                       | not run — nothing migrated                |
+| `/technicians/me`                                     | form fields, states                                    | F1–F6; S1–S4                | not migrated                       | not run — nothing migrated                |
+| `/vehicles/[vehicleId]`                               | form fields, `OperationalGrid`, `EntityPicker`, states | F1–F6; G1–G9; P1–P10; S1–S4 | not migrated                       | not run — nothing migrated                |
+| `/vehicles/duplicates`                                | `OperationalGrid`, states                              | G1–G9; S1–S4                | not migrated                       | not run — nothing migrated                |
+| `/vehicles/new`                                       | `OperationalGrid`, states                              | G1–G9; S1–S4                | not migrated                       | not run — nothing migrated                |
+| `/vehicles`                                           | form fields, `OperationalGrid`, states                 | F1–F6; G1–G9; S1–S4         | not migrated                       | not run — nothing migrated                |
+| `/warranty/[warrantyId]`                              | states                                                 | S1–S4                       | not migrated                       | not run — nothing migrated                |
+| `/warranty`                                           | form fields, `OperationalGrid`, states                 | F1–F6; G1–G9; S1–S4         | not migrated                       | not run — nothing migrated                |
+| `/warranty/policies/[policyId]`                       | form fields, states                                    | F1–F6; S1–S4                | not migrated                       | not run — nothing migrated                |
+| `/warranty/policies`                                  | form fields, states                                    | F1–F6; S1–S4                | not migrated                       | not run — nothing migrated                |
+| `/work-orders/[workOrderId]/closure`                  | form fields, `OperationalGrid`, states                 | F1–F6; G1–G9; S1–S4         | not migrated                       | not run — nothing migrated                |
+| `/work-orders/[workOrderId]/jobs/[jobId]/diagnostics` | form fields, states                                    | F1–F6; S1–S4                | not migrated                       | not run — nothing migrated                |
+| `/work-orders/[workOrderId]`                          | form fields, `OperationalGrid`, states                 | F1–F6; G1–G9; S1–S4         | not migrated                       | not run — nothing migrated                |
+| `/work-orders/diagnostics/[templateId]`               | form fields, states                                    | F1–F6; S1–S4                | not migrated                       | not run — nothing migrated                |
+| `/work-orders/diagnostics`                            | form fields, states                                    | F1–F6; S1–S4                | not migrated                       | not run — nothing migrated                |
+| `/work-orders`                                        | form fields, `OperationalGrid`, states                 | F1–F6; G1–G9; S1–S4         | not migrated                       | not run — nothing migrated                |
+| `/work-orders/quality`                                | form fields, states                                    | F1–F6; S1–S4                | not migrated                       | not run — nothing migrated                |
+| `/gallery`                                            | all four                                               | G, P, F, S                  | shown in the gallery, not a screen | `gallery-and-print.dom.test.tsx` (en, ar) |
+| `/platform/account`                                   | form fields, states                                    | F1–F6; S1–S4                | not migrated                       | not run — nothing migrated                |
+| `/platform/audit`                                     | form fields, `OperationalGrid`, states                 | F1–F6; G1–G9; S1–S4         | not migrated                       | not run — nothing migrated                |
+| `/platform/organizations/[tenantId]`                  | form fields, `OperationalGrid`, states                 | F1–F6; G1–G9; S1–S4         | not migrated                       | not run — nothing migrated                |
+| `/platform/organizations/new`                         | form fields, `OperationalGrid`, states                 | F1–F6; G1–G9; S1–S4         | not migrated                       | not run — nothing migrated                |
+| `/platform/organizations`                             | form fields, `OperationalGrid`, states                 | F1–F6; G1–G9; S1–S4         | not migrated                       | not run — nothing migrated                |
+| `/platform`                                           | `OperationalGrid`, states                              | G1–G9; S1–S4                | not migrated                       | not run — nothing migrated                |
+| `/platform/plans`                                     | form fields, `OperationalGrid`, states                 | F1–F6; G1–G9; S1–S4         | not migrated                       | not run — nothing migrated                |

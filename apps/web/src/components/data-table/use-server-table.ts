@@ -62,6 +62,20 @@ export interface ServerTable<Row> {
   readonly correlationId: string | undefined;
   /** Forces a re-read of the current page — used after a mutation succeeds. */
   readonly refresh: () => void;
+  /**
+   * What the read honours beyond the page. Absent: the whole request reaches
+   * the loader, as `useServerTable` hands it over. A search's table says
+   * neither is honoured — its loaders read the screen's criteria and a cursor
+   * and nothing else — so a renderer offers no control that would do nothing.
+   */
+  readonly honours?: { readonly pageSize: boolean; readonly sort: boolean } | undefined;
+  /**
+   * The rows answer a term or filter the REQUEST does not carry — a search
+   * keeps its criteria outside it. A zero-row answer is then "no matches for
+   * this search" and never "nothing here yet", a claim about every record
+   * (P1-27-FE-002).
+   */
+  readonly narrowed?: boolean | undefined;
 }
 
 export function useServerTable<Row>(
