@@ -610,11 +610,14 @@ describe('platform.organization-provision', () => {
     });
   }
 
+  // Case-insensitive, so a refused code submitted in capitals is looked up as
+  // it was submitted rather than as its lowercase form.
   async function expectNoTenant(label: string): Promise<void> {
     expect(
-      await scalar<string>('SELECT count(*)::text FROM org.tenants WHERE tenant_code = $1', [
-        `${label}_${RUN}`,
-      ])
+      await scalar<string>(
+        'SELECT count(*)::text FROM org.tenants WHERE lower(tenant_code) = lower($1)',
+        [`${label}_${RUN}`]
+      )
     ).toBe('0');
   }
 
@@ -678,7 +681,7 @@ describe('platform.organization-provision', () => {
 
   it('P11 refuses malformed codes, country, names and currency at the boundary', async () => {
     const cases: readonly [Record<string, unknown>, string, string][] = [
-      [specWith('wb_p11a', 'tenant', { code: `WB_P11A_${RUN}` }), 'body.tenant.code', 'wb_p11a'],
+      [specWith('wb_p11a', 'tenant', { code: `WB_P11A_${RUN}` }), 'body.tenant.code', 'WB_P11A'],
       [
         specWith('wb_p11b', 'branch', { country_code: 'jo' }),
         'body.branch.country_code',
@@ -738,6 +741,17 @@ describe('platform.organization-provision', () => {
         [tenantId]
       )
     ).toBe('JOD');
+    expect(
+      await scalar<string>('SELECT default_timezone FROM org.tenants WHERE id = $1', [tenantId])
+    ).toBe('UTC');
+    expect(
+      await scalar<string>('SELECT default_locale FROM org.tenants WHERE id = $1', [tenantId])
+    ).toBe('en');
+    expect(
+      await scalar<string>('SELECT timezone_name FROM org.branches WHERE tenant_id = $1', [
+        tenantId,
+      ])
+    ).toBe('UTC');
   });
 });
 
