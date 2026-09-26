@@ -58,6 +58,7 @@ const { CapacityPanel } =
   await import('@/features/administration/organization/components/CapacityPanel');
 const { SettingsEditor } =
   await import('@/features/administration/organization/components/SettingsEditor');
+const { TenantForm } = await import('@/features/administration/organization/components/TenantForm');
 
 const COMPANY: CompanyView = {
   id: '10000000-0000-4000-8000-000000000001',
@@ -538,5 +539,54 @@ describe('the settings editor when there is nothing to choose', () => {
     // No company picker — the other selects on this form belong to the setting
     // being written, not to the scope.
     expect(screen.queryByLabelText(new RegExp(en['admin.scope.company']))).toBeNull();
+  });
+});
+
+describe('the tenant form places a reference the platform does not hold on its field', () => {
+  it('shows the refusal under Default time zone and marks only that control', async () => {
+    send.mockResolvedValue({
+      ok: false,
+      kind: 'validation',
+      status: 422,
+      problem: {
+        type: 'urn:rootlco:error:ERR-VAL-001',
+        title: 'Validation failed',
+        status: 422,
+        code: 'ERR-VAL-001',
+        correlationId: 'corr-tenant',
+        violations: [{ path: 'body.defaultTimezone', rule: 'unknown_reference' }],
+      },
+      correlationId: 'corr-tenant',
+    });
+    const user = userEvent.setup();
+    renderLtr(
+      <TenantForm
+        messages={en}
+        canWrite
+        tenant={{
+          id: '30000000-0000-4000-8000-000000000003',
+          tenantCode: 'tenant_one',
+          displayName: 'Tenant One',
+          status: 'active',
+          defaultLocale: 'en',
+          defaultTimezone: 'UTC',
+          recordVersion: 3,
+        }}
+      />
+    );
+
+    const zone = screen.getByLabelText(new RegExp(`^${EN('organization.defaultTimezone')}`));
+    await user.clear(zone);
+    await user.type(zone, 'Etc/Unheld');
+    await user.click(screen.getByRole('button', { name: EN('admin.save') }));
+
+    expect(await screen.findByText(EN('form.violation.unknown_reference'))).toBeVisible();
+    expect(
+      screen.getByLabelText(new RegExp(`^${EN('organization.defaultTimezone')}`))
+    ).toHaveAttribute('aria-invalid', 'true');
+    expect(
+      screen.getByLabelText(new RegExp(`^${EN('organization.defaultLocale')}`))
+    ).not.toHaveAttribute('aria-invalid', 'true');
+    expect(screen.queryByText(EN('organization.error.unknownReference'))).toBeNull();
   });
 });
