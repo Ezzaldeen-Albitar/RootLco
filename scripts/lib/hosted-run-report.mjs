@@ -39,6 +39,18 @@
  *     against the digest the API publishes for them.
  *
  * A caller can still pass the wrong run id. It cannot pass the wrong numbers.
+ *
+ * READING IS SEPARATE FROM DECIDING
+ *
+ * `fetchHostedTierRun` collects what the run IS — in flight, cancelled, red,
+ * missing its artifact — and throws only when it cannot read at all.
+ * `judgeHostedEligibility` then decides, from that observation alone, whether it
+ * may become SUCCESS evidence for a given commit. Only a completed run that
+ * concluded `success` or `failure`, describing that commit, whose ONE tier job
+ * belongs to it and concluded `success`, whose tier step concluded `success`,
+ * and whose artifact (from that run, on its digest) holds a report and a tier
+ * summary that agree and record no failure, is eligible. The per-tier half of
+ * that rule is `ELIGIBLE_RUN_CONCLUSIONS` below.
  */
 
 import { createHash } from 'node:crypto';
@@ -126,52 +138,132 @@ async function api(path, token, { raw = false } = {}) {
 }
 
 /**
- * Every tier this repository can replay, and the three names that identify it in
- * a hosted run.
+ * Every tier this repository can replay, and the names that identify it in a
+ * hosted run.
  *
  * `step` is the identity that matters. A job can be renamed, moved between
  * workflows or matrixed, and the tier is still whatever step runs the tier — so
  * the job is FOUND by its step rather than matched by a name that would drift.
+ *
+ * `summary` is the tier summary `scripts/ci/summarise-vitest.mjs` writes from
+ * the same report in the same job and uploads in the same artifact. It is read
+ * back only to be compared with the report: two derivations of one run that
+ * disagree mean the artifact is not the run it claims to be.
  */
 export const HOSTED_TIERS = Object.freeze({
   unit: Object.freeze({
     step: 'Unit tier with coverage',
     artifact: 'evidence-unit-coverage',
     report: 'vitest-unit.json',
+    summary: 'test-totals-unit.json',
   }),
   web: Object.freeze({
     step: 'Web component tier',
     artifact: 'evidence-web-quality',
     report: 'apps/web/vitest-web.json',
+    summary: 'test-totals-web.json',
   }),
 });
 
 /**
- * Collects one tier's hosted observation, or throws saying which fact was missing.
+ * The run conclusions a tier may be taken from.
  *
- * It reads rather than decides: the only judgement here is that a run must name
- * exactly one job carrying the tier's step. Zero means the run never ran the
- * tier — a record taken from it would describe nothing. More than one means the
- * tier ran twice and the caller must say which, because silently taking the
- * first would let a green re-run stand in for a red original.
+ * `failure` is here on purpose, and only because of the per-tier rule below:
+ * a PR CI run is several independent jobs, and the overall conclusion is
+ * `failure` whenever ANY of them fails — including the clean-room job that
+ * refuses the previous head's run record (`RUN_RECORD_STALE`) until this very
+ * record is taken. What a tier's record may rest on is therefore that tier's
+ * OWN job and step, never the run as a whole: a failed run can supply a tier
+ * only when that tier's job concluded `success`, and a successful run cannot
+ * supply a tier whose job did not.
+ *
+ * Every other conclusion — `cancelled`, `timed_out`, `skipped`, `neutral`,
+ * `action_required`, `stale`, `startup_failure`, or none at all — is a run that
+ * did not reach a pass-or-fail verdict, and nothing measured in it is evidence.
  */
-export async function fetchHostedTierRun({ repo, runId, tier, token }) {
+export const ELIGIBLE_RUN_CONCLUSIONS = Object.freeze(['success', 'failure']);
+
+/**
+ * Why a hosted observation cannot become success evidence, one name per reason.
+ *
+ * These are the recorder's refusals, not the ledger gate's: they are decided
+ * BEFORE anything is written, so an ineligible run never reaches the ledger.
+ */
+export const HOSTED_INELIGIBILITY = Object.freeze({
+  HOSTED_RUN_NOT_COMPLETED: 'the run has not finished (queued, waiting or in progress)',
+  HOSTED_RUN_CONCLUSION_INELIGIBLE:
+    'the run reached no pass-or-fail verdict (cancelled, timed out, skipped or similar)',
+  HOSTED_RUN_HEAD_MISMATCH: 'the run describes a different commit from the one being recorded',
+  HOSTED_TIER_NOT_RUN: 'no job in the run reached a verdict on the tier step',
+  HOSTED_TIER_AMBIGUOUS: 'more than one job in the run ran the tier',
+  HOSTED_JOB_NOT_IN_RUN: 'the tier job belongs to a different run or a different head',
+  HOSTED_JOB_NOT_SUCCESSFUL: 'the tier job did not complete with conclusion success',
+  HOSTED_STEP_NOT_SUCCESSFUL: 'the tier step did not conclude success',
+  HOSTED_ARTIFACT_UNUSABLE:
+    'the tier artifact is missing, ambiguous, expired, from another run, off its digest or unreadable',
+  HOSTED_SUMMARY_MISSING: 'the tier artifact carries no tier summary to cross-check the report',
+  HOSTED_COUNTS_INCONSISTENT: 'the report counts disagree with themselves or with the tier summary',
+  HOSTED_REPORT_NOT_SUCCESSFUL: 'the report or its summary records a failure or no success',
+});
+
+/**
+ * Collects one tier's hosted observation. It READS; `judgeHostedEligibility`
+ * decides.
+ *
+ * Everything a run can be — in flight, cancelled, red, missing its artifact —
+ * is returned as an observation rather than thrown, so the same facts can be
+ * refused as success evidence or kept as diagnostic history without being
+ * fetched twice. What IS thrown is a failure to read at all: an unknown tier,
+ * or an API answer that is not OK. Those leave nothing to judge.
+ *
+ * `request` replaces the GitHub API for tests, which replay recorded answers
+ * instead of reaching the network: `request(path, { raw })` returns the parsed
+ * JSON, or a Buffer when `raw` is set.
+ */
+export async function fetchHostedTierRun({ repo, runId, tier, token, request }) {
   const spec = HOSTED_TIERS[tier];
   if (!spec) throw new Error(`unknown tier \`${tier}\` — ${Object.keys(HOSTED_TIERS)}`);
+  const get = request ?? ((path, options) => api(path, token, options));
 
-  const run = await api(`/repos/${repo}/actions/runs/${runId}`, token);
-  if (run.status !== 'completed') {
-    throw new Error(
-      `run ${runId} is ${run.status}; a record may not be taken from a run in flight`
-    );
-  }
+  const run = await get(`/repos/${repo}/actions/runs/${runId}`);
+  const observation = {
+    tier,
+    runId: String(runId),
+    headSha: String(run.head_sha ?? ''),
+    runUrl: String(run.html_url ?? ''),
+    workflow: String(run.name ?? ''),
+    runStatus: String(run.status ?? ''),
+    runConclusion: run.conclusion == null ? null : String(run.conclusion),
+    definingJobs: 0,
+    carryingJobs: [],
+    job: null,
+    jobName: null,
+    jobRunId: null,
+    jobHeadSha: null,
+    jobStatus: null,
+    jobConclusion: null,
+    step: spec.step,
+    stepConclusion: null,
+    exitCode: null,
+    artifact: spec.artifact,
+    artifactRunId: null,
+    artifactHeadSha: null,
+    artifactDigest: null,
+    artifactProblem: null,
+    field: spec.report,
+    report: null,
+    summaryField: spec.summary,
+    summary: null,
+    summaryProblem: null,
+    completedAt: String(run.updated_at ?? ''),
+  };
+  // A run in flight has no verdict to read, and its jobs and artifacts are
+  // still changing under the reader. Nothing further is collected.
+  if (observation.runStatus !== 'completed') return observation;
 
   const jobs = [];
   for (let page = 1; page <= 10; page += 1) {
-    const batch = await api(
-      `/repos/${repo}/actions/runs/${runId}/jobs?per_page=100&page=${page}`,
-      token
-    );
+    const batch = await get(`/repos/${repo}/actions/runs/${runId}/jobs?per_page=100&page=${page}`);
     jobs.push(...(batch.jobs ?? []));
     if ((batch.jobs ?? []).length < 100) break;
   }
@@ -185,72 +277,254 @@ export async function fetchHostedTierRun({ repo, runId, tier, token }) {
    * the job where the step reached a verdict.
    */
   const ran = (step) => step.conclusion === 'success' || step.conclusion === 'failure';
+  observation.definingJobs = jobs.filter((job) =>
+    (job.steps ?? []).some((step) => step.name === spec.step)
+  ).length;
   const carrying = jobs.filter((job) =>
     (job.steps ?? []).some((step) => step.name === spec.step && ran(step))
   );
-  if (carrying.length === 0) {
-    const skipped = jobs.filter((job) => (job.steps ?? []).some((step) => step.name === spec.step));
-    throw new Error(
-      skipped.length > 0
-        ? `run ${runId} skipped its \`${spec.step}\` step in all ${skipped.length} job(s) that define it`
-        : `run ${runId} has no job with a \`${spec.step}\` step — it did not run the ${tier} tier`
-    );
-  }
-  if (carrying.length > 1) {
-    throw new Error(
-      `run ${runId} ran the ${tier} tier in ${carrying.length} jobs (${carrying
-        .map((job) => job.id)
-        .join(', ')}); taking the first would let one stand in for the other`
-    );
-  }
+  observation.carryingJobs = carrying.map((job) => String(job.id));
+  if (carrying.length !== 1) return observation;
+
   const job = carrying[0];
   const step = job.steps.find((each) => each.name === spec.step && ran(each));
-  if (step.conclusion !== 'success' && step.conclusion !== 'failure') {
-    throw new Error(
-      `the \`${spec.step}\` step was ${step.conclusion}; it neither passed nor failed`
-    );
-  }
+  observation.job = String(job.id);
+  observation.jobName = String(job.name ?? '');
+  observation.jobRunId = job.run_id == null ? null : String(job.run_id);
+  observation.jobHeadSha = job.head_sha == null ? null : String(job.head_sha);
+  observation.jobStatus = job.status == null ? null : String(job.status);
+  observation.jobConclusion = job.conclusion == null ? null : String(job.conclusion);
+  observation.stepConclusion = String(step.conclusion);
+  // The one fact the JSON report cannot carry. vitest's json reporter has no
+  // field for an unhandled error, so a run with three of them still reports
+  // `success: true` and `numFailedTests: 0`. The step's conclusion is the
+  // process's own verdict, which is the thing the ledger is meant to record.
+  observation.exitCode = step.conclusion === 'success' ? 0 : 1;
+  observation.completedAt = String(job.completed_at ?? run.updated_at ?? '');
 
-  const artifacts = await api(`/repos/${repo}/actions/runs/${runId}/artifacts?per_page=100`, token);
-  const artifact = (artifacts.artifacts ?? []).find((each) => each.name === spec.artifact);
-  if (!artifact) {
-    throw new Error(`run ${runId} uploaded no \`${spec.artifact}\` artifact`);
+  const artifacts = await get(`/repos/${repo}/actions/runs/${runId}/artifacts?per_page=100`);
+  const matching = (artifacts.artifacts ?? []).filter((each) => each.name === spec.artifact);
+  if (matching.length === 0) {
+    observation.artifactProblem = `run ${runId} uploaded no \`${spec.artifact}\` artifact`;
+    return observation;
   }
+  if (matching.length > 1) {
+    // Taking the first would let one upload stand in for another.
+    observation.artifactProblem =
+      `run ${runId} holds ${matching.length} artifacts named \`${spec.artifact}\` ` +
+      `(${matching.map((each) => each.id).join(', ')}); which one this tier produced is unknowable`;
+    return observation;
+  }
+  const artifact = matching[0];
+  observation.artifactRunId =
+    artifact.workflow_run?.id == null ? null : String(artifact.workflow_run.id);
+  observation.artifactHeadSha =
+    artifact.workflow_run?.head_sha == null ? null : String(artifact.workflow_run.head_sha);
   if (artifact.expired) {
-    throw new Error(`\`${spec.artifact}\` from run ${runId} has expired and its bytes are gone`);
+    observation.artifactProblem = `\`${spec.artifact}\` from run ${runId} has expired and its bytes are gone`;
+    return observation;
   }
 
-  const zip = await api(`/repos/${repo}/actions/artifacts/${artifact.id}/zip`, token, {
-    raw: true,
-  });
+  const zip = await get(`/repos/${repo}/actions/artifacts/${artifact.id}/zip`, { raw: true });
   // The digest the API publishes for the archive, checked against the bytes that
   // arrived. It is what makes the counts below an OBSERVATION rather than a file
   // somebody handed over: a tampered report no longer matches what GitHub holds.
   const declared = String(artifact.digest ?? '');
   const actual = `sha256:${createHash('sha256').update(zip).digest('hex')}`;
   if (declared && declared !== actual) {
-    throw new Error(
-      `\`${spec.artifact}\` does not match its published digest — ${declared} vs ${actual}`
+    observation.artifactProblem = `\`${spec.artifact}\` does not match its published digest — ${declared} vs ${actual}`;
+    return observation;
+  }
+  observation.artifactDigest = declared || actual;
+  try {
+    observation.report = JSON.parse(readZipEntry(zip, spec.report).toString('utf8'));
+  } catch (error) {
+    observation.artifactProblem = `\`${spec.artifact}\`: ${error.message}`;
+    return observation;
+  }
+  try {
+    observation.summary = JSON.parse(readZipEntry(zip, spec.summary).toString('utf8'));
+  } catch (error) {
+    observation.summaryProblem = `\`${spec.artifact}\`: ${error.message}`;
+  }
+  return observation;
+}
+
+const isCount = (value) => Number.isInteger(value) && value >= 0;
+
+/**
+ * The counts a report states about itself and the counts its tier summary
+ * states about it, as one list of disagreements. Empty means they agree.
+ */
+export function countDisagreements(report, summary) {
+  const problems = [];
+  const files = report?.testResults ?? [];
+  const total = report?.numTotalTests;
+  const passed = report?.numPassedTests;
+  const failed = report?.numFailedTests;
+  const pending = report?.numPendingTests ?? 0;
+  const todo = report?.numTodoTests ?? 0;
+  for (const [name, value] of [
+    ['numTotalTests', total],
+    ['numPassedTests', passed],
+    ['numFailedTests', failed],
+    ['numPendingTests', pending],
+    ['numTodoTests', todo],
+  ]) {
+    if (!isCount(value)) problems.push(`the report's ${name} is not a count (${String(value)})`);
+  }
+  if (problems.length > 0) return problems;
+  if (passed + failed + pending + todo !== total) {
+    problems.push(
+      `the report states ${total} tests but passed ${passed} + failed ${failed} + ` +
+        `pending ${pending} + todo ${todo} = ${passed + failed + pending + todo}`
     );
   }
+  const cases = files.reduce((sum, file) => sum + (file?.assertionResults ?? []).length, 0);
+  if (cases !== total) {
+    problems.push(`the report states ${total} tests but its files carry ${cases} cases`);
+  }
+  if (summary !== null && summary !== undefined) {
+    for (const [what, fromSummary, fromReport] of [
+      ['files', summary.files, files.length],
+      ['total', summary.total, total],
+      ['passed', summary.passed, passed],
+      ['failed', summary.failed, failed],
+      ['pending', summary.pending, pending],
+      ['todo', summary.todo, todo],
+    ]) {
+      if (fromSummary !== fromReport) {
+        problems.push(
+          `the tier summary states ${what} ${String(fromSummary)}; the report states ${fromReport}`
+        );
+      }
+    }
+    if (summary.success !== (report?.success === true)) {
+      problems.push(
+        `the tier summary states success ${String(summary.success)}; the report states ` +
+          `${String(report?.success)}`
+      );
+    }
+  }
+  return problems;
+}
 
-  return {
-    headSha: String(run.head_sha),
-    runId: String(runId),
-    runUrl: String(run.html_url ?? ''),
-    workflow: String(run.name ?? ''),
-    job: String(job.id),
-    jobName: String(job.name ?? ''),
-    step: spec.step,
-    // The one fact the JSON report cannot carry. vitest's json reporter has no
-    // field for an unhandled error, so a run with three of them still reports
-    // `success: true` and `numFailedTests: 0`. The step's conclusion is the
-    // process's own verdict, which is the thing the ledger is meant to record.
-    exitCode: step.conclusion === 'success' ? 0 : 1,
-    artifact: spec.artifact,
-    artifactDigest: declared || actual,
-    field: spec.report,
-    completedAt: String(job.completed_at ?? run.updated_at ?? ''),
-    report: JSON.parse(readZipEntry(zip, spec.report).toString('utf8')),
-  };
+/**
+ * Decides whether an observation may become SUCCESS evidence for the commit
+ * `head`. Returns one `{ id, text }` per reason it may not; empty means eligible.
+ *
+ * Pure: it reads the observation and nothing else, so every refusal can be
+ * driven from a recorded fixture.
+ */
+export function judgeHostedEligibility(observation, { head } = {}) {
+  const problems = [];
+  const refuse = (id, text) => problems.push({ id, text: `${id}: ${text}` });
+  const o = observation ?? {};
+  const run = `run ${o.runId}`;
+
+  if (o.runStatus !== 'completed') {
+    refuse(
+      'HOSTED_RUN_NOT_COMPLETED',
+      `${run} is ${o.runStatus || 'of unknown status'}; a record may not be taken from a run in flight`
+    );
+    return problems;
+  }
+  if (!ELIGIBLE_RUN_CONCLUSIONS.includes(o.runConclusion)) {
+    refuse(
+      'HOSTED_RUN_CONCLUSION_INELIGIBLE',
+      `${run} concluded ${String(o.runConclusion)}, which is no pass-or-fail verdict; nothing ` +
+        'measured in it is evidence'
+    );
+  }
+  if (typeof head !== 'string' || !/^[0-9a-f]{40}$/.test(head) || o.headSha !== head) {
+    // Filing a run of one tree against another is the single way this writer
+    // could manufacture a green record, so it is refused before anything is
+    // written rather than left for the gate to catch afterwards.
+    refuse(
+      'HOSTED_RUN_HEAD_MISMATCH',
+      `${run} describes ${String(o.headSha).slice(0, 8)} but HEAD is ${String(head).slice(0, 8)}; ` +
+        'a record may only be filed against the head its run ran'
+    );
+  }
+  const carrying = o.carryingJobs ?? [];
+  if (carrying.length === 0) {
+    refuse(
+      'HOSTED_TIER_NOT_RUN',
+      o.definingJobs > 0
+        ? `${run} skipped its \`${o.step}\` step in all ${o.definingJobs} job(s) that define it`
+        : `${run} has no job with a \`${o.step}\` step — it did not run the ${o.tier} tier`
+    );
+    return problems;
+  }
+  if (carrying.length > 1) {
+    refuse(
+      'HOSTED_TIER_AMBIGUOUS',
+      `${run} ran the ${o.tier} tier in ${carrying.length} jobs (${carrying.join(', ')}); taking ` +
+        'the first would let one stand in for the other'
+    );
+    return problems;
+  }
+  if (o.jobRunId !== o.runId || o.jobHeadSha !== o.headSha) {
+    refuse(
+      'HOSTED_JOB_NOT_IN_RUN',
+      `job ${o.job} names run ${String(o.jobRunId)} at ${String(o.jobHeadSha).slice(0, 8)}, not ` +
+        `${run} at ${String(o.headSha).slice(0, 8)}`
+    );
+  }
+  if (o.jobStatus !== 'completed' || o.jobConclusion !== 'success') {
+    refuse(
+      'HOSTED_JOB_NOT_SUCCESSFUL',
+      `the ${o.tier} job ${o.job} (${o.jobName}) is ${String(o.jobStatus)} with conclusion ` +
+        `${String(o.jobConclusion)}. A tier is taken from its own job, and only a job that ` +
+        'concluded success can supply it — whatever the rest of the run did'
+    );
+  }
+  if (o.stepConclusion !== 'success') {
+    refuse(
+      'HOSTED_STEP_NOT_SUCCESSFUL',
+      `the \`${o.step}\` step concluded ${String(o.stepConclusion)}`
+    );
+  }
+  if (o.artifactProblem) {
+    refuse('HOSTED_ARTIFACT_UNUSABLE', o.artifactProblem);
+    return problems;
+  }
+  if (o.artifactRunId !== o.runId || o.artifactHeadSha !== o.headSha) {
+    refuse(
+      'HOSTED_ARTIFACT_UNUSABLE',
+      `\`${o.artifact}\` names run ${String(o.artifactRunId)} at ` +
+        `${String(o.artifactHeadSha).slice(0, 8)}, not ${run} at ${String(o.headSha).slice(0, 8)}`
+    );
+  }
+  if (o.report === null || typeof o.report !== 'object') {
+    refuse('HOSTED_ARTIFACT_UNUSABLE', `\`${o.artifact}\` yielded no \`${o.field}\` report`);
+    return problems;
+  }
+  if (o.summary === null || typeof o.summary !== 'object') {
+    refuse(
+      'HOSTED_SUMMARY_MISSING',
+      o.summaryProblem ??
+        `\`${o.artifact}\` carries no \`${o.summaryField}\` to cross-check the report against`
+    );
+  }
+  const disagreements = countDisagreements(o.report, o.summary);
+  if (disagreements.length > 0) {
+    refuse('HOSTED_COUNTS_INCONSISTENT', disagreements.join('; '));
+  }
+  const failedSuites = o.report.numFailedTestSuites;
+  const summaryProblems = Array.isArray(o.summary?.problems) ? o.summary.problems : [];
+  if (
+    o.report.success !== true ||
+    o.report.numFailedTests !== 0 ||
+    (failedSuites !== undefined && failedSuites !== 0) ||
+    summaryProblems.length > 0
+  ) {
+    refuse(
+      'HOSTED_REPORT_NOT_SUCCESSFUL',
+      `\`${o.field}\` records success ${String(o.report.success)}, ` +
+        `${String(o.report.numFailedTests)} failed test(s), ${String(failedSuites ?? 0)} failed ` +
+        `suite(s)${summaryProblems.length > 0 ? `, and its summary reports: ${summaryProblems.join(' ')}` : ''}`
+    );
+  }
+  return problems;
 }
