@@ -12,8 +12,8 @@ import type { ReceptionListCriteria, ReceptionListEntry } from './receptions-con
 /**
  * The reception board read (`rec.reception-list`) — SERVER ONLY.
  *
- * The body `listReceptions` ran, moved here so the Server Action and the GET
- * route at `/reads/receptions` share one implementation (P1-32-PRE-OD-READ).
+ * The body the retired `listReceptions` action ran, now served only by the
+ * POST route at `/reads/receptions` (P1-32-PRE-OD-READ).
  * No directive: nothing here is a browser-callable endpoint, and
  * `authorizedClient()` reads the `httpOnly` cookie through `next/headers`,
  * which a client bundle does not have. `tests/cancellable-reads.test.ts` fails

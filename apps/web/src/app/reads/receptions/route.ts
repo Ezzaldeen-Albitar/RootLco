@@ -1,16 +1,23 @@
+import { pageFailure } from '@/lib/api/browser-read';
 import { serveBrowserRead } from '@/lib/api/read-route';
 import { receptionListQuery, receptionListArgs } from '@/features/receptions/reception-list-read';
 import { readReceptionList } from '@/features/receptions/reception-list-read.server';
 
 /**
- * GET /reads/receptions — the reception board, cancellable (P1-32-PRE-OD-READ).
+ * POST /reads/receptions — the reception board, cancellable (P1-32-PRE-OD-READ).
  *
- * Parses the query, calls ONE server read core with this request's signal, and
+ * A POST whose parameters are a JSON body: it carries text an operator typed,
+ * and the Owner's rule is that search terms never go in the URL.
+ *
+ * Parses its body, calls ONE server read core with this request's signal, and
  * returns its envelope; `serveBrowserRead` holds the refusals and the headers.
  * Authorization, tenant and branch scope and the rate limit stay in the API.
  */
-export function GET(request: Request): Promise<Response> {
-  return serveBrowserRead(request, receptionListQuery, (query, signal) =>
-    readReceptionList(...receptionListArgs(query), signal)
-  );
+export function POST(request: Request): Promise<Response> {
+  return serveBrowserRead(request, {
+    input: 'body',
+    schema: receptionListQuery,
+    run: (params, signal) => readReceptionList(...receptionListArgs(params), signal),
+    failure: pageFailure,
+  });
 }

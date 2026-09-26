@@ -28,6 +28,12 @@ import {
  *
  * And "no queueing": each case issues the new request while the old one is
  * still unanswered. A Server Action would have waited for the first to settle.
+ *
+ * The board carries search text, so it is a POST whose parameters are a JSON
+ * body and whose address is the bare route — the Owner's rule that search terms
+ * never go in the URL. Its cases read the parameters from the BODY and assert
+ * the address carries none. The overview figures and a customer's vehicles
+ * carry identifiers only and stay a GET with a query.
  */
 
 const EN = en as Record<string, string>;
@@ -35,6 +41,9 @@ const COMPANY = TEST_COMPANY.id;
 
 interface Sent {
   readonly url: string;
+  readonly method: string;
+  /** The parameters a POST carried in its JSON body; empty for a GET. */
+  readonly body: Readonly<Record<string, string>>;
   readonly signal: AbortSignal;
   readonly answer: (response: Response) => void;
   readonly fail: (error: unknown) => void;
@@ -55,7 +64,9 @@ function stubNetwork({ honoursAbort = true } = {}) {
       (url: string, init: RequestInit) =>
         new Promise<Response>((answer, fail) => {
           const signal = init.signal as AbortSignal;
-          sent.push({ url, signal, answer, fail });
+          const body =
+            typeof init.body === 'string' ? (JSON.parse(init.body) as Record<string, string>) : {};
+          sent.push({ url, method: init.method ?? 'GET', body, signal, answer, fail });
           if (honoursAbort) {
             signal.addEventListener('abort', () =>
               fail(new DOMException('The operation was aborted.', 'AbortError'))
@@ -141,14 +152,16 @@ describe('the reception board, on a rapid branch switch', () => {
     renderBoard();
 
     await user.click(screen.getByRole('button', { name: 'use main' }));
-    await waitFor(() => expect(latest().url).toContain(`branchId=${TEST_BRANCH.id}`));
+    await waitFor(() => expect(latest().body.branchId).toBe(TEST_BRANCH.id));
     const left = latest();
-    expect(left.url).toMatch(/^\/reads\/receptions\?/);
+    // A POST to the bare route: the parameters are in the body, none in the address.
+    expect(left.method).toBe('POST');
+    expect(left.url).toBe('/reads/receptions');
     expect(left.signal.aborted).toBe(false);
     abort.mockClear();
 
     await user.click(screen.getByRole('button', { name: 'use second' }));
-    await waitFor(() => expect(latest().url).toContain(`branchId=${OTHER_BRANCH.id}`));
+    await waitFor(() => expect(latest().body.branchId).toBe(OTHER_BRANCH.id));
 
     // CANCELLED, not only ignored: the request for the branch left behind is
     // aborted, and the controller that owned it said so.
@@ -172,10 +185,10 @@ describe('the reception board, on a rapid branch switch', () => {
     renderBoard();
 
     await user.click(screen.getByRole('button', { name: 'use main' }));
-    await waitFor(() => expect(latest().url).toContain(`branchId=${TEST_BRANCH.id}`));
+    await waitFor(() => expect(latest().body.branchId).toBe(TEST_BRANCH.id));
     const left = latest();
     await user.click(screen.getByRole('button', { name: 'use second' }));
-    await waitFor(() => expect(latest().url).toContain(`branchId=${OTHER_BRANCH.id}`));
+    await waitFor(() => expect(latest().body.branchId).toBe(OTHER_BRANCH.id));
     const current = latest();
 
     // The stale answer arrives AFTER the switch — and is ignored.
@@ -197,11 +210,15 @@ describe('the reception board, on rapid typing', () => {
     const box = screen.getByLabelText(EN['receptions.queue.searchLabel'] as string);
 
     await user.type(box, 'Kha');
-    await waitFor(() => expect(latest().url).toContain('q=Kha&'));
+    await waitFor(() => expect(latest().body.q).toBe('Kha'));
     const typedPast = latest();
+    // The term travels in the body; the address holds the route and nothing else.
+    expect(typedPast.url).toBe('/reads/receptions');
+    expect(typedPast.url).not.toContain('Kha');
 
     await user.type(box, 'l');
-    await waitFor(() => expect(latest().url).toContain('q=Khal'));
+    await waitFor(() => expect(latest().body.q).toBe('Khal'));
+    expect(sent.every((request) => !request.url.includes('?'))).toBe(true);
 
     expect(typedPast.signal.aborted).toBe(true);
     expect(latest().signal.aborted).toBe(false);
@@ -217,6 +234,8 @@ describe('the overview figures, on a period change', () => {
 
     await waitFor(() => expect(latest().url).toContain('period=today'));
     const left = latest();
+    // Identifiers and a period, nothing typed: this family stays a GET.
+    expect(left.method).toBe('GET');
     expect(left.url).toMatch(/^\/reads\/dashboard-summary\?/);
     expect(left.url).toContain(`companyId=${COMPANY}`);
 

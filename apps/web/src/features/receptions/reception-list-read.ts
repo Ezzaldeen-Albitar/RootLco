@@ -13,16 +13,19 @@ import {
 /**
  * The reception board as a CANCELLABLE read (P1-32-PRE-OD-READ).
  *
- * The same read `listReceptions` performs, carried by the GET route at
- * `RECEPTION_LIST_ROUTE` instead of a Server Action so the browser can abort it
- * and so it does not queue behind another action on the page. This module is
- * the route's contract — one query schema both halves use — and the browser
- * half. The server half is `reception-list-read.server.ts`.
+ * The read the retired `listReceptions` Server Action performed, carried by
+ * the POST route at `RECEPTION_LIST_ROUTE` so the browser can abort it and so
+ * it does not queue behind another action on the page. This module is the
+ * route's contract — one schema both halves use — and the browser half. The
+ * server half is `reception-list-read.server.ts`.
+ *
+ * Its parameters travel as a JSON body, never in the address: the Owner's
+ * rule is that search terms never go in the URL.
  */
 
 export const RECEPTION_LIST_ROUTE = '/reads/receptions';
 
-/** The query the route accepts: the scope, the named criteria, a cursor and a page size. */
+/** The body the route accepts: the scope, the named criteria, a cursor and a page size. */
 export const receptionListQuery = z
   .object({
     companyId: readParam.id,
@@ -40,7 +43,7 @@ export const receptionListQuery = z
 
 export type ReceptionListQuery = z.infer<typeof receptionListQuery>;
 
-/** The arguments `listReceptions` takes, as query parameters. */
+/** The core's arguments, as the parameters the JSON body carries. */
 export function receptionListParams(
   scope: BranchScope,
   criteria: ReceptionListCriteria,
@@ -61,7 +64,7 @@ export function receptionListParams(
   };
 }
 
-/** The parsed query, as the arguments the server core takes. */
+/** The parsed body, as the arguments the server core takes. */
 export function receptionListArgs(
   query: ReceptionListQuery
 ): [BranchScope, ReceptionListCriteria, TableRequest, string | null] {
@@ -83,7 +86,7 @@ export function receptionListArgs(
 /**
  * One page of the reception board, cancellable.
  *
- * Same arguments and same answer as `listReceptions`, plus the signal: aborting
+ * Same arguments and same answer as the server core, plus the signal: aborting
  * it rejects with an `AbortError` (`isCancelledRead`) and closes the request.
  */
 export function listReceptionsCancellable(
@@ -95,6 +98,7 @@ export function listReceptionsCancellable(
 ): Promise<ServerPage<ReceptionListEntry>> {
   return browserRead({
     route: RECEPTION_LIST_ROUTE,
+    method: 'POST',
     params: receptionListParams(scope, criteria, request, cursor),
     signal,
     accept: acceptServerPage<ReceptionListEntry>,

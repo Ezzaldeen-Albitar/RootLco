@@ -1,8 +1,6 @@
 'use server';
 
 import { z } from 'zod';
-import type { TableRequest } from '@/components/data-table/table-state';
-import type { ServerPage } from '@/components/data-table/use-server-table';
 import { authorizedClient } from '@/lib/api/server-client';
 import { fromFailure, invalid, type ActionState } from '@/lib/forms/action-result';
 import {
@@ -13,30 +11,17 @@ import {
   MODEL_YEAR_MIN,
   POWERTRAIN_CATEGORIES,
   type CreatedVehicle,
-  type VehicleSearchCriteria,
-  type VehicleSearchHit,
 } from './contract';
 import { fieldErrorsFrom } from '@/lib/forms/field-errors';
-import { readVehicleSearch } from './vehicle-search-read.server';
 
 /**
- * Vehicle search (`FE-017`) and creation (`FE-018`) adapters.
+ * Vehicle creation (`FE-018`) adapters.
  *
- * The search body lives in `vehicle-search-read.server.ts`, shared with the GET
- * route at `/reads/vehicles` that the vehicle search screen and the intake
- * vehicle step now read through so the browser can cancel a superseded search
- * (P1-32-PRE-OD-READ). `searchVehicles` stays for any caller that still invokes
- * it, and answers exactly what it answered before: only the parameters the
- * `.strict()` schema names, `retries: 0` against the `expensive-read` budget,
- * and no request at all for an empty search.
+ * The search (`FE-017`) is not here: its request construction lives in the
+ * server-only core `vehicle-search-read.server.ts`, served by the POST route at
+ * `/reads/vehicles` so the browser can cancel a superseded search and the
+ * terms never enter an address (P1-32-PRE-OD-READ).
  */
-export async function searchVehicles(
-  criteria: VehicleSearchCriteria,
-  request: TableRequest,
-  cursor: string | null
-): Promise<ServerPage<VehicleSearchHit>> {
-  return readVehicleSearch(criteria, request, cursor);
-}
 
 /**
  * The creation body, mirroring the route's Zod schema field for field.

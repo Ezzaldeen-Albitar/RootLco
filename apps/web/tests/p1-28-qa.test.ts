@@ -457,12 +457,12 @@ describe('P1-28-QA-001 — every adapter is executed, and this file proves it', 
   });
 
   it('discovers the adapter modules by SHAPE, and reads a declaration form the tree lacks', () => {
-    // The walk selects `'use server'` modules. A filename convention would have
-    // missed `lib/customers/vehicles.ts`, which is in no feature tree and is not
-    // named `-api`, and which the intake vehicle picker depends on.
+    // By shape, not name: `lib/customers/vehicles-read.server.ts` is in no feature
+    // tree and not `-api`, and holds the read the intake vehicle picker uses.
     const modules = adapterModules().map((file) => file.replace(/\\/g, '/'));
-    expect(modules.some((file) => file.endsWith('/lib/customers/vehicles.ts'))).toBe(true);
-    expect(modules.every((file) => /use server/.test(readFileSync(file, 'utf8')))).toBe(true);
+    expect(modules.some((f) => f.endsWith('/lib/customers/vehicles-read.server.ts'))).toBe(true);
+    const shaped = (f: string) => /use server|authorizedClient\(\)/.test(readFileSync(f, 'utf8'));
+    expect(modules.every(shaped)).toBe(true);
 
     // The scanner is held against a form the tree does not contain TODAY, so
     // the blind spot is closed before it is fallen into rather than after.
@@ -1536,7 +1536,7 @@ describe('P1-28-QA-003 — scope is resolved by the server, and asserted by nobo
       // list because it now carries the pair — the read it replaced was
       // tenant-scoped and carried nothing, which was the disclosure.
       'listReceivingEmployeeCandidates',
-      'listReceptions',
+      'readReceptionList',
     ]);
   });
 
@@ -1557,7 +1557,7 @@ describe('P1-28-QA-003 — scope is resolved by the server, and asserted by nobo
   });
 
   it('sends the branch pair as the TARGET, and the target is the one it was handed', async () => {
-    for (const name of ['listAppointments', 'listReceptions', 'listConfirmedAppointments']) {
+    for (const name of ['listAppointments', 'readReceptionList', 'listConfirmedAppointments']) {
       const drive = DRIVES.find((one) => one.name === name);
       expect(drive, `${name} is not in the drive table`).toBeDefined();
       get.mockClear();

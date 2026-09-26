@@ -68,15 +68,15 @@ const { VehicleAttributeHistorySection } =
   await import('@/features/vehicles/components/VehicleAttributeHistorySection');
 
 /**
- * The adapter this file mocks everywhere else, imported for real.
+ * The search core this file mocks everywhere else, imported for real.
  *
- * `vi.importActual` bypasses the mock for THIS module only; its own imports
- * still resolve through the registry, so `@/lib/api/server-client` above is
- * still the mocked one. That is exactly the arrangement the transport cases
- * need: production adapter, production client, a transport under test control.
+ * `vi.importActual` loads it as shipped, and its own imports still resolve
+ * through the registry, so `@/lib/api/server-client` above is still the mocked
+ * one — production core, production client, a transport under test control.
  */
-const realVehicleApi =
-  await vi.importActual<typeof import('@/features/vehicles/api')>('@/features/vehicles/api');
+const realVehicleApi = await vi.importActual<
+  typeof import('@/features/vehicles/vehicle-search-read.server')
+>('@/features/vehicles/vehicle-search-read.server');
 const { ApiClient } = await import('@/lib/api/client');
 
 /**
@@ -422,17 +422,17 @@ describe('vehicle search asks nothing until it is asked', () => {
  * `ServerPage`, which means the mapping under test is supplied by the test.
  * These two hand the mock the REAL adapter and replace only `fetch`, so the
  * chain that runs is the shipped one: `VehicleSearchScreen` → `useServerTable` →
- * `searchVehicles` → `ApiClient.#request` → the catch block → `STATUS_BY_KIND` →
+ * `readVehicleSearch` → `ApiClient.#request` → the catch block → `STATUS_BY_KIND` →
  * `DataTable` → the English catalogue. Nothing in it is a fixture except the
  * transport, and the transport is where a timeout comes from in production too.
  *
  * ## What cancellation means on THIS screen, said exactly
  *
- * No P1-27 screen offers a Cancel control and no P1-27 adapter accepts an
- * `AbortSignal` — `searchVehicles` takes `(criteria, request, cursor)` and
- * nothing else. So the cancellation an operator can actually cause here is the
- * one the client's own comment names second: navigating away, which tears down
- * the in-flight request and rejects it with an `AbortError` the client did not
+ * No P1-27 screen offers a Cancel control. The search core does take an
+ * `AbortSignal` now (P1-32-PRE-OD-READ, proved in `cancellable-reads.test.ts`),
+ * but here the cancellation under test is the one the client's own comment
+ * names second: the transport torn down from outside, as navigating away does,
+ * which rejects the in-flight request with an `AbortError` the client did not
  * raise. That is what the second case drives. It is NOT a proof that a Cancel
  * button behaves, because there is no such button to prove.
  */
@@ -471,7 +471,7 @@ describe('a transport outcome an operator can actually meet, end to end', () => 
   }
 
   function renderSearchOver(fetchImpl: typeof fetch) {
-    searchVehicles.mockImplementation(realVehicleApi.searchVehicles);
+    searchVehicles.mockImplementation(realVehicleApi.readVehicleSearch);
     authorizedClient.mockResolvedValue(
       new ApiClient({
         baseUrl: 'https://api.invalid',

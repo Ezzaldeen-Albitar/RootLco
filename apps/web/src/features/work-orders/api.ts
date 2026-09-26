@@ -1,12 +1,9 @@
 'use server';
 
-import type { TableRequest } from '@/components/data-table/table-state';
-import type { ServerPage } from '@/components/data-table/use-server-table';
 import { authorizedClient } from '@/lib/api/server-client';
 import {
   branchTargetQuery,
   readOperation,
-  type BranchScope,
   type BranchTarget,
   type ItemsOnly,
   type ReadState,
@@ -22,28 +19,8 @@ import type {
   JobAssignment,
   WorkOrderCatalogue,
   WorkOrderDetail,
-  WorkOrderListCriteria,
-  WorkOrderListEntry,
   WorkOrderServiceLine,
 } from './work-orders-contract';
-import { readWorkOrderList } from './work-order-list-read.server';
-
-/**
- * The one read the work-order board issues (P1-29, `W1`) — `wo.work-order-list`.
- *
- * The body lives in `work-order-list-read.server.ts`, shared with the GET route
- * the board and the work-order picker now read through so the browser can
- * cancel the read (P1-32-PRE-OD-READ). This Server Action stays for any caller
- * that still invokes it, and answers exactly what it answered before.
- */
-export async function listWorkOrders(
-  scope: BranchScope,
-  criteria: WorkOrderListCriteria,
-  request: TableRequest,
-  cursor: string | null
-): Promise<ServerPage<WorkOrderListEntry>> {
-  return readWorkOrderList(scope, criteria, request, cursor);
-}
 
 /**
  * The tenant's work-order state graph (`wo.work-order-catalogue`).

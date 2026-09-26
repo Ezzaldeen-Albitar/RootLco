@@ -1,5 +1,9 @@
 import type { z } from 'zod';
-import { BROWSER_READ_HEADER, BROWSER_READ_HEADER_VALUE } from './browser-read';
+import {
+  BROWSER_READ_HEADER,
+  BROWSER_READ_HEADER_VALUE,
+  type BrowserReadFailure,
+} from './browser-read';
 
 /**
  * The server half of a cancellable browser read (P1-32-PRE-OD-READ).
@@ -10,48 +14,95 @@ import { BROWSER_READ_HEADER, BROWSER_READ_HEADER_VALUE } from './browser-read';
  *
  * ## What a route may and may not do
  *
- * It parses its query, calls ONE server read core with the request's signal,
- * and returns that core's envelope. It does not widen anything: the core is the
- * same body the Server Action runs, it reads the session through the same
- * `authorizedClient()`, and the API still receives the bearer token and still
- * decides authorization, tenant and branch scope and the rate limit. An unknown
- * parameter is refused rather than dropped, so what reaches the core is exactly
- * what the browser half sends.
+ * It parses its input, calls ONE server read core with the request's signal,
+ * and returns that core's envelope. It does not widen anything: the core reads
+ * the session through `authorizedClient()`, and the API still receives the
+ * bearer token and still decides authorization, tenant and branch scope and the
+ * rate limit. An unknown parameter is refused rather than dropped, so what
+ * reaches the core is exactly what the browser half sends.
+ *
+ * ## Search text travels in a body, never in an address
+ *
+ * The Owner's standing rule is that search terms never go in the URL. A URL is
+ * what an access log, a proxy log and a browser's own tooling record, so a
+ * family that carries text an operator typed — a name, a phone number, a plate,
+ * a chassis fragment, a free-text term — is a `POST` whose parameters are a
+ * JSON body (`input: 'body'`). Such a route refuses any query string at all, a
+ * body that is not `application/json`, and a body with a key its schema does
+ * not name. Only the two families that carry identifiers and a period and no
+ * typed text — the overview figures and a customer's vehicles — stay a `GET`
+ * with a query (`input: 'query'`).
  *
  * ## Why the header and the origin checks
  *
  * The session cookie is `SameSite=Lax`, which a cross-site top-level GET still
  * carries. A read answers data rather than changing state, but a read that
  * answers a foreign page is still a read nobody chose to publish. So a request
- * is refused unless:
+ * is refused, before any session is read, unless:
  *
  *   - it carries `x-rootlco-read: 1`. A cross-origin page cannot add a custom
  *     header without a CORS preflight, and nothing here answers one — the
  *     preflight fails and the request is never sent;
  *   - `Sec-Fetch-Site`, when the browser sends it, is `same-origin`. A link, an
  *     image or a form from another site says `cross-site` or `same-site`;
- *   - `Origin`, when present, names this host.
+ *   - `Origin`, when present, names this host. Behind a proxy chain the host
+ *     the edge saw is the FIRST value of `X-Forwarded-Host`, compared as a
+ *     host and port under the origin's own scheme, so `web.test:443` and
+ *     `https://web.test` agree and `web.test:8443` does not.
  *
  * ## Why every answer says `no-store`
  *
  * The body is one operator's view of one tenant's records. `private, no-store`
  * keeps it out of every shared and browser cache, and `Vary: Cookie` tells any
  * cache that ignores the first instruction that two sessions are two answers.
+ * That includes a read that failed inside the core: it answers the family's own
+ * `unavailable` envelope with the same headers rather than the framework's
+ * default error page.
  */
 
-/** Headers on every answer, refusals included. */
+/** Headers on every answer, refusals and failures included. */
 export const READ_RESPONSE_HEADERS: Readonly<Record<string, string>> = Object.freeze({
   'cache-control': 'private, no-store',
   vary: 'Cookie',
   'x-content-type-options': 'nosniff',
 });
 
+/** The largest body a read accepts. Every schema's bounds together fit well inside it. */
+export const READ_BODY_LIMIT_BYTES = 16 * 1024;
+
 /** Why a request was refused before it was read, or null when it may proceed. */
 export type ReadRefusal = 'header' | 'fetch-site' | 'origin';
 
-/** The host a request was addressed to, as the edge saw it. */
-function requestHost(request: Request): string | null {
-  return request.headers.get('x-forwarded-host') ?? request.headers.get('host');
+/** A host, or a host and port, and nothing else: no scheme, path, userinfo or query. */
+const AUTHORITY = /^(?:[a-z0-9-]+(?:\.[a-z0-9-]+)*|\[[0-9a-f:.]+\])(?::\d{1,5})?$/;
+
+/**
+ * The host a request was addressed to, as the edge saw it, lowercased.
+ *
+ * `X-Forwarded-Host` wins when present. Each proxy in a chain may append its own
+ * value, so the header can read `web.test, internal:3100`; the FIRST value is
+ * the one the browser addressed. An empty first value is not a host, and is
+ * not quietly replaced by `Host` either — the request is then refused.
+ */
+export function requestHost(request: Request): string | null {
+  const forwarded = request.headers.get('x-forwarded-host');
+  const raw = forwarded !== null ? forwarded.split(',')[0] : request.headers.get('host');
+  const host = raw?.trim().toLowerCase() ?? '';
+  return host.length > 0 ? host : null;
+}
+
+/** Whether `host` names the same host and port as `origin`, under the origin's scheme. */
+export function sameAuthority(origin: URL, host: string | null): boolean {
+  if (host === null || !AUTHORITY.test(host)) return false;
+  let addressed: URL;
+  try {
+    // Parsed under the origin's scheme so a default port reads the same both
+    // ways: `https://web.test` and `web.test:443` are one authority.
+    addressed = new URL(`${origin.protocol}//${host}`);
+  } catch {
+    return false;
+  }
+  return addressed.host === origin.host;
 }
 
 /** Whether this request may be served at all. See the module note. */
@@ -61,13 +112,13 @@ export function refusalOf(request: Request): ReadRefusal | null {
   if (site !== null && site !== 'same-origin') return 'fetch-site';
   const origin = request.headers.get('origin');
   if (origin !== null) {
-    let originHost: string;
+    let parsed: URL;
     try {
-      originHost = new URL(origin).host;
+      parsed = new URL(origin);
     } catch {
       return 'origin';
     }
-    if (originHost !== requestHost(request)) return 'origin';
+    if (!sameAuthority(parsed, requestHost(request))) return 'origin';
   }
   return null;
 }
@@ -95,31 +146,110 @@ export function queryObject(url: URL): Record<string, string> | null {
   return out;
 }
 
+/** Whether a `Content-Type` names JSON, parameters such as `charset` aside. */
+export function isJsonContentType(value: string | null): boolean {
+  if (value === null) return false;
+  return (value.split(';')[0] ?? '').trim().toLowerCase() === 'application/json';
+}
+
+/** What went wrong with an input, as the status the route answers. */
+type InputOutcome =
+  | { readonly ok: true; readonly raw: unknown }
+  | { readonly ok: false; readonly status: 400 | 405 | 413 | 415 };
+
+/**
+ * A POST body as a plain object.
+ *
+ * Refused: a query string of any kind (the body is the only place parameters
+ * travel), a content type other than JSON, a body over `READ_BODY_LIMIT_BYTES`,
+ * a body that does not parse, and one that is not a plain object. JSON that
+ * repeats a key keeps its last value, as `JSON.parse` does; the body is written
+ * by `JSON.stringify` in the browser half and is recorded in no address, so the
+ * disagreement the query rule guards against has no second reader here.
+ */
+async function bodyInput(request: Request): Promise<InputOutcome> {
+  if (request.method !== 'POST') return { ok: false, status: 405 };
+  if (new URL(request.url).search.length > 0) return { ok: false, status: 400 };
+  if (!isJsonContentType(request.headers.get('content-type'))) return { ok: false, status: 415 };
+  const declared = Number.parseInt(request.headers.get('content-length') ?? '', 10);
+  if (Number.isFinite(declared) && declared > READ_BODY_LIMIT_BYTES) {
+    return { ok: false, status: 413 };
+  }
+  let text: string;
+  try {
+    text = await request.text();
+  } catch {
+    return { ok: false, status: 400 };
+  }
+  if (new TextEncoder().encode(text).length > READ_BODY_LIMIT_BYTES) {
+    return { ok: false, status: 413 };
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    return { ok: false, status: 400 };
+  }
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+    return { ok: false, status: 400 };
+  }
+  return { ok: true, raw: parsed };
+}
+
+/** A GET query as an object. */
+function queryInput(request: Request): InputOutcome {
+  if (request.method !== 'GET') return { ok: false, status: 405 };
+  const raw = queryObject(new URL(request.url));
+  return raw === null ? { ok: false, status: 400 } : { ok: true, raw };
+}
+
+export interface BrowserReadSpec<Params, Envelope extends { readonly status: string }> {
+  /** Where the parameters travel: a JSON body (search text) or a query (identifiers only). */
+  readonly input: 'body' | 'query';
+  /** The strict schema the parameters must satisfy. */
+  readonly schema: z.ZodType<Params>;
+  /** The ONE server read core, handed this request's signal. */
+  readonly run: (params: Params, signal: AbortSignal) => Promise<Envelope>;
+  /** The family's own failure envelope, answered when the core throws. */
+  readonly failure: (status: BrowserReadFailure, correlationId: string | null) => Envelope;
+}
+
 /**
  * Serves one browser read.
  *
  * - refused (header, fetch site, origin): 403 `{ status: 'denied' }`;
- * - an invalid query: 400 `{ status: 'error' }`;
+ * - an input the route does not accept: 400, 405, 413 or 415 `{ status: 'error' }`;
+ * - the core threw: 503 with the family's own `unavailable` envelope;
  * - otherwise 200 with the core's own envelope, which carries the API's
- *   verdict — `expired` when there is no session, exactly as the action answers.
+ *   verdict — `expired` when there is no session.
  *
- * The request's signal reaches the core, and through it the API call, so a
- * browser that gives up on the read stops the work behind it.
+ * Every refusal is decided before the session is read. The request's signal
+ * reaches the core, and through it the API call, so a browser that gives up on
+ * the read stops the work behind it.
  */
 export async function serveBrowserRead<Params, Envelope extends { readonly status: string }>(
   request: Request,
-  schema: z.ZodType<Params>,
-  run: (params: Params, signal: AbortSignal) => Promise<Envelope>
+  spec: BrowserReadSpec<Params, Envelope>
 ): Promise<Response> {
   if (refusalOf(request) !== null) {
     return answer({ status: 'denied', correlationId: null }, 403, null);
   }
-  const raw = queryObject(new URL(request.url));
-  const parsed = raw === null ? null : schema.safeParse(raw);
-  if (parsed === null || !parsed.success) {
+  const input = spec.input === 'body' ? await bodyInput(request) : queryInput(request);
+  if (!input.ok) {
+    return answer({ status: 'error', correlationId: null }, input.status, null);
+  }
+  const parsed = spec.schema.safeParse(input.raw);
+  if (!parsed.success) {
     return answer({ status: 'error', correlationId: null }, 400, null);
   }
-  const envelope = await run(parsed.data, request.signal);
+  let envelope: Envelope;
+  try {
+    envelope = await spec.run(parsed.data, request.signal);
+  } catch {
+    // Nothing about the fault reaches the browser — not a message, not a
+    // stack — only the state the screen already knows how to render.
+    return answer(spec.failure('unavailable', null), 503, null);
+  }
   const correlationId = (envelope as { readonly correlationId?: unknown }).correlationId;
   return answer(envelope, 200, typeof correlationId === 'string' ? correlationId : null);
 }

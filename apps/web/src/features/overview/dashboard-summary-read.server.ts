@@ -11,8 +11,8 @@ import type { DashboardSummary, DashboardSummaryCriteria } from './overview-cont
  * The one read the operations overview issues (`ovw.dashboard-summary-read`)
  * — SERVER ONLY.
  *
- * The body `readDashboardSummary` ran, moved here so the Server Action and the
- * GET route at `/reads/dashboard-summary` share one implementation
+ * The body the retired `readDashboardSummary` action ran, now served only by
+ * the GET route at `/reads/dashboard-summary` — one implementation
  * (P1-32-PRE-OD-READ). No directive: nothing here is a browser-callable
  * endpoint, and `authorizedClient()` reads the `httpOnly` cookie through
  * `next/headers`, which a client bundle does not have.
@@ -52,7 +52,7 @@ export async function readDashboardSummaryState(
       to: criteria.to,
     });
   // The call `readOperation` makes — default retries — with the signal added
-  // only when there is one, so the Server Action's request is unchanged.
+  // only when there is one, so a call without a signal is that call exactly.
   const result = signal
     ? await client.get<DashboardSummary>(path, { signal })
     : await client.get<DashboardSummary>(path);

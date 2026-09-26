@@ -20,11 +20,14 @@ import {
 /**
  * The work-order board as a CANCELLABLE read (P1-32-PRE-OD-READ).
  *
- * The same read `listWorkOrders` performs, carried by the GET route at
- * `WORK_ORDER_LIST_ROUTE` instead of a Server Action so the browser can abort it
- * and so it does not queue behind another action on the page. This module is
- * the route's contract and the browser half; the server half is
+ * The read the retired `listWorkOrders` Server Action performed, carried by
+ * the POST route at `WORK_ORDER_LIST_ROUTE` so the browser can abort it and so
+ * it does not queue behind another action on the page. This module is the
+ * route's contract and the browser half; the server half is
  * `work-order-list-read.server.ts`.
+ *
+ * Its parameters travel as a JSON body, never in the address: the Owner's
+ * rule is that search terms never go in the URL.
  *
  * `state` stays free text: the state catalogue is tenant-extensible, so the
  * route cannot know every code, and the API refuses one it does not.
@@ -65,7 +68,7 @@ export const workOrderListQuery = z
 
 export type WorkOrderListQuery = z.infer<typeof workOrderListQuery>;
 
-/** The arguments `listWorkOrders` takes, as query parameters. */
+/** The core's arguments, as the parameters the JSON body carries. */
 export function workOrderListParams(
   scope: BranchScope,
   criteria: WorkOrderListCriteria,
@@ -94,7 +97,7 @@ export function workOrderListParams(
   };
 }
 
-/** The parsed query, as the arguments the server core takes. */
+/** The parsed body, as the arguments the server core takes. */
 export function workOrderListArgs(
   query: WorkOrderListQuery
 ): [BranchScope, WorkOrderListCriteria, TableRequest, string | null] {
@@ -128,7 +131,7 @@ export function workOrderListArgs(
 /**
  * One page of the work-order board, cancellable.
  *
- * Same arguments and same answer as `listWorkOrders`, plus the signal: aborting
+ * Same arguments and same answer as the server core, plus the signal: aborting
  * it rejects with an `AbortError` (`isCancelledRead`) and closes the request.
  */
 export function listWorkOrdersCancellable(
@@ -140,6 +143,7 @@ export function listWorkOrdersCancellable(
 ): Promise<ServerPage<WorkOrderListEntry>> {
   return browserRead({
     route: WORK_ORDER_LIST_ROUTE,
+    method: 'POST',
     params: workOrderListParams(scope, criteria, request, cursor),
     signal,
     accept: acceptServerPage<WorkOrderListEntry>,

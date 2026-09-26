@@ -10,11 +10,14 @@ import {
 /**
  * The overview figures as a CANCELLABLE read (P1-32-PRE-OD-READ).
  *
- * The same read `readDashboardSummary` performs, carried by the GET route at
- * `DASHBOARD_SUMMARY_ROUTE` instead of a Server Action so the browser can abort
- * it and so it does not queue behind another action on the page. This module is
- * the route's contract and the browser half; the server half is
+ * The read the retired `readDashboardSummary` Server Action performed, carried
+ * by the GET route at `DASHBOARD_SUMMARY_ROUTE` so the browser can abort it and
+ * so it does not queue behind another action on the page. This module is the
+ * route's contract and the browser half; the server half is
  * `dashboard-summary-read.server.ts`.
+ *
+ * A GET, because it carries a scope and a period and nothing an operator
+ * typed.
  */
 
 export const DASHBOARD_SUMMARY_ROUTE = '/reads/dashboard-summary';
@@ -31,7 +34,7 @@ export const dashboardSummaryQuery = z
 
 export type DashboardSummaryQuery = z.infer<typeof dashboardSummaryQuery>;
 
-/** The arguments `readDashboardSummary` takes, as query parameters. */
+/** The core's arguments, as the parameters the query carries. */
 export function dashboardSummaryParams(
   scope: BranchScope,
   criteria: DashboardSummaryCriteria
@@ -62,7 +65,7 @@ export function dashboardSummaryArgs(
 /**
  * The overview figures, cancellable.
  *
- * Same arguments and same answer as `readDashboardSummary`, plus the signal:
+ * Same arguments and same answer as the server core, plus the signal:
  * aborting it rejects with an `AbortError` (`isCancelledRead`) and closes the
  * request.
  */
@@ -73,6 +76,7 @@ export function readDashboardSummaryCancellable(
 ): Promise<ReadState<DashboardSummary>> {
   return browserRead({
     route: DASHBOARD_SUMMARY_ROUTE,
+    method: 'GET',
     params: dashboardSummaryParams(scope, criteria),
     signal,
     accept: acceptReadState<DashboardSummary>,

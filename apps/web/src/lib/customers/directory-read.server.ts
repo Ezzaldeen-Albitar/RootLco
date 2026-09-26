@@ -12,8 +12,8 @@ import {
 /**
  * The one customer search (`GET /api/v1/customers`) — SERVER ONLY.
  *
- * The body `searchCustomerDirectory` ran, moved here so the Server Action and
- * the GET route at `/reads/customer-directory` share one implementation
+ * The body the retired `searchCustomerDirectory` action ran, now served only
+ * by the POST route at `/reads/customer-directory` — one implementation
  * (P1-32-PRE-OD-READ). No directive: nothing here is a browser-callable
  * endpoint, and `authorizedClient()` reads the `httpOnly` cookie through
  * `next/headers`, which a client bundle does not have.

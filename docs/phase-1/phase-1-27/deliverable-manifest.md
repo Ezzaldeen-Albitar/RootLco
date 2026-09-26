@@ -257,28 +257,28 @@ This sentence said **40** until this revision, in the document whose own
 
 <!-- derived: rows crm-source = 20 -->
 
-| path                                              | carries                                                                                               |
-| ------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
-| `permissions.ts`                                  | The CRM permission codes the screens gate on                                                          |
-| `customers/action-support.ts`                     | The shared write path every CRM action goes through — `write()` and `client.send`                     |
-| `customers/profile-actions.ts`                    | `crm.contact-add`, `crm.address-add` — the two profile writes, outside the governance six             |
-| `customers/api.ts`                                | `crm.customer-search` adapter                                                                         |
-| `customers/contract.ts`                           | Search criteria, `CustomerSearchHit`, the page contract `{ items, nextCursor, hasMore }`              |
-| `customers/creation-actions.ts`                   | `crm.individual-create`, `crm.company-create`                                                         |
-| `customers/creation-contract.ts`                  | The creation schemas and `possibleDuplicates` on the creation **response**                            |
-| `customers/governance-actions.ts`                 | The six governance writes, behind six different permissions                                           |
-| `customers/governance-contract.ts`                | Their schemas and server vocabularies                                                                 |
-| `customers/identity-api.ts`                       | `crm.customer-timeline`, `crm.customer-history`, `crm.duplicate-list`, `crm.duplicate-review`         |
-| `customers/identity-contract.ts`                  | Duplicate-candidate and timeline shapes                                                               |
-| `customers/profile-api.ts`                        | The eight profile sub-resource reads, including the notes adapter that publishes `includesRestricted` |
-| `customers/profile-contract.ts`                   | Their shapes                                                                                          |
-| `customers/components/CustomerCreateActions.tsx`  | `OA-04` — Add an individual customer / Add a company customer                                         |
-| `customers/components/CustomerCreateScreen.tsx`   | Both creation paths                                                                                   |
-| `customers/components/CustomerProfileScreen.tsx`  | The profile and its component sections                                                                |
-| `customers/components/CustomerSearchScreen.tsx`   | Search, with the results a separate component mounted only after submission                           |
-| `customers/components/DuplicateDecisionPanel.tsx` | The dismissal decision — **and no merge form**, because **`P1-OD-017`** is open                       |
-| `customers/components/DuplicateReviewScreen.tsx`  | The CRM duplicate queue                                                                               |
-| `customers/components/RecordForm.tsx`             | The shared write form, gated on a successful read                                                     |
+| path                                              | carries                                                                                                  |
+| ------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| `permissions.ts`                                  | The CRM permission codes the screens gate on                                                             |
+| `customers/action-support.ts`                     | The shared write path every CRM action goes through — `write()` and `client.send`                        |
+| `customers/profile-actions.ts`                    | `crm.contact-add`, `crm.address-add` — the two profile writes, outside the governance six                |
+| `customers/api.ts`                                | `searchCustomers`, kept with no caller over the search core the `/reads/customer-directory` route serves |
+| `customers/contract.ts`                           | Search criteria, `CustomerSearchHit`, the page contract `{ items, nextCursor, hasMore }`                 |
+| `customers/creation-actions.ts`                   | `crm.individual-create`, `crm.company-create`                                                            |
+| `customers/creation-contract.ts`                  | The creation schemas and `possibleDuplicates` on the creation **response**                               |
+| `customers/governance-actions.ts`                 | The six governance writes, behind six different permissions                                              |
+| `customers/governance-contract.ts`                | Their schemas and server vocabularies                                                                    |
+| `customers/identity-api.ts`                       | `crm.customer-timeline`, `crm.customer-history`, `crm.duplicate-list`, `crm.duplicate-review`            |
+| `customers/identity-contract.ts`                  | Duplicate-candidate and timeline shapes                                                                  |
+| `customers/profile-api.ts`                        | The eight profile sub-resource reads, including the notes adapter that publishes `includesRestricted`    |
+| `customers/profile-contract.ts`                   | Their shapes                                                                                             |
+| `customers/components/CustomerCreateActions.tsx`  | `OA-04` — Add an individual customer / Add a company customer                                            |
+| `customers/components/CustomerCreateScreen.tsx`   | Both creation paths                                                                                      |
+| `customers/components/CustomerProfileScreen.tsx`  | The profile and its component sections                                                                   |
+| `customers/components/CustomerSearchScreen.tsx`   | Search, with the results a separate component mounted only after submission                              |
+| `customers/components/DuplicateDecisionPanel.tsx` | The dismissal decision — **and no merge form**, because **`P1-OD-017`** is open                          |
+| `customers/components/DuplicateReviewScreen.tsx`  | The CRM duplicate queue                                                                                  |
+| `customers/components/RecordForm.tsx`             | The shared write form, gated on a successful read                                                        |
 
 **Three rows were missing until this revision** — `action-support.ts`,
 `profile-actions.ts` here and `write-support.ts` in §5.3. The two headings were
@@ -292,7 +292,7 @@ cannot be dropped without the build noticing.
 
 | path                                            | carries                                                                                                                                                                                                                |
 | ----------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `api.ts`                                        | `veh.vehicle-search`, `veh.vehicle-create` (permission **`veh.vehicle.manage`**)                                                                                                                                       |
+| `api.ts`                                        | `veh.vehicle-create` (permission **`veh.vehicle.manage`**); the search moved to the read route                                                                                                                         |
 | `write-support.ts`                              | The vehicle tree's own write path — the counterpart of the CRM `action-support.ts`                                                                                                                                     |
 | `catalogue-api.ts`                              | The five catalogue reads — makes, models, trims, body types, powertrain types                                                                                                                                          |
 | `contract.ts`                                   | `normalizeCriteria` over a frozen `CRITERIA_KEYS` list into an `Object.create(null)` target                                                                                                                            |
@@ -306,8 +306,8 @@ cannot be dropped without the build noticing.
 | `profile-contract.ts`                           | The vehicle detail shape, including `recordVersion`                                                                                                                                                                    |
 | `relations-api.ts`                              | EV profile read and set; relationships; authorised-party add and retire                                                                                                                                                |
 | `relations-contract.ts`                         | Their shapes                                                                                                                                                                                                           |
-| `vehicle-search-read.ts`                        | The vehicle search as a cancellable read (P1-32-PRE-OD-READ): the `/reads/vehicles` query schema and the browser half                                                                                                  |
-| `vehicle-search-read.server.ts`                 | The vehicle search request construction, server-only, shared by `searchVehicles` and the read route                                                                                                                    |
+| `vehicle-search-read.ts`                        | The vehicle search as a cancellable read (P1-32-PRE-OD-READ): the `/reads/vehicles` body schema and the browser half                                                                                                   |
+| `vehicle-search-read.server.ts`                 | The vehicle search request construction, server-only, served by the `/reads/vehicles` POST route                                                                                                                       |
 | `components/VehicleSearchScreen.tsx`            | Vehicle search — exact VIN, plate and vehicle number, no substring                                                                                                                                                     |
 | `components/VehicleCreateScreen.tsx`            | Creation with dependent catalogue selectors                                                                                                                                                                            |
 | `components/VinField.tsx`                       | Format validation at the edge; the server's uniqueness verdict                                                                                                                                                         |

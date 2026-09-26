@@ -7,8 +7,8 @@ import type { CustomerVehicleEntry } from './vehicles-contract';
 /**
  * The customer→vehicle list (`crm.customer-vehicle-list`) — SERVER ONLY.
  *
- * The body `listCustomerVehicles` ran, moved here so the Server Action and the
- * GET route at `/reads/customer-vehicles` share one implementation
+ * The body the retired `listCustomerVehicles` action ran, now served only by
+ * the GET route at `/reads/customer-vehicles` — one implementation
  * (P1-32-PRE-OD-READ). No directive: nothing here is a browser-callable
  * endpoint, and `authorizedClient()` reads the `httpOnly` cookie through
  * `next/headers`, which a client bundle does not have.

@@ -35,8 +35,8 @@ const crmIdentity = await import('@/features/crm/customers/identity-api');
 const vehHistory = await import('@/features/vehicles/history-api');
 const vehRelations = await import('@/features/vehicles/relations-api');
 const vehDuplicates = await import('@/features/vehicles/duplicates-api');
-const vehApi = await import('@/features/vehicles/api');
-const crmApi = await import('@/features/crm/customers/api');
+const vehSearch = await import('@/features/vehicles/vehicle-search-read.server');
+const crmSearch = await import('@/lib/customers/directory-read.server');
 /*
  * The write table, shared with `write-adapters-driven.test.ts`.
  *
@@ -83,22 +83,22 @@ const LIST_ADAPTERS: readonly { name: string; call: () => Promise<{ status: stri
     name: 'listAttributeHistory',
     call: () => vehDuplicates.listAttributeHistory('v1', REQUEST, null),
   },
-  // Both searches, with real criteria. Called with EMPTY criteria they refuse
-  // to issue a request at all — a deliberate refusal, asserted in their own
+  // Both search cores (their actions retired, P1-32-PRE-OD-READ), with real
+  // criteria. With EMPTY criteria they issue no request — asserted in their own
   // suites — so passing a criterion here is what makes them reach the client.
   {
-    name: 'searchCustomers',
-    call: () => crmApi.searchCustomers(REQUEST, null, { name: 'Nadia' } as never),
+    name: 'readCustomerDirectory',
+    call: () => crmSearch.readCustomerDirectory(REQUEST, null, { name: 'Nadia' } as never),
   },
   {
-    name: 'searchVehicles',
+    name: 'readVehicleSearch',
     // `plate`, not `plateNumber`. This line said `plateNumber` until
     // `normalizeCriteria` stopped iterating the object and started reading the
     // five contract keys — at which point the criterion vanished, the search
     // was correctly refused as empty, and four cases here failed. The old code
     // would have forwarded `plateNumber` to a `.strict()` schema, which is a 422
     // for the whole search.
-    call: () => vehApi.searchVehicles({ plate: '12-3456' } as never, REQUEST, null),
+    call: () => vehSearch.readVehicleSearch({ plate: '12-3456' } as never, REQUEST, null),
   },
 ];
 

@@ -136,8 +136,8 @@ describe('what the adapter must never send', () => {
    *
    * It moved once more (P1-32-PRE-OD-READ): the request construction is now in
    * the server-only core `lib/customers/directory-read.server.ts`, which the
-   * Server Action in `directory.ts` and the cancellable read route share. The
-   * assertions follow it there, for the same reason.
+   * POST read route at `/reads/customer-directory` serves; the directory's own
+   * Server Action retired. The assertions follow it there, for the same reason.
    */
   const adapter = code(
     readFileSync(
@@ -161,9 +161,9 @@ describe('what the adapter must never send', () => {
       )
     );
     expect(wrapper).toContain('searchCustomers');
-    expect(wrapper).toContain('searchCustomerDirectory');
-    // No request building of its own — one customer-search authority, two
-    // callers.
+    // It calls the one server core the read route serves (P1-32-PRE-OD-READ).
+    expect(wrapper).toContain('readCustomerDirectory');
+    // No request building of its own — one customer-search authority.
     expect(wrapper).not.toContain('query({');
     expect(wrapper).not.toContain('/api/v1/customers');
   });

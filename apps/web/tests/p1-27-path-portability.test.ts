@@ -1,4 +1,4 @@
-import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, sep } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
@@ -82,15 +82,12 @@ describe('the file that failed on Linux now satisfies the rule', () => {
   });
 
   it('delegates to a module that does carry one', () => {
-    expect(source).toContain('@/lib/customers/directory');
-    const directory = readFileSync(
-      join(process.cwd(), 'src', 'lib', 'customers', 'directory.ts'),
-      'utf8'
-    );
-    // The directory is itself a thin Server Action now: its body moved to the
-    // server-only core the cancellable read route shares (P1-32-PRE-OD-READ),
-    // and the reference is carried where the mapping is written.
-    expect(directory).toContain('./directory-read.server');
+    // The directory Server Action it used to delegate to retired with the
+    // cancellable reads (P1-32-PRE-OD-READ); the wrapper now names the
+    // server-only core itself, and the reference is carried where the mapping
+    // is written.
+    expect(source).toContain("'@/lib/customers/directory-read.server'");
+    expect(existsSync(join(process.cwd(), 'src', 'lib', 'customers', 'directory.ts'))).toBe(false);
     const core = readFileSync(
       join(process.cwd(), 'src', 'lib', 'customers', 'directory-read.server.ts'),
       'utf8'

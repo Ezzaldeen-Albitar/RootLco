@@ -10,7 +10,6 @@ import {
   STATUS_BY_KIND,
   query,
   readOperation,
-  type BranchScope,
   type CursorPage,
   type ReadState,
 } from '@/lib/api/read-operation';
@@ -76,15 +75,12 @@ import {
   type ReceptionCreateInput,
   type ReceptionCreated,
   type ReceptionDetail,
-  type ReceptionListCriteria,
-  type ReceptionListEntry,
   type RefusalInput,
   type RefusalRecorded,
   type SignatureInput,
   type SignatureRecorded,
   type EvidenceKind,
 } from './receptions-contract';
-import { readReceptionList } from './reception-list-read.server';
 
 /**
  * Reception adapters (P1-28, Wave A).
@@ -297,23 +293,6 @@ const closeSchema = z.object({ reason: z.string().trim().min(1).max(MAX_CLOSURE_
 /* ------------------------------------------------------------------ *
  * Reads
  * ------------------------------------------------------------------ */
-
-/**
- * The reception board (`rec.reception-list`), most recently received first.
- *
- * The body lives in `reception-list-read.server.ts`, shared with the GET route
- * the board and the check-in lookup now read through so the browser can cancel
- * the read (P1-32-PRE-OD-READ). This Server Action stays for any caller that
- * still invokes it, and answers exactly what it answered before.
- */
-export async function listReceptions(
-  scope: BranchScope,
-  criteria: ReceptionListCriteria,
-  request: TableRequest,
-  cursor: string | null
-): Promise<ServerPage<ReceptionListEntry>> {
-  return readReceptionList(scope, criteria, request, cursor);
-}
 
 /**
  * One visit (`rec.reception-detail`). The returned `recordVersion` is the

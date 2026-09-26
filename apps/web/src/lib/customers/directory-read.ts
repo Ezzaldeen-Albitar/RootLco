@@ -14,11 +14,14 @@ import {
 /**
  * The customer search as a CANCELLABLE read (P1-32-PRE-OD-READ).
  *
- * The same read `searchCustomerDirectory` performs, carried by the GET route at
- * `CUSTOMER_DIRECTORY_ROUTE` instead of a Server Action so the browser can abort
- * a superseded search and so it does not queue behind another action on the
- * page. This module is the route's contract and the browser half; the server
- * half is `directory-read.server.ts`.
+ * The read the retired `searchCustomerDirectory` Server Action performed,
+ * carried by the POST route at `CUSTOMER_DIRECTORY_ROUTE` so the browser can
+ * abort a superseded search and so it does not queue behind another action on
+ * the page. This module is the route's contract and the browser half; the
+ * server half is `directory-read.server.ts`.
+ *
+ * Its parameters travel as a JSON body, never in the address: the Owner's
+ * rule is that search terms never go in the URL.
  *
  * The criteria are normalised HERE before they travel, with the same function
  * the server core applies again, so the route sees what the API will be sent:
@@ -42,7 +45,7 @@ export const customerDirectoryQuery = z
 
 export type CustomerDirectoryQuery = z.infer<typeof customerDirectoryQuery>;
 
-/** The arguments `searchCustomerDirectory` takes, as query parameters. */
+/** The core's arguments, as the parameters the JSON body carries. */
 export function customerDirectoryParams(
   request: TableRequest,
   cursor: string | null,
@@ -61,7 +64,7 @@ export function customerDirectoryParams(
   };
 }
 
-/** The parsed query, as the arguments the server core takes. */
+/** The parsed body, as the arguments the server core takes. */
 export function customerDirectoryArgs(
   query: CustomerDirectoryQuery
 ): [TableRequest, string | null, CustomerSearchCriteria] {
@@ -82,7 +85,7 @@ export function customerDirectoryArgs(
 /**
  * One page of the customer search, cancellable.
  *
- * Same arguments and same answer as `searchCustomerDirectory`, plus the signal:
+ * Same arguments and same answer as the server core, plus the signal:
  * aborting it rejects with an `AbortError` (`isCancelledRead`) and closes the
  * request. A search with nothing to search on answers here, exactly as the
  * server core would, without a request.
@@ -98,6 +101,7 @@ export async function searchCustomerDirectoryCancellable(
   }
   return browserRead({
     route: CUSTOMER_DIRECTORY_ROUTE,
+    method: 'POST',
     params: customerDirectoryParams(request, cursor, rawCriteria),
     signal,
     accept: acceptServerPage<CustomerSearchHit>,

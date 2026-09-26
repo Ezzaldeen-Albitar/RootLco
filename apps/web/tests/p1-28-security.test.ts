@@ -783,8 +783,8 @@ describe('P1-28-SEC-003 — the ONE door, and the abuse cases that try the walls
      * (driven), and the reason it cannot is structural (read).
      */
     backendAnswering(200, { items: [], nextCursor: null, hasMore: false });
-    const { listReceptions } = await import('@/features/receptions/api');
-    const page = await listReceptions(
+    const { readReceptionList } = await import('@/features/receptions/reception-list-read.server');
+    const page = await readReceptionList(
       { companyId: 'c1', branchId: 'b1' },
       { branchId: FORGED.branchId, vehicleId: 'v1' } as never,
       TABLE_REQUEST,
@@ -830,9 +830,9 @@ describe('P1-28-SEC-003 — the ONE door, and the abuse cases that try the walls
      *   - the cursor is not a filter, so it cannot be smuggled into the target.
      */
     backendAnswering(200, { items: [], nextCursor: null, hasMore: false });
-    const { listReceptions } = await import('@/features/receptions/api');
+    const { readReceptionList } = await import('@/features/receptions/reception-list-read.server');
     const issued = 'eyJvIjoiMjAyNi0wOC0xMyIsImkiOiJhYmMifQ==';
-    await listReceptions({ companyId: 'c1', branchId: 'b1' }, {}, TABLE_REQUEST, issued);
+    await readReceptionList({ companyId: 'c1', branchId: 'b1' }, {}, TABLE_REQUEST, issued);
 
     const parameters = new URL(onlyRequest().url).searchParams;
     expect(parameters.get('cursor'), 'the cursor was rewritten in flight').toBe(issued);
@@ -913,8 +913,8 @@ describe('P1-28-SEC-003 — the ONE door, and the abuse cases that try the walls
       status: 400,
       correlationId: 'corr-cursor',
     });
-    const { listReceptions } = await import('@/features/receptions/api');
-    const page = await listReceptions(
+    const { readReceptionList } = await import('@/features/receptions/reception-list-read.server');
+    const page = await readReceptionList(
       { companyId: 'c1', branchId: 'b1' },
       {},
       TABLE_REQUEST,

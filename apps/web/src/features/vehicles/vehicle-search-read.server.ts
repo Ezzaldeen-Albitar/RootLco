@@ -12,8 +12,8 @@ import {
 /**
  * Vehicle search (`FE-017`) — SERVER ONLY.
  *
- * The body `searchVehicles` ran, moved here so the Server Action and the GET
- * route at `/reads/vehicles` share one implementation (P1-32-PRE-OD-READ). No
+ * The body the retired `searchVehicles` action ran, now served only by the
+ * POST route at `/reads/vehicles` (P1-32-PRE-OD-READ). No
  * directive: nothing here is a browser-callable endpoint, and
  * `authorizedClient()` reads the `httpOnly` cookie through `next/headers`,
  * which a client bundle does not have. `tests/cancellable-reads.test.ts` fails

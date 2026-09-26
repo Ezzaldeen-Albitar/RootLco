@@ -12,8 +12,10 @@ import { env } from '@/lib/env';
  *     publishes as `public: true` because a caller who cannot sign in cannot
  *     authenticate to ask.
  *   - `authorizedClient()` — reads the `httpOnly` session cookie and attaches
- *     `Authorization: Bearer`. Only reachable from a Server Component or a
- *     Server Action, because `next/headers` is not available anywhere else.
+ *     `Authorization: Bearer`. Only reachable from a Server Component, a Server
+ *     Action or a Route Handler — the cancellable reads under `/reads/*` call
+ *     it through their server cores (P1-32-PRE-OD-READ) — because
+ *     `next/headers` is not available anywhere else.
  *
  * There is deliberately no browser client that holds a token. The browser
  * cannot read the cookie, so it could not construct one even if a call site

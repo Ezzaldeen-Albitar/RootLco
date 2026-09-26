@@ -27,8 +27,16 @@ import type { ReadState } from './read-operation';
  * Next aborts when the browser disconnects (`build/templates/app-route.js`
  * builds the request with `signalFromNodeResponse`), and requests to it run in
  * parallel. So the hottest reads — the two boards, the overview figures, the
- * customer and vehicle searches and the customer's vehicles — go through a GET
+ * customer and vehicle searches and the customer's vehicles — go through a
  * route under `/reads/*`, and this module is the browser half of that hop.
+ *
+ * ## Search text travels in a body
+ *
+ * The Owner's standing rule is that search terms never go in the URL, so a
+ * family that carries text an operator typed is a `POST` whose parameters are a
+ * JSON body, and its address is the bare route. Only a family that carries
+ * identifiers and a period and nothing typed is a `GET` with a query. Each
+ * family states which with `method`; there is no default to forget.
  *
  * ## What it does and does not change
  *
@@ -76,10 +84,18 @@ const FAILURES: ReadonlySet<string> = new Set<BrowserReadFailure>([
 /** What a read answers once decoded, or null when the body is not that. */
 export type AcceptBody<T> = (body: unknown) => T | null;
 
+/** How a family's parameters travel: `POST` with a JSON body, or `GET` with a query. */
+export type BrowserReadMethod = 'GET' | 'POST';
+
 export interface BrowserReadRequest<T> {
   /** The route, under `BROWSER_READ_PREFIX`. */
   readonly route: string;
-  /** Query parameters. Undefined, null and empty values are left out. */
+  /** `POST` for a family that carries search text, `GET` for one that carries none. */
+  readonly method: BrowserReadMethod;
+  /**
+   * The parameters: a JSON body for `POST`, the query for `GET`. Undefined,
+   * null and empty values are left out either way.
+   */
   readonly params: Readonly<Record<string, string | undefined | null>>;
   /** Aborting it cancels the fetch, and the promise rejects with an `AbortError`. */
   readonly signal?: AbortSignal | undefined;
@@ -104,6 +120,18 @@ function cancelled(): DOMException {
   return new DOMException('The read was cancelled before it answered.', 'AbortError');
 }
 
+/** The parameters that are actually present: undefined, null and empty values left out. */
+export function presentParams(
+  params: Readonly<Record<string, string | undefined | null>>
+): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const [key, value] of Object.entries(params)) {
+    if (value === undefined || value === null || value.length === 0) continue;
+    out[key] = value;
+  }
+  return out;
+}
+
 /** A route address with its query. The route is a literal under our own origin. */
 export function browserReadUrl(
   route: string,
@@ -112,13 +140,26 @@ export function browserReadUrl(
   if (!route.startsWith(BROWSER_READ_PREFIX)) {
     throw new Error(`A browser read must address a route under ${BROWSER_READ_PREFIX}.`);
   }
-  const search = new URLSearchParams();
-  for (const [key, value] of Object.entries(params)) {
-    if (value === undefined || value === null || value.length === 0) continue;
-    search.set(key, value);
-  }
-  const rendered = search.toString();
+  const rendered = new URLSearchParams(presentParams(params)).toString();
   return rendered.length > 0 ? `${route}?${rendered}` : route;
+}
+
+/**
+ * The address and body one read sends.
+ *
+ * A `POST` addresses the bare route and carries every parameter in its JSON
+ * body, so nothing an operator typed is ever part of an address. A `GET`
+ * carries its parameters in the query and has no body.
+ */
+export function browserReadInit(
+  route: string,
+  method: BrowserReadMethod,
+  params: Readonly<Record<string, string | undefined | null>>
+): { readonly url: string; readonly body: string | null } {
+  if (method === 'POST') {
+    return { url: browserReadUrl(route, {}), body: JSON.stringify(presentParams(params)) };
+  }
+  return { url: browserReadUrl(route, params), body: null };
 }
 
 /** The failure a status code means when the body did not say. */
@@ -153,7 +194,7 @@ export async function browserRead<T>(request: BrowserReadRequest<T>): Promise<T>
   const { signal } = request;
   if (signal?.aborted) throw cancelled();
 
-  const url = browserReadUrl(request.route, request.params);
+  const { url, body: sent } = browserReadInit(request.route, request.method, request.params);
   const controller = new AbortController();
   const onAbort = () => controller.abort();
   signal?.addEventListener('abort', onAbort, { once: true });
@@ -169,8 +210,13 @@ export async function browserRead<T>(request: BrowserReadRequest<T>): Promise<T>
     let response: Response;
     try {
       response = await fetch(url, {
-        method: 'GET',
-        headers: { [BROWSER_READ_HEADER]: BROWSER_READ_HEADER_VALUE, accept: 'application/json' },
+        method: request.method,
+        headers: {
+          [BROWSER_READ_HEADER]: BROWSER_READ_HEADER_VALUE,
+          accept: 'application/json',
+          ...(sent === null ? {} : { 'content-type': 'application/json' }),
+        },
+        ...(sent === null ? {} : { body: sent }),
         credentials: 'same-origin',
         cache: 'no-store',
         redirect: 'error',

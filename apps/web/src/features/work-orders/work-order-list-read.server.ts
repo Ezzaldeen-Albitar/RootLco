@@ -13,8 +13,8 @@ import type { WorkOrderListCriteria, WorkOrderListEntry } from './work-orders-co
  * The one read the work-order board issues (P1-29, `W1`) — `wo.work-order-list`
  * — SERVER ONLY.
  *
- * The body `listWorkOrders` ran, moved here so the Server Action and the GET
- * route at `/reads/work-orders` share one implementation (P1-32-PRE-OD-READ).
+ * The body the retired `listWorkOrders` action ran, now served only by the
+ * POST route at `/reads/work-orders` (P1-32-PRE-OD-READ).
  * No directive: nothing here is a browser-callable endpoint, and
  * `authorizedClient()` reads the `httpOnly` cookie through `next/headers`,
  * which a client bundle does not have. `tests/cancellable-reads.test.ts` fails

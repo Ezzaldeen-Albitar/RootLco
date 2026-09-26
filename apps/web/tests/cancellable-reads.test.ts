@@ -1,5 +1,5 @@
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
-import { dirname, join, relative, resolve } from 'node:path';
+import { dirname, join, relative, resolve, sep } from 'node:path';
 import { globSync } from 'tinyglobby';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -7,20 +7,29 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
  * Cancellable authenticated reads (P1-32-PRE-OD-READ).
  *
  * Seven browser reads moved from a Server Action — which the installed Next
- * sends one at a time per page and cannot abort — to a GET route under
- * `/reads/*` whose request signal Next aborts when the browser disconnects.
- * This suite holds the four properties that move has to keep:
+ * sends one at a time per page and cannot abort — to a route under `/reads/*`
+ * whose request signal Next aborts when the browser disconnects; six of the
+ * seven actions retired, and the seventh (`searchCustomers`) has no caller.
+ * Four families carry text an operator typed and are a POST
+ * whose parameters are a JSON body — the Owner's standing rule is that search
+ * terms never go in the URL; the overview figures and a customer's vehicles
+ * carry identifiers only and stay a GET. This suite holds five properties:
  *
- *   1. **Nothing widens.** Each route forwards exactly what its Server Action
- *      would have sent: the same API path, the same options, the same envelope.
- *      Proved by running both against one mocked transport and comparing.
+ *   1. **Nothing widens.** Each route forwards exactly what its server core
+ *      sends when called directly: the same API path, the same options, the
+ *      same envelope. Proved by running both against one mocked transport.
  *   2. **Refusals are refusals.** No custom header, a cross-site fetch, a foreign
- *      origin, an unknown or repeated parameter — each is refused before any
- *      session is read. A missing session is the action's own `expired`.
- *   3. **The cancellation is real.** The route hands its request signal to the
+ *      origin (including behind a proxy chain), an unknown key, a query string on
+ *      a POST, a body that is not JSON — each is refused before any session is
+ *      read. A missing session is the core's own `expired`.
+ *   3. **Search text never reaches an address.** The browser half of a POST
+ *      family addresses the bare route and carries every term in its body.
+ *   4. **The cancellation is real.** The route hands its request signal to the
  *      API call, and aborting the browser's signal aborts that request.
- *   4. **Cancelled is not unavailable.** A caller's abort rejects with an
- *      `AbortError`; an outage, a 5xx or the ceiling resolves `unavailable`.
+ *   5. **Cancelled is not unavailable, and a fault is not a framework page.** A
+ *      caller's abort rejects with an `AbortError`; an outage, a 5xx or the
+ *      ceiling resolves `unavailable`; a core that throws answers the family's
+ *      own `unavailable` envelope with the same private, uncached headers.
  */
 
 const get = vi.fn();
@@ -38,8 +47,19 @@ const {
   browserReadUrl,
   isCancelledRead,
   pageFailure,
+  presentParams,
+  readFailure,
 } = await import('@/lib/api/browser-read');
-const { READ_RESPONSE_HEADERS, queryObject, refusalOf } = await import('@/lib/api/read-route');
+const {
+  READ_BODY_LIMIT_BYTES,
+  READ_RESPONSE_HEADERS,
+  isJsonContentType,
+  queryObject,
+  refusalOf,
+  requestHost,
+  sameAuthority,
+  serveBrowserRead,
+} = await import('@/lib/api/read-route');
 const { CLIENT_READ_TIMEOUT_MS } = await import('@/lib/api/read-budget');
 
 const reception = await import('@/features/receptions/reception-list-read');
@@ -58,147 +78,185 @@ const HOST = 'web.test';
 const REQUEST_25 = { ...INITIAL_REQUEST, pageSize: 25 };
 
 type Params = Readonly<Record<string, string | undefined | null>>;
+type Handler = (request: Request) => Promise<Response>;
+type Method = 'GET' | 'POST';
 
 interface Family {
   readonly name: string;
   readonly route: string;
-  readonly handler: () => Promise<{ GET: (request: Request) => Promise<Response> }>;
-  /** The Server Action, invoked with `args`. */
-  readonly action: () => Promise<unknown>;
-  /** The query the browser half sends for the same `args`. */
+  readonly method: Method;
+  readonly handler: () => Promise<Partial<Record<Method, Handler>>>;
+  /** The server core, called directly with the family's arguments and no signal. */
+  readonly core: () => Promise<unknown>;
+  /** The browser half, called with the same arguments and a signal. */
+  readonly cancellable: (signal?: AbortSignal) => Promise<unknown>;
+  /** The parameters the browser half sends for the same arguments. */
   readonly params: Params;
+  /** The operator's typed text, which must never appear in an address. */
+  readonly typed: readonly string[];
   /** What the API answers, in the shape this family reads. */
   readonly data: unknown;
 }
 
 const PAGE_DATA = { items: [{ id: 'row-1' }], nextCursor: 'next-1', hasMore: true };
 
+const RECEPTION_ARGS = [
+  { companyId: COMPANY, branchId: BRANCH },
+  { statusGroup: 'open', q: 'Kha', from: '2026-09-01T00:00:00+03:00', vehicleId: VEHICLE },
+  REQUEST_25,
+  'cursor-1',
+] as const;
+const WORK_ORDER_ARGS = [
+  { companyId: COMPANY, branchId: null },
+  { stateGroup: 'active', assignedToMe: true, awaitingParts: false, q: '12-34' },
+  REQUEST_25,
+  null,
+] as const;
+const DASHBOARD_ARGS = [
+  { companyId: COMPANY, branchId: BRANCH },
+  { period: 'custom', from: '2026-09-01', to: '2026-09-10' },
+] as const;
+const DIRECTORY_ARGS = [
+  { ...INITIAL_REQUEST, pageSize: 10 },
+  'cursor-2',
+  { name: '  Layla  ', partyType: 'individual', q: 'x', phone: '0501 22' },
+] as const;
+const VEHICLE_ARGS = [
+  { ...EMPTY_CRITERIA, plate: ' ABC ', make: 'Toyota', vin: 'JT1234' },
+  REQUEST_25,
+  null,
+] as const;
+const CUSTOMER_VEHICLE_ARGS = [CUSTOMER, { ...INITIAL_REQUEST, pageSize: 10 }, 'cursor-3'] as const;
+
 const FAMILIES: readonly Family[] = [
   {
     name: 'reception board',
     route: '/reads/receptions',
+    method: 'POST',
     handler: () => import('@/app/reads/receptions/route'),
-    action: async () =>
-      (await import('@/features/receptions/api')).listReceptions(
-        { companyId: COMPANY, branchId: BRANCH },
-        { statusGroup: 'open', q: 'Kha', from: '2026-09-01T00:00:00+03:00', vehicleId: VEHICLE },
-        REQUEST_25,
-        'cursor-1'
+    core: async () =>
+      (await import('@/features/receptions/reception-list-read.server')).readReceptionList(
+        ...RECEPTION_ARGS
       ),
-    params: reception.receptionListParams(
-      { companyId: COMPANY, branchId: BRANCH },
-      { statusGroup: 'open', q: 'Kha', from: '2026-09-01T00:00:00+03:00', vehicleId: VEHICLE },
-      REQUEST_25,
-      'cursor-1'
-    ),
+    cancellable: (signal) => reception.listReceptionsCancellable(...RECEPTION_ARGS, signal),
+    params: reception.receptionListParams(...RECEPTION_ARGS),
+    typed: ['Kha'],
     data: PAGE_DATA,
   },
   {
     name: 'work-order board',
     route: '/reads/work-orders',
+    method: 'POST',
     handler: () => import('@/app/reads/work-orders/route'),
-    action: async () =>
-      (await import('@/features/work-orders/api')).listWorkOrders(
-        { companyId: COMPANY, branchId: null },
-        { stateGroup: 'active', assignedToMe: true, awaitingParts: false, q: '12-34' },
-        REQUEST_25,
-        null
+    core: async () =>
+      (await import('@/features/work-orders/work-order-list-read.server')).readWorkOrderList(
+        ...WORK_ORDER_ARGS
       ),
-    params: workOrder.workOrderListParams(
-      { companyId: COMPANY, branchId: null },
-      { stateGroup: 'active', assignedToMe: true, awaitingParts: false, q: '12-34' },
-      REQUEST_25,
-      null
-    ),
+    cancellable: (signal) => workOrder.listWorkOrdersCancellable(...WORK_ORDER_ARGS, signal),
+    params: workOrder.workOrderListParams(...WORK_ORDER_ARGS),
+    typed: ['12-34'],
     data: PAGE_DATA,
   },
   {
     name: 'overview figures',
     route: '/reads/dashboard-summary',
+    method: 'GET',
     handler: () => import('@/app/reads/dashboard-summary/route'),
-    action: async () =>
-      (await import('@/features/overview/api')).readDashboardSummary(
-        { companyId: COMPANY, branchId: BRANCH },
-        { period: 'custom', from: '2026-09-01', to: '2026-09-10' }
+    core: async () =>
+      (await import('@/features/overview/dashboard-summary-read.server')).readDashboardSummaryState(
+        ...DASHBOARD_ARGS
       ),
-    params: dashboard.dashboardSummaryParams(
-      { companyId: COMPANY, branchId: BRANCH },
-      { period: 'custom', from: '2026-09-01', to: '2026-09-10' }
-    ),
+    cancellable: (signal) => dashboard.readDashboardSummaryCancellable(...DASHBOARD_ARGS, signal),
+    params: dashboard.dashboardSummaryParams(...DASHBOARD_ARGS),
+    typed: [],
     data: { sections: [] },
   },
   {
     name: 'customer search',
     route: '/reads/customer-directory',
+    method: 'POST',
     handler: () => import('@/app/reads/customer-directory/route'),
-    action: async () =>
-      (await import('@/lib/customers/directory')).searchCustomerDirectory(
-        { ...INITIAL_REQUEST, pageSize: 10 },
-        'cursor-2',
-        { name: '  Layla  ', partyType: 'individual', q: 'x' }
+    core: async () =>
+      (await import('@/lib/customers/directory-read.server')).readCustomerDirectory(
+        ...DIRECTORY_ARGS
       ),
-    params: directory.customerDirectoryParams({ ...INITIAL_REQUEST, pageSize: 10 }, 'cursor-2', {
-      name: '  Layla  ',
-      partyType: 'individual',
-      q: 'x',
-    }),
+    cancellable: (signal) =>
+      directory.searchCustomerDirectoryCancellable(...DIRECTORY_ARGS, signal),
+    params: directory.customerDirectoryParams(...DIRECTORY_ARGS),
+    typed: ['Layla', '0501'],
     data: PAGE_DATA,
   },
   {
     name: 'vehicle search',
     route: '/reads/vehicles',
+    method: 'POST',
     handler: () => import('@/app/reads/vehicles/route'),
-    action: async () =>
-      (await import('@/features/vehicles/api')).searchVehicles(
-        { ...EMPTY_CRITERIA, plate: ' ABC ', make: 'Toyota' },
-        REQUEST_25,
-        null
+    core: async () =>
+      (await import('@/features/vehicles/vehicle-search-read.server')).readVehicleSearch(
+        ...VEHICLE_ARGS
       ),
-    params: vehicles.vehicleSearchParams(
-      { ...EMPTY_CRITERIA, plate: ' ABC ', make: 'Toyota' },
-      REQUEST_25,
-      null
-    ),
+    cancellable: (signal) => vehicles.searchVehiclesCancellable(...VEHICLE_ARGS, signal),
+    params: vehicles.vehicleSearchParams(...VEHICLE_ARGS),
+    typed: ['ABC', 'Toyota', 'JT1234'],
     data: PAGE_DATA,
   },
   {
     name: "a customer's vehicles",
     route: '/reads/customer-vehicles',
+    method: 'GET',
     handler: () => import('@/app/reads/customer-vehicles/route'),
-    action: async () =>
-      (await import('@/lib/customers/vehicles')).listCustomerVehicles(
-        CUSTOMER,
-        { ...INITIAL_REQUEST, pageSize: 10 },
-        'cursor-3'
+    core: async () =>
+      (await import('@/lib/customers/vehicles-read.server')).readCustomerVehicles(
+        ...CUSTOMER_VEHICLE_ARGS
       ),
-    params: customerVehicles.customerVehiclesParams(
-      CUSTOMER,
-      { ...INITIAL_REQUEST, pageSize: 10 },
-      'cursor-3'
-    ),
+    cancellable: (signal) =>
+      customerVehicles.listCustomerVehiclesCancellable(...CUSTOMER_VEHICLE_ARGS, signal),
+    params: customerVehicles.customerVehiclesParams(...CUSTOMER_VEHICLE_ARGS),
+    typed: [],
     data: PAGE_DATA,
   },
 ];
 
-/** A request as our own browser half sends it, with overrides. */
-function readRequest(
-  route: string,
-  params: Params,
-  headers: Record<string, string | null> = {},
-  signal?: AbortSignal
-): Request {
+const POST_FAMILIES = FAMILIES.filter((family) => family.method === 'POST');
+const GET_FAMILIES = FAMILIES.filter((family) => family.method === 'GET');
+const RECEPTIONS = FAMILIES[0] as Family;
+const OVERVIEW = FAMILIES[2] as Family;
+
+/** The handler a family's route exports for its own method. */
+async function handlerOf(family: Family): Promise<Handler> {
+  const handler = (await family.handler())[family.method];
+  if (!handler) throw new Error(`${family.route} exports no ${family.method}`);
+  return handler;
+}
+
+interface RequestShape {
+  readonly headers?: Record<string, string | null>;
+  readonly signal?: AbortSignal;
+  /** Replaces the JSON body a POST family would send. */
+  readonly body?: string;
+  /** Appended to the address as-is, e.g. `?q=Kha`. */
+  readonly search?: string;
+}
+
+/** A request as our own browser half sends it for this family, with overrides. */
+function readRequest(family: Family, params: Params, shape: RequestShape = {}): Request {
+  const post = family.method === 'POST';
   const merged: Record<string, string> = {};
   for (const [key, value] of Object.entries({
     host: HOST,
     [BROWSER_READ_HEADER]: '1',
     'sec-fetch-site': 'same-origin',
-    ...headers,
+    ...(post ? { 'content-type': 'application/json' } : {}),
+    ...shape.headers,
   })) {
     if (value !== null) merged[key] = value;
   }
-  return new Request(`http://${HOST}${browserReadUrl(route, params)}`, {
+  const address = post ? family.route : browserReadUrl(family.route, params);
+  return new Request(`http://${HOST}${address}${shape.search ?? ''}`, {
+    method: family.method,
     headers: merged,
-    ...(signal ? { signal } : {}),
+    ...(post ? { body: shape.body ?? JSON.stringify(presentParams(params)) } : {}),
+    ...(shape.signal ? { signal: shape.signal } : {}),
   });
 }
 
@@ -213,40 +271,40 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-describe('each route forwards exactly what its Server Action sends', () => {
+describe('each route forwards exactly what its server core sends', () => {
   it.each(FAMILIES)('$name: same API request, same envelope', async (family) => {
     get.mockResolvedValue({ ok: true, status: 200, data: family.data, correlationId: 'corr-1' });
 
-    const fromAction = await family.action();
+    const fromCore = await family.core();
     expect(get).toHaveBeenCalledTimes(1);
-    const [actionPath, actionOptions] = get.mock.calls[0] as [string, Record<string, unknown>?];
+    const [corePath, coreOptions] = get.mock.calls[0] as [string, Record<string, unknown>?];
 
     get.mockClear();
-    const { GET } = await family.handler();
-    const response = await GET(readRequest(family.route, family.params));
+    const handle = await handlerOf(family);
+    const response = await handle(readRequest(family, family.params));
     expect(response.status).toBe(200);
     expect(get).toHaveBeenCalledTimes(1);
     const [routePath, routeOptions] = get.mock.calls[0] as [string, Record<string, unknown>];
 
     // The same operation, the same parameters, in the same order.
-    expect(routePath).toBe(actionPath);
+    expect(routePath).toBe(corePath);
     // The same options, plus the signal and nothing else.
     const { signal, ...rest } = routeOptions;
     expect(signal).toBeInstanceOf(AbortSignal);
-    expect(rest).toEqual(actionOptions ?? {});
+    expect(rest).toEqual(coreOptions ?? {});
     // And the same answer, carried unchanged to the browser.
-    expect(await response.json()).toEqual(fromAction);
+    expect(await response.json()).toEqual(fromCore);
     expect(response.headers.get('x-correlation-id')).toBe('corr-1');
   });
 
-  it.each(FAMILIES)('$name: a missing session is the action’s own expired', async (family) => {
+  it.each(FAMILIES)('$name: a missing session is the core’s own expired', async (family) => {
     authorizedClient.mockResolvedValue(null);
-    const fromAction = await family.action();
-    const { GET } = await family.handler();
-    const response = await GET(readRequest(family.route, family.params));
+    const fromCore = await family.core();
+    const handle = await handlerOf(family);
+    const response = await handle(readRequest(family, family.params));
     expect(response.status).toBe(200);
-    expect(await response.json()).toEqual(fromAction);
-    expect(fromAction).toMatchObject({ status: 'expired' });
+    expect(await response.json()).toEqual(fromCore);
+    expect(fromCore).toMatchObject({ status: 'expired' });
     expect(get).not.toHaveBeenCalled();
   });
 
@@ -258,19 +316,19 @@ describe('each route forwards exactly what its Server Action sends', () => {
       problem: null,
       correlationId: 'corr-403',
     });
-    const fromAction = await family.action();
-    const { GET } = await family.handler();
-    const body = await (await GET(readRequest(family.route, family.params))).json();
-    expect(body).toEqual(fromAction);
+    const fromCore = await family.core();
+    const handle = await handlerOf(family);
+    const body = await (await handle(readRequest(family, family.params))).json();
+    expect(body).toEqual(fromCore);
     expect(body).toMatchObject({ status: 'denied', correlationId: 'corr-403' });
   });
 
   it('proves the equivalence is not vacuous — a different ask is a different request', async () => {
     get.mockResolvedValue({ ok: true, status: 200, data: PAGE_DATA, correlationId: 'c' });
-    const { GET } = await import('@/app/reads/receptions/route');
-    await GET(
+    const handle = await handlerOf(RECEPTIONS);
+    await handle(
       readRequest(
-        '/reads/receptions',
+        RECEPTIONS,
         reception.receptionListParams(
           { companyId: COMPANY, branchId: null },
           { status: 'opened' },
@@ -288,19 +346,30 @@ describe('each route forwards exactly what its Server Action sends', () => {
 });
 
 describe('the route refuses a request that is not our own browser read', () => {
-  const family = FAMILIES[0] as Family;
-
-  it.each([
-    ['no custom header', { [BROWSER_READ_HEADER]: null }],
-    ['a wrong header value', { [BROWSER_READ_HEADER]: 'yes' }],
-    ['a cross-site fetch', { 'sec-fetch-site': 'cross-site' }],
-    ['a sibling-subdomain fetch', { 'sec-fetch-site': 'same-site' }],
-    ['a top-level navigation', { 'sec-fetch-site': 'none' }],
-    ['a foreign Origin', { origin: 'https://elsewhere.test' }],
-    ['a malformed Origin', { origin: 'not a url' }],
-  ] as const)('refuses %s with 403 and reads no session', async (_label, headers) => {
-    const { GET } = await family.handler();
-    const response = await GET(readRequest(family.route, family.params, headers));
+  it.each(
+    [RECEPTIONS, OVERVIEW].flatMap((family) =>
+      (
+        [
+          ['no custom header', { [BROWSER_READ_HEADER]: null }],
+          ['a wrong header value', { [BROWSER_READ_HEADER]: 'yes' }],
+          ['a cross-site fetch', { 'sec-fetch-site': 'cross-site' }],
+          ['a sibling-subdomain fetch', { 'sec-fetch-site': 'same-site' }],
+          ['a top-level navigation', { 'sec-fetch-site': 'none' }],
+          ['a foreign Origin', { origin: 'https://elsewhere.test' }],
+          ['a malformed Origin', { origin: 'not a url' }],
+          [
+            'a foreign first forwarded host',
+            { origin: `http://${HOST}`, 'x-forwarded-host': 'elsewhere.test, web.test' },
+          ],
+        ] as const
+      ).map(
+        ([label, headers]) =>
+          [`${family.method} ${family.name}: ${label}`, family, headers] as const
+      )
+    )
+  )('refuses %s with 403 and reads no session', async (_label, family, headers) => {
+    const handle = await handlerOf(family);
+    const response = await handle(readRequest(family, family.params, { headers }));
     expect(response.status).toBe(403);
     expect(await response.json()).toEqual({ status: 'denied', correlationId: null });
     expect(authorizedClient).not.toHaveBeenCalled();
@@ -312,43 +381,156 @@ describe('the route refuses a request that is not our own browser read', () => {
 
   it('serves a same-origin fetch whose Origin names this host, and one with no fetch metadata', async () => {
     get.mockResolvedValue({ ok: true, status: 200, data: PAGE_DATA, correlationId: 'c' });
-    const { GET } = await family.handler();
-    const withOrigin = await GET(
-      readRequest(family.route, family.params, { origin: `http://${HOST}` })
+    const handle = await handlerOf(RECEPTIONS);
+    const withOrigin = await handle(
+      readRequest(RECEPTIONS, RECEPTIONS.params, { headers: { origin: `http://${HOST}` } })
     );
     expect(withOrigin.status).toBe(200);
     // A client that is not a browser sends no fetch metadata and cannot carry
     // someone else's cookie, so the header alone is its requirement.
-    const bare = await GET(readRequest(family.route, family.params, { 'sec-fetch-site': null }));
+    const bare = await handle(
+      readRequest(RECEPTIONS, RECEPTIONS.params, { headers: { 'sec-fetch-site': null } })
+    );
     expect(bare.status).toBe(200);
   });
+});
+
+describe('the host an Origin is compared with, behind a proxy chain', () => {
+  const at = (headers: Record<string, string | null>, origin: string) =>
+    refusalOf(readRequest(RECEPTIONS, RECEPTIONS.params, { headers: { ...headers, origin } }));
 
   it('checks the host the edge saw when a proxy forwards it', () => {
-    const forwarded = readRequest(family.route, family.params, {
-      host: 'internal:3100',
-      'x-forwarded-host': HOST,
-      origin: `https://${HOST}`,
-    });
-    expect(refusalOf(forwarded)).toBeNull();
-    const spoofedElsewhere = readRequest(family.route, family.params, {
-      host: 'internal:3100',
-      origin: `https://${HOST}`,
-    });
-    expect(refusalOf(spoofedElsewhere)).toBe('origin');
+    expect(at({ host: 'internal:3100', 'x-forwarded-host': HOST }, `https://${HOST}`)).toBeNull();
+    // Without the forwarded host, the internal address is not the origin's.
+    expect(at({ host: 'internal:3100' }, `https://${HOST}`)).toBe('origin');
   });
 
+  it('takes the FIRST value of a chain, trimmed and lowercased', () => {
+    const chain = {
+      host: 'internal:3100',
+      'x-forwarded-host': ' WEB.test , proxy-2:8080, internal',
+    };
+    expect(at(chain, `https://${HOST}`)).toBeNull();
+    expect(requestHost(readRequest(RECEPTIONS, RECEPTIONS.params, { headers: chain }))).toBe(
+      'web.test'
+    );
+    // A later hop naming this host does not rescue a foreign first value.
+    expect(
+      at({ host: HOST, 'x-forwarded-host': `elsewhere.test, ${HOST}` }, `https://${HOST}`)
+    ).toBe('origin');
+  });
+
+  it('compares host AND port, reading a default port the same both ways', () => {
+    expect(at({ 'x-forwarded-host': `${HOST}:443` }, `https://${HOST}`)).toBeNull();
+    expect(at({ 'x-forwarded-host': `${HOST}:80` }, `http://${HOST}`)).toBeNull();
+    expect(at({ 'x-forwarded-host': `${HOST}:8443` }, `https://${HOST}`)).toBe('origin');
+    expect(at({ 'x-forwarded-host': `${HOST}:443` }, `http://${HOST}`)).toBe('origin');
+    expect(at({ host: `${HOST}:3100` }, `http://${HOST}:3100`)).toBeNull();
+    expect(at({ host: `${HOST}:3100` }, `http://${HOST}:3101`)).toBe('origin');
+  });
+
+  it('refuses a forwarded value that is not a bare host', () => {
+    for (const forged of [', web.test', 'user@web.test', 'web.test/x', 'web.test?x', '']) {
+      expect(at({ host: HOST, 'x-forwarded-host': forged }, `https://${HOST}`), forged).toBe(
+        'origin'
+      );
+    }
+    expect(sameAuthority(new URL(`https://${HOST}`), null)).toBe(false);
+    expect(sameAuthority(new URL(`https://${HOST}`), `evil.test@${HOST}`)).toBe(false);
+    expect(sameAuthority(new URL(`https://${HOST}`), HOST)).toBe(true);
+  });
+});
+
+describe('a POST family accepts exactly one JSON body, and nothing in the address', () => {
+  it.each(POST_FAMILIES)('$name: serves the body it is sent', async (family) => {
+    get.mockResolvedValue({ ok: true, status: 200, data: family.data, correlationId: 'c' });
+    const handle = await handlerOf(family);
+    expect((await handle(readRequest(family, family.params))).status).toBe(200);
+  });
+
+  it.each(
+    POST_FAMILIES.flatMap((family) =>
+      (
+        [
+          [
+            'an unknown key',
+            { body: JSON.stringify({ ...presentParams(family.params), tenantId: '1' }) },
+            400,
+          ],
+          ['a query string beside the body', { search: '?q=Kha' }, 400],
+          ['a parameter moved into the address', { search: '?pageSize=25' }, 400],
+          ['a text/plain body', { headers: { 'content-type': 'text/plain' } }, 415],
+          [
+            'a form body',
+            { headers: { 'content-type': 'application/x-www-form-urlencoded' } },
+            415,
+          ],
+          ['no content type', { headers: { 'content-type': null } }, 415],
+          ['a body that is not JSON', { body: 'q=Kha' }, 400],
+          ['a JSON array', { body: '[]' }, 400],
+          ['JSON null', { body: 'null' }, 400],
+          [
+            'a number where text belongs',
+            { body: JSON.stringify({ ...presentParams(family.params), pageSize: 25 }) },
+            400,
+          ],
+          [
+            'an over-long term',
+            { body: JSON.stringify({ ...presentParams(family.params), q: 'x'.repeat(257) }) },
+            400,
+          ],
+          [
+            'a body over the limit',
+            { body: JSON.stringify({ q: 'x'.repeat(READ_BODY_LIMIT_BYTES) }) },
+            413,
+          ],
+        ] as const
+      ).map(
+        ([label, shape, status]) => [`${family.name}: ${label}`, family, shape, status] as const
+      )
+    )
+  )('refuses %s, before any session is read', async (_label, family, shape, status) => {
+    const handle = await handlerOf(family);
+    const response = await handle(readRequest(family, family.params, shape));
+    expect(response.status).toBe(status);
+    expect(await response.json()).toEqual({ status: 'error', correlationId: null });
+    for (const [name, value] of Object.entries(READ_RESPONSE_HEADERS)) {
+      expect(response.headers.get(name), name).toBe(value);
+    }
+    expect(authorizedClient).not.toHaveBeenCalled();
+    expect(get).not.toHaveBeenCalled();
+  });
+
+  it('accepts JSON with a charset, and nothing that merely resembles JSON', () => {
+    expect(isJsonContentType('application/json')).toBe(true);
+    expect(isJsonContentType('Application/JSON; charset=utf-8')).toBe(true);
+    expect(isJsonContentType('application/json-patch+json')).toBe(false);
+    expect(isJsonContentType('text/json')).toBe(false);
+    expect(isJsonContentType(null)).toBe(false);
+  });
+
+  it('refuses a body read through the wrong method with 405', async () => {
+    const response = await serveBrowserRead(readRequest(OVERVIEW, OVERVIEW.params), {
+      input: 'body',
+      schema: reception.receptionListQuery,
+      run: async () => pageFailure('error', null),
+      failure: pageFailure,
+    });
+    expect(response.status).toBe(405);
+    expect(authorizedClient).not.toHaveBeenCalled();
+  });
+});
+
+describe('a GET family validates its query', () => {
   it.each([
-    ['an unknown parameter', { ...family.params, tenantId: '1' }],
-    ['a page size no table offers', { ...family.params, pageSize: '1000' }],
-    ['a non-numeric page size', { ...family.params, pageSize: 'ten' }],
-    ['a missing page size', { ...family.params, pageSize: undefined }],
-    ['a malformed company', { ...family.params, companyId: 'c1' }],
-    ['a missing company', { ...family.params, companyId: undefined }],
-    ['a status the board does not know', { ...family.params, status: 'teleported' }],
-    ['an over-long term', { ...family.params, q: 'x'.repeat(257) }],
+    ['an unknown parameter', { ...OVERVIEW.params, tenantId: '1' }],
+    ['a malformed company', { ...OVERVIEW.params, companyId: 'c1' }],
+    ['a missing company', { ...OVERVIEW.params, companyId: undefined }],
+    ['a period the overview does not know', { ...OVERVIEW.params, period: 'forever' }],
+    ['an over-long bound', { ...OVERVIEW.params, from: 'x'.repeat(257) }],
   ] as const)('refuses %s with 400 and reads no session', async (_label, params) => {
-    const { GET } = await family.handler();
-    const response = await GET(readRequest(family.route, params));
+    const handle = await handlerOf(OVERVIEW);
+    const response = await handle(readRequest(OVERVIEW, params));
     expect(response.status).toBe(400);
     expect(await response.json()).toEqual({ status: 'error', correlationId: null });
     expect(response.headers.get('cache-control')).toBe('private, no-store');
@@ -356,9 +538,9 @@ describe('the route refuses a request that is not our own browser read', () => {
   });
 
   it('refuses a repeated parameter rather than choosing one of its values', async () => {
-    const { GET } = await family.handler();
-    const url = `http://${HOST}${browserReadUrl(family.route, family.params)}&companyId=${COMPANY}`;
-    const response = await GET(
+    const handle = await handlerOf(OVERVIEW);
+    const url = `http://${HOST}${browserReadUrl(OVERVIEW.route, OVERVIEW.params)}&companyId=${COMPANY}`;
+    const response = await handle(
       new Request(url, {
         headers: { host: HOST, [BROWSER_READ_HEADER]: '1', 'sec-fetch-site': 'same-origin' },
       })
@@ -367,16 +549,107 @@ describe('the route refuses a request that is not our own browser read', () => {
     expect(queryObject(new URL(url))).toBeNull();
     expect(queryObject(new URL(`http://${HOST}/reads/x?a=1&b=2`))).toEqual({ a: '1', b: '2' });
   });
+});
 
-  it.each(FAMILIES)('$name: every answer is private, uncached and keyed by cookie', async (f) => {
-    get.mockResolvedValue({ ok: true, status: 200, data: f.data, correlationId: 'c' });
-    const { GET } = await f.handler();
-    const response = await GET(readRequest(f.route, f.params));
+describe('the board and search fields a POST body validates', () => {
+  it.each([
+    ['a page size no table offers', { pageSize: '1000' }],
+    ['a non-numeric page size', { pageSize: 'ten' }],
+    ['a missing page size', { pageSize: undefined }],
+    ['a malformed company', { companyId: 'c1' }],
+    ['a missing company', { companyId: undefined }],
+    ['a status the board does not know', { status: 'teleported' }],
+  ] as const)('refuses %s with 400 and reads no session', async (_label, change) => {
+    const handle = await handlerOf(RECEPTIONS);
+    const response = await handle(readRequest(RECEPTIONS, { ...RECEPTIONS.params, ...change }));
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({ status: 'error', correlationId: null });
+    expect(authorizedClient).not.toHaveBeenCalled();
+  });
+});
+
+describe('every answer is private, uncached and keyed by cookie', () => {
+  it.each(FAMILIES)('$name: a served answer', async (family) => {
+    get.mockResolvedValue({ ok: true, status: 200, data: family.data, correlationId: 'c' });
+    const handle = await handlerOf(family);
+    const response = await handle(readRequest(family, family.params));
     expect(response.headers.get('cache-control')).toBe('private, no-store');
     expect(response.headers.get('vary')).toBe('Cookie');
     expect(response.headers.get('x-content-type-options')).toBe('nosniff');
     expect(response.headers.get('access-control-allow-origin')).toBeNull();
   });
+
+  it.each(FAMILIES)(
+    '$name: a core that THROWS answers its own unavailable envelope, with the same headers',
+    async (family) => {
+      get.mockRejectedValue(new Error('socket hang up at 10.0.0.7'));
+      const handle = await handlerOf(family);
+      const response = await handle(readRequest(family, family.params));
+      expect(response.status).toBe(503);
+      const body = (await response.json()) as Record<string, unknown>;
+      // The family's own shape, so the browser half accepts it as a failure
+      // rather than as a malformed answer, and the screen offers Retry.
+      const expected =
+        family === OVERVIEW ? readFailure('unavailable', null) : pageFailure('unavailable', null);
+      expect(body).toEqual(expected);
+      // Nothing of the fault itself reaches the browser.
+      expect(JSON.stringify(body)).not.toContain('10.0.0.7');
+      for (const [name, value] of Object.entries(READ_RESPONSE_HEADERS)) {
+        expect(response.headers.get(name), name).toBe(value);
+      }
+    }
+  );
+});
+
+describe('the browser half keeps search text out of every address', () => {
+  function recordingFetch() {
+    const calls: { url: string; init: RequestInit }[] = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string, init: RequestInit) => {
+        calls.push({ url, init });
+        return Response.json({
+          status: 'ok',
+          rows: [],
+          nextCursor: null,
+          hasMore: false,
+          correlationId: 'c',
+        });
+      })
+    );
+    return calls;
+  }
+
+  it.each(POST_FAMILIES)('$name: POSTs a JSON body to the bare route', async (family) => {
+    const calls = recordingFetch();
+    await family.cancellable(new AbortController().signal);
+    expect(calls).toHaveLength(1);
+    const [{ url, init }] = calls as [{ url: string; init: RequestInit }];
+    expect(init.method).toBe('POST');
+    // The address is the route and nothing else: no query string at all.
+    expect(url).toBe(family.route);
+    expect(url).not.toContain('?');
+    for (const term of family.typed) expect(url).not.toContain(term);
+    expect((init.headers as Record<string, string>)['content-type']).toBe('application/json');
+    // Every parameter the route needs is in the body, exactly as it parses it.
+    const sent = JSON.parse(String(init.body)) as Record<string, string>;
+    expect(sent).toEqual(presentParams(family.params));
+    expect(family.typed.length).toBeGreaterThan(0);
+    for (const term of family.typed) expect(String(init.body)).toContain(term);
+  });
+
+  it.each(GET_FAMILIES)(
+    '$name: GETs its identifiers in the query, with no body',
+    async (family) => {
+      const calls = recordingFetch();
+      await family.cancellable(new AbortController().signal);
+      const [{ url, init }] = calls as [{ url: string; init: RequestInit }];
+      expect(init.method).toBe('GET');
+      expect(url).toBe(browserReadUrl(family.route, family.params));
+      expect(url).toContain('?');
+      expect(init.body).toBeUndefined();
+    }
+  );
 });
 
 describe('the route hands its request signal to the API call', () => {
@@ -398,9 +671,9 @@ describe('the route hands its request signal to the API call', () => {
         })
     );
     const controller = new AbortController();
-    const request = readRequest(family.route, family.params, {}, controller.signal);
-    const { GET } = await family.handler();
-    const answered = GET(request);
+    const request = readRequest(family, family.params, { signal: controller.signal });
+    const handle = await handlerOf(family);
+    const answered = handle(request);
     await vi.waitFor(() => expect(get).toHaveBeenCalledTimes(1));
 
     expect(seen).toBe(request.signal);
@@ -416,6 +689,7 @@ describe('browserRead: cancelled is not unavailable', () => {
   const read = (signal?: AbortSignal, timeoutMs?: number) =>
     browserRead({
       route: '/reads/receptions',
+      method: 'GET',
       params: { companyId: COMPANY, pageSize: '25', empty: '', gone: null },
       signal,
       accept: acceptServerPage,
@@ -443,6 +717,36 @@ describe('browserRead: cancelled is not unavailable', () => {
     expect(init.cache).toBe('no-store');
     expect(init.redirect).toBe('error');
     expect(init.signal).toBeInstanceOf(AbortSignal);
+    expect(init.body).toBeUndefined();
+  });
+
+  it('sends a POST to the bare route with the present parameters as a JSON body', async () => {
+    const fetchStub = vi.fn(async () =>
+      Response.json({
+        status: 'ok',
+        rows: [],
+        nextCursor: null,
+        hasMore: false,
+        correlationId: 'c',
+      })
+    );
+    vi.stubGlobal('fetch', fetchStub);
+    await browserRead({
+      route: '/reads/receptions',
+      method: 'POST',
+      params: { companyId: COMPANY, q: 'Kha', empty: '', gone: null },
+      accept: acceptServerPage,
+      failure: pageFailure,
+    });
+    const [url, init] = fetchStub.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe('/reads/receptions');
+    expect(init.method).toBe('POST');
+    expect(JSON.parse(String(init.body))).toEqual({ companyId: COMPANY, q: 'Kha' });
+    const headers = init.headers as Record<string, string>;
+    expect(headers['content-type']).toBe('application/json');
+    expect(headers[BROWSER_READ_HEADER]).toBe('1');
+    expect(init.credentials).toBe('same-origin');
+    expect(init.cache).toBe('no-store');
   });
 
   it('refuses to address anything outside the read routes', () => {
@@ -597,7 +901,7 @@ describe('browserRead: cancelled is not unavailable', () => {
 
 describe('end to end in one process: the browser abort reaches the API call', () => {
   it('cancels the route, and the API request behind it, when the caller aborts', async () => {
-    const { GET } = await import('@/app/reads/receptions/route');
+    const { POST } = await import('@/app/reads/receptions/route');
     let apiSignal: AbortSignal | undefined;
     get.mockImplementation(
       (_path: string, options: { signal?: AbortSignal } = {}) =>
@@ -615,12 +919,15 @@ describe('end to end in one process: the browser abort reaches the API call', ()
         })
     );
     // The browser's fetch, served by the route in-process: the fetch signal
-    // becomes the request signal, as Next's disconnect wiring makes it.
+    // becomes the request signal, as Next's disconnect wiring makes it, and the
+    // method, headers and body are the ones the browser half built.
     vi.stubGlobal('fetch', (url: string, init: RequestInit) => {
       const headers = { ...(init.headers as Record<string, string>), host: HOST };
-      return GET(
+      return POST(
         new Request(`http://${HOST}${url}`, {
-          headers: { ...headers, 'sec-fetch-site': 'same-origin' },
+          method: init.method ?? 'GET',
+          headers: { ...headers, 'sec-fetch-site': 'same-origin', origin: `http://${HOST}` },
+          ...(typeof init.body === 'string' ? { body: init.body } : {}),
           ...(init.signal ? { signal: init.signal } : {}),
         })
       );
@@ -636,6 +943,8 @@ describe('end to end in one process: the browser abort reaches the API call', ()
     );
     await vi.waitFor(() => expect(apiSignal).toBeDefined());
     expect(apiSignal?.aborted).toBe(false);
+    // The term reached the API request through the body, never an address.
+    expect(String(get.mock.calls[0]?.[0])).toContain('q=Kha');
 
     controller.abort();
     expect(apiSignal?.aborted).toBe(true);
@@ -721,13 +1030,19 @@ describe('each family’s query survives the trip exactly', () => {
   });
 });
 
-/** The query a URL would carry: empty and absent values dropped. */
+/** What a route receives: empty and absent values dropped, through JSON as a POST sends it. */
 function clean(params: Params): Record<string, string> {
-  return queryObject(new URL(`http://${HOST}${browserReadUrl('/reads/x', params)}`)) ?? {};
+  const viaBody = JSON.parse(JSON.stringify(presentParams(params))) as Record<string, string>;
+  const viaQuery =
+    queryObject(new URL(`http://${HOST}${browserReadUrl('/reads/x', params)}`)) ?? {};
+  // The two transports deliver the same parameters, so either family's schema
+  // meets exactly what its browser half sent.
+  expect(viaBody).toEqual(viaQuery);
+  return viaBody;
 }
 
 /* ------------------------------------------------------------------ *
- * Structure: six routes, server-only cores, one new fetch
+ * Structure: six routes, server-only cores, one new fetch, no actions
  * ------------------------------------------------------------------ */
 
 const WEB_SRC = join(__dirname, '..', 'src');
@@ -771,7 +1086,7 @@ function localImportsOf(file: string, source: string): string[] {
 }
 
 describe('the read structure', () => {
-  it('serves exactly the six phase-one routes, each a GET and nothing else', () => {
+  it('serves exactly the six phase-one routes, each on its one method and nothing else', () => {
     const routes = readdirSync(READS_DIR).sort();
     expect(routes).toEqual([
       'customer-directory',
@@ -781,12 +1096,25 @@ describe('the read structure', () => {
       'vehicles',
       'work-orders',
     ]);
+    // Search text rides in a body: the four families that carry any are POST.
+    const METHOD: Record<string, Method> = {
+      'customer-directory': 'POST',
+      'customer-vehicles': 'GET',
+      'dashboard-summary': 'GET',
+      receptions: 'POST',
+      vehicles: 'POST',
+      'work-orders': 'POST',
+    };
     for (const route of routes) {
       const source = code(readFileSync(join(READS_DIR, route, 'route.ts'), 'utf8'));
       const exported = [...source.matchAll(/export\s+(?:async\s+)?(?:function|const)\s+(\w+)/g)]
         .map((match) => match[1])
         .sort();
-      expect(exported, route).toEqual(['GET']);
+      expect(exported, route).toEqual([METHOD[route]]);
+      expect(source, route).toContain(`input: '${METHOD[route] === 'POST' ? 'body' : 'query'}'`);
+      expect(FAMILIES.find((family) => family.route === `/reads/${route}`)?.method, route).toBe(
+        METHOD[route]
+      );
       // One door for every refusal and header, and one core per route.
       expect(source, route).toContain('serveBrowserRead(');
       expect(source.match(/from '@\/[^']+\.server'/g) ?? [], route).toHaveLength(1);
@@ -864,16 +1192,37 @@ describe('the read structure', () => {
     }
   });
 
-  it('switched every phase-one browser caller off the Server Action', () => {
-    const ACTIONS =
-      /\b(listReceptions|listWorkOrders|readDashboardSummary|searchCustomerDirectory|searchCustomers|searchVehicles|listCustomerVehicles)\s*\(/;
+  it('retired six of the seven Server Actions, and nothing calls the seventh', () => {
+    const CALLS =
+      /\b(listReceptions|listWorkOrders|readDashboardSummary|searchCustomerDirectory|searchVehicles|listCustomerVehicles)\s*\(/;
     const files = globSync(['**/*.ts', '**/*.tsx'], { cwd: WEB_SRC, absolute: true });
-    // Every module but the Server Action modules themselves — a plain module a
-    // client component imports ships to the browser just the same.
-    const callers = files
-      .filter((file) => directiveOf(readFileSync(file, 'utf8')) !== 'use server')
-      .filter((file) => ACTIONS.test(code(readFileSync(file, 'utf8'))))
+    // Every module, the Server Action modules included: a declaration is a call
+    // site's shape too, so an action that came back would be found either way.
+    const offenders = files
+      .filter((file) => CALLS.test(code(readFileSync(file, 'utf8'))))
       .map((file) => relative(WEB_SRC, file));
-    expect(callers).toEqual([]);
+    expect(offenders).toEqual([]);
+    // The three modules that held nothing else are gone.
+    for (const gone of [
+      join(WEB_SRC, 'features', 'overview', 'api.ts'),
+      join(WEB_SRC, 'lib', 'customers', 'directory.ts'),
+      join(WEB_SRC, 'lib', 'customers', 'vehicles.ts'),
+    ]) {
+      expect(existsSync(gone), relative(WEB_SRC, gone)).toBe(false);
+    }
+    // `searchCustomers` stays declared in exactly one module — kept only for the
+    // coverage baseline's file count, see its docblock — and is called nowhere.
+    const declaring = files
+      .filter((file) => /\bsearchCustomers\s*\(/.test(code(readFileSync(file, 'utf8'))))
+      .map((file) => relative(WEB_SRC, file).split(sep).join('/'));
+    expect(declaring).toEqual(['features/crm/customers/api.ts']);
+    const declaration = code(
+      readFileSync(join(WEB_SRC, 'features', 'crm', 'customers', 'api.ts'), 'utf8')
+    );
+    expect(declaration.match(/\bsearchCustomers\s*\(/g)).toHaveLength(1);
+    expect(declaration).toContain('export async function searchCustomers(');
+    // The detector finds what it is for.
+    expect(CALLS.test('export async function listReceptions(scope)')).toBe(true);
+    expect(CALLS.test('listReceptionsCancellable(scope)')).toBe(false);
   });
 });
