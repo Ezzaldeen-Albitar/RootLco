@@ -1,8 +1,18 @@
-import { screen, waitFor } from '@testing-library/react';
+import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { useState, type ReactElement } from 'react';
 import TextField from '@mui/material/TextField';
+import dayjs from 'dayjs';
+import { AdapterDayjs } from '@mui/x-date-pickers/AdapterDayjs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import {
+  DateField,
+  DateTimeField,
+  dayToPicker,
+  instantToPicker,
+  pickerToDay,
+  pickerToInstant,
+} from '@/components/forms/mui/DateField';
 import { FormMoneyField } from '@/components/forms/mui/FormMoneyField';
 import { FormNumberField } from '@/components/forms/mui/FormNumberField';
 import { FormSelectField } from '@/components/forms/mui/FormSelectField';
@@ -15,7 +25,8 @@ import { getMessages } from '@/i18n/get-messages';
 import type { ActionState } from '@/lib/forms/action-result';
 import { useClearOnCorrect } from '@/lib/forms/use-clear-on-correct';
 import { useFocusFirstInvalid } from '@/lib/forms/use-focus-first-invalid';
-import { renderLtr, renderRtl } from './render';
+import { validateInstant } from '@/components/forms/instant';
+import { TEST_BRANCH, branchSnapshot, inBranch, renderLtr, renderRtl } from './render';
 
 /**
  * The Material UI form fields (ADR-022 PR1) keep `FieldFrame`'s contract:
@@ -374,5 +385,278 @@ describe('right to left', () => {
     const input = screen.getByRole('textbox', { name: 'المسافة' });
     expect(input).toHaveAttribute('dir', 'ltr');
     expect(document.querySelector('.MuiInputAdornment-positionEnd')).toHaveTextContent('كم');
+  });
+});
+
+/*
+ * Dates and moments on the MIT pickers (`DateField`, `DateTimeField`).
+ *
+ * The value a screen holds is a calendar day or an instant WITH its offset —
+ * never the picker's own object — and every day is a day on the BRANCH's
+ * clock. Asia/Amman keeps one offset all year; America/New_York changes on
+ * 2026-03-08, so a moment either side of that carries a different offset.
+ */
+function pickerInput(group: HTMLElement): HTMLInputElement {
+  const input = group.parentElement?.querySelector('input');
+  if (!input) throw new Error('the picker has no value input');
+  return input;
+}
+
+function DayHost({
+  initial = '',
+  zone,
+  onDay,
+  error,
+  description,
+  required,
+  min,
+  onProblem,
+}: {
+  readonly initial?: string;
+  readonly zone?: string;
+  readonly onDay?: (day: string) => void;
+  readonly error?: string;
+  readonly description?: string;
+  readonly required?: boolean;
+  readonly min?: string;
+  readonly onProblem?: (problem: unknown) => void;
+}) {
+  const [value, setValue] = useState(initial);
+  return (
+    <DateField
+      label="Visit day"
+      value={value}
+      onChange={(next) => {
+        onDay?.(next);
+        setValue(next);
+      }}
+      timezone={zone}
+      error={error}
+      description={description}
+      required={required}
+      min={min}
+      onProblem={onProblem}
+    />
+  );
+}
+
+function MomentHost({
+  initial = '',
+  zone,
+  onMoment,
+}: {
+  readonly initial?: string;
+  readonly zone?: string;
+  readonly onMoment?: (moment: string) => void;
+}) {
+  const [value, setValue] = useState(initial);
+  return (
+    <DateTimeField
+      label="Visit time"
+      value={value}
+      onChange={(next) => {
+        onMoment?.(next);
+        setValue(next);
+      }}
+      timezone={zone}
+    />
+  );
+}
+
+describe('DateField and DateTimeField: the FieldFrame contract on a picker', () => {
+  it('is a group named by its label; aria-invalid only when wrong; no native required', () => {
+    mount(<DayHost required description="The day the vehicle arrives." />);
+    const group = screen.getByRole('group', { name: /^Visit day/ });
+    expect(group).not.toHaveAttribute('aria-invalid');
+    expect(group).toHaveAttribute('aria-required', 'true');
+    expect(pickerInput(group)).not.toHaveAttribute('required');
+    // A part per piece of the date, each its own spin button.
+    expect(within(group).getAllByRole('spinbutton')).toHaveLength(3);
+  });
+
+  it('marks the group invalid, lists the description then the error, and announces the error', () => {
+    mount(<DayHost description="The day the vehicle arrives." error="Choose a day." />);
+    const group = screen.getByRole('group', { name: /^Visit day/ });
+    expect(group).toHaveAttribute('aria-invalid', 'true');
+    const error = screen.getByRole('alert');
+    expect(error).toHaveTextContent('Choose a day.');
+    const described = (group.getAttribute('aria-describedby') ?? '').split(' ');
+    const description = screen.getByText('The day the vehicle arrives.');
+    expect(described).toEqual([description.id, error.id]);
+    expect(group).toHaveAttribute('aria-errormessage', error.id);
+  });
+
+  it('takes a day typed part by part and reports it as YYYY-MM-DD', async () => {
+    const user = userEvent.setup();
+    const onDay = vi.fn();
+    mount(<DayHost zone="Asia/Amman" onDay={onDay} />);
+    const group = screen.getByRole('group', { name: /^Visit day/ });
+    await user.click(within(group).getAllByRole('spinbutton')[0] as HTMLElement);
+    await user.keyboard('22092026');
+    expect(onDay).toHaveBeenLastCalledWith('2026-09-22');
+    expect(pickerInput(group)).toHaveValue('22/09/2026');
+  });
+
+  it('reports the same typed day on a zone far from the laptop, not the day before', async () => {
+    // The falsification of the held value: rebuilt from the string after each
+    // keystroke, the year passed through 0202 on a historical offset and the
+    // finished entry came back a day early.
+    const user = userEvent.setup();
+    const onDay = vi.fn();
+    mount(<DayHost zone="America/New_York" onDay={onDay} />);
+    const group = screen.getByRole('group', { name: /^Visit day/ });
+    await user.click(within(group).getAllByRole('spinbutton')[0] as HTMLElement);
+    await user.keyboard('08032026');
+    expect(onDay).toHaveBeenLastCalledWith('2026-03-08');
+  });
+
+  it("marks TODAY on the branch's clock, not the laptop's", async () => {
+    // 22:30 UTC: already the 22nd in Amman, still the 21st in New York.
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-09-21T22:30:00Z'));
+    try {
+      const user = userEvent.setup();
+      for (const [zone, today] of [
+        ['America/New_York', '21'],
+        ['Asia/Amman', '22'],
+      ] as const) {
+        const { unmount } = mount(<DayHost zone={zone} />);
+        await user.click(screen.getByRole('button', { name: en['mui.pickers.chooseDate'] }));
+        const marked = await screen.findByRole('gridcell', { current: 'date' });
+        expect(marked, zone).toHaveTextContent(today);
+        unmount();
+      }
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('says when a day is before the earliest it may be', () => {
+    const onProblem = vi.fn();
+    mount(<DayHost initial="2026-09-01" min="2026-09-10" onProblem={onProblem} />);
+    expect(onProblem).toHaveBeenCalledWith('minDate');
+  });
+
+  it('shows and types a moment on the BRANCH clock and emits it with that offset', async () => {
+    const user = userEvent.setup();
+    const onMoment = vi.fn();
+    mount(<MomentHost initial="2026-09-22T06:30:00Z" zone="Asia/Amman" onMoment={onMoment} />);
+    const group = screen.getByRole('group', { name: /^Visit time/ });
+    // 06:30 UTC is 09:30 on the branch's clock.
+    expect(pickerInput(group)).toHaveValue('22/09/2026 09:30');
+    const parts = within(group).getAllByRole('spinbutton');
+    await user.click(parts[3] as HTMLElement);
+    await user.keyboard('1015');
+    expect(onMoment).toHaveBeenLastCalledWith('2026-09-22T10:15:00+03:00');
+  });
+
+  it('draws the same instant differently on another branch clock', () => {
+    mount(<MomentHost initial="2026-09-22T06:30:00Z" zone="America/New_York" />);
+    const group = screen.getByRole('group', { name: /^Visit time/ });
+    expect(pickerInput(group)).toHaveValue('22/09/2026 02:30');
+  });
+
+  it("follows the working branch's zone when the caller names none", () => {
+    const newYork = { ...TEST_BRANCH, timezone: 'America/New_York' };
+    mount(
+      inBranch(<MomentHost initial="2026-01-15T12:00:00Z" />, {
+        snapshot: branchSnapshot([newYork]),
+      })
+    );
+    const group = screen.getByRole('group', { name: /^Visit time/ });
+    expect(pickerInput(group)).toHaveValue('15/01/2026 07:00');
+  });
+
+  it('is in Arabic, with Latin digits and the catalogue placeholders', () => {
+    const arabic = getMessages('ar');
+    mount(
+      <>
+        <DayHost initial="2026-09-22" zone="Asia/Amman" />
+        <DayHost zone="Asia/Amman" />
+      </>,
+      'ar'
+    );
+    const [filled, empty] = screen.getAllByRole('group');
+    const shown = pickerInput(filled as HTMLElement).value;
+    expect(shown).toContain('22/09/2026');
+    // No Arabic-Indic digit anywhere: the repository's `ar-jo-latn` locale,
+    // not dayjs's own `ar`, which rewrites every digit.
+    expect(shown).not.toMatch(/[٠-٩۰-۹]/);
+    const month = within(filled as HTMLElement).getAllByRole('spinbutton')[1] as HTMLElement;
+    expect(month.getAttribute('aria-valuetext')).toBe(
+      new Intl.DateTimeFormat('ar-JO-u-nu-latn', { month: 'long', timeZone: 'UTC' }).format(
+        new Date(Date.UTC(2026, 8, 15))
+      )
+    );
+    expect(
+      within(empty as HTMLElement)
+        .getAllByRole('spinbutton')
+        .map((part) => part.textContent)
+    ).toEqual([
+      arabic['mui.pickers.placeholderDay'],
+      arabic['mui.pickers.placeholderMonth'],
+      arabic['mui.pickers.placeholderYear'],
+    ]);
+  });
+});
+
+describe('the conversions between a picker value and what a screen holds', () => {
+  it('reads a calendar day on the zone it is given', () => {
+    // 22:30 UTC on the 21st is already the 22nd in Amman and still the 21st in New York.
+    const instant = dayjs('2026-09-21T22:30:00Z');
+    expect(pickerToDay(instant, 'Asia/Amman')).toBe('2026-09-22');
+    expect(pickerToDay(instant, 'America/New_York')).toBe('2026-09-21');
+  });
+
+  it('places a calendar day at that zone’s midnight', () => {
+    expect(dayToPicker('2026-09-22', 'Asia/Amman')?.toISOString()).toBe('2026-09-21T21:00:00.000Z');
+    expect(dayToPicker('2026-09-22', 'America/New_York')?.toISOString()).toBe(
+      '2026-09-22T04:00:00.000Z'
+    );
+    expect(dayToPicker('22/09/2026', 'Asia/Amman')).toBeNull();
+    expect(pickerToDay(null, 'Asia/Amman')).toBe('');
+  });
+
+  it('emits each moment with the offset in force AT that moment (daylight saving)', () => {
+    const before = dayjs.tz('2026-03-07 12:00', 'America/New_York');
+    const after = dayjs.tz('2026-03-09 12:00', 'America/New_York');
+    expect(pickerToInstant(before, 'America/New_York')).toBe('2026-03-07T12:00:00-05:00');
+    expect(pickerToInstant(after, 'America/New_York')).toBe('2026-03-09T12:00:00-04:00');
+    // No transitions: the same offset in winter and in summer.
+    expect(pickerToInstant(dayjs.tz('2026-01-15 12:00', 'Asia/Amman'), 'Asia/Amman')).toBe(
+      '2026-01-15T12:00:00+03:00'
+    );
+    expect(pickerToInstant(dayjs.tz('2026-07-15 12:00', 'Asia/Amman'), 'Asia/Amman')).toBe(
+      '2026-07-15T12:00:00+03:00'
+    );
+  });
+
+  it('reads what the operator typed, even when the picker object carries a stale offset', () => {
+    // Built the way the picker builds it while a year is typed digit by digit:
+    // a year-202 midnight, then the year set to 2026. The object keeps an offset
+    // that is wrong for 8 March 2026 in New York (daylight saving starts at
+    // 02:00), so converting its instant would land on the 7th.
+    const adapter = new AdapterDayjs();
+    const typed = adapter.setYear(adapter.date('0202-03-08T00:00:00', 'America/New_York'), 2026);
+    expect(typed.format('YYYY-MM-DD')).toBe('2026-03-08');
+    expect(pickerToDay(typed, 'America/New_York')).toBe('2026-03-08');
+  });
+
+  it('types a moment on the day the clocks change and emits the offset of that moment', async () => {
+    const user = userEvent.setup();
+    const onMoment = vi.fn();
+    mount(<MomentHost zone="America/New_York" onMoment={onMoment} />);
+    const group = screen.getByRole('group', { name: /^Visit time/ });
+    await user.click(within(group).getAllByRole('spinbutton')[0] as HTMLElement);
+    await user.keyboard('080320260030');
+    // 00:30 is before the 02:00 change: still standard time.
+    expect(onMoment).toHaveBeenLastCalledWith('2026-03-08T00:30:00-05:00');
+  });
+
+  it('emits an instant the offset rule accepts, and nothing for an unfinished one', () => {
+    const emitted = pickerToInstant(dayjs.tz('2026-09-22 09:30', 'Asia/Amman'), 'Asia/Amman');
+    expect(validateInstant(emitted)).toBe('ok');
+    expect(pickerToInstant(dayjs('not a date'), 'Asia/Amman')).toBe('');
+    expect(instantToPicker('', 'Asia/Amman')).toBeNull();
   });
 });
