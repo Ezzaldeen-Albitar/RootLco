@@ -510,31 +510,54 @@ and aborts its signal, and the screen drops the answer when it arrives, so a pre
 rows are never shown under the new branch's name. The request itself runs on, and the next read
 waits behind it. It is late, never wrong.
 
-Phase one (P1-32-PRE-OD-READ) moved seven reads to GET route handlers under `/reads/*`, whose
-request signal Next aborts when the browser disconnects: the reception board (`listReceptions`),
-the work-order board (`listWorkOrders`), the overview figures and the work-order board's figure
-strip (`readDashboardSummary`), the customer search and the customer pickers
-(`searchCustomerDirectory`, `searchCustomers`), the vehicle search (`searchVehicles`) and a
-customer's vehicles (`listCustomerVehicles`). On those screens a branch switch, a new term, a new
-period or a new customer now CANCELS the superseded request — the browser closes it and the route
-aborts the API call behind it — and the new read starts at once instead of queueing. The ignoring
-guards stay as well. The session, the authorization, the tenant and branch scope and the rate
-limit are unchanged: the route reads the same `httpOnly` cookie through the same server helper,
-refuses a request without its `x-rootlco-read` header or from another site, forwards only the
-validated parameters, and answers `private, no-store`.
+Phase one (P1-32-PRE-OD-READ) moved seven reads to route handlers under `/reads/*`, whose
+request signal Next aborts when the browser disconnects, and took every caller off the seven
+Server Actions behind them: the reception board (`listReceptions`), the work-order board
+(`listWorkOrders`), the overview figures and the work-order board's figure strip
+(`readDashboardSummary`), the customer search and the customer pickers (`searchCustomerDirectory`,
+`searchCustomers`), the vehicle search (`searchVehicles`) and a customer's vehicles
+(`listCustomerVehicles`). Six of those actions are retired. `searchCustomers` is kept with no
+caller only because removing it would take `features/crm` below the file count the committed web
+coverage baseline pins for that tree; retiring it waits on a decision to lower that pin. On those
+screens a branch
+switch, a new term, a new period or a new customer now CANCELS the superseded request — the
+browser closes it and the route aborts the API call behind it — and the new read starts at once
+instead of queueing. The ignoring guards stay as well. The session, the authorization, the tenant
+and branch scope and the rate limit are unchanged: each route reads the same `httpOnly` cookie
+through the same server helper, refuses a request without its `x-rootlco-read` header or from
+another site (the host behind a proxy chain is the first `X-Forwarded-Host` value, compared as
+host and port), forwards only the validated parameters, and answers `private, no-store`, `Vary:
+Cookie` and `nosniff` — a read that fails inside the web tier included, which answers the screen's
+own "unavailable" state rather than a framework error page.
 
-These routes are GET, so a search term travels in the route's query string, as it always has on
-the API request behind it. It is a `fetch`, never a navigation, so the term enters no browser
-history and no referrer; an access log in front of the web tier that records query strings will
-see it.
+**Search terms never go in the URL** (the Owner's standing rule, applied here by the coordinator).
+The four families that carry text an operator typed — the customer search (name, phone, free
+text), the vehicle search (plate, chassis number, make, model), the reception board and the
+work-order board (free text) — are `POST` routes whose parameters are a JSON body; the address is
+the bare route. Such a route refuses any query string, a body that is not `application/json`, a
+body over 16 KiB, and a key its schema does not name, all before the session is read. The overview
+figures and a customer's vehicles carry identifiers and a period and nothing typed, so they stay
+`GET` with a query. An access log in front of the web tier therefore sees no search term in an
+address; the terms still reach the API as its own query parameters, on the server-to-server hop
+behind the web tier, exactly as before.
+
+**A cancelled read may still count against the rate limit.** The search boxes that search as the
+operator types keep their debounce, and the others search on submit, so typing does not send a
+request per keystroke. But a request the browser cancels
+after it has reached the API is one the API has already counted against the operator's
+per-minute budget (the searches are `expensive-read`, 30 per minute), whether or not its answer is
+ever read. Rapid branch switching or re-typing can therefore spend budget on reads nobody sees. A
+throttled read shows the ordinary "service unavailable, try again" state: the read envelope maps a
+throttle to `unavailable` and does not carry it apart, so no separate "busy" wording is shown.
 
 Still on Server Actions, and therefore ignored rather than cancelled when superseded: the account
 picker (`listUsers`), the inventory item and issued-part pickers (`listItems`, `listIssuedParts`),
 the invoice picker (`listInvoices`), the appointment calendar (`listAppointments`), the warranty
 list (`listWarranties`), the work-order state catalogue (`readWorkOrderCatalogue`), and every
 other read. Plan: move the pickers next, family by family on the same pattern — a server-only
-core shared with the action, one route, one browser function — and leave reads that are made once
-per page, where nothing supersedes them, on Server Actions.
+core, one route (a `POST` with a JSON body when it carries typed text), one browser function, and
+the action retired once nothing calls it — and leave reads that are made once per page, where
+nothing supersedes them, on Server Actions.
 
 ## Material UI adoption (ADR-022)
 
