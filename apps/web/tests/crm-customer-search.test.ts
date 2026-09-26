@@ -133,13 +133,21 @@ describe('what the adapter must never send', () => {
    * old path: pointed at the wrapper they would scan a file containing no
    * `query({` at all and pass by finding nothing, which is the vacuity the
    * stripper check below exists to prevent.
+   *
+   * It moved once more (P1-32-PRE-OD-READ): the request construction is now in
+   * the server-only core `lib/customers/directory-read.server.ts`, which the
+   * Server Action in `directory.ts` and the cancellable read route share. The
+   * assertions follow it there, for the same reason.
    */
   const adapter = code(
-    readFileSync(join(ROOT, 'apps', 'web', 'src', 'lib', 'customers', 'directory.ts'), 'utf8')
+    readFileSync(
+      join(ROOT, 'apps', 'web', 'src', 'lib', 'customers', 'directory-read.server.ts'),
+      'utf8'
+    )
   );
 
   it('the comment stripper left the code, so these are not vacuous', () => {
-    expect(adapter).toContain('searchCustomerDirectory');
+    expect(adapter).toContain('readCustomerDirectory');
     // The subject of every assertion below. Without it `indexOf` returns -1 and
     // `slice(-1, -1)` is the empty string, which satisfies every `not.toContain`.
     expect(adapter).toContain('query({');

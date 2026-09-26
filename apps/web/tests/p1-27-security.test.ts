@@ -1504,16 +1504,16 @@ describe('P1-27-SEC-004 — audit-event coverage', () => {
      * asserted to carry the reference itself so delegation is never a loophole.
      *
      * `lib/customers/directory` joined the list when the customer-search adapter
-     * moved there: `features/vehicles` needs the same search to choose a
-     * customer and no feature may import another, so the implementation went to
-     * `lib/` and `features/crm/customers/api.ts` became a thin wrapper. That
-     * wrapper carries no `correlationId` of its own — correctly, because it adds
-     * no behaviour — and the rule had no way to say so.
+     * moved there, and `crm/customers/api.ts` became a thin wrapper carrying no
+     * `correlationId` of its own. Its body now lives in the server-only core
+     * `directory-read.server.ts`, shared with the cancellable read route
+     * (P1-32-PRE-OD-READ), so the reference is asserted where the mapping is
+     * written — the core — and the delegate spelling is unchanged.
      */
     const DELEGATES = [`./${SUPPORT.replace('.ts', '')}`, '@/lib/customers/directory'] as const;
 
     const directory = readFileSync(
-      join(process.cwd(), 'src', 'lib', 'customers', 'directory.ts'),
+      join(process.cwd(), 'src', 'lib', 'customers', 'directory-read.server.ts'),
       'utf8'
     );
     expect(

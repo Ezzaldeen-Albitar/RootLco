@@ -804,8 +804,9 @@ describe('P1-28-SEC-003 — the ONE door, and the abuse cases that try the walls
     // And the structure that makes it so: every criterion is named. A spread of
     // the criteria object would put the guard back in the path — which would
     // still be safe — but a spread of anything WIDER would not, and this is the
-    // line that would change.
-    const source = webFile('features', 'receptions', 'api.ts');
+    // line that would change. The body lives in the server-only core the
+    // action and the cancellable read route share (P1-32-PRE-OD-READ).
+    const source = webFile('features', 'receptions', 'reception-list-read.server.ts');
     expect(source).toContain('status: criteria.status');
     expect(source).toContain('vehicleId: criteria.vehicleId');
     // The door is `branchScopeQuery` since the branch became optional on this

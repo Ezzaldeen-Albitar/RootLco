@@ -8,7 +8,6 @@ import { fromFailure, invalid, type ActionState } from '@/lib/forms/action-resul
 import { fieldErrorsFrom } from '@/lib/forms/field-errors';
 import {
   STATUS_BY_KIND,
-  branchScopeQuery,
   query,
   readOperation,
   type BranchScope,
@@ -85,6 +84,7 @@ import {
   type SignatureRecorded,
   type EvidenceKind,
 } from './receptions-contract';
+import { readReceptionList } from './reception-list-read.server';
 
 /**
  * Reception adapters (P1-28, Wave A).
@@ -300,22 +300,11 @@ const closeSchema = z.object({ reason: z.string().trim().min(1).max(MAX_CLOSURE_
 
 /**
  * The reception board (`rec.reception-list`), most recently received first.
- * `retries: 0` — `expensive-read`, and the table offers Retry.
  *
- * ## The branch may now be left unnamed, and that is a REQUEST rather than a gap
- *
- * The scope travels through `branchScopeQuery`: the company is always named, and
- * the branch is named when the operator is working in one and omitted when they
- * have chosen "all my branches". An omitted branch asks the API for every branch
- * of that company the caller may read, and the API resolves that set one branch
- * at a time against `rec.reception.read`, refusing a caller that holds none — so
- * the omission never widens what this operator is entitled to see. Every row
- * carries its own `branchId` back, which is what lets the board say where each
- * car is.
- *
- * Every criterion is named explicitly rather than spread. A spread would put an
- * arbitrary caller-supplied key into the query builder, and the builder's throw
- * on a scope name is the last line of defence rather than the first.
+ * The body lives in `reception-list-read.server.ts`, shared with the GET route
+ * the board and the check-in lookup now read through so the browser can cancel
+ * the read (P1-32-PRE-OD-READ). This Server Action stays for any caller that
+ * still invokes it, and answers exactly what it answered before.
  */
 export async function listReceptions(
   scope: BranchScope,
@@ -323,34 +312,7 @@ export async function listReceptions(
   request: TableRequest,
   cursor: string | null
 ): Promise<ServerPage<ReceptionListEntry>> {
-  const client = await authorizedClient();
-  if (!client) return { ...EMPTY, status: 'expired', correlationId: null };
-
-  const path =
-    '/api/v1/receptions' +
-    branchScopeQuery(scope, {
-      status: criteria.status,
-      // Never both: the route refuses the pair rather than intersecting it.
-      statusGroup: criteria.statusGroup,
-      vehicleId: criteria.vehicleId,
-      from: criteria.from,
-      to: criteria.to,
-      q: criteria.q,
-      cursor,
-      limit: request.pageSize,
-    });
-
-  const result = await client.get<CursorPage<ReceptionListEntry>>(path, { retries: 0 });
-  if (!result.ok) {
-    return { ...EMPTY, status: STATUS_BY_KIND[result.kind], correlationId: result.correlationId };
-  }
-  return {
-    status: 'ok',
-    rows: result.data.items,
-    nextCursor: result.data.nextCursor,
-    hasMore: result.data.hasMore,
-    correlationId: result.correlationId,
-  };
+  return readReceptionList(scope, criteria, request, cursor);
 }
 
 /**

@@ -87,6 +87,14 @@ describe('the file that failed on Linux now satisfies the rule', () => {
       join(process.cwd(), 'src', 'lib', 'customers', 'directory.ts'),
       'utf8'
     );
-    expect(directory).toContain('correlationId');
+    // The directory is itself a thin Server Action now: its body moved to the
+    // server-only core the cancellable read route shares (P1-32-PRE-OD-READ),
+    // and the reference is carried where the mapping is written.
+    expect(directory).toContain('./directory-read.server');
+    const core = readFileSync(
+      join(process.cwd(), 'src', 'lib', 'customers', 'directory-read.server.ts'),
+      'utf8'
+    );
+    expect(core).toContain('correlationId');
   });
 });
