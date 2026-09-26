@@ -101,32 +101,41 @@ const ProvisionBody = z
   .object({
     owner: OwnerBody,
     activate: z.boolean().optional(),
+    // The same shapes the add-company and add-branch routes refuse at the
+    // boundary. Before they were aligned, a malformed code, country, name or
+    // currency passed here and reached a CHECK inside the function, which
+    // answered 500 for what is a caller's mistake.
     tenant: z
       .object({
-        code: z.string().min(2).max(63),
-        display_name: z.string().min(1).max(200),
-        locale: z.string().min(2).max(35),
-        timezone: z.string().min(1).max(64),
+        code: z.string().regex(/^[a-z][a-z0-9_]{1,62}$/, 'must match ^[a-z][a-z0-9_]{1,62}$'),
+        display_name: z.string().trim().min(1).max(200),
+        locale: z
+          .string()
+          .regex(/^[a-z]{2}(-[A-Z]{2})?$/, 'must be a language code such as en or ar-JO'),
+        timezone: z.string().trim().min(3).max(64),
       })
       .strict(),
     company: z
       .object({
-        code: z.string().min(1).max(63),
-        legal_name: z.string().min(1).max(200),
-        base_currency: z.string().length(3),
+        code: z.string().regex(/^[a-z][a-z0-9_]{1,62}$/, 'must match ^[a-z][a-z0-9_]{1,62}$'),
+        legal_name: z.string().trim().min(1).max(200),
+        base_currency: z.string().regex(/^[A-Z]{3}$/, 'must be a three-letter currency code'),
         registration_number: z.string().max(100).optional(),
         tax_registration_number: z.string().max(100).optional(),
       })
       .strict(),
     branch: z
       .object({
-        code: z.string().min(1).max(63),
-        name: z.string().min(1).max(200),
+        code: z.string().regex(/^[a-z][a-z0-9_]{1,62}$/, 'must match ^[a-z][a-z0-9_]{1,62}$'),
+        name: z.string().trim().min(1).max(200),
         city: z.string().max(120).optional(),
-        country_code: z.string().length(2).optional(),
+        country_code: z
+          .string()
+          .regex(/^[A-Z]{2}$/, 'must be a two-letter country code')
+          .optional(),
         // NOT optional: org.branches.timezone_name is NOT NULL, so an omitted
         // value fails inside the function rather than at the boundary. Measured.
-        timezone: z.string().min(1).max(64),
+        timezone: z.string().trim().min(3).max(64),
       })
       .strict(),
     subscription: z

@@ -578,6 +578,181 @@ describe('platform.organization-provision', () => {
     expect(withActivate.status).toBe(422);
     expect(withActivate.body.code).toBe('ERR-VAL-001');
   });
+
+  /*
+   * A reference the database does not hold is a refusal of ONE field, never an
+   * outage. Each case below changes exactly one value of an otherwise valid spec,
+   * so the only foreign key that can fire is the one named by the path; the
+   * database's own constraint name is what the service maps, which is why these
+   * cases are also the proof that the name survives the call into
+   * org.provision_organization. Nothing may be created by a refused request.
+   */
+  interface Refusal {
+    readonly code?: string;
+    readonly violations?: readonly { path: string; rule: string }[];
+  }
+
+  function specWith(
+    code: string,
+    part: 'tenant' | 'company' | 'branch' | 'subscription',
+    patch: Record<string, unknown>
+  ): Record<string, unknown> {
+    const base = spec(code);
+    return { ...base, [part]: { ...((base[part] as object | undefined) ?? {}), ...patch } };
+  }
+
+  async function provisionRefused(body: Record<string, unknown>): Promise<CallResult<Refusal>> {
+    asPlatformHolder();
+    return call<Refusal>(organizationProvisionRoute, {
+      path: '/platform/organizations',
+      body,
+      idempotencyKey: randomUUID(),
+    });
+  }
+
+  // Case-insensitive, so a refused code submitted in capitals is looked up as
+  // it was submitted rather than as its lowercase form.
+  async function expectNoTenant(label: string): Promise<void> {
+    expect(
+      await scalar<string>(
+        'SELECT count(*)::text FROM org.tenants WHERE lower(tenant_code) = lower($1)',
+        [`${label}_${RUN}`]
+      )
+    ).toBe('0');
+  }
+
+  async function expectReferenceRefusal(
+    result: CallResult<Refusal>,
+    path: string,
+    label: string
+  ): Promise<void> {
+    expect(result.status).toBe(422);
+    expect(result.body.code).toBe('ERR-VAL-001');
+    expect(result.body.violations).toEqual([{ path, rule: 'unknown_reference' }]);
+    await expectNoTenant(label);
+  }
+
+  it('P6 refuses a base currency the platform does not hold, on the currency field', async () => {
+    await expectReferenceRefusal(
+      await provisionRefused(specWith('wb_p6a', 'company', { base_currency: 'XTS' })),
+      'body.company.base_currency',
+      'wb_p6a'
+    );
+    await expectReferenceRefusal(
+      await provisionRefused(specWith('wb_p6b', 'company', { base_currency: 'JOR' })),
+      'body.company.base_currency',
+      'wb_p6b'
+    );
+  });
+
+  it('P7 refuses an organisation time zone the platform does not hold, on that field', async () => {
+    await expectReferenceRefusal(
+      await provisionRefused(specWith('wb_p7', 'tenant', { timezone: 'Etc/Never_Seeded' })),
+      'body.tenant.timezone',
+      'wb_p7'
+    );
+  });
+
+  it('P8 refuses a branch time zone the platform does not hold, on the branch field', async () => {
+    await expectReferenceRefusal(
+      await provisionRefused(specWith('wb_p8', 'branch', { timezone: 'Etc/Never_Seeded' })),
+      'body.branch.timezone',
+      'wb_p8'
+    );
+  });
+
+  it('P9 refuses a language the platform does not hold, on the language field', async () => {
+    await expectReferenceRefusal(
+      await provisionRefused(specWith('wb_p9', 'tenant', { locale: 'zz' })),
+      'body.tenant.locale',
+      'wb_p9'
+    );
+  });
+
+  it('P10 refuses a plan code no active plan carries, on the plan field', async () => {
+    await expectReferenceRefusal(
+      await provisionRefused(
+        specWith('wb_p10', 'subscription', { plan_code: `wb_no_plan_${RUN}` })
+      ),
+      'body.subscription.plan_code',
+      'wb_p10'
+    );
+  });
+
+  it('P11 refuses malformed codes, country, names and currency at the boundary', async () => {
+    const cases: readonly [Record<string, unknown>, string, string][] = [
+      [specWith('wb_p11a', 'tenant', { code: `WB_P11A_${RUN}` }), 'body.tenant.code', 'WB_P11A'],
+      [
+        specWith('wb_p11b', 'branch', { country_code: 'jo' }),
+        'body.branch.country_code',
+        'wb_p11b',
+      ],
+      [specWith('wb_p11c', 'company', { legal_name: '   ' }), 'body.company.legal_name', 'wb_p11c'],
+      [
+        specWith('wb_p11d', 'company', { base_currency: 'jod' }),
+        'body.company.base_currency',
+        'wb_p11d',
+      ],
+    ];
+    for (const [body, path, label] of cases) {
+      const result = await provisionRefused(body);
+      expect(result.status, path).toBe(422);
+      expect(result.body.code, path).toBe('ERR-VAL-001');
+      expect(
+        (result.body.violations ?? []).map((violation) => violation.path),
+        path
+      ).toEqual([path]);
+      await expectNoTenant(label);
+    }
+  });
+
+  it('P12 admits a corrected retry on the SAME key after a refusal, because the key rolled back', async () => {
+    const key = randomUUID();
+    asPlatformHolder();
+    const refused = await call<Refusal>(organizationProvisionRoute, {
+      path: '/platform/organizations',
+      body: specWith('wb_p12', 'company', { base_currency: 'JOR' }),
+      idempotencyKey: key,
+    });
+    expect(refused.status).toBe(422);
+    expect(refused.body.violations).toEqual([
+      { path: 'body.company.base_currency', rule: 'unknown_reference' },
+    ]);
+
+    asPlatformHolder();
+    const corrected = await call<{ tenantId: string }>(organizationProvisionRoute, {
+      path: '/platform/organizations',
+      body: spec('wb_p12'),
+      idempotencyKey: key,
+    });
+    expect(corrected.status).toBe(201);
+    expect(
+      await scalar<string>('SELECT count(*)::text FROM org.tenants WHERE tenant_code = $1', [
+        `wb_p12_${RUN}`,
+      ])
+    ).toBe('1');
+  });
+
+  it('P13 still provisions JOD, UTC and en', async () => {
+    const tenantId = await provisionedTenant('wb_p13');
+    expect(
+      await scalar<string>(
+        'SELECT base_currency_code FROM org.legal_companies WHERE tenant_id = $1',
+        [tenantId]
+      )
+    ).toBe('JOD');
+    expect(
+      await scalar<string>('SELECT default_timezone FROM org.tenants WHERE id = $1', [tenantId])
+    ).toBe('UTC');
+    expect(
+      await scalar<string>('SELECT default_locale FROM org.tenants WHERE id = $1', [tenantId])
+    ).toBe('en');
+    expect(
+      await scalar<string>('SELECT timezone_name FROM org.branches WHERE tenant_id = $1', [
+        tenantId,
+      ])
+    ).toBe('UTC');
+  });
 });
 
 // ---------------------------------------------------------------------------

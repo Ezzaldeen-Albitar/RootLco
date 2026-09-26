@@ -528,6 +528,32 @@ describe('platform.organization-company-create', () => {
       )
     ).toBe(0);
   });
+
+  it('refuses a currency the platform does not hold on its own field, not as a server fault', async () => {
+    // The console writes through the platform connection, which holds no grant on
+    // the currency catalogue; the refusal must come from the foreign key's name,
+    // never from a read that would answer 42501 and reach the caller as a 500.
+    asHolder();
+    const refused = await call<{
+      code?: string;
+      violations?: readonly { path: string; rule: string }[];
+    }>(companyCreateRoute, {
+      path: `/platform/organizations/${tenantOne}/companies`,
+      params: { tenantId: tenantOne },
+      idempotencyKey: randomUUID(),
+      body: { code: 'odog_xts', legalName: 'Unknown currency company', baseCurrency: 'XTS' },
+    });
+    expect(refused.status).toBe(422);
+    expect(refused.body.code).toBe('ERR-VAL-001');
+    expect(refused.body.violations).toEqual([
+      { path: 'body.baseCurrency', rule: 'unknown_reference' },
+    ]);
+    expect(
+      await countOf(
+        "SELECT count(*)::text FROM org.legal_companies WHERE company_code = 'odog_xts'"
+      )
+    ).toBe(0);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -639,6 +665,30 @@ describe('platform.organization-branch-create', () => {
     });
     expect(anonymous.status).toBe(401);
     expect(anonymous.body?.code).toBe('ERR-IAM-002');
+  });
+
+  it('refuses a time zone the platform does not hold on its own field, not as a server fault', async () => {
+    asHolder();
+    const refused = await call<{
+      code?: string;
+      violations?: readonly { path: string; rule: string }[];
+    }>(branchCreateRoute, {
+      path: `/platform/organizations/${tenantOne}/branches`,
+      params: { tenantId: tenantOne },
+      idempotencyKey: randomUUID(),
+      body: {
+        companyId: companyOne,
+        code: 'odog_nozone',
+        name: 'Unknown zone branch',
+        timezone: 'Etc/Never_Seeded',
+      },
+    });
+    expect(refused.status).toBe(422);
+    expect(refused.body.code).toBe('ERR-VAL-001');
+    expect(refused.body.violations).toEqual([{ path: 'body.timezone', rule: 'unknown_reference' }]);
+    expect(
+      await countOf("SELECT count(*)::text FROM org.branches WHERE branch_code = 'odog_nozone'")
+    ).toBe(0);
   });
 });
 

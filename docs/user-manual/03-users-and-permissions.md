@@ -1042,8 +1042,8 @@ apps/api/src/app/api/v1/iam/grants/[grantId]/scopes/[scopeId]/route.ts:27-32;
 apps/api/src/app/api/v1/iam/roles/[roleId]/route.ts:33-38 (rename exists in the service only);
 apps/api/src/app/api/v1/org/employees/route.ts:94-137;
 apps/api/src/app/api/v1/org/employees/[employeeId]/status/route.ts:56-62;
-apps/api/src/app/api/v1/org/companies/route.ts:47-53 and companies/[companyId]/route.ts:53-58 (list
-and update only — no create); org/branches/route.ts:35-41 and branches/[branchId]/route.ts:58-63.
+apps/api/src/app/api/v1/org/companies/route.ts:47-53 and companies/[companyId]/route.ts:56-61 (list
+and update only — no create); org/branches/route.ts:35-41 and branches/[branchId]/route.ts:62-67.
 
 Rules and seeded roles — apps/api/src/modules/iam/domain/delegation-policy.ts:1-27 (why the rules
 exist twice), :104-118 (no self-grant), :119-142 (delegable; deny exempt), :144-168 (no unrestricted

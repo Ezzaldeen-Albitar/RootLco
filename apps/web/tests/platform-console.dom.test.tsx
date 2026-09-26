@@ -1600,6 +1600,35 @@ describe('provisioning an organisation', () => {
     ).toHaveValue('Test Organisation Two');
   });
 
+  it('says a currency the platform does not hold under Base currency, not in the generic banner', async () => {
+    provisionOrganizationAction.mockResolvedValue({
+      status: 'invalid',
+      messageKey: 'form.formError',
+      attempt: 1,
+      correlationId: 'corr-reference',
+      fieldErrors: { companyCurrency: 'form.violation.unknown_reference' },
+    });
+    renderLtr(
+      <ProvisionOrganizationScreen
+        locale="en"
+        messages={messages}
+        plans={null}
+        canActivate={false}
+      />
+    );
+    fillTheRequiredFields();
+    await userEvent.click(screen.getByRole('button', { name: L('platform.provision.submit') }));
+
+    const company = section(L('platform.provision.company'));
+    expect(await within(company).findByRole('alert')).toHaveTextContent(
+      L('form.violation.unknown_reference')
+    );
+    expect(
+      within(company).getByLabelText(new RegExp(`^${L('platform.provision.baseCurrency')}`))
+    ).toHaveAttribute('aria-invalid', 'true');
+    expect(screen.queryByText(L('state.error.message'))).toBeNull();
+  });
+
   it('offers no subscription when the plan catalogue could not be read, and no activation without the authority', () => {
     renderLtr(
       <ProvisionOrganizationScreen
