@@ -801,3 +801,21 @@ describe('alert routing — the threshold decides what leaves the browser', () =
     });
   });
 });
+
+describe('every console line carries its own time', () => {
+  it('opens the line with an ISO-8601 UTC time field', () => {
+    const info = vi.spyOn(console, 'info').mockImplementation(() => undefined);
+    const before = Date.now();
+    report({ level: 'info', event: 'web.timed' });
+    const after = Date.now();
+
+    expect(info).toHaveBeenCalledTimes(1);
+    const line = String(info.mock.calls[0]?.[0]);
+    const record = JSON.parse(line) as Record<string, unknown>;
+    expect(Object.keys(record)[0]).toBe('time');
+    expect(record.time).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
+    const stamped = Date.parse(String(record.time));
+    expect(stamped).toBeGreaterThanOrEqual(before);
+    expect(stamped).toBeLessThanOrEqual(after);
+  });
+});

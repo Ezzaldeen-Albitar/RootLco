@@ -24,7 +24,7 @@ import { AppFailure } from '@/server/errors/app-failure';
 import type { DbHandle } from '@/server/db/transaction';
 import { assertVersionMatched } from '@/server/db/concurrency';
 import { appendAudit } from '@/server/audit/audit';
-import { isSqlState, SQLSTATE } from '@/server/db/repository';
+import { isSqlState, referenceRefusal, SQLSTATE } from '@/server/db/repository';
 import {
   OrganizationRepository,
   type SettingRow,
@@ -32,6 +32,12 @@ import {
 } from '../data/organization-repository';
 import { DelegationPolicy, type GrantFacts } from '../domain/delegation-policy';
 import { AuthorizationRepository } from '../data/authorization-repository';
+
+/** The tenant's two reference columns, by their LIVE foreign-key names. */
+const TENANT_SETTINGS_REFERENCES = {
+  fk_tenants_default_locale: 'body.defaultLocale',
+  fk_tenants_default_timezone: 'body.defaultTimezone',
+};
 
 export interface TenantSettingsView {
   readonly id: string;
@@ -144,15 +150,9 @@ export class OrganizationSettingsService extends ApplicationService {
           : {}),
       });
     } catch (error) {
-      if (isSqlState(error, SQLSTATE.foreignKeyViolation)) {
-        // `fk_tenants_default_locale` / `fk_tenants_default_timezone`: the value
-        // is not a registered language or IANA zone.
-        throw new AppFailure('ERR-VAL-001', {
-          message: 'Locale or timezone is not a registered platform value',
-          safeDetails: { violations: [{ path: 'body', rule: 'unknown_reference' }] },
-        });
-      }
-      throw error;
+      // The value is not a registered language or IANA zone: refused on the one
+      // field that carried it. Any other constraint is re-thrown.
+      throw referenceRefusal(error, TENANT_SETTINGS_REFERENCES) ?? error;
     }
     assertVersionMatched(affected);
 

@@ -34,7 +34,7 @@
  */
 import { AppFailure } from '@/server/errors/app-failure';
 import { appendAudit } from '@/server/audit/audit';
-import { SQLSTATE, isSqlState } from '@/server/db/repository';
+import { SQLSTATE, isSqlState, referenceRefusal } from '@/server/db/repository';
 import type { DbHandle } from '@/server/db/transaction';
 import type { AuthorizationTarget } from '@/server/auth/authorization';
 import { sharedServicesModule } from '@/modules/shared-services';
@@ -77,6 +77,17 @@ export type DepartmentView = DepartmentRow;
 export type CapacityAllowanceView = CapacityAllowanceRow;
 export type CapacityUsageView = CapacityUsageRow;
 export type SubscriptionSummaryView = SubscriptionSummaryRow;
+
+/*
+ * The reference foreign keys a company or branch write can trip, by their LIVE
+ * names, and the request field each one checks. The create bodies and the update
+ * bodies name the same column differently, so each has its own map. A foreign
+ * key none of them names is re-thrown to the unchanged 500 path.
+ */
+const COMPANY_CREATE_REFERENCES = { fk_legal_companies_base_currency: 'body.baseCurrency' };
+const BRANCH_CREATE_REFERENCES = { fk_branches_timezone: 'body.timezone' };
+const COMPANY_UPDATE_REFERENCES = { fk_legal_companies_base_currency: 'body.baseCurrencyCode' };
+const BRANCH_UPDATE_REFERENCES = { fk_branches_timezone: 'body.timezoneName' };
 
 /**
  * The response ENVELOPES, each named and exported.
@@ -259,6 +270,11 @@ export class OrganizationAdministrationService {
           message: 'A company with that code already exists in this organisation',
         });
       }
+      // A currency the platform does not hold. The platform connection has no
+      // grant on the currency catalogue, so the foreign key is the check and a
+      // pre-read would answer 42501 on the console path.
+      const refusal = referenceRefusal(error, COMPANY_CREATE_REFERENCES);
+      if (refusal !== undefined) throw refusal;
       throwCapacityFailure(error);
     }
   }
@@ -278,7 +294,12 @@ export class OrganizationAdministrationService {
     if (current === null) throw notFound();
     await authorizeScope({ companyId: current.id });
 
-    const updated = await this.repository.updateCompany(db, companyId, changes, expectedVersion);
+    let updated: CompanyRecordView | null;
+    try {
+      updated = await this.repository.updateCompany(db, companyId, changes, expectedVersion);
+    } catch (error) {
+      throw referenceRefusal(error, COMPANY_UPDATE_REFERENCES) ?? error;
+    }
     if (updated === null) throw stale();
 
     await appendAudit(db, {
@@ -410,6 +431,8 @@ export class OrganizationAdministrationService {
           message: 'A branch with that code already exists in this company',
         });
       }
+      const refusal = referenceRefusal(error, BRANCH_CREATE_REFERENCES);
+      if (refusal !== undefined) throw refusal;
       throwCapacityFailure(error);
     }
 
@@ -434,7 +457,12 @@ export class OrganizationAdministrationService {
     // absent company as unscoped.
     await authorizeScope({ companyId: current.companyId, branchId: current.id });
 
-    const updated = await this.repository.updateBranch(db, branchId, changes, expectedVersion);
+    let updated: BranchRecordView | null;
+    try {
+      updated = await this.repository.updateBranch(db, branchId, changes, expectedVersion);
+    } catch (error) {
+      throw referenceRefusal(error, BRANCH_UPDATE_REFERENCES) ?? error;
+    }
     if (updated === null) throw stale();
 
     await appendAudit(db, {

@@ -24,6 +24,7 @@ import {
   problemHeaders,
 } from '@/server/errors/problem';
 import { CORRELATION_HEADER } from '@/server/observability/correlation';
+import { referenceRefusal } from '@/server/db/repository';
 
 /** Fields RFC 9457 rendering is allowed to expose. Anything else is a leak. */
 const DOCUMENTED_PROBLEM_FIELDS = [
@@ -197,5 +198,66 @@ describe('unknown-throw classification', () => {
     expect(failure.safeDetails).toEqual({});
     expect(failure.name).toBe('AppFailure');
     expect(failure.cause).toBeUndefined();
+  });
+});
+
+describe('referenceRefusal', () => {
+  const POINTERS = { fk_legal_companies_base_currency: 'body.baseCurrency' } as const;
+  const driverError = (fields: Record<string, unknown>): Error =>
+    Object.assign(new Error('insert or update violates a foreign key constraint'), fields);
+
+  it('answers a mapped foreign key with ERR-VAL-001 on the field, and nothing from the driver', () => {
+    const failure = referenceRefusal(
+      driverError({
+        code: '23503',
+        constraint: 'fk_legal_companies_base_currency',
+        detail: 'Key (base_currency_code)=(JOR) is not present in table "currencies".',
+      }),
+      POINTERS
+    );
+
+    expect(failure).toBeInstanceOf(AppFailure);
+    expect(failure?.code).toBe('ERR-VAL-001');
+    expect(failure?.status).toBe(422);
+    expect(failure?.safeDetails.violations).toEqual([
+      { path: 'body.baseCurrency', rule: 'unknown_reference' },
+    ]);
+    // Neither the driver's detail nor its message is copied anywhere a caller or a
+    // log could read it.
+    expect(JSON.stringify(problemFor(failure!, CORRELATION_ID))).not.toContain('JOR');
+    expect(failure?.message).not.toContain('JOR');
+    expect(failure?.message).not.toContain('Key (');
+  });
+
+  it('carries the rule the caller names', () => {
+    const failure = referenceRefusal(
+      driverError({ code: '23503', constraint: 'fk_legal_companies_base_currency' }),
+      POINTERS,
+      'unknown_currency'
+    );
+    expect(failure?.safeDetails.violations).toEqual([
+      { path: 'body.baseCurrency', rule: 'unknown_currency' },
+    ]);
+  });
+
+  it('leaves an unmapped constraint, another SQLSTATE and a nameless violation to the caller', () => {
+    expect(
+      referenceRefusal(driverError({ code: '23503', constraint: 'fk_branches_company' }), POINTERS)
+    ).toBeUndefined();
+    expect(
+      referenceRefusal(
+        driverError({ code: '23505', constraint: 'fk_legal_companies_base_currency' }),
+        POINTERS
+      )
+    ).toBeUndefined();
+    expect(referenceRefusal(driverError({ code: '23503' }), POINTERS)).toBeUndefined();
+    expect(referenceRefusal(new Error('plain'), POINTERS)).toBeUndefined();
+    expect(referenceRefusal('not an error', POINTERS)).toBeUndefined();
+  });
+
+  it('does not answer for a key the map inherits rather than declares', () => {
+    expect(
+      referenceRefusal(driverError({ code: '23503', constraint: 'toString' }), POINTERS)
+    ).toBeUndefined();
   });
 });

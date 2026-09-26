@@ -309,11 +309,11 @@ administrator."_
 One form, four blocks, submitted once.
 
 **Organisation.** **Name**, **Code** (_"Short and unique: lowercase letters, numbers and
-underscores, starting with a letter."_), **Language**, **Time zone** (_"For example Asia/Riyadh."_)
+underscores, starting with a letter."_), **Language**, **Time zone** (_"Use a time zone the platform supports."_)
 and **Country** (_"Two capital letters, for example SA."_).
 
-**First company.** **Name**, **Legal name**, **Code**, **Base currency** (_"Three capital letters,
-for example SAR."_), **Commercial registration number** and **Tax registration number**.
+**First company.** **Name**, **Legal name**, **Code**, **Base currency** (_"Use a currency the
+platform supports."_), **Commercial registration number** and **Tax registration number**.
 
 **First branch.** **Name**, **Code**, **City**, **Country** and **Time zone**.
 

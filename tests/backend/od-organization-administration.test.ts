@@ -372,6 +372,30 @@ describe('org.company-create', () => {
       ])
     ).toBe(BRAVO.tenantId);
   });
+
+  it('refuses a currency the platform does not hold on its own field, not as a server fault', async () => {
+    // Bravo is on no plan, so no ceiling can answer first: the only rule that can
+    // refuse this company is the currency foreign key.
+    asBravo();
+    const refused = await call<{
+      code: string;
+      violations?: readonly { path: string; rule: string }[];
+    }>(companyCreateRoute, {
+      path: '/org/companies',
+      body: { code: code('bravo_xts'), legalName: 'Bravo Unknown Currency', baseCurrency: 'XTS' },
+      idempotencyKey: randomUUID(),
+    });
+    expect(refused.status).toBe(422);
+    expect(refused.body.code).toBe('ERR-VAL-001');
+    expect(refused.body.violations).toEqual([
+      { path: 'body.baseCurrency', rule: 'unknown_reference' },
+    ]);
+    expect(
+      await count('SELECT count(*) FROM org.legal_companies WHERE company_code = $1', [
+        code('bravo_xts'),
+      ])
+    ).toBe(0);
+  });
 });
 
 describe('org.branch-create', () => {
@@ -500,6 +524,31 @@ describe('org.branch-create', () => {
     });
     expect(refused.status).toBe(422);
     expect(refused.body.code).toBe('ERR-VAL-001');
+  });
+
+  it('refuses a time zone the platform does not hold on its own field, not as a server fault', async () => {
+    asBravo();
+    const refused = await call<{
+      code: string;
+      violations?: readonly { path: string; rule: string }[];
+    }>(branchCreateRoute, {
+      path: '/org/branches',
+      body: {
+        companyId: BRAVO.companyId,
+        code: code('bravo_nozone'),
+        name: 'Bravo Unknown Zone',
+        timezone: 'Etc/Never_Seeded',
+      },
+      idempotencyKey: randomUUID(),
+    });
+    expect(refused.status).toBe(422);
+    expect(refused.body.code).toBe('ERR-VAL-001');
+    expect(refused.body.violations).toEqual([{ path: 'body.timezone', rule: 'unknown_reference' }]);
+    expect(
+      await count('SELECT count(*) FROM org.branches WHERE branch_code = $1', [
+        code('bravo_nozone'),
+      ])
+    ).toBe(0);
   });
 });
 

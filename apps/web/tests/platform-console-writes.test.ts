@@ -219,6 +219,26 @@ describe('provisioning builds the document the operation publishes', () => {
     expect(state.fieldErrors?.companyCode).toBeUndefined();
   });
 
+  it('places a reference the platform does not hold on the control that carried it', async () => {
+    // The API answers an unknown currency, language, time zone or plan as a
+    // refusal of that one field. Each lands on its own control, never on the
+    // banner alone.
+    const cases: readonly [string, string][] = [
+      ['body.company.base_currency', 'companyCurrency'],
+      ['body.branch.timezone', 'branchTimezone'],
+      ['body.tenant.timezone', 'tenantTimezone'],
+      ['body.tenant.locale', 'tenantLocale'],
+      ['body.subscription.plan_code', 'planCode'],
+    ];
+    for (const [path, control] of cases) {
+      send.mockReset();
+      send.mockResolvedValue(violationFailure([{ path, rule: 'unknown_reference' }]));
+      const state = await actions.provisionOrganizationAction(IDLE as never, provisionForm());
+      expect(state.status, path).toBe('invalid');
+      expect(state.fieldErrors, path).toEqual({ [control]: 'form.violation.unknown_reference' });
+    }
+  });
+
   it('says an organisation with that code already exists, rather than repeating the server', async () => {
     send.mockResolvedValue({
       ok: false,
@@ -459,6 +479,33 @@ describe('growing a live organisation addresses the organisation it names', () =
     });
     expect(unknown.messageKey).toBe('state.notFound.message');
     expect(send).not.toHaveBeenCalled();
+  });
+
+  it('places a currency the platform does not hold on the currency control', async () => {
+    send.mockResolvedValue(
+      violationFailure([{ path: 'body.baseCurrency', rule: 'unknown_reference' }])
+    );
+    const state = await actions.addCompanyAction(TENANT, {
+      code: 'nw_second',
+      legalName: 'Northern Workshops Second Company',
+      baseCurrency: 'XTS',
+    });
+    expect(state.status).toBe('invalid');
+    expect(state.fieldErrors).toEqual({ baseCurrency: 'form.violation.unknown_reference' });
+  });
+
+  it('places a time zone the platform does not hold on the time zone control', async () => {
+    send.mockResolvedValue(
+      violationFailure([{ path: 'body.timezone', rule: 'unknown_reference' }])
+    );
+    const state = await actions.addBranchAction(TENANT, {
+      companyId: SUBSCRIPTION,
+      code: 'nw_north',
+      name: 'Northern branch',
+      timezone: 'Etc/Unheld',
+    });
+    expect(state.status).toBe('invalid');
+    expect(state.fieldErrors).toEqual({ timezone: 'form.violation.unknown_reference' });
   });
 
   it('opens a branch under the company it names, dropping a blank city', async () => {

@@ -63,19 +63,13 @@ export async function updateTenantAction(
     ifMatch: recordVersion,
   });
   if (!result.ok) {
-    // `fk_tenants_default_locale` / `fk_tenants_default_timezone`: the value is
-    // not a registered platform language or IANA zone. The Frontend does not
+    // A language or time zone the platform does not hold is refused by the API
+    // on the ONE field that carried it (`body.defaultLocale` or
+    // `body.defaultTimezone`, rule `unknown_reference`). The Frontend does not
     // pre-validate against a list it does not have — there is no operation that
-    // publishes either catalogue (`P1-26-F-006`) — so the backend's verdict is
-    // surfaced with its own sentence.
-    if (result.kind === 'validation') {
-      return {
-        status: 'invalid',
-        messageKey: 'organization.error.unknownReference',
-        correlationId: result.correlationId,
-        attempt,
-      };
-    }
+    // publishes either catalogue (`P1-26-F-006`) — so the refusal is routed
+    // through `fromFailure`, which turns each violation into a field error beside
+    // its control rather than one sentence in the banner.
     return fromFailure(result, attempt);
   }
   return success('admin.saved', attempt);
