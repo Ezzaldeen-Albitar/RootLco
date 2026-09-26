@@ -349,8 +349,10 @@ Every workspace route now declares one posture, in one place:
   header does not offer "All my branches". While it is selected, or while no branch is chosen yet,
   the page body does not draw the screen (`ConcreteRouteGate`, inside every `PageBody`): the page's
   title stays, and below it the ask and the authorized branches by name, so no list is read, no
-  picker searches and no write can start. A page that refuses the operator (no permission, not
-  found, session ended, a failed read) shows that refusal, never a branch ask. The server render and
+  picker searches and no write can start. A session without the route's permission (decided from
+  the navigation map) sees the page's refusal, never a branch ask; other refusal states drawn
+  directly in the page body (not found, session ended, a failed read) are let through as well. The
+  placeholder below carries a hidden "Finding your branch" label. The server render and
   the hydration render draw an empty, busy placeholder for an operator with several branches,
   because the remembered branch is only known in the browser; neither the screen nor the ask is
   sent from the server, and hydration matches. The selection is never changed on the operator's
@@ -386,9 +388,11 @@ must then be the argument of a call whose method is known; a `reads` path must n
 browser read route, whose handler joins the walk. The path and method are matched to the
 `defineOperation` literals parsed out of the API route modules. A candidate that cannot be resolved
 this way (an object map, `new URL`, `fetch`, a computed dynamic import, an unknown path) is
-reported as unresolved. Two module constants are exempted by name, with their reasons, and the test
-asserts that the union routes use exactly those two: the version prefix the client strips before
-looking a path up in the operation table, and the prefix the browser-read guard checks.
+reported as unresolved. Two module constants, the version prefix the client strips before looking
+a path up in the operation table and the prefix the browser-read guard checks, are exempt only at
+their guard uses in the module that owns them: as the argument of `startsWith`, through `.length`,
+and in the guard's error message. Anything else built on them is folded through them and must
+resolve. The test asserts the exempted positions, file, line and kind, exactly.
 
 `apps/web/tests/route-branch-scope.test.ts` then holds:
 
@@ -400,8 +404,8 @@ looking a path up in the operation table, and the prefix the browser-read guard 
   `PageBody`. This is a floor, not a proof that the value read is the value sent; tracing that is
   data-flow analysis the walk does not do, and the gate closes the gap at run time;
 - **none routes** — the page never reaches `useBranchTarget` and never reads the working context's
-  `selection`. `/administration/departments` and `/administration/employees` open on the working
-  branch, so they are concrete.
+  `selection`. `/administration/departments` and `/administration/employees` follow the working
+  branch, so they are concrete, and they no longer carry a branch picker of their own.
 
 It also holds the table against the filesystem (every workspace page has exactly one declaration),
 the navigation map, and this section's table below. The union set is compared in both directions
@@ -504,7 +508,6 @@ query is about, and each is named:
 - a price rule's branch on `/pricing/[priceListId]`;
 - a reorder level's branch on `/inventory/setup`;
 - the issue or reservation branch on `/inventory/parts` when the work order's branch cannot be read;
-- a department or employee branch in administration, which opens on the working branch;
 - the settings target on the administration settings pages;
 - the report's branch on the report screens, which opens on the working branch.
 

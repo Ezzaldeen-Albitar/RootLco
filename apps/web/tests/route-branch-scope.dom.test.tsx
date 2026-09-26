@@ -18,7 +18,11 @@ import {
   WorkingBranchField,
 } from '@/features/working-context/components/WorkingBranchField';
 import { ConcreteRouteGate } from '@/features/working-context/components/ConcreteRouteGate';
-import { RouteScopeProvider } from '@/features/working-context/components/RouteScopeProvider';
+import {
+  RouteScopeProvider,
+  navigationRequirementFor,
+} from '@/features/working-context/components/RouteScopeProvider';
+import { flattenNavigation } from '@/config/navigation';
 import { PageBody, PageHeader } from '@/components/shell/PageHeader';
 import { PermissionDeniedState } from '@/components/states/States';
 import {
@@ -46,7 +50,19 @@ import { OTHER_BRANCH, TEST_BRANCH, TEST_COMPANY, branchSnapshot, renderLtr } fr
  *   - the inline chooser a concrete screen offers is the working context's own
  *     guarded switch: it asks before discarding unsaved work, and it moves the
  *     version like any other switch;
- *   - an operator with one branch sees no selector anywhere.
+ *   - an operator with one branch sees no selector anywhere;
+ *   - a session that may not open a concrete route sees the page's refusal,
+ *     never a branch ask.
+ *
+ * ## The limit of the refusal rule, stated
+ *
+ * Whether the session may open a route is decided from the navigation map
+ * (`navigationRequirementFor`: the entry whose route is the longest leading run
+ * of the address) and the session's permissions — not by looking inside the
+ * page. A page that refuses for a reason the map does not state (a finer write
+ * code, a server read that failed) is let through the gate only when its
+ * refusal state is a DIRECT child of `PageBody`; a refusal nested deeper, for a
+ * reason the map does not know, is drawn after the operator names a branch.
  */
 
 const EN = en as Record<string, string>;
@@ -596,6 +612,9 @@ describe('the server render and hydration (PR #467 review)', () => {
     const run = await hydrate(onMount);
     try {
       expect(run.html).toContain('concrete-route-gate-pending');
+      // The placeholder is a named, busy status, not an empty box.
+      expect(run.html).toContain('role="status"');
+      expect(run.html).toContain(EN['workingContext.pending'] as string);
       expect(run.html).not.toContain('gated-screen');
       expect(run.html).not.toContain('concrete-route-gate-prompt');
       expect(run.recoverable).not.toHaveBeenCalled();
@@ -670,6 +689,11 @@ describe('unsaved work on a concrete screen is never unmounted without an answer
 
     const held = await screen.findByTestId('concrete-route-gate-held');
     expect(held).toHaveTextContent(EN['workingContext.held.description'] as string);
+    // The cursor moves to the notice as the screen goes inert, and it is announced.
+    await waitFor(() => expect(document.activeElement).toBe(held));
+    expect(within(held).getByRole('alert')).toHaveTextContent(
+      EN['workingContext.held.description'] as string
+    );
     expect(note().value).toBe('kept');
     expect(screen.getByTestId('concrete-route-gate-held-screen')).toHaveAttribute('inert');
     expect(onDiscard).not.toHaveBeenCalled();
@@ -730,5 +754,46 @@ describe('outside the workspace shell nothing is gated', () => {
     );
     expect(onMount).toHaveBeenCalledTimes(1);
     expect(screen.queryByTestId('concrete-route-gate')).toBeNull();
+  });
+});
+
+describe('a refusal comes before a branch ask, however deep the page draws it (PR #467 review)', () => {
+  const invoices = flattenNavigation().find((item) => item.href === '/invoices');
+
+  it('finds the navigation entry that governs an address', () => {
+    expect(navigationRequirementFor('/en/invoices')?.href).toBe('/invoices');
+    expect(navigationRequirementFor('/en/receptions/check-in')?.href).toBe('/receptions');
+    expect(navigationRequirementFor('/ar')?.href).toBe('/');
+    expect(navigationRequirementFor('/en/no-such-screen')).toBeNull();
+  });
+
+  function renderWith(permissions: readonly string[]) {
+    window.localStorage.setItem(KEY, ALL_BRANCHES);
+    nav.pathname = '/en/invoices';
+    return renderLtr(
+      <WorkingContextProvider snapshot={TWO} messages={messages}>
+        <RouteScopeProvider permissions={permissions}>
+          <PageBody>
+            <div>
+              <PermissionDeniedState messages={messages} />
+            </div>
+          </PageBody>
+        </RouteScopeProvider>
+      </WorkingContextProvider>
+    );
+  }
+
+  it("shows the page's refusal, not the ask, to a session lacking the route's permission", () => {
+    expect(invoices?.permission).toBeTruthy();
+    renderWith([]);
+    expect(screen.getByText(EN['state.denied.title'] as string)).toBeVisible();
+    expect(screen.queryByTestId('concrete-route-gate')).toBeNull();
+    expect(screen.queryByTestId('concrete-branch-chooser')).toBeNull();
+  });
+
+  it('asks for a branch first when the session holds it (the control)', () => {
+    renderWith([invoices?.permission as string, ...(invoices?.alsoRequires ?? [])]);
+    expect(screen.getByTestId('concrete-route-gate')).toBeInTheDocument();
+    expect(screen.queryByText(EN['state.denied.title'] as string)).toBeNull();
   });
 });

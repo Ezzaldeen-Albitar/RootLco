@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useSyncExternalStore, type ReactNode } from 'react';
+import { useEffect, useId, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
 import { translate } from '@/i18n/get-messages';
 import { useBranchTarget } from '../use-branch-target';
 import {
@@ -57,7 +57,7 @@ const noSubscription = () => () => undefined;
  */
 export function ConcreteRouteGate({ children }: { readonly children: ReactNode }) {
   // The route's posture, from the shell (`RouteScopeProvider`); null outside it.
-  const scope = useRouteScope();
+  const route = useRouteScope();
   const context = useWorkingContext();
   const messages = useWorkingContextMessages();
   const state = useBranchTarget();
@@ -68,7 +68,13 @@ export function ConcreteRouteGate({ children }: { readonly children: ReactNode }
     () => false
   );
 
-  const applies = context.present && messages !== null && scope === 'concrete';
+  /*
+   * A session that may not open this route is never asked for a branch: the
+   * page's own refusal is drawn, wherever in the page it sits. `permitted` is
+   * decided from the navigation map and the session's permissions.
+   */
+  const applies =
+    context.present && messages !== null && route?.scope === 'concrete' && route.permitted;
   const undecided = state.kind === 'all' || state.kind === 'unchosen';
   const closing = applies && inBrowser && undecided;
 
@@ -84,6 +90,17 @@ export function ConcreteRouteGate({ children }: { readonly children: ReactNode }
     setPrevious('screen');
     if (held) setHeld(false);
   }
+
+  /*
+   * When the screen goes inert under the held notice, the cursor moves to the
+   * notice — it would otherwise be left on a control that no longer answers —
+   * and the notice's sentence is announced.
+   */
+  const noticeRef = useRef<HTMLElement>(null);
+  const noticeId = useId();
+  useEffect(() => {
+    if (held) noticeRef.current?.focus();
+  }, [held]);
 
   /*
    * The screen always sits at the same place in the tree — second in a
@@ -110,7 +127,13 @@ export function ConcreteRouteGate({ children }: { readonly children: ReactNode }
     const unknown =
       context.status === 'ready' && context.branches.length > 1 && state.kind !== 'ready';
     if (!unknown) return screenIn(null);
-    return <div data-testid="concrete-route-gate-pending" aria-busy="true" />;
+    return (
+      <div data-testid="concrete-route-gate-pending" role="status" aria-busy="true">
+        <span className="sr-only">
+          {messages === null ? null : translate(messages, 'workingContext.pending')}
+        </span>
+      </div>
+    );
   }
 
   if (!undecided) return screenIn(null);
@@ -134,11 +157,14 @@ export function ConcreteRouteGate({ children }: { readonly children: ReactNode }
 
   return screenIn(
     <section
-      className="mb-4 flex max-w-md flex-col gap-3 rounded-md border border-border bg-surface p-4"
+      ref={noticeRef}
+      tabIndex={-1}
+      aria-describedby={noticeId}
+      className="mb-4 flex max-w-md flex-col gap-3 rounded-md border border-border bg-surface p-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
       data-testid="concrete-route-gate-held"
     >
       {ask}
-      <p className="text-supporting text-text-secondary">
+      <p id={noticeId} role="alert" className="text-supporting text-text-secondary">
         {translate(messages, 'workingContext.held.description')}
       </p>
       <div>

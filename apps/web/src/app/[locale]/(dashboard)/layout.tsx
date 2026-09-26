@@ -50,7 +50,7 @@ export default async function DashboardLayout({
 
   return (
     <WorkingContextProvider snapshot={workingContext} messages={messages}>
-      <RouteScopeProvider>
+      <RouteScopeProvider permissions={session.permissions}>
         <AppShell
           locale={locale}
           messages={messages}

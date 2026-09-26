@@ -160,9 +160,18 @@ export function PageHeader({
  * Every workspace screen sits in a `PageBody`, so this is where
  * `ConcreteRouteGate` holds a screen that needs one branch until one is named
  * (`config/route-branch-scope.ts`). The page's header stays above the ask. A
- * page that REFUSES the operator — no permission, nothing there, a session that
- * ended, a read that failed — is not gated: the refusal is the answer, and asking
- * for a branch first would suggest that choosing one could change it.
+ * page that REFUSES the operator is not gated: the refusal is the answer, and
+ * asking for a branch first would suggest that choosing one could change it.
+ *
+ * Two mechanisms, and the limit of each:
+ *
+ *   - **no permission** — decided by the gate itself from the navigation map and
+ *     the session's permissions (`RouteScopeProvider`), so it holds however deep
+ *     in the page the refusal is drawn;
+ *   - **every other refusal** (nothing there, a session that ended, a read that
+ *     failed, or a permission finer than the map states) — let through here only
+ *     when the refusal state is a DIRECT child of this body. One nested deeper is
+ *     drawn once the operator names a branch.
  */
 export function PageBody({
   children,
