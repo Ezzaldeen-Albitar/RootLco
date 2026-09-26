@@ -6300,6 +6300,7 @@
   "workingContext.allBranches": "All my branches",
   "workingContext.changeInHeader": "To work somewhere else, change your branch at the top of the page.",
   "workingContext.choose": "Choose your branch",
+  "workingContext.chooseBranchHere": "This screen works in one branch. Choose it here to continue.",
   "workingContext.chooseFirst": "Choose your branch at the top of the page to continue",
   "workingContext.chooseHere": "Branch for this screen",
   "workingContext.crossTab.description": "Another tab is now working in {branch}. This tab stays where it is until you choose, so your unsaved entries are kept.",

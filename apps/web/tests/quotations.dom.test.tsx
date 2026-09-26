@@ -358,9 +358,10 @@ describe('reached from a work order', () => {
 
 describe('the job picker and the working context', () => {
   /*
-   * The picker searches what the header holds: one branch, or every branch of
-   * the company under "All my branches" (the union the server enforces), or
-   * nothing when "All my branches" spans companies. A switch forgets the job
+   * The picker searches what the header holds when it is ONE branch, and
+   * nothing under "All my branches" or before a branch is chosen: the screen
+   * writes against the job it finds, so it is a concrete route and asks for one
+   * named branch instead (PR #467 review). A switch forgets the job
    * found under the previous branch, asks first when one was chosen, and drops
    * a reply that was still in flight.
    */
@@ -411,21 +412,36 @@ describe('the job picker and the working context', () => {
   const submit = () =>
     screen.getByRole('button', { name: EN['quotations.choose.submit'] as string });
 
-  it('under "All my branches" in one company, searches the whole company', async () => {
+  it('under "All my branches" searches nothing, asks for one named branch right there, and disables the submit (PR #467 review)', async () => {
     listWorkOrders.mockResolvedValue(found([workOrder]));
     const user = userEvent.setup();
     renderWith(branchSnapshot([TEST_BRANCH, OTHER_BRANCH]));
     await user.click(screen.getByRole('button', { name: 'everywhere' }));
+    const panel = await screen.findByTestId('work-order-picker-needs-branch');
+    expect(panel).toHaveTextContent(EN['workingContext.chooseBranchHere'] as string);
+    expect(screen.queryByRole('searchbox')).toBeNull();
+    expect(submit()).toBeDisabled();
+    // No request at all — above all, none for every branch of the company.
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(listWorkOrders).not.toHaveBeenCalled();
+    // The named chooser beside the ask is the working context's own switch,
+    // and nothing is pre-selected in it.
+    const chooser = screen.getByTestId('concrete-branch-chooser') as HTMLSelectElement;
+    expect(chooser.value).toBe('');
+    await user.selectOptions(chooser, OTHER_BRANCH.id);
+    await waitFor(() => expect(heldBranch()).toBe(OTHER_BRANCH.id));
     await user.type(box(), 'Layla{Enter}');
     expect(await screen.findByRole('button', { name: /WO-000042/ })).toBeVisible();
     expect(listWorkOrders).toHaveBeenCalledWith(
-      { companyId: TEST_COMPANY.id, branchId: null },
+      { companyId: TEST_COMPANY.id, branchId: OTHER_BRANCH.id },
       { q: 'Layla' },
       expect.objectContaining({ page: 1 }),
       null,
-      // The read is cancellable: it carries the signal its search aborts.
       expect.any(AbortSignal)
     );
+    for (const call of listWorkOrders.mock.calls) {
+      expect((call[0] as { branchId: string | null }).branchId).not.toBeNull();
+    }
   });
 
   it('under "All my branches" across companies, says why, reads nothing, and disables the submit with that reason', async () => {
@@ -436,7 +452,7 @@ describe('the job picker and the working context', () => {
     });
     await user.click(screen.getByRole('button', { name: 'everywhere' }));
     const panel = await screen.findByTestId('work-order-picker-needs-branch');
-    expect(panel).toHaveTextContent(EN['workingContext.needsOneBranch'] as string);
+    expect(panel).toHaveTextContent(EN['workingContext.chooseBranchHere'] as string);
     expect(screen.queryByRole('searchbox')).toBeNull();
     // A submit that would refuse with no control to point at is disabled
     // instead, and described by the sentence that says why.
@@ -444,7 +460,7 @@ describe('the job picker and the working context', () => {
     const describedBy = submit().getAttribute('aria-describedby');
     expect(describedBy).toBeTruthy();
     expect(document.getElementById(describedBy as string)).toHaveTextContent(
-      EN['workingContext.needsOneBranch'] as string
+      EN['workingContext.chooseBranchHere'] as string
     );
     expect(listWorkOrders).not.toHaveBeenCalled();
     expect(push).not.toHaveBeenCalled();

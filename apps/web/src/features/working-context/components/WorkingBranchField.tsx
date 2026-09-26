@@ -169,8 +169,20 @@ export function RequiresConcreteBranch({
   readonly chooser?: boolean;
 }) {
   const own = useBranchTarget();
+  const context = useWorkingContext();
   const resolved = state ?? own;
-  const key = branchBlockMessageKey(resolved) ?? fallbackKey ?? null;
+  /*
+   * With the chooser drawn right here, the sentence points at it rather than at
+   * the header: "choose one branch in the header" beside a chooser reads as two
+   * different instructions (PR #467 review).
+   */
+  const offering =
+    chooser &&
+    (resolved.kind === 'all' || resolved.kind === 'unchosen') &&
+    context.branches.length > 1;
+  const key = offering
+    ? 'workingContext.chooseBranchHere'
+    : (branchBlockMessageKey(resolved) ?? fallbackKey ?? null);
   if (key === null) return null;
   const sentence = (
     <p
@@ -181,12 +193,52 @@ export function RequiresConcreteBranch({
       {translateDynamic(messages, key)}
     </p>
   );
-  if (!chooser || (resolved.kind !== 'all' && resolved.kind !== 'unchosen')) return sentence;
+  if (!offering) return sentence;
   return (
     <div className="flex flex-col gap-2">
       {sentence}
       <ConcreteBranchChooser messages={messages} />
     </div>
+  );
+}
+
+/**
+ * Why a list the working context supplies is empty — for a screen that picks a
+ * company or a branch as a VALUE (the settings target, an approval limit's
+ * company) rather than addressing the working branch.
+ *
+ * `RequiresConcreteBranch` answers "why is this screen not addressed to one
+ * branch", and two of its four answers send the operator to the header. On a
+ * route that is not about a branch the header draws no control (PR #467
+ * review), so here only the two answers that explain an empty directory are
+ * given — nothing assigned, or the directory could not be read — and every
+ * other state says the caller's own sentence.
+ */
+export function DirectoryEmptyNotice({
+  messages,
+  fallbackKey,
+  testId = 'directory-empty',
+}: {
+  readonly messages: Messages;
+  /** What is missing, named by the caller, because only it knows which list. */
+  readonly fallbackKey: string;
+  readonly testId?: string;
+}) {
+  const { status } = useWorkingContext();
+  const key =
+    status === 'unavailable'
+      ? 'workingContext.unavailable'
+      : status === 'none'
+        ? 'workingContext.noBranch'
+        : fallbackKey;
+  return (
+    <p
+      role="status"
+      data-testid={testId}
+      className="rounded-md bg-warning-subtle px-3 py-2 text-supporting text-text-secondary"
+    >
+      {translateDynamic(messages, key)}
+    </p>
   );
 }
 

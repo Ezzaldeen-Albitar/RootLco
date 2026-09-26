@@ -397,7 +397,7 @@ describe('the branch is the working context of the shell, and every stock card i
     // Nothing is pre-selected: the first branch is not a default.
     expect(chooser.value).toBe('');
     expect(screen.getByTestId('requires-concrete-branch')).toHaveTextContent(
-      EN['workingContext.needsOneBranch'] as string
+      EN['workingContext.chooseBranchHere'] as string
     );
     expect(readLowStockAlerts).not.toHaveBeenCalled();
 

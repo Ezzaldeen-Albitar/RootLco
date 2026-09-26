@@ -1,6 +1,6 @@
 import { act, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import type { ReactNode } from 'react';
+import { useEffect, type ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import en from '../src/i18n/messages/en.json';
@@ -11,9 +11,11 @@ import {
 } from '@/features/working-context/WorkingContextProvider';
 import { WorkingContextControl } from '@/features/working-context/components/WorkingContextControl';
 import {
+  DirectoryEmptyNotice,
   RequiresConcreteBranch,
   WorkingBranchField,
 } from '@/features/working-context/components/WorkingBranchField';
+import { ConcreteRouteGate } from '@/features/working-context/components/ConcreteRouteGate';
 import {
   ALL_BRANCHES,
   preferenceKeyFor,
@@ -51,6 +53,22 @@ vi.mock('next/navigation', () => ({
   useSearchParams: () => new URLSearchParams(''),
   useRouter: () => ({ refresh: vi.fn(), push: vi.fn() }),
 }));
+
+/*
+ * The discount threshold screen reads its company through the working branch;
+ * its two adapters are replaced so a case can prove neither is reached.
+ */
+const thresholdReads = vi.hoisted(() => ({
+  readDiscountThreshold: vi.fn(),
+  setDiscountThreshold: vi.fn(),
+}));
+vi.mock('@/features/pricing/api', () => ({
+  readDiscountThreshold: (...args: unknown[]) => thresholdReads.readDiscountThreshold(...args),
+  setDiscountThreshold: (...args: unknown[]) => thresholdReads.setDiscountThreshold(...args),
+}));
+
+const { DiscountThresholdScreen } =
+  await import('@/features/pricing/components/DiscountThresholdScreen');
 
 const TWO = branchSnapshot([TEST_BRANCH, OTHER_BRANCH]);
 const KEY = preferenceKeyFor(TWO.tenantId as string, TWO.accountId as string);
@@ -193,7 +211,7 @@ describe('moving from a union screen to a concrete one never picks a branch', ()
     expect(headerSelect()?.value).toBe('');
     expect(screen.getByTestId('working-context-prompt')).toBeInTheDocument();
     expect(screen.getByTestId('requires-concrete-branch')).toHaveTextContent(
-      EN['workingContext.needsOneBranch'] as string
+      EN['workingContext.chooseBranchHere'] as string
     );
     const chooser = screen.getByTestId('concrete-branch-chooser') as HTMLSelectElement;
     expect(chooser.value).toBe('');
@@ -340,5 +358,132 @@ describe('an operator with one branch sees no selector anywhere (QA 1a.3)', () =
     renderAt('/en/crm/customers', ONE);
     expect(screen.queryByTestId('working-context-single')).toBeNull();
     expect(screen.queryAllByRole('combobox')).toHaveLength(0);
+  });
+});
+
+/** A screen that reports each mount, the way a list read on arrival would. */
+function Screen({ onMount }: { readonly onMount: () => void }) {
+  useEffect(() => {
+    onMount();
+  }, [onMount]);
+  return <p data-testid="gated-screen">the screen</p>;
+}
+
+describe('a screen that needs one branch waits for one (PR #467 review)', () => {
+  const gated = (onMount: () => void) => (
+    <ConcreteRouteGate messages={messages}>
+      <Screen onMount={onMount} />
+    </ConcreteRouteGate>
+  );
+
+  it('on a concrete route under "All my branches", mounts nothing until a branch is named', async () => {
+    window.localStorage.setItem(KEY, ALL_BRANCHES);
+    const onMount = vi.fn();
+    const user = userEvent.setup();
+    renderAt('/en/invoices', TWO, gated(onMount));
+
+    expect(screen.queryByTestId('gated-screen')).toBeNull();
+    expect(onMount).not.toHaveBeenCalled();
+    const prompt = screen.getByTestId('concrete-route-gate-prompt');
+    expect(prompt).toHaveTextContent(EN['workingContext.chooseBranchHere'] as string);
+    // The chooser is right there, so the sentence does not send anyone to the header.
+    expect(prompt).not.toHaveTextContent(EN['workingContext.needsOneBranch'] as string);
+    const chooser = screen.getByTestId('concrete-branch-chooser') as HTMLSelectElement;
+    expect(chooser.value).toBe('');
+    expect(screen.getByTestId('probe-selection')).toHaveTextContent('all');
+
+    await user.selectOptions(chooser, TEST_BRANCH.id);
+    expect(await screen.findByTestId('gated-screen')).toBeInTheDocument();
+    expect(onMount).toHaveBeenCalledTimes(1);
+    expect(screen.getByTestId('probe-selection')).toHaveTextContent(TEST_BRANCH.id);
+  });
+
+  it('asks the same way before any branch is chosen', () => {
+    const onMount = vi.fn();
+    renderAt('/en/inventory/adjustments', TWO, gated(onMount));
+    expect(screen.getByTestId('concrete-route-gate')).toBeInTheDocument();
+    expect(onMount).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['a union route', '/en/work-orders'],
+    ['a route that is not about a branch', '/en/crm/customers'],
+  ])('lets the screen through on %s, even under "All my branches"', (_label, path) => {
+    window.localStorage.setItem(KEY, ALL_BRANCHES);
+    const onMount = vi.fn();
+    renderAt(path, TWO, gated(onMount));
+    expect(screen.getByTestId('gated-screen')).toBeInTheDocument();
+    expect(onMount).toHaveBeenCalledTimes(1);
+  });
+
+  it('lets the screen through once a branch is named, and for an operator with one branch', () => {
+    window.localStorage.setItem(KEY, OTHER_BRANCH.id);
+    const first = vi.fn();
+    const { unmount } = renderAt('/en/invoices', TWO, gated(first));
+    expect(first).toHaveBeenCalledTimes(1);
+    unmount();
+    const second = vi.fn();
+    renderAt('/en/invoices', branchSnapshot([TEST_BRANCH]), gated(second));
+    expect(second).toHaveBeenCalledTimes(1);
+  });
+
+  it('leaves "no branch assigned" to the screen, which says it in its own words', () => {
+    const onMount = vi.fn();
+    renderAt('/en/invoices', branchSnapshot([], 'none'), gated(onMount));
+    expect(onMount).toHaveBeenCalledTimes(1);
+    expect(screen.queryByTestId('concrete-route-gate')).toBeNull();
+  });
+});
+
+describe('the discount threshold is written for one named branch only (PR #467 review)', () => {
+  it('reads nothing under "All my branches", and asks for one branch with the chooser', async () => {
+    window.localStorage.setItem(KEY, ALL_BRANCHES);
+    thresholdReads.readDiscountThreshold.mockReset();
+    thresholdReads.readDiscountThreshold.mockResolvedValue({
+      status: 'denied',
+      correlationId: null,
+    });
+    const user = userEvent.setup();
+    renderAt(
+      '/en/administration/discount-threshold',
+      TWO,
+      <DiscountThresholdScreen locale="en" messages={messages} canManage />
+    );
+    expect(screen.getByTestId('discount-threshold-needs-branch')).toHaveTextContent(
+      EN['workingContext.chooseBranchHere'] as string
+    );
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(thresholdReads.readDiscountThreshold).not.toHaveBeenCalled();
+
+    await user.selectOptions(screen.getByTestId('concrete-branch-chooser'), OTHER_BRANCH.id);
+    await waitFor(() =>
+      expect(thresholdReads.readDiscountThreshold).toHaveBeenCalledWith(TEST_COMPANY.id)
+    );
+  });
+});
+
+describe('a list the working context supplies says why it is empty in its own words', () => {
+  it('never sends the operator to the header on a route that draws no branch control', () => {
+    window.localStorage.setItem(KEY, ALL_BRANCHES);
+    renderAt(
+      '/en/administration/organization',
+      TWO,
+      <DirectoryEmptyNotice messages={messages} fallbackKey="workingContext.noCompany" />
+    );
+    expect(headerSelect()).toBeNull();
+    const notice = screen.getByTestId('directory-empty');
+    expect(notice).toHaveTextContent(EN['workingContext.noCompany'] as string);
+    expect(notice).not.toHaveTextContent(EN['workingContext.needsOneBranch'] as string);
+  });
+
+  it('says the directory could not be read when it could not', () => {
+    renderAt(
+      '/en/administration/organization',
+      branchSnapshot([], 'unavailable'),
+      <DirectoryEmptyNotice messages={messages} fallbackKey="workingContext.noCompany" />
+    );
+    expect(screen.getByTestId('directory-empty')).toHaveTextContent(
+      EN['workingContext.unavailable'] as string
+    );
   });
 });

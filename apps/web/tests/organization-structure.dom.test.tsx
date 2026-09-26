@@ -532,9 +532,9 @@ describe('the settings editor when there is nothing to choose', () => {
         { snapshot: { ...branchSnapshot([TEST_BRANCH]), companies: [] } }
       )
     );
-    expect(screen.getByTestId('requires-concrete-branch')).toHaveTextContent(
-      en['workingContext.noCompany']
-    );
+    // The list's own sentence: this route draws no branch control, so nothing
+    // here may send the operator to the header (PR #467 review).
+    expect(screen.getByTestId('directory-empty')).toHaveTextContent(en['workingContext.noCompany']);
     // No company picker — the other selects on this form belong to the setting
     // being written, not to the scope.
     expect(screen.queryByLabelText(new RegExp(en['admin.scope.company']))).toBeNull();

@@ -6,7 +6,7 @@ import type { Messages } from '@/i18n/get-messages';
 import { translate } from '@/i18n/get-messages';
 import { IDLE, type ActionState } from '@/lib/forms/action-result';
 import { FormFeedback } from '@/features/authentication/components/FormFeedback';
-import { RequiresConcreteBranch } from '@/features/working-context/components/WorkingBranchField';
+import { DirectoryEmptyNotice } from '@/features/working-context/components/WorkingBranchField';
 import { useWorkingContext } from '@/features/working-context/WorkingContextProvider';
 import { readSettings } from '../api';
 import type { SettingValueType, SettingView, SettingsScope } from '../types';
@@ -151,7 +151,7 @@ export function SettingsEditor({
         ) : (
           // Nothing to choose, or the directory could not be read. Saying which
           // is the honest answer; a box asking for a typed reference was not.
-          <RequiresConcreteBranch
+          <DirectoryEmptyNotice
             messages={messages}
             fallbackKey={
               scope === 'company' ? 'workingContext.noCompany' : 'workingContext.noBranch'

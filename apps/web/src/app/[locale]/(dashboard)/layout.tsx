@@ -4,6 +4,7 @@ import { AppShell } from '@/components/shell/AppShell';
 import { requireSession } from '@/features/authentication/api/session';
 import { AccountMenu } from '@/features/authentication/components/AccountMenu';
 import { loadWorkingContext } from '@/features/working-context/api';
+import { ConcreteRouteGate } from '@/features/working-context/components/ConcreteRouteGate';
 import { WorkingContextControl } from '@/features/working-context/components/WorkingContextControl';
 import { WorkingContextProvider } from '@/features/working-context/WorkingContextProvider';
 import { isLocale } from '@/i18n/config';
@@ -63,7 +64,8 @@ export default async function DashboardLayout({
           />
         }
       >
-        {children}
+        {/* A screen that needs one branch waits for one: config/route-branch-scope.ts. */}
+        <ConcreteRouteGate messages={messages}>{children}</ConcreteRouteGate>
       </AppShell>
     </WorkingContextProvider>
   );

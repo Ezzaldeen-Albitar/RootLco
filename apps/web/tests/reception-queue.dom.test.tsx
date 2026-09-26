@@ -186,7 +186,7 @@ describe('the board reads on arrival, bounded to the branch day', () => {
     const second = { ...TEST_BRANCH, id: '55555555-5555-4555-8555-555555555555', name: 'Second' };
     renderQueue({}, branchSnapshot([TEST_BRANCH, second]));
     expect(screen.getByTestId('requires-concrete-branch')).toHaveTextContent(
-      EN['workingContext.chooseFirst'] as string
+      EN['workingContext.chooseBranchHere'] as string
     );
     // Nothing is addressed, so nothing may be read. Waited out rather than
     // asserted synchronously, so a debounce cannot hide a request.

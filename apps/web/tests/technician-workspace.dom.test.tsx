@@ -519,7 +519,7 @@ describe('the technician queue is about ONE branch', () => {
     );
     await user.click(screen.getByRole('button', { name: 'use all' }));
     expect(await screen.findByTestId('requires-concrete-branch')).toHaveTextContent(
-      en['workingContext.needsOneBranch']
+      en['workingContext.chooseBranchHere']
     );
     expect(readMyQueue).not.toHaveBeenCalled();
   });

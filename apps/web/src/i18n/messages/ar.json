@@ -6300,6 +6300,7 @@
   "workingContext.allBranches": "كل فروعي",
   "workingContext.changeInHeader": "للعمل في مكان آخر، غيّر فرعك من أعلى الصفحة.",
   "workingContext.choose": "اختر فرعك",
+  "workingContext.chooseBranchHere": "تعمل هذه الشاشة في فرع واحد. اختره هنا للمتابعة.",
   "workingContext.chooseFirst": "اختر فرعك من أعلى الصفحة للمتابعة",
   "workingContext.chooseHere": "الفرع لهذه الشاشة",
   "workingContext.crossTab.description": "علامة التبويب الأخرى تعمل الآن في {branch}. تبقى هذه الصفحة كما هي حتى تختار، فلا تضيع إدخالاتك غير المحفوظة.",

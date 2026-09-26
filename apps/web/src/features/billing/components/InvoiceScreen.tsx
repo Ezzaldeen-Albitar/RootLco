@@ -430,6 +430,7 @@ function ChooseWorkOrder({
           canSearch
           needsBranchId={needsBranchId}
           countsAsUnsaved={false}
+          offersBranchChooser
         />
       ) : (
         <TextField

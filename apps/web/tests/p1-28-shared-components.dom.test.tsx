@@ -580,7 +580,7 @@ describe('BranchTargetFields', () => {
     const second = { ...TEST_BRANCH, id: '66666666-6666-4666-8666-666666666666', name: 'Second' };
     fields({}, branchSnapshot([TEST_BRANCH, second]));
     expect(screen.getByTestId('requires-concrete-branch')).toHaveTextContent(
-      EN['workingContext.chooseFirst'] as string
+      EN['workingContext.chooseBranchHere'] as string
     );
   });
 
