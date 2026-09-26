@@ -9,7 +9,8 @@ import Typography from '@mui/material/Typography';
 import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
 import { formatMessage, translate } from '@/i18n/get-messages';
-import { formatDateTime, formatInteger } from '@/lib/format';
+import { formatInZone, zoneLabelAt } from '@/lib/branch-time';
+import { formatInteger, intlLocale } from '@/lib/format';
 
 /**
  * One figure, and the address of the rows behind it — ADR-022 PR1.
@@ -42,6 +43,19 @@ import { formatDateTime, formatInteger } from '@/lib/format';
  *
  * `asOf` is when the figure was computed, shown under it, so a figure read ten
  * minutes ago is not taken for one read now.
+ *
+ * It is written on a NAMED clock (`timeZone`), never the browser's, and the
+ * clock is always written beside it (`GMT+3`):
+ *
+ *   - one branch in force — the caller passes that branch's zone, so the time
+ *     is the one on the workshop's wall;
+ *   - "All my branches" — the branches may keep different clocks and none of
+ *     them is THE clock of the figure, so the caller passes `'UTC'`. Showing
+ *     one branch's time, or the laptop's, would be a claim about a place the
+ *     figure is not about; UTC with its label is the one honest reading.
+ *
+ * Naming the clock in both cases means a reader never has to know which case
+ * they are in to read the time right.
  */
 
 export type MetricValue =
@@ -61,6 +75,11 @@ export interface MetricCardProps {
   readonly linkLabel?: string | undefined;
   /** When the figure was computed, an instant. */
   readonly asOf?: string | null | undefined;
+  /**
+   * The clock `asOf` is written on: the working branch's IANA zone when one
+   * branch is in force, `'UTC'` under "All my branches". See the docblock.
+   */
+  readonly timeZone: string;
   readonly testId?: string | undefined;
 }
 
@@ -79,6 +98,7 @@ export function MetricCard({
   href,
   linkLabel,
   asOf,
+  timeZone,
   testId,
 }: MetricCardProps) {
   const state = drawnState(metric);
@@ -86,7 +106,8 @@ export function MetricCard({
     asOf === null || asOf === undefined || metric.status !== 'ok'
       ? null
       : formatMessage(translate(messages, 'metric.freshness'), {
-          when: formatDateTime(asOf, locale),
+          when: formatInZone(asOf, intlLocale(locale), timeZone),
+          zone: zoneLabelAt(asOf, intlLocale(locale), timeZone),
         });
 
   const body = (

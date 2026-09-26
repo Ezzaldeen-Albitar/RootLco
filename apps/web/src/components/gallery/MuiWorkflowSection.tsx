@@ -253,6 +253,7 @@ export function MuiWorkflowSection({
           <MetricCard
             messages={messages}
             locale={locale}
+            timeZone={GALLERY_ZONE}
             label={translateDynamic(messages, FIXTURE_STATUS_KEY.open)}
             metric={{ status: 'ok', value: counts[0] ?? 0 }}
             href={`/${locale}/gallery#open`}
@@ -262,6 +263,7 @@ export function MuiWorkflowSection({
           <MetricCard
             messages={messages}
             locale={locale}
+            timeZone={GALLERY_ZONE}
             label={t('gallery.muiWorkflow.metricZero')}
             metric={{ status: 'ok', value: 0 }}
             href={`/${locale}/gallery#none`}
@@ -271,6 +273,7 @@ export function MuiWorkflowSection({
           <MetricCard
             messages={messages}
             locale={locale}
+            timeZone={GALLERY_ZONE}
             label={t('gallery.muiWorkflow.metricWithheld')}
             metric={{ status: 'unauthorized' }}
             testId="gallery-metric-withheld"
@@ -278,6 +281,7 @@ export function MuiWorkflowSection({
           <MetricCard
             messages={messages}
             locale={locale}
+            timeZone={GALLERY_ZONE}
             label={t('gallery.muiWorkflow.metricUnavailable')}
             metric={{ status: 'unavailable' }}
             testId="gallery-metric-unavailable"

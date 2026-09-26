@@ -16,7 +16,7 @@ import { MuiLoadingState } from '@/components/states/MuiStates';
 import { useReducedMotion } from '@/components/ui-foundation/use-reduced-motion';
 import { directionOf, type Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
-import { translate } from '@/i18n/get-messages';
+import { formatMessage, translate } from '@/i18n/get-messages';
 import { formatInteger } from '@/lib/format';
 import { LAYOUT_PX } from '@/styles/tokens/generated/tokens';
 import { estimatedTextWidth, fitLabel } from './label-fit';
@@ -40,7 +40,27 @@ import { estimatedTextWidth, fitLabel } from './label-fit';
  *     ALWAYS present beside the drawing: a shape inside `role="img"` is pruned
  *     from the accessibility tree and cannot be a keyboard's target.
  *   - Nothing is told by colour alone: a series or a category may be HATCHED as
- *     well as coloured, and the legend and the table say it in words.
+ *     well as coloured, and the legend and the table say it in words. A legend
+ *     swatch is drawn with the very paint the drawing uses — a filled box for
+ *     a bar, the hatch for a hatched bar, a line with its mark for a line (a
+ *     line is never hatched, so neither is its swatch).
+ *   - A per-category link stays when its figure is ZERO. Zero is an answer:
+ *     the platform counted and found none, and the list it counted still opens
+ *     (the same rule `MetricCard` follows). A ready chart whose every figure is
+ *     zero says `emptyText` instead of drawing, and still offers the links.
+ *
+ * ## A pie is numbered, not only coloured
+ *
+ * Every slice carries a NUMBER on the drawing, and a legend beside it — always
+ * shown for a pie — lists each number with its swatch, its words and its
+ * count, so a slice is found by its number without telling any colour apart.
+ * There are six distinct slice colours; a pie with more categories than that
+ * draws the first five as they come and folds the rest into a sixth slice,
+ * "Everything else", whose legend entry names every category folded into it.
+ * The table and the per-category links keep the full breakdown, one row and
+ * one link per category, folded or not. Folding rather than patterns: a
+ * seventh pattern on a quarter-circle is not something a reader can match to a
+ * swatch at 12 pixels, whereas a number is.
  *
  * ## Right to left is a coordinate decision
  *
@@ -146,12 +166,6 @@ const TONE_COLOUR: Record<ChartTone, string> = {
   primary: 'var(--color-primary)',
   secondary: 'var(--color-secondary)',
   muted: 'var(--color-text-muted)',
-};
-
-const TONE_SWATCH: Record<ChartTone, string> = {
-  primary: 'bg-primary',
-  secondary: 'bg-secondary',
-  muted: 'bg-text-muted',
 };
 
 /** Pie slices, in order: every one a token, none invented. */
@@ -354,23 +368,88 @@ export function lineChartProps(input: Omit<BuildInput, 'layout'>): LineChartProp
   };
 }
 
-/** The pie chart's configuration: one slice per category, token colours in order. */
-export function pieChartProps(input: Omit<BuildInput, 'layout'>): PieChartProps {
-  const { categories, series, locale, skipAnimation, hatchUrl } = input;
+/** The most slices a pie draws: one per distinct slice colour. */
+export const PIE_MAX_SLICES = SLICE_COLOURS.length;
+
+/** The key of the slice the tail is folded into. Never a category's key. */
+export const OTHER_SLICE_KEY = '__other';
+
+/** One slice as drawn and as listed in the legend. */
+export interface PieSlice {
+  readonly key: string;
+  /** The number written on the slice and beside it in the legend. */
+  readonly marker: string;
+  /** The legend's words for it. */
+  readonly label: string;
+  readonly value: number;
+  /** The paint: a slice colour token, or the hatch. */
+  readonly colour: string;
+  readonly hatched: boolean;
+  /** The categories it stands for: one, or the folded tail. */
+  readonly members: readonly ChartCategory[];
+}
+
+interface PieInput extends Omit<BuildInput, 'layout'> {
+  /** The legend's words for the folded tail. Defaults to the names, joined. */
+  readonly otherWording?: ((members: readonly ChartCategory[]) => string) | undefined;
+}
+
+/**
+ * The slices a pie draws: one per category, in the order given, while there are
+ * no more categories than distinct colours; otherwise the first
+ * `PIE_MAX_SLICES - 1` and one slice for the rest. See the docblock.
+ */
+export function pieSlices(input: PieInput): readonly PieSlice[] {
+  const { categories, series, locale, hatchUrl } = input;
   const only = series[0];
+  const valueAt = (index: number) => only?.data[index] ?? 0;
+  const folds = categories.length > PIE_MAX_SLICES;
+  const kept = folds ? categories.slice(0, PIE_MAX_SLICES - 1) : categories;
+  const slices: PieSlice[] = kept.map((category, index) => ({
+    key: category.key,
+    marker: formatInteger(index + 1, locale),
+    label: wording(category),
+    value: valueAt(index),
+    colour: category.hatched ? hatchUrl : (SLICE_COLOURS[index] as string),
+    hatched: category.hatched === true,
+    members: [category],
+  }));
+  if (folds) {
+    const tail = categories.slice(PIE_MAX_SLICES - 1);
+    const otherWording =
+      input.otherWording ?? ((members) => members.map((member) => wording(member)).join(', '));
+    slices.push({
+      key: OTHER_SLICE_KEY,
+      marker: formatInteger(PIE_MAX_SLICES, locale),
+      label: otherWording(tail),
+      value: tail.reduce((sum, _member, index) => sum + valueAt(PIE_MAX_SLICES - 1 + index), 0),
+      colour: SLICE_COLOURS[PIE_MAX_SLICES - 1] as string,
+      hatched: false,
+      members: tail,
+    });
+  }
+  return slices;
+}
+
+/** The pie chart's configuration: the slices above, each numbered on the drawing. */
+export function pieChartProps(input: PieInput): PieChartProps {
+  const { series, locale, skipAnimation } = input;
+  const slices = pieSlices(input);
+  const markers = new Map(slices.map((slice) => [slice.key, slice.marker]));
   return {
     series: [
       {
-        id: only?.id ?? 'values',
-        data: categories.map((category, index) => ({
-          id: category.key,
-          value: only?.data[index] ?? 0,
-          label: wording(category),
-          color: category.hatched
-            ? hatchUrl
-            : (SLICE_COLOURS[index % SLICE_COLOURS.length] as string),
+        id: series[0]?.id ?? 'values',
+        data: slices.map((slice) => ({
+          id: slice.key,
+          value: slice.value,
+          label: slice.label,
+          color: slice.colour,
         })),
-        arcLabel: (item) => formatInteger(item.value, locale),
+        // The slice's number, not its count: the number is what ties the slice
+        // to its line in the legend without comparing colours.
+        arcLabel: (item) => markers.get(String(item.id)) ?? '',
+        arcLabelMinAngle: 0,
         valueFormatter: (item) => formatInteger(item.value, locale),
       },
     ],
@@ -413,15 +492,47 @@ export function ChartPanel({
   const linked = categories.some((category) => category.href !== undefined);
   const linkText = (category: ChartCategory) => linkLabel?.(category) ?? wording(category);
   const showsFigures = state === 'ready';
+  const otherWording = (members: readonly ChartCategory[]) =>
+    formatMessage(translate(messages, 'chart.otherSlice'), {
+      names: members.map((member) => wording(member)).join(', '),
+    });
+  const input = { categories, series, locale, skipAnimation, hatchUrl, otherWording };
+  const slices = kind === 'pie' ? pieSlices(input) : [];
+  // Only what the drawing actually hatches: a line never is, and a bar chart
+  // hatches a category only when it has one series.
   const hatchedAnything =
-    series.some((entry) => entry.hatched) || categories.some((category) => category.hatched);
+    kind === 'line'
+      ? false
+      : kind === 'pie'
+        ? slices.some((slice) => slice.hatched)
+        : series.some((entry) => entry.hatched) ||
+          (series.length === 1 && categories.some((category) => category.hatched));
 
   const drawing = () => {
-    const input = { categories, series, locale, skipAnimation, hatchUrl };
     if (kind === 'pie') return <PieChart {...pieChartProps(input)} />;
     if (kind === 'line') return <LineChart {...lineChartProps(input)} />;
     return <BarChart {...barChartProps({ ...input, layout })} />;
   };
+
+  const categoryLinks = linked ? (
+    <ul className="flex flex-wrap gap-2" data-testid="chart-links">
+      {categories.map((category, index) =>
+        category.href === undefined ? null : (
+          <li key={category.key}>
+            <Link
+              href={category.href}
+              className="flex items-center gap-2 rounded-md border border-border px-2 py-1 text-caption text-text-primary transition-colors duration-fast ease-standard hover:bg-surface-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+            >
+              <bdi>{linkText(category)}</bdi>
+              <span className="text-text-secondary">
+                {series.map((entry) => formatInteger(entry.data[index] ?? 0, locale)).join(' / ')}
+              </span>
+            </Link>
+          </li>
+        )
+      )}
+    </ul>
+  ) : null;
 
   return (
     <section
@@ -449,17 +560,42 @@ export function ChartPanel({
           {translate(messages, state === 'unauthorized' ? 'chart.withheld' : 'chart.unavailable')}
         </p>
       ) : empty ? (
-        <p role="status" className="text-body text-text-muted">
-          {emptyText}
-        </p>
+        <>
+          <p role="status" className="text-body text-text-muted">
+            {emptyText}
+          </p>
+          {categoryLinks}
+        </>
       ) : (
         <>
           {hatchedAnything ? <HatchDefinition id={hatchId} /> : null}
-          {series.length > 1 || hatchedAnything ? (
-            <ul className="flex flex-wrap items-center gap-4 text-caption text-text-secondary">
+          {kind === 'pie' ? (
+            <ol
+              className="flex flex-col gap-1 text-caption text-text-secondary"
+              data-testid="chart-legend"
+            >
+              {slices.map((slice) => (
+                <li key={slice.key} data-slice={slice.key} className="flex items-center gap-2">
+                  <span className="min-w-4 font-semibold text-text-primary">{slice.marker}</span>
+                  <Swatch shape={slice.hatched ? 'hatch' : 'fill'} paint={slice.colour} />
+                  <bdi>{slice.label}</bdi>
+                  <span className="text-text-muted">{formatInteger(slice.value, locale)}</span>
+                </li>
+              ))}
+            </ol>
+          ) : series.length > 1 || hatchedAnything ? (
+            <ul
+              className="flex flex-wrap items-center gap-4 text-caption text-text-secondary"
+              data-testid="chart-legend"
+            >
               {series.map((entry) => (
                 <li key={entry.id} className="flex items-center gap-2">
-                  <Swatch tone={entry.tone} hatched={entry.hatched === true} />
+                  <Swatch
+                    shape={kind === 'line' ? 'line' : entry.hatched ? 'hatch' : 'fill'}
+                    paint={
+                      kind === 'line' ? TONE_COLOUR[entry.tone] : seriesColour(entry, hatchUrl)
+                    }
+                  />
                   {entry.label}
                 </li>
               ))}
@@ -477,27 +613,7 @@ export function ChartPanel({
           <p id={summaryId} className="sr-only">
             {summary}
           </p>
-          {linked ? (
-            <ul className="flex flex-wrap gap-2">
-              {categories.map((category, index) =>
-                category.href === undefined ? null : (
-                  <li key={category.key}>
-                    <Link
-                      href={category.href}
-                      className="flex items-center gap-2 rounded-md border border-border px-2 py-1 text-caption text-text-primary transition-colors duration-fast ease-standard hover:bg-surface-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
-                    >
-                      <bdi>{linkText(category)}</bdi>
-                      <span className="text-text-secondary">
-                        {series
-                          .map((entry) => formatInteger(entry.data[index] ?? 0, locale))
-                          .join(' / ')}
-                      </span>
-                    </Link>
-                  </li>
-                )
-              )}
-            </ul>
-          ) : null}
+          {categoryLinks}
         </>
       )}
 
@@ -576,17 +692,31 @@ export function ChartPanel({
   );
 }
 
-/** A legend swatch: the series' tone, or the hatch drawn as a bordered box. */
-function Swatch({ tone, hatched }: { readonly tone: ChartTone; readonly hatched: boolean }) {
+/**
+ * A legend swatch, painted with exactly what the drawing is painted with: a box
+ * filled with the colour or the hatch (`paint` is the same `var(--color-…)` or
+ * `url(#…)` the chart receives), or — for a line — a stroke with its mark.
+ * `data-swatch` names the shape, so a test can tell them apart.
+ */
+function Swatch({
+  shape,
+  paint,
+}: {
+  readonly shape: 'fill' | 'hatch' | 'line';
+  readonly paint: string;
+}) {
+  if (shape === 'line') {
+    return (
+      <svg aria-hidden="true" focusable="false" width={16} height={12} data-swatch="line">
+        <line x1={0} y1={6} x2={16} y2={6} stroke={paint} strokeWidth={2} />
+        <circle cx={8} cy={6} r={3} fill={paint} />
+      </svg>
+    );
+  }
   return (
-    <span
-      aria-hidden="true"
-      className={
-        hatched
-          ? 'inline-block size-3 rounded-sm border border-border-strong bg-surface-subtle'
-          : `inline-block size-3 rounded-sm ${TONE_SWATCH[tone]}`
-      }
-    />
+    <svg aria-hidden="true" focusable="false" width={12} height={12} data-swatch={shape}>
+      <rect width={12} height={12} rx={2} fill={paint} />
+    </svg>
   );
 }
 

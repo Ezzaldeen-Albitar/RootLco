@@ -10,7 +10,10 @@ import {
   barChartProps,
   countGutter,
   lineChartProps,
+  OTHER_SLICE_KEY,
+  PIE_MAX_SLICES,
   pieChartProps,
+  pieSlices,
   type ChartCategory,
   type ChartPanelProps,
   type ChartSeries,
@@ -56,7 +59,7 @@ function mount(ui: ReactElement, locale: Locale = 'en') {
 const ARABIC_INDIC = /[٠-٩۰-۹]/;
 
 describe('MetricCard: four statements that never look alike', () => {
-  function card(metric: MetricValue, locale: Locale = 'en') {
+  function card(metric: MetricValue, locale: Locale = 'en', timeZone = 'Asia/Amman') {
     const catalogue = getMessages(locale);
     return mount(
       <MetricCard
@@ -67,11 +70,47 @@ describe('MetricCard: four statements that never look alike', () => {
         href="/en/gallery#open"
         linkLabel="Open the list"
         asOf="2026-09-22T06:30:00Z"
+        timeZone={timeZone}
         testId="metric"
       />,
       locale
     );
   }
+
+  /** The time and the clock's name, worked out here rather than borrowed from the card. */
+  function stood(zone: string): string {
+    const instant = new Date('2026-09-22T06:30:00Z');
+    const when = new Intl.DateTimeFormat('en-GB', {
+      timeZone: zone,
+      dateStyle: 'medium',
+      timeStyle: 'short',
+    }).format(instant);
+    const name =
+      new Intl.DateTimeFormat('en-GB', { timeZone: zone, timeZoneName: 'shortOffset' })
+        .formatToParts(instant)
+        .find((part) => part.type === 'timeZoneName')?.value ?? '';
+    return `As it stood at ${when} (${name}).`;
+  }
+
+  it("writes when it was counted on the BRANCH's clock, naming the clock — not the browser's", () => {
+    // Pacific/Kiritimati is UTC+14: 06:30 UTC is 20:30 there, a clock no test
+    // machine keeps, so a card reading the browser's clock cannot pass.
+    card({ status: 'ok', value: 5 }, 'en', 'Pacific/Kiritimati');
+    const metric = screen.getByTestId('metric');
+    expect(metric).toHaveTextContent(stood('Pacific/Kiritimati'));
+    expect(metric).toHaveTextContent(/20:30 \(GMT\+14\)/);
+    const browser = new Intl.DateTimeFormat('en-GB', { timeStyle: 'short' }).format(
+      new Date('2026-09-22T06:30:00Z')
+    );
+    expect(metric.textContent ?? '').not.toContain(`${browser} (`);
+  });
+
+  it('writes the time on UTC, and says so, under "All my branches"', () => {
+    card({ status: 'ok', value: 5 }, 'en', 'UTC');
+    const metric = screen.getByTestId('metric');
+    expect(metric).toHaveTextContent(stood('UTC'));
+    expect(metric).toHaveTextContent(/06:30 \(GMT/);
+  });
 
   it('draws a count as a number that links to its list, with when it was counted', () => {
     card({ status: 'ok', value: 1234 });
@@ -316,6 +355,18 @@ describe('ChartPanel: states', () => {
     expect(screen.queryByRole('button', { name: en['chart.showTable'] })).toBeNull();
   });
 
+  it('keeps every per-category link when the figures are zero: zero is an answer and still links', () => {
+    panel({ series: [{ id: 'orders', label: 'Work orders', data: [0, 0, 0], tone: 'primary' }] });
+    expect(screen.getByTestId('chart')).toHaveAttribute('data-chart-state', 'empty');
+    const links = within(screen.getByTestId('chart-links')).getAllByRole('link');
+    expect(links.map((link) => link.getAttribute('href'))).toEqual([
+      '/en/work-orders?state=open',
+      '/en/work-orders?state=waiting',
+      '/en/work-orders?state=done',
+    ]);
+    for (const link of links) expect(link).toHaveTextContent(/0$/);
+  });
+
   it('says so when every figure is zero, and still offers the table of zeros', () => {
     panel({ series: [{ id: 'orders', label: 'Work orders', data: [0, 0, 0], tone: 'primary' }] });
     expect(screen.getByTestId('chart')).toHaveAttribute('data-chart-state', 'empty');
@@ -334,6 +385,128 @@ describe('ChartPanel: states', () => {
     const { container } = panel({}, locale);
     const results = await axe(container);
     expect(results.violations).toEqual([]);
+  });
+});
+
+describe('legend swatches are painted like the drawing', () => {
+  const TWO_LINES: readonly ChartSeries[] = [
+    { id: 'opened', label: 'Opened', data: [1, 2, 3], tone: 'primary' },
+    // Asked to be hatched — a line cannot be, so neither may its swatch.
+    { id: 'closed', label: 'Closed', data: [0, 1, 2], tone: 'muted', hatched: true },
+  ];
+
+  it('draws a line swatch for a line, never a hatch, and defines no hatch at all', () => {
+    const { container } = panel({ kind: 'line', series: TWO_LINES });
+    const legend = screen.getByTestId('chart-legend');
+    const swatches = [...legend.querySelectorAll('[data-swatch]')];
+    expect(swatches.map((swatch) => swatch.getAttribute('data-swatch'))).toEqual(['line', 'line']);
+    expect(swatches[1]?.querySelector('line')).toHaveAttribute('stroke', 'var(--color-text-muted)');
+    expect(legend.innerHTML).not.toContain('url(#');
+    expect(container.querySelector('pattern')).toBeNull();
+  });
+
+  it('paints a hatched bar series with the very hatch the bars use', () => {
+    const { container } = panel({ kind: 'bar', layout: 'vertical', series: TWO_LINES });
+    const pattern = container.querySelector('pattern');
+    expect(pattern).not.toBeNull();
+    const swatches = [...screen.getByTestId('chart-legend').querySelectorAll('[data-swatch]')];
+    expect(swatches.map((swatch) => swatch.getAttribute('data-swatch'))).toEqual(['fill', 'hatch']);
+    expect(swatches[0]?.querySelector('rect')).toHaveAttribute('fill', 'var(--color-primary)');
+    expect(swatches[1]?.querySelector('rect')).toHaveAttribute(
+      'fill',
+      `url(#${pattern?.id ?? ''})`
+    );
+  });
+});
+
+describe('a pie is identifiable without colour', () => {
+  const EIGHT: readonly ChartCategory[] = [
+    'Brakes',
+    'Tyres',
+    'Engine',
+    'Electrics',
+    'Body',
+    'Glass',
+    'Air conditioning',
+    'Inspection',
+  ].map((label, index) => ({
+    key: `k${String(index)}`,
+    label,
+    href: `/en/work-orders?kind=k${String(index)}`,
+  }));
+  const EIGHT_COUNTS: readonly ChartSeries[] = [
+    { id: 'orders', label: 'Work orders', data: [8, 7, 6, 5, 4, 3, 2, 1], tone: 'primary' },
+  ];
+
+  it('numbers every slice and lists each number with its words and count; the tail is folded and named', () => {
+    panel({
+      kind: 'pie',
+      categories: EIGHT,
+      series: EIGHT_COUNTS,
+      tableMode: 'always',
+      summary: '8 kinds, 36 work orders.',
+    });
+    const legend = screen.getByTestId('chart-legend');
+    expect(legend.tagName).toBe('OL');
+    const items = within(legend).getAllByRole('listitem');
+    expect(items).toHaveLength(PIE_MAX_SLICES);
+    expect(items.map((item) => item.firstElementChild?.textContent)).toEqual([
+      '1',
+      '2',
+      '3',
+      '4',
+      '5',
+      '6',
+    ]);
+    expect(items.slice(0, 5).map((item) => item.querySelector('bdi')?.textContent)).toEqual([
+      'Brakes',
+      'Tyres',
+      'Engine',
+      'Electrics',
+      'Body',
+    ]);
+    // The sixth slice is everything else, and says which categories it holds.
+    expect(items[5]).toHaveAttribute('data-slice', OTHER_SLICE_KEY);
+    expect(items[5]).toHaveTextContent('Everything else: Glass, Air conditioning, Inspection');
+    expect(items[5]).toHaveTextContent(/6$/);
+    // Every category is named in words somewhere a reader can find it without
+    // telling a colour apart: the legend, and — one row each — the table and
+    // the links.
+    for (const category of EIGHT) {
+      expect(legend).toHaveTextContent(category.label);
+    }
+    const rows = within(screen.getByRole('table')).getAllByRole('row');
+    expect(rows).toHaveLength(EIGHT.length + 1);
+    expect(within(screen.getByTestId('chart-links')).getAllByRole('link')).toHaveLength(
+      EIGHT.length
+    );
+  });
+
+  it('writes each slice NUMBER on the drawing, and gives six slices six distinct paints', () => {
+    const input = {
+      categories: EIGHT,
+      series: EIGHT_COUNTS,
+      locale: 'en' as const,
+      skipAnimation: false,
+      hatchUrl: 'url(#hatch)',
+    };
+    const config = pieChartProps(input);
+    const pie = config.series[0] as {
+      data: readonly { id: string; value: number; color: string }[];
+      arcLabel: (item: { id: string; value: number }) => string;
+    };
+    expect(pie.data).toHaveLength(PIE_MAX_SLICES);
+    expect(new Set(pie.data.map((slice) => slice.color)).size).toBe(PIE_MAX_SLICES);
+    expect(pie.data.map((slice) => pie.arcLabel(slice))).toEqual(['1', '2', '3', '4', '5', '6']);
+    // The folded slice counts the whole tail.
+    expect(pie.data[5]?.value).toBe(3 + 2 + 1);
+    // Six categories or fewer: no folding, one slice each.
+    expect(pieSlices({ ...input, categories: EIGHT.slice(0, 6) })).toHaveLength(6);
+    expect(
+      pieSlices({ ...input, categories: EIGHT.slice(0, 6) }).some(
+        (slice) => slice.key === OTHER_SLICE_KEY
+      )
+    ).toBe(false);
   });
 });
 
