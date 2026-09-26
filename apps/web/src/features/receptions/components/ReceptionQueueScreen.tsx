@@ -1,35 +1,34 @@
 'use client';
 
 import Link from 'next/link';
-import { useCallback, useId, useMemo, useState } from 'react';
-import { DataTable, type Column } from '@/components/data-table/DataTable';
+import { useCallback, useMemo, useState } from 'react';
+import Button from '@mui/material/Button';
+import {
+  OperationalGrid,
+  type OperationalColumn,
+  type RowAction,
+} from '@/components/data/OperationalGrid';
 import { INITIAL_REQUEST } from '@/components/data-table/table-state';
-import { SelectField, TextField } from '@/components/forms/Field';
-import { SearchBox } from '@/components/search/SearchBox';
-import { SearchStates } from '@/components/search/SearchStates';
+import { FilterToolbar, type ToolbarFilter } from '@/components/filters/FilterToolbar';
+import { boardInstantWindow } from '@/components/filters/period';
+import { MuiSearchStates, type NoResultsReason } from '@/components/states/MuiStates';
 import {
   RequiresConcreteBranch,
   WorkingBranchField,
 } from '@/features/working-context/components/WorkingBranchField';
-import { useBranchTarget } from '@/features/working-context/use-branch-target';
+import {
+  useBranchTarget,
+  type BranchTargetState,
+} from '@/features/working-context/use-branch-target';
 import { useWorkingContext } from '@/features/working-context/WorkingContextProvider';
+import type { WorkingContextBranch } from '@/features/working-context/working-context-contract';
 import type { BranchScope, CursorPage, ReadState } from '@/lib/api/read-operation';
 import { useSearchRequest } from '@/lib/api/use-search-request';
-import { IDLE, invalid, type ActionState } from '@/lib/forms/action-result';
-import { useClearOnCorrect } from '@/lib/forms/use-clear-on-correct';
-import { useFocusFirstInvalid } from '@/lib/forms/use-focus-first-invalid';
-import {
-  addDays,
-  dayIn,
-  endOfDayBound,
-  formatDayInZone,
-  formatInZone,
-  rangeOfDays,
-} from '@/lib/branch-time';
+import { formatDayInZone, formatInZone } from '@/lib/branch-time';
 import { intlLocale } from '@/lib/format';
 import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
-import { translate, translateDynamic } from '@/i18n/get-messages';
+import { formatMessage, translate, translateDynamic } from '@/i18n/get-messages';
 import { listReceptionsCancellable } from '../reception-list-read';
 import {
   MAX_RECEPTION_SEARCH,
@@ -39,7 +38,6 @@ import {
   TERMINAL_RECEPTION_STATUSES,
   UNFINISHED_RECEPTION_STATUSES,
   isFinishedReception,
-  type ReceptionBoardPeriod,
   type ReceptionListCriteria,
   type ReceptionListEntry,
   type ReceptionStatus,
@@ -116,6 +114,22 @@ import {
  * new branch's name, and the cursor stack is thrown away with it. Any change to
  * the criteria does the same, which is what stops a cursor issued against one
  * ordering being spent against another.
+ *
+ * ## On the Material UI wrappers (ADR-022)
+ *
+ * The filters are `FilterToolbar` — the grouped status select, the one search
+ * box, the board's five periods sent as instants on the branch's clock
+ * (`period.ts#boardInstantWindow`) with the two chosen days checked at their
+ * boxes, a summary line that states the period AND the clock it is counted on,
+ * and the board's own links beside them. The rows are `OperationalGrid` over the
+ * same `useSearchRequest(...).table`, and every state other than an answer is
+ * `MuiSearchStates`. Nothing about how the board reads changed: the same
+ * criteria, the same cancellable route, the same version key.
+ *
+ * The window is computed HERE on every render from the period in force and the
+ * zone, never stored from the toolbar's callback: a branch switch that changes
+ * the zone must move the window in the same render, and a stored window would
+ * still be the previous branch's day.
  */
 
 /**
@@ -126,18 +140,19 @@ import {
  * of the last seven days is a worse answer than no link at all, and one
  * declaration is what keeps the two sides naming the same five periods.
  */
-type PeriodKind = ReceptionBoardPeriod;
-
-const PERIOD_KINDS: readonly PeriodKind[] = RECEPTION_BOARD_PERIODS;
+const PERIOD_KINDS = RECEPTION_BOARD_PERIODS;
 
 /** The period in force, plus the two days a custom one was applied with. */
 export interface AppliedPeriod {
-  readonly kind: PeriodKind;
+  readonly kind: (typeof PERIOD_KINDS)[number];
   readonly from: string;
   readonly to: string;
 }
 
 const TODAY_PERIOD: AppliedPeriod = { kind: 'today', from: '', to: '' };
+
+/** The status control's value: nothing, a whole group, or one code — never both. */
+type StatusChoice = '' | `group:${ReceptionStatusGroup}` | ReceptionStatus;
 
 /** What the read is asked for: the scope it is addressed to and the filters. */
 interface Asked {
@@ -146,42 +161,34 @@ interface Asked {
 }
 
 /**
- * The instants a period covers, in the branch's zone.
+ * The clock the board's days are counted on, and whose it is.
  *
- * `beforeToday` has no lower bound on purpose: "what is still here from before
- * today" is a question about a beginning nobody named, and inventing one would
- * hide the oldest visits — which are the ones the question is about.
+ * One branch: its own zone. "All my branches": the first authorized branch's,
+ * and its NAME is returned so the summary line can say whose clock it is — see
+ * the docblock. A zone the directory does not publish falls back to `UTC`, and
+ * the summary names `UTC`, so the fallback is stated rather than silent.
+ * Anything else and the board is not read at all, so the value is never used.
+ * Exported so the fallback is tested on the function: no rendered state
+ * reaches it while the directory publishes a zone for every branch.
  */
-function windowOf(
-  period: AppliedPeriod,
-  zone: string
-): { readonly from?: string; readonly to?: string } {
-  const today = dayIn(zone);
-  switch (period.kind) {
-    case 'today':
-      return rangeOfDays(zone, today, today);
-    case 'yesterday': {
-      const day = addDays(today, -1);
-      return rangeOfDays(zone, day, day);
-    }
-    case 'last7':
-      // Seven days INCLUDING today, which is what "the last 7 days" means to
-      // the person asking. Six back plus today.
-      return rangeOfDays(zone, addDays(today, -6), today);
-    case 'beforeToday':
-      /*
-       * The LAST instant of yesterday, not the first instant of today.
-       *
-       * The route compares `custody_accepted_at <= to`, closed on both ends. The
-       * start of today satisfies that comparison, so sending it puts every visit
-       * received in the first millisecond of today — midnight arrivals, and any
-       * row the database stamped exactly on the boundary — into a board headed
-       * "before today".
-       */
-      return { to: endOfDayBound(zone, addDays(today, -1)) };
-    case 'custom':
-      return rangeOfDays(zone, period.from, period.to);
-  }
+export function boardClock(
+  branch: BranchTargetState,
+  branches: readonly Pick<WorkingContextBranch, 'id' | 'name' | 'timezone'>[]
+): {
+  readonly zone: string;
+  readonly spansBranches: boolean;
+  readonly zoneBranchName: string | null;
+} {
+  const zone =
+    (branch.kind === 'ready'
+      ? branches.find((entry) => entry.id === branch.target.branchId)?.timezone
+      : branches[0]?.timezone) ?? 'UTC';
+  const spansBranches = branch.kind === 'all';
+  return {
+    zone,
+    spansBranches,
+    zoneBranchName: spansBranches ? (branches[0]?.name ?? null) : null,
+  };
 }
 
 export function ReceptionQueueScreen({
@@ -189,6 +196,7 @@ export function ReceptionQueueScreen({
   messages,
   canCreate,
   canReachIntake = false,
+  searchesCustomers = true,
   initialPeriod,
 }: {
   readonly locale: Locale;
@@ -204,6 +212,14 @@ export function ReceptionQueueScreen({
    */
   readonly canReachIntake?: boolean;
   /**
+   * Whether the server matches this caller's search on a customer's name and
+   * phone — `crm.customer.read`, the code the reception read checks before it
+   * searches those details. Without it a term is matched on the plate, the
+   * chassis and the visit number only, and an empty answer says so rather than
+   * reading as "nothing exists" (Browser QA part 7, row 2.8).
+   */
+  readonly searchesCustomers?: boolean;
+  /**
    * The period this board opens on, when it was reached from a figure counted
    * over one.
    *
@@ -217,14 +233,22 @@ export function ReceptionQueueScreen({
   const context = useWorkingContext();
   const branch = useBranchTarget();
 
+  /*
+   * The period in force. A chosen range that arrived with the address opens the
+   * toolbar's two boxes filled with it, so the range the reader is looking at is
+   * the range the form shows — the toolbar sets its boxes from this value. An
+   * empty pair would invite them to "apply" a period they never asked for.
+   */
   const [period, setPeriod] = useState<AppliedPeriod>(initialPeriod ?? TODAY_PERIOD);
   /*
-   * The two boxes start filled when a chosen range arrived with the address, so
-   * the range the reader is looking at is the range the form shows. An empty
-   * pair would invite them to "apply" a period they never asked for.
+   * What Clear owes the toolbar's two date boxes. `periodReset` is bumped by
+   * Clear so the boxes close and their days go even when the period was
+   * already Today — a reset the period value alone cannot express. `typedDays`
+   * is the toolbar telling us the open boxes hold days, so Clear is offered for
+   * them as it was when the boxes lived here.
    */
-  const [draftFrom, setDraftFrom] = useState(initialPeriod?.from ?? '');
-  const [draftTo, setDraftTo] = useState(initialPeriod?.to ?? '');
+  const [periodReset, setPeriodReset] = useState(0);
+  const [typedDays, setTypedDays] = useState(false);
   /*
    * ONE control over two kinds of answer.
    *
@@ -235,33 +259,10 @@ export function ReceptionQueueScreen({
    * and it puts the answer an operator actually wants ("everything still with
    * us") at the top of the same list they were already reading.
    */
-  const [status, setStatus] = useState<'' | `group:${ReceptionStatusGroup}` | ReceptionStatus>('');
+  const [status, setStatus] = useState<StatusChoice>('');
   const [term, setTerm] = useState('');
-  // The period group is named by its visible label. A generated id rather than
-  // a written one, so two boards on one page could never share a name.
-  const periodLabelId = useId();
-  /**
-   * The filter form's own refusals, in the shape every form on this product
-   * speaks. `attempt` is what moves the cursor to the first bad field and what
-   * lets the same complaint be announced twice.
-   */
-  const [refusal, setRefusal] = useState<ActionState>(IDLE);
-  const formRef = useFocusFirstInvalid(refusal);
-  const corrections = useClearOnCorrect(refusal);
 
-  /*
-   * The zone the day is measured in.
-   *
-   * One branch: its own. "All my branches": the first authorized one, and the
-   * label says so — see the docblock. Anything else and the board is not read at
-   * all, so the value is never used.
-   */
-  const zone =
-    (branch.kind === 'ready'
-      ? context.branches.find((entry) => entry.id === branch.target.branchId)?.timezone
-      : context.branches[0]?.timezone) ?? 'UTC';
-  const spansBranches = branch.kind === 'all';
-  const zoneBranchName = spansBranches ? (context.branches[0]?.name ?? null) : null;
+  const { zone, spansBranches, zoneBranchName } = boardClock(branch, context.branches);
 
   /*
    * The scope, or the reason there is none.
@@ -313,7 +314,7 @@ export function ReceptionQueueScreen({
               : status.startsWith('group:')
                 ? { statusGroup: status.slice('group:'.length) as ReceptionStatusGroup }
                 : { status: status as ReceptionStatus }),
-            ...windowOf(period, zone),
+            ...boardInstantWindow(period, zone),
             ...(termIsSearchable ? { q: trimmed } : {}),
           },
         };
@@ -347,37 +348,11 @@ export function ReceptionQueueScreen({
     criteria: asked,
     load,
     version: context.version,
+    // A board read is narrowed whenever it carries a bound, a status or a term
+    // — and every one carries a period's bound — so an empty answer is "no
+    // matches", never "nothing here yet" (route checklist, G10).
+    narrows: (criteria) => Object.keys(criteria.filters).length > 0,
   });
-
-  const applyCustom = () => {
-    if (draftFrom === '' || draftTo === '') {
-      setRefusal(
-        invalid(
-          { [draftFrom === '' ? 'from' : 'to']: 'receptions.queue.periodIncomplete' },
-          (refusal.attempt ?? 0) + 1
-        )
-      );
-      return;
-    }
-    if (draftTo < draftFrom) {
-      // Refused here rather than at the backend. The operation answers 422 for
-      // an inverted range, and a 422 arriving as a page-level failure teaches
-      // the operator nothing about which of the two boxes to change.
-      setRefusal(invalid({ to: 'receptions.queue.invertedRange' }, (refusal.attempt ?? 0) + 1));
-      return;
-    }
-    setRefusal(IDLE);
-    setPeriod({ kind: 'custom', from: draftFrom, to: draftTo });
-  };
-
-  const choosePeriod = (kind: PeriodKind) => {
-    setRefusal(IDLE);
-    if (kind === 'custom') {
-      setPeriod({ kind: 'custom', from: '', to: '' });
-      return;
-    }
-    setPeriod({ kind, from: '', to: '' });
-  };
 
   /**
    * "What is still here from before today", as one button.
@@ -388,16 +363,13 @@ export function ReceptionQueueScreen({
    * so the question is one request again and the button asks it.
    */
   const olderUnfinished = () => {
-    setRefusal(IDLE);
     setPeriod({ kind: 'beforeToday', from: '', to: '' });
     setStatus('group:open');
   };
 
   const clearFilters = () => {
-    setRefusal(IDLE);
     setPeriod(TODAY_PERIOD);
-    setDraftFrom('');
-    setDraftTo('');
+    setPeriodReset((count) => count + 1);
     setStatus('');
     setTerm('');
   };
@@ -411,17 +383,27 @@ export function ReceptionQueueScreen({
    * empty board of all (a status or a period that matches nothing today) with
    * no way out but to undo each control by hand.
    *
-   * The draft days count even when the period is not custom: they are typed
-   * text the operator can see, and a Clear that left them sitting there would
-   * be a Clear that did not. The search box counts by the same rule, on its RAW
-   * text: a term of spaces asks nothing, but it is still text in the box.
+   * Days typed into the toolbar's open boxes count even when they are not
+   * applied: they are text the operator can see, and a Clear that left them
+   * sitting there would be a Clear that did not. Clear bumps `periodReset`,
+   * which closes the boxes and drops the days even while Today is already in
+   * force. The search box counts by the same rule, on its RAW text: a term of
+   * spaces asks nothing, but it is still text in the box.
    */
   const filtersApplied =
-    period.kind !== TODAY_PERIOD.kind ||
-    draftFrom !== '' ||
-    draftTo !== '' ||
-    status !== '' ||
-    term !== '';
+    period.kind !== TODAY_PERIOD.kind || typedDays || status !== '' || term !== '';
+
+  /*
+   * What narrowed an empty answer, in the operator's terms: the term they typed
+   * — matched on fewer details for an account that may not read customers — or
+   * otherwise the period and the status. Every read is bounded by a period, so
+   * an empty board is always a narrowed one and never "nothing here yet".
+   */
+  const emptyReason: NoResultsReason = termIsSearchable
+    ? searchesCustomers
+      ? 'search'
+      : 'searchLimited'
+    : 'filters';
 
   /*
    * The two groups first, as whole answers, then the six codes underneath them
@@ -464,12 +446,16 @@ export function ReceptionQueueScreen({
       period.kind === 'custom' && period.from !== '' && period.to !== ''
         ? `${formatDayInZone(period.from, intlLocale(locale), zone)} – ${formatDayInZone(period.to, intlLocale(locale), zone)}`
         : translateDynamic(messages, `receptions.queue.period.${period.kind}`);
+    // The clock is always stated, not only when several branches share one
+    // board (Browser QA part 7, row 3.1): a reader on another clock cannot tell
+    // "today" from "today on my laptop" otherwise.
+    const clock = formatMessage(translate(messages, 'receptions.queue.zoneNote'), { zone });
     return zoneName === null
-      ? base
-      : `${base} · ${translate(messages, 'receptions.queue.periodZoneOfFirstBranch')} ${zoneName}`;
+      ? `${base} · ${clock}`
+      : `${base} · ${translate(messages, 'receptions.queue.periodZoneOfFirstBranch')} ${zoneName} · ${clock}`;
   }, [period, zone, locale, messages, spansBranches, zoneBranchName]);
 
-  const columns = useMemo<readonly Column<ReceptionListEntry>[]>(
+  const allColumns = useMemo<readonly OperationalColumn<ReceptionListEntry>[]>(
     () => [
       {
         id: 'displayNumber',
@@ -547,9 +533,9 @@ export function ReceptionQueueScreen({
       {
         id: 'branch',
         headerKey: 'receptions.queue.column.branch',
-        // Rendered only while the board spans branches — see `hiddenColumnIds`
-        // below. The name, never the identifier: a reference here would be a
-        // second thing for the operator to look up.
+        // Passed to the grid only while the board spans branches — see
+        // `columns` below. The name, never the identifier: a reference here
+        // would be a second thing for the operator to look up.
         /*
          * The name, or an absence rendered AS an absence.
          *
@@ -590,18 +576,56 @@ export function ReceptionQueueScreen({
   );
 
   /*
-   * A field complaint, already translated.
-   *
-   * `useClearOnCorrect` answers with a catalogue KEY and stops answering once
-   * the operator edits the control, which is the whole behaviour: the sentence
-   * was about a value that is no longer there.
+   * The branch column exists only while the board spans branches. On one branch
+   * every row is that branch's, the page already names it, and a column
+   * repeating it would be noise — so it is not passed at all rather than hidden.
    */
-  const errorFor = (field: string): string | undefined => {
-    const key = corrections.errorFor(field);
-    return key === undefined ? undefined : translateDynamic(messages, key);
+  const columns = useMemo(
+    () => (spansBranches ? allColumns : allColumns.filter((column) => column.id !== 'branch')),
+    [allColumns, spansBranches]
+  );
+
+  /*
+   * The next action, decided by the graph rather than by a list of codes. A
+   * visit that can still move is one the desk has work to finish on; a finished
+   * one is a record to open. Both land on the same read, which is what supplies
+   * the version any guarded command needs — the board's own row version is a
+   * snapshot and must never be spent on a write (QA-004). Both are links: no
+   * reception write is reachable from this board.
+   */
+  const rowActions = useCallback(
+    (row: ReceptionListEntry): readonly RowAction[] => {
+      const about = row.displayNumber ?? undefined;
+      return [
+        {
+          kind: 'link',
+          label: isFinishedReception(row.receptionStatus)
+            ? translate(messages, 'receptions.queue.open')
+            : translate(messages, 'receptions.queue.continueCheckIn'),
+          href: `/${locale}/receptions/check-in/${row.id}`,
+          about,
+        },
+        {
+          kind: 'link',
+          label: translate(messages, 'receptions.queue.acknowledgement'),
+          href: `/${locale}/receptions/check-in/${row.id}/acknowledgement`,
+          about,
+        },
+      ];
+    },
+    [locale, messages]
+  );
+
+  const statusFilter: ToolbarFilter = {
+    kind: 'select',
+    key: 'status',
+    label: translate(messages, 'receptions.queue.statusFilter'),
+    value: status,
+    onChange: (next) => setStatus(next as StatusChoice),
+    options: statusOptions,
+    groups: statusGroups,
+    placeholder: translate(messages, 'receptions.queue.anyStatus'),
   };
-  const fromError = errorFor('from');
-  const toError = errorFor('to');
 
   const blocked =
     branch.kind === 'unchosen' || branch.kind === 'none' || branch.kind === 'unavailable';
@@ -609,156 +633,81 @@ export function ReceptionQueueScreen({
 
   return (
     <div className="flex min-h-0 flex-col gap-4">
-      <form
-        ref={formRef}
-        onSubmit={(event) => {
-          event.preventDefault();
-          search.submit();
+      {/*
+        The branch is STATED, not asked. It is the header's own selection and
+        there is exactly one place it can be changed; a second editable control
+        here would be a second authority for the same fact. A board that did not
+        name it would leave the operator to remember which branch they are
+        reading. Under "All my branches" it names the set and its company.
+      */}
+      <div className="max-w-md">
+        <WorkingBranchField
+          messages={messages}
+          label={translate(messages, 'receptions.checkIn.branch')}
+          acceptsAllBranches
+        />
+      </div>
+
+      <FilterToolbar
+        messages={messages}
+        label={translate(messages, 'receptions.queue.formLabel')}
+        testId="reception-queue-toolbar"
+        search={{
+          label: translate(messages, 'receptions.queue.searchLabel'),
+          placeholder: translate(messages, 'receptions.queue.searchPlaceholder'),
+          example: translate(messages, 'receptions.queue.searchExample'),
+          value: term,
+          onChange: setTerm,
+          onSubmit: search.submit,
+          busy: search.phase === 'loading',
+          maxLength: MAX_RECEPTION_SEARCH,
+          error: termTooShort ? translate(messages, 'receptions.queue.searchTooShort') : undefined,
         }}
-        noValidate
-        aria-label={translate(messages, 'receptions.queue.formLabel')}
-        className="flex flex-col gap-3 rounded-lg border border-border bg-surface p-4"
-      >
-        {/*
-          A GROUP, named by the label already beside it.
-
-          The buttons are one control with one answer, and without the role a
-          screen reader announces five unrelated toggles whose shared heading is
-          a stray line of text. `aria-labelledby` rather than a second
-          `aria-label` so the name a reader hears and the word on the screen
-          cannot drift apart. The work-order board's view chips do the same.
-        */}
-        <div
-          role="group"
-          aria-labelledby={periodLabelId}
-          className="flex flex-wrap items-center gap-2"
-        >
-          <span id={periodLabelId} className="text-label font-medium text-text-primary">
-            {translate(messages, 'receptions.queue.periodLabel')}
-          </span>
-          {PERIOD_KINDS.map((kind) => (
-            <button
-              key={kind}
-              type="button"
-              aria-pressed={period.kind === kind}
-              onClick={() => choosePeriod(kind)}
-              className={
-                period.kind === kind
-                  ? 'rounded-md border border-border bg-primary px-3 py-1.5 text-body text-on-primary transition-colors duration-fast ease-standard focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring'
-                  : 'rounded-md border border-border px-3 py-1.5 text-body text-text-primary transition-colors duration-fast ease-standard hover:bg-surface-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring'
-              }
-            >
-              {translateDynamic(messages, `receptions.queue.period.${kind}`)}
-            </button>
-          ))}
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2">
-          <button
-            type="button"
-            onClick={olderUnfinished}
-            className="rounded-md border border-border px-3 py-1.5 text-body text-text-primary transition-colors duration-fast ease-standard hover:bg-surface-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
-          >
-            {translate(messages, 'receptions.queue.olderUnfinished')}
-          </button>
-        </div>
-
-        <p data-testid="reception-period-label" className="text-supporting text-text-muted">
-          {periodLabel}
-        </p>
-
-        {period.kind === 'custom' ? (
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            <TextField
-              type="date"
-              label={translate(messages, 'receptions.queue.fromDay')}
-              value={draftFrom}
-              onChange={(event) => {
-                corrections.noteEdited('from');
-                setDraftFrom(event.target.value);
-              }}
-              {...(fromError === undefined ? {} : { error: fromError })}
-            />
-            <TextField
-              type="date"
-              label={translate(messages, 'receptions.queue.toDay')}
-              value={draftTo}
-              onChange={(event) => {
-                corrections.noteEdited('to');
-                setDraftTo(event.target.value);
-              }}
-              {...(toError === undefined ? {} : { error: toError })}
-            />
-            <div className="flex items-end">
-              <button
-                type="button"
-                onClick={applyCustom}
-                className="rounded-md bg-primary px-4 py-2 text-body font-medium text-on-primary transition-colors duration-fast ease-standard hover:bg-primary-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+        filters={[statusFilter]}
+        period={{
+          format: 'instants',
+          presets: PERIOD_KINDS,
+          value: period,
+          zone,
+          // Only the SELECTION is kept. The window is derived from it and the
+          // zone on every render — see the docblock.
+          onChange: (selection) => setPeriod(selection),
+          resetKey: periodReset,
+          onTypedDaysChange: setTypedDays,
+        }}
+        summary={periodLabel}
+        actions={
+          <>
+            {/*
+              "What is still here from before today", as one button: the
+              Before today period and the open group, in one request.
+            */}
+            <Button type="button" variant="outlined" size="small" onClick={olderUnfinished}>
+              {translate(messages, 'receptions.queue.olderUnfinished')}
+            </Button>
+            {canCreate ? (
+              <Button
+                component={Link}
+                href={`/${locale}/receptions/check-in`}
+                variant="outlined"
+                size="small"
               >
-                {translate(messages, 'receptions.queue.applyPeriod')}
-              </button>
-            </div>
-          </div>
-        ) : null}
-
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {/*
-            The branch is STATED, not asked. It is the header's own selection and
-            there is exactly one place it can be changed; a second editable
-            control here would be a second authority for the same fact. A board
-            that did not name it would leave the operator to remember which
-            branch they are reading.
-          */}
-          <WorkingBranchField
-            messages={messages}
-            label={translate(messages, 'receptions.checkIn.branch')}
-            acceptsAllBranches
-          />
-          <SelectField
-            label={translate(messages, 'receptions.queue.statusFilter')}
-            value={status}
-            onChange={(event) => setStatus(event.target.value as typeof status)}
-            options={statusOptions}
-            groups={statusGroups}
-            placeholder={translate(messages, 'receptions.queue.anyStatus')}
-          />
-          <div className="sm:col-span-2">
-            <SearchBox
-              messages={messages}
-              label={translate(messages, 'receptions.queue.searchLabel')}
-              placeholder={translate(messages, 'receptions.queue.searchPlaceholder')}
-              example={translate(messages, 'receptions.queue.searchExample')}
-              value={term}
-              onChange={setTerm}
-              onSubmit={search.submit}
-              busy={search.phase === 'loading'}
-              maxLength={MAX_RECEPTION_SEARCH}
-              {...(termTooShort
-                ? { error: translate(messages, 'receptions.queue.searchTooShort') }
-                : {})}
-            />
-          </div>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-3">
-          {canCreate ? (
-            <Link
-              href={`/${locale}/receptions/check-in`}
-              className="rounded-md border border-border px-4 py-2 text-body text-text-primary transition-colors duration-fast ease-standard hover:bg-surface-subtle"
-            >
-              {translate(messages, 'receptions.queue.checkInVehicle')}
-            </Link>
-          ) : null}
-          {canReachIntake ? (
-            <Link
-              href={`/${locale}/reception/walk-in`}
-              className="rounded-md border border-border px-4 py-2 text-body text-text-primary transition-colors duration-fast ease-standard hover:bg-surface-subtle"
-            >
-              {translate(messages, 'receptions.queue.newCustomer')}
-            </Link>
-          ) : null}
-        </div>
-      </form>
+                {translate(messages, 'receptions.queue.checkInVehicle')}
+              </Button>
+            ) : null}
+            {canReachIntake ? (
+              <Button
+                component={Link}
+                href={`/${locale}/reception/walk-in`}
+                variant="outlined"
+                size="small"
+              >
+                {translate(messages, 'receptions.queue.newCustomer')}
+              </Button>
+            ) : null}
+          </>
+        }
+      />
 
       {blocked ? (
         // Named apart from the one the branch field renders above it. The
@@ -784,11 +733,13 @@ export function ReceptionQueueScreen({
             {translate(messages, 'receptions.queue.resultsHeading')}
           </h2>
 
-          <SearchStates
+          <MuiSearchStates
             messages={messages}
             locale={locale}
             phase={search.phase}
             correlationId={search.correlationId}
+            emptyReason={emptyReason}
+            onRetry={search.submit}
             idle={
               // Reached only while a custom period is half filled in. Nothing
               // else here can be idle — the board reads on arrival.
@@ -796,76 +747,27 @@ export function ReceptionQueueScreen({
                 {translate(messages, 'receptions.queue.chooseBothDays')}
               </p>
             }
-            {...(search.phase === 'empty' && filtersApplied
-              ? {
-                  onClearFilters: (
-                    <button
-                      type="button"
-                      onClick={clearFilters}
-                      className="rounded-md border border-border px-3 py-1.5 text-body text-text-primary transition-colors duration-fast ease-standard hover:bg-surface-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
-                    >
-                      {translate(messages, 'receptions.queue.clearFilters')}
-                    </button>
-                  ),
-                }
-              : {})}
-            {...(search.phase === 'unavailable' || search.phase === 'failed'
-              ? {
-                  retry: (
-                    <button
-                      type="button"
-                      onClick={search.submit}
-                      className="rounded-md border border-border px-3 py-1.5 text-body text-text-primary transition-colors duration-fast ease-standard hover:bg-surface-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
-                    >
-                      {translate(messages, 'state.retry')}
-                    </button>
-                  ),
-                }
-              : {})}
+            onClearFilters={
+              search.phase === 'empty' && filtersApplied ? (
+                <Button type="button" variant="outlined" size="small" onClick={clearFilters}>
+                  {translate(messages, 'receptions.queue.clearFilters')}
+                </Button>
+              ) : undefined
+            }
           />
 
           {search.phase === 'ready' ? (
             <>
-              <DataTable<ReceptionListEntry>
+              <OperationalGrid<ReceptionListEntry>
                 messages={messages}
+                locale={locale}
+                label={translate(messages, 'receptions.queue.caption')}
                 columns={columns}
                 rowId={(row) => row.id}
-                request={search.table.request}
-                response={search.table.response}
-                status={search.table.status}
-                onRequestChange={search.table.setRequest}
-                onRetry={search.table.refresh}
-                correlationId={search.table.correlationId}
-                caption={translate(messages, 'receptions.queue.caption')}
-                hiddenColumnIds={spansBranches ? [] : ['branch']}
+                table={search.table}
+                rowActions={rowActions}
                 suppressEmptyState
-                rowActions={(row) => (
-                  <span className="flex flex-wrap gap-3">
-                    <Link
-                      href={`/${locale}/receptions/check-in/${row.id}`}
-                      className="text-primary underline-offset-2 hover:underline focus-visible:outline focus-visible:outline-2"
-                    >
-                      {/*
-                       * The next action, decided by the graph rather than by a
-                       * list of codes. A visit that can still move is one the
-                       * desk has work to finish on; a finished one is a record
-                       * to open. Both land on the same read, which is what
-                       * supplies the version any guarded command needs — the
-                       * board's own row version is a snapshot and must never be
-                       * spent on a write (QA-004).
-                       */}
-                      {isFinishedReception(row.receptionStatus)
-                        ? translate(messages, 'receptions.queue.open')
-                        : translate(messages, 'receptions.queue.continueCheckIn')}
-                    </Link>
-                    <Link
-                      href={`/${locale}/receptions/check-in/${row.id}/acknowledgement`}
-                      className="text-primary underline-offset-2 hover:underline focus-visible:outline focus-visible:outline-2"
-                    >
-                      {translate(messages, 'receptions.queue.acknowledgement')}
-                    </Link>
-                  </span>
-                )}
+                testId="reception-queue-grid"
               />
               <p className="px-2 pb-2 text-caption text-text-muted" lang={locale}>
                 {translate(messages, 'receptions.queue.orderingNote')}

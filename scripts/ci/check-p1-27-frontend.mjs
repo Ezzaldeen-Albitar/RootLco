@@ -350,8 +350,26 @@ export function importedModuleDirectories(files) {
 export const MODULE_DISPOSITION = Object.freeze({
   /** The P1-25 brand marks the dashboard shell renders. Clean, and scanned. */
   'apps/web/src/components/brand': 'in-surface',
+  /*
+   * `OperationalGrid` — the MUI X Community grid behind the product's list
+   * contract (ADR-022). Newly visible when the reception board moved onto the
+   * Material UI wrappers (Owner directive). It renders every visit row the board
+   * lists and the links out of each, so `in-surface`, exactly as
+   * `components/data-table` beside it.
+   */
+  'apps/web/src/components/data': 'in-surface',
   /** Renders every customer and vehicle row. Was in NO list, by either name. */
   'apps/web/src/components/data-table': 'in-surface',
+  /*
+   * `FilterToolbar` and `period.ts` — the search box, the filters and the
+   * period a board is read over (ADR-022). Newly visible with the reception
+   * board's move onto the Material UI wrappers. `in-surface` for the reason
+   * `components/search` is: the box is where an operator types a name, a phone
+   * number or a plate, so it is the surface SEC-002 is about — free text must
+   * never reach the address bar — and the period decides the instants the board
+   * sends.
+   */
+  'apps/web/src/components/filters': 'in-surface',
   'apps/web/src/components/duplicates': 'in-surface',
   'apps/web/src/components/forms': 'in-surface',
   'apps/web/src/components/party': 'in-surface',

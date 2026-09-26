@@ -1,6 +1,6 @@
 'use client';
 
-import { useId, useState, type KeyboardEvent } from 'react';
+import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import Button from '@mui/material/Button';
 import Chip from '@mui/material/Chip';
 import IconButton from '@mui/material/IconButton';
@@ -8,6 +8,7 @@ import InputAdornment from '@mui/material/InputAdornment';
 import TextField from '@mui/material/TextField';
 import ToggleButton from '@mui/material/ToggleButton';
 import ToggleButtonGroup from '@mui/material/ToggleButtonGroup';
+import type { SelectOptionGroup } from '@/components/forms/Field';
 import { DateField } from '@/components/forms/mui/DateField';
 import { FormSelectField } from '@/components/forms/mui/FormSelectField';
 import {
@@ -17,6 +18,8 @@ import {
 } from '@/components/forms/mui/field-wiring';
 import type { Messages } from '@/i18n/get-messages';
 import { formatMessage, translate } from '@/i18n/get-messages';
+import type { ActionState } from '@/lib/forms/action-result';
+import { useFocusFirstInvalid } from '@/lib/forms/use-focus-first-invalid';
 import {
   boardInstantWindow,
   checkCustomPeriod,
@@ -63,16 +66,31 @@ import {
  * that the list still shows the previous period. A chosen pair is checked
  * first — both days, the last not before the first, no longer than the
  * operation accepts (`maxDays`) — and a refusal is a field error on the box to
- * fix. `onChange` receives the selection and the request the screen's
+ * fix, with the cursor moved into that box (`useFocusFirstInvalid`), each
+ * refusal counted so pressing apply again on the same mistake moves it again.
+ * `onChange` receives the selection and the request the screen's
  * operation already takes (`period.ts`), chosen by `format`: the dashboard's
  * (`'dashboard'`: the preset's name, or `custom` with two calendar days) or a
  * board's (`'instants'`: closed instant bounds on the branch's clock).
  *
  * The chosen-dates panel follows `value`: when the screen changes the period
  * itself — a reset, a branch switch — or the zone changes, the panel opens or
- * closes to match and the half-typed days are dropped. Whenever the days in
- * the boxes differ from the period in force, including an applied pair being
- * edited, the toolbar says the list still shows the period in force.
+ * closes to match and the half-typed days are dropped. A reset that leaves the
+ * period as it was — Clear while Today is already in force — changes nothing
+ * the toolbar can see, so the screen also changes `resetKey`, which the panel
+ * follows the same way. Whenever the days in the boxes differ from the period
+ * in force, including an applied pair being edited, the toolbar says the list
+ * still shows the period in force; `onTypedDaysChange` tells the screen whether
+ * the open boxes hold typed days, so its Clear can count them.
+ *
+ * ## What the screen adds beside the filters
+ *
+ * `summary` is one line under the period saying what the list covers — the
+ * period in words and the clock its days are counted on — so a board states its
+ * zone rather than leaving the reader to assume their own. `actions` are the
+ * screen's own links and toggles, drawn in a row of their own at the foot of the
+ * toolbar; a button there must be `type="button"`, because the toolbar's form
+ * submit applies the chosen dates.
  */
 
 export interface ToolbarSearch {
@@ -115,6 +133,10 @@ export type ToolbarFilter =
       readonly onChange: (next: string) => void;
       /** The empty first choice, for "any". */
       readonly placeholder?: string | undefined;
+      /** Rendered after `options`, each as an `<optgroup>` heading that cannot be chosen. */
+      readonly groups?: readonly SelectOptionGroup[] | undefined;
+      /** A line under the select, wired to it as its description. */
+      readonly description?: string | undefined;
     };
 
 interface ToolbarPeriodBase {
@@ -123,6 +145,14 @@ interface ToolbarPeriodBase {
   readonly zone: string;
   /** The longest period the operation accepts, in days. */
   readonly maxDays?: number | undefined;
+  /**
+   * Changed by the screen to put the panel back to the period in force — it
+   * closes or opens to match and the typed days go — even when the period
+   * itself did not change (a Clear while Today is in force).
+   */
+  readonly resetKey?: number | undefined;
+  /** Told whether the open date boxes hold typed days, whenever that changes. */
+  readonly onTypedDaysChange?: ((typed: boolean) => void) | undefined;
 }
 
 /** A period sent to the dashboard summary: a preset's name, or two calendar days. */
@@ -150,6 +180,10 @@ export interface FilterToolbarProps {
   readonly search?: ToolbarSearch | undefined;
   readonly filters?: readonly ToolbarFilter[] | undefined;
   readonly period?: ToolbarPeriod | undefined;
+  /** One line saying what the list covers — see "What the screen adds". */
+  readonly summary?: string | undefined;
+  /** The screen's links and toggles, in a row at the foot. Buttons are `type="button"`. */
+  readonly actions?: ReactNode;
   readonly testId?: string | undefined;
 }
 
@@ -171,20 +205,37 @@ export function FilterToolbar({
   search,
   filters = [],
   period,
+  summary,
+  actions,
   testId = 'filter-toolbar',
 }: FilterToolbarProps) {
   const [custom, setCustom] = useState(period?.value.kind === 'custom');
   const [draftFrom, setDraftFrom] = useState(period?.value.from ?? '');
   const [draftTo, setDraftTo] = useState(period?.value.to ?? '');
   const [problem, setProblem] = useState<CustomPeriodProblem | null>(null);
+  // Every refused apply, counted: the attempt is what moves the cursor into the
+  // box to fix, and a second refusal of the same mistake moves it again.
+  const [refusals, setRefusals] = useState(0);
+  const refusal: ActionState =
+    problem === null
+      ? { status: 'idle', attempt: refusals }
+      : { status: 'invalid', fieldErrors: { [problem.field]: problem.problem }, attempt: refusals };
+  const formRef = useFocusFirstInvalid(refusal);
 
   // The panel follows the period in force. When the screen changes it — a
-  // reset, a branch switch — or the zone changes, the panel is set from it again
-  // during this render, so no frame shows the old days under the new period.
+  // reset, a branch switch — or the zone changes, or the screen changes
+  // `resetKey`, the panel is set from it again during this render, so no frame
+  // shows the old days under the new period.
   const appliedKey =
     period === undefined
       ? ''
-      : [period.zone, period.value.kind, period.value.from, period.value.to].join('|');
+      : [
+          period.zone,
+          period.value.kind,
+          period.value.from,
+          period.value.to,
+          String(period.resetKey ?? 0),
+        ].join('|');
   const [followedKey, setFollowedKey] = useState(appliedKey);
   if (followedKey !== appliedKey) {
     setFollowedKey(appliedKey);
@@ -193,6 +244,18 @@ export function FilterToolbar({
     setDraftTo(period?.value.to ?? '');
     setProblem(null);
   }
+
+  // Whether the open boxes hold typed days, reported to the screen when it
+  // changes. The callback is read from a box refreshed by an effect declared
+  // first, so an inline callback does not re-run the report on every render.
+  const typedDays = custom && (draftFrom !== '' || draftTo !== '');
+  const onTypedDaysChange = useRef(period?.onTypedDaysChange);
+  useEffect(() => {
+    onTypedDaysChange.current = period?.onTypedDaysChange;
+  });
+  useEffect(() => {
+    onTypedDaysChange.current?.(typedDays);
+  }, [typedDays]);
 
   const emit = (selection: PeriodSelection) => {
     if (period === undefined) return;
@@ -217,7 +280,10 @@ export function FilterToolbar({
     if (period === undefined || !custom) return;
     const found = checkCustomPeriod(draftFrom, draftTo, period.maxDays);
     setProblem(found);
-    if (found !== null) return;
+    if (found !== null) {
+      setRefusals((count) => count + 1);
+      return;
+    }
     emit({ kind: 'custom', from: draftFrom, to: draftTo });
   };
 
@@ -236,6 +302,7 @@ export function FilterToolbar({
 
   return (
     <form
+      ref={formRef}
       aria-label={label}
       noValidate
       data-testid={testId}
@@ -258,6 +325,8 @@ export function FilterToolbar({
                   value={filter.value}
                   onChange={filter.onChange}
                   options={filter.options}
+                  groups={filter.groups ?? []}
+                  description={filter.description}
                   placeholder={filter.placeholder}
                   testId={`filter-${filter.key}`}
                 />
@@ -342,6 +411,18 @@ export function FilterToolbar({
                   })}
             </p>
           ) : null}
+        </div>
+      ) : null}
+
+      {summary !== undefined && summary !== '' ? (
+        <p className="text-supporting text-text-muted" data-testid={`${testId}-summary`}>
+          {summary}
+        </p>
+      ) : null}
+
+      {actions !== undefined && actions !== null ? (
+        <div className="flex flex-wrap items-center gap-3" data-testid={`${testId}-actions`}>
+          {actions}
         </div>
       ) : null}
     </form>

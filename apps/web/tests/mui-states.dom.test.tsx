@@ -207,6 +207,53 @@ describe('MuiSearchStates keeps SearchStates’ decisions', () => {
     expect(within(state).queryByText(messages['state.noResults.description'])).toBeNull();
   });
 
+  it('says what narrowed an empty answer when the screen says so, in both languages', () => {
+    /*
+     * `emptyReason` (the reception slice). A board narrowed by a period and a
+     * status says a filter can be cleared; a search matched on fewer details
+     * for this account says THAT rather than "no matches" (Browser QA part 7,
+     * row 2.8). Each reason is its own pair of sentences — no two alike.
+     */
+    const REASONS = [
+      ['filters', 'state.noResults.title', 'state.noResults.description'],
+      ['search', 'state.noSearchMatches.title', 'state.noSearchMatches.description'],
+      [
+        'searchLimited',
+        'state.noSearchMatchesLimited.title',
+        'state.noSearchMatchesLimited.description',
+      ],
+    ] as const;
+    for (const locale of ['en', 'ar'] as const) {
+      const messages = getMessages(locale);
+      for (const [reason, title, description] of REASONS) {
+        const { unmount } = mount(
+          <MuiSearchStates
+            messages={messages}
+            phase="empty"
+            emptyReason={reason}
+            onClearFilters={<button type="button">clear</button>}
+          />,
+          locale
+        );
+        const state = screen.getByTestId('state-no-results');
+        expect(within(state).getByRole('heading', { level: 2 })).toHaveTextContent(messages[title]);
+        expect(state).toHaveTextContent(messages[description]);
+        // The caller's own way back still rides with every reason.
+        expect(within(state).getByRole('button', { name: 'clear' })).toBeInTheDocument();
+        for (const [other, otherTitle] of REASONS) {
+          if (other !== reason) expect(within(state).queryByText(messages[otherTitle])).toBeNull();
+        }
+        unmount();
+      }
+    }
+    // The same reasons on the bare state, so a grid's own empty state can say them too.
+    const messages = getMessages('en');
+    mount(<MuiNoResultsState messages={messages} reason="searchLimited" />);
+    expect(screen.getByTestId('state-no-results')).toHaveTextContent(
+      messages['state.noSearchMatchesLimited.description']
+    );
+  });
+
   it('renders nothing for an answer and the caller’s words before one', () => {
     const messages = getMessages('en');
     const { unmount } = mount(<MuiSearchStates messages={messages} phase="ready" />);

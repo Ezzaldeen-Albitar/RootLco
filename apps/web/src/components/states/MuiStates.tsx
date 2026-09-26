@@ -106,25 +106,51 @@ export function MuiEmptyState({ messages, action, testId }: StateProps) {
 }
 
 /**
+ * What narrowed a completed read to nothing, so the sentence can say which.
+ *
+ *   - `filters` — the request's filters (a period, a status). Clearing one may
+ *     widen it.
+ *   - `search` — a search term whose criteria the table does not hold. Different
+ *     words may find it; there is no filter to clear.
+ *   - `searchLimited` — a search term, read for an account the server searches
+ *     on fewer details (a caller who may not read customers is not matched on
+ *     a customer's name or phone). Said as such, so a withheld detail never
+ *     reads as "nothing exists" (Browser QA part 7, row 2.8).
+ */
+export type NoResultsReason = 'filters' | 'search' | 'searchLimited';
+
+const NO_RESULTS_KEYS: Record<
+  NoResultsReason,
+  { readonly title: keyof Messages; readonly description: keyof Messages }
+> = {
+  filters: { title: 'state.noResults.title', description: 'state.noResults.description' },
+  search: {
+    title: 'state.noSearchMatches.title',
+    description: 'state.noSearchMatches.description',
+  },
+  searchLimited: {
+    title: 'state.noSearchMatchesLimited.title',
+    description: 'state.noSearchMatchesLimited.description',
+  },
+};
+
+/**
  * A completed read matched nothing. Reached only from an answer, never while
- * loading. `reason` says what narrowed it: the request's filters, or a search
- * whose criteria the table does not hold — whose sentence offers no filter to
- * clear.
+ * loading. `reason` says what narrowed it — see `NoResultsReason`.
  */
 export function MuiNoResultsState({
   messages,
   action,
   testId,
   reason = 'filters',
-}: StateProps & { readonly reason?: 'filters' | 'search' }) {
+}: StateProps & { readonly reason?: NoResultsReason }) {
+  const keys = NO_RESULTS_KEYS[reason];
   return (
     <StateAlert
       messages={messages}
       severity="info"
-      titleKey={reason === 'search' ? 'state.noSearchMatches.title' : 'state.noResults.title'}
-      descriptionKey={
-        reason === 'search' ? 'state.noSearchMatches.description' : 'state.noResults.description'
-      }
+      titleKey={keys.title}
+      descriptionKey={keys.description}
       action={action}
       testId={testId ?? 'state-no-results'}
     />
@@ -315,6 +341,11 @@ export function MuiStaleState({ messages, onRetry, action, testId }: StateProps)
  * renders the rows), `idle` renders what the caller passes, `empty` is reached
  * only from a completed read, and neither a refusal nor an ended session is
  * offered a retry.
+ *
+ * `emptyReason` says what narrowed an empty answer. It defaults to `search`,
+ * which is what every caller before it rendered; a screen whose list is
+ * narrowed by a period or a status as well as by a term passes `filters` when no
+ * term was sent, so the sentence names what the operator can change.
  */
 export function MuiSearchStates({
   messages,
@@ -324,6 +355,7 @@ export function MuiSearchStates({
   idle = null,
   onClearFilters,
   onRetry,
+  emptyReason = 'search',
 }: {
   readonly messages: Messages;
   readonly locale?: Locale | undefined;
@@ -332,6 +364,7 @@ export function MuiSearchStates({
   readonly idle?: ReactNode;
   readonly onClearFilters?: ReactNode | undefined;
   readonly onRetry?: (() => void) | undefined;
+  readonly emptyReason?: NoResultsReason | undefined;
 }) {
   switch (phase) {
     case 'ready':
@@ -341,7 +374,7 @@ export function MuiSearchStates({
     case 'loading':
       return <MuiLoadingState messages={messages} variant="inline" />;
     case 'empty':
-      return <MuiNoResultsState messages={messages} action={onClearFilters} reason="search" />;
+      return <MuiNoResultsState messages={messages} action={onClearFilters} reason={emptyReason} />;
     case 'unavailable':
       return (
         <MuiUnavailableState messages={messages} onRetry={onRetry} correlationId={correlationId} />
