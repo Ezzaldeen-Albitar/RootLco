@@ -1273,6 +1273,7 @@
   "filters.period.last7": "Last 7 days",
   "filters.period.legend": "Period",
   "filters.period.notApplied": "The list still covers {period}. Choose two dates and press Use these dates.",
+  "filters.period.notAppliedCustom": "The list still covers the dates applied before. Press Use these dates to show the new ones.",
   "filters.period.to": "To",
   "filters.period.today": "Today",
   "filters.period.tooLong": "Choose a period of {days} days or fewer.",

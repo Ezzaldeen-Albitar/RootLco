@@ -18,7 +18,15 @@ import {
   TERMINAL_RECEPTION_STATUSES,
   UNFINISHED_RECEPTION_STATUSES,
 } from '@/features/receptions/receptions-contract';
-import { addDays, dayIn, endOfDay, rangeOfDays, startOfDay } from '@/lib/branch-time';
+import { z } from 'zod';
+import {
+  addDays,
+  dayIn,
+  endOfDay,
+  endOfDayBound,
+  rangeOfDays,
+  startOfDay,
+} from '@/lib/branch-time';
 
 /**
  * The reception desk's board (`P1-28-FE-001`, rebuilt under the Owner directive
@@ -232,8 +240,11 @@ describe('the period control', () => {
     await waitFor(() => expect(listReceptions).toHaveBeenCalledTimes(2));
 
     const yesterday = addDays(dayIn(ZONE), -1);
-    expect(lastCall().filters).toEqual({ to: endOfDay(ZONE, yesterday).toISOString() });
-    // The boundary itself, stated: one millisecond before today begins.
+    expect(lastCall().filters).toEqual({ to: endOfDayBound(ZONE, yesterday) });
+    // The boundary itself, stated: the last MICROSECOND of yesterday on the
+    // branch's clock (the database keeps microseconds), which a millisecond
+    // clock reads as one millisecond before today begins.
+    expect(lastCall().filters['to']).toBe(`${yesterday}T23:59:59.999999+03:00`);
     expect(new Date(lastCall().filters['to'] as string).getTime()).toBe(
       startOfDay(ZONE, dayIn(ZONE)).getTime() - 1
     );
@@ -379,7 +390,7 @@ describe('what is still with us from before today is ONE button', () => {
     await waitFor(() =>
       expect(lastCall().filters).toEqual({
         statusGroup: 'open',
-        to: endOfDay(ZONE, yesterday).toISOString(),
+        to: endOfDayBound(ZONE, yesterday),
       })
     );
   });
@@ -888,6 +899,41 @@ describe('the day the board asks about is the day at the branch', () => {
       '2026-03-29T00:00:00.000Z'
     );
     expect(endOfDay('Europe/London', '2026-03-29').toISOString()).toBe('2026-03-29T22:59:59.999Z');
+  });
+
+  it('sends the last instant to the microsecond, on the branch clock with its offset', () => {
+    // PostgreSQL keeps timestamptz to the microsecond and the boards compare
+    // `<= to`: a bound at .999 milliseconds would leave out a row stamped in
+    // the last 999 microseconds of the day.
+    expect(endOfDayBound('Asia/Riyadh', '2026-09-22')).toBe('2026-09-22T23:59:59.999999+03:00');
+    expect(rangeOfDays('Asia/Riyadh', '2026-09-22', '2026-09-22')).toStrictEqual({
+      from: '2026-09-21T21:00:00.000Z',
+      to: '2026-09-22T23:59:59.999999+03:00',
+    });
+    // The offset is the one in force at the END of the day: after the spring
+    // change in London, and back on UTC+0 after the autumn one.
+    expect(endOfDayBound('Europe/London', '2026-03-29')).toBe('2026-03-29T23:59:59.999999+01:00');
+    expect(endOfDayBound('Europe/London', '2026-10-25')).toBe('2026-10-25T23:59:59.999999+00:00');
+    expect(endOfDayBound('America/New_York', '2026-01-15')).toBe(
+      '2026-01-15T23:59:59.999999-05:00'
+    );
+    // The same instant as the millisecond bound, to the millisecond.
+    expect(Date.parse(endOfDayBound('Europe/London', '2026-03-29'))).toBe(
+      endOfDay('Europe/London', '2026-03-29').getTime()
+    );
+  });
+
+  it('writes a bound the routes accept: their validator takes six fractional digits', () => {
+    // The receptions, appointments and work-orders routes validate `from`/`to`
+    // (and `openedTo`, `completedTo`) with exactly this schema.
+    const routeInstant = z.string().datetime({ offset: true });
+    for (const bound of [
+      endOfDayBound('Asia/Riyadh', '2026-09-22'),
+      endOfDayBound('America/New_York', '2026-03-08'),
+      rangeOfDays('Europe/London', '2026-10-25', '2026-10-25').to,
+    ]) {
+      expect(routeInstant.safeParse(bound).success, bound).toBe(true);
+    }
   });
 
   it('reads the calendar day a zone is on at an instant, and the two can disagree', () => {

@@ -18,13 +18,15 @@ import {
 import type { Messages } from '@/i18n/get-messages';
 import { formatMessage, translate } from '@/i18n/get-messages';
 import {
+  boardInstantWindow,
   checkCustomPeriod,
-  periodWindow,
+  dashboardPeriodRequest,
   type CustomPeriodProblem,
-  type PeriodFormat,
+  type DashboardPeriodKind,
+  type DashboardPeriodRequest,
+  type InstantWindow,
   type PeriodKind,
   type PeriodSelection,
-  type PeriodWindow,
 } from './period';
 
 /**
@@ -61,9 +63,16 @@ import {
  * that the list still shows the previous period. A chosen pair is checked
  * first — both days, the last not before the first, no longer than the
  * operation accepts (`maxDays`) — and a refusal is a field error on the box to
- * fix. `onChange` receives the selection and the bounds in the format the
- * screen's operation already takes (`period.ts`): calendar days, or instants
- * on the branch's clock.
+ * fix. `onChange` receives the selection and the request the screen's
+ * operation already takes (`period.ts`), chosen by `format`: the dashboard's
+ * (`'dashboard'`: the preset's name, or `custom` with two calendar days) or a
+ * board's (`'instants'`: closed instant bounds on the branch's clock).
+ *
+ * The chosen-dates panel follows `value`: when the screen changes the period
+ * itself — a reset, a branch switch — or the zone changes, the panel opens or
+ * closes to match and the half-typed days are dropped. Whenever the days in
+ * the boxes differ from the period in force, including an applied pair being
+ * edited, the toolbar says the list still shows the period in force.
  */
 
 export interface ToolbarSearch {
@@ -108,18 +117,31 @@ export type ToolbarFilter =
       readonly placeholder?: string | undefined;
     };
 
-export interface ToolbarPeriod {
-  /** The presets offered, in order. Include `custom` to offer chosen days. */
-  readonly presets: readonly PeriodKind[];
+interface ToolbarPeriodBase {
   readonly value: PeriodSelection;
-  readonly onChange: (selection: PeriodSelection, window: PeriodWindow) => void;
   /** The branch's IANA zone. Every day here is a day on this clock. */
   readonly zone: string;
-  /** What the screen's reading operation takes. See `period.ts`. */
-  readonly format: PeriodFormat;
   /** The longest period the operation accepts, in days. */
   readonly maxDays?: number | undefined;
 }
+
+/** A period sent to the dashboard summary: a preset's name, or two calendar days. */
+export interface DashboardToolbarPeriod extends ToolbarPeriodBase {
+  readonly format: 'dashboard';
+  /** The presets offered, in order — only ones the dashboard names. */
+  readonly presets: readonly DashboardPeriodKind[];
+  readonly onChange: (selection: PeriodSelection, request: DashboardPeriodRequest) => void;
+}
+
+/** A period sent to a board: closed instant bounds on the branch's clock. */
+export interface BoardToolbarPeriod extends ToolbarPeriodBase {
+  readonly format: 'instants';
+  /** The presets offered, in order. Include `custom` to offer chosen days. */
+  readonly presets: readonly PeriodKind[];
+  readonly onChange: (selection: PeriodSelection, window: InstantWindow) => void;
+}
+
+export type ToolbarPeriod = DashboardToolbarPeriod | BoardToolbarPeriod;
 
 export interface FilterToolbarProps {
   readonly messages: Messages;
@@ -156,10 +178,40 @@ export function FilterToolbar({
   const [draftTo, setDraftTo] = useState(period?.value.to ?? '');
   const [problem, setProblem] = useState<CustomPeriodProblem | null>(null);
 
+  // The panel follows the period in force. When the screen changes it — a
+  // reset, a branch switch — or the zone changes, the panel is set from it again
+  // during this render, so no frame shows the old days under the new period.
+  const appliedKey =
+    period === undefined
+      ? ''
+      : [period.zone, period.value.kind, period.value.from, period.value.to].join('|');
+  const [followedKey, setFollowedKey] = useState(appliedKey);
+  if (followedKey !== appliedKey) {
+    setFollowedKey(appliedKey);
+    setCustom(period?.value.kind === 'custom');
+    setDraftFrom(period?.value.from ?? '');
+    setDraftTo(period?.value.to ?? '');
+    setProblem(null);
+  }
+
   const emit = (selection: PeriodSelection) => {
     if (period === undefined) return;
-    period.onChange(selection, periodWindow(selection, period.zone, period.format));
+    if (period.format === 'dashboard') {
+      const request = dashboardPeriodRequest(selection);
+      if (request !== null) period.onChange(selection, request);
+      return;
+    }
+    period.onChange(selection, boardInstantWindow(selection, period.zone));
   };
+
+  // What the boxes hold is not what the list shows: a preset is in force, or an
+  // applied pair of days is being edited.
+  const notApplied =
+    period !== undefined &&
+    custom &&
+    (period.value.kind !== 'custom' ||
+      draftFrom !== period.value.from ||
+      draftTo !== period.value.to);
 
   const applyCustom = () => {
     if (period === undefined || !custom) return;
@@ -234,7 +286,7 @@ export function FilterToolbar({
             }}
             className="flex-wrap"
           >
-            {period.presets.map((kind) => (
+            {(period.presets as readonly PeriodKind[]).map((kind) => (
               <ToggleButton key={kind} value={kind} data-period={kind}>
                 {periodLabel(messages, kind)}
               </ToggleButton>
@@ -276,15 +328,18 @@ export function FilterToolbar({
           ) : null}
 
           {/*
-            Pressing "Choose dates" changes nothing yet — no day has been named,
-            so there is nothing to ask for. Without this line the control reads
-            as applied while the list below still answers the period before it.
+            Pressing "Choose dates", or editing an applied pair, changes nothing
+            yet — nothing is asked for until the days are applied. Without this
+            line the control reads as applied while the list below still answers
+            the period before it.
           */}
-          {custom && period.value.kind !== 'custom' ? (
+          {notApplied ? (
             <p role="status" className="text-supporting text-warning">
-              {formatMessage(translate(messages, 'filters.period.notApplied'), {
-                period: periodLabel(messages, period.value.kind),
-              })}
+              {period.value.kind === 'custom'
+                ? translate(messages, 'filters.period.notAppliedCustom')
+                : formatMessage(translate(messages, 'filters.period.notApplied'), {
+                    period: periodLabel(messages, period.value.kind),
+                  })}
             </p>
           ) : null}
         </div>

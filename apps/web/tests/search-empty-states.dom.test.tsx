@@ -493,6 +493,9 @@ describe('the work-order board reads on arrival and narrows honestly', () => {
     await waitFor(() =>
       expect(lastCall().filters).toEqual({ openedFrom: window.from, openedTo: window.to })
     );
+    // The last instant of the branch's day, written to the microsecond with the
+    // branch's offset (Asia/Riyadh, UTC+3 all year).
+    expect(lastCall().filters['openedTo']).toBe(`${today}T23:59:59.999999+03:00`);
   });
 
   it('refuses an inverted opened range at the field and issues no read for it', async () => {

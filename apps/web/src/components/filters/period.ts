@@ -1,7 +1,7 @@
 import {
   addDays,
   dayIn,
-  endOfDay,
+  endOfDayBound,
   isCalendarDay,
   rangeOfDays,
   type CalendarDay,
@@ -10,22 +10,28 @@ import {
 /**
  * The periods a board or a dashboard is read over, and what each one sends.
  *
- * ## One vocabulary, two wire formats
+ * ## One vocabulary, two requests
  *
- * The screens that filter by period already name the same presets — today,
- * yesterday, the last seven days, before today and a chosen pair of days — and
- * already disagree, deliberately, about what they SEND:
+ * The screens that filter by period name the same presets — today, yesterday,
+ * the last seven days, before today and a chosen pair of days — and send them
+ * in two different shapes, one per kind of operation. Each shape is its own
+ * function, so a screen cannot ask for the other's by passing the wrong flag:
  *
- *   - the dashboard summary takes the preset's NAME, and for a chosen period the
- *     two CALENDAR DAYS (`YYYY-MM-DD`); the server resolves them on the
- *     branch's clock and answers with the days it used (`format: 'days'`);
- *   - the reception and work-order boards take INSTANTS — the first instant of
- *     the first day and the LAST instant of the last day on the branch's clock,
- *     because their filters compare closed on both ends (`format: 'instants'`,
- *     `lib/branch-time.ts#rangeOfDays`).
+ *   - `dashboardPeriodRequest` — the dashboard summary takes the preset's NAME
+ *     and nothing else (`{ period: 'today' }`); only a chosen period adds its
+ *     two CALENDAR DAYS (`{ period: 'custom', from: 'YYYY-MM-DD', to: … }`).
+ *     The server resolves the days on the branch's clock and answers with the
+ *     days it used. The dashboard names no "before today", so that preset has
+ *     no dashboard request (`null`), and neither has a chosen period missing
+ *     a day.
+ *   - `boardInstantWindow` — the reception, work-order and appointment boards
+ *     take INSTANTS: the first instant of the first day and the LAST instant of
+ *     the last day on the branch's clock (`lib/branch-time.ts#rangeOfDays`,
+ *     `#endOfDayBound`), because their filters compare closed on both ends.
+ *     "Before today" sends only the upper bound.
  *
- * `periodWindow` produces exactly what each already sends, so a screen that
- * moves onto `FilterToolbar` changes none of its requests.
+ * Each produces exactly what its screens already send, so a screen that moves
+ * onto `FilterToolbar` changes none of its requests.
  *
  * ## Whose clock
  *
@@ -36,6 +42,9 @@ import {
 
 export const PERIOD_KINDS = ['today', 'yesterday', 'last7', 'beforeToday', 'custom'] as const;
 export type PeriodKind = (typeof PERIOD_KINDS)[number];
+
+/** The presets the dashboard summary names: `DASHBOARD_PERIODS` in the overview contract. */
+export type DashboardPeriodKind = Exclude<PeriodKind, 'beforeToday'>;
 
 /** The period in force: a preset, or a chosen pair of days (only for `custom`). */
 export interface PeriodSelection {
@@ -48,10 +57,16 @@ export interface PeriodSelection {
 
 export const TODAY_PERIOD: PeriodSelection = Object.freeze({ kind: 'today', from: '', to: '' });
 
-export type PeriodFormat = 'days' | 'instants';
+/** Which request a period is sent as. See the docblock. */
+export type PeriodRequestMode = 'dashboard' | 'instants';
 
-/** What a period sends. A bound is absent when the period has none. */
-export interface PeriodWindow {
+/** What the dashboard summary is asked for: a preset's name, or a chosen pair of days. */
+export type DashboardPeriodRequest =
+  | { readonly period: Exclude<DashboardPeriodKind, 'custom'> }
+  | { readonly period: 'custom'; readonly from: CalendarDay; readonly to: CalendarDay };
+
+/** What a board is asked for: instants. A bound is absent when the period has none. */
+export interface InstantWindow {
   readonly from?: string;
   readonly to?: string;
 }
@@ -83,21 +98,40 @@ export function periodDays(
   }
 }
 
-/** The bounds a period sends, in the format the reading operation takes. */
-export function periodWindow(
+/**
+ * The dashboard summary's request for a period: the preset's name alone, or
+ * `custom` with its two days. `null` for a period the dashboard does not name
+ * (`beforeToday`) and for a chosen period missing a day. No zone: the server
+ * resolves the days on the branch's clock itself.
+ */
+export function dashboardPeriodRequest(selection: PeriodSelection): DashboardPeriodRequest | null {
+  switch (selection.kind) {
+    case 'today':
+    case 'yesterday':
+    case 'last7':
+      return { period: selection.kind };
+    case 'beforeToday':
+      return null;
+    case 'custom':
+      return isCalendarDay(selection.from) && isCalendarDay(selection.to)
+        ? { period: 'custom', from: selection.from, to: selection.to }
+        : null;
+  }
+}
+
+/** A board's request for a period: closed instant bounds on `zone`'s clock. */
+export function boardInstantWindow(
   selection: PeriodSelection,
   zone: string,
-  format: PeriodFormat,
   now: Date = new Date()
-): PeriodWindow {
+): InstantWindow {
   const days = periodDays(selection, zone, now);
-  if (format === 'days') return days;
   if (days.from !== undefined && days.to !== undefined) {
     return rangeOfDays(zone, days.from, days.to);
   }
   // The last instant of the last day, because the boards compare `<= to`: the
   // first instant of the next day would put its first arrival on this board.
-  if (days.to !== undefined) return { to: endOfDay(zone, days.to).toISOString() };
+  if (days.to !== undefined) return { to: endOfDayBound(zone, days.to) };
   return {};
 }
 

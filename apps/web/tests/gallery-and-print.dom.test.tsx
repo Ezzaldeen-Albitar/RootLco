@@ -419,7 +419,7 @@ describe('the choosing, confirming, filtering and figures section', () => {
     renderWorkflow('en');
     await user.click(screen.getByRole('button', { name: messages['filters.period.yesterday'] }));
     expect(screen.getByTestId('gallery-filter-sent')).toHaveTextContent(
-      /A board would now ask for \d{4}-\d{2}-\d{2}T00:00:00\.000Z to \d{4}-\d{2}-\d{2}T23:59:59\.999Z\./
+      /A board would now ask for \d{4}-\d{2}-\d{2}T00:00:00\.000Z to \d{4}-\d{2}-\d{2}T23:59:59\.999999\+00:00\./
     );
   });
 });

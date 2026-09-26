@@ -1273,6 +1273,7 @@
   "filters.period.last7": "آخر 7 أيام",
   "filters.period.legend": "الفترة",
   "filters.period.notApplied": "القائمة ما زالت تغطي {period}. اختر تاريخين ثم اضغط استخدام هذين التاريخين.",
+  "filters.period.notAppliedCustom": "القائمة ما زالت تغطي التواريخ المطبّقة سابقًا. اضغط استخدام هذين التاريخين لعرض الجديدة.",
   "filters.period.to": "إلى",
   "filters.period.today": "اليوم",
   "filters.period.tooLong": "اختر فترة لا تتجاوز {days} يومًا.",

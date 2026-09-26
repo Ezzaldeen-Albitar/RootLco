@@ -7,7 +7,11 @@ import { MetricCard } from '@/components/charts/MetricCard';
 import { ConfirmDialog } from '@/components/dialogs/ConfirmDialog';
 import { ReasonDialog } from '@/components/dialogs/ReasonDialog';
 import { FilterToolbar } from '@/components/filters/FilterToolbar';
-import { TODAY_PERIOD, type PeriodSelection, type PeriodWindow } from '@/components/filters/period';
+import {
+  TODAY_PERIOD,
+  type InstantWindow,
+  type PeriodSelection,
+} from '@/components/filters/period';
 import { DateField, DateTimeField } from '@/components/forms/mui/DateField';
 import { BranchSelector } from '@/features/working-context/mui/BranchSelector';
 import type { Locale } from '@/i18n/config';
@@ -69,7 +73,7 @@ export function MuiWorkflowSection({
   const settledTerm = useDebouncedValue(term);
   const [status, setStatus] = useState('');
   const [period, setPeriod] = useState<PeriodSelection>(TODAY_PERIOD);
-  const [sent, setSent] = useState<PeriodWindow | null>(null);
+  const [sent, setSent] = useState<InstantWindow | null>(null);
 
   const [day, setDay] = useState('');
   const [moment, setMoment] = useState('');

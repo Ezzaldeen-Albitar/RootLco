@@ -9,16 +9,21 @@ import {
   type ToolbarPeriod,
 } from '@/components/filters/FilterToolbar';
 import {
+  PERIOD_KINDS,
   TODAY_PERIOD,
+  boardInstantWindow,
   checkCustomPeriod,
+  dashboardPeriodRequest,
   daysCovered,
   periodDays,
-  periodWindow,
-  type PeriodFormat,
+  type DashboardPeriodKind,
+  type DashboardPeriodRequest,
+  type InstantWindow,
   type PeriodKind,
+  type PeriodRequestMode,
   type PeriodSelection,
-  type PeriodWindow,
 } from '@/components/filters/period';
+import { DASHBOARD_PERIODS } from '@/features/overview/overview-contract';
 import { UiFoundationProvider } from '@/components/ui-foundation/UiFoundationProvider';
 import { muiTextOf } from '@/components/ui-foundation/mui-text';
 import type { Locale } from '@/i18n/config';
@@ -29,8 +34,9 @@ import { BOTH_DIRECTIONS, renderLtr, renderRtl } from './render';
 
 /**
  * `FilterToolbar` (ADR-022 PR1): one search box with `SearchBox`'s contract,
- * filter chips and selects, and a period on the BRANCH's clock whose bounds are
- * emitted in the format the screen's operation already reads.
+ * filter chips and selects, and a period on the BRANCH's clock sent as the
+ * request the screen's operation already reads: the dashboard's preset name
+ * (or two days), or a board's closed instant bounds.
  *
  * Zones: Asia/Amman keeps one offset all year; America/New_York moves to
  * daylight saving on 2026-03-08, so a period spanning that day starts and ends
@@ -55,6 +61,9 @@ afterEach(() => {
 });
 
 const ALL_PRESETS: readonly PeriodKind[] = ['today', 'yesterday', 'last7', 'beforeToday', 'custom'];
+const DASHBOARD_PRESETS: readonly DashboardPeriodKind[] = ['today', 'yesterday', 'last7', 'custom'];
+
+type Sent = DashboardPeriodRequest | InstantWindow;
 
 function PeriodHost({
   zone,
@@ -62,26 +71,46 @@ function PeriodHost({
   maxDays,
   onPeriod,
   locale = 'en',
+  controls = false,
 }: {
   readonly zone: string;
-  readonly format: PeriodFormat;
+  readonly format: PeriodRequestMode;
   readonly maxDays?: number;
-  readonly onPeriod: (selection: PeriodSelection, window: PeriodWindow) => void;
+  readonly onPeriod: (selection: PeriodSelection, sent: Sent) => void;
   readonly locale?: Locale;
+  /** Two buttons OUTSIDE the toolbar: the screen resetting the period, and a branch switch. */
+  readonly controls?: boolean;
 }) {
   const [value, setValue] = useState<PeriodSelection>(TODAY_PERIOD);
-  const period: ToolbarPeriod = {
-    presets: ALL_PRESETS,
-    value,
-    zone,
-    format,
-    maxDays,
-    onChange: (selection, window) => {
-      onPeriod(selection, window);
-      setValue(selection);
-    },
+  const [shownZone, setShownZone] = useState(zone);
+  const accept = (selection: PeriodSelection, sent: Sent) => {
+    onPeriod(selection, sent);
+    setValue(selection);
   };
-  return <FilterToolbar messages={getMessages(locale)} label="Narrow the list" period={period} />;
+  const period: ToolbarPeriod =
+    format === 'dashboard'
+      ? { format, presets: DASHBOARD_PRESETS, value, zone: shownZone, maxDays, onChange: accept }
+      : { format, presets: ALL_PRESETS, value, zone: shownZone, maxDays, onChange: accept };
+  return (
+    <>
+      <FilterToolbar messages={getMessages(locale)} label="Narrow the list" period={period} />
+      {controls ? (
+        <>
+          <button type="button" onClick={() => setValue(TODAY_PERIOD)}>
+            screen resets
+          </button>
+          <button type="button" onClick={() => setShownZone('America/New_York')}>
+            switch branch
+          </button>
+        </>
+      ) : null}
+    </>
+  );
+}
+
+/** What the last call sent, compared strictly: an absent key is not an undefined one. */
+function lastSent(onPeriod: ReturnType<typeof vi.fn>): unknown {
+  return onPeriod.mock.lastCall?.[1];
 }
 
 /** Freezes the clock at an instant, for the Date object only. */
@@ -99,7 +128,7 @@ async function typeDay(user: ReturnType<typeof userEvent.setup>, label: string, 
 
 describe('the period presets', () => {
   it('are pressed buttons, one pressed at a time, Today first', () => {
-    mount(<PeriodHost zone="Asia/Amman" format="days" onPeriod={vi.fn()} />);
+    mount(<PeriodHost zone="Asia/Amman" format="instants" onPeriod={vi.fn()} />);
     const group = screen.getByRole('group', { name: en['filters.period.legend'] });
     const buttons = within(group).getAllByRole('button');
     expect(buttons.map((button) => button.textContent)).toEqual([
@@ -114,17 +143,20 @@ describe('the period presets', () => {
     ]);
   });
 
-  it('send calendar days on the branch clock to an operation that reads days', async () => {
+  it("send the dashboard the preset's NAME alone, exactly as it asks today", async () => {
     freezeAt('2026-09-21T22:30:00Z');
     const user = userEvent.setup();
     const onPeriod = vi.fn();
-    mount(<PeriodHost zone="Asia/Amman" format="days" onPeriod={onPeriod} />);
+    mount(<PeriodHost zone="Asia/Amman" format="dashboard" onPeriod={onPeriod} />);
+    // The dashboard names no "before today", so it is not offered.
+    expect(screen.queryByRole('button', { name: 'Before today' })).toBeNull();
     await user.click(screen.getByRole('button', { name: 'Yesterday' }));
-    // 22:30 UTC on the 21st is already the 22nd in Amman: yesterday is the 21st.
     expect(onPeriod).toHaveBeenLastCalledWith(
       { kind: 'yesterday', from: '', to: '' },
-      { from: '2026-09-21', to: '2026-09-21' }
+      { period: 'yesterday' }
     );
+    // No days beside the name: the server resolves them on the branch clock.
+    expect(lastSent(onPeriod)).toStrictEqual({ period: 'yesterday' });
     expect(screen.getByRole('button', { name: 'Yesterday' })).toHaveAttribute(
       'aria-pressed',
       'true'
@@ -139,8 +171,12 @@ describe('the period presets', () => {
     await user.click(screen.getByRole('button', { name: 'Yesterday' }));
     expect(onPeriod).toHaveBeenLastCalledWith(
       { kind: 'yesterday', from: '', to: '' },
-      { from: '2026-09-20T21:00:00.000Z', to: '2026-09-21T20:59:59.999Z' }
+      { from: '2026-09-20T21:00:00.000Z', to: '2026-09-21T23:59:59.999999+03:00' }
     );
+    expect(lastSent(onPeriod)).toStrictEqual({
+      from: '2026-09-20T21:00:00.000Z',
+      to: '2026-09-21T23:59:59.999999+03:00',
+    });
   });
 
   it('name a different day on a different branch clock at the same instant', async () => {
@@ -152,7 +188,7 @@ describe('the period presets', () => {
     await user.click(screen.getByRole('button', { name: 'Yesterday' }));
     expect(onPeriod).toHaveBeenLastCalledWith(
       { kind: 'yesterday', from: '', to: '' },
-      { from: '2026-09-20T04:00:00.000Z', to: '2026-09-21T03:59:59.999Z' }
+      { from: '2026-09-20T04:00:00.000Z', to: '2026-09-20T23:59:59.999999-04:00' }
     );
   });
 
@@ -165,7 +201,7 @@ describe('the period presets', () => {
     // 4 March starts on standard time (-05:00); 10 March ends on daylight time (-04:00).
     expect(onPeriod).toHaveBeenLastCalledWith(
       { kind: 'last7', from: '', to: '' },
-      { from: '2026-03-04T05:00:00.000Z', to: '2026-03-11T03:59:59.999Z' }
+      { from: '2026-03-04T05:00:00.000Z', to: '2026-03-10T23:59:59.999999-04:00' }
     );
   });
 
@@ -177,8 +213,9 @@ describe('the period presets', () => {
     await user.click(screen.getByRole('button', { name: 'Before today' }));
     expect(onPeriod).toHaveBeenLastCalledWith(
       { kind: 'beforeToday', from: '', to: '' },
-      { to: '2026-09-21T20:59:59.999Z' }
+      { to: '2026-09-21T23:59:59.999999+03:00' }
     );
+    expect(lastSent(onPeriod)).toStrictEqual({ to: '2026-09-21T23:59:59.999999+03:00' });
   });
 });
 
@@ -186,7 +223,7 @@ describe('a chosen period', () => {
   it('asks nothing until the two days are applied, and says the list has not changed', async () => {
     const user = userEvent.setup();
     const onPeriod = vi.fn();
-    mount(<PeriodHost zone="Asia/Amman" format="days" onPeriod={onPeriod} />);
+    mount(<PeriodHost zone="Asia/Amman" format="dashboard" onPeriod={onPeriod} />);
     await user.click(screen.getByRole('button', { name: 'Choose dates' }));
     expect(onPeriod).not.toHaveBeenCalled();
     expect(screen.getByRole('group', { name: /^From/ })).toBeInTheDocument();
@@ -199,7 +236,7 @@ describe('a chosen period', () => {
   it('refuses a missing day on the box that is empty', async () => {
     const user = userEvent.setup();
     const onPeriod = vi.fn();
-    mount(<PeriodHost zone="Asia/Amman" format="days" onPeriod={onPeriod} />);
+    mount(<PeriodHost zone="Asia/Amman" format="dashboard" onPeriod={onPeriod} />);
     await user.click(screen.getByRole('button', { name: 'Choose dates' }));
     await typeDay(user, 'From', '01092026');
     await user.click(screen.getByRole('button', { name: 'Use these dates' }));
@@ -213,7 +250,7 @@ describe('a chosen period', () => {
   it('refuses a last day before the first, on the second box, and withdraws it once corrected', async () => {
     const user = userEvent.setup();
     const onPeriod = vi.fn();
-    mount(<PeriodHost zone="Asia/Amman" format="days" onPeriod={onPeriod} />);
+    mount(<PeriodHost zone="Asia/Amman" format="dashboard" onPeriod={onPeriod} />);
     await user.click(screen.getByRole('button', { name: 'Choose dates' }));
     await typeDay(user, 'From', '22092026');
     await typeDay(user, 'To', '20092026');
@@ -230,7 +267,7 @@ describe('a chosen period', () => {
     await user.click(screen.getByRole('button', { name: 'Use these dates' }));
     expect(onPeriod).toHaveBeenLastCalledWith(
       { kind: 'custom', from: '2026-09-22', to: '2026-09-23' },
-      { from: '2026-09-22', to: '2026-09-23' }
+      { period: 'custom', from: '2026-09-22', to: '2026-09-23' }
     );
     expect(screen.queryByRole('status')).toBeNull();
   });
@@ -239,7 +276,7 @@ describe('a chosen period', () => {
     const user = userEvent.setup();
     const limited = vi.fn();
     const { unmount } = mount(
-      <PeriodHost zone="Asia/Amman" format="days" maxDays={92} onPeriod={limited} />
+      <PeriodHost zone="Asia/Amman" format="dashboard" maxDays={92} onPeriod={limited} />
     );
     await user.click(screen.getByRole('button', { name: 'Choose dates' }));
     await typeDay(user, 'From', '01012026');
@@ -250,7 +287,7 @@ describe('a chosen period', () => {
     unmount();
 
     const unlimited = vi.fn();
-    mount(<PeriodHost zone="Asia/Amman" format="days" onPeriod={unlimited} />);
+    mount(<PeriodHost zone="Asia/Amman" format="dashboard" onPeriod={unlimited} />);
     await user.click(screen.getByRole('button', { name: 'Choose dates' }));
     await typeDay(user, 'From', '01012026');
     await typeDay(user, 'To', '30062026');
@@ -268,27 +305,86 @@ describe('a chosen period', () => {
     await user.click(screen.getByRole('button', { name: 'Use these dates' }));
     expect(onPeriod).toHaveBeenLastCalledWith(
       { kind: 'custom', from: '2026-03-07', to: '2026-03-08' },
-      { from: '2026-03-07T05:00:00.000Z', to: '2026-03-09T03:59:59.999Z' }
+      { from: '2026-03-07T05:00:00.000Z', to: '2026-03-08T23:59:59.999999-04:00' }
     );
   });
 
   it('applies on Enter in a date box, like the button', async () => {
     const user = userEvent.setup();
     const onPeriod = vi.fn();
-    mount(<PeriodHost zone="Asia/Amman" format="days" onPeriod={onPeriod} />);
+    mount(<PeriodHost zone="Asia/Amman" format="dashboard" onPeriod={onPeriod} />);
     await user.click(screen.getByRole('button', { name: 'Choose dates' }));
     await typeDay(user, 'From', '01092026');
     await typeDay(user, 'To', '02092026');
     await user.keyboard('{Enter}');
     expect(onPeriod).toHaveBeenLastCalledWith(
       { kind: 'custom', from: '2026-09-01', to: '2026-09-02' },
-      { from: '2026-09-01', to: '2026-09-02' }
+      { period: 'custom', from: '2026-09-01', to: '2026-09-02' }
     );
+    expect(lastSent(onPeriod)).toStrictEqual({
+      period: 'custom',
+      from: '2026-09-01',
+      to: '2026-09-02',
+    });
+  });
+
+  it('follows the period when the SCREEN changes it: the panel closes and the typed days go', async () => {
+    const user = userEvent.setup();
+    mount(<PeriodHost zone="Asia/Amman" format="dashboard" onPeriod={vi.fn()} controls />);
+    await user.click(screen.getByRole('button', { name: 'Choose dates' }));
+    await typeDay(user, 'From', '22092026');
+    await typeDay(user, 'To', '23092026');
+    await user.click(screen.getByRole('button', { name: 'Use these dates' }));
+    expect(screen.getByRole('button', { name: 'Choose dates' })).toHaveAttribute(
+      'aria-pressed',
+      'true'
+    );
+
+    // The screen puts the period back to today (a reset, a branch switch).
+    await user.click(screen.getByRole('button', { name: 'screen resets' }));
+    expect(screen.queryByRole('group', { name: /^From/ })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Today' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.queryByRole('status')).toBeNull();
+    // Reopened, the boxes are empty: the old pair did not survive the reset.
+    await user.click(screen.getByRole('button', { name: 'Choose dates' }));
+    const from = screen.getByRole('group', { name: /^From/ });
+    expect((from.parentElement?.querySelector('input') as HTMLInputElement).value).not.toContain(
+      '22/09/2026'
+    );
+  });
+
+  it('drops half-typed days when the branch clock changes', async () => {
+    const user = userEvent.setup();
+    mount(<PeriodHost zone="Asia/Amman" format="instants" onPeriod={vi.fn()} controls />);
+    await user.click(screen.getByRole('button', { name: 'Choose dates' }));
+    await typeDay(user, 'From', '22092026');
+    await user.click(screen.getByRole('button', { name: 'switch branch' }));
+    // The period in force is still Today; the panel follows it and closes.
+    expect(screen.queryByRole('group', { name: /^From/ })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Today' })).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  it('says the list has not changed while an APPLIED pair is being edited, and not once it is back', async () => {
+    const user = userEvent.setup();
+    const onPeriod = vi.fn();
+    mount(<PeriodHost zone="Asia/Amman" format="dashboard" onPeriod={onPeriod} />);
+    await user.click(screen.getByRole('button', { name: 'Choose dates' }));
+    await typeDay(user, 'From', '22092026');
+    await typeDay(user, 'To', '23092026');
+    await user.click(screen.getByRole('button', { name: 'Use these dates' }));
+    expect(screen.queryByRole('status')).toBeNull();
+
+    await typeDay(user, 'To', '25092026');
+    expect(screen.getByRole('status')).toHaveTextContent(en['filters.period.notAppliedCustom']);
+    expect(onPeriod).toHaveBeenCalledTimes(1);
+
+    await typeDay(user, 'To', '23092026');
+    await waitFor(() => expect(screen.queryByRole('status')).toBeNull());
   });
 
   it('writes Latin digits and Arabic words in Arabic', async () => {
     const user = userEvent.setup();
-    mount(<PeriodHost zone="Asia/Amman" format="days" onPeriod={vi.fn()} locale="ar" />, 'ar');
+    mount(<PeriodHost zone="Asia/Amman" format="dashboard" onPeriod={vi.fn()} locale="ar" />, 'ar');
     expect(screen.getByRole('button', { name: ar['filters.period.last7'] })).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: ar['filters.period.custom'] }));
     const from = await typeDay(user, ar['filters.period.from'], '22092026');
@@ -535,7 +631,7 @@ describe('the toolbar in both directions', () => {
           presets: ALL_PRESETS,
           value: TODAY_PERIOD,
           zone: 'Asia/Amman',
-          format: 'days',
+          format: 'instants',
           onChange: vi.fn(),
         }}
       />,
@@ -568,16 +664,44 @@ describe('period arithmetic', () => {
     expect(periodDays({ kind: 'custom', from: '', to: '' }, 'Asia/Amman', now)).toEqual({});
   });
 
-  it('turns days into closed instant bounds only for the instants format', () => {
-    const custom: PeriodSelection = { kind: 'custom', from: '2026-09-01', to: '2026-09-02' };
-    expect(periodWindow(custom, 'Asia/Amman', 'days', now)).toEqual({
+  it("asks the dashboard for exactly its request: the name alone, or 'custom' with two days", () => {
+    const at = (kind: PeriodKind, from = '', to = ''): PeriodSelection => ({ kind, from, to });
+    expect(dashboardPeriodRequest(at('today'))).toStrictEqual({ period: 'today' });
+    expect(dashboardPeriodRequest(at('yesterday'))).toStrictEqual({ period: 'yesterday' });
+    expect(dashboardPeriodRequest(at('last7'))).toStrictEqual({ period: 'last7' });
+    expect(dashboardPeriodRequest(at('custom', '2026-09-01', '2026-09-02'))).toStrictEqual({
+      period: 'custom',
       from: '2026-09-01',
       to: '2026-09-02',
     });
-    expect(periodWindow(custom, 'Asia/Amman', 'instants', now)).toEqual({
+    // Nothing the dashboard does not name, and no half-chosen period.
+    expect(dashboardPeriodRequest(at('beforeToday'))).toBeNull();
+    expect(dashboardPeriodRequest(at('custom', '2026-09-01', ''))).toBeNull();
+    // Every period this names is one the dashboard operation names.
+    const named = PERIOD_KINDS.map((kind) =>
+      dashboardPeriodRequest(at(kind, '2026-09-01', '2026-09-02'))
+    )
+      .filter((request) => request !== null)
+      .map((request) => request.period);
+    expect([...named].sort()).toEqual([...DASHBOARD_PERIODS].sort());
+  });
+
+  it('asks a board for closed instant bounds, the last to the microsecond on the branch clock', () => {
+    const custom: PeriodSelection = { kind: 'custom', from: '2026-09-01', to: '2026-09-02' };
+    expect(boardInstantWindow(custom, 'Asia/Amman', now)).toStrictEqual({
       from: '2026-08-31T21:00:00.000Z',
-      to: '2026-09-02T20:59:59.999Z',
+      to: '2026-09-02T23:59:59.999999+03:00',
     });
+    expect(boardInstantWindow(TODAY_PERIOD, 'America/New_York', now)).toStrictEqual({
+      from: '2026-09-21T04:00:00.000Z',
+      to: '2026-09-21T23:59:59.999999-04:00',
+    });
+    expect(
+      boardInstantWindow({ kind: 'beforeToday', from: '', to: '' }, 'Asia/Amman', now)
+    ).toStrictEqual({ to: '2026-09-21T23:59:59.999999+03:00' });
+    expect(
+      boardInstantWindow({ kind: 'custom', from: '', to: '' }, 'Asia/Amman', now)
+    ).toStrictEqual({});
   });
 
   it('checks a chosen pair: both days, in order, within the limit', () => {
