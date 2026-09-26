@@ -6,7 +6,7 @@
  * does not publish, offering an email box the allow-list does not include, and
  * searching on every keystroke against a 30-per-minute budget.
  */
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
@@ -21,6 +21,21 @@ import {
   normalizeCriteria,
 } from '@/features/crm/customers/contract';
 import { CRM_PERMISSIONS, VEHICLE_PERMISSIONS, holds } from '@/features/crm/permissions';
+import { searchCustomers } from '@/features/crm/customers/api';
+import type { CustomerSearchHit } from '@/features/crm/customers/contract';
+import type { TableRequest } from '@/components/data-table/table-state';
+import type { ServerPage } from '@/components/data-table/use-server-table';
+import { readCustomerDirectory } from '@/lib/customers/directory-read.server';
+
+/*
+ * The server-only core is replaced for the whole file. Nothing else here imports
+ * it — every other assertion reads source text — so the replacement only
+ * removes the `next/headers` cookie read the real core would attempt, and lets
+ * the kept action be observed calling it.
+ */
+vi.mock('@/lib/customers/directory-read.server', () => ({
+  readCustomerDirectory: vi.fn(),
+}));
 
 const ROOT = join(process.cwd(), '..', '..');
 
@@ -166,6 +181,37 @@ describe('what the adapter must never send', () => {
     // No request building of its own — one customer-search authority.
     expect(wrapper).not.toContain('query({');
     expect(wrapper).not.toContain('/api/v1/customers');
+  });
+
+  it('the kept action hands its arguments to the core unchanged and returns its answer', async () => {
+    // Behaviour, not source text: the action must pass the same request, cursor
+    // and criteria to the one core — which normalises and validates them — with
+    // no signal of its own, and return the core's envelope as-is, adding nothing.
+    const core = vi.mocked(readCustomerDirectory);
+    const envelope: ServerPage<CustomerSearchHit> = {
+      status: 'denied',
+      rows: [],
+      nextCursor: null,
+      hasMore: false,
+      correlationId: 'corr-kept-action',
+    };
+    core.mockResolvedValueOnce(envelope);
+    const request: TableRequest = {
+      page: 1,
+      pageSize: 25,
+      sort: null,
+      filters: [],
+      search: '',
+    };
+    const criteria = { name: '  Sam  ', partyType: 'individual' as const };
+
+    const answer = await searchCustomers(request, 'cursor-2', criteria);
+
+    expect(core).toHaveBeenCalledTimes(1);
+    expect(core.mock.calls[0]).toEqual([request, 'cursor-2', criteria]);
+    expect(core.mock.calls[0]?.[0]).toBe(request);
+    expect(core.mock.calls[0]?.[2]).toBe(criteria);
+    expect(answer).toBe(envelope);
   });
 
   it('sends no sort parameter, because the operation publishes none', () => {
