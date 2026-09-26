@@ -185,6 +185,45 @@ export interface OperationalGridProps<Row> {
 /** The reserved field of the row-actions column. No caller column may use it. */
 export const ROW_ACTIONS_FIELD = 'rowActions';
 
+/*
+ * The row-actions column is as wide as its longest row of labels, so no label
+ * wraps — in English or in Arabic (Browser QA part 7, row 4.3: "Open the work
+ * order" broke over four lines in a 58 px column).
+ *
+ * A label is never measured in the DOM: the grid decides its column widths
+ * before the cells exist, and a width that changed after the first paint would
+ * move every other column under the operator's eye. It is estimated from token
+ * values instead — `space-2` per character, which is wider than the average
+ * glyph of a 14 px label in either script — plus each button's own padding, the
+ * gap between buttons and the cell's padding. An over-estimate costs a little
+ * space; an under-estimate would wrap, so the estimate errs wide.
+ */
+const ACTION_CHARACTER_PX = SPACE_PX['2'];
+const ACTION_BUTTON_PADDING_PX = SPACE_PX['4'];
+const ACTION_BUTTON_MIN_PX = SPACE_PX['16'];
+const ACTION_GAP_PX = SPACE_PX['1'];
+const ACTION_CELL_PADDING_PX = SPACE_PX['5'];
+
+/**
+ * The narrowest the row-actions column may be for these rows' labels: the widest
+ * row, never below the floor every other column keeps. Exported so the width is
+ * tested on the function as well as on the render.
+ */
+export function rowActionsMinWidth(labelRows: readonly (readonly string[])[]): number {
+  let widest = 0;
+  for (const labels of labelRows) {
+    let width = ACTION_CELL_PADDING_PX + ACTION_GAP_PX * Math.max(0, labels.length - 1);
+    for (const label of labels) {
+      width += Math.max(
+        ACTION_BUTTON_MIN_PX,
+        label.length * ACTION_CHARACTER_PX + ACTION_BUTTON_PADDING_PX
+      );
+    }
+    widest = Math.max(widest, width);
+  }
+  return Math.max(SPACE_PX['24'], widest);
+}
+
 /**
  * The grid texts: the theme's, then this grid's. Exported so the "merged,
  * never replaced" rule is tested on the function as well as on the render.
@@ -227,7 +266,9 @@ function RowActionsCell({
   readonly tabIndex: 0 | -1;
 }) {
   return (
-    <div className="flex flex-wrap items-center justify-end gap-1">
+    // No wrap, of the row or of a label: the column is sized to hold the row
+    // whole (`rowActionsMinWidth`).
+    <div className="flex flex-nowrap items-center justify-end gap-1 whitespace-nowrap">
       {actions.map((action) => {
         const name = (
           <>
@@ -301,6 +342,8 @@ export function OperationalGrid<Row>({
     if (settledHasNext !== false) apiRef.current?.setRowCount(-1);
   }, [apiRef, settledHasNext, request.page]);
 
+  const rows = useMemo(() => response?.rows ?? [], [response]);
+
   const gridColumns = useMemo<GridColDef<GridValidRowModel>[]>(() => {
     const mapped: GridColDef<GridValidRowModel>[] = columns.map((column) => ({
       field: column.id,
@@ -326,7 +369,9 @@ export function OperationalGrid<Row>({
         hideable: false,
         disableColumnMenu: true,
         flex: 1,
-        minWidth: SPACE_PX['24'],
+        minWidth: rowActionsMinWidth(
+          rows.map((row) => rowActions(row as Row).map((action) => action.label))
+        ),
         align: 'right',
         headerAlign: 'right',
         renderHeader: () => (
@@ -338,7 +383,7 @@ export function OperationalGrid<Row>({
       });
     }
     return mapped;
-  }, [columns, messages, rowActions, honoursSort]);
+  }, [columns, messages, rowActions, honoursSort, rows]);
 
   const columnVisibilityModel = useMemo<GridColumnVisibilityModel>(() => {
     const model: GridColumnVisibilityModel = {};
@@ -390,7 +435,6 @@ export function OperationalGrid<Row>({
     );
   }
 
-  const rows = response?.rows ?? [];
   const rowHeight =
     density === 'compact' ? LAYOUT_PX['table-row-height-compact'] : LAYOUT_PX['table-row-height'];
   const clear = () => table.setRequest(withoutAllFilters(request));

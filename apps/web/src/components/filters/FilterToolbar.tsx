@@ -1,6 +1,6 @@
 'use client';
 
-import { useId, useState, type KeyboardEvent } from 'react';
+import { useId, useState, type KeyboardEvent, type ReactNode } from 'react';
 import Button from '@mui/material/Button';
 import Chip from '@mui/material/Chip';
 import IconButton from '@mui/material/IconButton';
@@ -8,6 +8,7 @@ import InputAdornment from '@mui/material/InputAdornment';
 import TextField from '@mui/material/TextField';
 import ToggleButton from '@mui/material/ToggleButton';
 import ToggleButtonGroup from '@mui/material/ToggleButtonGroup';
+import type { SelectOptionGroup } from '@/components/forms/Field';
 import { DateField } from '@/components/forms/mui/DateField';
 import { FormSelectField } from '@/components/forms/mui/FormSelectField';
 import {
@@ -73,6 +74,15 @@ import {
  * closes to match and the half-typed days are dropped. Whenever the days in
  * the boxes differ from the period in force, including an applied pair being
  * edited, the toolbar says the list still shows the period in force.
+ *
+ * ## What the screen adds beside the filters
+ *
+ * `summary` is one line under the period saying what the list covers — the
+ * period in words and the clock its days are counted on — so a board states its
+ * zone rather than leaving the reader to assume their own. `actions` are the
+ * screen's own links and toggles, drawn in a row of their own at the foot of the
+ * toolbar; a button there must be `type="button"`, because the toolbar's form
+ * submit applies the chosen dates.
  */
 
 export interface ToolbarSearch {
@@ -115,6 +125,10 @@ export type ToolbarFilter =
       readonly onChange: (next: string) => void;
       /** The empty first choice, for "any". */
       readonly placeholder?: string | undefined;
+      /** Rendered after `options`, each as an `<optgroup>` heading that cannot be chosen. */
+      readonly groups?: readonly SelectOptionGroup[] | undefined;
+      /** A line under the select, wired to it as its description. */
+      readonly description?: string | undefined;
     };
 
 interface ToolbarPeriodBase {
@@ -150,6 +164,10 @@ export interface FilterToolbarProps {
   readonly search?: ToolbarSearch | undefined;
   readonly filters?: readonly ToolbarFilter[] | undefined;
   readonly period?: ToolbarPeriod | undefined;
+  /** One line saying what the list covers — see "What the screen adds". */
+  readonly summary?: string | undefined;
+  /** The screen's links and toggles, in a row at the foot. Buttons are `type="button"`. */
+  readonly actions?: ReactNode;
   readonly testId?: string | undefined;
 }
 
@@ -171,6 +189,8 @@ export function FilterToolbar({
   search,
   filters = [],
   period,
+  summary,
+  actions,
   testId = 'filter-toolbar',
 }: FilterToolbarProps) {
   const [custom, setCustom] = useState(period?.value.kind === 'custom');
@@ -258,6 +278,8 @@ export function FilterToolbar({
                   value={filter.value}
                   onChange={filter.onChange}
                   options={filter.options}
+                  groups={filter.groups ?? []}
+                  description={filter.description}
                   placeholder={filter.placeholder}
                   testId={`filter-${filter.key}`}
                 />
@@ -342,6 +364,18 @@ export function FilterToolbar({
                   })}
             </p>
           ) : null}
+        </div>
+      ) : null}
+
+      {summary !== undefined && summary !== '' ? (
+        <p className="text-supporting text-text-muted" data-testid={`${testId}-summary`}>
+          {summary}
+        </p>
+      ) : null}
+
+      {actions !== undefined && actions !== null ? (
+        <div className="flex flex-wrap items-center gap-3" data-testid={`${testId}-actions`}>
+          {actions}
         </div>
       ) : null}
     </form>
