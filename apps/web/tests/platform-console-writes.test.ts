@@ -201,6 +201,21 @@ describe('provisioning builds the document the operation publishes', () => {
     expect(send).not.toHaveBeenCalled();
   });
 
+  it('refuses a currency or a time zone left unchosen, saying so, and never reaches the server', async () => {
+    // The three controls are selects fed from the reference registers, so an
+    // empty value means nothing was chosen: it is refused as "choose", not as a
+    // malformed code.
+    const state = await actions.provisionOrganizationAction(
+      IDLE as never,
+      provisionForm({ companyCurrency: '', tenantTimezone: '', branchTimezone: '' })
+    );
+    expect(state.status).toBe('invalid');
+    expect(state.fieldErrors?.companyCurrency).toBe('platform.error.chooseCurrency');
+    expect(state.fieldErrors?.tenantTimezone).toBe('platform.error.chooseTimeZone');
+    expect(state.fieldErrors?.branchTimezone).toBe('platform.error.chooseTimeZone');
+    expect(send).not.toHaveBeenCalled();
+  });
+
   it('places a refusal about a nested `code` on the control that owns it', async () => {
     // The wire document holds three fields called `code`. The leaf alone cannot
     // say which control refused, so a mapping that dropped to the leaf would put
@@ -506,6 +521,25 @@ describe('growing a live organisation addresses the organisation it names', () =
     });
     expect(state.status).toBe('invalid');
     expect(state.fieldErrors).toEqual({ timezone: 'form.violation.unknown_reference' });
+  });
+
+  it('refuses an unchosen currency and an unchosen time zone without asking the server', async () => {
+    const company = await actions.addCompanyAction(TENANT, {
+      code: 'nw_second',
+      legalName: 'Northern Workshops Second Company',
+      baseCurrency: '',
+    });
+    expect(company.status).toBe('invalid');
+    expect(company.fieldErrors?.baseCurrency).toBe('platform.error.chooseCurrency');
+    const branch = await actions.addBranchAction(TENANT, {
+      companyId: SUBSCRIPTION,
+      code: 'nw_north',
+      name: 'Northern branch',
+      timezone: '',
+    });
+    expect(branch.status).toBe('invalid');
+    expect(branch.fieldErrors?.timezone).toBe('platform.error.chooseTimeZone');
+    expect(send).not.toHaveBeenCalled();
   });
 
   it('opens a branch under the company it names, dropping a blank city', async () => {

@@ -100,6 +100,7 @@ const platformReads = vi.hoisted(() => ({
   listPlans: vi.fn(),
   listCharges: vi.fn(),
   listOrganizationChoices: vi.fn(),
+  listReferenceValues: vi.fn(),
 }));
 vi.mock('@/features/platform/api/session', () => ({
   requirePlatformSession: async () => ({
@@ -116,6 +117,9 @@ vi.mock('@/features/platform/api', () => ({
   listPlans: (...args: unknown[]) => platformReads.listPlans(...args),
   listCharges: (...args: unknown[]) => platformReads.listCharges(...args),
   listOrganizationChoices: (...args: unknown[]) => platformReads.listOrganizationChoices(...args),
+  // The currencies, time zones and languages the Provision page and the growth
+  // dialogs offer as selects (P1-32-PRE-OD-REF).
+  listReferenceValues: (...args: unknown[]) => platformReads.listReferenceValues(...args),
   // The paged helper the two browser-callable reads in `actions.ts` use. Those
   // two are Server Actions a client table calls after render, so no route below
   // reaches them; the export is stood in for so the actions module still loads.
@@ -335,6 +339,23 @@ describe('the Platform Owner Console routes decide on their own platform code be
       correlationId: 'c',
     });
     platformReads.listOrganizationChoices.mockResolvedValue([]);
+    platformReads.listReferenceValues.mockResolvedValue({
+      status: 'ok',
+      data: { currencies: [], timezones: [], languages: [] },
+      correlationId: 'c',
+    });
+  });
+
+  it('provisioning reads the choices it offers only after its own gate', async () => {
+    await invokeConsole(consoleRoutes.provision, [P.organizationProvision]);
+    expect(platformReads.listReferenceValues).toHaveBeenCalledTimes(1);
+  });
+
+  it('organisation detail reads the growth choices only for a holder of the manage code', async () => {
+    await invokeConsole(consoleRoutes.detail, [P.organizationRead]);
+    expect(platformReads.listReferenceValues).not.toHaveBeenCalled();
+    await invokeConsole(consoleRoutes.detail, [P.organizationRead, P.organizationManage]);
+    expect(platformReads.listReferenceValues).toHaveBeenCalledTimes(1);
   });
 
   const GATES = [

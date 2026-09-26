@@ -309,13 +309,20 @@ administrator."_
 One form, four blocks, submitted once.
 
 **Organisation.** **Name**, **Code** (_"Short and unique: lowercase letters, numbers and
-underscores, starting with a letter."_), **Language**, **Time zone** (_"Use a time zone the platform supports."_)
-and **Country** (_"Two capital letters, for example SA."_).
+underscores, starting with a letter."_), **Language**, **Time zone** (_"Choose from the time zones
+the platform supports."_) and **Country** (_"Two capital letters, for example SA."_).
 
-**First company.** **Name**, **Legal name**, **Code**, **Base currency** (_"Use a currency the
-platform supports."_), **Commercial registration number** and **Tax registration number**.
+**First company.** **Name**, **Legal name**, **Code**, **Base currency** (_"Choose from the
+currencies the platform supports."_), **Commercial registration number** and **Tax registration
+number**.
 
 **First branch.** **Name**, **Code**, **City**, **Country** and **Time zone**.
+
+**Language**, both **Time zone** fields and **Base currency** are lists of the values the platform
+holds; nothing else can be entered. A currency is shown by its three-letter code. If the lists
+cannot be loaded, those four fields are shown greyed out with the note _"The list of choices could
+not be loaded. Reload the page to try again."_ The **Add company** and **Add branch** dialogs on
+an organisation page offer the base currency and the time zone the same way.
 
 **First administrator.** **Full name** and **Email address**. The form states what happens: _"The
 administrator receives an email with a link to set a password."_

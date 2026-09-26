@@ -1,7 +1,12 @@
 import { notFound } from 'next/navigation';
 import { PageBody, PageHeader } from '@/components/shell/PageHeader';
 import { PermissionDeniedState } from '@/components/states/States';
-import { listCharges, listPlans, readOrganization } from '@/features/platform/api';
+import {
+  listCharges,
+  listPlans,
+  listReferenceValues,
+  readOrganization,
+} from '@/features/platform/api';
 import { requirePlatformSession } from '@/features/platform/api/session';
 import { OrganizationDetailScreen } from '@/features/platform/components/OrganizationDetailScreen';
 import { ReadFailure } from '@/features/platform/components/ui';
@@ -82,6 +87,10 @@ export default async function PlatformOrganizationPage({
   const canManageSubscription = holds(permissions, PLATFORM_PERMISSIONS.subscriptionManage);
   const canReadBilling = holds(permissions, PLATFORM_PERMISSIONS.billingRead);
   const plans = canManageSubscription ? await listPlans() : null;
+  // The growth dialogs are offered only with platform.organization.manage, so the
+  // choices they need are read only then (P1-32-PRE-OD-REF).
+  const canManageOrganization = holds(permissions, PLATFORM_PERMISSIONS.organizationManage);
+  const referenceValues = canManageOrganization ? await listReferenceValues() : null;
   const requested = await searchParams;
   const chargeStatus = chargeStatusFilter(requested.chargeStatus);
   const chargeCursor =
@@ -112,13 +121,16 @@ export default async function PlatformOrganizationPage({
           messages={messages}
           organization={organization.data}
           plans={plans && plans.status === 'ok' ? plans.data.items : null}
+          referenceValues={
+            referenceValues && referenceValues.status === 'ok' ? referenceValues.data : null
+          }
           charges={charges}
           chargeStatus={chargeStatus ?? ''}
           chargesPaged={chargeCursor !== undefined}
           today={new Date().toISOString().slice(0, 10)}
           capabilities={{
             canChangeLifecycle: holds(permissions, PLATFORM_PERMISSIONS.organizationLifecycle),
-            canManageOrganization: holds(permissions, PLATFORM_PERMISSIONS.organizationManage),
+            canManageOrganization,
             canManageSubscription,
             canReadBilling,
             canManageBilling: holds(permissions, PLATFORM_PERMISSIONS.billingManage),
