@@ -93,7 +93,7 @@ Platform  (operated by RootLco, the company that supplies this software)
     │          example: "Al-Noor Auto Services (example)", code al_noor_auto (example)
     │
     ├── Company — the legal entity
-    │   │        example: "Al-Noor Auto Services (example)", base currency SAR
+    │   │        example: "Al-Noor Auto Services (example)", base currency JOD
     │   │
     │   ├── Branch — "Riyadh — Exit 5 (example)"
     │   │   │        address, country, time zone, its own numbering sequences
@@ -160,7 +160,7 @@ exactly what a new workspace is made of.
 
 1. **Workspace** — code (2–63 characters), display name, default language, default time zone.
    Example: code `al_noor_auto (example)`, display name "Al-Noor Auto Services (example)", language
-   `en`, time zone `Asia/Riyadh`.
+   `en`, time zone `Asia/Amman`.
 2. **Company** — code, legal name, three-letter base currency; registration number _(optional)_ and
    tax registration number _(optional)_.
 3. **Branch** — code, name, time zone; city _(optional)_ and two-letter country code _(optional)_.
