@@ -91,7 +91,7 @@ operation.
 
 ## P1-26-F-005 — currencies have no approved HTTP operation
 
-**Severity:** Medium · **Status:** Accepted (decision-neutral implementation) ·
+**Severity:** Medium · **Status:** Closed — P1-32-PRE-OD-REF (2026-09-27) ·
 **Area:** contract
 
 `shared.currencies` holds the ISO 4217 reference list. No route handler reads
@@ -102,11 +102,23 @@ provider is implied. Currency codes are validated for **shape** (`^[A-Z]{3}$`,
 the same expression the approval-limit contract uses) and never against a list
 the Frontend does not have.
 
+**Closure.** Two read operations now publish the ACTIVE rows of
+`shared.currencies` (with `shared.timezones` and `shared.languages`):
+`org.reference-values-read` (`GET /api/v1/org/reference-values`, on
+`org.tenant.read`) for the tenant Organization screen, and
+`platform.reference-values-read` (`GET /api/v1/platform/reference-values`, on
+`platform.organization.read`) for the Platform Owner Console, which migration
+`20260927090000_shared_reference_platform_read.sql` lets read the register. A
+company's base currency is chosen from that list rather than typed. The
+Currencies screen still stores the enabled codes as an exact list; no base
+currency is chosen for a tenant and no exchange rate is held. Which currencies
+the platform holds remains the Owner's decision (OIR-04).
+
 ---
 
 ## P1-26-F-006 — languages have no approved catalogue operation
 
-**Severity:** Medium · **Status:** Accepted (partial contract) · **Area:** contract
+**Severity:** Medium · **Status:** Closed — P1-32-PRE-OD-REF (2026-09-27) · **Area:** contract
 
 `shared.languages` holds the approved locales and their direction. No route
 handler reads it. The only approved language surface is the tenant's
@@ -119,6 +131,13 @@ owned and approved — and lets an authorised operator set the tenant default
 through the approved contract. An unregistered value is refused by the Backend
 with `ERR-VAL-001` and that verdict is surfaced verbatim in meaning. The screen
 does not claim to manage the platform language registry.
+
+**Closure.** `org.reference-values-read` and `platform.reference-values-read`
+publish the ACTIVE rows of `shared.languages` (see `F-005`). The tenant's
+default language and the language of a new organisation are chosen from the
+languages the platform holds that the interface can also be shown in, rather
+than typed; the Backend's `ERR-VAL-001` stays the authority on what exists.
+The screen still has no write to the platform language registry.
 
 ---
 
