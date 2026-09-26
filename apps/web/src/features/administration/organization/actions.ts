@@ -65,11 +65,11 @@ export async function updateTenantAction(
   if (!result.ok) {
     // A language or time zone the platform does not hold is refused by the API
     // on the ONE field that carried it (`body.defaultLocale` or
-    // `body.defaultTimezone`, rule `unknown_reference`). The Frontend does not
-    // pre-validate against a list it does not have — there is no operation that
-    // publishes either catalogue (`P1-26-F-006`) — so the refusal is routed
-    // through `fromFailure`, which turns each violation into a field error beside
-    // its control rather than one sentence in the banner.
+    // `body.defaultTimezone`, rule `unknown_reference`). The form offers both as
+    // selects fed from `org.reference-values-read` (P1-32-PRE-OD-REF), but the
+    // API stays the authority on what exists, so the refusal is still routed
+    // through `fromFailure`, which turns each violation into a field error
+    // beside its control rather than one sentence in the banner.
     return fromFailure(result, attempt);
   }
   return success('admin.saved', attempt);

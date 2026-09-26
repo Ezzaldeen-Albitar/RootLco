@@ -9,6 +9,7 @@ import {
   readTenant,
 } from '@/features/administration/organization/api';
 import { CapacityPanel } from '@/features/administration/organization/components/CapacityPanel';
+import { readReferenceValues } from '@/features/administration/organization/reference-values';
 import { OrganizationStructure } from '@/features/administration/organization/components/OrganizationStructure';
 import { SettingsEditor } from '@/features/administration/organization/components/SettingsEditor';
 import { TenantForm } from '@/features/administration/organization/components/TenantForm';
@@ -28,6 +29,12 @@ import { pageMetadata } from '@/lib/page-metadata';
  * a company or branch the caller chose from client state as if it were
  * authoritative — it sends an identifier as a path parameter, and
  * `assertScopeWithinAuthority` decides, before existence is even checked.
+ *
+ * The currency, time-zone and language choices come from
+ * `org.reference-values-read` (P1-32-PRE-OD-REF), read only for a holder of
+ * `org.tenant.read`, the code it declares. Without it, or when it fails, the
+ * company and branch dialogs and the tenant form fall back to the values already
+ * in use; nothing becomes free text.
  */
 export default async function OrganizationPage({
   params,
@@ -52,6 +59,7 @@ export default async function OrganizationPage({
 
   const tenant = await readTenant();
   const capacity = canReadTenant ? await readCapacity() : null;
+  const referenceValues = canReadTenant ? await readReferenceValues() : null;
   const companies = canReadCompanies ? await listCompanies() : null;
   const branches = canReadBranches ? await listBranches() : null;
   const currencyChoices =
@@ -82,7 +90,13 @@ export default async function OrganizationPage({
           <Panel title={t('organization.tenant')}>
             <ReadBoundary state={toReadState(tenant)} messages={messages}>
               {(view) => (
-                <TenantForm messages={messages} tenant={view} canWrite={canWriteSettings} />
+                <TenantForm
+                  messages={messages}
+                  tenant={view}
+                  canWrite={canWriteSettings}
+                  referenceValues={referenceValues}
+                  timezoneChoices={timezoneChoices}
+                />
               )}
             </ReadBoundary>
           </Panel>
@@ -107,6 +121,7 @@ export default async function OrganizationPage({
                 branches={branches}
                 currencyChoices={currencyChoices}
                 timezoneChoices={timezoneChoices}
+                referenceValues={referenceValues}
                 canManageCompanies={canManageCompanies}
                 canManageBranches={canManageBranches}
                 canChangeBranchStatus={canWriteSettings}

@@ -515,6 +515,13 @@ vi.mock('@/features/administration/organization/api', () => ({
   readBranchStatus: async () => ({ status: 'ok', data: null, correlationId: 'cid' }),
   readSettings: async () => ({ status: 'ok', data: [], correlationId: 'cid' }),
 }));
+// The currencies, time zones and languages the organisation screens offer
+// (org.reference-values-read, P1-32-PRE-OD-REF): a server-only module, so it is
+// stood in for here and its calls counted.
+const readReferenceValues = vi.hoisted(() => vi.fn());
+vi.mock('@/features/administration/organization/reference-values', () => ({
+  readReferenceValues: (...args: unknown[]) => readReferenceValues(...args),
+}));
 vi.mock('@/features/administration/departments/api', () => ({
   listDepartments: async () => ({ status: 'ok', data: [], correlationId: 'cid' }),
   readDepartmentNames: async () => ({}),
@@ -588,6 +595,29 @@ async function screenProps(
     marker
   );
 }
+
+describe('the organisation page reads the reference choices only with the code they declare', () => {
+  it('reads nothing without org.tenant.read, and reads them once with it', async () => {
+    readReferenceValues.mockReset();
+    readReferenceValues.mockResolvedValue(null);
+    await screenProps(
+      OrganizationPage,
+      {},
+      [ADMIN.companyRead, ADMIN.branchRead, ADMIN.companyManage],
+      'currencyChoices'
+    );
+    expect(readReferenceValues).not.toHaveBeenCalled();
+
+    const props = await screenProps(
+      OrganizationPage,
+      {},
+      [ADMIN.tenantRead, ADMIN.companyRead, ADMIN.branchRead],
+      'referenceValues'
+    );
+    expect(readReferenceValues).toHaveBeenCalledTimes(1);
+    expect(props).not.toBeNull();
+  });
+});
 
 describe('organisation administration routes grant each control from its OWN permission', () => {
   const USER_ID = 'a1b2c3d4-0000-4000-8000-0000000000aa';

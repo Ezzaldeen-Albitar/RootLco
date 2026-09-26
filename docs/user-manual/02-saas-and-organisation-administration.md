@@ -233,7 +233,7 @@ organisation."_ <!-- organization.company.addDescription --> — and fill in:
 | **Code**                           | _"Lower case letters, digits and underscores, starting with a letter."_ It cannot be changed afterwards. |
 | **Display name**                   | What the company is called day to day.                                                                   |
 | **Legal name**                     | The name it trades under legally.                                                                        |
-| **Base currency**                  | _"Chosen from the currencies enabled for your companies."_ Three capital letters, for example JOD.       |
+| **Base currency**                  | _"Chosen from the currencies enabled for your companies."_ With none enabled, the platform's list.       |
 | **Commercial registration number** | Optional.                                                                                                |
 | **Tax registration number**        | Optional.                                                                                                |
 
@@ -314,7 +314,7 @@ companies."_ <!-- organization.branch.addDescription --> — and fill in:
 | **Branch name** | What the site is called.                                                                             |
 | **City**        | Optional.                                                                                            |
 | **Country**     | _"Two capital letters, for example JO."_                                                             |
-| **Time zone**   | _"For example Asia/Amman. It must be a time zone the platform recognises."_                          |
+| **Time zone**   | _"Choose from the time zones the platform supports."_ A list; nothing is typed.                      |
 
 **Result** **"The branch was added."** <!-- organization.branch.created --> Its invoice, quotation
 and receipt numbering is set up with it, so it can start trading without a further step.
@@ -601,10 +601,10 @@ branches respectively. **Where** Sidebar → **Administration** → **Settings**
 1. The **Workspace** panel <!-- organization.tenant --> shows **Workspace code** <!-- organization.tenantCode -->
    and **Status** <!-- organization.status --> as facts with no control, and offers three editable
    fields: **Display name** _(required)_ <!-- organization.displayName --> , **Default language** <!-- organization.defaultLocale -->
-   (_"Must be a language the platform has registered."_ <!-- organization.defaultLocaleHint --> )
-   and **Default time zone** <!-- organization.defaultTimezone --> (_"An IANA time zone name, for
-   example Asia/Amman."_ <!-- organization.defaultTimezoneHint --> ). Press **Save** <!-- admin.save -->
-   .
+   (_"Choose from the languages the platform supports."_ <!-- organization.defaultLocaleHint --> )
+   and **Default time zone** <!-- organization.defaultTimezone --> (_"Choose from the time zones the
+   platform supports."_ <!-- organization.defaultTimezoneHint --> ), both chosen from lists. Press
+   **Save** <!-- admin.save --> .
 2. Below it, **"Subscription and capacity"** <!-- organization.capacity.title --> shows what your
    plan allows and how much is in use. Read 2.9 for what each row means and what a refusal says.
 3. Below that, **"Companies and branches"** <!-- organization.structure.title --> lists both by name
@@ -1078,7 +1078,7 @@ and the per-link permission gate)
 apps/web/src/app/[locale]/(dashboard)/administration/organization/page.tsx (at beebc6c2: three
 panels only, no branch-status control; superseded by the re-reading noted at the top of this
 comment)
-apps/web/src/features/administration/organization/components/TenantForm.tsx:14-26, 54-66 (tenantCode
+apps/web/src/features/administration/organization/components/TenantForm.tsx:15-32, 93-106 (tenantCode
 and status shown as facts; read-only variant)
 apps/web/src/features/administration/organization/components/SettingsEditor.tsx:14-38, 104-120 (no
 directory; typed reference; scope decided server-side)
