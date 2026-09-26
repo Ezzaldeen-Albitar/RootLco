@@ -339,10 +339,12 @@ async function renderPage(params: Record<string, string>, search: Record<string,
 }
 
 describe('nothing is read until the working context names one branch', () => {
-  it('with several branches and none chosen, asks in the header and reads nothing', () => {
+  it('with several branches and none chosen, asks for one right there and reads nothing', () => {
     renderScreen({}, branchSnapshot([TEST_BRANCH, OTHER_BRANCH]));
     expect(screen.getByText(EN['payments.target.explain'] as string)).toBeVisible();
-    expect(screen.getByText(EN['workingContext.chooseFirst'] as string)).toBeVisible();
+    // The branch section offers the named branches, so it says to choose here.
+    expect(screen.getByText(EN['workingContext.chooseBranchHere'] as string)).toBeVisible();
+    expect(screen.getByTestId('concrete-branch-chooser')).toHaveValue('');
     expect(listReceipts).not.toHaveBeenCalled();
     expect(readReceipt).not.toHaveBeenCalled();
     expect(listPaymentMethods).not.toHaveBeenCalled();
