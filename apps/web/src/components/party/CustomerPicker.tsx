@@ -6,7 +6,7 @@ import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
 import { translate } from '@/i18n/get-messages';
 import type { CursorPage, ReadState } from '@/lib/api/read-operation';
-import { searchCustomerDirectory } from '@/lib/customers/directory';
+import { searchCustomerDirectoryCancellable } from '@/lib/customers/directory-read';
 import { MAX_NAME_LENGTH, MIN_FREE_TEXT_LENGTH } from '@/lib/customers/directory-contract';
 
 /**
@@ -38,11 +38,17 @@ export function customerLabel(customer: ChosenCustomer): string {
 
 async function loadCustomers(
   term: string,
-  cursor: string | null
+  cursor: string | null,
+  signal: AbortSignal
 ): Promise<ReadState<CursorPage<ChosenCustomer>>> {
-  const page = await searchCustomerDirectory({ ...INITIAL_REQUEST, pageSize: 10 }, cursor, {
-    q: term,
-  });
+  // Cancellable (P1-32-PRE-OD-READ): the read for a term already typed past is
+  // aborted, not only discarded.
+  const page = await searchCustomerDirectoryCancellable(
+    { ...INITIAL_REQUEST, pageSize: 10 },
+    cursor,
+    { q: term },
+    signal
+  );
   if (page.status !== 'ok') return { status: page.status, correlationId: page.correlationId };
   return {
     status: 'ok',

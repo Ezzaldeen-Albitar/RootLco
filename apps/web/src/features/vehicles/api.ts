@@ -1,11 +1,8 @@
 'use server';
 
 import { z } from 'zod';
-import type { TableRequest } from '@/components/data-table/table-state';
-import type { ServerPage } from '@/components/data-table/use-server-table';
 import { authorizedClient } from '@/lib/api/server-client';
 import { fromFailure, invalid, type ActionState } from '@/lib/forms/action-result';
-import { STATUS_BY_KIND, query, type CursorPage } from '@/lib/api/read-operation';
 import {
   MAX_COLOR,
   MAX_DISPLAY_NUMBER,
@@ -13,60 +10,18 @@ import {
   MODEL_YEAR_MAX,
   MODEL_YEAR_MIN,
   POWERTRAIN_CATEGORIES,
-  isEmptyCriteria,
-  normalizeCriteria,
   type CreatedVehicle,
-  type VehicleSearchCriteria,
-  type VehicleSearchHit,
 } from './contract';
 import { fieldErrorsFrom } from '@/lib/forms/field-errors';
 
 /**
- * Vehicle search (`FE-017`) and creation (`FE-018`) adapters.
+ * Vehicle creation (`FE-018`) adapters.
  *
- * ## Search sends only the parameters the schema names
- *
- * The query schema is `.strict()`, so an unknown parameter is a 422 for the
- * whole request rather than a silently ignored extra. There is no `sort`, no
- * `page`, no `total`, and nothing is added for convenience.
- *
- * `retries: 0`, because search is `expensive-read` — 30 requests per minute per
- * user. A transparent retry would spend a second slot of a small budget on a
- * request the operator did not make, and the screen already offers Retry.
+ * The search (`FE-017`) is not here: its request construction lives in the
+ * server-only core `vehicle-search-read.server.ts`, served by the POST route at
+ * `/reads/vehicles` so the browser can cancel a superseded search and the
+ * terms never enter an address (P1-32-PRE-OD-READ).
  */
-
-const EMPTY = { rows: [], nextCursor: null, hasMore: false } as const;
-
-export async function searchVehicles(
-  criteria: VehicleSearchCriteria,
-  request: TableRequest,
-  cursor: string | null
-): Promise<ServerPage<VehicleSearchHit>> {
-  // Refused rather than sent. An unfiltered search is a full scan against an
-  // expensive-read budget, and the screen has no reason to ask for one.
-  if (isEmptyCriteria(criteria)) {
-    return { ...EMPTY, status: 'ok', correlationId: null };
-  }
-
-  const client = await authorizedClient();
-  if (!client) return { ...EMPTY, status: 'expired', correlationId: null };
-
-  const path =
-    '/api/v1/vehicles' + query({ ...normalizeCriteria(criteria), cursor, limit: request.pageSize });
-
-  const result = await client.get<CursorPage<VehicleSearchHit>>(path, { retries: 0 });
-  if (!result.ok) {
-    return { ...EMPTY, status: STATUS_BY_KIND[result.kind], correlationId: result.correlationId };
-  }
-  return {
-    status: 'ok',
-    rows: result.data.items,
-    nextCursor: result.data.nextCursor,
-    hasMore: result.data.hasMore,
-    correlationId: result.correlationId,
-    // No `total`. The operation publishes `hasMore` and nothing else.
-  };
-}
 
 /**
  * The creation body, mirroring the route's Zod schema field for field.

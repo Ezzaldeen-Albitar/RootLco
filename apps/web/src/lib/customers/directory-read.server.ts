@@ -1,5 +1,3 @@
-'use server';
-
 import type { TableRequest } from '@/components/data-table/table-state';
 import type { ServerPage } from '@/components/data-table/use-server-table';
 import { authorizedClient } from '@/lib/api/server-client';
@@ -12,49 +10,40 @@ import {
 } from './directory-contract';
 
 /**
- * The one customer-search adapter (`P1-27-FE-001`, `P1-27-FE-002`).
+ * The one customer search (`GET /api/v1/customers`) — SERVER ONLY.
  *
- * `GET /api/v1/customers` — `crm.customer.read`, tenant-scoped, cursor-paginated,
- * `expensive-read`. See `directory-contract.ts` for what the operation does and
- * does not accept; this file only turns criteria into that request and the
- * response into a view state.
+ * The body the retired `searchCustomerDirectory` action ran, now served only
+ * by the POST route at `/reads/customer-directory` — one implementation
+ * (P1-32-PRE-OD-READ). No directive: nothing here is a browser-callable
+ * endpoint, and `authorizedClient()` reads the `httpOnly` cookie through
+ * `next/headers`, which a client bundle does not have.
+ * `tests/cancellable-reads.test.ts` fails when a client module reaches this
+ * file. `signal` reaches the API call, so a caller that gives up stops it.
  *
- * Moved here from `features/crm/customers/api.ts` in the D1 remediation so the
- * vehicle feature's customer selector can use it without importing across
- * features. The CRM search screen still calls `searchCustomers`, which now
- * delegates here — one authority, two callers.
- *
- * ## It runs on the server, and that is not incidental
- *
- * The bearer token lives in a `httpOnly` cookie the browser cannot read. Every
- * read goes through a Server Action, so the token never enters the client
- * bundle, the client heap, or a network tab — and the operator's search terms
- * travel as an encoded parameter of a POST-backed action rather than as part of
- * a navigable URL. That last point is why a selector must not put its query in
- * the address bar: a customer name in a URL is in history, in a referrer, and in
- * every proxy log between here and the operator.
+ * `crm.customer.read`, tenant-scoped, cursor-paginated, `expensive-read`. See
+ * `directory-contract.ts` for what the operation does and does not accept.
  *
  * ## It sends only what the contract accepts
  *
  * Six criteria plus `cursor` and `limit`. **No `sort`** — the route's schema is
  * `.strict()` and the operation publishes no sort parameter, so sending one is a
  * 422 rather than a differently-ordered page.
- */
-
-const EMPTY = { rows: [], nextCursor: null, hasMore: false } as const;
-
-/**
- * A search that has not been asked for yet.
+ *
+ * ## A search that has not been asked for yet
  *
  * A caller must not reach the backend before the operator expresses intent —
  * partly because an unasked query is a wasted request against a 30-per-minute
  * budget, and partly because "here is everything" is not what a search surface
  * should say before it has been used.
  */
-export async function searchCustomerDirectory(
+
+const EMPTY = { rows: [], nextCursor: null, hasMore: false } as const;
+
+export async function readCustomerDirectory(
   request: TableRequest,
   cursor: string | null,
-  rawCriteria: CustomerSearchCriteria
+  rawCriteria: CustomerSearchCriteria,
+  signal?: AbortSignal
 ): Promise<ServerPage<CustomerSearchHit>> {
   const criteria = normalizeCriteria(rawCriteria);
   if (isEmptyCriteria(criteria)) {
@@ -84,7 +73,10 @@ export async function searchCustomerDirectory(
   // right for a cheap lookup and wrong here: this operation is `expensive-read`
   // at 30 per minute, and a silent second attempt spends the operator's budget
   // twice for one search.
-  const result = await client.get<CursorPage<CustomerSearchHit>>(path, { retries: 0 });
+  const result = await client.get<CursorPage<CustomerSearchHit>>(path, {
+    retries: 0,
+    ...(signal ? { signal } : {}),
+  });
   if (!result.ok) {
     return {
       ...EMPTY,

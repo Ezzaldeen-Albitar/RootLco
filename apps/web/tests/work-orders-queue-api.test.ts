@@ -3,7 +3,8 @@ import { join } from 'node:path';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 
 /**
- * The work-order board ADAPTER (P1-29, `W1`) — `listWorkOrders`.
+ * The work-order board read (P1-29, `W1`) — `readWorkOrderList`, the server core
+ * the POST route at `/reads/work-orders` serves (P1-32-PRE-OD-READ).
  *
  * ## Why this file exists at all
  *
@@ -35,7 +36,8 @@ vi.mock('@/lib/api/server-client', () => ({
   authorizedClient: () => authorizedClient(),
 }));
 
-const { listWorkOrders, readWorkOrderCatalogue } = await import('@/features/work-orders/api');
+const { readWorkOrderCatalogue } = await import('@/features/work-orders/api');
+const { readWorkOrderList } = await import('@/features/work-orders/work-order-list-read.server');
 const { WORK_ORDER_KINDS, WORK_ORDER_STATE_GROUPS } =
   await import('@/features/work-orders/work-orders-contract');
 
@@ -87,11 +89,11 @@ beforeEach(() => {
   authorizedClient.mockResolvedValue(client as unknown);
 });
 
-describe('listWorkOrders maps a published page onto table rows', () => {
+describe('readWorkOrderList maps a published page onto table rows', () => {
   it('carries the row through unchanged, with the server’s own end-of-set signals', async () => {
     get.mockResolvedValue(ok({ items: [ROW], nextCursor: 'cur-2', hasMore: true }));
 
-    const result = await listWorkOrders(TARGET, {}, REQUEST, null);
+    const result = await readWorkOrderList(TARGET, {}, REQUEST, null);
 
     expect(result.status).toBe('ok');
     expect(result.rows).toHaveLength(1);
@@ -113,7 +115,7 @@ describe('listWorkOrders maps a published page onto table rows', () => {
       ok({ items: [{ ...ROW, customer: null }], nextCursor: null, hasMore: false })
     );
 
-    const result = await listWorkOrders(TARGET, {}, REQUEST, null);
+    const result = await readWorkOrderList(TARGET, {}, REQUEST, null);
 
     expect(result.status).toBe('ok');
     expect(result.rows[0]?.customer).toBeNull();
@@ -122,7 +124,7 @@ describe('listWorkOrders maps a published page onto table rows', () => {
   it('sends the branch pair as a TARGET, and the criteria beside it', async () => {
     get.mockResolvedValue(ok({ items: [], nextCursor: null, hasMore: false }));
 
-    await listWorkOrders(
+    await readWorkOrderList(
       TARGET,
       { kind: 'rework', state: 'awaiting_parts' },
       REQUEST,
@@ -145,7 +147,7 @@ describe('listWorkOrders maps a published page onto table rows', () => {
   it('omits a criterion that was not chosen rather than sending it empty', async () => {
     get.mockResolvedValue(ok({ items: [], nextCursor: null, hasMore: false }));
 
-    await listWorkOrders(TARGET, {}, REQUEST, null);
+    await readWorkOrderList(TARGET, {}, REQUEST, null);
 
     const path = String(get.mock.calls[0]?.[0]);
     expect(path).not.toContain('kind=');
@@ -162,7 +164,7 @@ describe('listWorkOrders maps a published page onto table rows', () => {
   it('sends the state group and the completion window when they were chosen', async () => {
     get.mockResolvedValue(ok({ items: [], nextCursor: null, hasMore: false }));
 
-    await listWorkOrders(
+    await readWorkOrderList(
       TARGET,
       {
         stateGroup: 'active',
@@ -186,7 +188,7 @@ describe('listWorkOrders maps a published page onto table rows', () => {
   it('sends the P1-32 free-text criterion as typed, beside the target', async () => {
     get.mockResolvedValue(ok({ items: [], nextCursor: null, hasMore: false }));
 
-    await listWorkOrders(TARGET, { q: '١٢٣' }, REQUEST, null);
+    await readWorkOrderList(TARGET, { q: '١٢٣' }, REQUEST, null);
 
     const url = new URL(`https://api.invalid${String(get.mock.calls[0]?.[0])}`);
     expect(url.searchParams.get('companyId')).toBe(TARGET.companyId);
@@ -200,7 +202,7 @@ describe('listWorkOrders maps a published page onto table rows', () => {
   it('a REFUSAL is a refusal, never an empty board', async () => {
     get.mockResolvedValue(failure('forbidden'));
 
-    const result = await listWorkOrders(TARGET, {}, REQUEST, null);
+    const result = await readWorkOrderList(TARGET, {}, REQUEST, null);
 
     // Both halves asserted: the status must be the denial, AND it must not be
     // the success that an empty list would be rendered as.
@@ -221,7 +223,7 @@ describe('listWorkOrders maps a published page onto table rows', () => {
     ] as const) {
       get.mockReset();
       get.mockResolvedValue(failure(kind));
-      const result = await listWorkOrders(TARGET, {}, REQUEST, null);
+      const result = await readWorkOrderList(TARGET, {}, REQUEST, null);
       expect(result.status, `${kind} mapped wrong`).toBe(expected);
       expect(result.rows).toEqual([]);
     }
@@ -230,7 +232,7 @@ describe('listWorkOrders maps a published page onto table rows', () => {
   it('does not call the backend at all without a session', async () => {
     authorizedClient.mockResolvedValue(null);
 
-    const result = await listWorkOrders(TARGET, {}, REQUEST, null);
+    const result = await readWorkOrderList(TARGET, {}, REQUEST, null);
 
     expect(result.status).toBe('expired');
     expect(get).not.toHaveBeenCalled();
@@ -251,7 +253,7 @@ describe('the branch may be left unnamed, and that is a request', () => {
   it('sends the company alone when no branch is named', async () => {
     get.mockResolvedValue(ok({ items: [], nextCursor: null, hasMore: false }));
 
-    await listWorkOrders({ companyId: TARGET.companyId, branchId: null }, {}, REQUEST, null);
+    await readWorkOrderList({ companyId: TARGET.companyId, branchId: null }, {}, REQUEST, null);
 
     const url = new URL(`https://api.invalid${String(get.mock.calls[0]?.[0])}`);
     expect(url.searchParams.get('companyId')).toBe(TARGET.companyId);
@@ -263,14 +265,14 @@ describe('the branch may be left unnamed, and that is a request', () => {
 
   it('refuses a blank company rather than asking for everything', async () => {
     await expect(
-      listWorkOrders({ companyId: '', branchId: null }, {}, REQUEST, null)
+      readWorkOrderList({ companyId: '', branchId: null }, {}, REQUEST, null)
     ).rejects.toThrow(/companyId/);
   });
 
   it('still refuses a scope key smuggled among the filters', async () => {
     get.mockResolvedValue(ok({ items: [], nextCursor: null, hasMore: false }));
     await expect(
-      listWorkOrders(TARGET, { state: 'open', branchId: 'forged' } as never, REQUEST, null)
+      readWorkOrderList(TARGET, { state: 'open', branchId: 'forged' } as never, REQUEST, null)
     ).resolves.toBeDefined();
     // The criteria are named one by one in the adapter, so an unknown key is
     // never handed to the query builder at all — which is why the call above
@@ -283,7 +285,7 @@ describe('a board flag is three-valued on the wire', () => {
   it('sends the literal word for a flag that was asked for', async () => {
     get.mockResolvedValue(ok({ items: [], nextCursor: null, hasMore: false }));
 
-    await listWorkOrders(
+    await readWorkOrderList(
       TARGET,
       {
         assignedToMe: true,
@@ -311,7 +313,7 @@ describe('a board flag is three-valued on the wire', () => {
   it('distinguishes a flag turned OFF from a flag nobody asked about', async () => {
     get.mockResolvedValue(ok({ items: [], nextCursor: null, hasMore: false }));
 
-    await listWorkOrders(TARGET, { assignedToMe: false }, REQUEST, null);
+    await readWorkOrderList(TARGET, { assignedToMe: false }, REQUEST, null);
 
     const url = new URL(`https://api.invalid${String(get.mock.calls[0]?.[0])}`);
     // OFF is a request. The route reads the word, so this must be the word and

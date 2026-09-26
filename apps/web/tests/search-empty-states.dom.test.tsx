@@ -66,18 +66,20 @@ const listWorkOrders = vi.fn();
 const readWorkOrderCatalogue = vi.fn();
 const readDashboardSummary = vi.fn();
 
-vi.mock('@/features/crm/customers/api', () => ({
-  searchCustomers: (...a: unknown[]) => searchCustomers(...a),
+vi.mock('@/lib/customers/directory-read', () => ({
+  searchCustomerDirectoryCancellable: (...a: unknown[]) => searchCustomers(...a),
 }));
-vi.mock('@/features/vehicles/api', () => ({
-  searchVehicles: (...a: unknown[]) => searchVehicles(...a),
+vi.mock('@/features/vehicles/vehicle-search-read', () => ({
+  searchVehiclesCancellable: (...a: unknown[]) => searchVehicles(...a),
 }));
 vi.mock('@/features/work-orders/api', () => ({
-  listWorkOrders: (...a: unknown[]) => listWorkOrders(...a),
   readWorkOrderCatalogue: (...a: unknown[]) => readWorkOrderCatalogue(...a),
 }));
-vi.mock('@/features/overview/api', () => ({
-  readDashboardSummary: (...a: unknown[]) => readDashboardSummary(...a),
+vi.mock('@/features/work-orders/work-order-list-read', () => ({
+  listWorkOrdersCancellable: (...a: unknown[]) => listWorkOrders(...a),
+}));
+vi.mock('@/features/overview/dashboard-summary-read', () => ({
+  readDashboardSummaryCancellable: (...a: unknown[]) => readDashboardSummary(...a),
 }));
 
 /**

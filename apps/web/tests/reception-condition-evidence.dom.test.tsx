@@ -67,8 +67,8 @@ vi.mock('@/features/receptions/catalogue-api', () => ({
 }));
 
 const searchCustomerDirectory = vi.fn();
-vi.mock('@/lib/customers/directory', () => ({
-  searchCustomerDirectory: (...args: unknown[]) => searchCustomerDirectory(...args),
+vi.mock('@/lib/customers/directory-read', () => ({
+  searchCustomerDirectoryCancellable: (...args: unknown[]) => searchCustomerDirectory(...args),
 }));
 
 /*

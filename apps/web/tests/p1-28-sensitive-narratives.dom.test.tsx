@@ -41,8 +41,8 @@ vi.mock('@/features/receptions/api', () => ({
 }));
 
 const searchCustomerDirectory = vi.fn();
-vi.mock('@/lib/customers/directory', () => ({
-  searchCustomerDirectory: (...args: unknown[]) => searchCustomerDirectory(...args),
+vi.mock('@/lib/customers/directory-read', () => ({
+  searchCustomerDirectoryCancellable: (...args: unknown[]) => searchCustomerDirectory(...args),
 }));
 
 const { ComplaintsStep } = await import('@/features/receptions/components/steps/ComplaintsStep');

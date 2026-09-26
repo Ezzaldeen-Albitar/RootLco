@@ -162,7 +162,7 @@ fact in words did not, which is the gap this revision closes.
 | Source files under the P1-27 ownership gate                            | **145** (43 feature source + 53 route + 49 adopted reception)      | derived from the gate's own scan roots                                     |
 | Router pages (CRM and Vehicle)                                         | **8**                                                              | command 1                                                                  |
 | Shared-foundation source files changed by the phase or its remediation | **13** named in §5.5                                               | command 1, cross-read against the task register and the remediation record |
-| Web unit and component test files                                      | **179**                                                            | derived                                                                    |
+| Web unit and component test files                                      | **181**                                                            | derived                                                                    |
 | Playwright specification files                                         | **9** (2 anonymous, 7 authenticated)                               | commands 11 and 12 — **not re-measured**, §1.1.1                           |
 | Root CI-contract test files                                            | **46**                                                             | derived                                                                    |
 | CI gate scripts under `scripts/ci`                                     | **66** in the directory, **8** introduced or changed by this phase | derived; the eight are the `scripts/ci` rows of §7.1                       |
@@ -226,8 +226,8 @@ every advance of local `develop` in the sequence above was a fast-forward from
 
 ### 5.1 The five trees the P1-27 ownership gate owns — 145 files
 
-`validate:p1-27-frontend` reports **174 files across 5 trees, 0 failures**. Of
-those, **43** are §5.2 and §5.3 together — the two feature trees — and both
+`validate:p1-27-frontend` reports **178 files across 5 trees, 0 failures**. Of
+those, **45** are §5.2 and §5.3 together — the two feature trees — and both
 halves are derived from the trees the gate itself names, so the count follows the
 gate rather than a reader's memory of it. The next **34** are the third
 canonical tree, `apps/web/src/app/[locale]/(dashboard)`, which this manifest
@@ -257,28 +257,28 @@ This sentence said **40** until this revision, in the document whose own
 
 <!-- derived: rows crm-source = 20 -->
 
-| path                                              | carries                                                                                               |
-| ------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
-| `permissions.ts`                                  | The CRM permission codes the screens gate on                                                          |
-| `customers/action-support.ts`                     | The shared write path every CRM action goes through — `write()` and `client.send`                     |
-| `customers/profile-actions.ts`                    | `crm.contact-add`, `crm.address-add` — the two profile writes, outside the governance six             |
-| `customers/api.ts`                                | `crm.customer-search` adapter                                                                         |
-| `customers/contract.ts`                           | Search criteria, `CustomerSearchHit`, the page contract `{ items, nextCursor, hasMore }`              |
-| `customers/creation-actions.ts`                   | `crm.individual-create`, `crm.company-create`                                                         |
-| `customers/creation-contract.ts`                  | The creation schemas and `possibleDuplicates` on the creation **response**                            |
-| `customers/governance-actions.ts`                 | The six governance writes, behind six different permissions                                           |
-| `customers/governance-contract.ts`                | Their schemas and server vocabularies                                                                 |
-| `customers/identity-api.ts`                       | `crm.customer-timeline`, `crm.customer-history`, `crm.duplicate-list`, `crm.duplicate-review`         |
-| `customers/identity-contract.ts`                  | Duplicate-candidate and timeline shapes                                                               |
-| `customers/profile-api.ts`                        | The eight profile sub-resource reads, including the notes adapter that publishes `includesRestricted` |
-| `customers/profile-contract.ts`                   | Their shapes                                                                                          |
-| `customers/components/CustomerCreateActions.tsx`  | `OA-04` — Add an individual customer / Add a company customer                                         |
-| `customers/components/CustomerCreateScreen.tsx`   | Both creation paths                                                                                   |
-| `customers/components/CustomerProfileScreen.tsx`  | The profile and its component sections                                                                |
-| `customers/components/CustomerSearchScreen.tsx`   | Search, with the results a separate component mounted only after submission                           |
-| `customers/components/DuplicateDecisionPanel.tsx` | The dismissal decision — **and no merge form**, because **`P1-OD-017`** is open                       |
-| `customers/components/DuplicateReviewScreen.tsx`  | The CRM duplicate queue                                                                               |
-| `customers/components/RecordForm.tsx`             | The shared write form, gated on a successful read                                                     |
+| path                                              | carries                                                                                                  |
+| ------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| `permissions.ts`                                  | The CRM permission codes the screens gate on                                                             |
+| `customers/action-support.ts`                     | The shared write path every CRM action goes through — `write()` and `client.send`                        |
+| `customers/profile-actions.ts`                    | `crm.contact-add`, `crm.address-add` — the two profile writes, outside the governance six                |
+| `customers/api.ts`                                | `searchCustomers`, kept with no caller over the search core the `/reads/customer-directory` route serves |
+| `customers/contract.ts`                           | Search criteria, `CustomerSearchHit`, the page contract `{ items, nextCursor, hasMore }`                 |
+| `customers/creation-actions.ts`                   | `crm.individual-create`, `crm.company-create`                                                            |
+| `customers/creation-contract.ts`                  | The creation schemas and `possibleDuplicates` on the creation **response**                               |
+| `customers/governance-actions.ts`                 | The six governance writes, behind six different permissions                                              |
+| `customers/governance-contract.ts`                | Their schemas and server vocabularies                                                                    |
+| `customers/identity-api.ts`                       | `crm.customer-timeline`, `crm.customer-history`, `crm.duplicate-list`, `crm.duplicate-review`            |
+| `customers/identity-contract.ts`                  | Duplicate-candidate and timeline shapes                                                                  |
+| `customers/profile-api.ts`                        | The eight profile sub-resource reads, including the notes adapter that publishes `includesRestricted`    |
+| `customers/profile-contract.ts`                   | Their shapes                                                                                             |
+| `customers/components/CustomerCreateActions.tsx`  | `OA-04` — Add an individual customer / Add a company customer                                            |
+| `customers/components/CustomerCreateScreen.tsx`   | Both creation paths                                                                                      |
+| `customers/components/CustomerProfileScreen.tsx`  | The profile and its component sections                                                                   |
+| `customers/components/CustomerSearchScreen.tsx`   | Search, with the results a separate component mounted only after submission                              |
+| `customers/components/DuplicateDecisionPanel.tsx` | The dismissal decision — **and no merge form**, because **`P1-OD-017`** is open                          |
+| `customers/components/DuplicateReviewScreen.tsx`  | The CRM duplicate queue                                                                                  |
+| `customers/components/RecordForm.tsx`             | The shared write form, gated on a successful read                                                        |
 
 **Three rows were missing until this revision** — `action-support.ts`,
 `profile-actions.ts` here and `write-support.ts` in §5.3. The two headings were
@@ -286,13 +286,13 @@ right and the two tables were short, so the document contradicted itself by
 counting (`E-04`). Both tables are now pinned to their own row count, so a row
 cannot be dropped without the build noticing.
 
-### 5.3 Vehicle — `apps/web/src/features/vehicles/` (23 files)
+### 5.3 Vehicle — `apps/web/src/features/vehicles/` (25 files)
 
-<!-- derived: rows vehicle-source = 23 -->
+<!-- derived: rows vehicle-source = 25 -->
 
 | path                                            | carries                                                                                                                                                                                                                |
 | ----------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `api.ts`                                        | `veh.vehicle-search`, `veh.vehicle-create` (permission **`veh.vehicle.manage`**)                                                                                                                                       |
+| `api.ts`                                        | `veh.vehicle-create` (permission **`veh.vehicle.manage`**); the search moved to the read route                                                                                                                         |
 | `write-support.ts`                              | The vehicle tree's own write path — the counterpart of the CRM `action-support.ts`                                                                                                                                     |
 | `catalogue-api.ts`                              | The five catalogue reads — makes, models, trims, body types, powertrain types                                                                                                                                          |
 | `contract.ts`                                   | `normalizeCriteria` over a frozen `CRITERIA_KEYS` list into an `Object.create(null)` target                                                                                                                            |
@@ -306,6 +306,8 @@ cannot be dropped without the build noticing.
 | `profile-contract.ts`                           | The vehicle detail shape, including `recordVersion`                                                                                                                                                                    |
 | `relations-api.ts`                              | EV profile read and set; relationships; authorised-party add and retire                                                                                                                                                |
 | `relations-contract.ts`                         | Their shapes                                                                                                                                                                                                           |
+| `vehicle-search-read.ts`                        | The vehicle search as a cancellable read (P1-32-PRE-OD-READ): the `/reads/vehicles` body schema and the browser half                                                                                                   |
+| `vehicle-search-read.server.ts`                 | The vehicle search request construction, server-only, served by the `/reads/vehicles` POST route                                                                                                                       |
 | `components/VehicleSearchScreen.tsx`            | Vehicle search — exact VIN, plate and vehicle number, no substring                                                                                                                                                     |
 | `components/VehicleCreateScreen.tsx`            | Creation with dependent catalogue selectors                                                                                                                                                                            |
 | `components/VinField.tsx`                       | Format validation at the edge; the server's uniqueness verdict                                                                                                                                                         |
@@ -407,7 +409,7 @@ records.
 
 ## 6. Test files
 
-### 6.1 Web unit and component — `apps/web/tests` (179 files, and no case total — `E-03`)
+### 6.1 Web unit and component — `apps/web/tests` (181 files, and no case total — `E-03`)
 
 **`E-03` is closed by DELETING the number, not by correcting it.** The heading
 used to read `(70 files, 1493 cases, 0 failed)`, and before that `(66 files, 1231
@@ -686,7 +688,7 @@ under-report itself by seven files.
 | `ci-evidence.md`                                  | 275   | Hosted CI, with every value classified and every hosted one naming its run         |
 | `clean-room-evidence.md`                          | 379   | The clean-room record, and the six classes every closing value is sorted into      |
 | `contract-archaeology.md`                         | 416   | What the Backend actually publishes, read before anything was built                |
-| `deliverable-manifest.md`                         | 1062  | This file                                                                          |
+| `deliverable-manifest.md`                         | 1064  | This file                                                                          |
 | `developer-guide.md`                              | 238   | `DOC-002` — the developer half                                                     |
 | `evidence/change-log.md`                          | 1135  | `DOC-002` — the change-log half; its rows are scraped by a test                    |
 | `evidence/evidence-manifest.json`                 | 175   | `QA-005` — a SHA-256 digest of every document in this directory                    |
@@ -982,7 +984,7 @@ returns an explicit `OWNER ACCEPTANCE: PASS`. Silence is not Pass.**
      an earlier revision put them in the label column and broke two other gates
      whose regexes read the label and the number as adjacent cells. -->
 
-<!-- derived: files apps/web/tests = 179 -->
+<!-- derived: files apps/web/tests = 181 -->
 <!-- derived: files tests/ci = 77 -->
 <!-- derived: files scripts/ci = 66 -->
 <!-- derived: files apps/web/scripts = 5 -->
@@ -992,8 +994,8 @@ returns an explicit `OWNER ACCEPTANCE: PASS`. Silence is not Pass.**
 <!-- derived: files tests/backend = 157 -->
 <!-- derived: files tests/backend:all = 166 -->
 <!-- derived: files apps/web/src/features/crm = 20 -->
-<!-- derived: files apps/web/src/features/vehicles = 23 -->
-<!-- derived: files p1-27-frontend-gate = 174 -->
+<!-- derived: files apps/web/src/features/vehicles = 25 -->
+<!-- derived: files p1-27-frontend-gate = 178 -->
 <!-- derived: files p1-27-frontend-gate:trees = 5 -->
 <!-- derived: tracked docs/phase-1/phase-1-27 = 42 -->
 <!-- derived: tracked docs/phase-1/phase-1-27:md = 32 -->
@@ -1016,7 +1018,7 @@ returns an explicit `OWNER ACCEPTANCE: PASS`. Silence is not Pass.**
 <!-- derived: lines docs/phase-1/phase-1-27/clean-room-evidence.md = 379 -->
 <!-- derived: lines docs/phase-1/phase-1-27/closure-record.md = 114 -->
 <!-- derived: lines docs/phase-1/phase-1-27/contract-archaeology.md = 416 -->
-<!-- derived: lines docs/phase-1/phase-1-27/deliverable-manifest.md = 1062 -->
+<!-- derived: lines docs/phase-1/phase-1-27/deliverable-manifest.md = 1064 -->
 <!-- derived: lines docs/phase-1/phase-1-27/developer-guide.md = 238 -->
 <!-- derived: lines docs/phase-1/phase-1-27/evidence/change-log.md = 1135 -->
 <!-- derived: lines docs/phase-1/phase-1-27/evidence/evidence-manifest.json = 175 -->

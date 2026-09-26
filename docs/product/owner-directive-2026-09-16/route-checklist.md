@@ -501,17 +501,72 @@ their existing "discarding switches the branch and opens the form empty" cases.
 
 ## Known limitations
 
-**A branch switch cannot cancel a read already in flight.** The screens read through Server
-Actions, and Next.js runs the Server Actions of one page one at a time. When the operator changes
-branch while a read for the previous branch is still out, the working context moves its version
-and aborts its signal at once, and the screens drop the superseded answer when it arrives — so
-the previous branch's rows are never shown under the new branch's name. What the switch cannot do
-is stop the request itself: the read for the new branch waits behind it, and on a slow connection
-the new branch's data arrives late. It is late, never wrong.
+**Most reads still cannot be cancelled once sent; the hottest seven now can.** A Server Action
+cannot carry an `AbortSignal`, and the installed Next.js (16.3.3) sends the Server Actions of one
+page one at a time (`dispatchAction` in `next/dist/client/components/app-router-instance.js`; the
+action `fetch` in `.../router-reducer/reducers/server-action-reducer.js` has no `signal`). A read
+made that way can only be IGNORED when it is superseded: the working context moves its version
+and aborts its signal, and the screen drops the answer when it arrives, so a previous branch's
+rows are never shown under the new branch's name. The request itself runs on, and the next read
+waits behind it. It is late, never wrong.
 
-Technical follow-up: move the branch-addressed reads from Server Actions to `fetch` route calls
-that take the working context's `AbortSignal`, so a switch cancels the request on the wire instead
-of discarding its answer.
+Phase one (P1-32-PRE-OD-READ) moved seven reads to route handlers under `/reads/*`, whose
+request signal Next aborts when the browser disconnects, and took every caller off the seven
+Server Actions behind them: the reception board (`listReceptions`), the work-order board
+(`listWorkOrders`), the overview figures and the work-order board's figure strip
+(`readDashboardSummary`), the customer search and the customer pickers (`searchCustomerDirectory`,
+`searchCustomers`), the vehicle search (`searchVehicles`) and a customer's vehicles
+(`listCustomerVehicles`). Six of those actions are retired. `searchCustomers` is kept with no
+caller only because removing it would take `features/crm` below the file count the committed web
+coverage baseline pins for that tree; retiring it waits on a decision to lower that pin. On those
+screens a branch
+switch, a new term, a new period or a new customer now CANCELS the superseded request — the
+browser closes it and the route aborts the API call behind it — and the new read starts at once
+instead of queueing. The ignoring guards stay as well. The session, the authorization, the tenant
+and branch scope and the rate limit are unchanged: each route reads the same `httpOnly` cookie
+through the same server helper, refuses a request without its `x-rootlco-read` header or from
+another site (the host behind a proxy chain is the first `X-Forwarded-Host` value, compared as
+host and port), forwards only the validated parameters, and answers `private, no-store`, `Vary:
+Cookie` and `nosniff` — a read that fails inside the web tier included, which answers the screen's
+own "unavailable" state rather than a framework error page.
+
+**Search terms never go in the URL** (the Owner's standing rule, applied here by the coordinator).
+The four families that carry text an operator typed — the customer search (name, phone, free
+text), the vehicle search (plate, chassis number, make, model), the reception board and the
+work-order board (free text) — are `POST` routes whose parameters are a JSON body; the address is
+the bare route. Such a route refuses any query string, a body that is not `application/json`, a
+body over 16 KiB, and a key its schema does not name, all before the session is read. The overview
+figures and a customer's vehicles carry identifiers and a period and nothing typed, so they stay
+`GET` with a query. An access log in front of the web tier therefore sees no search term in an
+address; the terms still reach the API as its own query parameters, on the server-to-server hop
+behind the web tier, exactly as before.
+
+**A cancelled read may still count against the rate limit.** The search boxes that search as the
+operator types keep their debounce, and the others search on submit, so typing does not send a
+request per keystroke. But a request the browser cancels
+after it has reached the API is one the API has already counted against the operator's
+per-minute budget (the searches are `expensive-read`, 30 per minute), whether or not its answer is
+ever read. Rapid branch switching or re-typing can therefore spend budget on reads nobody sees. A
+throttled read shows the ordinary "service unavailable, try again" state: the read envelope maps a
+throttle to `unavailable` and does not carry it apart, so no separate "busy" wording is shown.
+
+**Debt: `searchCustomers` is a dead `'use server'` export, kept only for a coverage pin.** Nothing
+calls it — a structural test in `apps/web/tests/cancellable-reads.test.ts` proves that — yet it
+stays in `apps/web/src/features/crm` solely because the `crm-customer-surface` rule in
+`.github/ci-baselines/coverage-baseline.web.json` pins `minMatchedFiles: 20`, and deleting the
+file that holds it would leave that prefix matching 19 instrumented files, so the coverage gate
+would fail. A committed baseline is never lowered by a worker to make room for a change. Removing
+the export therefore needs an explicit baseline decision — lower the pin to 19 with a recorded
+reason, or keep the dead export — and until that decision is made it stays, unreachable.
+
+Still on Server Actions, and therefore ignored rather than cancelled when superseded: the account
+picker (`listUsers`), the inventory item and issued-part pickers (`listItems`, `listIssuedParts`),
+the invoice picker (`listInvoices`), the appointment calendar (`listAppointments`), the warranty
+list (`listWarranties`), the work-order state catalogue (`readWorkOrderCatalogue`), and every
+other read. Plan: move the pickers next, family by family on the same pattern — a server-only
+core, one route (a `POST` with a JSON body when it carries typed text), one browser function, and
+the action retired once nothing calls it — and leave reads that are made once per page, where
+nothing supersedes them, on Server Actions.
 
 ## Material UI adoption (ADR-022)
 

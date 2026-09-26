@@ -17,7 +17,7 @@ import {
   toSearchParams,
 } from '@/components/data-table/table-state';
 import { PUBLISHED_OPERATIONS } from '@/lib/api/idempotent-operations';
-import { searchCustomerDirectory } from '@/lib/customers/directory';
+import { readCustomerDirectory } from '@/lib/customers/directory-read.server';
 import { DOCUMENT_LIST_PERMISSION } from '@/features/vehicles/documents-contract';
 import enMessages from '../src/i18n/messages/en.json';
 import arMessages from '../src/i18n/messages/ar.json';
@@ -369,7 +369,7 @@ describe('P1-27-SEC-001 — permission and resolved scope', () => {
       'components/party/CustomerSelector.tsx',
       'components/party/PartyLabel.tsx',
       'components/duplicates/MatchExplanation.tsx',
-      'lib/customers/directory.ts',
+      'lib/customers/directory-read.server.ts',
       'lib/duplicates/explanations.ts',
       // The one that was in NO list — not in `MOVED_OUT`, not in the gate's
       // `UNCOLLECTED_PHASE_MODULES` — while rendering every customer and
@@ -1502,18 +1502,18 @@ describe('P1-27-SEC-004 — audit-event coverage', () => {
     /*
      * The two modules an adapter may delegate its failure mapping to, each
      * asserted to carry the reference itself so delegation is never a loophole.
-     *
-     * `lib/customers/directory` joined the list when the customer-search adapter
-     * moved there: `features/vehicles` needs the same search to choose a
-     * customer and no feature may import another, so the implementation went to
-     * `lib/` and `features/crm/customers/api.ts` became a thin wrapper. That
-     * wrapper carries no `correlationId` of its own — correctly, because it adds
-     * no behaviour — and the rule had no way to say so.
+     * The customer directory joined when `features/vehicles` needed the same
+     * search and no feature may import another, so it moved to `lib/`; its body
+     * is now the server-only core the read route serves (P1-32-PRE-OD-READ), so
+     * the reference is asserted there. A delegate counts only as an EXACT import
+     * specifier, so `@/lib/customers/directory` could never be satisfied by the
+     * `…/directory-contract` or `…/directory-read` modules its spelling prefixes.
      */
-    const DELEGATES = [`./${SUPPORT.replace('.ts', '')}`, '@/lib/customers/directory'] as const;
-
+    const DELEGATES = ['./action-support', '@/lib/customers/directory-read.server'] as const;
+    const delegatesTo = (source: string, specifier: string) =>
+      source.includes(`'${specifier}'`) || source.includes(`"${specifier}"`);
     const directory = readFileSync(
-      join(process.cwd(), 'src', 'lib', 'customers', 'directory.ts'),
+      join(process.cwd(), 'src', 'lib', 'customers', 'directory-read.server.ts'),
       'utf8'
     );
     expect(
@@ -1524,7 +1524,7 @@ describe('P1-27-SEC-004 — audit-event coverage', () => {
     for (const { path, source } of adapters) {
       if (source.includes('correlationId')) continue;
       expect(
-        DELEGATES.some((delegate) => source.includes(delegate)),
+        DELEGATES.some((delegate) => delegatesTo(source, delegate)),
         `${path} neither carries a correlation reference nor delegates to one that does`
       ).toBe(true);
     }
@@ -1906,7 +1906,7 @@ function onlyRequest(): CapturedRequest {
 /**
  * A backend that answers with `body`, recording what it was asked.
  *
- * Only `fetch` is replaced. `searchCustomerDirectory`, `authorizedClient`,
+ * Only `fetch` is replaced. `readCustomerDirectory`, `authorizedClient`,
  * `ApiClient` and `query` are all the shipped implementations, so what is
  * observed here is the request the application really assembles.
  */
@@ -1978,7 +1978,7 @@ describe('P1-27-QA-003 — what the client tier can prove about isolation', () =
 
   it('sends no tenant, company or branch on the real read path', async () => {
     backendAnswering(200, PAGE_FROM_ANOTHER_TENANT);
-    await searchCustomerDirectory(TABLE_REQUEST, null, { name: 'Nadia' });
+    await readCustomerDirectory(TABLE_REQUEST, null, { name: 'Nadia' });
 
     expect(captured).toHaveLength(1);
     const { url } = onlyRequest();
@@ -1993,7 +1993,7 @@ describe('P1-27-QA-003 — what the client tier can prove about isolation', () =
 
   it('identifies the caller by the session bearer, and by nothing else', async () => {
     backendAnswering(200, PAGE_FROM_ANOTHER_TENANT);
-    await searchCustomerDirectory(TABLE_REQUEST, null, { name: 'Nadia' });
+    await readCustomerDirectory(TABLE_REQUEST, null, { name: 'Nadia' });
 
     const { headers } = onlyRequest();
     expect(headers.get('authorization')).toBe('Bearer session-token-for-tenant-a');
@@ -2008,7 +2008,7 @@ describe('P1-27-QA-003 — what the client tier can prove about isolation', () =
      * strings mean the observed request came out of the guarded builder.
      */
     backendAnswering(200, PAGE_FROM_ANOTHER_TENANT);
-    await searchCustomerDirectory(TABLE_REQUEST, null, { name: 'Nadia' });
+    await readCustomerDirectory(TABLE_REQUEST, null, { name: 'Nadia' });
 
     const expected =
       `${API_ORIGIN}/api/v1/customers` + query({ cursor: null, limit: 25, name: 'Nadia' });
@@ -2036,7 +2036,7 @@ describe('P1-27-QA-003 — what the client tier can prove about isolation', () =
       [401, 'expired'],
     ] as const) {
       backendAnswering(status, { type: 'urn:rootlco:error:ERR-IAM-001', status });
-      const page = await searchCustomerDirectory(TABLE_REQUEST, null, { name: 'Nadia' });
+      const page = await readCustomerDirectory(TABLE_REQUEST, null, { name: 'Nadia' });
       expect(page.status, `HTTP ${status}`).toBe(expected);
       expect(page.rows, `HTTP ${status}`).toEqual([]);
       expect(page.hasMore).toBe(false);
@@ -2046,7 +2046,7 @@ describe('P1-27-QA-003 — what the client tier can prove about isolation', () =
     // The control: a 200 is NOT reported as a refusal, so the case above is not
     // passing because every outcome maps to one.
     backendAnswering(200, PAGE_FROM_ANOTHER_TENANT);
-    const ok = await searchCustomerDirectory(TABLE_REQUEST, null, { name: 'Nadia' });
+    const ok = await readCustomerDirectory(TABLE_REQUEST, null, { name: 'Nadia' });
     expect(ok.status).toBe('ok');
   });
 
@@ -2080,7 +2080,7 @@ describe('P1-27-QA-003 — what the client tier can prove about isolation', () =
      * tenants no matter which jobs execute which suites.
      */
     backendAnswering(200, PAGE_FROM_ANOTHER_TENANT);
-    const page = await searchCustomerDirectory(TABLE_REQUEST, null, { name: 'Nadia' });
+    const page = await readCustomerDirectory(TABLE_REQUEST, null, { name: 'Nadia' });
     expect(page.status).toBe('ok');
     expect(page.rows).toHaveLength(1);
   });

@@ -38,9 +38,10 @@ import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic, translateWithValues } from '@/i18n/get-messages';
 import { formatDateTime } from '@/lib/format';
 import type { ActionState } from '@/lib/forms/action-result';
-import { listCustomerVehicles } from '@/lib/customers/vehicles';
+import { listCustomerVehiclesCancellable } from '@/lib/customers/vehicles-read';
 import type { CustomerVehicleEntry } from '@/lib/customers/vehicles-contract';
-import { createReception, listReceptions } from '../api';
+import { createReception } from '../api';
+import { listReceptionsCancellable } from '../reception-list-read';
 import type { IntakeCatalogueResult } from '../catalogue-api';
 import { MAX_WALK_IN_NOTE, type ReceptionCreated } from '../receptions-contract';
 import {
@@ -378,9 +379,13 @@ export function CheckInStartScreen({
 
   const requesterId = requester?.id ?? null;
   const loadVehicles = useCallback(
-    (request: TableRequest, cursor: string | null): Promise<ServerPage<CustomerVehicleEntry>> =>
+    (
+      request: TableRequest,
+      cursor: string | null,
+      signal: AbortSignal
+    ): Promise<ServerPage<CustomerVehicleEntry>> =>
       requesterId !== null && canSearchCustomers
-        ? listCustomerVehicles(requesterId, request, cursor)
+        ? listCustomerVehiclesCancellable(requesterId, request, cursor, signal)
         : Promise.resolve(UNASKED),
     [requesterId, canSearchCustomers]
   );
@@ -438,9 +443,15 @@ export function CheckInStartScreen({
       : (effectiveVehicle?.vehicleId ?? null);
 
   const loadOpenVisits = useCallback(
-    (request: TableRequest, cursor: string | null) =>
+    (request: TableRequest, cursor: string | null, signal: AbortSignal) =>
       targetReady && chosenVehicleId !== null
-        ? listReceptions({ companyId, branchId }, { vehicleId: chosenVehicleId }, request, cursor)
+        ? listReceptionsCancellable(
+            { companyId, branchId },
+            { vehicleId: chosenVehicleId },
+            request,
+            cursor,
+            signal
+          )
         : Promise.resolve(UNASKED),
     [targetReady, chosenVehicleId, companyId, branchId]
   );

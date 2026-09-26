@@ -183,7 +183,9 @@ vi.mock('@/features/vehicles/relations-api', async (importOriginal) => {
     listRelationships: async () => page(),
   };
 });
-vi.mock('@/features/crm/customers/api', () => ({ searchCustomers: vi.fn() }));
+vi.mock('@/lib/customers/directory-read', () => ({
+  searchCustomerDirectoryCancellable: vi.fn(),
+}));
 vi.mock('next/navigation', () => ({ useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }) }));
 
 const { CustomerProfileScreen } =

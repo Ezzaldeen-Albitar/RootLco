@@ -65,7 +65,7 @@ import {
   type CreatedInvoice,
   type Invoice,
 } from '@/features/billing/billing-contract';
-import { searchCustomerDirectory } from '@/lib/customers/directory';
+import { searchCustomerDirectoryCancellable } from '@/lib/customers/directory-read';
 import type { CustomerSearchHit } from '@/lib/customers/directory-contract';
 import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
@@ -422,7 +422,9 @@ function BuyerPicker({
       setNote('inventory.counterSales.buyer.termNeeded');
       return;
     }
-    const page = await searchCustomerDirectory(
+    // The route read, not the Server Action (P1-32-PRE-OD-READ), so a buyer
+    // lookup never waits behind another action on this page.
+    const page = await searchCustomerDirectoryCancellable(
       { ...INITIAL_REQUEST, pageSize: 25 },
       null,
       // One criterion at a time, named by the chosen field. `directory.ts`

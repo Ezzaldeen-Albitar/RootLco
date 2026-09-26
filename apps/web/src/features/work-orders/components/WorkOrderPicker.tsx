@@ -18,7 +18,7 @@ import { translate } from '@/i18n/get-messages';
 import type { CursorPage, ReadState } from '@/lib/api/read-operation';
 import { useSearchRequest } from '@/lib/api/use-search-request';
 
-import { listWorkOrders } from '../api';
+import { listWorkOrdersCancellable } from '../work-order-list-read';
 import {
   MAX_WORK_ORDER_SEARCH,
   MIN_WORK_ORDER_SEARCH,
@@ -191,13 +191,17 @@ export function WorkOrderPicker({
   const load = useCallback(
     async (
       asked: { readonly companyId: string; readonly branchId: string | null; readonly q: string },
-      cursor: string | null
+      cursor: string | null,
+      signal: AbortSignal
     ): Promise<ReadState<CursorPage<WorkOrderListEntry>>> => {
-      const page = await listWorkOrders(
+      // Cancellable (P1-32-PRE-OD-READ): the read for a term the operator has
+      // already typed past is aborted, not only discarded.
+      const page = await listWorkOrdersCancellable(
         { companyId: asked.companyId, branchId: asked.branchId },
         { q: asked.q },
         { ...INITIAL_REQUEST, pageSize: 10 },
-        cursor
+        cursor,
+        signal
       );
       if (page.status !== 'ok') return { status: page.status, correlationId: page.correlationId };
       return {

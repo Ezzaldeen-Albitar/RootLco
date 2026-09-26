@@ -22,8 +22,10 @@ import { settleRead } from '@/lib/api/use-search-request';
  *
  * The bearer token lives in a `httpOnly` cookie the browser cannot read, so the
  * browser could not attach it even if it wanted to. Every read goes through a
- * Server Action, which runs with the cookie and returns a view model. The token
- * never enters the client bundle, the client heap, or a network tab.
+ * Server Action, or through one of the cancellable read routes under `/reads/*`
+ * (`src/lib/api/browser-read.ts`), and both run with the cookie on the server
+ * and return a view model. The token never enters the client bundle, the
+ * client heap, or a network tab.
  *
  * ## Why loading is derived rather than stored
  *
@@ -40,6 +42,12 @@ import { settleRead } from '@/lib/api/use-search-request';
  * it a slow page-1 response that lands after a fast page-2 response overwrites
  * page 2 with page 1, and the table shows rows from a request the operator has
  * already moved past.
+ *
+ * The same cleanup aborts the run's `AbortSignal`, which the loader receives as
+ * its third argument. A loader over a Server Action cannot use it — the call
+ * carries no signal — and the flag is what protects the table there. A loader
+ * over a cancellable read (`src/lib/api/browser-read.ts`) passes it on, and the
+ * superseded request is then cancelled, not merely ignored (P1-32-PRE-OD-READ).
  */
 
 export type ServerPageStatus = 'ok' | 'denied' | 'expired' | 'unavailable' | 'error' | 'not-found';
@@ -79,7 +87,17 @@ export interface ServerTable<Row> {
 }
 
 export function useServerTable<Row>(
-  load: (request: TableRequest, cursor: string | null) => Promise<ServerPage<Row>>,
+  /**
+   * One page of the read. `signal` aborts when this request is superseded or
+   * the table unmounts; a loader that reaches a cancellable read passes it on,
+   * so the superseded request is CANCELLED rather than only ignored. A loader
+   * that takes two parameters is still a loader.
+   */
+  load: (
+    request: TableRequest,
+    cursor: string | null,
+    signal: AbortSignal
+  ) => Promise<ServerPage<Row>>,
   options: {
     readonly initial?: TableRequest;
     /**
@@ -152,6 +170,9 @@ export function useServerTable<Row>(
 
   useEffect(() => {
     let cancelled = false;
+    // Aborted in the cleanup below, so a request this effect no longer wants is
+    // torn down as well as ignored — when its loader passes the signal on.
+    const controller = new AbortController();
     void (async () => {
       // Awaited before any state write, so nothing here is a synchronous
       // setState inside an effect body. Settled, never left hanging: a load
@@ -160,7 +181,7 @@ export function useServerTable<Row>(
       // reads "Loading" for ever (`settleRead`, browser QA part 7 row 2.6).
       const cursor = cursors.cursorFor(request.page);
       const page = await settleRead<ServerPage<Row>>(
-        () => load(request, cursor),
+        () => load(request, cursor, controller.signal),
         {
           status: 'unavailable',
           rows: [],
@@ -168,7 +189,7 @@ export function useServerTable<Row>(
           hasMore: false,
           correlationId: null,
         },
-        { serverReads }
+        { serverReads, signal: controller.signal }
       );
       if (cancelled) return;
       setHeld({ key: wanted, page });
@@ -176,6 +197,7 @@ export function useServerTable<Row>(
     })();
     return () => {
       cancelled = true;
+      controller.abort();
     };
     // `cursors` is stable per ordering; including it would re-run the read every
     // time a cursor is remembered, which is an infinite loop by construction.

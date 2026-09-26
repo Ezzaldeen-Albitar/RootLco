@@ -783,8 +783,8 @@ describe('P1-28-SEC-003 — the ONE door, and the abuse cases that try the walls
      * (driven), and the reason it cannot is structural (read).
      */
     backendAnswering(200, { items: [], nextCursor: null, hasMore: false });
-    const { listReceptions } = await import('@/features/receptions/api');
-    const page = await listReceptions(
+    const { readReceptionList } = await import('@/features/receptions/reception-list-read.server');
+    const page = await readReceptionList(
       { companyId: 'c1', branchId: 'b1' },
       { branchId: FORGED.branchId, vehicleId: 'v1' } as never,
       TABLE_REQUEST,
@@ -804,8 +804,9 @@ describe('P1-28-SEC-003 — the ONE door, and the abuse cases that try the walls
     // And the structure that makes it so: every criterion is named. A spread of
     // the criteria object would put the guard back in the path — which would
     // still be safe — but a spread of anything WIDER would not, and this is the
-    // line that would change.
-    const source = webFile('features', 'receptions', 'api.ts');
+    // line that would change. The body lives in the server-only core the
+    // action and the cancellable read route share (P1-32-PRE-OD-READ).
+    const source = webFile('features', 'receptions', 'reception-list-read.server.ts');
     expect(source).toContain('status: criteria.status');
     expect(source).toContain('vehicleId: criteria.vehicleId');
     // The door is `branchScopeQuery` since the branch became optional on this
@@ -829,9 +830,9 @@ describe('P1-28-SEC-003 — the ONE door, and the abuse cases that try the walls
      *   - the cursor is not a filter, so it cannot be smuggled into the target.
      */
     backendAnswering(200, { items: [], nextCursor: null, hasMore: false });
-    const { listReceptions } = await import('@/features/receptions/api');
+    const { readReceptionList } = await import('@/features/receptions/reception-list-read.server');
     const issued = 'eyJvIjoiMjAyNi0wOC0xMyIsImkiOiJhYmMifQ==';
-    await listReceptions({ companyId: 'c1', branchId: 'b1' }, {}, TABLE_REQUEST, issued);
+    await readReceptionList({ companyId: 'c1', branchId: 'b1' }, {}, TABLE_REQUEST, issued);
 
     const parameters = new URL(onlyRequest().url).searchParams;
     expect(parameters.get('cursor'), 'the cursor was rewritten in flight').toBe(issued);
@@ -912,8 +913,8 @@ describe('P1-28-SEC-003 — the ONE door, and the abuse cases that try the walls
       status: 400,
       correlationId: 'corr-cursor',
     });
-    const { listReceptions } = await import('@/features/receptions/api');
-    const page = await listReceptions(
+    const { readReceptionList } = await import('@/features/receptions/reception-list-read.server');
+    const page = await readReceptionList(
       { companyId: 'c1', branchId: 'b1' },
       {},
       TABLE_REQUEST,

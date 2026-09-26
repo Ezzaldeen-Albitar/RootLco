@@ -109,6 +109,11 @@ const OP = {
  *     scope at all and matches no rule. The exclusion is SHORTER than it was.
  *   - `client-log.ts` IS the structured logger the console rule tells people to
  *     use instead of `console.*`.
+ *   - `read-route.ts` holds `READ_BODY_LIMIT_BYTES = 16 * 1024`, the
+ *     request-body size cap for JSON read routes, not a media/upload limit. It
+ *     bounds how much JSON a read handler will parse before refusing; it says
+ *     nothing about which files, types or sizes a user may attach, which is the
+ *     decision `no-invented-media-limit` guards and P1-OD-025 owns.
  *
  * A new file, or a new rule matching one of those that remain, fails the case
  * that pins this list — which is what makes "excluded" a measurement rather than
@@ -121,6 +126,7 @@ const EXCLUDED_MODULE_MATCHES = [
   'no-console-output: apps/web/src/lib/observability/client-log.ts',
   'no-duplicate-scan-on-a-queue: apps/web/src/lib/api/idempotent-operations.ts',
   'no-export-surface: apps/web/src/lib/api/idempotent-operations.ts',
+  'no-invented-media-limit: apps/web/src/lib/api/read-route.ts',
   'no-merge-caller: apps/web/src/lib/api/idempotent-operations.ts',
 ];
 

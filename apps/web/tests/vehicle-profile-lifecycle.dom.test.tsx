@@ -95,7 +95,7 @@ vi.mock('@/features/vehicles/relations-api', () => ({
 vi.mock('@/features/vehicles/duplicates-api', () => ({
   listAttributeHistory: (...a: unknown[]) => listAttributeHistory(...a),
 }));
-vi.mock('@/features/crm/customers/api', () => ({ searchCustomers: vi.fn() }));
+vi.mock('@/lib/customers/directory-read', () => ({ searchCustomerDirectoryCancellable: vi.fn() }));
 
 /*
  * The transport, for the last section only.

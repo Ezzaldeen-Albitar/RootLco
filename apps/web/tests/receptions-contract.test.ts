@@ -40,9 +40,11 @@ import type { ReceptionListEntry } from '@/features/receptions/receptions-contra
 /**
  * The board adapter is exercised here too (Owner directive, P1-32-PRE-OD-UX).
  *
- * A DOM test of the queue screen mocks `@/features/receptions/api` wholesale, so
- * it exercises the screen and CANNOT exercise the adapter — the note
- * `work-orders-queue-api.test.ts` carries, for the same reason. Only the HTTP
+ * Its body is the server core `readReceptionList`, which the POST route at
+ * `/reads/receptions` serves (P1-32-PRE-OD-READ). A DOM test of the queue
+ * screen mocks the browser half wholesale, so it exercises the screen and
+ * CANNOT exercise the core — the note `work-orders-queue-api.test.ts` carries,
+ * for the same reason. Only the HTTP
  * client is mocked here, so the criteria really are serialised and the row
  * really is carried through.
  *
@@ -53,7 +55,7 @@ const get = vi.fn();
 vi.mock('@/lib/api/server-client', () => ({
   authorizedClient: async () => ({ get }) as unknown,
 }));
-const { listReceptions } = await import('@/features/receptions/api');
+const { readReceptionList } = await import('@/features/receptions/reception-list-read.server');
 
 const OPENAPI = JSON.parse(
   readFileSync(join(process.cwd(), '..', '..', 'docs', 'api', 'openapi.v1.json'), 'utf8')
@@ -487,7 +489,7 @@ describe('the board adapter sends the criteria and carries the row through', () 
   it('sends statusGroup when it was chosen', async () => {
     get.mockResolvedValue(ok({ items: [], nextCursor: null, hasMore: false }));
 
-    await listReceptions(TARGET, { statusGroup: 'finished' }, REQUEST, null);
+    await readReceptionList(TARGET, { statusGroup: 'finished' }, REQUEST, null);
 
     const url = new URL(`https://api.invalid${String(get.mock.calls[0]?.[0])}`);
     expect(url.searchParams.get('statusGroup')).toBe('finished');
@@ -500,7 +502,7 @@ describe('the board adapter sends the criteria and carries the row through', () 
   it('omits statusGroup that was not chosen rather than sending it empty', async () => {
     get.mockResolvedValue(ok({ items: [], nextCursor: null, hasMore: false }));
 
-    await listReceptions(TARGET, {}, REQUEST, null);
+    await readReceptionList(TARGET, {}, REQUEST, null);
 
     const path = String(get.mock.calls[0]?.[0]);
     // `.strict()` at the backend makes an empty-but-present parameter a 422,
@@ -512,7 +514,7 @@ describe('the board adapter sends the criteria and carries the row through', () 
   it('carries the customer block and the plate through unchanged', async () => {
     get.mockResolvedValue(ok({ items: [ROW], nextCursor: null, hasMore: false }));
 
-    const result = await listReceptions(TARGET, {}, REQUEST, null);
+    const result = await readReceptionList(TARGET, {}, REQUEST, null);
 
     expect(result.status).toBe('ok');
     // Field by field rather than a reference comparison: `toBe` on the same
@@ -538,7 +540,7 @@ describe('the board adapter sends the criteria and carries the row through', () 
       })
     );
 
-    const result = await listReceptions(TARGET, {}, REQUEST, null);
+    const result = await readReceptionList(TARGET, {}, REQUEST, null);
 
     expect(result.rows[0]?.customer).toEqual({ id: PARTNER, displayName: null });
     expect(result.rows[1]?.customer).toBeNull();

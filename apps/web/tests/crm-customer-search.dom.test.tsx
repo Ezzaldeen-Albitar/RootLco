@@ -21,8 +21,8 @@ import { renderLtr, renderRtl } from './render';
 
 const searchCustomers = vi.fn();
 
-vi.mock('@/features/crm/customers/api', () => ({
-  searchCustomers: (...args: unknown[]) => searchCustomers(...args),
+vi.mock('@/lib/customers/directory-read', () => ({
+  searchCustomerDirectoryCancellable: (...args: unknown[]) => searchCustomers(...args),
 }));
 
 const push = vi.fn();

@@ -158,7 +158,8 @@ describe('the search is the server’s, once per pause', () => {
     await user.type(box(), 'Layla');
     expect(await screen.findByRole('option', { name: 'Layla Haddad' })).toBeInTheDocument();
     expect(load).toHaveBeenCalledTimes(1);
-    expect(load.mock.calls[0]).toEqual(['Layla', null]);
+    // The third argument is the signal a superseded read is cancelled by.
+    expect(load.mock.calls[0]).toEqual(['Layla', null, expect.any(AbortSignal)]);
   });
 
   it('refuses a term shorter than the minimum, and sends at exactly the minimum', async () => {
@@ -175,7 +176,7 @@ describe('the search is the server’s, once per pause', () => {
     // FALSIFICATION of the boundary: one more character and the read goes out.
     await user.type(box(), 'a');
     await screen.findByRole('option', { name: 'Layla Haddad' });
-    expect(load.mock.calls.at(-1)).toEqual(['La', null]);
+    expect(load.mock.calls.at(-1)).toEqual(['La', null, expect.any(AbortSignal)]);
     expect(box()).not.toHaveAttribute('aria-invalid');
   });
 
@@ -232,7 +233,7 @@ describe('the search is the server’s, once per pause', () => {
       </form>
     );
     await user.type(box(), 'La{Enter}');
-    await waitFor(() => expect(load).toHaveBeenCalledWith('La', null));
+    await waitFor(() => expect(load).toHaveBeenCalledWith('La', null, expect.any(AbortSignal)));
     expect(submitted).not.toHaveBeenCalled();
     expect(within(screen.getByTestId('entity-picker')).queryAllByRole('button')).not.toContain(
       document.querySelector('button[type="submit"]')
@@ -251,7 +252,7 @@ describe('the search is the server’s, once per pause', () => {
 
     await user.click(screen.getByRole('button', { name: en['table.nextPage'] }));
     expect(await screen.findByRole('option', { name: 'Omar Saleh' })).toBeInTheDocument();
-    expect(load.mock.calls.at(-1)).toEqual(['La', 'p-2']);
+    expect(load.mock.calls.at(-1)).toEqual(['La', 'p-2', expect.any(AbortSignal)]);
     expect(screen.getByRole('button', { name: en['table.previousPage'] })).toBeEnabled();
   });
 });

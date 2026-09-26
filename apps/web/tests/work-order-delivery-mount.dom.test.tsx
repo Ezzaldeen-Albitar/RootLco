@@ -43,7 +43,9 @@ vi.mock('@/features/work-orders/api', () => ({
   listJobAssignments: (...args: unknown[]) => listJobAssignments(...args),
   updateJob: vi.fn(),
   assignTechnician: (...args: unknown[]) => assignTechnician(...args),
-  listWorkOrders: vi.fn(),
+}));
+vi.mock('@/features/work-orders/work-order-list-read', () => ({
+  listWorkOrdersCancellable: vi.fn(),
 }));
 
 const readWorkOrderTimeline = vi.fn();

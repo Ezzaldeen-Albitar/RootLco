@@ -92,8 +92,8 @@ vi.mock('@/features/attention/api', () => ({
  * attention are proved, and the dashboard is now the first of them.
  */
 const readDashboardSummary = vi.fn();
-vi.mock('@/features/overview/api', () => ({
-  readDashboardSummary: (...args: unknown[]) => readDashboardSummary(...args),
+vi.mock('@/features/overview/dashboard-summary-read', () => ({
+  readDashboardSummaryCancellable: (...args: unknown[]) => readDashboardSummary(...args),
 }));
 
 vi.mock('next/navigation', () => ({
@@ -1042,7 +1042,9 @@ describe('the dashboard reads once for the branch it is addressed to', () => {
     expect(readDashboardSummary).toHaveBeenCalledTimes(1);
     expect(readDashboardSummary).toHaveBeenCalledWith(
       { companyId: TEST_COMPANY.id, branchId: TEST_BRANCH.id },
-      { period: 'today' }
+      { period: 'today' },
+      // The read is cancellable: it carries the signal its effect aborts.
+      expect.any(AbortSignal)
     );
   });
 
@@ -1072,7 +1074,9 @@ describe('the dashboard reads once for the branch it is addressed to', () => {
     });
     expect(readDashboardSummary).toHaveBeenLastCalledWith(
       { companyId: TEST_COMPANY.id, branchId: TEST_BRANCH.id },
-      { period: 'yesterday' }
+      { period: 'yesterday' },
+      // The read is cancellable: it carries the signal its effect aborts.
+      expect.any(AbortSignal)
     );
   });
 
@@ -1136,7 +1140,9 @@ describe('the dashboard reads once for the branch it is addressed to', () => {
     });
     expect(readDashboardSummary).toHaveBeenLastCalledWith(
       { companyId: TEST_COMPANY.id, branchId: OTHER_BRANCH.id },
-      { period: 'today' }
+      { period: 'today' },
+      // The read is cancellable: it carries the signal its effect aborts.
+      expect.any(AbortSignal)
     );
   });
 
@@ -1419,7 +1425,9 @@ describe('every figure opens the list it counted', () => {
     await screen.findByText('7');
     expect(readDashboardSummary).toHaveBeenLastCalledWith(
       { companyId: TEST_COMPANY.id, branchId: null },
-      { period: 'today' }
+      { period: 'today' },
+      // The read is cancellable: it carries the signal its effect aborts.
+      expect.any(AbortSignal)
     );
 
     // No one branch to open on, and words that say the warnings are reviewed
@@ -1716,7 +1724,9 @@ describe('the dashboard answers for the period and the branch it is showing', ()
     await waitFor(() => {
       expect(readDashboardSummary).toHaveBeenLastCalledWith(
         { companyId: TEST_COMPANY.id, branchId: TEST_BRANCH.id },
-        { period: 'custom', from: '2026-09-01', to: '2026-09-10' }
+        { period: 'custom', from: '2026-09-01', to: '2026-09-10' },
+        // The read is cancellable: it carries the signal its effect aborts.
+        expect.any(AbortSignal)
       );
     });
     expect(

@@ -50,8 +50,8 @@ vi.mock('@/features/vehicles/relations-api', () => ({
   retirePartyAction: (...a: unknown[]) => retirePartyAction(...a),
   linkCustomerAction: (...a: unknown[]) => linkCustomerAction(...a),
 }));
-vi.mock('@/lib/customers/directory', () => ({
-  searchCustomerDirectory: (...a: unknown[]) => searchCustomerDirectory(...a),
+vi.mock('@/lib/customers/directory-read', () => ({
+  searchCustomerDirectoryCancellable: (...a: unknown[]) => searchCustomerDirectory(...a),
 }));
 
 const { OwnershipSection } = await import('@/features/vehicles/components/VehicleHistorySections');

@@ -134,7 +134,7 @@ export function EntityPicker<Row extends { readonly id: string }>({
 
   const search = useSearchRequest<Row, string>({
     criteria,
-    load: (asked, cursor) => load(asked, cursor),
+    load: (asked, cursor, signal) => load(asked, cursor, signal),
     version: context.version,
   });
 

@@ -30,7 +30,7 @@ import { intlLocale } from '@/lib/format';
 import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic } from '@/i18n/get-messages';
-import { listReceptions } from '../api';
+import { listReceptionsCancellable } from '../reception-list-read';
 import {
   MAX_RECEPTION_SEARCH,
   MIN_RECEPTION_SEARCH,
@@ -321,9 +321,18 @@ export function ReceptionQueueScreen({
   const load = useCallback(
     async (
       criteria: Asked,
-      cursor: string | null
+      cursor: string | null,
+      signal: AbortSignal
     ): Promise<ReadState<CursorPage<ReceptionListEntry>>> => {
-      const page = await listReceptions(criteria.scope, criteria.filters, INITIAL_REQUEST, cursor);
+      // Cancellable (P1-32-PRE-OD-READ): a superseded read — the operator typed
+      // again or switched branch — is aborted, not only discarded.
+      const page = await listReceptionsCancellable(
+        criteria.scope,
+        criteria.filters,
+        INITIAL_REQUEST,
+        cursor,
+        signal
+      );
       if (page.status !== 'ok') return { status: page.status, correlationId: page.correlationId };
       return {
         status: 'ok',

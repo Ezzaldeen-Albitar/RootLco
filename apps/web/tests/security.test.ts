@@ -774,12 +774,15 @@ describe('a resource scope reaches the wire through exactly two named doors', ()
 
   it('permits an optionally unnamed branch at exactly the reads whose route allows one', () => {
     expect(callSites(/branchScopeQuery\s*\(/)).toEqual([
-      // The operations whose route schema made the branch optional.
+      // The operations whose route schema made the branch optional. The three
+      // board and overview reads moved their bodies into server-only cores that
+      // the Server Action and the cancellable read route share
+      // (P1-32-PRE-OD-READ): the same three operations, one call site each.
       'features/appointments/api.ts',
-      'features/overview/api.ts',
-      'features/receptions/api.ts',
+      'features/overview/dashboard-summary-read.server.ts',
+      'features/receptions/reception-list-read.server.ts',
       'features/warranty/warranty-api.ts',
-      'features/work-orders/api.ts',
+      'features/work-orders/work-order-list-read.server.ts',
       // The definition itself, so this fails if the helper moves.
       'lib/api/read-operation.ts',
     ]);

@@ -32,8 +32,16 @@ export interface SearchPickerProps<Row extends { readonly id: string }> {
   readonly onChange: (next: Row | null) => void;
   /** What a person recognises the record by. Never its identifier. */
   readonly labelOf: (row: Row) => string;
-  /** One page of the read for a term already long enough to send. */
-  readonly load: (term: string, cursor: string | null) => Promise<ReadState<CursorPage<Row>>>;
+  /**
+   * One page of the read for a term already long enough to send. `signal`
+   * aborts when the term moves on; a loader over a cancellable read passes it
+   * on, so the superseded request is cancelled rather than only ignored.
+   */
+  readonly load: (
+    term: string,
+    cursor: string | null,
+    signal: AbortSignal
+  ) => Promise<ReadState<CursorPage<Row>>>;
   /** Whether the read can be answered at all for this caller. */
   readonly canSearch: boolean;
   /** Why there is no box, when `canSearch` is false. */
@@ -172,7 +180,7 @@ export function SearchPicker<Row extends { readonly id: string }>({
 
   const search = useSearchRequest<Row, string>({
     criteria,
-    load: (asked, cursor) => load(asked, cursor),
+    load: (asked, cursor, signal) => load(asked, cursor, signal),
     version: context.version,
   });
 

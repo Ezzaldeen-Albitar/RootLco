@@ -13,7 +13,7 @@ import { EmptyState } from '@/components/states/States';
 import type { Messages } from '@/i18n/get-messages';
 import { translate } from '@/i18n/get-messages';
 import type { Locale } from '@/i18n/config';
-import { searchCustomers } from '../api';
+import { searchCustomerDirectoryCancellable } from '@/lib/customers/directory-read';
 import { CustomerCreateActions } from './CustomerCreateActions';
 import {
   LIFECYCLE_STATUSES,
@@ -179,9 +179,12 @@ function CustomerSearchResults({
   const load = useCallback(
     async (
       asked: CustomerSearchCriteria,
-      cursor: string | null
+      cursor: string | null,
+      signal: AbortSignal
     ): Promise<ReadState<CursorPage<CustomerSearchHit>>> => {
-      const page = await searchCustomers(INITIAL_REQUEST, cursor, asked);
+      // Cancellable (P1-32-PRE-OD-READ): the same read `searchCustomers`
+      // performs, through the route, so a superseded search is aborted.
+      const page = await searchCustomerDirectoryCancellable(INITIAL_REQUEST, cursor, asked, signal);
       if (page.status !== 'ok') return { status: page.status, correlationId: page.correlationId };
       return {
         status: 'ok',
