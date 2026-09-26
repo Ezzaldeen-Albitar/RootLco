@@ -40,9 +40,9 @@ import { isLocale } from '@/i18n/config';
  *
  * A `concrete` or `none` route names no operations; the same derivation holds
  * it to its posture instead: a concrete page must reach a branch- or
- * company-scoped operation and read the working branch (`useBranchTarget` or
- * the report scope), and a `none` page must not read the working branch as a
- * target at all. The test also holds this table against the filesystem (every
+ * company-scoped operation and read the working branch (`useBranchTarget`, or
+ * the working context's `selection`), and a `none` page must do neither: it may
+ * not reach `useBranchTarget` or read the selection at all. The test also holds this table against the filesystem (every
  * workspace page has exactly one declaration) and the union set below against
  * the API's own declarations.
  *
@@ -265,13 +265,21 @@ export const ROUTE_BRANCH_SCOPES: readonly RouteScopeDeclaration[] = Object.free
     why: "The threshold is read and written for the working branch's company.",
   },
 
+  {
+    pattern: '/administration/departments',
+    scope: 'concrete',
+    why: 'Departments are listed and written per branch, opening on the working branch.',
+  },
+  {
+    pattern: '/administration/employees',
+    scope: 'concrete',
+    why: 'Employees are listed and written per branch, opening on the working branch.',
+  },
   // ── None: tenant-wide, or one record reached by address ──
   { pattern: '/administration', scope: 'none', why: TENANT_WIDE },
   { pattern: '/administration/approval-limits', scope: 'none', why: TENANT_WIDE },
   { pattern: '/administration/audit-log', scope: 'none', why: TENANT_WIDE },
   { pattern: '/administration/currencies', scope: 'none', why: TENANT_WIDE },
-  { pattern: '/administration/departments', scope: 'none', why: TENANT_WIDE },
-  { pattern: '/administration/employees', scope: 'none', why: TENANT_WIDE },
   { pattern: '/administration/languages', scope: 'none', why: TENANT_WIDE },
   { pattern: '/administration/numbering-rules', scope: 'none', why: TENANT_WIDE },
   { pattern: '/administration/organization', scope: 'none', why: TENANT_WIDE },

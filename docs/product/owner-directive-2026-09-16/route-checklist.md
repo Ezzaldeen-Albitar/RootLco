@@ -347,11 +347,18 @@ Every workspace route now declares one posture, in one place:
   for one branch.
 - **concrete** — the page writes, or reads something the server answers for one branch only. The
   header does not offer "All my branches". While it is selected, or while no branch is chosen yet,
-  the shell does not draw the screen at all (`ConcreteRouteGate`): it shows the ask and the
-  authorized branches by name, so no list is read, no picker searches and no write can start. The
-  selection is never changed on the operator's behalf, so a union page visited next still reads
-  every branch. The inline chooser is the working context's own guarded switch: it asks before
-  discarding unsaved work and moves the context version like any other switch. The job picker the
+  the page body does not draw the screen (`ConcreteRouteGate`, inside every `PageBody`): the page's
+  title stays, and below it the ask and the authorized branches by name, so no list is read, no
+  picker searches and no write can start. A page that refuses the operator (no permission, not
+  found, session ended, a failed read) shows that refusal, never a branch ask. The server render and
+  the hydration render draw an empty, busy placeholder for an operator with several branches,
+  because the remembered branch is only known in the browser; neither the screen nor the ask is
+  sent from the server, and hydration matches. The selection is never changed on the operator's
+  behalf, so a union page visited next still reads every branch. The inline chooser is the working
+  context's own guarded switch: it asks before discarding unsaved work and moves the context
+  version like any other switch. A screen holding unsaved work is never unmounted without an answer:
+  if its branch stops being published while it is open, the page holds the screen, untouched and
+  inert, under a notice offering the named branches and a way to discard. The job picker the
   invoice, quotation, inventory and parts screens share searches one named branch only; it no longer
   searches every branch of the company under "All my branches" (PR #467 review).
 - **none** — tenant-wide pages, and one record reached by its address whose branch is the record's
@@ -369,22 +376,32 @@ declares no union, so it is concrete although `sal.delivery-list` is a union rea
 
 What each route can call is derived from the source, not typed by hand.
 `apps/web/tests/support/route-reachability.ts` starts from the exports of the route's `page.tsx` and
-follows symbols, not files, through the module graph with the TypeScript compiler, so a large
-adapter module contributes only the functions the page can reach. In each reached declaration,
-every `/api/v1/…` literal is followed to the call that sends it: through `+` and template literals,
-through a constant, and through a path-builder function whose return value it is. The method comes
-from that call, and wrappers such as `readOperation` are analysed for where their path parameter
-goes. A `/reads/…` route adds its handler module to the walk. The path and method are matched to the
-`defineOperation` literals parsed out of the API route modules.
+follows symbols, not files, through the module graph with the TypeScript compiler, dynamic imports
+included, so a large adapter module contributes only the functions the page can reach. Every string
+in a reached declaration that could name an endpoint is a candidate: any literal or template
+fragment containing `api/v1` or a `reads` path segment, and any `+`, template or `[…].join(…)`
+expression whose folded value contains one. Each candidate is followed to where it is used, through
+constants and path-building functions, and the whole expression is constant-folded. An API path
+must then be the argument of a call whose method is known; a `reads` path must name an existing
+browser read route, whose handler joins the walk. The path and method are matched to the
+`defineOperation` literals parsed out of the API route modules. A candidate that cannot be resolved
+this way (an object map, `new URL`, `fetch`, a computed dynamic import, an unknown path) is
+reported as unresolved. Two module constants are exempted by name, with their reasons, and the test
+asserts that the union routes use exactly those two: the version prefix the client strips before
+looking a path up in the operation table, and the prefix the browser-read guard checks.
 
 `apps/web/tests/route-branch-scope.test.ts` then holds:
 
 - **union routes** — every reachable operation is a read, every one that is not tenant-wide is an
   `authorized-union` read, no endpoint is left unresolved, and the route's declared operations equal
   the derived set exactly;
-- **concrete routes** — the page reaches a branch- or company-scoped operation and reads the working
-  branch (`useBranchTarget` or the report scope);
-- **none routes** — the page never reads the working branch as a target.
+- **concrete routes** — the page reaches a branch- or company-scoped operation, reads the working
+  branch (`useBranchTarget` or the working context's `selection`), and puts its screen in
+  `PageBody`. This is a floor, not a proof that the value read is the value sent; tracing that is
+  data-flow analysis the walk does not do, and the gate closes the gap at run time;
+- **none routes** — the page never reaches `useBranchTarget` and never reads the working context's
+  `selection`. `/administration/departments` and `/administration/employees` open on the working
+  branch, so they are concrete.
 
 It also holds the table against the filesystem (every workspace page has exactly one declaration),
 the navigation map, and this section's table below. The union set is compared in both directions
@@ -394,7 +411,7 @@ through a call it cannot resolve, or name a path no operation publishes.
 
 ### Scope per route
 
-Counts: 5 union, 27 concrete, 45 none — 77 routes. `route-branch-scope.test.ts` fails when this
+Counts: 5 union, 29 concrete, 43 none — 77 routes. `route-branch-scope.test.ts` fails when this
 table and `ROUTE_BRANCH_SCOPES` disagree on a route, a scope or a reason.
 
 | Route                                                 | Scope    | Why                                                                                           |
@@ -404,7 +421,9 @@ table and `ROUTE_BRANCH_SCOPES` disagree on a route, a scope or a reason.
 | `/receptions`                                         | union    | The reception board is one list read the server answers for the authorized set.               |
 | `/warranty`                                           | union    | The warranty list is one read the server answers for the authorized set.                      |
 | `/work-orders`                                        | union    | The work-order board and its figures are two reads the server answers for the authorized set. |
+| `/administration/departments`                         | concrete | Departments are listed and written per branch, opening on the working branch.                 |
 | `/administration/discount-threshold`                  | concrete | The threshold is read and written for the working branch's company.                           |
+| `/administration/employees`                           | concrete | Employees are listed and written per branch, opening on the working branch.                   |
 | `/appointments/new`                                   | concrete | Booking writes an appointment into one branch.                                                |
 | `/attention`                                          | concrete | Every stock alert is read for one branch.                                                     |
 | `/credit-notes`                                       | concrete | Credit notes are read and decided for one branch.                                             |
@@ -435,8 +454,6 @@ table and `ROUTE_BRANCH_SCOPES` disagree on a route, a scope or a reason.
 | `/administration/approval-limits`                     | none     | Tenant-wide administration or records; nothing here is addressed to a branch.                 |
 | `/administration/audit-log`                           | none     | Tenant-wide administration or records; nothing here is addressed to a branch.                 |
 | `/administration/currencies`                          | none     | Tenant-wide administration or records; nothing here is addressed to a branch.                 |
-| `/administration/departments`                         | none     | Tenant-wide administration or records; nothing here is addressed to a branch.                 |
-| `/administration/employees`                           | none     | Tenant-wide administration or records; nothing here is addressed to a branch.                 |
 | `/administration/languages`                           | none     | Tenant-wide administration or records; nothing here is addressed to a branch.                 |
 | `/administration/numbering-rules`                     | none     | Tenant-wide administration or records; nothing here is addressed to a branch.                 |
 | `/administration/organization`                        | none     | Tenant-wide administration or records; nothing here is addressed to a branch.                 |
@@ -487,7 +504,7 @@ query is about, and each is named:
 - a price rule's branch on `/pricing/[priceListId]`;
 - a reorder level's branch on `/inventory/setup`;
 - the issue or reservation branch on `/inventory/parts` when the work order's branch cannot be read;
-- a department or employee branch in administration;
+- a department or employee branch in administration, which opens on the working branch;
 - the settings target on the administration settings pages;
 - the report's branch on the report screens, which opens on the working branch.
 

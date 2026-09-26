@@ -4,7 +4,7 @@ import { AppShell } from '@/components/shell/AppShell';
 import { requireSession } from '@/features/authentication/api/session';
 import { AccountMenu } from '@/features/authentication/components/AccountMenu';
 import { loadWorkingContext } from '@/features/working-context/api';
-import { ConcreteRouteGate } from '@/features/working-context/components/ConcreteRouteGate';
+import { RouteScopeProvider } from '@/features/working-context/components/RouteScopeProvider';
 import { WorkingContextControl } from '@/features/working-context/components/WorkingContextControl';
 import { WorkingContextProvider } from '@/features/working-context/WorkingContextProvider';
 import { isLocale } from '@/i18n/config';
@@ -50,23 +50,24 @@ export default async function DashboardLayout({
 
   return (
     <WorkingContextProvider snapshot={workingContext} messages={messages}>
-      <AppShell
-        locale={locale}
-        messages={messages}
-        capabilities={{ permissions: session.permissions }}
-        workingContext={<WorkingContextControl messages={messages} />}
-        account={
-          <AccountMenu
-            locale={locale}
-            messages={messages}
-            displayName={session.displayName}
-            email={session.email}
-          />
-        }
-      >
-        {/* A screen that needs one branch waits for one: config/route-branch-scope.ts. */}
-        <ConcreteRouteGate messages={messages}>{children}</ConcreteRouteGate>
-      </AppShell>
+      <RouteScopeProvider>
+        <AppShell
+          locale={locale}
+          messages={messages}
+          capabilities={{ permissions: session.permissions }}
+          workingContext={<WorkingContextControl messages={messages} />}
+          account={
+            <AccountMenu
+              locale={locale}
+              messages={messages}
+              displayName={session.displayName}
+              email={session.email}
+            />
+          }
+        >
+          {children}
+        </AppShell>
+      </RouteScopeProvider>
     </WorkingContextProvider>
   );
 }

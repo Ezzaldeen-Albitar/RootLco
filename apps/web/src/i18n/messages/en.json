@@ -6311,6 +6311,8 @@
   "workingContext.discard.confirm": "Discard and change branch",
   "workingContext.discard.description": "You have entries on this screen that are not saved yet. Changing branch now will lose them.",
   "workingContext.discard.title": "Leave this unsaved work?",
+  "workingContext.held.description": "Your entries on this screen are kept. Choose the branch they are for, or discard them.",
+  "workingContext.held.discard": "Discard my entries",
   "workingContext.label": "Working branch",
   "workingContext.needsOneBranch": "Choose one branch in the header to continue",
   "workingContext.noBranch": "No branch is assigned to you yet. Ask your manager to add one.",

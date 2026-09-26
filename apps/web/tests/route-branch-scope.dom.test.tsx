@@ -1,6 +1,8 @@
 import { act, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { useEffect, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
+import { renderToString } from 'react-dom/server';
+import { hydrateRoot, type Root } from 'react-dom/client';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import en from '../src/i18n/messages/en.json';
@@ -16,6 +18,9 @@ import {
   WorkingBranchField,
 } from '@/features/working-context/components/WorkingBranchField';
 import { ConcreteRouteGate } from '@/features/working-context/components/ConcreteRouteGate';
+import { RouteScopeProvider } from '@/features/working-context/components/RouteScopeProvider';
+import { PageBody, PageHeader } from '@/components/shell/PageHeader';
+import { PermissionDeniedState } from '@/components/states/States';
 import {
   ALL_BRANCHES,
   preferenceKeyFor,
@@ -102,7 +107,9 @@ function renderAt(pathname: string, snapshot: WorkingContextSnapshot = TWO, page
       <header>
         <WorkingContextControl messages={messages} />
       </header>
-      <main>{content}</main>
+      <RouteScopeProvider>
+        <main>{content}</main>
+      </RouteScopeProvider>
       <Probe />
     </WorkingContextProvider>
   );
@@ -371,7 +378,7 @@ function Screen({ onMount }: { readonly onMount: () => void }) {
 
 describe('a screen that needs one branch waits for one (PR #467 review)', () => {
   const gated = (onMount: () => void) => (
-    <ConcreteRouteGate messages={messages}>
+    <ConcreteRouteGate>
       <Screen onMount={onMount} />
     </ConcreteRouteGate>
   );
@@ -485,5 +492,243 @@ describe('a list the working context supplies says why it is empty in its own wo
     expect(screen.getByTestId('directory-empty')).toHaveTextContent(
       EN['workingContext.unavailable'] as string
     );
+  });
+});
+
+/** A form whose entry is unsaved work, reset by the discard the operator confirms. */
+function DirtyForm({ onDiscard }: { readonly onDiscard: () => void }) {
+  const [text, setText] = useState('');
+  useUnsavedGuard(text !== '', () => {
+    setText('');
+    onDiscard();
+  });
+  return (
+    <label>
+      Note for the job
+      <input value={text} onChange={(event) => setText(event.target.value)} />
+    </label>
+  );
+}
+
+const COAST = {
+  ...OTHER_BRANCH,
+  id: '99999999-1111-4111-8111-999999999999',
+  code: 'COAST',
+  name: 'Coast workshop',
+};
+
+describe('the page body keeps the title, and a refusal comes before any branch ask', () => {
+  it('keeps the page heading above the ask', () => {
+    window.localStorage.setItem(KEY, ALL_BRANCHES);
+    const onMount = vi.fn();
+    renderAt(
+      '/en/invoices',
+      TWO,
+      <>
+        <PageHeader locale="en" messages={messages} titleKey="invoices.page.title" />
+        <PageBody>
+          <Screen onMount={onMount} />
+        </PageBody>
+      </>
+    );
+    expect(
+      screen.getByRole('heading', { level: 1, name: EN['invoices.page.title'] as string })
+    ).toBeVisible();
+    expect(screen.getByTestId('concrete-route-gate-prompt')).toBeInTheDocument();
+    expect(onMount).not.toHaveBeenCalled();
+  });
+
+  it('shows a permission refusal, not a branch ask, to an operator without access', () => {
+    window.localStorage.setItem(KEY, ALL_BRANCHES);
+    renderAt(
+      '/en/invoices',
+      TWO,
+      <PageBody>
+        <PermissionDeniedState messages={messages} />
+      </PageBody>
+    );
+    expect(screen.getByText(EN['state.denied.title'] as string)).toBeVisible();
+    expect(screen.queryByTestId('concrete-route-gate')).toBeNull();
+    expect(screen.queryByTestId('concrete-branch-chooser')).toBeNull();
+  });
+});
+
+describe('the server render and hydration (PR #467 review)', () => {
+  const tree = (onMount: () => void) => (
+    <WorkingContextProvider snapshot={TWO} messages={messages}>
+      <RouteScopeProvider>
+        <PageBody>
+          <Screen onMount={onMount} />
+        </PageBody>
+      </RouteScopeProvider>
+    </WorkingContextProvider>
+  );
+
+  async function hydrate(onMount: () => void) {
+    nav.pathname = '/en/invoices';
+    const html = renderToString(tree(vi.fn()));
+    const container = document.createElement('div');
+    container.innerHTML = html;
+    document.body.appendChild(container);
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const recoverable = vi.fn();
+    let root: Root | null = null;
+    await act(async () => {
+      root = hydrateRoot(container, tree(onMount), { onRecoverableError: recoverable });
+    });
+    const logged = errors.mock.calls.map((call) => String(call[0]));
+    errors.mockRestore();
+    return {
+      html,
+      container,
+      recoverable,
+      logged,
+      done: () => {
+        act(() => (root as Root | null)?.unmount());
+        container.remove();
+      },
+    };
+  }
+
+  it('emits neither the screen nor the ask from the server, and hydrates without a mismatch', async () => {
+    window.localStorage.setItem(KEY, ALL_BRANCHES);
+    const onMount = vi.fn();
+    const run = await hydrate(onMount);
+    try {
+      expect(run.html).toContain('concrete-route-gate-pending');
+      expect(run.html).not.toContain('gated-screen');
+      expect(run.html).not.toContain('concrete-route-gate-prompt');
+      expect(run.recoverable).not.toHaveBeenCalled();
+      expect(run.logged.filter((line) => /hydrat/i.test(line))).toEqual([]);
+      // Once the browser has the remembered "All my branches", it asks.
+      expect(
+        run.container.querySelector('[data-testid="concrete-route-gate-prompt"]')
+      ).not.toBeNull();
+      expect(onMount).not.toHaveBeenCalled();
+    } finally {
+      run.done();
+    }
+  });
+
+  it('mounts the screen after hydration when one branch is remembered', async () => {
+    window.localStorage.setItem(KEY, OTHER_BRANCH.id);
+    const onMount = vi.fn();
+    const run = await hydrate(onMount);
+    try {
+      expect(run.html).not.toContain('gated-screen');
+      expect(run.recoverable).not.toHaveBeenCalled();
+      expect(run.container.querySelector('[data-testid="gated-screen"]')).not.toBeNull();
+      expect(onMount).toHaveBeenCalledTimes(1);
+    } finally {
+      run.done();
+    }
+  });
+});
+
+describe('unsaved work on a concrete screen is never unmounted without an answer (PR #467 review)', () => {
+  const tree = (snapshot: WorkingContextSnapshot, onDiscard: () => void) => (
+    <WorkingContextProvider snapshot={snapshot} messages={messages}>
+      <RouteScopeProvider>
+        <PageBody>
+          <DirtyForm onDiscard={onDiscard} />
+        </PageBody>
+      </RouteScopeProvider>
+      <Probe />
+    </WorkingContextProvider>
+  );
+  const THREE = branchSnapshot([TEST_BRANCH, OTHER_BRANCH, COAST]);
+  const WITHOUT_OTHER = branchSnapshot([TEST_BRANCH, COAST]);
+  const note = () => screen.getByLabelText('Note for the job') as HTMLInputElement;
+
+  it('keeps the screen and its entry when another tab changes the branch', async () => {
+    window.localStorage.setItem(KEY, OTHER_BRANCH.id);
+    const user = userEvent.setup();
+    nav.pathname = '/en/inventory/adjustments';
+    renderLtr(tree(THREE, vi.fn()));
+    await user.type(note(), 'kept');
+
+    window.localStorage.setItem(KEY, ALL_BRANCHES);
+    window.dispatchEvent(new Event('storage'));
+
+    expect(await screen.findByTestId('working-context-cross-tab')).toBeInTheDocument();
+    expect(screen.getByTestId('probe-selection')).toHaveTextContent(OTHER_BRANCH.id);
+    expect(screen.queryByTestId('concrete-route-gate')).toBeNull();
+    expect(screen.queryByTestId('concrete-route-gate-held')).toBeNull();
+    expect(note().value).toBe('kept');
+  });
+
+  it('holds a dirty screen when its branch stops being published, and discards only when told', async () => {
+    window.localStorage.setItem(KEY, OTHER_BRANCH.id);
+    const onDiscard = vi.fn();
+    const user = userEvent.setup();
+    nav.pathname = '/en/inventory/adjustments';
+    const view = renderLtr(tree(THREE, onDiscard));
+    await user.type(note(), 'kept');
+
+    // A refresh republishes the directory without the branch this form was for.
+    view.rerender(tree(WITHOUT_OTHER, onDiscard));
+
+    const held = await screen.findByTestId('concrete-route-gate-held');
+    expect(held).toHaveTextContent(EN['workingContext.held.description'] as string);
+    expect(note().value).toBe('kept');
+    expect(screen.getByTestId('concrete-route-gate-held-screen')).toHaveAttribute('inert');
+    expect(onDiscard).not.toHaveBeenCalled();
+
+    await user.click(
+      screen.getByRole('button', { name: EN['workingContext.held.discard'] as string })
+    );
+    expect(onDiscard).toHaveBeenCalledTimes(1);
+    expect(screen.queryByTestId('concrete-route-gate-held')).toBeNull();
+    expect(screen.getByTestId('concrete-route-gate')).toBeInTheDocument();
+    expect(screen.queryByLabelText('Note for the job')).toBeNull();
+
+    // Naming a branch brings the screen back — empty, because the entry was discarded.
+    await user.selectOptions(screen.getByTestId('concrete-branch-chooser'), COAST.id);
+    expect(note().value).toBe('');
+  });
+
+  it('asks before a branch named while held throws the entry away', async () => {
+    window.localStorage.setItem(KEY, OTHER_BRANCH.id);
+    const onDiscard = vi.fn();
+    const user = userEvent.setup();
+    nav.pathname = '/en/inventory/adjustments';
+    const view = renderLtr(tree(THREE, onDiscard));
+    await user.type(note(), 'kept');
+    view.rerender(tree(WITHOUT_OTHER, onDiscard));
+    await screen.findByTestId('concrete-route-gate-held');
+
+    await user.selectOptions(screen.getByTestId('concrete-branch-chooser'), COAST.id);
+    const dialog = await screen.findByRole('alertdialog');
+    await user.click(within(dialog).getByRole('button', { name: EN['overlay.cancel'] as string }));
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
+    expect(note().value).toBe('kept');
+    expect(onDiscard).not.toHaveBeenCalled();
+
+    await user.selectOptions(screen.getByTestId('concrete-branch-chooser'), COAST.id);
+    const again = await screen.findByRole('alertdialog');
+    await user.click(
+      within(again).getByRole('button', { name: EN['workingContext.discard.confirm'] as string })
+    );
+    await waitFor(() => expect(screen.getByTestId('probe-selection')).toHaveTextContent(COAST.id));
+    expect(onDiscard).toHaveBeenCalledTimes(1);
+    expect(screen.queryByTestId('concrete-route-gate-held')).toBeNull();
+    expect(note().value).toBe('');
+  });
+});
+
+describe('outside the workspace shell nothing is gated', () => {
+  it('renders a screen that is not under the route-scope provider, whatever the selection', () => {
+    window.localStorage.setItem(KEY, ALL_BRANCHES);
+    nav.pathname = '/en/invoices';
+    const onMount = vi.fn();
+    renderLtr(
+      <WorkingContextProvider snapshot={TWO} messages={messages}>
+        <PageBody>
+          <Screen onMount={onMount} />
+        </PageBody>
+      </WorkingContextProvider>
+    );
+    expect(onMount).toHaveBeenCalledTimes(1);
+    expect(screen.queryByTestId('concrete-route-gate')).toBeNull();
   });
 });

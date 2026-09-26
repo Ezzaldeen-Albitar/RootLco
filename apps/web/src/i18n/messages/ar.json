@@ -6311,6 +6311,8 @@
   "workingContext.discard.confirm": "تجاهل وغيّر الفرع",
   "workingContext.discard.description": "لديك إدخالات في هذه الشاشة لم تُحفظ بعد. تغيير الفرع الآن سيؤدي إلى فقدانها.",
   "workingContext.discard.title": "هل تترك العمل غير المحفوظ؟",
+  "workingContext.held.description": "إدخالاتك في هذه الشاشة محفوظة. اختر الفرع الذي تخصه، أو تجاهلها.",
+  "workingContext.held.discard": "تجاهل إدخالاتي",
   "workingContext.label": "فرع العمل",
   "workingContext.needsOneBranch": "اختر فرعًا واحدًا من الأعلى للمتابعة",
   "workingContext.noBranch": "لا يوجد فرع مُسنَد إليك بعد. اطلب من مديرك إضافة فرع.",

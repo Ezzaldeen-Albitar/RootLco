@@ -1,5 +1,13 @@
 import Link from 'next/link';
-import type { ReactNode } from 'react';
+import { Children, isValidElement, type ReactNode } from 'react';
+import {
+  BackendUnavailableState,
+  ErrorState,
+  NotFoundState,
+  PermissionDeniedState,
+  SessionExpiredState,
+} from '@/components/states/States';
+import { ConcreteRouteGate } from '@/features/working-context/components/ConcreteRouteGate';
 import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
 import { translate } from '@/i18n/get-messages';
@@ -146,6 +154,15 @@ export function PageHeader({
  * cards that SHOULD grow and let `main` scroll — forcing them into a fixed-height
  * box would give each of them its own inner scrollbar for no reason. Only the
  * four table screens ask for it.
+ *
+ * ## The branch a screen needs is asked for here
+ *
+ * Every workspace screen sits in a `PageBody`, so this is where
+ * `ConcreteRouteGate` holds a screen that needs one branch until one is named
+ * (`config/route-branch-scope.ts`). The page's header stays above the ask. A
+ * page that REFUSES the operator — no permission, nothing there, a session that
+ * ended, a read that failed — is not gated: the refusal is the answer, and asking
+ * for a branch first would suggest that choosing one could change it.
  */
 export function PageBody({
   children,
@@ -155,6 +172,23 @@ export function PageBody({
   readonly fill?: boolean;
 }) {
   return (
-    <div className={fill ? 'flex min-h-0 flex-1 flex-col px-6 py-6' : 'px-6 py-6'}>{children}</div>
+    <div className={fill ? 'flex min-h-0 flex-1 flex-col px-6 py-6' : 'px-6 py-6'}>
+      {isRefusal(children) ? children : <ConcreteRouteGate>{children}</ConcreteRouteGate>}
+    </div>
+  );
+}
+
+/** The page-level states that refuse the operator, drawn before any branch ask. */
+const REFUSALS: readonly unknown[] = [
+  PermissionDeniedState,
+  NotFoundState,
+  SessionExpiredState,
+  BackendUnavailableState,
+  ErrorState,
+];
+
+function isRefusal(children: ReactNode): boolean {
+  return Children.toArray(children).some(
+    (child) => isValidElement(child) && REFUSALS.includes(child.type)
   );
 }

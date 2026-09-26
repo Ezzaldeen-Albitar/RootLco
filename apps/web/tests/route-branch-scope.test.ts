@@ -26,6 +26,7 @@ import {
   RouteReachability,
   operationsDeclaredIn,
   parseApiOperations,
+  type Exemption,
   type RouteReach,
 } from './support/route-reachability';
 
@@ -43,9 +44,12 @@ import {
  *     the TypeScript compiler;
  *   - **the page source** — what each route can actually call, DERIVED by
  *     `support/route-reachability.ts`: the page's symbols walked through the
- *     module graph, each `/api/v1/…` literal followed to the call that sends it,
- *     and matched to one operation. A union route's declared operations must
- *     equal that derived set; no endpoint on a union route may go unresolved.
+ *     module graph (dynamic imports included), every string that could name an
+ *     endpoint constant-folded and followed to the call that sends it, and
+ *     matched to one operation. A union route's declared operations must equal
+ *     that derived set; nothing on a union route may go unresolved, and the
+ *     only exemptions are the two named below, asserted exact. A none route may
+ *     not read the working branch or company at all.
  *   - **the route checklist** — its scope table must say what the table says.
  *
  * Each rule is also shown refusing an input that breaks it.
@@ -142,6 +146,11 @@ function derivedIds(reach: RouteReach): string[] {
 
 const reaches = (symbols: ReadonlySet<string>, file: string, name: string) =>
   [...symbols].some((key) => key.replace(/\\/g, '/').endsWith(`${file}#${name}`));
+
+/** Whether a walk reaches the working branch: `useBranchTarget`, or the context's `selection`. */
+const readsWorkingBranch = (reach: RouteReach) =>
+  reaches(reach.symbols, 'features/working-context/use-branch-target.ts', 'useBranchTarget') ||
+  reach.selectionReaders.length > 0;
 
 describe('every workspace route declares its branch scope exactly once', () => {
   const pages = pagePatterns(WORKSPACE_ROUTES);
@@ -282,8 +291,38 @@ describe('the union set is exactly what the API route modules declare', () => {
   });
 });
 
+/**
+ * The two module constants that contain `/api/v1` or `/reads/` and are never
+ * an endpoint. Named with the reason, and the walk's own report of which
+ * exemptions it used on the union routes must equal this list exactly — so it
+ * can neither grow quietly nor outlive the code it excuses.
+ */
+const EXEMPTIONS: readonly Exemption[] = [
+  {
+    file: 'lib/api/operation-contract.ts',
+    name: 'VERSION_PREFIX',
+    reason:
+      'the prefix the client strips from a path before looking the path up in the generated ' +
+      'operation table (idempotency and audit class); it is compared and sliced, never sent',
+  },
+  {
+    file: 'lib/api/browser-read.ts',
+    name: 'BROWSER_READ_PREFIX',
+    reason:
+      'the guard every browser read passes, refusing a route outside /reads/; each route is its ' +
+      'own literal constant and is resolved on its own',
+  },
+];
+
 describe('what each route can call is derived from its source (PR #467 review)', () => {
-  const walker = new RouteReachability(WEB_SOURCE, API_OPERATIONS);
+  /*
+   * The gate reads the working branch on every route's behalf and passes the
+   * screen through on union and none routes (proved in the DOM tier), so the
+   * walk records it without walking into it: a page is judged by its own code.
+   */
+  const walker = new RouteReachability(WEB_SOURCE, API_OPERATIONS, EXEMPTIONS, [
+    'features/working-context/components/ConcreteRouteGate.tsx#ConcreteRouteGate',
+  ]);
   const derived = new Map(
     ROUTE_BRANCH_SCOPES.map((entry) => [
       entry.pattern,
@@ -310,6 +349,42 @@ describe('what each route can call is derived from its source (PR #467 review)',
     }
   );
 
+  it('the shell hands every page the route posture, and the page body gates on it', () => {
+    const layout = walker.reach(join(WEB_SOURCE, 'app', '[locale]', '(dashboard)', 'layout.tsx'));
+    expect(
+      reaches(
+        layout.symbols,
+        'features/working-context/components/RouteScopeProvider.tsx',
+        'RouteScopeProvider'
+      )
+    ).toBe(true);
+    const body = derived.get('/invoices') as RouteReach;
+    expect(
+      reaches(
+        body.symbols,
+        'features/working-context/components/ConcreteRouteGate.tsx',
+        'ConcreteRouteGate'
+      )
+    ).toBe(true);
+  });
+
+  it('used exactly the named exemptions on the union routes, and no other', () => {
+    const used = new Set<string>();
+    for (const entry of ROUTE_BRANCH_SCOPES.filter((e) => e.scope === 'union')) {
+      for (const key of (derived.get(entry.pattern) as RouteReach).exempted) used.add(key);
+    }
+    expect([...used].sort()).toEqual(EXEMPTIONS.map((e) => `${e.file}#${e.name}`).sort());
+  });
+
+  /*
+   * The concrete rule is a floor, not a proof. It says the page reaches an
+   * operation addressed to a branch or a company AND reads the working branch;
+   * it does not prove that the value read is the one sent. Tracing a value from
+   * `useBranchTarget` through state and props into a request is data-flow
+   * analysis this walk does not do — the residual limit, stated rather than
+   * implied. What closes the gap at run time is `ConcreteRouteGate`: on these
+   * routes nothing mounts until one branch is named.
+   */
   it.each(
     ROUTE_BRANCH_SCOPES.filter((entry) => entry.scope === 'concrete').map((e) => [e.pattern, e])
   )(
@@ -320,28 +395,20 @@ describe('what each route can call is derived from its source (PR #467 review)',
         (endpoint) => endpoint.operation !== null && endpoint.operation.scope !== 'tenant'
       );
       expect(scoped.length).toBeGreaterThan(0);
-      expect(
-        reaches(
-          reach.symbols,
-          'features/working-context/use-branch-target.ts',
-          'useBranchTarget'
-        ) ||
-          reaches(
-            reach.symbols,
-            'features/reports/components/use-working-report-scope.ts',
-            'useWorkingReportScope'
-          )
-      ).toBe(true);
+      expect(readsWorkingBranch(reach)).toBe(true);
+      // …and puts its screen in the page body, where the gate holds it.
+      expect(reaches(reach.symbols, 'components/shell/PageHeader.tsx', 'PageBody')).toBe(true);
     }
   );
 
   it.each(ROUTE_BRANCH_SCOPES.filter((entry) => entry.scope === 'none').map((e) => [e.pattern, e]))(
-    'the route %s, declared none, never reads the working branch as a target',
+    'the route %s, declared none, never reads the working branch or company',
     (_pattern, entry) => {
       const reach = derived.get(entry.pattern) as RouteReach;
       expect(
         reaches(reach.symbols, 'features/working-context/use-branch-target.ts', 'useBranchTarget')
       ).toBe(false);
+      expect(reach.selectionReaders).toEqual([]);
     }
   );
 });
@@ -355,15 +422,20 @@ describe('the derivation refuses what it cannot vouch for', () => {
     mkdirSync(dirname(path), { recursive: true });
     writeFileSync(path, text, 'utf8');
   };
-  const page = (name: string, adapter: string) => {
+  const page = (name: string, adapter: string, extra: Record<string, string> = {}) => {
     write(
       `app/[locale]/(dashboard)/${name}/page.tsx`,
       `import { load } from '@/features/${name}/api';\nexport default async function Page() {\n  await load();\n  return null;\n}\n`
     );
     write(`features/${name}/api.ts`, adapter);
-    return new RouteReachability(root, API_OPERATIONS).reach(pageFile(root, `/${name}`));
+    for (const [rel, text] of Object.entries(extra)) write(rel, text);
+    return new RouteReachability(root, API_OPERATIONS, EXEMPTIONS).reach(
+      pageFile(root, `/${name}`)
+    );
   };
   const CLIENT = `declare const client: { get(path: string): Promise<unknown>; send(method: string, path: string, body: unknown): Promise<unknown> };\n`;
+  const ONE_BRANCH =
+    'reaches sal.delivery-readiness-list, narrowed to a branch and not an authorized-union read';
 
   it('accepts a page whose only call is a union read (the positive control)', () => {
     const reach = page(
@@ -379,9 +451,82 @@ describe('the derivation refuses what it cannot vouch for', () => {
       'handover',
       `${CLIENT}const PATH = '/api/v1/delivery-readiness';\nexport async function load() {\n  return client.get(PATH);\n}\n`
     );
-    expect(unionProblems(reach)).toEqual([
-      'reaches sal.delivery-readiness-list, narrowed to a branch and not an authorized-union read',
+    expect(unionProblems(reach)).toEqual([ONE_BRANCH]);
+  });
+
+  it('folds a prefix constant held in a template', () => {
+    const reach = page(
+      'prefixed',
+      `${CLIENT}const V = '/api/v1';\nexport async function load() {\n  return client.get(\`\${V}/delivery-readiness\`);\n}\n`
+    );
+    expect(unionProblems(reach)).toEqual([ONE_BRANCH]);
+  });
+
+  it('folds a path split across +', () => {
+    const reach = page(
+      'split',
+      `${CLIENT}export async function load() {\n  return client.get('/api/v1' + '/delivery-readiness');\n}\n`
+    );
+    expect(unionProblems(reach)).toEqual([ONE_BRANCH]);
+  });
+
+  it('folds segments joined from an array, none of which says api/v1 on its own', () => {
+    const reach = page(
+      'joined',
+      `${CLIENT}export async function load() {\n  return client.get(['', 'api', 'v1', 'delivery-readiness'].join('/'));\n}\n`
+    );
+    expect(unionProblems(reach)).toEqual([ONE_BRANCH]);
+  });
+
+  it('walks a module imported dynamically, and refuses one whose name is computed', () => {
+    const walked = page(
+      'lazy',
+      `export async function load() {\n  const { readQueue } = await import('@/features/lazy/queue');\n  return readQueue();\n}\n`,
+      {
+        'features/lazy/queue.ts': `${CLIENT}export async function readQueue() {\n  return client.get('/api/v1/delivery-readiness');\n}\n`,
+      }
+    );
+    expect(unionProblems(walked)).toEqual([ONE_BRANCH]);
+    const computed = page(
+      'computed',
+      `export async function load(name: string) {\n  return import(name);\n}\n`
+    );
+    expect(unionProblems(computed)).toEqual([
+      expect.stringMatching(/^unresolved \(dynamic import with a computed specifier\)/),
     ]);
+  });
+
+  it.each([
+    [
+      'an object map',
+      `${CLIENT}const PATHS = { list: '/api/v1/work-orders' };\nexport async function load() {\n  return client.get(PATHS.list);\n}\n`,
+      'reaches no call',
+    ],
+    [
+      'new URL',
+      `export async function load() {\n  return new URL('/api/v1/work-orders', 'https://example.test');\n}\n`,
+      'reaches no call',
+    ],
+    [
+      'a variable handed to fetch',
+      `export async function load() {\n  const path = '/api/v1/work-orders';\n  return fetch(path);\n}\n`,
+      'method is not a literal',
+    ],
+    [
+      'an outside package',
+      `import { somewhere } from 'an-outside-package';\nexport async function load() {\n  return somewhere('/api/v1/work-orders');\n}\n`,
+      'method is not a literal',
+    ],
+    [
+      'a browser read route that does not exist',
+      `const ROUTE = '/reads/no-such-read';\nexport async function load() {\n  return ROUTE;\n}\n`,
+      'browser read route cannot be resolved',
+    ],
+  ])('fails closed on %s, even for a union read', (_label, adapter, problem) => {
+    const name = `shape-${_label.replace(/[^a-z]+/g, '-')}`;
+    const problems = unionProblems(page(name, adapter));
+    expect(problems.length).toBeGreaterThan(0);
+    for (const entry of problems) expect(entry).toContain(`unresolved (${problem})`);
   });
 
   it('refuses a union page that reaches a write through a wrapper and a path builder', () => {
@@ -394,18 +539,6 @@ describe('the derivation refuses what it cannot vouch for', () => {
     expect(unionProblems(reach)[0]).toMatch(/^reaches the write iam\.approval-limit-end/);
   });
 
-  it('refuses a union page with an endpoint it cannot resolve', () => {
-    const reach = page(
-      'mystery',
-      `import { somewhere } from 'an-outside-package';\nexport async function load() {\n  return somewhere('/api/v1/work-orders');\n}\n`
-    );
-    const problems = unionProblems(reach);
-    expect(problems).toHaveLength(1);
-    expect(problems[0]).toMatch(
-      /^unresolved \(method is not a literal\): \? \/api\/v1\/work-orders/
-    );
-  });
-
   it('refuses a union page whose path matches no published operation', () => {
     const reach = page(
       'invented',
@@ -416,6 +549,23 @@ describe('the derivation refuses what it cannot vouch for', () => {
         /^unresolved \(matches no published operation\): GET \/api\/v1\/no-such-resource/
       ),
     ]);
+  });
+
+  it('sees a none page reading the working branch through the context, not only through useBranchTarget', () => {
+    write(
+      'features/working-context/WorkingContextProvider.tsx',
+      `export function useWorkingContext() {\n  return { selection: null as null | { branchId: string } };\n}\n`
+    );
+    const reading = page(
+      'reader',
+      `import { useWorkingContext } from '@/features/working-context/WorkingContextProvider';\nexport function load() {\n  const { selection } = useWorkingContext();\n  return selection;\n}\n`
+    );
+    expect(readsWorkingBranch(reading)).toBe(true);
+    const versionOnly = page(
+      'versioned',
+      `import { useWorkingContext } from '@/features/working-context/WorkingContextProvider';\nexport function load() {\n  return useWorkingContext();\n}\n`
+    );
+    expect(readsWorkingBranch(versionOnly)).toBe(false);
   });
 });
 

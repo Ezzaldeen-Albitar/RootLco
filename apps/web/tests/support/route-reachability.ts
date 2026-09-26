@@ -14,15 +14,29 @@ import ts from 'typescript';
  * mentions. A 3,000-line adapter module therefore contributes only the functions
  * the page can actually reach. Types are skipped.
  *
- * In every reached declaration, each `/api/v1/…` literal is followed to the call
- * it is sent through — through `+` and template literals, through a local or
- * module constant (`const path = …`), and through a path-builder function whose
- * return value it is (with a string argument bound into its template). The HTTP
- * method comes from that call: `client.get(path)` is a GET, `client.send(method,
- * path)` takes its method from the first argument, and any other function is
- * analysed for where its path parameter goes (`readOperation`, `page`, `write`…),
- * with a method parameter bound from the caller's literal. A `/reads/…` literal
- * adds that browser read route's handler module to the walk.
+ * Dynamic `import()` with a literal specifier is walked like a static import;
+ * a computed specifier is reported as unresolved.
+ *
+ * ## Which strings are candidates, and how each is resolved
+ *
+ * Every string literal or template fragment in a reached declaration that
+ * contains `api/v1`, or a `reads` path segment, is a candidate — not only
+ * those that start with `/api/v1/` — so a prefix held in a constant, a path
+ * split across `+`, or segments joined from an array cannot slip past. Each
+ * candidate is followed to where its string is used: through a constant to
+ * every use of it, and out of a path-building function to every call of it.
+ * There the whole expression is CONSTANT-FOLDED — literals, `+`, templates,
+ * local, module and imported constants, `[…].join(literal)`, and calls of
+ * functions whose returned expressions fold, with the caller's arguments bound
+ * to the parameters. A value not known from the source folds to `{p}`; a query
+ * string built at run time folds to `?…` and is dropped.
+ *
+ * An API path must then be an argument of a call whose method is known:
+ * `client.get(path)` is a GET, `client.send(method, path)` takes its method from
+ * the first argument, and any other function is analysed for where its path
+ * parameter goes (`readOperation`, `page`, `write`…), with a method parameter
+ * bound from the caller's literal. A `reads` path must fold to an existing
+ * `app/reads/…/route.ts`, whose handler module then joins the walk.
  *
  * The path and method are matched against the operations parsed from the API
  * route modules (a literal segment beats a parameter segment), so each endpoint
@@ -31,10 +45,12 @@ import ts from 'typescript';
  *
  * ## What it refuses to guess
  *
- * An API literal that does not reach a call, a call whose method is not a
- * literal, or a path that matches no published operation is reported as an
- * UNRESOLVED endpoint with the file and line. The caller decides what that
- * means; the route-scope test fails a union route on any of them.
+ * A candidate that does not reach a call (an object map, `new URL`), a call
+ * whose method is not known (`fetch`, an outside package), a path with an
+ * unknown part where a segment should be, a `reads` path with no route, or a
+ * path that matches no published operation is reported as UNRESOLVED with the
+ * file and line. The caller decides what that means; the route-scope test fails
+ * a union route on any of them. The only way out is a named `Exemption`.
  */
 
 export interface ApiOperation {
@@ -59,6 +75,24 @@ export interface RouteReach {
   readonly endpoints: readonly Endpoint[];
   /** Every reached module-level symbol, as `<file>#<name>`. */
   readonly symbols: ReadonlySet<string>;
+  /** The exemptions this walk used, as `<file>#<constant>`. */
+  readonly exempted: readonly string[];
+  /**
+   * Reached declarations that read the working branch or company: they take
+   * `useWorkingContext()` and read its `selection`.
+   */
+  readonly selectionReaders: readonly string[];
+}
+
+/**
+ * A module constant that contains `/api/v1` and is never an endpoint. Named by
+ * file and constant with the reason, and asserted exact by the caller, so the
+ * list cannot grow quietly or go stale.
+ */
+export interface Exemption {
+  readonly file: string;
+  readonly name: string;
+  readonly reason: string;
 }
 
 // ── The API side ─────────────────────────────────────────────────────────────
@@ -202,10 +236,17 @@ export class RouteReachability {
 
   constructor(
     private readonly webSource: string,
-    private readonly operations: readonly ApiOperation[]
+    private readonly operations: readonly ApiOperation[],
+    private readonly exemptions: readonly Exemption[] = [],
+    /**
+     * Symbols recorded as reached but not walked into, as `<file>#<name>`
+     * suffixes: shell machinery that reads the working branch on the route's
+     * behalf (`ConcreteRouteGate`), so a page is judged by its own code.
+     */
+    private readonly boundaries: readonly string[] = []
   ) {}
 
-  private resolveSpecifier(from: string, specifier: string): string | null {
+  resolveSpecifier(from: string, specifier: string): string | null {
     let base: string;
     if (specifier.startsWith('@/')) base = join(this.webSource, specifier.slice(2));
     else if (specifier.startsWith('.')) base = resolve(dirname(from), specifier);
@@ -402,7 +443,12 @@ export class RouteReachability {
   reach(entry: string): RouteReach {
     const reached = new Set<string>();
     const queue: { file: string; local: string }[] = [];
+    const problems: Endpoint[] = [];
+    const exempted: string[] = [];
+    const walkedModules = new Set<string>();
     const enqueueExports = (file: string) => {
+      if (walkedModules.has(file)) return;
+      walkedModules.add(file);
       for (const name of this.module(file).exports.keys()) {
         const found = this.resolveExport(file, name);
         if (found !== null) queue.push(found);
@@ -410,7 +456,6 @@ export class RouteReachability {
       for (const star of this.module(file).stars) if (star !== null) enqueueExports(star);
     };
     enqueueExports(entry);
-    const readRoutes = new Set<string>();
     while (queue.length > 0) {
       const next = queue.pop() as { file: string; local: string };
       if (next.local === '*') {
@@ -423,140 +468,393 @@ export class RouteReachability {
       const key = `${next.file}#${next.local}`;
       if (reached.has(key)) continue;
       reached.add(key);
+      const normalized = key.replace(/\\/g, '/');
+      if (this.boundaries.some((boundary) => normalized.endsWith(boundary))) continue;
       const info = this.module(next.file);
       for (const node of info.declarations.get(next.local) ?? []) {
         for (const name of this.mentions(info, node)) {
           const found = this.resolveLocal(next.file, name);
           if (found !== null) queue.push(found);
         }
+        // A dynamic import is walked like a static one; one whose specifier is
+        // computed cannot be followed, and says so.
+        forEachDynamicImport(node, (call) => {
+          const specifier = stringOf(call.arguments[0]);
+          if (specifier === null) {
+            problems.push(unresolved(info, call, null, 'dynamic import with a computed specifier'));
+            return;
+          }
+          const target = this.resolveSpecifier(next.file, specifier);
+          if (target !== null) enqueueExports(target);
+        });
         // A browser read route: its handler module joins the walk.
-        forEachLiteral(node, (literal, text) => {
-          if (!text.startsWith('/reads/')) return;
-          const route = join(this.webSource, 'app', ...segments(text), 'route.ts');
-          if (existsSync(route) && !readRoutes.has(route)) {
-            readRoutes.add(route);
+        this.candidates(info, node, (literal, kind) => {
+          if (kind !== 'reads') return;
+          const exemption = this.exemptionFor(info, literal);
+          if (exemption !== null) {
+            exempted.push(exemption);
+            return;
+          }
+          for (const end of this.ends(info, literal, reached, 0)) {
+            if (end.problem !== null) {
+              problems.push(unresolved(end.info, end.top, null, end.problem));
+              continue;
+            }
+            const path =
+              this.fold(end.info, end.top as ts.Expression, new Map(), 0).split('?')[0] ?? '';
+            const route = join(this.webSource, 'app', ...segments(path), 'route.ts');
+            if (!path.startsWith('/reads/') || path.includes('{p}') || !existsSync(route)) {
+              problems.push(
+                unresolved(end.info, end.top, path, 'browser read route cannot be resolved')
+              );
+              continue;
+            }
             enqueueExports(route);
           }
-          void literal;
         });
       }
     }
 
     const endpoints: Endpoint[] = [];
+    const selectionReaders: string[] = [];
     for (const key of reached) {
       const [file, local] = splitKey(key);
       if (local === '*') continue;
+      if (this.boundaries.some((boundary) => key.replace(/\\/g, '/').endsWith(boundary))) continue;
       const info = this.module(file);
       for (const node of info.declarations.get(local) ?? []) {
-        forEachLiteral(node, (literal, text) => {
-          if (!text.startsWith('/api/v1/')) return;
+        if (this.readsWorkingSelection(info, node)) selectionReaders.push(key);
+        this.candidates(info, node, (literal, kind) => {
+          if (kind !== 'api') return;
+          const exemption = this.exemptionFor(info, literal);
+          if (exemption !== null) {
+            exempted.push(exemption);
+            return;
+          }
           endpoints.push(...this.endpointsOf(info, literal, reached));
         });
       }
     }
-    return { endpoints: dedupe(endpoints), symbols: reached };
+    return {
+      endpoints: dedupe([...problems, ...endpoints]),
+      symbols: reached,
+      exempted: [...new Set(exempted)].sort(),
+      selectionReaders: selectionReaders.sort(),
+    };
   }
 
-  // ── Following a literal to the call that sends it ──────────────────────────
+  /**
+   * Every string in `node` that could name an endpoint. Two nets, deliberately
+   * wider than "starts with /api/v1/": any literal or template fragment
+   * containing `api/v1` or a `reads` path segment, and any outermost string
+   * expression — `+`, a template, `[…].join(literal)` — whose FOLDED value
+   * contains one, so a path assembled from pieces none of which says `api/v1`
+   * on its own is caught too.
+   */
+  private candidates(
+    info: ModuleInfo,
+    node: ts.Node,
+    each: (candidate: ts.Node, kind: 'api' | 'reads') => void
+  ): void {
+    const report = (candidate: ts.Node, texts: readonly string[]) => {
+      if (texts.some((text) => text.includes('api/v1'))) each(candidate, 'api');
+      if (texts.some((text) => READS.test(text))) each(candidate, 'reads');
+    };
+    const visit = (current: ts.Node) => {
+      if (ts.isStringLiteral(current) || ts.isNoSubstitutionTemplateLiteral(current)) {
+        report(current, [current.text]);
+      } else if (ts.isTemplateExpression(current)) {
+        report(current, [
+          current.head.text,
+          ...current.templateSpans.map((span) => span.literal.text),
+        ]);
+      }
+      const stringy =
+        ts.isTemplateExpression(current) ||
+        (ts.isBinaryExpression(current) &&
+          current.operatorToken.kind === ts.SyntaxKind.PlusToken) ||
+        (ts.isCallExpression(current) &&
+          ts.isPropertyAccessExpression(current.expression) &&
+          current.expression.name.text === 'join' &&
+          ts.isArrayLiteralExpression(current.expression.expression));
+      if (stringy && climbString(current) === current) {
+        report(current, [this.fold(info, current as ts.Expression, new Map(), 0)]);
+      }
+      ts.forEachChild(current, visit);
+    };
+    visit(node);
+  }
+
+  /**
+   * An exemption applies to a candidate that is the whole initializer of a
+   * named module-level constant listed in `exemptions`.
+   */
+  private exemptionFor(info: ModuleInfo, candidate: ts.Node): string | null {
+    const named = (file: string, name: string): string | null => {
+      const normalized = file.replace(/\\/g, '/');
+      for (const exemption of this.exemptions) {
+        if (normalized.endsWith(exemption.file) && name === exemption.name) {
+          return `${exemption.file}#${exemption.name}`;
+        }
+      }
+      return null;
+    };
+    const parent = candidate.parent;
+    if (
+      ts.isVariableDeclaration(parent) &&
+      parent.initializer === candidate &&
+      ts.isIdentifier(parent.name)
+    ) {
+      const direct = named(info.file, parent.name.text);
+      if (direct !== null) return direct;
+    }
+    // An expression that says `api/v1` or `reads` only through an exempted
+    // constant — the guard's own error message, say — is that constant's use.
+    let ownFragment = false;
+    let through: string | null = null;
+    const visit = (node: ts.Node) => {
+      if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) {
+        if (node.text.includes('api/v1') || READS.test(node.text)) ownFragment = true;
+      } else if (ts.isTemplateExpression(node)) {
+        for (const text of [
+          node.head.text,
+          ...node.templateSpans.map((span) => span.literal.text),
+        ]) {
+          if (text.includes('api/v1') || READS.test(text)) ownFragment = true;
+        }
+      } else if (ts.isIdentifier(node)) {
+        const resolved = this.resolveLocal(info.file, node.text);
+        if (resolved !== null && resolved.local !== '*') {
+          through = named(resolved.file, resolved.local) ?? through;
+        }
+      }
+      ts.forEachChild(node, visit);
+    };
+    visit(candidate);
+    return ownFragment ? null : through;
+  }
+
+  /**
+   * Whether a declaration reads the working branch or company: it takes the
+   * working context (`useWorkingContext`) and reads its `selection`, directly
+   * or by destructuring.
+   */
+  private readsWorkingSelection(info: ModuleInfo, node: ts.Node): boolean {
+    let takesContext = false;
+    let readsSelection = false;
+    const visit = (current: ts.Node) => {
+      if (ts.isIdentifier(current)) {
+        const binding = info.imports.get(current.text);
+        if (binding?.file && binding.imported === 'useWorkingContext') {
+          const found = this.resolveExport(binding.file, 'useWorkingContext');
+          if (
+            found?.file.replace(/\\/g, '/').endsWith('working-context/WorkingContextProvider.tsx')
+          ) {
+            takesContext = true;
+          }
+        }
+      }
+      if (ts.isPropertyAccessExpression(current) && current.name.text === 'selection') {
+        readsSelection = true;
+      }
+      if (
+        ts.isBindingElement(current) &&
+        ((current.propertyName &&
+          ts.isIdentifier(current.propertyName) &&
+          current.propertyName.text === 'selection') ||
+          (!current.propertyName &&
+            ts.isIdentifier(current.name) &&
+            current.name.text === 'selection'))
+      ) {
+        readsSelection = true;
+      }
+      ts.forEachChild(current, visit);
+    };
+    visit(node);
+    return takesContext && readsSelection;
+  }
+
+  // ── Following a literal to where it is used ────────────────────────────────
 
   private endpointsOf(
     info: ModuleInfo,
     literal: ts.Node,
     reached: ReadonlySet<string>
   ): Endpoint[] {
-    const at = `${info.file}:${info.source.getLineAndCharacterOfPosition(literal.getStart()).line + 1}`;
     const out: Endpoint[] = [];
-    const settle = (method: string | null, template: string, problem: string | null) => {
-      const cut = template.split('?')[0] as string;
-      if (problem !== null || method === null) {
-        out.push({ at, method, template: cut, operation: null, problem: problem ?? 'no method' });
-        return;
+    for (const end of this.ends(info, literal, reached, 0)) {
+      if (end.problem !== null) {
+        out.push(unresolved(end.info, end.top, null, end.problem));
+        continue;
       }
-      const operation = matchOperation(this.operations, method, cut);
+      const folded = this.fold(end.info, end.top as ts.Expression, new Map(), 0);
+      const at = folded.indexOf('api/v1');
+      const rest = at === -1 ? '' : folded.slice(at + 'api/v1'.length);
+      const template = `/api/v1${rest}`.split('?')[0] as string;
+      if (rest.split('?')[0]?.replace(/\//g, '') === '') {
+        out.push(unresolved(end.info, end.top, template, 'names no resource after /api/v1'));
+        continue;
+      }
+      const parent = end.top.parent;
+      if (!(ts.isCallExpression(parent) && parent.arguments.includes(end.top as ts.Expression))) {
+        out.push(unresolved(end.info, end.top, template, 'reaches no call'));
+        continue;
+      }
+      const method = this.methodOf(
+        end.info,
+        parent,
+        parent.arguments.indexOf(end.top as ts.Expression),
+        0
+      );
+      if (method === null) {
+        out.push(unresolved(end.info, end.top, template, 'method is not a literal'));
+        continue;
+      }
+      const operation = matchOperation(this.operations, method, template);
       out.push({
-        at,
+        at: locate(end.info, end.top),
         method,
-        template: cut,
+        template,
         operation,
         problem: operation === null ? 'matches no published operation' : null,
       });
-    };
-    const flows = this.flow(info, literal, templateOf(literal, new Map()), reached, 0);
-    if (flows.length === 0) settle(null, templateOf(literal, new Map()), 'reaches no call');
-    for (const flow of flows) settle(flow.method, flow.template, flow.problem);
+    }
     return out;
   }
 
   /**
-   * Where the expression containing `node` goes: into a call's argument, into
-   * a constant whose uses are then followed, or out of a path builder whose
-   * call sites are then followed.
+   * Where the string expression containing `node` ends up: the outermost string
+   * expression at each place it is used. Through a constant, every use of the
+   * constant is followed; out of a path-building function, every call of it.
    */
-  private flow(
+  private ends(
     info: ModuleInfo,
     node: ts.Node,
-    template: string,
     reached: ReadonlySet<string>,
     depth: number
-  ): { method: string | null; template: string; problem: string | null }[] {
-    if (depth > 6) return [{ method: null, template, problem: 'flow too deep' }];
-    let current = node;
-    for (;;) {
-      const parent = current.parent;
-      if (
-        (ts.isBinaryExpression(parent) && parent.operatorToken.kind === ts.SyntaxKind.PlusToken) ||
-        ts.isParenthesizedExpression(parent) ||
-        (ts.isConditionalExpression(parent) && parent.condition !== current) ||
-        ts.isAsExpression(parent) ||
-        ts.isSatisfiesExpression(parent) ||
-        ts.isNonNullExpression(parent)
-      ) {
-        current = parent;
-        continue;
-      }
-      break;
-    }
-    const parent = current.parent;
-    if (ts.isCallExpression(parent) && parent.arguments.includes(current as ts.Expression)) {
-      const method = this.methodOf(
-        info,
-        parent,
-        parent.arguments.indexOf(current as ts.Expression),
-        0
-      );
-      return [{ method, template, problem: method === null ? 'method is not a literal' : null }];
-    }
+  ): { info: ModuleInfo; top: ts.Node; problem: string | null }[] {
+    if (depth > 8) return [{ info, top: node, problem: 'flow too deep' }];
+    const top = climbString(node);
+    const parent = top.parent;
     if (
       ts.isVariableDeclaration(parent) &&
-      parent.initializer === current &&
+      parent.initializer === top &&
       ts.isIdentifier(parent.name)
     ) {
       const refs = this.referencesTo(info, parent, parent.name.text, reached);
-      if (refs.length === 0) return [{ method: null, template, problem: 'constant is never sent' }];
-      return refs.flatMap((ref) => this.flow(ref.info, ref.node, template, reached, depth + 1));
+      if (refs.length === 0) return [{ info, top, problem: 'constant is never used' }];
+      return refs.flatMap((ref) => this.ends(ref.info, ref.node, reached, depth + 1));
     }
     const builder = ts.isReturnStatement(parent)
       ? enclosingFunction(parent)
-      : ts.isArrowFunction(parent) && parent.body === current
+      : ts.isArrowFunction(parent) && parent.body === top
         ? parent
         : null;
     if (builder !== null) {
       const named = functionName(builder);
-      if (named === null) return [{ method: null, template, problem: 'anonymous path builder' }];
+      if (named === null) return [{ info, top, problem: 'anonymous path builder' }];
       const calls = this.referencesTo(info, named.declaration, named.name, reached).filter(
         (ref) => ts.isCallExpression(ref.node.parent) && ref.node.parent.expression === ref.node
       );
-      if (calls.length === 0)
-        return [{ method: null, template, problem: 'path builder is never called' }];
-      return calls.flatMap((ref) => {
-        const call = ref.node.parent as ts.CallExpression;
-        const bound = bindParameters(builder, call);
-        const literal = findLiteralIn(builder, template);
-        const rebuilt = literal === null ? template : templateOf(literal, bound);
-        return this.flow(ref.info, call, rebuilt, reached, depth + 1);
-      });
+      if (calls.length === 0) return [{ info, top, problem: 'path builder is never called' }];
+      return calls.flatMap((ref) => this.ends(ref.info, ref.node.parent, reached, depth + 1));
     }
-    return [{ method: null, template, problem: 'reaches no call' }];
+    return [{ info, top, problem: null }];
+  }
+
+  /**
+   * The string an expression spells, `{p}` for every part that is not known
+   * from the source. Folds literals, `+`, templates, constants (local, module
+   * and imported), `[…].join(literal)`, and calls of functions whose returned
+   * expressions fold — with the caller's arguments bound to the parameters. A
+   * query built at run time folds to `?{p}`, and a returned value that is a
+   * query or nothing folds to `?`.
+   */
+  private fold(
+    info: ModuleInfo,
+    expression: ts.Expression,
+    bound: ReadonlyMap<string, { info: ModuleInfo; expression: ts.Expression }>,
+    depth: number
+  ): string {
+    if (depth > 10) return '{p}';
+    const next = (e: ts.Expression, i = info, b = bound) => this.fold(i, e, b, depth + 1);
+    if (ts.isStringLiteral(expression) || ts.isNoSubstitutionTemplateLiteral(expression)) {
+      return expression.text;
+    }
+    if (ts.isTemplateExpression(expression)) {
+      let text = expression.head.text;
+      for (const span of expression.templateSpans)
+        text += next(span.expression) + span.literal.text;
+      return text;
+    }
+    if (
+      ts.isBinaryExpression(expression) &&
+      expression.operatorToken.kind === ts.SyntaxKind.PlusToken
+    ) {
+      return next(expression.left) + next(expression.right);
+    }
+    if (
+      ts.isParenthesizedExpression(expression) ||
+      ts.isAsExpression(expression) ||
+      ts.isSatisfiesExpression(expression) ||
+      ts.isNonNullExpression(expression)
+    ) {
+      return next(expression.expression);
+    }
+    if (ts.isConditionalExpression(expression)) {
+      return agree([next(expression.whenTrue), next(expression.whenFalse)]);
+    }
+    if (ts.isIdentifier(expression)) {
+      const binding = bound.get(expression.text);
+      if (binding !== undefined)
+        return this.fold(binding.info, binding.expression, new Map(), depth + 1);
+      const local = localConstant(expression);
+      if (local !== null) return next(local);
+      if (isParameterOf(expression)) return '{p}';
+      const resolved = this.resolveLocal(info.file, expression.text);
+      if (resolved === null || resolved.local === '*') return '{p}';
+      const target = this.module(resolved.file);
+      for (const declaration of target.declarations.get(resolved.local) ?? []) {
+        if (ts.isVariableDeclaration(declaration) && declaration.initializer) {
+          return this.fold(target, declaration.initializer, new Map(), depth + 1);
+        }
+      }
+      return '{p}';
+    }
+    if (ts.isCallExpression(expression)) {
+      const callee = expression.expression;
+      if (
+        ts.isPropertyAccessExpression(callee) &&
+        callee.name.text === 'join' &&
+        ts.isArrayLiteralExpression(callee.expression)
+      ) {
+        const separator = stringOf(expression.arguments[0]);
+        if (separator === null) return '{p}';
+        return callee.expression.elements.map((element) => next(element)).join(separator);
+      }
+      if (!ts.isIdentifier(callee)) return '{p}';
+      const target = this.functionFor(info, callee);
+      if (target === null || target.fn.body === undefined) return '{p}';
+      const binding = new Map<string, { info: ModuleInfo; expression: ts.Expression }>();
+      target.fn.parameters.forEach((parameter, index) => {
+        if (!ts.isIdentifier(parameter.name)) return;
+        const argument = expression.arguments[index];
+        if (argument !== undefined)
+          binding.set(parameter.name.text, { info, expression: argument });
+        else if (parameter.initializer) {
+          binding.set(parameter.name.text, {
+            info: target.info,
+            expression: parameter.initializer,
+          });
+        }
+      });
+      const returned = ts.isBlock(target.fn.body)
+        ? returnsOf(target.fn.body)
+        : [target.fn.body as ts.Expression];
+      if (returned.length === 0) return '{p}';
+      return agree(returned.map((e) => this.fold(target.info, e, binding, depth + 1)));
+    }
+    return '{p}';
   }
 
   /** The HTTP method a call sends the path at `index` with, or null. */
@@ -705,42 +1003,136 @@ function splitKey(key: string): [string, string] {
   return [key.slice(0, at), key.slice(at + 1)];
 }
 
-function forEachLiteral(node: ts.Node, each: (literal: ts.Node, text: string) => void): void {
+const READS = /(^|\/)reads(\/|$)/;
+
+function forEachDynamicImport(node: ts.Node, each: (call: ts.CallExpression) => void): void {
   const visit = (current: ts.Node) => {
-    if (ts.isStringLiteral(current) || ts.isNoSubstitutionTemplateLiteral(current)) {
-      each(current, current.text);
-    } else if (ts.isTemplateExpression(current)) {
-      each(current, current.head.text);
+    if (ts.isCallExpression(current) && current.expression.kind === ts.SyntaxKind.ImportKeyword) {
+      each(current);
     }
     ts.forEachChild(current, visit);
   };
   visit(node);
 }
 
+/** The outermost string expression a node is part of. */
+function climbString(node: ts.Node): ts.Node {
+  let current = node;
+  for (;;) {
+    const parent = current.parent;
+    if (parent === undefined) return current;
+    if (
+      (ts.isBinaryExpression(parent) && parent.operatorToken.kind === ts.SyntaxKind.PlusToken) ||
+      ts.isParenthesizedExpression(parent) ||
+      (ts.isConditionalExpression(parent) && parent.condition !== current) ||
+      ts.isAsExpression(parent) ||
+      ts.isSatisfiesExpression(parent) ||
+      ts.isNonNullExpression(parent)
+    ) {
+      current = parent;
+      continue;
+    }
+    if (ts.isTemplateSpan(parent) && parent.expression === current) {
+      current = parent.parent;
+      continue;
+    }
+    if (ts.isArrayLiteralExpression(parent)) {
+      const access = parent.parent;
+      if (
+        ts.isPropertyAccessExpression(access) &&
+        access.expression === parent &&
+        access.name.text === 'join' &&
+        ts.isCallExpression(access.parent) &&
+        access.parent.expression === access
+      ) {
+        current = access.parent;
+        continue;
+      }
+    }
+    return current;
+  }
+}
+
+function locate(info: { file: string; source: ts.SourceFile }, node: ts.Node): string {
+  return `${info.file}:${info.source.getLineAndCharacterOfPosition(node.getStart()).line + 1}`;
+}
+
+function unresolved(
+  info: { file: string; source: ts.SourceFile },
+  node: ts.Node,
+  template: string | null,
+  problem: string
+): Endpoint {
+  return { at: locate(info, node), method: null, template, operation: null, problem };
+}
+
+/** One answer from several folded values: the same string, a query, or unknown. */
+function agree(values: readonly string[]): string {
+  if (values.every((value) => value === values[0])) return values[0] ?? '{p}';
+  if (values.every((value) => value === '' || value.startsWith('?'))) return '?';
+  return '{p}';
+}
+
+/** A `const` declared in an enclosing block of a function (not the module). */
+function localConstant(identifier: ts.Identifier): ts.Expression | null {
+  let current: ts.Node | undefined = identifier.parent;
+  while (current !== undefined && !ts.isSourceFile(current)) {
+    if (ts.isBlock(current) || ts.isCaseClause(current)) {
+      for (const statement of current.statements) {
+        if (!ts.isVariableStatement(statement)) continue;
+        if ((statement.declarationList.flags & ts.NodeFlags.Const) === 0) continue;
+        for (const declaration of statement.declarationList.declarations) {
+          if (
+            ts.isIdentifier(declaration.name) &&
+            declaration.name.text === identifier.text &&
+            declaration.initializer &&
+            declaration.name !== identifier
+          ) {
+            return declaration.initializer;
+          }
+        }
+      }
+    }
+    current = current.parent;
+  }
+  return null;
+}
+
+function isParameterOf(identifier: ts.Identifier): boolean {
+  let current: ts.Node | undefined = identifier.parent;
+  while (current !== undefined) {
+    if (
+      ts.isFunctionDeclaration(current) ||
+      ts.isArrowFunction(current) ||
+      ts.isFunctionExpression(current) ||
+      ts.isMethodDeclaration(current)
+    ) {
+      if (
+        current.parameters.some((p) => ts.isIdentifier(p.name) && p.name.text === identifier.text)
+      ) {
+        return true;
+      }
+    }
+    current = current.parent;
+  }
+  return false;
+}
+
+/** The expressions a function body returns, nested functions excluded. */
+function returnsOf(body: ts.Block): ts.Expression[] {
+  const out: ts.Expression[] = [];
+  const visit = (node: ts.Node) => {
+    if (ts.isFunctionLike(node)) return;
+    if (ts.isReturnStatement(node) && node.expression) out.push(node.expression);
+    ts.forEachChild(node, visit);
+  };
+  body.statements.forEach(visit);
+  return out;
+}
+
 function stringOf(node: ts.Node | undefined): string | null {
   if (node === undefined) return null;
   return ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node) ? node.text : null;
-}
-
-/**
- * The path a literal spells, `{p}` for every interpolated value. An
- * interpolated parameter bound to a string literal at the call site is written
- * in, so `deliveryPath(id, '/signatures')` spells its real suffix.
- */
-function templateOf(literal: ts.Node, bound: ReadonlyMap<string, ts.Expression>): string {
-  if (ts.isStringLiteral(literal) || ts.isNoSubstitutionTemplateLiteral(literal))
-    return literal.text;
-  if (!ts.isTemplateExpression(literal)) return '';
-  let text = literal.head.text;
-  for (const span of literal.templateSpans) {
-    const expression = span.expression;
-    const value =
-      ts.isIdentifier(expression) && bound.has(expression.text)
-        ? stringOf(bound.get(expression.text))
-        : null;
-    text += (value ?? '{p}') + span.literal.text;
-  }
-  return text;
 }
 
 function enclosingFunction(node: ts.Node): ts.FunctionLikeDeclaration | null {
@@ -768,34 +1160,6 @@ function functionName(
     return { name: parent.name.text, declaration: parent };
   }
   return null;
-}
-
-function bindParameters(
-  fn: ts.FunctionLikeDeclaration,
-  call: ts.CallExpression
-): Map<string, ts.Expression> {
-  const bound = new Map<string, ts.Expression>();
-  fn.parameters.forEach((parameter, index) => {
-    if (!ts.isIdentifier(parameter.name)) return;
-    const argument = call.arguments[index] ?? parameter.initializer;
-    if (argument !== undefined) bound.set(parameter.name.text, argument);
-  });
-  return bound;
-}
-
-/** The API literal inside a builder whose unbound template is `template`. */
-function findLiteralIn(fn: ts.Node, template: string): ts.Node | null {
-  let found: ts.Node | null = null;
-  forEachLiteral(fn, (literal, text) => {
-    if (
-      found === null &&
-      text.startsWith('/api/v1/') &&
-      templateOf(literal, new Map()) === template
-    ) {
-      found = literal;
-    }
-  });
-  return found;
 }
 
 function dedupe(endpoints: Endpoint[]): Endpoint[] {
