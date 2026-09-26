@@ -219,6 +219,43 @@ and it is why `AttachmentService.logIssuance()` logs `{ purpose, ttlSeconds, pro
 the URL only in the response body. **The redactor is a backstop for accidents, never the control.**
 The control is that the value is not passed to the logger at all.
 
+### 4.3 What a server fault logs, and what it never logs
+
+`captureException()` in [`monitoring.ts`](../../../apps/api/src/server/observability/monitoring.ts)
+is the only path a 5xx takes to the log (`route-handler.ts` sends it every response of status 500 or
+above). The `RecordingErrorMonitor` line carries two added fields, both inside `context`, because the
+logger keeps only its fixed top-level keys and redacts `context`:
+
+| Field                 | Present when                                                                   | Carries                                                                                                          |
+| --------------------- | ------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------- |
+| `context.database`    | The fault is a PostgreSQL driver error                                         | `sqlState`, and each of `constraint`, `schema`, `table`, `column`, `routine` only when the driver set it as text |
+| `context.stackFrames` | The fault is an `Error` with a stack (a database fault or any other exception) | At most 20 `    at …` frame lines taken from the raw stack, each scrubbed                                        |
+
+A driver error is recognised by shape: a five-character SQLSTATE in `code`, a `severity`, and a
+`routine` or `file`. The last two are required so that an operating-system error code such as
+`EPIPE` or `EPERM` is not mistaken for one.
+
+**The rule.** For a database fault the log message is the fixed text `Database error <SQLSTATE>`.
+The driver's message, its `detail`, `where` and `hint`, the internal query and the bound parameters
+are never read, because those are exactly where PostgreSQL repeats the value the caller submitted —
+`Key (base_currency_code)=(…)`, `invalid input syntax for type uuid: "…"`, an idempotency key named
+in a `RAISE`. No submitted value is logged. The stack frames are filtered with `/^\s+at /` on the raw
+stack before anything escapes its newlines, so the stack's first line (which repeats the message) and
+any message text that continues onto further lines are dropped. A fault that is not a database error
+keeps its scrubbed message as before.
+
+Two consequences an operator should expect:
+
+- **The worker's dead-letter lines change too.** The outbox worker reports a consumer failure and a
+  dead letter through the same `captureException()` (`outbox-worker.ts`), so a database fault there is
+  also logged as `Database error <SQLSTATE>` with the structured fields, not by its driver message.
+- **Stack frames carry absolute server file paths.** On the local stack those paths include the
+  Windows user-profile folder name. They carry no submitted data, but they do name the machine's
+  directory layout, which is why they stay in the server log and are never returned to a caller.
+
+The event handed to an installed adapter still carries the scrubbed `stack` unchanged; the log line
+does not, and never did.
+
 ## 5. Runbooks
 
 Each runbook states a symptom, what to check, what to do, and what **not** to do. The "what not to
