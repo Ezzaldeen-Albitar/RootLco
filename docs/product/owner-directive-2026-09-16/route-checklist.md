@@ -346,11 +346,14 @@ Every workspace route now declares one posture, in one place:
   branch at once. The header offers "All my branches" and the page names that set rather than asking
   for one branch.
 - **concrete** — the page writes, or reads something the server answers for one branch only. The
-  header does not offer "All my branches". Arriving with it selected shows the header's ask with
-  nothing chosen, and the page's branch section asks too, with the authorized branches by name. The
+  header does not offer "All my branches". While it is selected, or while no branch is chosen yet,
+  the shell does not draw the screen at all (`ConcreteRouteGate`): it shows the ask and the
+  authorized branches by name, so no list is read, no picker searches and no write can start. The
   selection is never changed on the operator's behalf, so a union page visited next still reads
   every branch. The inline chooser is the working context's own guarded switch: it asks before
-  discarding unsaved work and moves the context version like any other switch.
+  discarding unsaved work and moves the context version like any other switch. The job picker the
+  invoice, quotation, inventory and parts screens share searches one named branch only; it no longer
+  searches every branch of the company under "All my branches" (PR #467 review).
 - **none** — tenant-wide pages, and one record reached by its address whose branch is the record's
   own. The header draws no branch control. The Platform Owner Console has no working context at all.
 
@@ -361,103 +364,118 @@ asked anywhere: the header names the branch, and no chooser is drawn.
 
 The union set is the seven operations the API declares `authorized-union`: `apt.appointment-list`,
 `inv.part-issue-list`, `ovw.dashboard-summary-read`, `rec.reception-list`, `sal.delivery-list`,
-`wo.work-order-list` and `wty.warranty-list`. Each route's operations were read from the adapters
-its screen imports. Two findings changed the expected list. `/delivery` reads
-`sal.delivery-readiness-list`, which declares no union, so it is concrete although
-`sal.delivery-list` is a union read. No screen lists `sal.delivery-list` or
-`inv.part-issue-list` as its page read; the second is the issued-part picker read on `/inventory/customer-returns`, a write screen.
+`wo.work-order-list` and `wty.warranty-list`. `/delivery` reads `sal.delivery-readiness-list`, which
+declares no union, so it is concrete although `sal.delivery-list` is a union read.
 
-`apps/web/tests/route-branch-scope.test.ts` holds the table against the filesystem (every page
-under the workspace group has exactly one declaration, and every declaration has a page), the
-navigation map (every available entry resolves), the published contract (every operation exists,
-and a union operation is a read), and the API route modules. The union set is compared in both
-directions with the operations whose `defineOperation({...})` object literal carries the value,
-found by parsing each `route.ts` with the TypeScript compiler; a comment or a computed value is not
-counted. Each rule is also shown refusing a table that breaks it.
+What each route can call is derived from the source, not typed by hand.
+`apps/web/tests/support/route-reachability.ts` starts from the exports of the route's `page.tsx` and
+follows symbols, not files, through the module graph with the TypeScript compiler, so a large
+adapter module contributes only the functions the page can reach. In each reached declaration,
+every `/api/v1/…` literal is followed to the call that sends it: through `+` and template literals,
+through a constant, and through a path-builder function whose return value it is. The method comes
+from that call, and wrappers such as `readOperation` are analysed for where their path parameter
+goes. A `/reads/…` route adds its handler module to the walk. The path and method are matched to the
+`defineOperation` literals parsed out of the API route modules.
+
+`apps/web/tests/route-branch-scope.test.ts` then holds:
+
+- **union routes** — every reachable operation is a read, every one that is not tenant-wide is an
+  `authorized-union` read, no endpoint is left unresolved, and the route's declared operations equal
+  the derived set exactly;
+- **concrete routes** — the page reaches a branch- or company-scoped operation and reads the working
+  branch (`useBranchTarget` or the report scope);
+- **none routes** — the page never reads the working branch as a target.
+
+It also holds the table against the filesystem (every workspace page has exactly one declaration),
+the navigation map, and this section's table below. The union set is compared in both directions
+with the API's declarations. Every rule is shown refusing an input that breaks it: fixture pages
+that reach a one-branch read, reach a write through a wrapper and a path builder, send a path
+through a call it cannot resolve, or name a path no operation publishes.
 
 ### Scope per route
 
-Counts: 5 union, 27 concrete, 45 none — 77 routes.
+Counts: 5 union, 27 concrete, 45 none — 77 routes. `route-branch-scope.test.ts` fails when this
+table and `ROUTE_BRANCH_SCOPES` disagree on a route, a scope or a reason.
 
-| Route                                                 | Scope    | Operations the page addresses to the working branch                                                                                    | Why                                                                                           |
-| ----------------------------------------------------- | -------- | -------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
-| `/`                                                   | union    | `ovw.dashboard-summary-read`                                                                                                           | The dashboard figures are one summary read the server answers for the authorized set.         |
-| `/appointments`                                       | union    | `apt.appointment-list`                                                                                                                 | The appointment list is one read the server answers for the authorized set.                   |
-| `/receptions`                                         | union    | `rec.reception-list`                                                                                                                   | The reception board is one list read the server answers for the authorized set.               |
-| `/warranty`                                           | union    | `wty.warranty-list`                                                                                                                    | The warranty list is one read the server answers for the authorized set.                      |
-| `/work-orders`                                        | union    | `wo.work-order-list`, `ovw.dashboard-summary-read`                                                                                     | The work-order board and its figures are two reads the server answers for the authorized set. |
-| `/administration/discount-threshold`                  | concrete | `svc.discount-threshold-read`, `svc.discount-threshold-set`                                                                            | The threshold is read and written for the working branch's company.                           |
-| `/appointments/new`                                   | concrete | `apt.appointment-create`                                                                                                               | Booking writes an appointment into one branch.                                                |
-| `/attention`                                          | concrete | `inv.low-stock-alert-read`, `inv.count-discrepancy-alert-read`, `inv.unusual-consumption-alert-read`, `inv.aged-in-transit-alert-read` | Every stock alert is read for one branch.                                                     |
-| `/credit-notes`                                       | concrete | `sal.credit-note-list`, `sal.credit-note-approve`                                                                                      | Credit notes are read and decided for one branch.                                             |
-| `/delivery`                                           | concrete | `sal.delivery-readiness-list`                                                                                                          | The handover queue is read for one branch; its read declares no union.                        |
-| `/inventory`                                          | concrete | `inv.stock-availability-read`, `inv.stock-reservation-list`, `inv.stock-reservation-create`                                            | Stock is read and reserved in one branch.                                                     |
-| `/inventory/adjustments`                              | concrete | `inv.stock-adjustment-list`, `inv.stock-adjustment-create`                                                                             | An adjustment writes stock in one branch.                                                     |
-| `/inventory/counter-sales`                            | concrete | `sal.counter-sale-list`, `sal.counter-sale-create`                                                                                     | A counter sale is made in one branch.                                                         |
-| `/inventory/counts`                                   | concrete | `inv.stock-count-list`, `inv.stock-count-open`                                                                                         | A count is opened in one branch.                                                              |
-| `/inventory/customer-returns`                         | concrete | `inv.sales-return-list`, `inv.sales-return-create`                                                                                     | A return is received into one branch.                                                         |
-| `/inventory/goods-receipts`                           | concrete | `inv.goods-receipt-list`, `inv.goods-receipt-create`                                                                                   | Goods are received into one branch.                                                           |
-| `/inventory/movements`                                | concrete | `inv.stock-movement-list`                                                                                                              | Movements are read for one branch; the read declares no union.                                |
-| `/inventory/opening-stock`                            | concrete | `inv.opening-batch-list`, `inv.opening-batch-create`                                                                                   | Opening stock is recorded in one branch.                                                      |
-| `/inventory/parts`                                    | concrete | `inv.stock-reservation-create`, `inv.stock-issue-create`                                                                               | Parts are reserved and issued from one branch.                                                |
-| `/inventory/setup`                                    | concrete | `inv.stock-location-list`, `inv.stock-location-create`                                                                                 | Stock locations belong to one branch.                                                         |
-| `/inventory/transfers`                                | concrete | `inv.stock-transfer-list`, `inv.stock-transfer-settlement-list`, `inv.stock-transfer-create`                                           | A transfer leaves one named branch.                                                           |
-| `/invoices`                                           | concrete | `sal.invoice-create`, `sal.invoice-issue`                                                                                              | An invoice is written; a write needs one named branch.                                        |
-| `/payments`                                           | concrete | `sal.receipt-list`, `sal.payment-record`                                                                                               | A payment is recorded in one branch.                                                          |
-| `/pricing`                                            | concrete | `svc.price-resolve`                                                                                                                    | The price that applies is resolved for one branch.                                            |
-| `/quotations`                                         | concrete | `quo.quotation-create`                                                                                                                 | A quotation is written; a write needs one named branch.                                       |
-| `/receptions/check-in`                                | concrete | `rec.reception-create`, `rec.receiving-employee-list`                                                                                  | Check-in writes a reception into one branch.                                                  |
-| `/reports/[reportCode]`                               | concrete | `rpt.report-run`                                                                                                                       | A report covers one branch; the report read declares no union.                                |
-| `/reports/overview`                                   | concrete | `rpt.report-run`                                                                                                                       | A report covers one branch; the report read declares no union.                                |
-| `/services/[serviceId]`                               | concrete | `svc.branch-availability-set`                                                                                                          | Availability is set for one branch.                                                           |
-| `/technicians/me`                                     | concrete | `tech.technician-me-queue`                                                                                                             | A technician's queue is read for one branch.                                                  |
-| `/warranty/policies`                                  | concrete | `wty.warranty-policy-list`, `wty.warranty-policy-create`                                                                               | A plan is created for the working branch's company.                                           |
-| `/work-orders/quality`                                | concrete | `qms.qc-record-branch-list`                                                                                                            | The quality queue is read for one branch; its read declares no union.                         |
-| `/administration`                                     | none     | —                                                                                                                                      | Tenant-wide administration or records; nothing here is addressed to a branch.                 |
-| `/administration/approval-limits`                     | none     | —                                                                                                                                      | Tenant-wide administration or records; nothing here is addressed to a branch.                 |
-| `/administration/audit-log`                           | none     | —                                                                                                                                      | Tenant-wide administration or records; nothing here is addressed to a branch.                 |
-| `/administration/currencies`                          | none     | —                                                                                                                                      | Tenant-wide administration or records; nothing here is addressed to a branch.                 |
-| `/administration/departments`                         | none     | —                                                                                                                                      | Tenant-wide administration or records; nothing here is addressed to a branch.                 |
-| `/administration/employees`                           | none     | —                                                                                                                                      | Tenant-wide administration or records; nothing here is addressed to a branch.                 |
-| `/administration/languages`                           | none     | —                                                                                                                                      | Tenant-wide administration or records; nothing here is addressed to a branch.                 |
-| `/administration/numbering-rules`                     | none     | —                                                                                                                                      | Tenant-wide administration or records; nothing here is addressed to a branch.                 |
-| `/administration/organization`                        | none     | —                                                                                                                                      | Tenant-wide administration or records; nothing here is addressed to a branch.                 |
-| `/administration/permissions`                         | none     | —                                                                                                                                      | Tenant-wide administration or records; nothing here is addressed to a branch.                 |
-| `/administration/roles`                               | none     | —                                                                                                                                      | Tenant-wide administration or records; nothing here is addressed to a branch.                 |
-| `/administration/system-settings`                     | none     | —                                                                                                                                      | Tenant-wide administration or records; nothing here is addressed to a branch.                 |
-| `/administration/taxes`                               | none     | —                                                                                                                                      | Tenant-wide administration or records; nothing here is addressed to a branch.                 |
-| `/administration/users`                               | none     | —                                                                                                                                      | Tenant-wide administration or records; nothing here is addressed to a branch.                 |
-| `/administration/users/[userId]`                      | none     | —                                                                                                                                      | Tenant-wide administration or records; nothing here is addressed to a branch.                 |
-| `/appointments/[appointmentId]`                       | none     | —                                                                                                                                      | One record reached by its address; its branch is the record's own.                            |
-| `/crm/customer-duplicates`                            | none     | —                                                                                                                                      | Tenant-wide administration or records; nothing here is addressed to a branch.                 |
-| `/crm/customers`                                      | none     | —                                                                                                                                      | Tenant-wide administration or records; nothing here is addressed to a branch.                 |
-| `/crm/customers/[customerId]`                         | none     | —                                                                                                                                      | One record reached by its address; its branch is the record's own.                            |
-| `/crm/customers/[customerId]/work-order/new`          | none     | —                                                                                                                                      | Hands the customer on to check-in, which is where the branch is asked for.                    |
-| `/crm/customers/new/[kind]`                           | none     | —                                                                                                                                      | Tenant-wide administration or records; nothing here is addressed to a branch.                 |
-| `/delivery/[deliveryId]`                              | none     | —                                                                                                                                      | One record reached by its address; its branch is the record's own.                            |
-| `/inventory/items/[itemId]`                           | none     | —                                                                                                                                      | One record reached by its address; its branch is the record's own.                            |
-| `/inventory/labels`                                   | none     | —                                                                                                                                      | Tenant-wide administration or records; nothing here is addressed to a branch.                 |
-| `/inventory/unit-conversions`                         | none     | —                                                                                                                                      | Tenant-wide administration or records; nothing here is addressed to a branch.                 |
-| `/inventory/vehicle-specifications`                   | none     | —                                                                                                                                      | Tenant-wide administration or records; nothing here is addressed to a branch.                 |
-| `/pricing/[priceListId]`                              | none     | —                                                                                                                                      | One record reached by its address; its branch is the record's own.                            |
-| `/profile`                                            | none     | —                                                                                                                                      | Tenant-wide administration or records; nothing here is addressed to a branch.                 |
-| `/quotations/[quotationId]`                           | none     | —                                                                                                                                      | One record reached by its address; its branch is the record's own.                            |
-| `/reception/walk-in`                                  | none     | —                                                                                                                                      | Finds or creates the customer and the car, then hands on to check-in for the branch.          |
-| `/receptions/check-in/[receptionId]`                  | none     | —                                                                                                                                      | One record reached by its address; its branch is the record's own.                            |
-| `/receptions/check-in/[receptionId]/acknowledgement`  | none     | —                                                                                                                                      | One record reached by its address; its branch is the record's own.                            |
-| `/reports`                                            | none     | —                                                                                                                                      | Tenant-wide administration or records; nothing here is addressed to a branch.                 |
-| `/services`                                           | none     | —                                                                                                                                      | Tenant-wide administration or records; nothing here is addressed to a branch.                 |
-| `/vehicles`                                           | none     | —                                                                                                                                      | Tenant-wide administration or records; nothing here is addressed to a branch.                 |
-| `/vehicles/[vehicleId]`                               | none     | —                                                                                                                                      | One record reached by its address; its branch is the record's own.                            |
-| `/vehicles/duplicates`                                | none     | —                                                                                                                                      | Tenant-wide administration or records; nothing here is addressed to a branch.                 |
-| `/vehicles/new`                                       | none     | —                                                                                                                                      | Tenant-wide administration or records; nothing here is addressed to a branch.                 |
-| `/warranty/[warrantyId]`                              | none     | —                                                                                                                                      | One record reached by its address; its branch is the record's own.                            |
-| `/warranty/policies/[policyId]`                       | none     | —                                                                                                                                      | One record reached by its address; its branch is the record's own.                            |
-| `/work-orders/[workOrderId]`                          | none     | —                                                                                                                                      | One record reached by its address; its branch is the record's own.                            |
-| `/work-orders/[workOrderId]/closure`                  | none     | —                                                                                                                                      | One record reached by its address; its branch is the record's own.                            |
-| `/work-orders/[workOrderId]/jobs/[jobId]/diagnostics` | none     | —                                                                                                                                      | One record reached by its address; its branch is the record's own.                            |
-| `/work-orders/diagnostics`                            | none     | —                                                                                                                                      | Tenant-wide administration or records; nothing here is addressed to a branch.                 |
-| `/work-orders/diagnostics/[templateId]`               | none     | —                                                                                                                                      | One record reached by its address; its branch is the record's own.                            |
+| Route                                                 | Scope    | Why                                                                                           |
+| ----------------------------------------------------- | -------- | --------------------------------------------------------------------------------------------- |
+| `/`                                                   | union    | The dashboard figures are one summary read the server answers for the authorized set.         |
+| `/appointments`                                       | union    | The appointment list is one read the server answers for the authorized set.                   |
+| `/receptions`                                         | union    | The reception board is one list read the server answers for the authorized set.               |
+| `/warranty`                                           | union    | The warranty list is one read the server answers for the authorized set.                      |
+| `/work-orders`                                        | union    | The work-order board and its figures are two reads the server answers for the authorized set. |
+| `/administration/discount-threshold`                  | concrete | The threshold is read and written for the working branch's company.                           |
+| `/appointments/new`                                   | concrete | Booking writes an appointment into one branch.                                                |
+| `/attention`                                          | concrete | Every stock alert is read for one branch.                                                     |
+| `/credit-notes`                                       | concrete | Credit notes are read and decided for one branch.                                             |
+| `/delivery`                                           | concrete | The handover queue is read for one branch; its read declares no union.                        |
+| `/inventory`                                          | concrete | Stock is read and reserved in one branch.                                                     |
+| `/inventory/adjustments`                              | concrete | An adjustment writes stock in one branch.                                                     |
+| `/inventory/counter-sales`                            | concrete | A counter sale is made in one branch.                                                         |
+| `/inventory/counts`                                   | concrete | A count is opened in one branch.                                                              |
+| `/inventory/customer-returns`                         | concrete | A return is received into one branch.                                                         |
+| `/inventory/goods-receipts`                           | concrete | Goods are received into one branch.                                                           |
+| `/inventory/movements`                                | concrete | Movements are read for one branch; the read declares no union.                                |
+| `/inventory/opening-stock`                            | concrete | Opening stock is recorded in one branch.                                                      |
+| `/inventory/parts`                                    | concrete | Parts are reserved and issued from one branch.                                                |
+| `/inventory/setup`                                    | concrete | Stock locations belong to one branch.                                                         |
+| `/inventory/transfers`                                | concrete | A transfer leaves one named branch.                                                           |
+| `/invoices`                                           | concrete | An invoice is written; a write needs one named branch.                                        |
+| `/payments`                                           | concrete | A payment is recorded in one branch.                                                          |
+| `/pricing`                                            | concrete | The price that applies is resolved for one branch.                                            |
+| `/quotations`                                         | concrete | A quotation is written; a write needs one named branch.                                       |
+| `/receptions/check-in`                                | concrete | Check-in writes a reception into one branch.                                                  |
+| `/reports/[reportCode]`                               | concrete | A report covers one branch; the report read declares no union.                                |
+| `/reports/overview`                                   | concrete | A report covers one branch; the report read declares no union.                                |
+| `/services/[serviceId]`                               | concrete | Availability is set for one branch.                                                           |
+| `/technicians/me`                                     | concrete | A technician's queue is read for one branch.                                                  |
+| `/warranty/policies`                                  | concrete | A plan is created for the working branch's company.                                           |
+| `/work-orders/quality`                                | concrete | The quality queue is read for one branch; its read declares no union.                         |
+| `/administration`                                     | none     | Tenant-wide administration or records; nothing here is addressed to a branch.                 |
+| `/administration/approval-limits`                     | none     | Tenant-wide administration or records; nothing here is addressed to a branch.                 |
+| `/administration/audit-log`                           | none     | Tenant-wide administration or records; nothing here is addressed to a branch.                 |
+| `/administration/currencies`                          | none     | Tenant-wide administration or records; nothing here is addressed to a branch.                 |
+| `/administration/departments`                         | none     | Tenant-wide administration or records; nothing here is addressed to a branch.                 |
+| `/administration/employees`                           | none     | Tenant-wide administration or records; nothing here is addressed to a branch.                 |
+| `/administration/languages`                           | none     | Tenant-wide administration or records; nothing here is addressed to a branch.                 |
+| `/administration/numbering-rules`                     | none     | Tenant-wide administration or records; nothing here is addressed to a branch.                 |
+| `/administration/organization`                        | none     | Tenant-wide administration or records; nothing here is addressed to a branch.                 |
+| `/administration/permissions`                         | none     | Tenant-wide administration or records; nothing here is addressed to a branch.                 |
+| `/administration/roles`                               | none     | Tenant-wide administration or records; nothing here is addressed to a branch.                 |
+| `/administration/system-settings`                     | none     | Tenant-wide administration or records; nothing here is addressed to a branch.                 |
+| `/administration/taxes`                               | none     | Tenant-wide administration or records; nothing here is addressed to a branch.                 |
+| `/administration/users`                               | none     | Tenant-wide administration or records; nothing here is addressed to a branch.                 |
+| `/administration/users/[userId]`                      | none     | Tenant-wide administration or records; nothing here is addressed to a branch.                 |
+| `/appointments/[appointmentId]`                       | none     | One record reached by its address; its branch is the record's own.                            |
+| `/crm/customer-duplicates`                            | none     | Tenant-wide administration or records; nothing here is addressed to a branch.                 |
+| `/crm/customers`                                      | none     | Tenant-wide administration or records; nothing here is addressed to a branch.                 |
+| `/crm/customers/[customerId]`                         | none     | One record reached by its address; its branch is the record's own.                            |
+| `/crm/customers/[customerId]/work-order/new`          | none     | Hands the customer on to check-in, which is where the branch is asked for.                    |
+| `/crm/customers/new/[kind]`                           | none     | Tenant-wide administration or records; nothing here is addressed to a branch.                 |
+| `/delivery/[deliveryId]`                              | none     | One record reached by its address; its branch is the record's own.                            |
+| `/inventory/items/[itemId]`                           | none     | One record reached by its address; its branch is the record's own.                            |
+| `/inventory/labels`                                   | none     | Tenant-wide administration or records; nothing here is addressed to a branch.                 |
+| `/inventory/unit-conversions`                         | none     | Tenant-wide administration or records; nothing here is addressed to a branch.                 |
+| `/inventory/vehicle-specifications`                   | none     | Tenant-wide administration or records; nothing here is addressed to a branch.                 |
+| `/pricing/[priceListId]`                              | none     | One record reached by its address; its branch is the record's own.                            |
+| `/profile`                                            | none     | Tenant-wide administration or records; nothing here is addressed to a branch.                 |
+| `/quotations/[quotationId]`                           | none     | One record reached by its address; its branch is the record's own.                            |
+| `/reception/walk-in`                                  | none     | Finds or creates the customer and the car, then hands on to check-in for the branch.          |
+| `/receptions/check-in/[receptionId]`                  | none     | One record reached by its address; its branch is the record's own.                            |
+| `/receptions/check-in/[receptionId]/acknowledgement`  | none     | One record reached by its address; its branch is the record's own.                            |
+| `/reports`                                            | none     | Tenant-wide administration or records; nothing here is addressed to a branch.                 |
+| `/services`                                           | none     | Tenant-wide administration or records; nothing here is addressed to a branch.                 |
+| `/vehicles`                                           | none     | Tenant-wide administration or records; nothing here is addressed to a branch.                 |
+| `/vehicles/[vehicleId]`                               | none     | One record reached by its address; its branch is the record's own.                            |
+| `/vehicles/duplicates`                                | none     | Tenant-wide administration or records; nothing here is addressed to a branch.                 |
+| `/vehicles/new`                                       | none     | Tenant-wide administration or records; nothing here is addressed to a branch.                 |
+| `/warranty/[warrantyId]`                              | none     | One record reached by its address; its branch is the record's own.                            |
+| `/warranty/policies/[policyId]`                       | none     | One record reached by its address; its branch is the record's own.                            |
+| `/work-orders/[workOrderId]`                          | none     | One record reached by its address; its branch is the record's own.                            |
+| `/work-orders/[workOrderId]/closure`                  | none     | One record reached by its address; its branch is the record's own.                            |
+| `/work-orders/[workOrderId]/jobs/[jobId]/diagnostics` | none     | One record reached by its address; its branch is the record's own.                            |
+| `/work-orders/diagnostics`                            | none     | Tenant-wide administration or records; nothing here is addressed to a branch.                 |
+| `/work-orders/diagnostics/[templateId]`               | none     | One record reached by its address; its branch is the record's own.                            |
 
 ### Local branch fields that stay
 

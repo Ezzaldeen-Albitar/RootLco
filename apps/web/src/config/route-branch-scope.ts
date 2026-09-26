@@ -26,16 +26,25 @@ import { isLocale } from '@/i18n/config';
  *     whose branch is the record's own. The header selector has nothing to say
  *     here and is not drawn.
  *
- * ## `operations` is the derivation, and it is checked
+ * ## What is declared, and what is derived and checked
  *
- * Each declaration names the published operations the page addresses to the
- * working branch (or, for `union`, to the authorized set). A `none` page names
- * none. `tests/route-branch-scope.test.ts` holds this table against three
- * things it does not trust it about: the filesystem (every workspace page has
- * exactly one declaration), the published contract (every operation exists),
- * and the API route modules themselves (the union set below is exactly the set
- * of operations whose `defineOperation` literal declares `authorized-union`,
- * read by parsing the route files, not by matching text).
+ * A `union` route names every published operation its page can reach, and
+ * `tests/route-branch-scope.test.ts` DERIVES that set from the source and
+ * requires the two to be equal: it walks the page's symbols through the module
+ * graph with the TypeScript compiler, follows each `/api/v1/…` literal to the
+ * call that sends it, and matches the path and method to the `defineOperation`
+ * literals it parses out of the API route modules. So a union page that starts
+ * calling a one-branch read, or any write, fails — as does an endpoint the walk
+ * cannot resolve. Every reachable operation that is not tenant-wide must be an
+ * `authorized-union` read.
+ *
+ * A `concrete` or `none` route names no operations; the same derivation holds
+ * it to its posture instead: a concrete page must reach a branch- or
+ * company-scoped operation and read the working branch (`useBranchTarget` or
+ * the report scope), and a `none` page must not read the working branch as a
+ * target at all. The test also holds this table against the filesystem (every
+ * workspace page has exactly one declaration) and the union set below against
+ * the API's own declarations.
  *
  * An address this table does not know is treated as `concrete`: never offering
  * "All my branches" is the direction that cannot write against a branch nobody
@@ -50,8 +59,11 @@ export interface RouteScopeDeclaration {
    */
   readonly pattern: string;
   readonly scope: RouteBranchScope;
-  /** The operations the page addresses to the working branch, or to the union. */
-  readonly operations: readonly string[];
+  /**
+   * `union` only: every published operation the page can reach, exactly as the
+   * route-scope test derives it from the source. Absent on every other route.
+   */
+  readonly operations?: readonly string[];
   /** Why this posture, in one sentence. Shown in the route checklist. */
   readonly why: string;
 }
@@ -82,31 +94,37 @@ export const ROUTE_BRANCH_SCOPES: readonly RouteScopeDeclaration[] = Object.free
   {
     pattern: '/',
     scope: 'union',
-    operations: ['ovw.dashboard-summary-read'],
+    operations: ['iam.auth-session', 'ovw.dashboard-summary-read', 'platform.session-read'],
     why: 'The dashboard figures are one summary read the server answers for the authorized set.',
   },
   {
     pattern: '/receptions',
     scope: 'union',
-    operations: ['rec.reception-list'],
+    operations: ['iam.auth-session', 'platform.session-read', 'rec.reception-list'],
     why: 'The reception board is one list read the server answers for the authorized set.',
   },
   {
     pattern: '/work-orders',
     scope: 'union',
-    operations: ['wo.work-order-list', 'ovw.dashboard-summary-read'],
+    operations: [
+      'iam.auth-session',
+      'ovw.dashboard-summary-read',
+      'platform.session-read',
+      'wo.work-order-catalogue',
+      'wo.work-order-list',
+    ],
     why: 'The work-order board and its figures are two reads the server answers for the authorized set.',
   },
   {
     pattern: '/appointments',
     scope: 'union',
-    operations: ['apt.appointment-list'],
+    operations: ['apt.appointment-list', 'iam.auth-session', 'platform.session-read'],
     why: 'The appointment list is one read the server answers for the authorized set.',
   },
   {
     pattern: '/warranty',
     scope: 'union',
-    operations: ['wty.warranty-list'],
+    operations: ['iam.auth-session', 'platform.session-read', 'wty.warranty-list'],
     why: 'The warranty list is one read the server answers for the authorized set.',
   },
 
@@ -114,253 +132,207 @@ export const ROUTE_BRANCH_SCOPES: readonly RouteScopeDeclaration[] = Object.free
   {
     pattern: '/attention',
     scope: 'concrete',
-    operations: [
-      'inv.low-stock-alert-read',
-      'inv.count-discrepancy-alert-read',
-      'inv.unusual-consumption-alert-read',
-      'inv.aged-in-transit-alert-read',
-    ],
     why: 'Every stock alert is read for one branch.',
   },
   {
     pattern: '/appointments/new',
     scope: 'concrete',
-    operations: ['apt.appointment-create'],
     why: 'Booking writes an appointment into one branch.',
   },
   {
     pattern: '/receptions/check-in',
     scope: 'concrete',
-    operations: ['rec.reception-create', 'rec.receiving-employee-list'],
     why: 'Check-in writes a reception into one branch.',
   },
   {
     pattern: '/delivery',
     scope: 'concrete',
-    operations: ['sal.delivery-readiness-list'],
     why: 'The handover queue is read for one branch; its read declares no union.',
   },
   {
     pattern: '/warranty/policies',
     scope: 'concrete',
-    operations: ['wty.warranty-policy-list', 'wty.warranty-policy-create'],
     why: "A plan is created for the working branch's company.",
   },
   {
     pattern: '/work-orders/quality',
     scope: 'concrete',
-    operations: ['qms.qc-record-branch-list'],
     why: 'The quality queue is read for one branch; its read declares no union.',
   },
   {
     pattern: '/technicians/me',
     scope: 'concrete',
-    operations: ['tech.technician-me-queue'],
     why: "A technician's queue is read for one branch.",
   },
   {
     pattern: '/inventory',
     scope: 'concrete',
-    operations: [
-      'inv.stock-availability-read',
-      'inv.stock-reservation-list',
-      'inv.stock-reservation-create',
-    ],
     why: 'Stock is read and reserved in one branch.',
   },
   {
     pattern: '/inventory/transfers',
     scope: 'concrete',
-    operations: [
-      'inv.stock-transfer-list',
-      'inv.stock-transfer-settlement-list',
-      'inv.stock-transfer-create',
-    ],
     why: 'A transfer leaves one named branch.',
   },
   {
     pattern: '/inventory/goods-receipts',
     scope: 'concrete',
-    operations: ['inv.goods-receipt-list', 'inv.goods-receipt-create'],
     why: 'Goods are received into one branch.',
   },
   {
     pattern: '/inventory/adjustments',
     scope: 'concrete',
-    operations: ['inv.stock-adjustment-list', 'inv.stock-adjustment-create'],
     why: 'An adjustment writes stock in one branch.',
   },
   {
     pattern: '/inventory/counts',
     scope: 'concrete',
-    operations: ['inv.stock-count-list', 'inv.stock-count-open'],
     why: 'A count is opened in one branch.',
   },
   {
     pattern: '/inventory/customer-returns',
     scope: 'concrete',
-    operations: ['inv.sales-return-list', 'inv.sales-return-create'],
     why: 'A return is received into one branch.',
   },
   {
     pattern: '/inventory/counter-sales',
     scope: 'concrete',
-    operations: ['sal.counter-sale-list', 'sal.counter-sale-create'],
     why: 'A counter sale is made in one branch.',
   },
   {
     pattern: '/inventory/movements',
     scope: 'concrete',
-    operations: ['inv.stock-movement-list'],
     why: 'Movements are read for one branch; the read declares no union.',
   },
   {
     pattern: '/inventory/opening-stock',
     scope: 'concrete',
-    operations: ['inv.opening-batch-list', 'inv.opening-batch-create'],
     why: 'Opening stock is recorded in one branch.',
   },
   {
     pattern: '/inventory/setup',
     scope: 'concrete',
-    operations: ['inv.stock-location-list', 'inv.stock-location-create'],
     why: 'Stock locations belong to one branch.',
   },
   {
     pattern: '/inventory/parts',
     scope: 'concrete',
-    operations: ['inv.stock-reservation-create', 'inv.stock-issue-create'],
     why: 'Parts are reserved and issued from one branch.',
   },
   {
     pattern: '/credit-notes',
     scope: 'concrete',
-    operations: ['sal.credit-note-list', 'sal.credit-note-approve'],
     why: 'Credit notes are read and decided for one branch.',
   },
   {
     pattern: '/invoices',
     scope: 'concrete',
-    operations: ['sal.invoice-create', 'sal.invoice-issue'],
     why: 'An invoice is written; a write needs one named branch.',
   },
   {
     pattern: '/payments',
     scope: 'concrete',
-    operations: ['sal.receipt-list', 'sal.payment-record'],
     why: 'A payment is recorded in one branch.',
   },
   {
     pattern: '/quotations',
     scope: 'concrete',
-    operations: ['quo.quotation-create'],
     why: 'A quotation is written; a write needs one named branch.',
   },
   {
     pattern: '/pricing',
     scope: 'concrete',
-    operations: ['svc.price-resolve'],
     why: 'The price that applies is resolved for one branch.',
   },
   {
     pattern: '/services/[serviceId]',
     scope: 'concrete',
-    operations: ['svc.branch-availability-set'],
     why: 'Availability is set for one branch.',
   },
   {
     pattern: '/reports/overview',
     scope: 'concrete',
-    operations: ['rpt.report-run'],
     why: 'A report covers one branch; the report read declares no union.',
   },
   {
     pattern: '/reports/[reportCode]',
     scope: 'concrete',
-    operations: ['rpt.report-run'],
     why: 'A report covers one branch; the report read declares no union.',
   },
   {
     pattern: '/administration/discount-threshold',
     scope: 'concrete',
-    operations: ['svc.discount-threshold-read', 'svc.discount-threshold-set'],
     why: "The threshold is read and written for the working branch's company.",
   },
 
   // ── None: tenant-wide, or one record reached by address ──
-  { pattern: '/administration', scope: 'none', operations: [], why: TENANT_WIDE },
-  { pattern: '/administration/approval-limits', scope: 'none', operations: [], why: TENANT_WIDE },
-  { pattern: '/administration/audit-log', scope: 'none', operations: [], why: TENANT_WIDE },
-  { pattern: '/administration/currencies', scope: 'none', operations: [], why: TENANT_WIDE },
-  { pattern: '/administration/departments', scope: 'none', operations: [], why: TENANT_WIDE },
-  { pattern: '/administration/employees', scope: 'none', operations: [], why: TENANT_WIDE },
-  { pattern: '/administration/languages', scope: 'none', operations: [], why: TENANT_WIDE },
-  { pattern: '/administration/numbering-rules', scope: 'none', operations: [], why: TENANT_WIDE },
-  { pattern: '/administration/organization', scope: 'none', operations: [], why: TENANT_WIDE },
-  { pattern: '/administration/permissions', scope: 'none', operations: [], why: TENANT_WIDE },
-  { pattern: '/administration/roles', scope: 'none', operations: [], why: TENANT_WIDE },
-  { pattern: '/administration/system-settings', scope: 'none', operations: [], why: TENANT_WIDE },
-  { pattern: '/administration/taxes', scope: 'none', operations: [], why: TENANT_WIDE },
-  { pattern: '/administration/users', scope: 'none', operations: [], why: TENANT_WIDE },
-  { pattern: '/administration/users/[userId]', scope: 'none', operations: [], why: TENANT_WIDE },
-  { pattern: '/appointments/[appointmentId]', scope: 'none', operations: [], why: ONE_RECORD },
-  { pattern: '/crm/customer-duplicates', scope: 'none', operations: [], why: TENANT_WIDE },
-  { pattern: '/crm/customers', scope: 'none', operations: [], why: TENANT_WIDE },
-  { pattern: '/crm/customers/[customerId]', scope: 'none', operations: [], why: ONE_RECORD },
+  { pattern: '/administration', scope: 'none', why: TENANT_WIDE },
+  { pattern: '/administration/approval-limits', scope: 'none', why: TENANT_WIDE },
+  { pattern: '/administration/audit-log', scope: 'none', why: TENANT_WIDE },
+  { pattern: '/administration/currencies', scope: 'none', why: TENANT_WIDE },
+  { pattern: '/administration/departments', scope: 'none', why: TENANT_WIDE },
+  { pattern: '/administration/employees', scope: 'none', why: TENANT_WIDE },
+  { pattern: '/administration/languages', scope: 'none', why: TENANT_WIDE },
+  { pattern: '/administration/numbering-rules', scope: 'none', why: TENANT_WIDE },
+  { pattern: '/administration/organization', scope: 'none', why: TENANT_WIDE },
+  { pattern: '/administration/permissions', scope: 'none', why: TENANT_WIDE },
+  { pattern: '/administration/roles', scope: 'none', why: TENANT_WIDE },
+  { pattern: '/administration/system-settings', scope: 'none', why: TENANT_WIDE },
+  { pattern: '/administration/taxes', scope: 'none', why: TENANT_WIDE },
+  { pattern: '/administration/users', scope: 'none', why: TENANT_WIDE },
+  { pattern: '/administration/users/[userId]', scope: 'none', why: TENANT_WIDE },
+  { pattern: '/appointments/[appointmentId]', scope: 'none', why: ONE_RECORD },
+  { pattern: '/crm/customer-duplicates', scope: 'none', why: TENANT_WIDE },
+  { pattern: '/crm/customers', scope: 'none', why: TENANT_WIDE },
+  { pattern: '/crm/customers/[customerId]', scope: 'none', why: ONE_RECORD },
   {
     pattern: '/crm/customers/[customerId]/work-order/new',
     scope: 'none',
-    operations: [],
     why: 'Hands the customer on to check-in, which is where the branch is asked for.',
   },
-  { pattern: '/crm/customers/new/[kind]', scope: 'none', operations: [], why: TENANT_WIDE },
-  { pattern: '/delivery/[deliveryId]', scope: 'none', operations: [], why: ONE_RECORD },
-  { pattern: '/inventory/items/[itemId]', scope: 'none', operations: [], why: ONE_RECORD },
-  { pattern: '/inventory/labels', scope: 'none', operations: [], why: TENANT_WIDE },
-  { pattern: '/inventory/unit-conversions', scope: 'none', operations: [], why: TENANT_WIDE },
-  { pattern: '/inventory/vehicle-specifications', scope: 'none', operations: [], why: TENANT_WIDE },
-  { pattern: '/pricing/[priceListId]', scope: 'none', operations: [], why: ONE_RECORD },
-  { pattern: '/profile', scope: 'none', operations: [], why: TENANT_WIDE },
-  { pattern: '/quotations/[quotationId]', scope: 'none', operations: [], why: ONE_RECORD },
+  { pattern: '/crm/customers/new/[kind]', scope: 'none', why: TENANT_WIDE },
+  { pattern: '/delivery/[deliveryId]', scope: 'none', why: ONE_RECORD },
+  { pattern: '/inventory/items/[itemId]', scope: 'none', why: ONE_RECORD },
+  { pattern: '/inventory/labels', scope: 'none', why: TENANT_WIDE },
+  { pattern: '/inventory/unit-conversions', scope: 'none', why: TENANT_WIDE },
+  { pattern: '/inventory/vehicle-specifications', scope: 'none', why: TENANT_WIDE },
+  { pattern: '/pricing/[priceListId]', scope: 'none', why: ONE_RECORD },
+  { pattern: '/profile', scope: 'none', why: TENANT_WIDE },
+  { pattern: '/quotations/[quotationId]', scope: 'none', why: ONE_RECORD },
   {
     pattern: '/reception/walk-in',
     scope: 'none',
-    operations: [],
     why: 'Finds or creates the customer and the car, then hands on to check-in for the branch.',
   },
   {
     pattern: '/receptions/check-in/[receptionId]',
     scope: 'none',
-    operations: [],
     why: ONE_RECORD,
   },
   {
     pattern: '/receptions/check-in/[receptionId]/acknowledgement',
     scope: 'none',
-    operations: [],
     why: ONE_RECORD,
   },
-  { pattern: '/reports', scope: 'none', operations: [], why: TENANT_WIDE },
-  { pattern: '/services', scope: 'none', operations: [], why: TENANT_WIDE },
-  { pattern: '/vehicles', scope: 'none', operations: [], why: TENANT_WIDE },
-  { pattern: '/vehicles/[vehicleId]', scope: 'none', operations: [], why: ONE_RECORD },
-  { pattern: '/vehicles/duplicates', scope: 'none', operations: [], why: TENANT_WIDE },
-  { pattern: '/vehicles/new', scope: 'none', operations: [], why: TENANT_WIDE },
-  { pattern: '/warranty/[warrantyId]', scope: 'none', operations: [], why: ONE_RECORD },
-  { pattern: '/warranty/policies/[policyId]', scope: 'none', operations: [], why: ONE_RECORD },
-  { pattern: '/work-orders/[workOrderId]', scope: 'none', operations: [], why: ONE_RECORD },
-  { pattern: '/work-orders/[workOrderId]/closure', scope: 'none', operations: [], why: ONE_RECORD },
+  { pattern: '/reports', scope: 'none', why: TENANT_WIDE },
+  { pattern: '/services', scope: 'none', why: TENANT_WIDE },
+  { pattern: '/vehicles', scope: 'none', why: TENANT_WIDE },
+  { pattern: '/vehicles/[vehicleId]', scope: 'none', why: ONE_RECORD },
+  { pattern: '/vehicles/duplicates', scope: 'none', why: TENANT_WIDE },
+  { pattern: '/vehicles/new', scope: 'none', why: TENANT_WIDE },
+  { pattern: '/warranty/[warrantyId]', scope: 'none', why: ONE_RECORD },
+  { pattern: '/warranty/policies/[policyId]', scope: 'none', why: ONE_RECORD },
+  { pattern: '/work-orders/[workOrderId]', scope: 'none', why: ONE_RECORD },
+  { pattern: '/work-orders/[workOrderId]/closure', scope: 'none', why: ONE_RECORD },
   {
     pattern: '/work-orders/[workOrderId]/jobs/[jobId]/diagnostics',
     scope: 'none',
-    operations: [],
     why: ONE_RECORD,
   },
-  { pattern: '/work-orders/diagnostics', scope: 'none', operations: [], why: TENANT_WIDE },
+  { pattern: '/work-orders/diagnostics', scope: 'none', why: TENANT_WIDE },
   {
     pattern: '/work-orders/diagnostics/[templateId]',
     scope: 'none',
-    operations: [],
     why: ONE_RECORD,
   },
 ]);
@@ -422,44 +394,58 @@ export interface RouteScopeFinding {
   readonly problem: string;
 }
 
+/** What the validator needs to know about a published operation. */
+export interface OperationFacts {
+  readonly method: string;
+  /** `tenant`, `company` or `branch`, as the operation declares it. */
+  readonly scope: string | null;
+  readonly union: boolean;
+}
+
 /**
- * Checks a table of declarations against the union set and the published
- * operations. Pure, so the test can feed it a broken table and watch it refuse.
+ * Checks a table of declarations against the published operations. Pure, so
+ * the test can feed it a broken table and watch it refuse.
  */
 export function validateRouteScopes(
   declarations: readonly RouteScopeDeclaration[],
-  unionOperations: ReadonlySet<string>,
-  published: ReadonlyMap<string, string>
+  operations: ReadonlyMap<string, OperationFacts>
 ): readonly RouteScopeFinding[] {
   const findings: RouteScopeFinding[] = [];
   const seen = new Set<string>();
   for (const declaration of declarations) {
-    const { pattern, scope, operations } = declaration;
+    const { pattern, scope } = declaration;
     if (seen.has(pattern)) findings.push({ pattern, problem: 'declared more than once' });
     seen.add(pattern);
     if (declaration.why.trim().length === 0) findings.push({ pattern, problem: 'no reason given' });
-    for (const operation of operations) {
-      if (!published.has(operation)) {
-        findings.push({ pattern, problem: `names ${operation}, which is not published` });
+    if (scope !== 'union') {
+      if (declaration.operations !== undefined) {
+        findings.push({ pattern, problem: `is declared ${scope} but names operations` });
+      }
+      continue;
+    }
+    const named = declaration.operations ?? [];
+    if (named.length === 0)
+      findings.push({ pattern, problem: 'is declared union but names no operation' });
+    let unions = 0;
+    for (const id of named) {
+      const facts = operations.get(id);
+      if (facts === undefined) {
+        findings.push({ pattern, problem: `names ${id}, which is not published` });
+        continue;
+      }
+      if (facts.method !== 'GET') {
+        findings.push({ pattern, problem: `is declared union but ${id} is not a read` });
+      } else if (facts.union) {
+        unions += 1;
+      } else if (facts.scope !== 'tenant') {
+        findings.push({
+          pattern,
+          problem: `is declared union but ${id} is narrowed to a branch and is not an authorized-union read`,
+        });
       }
     }
-    if (scope === 'none' && operations.length > 0) {
-      findings.push({ pattern, problem: 'is declared none but names working-branch operations' });
-    }
-    if (scope !== 'none' && operations.length === 0) {
-      findings.push({ pattern, problem: `is declared ${scope} but names no operation` });
-    }
-    if (scope === 'union') {
-      for (const operation of operations) {
-        if (!unionOperations.has(operation)) {
-          findings.push({
-            pattern,
-            problem: `is declared union but ${operation} is not an authorized-union read`,
-          });
-        } else if (published.get(operation) !== 'GET') {
-          findings.push({ pattern, problem: `is declared union but ${operation} is not a read` });
-        }
-      }
+    if (named.length > 0 && unions === 0) {
+      findings.push({ pattern, problem: 'is declared union but reaches no authorized-union read' });
     }
   }
   return findings;
