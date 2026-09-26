@@ -1,10 +1,10 @@
 {
   "generatedFrom": "scripts/check-operation-test-coverage.mjs",
   "counts": {
-    "registered": 503,
-    "publicApi": 503,
+    "registered": 505,
+    "publicApi": 505,
     "internal": 0,
-    "withRequiredEvidence": 503,
+    "withRequiredEvidence": 505,
     "invocationOnly": 0,
     "p1_15": {
       "registered": 28,
@@ -7337,6 +7337,22 @@
       "unitOnly": false
     },
     {
+      "id": "org.reference-values-read",
+      "surface": "public-api",
+      "method": "GET",
+      "path": "/org/reference-values",
+      "public": false,
+      "files": ["tests/backend/od-organization-administration.test.ts"],
+      "referenced": true,
+      "derived": ["route", "service", "success", "authorization"],
+      "declared": ["denial"],
+      "required": ["route", "service", "success", "authorization", "denial"],
+      "provided": ["authorization", "denial", "route", "service", "success"],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
       "id": "ovw.dashboard-summary-read",
       "surface": "public-api",
       "method": "GET",
@@ -7844,6 +7860,22 @@
         "service",
         "success"
       ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "platform.reference-values-read",
+      "surface": "public-api",
+      "method": "GET",
+      "path": "/platform/reference-values",
+      "public": false,
+      "files": ["tests/backend/p1-32-platform-console.test.ts"],
+      "referenced": true,
+      "derived": ["route", "service", "success", "authorization"],
+      "declared": ["denial"],
+      "required": ["route", "service", "success", "authorization", "denial"],
+      "provided": ["authorization", "denial", "route", "service", "success"],
       "missing": [],
       "metadataOnly": false,
       "unitOnly": false

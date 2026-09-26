@@ -543,6 +543,8 @@ import '@/app/api/v1/platform/organizations/[tenantId]/charges/[chargeId]/void/r
 import '@/app/api/v1/platform/organizations/[tenantId]/receipts/route';
 import '@/app/api/v1/platform/statistics/route';
 import '@/app/api/v1/platform/audit-events/route';
+import '@/app/api/v1/platform/reference-values/route';
+import '@/app/api/v1/org/reference-values/route';
 // Owner directive — the tenant operations overview.
 import '@/app/api/v1/dashboard/summary/route';
 
