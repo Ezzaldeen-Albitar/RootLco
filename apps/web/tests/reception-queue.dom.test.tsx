@@ -1,8 +1,12 @@
 import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import type { ReactElement } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import en from '../src/i18n/messages/en.json';
 import ar from '../src/i18n/messages/ar.json';
+import { UiFoundationProvider } from '@/components/ui-foundation/UiFoundationProvider';
+import { muiTextOf } from '@/components/ui-foundation/mui-text';
+import { getMessages } from '@/i18n/get-messages';
 import {
   BranchSwitch,
   OTHER_BRANCH,
@@ -43,6 +47,16 @@ import {
  * a refusal that reads as a refusal, and a branch changed in the header
  * re-targeting the board rather than leaving one branch's work under another
  * branch's name.
+ *
+ * ## On the Material UI wrappers (ADR-022)
+ *
+ * The board renders `FilterToolbar`, `OperationalGrid` and `MuiSearchStates`,
+ * so the cases find it by role and by label: the period is a named group of
+ * pressed buttons, the chosen days are two date groups, the rows are a `grid`,
+ * and each row action is a link whose name starts with its label and ends with
+ * the visit number (read only by assistive technology). Every case mounts the
+ * board inside the product's Material provider, exactly as the locale layout
+ * does, so the date pickers and the Arabic texts are the real ones.
  *
  * ## The day boundary is tested on its own, with explicit instants
  *
@@ -87,7 +101,7 @@ function propsCarrying(node: unknown, prop: string): Record<string, unknown> | n
   return null;
 }
 
-const { ReceptionQueueScreen } =
+const { ReceptionQueueScreen, boardClock } =
   await import('@/features/receptions/components/ReceptionQueueScreen');
 const ReceptionQueuePage = (await import('@/app/[locale]/(dashboard)/receptions/page'))
   .default as (args: {
@@ -128,10 +142,46 @@ function page(rows: readonly unknown[], over: Record<string, unknown> = {}) {
   };
 }
 
+/** The product's Material provider, as the locale layout mounts it. */
+function withMui(ui: ReactElement, locale: 'en' | 'ar' = 'en'): ReactElement {
+  return (
+    <UiFoundationProvider locale={locale} text={muiTextOf(getMessages(locale))}>
+      {ui}
+    </UiFoundationProvider>
+  );
+}
+
 function renderQueue(over: Record<string, unknown> = {}, snapshot = branchSnapshot()) {
   return renderLtr(
-    inBranch(<ReceptionQueueScreen locale="en" messages={en} canCreate {...over} />, { snapshot })
+    withMui(
+      inBranch(<ReceptionQueueScreen locale="en" messages={en} canCreate {...over} />, {
+        snapshot,
+      })
+    )
   );
+}
+
+/** The board's summary line: the period in words and the clock it is counted on. */
+function summary(): HTMLElement {
+  return screen.getByTestId('reception-queue-toolbar-summary');
+}
+
+/** A period preset, by the words on it. */
+function preset(kind: 'today' | 'yesterday' | 'last7' | 'beforeToday' | 'custom'): HTMLElement {
+  return screen.getByRole('button', { name: EN[`filters.period.${kind}`] as string });
+}
+
+/** Types a day into one of the two chosen-day boxes, one section at a time. */
+async function typeDay(user: ReturnType<typeof userEvent.setup>, label: string, digits: string) {
+  const group = screen.getByRole('group', { name: new RegExp(`^${label}`) });
+  await user.click(within(group).getAllByRole('spinbutton')[0] as HTMLElement);
+  await user.keyboard(digits);
+  return group;
+}
+
+/** A row action, by the label it starts with (the visit number follows, unseen). */
+function rowLink(key: string): HTMLElement {
+  return screen.getByRole('link', { name: new RegExp(`^${EN[key] as string}`) });
 }
 
 /** The scope and filters of the most recent call. */
@@ -168,17 +218,18 @@ describe('the board reads on arrival, bounded to the branch day', () => {
     expect(filters).toEqual(todayWindow());
   });
 
-  it('says which period it is showing', async () => {
+  it('says which period it is showing, and on which clock (QA 3.1)', async () => {
     renderQueue();
     await waitFor(() => expect(listReceptions).toHaveBeenCalled());
-    expect(screen.getByTestId('reception-period-label')).toHaveTextContent(
-      EN['receptions.queue.period.today'] as string
-    );
+    expect(summary()).toHaveTextContent(EN['receptions.queue.period.today'] as string);
+    // The board states its zone itself, as the work-order board and the
+    // dashboard do — a reader on another clock is not left to assume theirs.
+    expect(summary()).toHaveTextContent(`Days and times follow the clock in ${ZONE}.`);
   });
 
   it('renders the rows it was answered with', async () => {
     renderQueue();
-    expect(await screen.findByText('R-0001')).toBeVisible();
+    expect(await screen.findByText('R-0001', { selector: 'code' })).toBeVisible();
     expect(screen.getByText(EN['receptions.queue.custodyHeld'] as string)).toBeVisible();
   });
 
@@ -201,9 +252,7 @@ describe('the period control', () => {
     renderQueue();
     await waitFor(() => expect(listReceptions).toHaveBeenCalledTimes(1));
 
-    await user.click(
-      screen.getByRole('button', { name: EN['receptions.queue.period.yesterday'] as string })
-    );
+    await user.click(preset('yesterday'));
     await waitFor(() => expect(listReceptions).toHaveBeenCalledTimes(2));
     const yesterday = addDays(dayIn(ZONE), -1);
     expect(lastCall().filters).toEqual(rangeOfDays(ZONE, yesterday, yesterday));
@@ -214,9 +263,7 @@ describe('the period control', () => {
     renderQueue();
     await waitFor(() => expect(listReceptions).toHaveBeenCalledTimes(1));
 
-    await user.click(
-      screen.getByRole('button', { name: EN['receptions.queue.period.last7'] as string })
-    );
+    await user.click(preset('last7'));
     await waitFor(() => expect(listReceptions).toHaveBeenCalledTimes(2));
     const today = dayIn(ZONE);
     expect(lastCall().filters).toEqual(rangeOfDays(ZONE, addDays(today, -6), today));
@@ -234,9 +281,7 @@ describe('the period control', () => {
     renderQueue();
     await waitFor(() => expect(listReceptions).toHaveBeenCalledTimes(1));
 
-    await user.click(
-      screen.getByRole('button', { name: EN['receptions.queue.period.beforeToday'] as string })
-    );
+    await user.click(preset('beforeToday'));
     await waitFor(() => expect(listReceptions).toHaveBeenCalledTimes(2));
 
     const yesterday = addDays(dayIn(ZONE), -1);
@@ -258,18 +303,12 @@ describe('the period control', () => {
     await waitFor(() => expect(listReceptions).toHaveBeenCalledTimes(1));
     listReceptions.mockClear();
 
-    await user.click(
-      screen.getByRole('button', { name: EN['receptions.queue.period.custom'] as string })
-    );
-    const from = screen.getByLabelText(EN['receptions.queue.fromDay'] as string, { exact: false });
-    const to = screen.getByLabelText(EN['receptions.queue.toDay'] as string, { exact: false });
-    await user.type(from, '2026-09-10');
-    await user.type(to, '2026-09-01');
-    await user.click(
-      screen.getByRole('button', { name: EN['receptions.queue.applyPeriod'] as string })
-    );
+    await user.click(preset('custom'));
+    await typeDay(user, EN['filters.period.from'] as string, '10092026');
+    const to = await typeDay(user, EN['filters.period.to'] as string, '01092026');
+    await user.click(screen.getByRole('button', { name: EN['filters.period.apply'] as string }));
 
-    expect(await screen.findByText(EN['receptions.queue.invertedRange'] as string)).toBeVisible();
+    expect(await screen.findByText(EN['filters.period.inverted'] as string)).toBeVisible();
     // The control itself is marked, not only a sentence beside it — that is what
     // assistive technology announces and what focus-first-invalid finds.
     expect(to).toHaveAttribute('aria-invalid', 'true');
@@ -282,21 +321,16 @@ describe('the period control', () => {
     renderQueue();
     await waitFor(() => expect(listReceptions).toHaveBeenCalled());
 
-    await user.click(
-      screen.getByRole('button', { name: EN['receptions.queue.period.custom'] as string })
-    );
-    const from = screen.getByLabelText(EN['receptions.queue.fromDay'] as string, { exact: false });
-    const to = screen.getByLabelText(EN['receptions.queue.toDay'] as string, { exact: false });
-    await user.type(from, '2026-09-10');
-    await user.type(to, '2026-09-01');
-    await user.click(
-      screen.getByRole('button', { name: EN['receptions.queue.applyPeriod'] as string })
-    );
-    await screen.findByText(EN['receptions.queue.invertedRange'] as string);
+    await user.click(preset('custom'));
+    await typeDay(user, EN['filters.period.from'] as string, '10092026');
+    await typeDay(user, EN['filters.period.to'] as string, '01092026');
+    await user.click(screen.getByRole('button', { name: EN['filters.period.apply'] as string }));
+    await screen.findByText(EN['filters.period.inverted'] as string);
 
-    await user.clear(to);
-    await user.type(to, '2026-09-12');
-    expect(screen.queryByText(EN['receptions.queue.invertedRange'] as string)).toBeNull();
+    await typeDay(user, EN['filters.period.to'] as string, '12092026');
+    await waitFor(() =>
+      expect(screen.queryByText(EN['filters.period.inverted'] as string)).toBeNull()
+    );
   });
 
   it('reads the chosen days once they are applied', async () => {
@@ -304,22 +338,23 @@ describe('the period control', () => {
     renderQueue();
     await waitFor(() => expect(listReceptions).toHaveBeenCalledTimes(1));
 
-    await user.click(
-      screen.getByRole('button', { name: EN['receptions.queue.period.custom'] as string })
+    await user.click(preset('custom'));
+    // Nothing is asked for until the two days are applied, and the toolbar says
+    // the list still covers the period in force.
+    expect(screen.getByRole('status')).toHaveTextContent(
+      (EN['filters.period.notApplied'] as string).replace(
+        '{period}',
+        EN['filters.period.today'] as string
+      )
     );
-    await user.type(
-      screen.getByLabelText(EN['receptions.queue.fromDay'] as string, { exact: false }),
-      '2026-09-01'
-    );
-    await user.type(
-      screen.getByLabelText(EN['receptions.queue.toDay'] as string, { exact: false }),
-      '2026-09-03'
-    );
-    await user.click(
-      screen.getByRole('button', { name: EN['receptions.queue.applyPeriod'] as string })
-    );
+    await typeDay(user, EN['filters.period.from'] as string, '01092026');
+    await typeDay(user, EN['filters.period.to'] as string, '03092026');
+    expect(listReceptions).toHaveBeenCalledTimes(1);
+    await user.click(screen.getByRole('button', { name: EN['filters.period.apply'] as string }));
     await waitFor(() => expect(listReceptions).toHaveBeenCalledTimes(2));
     expect(lastCall().filters).toEqual(rangeOfDays(ZONE, '2026-09-01', '2026-09-03'));
+    // The summary names the two days on the branch clock, not the preset.
+    expect(summary()).not.toHaveTextContent(EN['receptions.queue.period.today'] as string);
   });
 });
 
@@ -440,9 +475,9 @@ describe('what is still with us from before today is ONE button', () => {
 describe('the customer and the plate', () => {
   it('names the customer and shows the plate the car carries today', async () => {
     renderQueue();
-    const table = await screen.findByRole('table');
-    expect(within(table).getByText('A recorded customer')).toBeVisible();
-    expect(within(table).getByText('ABC-1234')).toBeVisible();
+    const grid = await screen.findByRole('grid');
+    expect(within(grid).getByText('A recorded customer')).toBeVisible();
+    expect(within(grid).getByText('ABC-1234')).toBeVisible();
   });
 
   it('tells three absences apart rather than rendering one blank', async () => {
@@ -570,6 +605,52 @@ describe('every non-answer reads as itself', () => {
     ).toBeVisible();
   });
 
+  it('says what narrowed an empty board: the period and status, or the term', async () => {
+    const user = userEvent.setup();
+    listReceptions.mockResolvedValue(page([]));
+    renderQueue();
+    // No term: the period (and any status) narrowed it, and the sentence says
+    // a filter can be cleared.
+    expect(await screen.findByText(EN['state.noResults.title'] as string)).toBeVisible();
+    expect(screen.queryByText(EN['state.noSearchMatches.title'] as string)).toBeNull();
+
+    await user.type(screen.getByLabelText(EN['receptions.queue.searchLabel'] as string), 'zz');
+    await user.keyboard('{Enter}');
+    // A term: the search matched nothing, said as such.
+    expect(await screen.findByText(EN['state.noSearchMatches.title'] as string)).toBeVisible();
+    expect(screen.queryByText(EN['state.noResults.title'] as string)).toBeNull();
+  });
+
+  it('never reads a withheld search as an empty board (QA 2.8)', async () => {
+    /*
+     * The reception read matches a term on a customer's name and phone only for
+     * a caller who may read customers. The front desk searched a phone number
+     * and was told "No records match the current filters" — a withheld detail
+     * reading as "nothing exists". An account that cannot search those details
+     * is told so, and told what it can search by instead.
+     */
+    const user = userEvent.setup();
+    listReceptions.mockResolvedValue(page([]));
+    renderQueue({ searchesCustomers: false });
+    await screen.findByText(EN['state.noResults.title'] as string);
+
+    await user.type(
+      screen.getByLabelText(EN['receptions.queue.searchLabel'] as string),
+      '0797001122'
+    );
+    await user.keyboard('{Enter}');
+    expect(
+      await screen.findByText(EN['state.noSearchMatchesLimited.title'] as string)
+    ).toBeVisible();
+    expect(
+      screen.getByText(EN['state.noSearchMatchesLimited.description'] as string)
+    ).toBeVisible();
+    expect(screen.queryByText(EN['state.noResults.title'] as string)).toBeNull();
+    expect(screen.queryByText(EN['state.noSearchMatches.title'] as string)).toBeNull();
+    // The term still travelled as typed: the narrowing is the server's.
+    expect(lastCall().filters['q']).toBe('0797001122');
+  });
+
   it('offers the way back for a PERIOD that matched nothing, with no term typed', async () => {
     /*
      * The offer used to be made only for a searchable term, which left the
@@ -586,9 +667,7 @@ describe('every non-answer reads as itself', () => {
       screen.queryByRole('button', { name: EN['receptions.queue.clearFilters'] as string })
     ).toBeNull();
 
-    await user.click(
-      screen.getByRole('button', { name: EN['receptions.queue.period.yesterday'] as string })
-    );
+    await user.click(preset('yesterday'));
     const clear = await screen.findByRole('button', {
       name: EN['receptions.queue.clearFilters'] as string,
     });
@@ -597,11 +676,7 @@ describe('every non-answer reads as itself', () => {
     // And pressing it really does put every control back, so the offer is not
     // a button that says the board is already clear.
     await user.click(clear);
-    await waitFor(() =>
-      expect(
-        screen.getByRole('button', { name: EN['receptions.queue.period.today'] as string })
-      ).toHaveAttribute('aria-pressed', 'true')
-    );
+    await waitFor(() => expect(preset('today')).toHaveAttribute('aria-pressed', 'true'));
     expect(
       screen.queryByRole('button', { name: EN['receptions.queue.clearFilters'] as string })
     ).toBeNull();
@@ -609,19 +684,17 @@ describe('every non-answer reads as itself', () => {
 
   it('names the period buttons as one group rather than five loose toggles', () => {
     /*
-     * Without the role a screen reader announces five unrelated toggles and the
-     * word beside them as a stray line of text, so the operator hears "Today,
-     * pressed" with nothing saying today WHAT. The name comes from that same
-     * visible word, which is what stops the two drifting apart.
+     * Without the role a screen reader announces five unrelated toggles, so the
+     * operator hears "Today, pressed" with nothing saying today WHAT.
      */
     renderQueue();
     const group = screen.getByRole('group', {
-      name: EN['receptions.queue.periodLabel'] as string,
+      name: EN['filters.period.legend'] as string,
     });
     for (const kind of ['today', 'yesterday', 'last7', 'beforeToday', 'custom']) {
       expect(
         within(group).getByRole('button', {
-          name: EN[`receptions.queue.period.${kind}`] as string,
+          name: EN[`filters.period.${kind}`] as string,
         })
       ).toBeVisible();
     }
@@ -649,7 +722,7 @@ describe('every non-answer reads as itself', () => {
 
   it('invents no total, and offers Next only while the server says more exists', async () => {
     renderQueue();
-    await screen.findByText('R-0001');
+    await screen.findByText('R-0001', { selector: 'code' });
     expect(screen.getByRole('button', { name: EN['table.nextPage'] as string })).toBeDisabled();
     expect(screen.getByText(EN['receptions.queue.orderingNote'] as string)).toBeVisible();
   });
@@ -667,19 +740,23 @@ describe('every non-answer reads as itself', () => {
 describe('the next action names what can be done where it lands', () => {
   it('offers to continue the check-in while the visit can still move', async () => {
     renderQueue();
-    const link = await screen.findByRole('link', {
-      name: EN['receptions.queue.continueCheckIn'] as string,
-    });
+    await screen.findByRole('grid');
+    const link = rowLink('receptions.queue.continueCheckIn');
     expect(link).toHaveAttribute('href', '/en/receptions/check-in/rv-1');
+    // Ten rows of the same label are ten different controls to a screen reader.
+    expect(link).toHaveAccessibleName(`${EN['receptions.queue.continueCheckIn'] as string} R-0001`);
   });
 
   it('offers to open the record once the visit is finished', async () => {
     listReceptions.mockResolvedValue(page([row({ receptionStatus: 'converted' })]));
     renderQueue();
-    const link = await screen.findByRole('link', { name: EN['receptions.queue.open'] as string });
+    await screen.findByRole('grid');
+    const link = rowLink('receptions.queue.open');
     expect(link).toHaveAttribute('href', '/en/receptions/check-in/rv-1');
     expect(
-      screen.queryByRole('link', { name: EN['receptions.queue.continueCheckIn'] as string })
+      screen.queryByRole('link', {
+        name: new RegExp(`^${EN['receptions.queue.continueCheckIn'] as string}`),
+      })
     ).toBeNull();
   });
 
@@ -698,20 +775,20 @@ describe('the next action names what can be done where it lands', () => {
      */
     listReceptions.mockResolvedValue(page([row({ receptionStatus: 'authorized' })]));
     renderQueue();
-    const next = await screen.findByRole('link', {
-      name: EN['receptions.queue.continueCheckIn'] as string,
-    });
+    const grid = await screen.findByRole('grid');
+    const next = rowLink('receptions.queue.continueCheckIn');
     expect(next).toHaveAttribute('href', '/en/receptions/check-in/rv-1');
     // Nothing on the board commits anything: every row action is a link.
-    const table = screen.getByRole('table');
-    expect(within(table).queryAllByRole('button')).toEqual([]);
+    expect(within(grid).queryAllByRole('button')).toEqual([]);
   });
 
   it('links every row to its acknowledgement', async () => {
     renderQueue();
-    expect(
-      await screen.findByRole('link', { name: EN['receptions.queue.acknowledgement'] as string })
-    ).toHaveAttribute('href', '/en/receptions/check-in/rv-1/acknowledgement');
+    await screen.findByRole('grid');
+    expect(rowLink('receptions.queue.acknowledgement')).toHaveAttribute(
+      'href',
+      '/en/receptions/check-in/rv-1/acknowledgement'
+    );
   });
 
   it('offers the walk-in desk only to somebody who may open it', async () => {
@@ -739,20 +816,22 @@ describe('a branch changed in the header re-targets the board', () => {
   it('reads the NEW branch at once and drops the previous branch rows', async () => {
     const user = userEvent.setup();
     renderLtr(
-      inBranch(
-        <>
-          <BranchSwitch to={TEST_BRANCH.id} label="use main" />
-          <BranchSwitch to={OTHER_BRANCH.id} label="use second" />
-          <ReceptionQueueScreen locale="en" messages={en} canCreate />
-        </>,
-        { snapshot: branchSnapshot([TEST_BRANCH, OTHER_BRANCH]) }
+      withMui(
+        inBranch(
+          <>
+            <BranchSwitch to={TEST_BRANCH.id} label="use main" />
+            <BranchSwitch to={OTHER_BRANCH.id} label="use second" />
+            <ReceptionQueueScreen locale="en" messages={en} canCreate />
+          </>,
+          { snapshot: branchSnapshot([TEST_BRANCH, OTHER_BRANCH]) }
+        )
       )
     );
 
     await user.click(screen.getByRole('button', { name: 'use main' }));
     await waitFor(() => expect(listReceptions).toHaveBeenCalled());
     expect(lastCall().scope).toEqual({ companyId: COMPANY, branchId: TEST_BRANCH.id });
-    expect(await screen.findByText('R-0001')).toBeVisible();
+    expect(await screen.findByText('R-0001', { selector: 'code' })).toBeVisible();
 
     listReceptions.mockClear();
     listReceptions.mockResolvedValue(
@@ -763,7 +842,7 @@ describe('a branch changed in the header re-targets the board', () => {
     await waitFor(() =>
       expect(lastCall().scope).toEqual({ companyId: COMPANY, branchId: OTHER_BRANCH.id })
     );
-    expect(await screen.findByText('R-0002')).toBeVisible();
+    expect(await screen.findByText('R-0002', { selector: 'code' })).toBeVisible();
     expect(screen.queryByText('R-0001')).toBeNull();
   });
 
@@ -780,13 +859,15 @@ describe('a branch changed in the header re-targets the board', () => {
      */
     const user = userEvent.setup();
     renderLtr(
-      inBranch(
-        <>
-          <BranchSwitch to={TEST_BRANCH.id} label="use main" />
-          <BranchSwitch to={OTHER_BRANCH.id} label="use second" />
-          <ReceptionQueueScreen locale="en" messages={en} canCreate />
-        </>,
-        { snapshot: branchSnapshot([TEST_BRANCH, OTHER_BRANCH]) }
+      withMui(
+        inBranch(
+          <>
+            <BranchSwitch to={TEST_BRANCH.id} label="use main" />
+            <BranchSwitch to={OTHER_BRANCH.id} label="use second" />
+            <ReceptionQueueScreen locale="en" messages={en} canCreate />
+          </>,
+          { snapshot: branchSnapshot([TEST_BRANCH, OTHER_BRANCH]) }
+        )
       )
     );
     await user.click(screen.getByRole('button', { name: 'use main' }));
@@ -812,12 +893,14 @@ describe('a branch changed in the header re-targets the board', () => {
       page([row({ branchId: OTHER_BRANCH.id, displayNumber: 'R-0003' })])
     );
     renderLtr(
-      inBranch(
-        <>
-          <BranchSwitch to="all" label="use all" />
-          <ReceptionQueueScreen locale="en" messages={en} canCreate />
-        </>,
-        { snapshot: branchSnapshot([TEST_BRANCH, OTHER_BRANCH]) }
+      withMui(
+        inBranch(
+          <>
+            <BranchSwitch to="all" label="use all" />
+            <ReceptionQueueScreen locale="en" messages={en} canCreate />
+          </>,
+          { snapshot: branchSnapshot([TEST_BRANCH, OTHER_BRANCH]) }
+        )
       )
     );
     await user.click(screen.getByRole('button', { name: 'use all' }));
@@ -827,9 +910,69 @@ describe('a branch changed in the header re-targets the board', () => {
     await waitFor(() => expect(lastCall().scope).toEqual({ companyId: COMPANY, branchId: null }));
     // A page that can span branches has to say which branch each row is from.
     expect(await screen.findByText(OTHER_BRANCH.name)).toBeVisible();
-    // And the period label names the clock the day was counted on, because
-    // several branches have no single one.
-    expect(screen.getByTestId('reception-period-label')).toHaveTextContent(TEST_BRANCH.name);
+    // And the summary names the branch whose clock the day was counted on,
+    // because several branches have no single one — and the zone itself.
+    expect(summary()).toHaveTextContent(
+      `${EN['receptions.queue.periodZoneOfFirstBranch'] as string} ${TEST_BRANCH.name}`
+    );
+    expect(summary()).toHaveTextContent(
+      `Days and times follow the clock in ${TEST_BRANCH.timezone}.`
+    );
+    // The union is named as such where the branch is stated.
+    expect(screen.getByTestId('working-branch-field-all')).toHaveTextContent(
+      `${EN['workingContext.allBranches'] as string} · ${TEST_COMPANY.name}`
+    );
+  });
+
+  it('draws the branch column only while the board spans branches', async () => {
+    const user = userEvent.setup();
+    const header = () =>
+      screen.queryByRole('columnheader', {
+        name: EN['receptions.queue.column.branch'] as string,
+      });
+    renderLtr(
+      withMui(
+        inBranch(
+          <>
+            <BranchSwitch to={TEST_BRANCH.id} label="use main" />
+            <BranchSwitch to="all" label="use all" />
+            <ReceptionQueueScreen locale="en" messages={en} canCreate />
+          </>,
+          { snapshot: branchSnapshot([TEST_BRANCH, OTHER_BRANCH]) }
+        )
+      )
+    );
+    await user.click(screen.getByRole('button', { name: 'use main' }));
+    await screen.findByRole('grid');
+    // One branch: every row is that branch's, so the column is not there at all.
+    expect(header()).toBeNull();
+    expect(screen.queryByText(TEST_BRANCH.name, { selector: '[role="gridcell"] *' })).toBeNull();
+
+    await user.click(screen.getByRole('button', { name: 'use all' }));
+    await waitFor(() => expect(header()).not.toBeNull());
+  });
+
+  it('asks nothing, and says why, when all my branches span two companies', async () => {
+    const user = userEvent.setup();
+    const elsewhere = { ...OTHER_BRANCH, companyId: '99999999-9999-4999-8999-999999999999' };
+    renderLtr(
+      withMui(
+        inBranch(
+          <>
+            <BranchSwitch to="all" label="use all" />
+            <ReceptionQueueScreen locale="en" messages={en} canCreate />
+          </>,
+          { snapshot: branchSnapshot([TEST_BRANCH, elsewhere]) }
+        )
+      )
+    );
+    await user.click(screen.getByRole('button', { name: 'use all' }));
+    expect(await screen.findByTestId('reception-queue-spans-companies')).toHaveTextContent(
+      EN['workingContext.spansCompanies'] as string
+    );
+    await new Promise((resolve) => setTimeout(resolve, 350));
+    expect(listReceptions).not.toHaveBeenCalled();
+    expect(screen.queryByRole('grid')).toBeNull();
   });
 
   it('renders a branch it cannot name as an absence, never as an empty cell', async () => {
@@ -840,30 +983,48 @@ describe('a branch changed in the header re-targets the board', () => {
       page([row({ branchId: '99999999-9999-4999-8999-999999999999' })])
     );
     renderLtr(
-      inBranch(
-        <>
-          <BranchSwitch to="all" label="use all" />
-          <ReceptionQueueScreen locale="en" messages={en} canCreate />
-        </>,
-        { snapshot: branchSnapshot([TEST_BRANCH, OTHER_BRANCH]) }
+      withMui(
+        inBranch(
+          <>
+            <BranchSwitch to="all" label="use all" />
+            <ReceptionQueueScreen locale="en" messages={en} canCreate />
+          </>,
+          { snapshot: branchSnapshot([TEST_BRANCH, OTHER_BRANCH]) }
+        )
       )
     );
     await user.click(screen.getByRole('button', { name: 'use all' }));
-    const table = await screen.findByRole('table');
-    expect(within(table).getAllByText('—').length).toBeGreaterThan(0);
+    const grid = await screen.findByRole('grid');
+    expect(within(grid).getAllByText('—').length).toBeGreaterThan(0);
   });
 });
 
 describe('both directions', () => {
   it('renders in Arabic, right to left, and reads on arrival there too', async () => {
     renderRtl(
-      inBranch(<ReceptionQueueScreen locale="ar" messages={ar} canCreate />, { locale: 'ar' })
+      withMui(
+        inBranch(<ReceptionQueueScreen locale="ar" messages={ar} canCreate />, { locale: 'ar' }),
+        'ar'
+      )
     );
     expect(await screen.findByText(AR['receptions.queue.custodyHeld'] as string)).toBeVisible();
     expect(document.documentElement.dir).toBe('rtl');
     expect(
-      screen.getByRole('button', { name: AR['receptions.queue.period.today'] as string })
+      screen.getByRole('button', { name: AR['filters.period.today'] as string })
     ).toHaveAttribute('aria-pressed', 'true');
+    // The summary line, the grid and the row actions speak Arabic too.
+    expect(screen.getByTestId('reception-queue-toolbar-summary')).toHaveTextContent(
+      (AR['receptions.queue.zoneNote'] as string).replace('{zone}', ZONE)
+    );
+    expect(
+      screen.getByRole('grid', { name: AR['receptions.queue.caption'] as string })
+    ).toBeVisible();
+    expect(
+      screen.getByRole('link', {
+        name: new RegExp(`^${AR['receptions.queue.continueCheckIn'] as string}`),
+      })
+    ).toBeVisible();
+    expect(screen.getByLabelText(AR['receptions.queue.searchLabel'] as string)).toBeVisible();
   });
 });
 
@@ -1047,11 +1208,55 @@ describe('the reception board opens on the period the address names', () => {
     expect(lastCall().filters).toEqual(rangeOfDays(ZONE, '2026-09-01', '2026-09-10'));
     // The boxes agree with the list. An empty pair would invite the reader to
     // "apply" a period they never asked for.
+    const shown = (label: string) =>
+      (
+        screen
+          .getByRole('group', { name: new RegExp(`^${label}`) })
+          .parentElement?.querySelector('input') as HTMLInputElement
+      ).value;
+    expect(shown(EN['filters.period.from'] as string)).toBe('01/09/2026');
+    expect(shown(EN['filters.period.to'] as string)).toBe('10/09/2026');
+    // And nothing says the list is out of step with them.
+    expect(screen.queryByText(EN['filters.period.notAppliedCustom'] as string)).toBeNull();
+  });
+});
+
+describe('the clock the board counts its days on', () => {
+  const branches = [
+    { id: TEST_BRANCH.id, name: TEST_BRANCH.name, timezone: 'Asia/Riyadh' },
+    { id: OTHER_BRANCH.id, name: OTHER_BRANCH.name, timezone: 'Europe/London' },
+  ];
+
+  it('is the working branch\u2019s own zone on one branch, with no branch named', () => {
     expect(
-      (screen.getByLabelText(EN['receptions.queue.fromDay'] as string) as HTMLInputElement).value
-    ).toBe('2026-09-01');
+      boardClock(
+        { kind: 'ready', target: { companyId: COMPANY, branchId: OTHER_BRANCH.id } },
+        branches
+      )
+    ).toEqual({ zone: 'Europe/London', spansBranches: false, zoneBranchName: null });
+  });
+
+  it('is the FIRST branch\u2019s zone under all my branches, and names that branch', () => {
+    expect(boardClock({ kind: 'all' }, branches)).toEqual({
+      zone: 'Asia/Riyadh',
+      spansBranches: true,
+      zoneBranchName: TEST_BRANCH.name,
+    });
+  });
+
+  it('falls back to UTC when no zone is published, and says so rather than guessing', () => {
+    // All my branches with an empty directory, and a working branch the
+    // directory no longer lists: neither has a zone to count on.
+    expect(boardClock({ kind: 'all' }, [])).toEqual({
+      zone: 'UTC',
+      spansBranches: true,
+      zoneBranchName: null,
+    });
     expect(
-      (screen.getByLabelText(EN['receptions.queue.toDay'] as string) as HTMLInputElement).value
-    ).toBe('2026-09-10');
+      boardClock(
+        { kind: 'ready', target: { companyId: COMPANY, branchId: 'no-longer-listed' } },
+        branches
+      ).zone
+    ).toBe('UTC');
   });
 });

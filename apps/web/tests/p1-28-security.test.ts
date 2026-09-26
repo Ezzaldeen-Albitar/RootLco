@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import ts from 'typescript';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { holds } from '@/features/crm/permissions';
 import {
@@ -76,6 +77,172 @@ function repoFile(...parts: string[]): string {
 /** A file under `apps/web/src`. */
 function webFile(...parts: string[]): string {
   return readFileSync(join(WEB_ROOT, 'src', ...parts), 'utf8');
+}
+
+/**
+ * The reception board's read contract, read from its SYNTAX TREE rather than
+ * from its text (Owner directive, the Material UI reception slice).
+ *
+ * The check it replaces searched the file for four literal strings. A rename, a
+ * wrapper or a reformat broke it while the behaviour stood, and a string left
+ * in a comment kept it green while the behaviour was gone. This reads what the
+ * code DOES at the one call that files the board's reads, and answers with the
+ * rules that do not hold — empty when the contract stands:
+ *
+ *   - **version** — `useSearchRequest` is passed `version: <ctx>.version`, where
+ *     `<ctx>` is bound to `useWorkingContext()` in the same component, so a
+ *     branch change in the header abandons the read in flight.
+ *   - **scope** — the `criteria` passed is a declaration whose type names an
+ *     interface holding `scope: BranchScope`, and whose value builds an object
+ *     carrying that `scope`: the scope is part of what the read is filed under,
+ *     so a branch change is a new ordering contract, never a reused cursor.
+ *   - **asked** — the `load` passed hands exactly those criteria's `scope` and
+ *     `filters` to the read (`listReceptionsCancellable`), so what the board is
+ *     keyed on is what it sends.
+ */
+function receptionReadContractViolations(source: string): string[] {
+  const file = ts.createSourceFile(
+    'ReceptionQueueScreen.tsx',
+    source,
+    ts.ScriptTarget.Latest,
+    true
+  );
+  const violations: string[] = [];
+  const calls: ts.CallExpression[] = [];
+  const declarations = new Map<string, ts.VariableDeclaration>();
+  const interfaces = new Map<string, ts.InterfaceDeclaration>();
+  const visit = (node: ts.Node) => {
+    if (
+      ts.isCallExpression(node) &&
+      ts.isIdentifier(node.expression) &&
+      node.expression.text === 'useSearchRequest'
+    ) {
+      calls.push(node);
+    }
+    if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name)) {
+      declarations.set(node.name.text, node);
+    }
+    if (ts.isInterfaceDeclaration(node)) interfaces.set(node.name.text, node);
+    ts.forEachChild(node, visit);
+  };
+  visit(file);
+
+  if (calls.length !== 1) return [`expected one useSearchRequest call, found ${calls.length}`];
+  const options = calls[0]?.arguments[0];
+  if (options === undefined || !ts.isObjectLiteralExpression(options)) {
+    return ['useSearchRequest is not handed an object literal'];
+  }
+  /** The value a property of the options carries, following a shorthand to its name. */
+  const valueOf = (name: string): ts.Expression | null => {
+    for (const property of options.properties) {
+      if (property.name === undefined || !ts.isIdentifier(property.name)) continue;
+      if (property.name.text !== name) continue;
+      if (ts.isPropertyAssignment(property)) return property.initializer;
+      if (ts.isShorthandPropertyAssignment(property)) return property.name;
+    }
+    return null;
+  };
+  const initializerOf = (expression: ts.Expression | null): ts.Expression | null => {
+    if (expression === null || !ts.isIdentifier(expression)) return null;
+    return declarations.get(expression.text)?.initializer ?? null;
+  };
+
+  // version: <ctx>.version, <ctx> = useWorkingContext()
+  const version = valueOf('version');
+  const context =
+    version !== null &&
+    ts.isPropertyAccessExpression(version) &&
+    version.name.text === 'version' &&
+    ts.isIdentifier(version.expression)
+      ? initializerOf(version.expression)
+      : null;
+  if (
+    context === null ||
+    !ts.isCallExpression(context) ||
+    !ts.isIdentifier(context.expression) ||
+    context.expression.text !== 'useWorkingContext'
+  ) {
+    violations.push('version: the read is not keyed on the working-context version');
+  }
+
+  // scope: criteria's declared type holds `scope: BranchScope`, and its value builds it
+  const criteria = valueOf('criteria');
+  const criteriaDeclaration =
+    criteria !== null && ts.isIdentifier(criteria) ? declarations.get(criteria.text) : undefined;
+  const namedTypes: string[] = [];
+  const collectTypeNames = (node: ts.Node) => {
+    if (ts.isTypeReferenceNode(node) && ts.isIdentifier(node.typeName)) {
+      namedTypes.push(node.typeName.text);
+    }
+    ts.forEachChild(node, collectTypeNames);
+  };
+  if (criteriaDeclaration?.type) collectTypeNames(criteriaDeclaration.type);
+  const holdsScope = namedTypes.some((name) =>
+    (interfaces.get(name)?.members ?? []).some(
+      (member) =>
+        ts.isPropertySignature(member) &&
+        ts.isIdentifier(member.name) &&
+        member.name.text === 'scope' &&
+        member.type !== undefined &&
+        ts.isTypeReferenceNode(member.type) &&
+        ts.isIdentifier(member.type.typeName) &&
+        member.type.typeName.text === 'BranchScope'
+    )
+  );
+  let buildsScope = false;
+  const findScope = (node: ts.Node) => {
+    if (ts.isObjectLiteralExpression(node)) {
+      const names = node.properties.flatMap((property) =>
+        property.name !== undefined && ts.isIdentifier(property.name) ? [property.name.text] : []
+      );
+      if (names.includes('scope') && names.includes('filters')) buildsScope = true;
+    }
+    ts.forEachChild(node, findScope);
+  };
+  if (criteriaDeclaration?.initializer) findScope(criteriaDeclaration.initializer);
+  if (!holdsScope || !buildsScope) {
+    violations.push('scope: the criteria the read is filed under do not carry a BranchScope scope');
+  }
+
+  // asked: load hands criteria.scope and criteria.filters to the read
+  const loadInitializer = initializerOf(valueOf('load'));
+  const loader =
+    loadInitializer !== null &&
+    ts.isCallExpression(loadInitializer) &&
+    loadInitializer.arguments[0] !== undefined &&
+    (ts.isArrowFunction(loadInitializer.arguments[0]) ||
+      ts.isFunctionExpression(loadInitializer.arguments[0]))
+      ? loadInitializer.arguments[0]
+      : loadInitializer !== null &&
+          (ts.isArrowFunction(loadInitializer) || ts.isFunctionExpression(loadInitializer))
+        ? loadInitializer
+        : null;
+  const parameter = loader?.parameters[0]?.name;
+  let sendsAsked = false;
+  const findRead = (node: ts.Node) => {
+    if (
+      ts.isCallExpression(node) &&
+      ts.isIdentifier(node.expression) &&
+      node.expression.text === 'listReceptionsCancellable' &&
+      parameter !== undefined &&
+      ts.isIdentifier(parameter)
+    ) {
+      const [first, second] = node.arguments;
+      const reads = (argument: ts.Expression | undefined, field: string) =>
+        argument !== undefined &&
+        ts.isPropertyAccessExpression(argument) &&
+        ts.isIdentifier(argument.expression) &&
+        argument.expression.text === parameter.text &&
+        argument.name.text === field;
+      if (reads(first, 'scope') && reads(second, 'filters')) sendsAsked = true;
+    }
+    ts.forEachChild(node, findRead);
+  };
+  if (loader?.body) findRead(loader.body);
+  if (!sendsAsked) {
+    violations.push('asked: the read is not sent the scope and filters the board is keyed on');
+  }
+  return violations;
 }
 
 interface RegisterOperation {
@@ -885,9 +1052,11 @@ describe('P1-28-SEC-003 — the ONE door, and the abuse cases that try the walls
      * version is passed explicitly so a header change abandons the read in
      * flight rather than letting it land under the new branch's name.
      */
+    // The reception board is held by `receptionReadContractViolations` in the
+    // case below — its syntax tree, not its text. The other two keep this text
+    // check until their own Material UI slices replace it the same way.
     for (const relative of [
       ['features', 'appointments', 'components', 'AppointmentCalendarScreen.tsx'],
-      ['features', 'receptions', 'components', 'ReceptionQueueScreen.tsx'],
       ['features', 'work-orders', 'components', 'WorkOrderQueueScreen.tsx'],
     ]) {
       const source = webFile(...relative);
@@ -900,6 +1069,64 @@ describe('P1-28-SEC-003 — the ONE door, and the abuse cases that try the walls
       // And no screen spends a cursor of its own: the stack is the hook's.
       expect(source, relative.join('/')).not.toMatch(/atob\(|Buffer\.from\(|JSON\.parse\(cursor/);
     }
+  });
+
+  it('3/3 cursor: the reception board keys its reads on the version and the scope it sends', () => {
+    /*
+     * The same guarantee as the case above, for the reception board, read from
+     * the call itself: the version is the working context's, the criteria carry
+     * the BranchScope, and the loader sends exactly those criteria. The
+     * behaviour is also driven end to end — `cancellable-reads.dom.test.tsx`
+     * aborts the left branch's request on a switch, and
+     * `reception-queue.dom.test.tsx` asserts the scope and filters every read
+     * was sent.
+     */
+    const relative = ['features', 'receptions', 'components', 'ReceptionQueueScreen.tsx'];
+    const source = webFile(...relative);
+    expect(receptionReadContractViolations(source), relative.join('/')).toEqual([]);
+    // And no screen spends a cursor of its own: the stack is the hook's.
+    expect(source, relative.join('/')).not.toMatch(/atob\(|Buffer\.from\(|JSON\.parse\(cursor/);
+  });
+
+  it('3/3 cursor: the reception contract check fails when any of its three rules is broken', () => {
+    /*
+     * Each rule, falsified on a copy of the real source. A check that stayed
+     * green over these would be describing the text, not the behaviour.
+     */
+    const source = webFile('features', 'receptions', 'components', 'ReceptionQueueScreen.tsx');
+    const broken = (from: RegExp, to: string) => {
+      expect(source, `the falsification anchor ${from} is gone from the source`).toMatch(from);
+      return receptionReadContractViolations(source.replace(from, to));
+    };
+    // No version: the read would land under the next branch's name.
+    expect(broken(/version: context\.version,/, '')).toEqual([
+      'version: the read is not keyed on the working-context version',
+    ]);
+    // A version that is not the working context's.
+    expect(broken(/version: context\.version,/, 'version: 0,')).toEqual([
+      'version: the read is not keyed on the working-context version',
+    ]);
+    // Criteria whose type no longer carries a BranchScope scope.
+    expect(broken(/readonly scope: BranchScope;/, 'readonly scope: string;')).toEqual([
+      'scope: the criteria the read is filed under do not carry a BranchScope scope',
+    ]);
+    // Criteria that are no longer the asked object.
+    expect(broken(/criteria: asked,/, 'criteria: null,')).toEqual([
+      'scope: the criteria the read is filed under do not carry a BranchScope scope',
+    ]);
+    // A loader that sends something other than what the board is keyed on.
+    expect(broken(/criteria\.scope,\n(\s*)criteria\.filters,/, 'criteria.scope,\n$1{},')).toEqual([
+      'asked: the read is not sent the scope and filters the board is keyed on',
+    ]);
+    // No comment can keep it green: the same words in a comment are not a call.
+    expect(
+      receptionReadContractViolations(
+        `// useSearchRequest({ criteria: asked, load, version: context.version })\n${source.replace(
+          /version: context\.version,/,
+          ''
+        )}`
+      )
+    ).toContain('version: the read is not keyed on the working-context version');
   });
 
   it('3/3 cursor: a refused cursor surfaces as an error with a reference, never as “empty”', async () => {

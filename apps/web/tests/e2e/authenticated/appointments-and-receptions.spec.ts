@@ -761,7 +761,11 @@ test.describe('the P1-28 modules are reachable from the sidebar', () => {
     await expect(page).toHaveURL(/\/en\/receptions$/);
     // The board reads on arrival now, so what proves the route rendered is its
     // own period control rather than an idle state that no longer exists.
-    await expect(page.getByRole('main')).toContainText(say('en', 'receptions.queue.periodLabel'));
+    await expect(
+      page
+        .getByRole('main')
+        .getByRole('group', { name: say('en', 'filters.period.legend'), exact: true })
+    ).toBeVisible();
   });
 });
 
@@ -957,7 +961,11 @@ test.describe('the reception queue is a board for one named branch', () => {
 
     await page.goto('/en/receptions');
     await segmentRendered(page, '/en/receptions');
-    await expect(page.getByRole('main')).toContainText(say('en', 'receptions.queue.periodLabel'));
+    await expect(
+      page
+        .getByRole('main')
+        .getByRole('group', { name: say('en', 'filters.period.legend'), exact: true })
+    ).toBeVisible();
 
     /*
      * WHICH READ IS BEING COUNTED, and why the two bootstraps cannot share one
@@ -1466,7 +1474,11 @@ test.describe('a read-only operator meets a denial, not an empty screen', () => 
     ).not.toContainText(say('en', 'state.denied.title'));
     // The board reads on arrival, so what proves the reader reached it is the
     // board's own control rather than an idle state the screen no longer has.
-    await expect(page.getByRole('main')).toContainText(say('en', 'receptions.queue.periodLabel'));
+    await expect(
+      page
+        .getByRole('main')
+        .getByRole('group', { name: say('en', 'filters.period.legend'), exact: true })
+    ).toBeVisible();
   });
 
   test('every write affordance is absent for the reader, and the wizard says why', async ({
