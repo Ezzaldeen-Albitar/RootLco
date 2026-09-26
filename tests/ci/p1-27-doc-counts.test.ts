@@ -653,10 +653,12 @@ interface RunRecord {
   files?: number;
   measuredAtCommit?: string;
   provenance?: unknown;
+  diagnostic?: unknown;
 }
 
 interface RunLedger {
   tiers?: Record<string, RunRecord | undefined>;
+  diagnostics?: unknown;
 }
 
 interface ClosingValue {
@@ -703,6 +705,12 @@ function tierProvenance(ledger: RunLedger, tier: string): Provenance {
   const record = ledger.tiers?.[tier];
   if (record === undefined || record === null || typeof record !== 'object') {
     return { state: 'malformed', why: `the run ledger holds no record for the \`${tier}\` tier` };
+  }
+  // A diagnostic is the history of a run that did NOT succeed. It lives under
+  // `diagnostics`, which this reader never consults; one standing in `tiers` is
+  // neither local nor hosted evidence, and no page may restate it.
+  if ('diagnostic' in record) {
+    return { state: 'malformed', why: `the \`${tier}\` record is a diagnostic, not a measurement` };
   }
   const block = record.provenance;
   // An absent block is the repository's own marker for a local measurement —
@@ -951,6 +959,36 @@ describe('P1-31-QA-005-038 — a restated provenance is judged against the run l
 
   it('accepts a hosted record described as the binding measurement', () => {
     expect(judge(HOSTED_SENTENCE, hostedLedger())).toEqual([]);
+  });
+
+  it('IGNORES diagnostic history of a failed run kept beside the tier record', () => {
+    // A failed run kept by `--record --diagnostic` lives under `diagnostics`,
+    // with its own (red) counts. The page restates the TIER record, and the
+    // history beside it must change nothing — neither the word nor the figure.
+    const { page, closing } = fixture(HOSTED_SENTENCE);
+    const runs: RunLedger = {
+      tiers: { web: { measuredAtCommit: 'a'.repeat(40), provenance: hostedBlock(), tests: 4020 } },
+      diagnostics: [
+        {
+          diagnostic: true,
+          evidence: 'DIAGNOSTIC ONLY — a run that did not succeed, kept as history.',
+          tier: 'web',
+          counts: { tests: 3999, passed: 3990, failed: 9, skipped: 0, files: 170 },
+          run: { id: '1', headSha: 'b'.repeat(40), conclusion: 'failure' },
+        },
+      ],
+    };
+    expect(judgeRestatedProvenance(FIXTURE_PATH, page, closing, runs)).toEqual([]);
+  });
+
+  it('REFUSES a diagnostic record standing where the tier record is read', () => {
+    const problems = judge(HOSTED_SENTENCE, {
+      tiers: {
+        web: { measuredAtCommit: 'a'.repeat(40), provenance: hostedBlock(), diagnostic: true },
+      },
+    });
+    expect(problems.length, 'a diagnostic record was restated as a measurement').toBe(1);
+    expect(first(problems)).toContain('is a diagnostic, not a measurement');
   });
 
   it('REFUSES a hosted record still described as local and pending attestation', () => {

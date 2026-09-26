@@ -133,3 +133,74 @@ case that pins this, and if it ever returns `[]` the authority has become a loop
 
 A hosted record buys authority, not permanence. It is filed against the commit its run ran,
 and the staleness rules expire it the moment an executable path changes.
+
+## 8. Only success is recorded, and the ledger changes whole or not at all
+
+**The defect.** `--record <tier> --hosted-run <runId>` used to take the tier from whichever job
+reached a verdict on the tier's step, pass or fail, and write the result. A run whose tier step
+FAILED was written into `tiers` with `exitCode: 1`. The gate refused that record afterwards, but
+the ledger had already been rewritten: the success slot held a failure, and only a manual
+restore kept it out of a commit. The local `--record <tier>` wrote a failing run the same way.
+
+**Eligibility is decided before anything is written.** `judgeHostedEligibility` in
+`scripts/lib/hosted-run-report.mjs` reads the observation `fetchHostedTierRun` collected and
+refuses, naming each reason, unless every one of these holds:
+
+| rule                                                                                                   | refusal                            |
+| ------------------------------------------------------------------------------------------------------ | ---------------------------------- |
+| the run has finished (`status: completed`)                                                             | `HOSTED_RUN_NOT_COMPLETED`         |
+| the run concluded `success` or `failure` — not `cancelled`, `timed_out`, `skipped` or any other state  | `HOSTED_RUN_CONCLUSION_INELIGIBLE` |
+| the run describes the commit being recorded (`head_sha` equals `HEAD`)                                 | `HOSTED_RUN_HEAD_MISMATCH`         |
+| exactly one job reached a verdict on the tier's step                                                   | `HOSTED_TIER_NOT_RUN`, `HOSTED_TIER_AMBIGUOUS` |
+| that job belongs to this run and this head                                                             | `HOSTED_JOB_NOT_IN_RUN`            |
+| that job completed with conclusion `success`                                                           | `HOSTED_JOB_NOT_SUCCESSFUL`        |
+| the tier step concluded `success`                                                                      | `HOSTED_STEP_NOT_SUCCESSFUL`       |
+| the tier artifact exists once, is unexpired, names this run and head, and matches its published digest | `HOSTED_ARTIFACT_UNUSABLE`         |
+| the artifact carries the tier summary (`test-totals-<tier>.json`)                                      | `HOSTED_SUMMARY_MISSING`           |
+| the report adds up to itself and agrees with the summary on files, total, passed, failed, pending, todo | `HOSTED_COUNTS_INCONSISTENT`       |
+| the report and the summary record success and no failure                                               | `HOSTED_REPORT_NOT_SUCCESSFUL`     |
+
+The record is then put through the completeness and provenance rules of sections 3 and 7, and
+only then written. A refusal exits 1 and writes nothing; a failure to read the API exits 2 and
+writes nothing. The local `--record <tier>` applies the same completeness rules before it writes.
+
+**Mixed runs: provenance is per tier.** A PR CI run is several independent jobs, and its overall
+conclusion is `failure` whenever any one of them fails — including the clean-room job, which
+refuses the previous head's run record (`RUN_RECORD_STALE`) until this very record is taken, and
+the unit job, which refuses a web file count the ledger does not yet hold. So the whole-run
+conclusion is never the evidence: a tier is taken from **its own job**. A run that concluded
+`failure` can supply a tier whose job concluded `success`; a run that concluded `success` cannot
+supply a tier whose job did not; and a run with no pass-or-fail verdict supplies nothing. This is
+the rule the recorder has always applied by locating the tier's job by its step (section 7), and
+the same per-binding discipline the P1-28 closure package applies to each tier's
+`hostedAttestation` (a run id, a job id and the head of that job, for each tier separately). It is
+stated in code as `ELIGIBLE_RUN_CONCLUSIONS`.
+
+**All or nothing.** The ledger is computed whole, then written by
+`scripts/lib/atomic-files.mjs`: each new body is staged beside its target and renamed over it,
+and if any step fails every file already replaced is restored and every staged file removed. On
+any error the working tree is byte-identical to what it was before the command ran.
+
+**Failure history without failure evidence.** A failed or ineligible run can still be worth
+keeping. `--diagnostic` does that and nothing else:
+
+```
+node scripts/ci/check-p1-27-closing-values.mjs --record <tier> --hosted-run <runId> --diagnostic
+```
+
+It writes to the ledger's `diagnostics` list — never to `tiers` — an entry carrying
+`diagnostic: true`, a notice beginning `DIAGNOSTIC ONLY`, the run, job and step as the API
+reported them, the counts when the artifact could be read, and the reasons the run was refused.
+It refuses a run that IS eligible (record that one without `--diagnostic`) and a run still in
+flight. Every reader of the ledger reads `tiers` only, so the history changes no verdict; and the
+gate refuses the two ways of confusing them (`RUN_RECORD_DIAGNOSTIC_MISPLACED`): a record in
+`tiers` carrying the `diagnostic` marker, and an entry in `diagnostics` without it. The
+provenance reader in `tests/ci/p1-27-doc-counts.test.ts` refuses a diagnostic record standing in
+`tiers` as neither local nor hosted.
+
+Like any write to the ledger, a diagnostic entry changes a digested evidence file, so it is
+followed by `npm run evidence:p1-27` before it is committed.
+
+`tests/ci/hosted-run-recorder.test.ts` drives every rule above with GitHub API answers
+transcribed from PR CI run 36245483798 and mutated one fact at a time, with no network, including
+a failure injected between two file writes.
