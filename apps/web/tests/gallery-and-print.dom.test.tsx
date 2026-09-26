@@ -1,10 +1,12 @@
 import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { screen, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { describe, expect, it } from 'vitest';
 import { axe } from 'vitest-axe';
 import { FIXTURE_ROWS, simulateServer } from '@/components/gallery/fixtures';
 import { MuiFoundationSection } from '@/components/gallery/MuiFoundationSection';
+import { MuiWorkflowSection } from '@/components/gallery/MuiWorkflowSection';
 import { MuiWrappersSection } from '@/components/gallery/MuiWrappersSection';
 import { UiFoundationProvider } from '@/components/ui-foundation/UiFoundationProvider';
 import { muiTextOf } from '@/components/ui-foundation/mui-text';
@@ -328,5 +330,96 @@ describe('the shared Material UI wrappers section', () => {
     ]) {
       expect(within(section).getByTestId(testId), testId).toBeInTheDocument();
     }
+  });
+});
+
+/**
+ * The second set of shared wrappers (ADR-022 PR1) in the gallery: the branch
+ * selector, the two decision dialogs, the filter toolbar, the date fields and
+ * the figures, in both languages, over the gallery's placeholder rows.
+ */
+describe('the choosing, confirming, filtering and figures section', () => {
+  function renderWorkflow(locale: Locale) {
+    const messages = getMessages(locale);
+    const renderIn = locale === 'ar' ? renderRtl : renderLtr;
+    return renderIn(
+      <UiFoundationProvider locale={locale} text={muiTextOf(messages)}>
+        <MuiWorkflowSection locale={locale} messages={messages} />
+      </UiFoundationProvider>
+    );
+  }
+
+  it.each(['en', 'ar'] as const)('renders every wrapper in %s', async (locale) => {
+    const messages = getMessages(locale);
+    const user = userEvent.setup();
+    renderWorkflow(locale);
+    expect(document.documentElement.dir).toBe(locale === 'ar' ? 'rtl' : 'ltr');
+    const section = screen.getByTestId('mui-workflow');
+    expect(
+      within(section).getByRole('heading', { name: messages['gallery.muiWorkflow.title'] })
+    ).toBeInTheDocument();
+
+    // One selector for several branches; a sentence for one.
+    const selector = within(section).getByRole('combobox', {
+      name: messages['workingContext.label'],
+    });
+    expect(
+      within(selector).getByRole('option', { name: messages['workingContext.allBranches'] })
+    ).toBeInTheDocument();
+    expect(within(section).getByTestId('working-context-single')).toHaveTextContent(
+      messages['gallery.muiWorkflow.branchFirst']
+    );
+
+    await user.click(
+      within(section).getByRole('button', { name: messages['gallery.muiWorkflow.confirmOpen'] })
+    );
+    const confirm = await screen.findByRole('alertdialog', {
+      name: messages['gallery.muiWorkflow.confirmTitle'],
+    });
+    await user.click(within(confirm).getByRole('button', { name: messages['overlay.cancel'] }));
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+
+    const toolbar = within(section).getByTestId('gallery-filter-toolbar');
+    expect(
+      within(toolbar).getByRole('searchbox', {
+        name: messages['gallery.muiWorkflow.searchLabel'],
+      })
+    ).toBeInTheDocument();
+    expect(
+      within(toolbar).getByRole('button', { name: messages['filters.period.custom'] })
+    ).toBeInTheDocument();
+
+    expect(
+      within(section).getByRole('group', {
+        name: new RegExp(`^${messages['gallery.muiWorkflow.dateLabel']}`),
+      })
+    ).toBeInTheDocument();
+
+    for (const [testId, state] of [
+      ['gallery-metric-value', 'value'],
+      ['gallery-metric-zero', 'zero'],
+      ['gallery-metric-withheld', 'unauthorized'],
+      ['gallery-metric-unavailable', 'unavailable'],
+    ] as const) {
+      expect(within(section).getByTestId(testId)).toHaveAttribute('data-metric-state', state);
+    }
+    expect(
+      within(section).getByRole('img', { name: messages['gallery.muiWorkflow.chartTitle'] })
+    ).toBeInTheDocument();
+    expect(within(section).getByTestId('gallery-chart-states')).toHaveAttribute(
+      'data-axis-reversed',
+      String(locale === 'ar')
+    );
+    expect(section.textContent ?? '').not.toMatch(/[٠-٩۰-۹]/);
+  });
+
+  it('shows the period a board would send, on the fixed gallery clock', async () => {
+    const user = userEvent.setup();
+    const messages = getMessages('en');
+    renderWorkflow('en');
+    await user.click(screen.getByRole('button', { name: messages['filters.period.yesterday'] }));
+    expect(screen.getByTestId('gallery-filter-sent')).toHaveTextContent(
+      /A board would now ask for \d{4}-\d{2}-\d{2}T00:00:00\.000Z to \d{4}-\d{2}-\d{2}T23:59:59\.999Z\./
+    );
   });
 });
