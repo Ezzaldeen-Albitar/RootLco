@@ -47,15 +47,17 @@ vi.mock('@/features/receptions/api', () => ({
 }));
 
 const listCustomerVehicles = vi.fn();
-vi.mock('@/lib/customers/vehicles', () => ({
-  listCustomerVehicles: (...args: unknown[]) => listCustomerVehicles(...args),
+vi.mock('@/lib/customers/vehicles-read', () => ({
+  listCustomerVehiclesCancellable: (...args: unknown[]) => listCustomerVehicles(...args),
 }));
 
 const searchVehicles = vi.fn();
 const createVehicleAction = vi.fn();
 vi.mock('@/features/vehicles/api', () => ({
-  searchVehicles: (...args: unknown[]) => searchVehicles(...args),
   createVehicleAction: (...args: unknown[]) => createVehicleAction(...args),
+}));
+vi.mock('@/features/vehicles/vehicle-search-read', () => ({
+  searchVehiclesCancellable: (...args: unknown[]) => searchVehicles(...args),
 }));
 
 const linkCustomerAction = vi.fn();

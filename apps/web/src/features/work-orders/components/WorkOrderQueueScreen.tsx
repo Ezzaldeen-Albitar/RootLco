@@ -8,7 +8,7 @@ import { DigitsEcho } from '@/components/forms/DigitsEcho';
 import { SelectField, TextField } from '@/components/forms/Field';
 import { SearchBox } from '@/components/search/SearchBox';
 import { SearchStates } from '@/components/search/SearchStates';
-import { readDashboardSummary } from '@/features/overview/api';
+import { readDashboardSummaryCancellable } from '@/features/overview/dashboard-summary-read';
 import { figureStateOf, type DashboardSummary } from '@/features/overview/overview-contract';
 import {
   RequiresConcreteBranch,
@@ -26,7 +26,8 @@ import { formatInteger, intlLocale } from '@/lib/format';
 import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic } from '@/i18n/get-messages';
-import { listWorkOrders, readWorkOrderCatalogue } from '../api';
+import { readWorkOrderCatalogue } from '../api';
+import { listWorkOrdersCancellable } from '../work-order-list-read';
 import {
   MAX_WORK_ORDER_SEARCH,
   MIN_WORK_ORDER_SEARCH,
@@ -371,11 +372,24 @@ export function WorkOrderQueueScreen({
   useEffect(() => {
     if (summaryKey === null || companyId === null) return undefined;
     let cancelled = false;
-    void readDashboardSummary({ companyId, branchId }, { period: 'today' }).then((read) => {
-      if (!cancelled) setSummary({ key: summaryKey, read });
-    });
+    // Aborted when the scope moves or the board unmounts, so the figures for a
+    // branch the operator has left are cancelled, not only discarded
+    // (P1-32-PRE-OD-READ). A cancelled read rejects; that rejection is this
+    // effect's own doing and there is nothing to show for it.
+    const controller = new AbortController();
+    void readDashboardSummaryCancellable(
+      { companyId, branchId },
+      { period: 'today' },
+      controller.signal
+    ).then(
+      (read) => {
+        if (!cancelled) setSummary({ key: summaryKey, read });
+      },
+      () => undefined
+    );
     return () => {
       cancelled = true;
+      controller.abort();
     };
   }, [summaryKey, companyId, branchId]);
 
@@ -450,9 +464,18 @@ export function WorkOrderQueueScreen({
   const load = useCallback(
     async (
       criteria: Asked,
-      cursor: string | null
+      cursor: string | null,
+      signal: AbortSignal
     ): Promise<ReadState<CursorPage<WorkOrderListEntry>>> => {
-      const page = await listWorkOrders(criteria.scope, criteria.filters, INITIAL_REQUEST, cursor);
+      // Cancellable (P1-32-PRE-OD-READ): a superseded read — the operator typed
+      // again or switched branch — is aborted, not only discarded.
+      const page = await listWorkOrdersCancellable(
+        criteria.scope,
+        criteria.filters,
+        INITIAL_REQUEST,
+        cursor,
+        signal
+      );
       if (page.status !== 'ok') return { status: page.status, correlationId: page.correlationId };
       return {
         status: 'ok',

@@ -99,8 +99,8 @@ vi.mock('@/features/vehicles/history-api', () => ({
 }));
 
 const searchCustomerDirectory = vi.fn();
-vi.mock('@/lib/customers/directory', () => ({
-  searchCustomerDirectory: (...args: unknown[]) => searchCustomerDirectory(...args),
+vi.mock('@/lib/customers/directory-read', () => ({
+  searchCustomerDirectoryCancellable: (...args: unknown[]) => searchCustomerDirectory(...args),
 }));
 
 const { ReadingsStep } = await import('@/features/receptions/components/steps/ReadingsStep');

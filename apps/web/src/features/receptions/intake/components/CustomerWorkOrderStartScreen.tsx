@@ -8,7 +8,7 @@ import { PartyLabel } from '@/components/party/PartyLabel';
 import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic } from '@/i18n/get-messages';
 import type { Locale } from '@/i18n/config';
-import { listCustomerVehicles } from '@/lib/customers/vehicles';
+import { listCustomerVehiclesCancellable } from '@/lib/customers/vehicles-read';
 import type { CustomerVehicleEntry } from '@/lib/customers/vehicles-contract';
 import { listPlates } from '@/features/vehicles/history-api';
 import { isInForceOn, localToday } from '@/features/vehicles/history-contract';
@@ -226,8 +226,8 @@ function CurrentVehicleChoice({
 }) {
   const groupId = useId();
   const load = useCallback(
-    (request: TableRequest, cursor: string | null) =>
-      listCustomerVehicles(customer.id, request, cursor),
+    (request: TableRequest, cursor: string | null, signal: AbortSignal) =>
+      listCustomerVehiclesCancellable(customer.id, request, cursor, signal),
     [customer.id]
   );
   const table = useServerTable<CustomerVehicleEntry>(load, {

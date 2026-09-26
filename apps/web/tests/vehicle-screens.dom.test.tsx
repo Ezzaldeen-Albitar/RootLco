@@ -49,8 +49,8 @@ vi.mock('@/lib/api/server-client', () => ({
   authorizedClient: () => authorizedClient(),
 }));
 
-vi.mock('@/features/vehicles/api', () => ({
-  searchVehicles: (...args: unknown[]) => searchVehicles(...args),
+vi.mock('@/features/vehicles/vehicle-search-read', () => ({
+  searchVehiclesCancellable: (...args: unknown[]) => searchVehicles(...args),
 }));
 vi.mock('@/features/vehicles/duplicates-api', () => ({
   listVehicleDuplicates: (...args: unknown[]) => listVehicleDuplicates(...args),

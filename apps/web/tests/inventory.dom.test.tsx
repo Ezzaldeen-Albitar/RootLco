@@ -91,8 +91,10 @@ vi.mock('@/features/inventory/api', () => ({
 const listWorkOrders = vi.fn();
 const readWorkOrderDetail = vi.fn();
 vi.mock('@/features/work-orders/api', () => ({
-  listWorkOrders: (...args: unknown[]) => listWorkOrders(...args),
   readWorkOrderDetail: (...args: unknown[]) => readWorkOrderDetail(...args),
+}));
+vi.mock('@/features/work-orders/work-order-list-read', () => ({
+  listWorkOrdersCancellable: (...args: unknown[]) => listWorkOrders(...args),
 }));
 
 vi.mock('next/navigation', () => ({

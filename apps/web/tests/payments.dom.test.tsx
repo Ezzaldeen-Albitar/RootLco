@@ -77,8 +77,8 @@ vi.mock('@/features/payments/api', () => ({
 // The payer and the invoice are FOUND, through the customer directory and the
 // branch invoice list; both adapters are replaced here, never the pickers.
 const searchCustomerDirectory = vi.fn();
-vi.mock('@/lib/customers/directory', () => ({
-  searchCustomerDirectory: (...args: unknown[]) => searchCustomerDirectory(...args),
+vi.mock('@/lib/customers/directory-read', () => ({
+  searchCustomerDirectoryCancellable: (...args: unknown[]) => searchCustomerDirectory(...args),
 }));
 const listInvoices = vi.fn();
 vi.mock('@/features/billing/api', () => ({

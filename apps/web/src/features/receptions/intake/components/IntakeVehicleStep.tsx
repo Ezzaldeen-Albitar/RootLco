@@ -16,9 +16,10 @@ import {
 import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic, translateWithValues } from '@/i18n/get-messages';
 import type { Locale } from '@/i18n/config';
-import { listCustomerVehicles } from '@/lib/customers/vehicles';
+import { listCustomerVehiclesCancellable } from '@/lib/customers/vehicles-read';
 import type { CustomerVehicleEntry } from '@/lib/customers/vehicles-contract';
-import { createVehicleAction, searchVehicles } from '@/features/vehicles/api';
+import { createVehicleAction } from '@/features/vehicles/api';
+import { searchVehiclesCancellable } from '@/features/vehicles/vehicle-search-read';
 import type { VehicleCreationState } from '@/features/vehicles/api';
 import {
   EMPTY_CRITERIA,
@@ -182,8 +183,8 @@ function CustomerVehicleList({
   readonly onChosen: (vehicle: ChosenVehicle) => void;
 }) {
   const load = useCallback(
-    (request: TableRequest, cursor: string | null) =>
-      listCustomerVehicles(customerId, request, cursor),
+    (request: TableRequest, cursor: string | null, signal: AbortSignal) =>
+      listCustomerVehiclesCancellable(customerId, request, cursor, signal),
     [customerId]
   );
   const table = useServerTable<CustomerVehicleEntry>(load, {
@@ -408,7 +409,8 @@ function VehicleSearchResults({
   readonly onChosen: (vehicle: ChosenVehicle) => void;
 }) {
   const load = useCallback(
-    (request: TableRequest, cursor: string | null) => searchVehicles(criteria, request, cursor),
+    (request: TableRequest, cursor: string | null, signal: AbortSignal) =>
+      searchVehiclesCancellable(criteria, request, cursor, signal),
     [criteria]
   );
   const table = useServerTable<VehicleSearchHit>(load, {

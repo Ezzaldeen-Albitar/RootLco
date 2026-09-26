@@ -15,7 +15,7 @@ import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic } from '@/i18n/get-messages';
 import type { Locale } from '@/i18n/config';
 import { formatDate } from '@/lib/format';
-import { searchVehicles } from '../api';
+import { searchVehiclesCancellable } from '../vehicle-search-read';
 import type { CatalogueResult } from '../catalogue-api';
 import {
   EMPTY_CRITERIA,
@@ -321,9 +321,12 @@ function VehicleSearchResults({
   const load = useCallback(
     async (
       asked: VehicleSearchCriteria,
-      cursor: string | null
+      cursor: string | null,
+      signal: AbortSignal
     ): Promise<ReadState<CursorPage<VehicleSearchHit>>> => {
-      const page = await searchVehicles(asked, INITIAL_REQUEST, cursor);
+      // Cancellable (P1-32-PRE-OD-READ): a superseded search is aborted, not
+      // only discarded.
+      const page = await searchVehiclesCancellable(asked, INITIAL_REQUEST, cursor, signal);
       if (page.status !== 'ok') return { status: page.status, correlationId: page.correlationId };
       return {
         status: 'ok',

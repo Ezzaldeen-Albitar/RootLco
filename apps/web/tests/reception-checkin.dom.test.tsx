@@ -38,12 +38,14 @@ const recordAuthorization = vi.fn();
 
 vi.mock('@/features/receptions/api', () => ({
   createReception: (...args: unknown[]) => createReception(...args),
-  listReceptions: (...args: unknown[]) => listReceptions(...args),
   readReception: (...args: unknown[]) => readReception(...args),
   listPartyRoles: (...args: unknown[]) => listPartyRoles(...args),
   listAuthorizations: (...args: unknown[]) => listAuthorizations(...args),
   assignPartyRole: (...args: unknown[]) => assignPartyRole(...args),
   recordAuthorization: (...args: unknown[]) => recordAuthorization(...args),
+}));
+vi.mock('@/features/receptions/reception-list-read', () => ({
+  listReceptionsCancellable: (...args: unknown[]) => listReceptions(...args),
 }));
 
 const listConfirmedAppointments = vi.fn();
@@ -61,13 +63,13 @@ vi.mock('@/features/receptions/support-api', () => ({
 }));
 
 const listCustomerVehicles = vi.fn();
-vi.mock('@/lib/customers/vehicles', () => ({
-  listCustomerVehicles: (...args: unknown[]) => listCustomerVehicles(...args),
+vi.mock('@/lib/customers/vehicles-read', () => ({
+  listCustomerVehiclesCancellable: (...args: unknown[]) => listCustomerVehicles(...args),
 }));
 
 const searchCustomerDirectory = vi.fn();
-vi.mock('@/lib/customers/directory', () => ({
-  searchCustomerDirectory: (...args: unknown[]) => searchCustomerDirectory(...args),
+vi.mock('@/lib/customers/directory-read', () => ({
+  searchCustomerDirectoryCancellable: (...args: unknown[]) => searchCustomerDirectory(...args),
 }));
 
 const { CheckInStartScreen } = await import('@/features/receptions/components/CheckInStartScreen');

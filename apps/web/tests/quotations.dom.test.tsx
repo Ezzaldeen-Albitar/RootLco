@@ -76,7 +76,9 @@ const readWorkOrderDetail = vi.fn();
 const listWorkOrders = vi.fn();
 vi.mock('@/features/work-orders/api', () => ({
   readWorkOrderDetail: (...args: unknown[]) => readWorkOrderDetail(...args),
-  listWorkOrders: (...args: unknown[]) => listWorkOrders(...args),
+}));
+vi.mock('@/features/work-orders/work-order-list-read', () => ({
+  listWorkOrdersCancellable: (...args: unknown[]) => listWorkOrders(...args),
 }));
 
 const push = vi.fn();
@@ -286,7 +288,9 @@ describe('reached from a work order', () => {
       { companyId: TEST_BRANCH.companyId, branchId: TEST_BRANCH.id },
       { q: '12-34' },
       expect.objectContaining({ page: 1 }),
-      null
+      null,
+      // The read is cancellable: it carries the signal its search aborts.
+      expect.any(AbortSignal)
     );
     await user.click(
       screen.getByRole('button', { name: EN['quotations.choose.submit'] as string })
@@ -418,7 +422,9 @@ describe('the job picker and the working context', () => {
       { companyId: TEST_COMPANY.id, branchId: null },
       { q: 'Layla' },
       expect.objectContaining({ page: 1 }),
-      null
+      null,
+      // The read is cancellable: it carries the signal its search aborts.
+      expect.any(AbortSignal)
     );
   });
 

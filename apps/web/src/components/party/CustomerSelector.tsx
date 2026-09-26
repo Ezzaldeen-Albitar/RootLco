@@ -11,7 +11,7 @@ import { useSearchRequest, type SearchPhase } from '@/lib/api/use-search-request
 import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic } from '@/i18n/get-messages';
 import type { Locale } from '@/i18n/config';
-import { searchCustomerDirectory } from '@/lib/customers/directory';
+import { searchCustomerDirectoryCancellable } from '@/lib/customers/directory-read';
 import { DigitsEcho } from '@/components/forms/DigitsEcho';
 import {
   MAX_CUSTOMER_NUMBER_LENGTH,
@@ -299,16 +299,20 @@ export function CustomerSelector({
   const load = useCallback(
     async (
       asked: CustomerSearchCriteria,
-      cursor: string | null
+      cursor: string | null,
+      signal: AbortSignal
     ): Promise<ReadState<CursorPage<CustomerSearchHit>>> => {
       // The directory answers in `ServerPage`, which is the shape
       // `useServerTable` consumes; the hook reads `ReadState<CursorPage>`. The
       // two carry the same facts under different names, and writing the
       // translation here keeps it at the one place they meet.
-      const page = await searchCustomerDirectory(
+      // Cancellable (P1-32-PRE-OD-READ): a superseded search is aborted, not
+      // only discarded.
+      const page = await searchCustomerDirectoryCancellable(
         { ...INITIAL_REQUEST, pageSize: 10 },
         cursor,
-        asked
+        asked,
+        signal
       );
       if (page.status !== 'ok') return { status: page.status, correlationId: page.correlationId };
       return {

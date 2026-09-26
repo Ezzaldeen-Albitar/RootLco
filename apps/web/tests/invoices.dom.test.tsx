@@ -92,8 +92,8 @@ vi.mock('@/features/billing/api', () => ({
 
 // A different payer is FOUND among customers; the directory adapter is replaced.
 const searchCustomerDirectory = vi.fn();
-vi.mock('@/lib/customers/directory', () => ({
-  searchCustomerDirectory: (...args: unknown[]) => searchCustomerDirectory(...args),
+vi.mock('@/lib/customers/directory-read', () => ({
+  searchCustomerDirectoryCancellable: (...args: unknown[]) => searchCustomerDirectory(...args),
 }));
 const OTHER_PAYER = '99999999-9999-4999-8999-999999999999';
 
@@ -113,7 +113,9 @@ const readWorkOrderDetail = vi.fn();
 const listWorkOrders = vi.fn();
 vi.mock('@/features/work-orders/api', () => ({
   readWorkOrderDetail: (...args: unknown[]) => readWorkOrderDetail(...args),
-  listWorkOrders: (...args: unknown[]) => listWorkOrders(...args),
+}));
+vi.mock('@/features/work-orders/work-order-list-read', () => ({
+  listWorkOrdersCancellable: (...args: unknown[]) => listWorkOrders(...args),
 }));
 
 const push = vi.fn();
@@ -359,7 +361,9 @@ describe('reached from a work order', () => {
       { companyId: TEST_BRANCH.companyId, branchId: TEST_BRANCH.id },
       { q: 'Layla' },
       expect.objectContaining({ page: 1 }),
-      null
+      null,
+      // The read is cancellable: it carries the signal its search aborts.
+      expect.any(AbortSignal)
     );
     expect(match).toHaveTextContent('12-34567');
     expect(match).toHaveTextContent('Layla Haddad');
@@ -574,7 +578,9 @@ describe('the job picker and the working context', () => {
       { companyId: TEST_COMPANY.id, branchId: null },
       { q: 'Layla' },
       expect.objectContaining({ page: 1 }),
-      null
+      null,
+      // The read is cancellable: it carries the signal its search aborts.
+      expect.any(AbortSignal)
     );
   });
 

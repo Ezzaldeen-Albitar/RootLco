@@ -21,7 +21,7 @@ import { useBranchTarget } from '@/features/working-context/use-branch-target';
 import { useUnsavedGuard } from '@/features/working-context/WorkingContextProvider';
 import { notifyActionResult } from '@/components/notifications/action-notifications';
 import { IDLE, invalid } from '@/lib/forms/action-result';
-import { listCustomerVehicles } from '@/lib/customers/vehicles';
+import { listCustomerVehiclesCancellable } from '@/lib/customers/vehicles-read';
 import type { CustomerVehicleEntry } from '@/lib/customers/vehicles-contract';
 import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic } from '@/i18n/get-messages';
@@ -471,8 +471,8 @@ function VehiclePicker({
   readonly onChange: (next: SelectedVehicle | null) => void;
 }) {
   const load = useCallback(
-    (request: TableRequest, cursor: string | null) =>
-      listCustomerVehicles(customerId, request, cursor),
+    (request: TableRequest, cursor: string | null, signal: AbortSignal) =>
+      listCustomerVehiclesCancellable(customerId, request, cursor, signal),
     [customerId]
   );
   const table = useServerTable<CustomerVehicleEntry>(load, {

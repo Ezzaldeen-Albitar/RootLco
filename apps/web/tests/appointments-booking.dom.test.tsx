@@ -30,13 +30,13 @@ vi.mock('@/features/appointments/api', () => ({
 }));
 
 const searchCustomerDirectory = vi.fn();
-vi.mock('@/lib/customers/directory', () => ({
-  searchCustomerDirectory: (...args: unknown[]) => searchCustomerDirectory(...args),
+vi.mock('@/lib/customers/directory-read', () => ({
+  searchCustomerDirectoryCancellable: (...args: unknown[]) => searchCustomerDirectory(...args),
 }));
 
 const listCustomerVehicles = vi.fn();
-vi.mock('@/lib/customers/vehicles', () => ({
-  listCustomerVehicles: (...args: unknown[]) => listCustomerVehicles(...args),
+vi.mock('@/lib/customers/vehicles-read', () => ({
+  listCustomerVehiclesCancellable: (...args: unknown[]) => listCustomerVehicles(...args),
 }));
 
 const push = vi.fn();

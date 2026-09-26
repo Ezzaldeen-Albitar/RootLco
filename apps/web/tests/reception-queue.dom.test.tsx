@@ -56,8 +56,8 @@ const EN = en as Record<string, string>;
 const AR = ar as Record<string, string>;
 
 const listReceptions = vi.fn();
-vi.mock('@/features/receptions/api', () => ({
-  listReceptions: (...args: unknown[]) => listReceptions(...args),
+vi.mock('@/features/receptions/reception-list-read', () => ({
+  listReceptionsCancellable: (...args: unknown[]) => listReceptions(...args),
 }));
 
 /**

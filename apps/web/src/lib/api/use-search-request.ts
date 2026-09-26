@@ -55,7 +55,7 @@ import type { CursorPage, ReadState } from './read-operation';
  *
  * ## What `signal` can and cannot do here
  *
- * Every read in this application goes through a Server Action, because the
+ * Most reads in this application go through a Server Action, because the
  * bearer token lives in a cookie the browser cannot read. A Server Action call
  * cannot carry an `AbortSignal` across the boundary, so aborting does not stop
  * the work the server has already started — what it does, reliably, is
@@ -63,6 +63,12 @@ import type { CursorPage, ReadState } from './read-operation';
  * give a loader that does reach a real `fetch` (anything under `src/lib/api`)
  * something to pass on. Both halves are stated because the weaker one is the
  * one a reader would otherwise assume.
+ *
+ * The hottest reads now DO reach a real `fetch`: the boards, the overview
+ * figures and the customer and vehicle searches go through the cancellable
+ * read routes (`browser-read.ts`, P1-32-PRE-OD-READ), and their loaders pass
+ * this signal on — so for them the abort cancels the request as well as
+ * discarding its answer.
  */
 
 export type SearchPhase =

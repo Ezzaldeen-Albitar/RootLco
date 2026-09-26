@@ -26,7 +26,7 @@ import { useClearOnCorrect } from '@/lib/forms/use-clear-on-correct';
 import { useFocusFirstInvalid } from '@/lib/forms/use-focus-first-invalid';
 import { UNANSWERED_READ, settleRead } from '@/lib/api/use-search-request';
 import { formatDateTime, formatInteger, intlLocale } from '@/lib/format';
-import { readDashboardSummary } from '../api';
+import { readDashboardSummaryCancellable } from '../dashboard-summary-read';
 import {
   attentionAreaLink,
   receptionsPeriodLink,
@@ -208,19 +208,32 @@ export function DashboardScreen({
      * that outlives the client ceiling, into `unavailable`, which renders the
      * outage and its Try again.
      */
+    /*
+     * This read's own controller, aborted when the effect is torn down — a new
+     * period, a refresh, leaving the screen — AND when the working context's
+     * signal aborts on a branch change. The read is cancellable
+     * (P1-32-PRE-OD-READ), so either one now stops the request rather than
+     * only discarding its answer.
+     */
+    const controller = new AbortController();
+    const onContextAbort = () => controller.abort();
+    if (signal.aborted) controller.abort();
+    else signal.addEventListener('abort', onContextAbort, { once: true });
     void settleRead<ReadState<DashboardSummary>>(
-      () => readDashboardSummary({ companyId, branchId }, criteria),
+      () => readDashboardSummaryCancellable({ companyId, branchId }, criteria, controller.signal),
       UNANSWERED_READ,
-      { signal }
+      { signal: controller.signal }
     ).then((read) => {
       // Two guards, and they answer different questions: `live` is "this effect
       // is still the current one", `signal.aborted` is "the branch has moved on
-      // since this was asked". A Server Action call cannot be cancelled across
-      // the boundary, so what aborting buys is that the answer is DISCARDED.
+      // since this was asked". Either way the request was cancelled and its
+      // settled placeholder is not an answer to show.
       if (live && !signal.aborted) setHeld({ key, read });
     });
     return () => {
       live = false;
+      signal.removeEventListener('abort', onContextAbort);
+      controller.abort();
     };
   }, [key, companyId, branchId, periodKind, askedFrom, askedTo, signal]);
 

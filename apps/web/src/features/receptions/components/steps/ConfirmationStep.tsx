@@ -21,7 +21,7 @@ import {
 import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic } from '@/i18n/get-messages';
 import type { ReadState } from '@/lib/api/read-operation';
-import { listCustomerVehicles } from '@/lib/customers/vehicles';
+import { listCustomerVehiclesCancellable } from '@/lib/customers/vehicles-read';
 import type { CustomerVehicleEntry } from '@/lib/customers/vehicles-contract';
 import { listPartyRoles } from '../../api';
 import type { PartyRoleEntry } from '../../receptions-contract';
@@ -200,11 +200,12 @@ export function ConfirmationStep({
 
   const loadCustomerVehicles = useCallback(
     (
-      request: Parameters<typeof listCustomerVehicles>[1],
-      cursor: string | null
+      request: Parameters<typeof listCustomerVehiclesCancellable>[1],
+      cursor: string | null,
+      signal: AbortSignal
     ): Promise<ServerPage<CustomerVehicleEntry>> =>
       capabilities.readCustomers && requesterPartnerId !== null
-        ? listCustomerVehicles(requesterPartnerId, request, cursor)
+        ? listCustomerVehiclesCancellable(requesterPartnerId, request, cursor, signal)
         : Promise.resolve({ ...EMPTY_PAGE, status: 'denied', correlationId: null }),
     [capabilities.readCustomers, requesterPartnerId]
   );
