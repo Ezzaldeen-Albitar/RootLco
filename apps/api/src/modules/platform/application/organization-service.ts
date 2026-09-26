@@ -11,7 +11,7 @@
  */
 import { appendAudit } from '@/server/audit/audit';
 import { AppFailure } from '@/server/errors/app-failure';
-import { isSqlState, SQLSTATE } from '@/server/db/repository';
+import { isSqlState, referenceRefusal, sqlState, SQLSTATE } from '@/server/db/repository';
 import {
   type DbHandle,
   withPlatformTarget,
@@ -97,6 +97,22 @@ export interface OrganizationDetailView {
 
 /** How many rows of each unbounded child list the detail publishes. */
 const DETAIL_HISTORY_LIMIT = 100;
+
+/**
+ * The reference foreign keys org.provision_organization can trip, by their LIVE
+ * names, and the request field each one checks. `fk_branches_timezone` is the
+ * constraint's real name; `fk_branches_timezone_name`, which some comments
+ * elsewhere use, does not exist.
+ */
+const PROVISION_REFERENCE_POINTERS: Readonly<Record<string, string>> = {
+  fk_tenants_default_locale: 'body.tenant.locale',
+  fk_tenants_default_timezone: 'body.tenant.timezone',
+  fk_legal_companies_base_currency: 'body.company.base_currency',
+  fk_branches_timezone: 'body.branch.timezone',
+};
+
+/** PostgreSQL `no_data_found`, the one refusal the function raises for a plan code. */
+const SQLSTATE_NO_DATA_FOUND = 'P0002';
 
 /**
  * What provisioning returns to the caller.
@@ -609,6 +625,22 @@ export class OrganizationService {
             ? 'An organization with that code already exists'
             : 'A company or branch code in the request already exists';
         throw new AppFailure('ERR-RES-002', { message: which });
+      }
+      // A currency, language or time zone the platform does not hold reaches the
+      // function's INSERTs as a foreign-key violation. Mapped by the LIVE
+      // constraint names, so a tenant or company key cannot borrow the answer.
+      const refusal = referenceRefusal(error, PROVISION_REFERENCE_POINTERS);
+      if (refusal !== undefined) throw refusal;
+      // `no_data_found`, raised by org.provision_organization only when no active
+      // plan version carries the requested plan code. The message names the code
+      // the caller sent, so it is not read.
+      if (sqlState(error) === SQLSTATE_NO_DATA_FOUND) {
+        throw new AppFailure('ERR-VAL-001', {
+          message: 'No active plan carries the requested plan code',
+          safeDetails: {
+            violations: [{ path: 'body.subscription.plan_code', rule: 'unknown_reference' }],
+          },
+        });
       }
       throw error;
     }
