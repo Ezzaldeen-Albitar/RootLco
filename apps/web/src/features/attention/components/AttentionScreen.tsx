@@ -1,17 +1,13 @@
 'use client';
 
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo } from 'react';
 
 import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
 import { translate } from '@/i18n/get-messages';
-import { useWorkingContext } from '@/features/working-context/WorkingContextProvider';
-import {
-  BranchPairPicker,
-  EMPTY_PAIR,
-  useBranches,
-  type BranchPair,
-} from '@/features/inventory/components/shared';
+import { WorkingBranchField } from '@/features/working-context/components/WorkingBranchField';
+import { useBranchTarget } from '@/features/working-context/use-branch-target';
+import { EMPTY_PAIR, useBranches, type BranchPair } from '@/features/inventory/components/shared';
 
 import {
   AgedInTransitCard,
@@ -31,10 +27,20 @@ import {
  * ## Four cards are about a BRANCH, and one is about the organisation
  *
  * The stock alerts are branch-targeted reads: the pair is the read's target and
- * is re-authorized server-side on every call, so nothing about stock is asked
- * for until a branch is named — and until then those cards say so rather than
- * showing an empty table. The subscription allowance is tenant-wide and has no
- * target, so it reads on first paint.
+ * is re-authorized server-side on every call. The subscription allowance is
+ * tenant-wide and has no target, so it reads on first paint.
+ *
+ * ## The branch is the working context's, and nothing else's
+ *
+ * Browser QA part 7, row 1a.3: this screen carried its own "Which branch"
+ * select — offered even to an operator with one branch — beside the header that
+ * already answered the question. There is now one answer. The stock cards read
+ * the working branch; an operator with one branch is never asked; under "All my
+ * branches", or before a branch is chosen, the branch section asks for one by
+ * name (`WorkingBranchField`, whose chooser is the header's own guarded switch)
+ * and the cards say they are waiting rather than showing an empty table. Every
+ * stock alert is addressed to one branch, so "All my branches" is not offered
+ * on this route at all (`config/route-branch-scope.ts`).
  *
  * ## Nothing on this screen writes
  *
@@ -55,73 +61,34 @@ export function AttentionScreen({
   canReadStock,
   canReadCapacity,
   canReadBranches,
-  initialBranchId = null,
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
-  /**
-   * The branch the address asked the stock cards to open on, already checked
-   * for the shape of an identifier by the page. Believed only if the picker's
-   * own list holds it; otherwise the screen opens with no branch chosen.
-   */
-  readonly initialBranchId?: string | null;
   /** `inv.stock.read` — the four stock alerts. */
   readonly canReadStock: boolean;
   /** `org.tenant.read` — the subscription allowance. */
   readonly canReadCapacity: boolean;
-  /** `org.branch.read` — whether a branch list is requested for the picker. */
+  /**
+   * `org.branch.read` — whether the branch directory may be read to name the
+   * branches a transfer runs between when no working context is present.
+   */
   readonly canReadBranches: boolean;
 }) {
   const branches = useBranches(canReadBranches && canReadStock);
-  const [pair, setPair] = useState<BranchPair>(EMPTY_PAIR);
+  const target = useBranchTarget();
+  const pair: BranchPair =
+    target.kind === 'ready'
+      ? { companyId: target.target.companyId, branchId: target.target.branchId }
+      : EMPTY_PAIR;
   const t = (key: keyof Messages) => translate(messages, key);
 
   /*
-   * The address's branch, applied ONCE — when the list it must belong to has
-   * arrived — and never again, so a later choice from the picker is not
-   * overwritten by a branch from an address the reader has since moved on from.
-   *
-   * Decided during render rather than in an effect: it is state derived from a
-   * prop and a list, and adjusting it here settles in the same render instead
-   * of painting "choose a branch" for a frame and then cascading. A branch the
-   * list does not hold is dropped, not guessed at.
-   */
-  const [preselected, setPreselected] = useState(initialBranchId === null);
-  if (!preselected && branches.phase === 'listed') {
-    setPreselected(true);
-    const chosen = branches.items.find((row) => row.id === initialBranchId);
-    if (chosen !== undefined) setPair({ companyId: chosen.companyId, branchId: chosen.id });
-  }
-
-  /*
-   * The working branch, followed (route sweep B3). The stock cards used to wait
-   * on "choose a branch" while the header already named one. With no branch in
-   * the address they now open on the working branch, and every later change of
-   * the working branch moves them to the new one — decided during render, like
-   * the address above, once per working-context version. An address that named
-   * a branch wins on arrival only. "All my branches" and "not chosen yet" leave
-   * the picker as it is: every stock alert is addressed to one branch.
-   */
-  const context = useWorkingContext();
-  const [followed, setFollowed] = useState<number | null>(() =>
-    initialBranchId === null ? null : context.version
-  );
-  if (followed !== context.version && preselected && branches.phase === 'listed') {
-    setFollowed(context.version);
-    const selection = context.selection;
-    const working =
-      selection !== null && !selection.allBranches
-        ? branches.items.find((row) => row.id === selection.branchId)
-        : undefined;
-    if (working !== undefined) setPair({ companyId: working.companyId, branchId: working.id });
-  }
-
-  /*
-   * The branch list, as a lookup for the cards that report on a PAIR of
-   * branches. A transfer names the two it runs between by identifier only, and
-   * the only place on this screen that already knows their names is the list
-   * the picker was given. A branch missing from it stays missing: the card says
-   * so rather than inventing a name or quietly showing something else.
+   * The branch names, for the cards that report on a PAIR of branches. A
+   * transfer names the two it runs between by identifier only, so the names
+   * come from the branch list `useBranches` holds — the working context's own
+   * named branches in the shell. A branch missing from it stays missing: the
+   * card says so rather than inventing a name or quietly showing something
+   * else.
    */
   const names = useMemo(() => {
     const map = new Map<string, string>();
@@ -141,13 +108,10 @@ export function AttentionScreen({
             {t('attention.target.explain')}
           </p>
           <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
-            <BranchPairPicker
+            <WorkingBranchField
               messages={messages}
-              branches={branches}
               label={t('attention.target.branch')}
-              placeholder={t('attention.target.choose')}
-              value={pair}
-              onChange={setPair}
+              testId="attention-branch"
             />
           </div>
         </section>

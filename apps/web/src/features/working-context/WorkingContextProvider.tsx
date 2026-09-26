@@ -147,6 +147,40 @@ const FALLBACK_CONTEXT: WorkingContext = {
 
 const WorkingContextValue = createContext<WorkingContext>(FALLBACK_CONTEXT);
 const GuardRegistryValue = createContext<GuardRegistry>(EMPTY_GUARDS);
+const MessagesValue = createContext<Messages | null>(null);
+
+/**
+ * The catalogue the shell was rendered with, for a shell component that asks
+ * about the branch without being handed it — `ConcreteRouteGate`, which sits
+ * inside every page body. `null` outside a provider.
+ */
+export function useWorkingContextMessages(): Messages | null {
+  return useContext(MessagesValue);
+}
+
+/** Whether any screen holds unsaved work, and a way to throw it away. */
+export interface UnsavedWork {
+  readonly any: () => boolean;
+  /** Calls `onDiscard` for every guard that is dirty now. */
+  readonly discard: () => void;
+}
+
+/**
+ * The unsaved-work registry, read rather than written: for the shell, which
+ * must not unmount a screen holding work nobody agreed to lose.
+ */
+export function useUnsavedWork(): UnsavedWork {
+  const registry = useContext(GuardRegistryValue);
+  return useMemo(
+    () => ({
+      any: () => Array.from(registry).some((guard) => guard.dirty),
+      discard: () => {
+        for (const guard of Array.from(registry).filter((entry) => entry.dirty)) guard.discard();
+      },
+    }),
+    [registry]
+  );
+}
 
 export function useWorkingContext(): WorkingContext {
   return useContext(WorkingContextValue);
@@ -548,49 +582,51 @@ export function WorkingContextProvider({
 
   return (
     <WorkingContextValue.Provider value={value}>
-      <GuardRegistryValue.Provider value={guards}>
-        {children}
-        <ConfirmDialog
-          open={pending !== null}
-          onCancel={() => setPending(null)}
-          onConfirm={() => {
-            const waiting = pending;
-            setPending(null);
-            if (waiting === null) return;
-            // Taken BEFORE the switch: these are the guards the question was
-            // about. Called in the same update as the switch, so no frame shows
-            // the new branch over the work that was just declared lost.
-            const discarded = Array.from(guards).filter((guard) => guard.dirty);
-            apply(waiting.next);
-            for (const guard of discarded) guard.discard();
-          }}
-          title={translate(messages, 'workingContext.discard.title')}
-          description={translate(messages, 'workingContext.discard.description')}
-          confirmLabel={translate(messages, 'workingContext.discard.confirm')}
-          messages={messages}
-          destructive
-        />
-        <CrossTabNotice
-          messages={messages}
-          current={labelFor(selection, branches, messages)}
-          incoming={
-            outside === null
-              ? null
-              : labelFor(
-                  deriveSelection(status, branches, usable ? outside.value : null),
-                  branches,
-                  messages
-                )
-          }
-          open={outside !== null}
-          onSwitch={() => {
-            if (outside !== null) requestSwitch(outside.value);
-          }}
-          onStay={() => {
-            if (outside !== null) setDeclined({ value: outside.value });
-          }}
-        />
-      </GuardRegistryValue.Provider>
+      <MessagesValue.Provider value={messages}>
+        <GuardRegistryValue.Provider value={guards}>
+          {children}
+          <ConfirmDialog
+            open={pending !== null}
+            onCancel={() => setPending(null)}
+            onConfirm={() => {
+              const waiting = pending;
+              setPending(null);
+              if (waiting === null) return;
+              // Taken BEFORE the switch: these are the guards the question was
+              // about. Called in the same update as the switch, so no frame shows
+              // the new branch over the work that was just declared lost.
+              const discarded = Array.from(guards).filter((guard) => guard.dirty);
+              apply(waiting.next);
+              for (const guard of discarded) guard.discard();
+            }}
+            title={translate(messages, 'workingContext.discard.title')}
+            description={translate(messages, 'workingContext.discard.description')}
+            confirmLabel={translate(messages, 'workingContext.discard.confirm')}
+            messages={messages}
+            destructive
+          />
+          <CrossTabNotice
+            messages={messages}
+            current={labelFor(selection, branches, messages)}
+            incoming={
+              outside === null
+                ? null
+                : labelFor(
+                    deriveSelection(status, branches, usable ? outside.value : null),
+                    branches,
+                    messages
+                  )
+            }
+            open={outside !== null}
+            onSwitch={() => {
+              if (outside !== null) requestSwitch(outside.value);
+            }}
+            onStay={() => {
+              if (outside !== null) setDeclined({ value: outside.value });
+            }}
+          />
+        </GuardRegistryValue.Provider>
+      </MessagesValue.Provider>
     </WorkingContextValue.Provider>
   );
 }

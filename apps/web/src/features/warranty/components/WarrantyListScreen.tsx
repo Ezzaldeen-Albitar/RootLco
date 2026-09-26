@@ -270,7 +270,11 @@ export function WarrantyListScreen({
             The branch is STATED, not asked. A second editable control here would
             be a second authority for the same fact.
           */}
-          <WorkingBranchField messages={messages} testId="warranty-branch-target" />
+          <WorkingBranchField
+            messages={messages}
+            testId="warranty-branch-target"
+            acceptsAllBranches
+          />
           <div className="sm:col-span-2">
             <SearchBox
               messages={messages}

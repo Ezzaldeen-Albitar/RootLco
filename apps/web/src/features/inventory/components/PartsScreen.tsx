@@ -587,6 +587,7 @@ function ChooseWorkOrder({
           error={error}
           canSearch
           needsBranchId={needsBranchId}
+          offersBranchChooser
         />
       ) : (
         <ReferenceBox

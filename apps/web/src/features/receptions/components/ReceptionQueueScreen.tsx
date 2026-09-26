@@ -712,6 +712,7 @@ export function ReceptionQueueScreen({
           <WorkingBranchField
             messages={messages}
             label={translate(messages, 'receptions.checkIn.branch')}
+            acceptsAllBranches
           />
           <SelectField
             label={translate(messages, 'receptions.queue.statusFilter')}

@@ -4,6 +4,8 @@ import { useCallback, useEffect, useState } from 'react';
 
 import { SelectField, TextField } from '@/components/forms/Field';
 import { notifyActionResult } from '@/components/notifications/action-notifications';
+import { RequiresConcreteBranch } from '@/features/working-context/components/WorkingBranchField';
+import { useBranchTarget } from '@/features/working-context/use-branch-target';
 import { useWorkingContext } from '@/features/working-context/WorkingContextProvider';
 import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
@@ -62,11 +64,25 @@ export function DiscountThresholdScreen({
   readonly canManage: boolean;
 }) {
   const context = useWorkingContext();
-  const companyId = context.selection?.companyId ?? null;
+  const branch = useBranchTarget();
+  /*
+   * The company of ONE named working branch. "All my branches" inside one
+   * company used to answer it too, so the threshold could be written while the
+   * header said this screen works in one branch (PR #467 review): a write needs
+   * a concrete authorized branch, and its company is the one it belongs to.
+   */
+  const companyId = branch.kind === 'ready' ? branch.target.companyId : null;
   const company = context.companies.find((entry) => entry.id === companyId) ?? null;
 
   if (companyId === null) {
-    return (
+    return branch.kind === 'all' || branch.kind === 'unchosen' ? (
+      <RequiresConcreteBranch
+        messages={messages}
+        state={branch}
+        chooser
+        testId="discount-threshold-needs-branch"
+      />
+    ) : (
       <p className="text-body text-text-secondary" lang={locale}>
         {translate(messages, 'discountThreshold.chooseCompany')}
       </p>

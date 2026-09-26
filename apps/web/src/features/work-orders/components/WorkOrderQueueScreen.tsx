@@ -870,6 +870,10 @@ export function WorkOrderQueueScreen({
           <WorkingBranchField
             messages={messages}
             label={translate(messages, 'workOrders.queue.branch')}
+            // The list read is a union the server enforces, so "All my
+            // branches" is named here as what the board is showing — never the
+            // "choose one branch" ask beside rows from both (QA part 7, 1b.4).
+            acceptsAllBranches
           />
           <SelectField
             label={translate(messages, 'workOrders.queue.stateFilter')}
@@ -988,7 +992,12 @@ export function WorkOrderQueueScreen({
             )}
           </p>
           <p className="text-caption text-text-muted" lang={locale}>
-            {translate(messages, 'workOrders.queue.figure.note')}
+            {translate(
+              messages,
+              spansBranches
+                ? 'workOrders.queue.figure.noteAllBranches'
+                : 'workOrders.queue.figure.note'
+            )}
             {figureZone === null ? null : (
               <>
                 {' '}

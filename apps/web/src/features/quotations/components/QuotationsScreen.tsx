@@ -285,6 +285,7 @@ function ChooseWorkOrder({
         canSearch={canSearchWorkOrders}
         needsBranchId={needsBranchId}
         countsAsUnsaved={false}
+        offersBranchChooser
       />
       {canSearchWorkOrders ? (
         <div>

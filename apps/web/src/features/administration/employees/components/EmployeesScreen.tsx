@@ -14,8 +14,8 @@ import { SubmitButton } from '@/features/authentication/components/SubmitButton'
 import { ReadBoundary } from '../../shared/components/ScreenStates';
 import { useWorkingBranch } from '../../shared/use-working-branch';
 import { useUnsavedGuard } from '@/features/working-context/WorkingContextProvider';
+import { WorkingBranchField } from '@/features/working-context/components/WorkingBranchField';
 import {
-  BranchPicker,
   PRIMARY_BUTTON,
   SECONDARY_BUTTON,
   StatusPill,
@@ -43,12 +43,12 @@ import { useActionRefusal } from '@/lib/forms/use-action-refusal';
 export function EmployeesScreen({
   messages,
   branches,
-  companies,
   loginAccounts,
   canManage,
 }: {
   readonly messages: Messages;
   readonly branches: ReadState<readonly BranchView[]>;
+  /** Accepted so the route did not change; no longer read — the branch is the working one. */
   readonly companies: readonly CompanyView[];
   readonly loginAccounts: readonly LoginAccountOption[];
   readonly canManage: boolean;
@@ -64,7 +64,6 @@ export function EmployeesScreen({
   const [running, startRunning] = useTransition();
   // Bumped when the register follows the working branch, so the uncontrolled
   // branch control is re-seeded to show the branch now being read.
-  const [followed, setFollowed] = useState(0);
 
   const accountName = new Map(loginAccounts.map((account) => [account.id, account.displayName]));
 
@@ -100,7 +99,6 @@ export function EmployeesScreen({
   useWorkingBranch(branches.status === 'ok' ? branches.data : null, (row) => {
     setCreating(false);
     setPending(null);
-    setFollowed((count) => count + 1);
     reload(row);
   });
 
@@ -109,15 +107,17 @@ export function EmployeesScreen({
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div className="w-full max-w-md">
           <ReadBoundary state={branches} messages={messages}>
-            {(options) => (
-              <BranchPicker
-                key={followed}
+            {() => (
+              /*
+               * The working branch, stated. This register used to carry a branch
+               * picker of its own — a second chooser for the header's answer. It
+               * follows the working branch instead (`useWorkingBranch`, above):
+               * every read and write here is for the branch the header names.
+               */
+              <WorkingBranchField
                 messages={messages}
-                branches={options}
-                companies={companies}
-                value={branch?.id ?? ''}
-                attempt={outcome.attempt}
-                onChange={(id) => reload(options.find((row) => row.id === id) ?? null)}
+                label={t('admin.scope.branch')}
+                testId="employees-branch"
               />
             )}
           </ReadBoundary>

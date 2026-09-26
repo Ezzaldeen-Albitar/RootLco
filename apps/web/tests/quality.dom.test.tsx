@@ -942,7 +942,7 @@ describe('the QC queue is about ONE branch', () => {
     );
     await user.click(screen.getByRole('button', { name: 'use all' }));
     expect(await screen.findByTestId('requires-concrete-branch')).toHaveTextContent(
-      t('workingContext.needsOneBranch')
+      t('workingContext.chooseBranchHere')
     );
     expect(listQcQueue).not.toHaveBeenCalled();
   });

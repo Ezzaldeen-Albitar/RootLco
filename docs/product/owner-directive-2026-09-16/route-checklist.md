@@ -253,10 +253,10 @@ hand-built form moves the cursor to the refused field and withdraws a corrected 
 
 ### Attention and profile
 
-| Route        | Screen file                                                       | a                                                                                                        | b                                                          | c    | d   | e   | f                        | g                                                           | h    | i    |
-| ------------ | ----------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------- | ---- | --- | --- | ------------------------ | ----------------------------------------------------------- | ---- | ---- |
-| `/attention` | `apps/web/src/features/attention/components/AttentionScreen.tsx`  | fixed (B3-02) — the stock cards open on and follow the working branch; an address branch wins on arrival | fixed (B3-02) — read on arrival; the allowance was already | pass | n/a | n/a | n/a — nothing is written | pass — each card says a refusal in words with its reference | pass | pass |
-| `/profile`   | `apps/web/src/features/authentication/components/ProfileForm.tsx` | n/a — the signed-in account                                                                              | pass                                                       | n/a  | n/a | n/a | fixed (B3-03)            | pass                                                        | pass | pass |
+| Route        | Screen file                                                       | a                                                                                                                                       | b                                                          | c    | d   | e   | f                        | g                                                           | h    | i    |
+| ------------ | ----------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------- | ---- | --- | --- | ------------------------ | ----------------------------------------------------------- | ---- | ---- |
+| `/attention` | `apps/web/src/features/attention/components/AttentionScreen.tsx`  | fixed (B3-02, SCOPE-01) — the stock cards read the working branch only; the page-local branch select and its address parameter are gone | fixed (B3-02) — read on arrival; the allowance was already | pass | n/a | n/a | n/a — nothing is written | pass — each card says a refusal in words with its reference | pass | pass |
+| `/profile`   | `apps/web/src/features/authentication/components/ProfileForm.tsx` | n/a — the signed-in account                                                                                                             | pass                                                       | n/a  | n/a | n/a | fixed (B3-03)            | pass                                                        | pass | pass |
 
 ### Customers, vehicles and work orders
 
@@ -329,6 +329,187 @@ carries the caller's id; a required part carried from "Issue" stays linked while
 still being read and is not sent once the list drops it; a returnable-quantity reply for a sale
 line is not drawn after a switch to a part handed to a job; and a reply for the linked job that
 lands after a branch switch is not drawn in the new panel.
+
+## Branch scope per route (`P1-32-PRE-OD-SCOPE-01`)
+
+Browser QA part 7 at `be74f81c` found three faults in one rule. `/attention` carried its own branch
+select, offered even to an operator with one branch (row 1a.3). Under "All my branches" the
+work-order board listed both branches while its Branch field said "Choose one branch in the header
+to continue" (row 1b.4). And the header offered "All my branches" on every screen, including
+check-in, stock adjustments and opening stock, which then refused it (row 1b.5).
+
+Every workspace route now declares one posture, in one place:
+`apps/web/src/config/route-branch-scope.ts`.
+
+- **union** — every read the page addresses to the working branch is one whose `defineOperation`
+  literal declares `branchNarrowing: 'authorized-union'`, so the server answers for every authorized
+  branch at once. The header offers "All my branches" and the page names that set rather than asking
+  for one branch.
+- **concrete** — the page writes, or reads something the server answers for one branch only. The
+  header does not offer "All my branches". While it is selected, or while no branch is chosen yet,
+  the page body does not draw the screen (`ConcreteRouteGate`, inside every `PageBody`): the page's
+  title stays, and below it the ask and the authorized branches by name, so no list is read, no
+  picker searches and no write can start. A session without the route's permission (decided from
+  the navigation map) sees the page's refusal, never a branch ask; other refusal states drawn
+  directly in the page body (not found, session ended, a failed read) are let through as well. The
+  placeholder below carries a hidden "Finding your branch" label. The server render and
+  the hydration render draw an empty, busy placeholder for an operator with several branches,
+  because the remembered branch is only known in the browser; neither the screen nor the ask is
+  sent from the server, and hydration matches. The selection is never changed on the operator's
+  behalf, so a union page visited next still reads every branch. The inline chooser is the working
+  context's own guarded switch: it asks before discarding unsaved work and moves the context
+  version like any other switch. A screen holding unsaved work is never unmounted without an answer:
+  if its branch stops being published while it is open, the page holds the screen, untouched and
+  inert, under a notice offering the named branches and a way to discard. The job picker the
+  invoice, quotation, inventory and parts screens share searches one named branch only; it no longer
+  searches every branch of the company under "All my branches" (PR #467 review).
+- **none** — tenant-wide pages, and one record reached by its address whose branch is the record's
+  own. The header draws no branch control. The Platform Owner Console has no working context at all.
+
+An address the table does not know is treated as concrete. An operator with one branch is never
+asked anywhere: the header names the branch, and no chooser is drawn.
+
+### How the table was derived, and what checks it
+
+The union set is the seven operations the API declares `authorized-union`: `apt.appointment-list`,
+`inv.part-issue-list`, `ovw.dashboard-summary-read`, `rec.reception-list`, `sal.delivery-list`,
+`wo.work-order-list` and `wty.warranty-list`. `/delivery` reads `sal.delivery-readiness-list`, which
+declares no union, so it is concrete although `sal.delivery-list` is a union read.
+
+What each route can call is derived from the source, not typed by hand.
+`apps/web/tests/support/route-reachability.ts` starts from the exports of the route's `page.tsx` and
+follows symbols, not files, through the module graph with the TypeScript compiler, dynamic imports
+included, so a large adapter module contributes only the functions the page can reach. Every string
+in a reached declaration that could name an endpoint is a candidate: any literal or template
+fragment containing `api/v1` or a `reads` path segment, and any `+`, template or `[…].join(…)`
+expression whose folded value contains one. Each candidate is followed to where it is used, through
+constants and path-building functions, and the whole expression is constant-folded. An API path
+must then be the argument of a call whose method is known; a `reads` path must name an existing
+browser read route, whose handler joins the walk. The path and method are matched to the
+`defineOperation` literals parsed out of the API route modules. A candidate that cannot be resolved
+this way (an object map, `new URL`, `fetch`, a computed dynamic import, an unknown path) is
+reported as unresolved. Two module constants, the version prefix the client strips before looking
+a path up in the operation table and the prefix the browser-read guard checks, are exempt only at
+their guard uses in the module that owns them: as the argument of `startsWith`, through `.length`,
+and in the guard's error message. Anything else built on them is folded through them and must
+resolve. The test asserts the exempted positions, file, line and kind, exactly.
+
+`apps/web/tests/route-branch-scope.test.ts` then holds:
+
+- **union routes** — every reachable operation is a read, every one that is not tenant-wide is an
+  `authorized-union` read, no endpoint is left unresolved, and the route's declared operations equal
+  the derived set exactly;
+- **concrete routes** — the page reaches a branch- or company-scoped operation, reads the working
+  branch (`useBranchTarget` or the working context's `selection`), and puts its screen in
+  `PageBody`. This is a floor, not a proof that the value read is the value sent; tracing that is
+  data-flow analysis the walk does not do, and the gate closes the gap at run time;
+- **none routes** — the page never reaches `useBranchTarget` and never reads the working context's
+  `selection`. `/administration/departments` and `/administration/employees` follow the working
+  branch, so they are concrete, and they no longer carry a branch picker of their own.
+
+It also holds the table against the filesystem (every workspace page has exactly one declaration),
+the navigation map, and this section's table below. The union set is compared in both directions
+with the API's declarations. Every rule is shown refusing an input that breaks it: fixture pages
+that reach a one-branch read, reach a write through a wrapper and a path builder, send a path
+through a call it cannot resolve, or name a path no operation publishes.
+
+### Scope per route
+
+Counts: 5 union, 29 concrete, 43 none — 77 routes. `route-branch-scope.test.ts` fails when this
+table and `ROUTE_BRANCH_SCOPES` disagree on a route, a scope or a reason.
+
+| Route                                                 | Scope    | Why                                                                                           |
+| ----------------------------------------------------- | -------- | --------------------------------------------------------------------------------------------- |
+| `/`                                                   | union    | The dashboard figures are one summary read the server answers for the authorized set.         |
+| `/appointments`                                       | union    | The appointment list is one read the server answers for the authorized set.                   |
+| `/receptions`                                         | union    | The reception board is one list read the server answers for the authorized set.               |
+| `/warranty`                                           | union    | The warranty list is one read the server answers for the authorized set.                      |
+| `/work-orders`                                        | union    | The work-order board and its figures are two reads the server answers for the authorized set. |
+| `/administration/departments`                         | concrete | Departments are listed and written per branch, opening on the working branch.                 |
+| `/administration/discount-threshold`                  | concrete | The threshold is read and written for the working branch's company.                           |
+| `/administration/employees`                           | concrete | Employees are listed and written per branch, opening on the working branch.                   |
+| `/appointments/new`                                   | concrete | Booking writes an appointment into one branch.                                                |
+| `/attention`                                          | concrete | Every stock alert is read for one branch.                                                     |
+| `/credit-notes`                                       | concrete | Credit notes are read and decided for one branch.                                             |
+| `/delivery`                                           | concrete | The handover queue is read for one branch; its read declares no union.                        |
+| `/inventory`                                          | concrete | Stock is read and reserved in one branch.                                                     |
+| `/inventory/adjustments`                              | concrete | An adjustment writes stock in one branch.                                                     |
+| `/inventory/counter-sales`                            | concrete | A counter sale is made in one branch.                                                         |
+| `/inventory/counts`                                   | concrete | A count is opened in one branch.                                                              |
+| `/inventory/customer-returns`                         | concrete | A return is received into one branch.                                                         |
+| `/inventory/goods-receipts`                           | concrete | Goods are received into one branch.                                                           |
+| `/inventory/movements`                                | concrete | Movements are read for one branch; the read declares no union.                                |
+| `/inventory/opening-stock`                            | concrete | Opening stock is recorded in one branch.                                                      |
+| `/inventory/parts`                                    | concrete | Parts are reserved and issued from one branch.                                                |
+| `/inventory/setup`                                    | concrete | Stock locations belong to one branch.                                                         |
+| `/inventory/transfers`                                | concrete | A transfer leaves one named branch.                                                           |
+| `/invoices`                                           | concrete | An invoice is written; a write needs one named branch.                                        |
+| `/payments`                                           | concrete | A payment is recorded in one branch.                                                          |
+| `/pricing`                                            | concrete | The price that applies is resolved for one branch.                                            |
+| `/quotations`                                         | concrete | A quotation is written; a write needs one named branch.                                       |
+| `/receptions/check-in`                                | concrete | Check-in writes a reception into one branch.                                                  |
+| `/reports/[reportCode]`                               | concrete | A report covers one branch; the report read declares no union.                                |
+| `/reports/overview`                                   | concrete | A report covers one branch; the report read declares no union.                                |
+| `/services/[serviceId]`                               | concrete | Availability is set for one branch.                                                           |
+| `/technicians/me`                                     | concrete | A technician's queue is read for one branch.                                                  |
+| `/warranty/policies`                                  | concrete | A plan is created for the working branch's company.                                           |
+| `/work-orders/quality`                                | concrete | The quality queue is read for one branch; its read declares no union.                         |
+| `/administration`                                     | none     | Tenant-wide administration or records; nothing here is addressed to a branch.                 |
+| `/administration/approval-limits`                     | none     | Tenant-wide administration or records; nothing here is addressed to a branch.                 |
+| `/administration/audit-log`                           | none     | Tenant-wide administration or records; nothing here is addressed to a branch.                 |
+| `/administration/currencies`                          | none     | Tenant-wide administration or records; nothing here is addressed to a branch.                 |
+| `/administration/languages`                           | none     | Tenant-wide administration or records; nothing here is addressed to a branch.                 |
+| `/administration/numbering-rules`                     | none     | Tenant-wide administration or records; nothing here is addressed to a branch.                 |
+| `/administration/organization`                        | none     | Tenant-wide administration or records; nothing here is addressed to a branch.                 |
+| `/administration/permissions`                         | none     | Tenant-wide administration or records; nothing here is addressed to a branch.                 |
+| `/administration/roles`                               | none     | Tenant-wide administration or records; nothing here is addressed to a branch.                 |
+| `/administration/system-settings`                     | none     | Tenant-wide administration or records; nothing here is addressed to a branch.                 |
+| `/administration/taxes`                               | none     | Tenant-wide administration or records; nothing here is addressed to a branch.                 |
+| `/administration/users`                               | none     | Tenant-wide administration or records; nothing here is addressed to a branch.                 |
+| `/administration/users/[userId]`                      | none     | Tenant-wide administration or records; nothing here is addressed to a branch.                 |
+| `/appointments/[appointmentId]`                       | none     | One record reached by its address; its branch is the record's own.                            |
+| `/crm/customer-duplicates`                            | none     | Tenant-wide administration or records; nothing here is addressed to a branch.                 |
+| `/crm/customers`                                      | none     | Tenant-wide administration or records; nothing here is addressed to a branch.                 |
+| `/crm/customers/[customerId]`                         | none     | One record reached by its address; its branch is the record's own.                            |
+| `/crm/customers/[customerId]/work-order/new`          | none     | Hands the customer on to check-in, which is where the branch is asked for.                    |
+| `/crm/customers/new/[kind]`                           | none     | Tenant-wide administration or records; nothing here is addressed to a branch.                 |
+| `/delivery/[deliveryId]`                              | none     | One record reached by its address; its branch is the record's own.                            |
+| `/inventory/items/[itemId]`                           | none     | One record reached by its address; its branch is the record's own.                            |
+| `/inventory/labels`                                   | none     | Tenant-wide administration or records; nothing here is addressed to a branch.                 |
+| `/inventory/unit-conversions`                         | none     | Tenant-wide administration or records; nothing here is addressed to a branch.                 |
+| `/inventory/vehicle-specifications`                   | none     | Tenant-wide administration or records; nothing here is addressed to a branch.                 |
+| `/pricing/[priceListId]`                              | none     | One record reached by its address; its branch is the record's own.                            |
+| `/profile`                                            | none     | Tenant-wide administration or records; nothing here is addressed to a branch.                 |
+| `/quotations/[quotationId]`                           | none     | One record reached by its address; its branch is the record's own.                            |
+| `/reception/walk-in`                                  | none     | Finds or creates the customer and the car, then hands on to check-in for the branch.          |
+| `/receptions/check-in/[receptionId]`                  | none     | One record reached by its address; its branch is the record's own.                            |
+| `/receptions/check-in/[receptionId]/acknowledgement`  | none     | One record reached by its address; its branch is the record's own.                            |
+| `/reports`                                            | none     | Tenant-wide administration or records; nothing here is addressed to a branch.                 |
+| `/services`                                           | none     | Tenant-wide administration or records; nothing here is addressed to a branch.                 |
+| `/vehicles`                                           | none     | Tenant-wide administration or records; nothing here is addressed to a branch.                 |
+| `/vehicles/[vehicleId]`                               | none     | One record reached by its address; its branch is the record's own.                            |
+| `/vehicles/duplicates`                                | none     | Tenant-wide administration or records; nothing here is addressed to a branch.                 |
+| `/vehicles/new`                                       | none     | Tenant-wide administration or records; nothing here is addressed to a branch.                 |
+| `/warranty/[warrantyId]`                              | none     | One record reached by its address; its branch is the record's own.                            |
+| `/warranty/policies/[policyId]`                       | none     | One record reached by its address; its branch is the record's own.                            |
+| `/work-orders/[workOrderId]`                          | none     | One record reached by its address; its branch is the record's own.                            |
+| `/work-orders/[workOrderId]/closure`                  | none     | One record reached by its address; its branch is the record's own.                            |
+| `/work-orders/[workOrderId]/jobs/[jobId]/diagnostics` | none     | One record reached by its address; its branch is the record's own.                            |
+| `/work-orders/diagnostics`                            | none     | Tenant-wide administration or records; nothing here is addressed to a branch.                 |
+| `/work-orders/diagnostics/[templateId]`               | none     | One record reached by its address; its branch is the record's own.                            |
+
+### Local branch fields that stay
+
+These are not a second answer to "which branch am I working in". Each is a value the record or
+query is about, and each is named:
+
+- the branch filter on `/services`;
+- the price lookup's branch on `/pricing`, which follows the working branch;
+- a price rule's branch on `/pricing/[priceListId]`;
+- a reorder level's branch on `/inventory/setup`;
+- the issue or reservation branch on `/inventory/parts` when the work order's branch cannot be read;
+- the settings target on the administration settings pages;
+- the report's branch on the report screens, which opens on the working branch.
 
 ## Remaining — backend prerequisites and Owner decisions only
 

@@ -50,13 +50,17 @@ import {
  * every proxy log between here and the operator. The CHOSEN job is what the
  * caller puts in the address, and that is a record reference, not a search.
  *
- * ## The scope is the working context's, exactly as the board's
+ * ## The scope is ONE named branch
  *
- * The company travels, and the branch travels when the operator is working in
- * one; "All my branches" inside one company is the union the server enforces on
- * the board. "All my branches" spanning more than one company resolves to no
- * scope at all, because `companyId` is mandatory on the read and there is no
- * honest single answer — the operator is told to choose one branch.
+ * The company and the branch travel together, and only when the operator is
+ * working in one branch. Every screen this picker serves writes against the job
+ * it finds — an invoice, a quotation, a draw of parts — and those are `concrete`
+ * routes (`config/route-branch-scope.ts`). It used to search every branch of the
+ * company under "All my branches", so the invoice desk listed jobs from branches
+ * the header said the screen was not working in (PR #467 review). "All my
+ * branches", like no branch chosen yet, now resolves to no scope: nothing is
+ * searched, the caller's submit is disabled, and the picker asks for one branch
+ * — offering the named branches right there when the caller says so.
  *
  * ## A branch switch forgets the choice
  *
@@ -103,13 +107,9 @@ export type WorkOrderSearchScope = {
  * it refuse without a control to point at.
  */
 export function useWorkOrderSearchScope(): WorkOrderSearchScope {
-  const context = useWorkingContext();
   const branch = useBranchTarget();
   if (branch.kind === 'ready') {
     return { companyId: branch.target.companyId, branchId: branch.target.branchId };
-  }
-  if (branch.kind === 'all' && context.selection?.companyId) {
-    return { companyId: context.selection.companyId, branchId: null };
   }
   return null;
 }
@@ -124,6 +124,7 @@ export function WorkOrderPicker({
   needsBranchId,
   countsAsUnsaved = true,
   pristineId = null,
+  offersBranchChooser = false,
   testId = 'work-order-picker',
 }: {
   readonly messages: Messages;
@@ -153,6 +154,13 @@ export function WorkOrderPicker({
    * Holding it is not unsaved work; changing it is.
    */
   readonly pristineId?: string | null;
+  /**
+   * Whether the ask for one branch carries the named branches with it. On
+   * where the picker is the only place the screen names its branch (the
+   * invoice, quotation and parts desks); off where a branch section above it
+   * already offers them, so a screen never carries two choosers.
+   */
+  readonly offersBranchChooser?: boolean;
   readonly testId?: string;
 }) {
   const base = useId();
@@ -273,11 +281,12 @@ export function WorkOrderPicker({
     return (
       <div className="flex flex-col gap-1.5" data-testid={testId}>
         {heading}
-        {/* "All my branches" across companies says "choose one branch"; the rest say their own reason. */}
+        {/* "All my branches" and "nothing chosen" ask for one branch; the rest say their own reason. */}
         <div id={needsBranchId}>
           <RequiresConcreteBranch
             messages={messages}
             state={branch}
+            chooser={offersBranchChooser}
             testId={`${testId}-needs-branch`}
           />
         </div>

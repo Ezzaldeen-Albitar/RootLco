@@ -104,21 +104,52 @@ const TARGET = `companyId=${COMPANY.id}&branchId=${BRANCH.id}`;
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // The working branch is remembered in browser storage; every case starts afresh.
+  window.localStorage.clear();
 });
 
+/**
+ * The registers follow the working branch and carry no branch picker of their
+ * own (PR #467 review), so a case names the branch the way an operator does: in
+ * the working context, here through a bare switch standing in for the header.
+ */
+const WORK_IN_FIRST = 'work in the first branch';
+function inWorkingContext(ui: React.ReactElement, locale: 'en' | 'ar' = 'en') {
+  return inBranch(
+    <>
+      <BranchSwitch to={BRANCH.id} label={WORK_IN_FIRST} />
+      {ui}
+    </>,
+    {
+      locale,
+      snapshot: branchSnapshot([
+        { ...TEST_BRANCH, id: BRANCH.id, companyId: COMPANY.id, name: BRANCH.name },
+        {
+          ...TEST_BRANCH,
+          id: '20000000-0000-4000-8000-000000000008',
+          companyId: COMPANY.id,
+          name: 'Another Branch',
+        },
+      ]),
+    }
+  );
+}
+
 async function chooseBranch(user: ReturnType<typeof userEvent.setup>) {
-  await user.selectOptions(screen.getByLabelText(/^Branch/), BRANCH.id);
+  await user.click(screen.getByRole('button', { name: WORK_IN_FIRST }));
 }
 
 describe('Departments', () => {
   function renderDepartments(canManage = true) {
     return renderLtr(
-      <DepartmentsScreen
-        messages={en}
-        branches={branches}
-        companies={[COMPANY]}
-        canManage={canManage}
-      />
+      inWorkingContext(
+        <DepartmentsScreen
+          messages={en}
+          branches={branches}
+          companies={[COMPANY]}
+          canManage={canManage}
+        />
+      )
     );
   }
 
@@ -298,7 +329,10 @@ describe('Departments', () => {
 
   it('reads in Arabic, right to left', () => {
     renderRtl(
-      <DepartmentsScreen messages={ar} branches={branches} companies={[COMPANY]} canManage />
+      inWorkingContext(
+        <DepartmentsScreen messages={ar} branches={branches} companies={[COMPANY]} canManage />,
+        'ar'
+      )
     );
     expect(document.documentElement.dir).toBe('rtl');
     expect(screen.getByText(AR('departments.chooseBranch'))).toBeVisible();
@@ -308,13 +342,15 @@ describe('Departments', () => {
 describe('Employees', () => {
   function renderEmployees(canManage = true, loginAccounts = [ACCOUNT]) {
     return renderLtr(
-      <EmployeesScreen
-        messages={en}
-        branches={branches}
-        companies={[COMPANY]}
-        loginAccounts={loginAccounts}
-        canManage={canManage}
-      />
+      inWorkingContext(
+        <EmployeesScreen
+          messages={en}
+          branches={branches}
+          companies={[COMPANY]}
+          loginAccounts={loginAccounts}
+          canManage={canManage}
+        />
+      )
     );
   }
 
@@ -421,7 +457,7 @@ describe('the registers open on the working branch (route sweep B3)', () => {
   /*
    * Both registers asked "which branch?" on a blank page while the header
    * already named one. They now read the header's branch on arrival and follow
-   * it when it changes; the branch control stays for reading another branch.
+   * it when it changes, and state it rather than offering a second chooser.
    */
   afterEach(forgetRememberedBranch);
 
@@ -462,7 +498,11 @@ describe('the registers open on the working branch (route sweep B3)', () => {
     await user.click(screen.getByRole('button', { name: 'first' }));
     expect(await screen.findByText('Service')).toBeVisible();
     expect(get).toHaveBeenLastCalledWith(`/api/v1/org/departments?${TARGET}`);
-    expect((screen.getByLabelText(/^Branch/) as HTMLSelectElement).value).toBe(BRANCH.id);
+    expect(screen.getByTestId('departments-branch')).toHaveTextContent(BRANCH.name);
+    // Stated, not asked: no branch picker of the register's own (PR #467 review).
+    expect(
+      within(screen.getByTestId('departments-branch')).queryAllByRole('combobox')
+    ).toHaveLength(0);
 
     await user.click(screen.getByRole('button', { name: 'second' }));
     await waitFor(() =>
@@ -470,7 +510,7 @@ describe('the registers open on the working branch (route sweep B3)', () => {
         `/api/v1/org/departments?companyId=${COMPANY.id}&branchId=${SECOND.id}`
       )
     );
-    expect((screen.getByLabelText(/^Branch/) as HTMLSelectElement).value).toBe(SECOND.id);
+    expect(screen.getByTestId('departments-branch')).toHaveTextContent(SECOND.name);
   });
 
   it('employees: reads the working branch on arrival, with no branch to choose first', async () => {
@@ -498,6 +538,8 @@ describe('the registers open on the working branch (route sweep B3)', () => {
     );
     expect(await screen.findByText('Handover Clerk')).toBeVisible();
     expect(screen.queryByText(EN('employees.chooseBranch'))).toBeNull();
+    expect(screen.getByTestId('employees-branch')).toHaveTextContent(BRANCH.name);
+    expect(screen.queryAllByRole('combobox')).toHaveLength(0);
     expect(get.mock.calls[0]?.[0]).toContain(TARGET);
   });
 });

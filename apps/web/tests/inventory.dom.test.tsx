@@ -577,7 +577,7 @@ describe('FE-009 — stock is read only for a named branch', () => {
       )
     );
     expect(screen.getByTestId('requires-concrete-branch')).toHaveTextContent(
-      EN['workingContext.chooseFirst'] as string
+      EN['workingContext.chooseBranchHere'] as string
     );
     await new Promise((resolve) => setTimeout(resolve, 350));
     expect(listAvailability).not.toHaveBeenCalled();

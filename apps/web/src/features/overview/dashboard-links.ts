@@ -4,10 +4,6 @@ import {
   WORK_ORDER_STATE_CODE_PATTERN,
   type WorkOrderBoardView,
 } from '@/features/work-orders/work-orders-contract';
-import {
-  ATTENTION_BRANCH_PARAM,
-  isAttentionBranchParam,
-} from '@/features/attention/attention-contract';
 import type { DashboardSummaryCriteria } from './overview-contract';
 
 /**
@@ -96,9 +92,11 @@ export function receptionsPeriodLink(locale: Locale, criteria: DashboardSummaryC
 /**
  * The Attention area, where a stock or allowance warning is acted on.
  *
- * With a branch, the page opens with that branch already chosen — the branch the
- * figure was counted for. Without one, or with a value that is not an
- * identifier, it opens with the choice left to the reader.
+ * It carries no branch. The page reads the working context, the same one the
+ * figure was counted for, so it opens on that branch; under "All my branches"
+ * it asks for one by name (Browser QA part 7, row 1a.3: the page used to carry
+ * its own branch select, a second authority for the header's answer, fed by a
+ * branch in the address).
  *
  * NOT "the list" behind the low-stock figure, and no caller may word it as
  * one. The figure counts distinct ITEMS; the page lists FINDINGS — one per
@@ -106,8 +104,6 @@ export function receptionsPeriodLink(locale: Locale, criteria: DashboardSummaryC
  * its list. It is where those items are dealt with, which is what the link
  * text says.
  */
-export function attentionAreaLink(locale: Locale, branchId: string | null = null): string {
-  return isAttentionBranchParam(branchId)
-    ? `/${locale}/attention?${ATTENTION_BRANCH_PARAM}=${encodeURIComponent(branchId)}`
-    : `/${locale}/attention`;
+export function attentionAreaLink(locale: Locale): string {
+  return `/${locale}/attention`;
 }

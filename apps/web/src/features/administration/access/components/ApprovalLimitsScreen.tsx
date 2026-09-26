@@ -11,7 +11,7 @@ import { formatMoney } from '@/lib/money';
 import { intlLocale } from '@/lib/format';
 import { IDLE, type ActionState } from '@/lib/forms/action-result';
 import { FormFeedback } from '@/features/authentication/components/FormFeedback';
-import { RequiresConcreteBranch } from '@/features/working-context/components/WorkingBranchField';
+import { DirectoryEmptyNotice } from '@/features/working-context/components/WorkingBranchField';
 import { useWorkingContext } from '@/features/working-context/WorkingContextProvider';
 import { SubmitButton } from '@/features/authentication/components/SubmitButton';
 import { AccountPicker, type ChosenAccount } from '../../users/components/AccountPicker';
@@ -393,7 +393,7 @@ function CreateDialog({
         ) : (
           // No company to choose, or the directory could not be read. Saying so
           // is the honest answer; a box asking for a typed reference was not.
-          <RequiresConcreteBranch messages={messages} fallbackKey="workingContext.noCompany" />
+          <DirectoryEmptyNotice messages={messages} fallbackKey="workingContext.noCompany" />
         )}
 
         {/*

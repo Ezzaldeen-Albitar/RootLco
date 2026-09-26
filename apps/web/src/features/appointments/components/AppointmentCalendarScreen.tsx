@@ -495,7 +495,11 @@ export function AppointmentCalendarScreen({
             there is exactly one place it can be changed; a second editable
             control here would be a second authority for the same fact.
           */}
-          <WorkingBranchField messages={messages} testId="appointment-branch-target" />
+          <WorkingBranchField
+            messages={messages}
+            testId="appointment-branch-target"
+            acceptsAllBranches
+          />
           <SelectField
             label={translate(messages, 'appointments.calendar.statusFilter')}
             value={status}
