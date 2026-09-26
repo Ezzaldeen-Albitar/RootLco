@@ -749,14 +749,26 @@ core, one route (a `POST` with a JSON body when it carries typed text), one brow
 the action retired once nothing calls it — and leave reads that are made once per page, where
 nothing supersedes them, on Server Actions.
 
+**Residual limits of the route branch-scope check (PR #467 review).** Each is a limit of
+`config/route-branch-scope.ts` and `apps/web/tests/route-branch-scope.test.ts`, not a fault found
+on a screen; one line each:
+
+1. `permitted` follows the governing navigation entry, not the page's own check — where they differ (`/inventory/opening-stock` page `inv.stock.read` vs nav `inv.item.read`; `/appointments/new` `apt.appointment.manage` vs `apt.appointment.read`) a user holding only the page's code sees the screen's own branch refusal instead of the gate.
+2. Guard uses are exempt by position — a request smuggled through a guard expression is caught only by the exact position list.
+3. The concrete rule proves a scoped operation and a working-branch read are both reachable, not that one feeds the other.
+4. A refusal drawn inside a screen or wrapper is gated behind the branch ask unless the route's navigation permission is missing.
+5. The departments and employees registers follow the working branch only when the directory also lists it — a mismatch leaves the register asking until refresh.
+6. Endpoints are recognised by an `api/v1` or `/reads/` fragment after constant folding — a path assembled without one is out of scope.
+
 ## Material UI adoption (ADR-022)
 
 ADR-022 makes Material UI and the MUI X Community editions the component layer. Screens move onto
 it one at a time, through shared wrappers that keep the behaviour of the components they replace;
 a screen changes what it renders and nothing about how it reads, searches or refuses. This section
 records each wrapper's contract and, per route, which wrappers apply and whether the route has
-moved. Nothing has moved yet: every route below reads `not migrated`, and a verification cell says
-`not run` until a route moves and its suite is run in both languages.
+moved. The reception board (`/receptions`) is the first route that has moved (see "`/receptions`
+on Material UI" below the table); every other route reads `not migrated`, and a verification cell
+says `not run` until a route moves and its suite is run in both languages.
 
 ### The shared wrappers and what each keeps
 
@@ -793,6 +805,10 @@ The one place the MUI X data grid is rendered with props a caller supplies.
 - G10. Queue boards migrating to `OperationalGrid` via `useSearchRequest` MUST pass
   `narrows(criteria)` so a scoped-but-unsearched empty queue shows its empty state, not "no
   matches".
+- G11. The row-actions column is handed a minimum width its widest row of labels fits in
+  (`rowActionsMinWidth`: `space-2` per character, each button's padding, the gaps and the cell's
+  padding, never below the `space-24` floor), and neither the row nor a label wraps inside it — in
+  English or Arabic (Browser QA part 7, row 4.3).
 
 **`EntityPicker`** (`apps/web/src/components/pickers/EntityPicker.tsx`) is `SearchPicker` on
 Material UI's Autocomplete. It takes exactly `SearchPickerProps`; the module also exports it as
@@ -841,6 +857,11 @@ the same catalogue entries.
 - S2. A retry only where retrying can change the answer: an outage, a fault and a stale read.
 - S3. No raw code; the correlation reference is the only diagnostic.
 - S4. `role="status"`, so a state is announced politely rather than interrupting.
+- S5. An empty answer says what narrowed it (`emptyReason` on `MuiSearchStates`, `reason` on
+  `MuiNoResultsState`): the filters (a period, a status), a search term, or a search matched on
+  fewer details for this account (`searchLimited`: a caller who may not read customers is not
+  matched on a customer's name or phone). `MuiSearchStates` defaults to the search sentence, as
+  before.
 
 **`BranchSelector`** (`apps/web/src/features/working-context/mui/BranchSelector.tsx`) draws the
 header's working-branch control on Material UI. `WorkingContextControl` is now its container and
@@ -891,6 +912,11 @@ above a list: a search, chips or selects, and a period.
   branch's offset (`…T23:59:59.999999±HH:MM`), so a daylight-saving change gives the two ends
   different offsets. The work-order route parses its bounds to milliseconds, so there the last
   999 microseconds of a day stay outside the bound (recorded in `lib/branch-time.ts`).
+- T5. What a screen adds beside the filters: a select's `groups` (`<optgroup>` headings after its
+  options) and `description`, passed to `FormSelectField`; a `summary` line under the period (the
+  period in words and the clock it is counted on); and an `actions` row at the foot for the
+  screen's links and toggles, whose buttons are `type="button"` so they never apply the chosen
+  dates. A toolbar given none of them draws none of them.
 
 **`DateField` / `DateTimeField`** (`apps/web/src/components/forms/mui/DateField.tsx`) are the MIT
 pickers with `FieldFrame`'s contract.
@@ -1001,7 +1027,7 @@ The preserved-behaviour cell names the contract items above that a migration mus
 | `/receptions/check-in/[receptionId]/acknowledgement`  | `OperationalGrid`, states                              | G1–G9; S1–S4                | not migrated                       | not run — nothing migrated                |
 | `/receptions/check-in/[receptionId]`                  | form fields, `OperationalGrid`, `EntityPicker`, states | F1–F6; G1–G9; P1–P10; S1–S4 | not migrated                       | not run — nothing migrated                |
 | `/receptions/check-in`                                | form fields, `OperationalGrid`, `EntityPicker`, states | F1–F6; G1–G9; P1–P10; S1–S4 | not migrated                       | not run — nothing migrated                |
-| `/receptions`                                         | form fields, `OperationalGrid`, states                 | F1–F6; G1–G9; S1–S4         | not migrated                       | not run — nothing migrated                |
+| `/receptions`                                         | `FilterToolbar`, `OperationalGrid`, states             | F6; G1–G11; S1–S5; T1–T5    | migrated — see below the table     | focused suites, en and ar — see below     |
 | `/reports/[reportCode]`                               | form fields, states                                    | F1–F6; S1–S4                | not migrated                       | not run — nothing migrated                |
 | `/reports/overview`                                   | form fields, states                                    | F1–F6; S1–S4                | not migrated                       | not run — nothing migrated                |
 | `/reports`                                            | states                                                 | S1–S4                       | not migrated                       | not run — nothing migrated                |
@@ -1031,3 +1057,42 @@ The preserved-behaviour cell names the contract items above that a migration mus
 | `/platform/organizations`                             | form fields, `OperationalGrid`, states                 | F1–F6; G1–G9; S1–S4         | not migrated                       | not run — nothing migrated                |
 | `/platform`                                           | `OperationalGrid`, states                              | G1–G9; S1–S4                | not migrated                       | not run — nothing migrated                |
 | `/platform/plans`                                     | form fields, `OperationalGrid`, states                 | F1–F6; G1–G9; S1–S4         | not migrated                       | not run — nothing migrated                |
+
+### `/receptions` on Material UI
+
+`ReceptionQueueScreen` renders `FilterToolbar` (the grouped status select, the one search box, the
+board's five periods sent as instants on the branch's clock with two chosen days, the summary line
+and the board's links), `OperationalGrid` over the same `useSearchRequest(...).table`, and
+`MuiSearchStates` for every state other than an answer. `WorkingBranchField` stays as it was (there
+is no Material equivalent); under "All my branches" it reads "All my branches · company". Nothing
+about how the board reads changed: the same criteria, the same cancellable `/reads/receptions`
+route, the same working-context version key.
+
+Preserved, each held by a case in `apps/web/tests/reception-queue.dom.test.tsx` unless named:
+
+- The day is the branch's day, and the board states its clock in the summary line (Browser QA part
+  7, row 3.1); under "All my branches" the day is the first branch's and the line names that
+  branch; a zone the directory does not publish falls back to `UTC` and the line says `UTC`
+  (`boardClock`).
+- "Before today" sends only an upper bound, the last instant of yesterday; "Still with us from
+  before today" is one request (the `open` group with that bound).
+- One status control holds a whole group or one code, never both (`group:` values).
+- Clear is offered only on an empty answer and only when a period, a status or a term is applied.
+- The row action follows `isFinishedReception` (continue the check-in, or open the visit), beside
+  the acknowledgement; both are links named with the visit number; no reception write is
+  reachable from the board.
+- Reads are keyed on the working-context version: a branch switch cancels the read in flight and
+  ignores a late answer (`cancellable-reads.dom.test.tsx`); the read contract is held on the
+  syntax tree of the `useSearchRequest` call (`p1-28-security.test.ts`).
+- The branch column is passed to the grid only under "All my branches", and names the branch.
+- The check-in and walk-in links follow `rec.reception.manage` and `crm.customer.read`; the
+  blocked-branch and spans-companies notices stand in place of the list.
+- An empty search for an account that may not read customers says that names and phone numbers
+  are not searched for it (row 2.8); a 503 or a failed request is "unavailable" with a retry
+  (row 2.6, `cancellable-reads.dom.test.tsx`).
+- Arabic and English, right to left included.
+
+Verification: the focused suites above, `filter-toolbar.dom.test.tsx`, `mui-states.dom.test.tsx`,
+`operational-grid.dom.test.tsx`, `operational-grid-actions-width.dom.test.tsx` and the route
+branch-scope suites were run locally in both languages; the browser specs
+(`tests/e2e/authenticated/appointments-and-receptions.spec.ts`) run only in hosted CI.
