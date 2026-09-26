@@ -653,7 +653,7 @@ describe('a validation or write failure leaves the tree byte-identical', () => {
     const fresh = join(dir, 'fresh.json');
     const before = [readFileSync(first), readFileSync(second)];
     let renames = 0;
-    const failSecond = (from: string, to: string): void => {
+    const failSecond: typeof renameSync = (from, to) => {
       renames += 1;
       if (renames === 3) throw new Error('injected: the disk filled between two writes');
       renameSync(from, to);
@@ -680,7 +680,7 @@ describe('a validation or write failure leaves the tree byte-identical', () => {
     const { dir, first, second } = pair();
     const before = [readFileSync(first), readFileSync(second)];
     let writes = 0;
-    const failStaging = (path: string, content: string): void => {
+    const failStaging: typeof writeFileSync = (path, content) => {
       writes += 1;
       if (writes === 2) throw new Error('injected: staging failed');
       writeFileSync(path, content);
@@ -775,9 +775,9 @@ describe('a failed run is kept as history only when asked, and never as evidence
     };
     const problems = recordProblems('unit', red);
     expect(problems.map((p: { id: string }) => p.id)).toContain('RUN_RECORD_RUN_NOT_SUCCESSFUL');
-    expect(recordProblems('unit', { ...red, failed: 0, exitCode: 0, reporterSuccess: true })).toEqual(
-      []
-    );
+    expect(
+      recordProblems('unit', { ...red, failed: 0, exitCode: 0, reporterSuccess: true })
+    ).toEqual([]);
     const entry = localDiagnosticRecord('unit', red, problems);
     expect(entry.diagnostic).toBe(true);
     expect(judgeRunDiagnostics({ tiers: {}, [DIAGNOSTICS_KEY]: [entry] })).toEqual([]);

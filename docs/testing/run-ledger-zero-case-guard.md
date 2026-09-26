@@ -146,19 +146,19 @@ restore kept it out of a commit. The local `--record <tier>` wrote a failing run
 `scripts/lib/hosted-run-report.mjs` reads the observation `fetchHostedTierRun` collected and
 refuses, naming each reason, unless every one of these holds:
 
-| rule                                                                                                   | refusal                            |
-| ------------------------------------------------------------------------------------------------------ | ---------------------------------- |
-| the run has finished (`status: completed`)                                                             | `HOSTED_RUN_NOT_COMPLETED`         |
-| the run concluded `success` or `failure` — not `cancelled`, `timed_out`, `skipped` or any other state  | `HOSTED_RUN_CONCLUSION_INELIGIBLE` |
-| the run describes the commit being recorded (`head_sha` equals `HEAD`)                                 | `HOSTED_RUN_HEAD_MISMATCH`         |
-| exactly one job reached a verdict on the tier's step                                                   | `HOSTED_TIER_NOT_RUN`, `HOSTED_TIER_AMBIGUOUS` |
-| that job belongs to this run and this head                                                             | `HOSTED_JOB_NOT_IN_RUN`            |
-| that job completed with conclusion `success`                                                           | `HOSTED_JOB_NOT_SUCCESSFUL`        |
-| the tier step concluded `success`                                                                      | `HOSTED_STEP_NOT_SUCCESSFUL`       |
-| the tier artifact exists once, is unexpired, names this run and head, and matches its published digest | `HOSTED_ARTIFACT_UNUSABLE`         |
-| the artifact carries the tier summary (`test-totals-<tier>.json`)                                      | `HOSTED_SUMMARY_MISSING`           |
-| the report adds up to itself and agrees with the summary on files, total, passed, failed, pending, todo | `HOSTED_COUNTS_INCONSISTENT`       |
-| the report and the summary record success and no failure                                               | `HOSTED_REPORT_NOT_SUCCESSFUL`     |
+| rule                                                                                                    | refusal                                        |
+| ------------------------------------------------------------------------------------------------------- | ---------------------------------------------- |
+| the run has finished (`status: completed`)                                                              | `HOSTED_RUN_NOT_COMPLETED`                     |
+| the run concluded `success` or `failure` — not `cancelled`, `timed_out`, `skipped` or any other state   | `HOSTED_RUN_CONCLUSION_INELIGIBLE`             |
+| the run describes the commit being recorded (`head_sha` equals `HEAD`)                                  | `HOSTED_RUN_HEAD_MISMATCH`                     |
+| exactly one job reached a verdict on the tier's step                                                    | `HOSTED_TIER_NOT_RUN`, `HOSTED_TIER_AMBIGUOUS` |
+| that job belongs to this run and this head                                                              | `HOSTED_JOB_NOT_IN_RUN`                        |
+| that job completed with conclusion `success`                                                            | `HOSTED_JOB_NOT_SUCCESSFUL`                    |
+| the tier step concluded `success`                                                                       | `HOSTED_STEP_NOT_SUCCESSFUL`                   |
+| the tier artifact exists once, is unexpired, names this run and head, and matches its published digest  | `HOSTED_ARTIFACT_UNUSABLE`                     |
+| the artifact carries the tier summary (`test-totals-<tier>.json`)                                       | `HOSTED_SUMMARY_MISSING`                       |
+| the report adds up to itself and agrees with the summary on files, total, passed, failed, pending, todo | `HOSTED_COUNTS_INCONSISTENT`                   |
+| the report and the summary record success and no failure                                                | `HOSTED_REPORT_NOT_SUCCESSFUL`                 |
 
 The record is then put through the completeness and provenance rules of sections 3 and 7, and
 only then written. A refusal exits 1 and writes nothing; a failure to read the API exits 2 and
