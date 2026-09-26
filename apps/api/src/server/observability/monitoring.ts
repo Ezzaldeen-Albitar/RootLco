@@ -184,12 +184,17 @@ function databaseFields(error: DriverError): DatabaseFaultFields {
 }
 
 /**
- * The frame lines of a RAW stack. Filtered before anything escapes its
- * newlines, so a message that continues onto a second line is a separate line
- * here and is dropped with the first.
+ * The frame lines of a RAW stack. The header and the whole message are cut
+ * first, through the end of the message's first occurrence, whatever the
+ * error's name: a message line that itself begins with `    at ` would
+ * otherwise pass the frame filter. Only the rest is split and filtered, before
+ * anything escapes its newlines.
  */
-function stackFramesOf(stack: string): readonly string[] {
-  return stack
+function stackFramesOf(stack: string, message: unknown): readonly string[] {
+  const text = typeof message === 'string' ? message : '';
+  const messageAt = text === '' ? -1 : stack.indexOf(text);
+  const afterMessage = messageAt === -1 ? stack : stack.slice(messageAt + text.length);
+  return afterMessage
     .split('\n')
     .filter((line) => FRAME_LINE.test(line))
     .slice(0, MAX_STACK_FRAMES)
@@ -216,7 +221,7 @@ export function captureException(error: unknown, context: CaptureContext): void 
     ...(context.tenantRef !== undefined ? { tenantRef: context.tenantRef } : {}),
     ...(context.actorRef !== undefined ? { actorRef: context.actorRef } : {}),
     ...(isError && error.stack ? { stack: scrubString(error.stack) } : {}),
-    ...(isError && error.stack ? { stackFrames: stackFramesOf(error.stack) } : {}),
+    ...(isError && error.stack ? { stackFrames: stackFramesOf(error.stack, error.message) } : {}),
     ...(database !== undefined ? { database } : {}),
     ...(context.context !== undefined
       ? { context: redact(context.context) as Record<string, unknown> }

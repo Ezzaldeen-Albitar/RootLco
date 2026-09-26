@@ -271,6 +271,45 @@ describe('database faults are logged by structure', () => {
     expect(raw).not.toContain('submitted-value');
   });
 
+  it('drops a message line that itself looks like a frame from the line and the frames', () => {
+    const lines = capturedLines();
+    captureException(
+      driverError('invalid input syntax for type uuid: "x"\n    at injected (C:\\evil.js:1:1)', {
+        code: '22P02',
+        routine: 'string_to_uuid',
+      }),
+      { correlationId: CORRELATION_ID }
+    );
+
+    const event = monitor.recorded()[0]!;
+    expect(event.message).toBe('Database error 22P02');
+    expect(event.stackFrames?.length).toBeGreaterThan(0);
+    const { raw, record } = onlyLine(lines);
+    const frames = JSON.stringify(record.context.stackFrames);
+    for (const leaked of ['injected', 'evil']) {
+      expect(raw).not.toContain(leaked);
+      expect(frames).not.toContain(leaked);
+      expect(JSON.stringify(event.stackFrames)).not.toContain(leaked);
+    }
+  });
+
+  it('treats a SQLSTATE-shaped code without a server routine or file as an ordinary error', () => {
+    const lines = capturedLines();
+    const error = Object.assign(new Error('not raised by the server'), {
+      code: '23503',
+      severity: 'ERROR',
+    });
+    captureException(error, { correlationId: CORRELATION_ID });
+
+    const event = monitor.recorded()[0]!;
+    expect(event.message).toBe('not raised by the server');
+    expect(event.message).not.toBe('Database error 23503');
+    expect(Object.prototype.hasOwnProperty.call(event, 'database')).toBe(false);
+    const { record } = onlyLine(lines);
+    expect(record.msg).toBe('not raised by the server');
+    expect(record.context.database).toBeUndefined();
+  });
+
   it('logs no idempotency key from a RAISE that names one', () => {
     const lines = capturedLines();
     const key = '7d4c2a10-9b8e-4f3a-a1b2-c3d4e5f6a7b8';
