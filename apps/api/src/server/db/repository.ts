@@ -148,7 +148,10 @@ export function referenceRefusal(
 ): AppFailure | undefined {
   if (!isSqlState(error, SQLSTATE.foreignKeyViolation)) return undefined;
   const constraint = violatedConstraint(error);
-  if (constraint === undefined || !Object.prototype.hasOwnProperty.call(pointerByConstraint, constraint)) {
+  if (
+    constraint === undefined ||
+    !Object.prototype.hasOwnProperty.call(pointerByConstraint, constraint)
+  ) {
     return undefined;
   }
   const path = pointerByConstraint[constraint];
