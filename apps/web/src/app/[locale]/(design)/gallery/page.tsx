@@ -2,6 +2,7 @@ import { notFound } from 'next/navigation';
 import { ApiReadinessPanel } from '@/components/gallery/ApiReadinessPanel';
 import { GalleryClient } from '@/components/gallery/GalleryClient';
 import { MuiFoundationSection } from '@/components/gallery/MuiFoundationSection';
+import { MuiWorkflowSection } from '@/components/gallery/MuiWorkflowSection';
 import { MuiWrappersSection } from '@/components/gallery/MuiWrappersSection';
 import { PageBody, PageHeader } from '@/components/shell/PageHeader';
 import { isLocale } from '@/i18n/config';
@@ -54,6 +55,7 @@ export default async function GalleryPage({
         <GalleryClient locale={locale} messages={messages} />
         <MuiFoundationSection locale={locale} messages={messages} />
         <MuiWrappersSection locale={locale} messages={messages} />
+        <MuiWorkflowSection locale={locale} messages={messages} />
       </PageBody>
     </>
   );

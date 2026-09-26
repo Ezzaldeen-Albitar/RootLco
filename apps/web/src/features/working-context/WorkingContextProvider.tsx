@@ -12,7 +12,7 @@ import {
   useSyncExternalStore,
   type ReactNode,
 } from 'react';
-import { ConfirmDialog } from '@/components/overlays/Overlays';
+import { ConfirmDialog } from '@/components/dialogs/ConfirmDialog';
 import type { Messages } from '@/i18n/get-messages';
 import { formatMessage, translate } from '@/i18n/get-messages';
 import { readPreference, usePersistedPreference } from '@/lib/use-persisted-flag';

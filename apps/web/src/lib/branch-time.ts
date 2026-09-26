@@ -139,25 +139,83 @@ export function startOfDay(zone: string, day: CalendarDay): Date {
 }
 
 /**
- * The LAST instant of a calendar day in a zone.
+ * The LAST millisecond of a calendar day in a zone, as a `Date`.
  *
- * One millisecond before the next day begins, because the two list filters this
- * feeds compare CLOSED on both ends (`custody_accepted_at <= to`,
- * `opened_at <= openedTo`). A half-open bound passed to a closed comparison
- * silently includes the first instant of the following day, which is how a
- * "today" board comes to show tomorrow's first car.
+ * One millisecond before the next day begins. A `Date` cannot hold anything
+ * finer, so this is NOT the bound a request sends — see `endOfDayBound`.
  */
 export function endOfDay(zone: string, day: CalendarDay): Date {
   return new Date(startOfDay(zone, addDays(day, 1)).getTime() - 1);
 }
 
-/** An inclusive instant range over a span of calendar days in one zone. */
+/** `±HH:MM` for an offset in minutes east of UTC. */
+function offsetText(minutes: number): string {
+  const sign = minutes < 0 ? '-' : '+';
+  const whole = Math.abs(minutes);
+  return `${sign}${pad(Math.floor(whole / 60))}:${pad(whole % 60)}`;
+}
+
+/** The offset a zone is on at an instant, in minutes east of UTC. */
+export function offsetMinutesAt(zone: string, instant: Date): number {
+  const clock = wallClockIn(zone, instant);
+  const shown = Date.UTC(
+    clock.year,
+    clock.month - 1,
+    clock.day,
+    clock.hour,
+    clock.minute,
+    clock.second
+  );
+  // The wall clock is read to the second, so the instant is too.
+  const measured = Math.floor(instant.getTime() / 1000) * 1000;
+  return Math.round((shown - measured) / 60_000);
+}
+
+/**
+ * The LAST instant of a calendar day in a zone, as the string a request sends:
+ * `YYYY-MM-DDT23:59:59.999999±HH:MM`, on that zone's wall clock and with the
+ * offset in force at that instant.
+ *
+ * ## Why microseconds, and why a string
+ *
+ * The list filters this feeds compare CLOSED on both ends
+ * (`custody_accepted_at <= to`, `opened_at <= openedTo`, an appointment's start
+ * `<= to`). A half-open bound passed to a closed comparison silently includes
+ * the first instant of the following day, which is how a "today" board comes
+ * to show tomorrow's first car. The opposite error is subtler: PostgreSQL
+ * stores `timestamptz` to the MICROSECOND, so a bound at `.999` milliseconds
+ * leaves out a row stamped in the last 999 microseconds of the day. The bound
+ * is therefore written to six fractional digits, which a `Date` cannot hold —
+ * hence a string built from the wall clock, not `toISOString()`.
+ *
+ * The routes validate these parameters with `z.string().datetime({ offset:
+ * true })`, which accepts any number of fractional digits. The reception and
+ * appointment routes hand the string to the database as it came, so the bound
+ * holds to the microsecond there. The work-order route parses `openedTo` and
+ * `completedTo` into a `Date` before querying, which keeps milliseconds only:
+ * on that board the last 999 microseconds of a day are still outside the
+ * bound. That is a limitation of the route, recorded here rather than papered
+ * over on this side.
+ */
+export function endOfDayBound(zone: string, day: CalendarDay): string {
+  const last = endOfDay(zone, day);
+  const clock = wallClockIn(zone, last);
+  const date = `${pad(clock.year, 4)}-${pad(clock.month)}-${pad(clock.day)}`;
+  const time = `${pad(clock.hour)}:${pad(clock.minute)}:${pad(clock.second)}`;
+  return `${date}T${time}.999999${offsetText(offsetMinutesAt(zone, last))}`;
+}
+
+/**
+ * An inclusive instant range over a span of calendar days in one zone: the
+ * first instant of `from` (`toISOString()`, UTC) and the last instant of `to`
+ * (`endOfDayBound`, the zone's offset, microseconds).
+ */
 export function rangeOfDays(
   zone: string,
   from: CalendarDay,
   to: CalendarDay
 ): { readonly from: string; readonly to: string } {
-  return { from: startOfDay(zone, from).toISOString(), to: endOfDay(zone, to).toISOString() };
+  return { from: startOfDay(zone, from).toISOString(), to: endOfDayBound(zone, to) };
 }
 
 /** Whether an instant falls on a given calendar day in a zone. */
@@ -179,6 +237,19 @@ export function formatInZone(value: string, intlLocale: string, zone: string): s
     dateStyle: 'medium',
     timeStyle: 'short',
   }).format(new Date(value));
+}
+
+/**
+ * The name of the clock an instant is rendered on, as the reader's language
+ * writes it (`GMT+3`, `GMT-4`): written beside a time whenever
+ * the reader cannot tell from the screen which clock it is.
+ */
+export function zoneLabelAt(value: string, intlLocale: string, zone: string): string {
+  const parts = new Intl.DateTimeFormat(intlLocale, {
+    timeZone: zone,
+    timeZoneName: 'shortOffset',
+  }).formatToParts(new Date(value));
+  return parts.find((part) => part.type === 'timeZoneName')?.value ?? zone;
 }
 
 /** A day, rendered for reading, on the branch's clock. */

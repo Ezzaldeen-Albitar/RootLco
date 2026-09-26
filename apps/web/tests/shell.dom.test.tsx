@@ -19,7 +19,10 @@ import { Sidebar } from '@/components/shell/Sidebar';
 import { NAVIGATION, flattenNavigation, hrefFor, navigationLinks } from '@/config/navigation';
 import { getMessages } from '@/i18n/get-messages';
 import { visibleNavigation } from '@/lib/permissions';
+import { UiFoundationProvider } from '@/components/ui-foundation/UiFoundationProvider';
+import { muiTextOf } from '@/components/ui-foundation/mui-text';
 import { WorkingContextControl } from '@/features/working-context/components/WorkingContextControl';
+import { BranchSelector } from '@/features/working-context/mui/BranchSelector';
 import {
   WorkingContextProvider,
   useUnsavedGuard,
@@ -1830,5 +1833,202 @@ describe('RecordForm empties itself on a confirmed discard', () => {
     // Nothing is left to lose, so the next switch asks nothing.
     await switchWithoutQuestion(user, 'first');
     expect(within(document.body).queryByRole('alertdialog')).toBeNull();
+  });
+});
+
+/*
+ * The working-branch control on Material UI (`mui/BranchSelector`, ADR-022 PR1).
+ *
+ * `WorkingContextControl` is now a container over `BranchSelector`; every case
+ * above already runs through it. These pin what the redraw itself must keep:
+ * one native selector with the same label and test id, the provider's rule for
+ * "All my branches", a switch that goes through the provider's guarded path —
+ * whose question is now Material's `ConfirmDialog` — and both directions.
+ */
+describe('the branch selector, on Material UI', () => {
+  beforeEach(() => {
+    window.localStorage.clear();
+    refreshed.mockClear();
+  });
+
+  function inFoundation(ui: ReactNode, locale: 'en' | 'ar' = 'en') {
+    const catalogue = locale === 'ar' ? arabic : messages;
+    const renderIn = locale === 'ar' ? renderRtl : renderLtr;
+    const onContext = vi.fn();
+    const { container } = renderIn(
+      <UiFoundationProvider locale={locale} text={muiTextOf(catalogue)}>
+        <WorkingContextProvider snapshot={wcSnapshot([MAIN, SECOND, COAST])} messages={catalogue}>
+          <Probe onContext={onContext} />
+          {ui}
+          <WorkingContextControl messages={catalogue} />
+        </WorkingContextProvider>
+      </UiFoundationProvider>
+    );
+    return {
+      container,
+      seen: () => onContext.mock.calls[onContext.mock.calls.length - 1]?.[0] as WorkingContext,
+    };
+  }
+
+  it('is ONE named, native selector drawn by Material', () => {
+    inFoundation(null);
+    const selectors = screen.getAllByRole('combobox');
+    expect(selectors).toHaveLength(1);
+    const select = screen.getByRole('combobox', { name: messages['workingContext.label'] });
+    expect(select).toBe(screen.getByTestId('working-context-select'));
+    expect(select.tagName).toBe('SELECT');
+    expect(select).toHaveClass('MuiNativeSelect-select');
+    // Company headings travel as optgroups, which a custom listbox would lose.
+    expect(select.querySelectorAll('optgroup')).toHaveLength(2);
+  });
+
+  it("asks through Material's confirmation, Cancel first, and returns to the selector", async () => {
+    const user = userEvent.setup();
+    window.localStorage.setItem(WC_KEY, 'b-1');
+    const { seen } = inFoundation(<DirtyScreen dirty />);
+    const select = screen.getByTestId('working-context-select');
+
+    await user.selectOptions(select, 'b-2');
+    const dialog = await screen.findByRole('alertdialog');
+    expect(dialog).toHaveClass('MuiDialog-paper');
+    expect(dialog).toHaveAccessibleName(messages['workingContext.discard.title']);
+    expect(dialog).toHaveAccessibleDescription(messages['workingContext.discard.description']);
+    const cancel = within(dialog).getByRole('button', { name: messages['overlay.cancel'] });
+    // Destructive: the discard is never the default answer.
+    await waitFor(() => expect(document.activeElement).toBe(cancel));
+    expect(
+      within(dialog).getByRole('button', { name: messages['workingContext.discard.confirm'] })
+    ).toHaveAttribute('data-destructive', 'true');
+
+    await user.click(cancel);
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+    expect(seen().selection).toMatchObject({ branchId: 'b-1' });
+    // The controlled selector shows the branch still in force, not the refused one.
+    expect(select).toHaveValue('b-1');
+    await waitFor(() => expect(document.activeElement).toBe(select));
+  });
+
+  it('switches on "Discard and change branch", and calls the screen\'s onDiscard', async () => {
+    const user = userEvent.setup();
+    window.localStorage.setItem(WC_KEY, 'b-1');
+    const discarded = vi.fn();
+    function DiscardingScreen() {
+      useUnsavedGuard(true, discarded);
+      return null;
+    }
+    const { seen } = inFoundation(<DiscardingScreen />);
+    const before = seen();
+    await user.selectOptions(screen.getByTestId('working-context-select'), 'b-3');
+    const dialog = await screen.findByRole('alertdialog');
+    await user.click(
+      within(dialog).getByRole('button', { name: messages['workingContext.discard.confirm'] })
+    );
+    await waitFor(() => expect(seen().selection).toMatchObject({ branchId: 'b-3' }));
+    expect(seen().version).toBe(before.version + 1);
+    expect(before.signal.aborted).toBe(true);
+    expect(discarded).toHaveBeenCalledTimes(1);
+    expect(screen.getByTestId('working-context-select')).toHaveValue('b-3');
+  });
+
+  it('holds another tab\'s change over unsaved work, and "Switch now" asks the same question', async () => {
+    const user = userEvent.setup();
+    window.localStorage.setItem(WC_KEY, 'b-1');
+    const { seen } = inFoundation(<DirtyScreen dirty />);
+    window.localStorage.setItem(WC_KEY, 'b-2');
+    window.dispatchEvent(new Event('storage'));
+
+    const notice = await screen.findByTestId('working-context-cross-tab');
+    expect(seen().selection).toMatchObject({ branchId: 'b-1' });
+    expect(screen.getByTestId('working-context-select')).toHaveValue('b-1');
+    await user.click(
+      within(notice).getByRole('button', { name: messages['workingContext.crossTab.switch'] })
+    );
+    const dialog = await screen.findByRole('alertdialog');
+    expect(dialog).toHaveClass('MuiDialog-paper');
+    await user.click(
+      within(dialog).getByRole('button', { name: messages['workingContext.discard.confirm'] })
+    );
+    await waitFor(() => expect(seen().selection).toMatchObject({ branchId: 'b-2' }));
+    expect(screen.getByTestId('working-context-select')).toHaveValue('b-2');
+  });
+
+  it.each(BOTH_DIRECTIONS)(
+    'reads as a labelled control with no axe violations in %s',
+    async (locale) => {
+      const { container } = inFoundation(null, locale);
+      const catalogue = locale === 'ar' ? arabic : messages;
+      expect(document.documentElement.dir).toBe(locale === 'ar' ? 'rtl' : 'ltr');
+      const select = screen.getByRole('combobox', { name: catalogue['workingContext.label'] });
+      expect(
+        within(select).getByRole('option', { name: catalogue['workingContext.allBranches'] })
+      ).toBeInTheDocument();
+      expect(screen.getByTestId('working-context-prompt')).toHaveTextContent(
+        catalogue['workingContext.prompt']
+      );
+      const results = await axe(container);
+      expect(results.violations).toEqual([]);
+    }
+  );
+});
+
+describe('BranchSelector, the drawing on its own', () => {
+  function draw(overrides: Partial<Parameters<typeof BranchSelector>[0]> = {}) {
+    const onSelect = vi.fn();
+    const onRetry = vi.fn();
+    renderLtr(
+      <UiFoundationProvider locale="en" text={muiTextOf(messages)}>
+        <BranchSelector
+          messages={messages}
+          status="ready"
+          companies={WC_COMPANIES}
+          branches={[MAIN, SECOND]}
+          value=""
+          onSelect={onSelect}
+          onRetry={onRetry}
+          offerAllBranches
+          {...overrides}
+        />
+      </UiFoundationProvider>
+    );
+    return { onSelect, onRetry };
+  }
+
+  it('offers "All my branches" only when told the set has more than one branch', () => {
+    draw({ offerAllBranches: false });
+    // The falsification of the provider's rule: the option follows the flag,
+    // it is not drawn unconditionally.
+    expect(screen.queryByRole('option', { name: 'All my branches' })).toBeNull();
+  });
+
+  it('never reports the "choose" placeholder as a choice', async () => {
+    const user = userEvent.setup();
+    const { onSelect } = draw();
+    const select = screen.getByTestId('working-context-select');
+    await user.selectOptions(select, 'b-2');
+    expect(onSelect).toHaveBeenCalledWith('b-2');
+    await user.selectOptions(select, '');
+    expect(onSelect).not.toHaveBeenCalledWith('');
+  });
+
+  it('drops the "choose" line once a branch is in force, and stops announcing the ask', () => {
+    draw({ value: 'b-1' });
+    expect(screen.queryByRole('option', { name: 'Choose your branch' })).toBeNull();
+    expect(screen.queryByTestId('working-context-prompt')).toBeNull();
+  });
+
+  it('offers a retry, and nothing else, when the list could not be read', async () => {
+    const user = userEvent.setup();
+    const { onRetry } = draw({ status: 'unavailable', branches: [] });
+    expect(screen.queryByRole('combobox')).toBeNull();
+    await user.click(screen.getByRole('button', { name: 'Try again' }));
+    expect(onRetry).toHaveBeenCalledTimes(1);
+  });
+
+  it('names the one branch and its company, and asks nothing', () => {
+    draw({ branches: [COAST], value: 'b-3' });
+    expect(screen.queryByRole('combobox')).toBeNull();
+    expect(screen.getByTestId('working-context-single')).toHaveTextContent(
+      'Coastal workshop · Coastal Operations'
+    );
   });
 });

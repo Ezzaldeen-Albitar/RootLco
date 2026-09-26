@@ -21,7 +21,7 @@ import { useFocusFirstInvalid } from '@/lib/forms/use-focus-first-invalid';
 import {
   addDays,
   dayIn,
-  endOfDay,
+  endOfDayBound,
   formatDayInZone,
   formatInZone,
   rangeOfDays,
@@ -178,7 +178,7 @@ function windowOf(
        * row the database stamped exactly on the boundary — into a board headed
        * "before today".
        */
-      return { to: endOfDay(zone, addDays(today, -1)).toISOString() };
+      return { to: endOfDayBound(zone, addDays(today, -1)) };
     case 'custom':
       return rangeOfDays(zone, period.from, period.to);
   }

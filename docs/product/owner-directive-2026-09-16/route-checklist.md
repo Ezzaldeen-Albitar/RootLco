@@ -606,6 +606,96 @@ the same catalogue entries.
 - S3. No raw code; the correlation reference is the only diagnostic.
 - S4. `role="status"`, so a state is announced politely rather than interrupting.
 
+**`BranchSelector`** (`apps/web/src/features/working-context/mui/BranchSelector.tsx`) draws the
+header's working-branch control on Material UI. `WorkingContextControl` is now its container and
+decides nothing new; the provider still decides which branch is in force.
+
+- W1. One authorized branch is a sentence naming the branch and its company, never a control.
+- W2. Several are ONE native selector (Material's `native` select) with the same label and
+  `working-context-select` id, grouped by company in `<optgroup>`s; "All my branches" is offered
+  wherever there is more than one branch — the existing rule — and a screen that must address one
+  branch refuses it itself (`useBranchTarget`).
+- W3. Nothing chosen yet shows the ask, announced (`role="status"`); an unreadable list is a
+  sentence and a retry, never an empty control.
+- W4. Every switch goes through the provider's guarded `select`: with unsaved work anywhere it asks
+  first (Material's `ConfirmDialog`, Cancel focused, "Discard and change branch" destructive) and
+  calls each dirty guard's `onDiscard` in the same update as the switch; the version moves once
+  and the outstanding signal is aborted.
+- W5. Another tab's change over unsaved work is held with a notice; "Switch now" asks the same
+  question.
+
+**`ConfirmDialog` / `ReasonDialog`** (`apps/web/src/components/dialogs/`) are the overlay
+confirmations on Material UI, with the same props; the unsaved-work question is the first user.
+
+- D1. An alert dialog named by its title and described by its sentence; Tab stays inside; focus
+  returns to what opened it.
+- D2. Cancel takes focus on a destructive action; the reason box takes it otherwise.
+- D3. Escape cancels, a click outside does not; while the action is pending both buttons are
+  disabled and Escape does nothing.
+- D4. A closed dialog leaves the page at once (no exit transition keeps an answered question in the
+  accessibility tree); under "reduce motion" there is no fade.
+- D5. A reason is required, sent trimmed, and refused as a FIELD error on the box — the same box
+  carries a server refusal of the reason (`reasonError`); it is dropped when the dialog closes.
+
+**`FilterToolbar`** (`apps/web/src/components/filters/FilterToolbar.tsx`, `period.ts`) is the row
+above a list: a search, chips or selects, and a period.
+
+- T1. The search keeps `SearchBox`'s contract: the term goes to the server as typed, the read
+  hook's pause and Enter decide when, Escape clears, and nothing reads or writes the URL (SEC-002).
+- T2. Presets are pressed buttons; "Choose dates" opens two MIT date pickers (never the commercial
+  range picker) and asks nothing until the days are applied, saying so whenever the boxes differ
+  from the period in force (an applied pair being edited included). The panel follows the period
+  in force: a reset or a branch switch by the screen closes or reopens it and drops typed days.
+- T3. A chosen pair is checked first — both days, the last not before the first, at most the
+  operation's limit (the dashboard summary's 92 days) — and refused on the box to fix.
+- T4. Every day is on the BRANCH's clock. Each operation gets exactly the request it already reads,
+  from its own function: the dashboard the preset's name alone, or `custom` with two calendar
+  days (`dashboardPeriodRequest`); the boards the first and LAST instant of each day
+  (`boardInstantWindow`, closed comparisons), the last written to the microsecond with the
+  branch's offset (`…T23:59:59.999999±HH:MM`), so a daylight-saving change gives the two ends
+  different offsets. The work-order route parses its bounds to milliseconds, so there the last
+  999 microseconds of a day stay outside the bound (recorded in `lib/branch-time.ts`).
+
+**`DateField` / `DateTimeField`** (`apps/web/src/components/forms/mui/DateField.tsx`) are the MIT
+pickers with `FieldFrame`'s contract.
+
+- E1. The group is named by its label, `aria-invalid` only when wrong, described by the
+  description then the error; no native `required`.
+- E2. Values are a calendar day `YYYY-MM-DD`, or an instant with the branch's offset for that
+  moment (`components/forms/instant.ts` accepts it); the picker's object never leaves the file.
+- E3. The zone is the caller's, else the working branch's; typed entry is read as the wall clock
+  the operator sees, so a stale offset on the picker's object cannot move the day. A
+  `DateTimeField` is a write input and never falls back to the browser's clock: with no
+  `timezone` and no single branch with a known zone in force ("All my branches", none chosen), it
+  draws its label and the shared `RequiresConcreteBranch` sentence instead of a picker. In the
+  hour the clocks go back, a typed time is the earlier occurrence, and the field names the offset
+  of the moment it holds.
+- E4. Texts come from the catalogue; Arabic uses `ar-jo-latn`, so digits are Latin.
+
+**`MetricCard` / `ChartPanel`** (`apps/web/src/components/charts/`) are one figure and one chart on
+MUI X Charts (MIT). The dashboard keeps `charts.tsx` until it moves (PR5); the label budget is now
+shared (`label-fit.ts`).
+
+- M1. A count (zero included) is a number and a link to exactly the set it counted; withheld and
+  unanswerable are two different sentences with no number and no link; loading is announced.
+  Freshness is written on a named clock with its name beside it: the branch's zone for one branch,
+  UTC under "All my branches".
+- M2. A chart is a named `role="img"` drawing with a summary, a table alternative one button away
+  (or always shown), and an ordinary link per category beside it.
+- M3. In Arabic the category axis is reversed and the scale stands on the right; the drawing is
+  left to right so its text anchors are physical sides.
+- M4. Tick labels are cut with an ellipsis and whole in the tooltip, the links and the table; the
+  far margin is reserved for the widest count, so no count is clipped.
+- M5. Colours are token custom properties only; a second meaning is hatched as well as coloured,
+  and a legend swatch is painted like the drawing (a line's swatch is a line, never a hatch); a
+  pie numbers every slice beside a legend, folding categories beyond its six colours into one
+  named "Everything else" slice while the table and links keep every category; a per-category link
+  stays when its figure is zero; "reduce motion" skips the animation; loading, withheld,
+  unanswerable and empty are distinct.
+
+These PR1b wrappers are not yet in the "Applicable" column below: each route's applicability for
+them is derived when the first route moves onto one of them.
+
 ### Route adoption
 
 "Applicable" is derived from each route's import graph at this head: `OperationalGrid` where the
