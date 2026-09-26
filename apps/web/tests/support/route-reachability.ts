@@ -50,7 +50,8 @@ import ts from 'typescript';
  * unknown part where a segment should be, a `reads` path with no route, or a
  * path that matches no published operation is reported as UNRESOLVED with the
  * file and line. The caller decides what that means; the route-scope test fails
- * a union route on any of them. The only way out is a named `Exemption`.
+ * a union route on any of them. The only way out is a named guard use of an
+ * `Exemption` constant in its own module.
  */
 
 export interface ApiOperation {
@@ -75,7 +76,7 @@ export interface RouteReach {
   readonly endpoints: readonly Endpoint[];
   /** Every reached module-level symbol, as `<file>#<name>`. */
   readonly symbols: ReadonlySet<string>;
-  /** The exemptions this walk used, as `<file>#<constant>`. */
+  /** The guard uses this walk exempted, as `<file>:<line> <kind>`. */
   readonly exempted: readonly string[];
   /**
    * Reached declarations that read the working branch or company: they take
@@ -85,9 +86,11 @@ export interface RouteReach {
 }
 
 /**
- * A module constant that contains `/api/v1` and is never an endpoint. Named by
- * file and constant with the reason, and asserted exact by the caller, so the
- * list cannot grow quietly or go stale.
+ * A module constant that contains `/api/v1` or `/reads/` and is never itself an
+ * endpoint. Only its GUARD USES in its own module are exempt (see `guardUse`);
+ * every other expression built on it is folded through it and resolved. The
+ * caller asserts the exempted positions exactly, so the list cannot grow
+ * quietly or go stale.
  */
 export interface Exemption {
   readonly file: string;
@@ -490,12 +493,12 @@ export class RouteReachability {
         // A browser read route: its handler module joins the walk.
         this.candidates(info, node, (literal, kind) => {
           if (kind !== 'reads') return;
-          const exemption = this.exemptionFor(info, literal);
-          if (exemption !== null) {
-            exempted.push(exemption);
-            return;
-          }
           for (const end of this.ends(info, literal, reached, 0)) {
+            const guard = this.guardUse(end);
+            if (guard !== null) {
+              exempted.push(guard);
+              continue;
+            }
             if (end.problem !== null) {
               problems.push(unresolved(end.info, end.top, null, end.problem));
               continue;
@@ -526,12 +529,7 @@ export class RouteReachability {
         if (this.readsWorkingSelection(info, node)) selectionReaders.push(key);
         this.candidates(info, node, (literal, kind) => {
           if (kind !== 'api') return;
-          const exemption = this.exemptionFor(info, literal);
-          if (exemption !== null) {
-            exempted.push(exemption);
-            return;
-          }
-          endpoints.push(...this.endpointsOf(info, literal, reached));
+          endpoints.push(...this.endpointsOf(info, literal, reached, exempted));
         });
       }
     }
@@ -586,52 +584,71 @@ export class RouteReachability {
   }
 
   /**
-   * An exemption applies to a candidate that is the whole initializer of a
-   * named module-level constant listed in `exemptions`.
+   * Whether an end is a named GUARD USE of an exempted constant, in the module
+   * that owns the constant: the constant itself as the argument of
+   * `.startsWith(…)`, the constant's `.length`, or a template containing it as
+   * the argument of `new Error(…)`. Nothing else built on an exempted constant
+   * is exempt — `client.get(VERSION_PREFIX + '/x')` is folded THROUGH it and
+   * must resolve like any other path. Returns the position, `<file>:<line>
+   * <kind>`, so the caller can hold the exemptions to an exact list.
    */
-  private exemptionFor(info: ModuleInfo, candidate: ts.Node): string | null {
-    const named = (file: string, name: string): string | null => {
-      const normalized = file.replace(/\\/g, '/');
-      for (const exemption of this.exemptions) {
-        if (normalized.endsWith(exemption.file) && name === exemption.name) {
-          return `${exemption.file}#${exemption.name}`;
+  private guardUse(end: { info: ModuleInfo; top: ts.Node; problem: string | null }): string | null {
+    const file = end.info.file.replace(/\\/g, '/');
+    for (const exemption of this.exemptions) {
+      if (!file.endsWith(exemption.file)) continue;
+      const refersTo = (node: ts.Node): boolean => {
+        if (!ts.isIdentifier(node)) return false;
+        const resolved = this.resolveLocal(end.info.file, node.text);
+        return (
+          resolved !== null &&
+          resolved.file.replace(/\\/g, '/').endsWith(exemption.file) &&
+          resolved.local === exemption.name
+        );
+      };
+      const contains = (root: ts.Node): boolean => {
+        let found = false;
+        const visit = (node: ts.Node) => {
+          if (refersTo(node)) found = true;
+          ts.forEachChild(node, visit);
+        };
+        visit(root);
+        return found;
+      };
+      const top = end.top;
+      const parent = top.parent;
+      const line = end.info.source.getLineAndCharacterOfPosition(top.getStart()).line + 1;
+      const at = (kind: string) => `${exemption.file}:${line} ${kind}`;
+      if (refersTo(top)) {
+        if (
+          ts.isCallExpression(parent) &&
+          ts.isPropertyAccessExpression(parent.expression) &&
+          parent.expression.name.text === 'startsWith' &&
+          parent.arguments.includes(top as ts.Expression)
+        ) {
+          return at('startsWith');
+        }
+        if (
+          ts.isPropertyAccessExpression(parent) &&
+          parent.expression === top &&
+          parent.name.text === 'length'
+        ) {
+          return at('length');
         }
       }
-      return null;
-    };
-    const parent = candidate.parent;
-    if (
-      ts.isVariableDeclaration(parent) &&
-      parent.initializer === candidate &&
-      ts.isIdentifier(parent.name)
-    ) {
-      const direct = named(info.file, parent.name.text);
-      if (direct !== null) return direct;
+      if (
+        ts.isTemplateExpression(top) &&
+        ts.isNewExpression(parent) &&
+        ts.isIdentifier(parent.expression) &&
+        parent.expression.text === 'Error' &&
+        contains(top) &&
+        ![top.head.text, ...top.templateSpans.map((span) => span.literal.text)].some(
+          (text) => text.includes('api/v1') || READS.test(text)
+        )
+      ) {
+        return at('error message');
+      }
     }
-    // An expression that says `api/v1` or `reads` only through an exempted
-    // constant — the guard's own error message, say — is that constant's use.
-    let ownFragment = false;
-    let through: string | null = null;
-    const visit = (node: ts.Node) => {
-      if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) {
-        if (node.text.includes('api/v1') || READS.test(node.text)) ownFragment = true;
-      } else if (ts.isTemplateExpression(node)) {
-        for (const text of [
-          node.head.text,
-          ...node.templateSpans.map((span) => span.literal.text),
-        ]) {
-          if (text.includes('api/v1') || READS.test(text)) ownFragment = true;
-        }
-      } else if (ts.isIdentifier(node)) {
-        const resolved = this.resolveLocal(info.file, node.text);
-        if (resolved !== null && resolved.local !== '*') {
-          through = named(resolved.file, resolved.local) ?? through;
-        }
-      }
-      ts.forEachChild(node, visit);
-    };
-    visit(candidate);
-    return ownFragment ? null : through;
+    return null;
   }
 
   /**
@@ -679,10 +696,16 @@ export class RouteReachability {
   private endpointsOf(
     info: ModuleInfo,
     literal: ts.Node,
-    reached: ReadonlySet<string>
+    reached: ReadonlySet<string>,
+    exempted: string[]
   ): Endpoint[] {
     const out: Endpoint[] = [];
     for (const end of this.ends(info, literal, reached, 0)) {
+      const guard = this.guardUse(end);
+      if (guard !== null) {
+        exempted.push(guard);
+        continue;
+      }
       if (end.problem !== null) {
         out.push(unresolved(end.info, end.top, null, end.problem));
         continue;

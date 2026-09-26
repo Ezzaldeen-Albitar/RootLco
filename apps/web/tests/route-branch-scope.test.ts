@@ -293,9 +293,12 @@ describe('the union set is exactly what the API route modules declare', () => {
 
 /**
  * The two module constants that contain `/api/v1` or `/reads/` and are never
- * an endpoint. Named with the reason, and the walk's own report of which
- * exemptions it used on the union routes must equal this list exactly — so it
- * can neither grow quietly nor outlive the code it excuses.
+ * an endpoint themselves. Only their GUARD USES in the module that owns them
+ * are exempt — the constant as the argument of `.startsWith(…)`, its `.length`,
+ * and a `new Error(…)` message quoting it. Anything else built on them is folded
+ * through them and must resolve (PR #467 review). The exempted POSITIONS the
+ * walk reports on the union routes must equal `EXEMPT_POSITIONS` exactly, so the
+ * list can neither grow quietly nor outlive the code it excuses.
  */
 const EXEMPTIONS: readonly Exemption[] = [
   {
@@ -312,6 +315,14 @@ const EXEMPTIONS: readonly Exemption[] = [
       'the guard every browser read passes, refusing a route outside /reads/; each route is its ' +
       'own literal constant and is resolved on its own',
   },
+];
+
+/** Every guard use the union routes may reach, by file, line and kind. */
+const EXEMPT_POSITIONS: readonly string[] = [
+  'lib/api/browser-read.ts:140 startsWith',
+  'lib/api/browser-read.ts:141 error message',
+  'lib/api/operation-contract.ts:80 length',
+  'lib/api/operation-contract.ts:80 startsWith',
 ];
 
 describe('what each route can call is derived from its source (PR #467 review)', () => {
@@ -368,12 +379,12 @@ describe('what each route can call is derived from its source (PR #467 review)',
     ).toBe(true);
   });
 
-  it('used exactly the named exemptions on the union routes, and no other', () => {
+  it('exempted exactly the named guard positions on the union routes, and no other', () => {
     const used = new Set<string>();
     for (const entry of ROUTE_BRANCH_SCOPES.filter((e) => e.scope === 'union')) {
       for (const key of (derived.get(entry.pattern) as RouteReach).exempted) used.add(key);
     }
-    expect([...used].sort()).toEqual(EXEMPTIONS.map((e) => `${e.file}#${e.name}`).sort());
+    expect([...used].sort()).toEqual([...EXEMPT_POSITIONS].sort());
   });
 
   /*
@@ -527,6 +538,65 @@ describe('the derivation refuses what it cannot vouch for', () => {
     const problems = unionProblems(page(name, adapter));
     expect(problems.length).toBeGreaterThan(0);
     for (const entry of problems) expect(entry).toContain(`unresolved (${problem})`);
+  });
+
+  describe('an exempted constant is exempt only at its guard uses', () => {
+    // The owning modules, as small as they can be and still hold every guard kind.
+    const own = () => {
+      write(
+        'lib/api/operation-contract.ts',
+        `export const VERSION_PREFIX = '/api/v1';\nexport function strip(path: string): string {\n  return path.startsWith(VERSION_PREFIX) ? path.slice(VERSION_PREFIX.length) : path;\n}\n`
+      );
+      write(
+        'lib/api/browser-read.ts',
+        `export const BROWSER_READ_PREFIX = '/reads/';\nexport function browserRead(route: string): string {\n  if (!route.startsWith(BROWSER_READ_PREFIX)) {\n    throw new Error(\`A browser read must address a route under \${BROWSER_READ_PREFIX}.\`);\n  }\n  return route;\n}\n`
+      );
+    };
+
+    it('keeps the guard uses exempt, by position (the positive control)', () => {
+      own();
+      const reach = page(
+        'guards',
+        `import { strip } from '@/lib/api/operation-contract';\nimport { browserRead } from '@/lib/api/browser-read';\nexport async function load(route: string) {\n  return strip(browserRead(route));\n}\n`
+      );
+      expect(unionProblems(reach)).toEqual([]);
+      expect(reach.exempted).toEqual([
+        'lib/api/browser-read.ts:3 startsWith',
+        'lib/api/browser-read.ts:4 error message',
+        'lib/api/operation-contract.ts:3 length',
+        'lib/api/operation-contract.ts:3 startsWith',
+      ]);
+    });
+
+    it('folds a read built on the version prefix through it, and refuses it', () => {
+      own();
+      const reach = page(
+        'prefix-read',
+        `${CLIENT}import { VERSION_PREFIX } from '@/lib/api/operation-contract';\nexport async function load() {\n  return client.get(VERSION_PREFIX + '/delivery-readiness');\n}\n`
+      );
+      expect(unionProblems(reach)).toEqual([ONE_BRANCH]);
+    });
+
+    it('folds a write built on the version prefix through it, and refuses it', () => {
+      own();
+      const reach = page(
+        'prefix-write',
+        `${CLIENT}import { VERSION_PREFIX } from '@/lib/api/operation-contract';\nexport async function load() {\n  return client.send('POST', \`\${VERSION_PREFIX}/receptions\`, {});\n}\n`
+      );
+      expect(derivedIds(reach)).toEqual(['rec.reception-create']);
+      expect(unionProblems(reach)[0]).toMatch(/^reaches the write rec\.reception-create/);
+    });
+
+    it('folds a browser read built on the reads prefix through it, and refuses a route that does not exist', () => {
+      own();
+      const reach = page(
+        'prefix-reads',
+        `import { BROWSER_READ_PREFIX, browserRead } from '@/lib/api/browser-read';\nexport async function load() {\n  return browserRead(\`\${BROWSER_READ_PREFIX}anything\`);\n}\n`
+      );
+      expect(unionProblems(reach)).toEqual([
+        expect.stringMatching(/^unresolved \(browser read route cannot be resolved\)/),
+      ]);
+    });
   });
 
   it('refuses a union page that reaches a write through a wrapper and a path builder', () => {
