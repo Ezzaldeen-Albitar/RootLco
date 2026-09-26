@@ -550,6 +550,15 @@ ever read. Rapid branch switching or re-typing can therefore spend budget on rea
 throttled read shows the ordinary "service unavailable, try again" state: the read envelope maps a
 throttle to `unavailable` and does not carry it apart, so no separate "busy" wording is shown.
 
+**Debt: `searchCustomers` is a dead `'use server'` export, kept only for a coverage pin.** Nothing
+calls it — a structural test in `apps/web/tests/cancellable-reads.test.ts` proves that — yet it
+stays in `apps/web/src/features/crm` solely because the `crm-customer-surface` rule in
+`.github/ci-baselines/coverage-baseline.web.json` pins `minMatchedFiles: 20`, and deleting the
+file that holds it would leave that prefix matching 19 instrumented files, so the coverage gate
+would fail. A committed baseline is never lowered by a worker to make room for a change. Removing
+the export therefore needs an explicit baseline decision — lower the pin to 19 with a recorded
+reason, or keep the dead export — and until that decision is made it stays, unreachable.
+
 Still on Server Actions, and therefore ignored rather than cancelled when superseded: the account
 picker (`listUsers`), the inventory item and issued-part pickers (`listItems`, `listIssuedParts`),
 the invoice picker (`listInvoices`), the appointment calendar (`listAppointments`), the warranty

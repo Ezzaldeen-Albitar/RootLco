@@ -53,6 +53,7 @@ const {
 const {
   READ_BODY_LIMIT_BYTES,
   READ_RESPONSE_HEADERS,
+  carriesPrototypeKey,
   isJsonContentType,
   queryObject,
   refusalOf,
@@ -519,6 +520,126 @@ describe('a POST family accepts exactly one JSON body, and nothing in the addres
     expect(response.status).toBe(405);
     expect(authorizedClient).not.toHaveBeenCalled();
   });
+
+  it('refuses a body carrying a __proto__ key, which lands as an own key the schema does not name', async () => {
+    get.mockResolvedValue({ ok: true, status: 200, data: RECEPTIONS.data, correlationId: 'c' });
+    const handle = await handlerOf(RECEPTIONS);
+    const present = JSON.stringify(presentParams(RECEPTIONS.params));
+    for (const extra of ['"__proto__":"x"', '"__proto__":{"q":"x"}']) {
+      const body = `{${extra},${present.slice(1)}`;
+      expect(Object.hasOwn(JSON.parse(body) as object, '__proto__'), body).toBe(true);
+      const response = await handle(readRequest(RECEPTIONS, RECEPTIONS.params, { body }));
+      expect(response.status, body).toBe(400);
+      expect(await response.json()).toEqual({ status: 'error', correlationId: null });
+    }
+    expect(authorizedClient).not.toHaveBeenCalled();
+    // Not vacuous: the same body without the extra key is served.
+    const served = await handle(readRequest(RECEPTIONS, RECEPTIONS.params, { body: present }));
+    expect(served.status).toBe(200);
+  });
+});
+
+/**
+ * A body source that counts how many chunks the route pulled from it.
+ *
+ * It would offer `chunks` chunks of `size` bytes — far more than the limit —
+ * so a route that buffered the whole body would pull every one.
+ */
+function countingBody(chunks: number, size: number) {
+  const counter = { pulls: 0, cancelled: false };
+  const chunk = new TextEncoder().encode(' '.repeat(size));
+  const stream = new ReadableStream<Uint8Array>(
+    {
+      pull(controller) {
+        counter.pulls += 1;
+        if (counter.pulls > chunks) controller.close();
+        else controller.enqueue(chunk);
+      },
+      cancel() {
+        counter.cancelled = true;
+      },
+    },
+    { highWaterMark: 0 }
+  );
+  return { stream, counter };
+}
+
+/** A POST read whose body is a stream and whose headers are exactly these. */
+function streamedRequest(body: ReadableStream<Uint8Array>, headers: Record<string, string> = {}) {
+  return new Request(`http://${HOST}${RECEPTIONS.route}`, {
+    method: 'POST',
+    headers: {
+      host: HOST,
+      [BROWSER_READ_HEADER]: '1',
+      'sec-fetch-site': 'same-origin',
+      'content-type': 'application/json',
+      ...headers,
+    },
+    body,
+    duplex: 'half',
+  } as RequestInit);
+}
+
+describe('a POST body is capped while it streams, never buffered whole', () => {
+  it('refuses a chunked body with no declared length as soon as it passes the limit', async () => {
+    const chunkBytes = 1024;
+    const offered = 1000;
+    const { stream, counter } = countingBody(offered, chunkBytes);
+    const request = streamedRequest(stream);
+    expect(request.headers.get('content-length')).toBeNull();
+    const handle = await handlerOf(RECEPTIONS);
+    const response = await handle(request);
+    expect(response.status).toBe(413);
+    expect(await response.json()).toEqual({ status: 'error', correlationId: null });
+    // The limit is 16 chunks; the 17th passes it. One read-ahead is tolerated;
+    // a route that read the whole body would have pulled all 1000.
+    const needed = Math.floor(READ_BODY_LIMIT_BYTES / chunkBytes) + 1;
+    expect(counter.pulls).toBeGreaterThanOrEqual(needed);
+    expect(counter.pulls).toBeLessThanOrEqual(needed + 1);
+    expect(counter.cancelled).toBe(true);
+    expect(authorizedClient).not.toHaveBeenCalled();
+  });
+
+  it('refuses a declared length over the limit before reading a single byte', async () => {
+    const { stream, counter } = countingBody(1, 8);
+    const request = streamedRequest(stream, {
+      'content-length': String(READ_BODY_LIMIT_BYTES + 1),
+    });
+    expect(request.headers.get('content-length')).toBe(String(READ_BODY_LIMIT_BYTES + 1));
+    const handle = await handlerOf(RECEPTIONS);
+    const response = await handle(request);
+    expect(response.status).toBe(413);
+    expect(counter.pulls).toBe(0);
+    expect(authorizedClient).not.toHaveBeenCalled();
+  });
+
+  it('accepts a body of exactly the limit and refuses one byte more', async () => {
+    get.mockResolvedValue({ ok: true, status: 200, data: RECEPTIONS.data, correlationId: 'c' });
+    const handle = await handlerOf(RECEPTIONS);
+    const present = JSON.stringify(presentParams(RECEPTIONS.params));
+    const exact = present + ' '.repeat(READ_BODY_LIMIT_BYTES - present.length);
+    expect(new TextEncoder().encode(exact).byteLength).toBe(READ_BODY_LIMIT_BYTES);
+    const accepted = await handle(readRequest(RECEPTIONS, RECEPTIONS.params, { body: exact }));
+    expect(accepted.status).toBe(200);
+    expect(get).toHaveBeenCalledTimes(1);
+    const over = await handle(readRequest(RECEPTIONS, RECEPTIONS.params, { body: `${exact} ` }));
+    expect(over.status).toBe(413);
+    expect(get).toHaveBeenCalledTimes(1);
+  });
+
+  it('refuses a body that is not valid UTF-8 rather than repairing it', async () => {
+    const bytes = new Uint8Array([0x7b, 0x22, 0x71, 0x22, 0x3a, 0x22, 0xff, 0x22, 0x7d]);
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(bytes);
+        controller.close();
+      },
+    });
+    const handle = await handlerOf(RECEPTIONS);
+    const response = await handle(streamedRequest(stream));
+    expect(response.status).toBe(400);
+    expect(authorizedClient).not.toHaveBeenCalled();
+  });
 });
 
 describe('a GET family validates its query', () => {
@@ -548,6 +669,26 @@ describe('a GET family validates its query', () => {
     expect(response.status).toBe(400);
     expect(queryObject(new URL(url))).toBeNull();
     expect(queryObject(new URL(`http://${HOST}/reads/x?a=1&b=2`))).toEqual({ a: '1', b: '2' });
+  });
+
+  it('keeps a __proto__ parameter as an own key, so the strict schema refuses it', async () => {
+    const parsed = queryObject(new URL(`http://${HOST}/reads/x?__proto__=x&a=1`));
+    expect(parsed).not.toBeNull();
+    expect(Object.hasOwn(parsed as object, '__proto__')).toBe(true);
+    expect(Object.keys(parsed as object)).toEqual(['__proto__', 'a']);
+    expect(Object.getPrototypeOf(parsed)).toBeNull();
+    expect(carriesPrototypeKey(parsed)).toBe(true);
+    expect(carriesPrototypeKey({ a: '1' })).toBe(false);
+    const handle = await handlerOf(OVERVIEW);
+    const url = `http://${HOST}${browserReadUrl(OVERVIEW.route, OVERVIEW.params)}&__proto__=x`;
+    const response = await handle(
+      new Request(url, {
+        headers: { host: HOST, [BROWSER_READ_HEADER]: '1', 'sec-fetch-site': 'same-origin' },
+      })
+    );
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({ status: 'error', correlationId: null });
+    expect(authorizedClient).not.toHaveBeenCalled();
   });
 });
 

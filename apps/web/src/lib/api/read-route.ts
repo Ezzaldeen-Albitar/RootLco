@@ -135,9 +135,14 @@ function answer(body: unknown, status: number, correlationId: string | null): Re
  * A repeated key is refused rather than resolved: taking the first or the last
  * would mean the route and a reader of the URL could disagree about what was
  * asked.
+ *
+ * The object has no prototype, so every parameter — `__proto__` included —
+ * lands as an own key. On a plain object `out['__proto__'] = 'x'` would be
+ * swallowed by the prototype setter and the parameter would vanish instead of
+ * being refused; as an own key it reaches `carriesPrototypeKey` below.
  */
 export function queryObject(url: URL): Record<string, string> | null {
-  const out: Record<string, string> = {};
+  const out = Object.create(null) as Record<string, string>;
   for (const key of new Set(url.searchParams.keys())) {
     const values = url.searchParams.getAll(key);
     if (values.length !== 1) return null;
@@ -146,10 +151,71 @@ export function queryObject(url: URL): Record<string, string> | null {
   return out;
 }
 
+/**
+ * Whether the parameters carry an own `__proto__` key.
+ *
+ * A strict zod object refuses every key its shape does not name EXCEPT this
+ * one, which it passes over without a word — so without this check the
+ * parameter would be dropped rather than refused, against the rule that what
+ * reaches the core is exactly what was sent. Both a query (see `queryObject`)
+ * and a parsed JSON body hold it as an own key, so one check covers both.
+ */
+export function carriesPrototypeKey(raw: unknown): boolean {
+  return typeof raw === 'object' && raw !== null && Object.hasOwn(raw, '__proto__');
+}
+
 /** Whether a `Content-Type` names JSON, parameters such as `charset` aside. */
 export function isJsonContentType(value: string | null): boolean {
   if (value === null) return false;
   return (value.split(';')[0] ?? '').trim().toLowerCase() === 'application/json';
+}
+
+/**
+ * The body as UTF-8 text, read chunk by chunk and never past the limit.
+ *
+ * `request.text()` would buffer whatever a client chose to send before the
+ * size could be checked, and a chunked body declares no length to refuse it
+ * by. So the stream is read here, the running byte count is checked after
+ * every chunk, and the read is cancelled the moment the count passes
+ * `READ_BODY_LIMIT_BYTES`: at most one chunk past the limit is ever held.
+ * The bytes are decoded only once the whole body is known to fit, and a body
+ * that is not valid UTF-8 is refused rather than repaired.
+ */
+async function readCappedBody(
+  request: Request
+): Promise<
+  { readonly ok: true; readonly text: string } | { readonly ok: false; readonly status: 400 | 413 }
+> {
+  const body = request.body;
+  if (body === null) return { ok: true, text: '' };
+  const reader = body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      total += value.byteLength;
+      if (total > READ_BODY_LIMIT_BYTES) {
+        await reader.cancel().catch(() => undefined);
+        return { ok: false, status: 413 };
+      }
+      chunks.push(value);
+    }
+  } catch {
+    return { ok: false, status: 400 };
+  }
+  const bytes = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  try {
+    return { ok: true, text: new TextDecoder('utf-8', { fatal: true }).decode(bytes) };
+  } catch {
+    return { ok: false, status: 400 };
+  }
 }
 
 /** What went wrong with an input, as the status the route answers. */
@@ -161,8 +227,10 @@ type InputOutcome =
  * A POST body as a plain object.
  *
  * Refused: a query string of any kind (the body is the only place parameters
- * travel), a content type other than JSON, a body over `READ_BODY_LIMIT_BYTES`,
- * a body that does not parse, and one that is not a plain object. JSON that
+ * travel), a content type other than JSON, a body over `READ_BODY_LIMIT_BYTES`
+ * (by its declared length before a byte is read, and by its counted length
+ * while it streams — see `readCappedBody`), a body that is not UTF-8 or does
+ * not parse, and one that is not a plain object. JSON that
  * repeats a key keeps its last value, as `JSON.parse` does; the body is written
  * by `JSON.stringify` in the browser half and is recorded in no address, so the
  * disagreement the query rule guards against has no second reader here.
@@ -175,18 +243,11 @@ async function bodyInput(request: Request): Promise<InputOutcome> {
   if (Number.isFinite(declared) && declared > READ_BODY_LIMIT_BYTES) {
     return { ok: false, status: 413 };
   }
-  let text: string;
-  try {
-    text = await request.text();
-  } catch {
-    return { ok: false, status: 400 };
-  }
-  if (new TextEncoder().encode(text).length > READ_BODY_LIMIT_BYTES) {
-    return { ok: false, status: 413 };
-  }
+  const body = await readCappedBody(request);
+  if (!body.ok) return body;
   let parsed: unknown;
   try {
-    parsed = JSON.parse(text);
+    parsed = JSON.parse(body.text);
   } catch {
     return { ok: false, status: 400 };
   }
@@ -237,6 +298,9 @@ export async function serveBrowserRead<Params, Envelope extends { readonly statu
   const input = spec.input === 'body' ? await bodyInput(request) : queryInput(request);
   if (!input.ok) {
     return answer({ status: 'error', correlationId: null }, input.status, null);
+  }
+  if (carriesPrototypeKey(input.raw)) {
+    return answer({ status: 'error', correlationId: null }, 400, null);
   }
   const parsed = spec.schema.safeParse(input.raw);
   if (!parsed.success) {
