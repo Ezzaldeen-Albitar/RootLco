@@ -770,6 +770,8 @@
   "dashboard.workload.technician": "الفني",
   "dashboard.workload.title": "العمل لدى كل فني",
   "dashboard.workload.unnamed": "الاسم غير متاح لك",
+  "dateField.repeatedTime": "تعود الساعة إلى الوراء في هذا اليوم، لذلك يتكرر هذا الوقت مرتين. الوقت المعروض هو الذي عند {offset}.",
+  "dateField.zoneUnknown": "المنطقة الزمنية لهذا الفرع غير معروفة بعد، لذلك لا يمكن اختيار وقت هنا.",
   "delivery.action.loadMore": "عرض المزيد",
   "delivery.blocker.checklistIncomplete": "أحد بنود قائمة الفحص المطلوبة بلا نتيجة.",
   "delivery.blocker.deliveryStateInvalid": "هذا التسليم مسجَّل كحالة مشكلة ولا يمكن المضي فيه.",

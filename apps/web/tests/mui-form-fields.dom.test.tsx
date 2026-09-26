@@ -12,6 +12,7 @@ import {
   instantToPicker,
   pickerToDay,
   pickerToInstant,
+  repeatedWallClock,
 } from '@/components/forms/mui/DateField';
 import { FormMoneyField } from '@/components/forms/mui/FormMoneyField';
 import { FormNumberField } from '@/components/forms/mui/FormNumberField';
@@ -26,7 +27,14 @@ import type { ActionState } from '@/lib/forms/action-result';
 import { useClearOnCorrect } from '@/lib/forms/use-clear-on-correct';
 import { useFocusFirstInvalid } from '@/lib/forms/use-focus-first-invalid';
 import { validateInstant } from '@/components/forms/instant';
-import { TEST_BRANCH, branchSnapshot, inBranch, renderLtr, renderRtl } from './render';
+import {
+  BranchSwitch,
+  TEST_BRANCH,
+  branchSnapshot,
+  inBranch,
+  renderLtr,
+  renderRtl,
+} from './render';
 
 /**
  * The Material UI form fields (ADR-022 PR1) keep `FieldFrame`'s contract:
@@ -46,6 +54,11 @@ function mount(ui: ReactElement, locale: Locale = 'en') {
       {ui}
     </UiFoundationProvider>
   );
+}
+
+/** The catalogue's `{name}` placeholders, filled — written here, not borrowed from the component. */
+function formatMessageText(template: string, values: Record<string, string>): string {
+  return template.replace(/\{(\w+)\}/g, (whole, name: string) => values[name] ?? whole);
 }
 
 function describedByIds(element: HTMLElement): string[] {
@@ -452,6 +465,7 @@ function MomentHost({
   const [value, setValue] = useState(initial);
   return (
     <DateTimeField
+      messages={en}
       label="Visit time"
       value={value}
       onChange={(next) => {
@@ -567,6 +581,74 @@ describe('DateField and DateTimeField: the FieldFrame contract on a picker', () 
     expect(pickerInput(group)).toHaveValue('15/01/2026 07:00');
   });
 
+  it('refuses to take a moment under "All my branches": no picker, and the choose-one-branch sentence', async () => {
+    // A moment is a write input, and writes need a concrete branch. The
+    // falsification: before the refusal the field silently used the laptop's
+    // clock here.
+    const user = userEvent.setup();
+    const second = { ...TEST_BRANCH, id: '88888888-8888-4888-8888-888888888888', name: 'Second' };
+    mount(
+      inBranch(
+        <>
+          <BranchSwitch to="all" label="use all" />
+          <BranchSwitch to={TEST_BRANCH.id} label="use main" />
+          <MomentHost initial="2026-01-15T12:00:00Z" />
+        </>,
+        { snapshot: branchSnapshot([TEST_BRANCH, second]) }
+      )
+    );
+    await user.click(screen.getByRole('button', { name: 'use all' }));
+    const refusal = await screen.findByTestId('date-time-requires-branch');
+    expect(refusal).toHaveTextContent(en['workingContext.needsOneBranch']);
+    expect(refusal.closest('[data-zone-refused="true"]')).toHaveTextContent('Visit time');
+    expect(screen.queryByRole('group', { name: /^Visit time/ })).toBeNull();
+    expect(document.querySelector('input')).toBeNull();
+
+    // One branch again: the picker is back, on that branch's clock (UTC+3).
+    await user.click(screen.getByRole('button', { name: 'use main' }));
+    const group = await screen.findByRole('group', { name: /^Visit time/ });
+    expect(pickerInput(group)).toHaveValue('15/01/2026 15:00');
+    expect(screen.queryByTestId('date-time-requires-branch')).toBeNull();
+  });
+
+  it('refuses a moment on a branch whose zone is not known, in its own words', () => {
+    const unknown = { ...TEST_BRANCH, timezone: '' };
+    mount(inBranch(<MomentHost />, { snapshot: branchSnapshot([unknown]) }));
+    expect(screen.getByTestId('date-time-requires-branch')).toHaveTextContent(
+      en['dateField.zoneUnknown']
+    );
+    expect(screen.queryByRole('group', { name: /^Visit time/ })).toBeNull();
+  });
+
+  it('takes the EARLIER of the two 01:30s on the night the clocks go back, and says so', async () => {
+    // 1 November 2026, America/New_York: 02:00 daylight time becomes 01:00
+    // standard time, so 01:00-01:59 happens twice, at -04:00 and then -05:00.
+    const user = userEvent.setup();
+    const onMoment = vi.fn();
+    mount(<MomentHost zone="America/New_York" onMoment={onMoment} />);
+    const group = screen.getByRole('group', { name: /^Visit time/ });
+    await user.click(within(group).getAllByRole('spinbutton')[0] as HTMLElement);
+    await user.keyboard('011120260130');
+    expect(onMoment).toHaveBeenLastCalledWith('2026-11-01T01:30:00-04:00');
+    const note = formatMessageText(en['dateField.repeatedTime'], { offset: 'UTC-04:00' });
+    await waitFor(() => expect(group).toHaveAccessibleDescription(note));
+
+    // An hour later on the clock is an ordinary time again: no note.
+    await user.click(within(group).getAllByRole('spinbutton')[3] as HTMLElement);
+    await user.keyboard('03');
+    expect(onMoment).toHaveBeenLastCalledWith('2026-11-01T03:30:00-05:00');
+    await waitFor(() => expect(group).not.toHaveAccessibleDescription(note));
+  });
+
+  it('names the later offset when the moment it holds IS the later 01:30', () => {
+    mount(<MomentHost initial="2026-11-01T01:30:00-05:00" zone="America/New_York" />);
+    const group = screen.getByRole('group', { name: /^Visit time/ });
+    expect(pickerInput(group)).toHaveValue('01/11/2026 01:30');
+    expect(group).toHaveAccessibleDescription(
+      formatMessageText(en['dateField.repeatedTime'], { offset: 'UTC-05:00' })
+    );
+  });
+
   it('is in Arabic, with Latin digits and the catalogue placeholders', () => {
     const arabic = getMessages('ar');
     mount(
@@ -651,6 +733,27 @@ describe('the conversions between a picker value and what a screen holds', () =>
     await user.keyboard('080320260030');
     // 00:30 is before the 02:00 change: still standard time.
     expect(onMoment).toHaveBeenLastCalledWith('2026-03-08T00:30:00-05:00');
+  });
+
+  it('finds the repeated hour, and only the repeated hour', () => {
+    const zone = 'America/New_York';
+    expect(repeatedWallClock('2026-11-01T01:30:00-04:00', zone)).toEqual({
+      earlier: '-04:00',
+      later: '-05:00',
+      shown: '-04:00',
+    });
+    expect(repeatedWallClock('2026-11-01T01:30:00-05:00', zone)).toEqual({
+      earlier: '-04:00',
+      later: '-05:00',
+      shown: '-05:00',
+    });
+    // Just outside the repeated hour, the skipped spring hour, and a zone with
+    // no transitions: none is repeated.
+    expect(repeatedWallClock('2026-11-01T00:59:00-04:00', zone)).toBeNull();
+    expect(repeatedWallClock('2026-11-01T02:00:00-05:00', zone)).toBeNull();
+    expect(repeatedWallClock('2026-03-08T03:30:00-04:00', zone)).toBeNull();
+    expect(repeatedWallClock('2026-11-01T01:30:00+03:00', 'Asia/Amman')).toBeNull();
+    expect(repeatedWallClock('', zone)).toBeNull();
   });
 
   it('emits an instant the offset rule accepts, and nothing for an unfinished one', () => {

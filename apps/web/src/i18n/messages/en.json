@@ -770,6 +770,8 @@
   "dashboard.workload.technician": "Technician",
   "dashboard.workload.title": "Work with each technician",
   "dashboard.workload.unnamed": "Name not available to you",
+  "dateField.repeatedTime": "The clocks go back on this day, so this time happens twice. The one shown is at {offset}.",
+  "dateField.zoneUnknown": "The time zone of this branch is not known yet, so a time cannot be chosen here.",
   "delivery.action.loadMore": "Show more",
   "delivery.blocker.checklistIncomplete": "A required checklist item has no result.",
   "delivery.blocker.deliveryStateInvalid": "This handover is marked as a problem and cannot go ahead.",

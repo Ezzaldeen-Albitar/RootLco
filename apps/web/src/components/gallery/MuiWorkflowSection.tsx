@@ -236,6 +236,7 @@ export function MuiWorkflowSection({
             description={t('gallery.muiWorkflow.dateHint')}
           />
           <DateTimeField
+            messages={messages}
             label={t('gallery.muiWorkflow.dateTimeLabel')}
             value={moment}
             onChange={setMoment}

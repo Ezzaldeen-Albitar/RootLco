@@ -8,10 +8,13 @@ import { AdapterDayjs } from '@mui/x-date-pickers/AdapterDayjs';
 import { DatePicker } from '@mui/x-date-pickers/DatePicker';
 import { DateTimePicker } from '@mui/x-date-pickers/DateTimePicker';
 import type { DateValidationError, DateTimeValidationError } from '@mui/x-date-pickers/models';
+import { RequiresConcreteBranch } from '@/features/working-context/components/WorkingBranchField';
 import {
   useWorkingContext,
   type WorkingContext,
 } from '@/features/working-context/WorkingContextProvider';
+import type { Messages } from '@/i18n/get-messages';
+import { formatMessage, translate } from '@/i18n/get-messages';
 import { isCalendarDay, type CalendarDay } from '@/lib/branch-time';
 import {
   FieldHelper,
@@ -42,10 +45,34 @@ import {
  *
  * Business days are decided on the BRANCH's clock (`lib/branch-time.ts`), not
  * the laptop's. The pickers are given `timezone`: the zone the caller names, or
- * else the working branch's own zone from the working context, or — only when
- * no single branch is in force — the browser's. A moment is shown and typed as
- * the branch's wall clock and emitted with the branch's offset for that moment,
- * so daylight-saving is answered per instant, never per page load.
+ * else the working branch's own zone from the working context. A moment is
+ * shown and typed as the branch's wall clock and emitted with the branch's
+ * offset for that moment, so daylight-saving is answered per instant, never per
+ * page load.
+ *
+ * ## A moment needs a concrete branch
+ *
+ * A `DateTimeField` is a WRITE input — an appointment's start, a promised
+ * handover — and writes need a concrete branch. Under "All my branches" (or
+ * before any branch is chosen) there is no one clock the typed wall time could
+ * mean, and the browser's clock would be a silent guess that moves the moment
+ * by hours. So when the caller names no `timezone` and no single branch with a
+ * known zone is in force, the field is NOT drawn: its label and the shared
+ * "choose one branch" sentence (`RequiresConcreteBranch`) are, instead —
+ * `data-zone-refused` marks it. A screen that genuinely means another clock
+ * passes `timezone` explicitly. `DateField` holds a calendar day, which names
+ * no instant, and keeps the browser's calendar only for drawing the picker.
+ *
+ * ## The hour that happens twice
+ *
+ * When the clocks go back, one wall-clock hour happens twice (01:00–01:59 on
+ * the first Sunday of November in New York). A typed time in that hour is read
+ * as the EARLIER of the two — the one before the change, on the summer offset —
+ * and the field then says so under itself, naming the offset of the moment it
+ * holds (`repeatedWallClock`). Entering the later one is not offered: no
+ * screen has needed it, and a disambiguation control on every moment field
+ * would be a cost paid for an hour a year. A value handed in that IS the later
+ * one is shown with that later offset named, so the note is always true.
  *
  * ## Texts and digits
  *
@@ -96,6 +123,8 @@ export interface DateFieldProps extends PickerFieldProps {
 }
 
 export interface DateTimeFieldProps extends PickerFieldProps {
+  /** For the refusal under "All my branches" and the repeated-hour note. */
+  readonly messages: Messages;
   /** An instant with an explicit offset (or `Z`), or `''` for none. */
   readonly value: string;
   readonly onChange: (next: string) => void;
@@ -105,11 +134,12 @@ export interface DateTimeFieldProps extends PickerFieldProps {
   readonly max?: string | undefined;
 }
 
-/** The zone of the one branch in force, or `undefined` when there is none. */
+/** The zone of the one branch in force, or `undefined` when there is none or it is not known. */
 export function workingZone(context: WorkingContext): string | undefined {
   const selection = context.selection;
   if (selection === null || selection.allBranches) return undefined;
-  return context.branches.find((branch) => branch.id === selection.branchId)?.timezone;
+  const zone = context.branches.find((branch) => branch.id === selection.branchId)?.timezone;
+  return zone === undefined || zone.trim() === '' ? undefined : zone;
 }
 
 /** The picker's zone name: an IANA zone, or `'default'` for the browser's. */
@@ -172,6 +202,35 @@ export function pickerToInstant(value: Dayjs | null, zone: string | undefined): 
   // The wall clock, resolved afresh on the zone: the offset is the one in force
   // at THAT wall clock, whatever the picker's object was carrying.
   return dayjs.tz(wallClockIn(value, zone), zone).format('YYYY-MM-DDTHH:mm:ssZ');
+}
+
+/**
+ * Whether an instant's wall clock on `zone` happens twice that day (the clocks
+ * went back), and if so the offsets of both occurrences, earlier first.
+ *
+ * The other occurrence, if there is one, is one offset change away: the offset
+ * is measured three hours either side (every transition in use is an hour or
+ * less), and the instant moved by the difference is checked for the same wall
+ * clock.
+ */
+export function repeatedWallClock(
+  instant: string,
+  zone: string
+): { readonly earlier: string; readonly later: string; readonly shown: string } | null {
+  if (instant.trim() === '') return null;
+  const at = dayjs(instant);
+  if (!at.isValid()) return null;
+  const local = at.tz(zone);
+  const wall = local.format(WALL_CLOCK);
+  for (const hours of [-3, 3]) {
+    const probe = at.add(hours, 'hour').tz(zone).utcOffset();
+    if (probe === local.utcOffset()) continue;
+    const other = at.add(local.utcOffset() - probe, 'minute').tz(zone);
+    if (other.format(WALL_CLOCK) !== wall) continue;
+    const [first, second] = other.isBefore(at) ? [other, local] : [local, other];
+    return { earlier: first.format('Z'), later: second.format('Z'), shown: local.format('Z') };
+  }
+  return null;
 }
 
 /**
@@ -269,14 +328,49 @@ export function DateField(props: DateFieldProps) {
 }
 
 export function DateTimeField(props: DateTimeFieldProps) {
-  const { label, value, onChange, min, max, timezone, onProblem, onEdit, disabled, readOnly } =
-    props;
+  const {
+    messages,
+    label,
+    value,
+    onChange,
+    min,
+    max,
+    timezone,
+    onProblem,
+    onEdit,
+    disabled,
+    readOnly,
+  } = props;
   const context = useWorkingContext();
   const zone = timezone ?? workingZone(context);
-  const wiring = useFieldWiring(props.description, props.error, props.describedBy);
+  const repeated = zone === undefined ? null : repeatedWallClock(value, zone);
+  const repeatedNote =
+    repeated === null
+      ? undefined
+      : formatMessage(translate(messages, 'dateField.repeatedTime'), {
+          offset: `UTC${repeated.shown}`,
+        });
+  const description =
+    [props.description, repeatedNote].filter((part) => part !== undefined).join(' ') || undefined;
+  const wiring = useFieldWiring(description, props.error, props.describedBy);
   const minMoment = min === undefined ? null : instantToPicker(min, zone);
   const maxMoment = max === undefined ? null : instantToPicker(max, zone);
   const [picker, keep] = useHeldPickerValue(value, zone, instantToPicker);
+
+  if (zone === undefined) {
+    // No clock the typed time could honestly mean. See "A moment needs a
+    // concrete branch" above.
+    return (
+      <div className="flex flex-col gap-1.5" data-testid={props.testId} data-zone-refused="true">
+        <span className="text-label font-medium text-text-primary">{label}</span>
+        <RequiresConcreteBranch
+          messages={messages}
+          fallbackKey="dateField.zoneUnknown"
+          testId="date-time-requires-branch"
+        />
+      </div>
+    );
+  }
 
   return (
     <DateTimePicker
@@ -294,7 +388,7 @@ export function DateTimeField(props: DateTimeFieldProps) {
       readOnly={readOnly ?? false}
       {...(minMoment === null ? {} : { minDateTime: minMoment })}
       {...(maxMoment === null ? {} : { maxDateTime: maxMoment })}
-      slotProps={{ textField: textFieldSlot(wiring, props) }}
+      slotProps={{ textField: textFieldSlot(wiring, { ...props, description }) }}
     />
   );
 }
