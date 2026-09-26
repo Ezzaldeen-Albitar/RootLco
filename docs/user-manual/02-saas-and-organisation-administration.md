@@ -1102,7 +1102,7 @@ apps/api/src/modules/iam/domain/bootstrap-roles.ts:267-273 (first_owner: three c
 rpt.export, no shared.notification.*) apps/api/src/modules/iam/domain/delegation-policy.ts:1-27,
 140-200 (a permission may only be granted by someone holding it; enforced in the database as well)
 apps/api/src/app/api/v1/org/companies/route.ts (list only — no create),
-.../[companyId]/route.ts:38-58, .../[companyId]/status/route.ts:43-51
+.../[companyId]/route.ts:38-61, .../[companyId]/status/route.ts:43-51
 apps/api/src/app/api/v1/org/branches/route.ts (list only — no create), .../[branchId]/route.ts:1-27,
 40-70 (frozen code and company)
 apps/api/src/app/api/v1/organization/branches/[branchId]/status/route.ts:26-31, 33-71
