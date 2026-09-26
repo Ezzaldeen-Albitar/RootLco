@@ -501,17 +501,40 @@ their existing "discarding switches the branch and opens the form empty" cases.
 
 ## Known limitations
 
-**A branch switch cannot cancel a read already in flight.** The screens read through Server
-Actions, and Next.js runs the Server Actions of one page one at a time. When the operator changes
-branch while a read for the previous branch is still out, the working context moves its version
-and aborts its signal at once, and the screens drop the superseded answer when it arrives — so
-the previous branch's rows are never shown under the new branch's name. What the switch cannot do
-is stop the request itself: the read for the new branch waits behind it, and on a slow connection
-the new branch's data arrives late. It is late, never wrong.
+**Most reads still cannot be cancelled once sent; the hottest seven now can.** A Server Action
+cannot carry an `AbortSignal`, and the installed Next.js (16.3.3) sends the Server Actions of one
+page one at a time (`dispatchAction` in `next/dist/client/components/app-router-instance.js`; the
+action `fetch` in `.../router-reducer/reducers/server-action-reducer.js` has no `signal`). A read
+made that way can only be IGNORED when it is superseded: the working context moves its version
+and aborts its signal, and the screen drops the answer when it arrives, so a previous branch's
+rows are never shown under the new branch's name. The request itself runs on, and the next read
+waits behind it. It is late, never wrong.
 
-Technical follow-up: move the branch-addressed reads from Server Actions to `fetch` route calls
-that take the working context's `AbortSignal`, so a switch cancels the request on the wire instead
-of discarding its answer.
+Phase one (P1-32-PRE-OD-READ) moved seven reads to GET route handlers under `/reads/*`, whose
+request signal Next aborts when the browser disconnects: the reception board (`listReceptions`),
+the work-order board (`listWorkOrders`), the overview figures and the work-order board's figure
+strip (`readDashboardSummary`), the customer search and the customer pickers
+(`searchCustomerDirectory`, `searchCustomers`), the vehicle search (`searchVehicles`) and a
+customer's vehicles (`listCustomerVehicles`). On those screens a branch switch, a new term, a new
+period or a new customer now CANCELS the superseded request — the browser closes it and the route
+aborts the API call behind it — and the new read starts at once instead of queueing. The ignoring
+guards stay as well. The session, the authorization, the tenant and branch scope and the rate
+limit are unchanged: the route reads the same `httpOnly` cookie through the same server helper,
+refuses a request without its `x-rootlco-read` header or from another site, forwards only the
+validated parameters, and answers `private, no-store`.
+
+These routes are GET, so a search term travels in the route's query string, as it always has on
+the API request behind it. It is a `fetch`, never a navigation, so the term enters no browser
+history and no referrer; an access log in front of the web tier that records query strings will
+see it.
+
+Still on Server Actions, and therefore ignored rather than cancelled when superseded: the account
+picker (`listUsers`), the inventory item and issued-part pickers (`listItems`, `listIssuedParts`),
+the invoice picker (`listInvoices`), the appointment calendar (`listAppointments`), the warranty
+list (`listWarranties`), the work-order state catalogue (`readWorkOrderCatalogue`), and every
+other read. Plan: move the pickers next, family by family on the same pattern — a server-only
+core shared with the action, one route, one browser function — and leave reads that are made once
+per page, where nothing supersedes them, on Server Actions.
 
 ## Material UI adoption (ADR-022)
 
