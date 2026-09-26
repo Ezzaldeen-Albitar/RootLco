@@ -1,6 +1,6 @@
 'use client';
 
-import { useId, useState, type KeyboardEvent, type ReactNode } from 'react';
+import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import Button from '@mui/material/Button';
 import Chip from '@mui/material/Chip';
 import IconButton from '@mui/material/IconButton';
@@ -18,6 +18,8 @@ import {
 } from '@/components/forms/mui/field-wiring';
 import type { Messages } from '@/i18n/get-messages';
 import { formatMessage, translate } from '@/i18n/get-messages';
+import type { ActionState } from '@/lib/forms/action-result';
+import { useFocusFirstInvalid } from '@/lib/forms/use-focus-first-invalid';
 import {
   boardInstantWindow,
   checkCustomPeriod,
@@ -64,16 +66,22 @@ import {
  * that the list still shows the previous period. A chosen pair is checked
  * first — both days, the last not before the first, no longer than the
  * operation accepts (`maxDays`) — and a refusal is a field error on the box to
- * fix. `onChange` receives the selection and the request the screen's
+ * fix, with the cursor moved into that box (`useFocusFirstInvalid`), each
+ * refusal counted so pressing apply again on the same mistake moves it again.
+ * `onChange` receives the selection and the request the screen's
  * operation already takes (`period.ts`), chosen by `format`: the dashboard's
  * (`'dashboard'`: the preset's name, or `custom` with two calendar days) or a
  * board's (`'instants'`: closed instant bounds on the branch's clock).
  *
  * The chosen-dates panel follows `value`: when the screen changes the period
  * itself — a reset, a branch switch — or the zone changes, the panel opens or
- * closes to match and the half-typed days are dropped. Whenever the days in
- * the boxes differ from the period in force, including an applied pair being
- * edited, the toolbar says the list still shows the period in force.
+ * closes to match and the half-typed days are dropped. A reset that leaves the
+ * period as it was — Clear while Today is already in force — changes nothing
+ * the toolbar can see, so the screen also changes `resetKey`, which the panel
+ * follows the same way. Whenever the days in the boxes differ from the period
+ * in force, including an applied pair being edited, the toolbar says the list
+ * still shows the period in force; `onTypedDaysChange` tells the screen whether
+ * the open boxes hold typed days, so its Clear can count them.
  *
  * ## What the screen adds beside the filters
  *
@@ -137,6 +145,14 @@ interface ToolbarPeriodBase {
   readonly zone: string;
   /** The longest period the operation accepts, in days. */
   readonly maxDays?: number | undefined;
+  /**
+   * Changed by the screen to put the panel back to the period in force — it
+   * closes or opens to match and the typed days go — even when the period
+   * itself did not change (a Clear while Today is in force).
+   */
+  readonly resetKey?: number | undefined;
+  /** Told whether the open date boxes hold typed days, whenever that changes. */
+  readonly onTypedDaysChange?: ((typed: boolean) => void) | undefined;
 }
 
 /** A period sent to the dashboard summary: a preset's name, or two calendar days. */
@@ -197,14 +213,29 @@ export function FilterToolbar({
   const [draftFrom, setDraftFrom] = useState(period?.value.from ?? '');
   const [draftTo, setDraftTo] = useState(period?.value.to ?? '');
   const [problem, setProblem] = useState<CustomPeriodProblem | null>(null);
+  // Every refused apply, counted: the attempt is what moves the cursor into the
+  // box to fix, and a second refusal of the same mistake moves it again.
+  const [refusals, setRefusals] = useState(0);
+  const refusal: ActionState =
+    problem === null
+      ? { status: 'idle', attempt: refusals }
+      : { status: 'invalid', fieldErrors: { [problem.field]: problem.problem }, attempt: refusals };
+  const formRef = useFocusFirstInvalid(refusal);
 
   // The panel follows the period in force. When the screen changes it — a
-  // reset, a branch switch — or the zone changes, the panel is set from it again
-  // during this render, so no frame shows the old days under the new period.
+  // reset, a branch switch — or the zone changes, or the screen changes
+  // `resetKey`, the panel is set from it again during this render, so no frame
+  // shows the old days under the new period.
   const appliedKey =
     period === undefined
       ? ''
-      : [period.zone, period.value.kind, period.value.from, period.value.to].join('|');
+      : [
+          period.zone,
+          period.value.kind,
+          period.value.from,
+          period.value.to,
+          String(period.resetKey ?? 0),
+        ].join('|');
   const [followedKey, setFollowedKey] = useState(appliedKey);
   if (followedKey !== appliedKey) {
     setFollowedKey(appliedKey);
@@ -213,6 +244,18 @@ export function FilterToolbar({
     setDraftTo(period?.value.to ?? '');
     setProblem(null);
   }
+
+  // Whether the open boxes hold typed days, reported to the screen when it
+  // changes. The callback is read from a box refreshed by an effect declared
+  // first, so an inline callback does not re-run the report on every render.
+  const typedDays = custom && (draftFrom !== '' || draftTo !== '');
+  const onTypedDaysChange = useRef(period?.onTypedDaysChange);
+  useEffect(() => {
+    onTypedDaysChange.current = period?.onTypedDaysChange;
+  });
+  useEffect(() => {
+    onTypedDaysChange.current?.(typedDays);
+  }, [typedDays]);
 
   const emit = (selection: PeriodSelection) => {
     if (period === undefined) return;
@@ -237,7 +280,10 @@ export function FilterToolbar({
     if (period === undefined || !custom) return;
     const found = checkCustomPeriod(draftFrom, draftTo, period.maxDays);
     setProblem(found);
-    if (found !== null) return;
+    if (found !== null) {
+      setRefusals((count) => count + 1);
+      return;
+    }
     emit({ kind: 'custom', from: draftFrom, to: draftTo });
   };
 
@@ -256,6 +302,7 @@ export function FilterToolbar({
 
   return (
     <form
+      ref={formRef}
       aria-label={label}
       noValidate
       data-testid={testId}

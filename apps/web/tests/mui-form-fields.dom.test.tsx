@@ -215,6 +215,49 @@ describe('the form hooks work through the fields', () => {
   });
 });
 
+describe('the cursor enters a refused date picker', () => {
+  // The picker marks its whole field invalid — a group that cannot itself take
+  // focus — so the hook must enter it: focusing the group alone left the cursor
+  // on Save.
+  function RefusingDateForm() {
+    const [state, setState] = useState<ActionState>({ status: 'idle' });
+    const [day, setDay] = useState('');
+    const formRef = useFocusFirstInvalid(state);
+    return (
+      <form
+        ref={formRef}
+        onSubmit={(event) => {
+          event.preventDefault();
+          setState({
+            status: 'invalid',
+            fieldErrors: { day: 'form.required' },
+            attempt: (state.attempt ?? 0) + 1,
+          });
+        }}
+      >
+        <FormTextField label="Reference" value="DOC-1" onChange={() => undefined} />
+        <DateField
+          label="Visit day"
+          value={day}
+          onChange={setDay}
+          timezone="Asia/Amman"
+          error={state.status === 'invalid' ? 'Choose a day.' : undefined}
+        />
+        <button type="submit">Save</button>
+      </form>
+    );
+  }
+
+  it('lands inside the picker, not on Save and not on a neighbour', async () => {
+    const user = userEvent.setup();
+    mount(<RefusingDateForm />);
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+    const group = screen.getByRole('group', { name: /^Visit day/ });
+    expect(group).toHaveAttribute('aria-invalid', 'true');
+    await waitFor(() => expect(group.contains(document.activeElement)).toBe(true));
+  });
+});
+
 describe('number and money stay strings', () => {
   it('reports the typed text uncoerced, on a numeric keypad, left to right', async () => {
     const reported = vi.fn();

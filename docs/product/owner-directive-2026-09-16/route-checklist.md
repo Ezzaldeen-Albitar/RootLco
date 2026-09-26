@@ -760,6 +760,18 @@ on a screen; one line each:
 5. The departments and employees registers follow the working branch only when the directory also lists it — a mismatch leaves the register asking until refresh.
 6. Endpoints are recognised by an `api/v1` or `/reads/` fragment after constant folding — a path assembled without one is out of scope.
 
+**Residual limits of the reception board on Material UI (PR #470 review).** Recorded, not fixed in
+that slice; one line each:
+
+1. The `chooseBothDays` idle state in `ReceptionQueueScreen` can no longer be reached — the toolbar never emits a chosen period with empty days and the route validates `initialPeriod`; the toolbar's "not applied" line does that job now. Dead code, not a live path.
+2. Six catalogue entries are now unused in `en` and `ar`: `receptions.queue.applyPeriod`, `fromDay`, `toDay`, `invertedRange`, `periodIncomplete` and `periodLabel`; they are kept, not removed, in that slice.
+3. The summary line names a zone (`branches[0].timezone`) even when no branch is chosen (the blocked state), without naming a branch; no read is made in that state.
+4. The summary line shows the raw IANA zone id inside an Arabic sentence with no `<bdi>`, as `dashboard.period.covering` and `metric.freshness` already do.
+5. `OperationalGrid`'s column definitions now depend on the rows (`rowActionsMinWidth`), so they are rebuilt on every page and a column a user resized could reset; no resize contract is known to break.
+6. The PR also carries the PR #467 route branch-scope residual notes (the header of `apps/web/tests/route-branch-scope.test.ts` and the list above); documentation only.
+7. At review the implementer's 13 source falsifications were not re-run (the review was read-only); the permanent falsification cases of the syntax-tree check in `p1-28-security.test.ts` were run. `MODULE_DISPOSITION` entries `components/data` and `components/filters` are `in-surface` — scanned registrations, not exclusions. The e2e selectors match the new DOM (the Period group by its `ToggleButtonGroup` label, the native status select, links drawn by `Button component={Link}`).
+8. Confirmed at review: the instant windows (`period.ts` `boardInstantWindow`) match the old `windowOf`, "Before today" included (upper bound only); the zone rule matches (the working branch's own zone, else `branches[0]`, else `UTC`); the status select holds a whole group or one code, never both; the action buttons are `type="button"` and wrap with logical gaps; the diff carries no baseline edit and no migration change.
+
 ## Material UI adoption (ADR-022)
 
 ADR-022 makes Material UI and the MUI X Community editions the component layer. Screens move onto
@@ -917,6 +929,11 @@ above a list: a search, chips or selects, and a period.
   period in words and the clock it is counted on); and an `actions` row at the foot for the
   screen's links and toggles, whose buttons are `type="button"` so they never apply the chosen
   dates. A toolbar given none of them draws none of them.
+- T6. A refused chosen pair puts the cursor in the box to fix (`useFocusFirstInvalid` on the
+  toolbar's form, each refusal counted, entering the picker's group). A screen that resets the
+  period to the value already in force changes `resetKey`, which closes or opens the panel to
+  match and drops the typed days; `onTypedDaysChange` tells the screen whether the open boxes hold
+  typed days.
 
 **`DateField` / `DateTimeField`** (`apps/web/src/components/forms/mui/DateField.tsx`) are the MIT
 pickers with `FieldFrame`'s contract.
@@ -1027,7 +1044,7 @@ The preserved-behaviour cell names the contract items above that a migration mus
 | `/receptions/check-in/[receptionId]/acknowledgement`  | `OperationalGrid`, states                              | G1–G9; S1–S4                | not migrated                       | not run — nothing migrated                |
 | `/receptions/check-in/[receptionId]`                  | form fields, `OperationalGrid`, `EntityPicker`, states | F1–F6; G1–G9; P1–P10; S1–S4 | not migrated                       | not run — nothing migrated                |
 | `/receptions/check-in`                                | form fields, `OperationalGrid`, `EntityPicker`, states | F1–F6; G1–G9; P1–P10; S1–S4 | not migrated                       | not run — nothing migrated                |
-| `/receptions`                                         | `FilterToolbar`, `OperationalGrid`, states             | F6; G1–G11; S1–S5; T1–T5    | migrated — see below the table     | focused suites, en and ar — see below     |
+| `/receptions`                                         | `FilterToolbar`, `OperationalGrid`, states             | F6; G1–G11; S1–S5; T1–T6    | migrated — see below the table     | focused suites, en and ar — see below     |
 | `/reports/[reportCode]`                               | form fields, states                                    | F1–F6; S1–S4                | not migrated                       | not run — nothing migrated                |
 | `/reports/overview`                                   | form fields, states                                    | F1–F6; S1–S4                | not migrated                       | not run — nothing migrated                |
 | `/reports`                                            | states                                                 | S1–S4                       | not migrated                       | not run — nothing migrated                |
@@ -1077,7 +1094,11 @@ Preserved, each held by a case in `apps/web/tests/reception-queue.dom.test.tsx` 
 - "Before today" sends only an upper bound, the last instant of yesterday; "Still with us from
   before today" is one request (the `open` group with that bound).
 - One status control holds a whole group or one code, never both (`group:` values).
-- Clear is offered only on an empty answer and only when a period, a status or a term is applied.
+- Clear is offered only on an empty answer and only when a period, a status, a term or days typed
+  into the open date boxes are there to clear; pressing it closes the boxes and drops the days even
+  while Today is already in force (`resetKey`).
+- A refused chosen pair puts the cursor in the box to fix: To for a last day before the first, From
+  for a missing first day.
 - The row action follows `isFinishedReception` (continue the check-in, or open the visit), beside
   the acknowledgement; both are links named with the visit number; no reception write is
   reachable from the board.

@@ -241,6 +241,15 @@ export function ReceptionQueueScreen({
    */
   const [period, setPeriod] = useState<AppliedPeriod>(initialPeriod ?? TODAY_PERIOD);
   /*
+   * What Clear owes the toolbar's two date boxes. `periodReset` is bumped by
+   * Clear so the boxes close and their days go even when the period was
+   * already Today — a reset the period value alone cannot express. `typedDays`
+   * is the toolbar telling us the open boxes hold days, so Clear is offered for
+   * them as it was when the boxes lived here.
+   */
+  const [periodReset, setPeriodReset] = useState(0);
+  const [typedDays, setTypedDays] = useState(false);
+  /*
    * ONE control over two kinds of answer.
    *
    * `status` is a single frozen code and `statusGroup` is `open` or `finished`;
@@ -360,6 +369,7 @@ export function ReceptionQueueScreen({
 
   const clearFilters = () => {
     setPeriod(TODAY_PERIOD);
+    setPeriodReset((count) => count + 1);
     setStatus('');
     setTerm('');
   };
@@ -373,13 +383,15 @@ export function ReceptionQueueScreen({
    * empty board of all (a status or a period that matches nothing today) with
    * no way out but to undo each control by hand.
    *
-   * Two days typed into the toolbar's boxes and not yet applied are the
-   * toolbar's, and it says beside them that the list has not changed; resetting
-   * the period to today closes the boxes and drops them. The search box counts
-   * on its RAW text: a term of spaces asks nothing, but it is still text in the
-   * box.
+   * Days typed into the toolbar's open boxes count even when they are not
+   * applied: they are text the operator can see, and a Clear that left them
+   * sitting there would be a Clear that did not. Clear bumps `periodReset`,
+   * which closes the boxes and drops the days even while Today is already in
+   * force. The search box counts by the same rule, on its RAW text: a term of
+   * spaces asks nothing, but it is still text in the box.
    */
-  const filtersApplied = period.kind !== TODAY_PERIOD.kind || status !== '' || term !== '';
+  const filtersApplied =
+    period.kind !== TODAY_PERIOD.kind || typedDays || status !== '' || term !== '';
 
   /*
    * What narrowed an empty answer, in the operator's terms: the term they typed
@@ -660,6 +672,8 @@ export function ReceptionQueueScreen({
           // Only the SELECTION is kept. The window is derived from it and the
           // zone on every render — see the docblock.
           onChange: (selection) => setPeriod(selection),
+          resetKey: periodReset,
+          onTypedDaysChange: setTypedDays,
         }}
         summary={periodLabel}
         actions={

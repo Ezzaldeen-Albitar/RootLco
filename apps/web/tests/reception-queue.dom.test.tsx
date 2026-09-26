@@ -316,6 +316,34 @@ describe('the period control', () => {
     expect(listReceptions).not.toHaveBeenCalled();
   });
 
+  it('moves the cursor to the box to fix: To for an inverted range, From for an incomplete one', async () => {
+    // The Owner's first-invalid rule: the error is shown AND the cursor goes to
+    // the box that is wrong, not left on the button that was pressed.
+    const user = userEvent.setup();
+    renderQueue();
+    await waitFor(() => expect(listReceptions).toHaveBeenCalledTimes(1));
+
+    await user.click(preset('custom'));
+    await typeDay(user, EN['filters.period.from'] as string, '10092026');
+    const to = await typeDay(user, EN['filters.period.to'] as string, '01092026');
+    await user.click(screen.getByRole('button', { name: EN['filters.period.apply'] as string }));
+    await screen.findByText(EN['filters.period.inverted'] as string);
+    await waitFor(() => expect(to.contains(document.activeElement)).toBe(true));
+
+    // Leave only the To day: the pair is incomplete on the From box.
+    await user.click(
+      screen.getByRole('button', { name: EN['filters.period.yesterday'] as string })
+    );
+    await user.click(preset('custom'));
+    await typeDay(user, EN['filters.period.to'] as string, '01092026');
+    await user.click(screen.getByRole('button', { name: EN['filters.period.apply'] as string }));
+    await screen.findByText(EN['filters.period.incomplete'] as string);
+    const from = screen.getByRole('group', {
+      name: new RegExp(`^${EN['filters.period.from'] as string}`),
+    });
+    await waitFor(() => expect(from.contains(document.activeElement)).toBe(true));
+  });
+
   it('clears the complaint when the operator corrects the date, without a second submission', async () => {
     const user = userEvent.setup();
     renderQueue();
@@ -717,6 +745,81 @@ describe('every non-answer reads as itself', () => {
     await waitFor(() => expect(box).toHaveValue(''));
     expect(
       screen.queryByRole('button', { name: EN['receptions.queue.clearFilters'] as string })
+    ).toBeNull();
+  });
+
+  it('drops typed days on Clear even while Today is already the period in force', async () => {
+    /*
+     * The sequence the review found: a status that matches nothing, an empty
+     * answer, "Choose dates", one day typed, Clear. The period was already
+     * Today, so nothing the toolbar followed changed and the panel stayed open
+     * with the day in it and its "the list still covers Today" warning.
+     */
+    const user = userEvent.setup();
+    listReceptions.mockResolvedValue(page([]));
+    renderQueue();
+    await screen.findByText(EN['state.noResults.title'] as string);
+    await user.selectOptions(
+      screen.getByLabelText(EN['receptions.queue.statusFilter'] as string, { exact: false }),
+      'refused'
+    );
+    await waitFor(() => expect(lastCall().filters['status']).toBe('refused'));
+    await screen.findByText(EN['state.noResults.title'] as string);
+
+    await user.click(preset('custom'));
+    await typeDay(user, EN['filters.period.from'] as string, '10092026');
+    await user.click(
+      await screen.findByRole('button', { name: EN['receptions.queue.clearFilters'] as string })
+    );
+
+    await waitFor(() =>
+      expect(
+        screen.queryByRole('group', {
+          name: new RegExp(`^${EN['filters.period.from'] as string}`),
+        })
+      ).toBeNull()
+    );
+    expect(preset('today')).toHaveAttribute('aria-pressed', 'true');
+    expect(
+      screen.queryByText(
+        (EN['filters.period.notApplied'] as string).replace(
+          '{period}',
+          EN['filters.period.today'] as string
+        )
+      )
+    ).toBeNull();
+    // Reopened, the box is empty: the typed day did not survive Clear.
+    await user.click(preset('custom'));
+    const reopened = screen.getByRole('group', {
+      name: new RegExp(`^${EN['filters.period.from'] as string}`),
+    });
+    expect(
+      (reopened.parentElement?.querySelector('input') as HTMLInputElement).value
+    ).not.toContain('10/09/2026');
+  });
+
+  it('offers Clear for days typed into the open boxes alone, as it did before', async () => {
+    const user = userEvent.setup();
+    listReceptions.mockResolvedValue(page([]));
+    renderQueue();
+    await screen.findByText(EN['state.noResults.title'] as string);
+    await user.click(preset('custom'));
+    expect(
+      screen.queryByRole('button', { name: EN['receptions.queue.clearFilters'] as string })
+    ).toBeNull();
+
+    await typeDay(user, EN['filters.period.from'] as string, '10092026');
+    const clear = await screen.findByRole('button', {
+      name: EN['receptions.queue.clearFilters'] as string,
+    });
+    await user.click(clear);
+    await waitFor(() =>
+      expect(
+        screen.queryByRole('button', { name: EN['receptions.queue.clearFilters'] as string })
+      ).toBeNull()
+    );
+    expect(
+      screen.queryByRole('group', { name: new RegExp(`^${EN['filters.period.from'] as string}`) })
     ).toBeNull();
   });
 

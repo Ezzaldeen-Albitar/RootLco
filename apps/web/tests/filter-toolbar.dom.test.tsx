@@ -273,6 +273,37 @@ describe('a chosen period', () => {
     expect(screen.queryByRole('status')).toBeNull();
   });
 
+  it('moves the cursor into the box to fix: the To box for an inverted pair, again on a second refusal', async () => {
+    const user = userEvent.setup();
+    mount(<PeriodHost zone="Asia/Amman" format="dashboard" onPeriod={vi.fn()} />);
+    await user.click(screen.getByRole('button', { name: 'Choose dates' }));
+    await typeDay(user, 'From', '22092026');
+    await typeDay(user, 'To', '20092026');
+    const apply = screen.getByRole('button', { name: 'Use these dates' });
+    await user.click(apply);
+    const to = screen.getByRole('group', { name: /^To/ });
+    await waitFor(() => expect(to.contains(document.activeElement)).toBe(true));
+    expect(screen.getByRole('group', { name: /^From/ }).contains(document.activeElement)).toBe(
+      false
+    );
+
+    // The same mistake, applied again from the button, moves the cursor again.
+    apply.focus();
+    await user.click(apply);
+    await waitFor(() => expect(to.contains(document.activeElement)).toBe(true));
+  });
+
+  it('moves the cursor into the From box when the pair is incomplete there', async () => {
+    const user = userEvent.setup();
+    mount(<PeriodHost zone="Asia/Amman" format="dashboard" onPeriod={vi.fn()} />);
+    await user.click(screen.getByRole('button', { name: 'Choose dates' }));
+    await typeDay(user, 'To', '20092026');
+    await user.click(screen.getByRole('button', { name: 'Use these dates' }));
+    const from = screen.getByRole('group', { name: /^From/ });
+    expect(from).toHaveAttribute('aria-invalid', 'true');
+    await waitFor(() => expect(from.contains(document.activeElement)).toBe(true));
+  });
+
   it('refuses a period longer than the operation accepts, and only when it has a limit', async () => {
     const user = userEvent.setup();
     const limited = vi.fn();
@@ -347,6 +378,52 @@ describe('a chosen period', () => {
     expect(screen.getByRole('button', { name: 'Today' })).toHaveAttribute('aria-pressed', 'true');
     expect(screen.queryByRole('status')).toBeNull();
     // Reopened, the boxes are empty: the old pair did not survive the reset.
+    await user.click(screen.getByRole('button', { name: 'Choose dates' }));
+    const from = screen.getByRole('group', { name: /^From/ });
+    expect((from.parentElement?.querySelector('input') as HTMLInputElement).value).not.toContain(
+      '22/09/2026'
+    );
+  });
+
+  it('follows a reset key when the period stays the same, and reports typed days as they come and go', async () => {
+    // A Clear while Today is already in force changes no period value, so the
+    // screen bumps `resetKey`; the panel closes and the typed days go all the same.
+    const onTypedDays = vi.fn();
+    function ResetHost() {
+      const [resetKey, setResetKey] = useState(0);
+      return (
+        <>
+          <FilterToolbar
+            messages={en}
+            label="Narrow the list"
+            period={{
+              format: 'instants',
+              presets: ALL_PRESETS,
+              value: TODAY_PERIOD,
+              zone: 'Asia/Amman',
+              onChange: vi.fn(),
+              resetKey,
+              onTypedDaysChange: onTypedDays,
+            }}
+          />
+          <button type="button" onClick={() => setResetKey((count) => count + 1)}>
+            screen clears
+          </button>
+        </>
+      );
+    }
+    const user = userEvent.setup();
+    mount(<ResetHost />);
+    await user.click(screen.getByRole('button', { name: 'Choose dates' }));
+    expect(onTypedDays).toHaveBeenLastCalledWith(false);
+    await typeDay(user, 'From', '22092026');
+    expect(onTypedDays).toHaveBeenLastCalledWith(true);
+
+    await user.click(screen.getByRole('button', { name: 'screen clears' }));
+    expect(screen.queryByRole('group', { name: /^From/ })).toBeNull();
+    expect(screen.queryByRole('status')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Today' })).toHaveAttribute('aria-pressed', 'true');
+    expect(onTypedDays).toHaveBeenLastCalledWith(false);
     await user.click(screen.getByRole('button', { name: 'Choose dates' }));
     const from = screen.getByRole('group', { name: /^From/ });
     expect((from.parentElement?.querySelector('input') as HTMLInputElement).value).not.toContain(

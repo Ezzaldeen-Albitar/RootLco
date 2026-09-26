@@ -60,6 +60,16 @@ import type { ActionState } from './action-result';
  * parent, a write started from a button's click handler — has no submission to
  * remember, and falls back to the element focused when the refusal arrived.
  *
+ * ## A composite control is entered, not merely targeted
+ *
+ * The element marked invalid is not always the one that takes the cursor. A
+ * Material date picker (`DateField`) marks its whole field — a group holding one
+ * spin button per part of the date — and the group itself cannot be focused, so
+ * focusing it did nothing and the cursor stayed on the submit button. When the
+ * marked element does not take focus, the first focusable element inside it
+ * does (for the picker, its date parts), so the cursor still lands in the field
+ * that is wrong and never in a neighbour.
+ *
  * ## Revealing before focusing
  *
  * Focusing an element inside a closed `<details>` scrolls nowhere and announces
@@ -81,6 +91,17 @@ import type { ActionState } from './action-result';
  */
 
 const INVALID = '[aria-invalid="true"], [data-invalid="true"]';
+
+/** What can take the cursor inside a composite control, in document order. */
+const FOCUSABLE =
+  'input:not([type="hidden"]):not([aria-hidden="true"]):not([disabled]), select:not([disabled]), textarea:not([disabled]), button:not([disabled]), [tabindex]:not([tabindex="-1"])';
+
+/** Focuses the element, or — when it cannot take focus — the first thing inside it that can. */
+function focusInto(element: HTMLElement): void {
+  element.focus({ preventScroll: true });
+  if (element.contains(document.activeElement)) return;
+  element.querySelector<HTMLElement>(FOCUSABLE)?.focus({ preventScroll: true });
+}
 
 function openEnclosingDetails(element: Element): void {
   let node: Element | null = element.parentElement;
@@ -197,7 +218,7 @@ export function useFocusFirstInvalid(
       const live = formRef.current?.querySelector<HTMLElement>(INVALID);
       if (!live) return;
       openEnclosingDetails(live);
-      live.focus({ preventScroll: true });
+      focusInto(live);
       // jsdom implements neither, and a missing scroll is not a reason to throw
       // inside a form's render path.
       if (typeof live.scrollIntoView === 'function') {
