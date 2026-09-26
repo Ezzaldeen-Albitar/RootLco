@@ -425,6 +425,25 @@ by design, for platform-scope rows. The tenant-scoped predicate evaluates to
 NULL for those rows, so a tenant session can neither read nor write them;
 platform provisioning keeps using a platform connection.
 
+### 5.8 Control-plane read of the reference registers (DBCR-P1-32-PRE-OD-REF-001, migration `20260927090000`)
+
+The control-plane role `app_platform` reads the three reference registers so the
+Platform Owner Console can offer a currency, a time zone and a language as
+choices (`platform.reference-values-read`). This reverses the choice recorded in
+`20260916091000_org_subscription_commerce.sql` that no platform path reads the
+currency register. The whole of the added surface:
+
+| Object                                                 | `app_platform` | Policy                                    |
+| ------------------------------------------------------ | -------------- | ----------------------------------------- |
+| `shared.currencies`                                    | SELECT         | `sel_currencies_platform`, `USING (true)` |
+| `shared.timezones`                                     | SELECT         | `sel_timezones_platform`, `USING (true)`  |
+| `shared.languages`                                     | SELECT         | `sel_languages_platform`, `USING (true)`  |
+| INSERT / UPDATE / DELETE on any of the three, any role | —              | —                                         |
+
+The predicate is `true` for the reason the existing `sel_*_all` policies give:
+the registers hold no tenant data. Reference rows are still written only by the
+declared seed and the migration role.
+
 ---
 
 ## 6. How later phases attach real logins
