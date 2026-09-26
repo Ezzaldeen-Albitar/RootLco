@@ -1562,8 +1562,10 @@ describe('the phase modules outside every scan root are DERIVED, not listed', ()
     // Eighteen, plus `components/search` and `lib/branch-time`. Both came into
     // view of a scanned tree under the Owner directive (`P1-32-PRE-OD-UX`) and
     // both are DECIDED in `MODULE_DISPOSITION` rather than silently collected,
-    // which is what moves this number.
-    expect(derived.length, 'no module import was discovered — the derivation is broken').toBe(20);
+    // which is what moves this number. Twenty-two since the reception board
+    // moved onto the Material UI wrappers: `components/data` (`OperationalGrid`)
+    // and `components/filters` (`FilterToolbar`), each decided the same way.
+    expect(derived.length, 'no module import was discovered — the derivation is broken').toBe(22);
     expect(
       derived,
       'a module the scanned trees import has no recorded disposition, or a recorded module is ' +
@@ -1633,8 +1635,9 @@ describe('the phase modules outside every scan root are DERIVED, not listed', ()
     // searches ask through (P1-32) — and `lib/branch-time`, which decides the
     // day a board is headed with on the BRANCH's clock. Both are derived from
     // `MODULE_DISPOSITION`, so this number moves with a recorded decision and
-    // never on its own.
-    expect(UNCOLLECTED_PHASE_MODULES.length).toBe(18);
+    // never on its own. Twenty since the reception board's move onto the
+    // Material UI wrappers added `components/data` and `components/filters`.
+    expect(UNCOLLECTED_PHASE_MODULES.length).toBe(20);
     for (const dir of UNCOLLECTED_PHASE_MODULES) {
       // `moduleSourceRoot`, not `existsSync`: `apps/web/src/lib/page-metadata`
       // is a FILE, and dropping it to avoid an `ENOENT` would be precisely the

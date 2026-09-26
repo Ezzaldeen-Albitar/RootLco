@@ -1,5 +1,6 @@
 import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import Link from 'next/link';
 import { useState, type ReactElement } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { axe } from 'vitest-axe';
@@ -272,6 +273,37 @@ describe('a chosen period', () => {
     expect(screen.queryByRole('status')).toBeNull();
   });
 
+  it('moves the cursor into the box to fix: the To box for an inverted pair, again on a second refusal', async () => {
+    const user = userEvent.setup();
+    mount(<PeriodHost zone="Asia/Amman" format="dashboard" onPeriod={vi.fn()} />);
+    await user.click(screen.getByRole('button', { name: 'Choose dates' }));
+    await typeDay(user, 'From', '22092026');
+    await typeDay(user, 'To', '20092026');
+    const apply = screen.getByRole('button', { name: 'Use these dates' });
+    await user.click(apply);
+    const to = screen.getByRole('group', { name: /^To/ });
+    await waitFor(() => expect(to.contains(document.activeElement)).toBe(true));
+    expect(screen.getByRole('group', { name: /^From/ }).contains(document.activeElement)).toBe(
+      false
+    );
+
+    // The same mistake, applied again from the button, moves the cursor again.
+    apply.focus();
+    await user.click(apply);
+    await waitFor(() => expect(to.contains(document.activeElement)).toBe(true));
+  });
+
+  it('moves the cursor into the From box when the pair is incomplete there', async () => {
+    const user = userEvent.setup();
+    mount(<PeriodHost zone="Asia/Amman" format="dashboard" onPeriod={vi.fn()} />);
+    await user.click(screen.getByRole('button', { name: 'Choose dates' }));
+    await typeDay(user, 'To', '20092026');
+    await user.click(screen.getByRole('button', { name: 'Use these dates' }));
+    const from = screen.getByRole('group', { name: /^From/ });
+    expect(from).toHaveAttribute('aria-invalid', 'true');
+    await waitFor(() => expect(from.contains(document.activeElement)).toBe(true));
+  });
+
   it('refuses a period longer than the operation accepts, and only when it has a limit', async () => {
     const user = userEvent.setup();
     const limited = vi.fn();
@@ -346,6 +378,52 @@ describe('a chosen period', () => {
     expect(screen.getByRole('button', { name: 'Today' })).toHaveAttribute('aria-pressed', 'true');
     expect(screen.queryByRole('status')).toBeNull();
     // Reopened, the boxes are empty: the old pair did not survive the reset.
+    await user.click(screen.getByRole('button', { name: 'Choose dates' }));
+    const from = screen.getByRole('group', { name: /^From/ });
+    expect((from.parentElement?.querySelector('input') as HTMLInputElement).value).not.toContain(
+      '22/09/2026'
+    );
+  });
+
+  it('follows a reset key when the period stays the same, and reports typed days as they come and go', async () => {
+    // A Clear while Today is already in force changes no period value, so the
+    // screen bumps `resetKey`; the panel closes and the typed days go all the same.
+    const onTypedDays = vi.fn();
+    function ResetHost() {
+      const [resetKey, setResetKey] = useState(0);
+      return (
+        <>
+          <FilterToolbar
+            messages={en}
+            label="Narrow the list"
+            period={{
+              format: 'instants',
+              presets: ALL_PRESETS,
+              value: TODAY_PERIOD,
+              zone: 'Asia/Amman',
+              onChange: vi.fn(),
+              resetKey,
+              onTypedDaysChange: onTypedDays,
+            }}
+          />
+          <button type="button" onClick={() => setResetKey((count) => count + 1)}>
+            screen clears
+          </button>
+        </>
+      );
+    }
+    const user = userEvent.setup();
+    mount(<ResetHost />);
+    await user.click(screen.getByRole('button', { name: 'Choose dates' }));
+    expect(onTypedDays).toHaveBeenLastCalledWith(false);
+    await typeDay(user, 'From', '22092026');
+    expect(onTypedDays).toHaveBeenLastCalledWith(true);
+
+    await user.click(screen.getByRole('button', { name: 'screen clears' }));
+    expect(screen.queryByRole('group', { name: /^From/ })).toBeNull();
+    expect(screen.queryByRole('status')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Today' })).toHaveAttribute('aria-pressed', 'true');
+    expect(onTypedDays).toHaveBeenLastCalledWith(false);
     await user.click(screen.getByRole('button', { name: 'Choose dates' }));
     const from = screen.getByRole('group', { name: /^From/ });
     expect((from.parentElement?.querySelector('input') as HTMLInputElement).value).not.toContain(
@@ -606,6 +684,119 @@ describe('filters', () => {
     expect(select.tagName).toBe('SELECT');
     await user.selectOptions(select, 'repair');
     expect(select).toHaveValue('repair');
+  });
+});
+
+describe('what a screen adds beside the filters (the reception slice)', () => {
+  it('groups a select’s choices under headings and wires its description', async () => {
+    const user = userEvent.setup();
+    const onChange = vi.fn();
+    mount(
+      <FilterToolbar
+        messages={en}
+        label="Narrow the list"
+        filters={[
+          {
+            kind: 'select',
+            key: 'status',
+            label: 'Status',
+            options: [{ value: 'group:open', label: 'Everything still with us' }],
+            groups: [
+              { label: 'Still with us', options: [{ value: 'opened', label: 'Opened' }] },
+              { label: 'Finished', options: [{ value: 'closed', label: 'Closed' }] },
+            ],
+            description: 'Choose a whole group or one status.',
+            placeholder: 'Any status',
+            value: '',
+            onChange,
+          },
+        ]}
+      />
+    );
+    const select = screen.getByRole('combobox', { name: 'Status' });
+    // The whole-group answer first, then each group as a heading that cannot
+    // itself be chosen, holding its codes.
+    expect(
+      within(select)
+        .getAllByRole('option')
+        .map((option) => (option as HTMLOptionElement).value)
+    ).toEqual(['', 'group:open', 'opened', 'closed']);
+    const groups = within(select).getAllByRole('group');
+    expect(groups.map((group) => group.getAttribute('label'))).toEqual([
+      'Still with us',
+      'Finished',
+    ]);
+    expect(within(groups[1] as HTMLElement).getByRole('option', { name: 'Closed' })).toBeTruthy();
+    // The description is the control's, not a stray line beside it.
+    expect(select).toHaveAccessibleDescription('Choose a whole group or one status.');
+    await user.selectOptions(select, 'closed');
+    expect(onChange).toHaveBeenLastCalledWith('closed');
+  });
+
+  it('draws a summary line and the screen’s actions only when given, inside the named form', () => {
+    const { unmount } = mount(
+      <FilterToolbar
+        messages={en}
+        label="Narrow the list"
+        testId="board-toolbar"
+        summary="Today · Days and times follow the clock in Asia/Amman."
+        actions={
+          <>
+            <button type="button">Still with us from before today</button>
+            <Link href="/en/receptions/check-in">Check a vehicle in</Link>
+          </>
+        }
+      />
+    );
+    const form = screen.getByRole('form', { name: 'Narrow the list' });
+    expect(within(form).getByTestId('board-toolbar-summary')).toHaveTextContent(
+      'Today · Days and times follow the clock in Asia/Amman.'
+    );
+    const actions = within(form).getByTestId('board-toolbar-actions');
+    expect(within(actions).getByRole('button', { name: /before today/ })).toHaveAttribute(
+      'type',
+      'button'
+    );
+    expect(within(actions).getByRole('link', { name: 'Check a vehicle in' })).toHaveAttribute(
+      'href',
+      '/en/receptions/check-in'
+    );
+    unmount();
+
+    // A toolbar given neither draws neither — the existing consumers are unchanged.
+    mount(<FilterToolbar messages={en} label="Narrow the list" testId="plain" summary="" />);
+    expect(screen.queryByTestId('plain-summary')).toBeNull();
+    expect(screen.queryByTestId('plain-actions')).toBeNull();
+  });
+
+  it('never applies the chosen dates from an action pressed beside them', async () => {
+    const user = userEvent.setup();
+    const onPeriod = vi.fn();
+    const onAction = vi.fn();
+    mount(
+      <FilterToolbar
+        messages={en}
+        label="Narrow the list"
+        period={{
+          format: 'instants',
+          presets: ALL_PRESETS,
+          value: TODAY_PERIOD,
+          zone: 'Asia/Amman',
+          onChange: onPeriod,
+        }}
+        actions={
+          <button type="button" onClick={onAction}>
+            Still with us from before today
+          </button>
+        }
+      />
+    );
+    await user.click(screen.getByRole('button', { name: 'Choose dates' }));
+    await typeDay(user, 'From', '01092026');
+    await typeDay(user, 'To', '02092026');
+    await user.click(screen.getByRole('button', { name: 'Still with us from before today' }));
+    expect(onAction).toHaveBeenCalledTimes(1);
+    expect(onPeriod).not.toHaveBeenCalled();
   });
 });
 

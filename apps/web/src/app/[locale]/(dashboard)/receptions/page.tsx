@@ -31,7 +31,9 @@ import { pageMetadata } from '@/lib/page-metadata';
  * `crm.customer.read` gates the offer to receive a NEW customer, because that is
  * the code the walk-in desk's own route gates on. An offer that lands on a
  * refusal is worse than no offer, and this page must not invent a second,
- * softer rule for who may open that screen.
+ * softer rule for who may open that screen. The same code is what the reception
+ * read checks before it matches a search on a customer's name or phone, so the
+ * board is told whether an empty search was narrowed by that.
  */
 export default async function ReceptionQueuePage({
   params,
@@ -101,6 +103,7 @@ export default async function ReceptionQueuePage({
           messages={messages}
           canCreate={holds(session.permissions, RECEPTION_PERMISSIONS.manage)}
           canReachIntake={holds(session.permissions, CRM_PERMISSIONS.customerRead)}
+          searchesCustomers={holds(session.permissions, CRM_PERMISSIONS.customerRead)}
           initialPeriod={initialPeriod}
         />
       </PageBody>
