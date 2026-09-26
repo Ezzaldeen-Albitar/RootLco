@@ -33,6 +33,8 @@ export interface FormTextFieldProps extends MuiFieldBaseProps {
   readonly rows?: number;
   readonly startAdornment?: ReactNode;
   readonly endAdornment?: ReactNode;
+  /** Takes focus when mounted — for the one box a dialog opens to be filled in. */
+  readonly autoFocus?: boolean;
 }
 
 export function FormTextField({
@@ -59,6 +61,7 @@ export function FormTextField({
   rows,
   startAdornment,
   endAdornment,
+  autoFocus = false,
 }: FormTextFieldProps) {
   const wiring = useFieldWiring(description, error, describedBy);
 
@@ -75,6 +78,7 @@ export function FormTextField({
       placeholder={placeholder}
       autoComplete={autoComplete}
       multiline={multiline}
+      autoFocus={autoFocus}
       {...(rows === undefined ? {} : { rows })}
       onChange={(event) => {
         onEdit?.();
