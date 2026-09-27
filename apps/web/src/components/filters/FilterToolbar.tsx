@@ -8,6 +8,7 @@ import InputAdornment from '@mui/material/InputAdornment';
 import TextField from '@mui/material/TextField';
 import ToggleButton from '@mui/material/ToggleButton';
 import ToggleButtonGroup from '@mui/material/ToggleButtonGroup';
+import { DigitsEcho } from '@/components/forms/DigitsEcho';
 import type { SelectOptionGroup } from '@/components/forms/Field';
 import { DateField } from '@/components/forms/mui/DateField';
 import { FormSelectField } from '@/components/forms/mui/FormSelectField';
@@ -18,6 +19,7 @@ import {
 } from '@/components/forms/mui/field-wiring';
 import type { Messages } from '@/i18n/get-messages';
 import { formatMessage, translate } from '@/i18n/get-messages';
+import type { CalendarDay } from '@/lib/branch-time';
 import type { ActionState } from '@/lib/forms/action-result';
 import { useFocusFirstInvalid } from '@/lib/forms/use-focus-first-invalid';
 import {
@@ -54,9 +56,32 @@ import {
  * ## Filters
  *
  * A `chips` filter is a small closed set shown whole — each choice a pressed or
- * unpressed button, "All" first. A `select` filter is Material's native select
- * (`FormSelectField`) for a longer list. Both report the value; the screen
- * sends it.
+ * unpressed button, "All" first. A set that carries its own "everything" choice,
+ * or whose default is not "everything", turns the added "All" off
+ * (`allChoice: false`) and names its own default in `value`. A choice may carry
+ * a figure (`count`), already formatted by the screen, and only the choices the
+ * screen gives one show one: a number beside a choice is read as "this many will
+ * be listed", so the screen decides where that is true. A `select` filter is
+ * Material's native select (`FormSelectField`) for a longer list. Both report
+ * the value; the screen sends it.
+ *
+ * ## A date range of its own
+ *
+ * `range` is two MIT date pickers over one date column, apart from the period:
+ * a board whose quick views already carry a day ("created today") offers the
+ * operator's own dates beside them rather than as another preset. Nothing is
+ * asked for until the two days are applied; the pair is checked first — both
+ * days, the last not before the first — and a refusal is a field error on the
+ * box to fix, with the cursor moved into it by the same counted-refusal
+ * mechanism as the period, and the typed days kept. Clear empties the boxes and
+ * tells the screen. The boxes follow `value` and `resetKey` the way the period
+ * panel does.
+ *
+ * ## The search can echo its digits
+ *
+ * `echoDigits` draws `DigitsEcho` under the box: digits typed on an Arabic
+ * keyboard are shown back as Latin digits, for reading only. The term is still
+ * sent exactly as typed and the server folds the digits itself.
  *
  * ## The period
  *
@@ -107,11 +132,18 @@ export interface ToolbarSearch {
   readonly error?: string | undefined;
   readonly busy?: boolean | undefined;
   readonly maxLength?: number | undefined;
+  /** Show Arabic-Indic digits back as Latin under the box (`DigitsEcho`). Display only. */
+  readonly echoDigits?: boolean | undefined;
 }
 
 export interface ToolbarOption {
   readonly value: string;
   readonly label: string;
+  /**
+   * A figure drawn on a chip beside its label, already formatted by the screen.
+   * Given only where the figure counts exactly what choosing it will list.
+   */
+  readonly count?: string | undefined;
 }
 
 export type ToolbarFilter =
@@ -120,9 +152,11 @@ export type ToolbarFilter =
       readonly key: string;
       readonly label: string;
       readonly options: readonly ToolbarOption[];
-      /** `''` is "All". */
+      /** `''` is "All" while `allChoice` is on; otherwise one of `options`. */
       readonly value: string;
       readonly onChange: (next: string) => void;
+      /** Offer "All" (`''`) first. On unless stated. */
+      readonly allChoice?: boolean | undefined;
     }
   | {
       readonly kind: 'select';
@@ -173,6 +207,26 @@ export interface BoardToolbarPeriod extends ToolbarPeriodBase {
 
 export type ToolbarPeriod = DashboardToolbarPeriod | BoardToolbarPeriod;
 
+/** Two chosen days over one date column — see "A date range of its own". */
+export interface ToolbarDateRange {
+  /** Names the two boxes' test ids: `filter-<key>-from`, `filter-<key>-to`. */
+  readonly key: string;
+  readonly fromLabel: string;
+  readonly toLabel: string;
+  readonly applyLabel: string;
+  readonly clearLabel: string;
+  /** The days in force, or `null` when no range is applied. */
+  readonly value: { readonly from: CalendarDay; readonly to: CalendarDay } | null;
+  /** The branch's IANA zone. Every day here is a day on this clock. */
+  readonly zone: string;
+  readonly onApply: (from: CalendarDay, to: CalendarDay) => void;
+  readonly onClear: () => void;
+  /** Changed by the screen to put the boxes back to `value` even when it did not change. */
+  readonly resetKey?: number | undefined;
+  /** Told whether the boxes hold typed days, whenever that changes. */
+  readonly onTypedDaysChange?: ((typed: boolean) => void) | undefined;
+}
+
 export interface FilterToolbarProps {
   readonly messages: Messages;
   /** Names the toolbar: what list it narrows. */
@@ -180,6 +234,7 @@ export interface FilterToolbarProps {
   readonly search?: ToolbarSearch | undefined;
   readonly filters?: readonly ToolbarFilter[] | undefined;
   readonly period?: ToolbarPeriod | undefined;
+  readonly range?: ToolbarDateRange | undefined;
   /** One line saying what the list covers — see "What the screen adds". */
   readonly summary?: string | undefined;
   /** The screen's links and toggles, in a row at the foot. Buttons are `type="button"`. */
@@ -205,6 +260,7 @@ export function FilterToolbar({
   search,
   filters = [],
   period,
+  range,
   summary,
   actions,
   testId = 'filter-toolbar',
@@ -213,14 +269,72 @@ export function FilterToolbar({
   const [draftFrom, setDraftFrom] = useState(period?.value.from ?? '');
   const [draftTo, setDraftTo] = useState(period?.value.to ?? '');
   const [problem, setProblem] = useState<CustomPeriodProblem | null>(null);
-  // Every refused apply, counted: the attempt is what moves the cursor into the
-  // box to fix, and a second refusal of the same mistake moves it again.
+  const [rangeFrom, setRangeFrom] = useState(range?.value?.from ?? '');
+  const [rangeTo, setRangeTo] = useState(range?.value?.to ?? '');
+  const [rangeProblem, setRangeProblem] = useState<CustomPeriodProblem | null>(null);
+  const rangeRef = useRef<HTMLDivElement | null>(null);
+  // Whether the last Enter was pressed inside the range's boxes. A submit that
+  // follows it applies the range even while the period's own button is the
+  // form's default; a pointer press anywhere forgets it.
+  const enterInRange = useRef(false);
+  // Every refused apply, counted — the period's and the range's alike: the
+  // attempt is what moves the cursor into the box to fix, and a second refusal
+  // of the same mistake moves it again.
   const [refusals, setRefusals] = useState(0);
+  const fieldErrors: Record<string, string> = {
+    ...(problem === null ? {} : { [problem.field]: problem.problem }),
+    ...(rangeProblem === null ? {} : { [`range-${rangeProblem.field}`]: rangeProblem.problem }),
+  };
   const refusal: ActionState =
-    problem === null
+    problem === null && rangeProblem === null
       ? { status: 'idle', attempt: refusals }
-      : { status: 'invalid', fieldErrors: { [problem.field]: problem.problem }, attempt: refusals };
+      : { status: 'invalid', fieldErrors, attempt: refusals };
   const formRef = useFocusFirstInvalid(refusal);
+
+  // The range's boxes follow the range in force the same way the period panel
+  // does: a screen that clears or replaces it, changes the zone, or changes
+  // `resetKey` puts the boxes back in this render.
+  const rangeKey =
+    range === undefined
+      ? ''
+      : [range.zone, range.value?.from ?? '', range.value?.to ?? '', String(range.resetKey ?? 0)].join(
+          '|'
+        );
+  const [followedRangeKey, setFollowedRangeKey] = useState(rangeKey);
+  if (followedRangeKey !== rangeKey) {
+    setFollowedRangeKey(rangeKey);
+    setRangeFrom(range?.value?.from ?? '');
+    setRangeTo(range?.value?.to ?? '');
+    setRangeProblem(null);
+  }
+
+  const rangeTyped = rangeFrom !== '' || rangeTo !== '';
+  const onRangeTyped = useRef(range?.onTypedDaysChange);
+  useEffect(() => {
+    onRangeTyped.current = range?.onTypedDaysChange;
+  });
+  useEffect(() => {
+    onRangeTyped.current?.(rangeTyped);
+  }, [rangeTyped]);
+
+  const applyRange = () => {
+    if (range === undefined) return;
+    const found = checkCustomPeriod(rangeFrom, rangeTo);
+    setRangeProblem(found);
+    if (found !== null) {
+      setRefusals((count) => count + 1);
+      return;
+    }
+    range.onApply(rangeFrom, rangeTo);
+  };
+
+  const clearRange = () => {
+    if (range === undefined) return;
+    setRangeFrom('');
+    setRangeTo('');
+    setRangeProblem(null);
+    range.onClear();
+  };
 
   // The panel follows the period in force. When the screen changes it — a
   // reset, a branch switch — or the zone changes, or the screen changes
@@ -287,18 +401,19 @@ export function FilterToolbar({
     emit({ kind: 'custom', from: draftFrom, to: draftTo });
   };
 
-  const problemText = (field: 'from' | 'to'): string | undefined => {
-    if (problem === null || problem.field !== field) return undefined;
-    if (problem.problem === 'tooLong') {
+  const textOf = (found: CustomPeriodProblem | null, field: 'from' | 'to'): string | undefined => {
+    if (found === null || found.field !== field) return undefined;
+    if (found.problem === 'tooLong') {
       return formatMessage(translate(messages, 'filters.period.tooLong'), {
-        days: String(problem.maxDays),
+        days: String(found.maxDays),
       });
     }
     return translate(
       messages,
-      problem.problem === 'inverted' ? 'filters.period.inverted' : 'filters.period.incomplete'
+      found.problem === 'inverted' ? 'filters.period.inverted' : 'filters.period.incomplete'
     );
   };
+  const problemText = (field: 'from' | 'to') => textOf(problem, field);
 
   return (
     <form
@@ -306,8 +421,31 @@ export function FilterToolbar({
       aria-label={label}
       noValidate
       data-testid={testId}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter') {
+          enterInRange.current = rangeRef.current?.contains(event.target as Node) === true;
+        }
+      }}
+      onPointerDown={() => {
+        enterInRange.current = false;
+      }}
       onSubmit={(event) => {
         event.preventDefault();
+        // The range's own button, or Enter in the range's boxes, applies the
+        // range; any other submit applies the chosen period, as it always has.
+        // The button that submitted is asked first, because a click does not
+        // move the cursor in every browser.
+        const submitter = (event.nativeEvent as SubmitEvent).submitter ?? null;
+        const inRange = (node: Element | null) =>
+          node !== null && rangeRef.current?.contains(node) === true;
+        const fromRange =
+          enterInRange.current ||
+          (submitter === null ? inRange(document.activeElement) : inRange(submitter));
+        enterInRange.current = false;
+        if (range !== undefined && fromRange) {
+          applyRange();
+          return;
+        }
         applyCustom();
       }}
       className="flex flex-col gap-3 rounded-lg border border-border bg-surface p-4"
@@ -414,6 +552,52 @@ export function FilterToolbar({
         </div>
       ) : null}
 
+      {range !== undefined ? (
+        <div
+          ref={rangeRef}
+          className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3"
+          data-testid={`filter-${range.key}`}
+        >
+          <DateField
+            label={range.fromLabel}
+            value={rangeFrom}
+            onChange={setRangeFrom}
+            onEdit={() => {
+              if (rangeProblem?.field === 'from') setRangeProblem(null);
+            }}
+            timezone={range.zone}
+            error={textOf(rangeProblem, 'from')}
+            testId={`filter-${range.key}-from`}
+          />
+          <DateField
+            label={range.toLabel}
+            value={rangeTo}
+            onChange={setRangeTo}
+            onEdit={() => {
+              if (rangeProblem?.field === 'to') setRangeProblem(null);
+            }}
+            timezone={range.zone}
+            error={textOf(rangeProblem, 'to')}
+            testId={`filter-${range.key}-to`}
+          />
+          <div className="flex flex-wrap items-start gap-2">
+            {/*
+              A submit button, so Enter in either box applies the range. The
+              form's submit decides which pair to apply by where the cursor is:
+              pressing this button puts it here.
+            */}
+            <Button type="submit" variant="contained">
+              {range.applyLabel}
+            </Button>
+            {range.value !== null || rangeTyped ? (
+              <Button type="button" variant="outlined" onClick={clearRange}>
+                {range.clearLabel}
+              </Button>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
+
       {summary !== undefined && summary !== '' ? (
         <p className="text-supporting text-text-muted" data-testid={`${testId}-summary`}>
           {summary}
@@ -503,11 +687,15 @@ function SearchField({
           formHelperText: { component: 'div' },
         }}
       />
+      {search.echoDigits ? <DigitsEcho messages={messages} value={value} /> : null}
     </div>
   );
 }
 
-/** A closed set shown whole: "All", then each choice, one of them pressed. */
+/**
+ * A closed set shown whole: "All" (unless the set carries its own), then each
+ * choice, one of them pressed, each with the figure the screen gave it.
+ */
 function ChipFilter({
   messages,
   filter,
@@ -516,10 +704,10 @@ function ChipFilter({
   readonly filter: Extract<ToolbarFilter, { kind: 'chips' }>;
 }) {
   const labelId = useId();
-  const choices: readonly ToolbarOption[] = [
-    { value: '', label: translate(messages, 'filters.chips.all') },
-    ...filter.options,
-  ];
+  const choices: readonly ToolbarOption[] =
+    filter.allChoice === false
+      ? filter.options
+      : [{ value: '', label: translate(messages, 'filters.chips.all') }, ...filter.options];
   return (
     <div className="flex flex-col gap-1.5">
       <span id={labelId} className="text-label font-medium text-text-primary">
@@ -531,7 +719,18 @@ function ChipFilter({
           return (
             <Chip
               key={choice.value === '' ? '__all' : choice.value}
-              label={choice.label}
+              label={
+                choice.count === undefined ? (
+                  choice.label
+                ) : (
+                  <>
+                    {choice.label}
+                    <span className="ms-2 text-caption" data-testid="filter-chip-count">
+                      {choice.count}
+                    </span>
+                  </>
+                )
+              }
               clickable
               color={pressed ? 'primary' : 'default'}
               variant={pressed ? 'filled' : 'outlined'}

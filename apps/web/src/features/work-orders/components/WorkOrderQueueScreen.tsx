@@ -2,12 +2,19 @@
 
 import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { DataTable, type Column } from '@/components/data-table/DataTable';
+import Button from '@mui/material/Button';
+import {
+  OperationalGrid,
+  type OperationalColumn,
+  type RowAction,
+} from '@/components/data/OperationalGrid';
 import { INITIAL_REQUEST } from '@/components/data-table/table-state';
-import { DigitsEcho } from '@/components/forms/DigitsEcho';
-import { SelectField, TextField } from '@/components/forms/Field';
-import { SearchBox } from '@/components/search/SearchBox';
-import { SearchStates } from '@/components/search/SearchStates';
+import { FilterToolbar, type ToolbarFilter } from '@/components/filters/FilterToolbar';
+import {
+  MuiEmptyState,
+  MuiSearchStates,
+  type NoResultsReason,
+} from '@/components/states/MuiStates';
 import { readDashboardSummaryCancellable } from '@/features/overview/dashboard-summary-read';
 import { figureStateOf, type DashboardSummary } from '@/features/overview/overview-contract';
 import {
@@ -18,10 +25,7 @@ import { useBranchTarget } from '@/features/working-context/use-branch-target';
 import { useWorkingContext } from '@/features/working-context/WorkingContextProvider';
 import type { BranchScope, CursorPage, ReadState } from '@/lib/api/read-operation';
 import { useSearchRequest } from '@/lib/api/use-search-request';
-import { IDLE, invalid, type ActionState } from '@/lib/forms/action-result';
-import { useClearOnCorrect } from '@/lib/forms/use-clear-on-correct';
-import { useFocusFirstInvalid } from '@/lib/forms/use-focus-first-invalid';
-import { dayIn, formatInZone, rangeOfDays } from '@/lib/branch-time';
+import { dayIn, formatInZone, rangeOfDays, type CalendarDay } from '@/lib/branch-time';
 import { formatInteger, intlLocale } from '@/lib/format';
 import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
@@ -131,6 +135,19 @@ import {
  *
  * The schema records no due date on a work order. Nothing on this board says
  * "overdue", "due today" or "late", and no control offers to sort by one.
+ *
+ * ## On the Material UI wrappers (ADR-022)
+ *
+ * The filters are `FilterToolbar`: the nine views as chips with no added "All"
+ * (the views carry their own) and the default pressed, a figure only on the four
+ * chips `chipFigure` allows; the grouped state select with its description; the
+ * kind select; the one search box with its digits echo; and the opened-date
+ * range with its own Clear, checked at its boxes. The rows are `OperationalGrid`
+ * over the same `useSearchRequest(...).table`, and every state other than an
+ * answer is `MuiSearchStates` (or `MuiEmptyState` for an unnarrowed board that
+ * holds nothing). Nothing about how the board reads changed: the same criteria,
+ * the same cancellable route, the same version key. The figure strip keeps its
+ * figures and its wording.
  */
 
 /**
@@ -263,12 +280,18 @@ export function WorkOrderQueueScreen({
   const [state, setState] = useState('');
   const [kind, setKind] = useState<'' | WorkOrderKind>('');
   const [term, setTerm] = useState('');
-  const [draftFrom, setDraftFrom] = useState('');
-  const [draftTo, setDraftTo] = useState('');
-  const [openedRange, setOpenedRange] = useState<{ from: string; to: string } | null>(null);
-  const [refusal, setRefusal] = useState<ActionState>(IDLE);
-  const formRef = useFocusFirstInvalid(refusal);
-  const corrections = useClearOnCorrect(refusal);
+  /*
+   * The opened-date range in force. The two boxes and their checking live in the
+   * toolbar; only an APPLIED pair reaches here. `rangeReset` is bumped by Clear
+   * so the boxes empty even when no range was applied, and `typedRange` is the
+   * toolbar saying the boxes hold days, so Clear is offered for them too.
+   */
+  const [openedRange, setOpenedRange] = useState<{
+    readonly from: CalendarDay;
+    readonly to: CalendarDay;
+  } | null>(null);
+  const [rangeReset, setRangeReset] = useState(0);
+  const [typedRange, setTypedRange] = useState(false);
 
   const zone =
     (branch.kind === 'ready'
@@ -490,35 +513,25 @@ export function WorkOrderQueueScreen({
     criteria: asked,
     load,
     version: context.version,
+    // Narrowed whenever a view, a state, a kind, a range or a term is sent. Only
+    // the unfiltered "All" view asks for the branch as it is, and only there is
+    // an empty answer "nothing here yet" rather than "no matches".
+    narrows: (criteria) => Object.keys(criteria.filters).length > 0,
   });
 
-  const applyOpenedRange = () => {
-    if (draftFrom === '' || draftTo === '') {
-      setRefusal(
-        invalid(
-          { [draftFrom === '' ? 'openedFrom' : 'openedTo']: 'workOrders.queue.periodIncomplete' },
-          (refusal.attempt ?? 0) + 1
-        )
-      );
-      return;
-    }
-    if (draftTo < draftFrom) {
-      // The operation answers 422 for an inverted window. A 422 arriving as a
-      // page-level failure teaches the operator nothing about which box to fix.
-      setRefusal(
-        invalid({ openedTo: 'workOrders.queue.invertedRange' }, (refusal.attempt ?? 0) + 1)
-      );
-      return;
-    }
-    setRefusal(IDLE);
-    setOpenedRange({ from: draftFrom, to: draftTo });
+  /*
+   * The toolbar checks the pair before it reaches here — both days, the last
+   * not before the first — and refuses it on the box to fix, because the
+   * operation answers 422 for an inverted window and a page-level failure
+   * teaches the operator nothing about which box to fix.
+   */
+  const applyOpenedRange = (from: CalendarDay, to: CalendarDay) => {
+    setOpenedRange({ from, to });
   };
 
   const clearOpenedRange = () => {
-    setRefusal(IDLE);
-    setDraftFrom('');
-    setDraftTo('');
     setOpenedRange(null);
+    setRangeReset((count) => count + 1);
   };
 
   /*
@@ -544,12 +557,25 @@ export function WorkOrderQueueScreen({
     clearOpenedRange();
   };
 
-  const errorFor = (field: string): string | undefined => {
-    const key = corrections.errorFor(field);
-    return key === undefined ? undefined : translateDynamic(messages, key);
-  };
-  const openedFromError = errorFor('openedFrom');
-  const openedToError = errorFor('openedTo');
+  /**
+   * Is there anything for Clear to clear? Every input `clearFilters` resets,
+   * against the value it resets to — days typed into the range's boxes included,
+   * because they are text the operator can see.
+   */
+  const filtersApplied =
+    view !== DEFAULT_VIEW ||
+    state !== '' ||
+    kind !== '' ||
+    term !== '' ||
+    openedRange !== null ||
+    typedRange;
+
+  /*
+   * What narrowed an empty answer: the term the operator typed, or otherwise the
+   * view and the filters. An answer to nothing but the branch — the "All" view
+   * with nothing set — is not narrowed at all, and says "nothing here yet".
+   */
+  const emptyReason: NoResultsReason = termIsSearchable ? 'search' : 'filters';
 
   const stateGroups = useMemo(
     () => [
@@ -584,7 +610,7 @@ export function WorkOrderQueueScreen({
     [messages]
   );
 
-  const columns = useMemo<readonly Column<WorkOrderListEntry>[]>(
+  const allColumns = useMemo<readonly OperationalColumn<WorkOrderListEntry>[]>(
     () => [
       {
         id: 'displayNumber',
@@ -714,6 +740,46 @@ export function WorkOrderQueueScreen({
     [catalogue, context, locale, messages, zone]
   );
 
+  /*
+   * The branch column exists only while the board spans branches. On one branch
+   * every row is that branch's and the header already names it, so the column is
+   * not passed at all rather than hidden.
+   */
+  const columns = useMemo(
+    () => (spansBranches ? allColumns : allColumns.filter((column) => column.id !== 'branch')),
+    [allColumns, spansBranches]
+  );
+
+  /*
+   * The next action names what can be done where it lands — it never performs
+   * it. Nothing on this board advances a work order: a row's `recordVersion` is a
+   * snapshot of whenever the page was fetched, and spending it on an `If-Match`
+   * write would answer 409 for any operator who left the board open. The detail
+   * read supplies the version its own commands are guarded with.
+   *
+   * The label follows the VIEW rather than the row, because that is where the
+   * fact lives: a row carries no approval state and no delivery readiness, but
+   * every row of the "awaiting approval" view is awaiting one. The number is
+   * appended for assistive technology, so a page of links is a page of different
+   * links.
+   */
+  const rowActions = useCallback(
+    (row: WorkOrderListEntry): readonly RowAction[] => [
+      {
+        kind: 'link',
+        label:
+          view === 'awaitingApproval'
+            ? translate(messages, 'workOrders.queue.openForApproval')
+            : view === 'readyForDelivery'
+              ? translate(messages, 'workOrders.queue.openForDelivery')
+              : translate(messages, 'workOrders.queue.open'),
+        href: `/${locale}/work-orders/${row.id}`,
+        about: row.displayNumber ?? undefined,
+      },
+    ],
+    [locale, messages, view]
+  );
+
   const blocked =
     branch.kind === 'unchosen' || branch.kind === 'none' || branch.kind === 'unavailable';
   const spansCompanies = branch.kind === 'all' && scope === null;
@@ -807,149 +873,108 @@ export function WorkOrderQueueScreen({
   const figureZone =
     summary !== null && summary.read.status === 'ok' ? summary.read.data.period.timezone : null;
 
+  /*
+   * The nine views, as chips. No "All" is added: the views carry their own, and
+   * the board opens on "Still with us", not on everything.
+   *
+   * A FIGURE ONLY WHERE THE TWO PREDICATES ARE THE SAME SET. A number beside a
+   * view is read as "this is how many the list below will show", so it may only
+   * appear where that is true. `chipFigure` carries the four that agree and the
+   * reason each of the other five does not; the strip below carries every
+   * published figure, labelled by what the AGGREGATE counts, for the ones a chip
+   * cannot claim. The figures are still branch-wide: a chip's number is the
+   * view's own predicate over the whole branch, and the list additionally
+   * honours whatever else the operator has set here. The strip says so.
+   */
+  const viewFilter: ToolbarFilter = {
+    kind: 'chips',
+    key: 'view',
+    label: translate(messages, 'workOrders.queue.viewLabel'),
+    allChoice: false,
+    value: view,
+    onChange: (next) => chooseView(next as ViewKind),
+    options: VIEW_KINDS.map((kindOfView) => {
+      const figure = chipFigure(kindOfView);
+      return {
+        value: kindOfView,
+        label: translateDynamic(messages, `workOrders.queue.view.${kindOfView}`),
+        ...(figure === null ? {} : { count: formatInteger(figure, locale) }),
+      };
+    }),
+  };
+
+  const stateFilter: ToolbarFilter = {
+    kind: 'select',
+    key: 'state',
+    label: translate(messages, 'workOrders.queue.stateFilter'),
+    description: translate(messages, 'workOrders.queue.stateFilterHelp'),
+    value: state,
+    onChange: chooseState,
+    options: [],
+    groups: stateGroups,
+    placeholder: translate(messages, 'workOrders.queue.anyState'),
+  };
+
+  const kindFilter: ToolbarFilter = {
+    kind: 'select',
+    key: 'kind',
+    label: translate(messages, 'workOrders.queue.kindFilter'),
+    value: kind,
+    onChange: (next) => setKind(next as '' | WorkOrderKind),
+    options: kindOptions,
+    placeholder: translate(messages, 'workOrders.queue.anyKind'),
+  };
+
   return (
     <div className="flex min-h-0 flex-col gap-4">
-      <form
-        ref={formRef}
-        onSubmit={(event) => {
-          event.preventDefault();
-          search.submit();
+      {/*
+        Stated rather than asked, for the reason the reception board states it:
+        the branch is the header's own selection, there is one place it can be
+        changed, and a board that did not name it would leave the operator to
+        remember which branch they are reading.
+      */}
+      <div className="max-w-md">
+        <WorkingBranchField
+          messages={messages}
+          label={translate(messages, 'workOrders.queue.branch')}
+          // The list read is a union the server enforces, so "All my branches"
+          // is named here as what the board is showing — never the "choose one
+          // branch" ask beside rows from both (QA part 7, 1b.4).
+          acceptsAllBranches
+        />
+      </div>
+
+      <FilterToolbar
+        messages={messages}
+        label={translate(messages, 'workOrders.queue.formLabel')}
+        testId="work-order-queue-toolbar"
+        search={{
+          label: translate(messages, 'workOrders.queue.searchLabel'),
+          placeholder: translate(messages, 'workOrders.queue.searchPlaceholder'),
+          example: translate(messages, 'workOrders.queue.searchExample'),
+          value: term,
+          onChange: setTerm,
+          onSubmit: search.submit,
+          busy: search.phase === 'loading',
+          maxLength: MAX_WORK_ORDER_SEARCH,
+          error: termTooShort ? translate(messages, 'workOrders.queue.searchTooShort') : undefined,
+          echoDigits: true,
         }}
-        noValidate
-        aria-label={translate(messages, 'workOrders.queue.formLabel')}
-        className="flex flex-col gap-3 rounded-lg border border-border bg-surface p-4"
-      >
-        <div
-          role="group"
-          aria-label={translate(messages, 'workOrders.queue.viewLabel')}
-          className="flex flex-wrap items-center gap-2"
-        >
-          {/*
-            A FIGURE ONLY WHERE THE TWO PREDICATES ARE THE SAME SET.
-
-            A number beside a view is read as "this is how many the list below
-            will show", so it may only appear where that is true. `chipFigure`
-            carries the four that agree and the reason each of the other five
-            does not; the strip below carries every published figure, labelled
-            by what the AGGREGATE counts, for the ones a chip cannot claim.
-
-            The figures are still branch-wide: a chip's number is the view's own
-            predicate over the whole branch, and the list additionally honours
-            whatever else the operator has set here. The strip says so.
-          */}
-          {VIEW_KINDS.map((kindOfView) => {
-            const figure = chipFigure(kindOfView);
-            return (
-              <button
-                key={kindOfView}
-                type="button"
-                aria-pressed={view === kindOfView}
-                onClick={() => chooseView(kindOfView)}
-                className={
-                  view === kindOfView
-                    ? 'rounded-md border border-border bg-primary px-3 py-1.5 text-body text-on-primary transition-colors duration-fast ease-standard focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring'
-                    : 'rounded-md border border-border px-3 py-1.5 text-body text-text-primary transition-colors duration-fast ease-standard hover:bg-surface-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring'
-                }
-              >
-                {translateDynamic(messages, `workOrders.queue.view.${kindOfView}`)}
-                {figure === null ? null : (
-                  <span className="ms-2 text-caption">{formatInteger(figure, locale)}</span>
-                )}
-              </button>
-            );
-          })}
-        </div>
-
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {/*
-            Stated rather than asked, for the reason the reception board states
-            it: the branch is the header's own selection, there is one place it
-            can be changed, and a board that did not name it would leave the
-            operator to remember which branch they are reading.
-          */}
-          <WorkingBranchField
-            messages={messages}
-            label={translate(messages, 'workOrders.queue.branch')}
-            // The list read is a union the server enforces, so "All my
-            // branches" is named here as what the board is showing — never the
-            // "choose one branch" ask beside rows from both (QA part 7, 1b.4).
-            acceptsAllBranches
-          />
-          <SelectField
-            label={translate(messages, 'workOrders.queue.stateFilter')}
-            description={translate(messages, 'workOrders.queue.stateFilterHelp')}
-            value={state}
-            onChange={(event) => chooseState(event.target.value)}
-            groups={stateGroups}
-            placeholder={translate(messages, 'workOrders.queue.anyState')}
-          />
-          <SelectField
-            label={translate(messages, 'workOrders.queue.kindFilter')}
-            value={kind}
-            onChange={(event) => setKind(event.target.value as '' | WorkOrderKind)}
-            options={kindOptions}
-            placeholder={translate(messages, 'workOrders.queue.anyKind')}
-          />
-          <div className="flex flex-col gap-1">
-            <SearchBox
-              messages={messages}
-              label={translate(messages, 'workOrders.queue.searchLabel')}
-              placeholder={translate(messages, 'workOrders.queue.searchPlaceholder')}
-              example={translate(messages, 'workOrders.queue.searchExample')}
-              value={term}
-              onChange={setTerm}
-              onSubmit={search.submit}
-              busy={search.phase === 'loading'}
-              maxLength={MAX_WORK_ORDER_SEARCH}
-              {...(termTooShort
-                ? { error: translate(messages, 'workOrders.queue.searchTooShort') }
-                : {})}
-            />
-            <DigitsEcho messages={messages} value={term} />
-          </div>
-        </div>
-
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          <TextField
-            type="date"
-            label={translate(messages, 'workOrders.queue.openedFrom')}
-            value={draftFrom}
-            onChange={(event) => {
-              corrections.noteEdited('openedFrom');
-              setDraftFrom(event.target.value);
-            }}
-            {...(openedFromError === undefined ? {} : { error: openedFromError })}
-          />
-          <TextField
-            type="date"
-            label={translate(messages, 'workOrders.queue.openedTo')}
-            value={draftTo}
-            onChange={(event) => {
-              corrections.noteEdited('openedTo');
-              setDraftTo(event.target.value);
-            }}
-            {...(openedToError === undefined ? {} : { error: openedToError })}
-          />
-          <div className="flex flex-wrap items-end gap-2">
-            <button
-              type="button"
-              onClick={applyOpenedRange}
-              className="rounded-md bg-primary px-4 py-2 text-body font-medium text-on-primary transition-colors duration-fast ease-standard hover:bg-primary-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
-            >
-              {translate(messages, 'workOrders.queue.applyOpenedRange')}
-            </button>
-            {openedRange === null ? null : (
-              <button
-                type="button"
-                onClick={clearOpenedRange}
-                className="rounded-md border border-border px-3 py-1.5 text-body text-text-primary transition-colors duration-fast ease-standard hover:bg-surface-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
-              >
-                {translate(messages, 'workOrders.queue.clearOpenedRange')}
-              </button>
-            )}
-          </div>
-        </div>
-      </form>
+        filters={[viewFilter, stateFilter, kindFilter]}
+        range={{
+          key: 'opened',
+          fromLabel: translate(messages, 'workOrders.queue.openedFrom'),
+          toLabel: translate(messages, 'workOrders.queue.openedTo'),
+          applyLabel: translate(messages, 'workOrders.queue.applyOpenedRange'),
+          clearLabel: translate(messages, 'workOrders.queue.clearOpenedRange'),
+          value: openedRange,
+          zone,
+          onApply: applyOpenedRange,
+          onClear: clearOpenedRange,
+          resetKey: rangeReset,
+          onTypedDaysChange: setTypedRange,
+        }}
+      />
 
       {/*
         The branch's day, from the aggregate — never from the page.
@@ -1056,93 +1081,55 @@ export function WorkOrderQueueScreen({
             </p>
           ) : null}
 
-          <SearchStates
-            messages={messages}
-            locale={locale}
-            phase={search.phase}
-            correlationId={search.correlationId}
-            {...(search.phase === 'empty'
-              ? {
-                  onClearFilters: (
-                    <button
-                      type="button"
-                      onClick={clearFilters}
-                      className="rounded-md border border-border px-3 py-1.5 text-body text-text-primary transition-colors duration-fast ease-standard hover:bg-surface-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
-                    >
-                      {translate(messages, 'workOrders.queue.clearFilters')}
-                    </button>
-                  ),
-                }
-              : {})}
-            {...(search.phase === 'unavailable' || search.phase === 'failed'
-              ? {
-                  retry: (
-                    <button
-                      type="button"
-                      onClick={search.submit}
-                      className="rounded-md border border-border px-3 py-1.5 text-body text-text-primary transition-colors duration-fast ease-standard hover:bg-surface-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
-                    >
-                      {translate(messages, 'state.retry')}
-                    </button>
-                  ),
-                }
-              : {})}
-          />
+          {search.phase === 'empty' && search.table.narrowed !== true ? (
+            // The "All" view with nothing set is the branch as it is: an empty
+            // answer there is "nothing here yet", never "no matches".
+            <MuiEmptyState messages={messages} />
+          ) : (
+            <MuiSearchStates
+              messages={messages}
+              locale={locale}
+              phase={search.phase}
+              correlationId={search.correlationId}
+              emptyReason={emptyReason}
+              onRetry={search.submit}
+              onClearFilters={
+                search.phase === 'empty' && filtersApplied ? (
+                  <Button type="button" variant="outlined" size="small" onClick={clearFilters}>
+                    {translate(messages, 'workOrders.queue.clearFilters')}
+                  </Button>
+                ) : undefined
+              }
+            />
+          )}
 
           {search.phase === 'ready' ? (
             <>
-              <DataTable<WorkOrderListEntry>
+              <OperationalGrid<WorkOrderListEntry>
                 messages={messages}
+                locale={locale}
+                label={translate(messages, 'workOrders.queue.caption')}
                 columns={columns}
                 rowId={(row) => row.id}
-                request={search.table.request}
-                response={search.table.response}
-                status={search.table.status}
-                onRequestChange={search.table.setRequest}
-                onRetry={search.table.refresh}
-                correlationId={search.table.correlationId}
-                caption={translate(messages, 'workOrders.queue.caption')}
-                hiddenColumnIds={spansBranches ? [] : ['branch']}
+                table={search.table}
+                rowActions={rowActions}
                 suppressEmptyState
-                rowActions={(row) => (
-                  <span className="flex flex-wrap gap-3">
-                    <Link
-                      href={`/${locale}/work-orders/${row.id}`}
-                      className="text-primary underline-offset-2 hover:underline focus-visible:outline focus-visible:outline-2"
-                    >
-                      {/*
-                       * The next action names what can be done where it lands —
-                       * it never performs it. Nothing on this board advances a
-                       * work order: a row's `recordVersion` is a snapshot of
-                       * whenever the page was fetched, and spending it on an
-                       * `If-Match` write would answer 409 for any operator who
-                       * left the board open. The detail read supplies the
-                       * version its own commands are guarded with.
-                       *
-                       * The label follows the VIEW rather than the row, because
-                       * that is where the fact lives: a row carries no
-                       * approval state and no delivery readiness, but every row
-                       * of the "awaiting approval" view is awaiting one.
-                       */}
-                      {view === 'awaitingApproval'
-                        ? translate(messages, 'workOrders.queue.openForApproval')
-                        : view === 'readyForDelivery'
-                          ? translate(messages, 'workOrders.queue.openForDelivery')
-                          : translate(messages, 'workOrders.queue.open')}
-                    </Link>
-                  </span>
-                )}
+                testId="work-order-queue-grid"
               />
               <p className="px-2 pb-2 text-caption text-text-muted" lang={locale}>
                 {translate(messages, 'workOrders.queue.orderingNote')}
               </p>
               {view === 'readyForDelivery' && canReachDelivery ? (
-                <Link
-                  href={`/${locale}/delivery`}
-                  className="px-2 text-body text-primary underline-offset-2 hover:underline focus-visible:outline focus-visible:outline-2"
-                >
-                  {translate(messages, 'workOrders.queue.deliveryQueue')}
-                </Link>
+                <div>
+                  <Button
+                    component={Link}
+                    href={`/${locale}/delivery`}
+                    variant="outlined"
+                    size="small"
+                  >
+                    {translate(messages, 'workOrders.queue.deliveryQueue')}
+                  </Button>
+                </div>
               ) : null}
             </>
           ) : null}

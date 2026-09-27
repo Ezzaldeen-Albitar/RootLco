@@ -687,6 +687,251 @@ describe('filters', () => {
   });
 });
 
+describe('what the work-order board adds (the work-order slice)', () => {
+  function ViewsHost({ onView }: { readonly onView: (value: string) => void }) {
+    const [view, setView] = useState('active');
+    const filters: ToolbarFilter[] = [
+      {
+        kind: 'chips',
+        key: 'view',
+        label: 'Which work orders',
+        allChoice: false,
+        options: [
+          { value: 'active', label: 'Still with us', count: '7' },
+          { value: 'all', label: 'Everything' },
+          { value: 'parts', label: 'Waiting for parts', count: '0' },
+        ],
+        value: view,
+        onChange: (next) => {
+          onView(next);
+          setView(next);
+        },
+      },
+    ];
+    return <FilterToolbar messages={en} label="Narrow the list" filters={filters} />;
+  }
+
+  it('shows a set without an added "All", its own default pressed, and a figure only where given', async () => {
+    const user = userEvent.setup();
+    const onView = vi.fn();
+    mount(<ViewsHost onView={onView} />);
+    const group = screen.getByRole('group', { name: 'Which work orders' });
+    const chips = within(group).getAllByRole('button');
+    expect(chips).toHaveLength(3);
+    expect(within(group).queryByRole('button', { name: 'All' })).toBeNull();
+    expect(chips[0]).toHaveAttribute('aria-pressed', 'true');
+    // The figure is on the two choices the screen gave one — a zero included,
+    // because nought is a figure — and nowhere else.
+    expect(chips[0]).toHaveTextContent('Still with us7');
+    expect(chips[1]?.textContent).toBe('Everything');
+    expect(chips[2]).toHaveTextContent('Waiting for parts0');
+    expect(within(group).getAllByTestId('filter-chip-count')).toHaveLength(2);
+
+    await user.click(within(group).getByRole('button', { name: /^Everything/ }));
+    expect(onView).toHaveBeenLastCalledWith('all');
+    expect(within(group).getByRole('button', { name: /^Everything/ })).toHaveAttribute(
+      'aria-pressed',
+      'true'
+    );
+    expect(chips[0]).toHaveAttribute('aria-pressed', 'false');
+  });
+
+  function RangeHost({
+    onApply,
+    onClear,
+    withPeriod = false,
+    onPeriod,
+  }: {
+    readonly onApply: (from: string, to: string) => void;
+    readonly onClear: () => void;
+    readonly withPeriod?: boolean;
+    readonly onPeriod?: (selection: PeriodSelection) => void;
+  }) {
+    const [value, setValue] = useState<{ from: string; to: string } | null>(null);
+    const [reset, setReset] = useState(0);
+    const [period, setPeriod] = useState<PeriodSelection>(TODAY_PERIOD);
+    return (
+      <>
+        <FilterToolbar
+          messages={en}
+          label="Narrow the list"
+          range={{
+            key: 'opened',
+            fromLabel: 'Opened from',
+            toLabel: 'Opened to',
+            applyLabel: 'Apply the dates',
+            clearLabel: 'Clear the dates',
+            value,
+            zone: 'Asia/Amman',
+            resetKey: reset,
+            onApply: (from, to) => {
+              onApply(from, to);
+              setValue({ from, to });
+            },
+            onClear: () => {
+              onClear();
+              setValue(null);
+            },
+          }}
+          {...(withPeriod
+            ? {
+                period: {
+                  format: 'instants' as const,
+                  presets: ALL_PRESETS,
+                  value: period,
+                  zone: 'Asia/Amman',
+                  onChange: (selection: PeriodSelection) => {
+                    onPeriod?.(selection);
+                    setPeriod(selection);
+                  },
+                },
+              }
+            : {})}
+        />
+        <button type="button" onClick={() => setReset((count) => count + 1)}>
+          screen resets
+        </button>
+      </>
+    );
+  }
+
+  it('refuses an inverted range on the second box, moves the cursor there and keeps the days', async () => {
+    const user = userEvent.setup();
+    const onApply = vi.fn();
+    mount(<RangeHost onApply={onApply} onClear={vi.fn()} />);
+    const from = await typeDay(user, 'Opened from', '22092026');
+    const to = await typeDay(user, 'Opened to', '20092026');
+    const apply = screen.getByRole('button', { name: 'Apply the dates' });
+    await user.click(apply);
+    expect(onApply).not.toHaveBeenCalled();
+    expect(to).toHaveAttribute('aria-invalid', 'true');
+    expect(from).not.toHaveAttribute('aria-invalid');
+    const error = screen.getByRole('alert');
+    expect(error).toHaveTextContent('The second date cannot be earlier than the first.');
+    expect((to.getAttribute('aria-describedby') ?? '').split(' ')).toContain(error.id);
+    await waitFor(() => expect(to.contains(document.activeElement)).toBe(true));
+    // The typed days are still there to correct.
+    expect(within(from).getAllByRole('spinbutton').map((part) => part.textContent)).toContain(
+      '2026'
+    );
+
+    // The same mistake again moves the cursor again.
+    apply.focus();
+    await user.click(apply);
+    await waitFor(() => expect(to.contains(document.activeElement)).toBe(true));
+
+    // Correcting the box withdraws the refusal, and the pair is then applied.
+    await typeDay(user, 'Opened to', '23092026');
+    await waitFor(() => expect(to).not.toHaveAttribute('aria-invalid'));
+    await user.click(apply);
+    expect(onApply).toHaveBeenLastCalledWith('2026-09-22', '2026-09-23');
+  });
+
+  it('refuses a missing first day on the first box', async () => {
+    const user = userEvent.setup();
+    const onApply = vi.fn();
+    mount(<RangeHost onApply={onApply} onClear={vi.fn()} />);
+    await typeDay(user, 'Opened to', '20092026');
+    await user.click(screen.getByRole('button', { name: 'Apply the dates' }));
+    expect(onApply).not.toHaveBeenCalled();
+    const from = screen.getByRole('group', { name: /^Opened from/ });
+    expect(from).toHaveAttribute('aria-invalid', 'true');
+    expect(screen.getByRole('alert')).toHaveTextContent('Choose both dates.');
+    await waitFor(() => expect(from.contains(document.activeElement)).toBe(true));
+  });
+
+  it('offers Clear for typed or applied days, and Clear empties the boxes and tells the screen', async () => {
+    const user = userEvent.setup();
+    const onClear = vi.fn();
+    mount(<RangeHost onApply={vi.fn()} onClear={onClear} />);
+    const clear = () => screen.queryByRole('button', { name: 'Clear the dates' });
+    expect(clear()).toBeNull();
+    const from = await typeDay(user, 'Opened from', '22092026');
+    expect(clear()).not.toBeNull();
+    await typeDay(user, 'Opened to', '23092026');
+    await user.click(screen.getByRole('button', { name: 'Apply the dates' }));
+    await user.click(clear() as HTMLElement);
+    expect(onClear).toHaveBeenCalledTimes(1);
+    expect(clear()).toBeNull();
+    expect(within(from).getAllByRole('spinbutton').map((part) => part.textContent)).not.toContain(
+      '2026'
+    );
+  });
+
+  it('follows a reset key from the screen: the typed days go', async () => {
+    const user = userEvent.setup();
+    mount(<RangeHost onApply={vi.fn()} onClear={vi.fn()} />);
+    const from = await typeDay(user, 'Opened from', '22092026');
+    expect(screen.getByRole('button', { name: 'Clear the dates' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'screen resets' }));
+    expect(screen.queryByRole('button', { name: 'Clear the dates' })).toBeNull();
+    expect(within(from).getAllByRole('spinbutton').map((part) => part.textContent)).not.toContain(
+      '2026'
+    );
+  });
+
+  it('applies the range on Enter in its own boxes, and leaves the period alone', async () => {
+    const user = userEvent.setup();
+    const onApply = vi.fn();
+    const onPeriod = vi.fn();
+    mount(<RangeHost onApply={onApply} onClear={vi.fn()} withPeriod onPeriod={onPeriod} />);
+    await typeDay(user, 'Opened from', '01092026');
+    await typeDay(user, 'Opened to', '02092026');
+    await user.keyboard('{Enter}');
+    expect(onApply).toHaveBeenLastCalledWith('2026-09-01', '2026-09-02');
+    expect(onPeriod).not.toHaveBeenCalled();
+  });
+
+  it('keeps the two apply buttons apart while the chosen period is open beside the range', async () => {
+    const user = userEvent.setup();
+    const onApply = vi.fn();
+    const onPeriod = vi.fn();
+    mount(<RangeHost onApply={onApply} onClear={vi.fn()} withPeriod onPeriod={onPeriod} />);
+    await user.click(screen.getByRole('button', { name: 'Choose dates' }));
+    await typeDay(user, 'Opened from', '01092026');
+    await typeDay(user, 'Opened to', '02092026');
+    await typeDay(user, 'From', '10092026');
+    await typeDay(user, 'To', '11092026');
+
+    await user.click(screen.getByRole('button', { name: 'Apply the dates' }));
+    expect(onApply).toHaveBeenLastCalledWith('2026-09-01', '2026-09-02');
+    expect(onPeriod).not.toHaveBeenCalled();
+
+    await user.click(screen.getByRole('button', { name: 'Use these dates' }));
+    expect(onPeriod).toHaveBeenLastCalledWith({ kind: 'custom', from: '2026-09-10', to: '2026-09-11' });
+    expect(onApply).toHaveBeenCalledTimes(1);
+  });
+
+  function EchoHost({ echo }: { readonly echo: boolean }) {
+    const [term, setTerm] = useState('');
+    return (
+      <FilterToolbar
+        messages={en}
+        label="Narrow the list"
+        search={{ label: 'Search this list', value: term, onChange: setTerm, echoDigits: echo }}
+      />
+    );
+  }
+
+  it('echoes Arabic-Indic digits as Latin under the box when asked, and reports them as typed', async () => {
+    const user = userEvent.setup();
+    mount(<EchoHost echo />);
+    const box = screen.getByLabelText('Search this list');
+    expect(screen.queryByTestId('digits-echo')).toBeNull();
+    await user.type(box, 'WO ١٢٣');
+    expect(screen.getByTestId('digits-echo')).toHaveTextContent('WO 123');
+    // The box keeps what was typed: the echo is for reading only.
+    expect(box).toHaveValue('WO ١٢٣');
+  });
+
+  it('draws no echo unless the screen asks for one', async () => {
+    const user = userEvent.setup();
+    mount(<EchoHost echo={false} />);
+    await user.type(screen.getByLabelText('Search this list'), '١٢٣');
+    expect(screen.queryByTestId('digits-echo')).toBeNull();
+  });
+});
+
 describe('what a screen adds beside the filters (the reception slice)', () => {
   it('groups a select’s choices under headings and wires its description', async () => {
     const user = userEvent.setup();

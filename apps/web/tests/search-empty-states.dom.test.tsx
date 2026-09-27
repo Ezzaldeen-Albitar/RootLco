@@ -1,5 +1,6 @@
 import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import type { ReactElement } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import en from '../src/i18n/messages/en.json';
 import ar from '../src/i18n/messages/ar.json';
@@ -14,7 +15,10 @@ import {
   renderRtl,
 } from './render';
 import type { CatalogueResult } from '@/features/vehicles/catalogue-api';
-import { dayIn, rangeOfDays } from '@/lib/branch-time';
+import { UiFoundationProvider } from '@/components/ui-foundation/UiFoundationProvider';
+import { muiTextOf } from '@/components/ui-foundation/mui-text';
+import { getMessages } from '@/i18n/get-messages';
+import { dayIn, endOfDayBound, rangeOfDays } from '@/lib/branch-time';
 
 /** A healthy make catalogue — see the note in `vehicle-screens.dom.test.tsx`. */
 const CATALOGUE_OK: CatalogueResult = {
@@ -161,6 +165,52 @@ const EMPTY_PAGE = {
   hasMore: false,
   correlationId: 'fixed-correlation-id',
 };
+
+/** The product's Material provider, as the locale layout mounts it. */
+function withMui(ui: ReactElement, locale: 'en' | 'ar' = 'en'): ReactElement {
+  return (
+    <UiFoundationProvider locale={locale} text={muiTextOf(getMessages(locale))}>
+      {ui}
+    </UiFoundationProvider>
+  );
+}
+
+/** Types a day into one of the date boxes, one section at a time. */
+async function typeDay(user: ReturnType<typeof userEvent.setup>, label: string, digits: string) {
+  const group = screen.getByRole('group', { name: new RegExp(`^${label}`) });
+  await user.click(within(group).getAllByRole('spinbutton')[0] as HTMLElement);
+  await user.keyboard(digits);
+  return group;
+}
+
+/** A screen in a working context, inside the product's Material provider. */
+function woBranch(ui: ReactElement, options: Parameters<typeof inBranch>[1] = {}): ReactElement {
+  return withMui(inBranch(ui, options), options.locale === 'ar' ? 'ar' : 'en');
+}
+
+/** A work-order view chip, by the words on it (a figure may follow). */
+function viewChip(view: string, catalogue: Record<string, unknown> = en): HTMLElement {
+  const group = screen.getByRole('group', {
+    name: catalogue['workOrders.queue.viewLabel'] as string,
+  });
+  return within(group).getByRole('button', {
+    name: new RegExp(`^${catalogue[`workOrders.queue.view.${view}`] as string}`),
+  });
+}
+
+/** The board's state select. */
+function stateSelect(): HTMLSelectElement {
+  return screen.getByRole('combobox', {
+    name: en['workOrders.queue.stateFilter'] as string,
+  }) as HTMLSelectElement;
+}
+
+/** A row action, by the label it starts with (the work-order number follows, unseen). */
+function rowLink(key: string) {
+  return screen.findAllByRole('link', {
+    name: new RegExp(`^${(en as Record<string, string>)[key] as string}`),
+  });
+}
 
 beforeEach(() => {
   searchCustomers.mockReset();
@@ -332,7 +382,7 @@ describe('the work-order board reads on arrival and narrows honestly', () => {
 
   const render = (canReachDelivery = false) =>
     renderLtr(
-      inBranch(
+      woBranch(
         <WorkOrderQueueScreen locale="en" messages={en} canReachDelivery={canReachDelivery} />
       )
     );
@@ -347,9 +397,9 @@ describe('the work-order board reads on arrival and narrows honestly', () => {
     await waitFor(() => expect(listWorkOrders).toHaveBeenCalledTimes(1));
     expect(lastCall().scope).toEqual({ companyId: COMPANY, branchId: BRANCH });
     expect(lastCall().filters).toEqual({ stateGroup: 'active' });
-    expect(await screen.findByText('WO-000123')).toBeInTheDocument();
+    expect(await screen.findByText('WO-000123', { selector: 'code' })).toBeInTheDocument();
     expect(
-      screen.getByRole('button', { name: new RegExp(en['workOrders.queue.view.active'] as string) })
+      viewChip('active')
     ).toHaveAttribute('aria-pressed', 'true');
   });
 
@@ -357,7 +407,7 @@ describe('the work-order board reads on arrival and narrows honestly', () => {
     const user = userEvent.setup();
     render();
     await waitFor(() => expect(listWorkOrders).toHaveBeenCalledTimes(1));
-    await user.click(screen.getByRole('button', { name: en['workOrders.queue.view.all'] }));
+    await user.click(viewChip('all'));
     await waitFor(() => expect(lastCall().filters).toEqual({}));
   });
 
@@ -372,9 +422,7 @@ describe('the work-order board reads on arrival and narrows honestly', () => {
     await waitFor(() => expect(listWorkOrders).toHaveBeenCalledTimes(1));
 
     await user.click(
-      screen.getByRole('button', {
-        name: new RegExp(en['workOrders.queue.view.completedToday'] as string),
-      })
+      viewChip('completedToday')
     );
     const today = dayIn(TEST_BRANCH.timezone);
     const window = rangeOfDays(TEST_BRANCH.timezone, today, today);
@@ -398,15 +446,13 @@ describe('the work-order board reads on arrival and narrows honestly', () => {
     await waitFor(() => expect(listWorkOrders).toHaveBeenCalledTimes(1));
     expect(lastCall().filters).toEqual({ stateGroup: 'active' });
 
-    await user.selectOptions(
-      await screen.findByLabelText(en['workOrders.queue.stateFilter'], { exact: false }),
-      'open'
-    );
+    await waitFor(() => expect(within(stateSelect()).getAllByRole('group').length).toBe(2));
+    await user.selectOptions(stateSelect(), 'open');
     await waitFor(() => expect(lastCall().filters).toEqual({ state: 'open' }));
 
     // And back the other way: the view clears the code.
     await user.click(
-      screen.getByRole('button', { name: new RegExp(en['workOrders.queue.view.active'] as string) })
+      viewChip('active')
     );
     await waitFor(() => expect(lastCall().filters).toEqual({ stateGroup: 'active' }));
 
@@ -454,7 +500,7 @@ describe('the work-order board reads on arrival and narrows honestly', () => {
 
   it('echoes digits typed on an Arabic keyboard and sends them as typed', async () => {
     const user = userEvent.setup();
-    renderRtl(inBranch(<WorkOrderQueueScreen locale="ar" messages={ar} />, { locale: 'ar' }));
+    renderRtl(woBranch(<WorkOrderQueueScreen locale="ar" messages={ar} />, { locale: 'ar' }));
     await waitFor(() => expect(listWorkOrders).toHaveBeenCalledTimes(1));
     const box = screen.getByLabelText(ar['workOrders.queue.searchLabel']);
     await user.type(box, '١٢٣');
@@ -476,9 +522,7 @@ describe('the work-order board reads on arrival and narrows honestly', () => {
       ['readyForDelivery', 'readyForDelivery'],
     ] as const) {
       await user.click(
-        screen.getByRole('button', {
-          name: new RegExp(en[`workOrders.queue.view.${view}`] as string),
-        })
+        viewChip(view)
       );
       await waitFor(() => expect(lastCall().filters).toEqual({ [flag]: true }));
     }
@@ -489,7 +533,7 @@ describe('the work-order board reads on arrival and narrows honestly', () => {
     render();
     await waitFor(() => expect(listWorkOrders).toHaveBeenCalledTimes(1));
 
-    await user.click(screen.getByRole('button', { name: en['workOrders.queue.view.openedToday'] }));
+    await user.click(viewChip('openedToday'));
     const today = dayIn(TEST_BRANCH.timezone);
     const window = rangeOfDays(TEST_BRANCH.timezone, today, today);
     await waitFor(() =>
@@ -500,22 +544,81 @@ describe('the work-order board reads on arrival and narrows honestly', () => {
     expect(lastCall().filters['openedTo']).toBe(`${today}T23:59:59.999999+03:00`);
   });
 
-  it('refuses an inverted opened range at the field and issues no read for it', async () => {
+  it('refuses an inverted opened range at the field, keeps what was typed and issues no read', async () => {
     const user = userEvent.setup();
     render();
     await waitFor(() => expect(listWorkOrders).toHaveBeenCalledTimes(1));
     const calls = listWorkOrders.mock.calls.length;
 
-    const from = screen.getByLabelText(en['workOrders.queue.openedFrom'], { exact: false });
-    const to = screen.getByLabelText(en['workOrders.queue.openedTo'], { exact: false });
-    await user.type(from, '2026-09-10');
-    await user.type(to, '2026-09-01');
-    await user.click(screen.getByRole('button', { name: en['workOrders.queue.applyOpenedRange'] }));
+    const from = await typeDay(user, en['workOrders.queue.openedFrom'] as string, '10092026');
+    const to = await typeDay(user, en['workOrders.queue.openedTo'] as string, '01092026');
+    const apply = screen.getByRole('button', { name: en['workOrders.queue.applyOpenedRange'] });
+    await user.click(apply);
 
-    expect(await screen.findByText(en['workOrders.queue.invertedRange'])).toBeInTheDocument();
+    // On the box to fix, in words, with the cursor moved into it.
     expect(to).toHaveAttribute('aria-invalid', 'true');
+    expect(from).not.toHaveAttribute('aria-invalid');
+    expect(screen.getByRole('alert')).toHaveTextContent(en['filters.period.inverted'] as string);
+    await waitFor(() => expect(to.contains(document.activeElement)).toBe(true));
+    // What was typed stays where it was typed.
+    expect(from).toHaveTextContent('2026');
+    expect(from).toHaveTextContent('10');
     await new Promise((resolve) => setTimeout(resolve, 350));
     expect(listWorkOrders.mock.calls.length).toBe(calls);
+
+    // A second press on the same mistake moves the cursor again.
+    apply.focus();
+    await user.click(apply);
+    await waitFor(() => expect(to.contains(document.activeElement)).toBe(true));
+
+    // Correcting the box withdraws the refusal, and the pair is then sent.
+    await typeDay(user, en['workOrders.queue.openedTo'] as string, '12092026');
+    await waitFor(() => expect(to).not.toHaveAttribute('aria-invalid'));
+  });
+
+  it('refuses a missing first day on the From box', async () => {
+    const user = userEvent.setup();
+    render();
+    await waitFor(() => expect(listWorkOrders).toHaveBeenCalledTimes(1));
+    await typeDay(user, en['workOrders.queue.openedTo'] as string, '01092026');
+    await user.click(screen.getByRole('button', { name: en['workOrders.queue.applyOpenedRange'] }));
+    const from = screen.getByRole('group', {
+      name: new RegExp(`^${en['workOrders.queue.openedFrom'] as string}`),
+    });
+    expect(from).toHaveAttribute('aria-invalid', 'true');
+    expect(screen.getByRole('alert')).toHaveTextContent(en['filters.period.incomplete'] as string);
+    await waitFor(() => expect(from.contains(document.activeElement)).toBe(true));
+  });
+
+  it('sends an applied range on the branch clock, to the microsecond, and Clear takes it away', async () => {
+    const user = userEvent.setup();
+    render();
+    await waitFor(() => expect(listWorkOrders).toHaveBeenCalledTimes(1));
+    const clear = () =>
+      screen.queryByRole('button', { name: en['workOrders.queue.clearOpenedRange'] });
+    // Clear is not offered while there is nothing to clear.
+    expect(clear()).toBeNull();
+
+    await typeDay(user, en['workOrders.queue.openedFrom'] as string, '01092026');
+    // Typed days are something to clear, applied or not.
+    expect(clear()).not.toBeNull();
+    await typeDay(user, en['workOrders.queue.openedTo'] as string, '03092026');
+    await user.click(screen.getByRole('button', { name: en['workOrders.queue.applyOpenedRange'] }));
+    const window = rangeOfDays(TEST_BRANCH.timezone, '2026-09-01', '2026-09-03');
+    await waitFor(() =>
+      expect(lastCall().filters).toEqual({
+        stateGroup: 'active',
+        openedFrom: window.from,
+        openedTo: window.to,
+      })
+    );
+    expect(lastCall().filters['openedTo']).toBe(
+      endOfDayBound(TEST_BRANCH.timezone, '2026-09-03')
+    );
+
+    await user.click(clear() as HTMLElement);
+    await waitFor(() => expect(lastCall().filters).toEqual({ stateGroup: 'active' }));
+    expect(clear()).toBeNull();
   });
 
   it('labels a state from the live catalogue rather than from a list in the repository', async () => {
@@ -527,7 +630,7 @@ describe('the work-order board reads on arrival and narrows honestly', () => {
     // A code the platform does not define, named by the workshop that defined
     // it. A hard-coded table would have rendered the code, or a key. Scoped to
     // the table: the same name is also an option of the filter above it.
-    const table = await screen.findByRole('table');
+    const table = await screen.findByRole('grid', { name: en['workOrders.queue.caption'] });
     expect(within(table).getByText('Waiting for the insurer')).toBeInTheDocument();
     expect(within(table).queryByText('awaiting_insurer')).toBeNull();
   });
@@ -535,9 +638,7 @@ describe('the work-order board reads on arrival and narrows honestly', () => {
   it('groups the state filter by the catalogue"s own terminal flag', async () => {
     render();
     await waitFor(() => expect(listWorkOrders).toHaveBeenCalled());
-    const select = await screen.findByLabelText(en['workOrders.queue.stateFilter'], {
-      exact: false,
-    });
+    const select = stateSelect();
     await waitFor(() => expect(within(select).getAllByRole('group').length).toBe(2));
     const groups = within(select).getAllByRole('group');
     expect(
@@ -637,7 +738,7 @@ describe('the work-order board reads on arrival and narrows honestly', () => {
 
     const catalogue = en as Record<string, string>;
     const label = (view: string) => catalogue[`workOrders.queue.view.${view}`] as string;
-    const chip = (view: string) => screen.getByRole('button', { name: new RegExp(label(view)) });
+    const chip = (view: string) => viewChip(view);
 
     expect(chip('active')).toHaveTextContent('7');
     expect(chip('readyForDelivery')).toHaveTextContent('1');
@@ -696,24 +797,30 @@ describe('the work-order board reads on arrival and narrows honestly', () => {
   it('names what can be done where the next action lands, per view', async () => {
     const user = userEvent.setup();
     render();
-    expect(await screen.findByRole('link', { name: en['workOrders.queue.open'] })).toHaveAttribute(
+    const [open] = await rowLink('workOrders.queue.open');
+    expect(open).toHaveAttribute('href', `/en/work-orders/${ROW.id}`);
+    // The number is part of the link's name, so a page of links is a page of
+    // different links to assistive technology.
+    expect(open).toHaveAccessibleName(`${en['workOrders.queue.open'] as string} WO-000123`);
+
+    await user.click(
+      viewChip('awaitingApproval')
+    );
+    expect((await rowLink('workOrders.queue.openForApproval'))[0]).toHaveAttribute(
       'href',
       `/en/work-orders/${ROW.id}`
     );
+    expect(
+      screen.queryAllByRole('link', { name: new RegExp(`^${en['workOrders.queue.open'] as string}`) })
+    ).toEqual([]);
 
     await user.click(
-      screen.getByRole('button', { name: en['workOrders.queue.view.awaitingApproval'] })
+      viewChip('readyForDelivery')
     );
-    expect(
-      await screen.findByRole('link', { name: en['workOrders.queue.openForApproval'] })
-    ).toHaveAttribute('href', `/en/work-orders/${ROW.id}`);
-
-    await user.click(
-      screen.getByRole('button', { name: en['workOrders.queue.view.readyForDelivery'] })
+    expect((await rowLink('workOrders.queue.openForDelivery'))[0]).toHaveAttribute(
+      'href',
+      `/en/work-orders/${ROW.id}`
     );
-    expect(
-      await screen.findByRole('link', { name: en['workOrders.queue.openForDelivery'] })
-    ).toHaveAttribute('href', `/en/work-orders/${ROW.id}`);
   });
 
   /*
@@ -731,7 +838,7 @@ describe('the work-order board reads on arrival and narrows honestly', () => {
     const user = userEvent.setup();
     render(true);
     await user.click(
-      screen.getByRole('button', { name: en['workOrders.queue.view.readyForDelivery'] })
+      viewChip('readyForDelivery')
     );
     expect(
       await screen.findByRole('link', { name: en['workOrders.queue.deliveryQueue'] })
@@ -742,13 +849,11 @@ describe('the work-order board reads on arrival and narrows honestly', () => {
     const user = userEvent.setup();
     render(false);
     await user.click(
-      screen.getByRole('button', { name: en['workOrders.queue.view.readyForDelivery'] })
+      viewChip('readyForDelivery')
     );
     // The view itself still works: the rows are there, and only the way through
     // to a page that would refuse them is gone.
-    expect(
-      await screen.findByRole('link', { name: en['workOrders.queue.openForDelivery'] })
-    ).toBeInTheDocument();
+    expect((await rowLink('workOrders.queue.openForDelivery'))[0]).toBeInTheDocument();
     expect(screen.queryByRole('link', { name: en['workOrders.queue.deliveryQueue'] })).toBeNull();
   });
 
@@ -759,7 +864,7 @@ describe('the work-order board reads on arrival and narrows honestly', () => {
      */
     const user = userEvent.setup();
     renderLtr(
-      inBranch(
+      woBranch(
         <>
           <BranchSwitch to={TEST_BRANCH.id} label="use main" />
           <BranchSwitch to={OTHER_BRANCH.id} label="use second" />
@@ -771,7 +876,7 @@ describe('the work-order board reads on arrival and narrows honestly', () => {
     await user.click(screen.getByRole('button', { name: 'use main' }));
     await user.type(screen.getByLabelText(en['workOrders.queue.searchLabel']), 'ABC{Enter}');
     await waitFor(() => expect(lastCall().filters).toEqual({ stateGroup: 'active', q: 'ABC' }));
-    expect(await screen.findByText('WO-000123')).toBeInTheDocument();
+    expect(await screen.findByText('WO-000123', { selector: 'code' })).toBeInTheDocument();
 
     listWorkOrders.mockResolvedValue({
       ...EMPTY_PAGE,
@@ -787,8 +892,8 @@ describe('the work-order board reads on arrival and narrows honestly', () => {
     );
     // The filter is what the operator asked for and is not about the branch.
     expect(lastCall().filters).toEqual({ stateGroup: 'active', q: 'ABC' });
-    expect(await screen.findByText('WO-000999')).toBeInTheDocument();
-    expect(screen.queryByText('WO-000123')).toBeNull();
+    expect(await screen.findByText('WO-000999', { selector: 'code' })).toBeInTheDocument();
+    expect(screen.queryByText('WO-000123', { selector: 'code' })).toBeNull();
   });
 
   it('issues NO read for the branch it just left', async () => {
@@ -809,7 +914,7 @@ describe('the work-order board reads on arrival and narrows honestly', () => {
      */
     const user = userEvent.setup();
     renderLtr(
-      inBranch(
+      woBranch(
         <>
           <BranchSwitch to={TEST_BRANCH.id} label="use main" />
           <BranchSwitch to={OTHER_BRANCH.id} label="use second" />
@@ -838,7 +943,7 @@ describe('the work-order board reads on arrival and narrows honestly', () => {
   it('asks for every branch of the company on "all my branches"', async () => {
     const user = userEvent.setup();
     renderLtr(
-      inBranch(
+      woBranch(
         <>
           <BranchSwitch to="all" label="use all" />
           <WorkOrderQueueScreen locale="en" messages={en} />
@@ -869,7 +974,7 @@ describe('the work-order board reads on arrival and narrows honestly', () => {
     readDashboardSummary.mockResolvedValue(summaryWith({}));
     const user = userEvent.setup();
     renderLtr(
-      inBranch(
+      woBranch(
         <>
           <BranchSwitch to="all" label="use all" />
           <WorkOrderQueueScreen locale="en" messages={en} />
@@ -879,8 +984,8 @@ describe('the work-order board reads on arrival and narrows honestly', () => {
     );
     await user.click(screen.getByRole('button', { name: 'use all' }));
 
-    expect(await screen.findByText('WO-000999')).toBeInTheDocument();
-    expect(screen.getByText('WO-000123')).toBeInTheDocument();
+    expect(await screen.findByText('WO-000999', { selector: 'code' })).toBeInTheDocument();
+    expect(screen.getByText('WO-000123', { selector: 'code' })).toBeInTheDocument();
     expect(screen.getByTestId('working-branch-field-all')).toHaveTextContent(
       `${en['workingContext.allBranches']} · ${TEST_COMPANY.name}`
     );
@@ -915,7 +1020,7 @@ describe('the work-order board reads on arrival and narrows honestly', () => {
     };
     const user = userEvent.setup();
     renderLtr(
-      inBranch(
+      woBranch(
         <>
           <BranchSwitch to="all" label="use all" />
           <WorkOrderQueueScreen locale="en" messages={en} />
@@ -932,11 +1037,153 @@ describe('the work-order board reads on arrival and narrows honestly', () => {
     expect(listWorkOrders).not.toHaveBeenCalled();
   });
 
+  it('says "nothing here yet" for the unfiltered All view, and offers no Clear', async () => {
+    /*
+     * The "All" view with nothing set asks for the branch as it is, so an empty
+     * answer there is a true statement about the branch — and the only view in
+     * which "no matches" would be the wrong sentence.
+     */
+    const user = userEvent.setup();
+    listWorkOrders.mockResolvedValue(EMPTY_PAGE);
+    render();
+    await screen.findByText(en['state.noResults.title'] as string);
+    await user.click(viewChip('all'));
+    await waitFor(() => expect(lastCall().filters).toEqual({}));
+    expect(await screen.findByText(en['state.empty.title'] as string)).toBeInTheDocument();
+    expect(screen.queryByText(en['state.noResults.title'] as string)).toBeNull();
+    expect(screen.queryByRole('button', { name: en['workOrders.queue.clearFilters'] })).toBeNull();
+  });
+
+  it('offers Clear on an empty narrowed answer only when there is something to clear', async () => {
+    const user = userEvent.setup();
+    listWorkOrders.mockResolvedValue(EMPTY_PAGE);
+    render();
+    // The default board, empty: nothing the operator set, so nothing to clear.
+    await screen.findByText(en['state.noResults.title'] as string);
+    expect(screen.queryByRole('button', { name: en['workOrders.queue.clearFilters'] })).toBeNull();
+
+    await user.selectOptions(
+      screen.getByRole('combobox', { name: en['workOrders.queue.kindFilter'] as string }),
+      'ordinary'
+    );
+    await user.click(viewChip('mine'));
+    await waitFor(() => expect(lastCall().filters).toEqual({ assignedToMe: true, kind: 'ordinary' }));
+    await user.click(
+      await screen.findByRole('button', { name: en['workOrders.queue.clearFilters'] })
+    );
+    // Back to the board it opens on, in one press.
+    await waitFor(() => expect(lastCall().filters).toEqual({ stateGroup: 'active' }));
+    expect(viewChip('active')).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  it('names what narrowed an empty answer: the term, or the filters', async () => {
+    const user = userEvent.setup();
+    listWorkOrders.mockResolvedValue(EMPTY_PAGE);
+    render();
+    expect(await screen.findByText(en['state.noResults.title'] as string)).toBeInTheDocument();
+    await user.type(screen.getByLabelText(en['workOrders.queue.searchLabel']), 'ZZ-99{Enter}');
+    expect(await screen.findByText(en['state.noSearchMatches.title'] as string)).toBeInTheDocument();
+  });
+
+  it('discards the figures read for a branch the operator has left, before the new ones arrive', async () => {
+    /*
+     * The figures are filed under the scope they were read for. A read for the
+     * new branch that has not answered yet must leave NO figure on screen — not
+     * the previous branch's, on the strip or on a chip.
+     */
+    readDashboardSummary.mockResolvedValue(summaryWith({}));
+    const user = userEvent.setup();
+    renderLtr(
+      woBranch(
+        <>
+          <BranchSwitch to={TEST_BRANCH.id} label="use main" />
+          <BranchSwitch to={OTHER_BRANCH.id} label="use second" />
+          <WorkOrderQueueScreen locale="en" messages={en} />
+        </>,
+        { snapshot: branchSnapshot([TEST_BRANCH, OTHER_BRANCH]) }
+      )
+    );
+    await user.click(screen.getByRole('button', { name: 'use main' }));
+    expect(await screen.findByTestId('figure-active')).toHaveTextContent('7');
+    expect(viewChip('active')).toHaveTextContent('7');
+
+    readDashboardSummary.mockReturnValue(new Promise(() => undefined));
+    await user.click(screen.getByRole('button', { name: 'use second' }));
+    await waitFor(() => expect(screen.queryByTestId('work-order-summary-strip')).toBeNull());
+    expect(viewChip('active').textContent).toBe(en['workOrders.queue.view.active']);
+  });
+
+  it('shows the branch column only while the board spans branches', async () => {
+    const user = userEvent.setup();
+    renderLtr(
+      woBranch(
+        <>
+          <BranchSwitch to={TEST_BRANCH.id} label="use main" />
+          <BranchSwitch to="all" label="use all" />
+          <WorkOrderQueueScreen locale="en" messages={en} />
+        </>,
+        { snapshot: branchSnapshot([TEST_BRANCH, OTHER_BRANCH]) }
+      )
+    );
+    await user.click(screen.getByRole('button', { name: 'use main' }));
+    const grid = await screen.findByRole('grid', { name: en['workOrders.queue.caption'] });
+    expect(
+      within(grid).queryByRole('columnheader', { name: en['workOrders.queue.column.branch'] })
+    ).toBeNull();
+
+    await user.click(screen.getByRole('button', { name: 'use all' }));
+    await waitFor(() =>
+      expect(
+        within(screen.getByRole('grid', { name: en['workOrders.queue.caption'] })).getByRole(
+          'columnheader',
+          { name: en['workOrders.queue.column.branch'] }
+        )
+      ).toBeInTheDocument()
+    );
+    // The branch by its name, never by its identifier.
+    expect(await screen.findByText(TEST_BRANCH.name)).toBeInTheDocument();
+  });
+
+  it('draws the board in Arabic, right to left, with the views and the grid named in Arabic', async () => {
+    readDashboardSummary.mockResolvedValue(summaryWith({}));
+    const { container } = renderRtl(
+      woBranch(<WorkOrderQueueScreen locale="ar" messages={ar} />, { locale: 'ar' })
+    );
+    const grid = await screen.findByRole('grid', { name: ar['workOrders.queue.caption'] });
+    expect(grid.closest('[dir="rtl"]')).not.toBeNull();
+    expect(viewChip('active', ar)).toHaveAttribute('aria-pressed', 'true');
+    // The figure is on the chip in Arabic too, and only on the four that count
+    // the same set.
+    expect(await screen.findByTestId('figure-active')).toBeInTheDocument();
+    expect(viewChip('active', ar)).toHaveTextContent('7');
+    expect(viewChip('mine', ar).textContent).toBe(ar['workOrders.queue.view.mine']);
+    expect(
+      screen.getByRole('combobox', { name: ar['workOrders.queue.stateFilter'] as string })
+    ).toBeInTheDocument();
+    expect(container.textContent ?? '').not.toContain('workOrders.');
+  });
+
   it('states an empty result as a statement about the search', async () => {
     listWorkOrders.mockResolvedValue(EMPTY_PAGE);
     const { container } = render();
     expect(await screen.findByText(en['state.noResults.title'])).toBeInTheDocument();
     expect(container.textContent ?? '').not.toContain(en['state.empty.title']);
+  });
+
+  it('renders an outage as unavailable with a retry that asks again (QA 2.6)', async () => {
+    /*
+     * Browser QA part 7, row 2.6: under a failed or 503 read the board was still
+     * "Loading" twelve seconds later with no alert and no retry.
+     */
+    const user = userEvent.setup();
+    listWorkOrders.mockResolvedValue({ ...EMPTY_PAGE, status: 'unavailable' });
+    render();
+    expect(await screen.findByText(en['state.unavailable.title'] as string)).toBeInTheDocument();
+    const calls = listWorkOrders.mock.calls.length;
+    listWorkOrders.mockResolvedValue({ ...EMPTY_PAGE, rows: [ROW] });
+    await user.click(screen.getByRole('button', { name: en['state.retry'] }));
+    expect(await screen.findByText('WO-000123', { selector: 'code' })).toBeInTheDocument();
+    expect(listWorkOrders.mock.calls.length).toBeGreaterThan(calls);
   });
 
   it('renders a denial as a denial, not as an empty board', async () => {
@@ -1041,9 +1288,21 @@ describe('the work-order board opens where the address says, or says it could no
     expect(props['initialState']).toBe('open');
   });
 
+  it('offers the delivery queue only to a session holding all three of its codes', async () => {
+    // The delivery page refuses an operator missing ANY of the three, so the
+    // route hands the board one answer computed over the whole set.
+    const all = ['wo.work_order.read', 'sal.delivery.view', 'sal.finance.view'];
+    PERMISSIONS = all;
+    expect((await routeProps({}))['canReachDelivery']).toBe(true);
+    for (const missing of ['sal.delivery.view', 'sal.finance.view']) {
+      PERMISSIONS = all.filter((code) => code !== missing);
+      expect((await routeProps({}))['canReachDelivery'], missing).toBe(false);
+    }
+  });
+
   it('sends the arriving view on the first read', async () => {
     renderLtr(
-      inBranch(<WorkOrderQueueScreen locale="en" messages={en} initialView="awaitingParts" />)
+      woBranch(<WorkOrderQueueScreen locale="en" messages={en} initialView="awaitingParts" />)
     );
     await waitFor(() => expect(listWorkOrders).toHaveBeenCalledTimes(1));
     expect(firstFilters()).toEqual({ awaitingParts: true });
@@ -1055,7 +1314,7 @@ describe('the work-order board opens where the address says, or says it could no
     // under an address that promised one state.
     readWorkOrderCatalogue.mockReturnValue(new Promise(() => undefined));
     renderLtr(
-      inBranch(<WorkOrderQueueScreen locale="en" messages={en} initialState="awaiting_insurer" />)
+      woBranch(<WorkOrderQueueScreen locale="en" messages={en} initialState="awaiting_insurer" />)
     );
     await waitFor(() => expect(readWorkOrderCatalogue).toHaveBeenCalled());
     expect(listWorkOrders).not.toHaveBeenCalled();
@@ -1063,19 +1322,17 @@ describe('the work-order board opens where the address says, or says it could no
 
   it('carries a code the catalogue names, and shows it in the picker', async () => {
     renderLtr(
-      inBranch(<WorkOrderQueueScreen locale="en" messages={en} initialState="awaiting_insurer" />)
+      woBranch(<WorkOrderQueueScreen locale="en" messages={en} initialState="awaiting_insurer" />)
     );
     await waitFor(() => expect(listWorkOrders).toHaveBeenCalledTimes(1));
     expect(firstFilters()).toEqual({ state: 'awaiting_insurer' });
-    expect(
-      (screen.getByLabelText(en['workOrders.queue.stateFilter']) as HTMLSelectElement).value
-    ).toBe('awaiting_insurer');
+    expect(stateSelect().value).toBe('awaiting_insurer');
     expect(screen.queryByTestId('work-order-queue-state-unknown')).toBeNull();
   });
 
   it('drops a well-shaped code this workshop does not keep, and says so', async () => {
     renderLtr(
-      inBranch(<WorkOrderQueueScreen locale="en" messages={en} initialState="awaiting_dealer" />)
+      woBranch(<WorkOrderQueueScreen locale="en" messages={en} initialState="awaiting_dealer" />)
     );
     await waitFor(() => expect(listWorkOrders).toHaveBeenCalledTimes(1));
 
@@ -1084,16 +1341,14 @@ describe('the work-order board opens where the address says, or says it could no
     expect(await screen.findByTestId('work-order-queue-state-unknown')).toHaveTextContent(
       en['workOrders.queue.stateNotRecognised'] as string
     );
-    expect(
-      (screen.getByLabelText(en['workOrders.queue.stateFilter']) as HTMLSelectElement).value
-    ).toBe('');
+    expect(stateSelect().value).toBe('');
   });
 
   it('moves an accepted code off the default view, which sends a group', async () => {
     // The list operation refuses a state code and a state group together, so a
     // code arriving with `view=active` opens on every state instead.
     renderLtr(
-      inBranch(
+      woBranch(
         <WorkOrderQueueScreen
           locale="en"
           messages={en}
@@ -1114,7 +1369,7 @@ describe('the work-order board opens where the address says, or says it could no
     // is true is that the list could not be loaded and the state was not applied.
     readWorkOrderCatalogue.mockResolvedValue({ status: 'unavailable', correlationId: 'c' });
     renderLtr(
-      inBranch(<WorkOrderQueueScreen locale="en" messages={en} initialState="awaiting_insurer" />)
+      woBranch(<WorkOrderQueueScreen locale="en" messages={en} initialState="awaiting_insurer" />)
     );
     await waitFor(() => expect(listWorkOrders).toHaveBeenCalledTimes(1));
     expect(firstFilters()).toEqual({});
@@ -1128,7 +1383,7 @@ describe('the work-order board opens where the address says, or says it could no
   it('says the same thing in Arabic when the catalogue could not be read', async () => {
     readWorkOrderCatalogue.mockResolvedValue({ status: 'unavailable', correlationId: 'c' });
     renderRtl(
-      inBranch(<WorkOrderQueueScreen locale="ar" messages={ar} initialState="awaiting_insurer" />, {
+      woBranch(<WorkOrderQueueScreen locale="ar" messages={ar} initialState="awaiting_insurer" />, {
         locale: 'ar',
       })
     );
@@ -1139,7 +1394,7 @@ describe('the work-order board opens where the address says, or says it could no
 
   it('addresses the read to the working branch however it arrived', async () => {
     renderLtr(
-      inBranch(<WorkOrderQueueScreen locale="en" messages={en} initialView="awaitingApproval" />)
+      woBranch(<WorkOrderQueueScreen locale="en" messages={en} initialView="awaitingApproval" />)
     );
     await waitFor(() => expect(listWorkOrders).toHaveBeenCalledTimes(1));
     const scope = (listWorkOrders.mock.calls.at(0) as [Record<string, unknown>])[0];
