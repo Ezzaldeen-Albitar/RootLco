@@ -1,7 +1,7 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { useActionState, useState } from 'react';
+import { startTransition, useActionState, useState, type FormEvent } from 'react';
 import Button from '@mui/material/Button';
 import { ReferenceListRetry } from '@/components/forms/ReferenceList';
 import { FormSelectField } from '@/components/forms/mui/FormSelectField';
@@ -57,8 +57,19 @@ import { useActionRefusal } from '@/lib/forms/use-action-refusal';
  * the first refused field and keeps what was typed; editing the field clears its
  * complaint (`useActionRefusal`). A draft that differs from the saved values is
  * unsaved work: a branch change asks first (`useUnsavedGuard`), and Discard
- * changes puts the saved values back. A save is said in words and the page is
- * re-read, so the next save carries the new version.
+ * changes puts the saved values back and withdraws every complaint, since each
+ * was about a value that is no longer there. A save is said in words and the
+ * page is re-read, so the next save carries the new version.
+ *
+ * The submission is dispatched from `onSubmit` inside a transition rather than
+ * left to the form's `action`. React resets a form whose `action` settles, and
+ * a controlled native select comes back from a reset on its FIRST option — the
+ * saved value — while the draft still holds the operator's choice, so after a
+ * refusal that names no field (a lost-update 412, a server fault, an expired
+ * session) the screen showed the saved values and a second Save sent them. A
+ * prevented submit that starts a transition is not reset, and React still ties
+ * that transition to the form, so `SubmitButton`'s `useFormStatus` stays the
+ * double-submit guard. `action` stays for a page that has not hydrated.
  */
 export function TenantForm({
   locale,
@@ -114,13 +125,22 @@ export function TenantForm({
     errorKey: refusalErrorKey,
     formRef: refusalFormRef,
   } = useActionRefusal(state);
-  const discard = () => setDraft(baseline);
+  const discard = () => {
+    setDraft(baseline);
+    // Every complaint was about a value Discard has just taken away.
+    FIELDS.forEach(refusalEdited);
+  };
   // Typed and not saved is work a branch change would throw away, so it asks
   // first; a confirmed discard puts the saved values back.
   useUnsavedGuard(canWrite && dirty, discard);
   const retain = (name: keyof TenantDraft) => (value: string) => {
     refusalEdited(name);
     setDraft((current) => ({ ...current, [name]: value }));
+  };
+  const submit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    startTransition(() => formAction(form));
   };
   const t = (key: string) => translate(messages, key as keyof Messages);
   // The refusal is said on the field it is about, not only in the banner.
@@ -173,6 +193,7 @@ export function TenantForm({
     <form
       ref={refusalFormRef}
       action={formAction}
+      onSubmit={submit}
       className="flex max-w-xl flex-col gap-4"
       noValidate
     >
@@ -190,14 +211,8 @@ export function TenantForm({
         <Fact label={t('organization.status')} value={statusLabel} />
       </dl>
 
-      {/*
-        Controlled from the draft, and remounted on each attempt: React resets a
-        form once its Server Action settles, and the remount is what makes each
-        control come back holding the operator's own value rather than the one
-        the page was rendered with.
-      */}
+      {/* Controlled from the draft, which a refused save leaves untouched. */}
       <FormTextField
-        key={`displayName-${state.attempt ?? 0}`}
         name="displayName"
         label={t('organization.displayName')}
         value={draft.displayName}
@@ -206,7 +221,6 @@ export function TenantForm({
         required
       />
       <FormSelectField
-        key={`defaultLocale-${state.attempt ?? 0}`}
         name="defaultLocale"
         label={t('organization.defaultLocale')}
         description={t(
@@ -219,7 +233,6 @@ export function TenantForm({
       />
       {referenceUnavailable ? <ReferenceListRetry label={t('form.retry')} /> : null}
       <FormSelectField
-        key={`defaultTimezone-${state.attempt ?? 0}`}
         name="defaultTimezone"
         label={t('organization.defaultTimezone')}
         description={t(

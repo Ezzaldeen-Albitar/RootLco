@@ -757,9 +757,31 @@ code is refused every settings write. The backfill's selective run is BF-18.
 **On screen.** The Workspace form is editable for a holder of the code and stays read-only, with
 its notice, for everyone else. The language and time zone selects show names. A refused save marks
 the field, says why beside it and moves the cursor there; what was typed stays; a correction clears
-the complaint. Unsaved changes are protected on a branch change and can be put back with Discard
-changes. A save says so and refreshes the saved values. The Workspace facts show the status in
-words ("Active", "نشطة"), never the stored value.
+the complaint. A save refused for a reason that names no field (a lost-update conflict, a server
+fault, a refusal or an expired session) keeps every typed value, the selects included, and the next
+Save sends them. Unsaved changes are protected on a branch change and can be put back with Discard
+changes, which also withdraws every complaint. A save says so and refreshes the saved values. The
+Workspace facts show the status in words ("Active", "نشطة"), never the stored value.
+
+Known limitations of this slice, one line each:
+
+- DEF-R3: the chart's `data-plot-height` is worked out from its props, not measured from the
+  drawing; a probe of MUI X `BarChart` with 1, 2 and 7 categories in both languages drew every bar
+  25.6 high (plot areas 32, 64 and 224), so a single category now draws.
+- Side effects of the audit above: a holder can take `SELECT … FOR UPDATE` locks on its own tenant
+  row, and can author and approve its own templates through the approval witness.
+- The tenant administrator now sees four more navigation entries (Numbering rules, Taxes,
+  Currencies, System settings) and an editable Workspace form on the Languages page; both are
+  described in the user manual and here.
+- The selective backfill for the previously authorised QA organisations is an operator act that
+  has not been performed; section 9 of the backfill document names neither organisation nor gives
+  the exact `--tenant` command, and BF-18 proves the mechanism on other organisations only.
+- The hosted clean-room job stops at `validate:p1-27-closing-values` while the run records are
+  stale, so the steps after it in that job were not observed for this slice.
+- The Workspace form's draft and saved values are not re-seeded when a refreshed tenant arrives
+  from elsewhere (another administrator's save); the form behaved the same way before this slice.
+- Other `FormSelectField` consumers that submit through a form `action` may lose a select's value
+  to React's form reset in the same way; they were not checked, being outside this slice.
 
 ## Remaining — backend prerequisites and Owner decisions only
 

@@ -1227,5 +1227,201 @@ describe.each(READERS)(
       expect(screen.queryByText(M('form.violation.unknown_reference'))).toBeNull();
       expect(control('organization.defaultTimezone')).not.toHaveAttribute('aria-invalid', 'true');
     });
+
+    /*
+     * FIX ROUND 1 of PR #475. A save refused for a reason that names no field
+     * (a lost-update 412, a server fault) left React to reset the form once the
+     * action settled; a controlled native select then fell back to its first
+     * option — the SAVED value — while the draft still held the operator's
+     * choice, so the screen lied and a second Save sent the saved values.
+     */
+    const SAVED_FIRST: ReferenceValues = {
+      ...REFERENCES,
+      timezones: [{ zoneName: 'UTC' }, { zoneName: 'Asia/Amman' }],
+      languages: [
+        { localeCode: 'en', name: 'English', direction: 'ltr' },
+        { localeCode: 'ar', name: 'Arabic', direction: 'rtl' },
+      ],
+    };
+    it.each([
+      {
+        name: 'a 412 lost-update refusal',
+        failure: {
+          ok: false,
+          kind: 'conflict',
+          status: 412,
+          problem: {
+            type: 'about:blank',
+            title: 'Precondition failed',
+            status: 412,
+            code: 'ERR-CON-002',
+            correlationId: 'corr-412',
+          },
+          correlationId: 'corr-412',
+        },
+      },
+      {
+        name: 'a 500 server fault',
+        failure: {
+          ok: false,
+          kind: 'server',
+          status: 500,
+          problem: {
+            type: 'about:blank',
+            title: 'Internal error',
+            status: 500,
+            code: 'ERR-SYS-001',
+            correlationId: 'corr-500',
+          },
+          correlationId: 'corr-500',
+        },
+      },
+    ])('keeps every typed value after $name, and a second Save sends them', async ({ failure }) => {
+      send.mockResolvedValue(failure);
+      const user = userEvent.setup();
+      paint(
+        <TenantForm
+          locale={locale}
+          messages={messages}
+          canWrite
+          tenant={WORKSPACE}
+          referenceValues={SAVED_FIRST}
+        />
+      );
+      // The saved values are each select's FIRST option, which is where a
+      // reset native select lands; any other order would hide the defect.
+      expect(optionValues(control('organization.defaultLocale'))[0]).toBe('en');
+      expect(optionValues(control('organization.defaultTimezone'))[0]).toBe('UTC');
+      await user.clear(control('organization.displayName'));
+      await user.type(control('organization.displayName'), 'Renamed');
+      await user.selectOptions(control('organization.defaultLocale'), 'ar');
+      await user.selectOptions(control('organization.defaultTimezone'), 'Asia/Amman');
+      await user.click(screen.getByRole('button', { name: M('admin.save') }));
+
+      expect(await screen.findByRole('alert')).toBeVisible();
+      await waitFor(() => expect(send).toHaveBeenCalledTimes(1));
+      expect(control('organization.displayName')).toHaveValue('Renamed');
+      expect(control('organization.defaultLocale')).toHaveValue('ar');
+      expect(control('organization.defaultTimezone')).toHaveValue('Asia/Amman');
+      expect(refresh).not.toHaveBeenCalled();
+
+      await user.click(screen.getByRole('button', { name: M('admin.save') }));
+      await waitFor(() => expect(send).toHaveBeenCalledTimes(2));
+      expect(send).toHaveBeenLastCalledWith(
+        'PATCH',
+        '/api/v1/org/tenant',
+        { displayName: 'Renamed', defaultLocale: 'ar', defaultTimezone: 'Asia/Amman' },
+        { ifMatch: 3 }
+      );
+    });
+
+    it('holds Save disabled while a save is in flight, so it cannot be sent twice', async () => {
+      let settle: (value: unknown) => void = () => undefined;
+      send.mockReturnValue(
+        new Promise((resolve) => {
+          settle = resolve;
+        })
+      );
+      const user = userEvent.setup();
+      paint(
+        <TenantForm
+          locale={locale}
+          messages={messages}
+          canWrite
+          tenant={WORKSPACE}
+          referenceValues={REFERENCES}
+        />
+      );
+      await user.selectOptions(control('organization.defaultLocale'), 'ar');
+      await user.click(screen.getByRole('button', { name: M('admin.save') }));
+
+      const pending = await screen.findByRole('button', { name: M('admin.saving') });
+      expect(pending).toBeDisabled();
+      await waitFor(() => expect(send).toHaveBeenCalledTimes(1));
+      settle({ ok: true, status: 200, data: {}, correlationId: 'corr-save' });
+      expect(await screen.findByText(M('admin.saved'))).toBeVisible();
+      expect(screen.getByRole('button', { name: M('admin.save') })).toBeEnabled();
+      expect(send).toHaveBeenCalledTimes(1);
+    });
+
+    it('withdraws every complaint when Discard changes puts the saved values back', async () => {
+      send.mockResolvedValue({
+        ok: false,
+        kind: 'validation',
+        status: 422,
+        problem: {
+          type: 'urn:rootlco:error:ERR-VAL-001',
+          title: 'Validation failed',
+          status: 422,
+          code: 'ERR-VAL-001',
+          correlationId: 'corr-tenant',
+          violations: [{ path: 'body.displayName', rule: 'unknown_reference' }],
+        },
+        correlationId: 'corr-tenant',
+      });
+      const user = userEvent.setup();
+      paint(
+        <TenantForm
+          locale={locale}
+          messages={messages}
+          canWrite
+          tenant={WORKSPACE}
+          referenceValues={REFERENCES}
+        />
+      );
+      await user.clear(control('organization.displayName'));
+      await user.type(control('organization.displayName'), 'Renamed');
+      await user.click(screen.getByRole('button', { name: M('admin.save') }));
+      expect(await screen.findByText(M('form.violation.unknown_reference'))).toBeVisible();
+      expect(control('organization.displayName')).toHaveAttribute('aria-invalid', 'true');
+
+      await user.click(screen.getByRole('button', { name: M('organization.discardChanges') }));
+
+      expect(control('organization.displayName')).toHaveValue('Tenant One');
+      expect(control('organization.displayName')).not.toHaveAttribute('aria-invalid', 'true');
+      expect(screen.queryByText(M('form.violation.unknown_reference'))).toBeNull();
+    });
+
+    it('withdraws every complaint when the shell discards the unsaved work', async () => {
+      send.mockResolvedValue({
+        ok: false,
+        kind: 'validation',
+        status: 422,
+        problem: {
+          type: 'urn:rootlco:error:ERR-VAL-001',
+          title: 'Validation failed',
+          status: 422,
+          code: 'ERR-VAL-001',
+          correlationId: 'corr-tenant',
+          violations: [{ path: 'body.defaultTimezone', rule: 'unknown_reference' }],
+        },
+        correlationId: 'corr-tenant',
+      });
+      const user = userEvent.setup();
+      paint(
+        inBranch(
+          <>
+            <TenantForm
+              locale={locale}
+              messages={messages}
+              canWrite
+              tenant={WORKSPACE}
+              referenceValues={REFERENCES}
+            />
+            <UnsavedProbe />
+          </>,
+          { locale }
+        )
+      );
+      await user.selectOptions(control('organization.defaultTimezone'), 'Asia/Amman');
+      await user.click(screen.getByRole('button', { name: M('admin.save') }));
+      expect(await screen.findByText(M('form.violation.unknown_reference'))).toBeVisible();
+
+      await user.click(screen.getByRole('button', { name: 'probe discard' }));
+
+      await waitFor(() => expect(control('organization.defaultTimezone')).toHaveValue('UTC'));
+      expect(control('organization.defaultTimezone')).not.toHaveAttribute('aria-invalid', 'true');
+      expect(screen.queryByText(M('form.violation.unknown_reference'))).toBeNull();
+    });
   }
 );
