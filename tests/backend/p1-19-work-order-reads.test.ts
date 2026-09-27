@@ -61,6 +61,7 @@ import {
   createWorkOrder,
   establishP1_19Fixtures,
   establishTechnicianFixtures,
+  seedAuthorizedVisit,
 } from './p1-19-helpers';
 import { __setPrimaryPoolForTests } from '@/server/db/pool';
 import { __resetAuthenticatorForTests } from '@/server/context/principal';
@@ -312,6 +313,62 @@ describe('wo.work-order-list', () => {
     const ids = (await page(own)).items.map((item) => item.id);
     expect(ids).toContain(inB.workOrderId);
     expect(ids).not.toContain(inA.workOrderId);
+  });
+
+  it('holds the end-of-day bound to the microsecond: .999500 is in the day, the next midnight is not', async () => {
+    /*
+     * The web sends the last instant of a branch's day to the microsecond
+     * (`lib/branch-time.ts#endOfDayBound`, `…T23:59:59.999999±HH:MM`) because
+     * this board compares `opened_at <= openedTo`, closed, and PostgreSQL keeps
+     * `timestamptz` to the microsecond. The route used to parse the bound into a
+     * `Date`, which keeps milliseconds, so the bound reached SQL as `.999` and
+     * the order opened at `.999500` below was left off its own day.
+     *
+     * `opened_at` is frozen by `tg_work_orders_immutable` and defaults to
+     * `now()`, so the two orders are INSERTed with a chosen instant against a
+     * real authorized visit — the same preconditions `wo.guard_work_order_refs`
+     * checks on insert, as `p1-31-report-engine-work-orders` does. The day is in
+     * the future so no other fixture of this branch falls inside it.
+     */
+    const openedAt = async (instant: string): Promise<string> => {
+      const visit = await seedAuthorizedVisit();
+      const inserted = await admin.query<{ id: string }>(
+        `INSERT INTO wo.work_orders
+           (tenant_id, company_id, branch_id, reception_visit_id, vehicle_id, opened_at, created_by)
+         VALUES ($1,$2,$3,$4,$5,$6::timestamptz,$7) RETURNING id`,
+        [TENANT_A, COMPANY_A1, BRANCH_A1, visit.visitId, visit.vehicleId, instant, USER_A]
+      );
+      return inserted.rows[0]?.id ?? '';
+    };
+    const lastMoments = await openedAt('2031-03-14T23:59:59.999500+03:00');
+    const nextMidnight = await openedAt('2031-03-15T00:00:00.000000+03:00');
+
+    authAs(READER);
+    const day = await board({
+      openedFrom: '2031-03-14T00:00:00.000000+03:00',
+      openedTo: '2031-03-14T23:59:59.999999+03:00',
+    });
+    expect(day.status).toBe(200);
+    const ids = (await page(day)).items.map((item) => item.id);
+    expect(ids, 'an order opened in the last millisecond of the day fell outside it').toContain(
+      lastMoments
+    );
+    expect(ids, 'the first instant of the next day was counted in this one').not.toContain(
+      nextMidnight
+    );
+
+    // And the next day holds the midnight order and not the other, so the two
+    // assertions above are about the bound rather than about rows that are
+    // invisible to this reader.
+    authAs(READER);
+    const next = await page(
+      await board({
+        openedFrom: '2031-03-15T00:00:00.000000+03:00',
+        openedTo: '2031-03-15T23:59:59.999999+03:00',
+      })
+    );
+    expect(next.items.map((item) => item.id)).toContain(nextMidnight);
+    expect(next.items.map((item) => item.id)).not.toContain(lastMoments);
   });
 
   it('refuses a missing scope, an unknown parameter, a bad cursor and a timezone-less date', async () => {

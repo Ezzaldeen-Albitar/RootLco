@@ -189,13 +189,9 @@ export function offsetMinutesAt(zone: string, instant: Date): number {
  * hence a string built from the wall clock, not `toISOString()`.
  *
  * The routes validate these parameters with `z.string().datetime({ offset:
- * true })`, which accepts any number of fractional digits. The reception and
- * appointment routes hand the string to the database as it came, so the bound
- * holds to the microsecond there. The work-order route parses `openedTo` and
- * `completedTo` into a `Date` before querying, which keeps milliseconds only:
- * on that board the last 999 microseconds of a day are still outside the
- * bound. That is a limitation of the route, recorded here rather than papered
- * over on this side.
+ * true })`, which accepts any number of fractional digits. The reception,
+ * appointment and work-order routes hand the string to the database as it
+ * came, so the bound holds to the microsecond on every board.
  */
 export function endOfDayBound(zone: string, day: CalendarDay): string {
   const last = endOfDay(zone, day);
