@@ -299,9 +299,13 @@ describe('the currency and time zone are chosen, never typed', () => {
     const user = userEvent.setup();
     renderStructure({ currencyChoices: [], referenceValues: null });
     await user.click(screen.getByRole('button', { name: EN('organization.company.add') }));
-    const currency = within(screen.getByRole('dialog')).getByLabelText(/^Base currency/);
+    const dialog = screen.getByRole('dialog');
+    const currency = within(dialog).getByLabelText(/^Base currency/);
     expect(currency.tagName).toBe('SELECT');
     expect(optionValues(currency)).toEqual(['']);
+    // The empty choice is explained, so the operator is not left guessing.
+    expect(within(dialog).getByText(EN('organization.company.currencyUnavailable'))).toBeVisible();
+    expect(within(dialog).queryByText(EN('organization.company.currencyHint'))).toBeNull();
   });
 
   it('offers the platform time zones for a branch, and the zones in use without them', async () => {
@@ -364,6 +368,29 @@ describe('the tenant form offers its language and time zone as selects', () => {
     expect(
       optionValues(screen.getByLabelText(new RegExp(`^${EN('organization.defaultTimezone')}`)))
     ).toEqual(['UTC', 'Asia/Amman']);
+  });
+
+  it('keeps a saved value the list does not hold as the selected choice', () => {
+    renderLtr(
+      <TenantForm
+        messages={en}
+        canWrite
+        tenant={{ ...TENANT, defaultTimezone: 'Europe/London' }}
+        referenceValues={REFERENCES}
+      />
+    );
+    const zone = screen.getByLabelText(new RegExp(`^${EN('organization.defaultTimezone')}`));
+    expect(optionValues(zone)).toEqual(['Europe/London', 'Asia/Amman', 'UTC']);
+    expect((zone as HTMLSelectElement).value).toBe('Europe/London');
+  });
+
+  it('offers only the saved zone when neither the list nor the zones in use are given', () => {
+    // The Languages screen passes no zones in use; without the list the saved
+    // zone is still offered and selected, so an untouched form submits it.
+    renderLtr(<TenantForm messages={en} canWrite tenant={TENANT} referenceValues={null} />);
+    const zone = screen.getByLabelText(new RegExp(`^${EN('organization.defaultTimezone')}`));
+    expect(optionValues(zone)).toEqual(['UTC']);
+    expect((zone as HTMLSelectElement).value).toBe('UTC');
   });
 });
 

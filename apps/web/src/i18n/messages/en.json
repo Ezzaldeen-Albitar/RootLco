@@ -3393,6 +3393,7 @@
   "organization.company.confirmDeactivate": "Deactivate this company?",
   "organization.company.created": "The company was added.",
   "organization.company.currencyHint": "Choose from the currencies the platform supports.",
+  "organization.company.currencyUnavailable": "No currency is available to choose from, so a company cannot be added yet. Reload the page to try again.",
   "organization.company.description": "The legal companies in your organisation.",
   "organization.company.duplicateCode": "A company with this code already exists in your organisation.",
   "organization.company.emptyBody": "Add a company to start adding branches to it.",

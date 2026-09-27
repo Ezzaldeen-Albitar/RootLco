@@ -110,10 +110,14 @@ export function OrganizationStructure({
   const timezoneOptions = referenceValues
     ? referenceValues.timezones.map((zone) => zone.zoneName)
     : timezoneChoices;
+  // With neither source holding a currency the select has nothing to offer, and
+  // the dialog says so rather than presenting an empty required choice.
   const currencyHint =
     currencyChoices.length > 0
       ? 'organization.company.baseCurrencyHint'
-      : 'organization.company.currencyHint';
+      : currencyOptions.length > 0
+        ? 'organization.company.currencyHint'
+        : 'organization.company.currencyUnavailable';
   const companyName = new Map(companyRows.map((company) => [company.id, company.legalName]));
 
   const confirmStatus = (reason: string) => {

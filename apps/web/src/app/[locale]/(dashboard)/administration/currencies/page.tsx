@@ -37,7 +37,7 @@ export default async function CurrenciesPage({
       navLabelKey="nav.currencies"
       keyPrefix={CURRENCY_PREFIX}
       suggestions={CURRENCY_KEYS}
-      noticeKeys={['admin.contractGap.noCatalogue', 'currencies.noRates']}
+      noticeKeys={['currencies.noRates']}
     />
   );
 }

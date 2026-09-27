@@ -555,6 +555,8 @@ const EmployeesPage = (await import('@/app/[locale]/(dashboard)/administration/e
 const UserAccessPage = (
   await import('@/app/[locale]/(dashboard)/administration/users/[userId]/page')
 ).default as unknown as AnyPage;
+const LanguagesPage = (await import('@/app/[locale]/(dashboard)/administration/languages/page'))
+  .default as unknown as AnyPage;
 
 /**
  * Walks an element tree for the first node whose props carry `marker`. A render
@@ -616,6 +618,16 @@ describe('the organisation page reads the reference choices only with the code t
     );
     expect(readReferenceValues).toHaveBeenCalledTimes(1);
     expect(props).not.toBeNull();
+  });
+
+  it('the languages page reads them only with org.tenant.read, and once with it', async () => {
+    readReferenceValues.mockReset();
+    readReferenceValues.mockResolvedValue(null);
+    await screenProps(LanguagesPage, {}, [ADMIN.settingsManage], 'referenceValues');
+    expect(readReferenceValues).not.toHaveBeenCalled();
+
+    await screenProps(LanguagesPage, {}, [ADMIN.tenantRead], 'referenceValues');
+    expect(readReferenceValues).toHaveBeenCalledTimes(1);
   });
 });
 

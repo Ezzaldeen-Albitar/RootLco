@@ -764,9 +764,7 @@ the settings-management permission. **Where** Sidebar → **Administration** →
    service renders on your behalf."_ <!-- languages.defaultHint --> **Result** New accounts start in
    the language you set here. Each person can still switch their own language from the header at any
    time — see Part 1. **Restrictions** _"Arabic and English are both served by this application and
-   cannot be removed here."_ <!-- languages.required --> Standing notice: _"The platform reference
-   list behind this screen is not published by the service in this release."_ <!-- admin.contractGap.noCatalogue -->
-   **If it goes wrong** If the value is not one the platform has registered, the save is refused
+   cannot be removed here."_ <!-- languages.required --> **If it goes wrong** If the value is not one the platform has registered, the save is refused
    with _"That language or time zone is not registered on the platform."_ <!-- organization.error.unknownReference -->
    **Screenshot** no screenshot available at this version.
 

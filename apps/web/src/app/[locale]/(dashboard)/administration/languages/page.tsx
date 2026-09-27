@@ -65,10 +65,7 @@ export default async function LanguagesPage({
       />
       <PageBody>
         <div className="flex flex-col gap-6">
-          <ContractNotice
-            messages={messages}
-            bodyKeys={['admin.contractGap.noCatalogue', 'languages.required']}
-          />
+          <ContractNotice messages={messages} bodyKeys={['languages.required']} />
 
           <Panel title={t('languages.available')}>
             <dl className="grid gap-4 sm:grid-cols-2">

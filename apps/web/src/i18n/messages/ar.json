@@ -3393,6 +3393,7 @@
   "organization.company.confirmDeactivate": "إيقاف هذه الشركة؟",
   "organization.company.created": "أُضيفت الشركة.",
   "organization.company.currencyHint": "اختر من العملات التي تدعمها المنصّة.",
+  "organization.company.currencyUnavailable": "لا توجد عملة متاحة للاختيار، لذا لا يمكن إضافة شركة بعد. أعد تحميل الصفحة للمحاولة مرة أخرى.",
   "organization.company.description": "الشركات القانونية في مؤسستك.",
   "organization.company.duplicateCode": "توجد شركة بهذا الرمز في مؤسستك.",
   "organization.company.emptyBody": "أضف شركة لتبدأ بإضافة فروع إليها.",

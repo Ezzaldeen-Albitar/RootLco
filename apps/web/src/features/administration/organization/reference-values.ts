@@ -14,7 +14,8 @@ import type { ReferenceValues } from './types';
  * `api.ts` beside this file carries the directive, and a read exported from it
  * would become a browser-callable endpoint, reachable without the page gate
  * that decides whether it is made. This module is imported only by the
- * organisation page, a Server Component, and `authorizedClient()` reads the
+ * organisation and languages pages, both Server Components, and
+ * `authorizedClient()` reads the
  * `httpOnly` session cookie through `next/headers`, which does not exist in a
  * client bundle.
  *
