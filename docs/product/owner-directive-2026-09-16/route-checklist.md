@@ -759,12 +759,24 @@ its notice, for everyone else. The language and time zone selects show names. A 
 the field, says why beside it and moves the cursor there; what was typed stays; a correction clears
 the complaint. A save refused for a reason that names no field (a lost-update conflict, a server
 fault, a refusal or an expired session) keeps every typed value, the selects included, and the next
-Save sends them. Unsaved changes are protected on a branch change and can be put back with Discard
-changes, which also withdraws every complaint. A save says so and refreshes the saved values. The
+Save sends them. Unsaved changes are protected on a branch change and when the page is left (a link
+or menu entry, back or forward, a reload or a closed tab; see "Leaving the page with unsaved work"
+below), and can be put back with Discard changes, which also withdraws every complaint. A blank or
+whitespace-only display name is refused on its field and nothing is saved (DEF-S2a, settings QA at
+d17e7df1); before, the zone beside it was saved and the form said "Saved.". A save says so and refreshes the saved values. The
 Workspace facts show the status in words ("Active", "نشطة"), never the stored value.
 
 Known limitations of this slice, one line each:
 
+- OBS-S4 (settings QA at d17e7df1), fixed: in Arabic the category names of the horizontal bar
+  charts were drawn over the bars' ends, because the chart library mirrored the labels' anchor a
+  second time from the right-to-left theme inside a left-to-right drawing; the anchor is now named
+  physically (`axisTickStyle` in `ChartPanel.tsx`) for every side axis, and the drawn labels are
+  tested in both languages.
+- Open, not fixed here: the Organisation page still reads company settings for a reader whose
+  `org.company.read` comes only from a branch-scoped grant (the counter clerk, two refused reads
+  per load). The session publishes the permission codes and the scope separately, so the web cannot
+  tell a company-wide holder from a branch-scoped one; skipping the read needs a decision.
 - DEF-R3: the chart's `data-plot-height` is worked out from its props, not measured from the
   drawing; a probe of MUI X `BarChart` with 1, 2 and 7 categories in both languages drew every bar
   25.6 high (plot areas 32, 64 and 224), so a single category now draws.
@@ -951,6 +963,40 @@ departments and employees (`departments-employees.dom.test.tsx`); quality (`qual
 customer creation asked nothing (`crm-customer-create.dom.test.tsx`); and the provider's own
 contract (`shell.dom.test.tsx`). The inventory stock screens, services and warranty are covered by
 their existing "discarding switches the branch and opens the form empty" cases.
+
+### Leaving the page with unsaved work (DEF-S2b, settings QA at d17e7df1)
+
+Browser QA typed a new time zone on the Organisation page, clicked "Customers" in the side menu and
+lost the draft without a question: the only question was the branch switch's, and that page has no
+branch control. The same `useUnsavedGuard` declarations now protect the page itself, through ONE
+mechanism mounted by the working-context provider for the whole workspace
+(`features/working-context/components/UnsavedNavigationGuard.tsx`), so every owner in the table
+above is covered without a change of its own:
+
+- a left click with no modifier on a same-origin link or menu entry that leads to another page is
+  stopped before the router sees it, and the shared `ConfirmDialog` asks "Leave without saving?"
+  with "Stay on this page" and "Leave and discard changes" (English and Arabic, right to left);
+- back and forward ask the same question; "Stay" puts this page's address back;
+- a reload, a closed tab or a typed address gets the browser's own question, registered only while
+  something is unsaved;
+- "Leave" calls every dirty owner's `onDiscard` before the navigation, and nothing is sent; "Stay"
+  keeps every typed value and returns the cursor to the control it was in;
+- nothing is asked with nothing unsaved, or after a save (each owner lowers its declaration when
+  its work is stored).
+
+Residual limits, one line each:
+
+- a navigation the application makes by itself (`router.push` after a save, a row opened by a click
+  handler on the appointment calendar or the vehicle search) passes through no link and is not
+  asked about;
+- a click with Ctrl, Cmd, Shift or Alt, a middle click, a link opening another tab, a download and a
+  link to a place on the same page are not intercepted, because none of them takes the page away;
+- the browser's own reload/close question uses the browser's wording, which a page cannot change;
+- the Platform Owner Console renders no working-context provider and declares no unsaved work, so
+  it has no such question.
+
+Tests: `unsaved-navigation.dom.test.tsx` (link, Stay, Leave with discard, clean page, after a save,
+the clicks left alone, back and forward, reload and close, in English and Arabic).
 
 ## Known limitations
 
