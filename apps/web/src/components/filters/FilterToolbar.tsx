@@ -88,7 +88,8 @@ import {
  * Presets are pressed buttons; "Choose dates" opens two MIT date pickers — two,
  * never the commercial range picker — on the BRANCH's clock (`zone`). Nothing
  * is asked for until the two days are applied, and until then the toolbar says
- * that the list still shows the previous period. A chosen pair is checked
+ * that the list still shows the previous period (a screen of figures rather
+ * than a list passes its own words, `notApplied`). A chosen pair is checked
  * first — both days, the last not before the first, no longer than the
  * operation accepts (`maxDays`) — and a refusal is a field error on the box to
  * fix, with the cursor moved into that box (`useFocusFirstInvalid`), each
@@ -187,6 +188,13 @@ interface ToolbarPeriodBase {
   readonly resetKey?: number | undefined;
   /** Told whether the open date boxes hold typed days, whenever that changes. */
   readonly onTypedDaysChange?: ((typed: boolean) => void) | undefined;
+  /**
+   * What the not-applied line says, for a screen that shows something other
+   * than a list — the dashboard's figures. `preset` carries `{period}`, the
+   * preset still in force; `custom` is said while an applied pair is edited.
+   * Unset, the line speaks of "the list".
+   */
+  readonly notApplied?: { readonly preset: string; readonly custom: string } | undefined;
 }
 
 /** A period sent to the dashboard summary: a preset's name, or two calendar days. */
@@ -532,10 +540,12 @@ export function FilterToolbar({
           {notApplied ? (
             <p role="status" className="text-supporting text-warning">
               {period.value.kind === 'custom'
-                ? translate(messages, 'filters.period.notAppliedCustom')
-                : formatMessage(translate(messages, 'filters.period.notApplied'), {
-                    period: periodLabel(messages, period.value.kind),
-                  })}
+                ? (period.notApplied?.custom ??
+                  translate(messages, 'filters.period.notAppliedCustom'))
+                : formatMessage(
+                    period.notApplied?.preset ?? translate(messages, 'filters.period.notApplied'),
+                    { period: periodLabel(messages, period.value.kind) }
+                  )}
             </p>
           ) : null}
         </div>

@@ -1217,3 +1217,55 @@ describe('period arithmetic', () => {
     expect(checkCustomPeriod('2026-09-01', '2026-09-01', 92)).toBeNull();
   });
 });
+
+describe('what the dashboard adds (the dashboard slice)', () => {
+  /** A dashboard period whose not-applied line speaks of figures, not of a list. */
+  function FiguresHost({ onPeriod }: { readonly onPeriod: (selection: PeriodSelection) => void }) {
+    const [value, setValue] = useState<PeriodSelection>(TODAY_PERIOD);
+    return (
+      <FilterToolbar
+        messages={en}
+        label="Period"
+        period={{
+          format: 'dashboard',
+          presets: DASHBOARD_PRESETS,
+          value,
+          zone: 'Asia/Amman',
+          maxDays: 92,
+          onChange: (selection) => {
+            onPeriod(selection);
+            setValue(selection);
+          },
+          notApplied: {
+            preset: en['dashboard.period.notApplied'],
+            custom: en['dashboard.period.notAppliedCustom'],
+          },
+        }}
+      />
+    );
+  }
+
+  it('says the FIGURES still cover the period in force, in the words the screen gives', async () => {
+    const user = userEvent.setup();
+    const onPeriod = vi.fn();
+    mount(<FiguresHost onPeriod={onPeriod} />);
+    await user.click(screen.getByRole('button', { name: 'Choose dates' }));
+    expect(screen.getByRole('status')).toHaveTextContent(
+      'The figures still cover Today. Choose two dates and press Use these dates.'
+    );
+    expect(screen.getByRole('status')).not.toHaveTextContent('The list');
+
+    await typeDay(user, 'From', '22092026');
+    await typeDay(user, 'To', '23092026');
+    await user.click(screen.getByRole('button', { name: 'Use these dates' }));
+    expect(onPeriod).toHaveBeenLastCalledWith({
+      kind: 'custom',
+      from: '2026-09-22',
+      to: '2026-09-23',
+    });
+    expect(screen.queryByRole('status')).toBeNull();
+
+    await typeDay(user, 'To', '25092026');
+    expect(screen.getByRole('status')).toHaveTextContent(en['dashboard.period.notAppliedCustom']);
+  });
+});
