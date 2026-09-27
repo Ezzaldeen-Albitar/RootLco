@@ -12,6 +12,7 @@ import {
   CHART_LABEL_FONT_SIZE,
   CHART_LABEL_TEXT_WIDTH,
   ChartPanel,
+  axisTickStyle,
   barChartProps,
   countGutter,
   horizontalBarHeight,
@@ -880,6 +881,115 @@ describe('a horizontal bar chart draws one category as well as many (DEF-R3)', (
   it('records no plot height for a chart that is not a horizontal bar chart', () => {
     panel({ layout: 'vertical' });
     expect(screen.getByTestId('chart-drawing')).not.toHaveAttribute('data-plot-height');
+  });
+});
+
+/*
+ * OBS-S4 (settings QA at d17e7df1): in Arabic the category names of the
+ * dashboard's horizontal bar charts were drawn over the bars' ends. The drawing
+ * is laid out left to right, and the chart library swapped the labels' anchor a
+ * second time from the right-to-left theme, so a right-hand label ended at its
+ * axis and ran back across the bars. The anchor is now physical.
+ *
+ * These cases DRAW the chart rather than read its props: the defect lived in
+ * what the library did with the props, so only the drawn text can show it.
+ * jsdom measures nothing, so the one measurement the chart makes — its own
+ * width — is answered, and nothing else is faked.
+ */
+describe('category labels sit in their own column, beside the bars (OBS-S4)', () => {
+  const DRAWING_WIDTH = 800;
+
+  function drawnAt(locale: Locale) {
+    const real = window.getComputedStyle.bind(window);
+    const spy = vi.spyOn(window, 'getComputedStyle').mockImplementation((element, pseudo) => {
+      const style = real(element, pseudo);
+      if (
+        !(element instanceof HTMLElement) ||
+        !element.className.includes('MuiChartsSurface-root')
+      ) {
+        return style;
+      }
+      return new Proxy(style, {
+        get: (target, key) =>
+          key === 'width' ? `${DRAWING_WIDTH}px` : (Reflect.get(target, key) as unknown),
+      });
+    });
+    try {
+      panel(
+        {
+          categories: [
+            { key: 'first', label: 'First technician' },
+            { key: 'second', label: 'الفني الثاني' },
+          ],
+          series: [{ id: 'jobs', label: 'Jobs', data: [3, 5], tone: 'primary' }],
+        },
+        locale
+      );
+    } finally {
+      spy.mockRestore();
+    }
+    const drawing = screen.getByTestId('chart-drawing');
+    const axis = drawing.querySelector('.MuiChartsAxis-directionY');
+    const labels = Array.from(axis?.querySelectorAll('text') ?? []);
+    const axisX = Number(
+      /translate\(\s*(-?[\d.]+)/.exec(axis?.getAttribute('transform') ?? '')?.[1]
+    );
+    return { drawing, labels, axisX };
+  }
+
+  it('in Arabic, stands the labels right of the bars, each starting at the axis and running away from them', () => {
+    const { drawing, labels, axisX } = drawnAt('ar');
+    expect(drawing).toHaveAttribute('data-label-side', 'right');
+    expect(labels.map((label) => label.textContent)).toEqual(['First technician', 'الفني الثاني']);
+    // The axis is the column's inner edge: the drawing's width less the column.
+    expect(axisX).toBe(DRAWING_WIDTH - CHART_LABEL_COLUMN);
+    for (const label of labels) {
+      expect(label).toHaveAttribute('text-anchor', 'start');
+      expect(Number(label.getAttribute('x'))).toBeGreaterThan(0);
+      expect(label.getAttribute('style')).toMatch(/direction: ltr/);
+      expect(label.getAttribute('style')).toMatch(/unicode-bidi: plaintext/);
+    }
+  });
+
+  it('in English, stands them left of the bars, each ending at the axis', () => {
+    const { drawing, labels, axisX } = drawnAt('en');
+    expect(drawing).toHaveAttribute('data-label-side', 'left');
+    expect(axisX).toBe(CHART_LABEL_COLUMN);
+    expect(labels).toHaveLength(2);
+    for (const label of labels) {
+      expect(label).toHaveAttribute('text-anchor', 'end');
+      expect(Number(label.getAttribute('x'))).toBeLessThan(0);
+    }
+  });
+
+  it('names the anchor physically for every axis it stands on a side, in both directions', () => {
+    expect(axisTickStyle('right')).toMatchObject({ textAnchor: 'start', direction: 'ltr' });
+    expect(axisTickStyle('left')).toMatchObject({ textAnchor: 'end', direction: 'ltr' });
+    for (const config of [
+      barChartProps({
+        layout: 'vertical',
+        categories: STATES,
+        series: COUNTS,
+        locale: 'ar',
+        skipAnimation: true,
+        hatchUrl: 'url(#hatch)',
+      }),
+      lineChartProps({
+        categories: STATES,
+        series: COUNTS,
+        locale: 'ar',
+        skipAnimation: true,
+        hatchUrl: 'url(#hatch)',
+      }),
+    ]) {
+      const scale = config.yAxis?.[0] as { tickLabelStyle?: unknown };
+      expect(scale.tickLabelStyle).toEqual(axisTickStyle('right'));
+    }
+  });
+
+  it('records no label side for a pie', () => {
+    panel({ kind: 'pie' });
+    expect(screen.getByTestId('chart-drawing')).not.toHaveAttribute('data-label-side');
   });
 });
 
