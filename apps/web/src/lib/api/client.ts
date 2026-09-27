@@ -519,9 +519,9 @@ export class ApiClient {
       }
       return { ok: true, status: response.status, data: payload as T, correlationId: echoed };
     } catch (error) {
-      // An abort is either the caller cancelling or our own timeout firing.
-      // They are different outcomes: one is expected and silent, the other is a
-      // condition worth showing.
+      // A caller whose signal is aborted CANCELLED, whatever the fetch threw: a
+      // Route Handler's signal aborts with the framework's own reason, not an
+      // AbortError, and a superseded read was logged at `error` as `network`.
       // Three distinguishable outcomes, and the distinction matters: a user
       // pressing Cancel must not be reported as a backend timeout, which would
       // put a service-unavailable state on screen for something that did not
@@ -531,7 +531,7 @@ export class ApiClient {
       const isTimeout =
         timedOutHere || (error instanceof DOMException && error.name === 'TimeoutError');
       const isAbort = error instanceof DOMException && error.name === 'AbortError';
-      const kind = isTimeout ? 'timeout' : isAbort ? 'cancelled' : 'network';
+      const kind = isTimeout ? 'timeout' : isAbort || signal?.aborted ? 'cancelled' : 'network';
       const failure: ApiFailure = {
         ok: false,
         kind,
@@ -832,10 +832,32 @@ export const CONCURRENT_CHANGE_CODE = 'ERR-CON-001';
  */
 export function failureMessageKey(failure: ApiFailure): string {
   if (failure.kind !== 'conflict') return FAILURE_MESSAGE_KEY[failure.kind];
-  return failure.problem?.code === CONCURRENT_CHANGE_CODE
-    ? 'state.conflict.title'
-    : 'state.conflict.blocked.title';
+  if (failure.problem?.code === CONCURRENT_CHANGE_CODE) return 'state.conflict.title';
+  // Every other 409, `ERR-TRN-001` included (see `STATE_TRANSITION_CODE` below).
+  return 'state.conflict.blocked.title';
 }
+
+/**
+ * The catalog code for "Transition not permitted from the current state" (409).
+ *
+ * The code alone does NOT establish that the record moved on. The backend also
+ * answers `ERR-TRN-001` for a broken bound or invariant: an allocation larger
+ * than the receipt's remainder or the invoice's open balance
+ * (`payment-service.ts`), a billing invariant or a numeric overflow
+ * (`invoice-service.ts`), a reservation the stock ledger refuses. Telling that
+ * operator to refresh would point at a fix that does nothing, so
+ * `failureMessageKey` keeps the blocked sentence for it.
+ *
+ * Only an adapter whose operation uses the code for nothing but a stage refusal
+ * opts in, through `fromStateRefusal` in `lib/forms/action-result.ts`, to the
+ * sentence that says the step is no longer possible and to refresh (Browser QA
+ * part 7, row 1.4b). A refusal that names its precondition still reaches the
+ * form through `violations` first, which is more specific than either.
+ *
+ * Declared below the function that reads it so that no line above moves under
+ * the P1-27 citation anchors.
+ */
+export const STATE_TRANSITION_CODE = 'ERR-TRN-001';
 
 // --- subscription capacity refusals -------------------------------------------
 

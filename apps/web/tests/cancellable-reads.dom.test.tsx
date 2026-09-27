@@ -1,6 +1,10 @@
 import { act, renderHook, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { UiFoundationProvider } from '@/components/ui-foundation/UiFoundationProvider';
+import { muiTextOf } from '@/components/ui-foundation/mui-text';
+import { getMessages } from '@/i18n/get-messages';
+import ar from '../src/i18n/messages/ar.json';
 import en from '../src/i18n/messages/en.json';
 import {
   BranchSwitch,
@@ -10,7 +14,21 @@ import {
   branchSnapshot,
   inBranch,
   renderLtr,
+  renderRtl,
 } from './render';
+
+/*
+ * The work-order board reads its state catalogue through a Server Action; only
+ * that is stood in for. Its board read and its figures still go through the
+ * real `browserRead` to the stubbed network below.
+ */
+vi.mock('@/features/work-orders/api', () => ({
+  readWorkOrderCatalogue: vi.fn(async () => ({
+    status: 'ok',
+    data: { workOrderStates: [] },
+    correlationId: null,
+  })),
+}));
 
 /**
  * Cancellable reads, from the screen's side (P1-32-PRE-OD-READ).
@@ -114,6 +132,8 @@ function page(rows: readonly unknown[]) {
 
 const { ReceptionQueueScreen } =
   await import('@/features/receptions/components/ReceptionQueueScreen');
+const { WorkOrderQueueScreen } =
+  await import('@/features/work-orders/components/WorkOrderQueueScreen');
 const { DashboardScreen } = await import('@/features/overview/components/DashboardScreen');
 const { useSearchRequest, CLIENT_READ_TIMEOUT_MS } = await import('@/lib/api/use-search-request');
 const { useServerTable } = await import('@/components/data-table/use-server-table');
@@ -395,4 +415,183 @@ describe('a slow or failing network still ends in a state with a way on', () => 
     expect(result.current.phase).toBe('unavailable');
     expect(slow.signal.aborted).toBe(true);
   });
+});
+
+/*
+ * Checkpoint browser QA: clicking Yesterday on the reception board after the
+ * branch was chosen sent today's window AGAIN before yesterday's. A branch
+ * choice is a submission, and leaving a submission re-read the criteria being
+ * left while the new ones settled. One choice is one read.
+ */
+describe('the reception board, on a period choice after a branch switch', () => {
+  it('sends exactly one read — yesterday’s — and never today’s window again', async () => {
+    stubNetwork();
+    const user = userEvent.setup();
+    renderBoard();
+
+    await user.click(screen.getByRole('button', { name: 'use main' }));
+    await waitFor(() => expect(latest().body.branchId).toBe(TEST_BRANCH.id));
+    latest().answer(json(page([receptionRow()])));
+    expect(await screen.findByText('R-0001', { selector: 'code' })).toBeVisible();
+    const today = latest().body;
+    const before = sent.length;
+
+    await user.click(
+      screen.getByRole('button', { name: EN['filters.period.yesterday'] as string })
+    );
+    await waitFor(() => expect(sent.length).toBe(before + 1));
+    // Past the pause, and nothing more goes out.
+    await new Promise((resolve) => setTimeout(resolve, 450));
+    expect(sent.length).toBe(before + 1);
+    const yesterday = latest().body;
+    expect(yesterday.branchId).toBe(TEST_BRANCH.id);
+    expect(yesterday).not.toEqual(today);
+  });
+});
+
+/*
+ * Checkpoint browser QA: a search on the work-order board drew 429s in pairs
+ * 50 ms apart. The term settled and was read, and Enter then asked for the
+ * same term again. Enter on a read still in flight sends nothing; once it has
+ * settled Enter asks again, as the retry after a failure and as the refresh
+ * after an answer.
+ */
+describe('a board search asks once per term, Enter included', () => {
+  async function typedAndSettled(user: ReturnType<typeof userEvent.setup>) {
+    renderLtr(inBranch(<ReceptionQueueScreen locale="en" messages={en} canCreate />));
+    const box = screen.getByLabelText(EN['receptions.queue.searchLabel'] as string);
+    await user.type(box, 'Khal');
+    await waitFor(() => expect(latest().body.q).toBe('Khal'));
+    return box;
+  }
+
+  it('sends nothing on Enter while the settled read is still in flight', async () => {
+    stubNetwork();
+    const user = userEvent.setup();
+    await typedAndSettled(user);
+    const count = sent.length;
+    await user.keyboard('{Enter}');
+    await new Promise((resolve) => setTimeout(resolve, 450));
+    expect(sent.length).toBe(count);
+    expect(latest().signal.aborted).toBe(false);
+  });
+
+  it('sends exactly one new read on Enter once the board shows an answer — the refresh', async () => {
+    // Nothing polls and the board has no other refresh control, so Search on an
+    // answered read is how an operator looks for new arrivals.
+    stubNetwork();
+    const user = userEvent.setup();
+    await typedAndSettled(user);
+    latest().answer(json(page([receptionRow()])));
+    expect(await screen.findByText('R-0001', { selector: 'code' })).toBeVisible();
+    const count = sent.length;
+    await user.keyboard('{Enter}');
+    await waitFor(() => expect(sent.length).toBe(count + 1));
+    expect(latest().body.q).toBe('Khal');
+    await new Promise((resolve) => setTimeout(resolve, 450));
+    expect(sent.length).toBe(count + 1);
+  });
+
+  it('asks again on Enter after the read failed — that is the retry', async () => {
+    stubNetwork();
+    const user = userEvent.setup();
+    await typedAndSettled(user);
+    latest().answer(json({ status: 'unavailable' }, 503));
+    expect(await screen.findByText(EN['state.unavailable.title'] as string)).toBeVisible();
+    const count = sent.length;
+    await user.keyboard('{Enter}');
+    await waitFor(() => expect(sent.length).toBe(count + 1));
+    expect(latest().body.q).toBe('Khal');
+  });
+});
+
+/*
+ * Checkpoint browser QA: under the limiter the API answers 429, which the read
+ * route carries as an `unavailable` envelope (200) — and a web tier that is
+ * itself throttled answers a bare 429. Both must read as "busy, try again",
+ * never as an empty list that looks like "no matches".
+ */
+const THROTTLED_ENVELOPE = {
+  status: 'unavailable',
+  rows: [],
+  nextCursor: null,
+  hasMore: false,
+  correlationId: 'corr-429',
+};
+
+type Catalogue = Record<string, string>;
+
+function expectBusyNotEmpty(catalogue: Catalogue) {
+  expect(screen.getByRole('button', { name: catalogue['state.retry'] as string })).toBeVisible();
+  expect(screen.queryByText(catalogue['state.noResults.title'] as string)).toBeNull();
+  expect(screen.queryByText(catalogue['state.empty.title'] as string)).toBeNull();
+  expect(screen.queryByText(catalogue['state.loading'] as string)).toBeNull();
+}
+
+describe('a throttled board read says busy, never empty (en and ar)', () => {
+  const AR = ar as Catalogue;
+  const cases = [
+    ['en', EN, renderLtr],
+    ['ar', AR, renderRtl],
+  ] as const;
+
+  for (const [locale, catalogue, render] of cases) {
+    const messages = locale === 'ar' ? ar : en;
+
+    it(`reception board: the API's 429, carried by the route (${locale})`, async () => {
+      stubNetwork();
+      render(
+        inBranch(<ReceptionQueueScreen locale={locale} messages={messages} canCreate />, {
+          locale,
+        })
+      );
+      await waitFor(() => expect(sent).toHaveLength(1));
+      latest().answer(json(THROTTLED_ENVELOPE));
+      expect(await screen.findByText(catalogue['state.unavailable.title'] as string)).toBeVisible();
+      expectBusyNotEmpty(catalogue);
+    });
+
+    it(`reception board: a bare 429 from the web tier (${locale})`, async () => {
+      stubNetwork();
+      render(
+        inBranch(<ReceptionQueueScreen locale={locale} messages={messages} canCreate />, {
+          locale,
+        })
+      );
+      await waitFor(() => expect(sent).toHaveLength(1));
+      latest().answer(new Response('Too Many Requests', { status: 429 }));
+      expect(await screen.findByText(catalogue['state.unavailable.title'] as string)).toBeVisible();
+      expectBusyNotEmpty(catalogue);
+    });
+
+    it(`work-order board: the API's 429 and a bare 429 (${locale})`, async () => {
+      stubNetwork();
+      const user = userEvent.setup();
+      render(
+        <UiFoundationProvider locale={locale} text={muiTextOf(getMessages(locale))}>
+          {inBranch(<WorkOrderQueueScreen locale={locale} messages={messages} />, { locale })}
+        </UiFoundationProvider>
+      );
+      const board = () => sent.filter((request) => request.url === '/reads/work-orders');
+      await waitFor(() => expect(board()).toHaveLength(1));
+      board()[0]?.answer(json(THROTTLED_ENVELOPE));
+      expect(await screen.findByText(catalogue['state.unavailable.title'] as string)).toBeVisible();
+      expectBusyNotEmpty(catalogue);
+
+      await user.click(screen.getByRole('button', { name: catalogue['state.retry'] as string }));
+      await waitFor(() => expect(board()).toHaveLength(2));
+      board()[1]?.answer(new Response('Too Many Requests', { status: 429 }));
+      expect(await screen.findByText(catalogue['state.unavailable.title'] as string)).toBeVisible();
+      expectBusyNotEmpty(catalogue);
+    });
+
+    it(`overview figures: a bare 429 from the web tier (${locale})`, async () => {
+      stubNetwork();
+      render(inBranch(<DashboardScreen locale={locale} messages={messages} />, { locale }));
+      await waitFor(() => expect(latest().url).toContain('/reads/dashboard-summary'));
+      latest().answer(new Response('Too Many Requests', { status: 429 }));
+      expect(await screen.findByText(catalogue['state.unavailable.title'] as string)).toBeVisible();
+      expectBusyNotEmpty(catalogue);
+    });
+  }
 });

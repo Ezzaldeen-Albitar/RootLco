@@ -171,6 +171,16 @@ vi.mock('@/features/delivery/readiness-api', () => ({
   readDeliveryReadinessScopes: (...args: unknown[]) => readDeliveryReadinessScopes(...args),
 }));
 
+/*
+ * The work-order read the handover page asks for the vehicle's plate (Browser QA
+ * part 7, row 3.2b). Only that read is replaced; the rest of the module is real.
+ */
+const readWorkOrderDetail = vi.fn();
+vi.mock('@/features/work-orders/api', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/features/work-orders/api')>()),
+  readWorkOrderDetail: (...args: unknown[]) => readWorkOrderDetail(...args),
+}));
+
 let PERMISSIONS: readonly string[] = [];
 vi.mock('@/features/authentication/api/session', () => ({
   requireSession: async () => ({
@@ -572,6 +582,53 @@ describe('the route page decides before it reads', () => {
   });
 });
 
+/*
+ * Row 3.2b on the route page: the vehicle is named by its plate, read from the
+ * work order, only for a caller who holds the code that read declares; a read
+ * that does not answer names no vehicle rather than printing an identifier.
+ */
+describe('the route page names the vehicle from the work order', () => {
+  const workOrderRead = (vehicle: { registrationPlate: string | null; makeModel: string | null }) =>
+    okRead({ workOrder: { vehicle } });
+  const summary = () => panel('delivery.summary.heading');
+
+  it('asks nothing of the work order without its read code, and names no vehicle', async () => {
+    PERMISSIONS = [VIEW];
+    await renderPage({ locale: 'en', deliveryId: DELIVERY_ID });
+    expect(readWorkOrderDetail).not.toHaveBeenCalled();
+    expect(summary().textContent).not.toContain(EN['delivery.summary.vehicleName'] as string);
+  });
+
+  it('names the vehicle by its plate for a holder of the work-order read', async () => {
+    PERMISSIONS = [VIEW, WORK_ORDER_READ];
+    readWorkOrderDetail.mockResolvedValue(
+      workOrderRead({ registrationPlate: 'ODQ 7002', makeModel: 'Test Make Model' })
+    );
+    await renderPage({ locale: 'en', deliveryId: DELIVERY_ID });
+    expect(readWorkOrderDetail).toHaveBeenCalledWith(WORK_ORDER_ID);
+    expect(within(summary()).getByText('ODQ 7002')).toBeVisible();
+    expect(within(summary()).queryByText(VEHICLE_ID)).toBeNull();
+  });
+
+  it('names it by make and model when it carries no plate', async () => {
+    PERMISSIONS = [VIEW, WORK_ORDER_READ];
+    readWorkOrderDetail.mockResolvedValue(
+      workOrderRead({ registrationPlate: null, makeModel: 'Test Make Model' })
+    );
+    await renderPage({ locale: 'en', deliveryId: DELIVERY_ID });
+    expect(within(summary()).getByText('Test Make Model')).toBeVisible();
+  });
+
+  it('names no vehicle, and prints no identifier, when the work-order read does not answer', async () => {
+    PERMISSIONS = [VIEW, WORK_ORDER_READ];
+    readWorkOrderDetail.mockResolvedValue(refusedRead('unavailable', 'corr-wo'));
+    await renderPage({ locale: 'en', deliveryId: DELIVERY_ID });
+    expect(readWorkOrderDetail).toHaveBeenCalledTimes(1);
+    expect(summary().textContent).not.toContain(EN['delivery.summary.vehicleName'] as string);
+    expect(within(summary()).queryByText(VEHICLE_ID)).toBeNull();
+  });
+});
+
 describe('the release checks respect the second permission the operation demands', () => {
   it('is neither shown nor REQUESTED without the financial read code', async () => {
     renderScreen({ canReadFinance: false });
@@ -621,8 +678,48 @@ describe('the release checks respect the second permission the operation demands
     // drawn that way.
     expect(unreadable).toHaveLength(1);
     expect(established).toHaveLength(2);
-    // The source is offered for support on the unreadable row only.
-    expect(unreadable[0]?.textContent).toContain('quality gate');
+    // The unreadable row says WHY in plain words, and never the fact's source —
+    // a developer's provenance note (Browser QA part 7, row 3.2b).
+    expect(unreadable[0]?.textContent).toContain(
+      EN['delivery.eligibility.unreadable.other'] as string
+    );
+    expect(region.textContent).not.toContain('quality gate');
+    expect(region.textContent).not.toContain('billing open receivable');
+  });
+
+  it('gives the unreadable balance its own reason, in English and in Arabic', async () => {
+    const unbilled = {
+      ...eligibility,
+      facts: [
+        {
+          blocker: 'financial_balance_outstanding',
+          established: false,
+          source: '@/modules/billing — no live invoice for this work order',
+        },
+      ],
+    };
+    for (const [locale, catalogue, render] of [
+      ['en', en, renderLtr],
+      ['ar', ar, renderRtl],
+    ] as const) {
+      readEligibility.mockResolvedValue(okRead(unbilled));
+      const { container, unmount } = render(
+        <DeliveryDetailScreen
+          locale={locale}
+          messages={catalogue}
+          delivery={delivery}
+          canReadFinance={true}
+          canComplete={false}
+        />
+      );
+      const reason = (catalogue as Record<string, string>)[
+        'delivery.eligibility.unreadable.financialBalanceOutstanding'
+      ] as string;
+      await waitFor(() => expect(container.textContent).toContain(reason));
+      expect(container.textContent).not.toContain('@/modules/billing');
+      expect(container.textContent).not.toContain('no live invoice');
+      unmount();
+    }
   });
 
   it('says who may override the one overridable reason, and which side of it the reader is on', async () => {
@@ -959,20 +1056,28 @@ describe('the history', () => {
 });
 
 describe('the summary', () => {
-  it('names the identifiers as identifiers and explains why', async () => {
-    const { container } = renderScreen();
+  it('prints no internal reference: the vehicle by its plate, the visit through the work order', async () => {
+    const { container } = renderScreen({ vehicleName: 'ODQ 7001' });
     const region = panel('delivery.summary.heading');
-    expect(within(region).getByText(VEHICLE_ID)).toBeVisible();
-    expect(within(region).getByText(VISIT_ID)).toBeVisible();
+    // Browser QA part 7, row 3.2b: "Vehicle reference d2699b23-… Visit reference
+    // c5007468-… These are internal references" on a handover whose vehicle has a
+    // plate. The plate is what an operator recognises.
+    expect(within(region).queryByText(VEHICLE_ID)).toBeNull();
+    expect(within(region).queryByText(VISIT_ID)).toBeNull();
+    expect(region.textContent).not.toContain(EN['delivery.summary.vehicle'] as string);
+    expect(region.textContent).not.toContain(EN['delivery.summary.visit'] as string);
+    expect(within(region).getByText('ODQ 7001')).toBeVisible();
+    expect(region.textContent).toContain(EN['delivery.summary.vehicleName'] as string);
     // The delivering employee is NOT one of them any more: P1-31 prerequisite
     // P-17 bound the column to the employee register and the database stamps an
     // immutable name beside it, so the screen shows the person the server
     // recorded rather than the reference it used to print.
     expect(within(region).getByText('Maryam Haddad')).toBeVisible();
     expect(within(region).queryByText(EMPLOYEE_ID)).toBeNull();
+    // No reference is on screen, so the sentence explaining references is not.
     expect(
-      within(region).getByText(EN['delivery.summary.identifiersExplain'] as string)
-    ).toBeVisible();
+      within(region).queryByText(EN['delivery.summary.identifiersExplain'] as string)
+    ).toBeNull();
     expect(
       within(region).getByText(EN['delivery.summary.notDeliveredYet'] as string)
     ).toBeVisible();
@@ -981,6 +1086,40 @@ describe('the summary', () => {
     });
     expect(link.getAttribute('href')).toBe(`/en/work-orders/${WORK_ORDER_ID}`);
     expect(container.textContent).toContain(EN['delivery.status.ready'] as string);
+  });
+});
+
+describe('the summary without a resolved plate', () => {
+  it('draws no vehicle row rather than an identifier, and explains a reference only when one shows', async () => {
+    renderScreen({ delivery: { ...delivery, deliveringEmployeeDisplayName: null } });
+    const region = panel('delivery.summary.heading');
+    expect(region.textContent).not.toContain(EN['delivery.summary.vehicleName'] as string);
+    expect(within(region).queryByText(VEHICLE_ID)).toBeNull();
+    expect(within(region).queryByText(VISIT_ID)).toBeNull();
+    // A handover recorded before the employee register carries no name, so its
+    // reference is shown — and then, only then, the sentence saying why.
+    expect(within(region).getByText(EMPLOYEE_ID)).toBeVisible();
+    expect(
+      within(region).getByText(EN['delivery.summary.identifiersExplain'] as string)
+    ).toBeVisible();
+  });
+
+  it('names the vehicle by its plate in Arabic too', () => {
+    renderRtl(
+      <DeliveryDetailScreen
+        locale="ar"
+        messages={ar}
+        delivery={delivery}
+        canReadFinance={true}
+        canComplete={false}
+        vehicleName="ODQ 7001"
+      />
+    );
+    const region = screen.getByRole('region', { name: AR['delivery.summary.heading'] as string });
+    expect(within(region).getByText('ODQ 7001')).toBeVisible();
+    expect(region.textContent).toContain(AR['delivery.summary.vehicleName'] as string);
+    expect(within(region).queryByText(VEHICLE_ID)).toBeNull();
+    expect(within(region).queryByText(VISIT_ID)).toBeNull();
   });
 });
 

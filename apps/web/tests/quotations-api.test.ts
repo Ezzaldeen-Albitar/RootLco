@@ -190,6 +190,38 @@ describe('the guarded writes carry the QUOTATION version, and the others carry n
     expect(state.correlationId).toBe('corr-1');
   });
 
+  it('a quotation on a closed job says the step is no longer possible (ERR-TRN-001)', async () => {
+    // Browser QA part 7, row 1.4b. Every ERR-TRN-001 quotation create, revise
+    // and issue answer without a violation is a stage refusal, so these adapters
+    // opt in to the sentence that says to refresh.
+    const refused = {
+      ...failure('conflict'),
+      status: 409,
+      problem: { code: 'ERR-TRN-001' },
+    };
+    send.mockResolvedValue(refused);
+    const created = await createQuotation({
+      workOrderId: WORK_ORDER_ID,
+      lines: [{ serviceId: SERVICE_ID, quantity: '1' }],
+    });
+    expect(created.state.messageKey).toBe('state.conflict.transition.title');
+    expect(created.created).toBeNull();
+    expect((await issueQuotation(QUOTATION_ID, { revisionId: REVISION_ID }, 2)).messageKey).toBe(
+      'state.conflict.transition.title'
+    );
+    // A discount refusal names its rule, and that rule still speaks first.
+    send.mockResolvedValue({
+      ...refused,
+      problem: {
+        code: 'ERR-TRN-001',
+        violations: [{ path: 'body', rule: 'discount_approval_pending' }],
+      },
+    });
+    expect((await issueQuotation(QUOTATION_ID, { revisionId: REVISION_ID }, 2)).messageKey).toBe(
+      'form.violation.discount_approval_pending'
+    );
+  });
+
   it('createQuotation posts the lines as given and passes no version', async () => {
     send.mockResolvedValue(ok({ ...SUMMARY, currentRevision: null }));
     const body = {

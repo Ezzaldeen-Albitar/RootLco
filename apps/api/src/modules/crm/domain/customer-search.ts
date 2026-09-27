@@ -36,12 +36,26 @@
  *     many people to be a lookup and would turn a search box into an enumeration
  *     tool.
  *
+ * ## One Jordanian number, however it is written (Browser QA part 7, 2.3b/2.3c)
+ *
+ * A number stored as `0797001122` was not found by `+962 79 700 1122` or
+ * `00962797001122`, and a customer number typed in Arabic-Indic digits was not
+ * found at all. So the phone fragment is reduced to the national form
+ * (`toNationalPhoneDigits`: `+962` / `00962` / `962` followed by eight or nine
+ * digits becomes `0` followed by them) for the exact comparison, and the SUFFIX
+ * comparison uses the national significant number — the national form without
+ * its trunk `0` (`phoneSuffixKey`) — so a number stored in either spelling is
+ * found by either. Only a FULL national number loses the `0`; a shorter tail is
+ * compared exactly as typed, so a tail that starts with `0` still finds it. The customer number is compared after its digits are folded
+ * to ASCII. None of this widens WHO may search or WHAT is searched: the same
+ * three arms, the same `MIN_PHONE_SUFFIX` floor on the suffix, the same page.
+ *
  * The projected phone is MASKED to its last four digits unless the caller holds
  * `iam.sensitive.view`. Four digits is what a person confirms out loud when they
  * are asked to identify themselves, so it is enough to choose the right row and
  * not enough to harvest a contact list from a result page.
  */
-import { foldSearchText, normalizePhoneDigits } from '@/shared/text/normalization';
+import { foldDigits, foldSearchText, normalizePhoneDigits } from '@/shared/text/normalization';
 
 /** The two party kinds `crm.business_partners.party_type` permits. */
 export const CUSTOMER_PARTY_TYPES = ['individual', 'organization'] as const;
@@ -119,15 +133,25 @@ export interface CustomerSearchFilter {
    * honest reply is an empty page rather than the tenant's whole first page.
    */
   readonly phoneDigits: string | null;
-  /** Whether `phoneDigits` is long enough to be matched as a suffix. */
+  /**
+   * The tail the suffix arm compares — `phoneSuffixKey(phoneDigits)` — or null
+   * when no phone was supplied.
+   */
+  readonly phoneSuffix: string | null;
+  /** Whether `phoneSuffix` is long enough to be matched as a suffix. */
   readonly phoneSuffixEligible: boolean;
   /** Folded, LIKE-escaped free-text fragment, or null. */
   readonly freeText: string | null;
   /** The free-text fragment reduced to digits, for its phone arm. Empty when it held none. */
   readonly freeTextDigits: string;
-  /** Whether `freeTextDigits` is long enough to be matched as a phone suffix. */
+  /** The tail the free-text phone arm compares — `phoneSuffixKey(freeTextDigits)`. */
+  readonly freeTextPhoneSuffix: string;
+  /** Whether `freeTextPhoneSuffix` is long enough to be matched as a phone suffix. */
   readonly freeTextPhoneEligible: boolean;
-  /** The free-text fragment trimmed but not folded, for the exact customer-number arm. */
+  /**
+   * The free-text fragment trimmed, with its digits folded to ASCII and nothing
+   * else changed, for the exact customer-number arm.
+   */
   readonly freeTextRaw: string;
   readonly partyType: CustomerPartyType | null;
   readonly lifecycleStatus: CustomerLifecycleStatus | null;
@@ -184,14 +208,52 @@ export function normalizeNameFragment(raw: string): string {
   return escapeLike(foldSearchText(raw) ?? '');
 }
 
+/** Jordan's country calling code. */
+export const JORDAN_COUNTRY_CODE = '962';
+
+/**
+ * Rewrites an international Jordanian number to its national form.
+ *
+ * `962` followed by eight digits (a landline) or nine (a mobile) — typed as
+ * `+962`, `00962` or bare — becomes `0` followed by those digits, which is how a
+ * number is written and stored in the country. Anything else is returned as it
+ * came: a national number already starts with `0`, and a number from another
+ * country is not rewritten by a rule written for this one.
+ */
+export function toNationalPhoneDigits(digits: string): string {
+  const international = digits.startsWith('00') ? digits.slice(2) : digits;
+  if (!international.startsWith(JORDAN_COUNTRY_CODE)) return digits;
+  const national = international.slice(JORDAN_COUNTRY_CODE.length);
+  return national.length === 8 || national.length === 9 ? `0${national}` : digits;
+}
+
+/** A full Jordanian national number: trunk `0`, then eight or nine digits. */
+const NATIONAL_NUMBER = /^0[1-9]\d{7,8}$/;
+
+/**
+ * The tail a phone is matched by as a SUFFIX: the national significant number.
+ *
+ * A national number's trunk `0` is dropped, so `0797001122` matches a stored
+ * `0797001122` and a stored `+962797001122` alike through
+ * `normalized_value LIKE '%797001122'`. Only a FULL national number — `0`
+ * followed by eight (landline) or nine (mobile) digits, the shapes
+ * `toNationalPhoneDigits` produces — loses its `0`. Any other fragment is a tail
+ * and is its own key exactly as typed: `0712345` is the last seven digits of a
+ * stored `0790712345`, and dropping its `0` would both lose that customer and
+ * match numbers the operator did not type.
+ */
+export function phoneSuffixKey(digits: string): string {
+  return NATIONAL_NUMBER.test(digits) ? digits.slice(1) : digits;
+}
+
 /**
  * Reduces a phone fragment to the ASCII digits the stored normalized value is
- * built from. The leading `+` of an E.164 value is dropped, because a caller
- * quoting a number rarely types it and a stored `+` is matched by the suffix arm
- * regardless.
+ * built from, in the national form. The leading `+` of an E.164 value is
+ * dropped, because a caller quoting a number rarely types it, and a Jordanian
+ * international number is rewritten to `0…` (`toNationalPhoneDigits`).
  */
 export function normalizePhoneFragment(raw: string): string {
-  return (normalizePhoneDigits(raw) ?? '').replace(/^\+/, '');
+  return toNationalPhoneDigits((normalizePhoneDigits(raw) ?? '').replace(/^\+/, ''));
 }
 
 /**
@@ -233,18 +295,24 @@ export function maskPhone(value: string): string {
 export function toCustomerSearchFilter(input: CustomerSearchInput): CustomerSearchFilter {
   const name = input.name === undefined ? '' : normalizeNameFragment(input.name);
   const freeText = input.q === undefined ? '' : normalizeNameFragment(input.q);
-  const freeTextRaw = input.q === undefined ? '' : input.q.trim();
+  // Digits folded, nothing else: a display number is stored in ASCII digits, and
+  // one typed on an Arabic keyboard is the same number.
+  const freeTextRaw = input.q === undefined ? '' : foldDigits(input.q.trim());
   const freeTextDigits = input.q === undefined ? '' : normalizePhoneFragment(input.q);
+  const freeTextPhoneSuffix = phoneSuffixKey(freeTextDigits);
   const phoneDigits = input.phone === undefined ? null : normalizePhoneFragment(input.phone);
-  const customerNumber = input.customerNumber?.trim() ?? '';
+  const phoneSuffix = phoneDigits === null ? null : phoneSuffixKey(phoneDigits);
+  const customerNumber = foldDigits(input.customerNumber?.trim() ?? '');
   return {
     nameFragment: name === '' ? null : name,
     customerNumber: customerNumber === '' ? null : customerNumber,
     phoneDigits,
-    phoneSuffixEligible: phoneDigits !== null && phoneDigits.length >= MIN_PHONE_SUFFIX,
+    phoneSuffix,
+    phoneSuffixEligible: phoneSuffix !== null && phoneSuffix.length >= MIN_PHONE_SUFFIX,
     freeText: freeText === '' ? null : freeText,
     freeTextDigits,
-    freeTextPhoneEligible: freeTextDigits.length >= MIN_PHONE_SUFFIX,
+    freeTextPhoneSuffix,
+    freeTextPhoneEligible: freeTextPhoneSuffix.length >= MIN_PHONE_SUFFIX,
     freeTextRaw,
     partyType: input.partyType ?? null,
     lifecycleStatus: input.lifecycleStatus ?? null,

@@ -304,7 +304,9 @@ describe('the four approved domains are four runs of their own reports', () => {
   it('shows the work-order counts the server grouped, as the characters it sent', async () => {
     await showOverview();
     const section = within(await waitFor(() => panel('work_orders_by_status')));
-    expect(section.getByText('Awaiting parts')).toBeVisible();
+    // The state in the reader's language, not the server's English name.
+    expect(section.getByText(EN['workOrders.state.awaiting_parts'] as string)).toBeVisible();
+    expect(section.queryByText('Awaiting parts')).toBeNull();
     expect(section.getByText('4')).toBeVisible();
     expect(section.getByText(EN['reports.field.count'] as string)).toBeVisible();
   });
@@ -410,9 +412,17 @@ describe('the period, the zone and the branch travel with the summaries', () => 
         EN['reports.context.freshness.live'] as string
       )
     ).toBeVisible();
+    // On the branch's clock (Asia/Amman) and in the reader's format, never raw ISO.
+    const readAt = new Intl.DateTimeFormat('en-GB', {
+      timeZone: 'Asia/Amman',
+      dateStyle: 'medium',
+      timeStyle: 'short',
+    }).format(new Date('2026-09-12T09:00:00.000Z'));
+    expect(readAt).toContain('12:00');
+    expect(within(fact('reports.context.generatedAt')).getByText(readAt)).toBeVisible();
     expect(
-      within(fact('reports.context.generatedAt')).getByText('2026-09-12T09:00:00.000Z')
-    ).toBeVisible();
+      within(fact('reports.context.generatedAt')).queryByText('2026-09-12T09:00:00.000Z')
+    ).toBeNull();
   });
 
   it('names an unrecognised freshness as itself rather than calling it live', async () => {
@@ -528,7 +538,7 @@ describe('a domain that cannot answer says so, and the others still answer', () 
     });
     await showOverview();
     const counts = within(await waitFor(() => panel('work_orders_by_status')));
-    expect(counts.getByText('Awaiting parts')).toBeVisible();
+    expect(counts.getByText(EN['workOrders.state.awaiting_parts'] as string)).toBeVisible();
     expect(counts.getByText('4')).toBeVisible();
     expect(
       within(panel('invoice_payment_summary')).getByText(EN['reports.overview.noSummary'] as string)

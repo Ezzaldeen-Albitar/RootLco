@@ -1,4 +1,5 @@
 import {
+  STATE_TRANSITION_CODE,
   VIOLATION_FALLBACK_KEY,
   refusalMessageKey,
   failureMessageValues,
@@ -204,6 +205,36 @@ export function fromFailure(
     correlationId: failure.correlationId,
     attempt,
   };
+}
+
+/**
+ * `fromFailure` for an operation whose `ERR-TRN-001` means one thing only: the
+ * record's stage no longer allows the step (a quotation on a closed job, a
+ * cancellation of an appointment already ended, a closure of a visit already
+ * closed).
+ *
+ * `fromFailure` cannot know that. The same code also reports a broken bound or
+ * invariant elsewhere (a payment allocation over the open balance, a billing
+ * invariant), where "refresh to see where it stands" is false, so the shared
+ * mapping keeps the sentence that claims no cause (`STATE_TRANSITION_CODE` in
+ * `lib/api/client.ts`). An adapter opts in here only after checking that every
+ * `ERR-TRN-001` its operation can answer is a stage refusal.
+ *
+ * A named precondition still speaks first: a refusal that carries any violation
+ * is left exactly as `fromFailure` said it (a discount-approval refusal names
+ * its rule this way), and only the generic blocked sentence is ever replaced.
+ */
+export function fromStateRefusal(failure: ApiFailure, attempt: number): ActionState {
+  const state = fromFailure(failure, attempt);
+  if (
+    failure.kind === 'conflict' &&
+    failure.problem?.code === STATE_TRANSITION_CODE &&
+    (failure.problem.violations?.length ?? 0) === 0 &&
+    state.messageKey === 'state.conflict.blocked.title'
+  ) {
+    return { ...state, messageKey: 'state.conflict.transition.title' };
+  }
+  return state;
 }
 
 export function invalid(

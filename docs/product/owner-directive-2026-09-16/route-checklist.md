@@ -511,6 +511,182 @@ query is about, and each is named:
 - the settings target on the administration settings pages;
 - the report's branch on the report screens, which opens on the working branch.
 
+## Browser QA part 7 — plain language, names and search (`P1-32-PRE-OD-QAF`)
+
+Rows of Browser QA part 7 (measured at `be74f81c`) that needed no screen migration and no database
+change. Each row says what changed; a row that needs a read the platform does not publish says so
+and was left as it is.
+
+- **2.10 — fixed.** The closure screen no longer draws the eligibility read's `deferred` note (its
+  owning phase, its reason and its condition codes), nor a blocker's code and the database object
+  that enforces it. Each blocker `B1`…`B6` is one sentence in the reader's language, keyed by its
+  code. The API still publishes `deferred`; it is simply not an operator's text.
+- **3.2b — fixed.** A release check that could not be read says why in plain words, keyed by the
+  reason code (its own sentence for the balance that could not be confirmed), and never prints the
+  fact's `source`. The handover summary names the vehicle by its plate, read from the work order by
+  the route when the reader holds `wo.work_order.read`, and draws no vehicle or visit reference;
+  the sentence explaining references appears only when one is on screen. Not changed: checklist
+  item codes still stand beside their labels.
+- **4.3b — fixed.** The plan list's company column is headed "Company" and the picker's help says
+  what it offers; a company outside the reader's branches is said in words, not by reference.
+- **1.4b — fixed (the wording); 5.5c — not changed.** `ERR-TRN-001` does not by itself mean the
+  record moved on: the backend also answers it for a broken bound or invariant (a payment allocation
+  over the receipt's remainder or the invoice's open balance, a billing invariant, a reservation the
+  stock ledger refuses), so the shared mapping keeps "This change cannot be saved" for it. Only the
+  adapters whose operation answers `ERR-TRN-001` for nothing but a stage refusal opt in
+  (`fromStateRefusal`) to the sentence, in English and Arabic, that says the step is no longer
+  possible and to refresh: quotation create, revise and issue (row 1.4b), the appointment
+  reschedule, cancel and no-show commands, and the two visit closures. It claims no concurrent edit
+  and invites no retry, and a refusal that carries any violation still speaks first. Not changed:
+  the quotation builder is still offered on a closed job, and a reservation on a job in draft
+  (5.5c) keeps the blocked sentence, because the same code there also means too little stock.
+- **5.3 — fixed after conversion.** The conversion answer links to the new work order (for a reader
+  who may open it) and says its state in words. Needs a backend read: revisiting a converted visit
+  still offers no link, because the reception read publishes no work-order identifier.
+- **6.7 — fixed.** Report rows, and the time a report or the overview was read, are formatted on
+  the reported branch's clock (the zone the period was resolved in) in the reader's language, never
+  as raw ISO; a work-order state is said in the reader's language, and a state outside the platform
+  vocabulary keeps the server's name.
+- **9.5 — fixed.** The header's language switcher and account never shrink, and every box down to
+  the working-branch select may, so at 375 px the select narrows instead of being drawn under the
+  switcher. The overlap itself is a browser measurement and was not re-run for this change.
+- **5.10b — fixed for the company.** A company-only rule names its company from the working context,
+  or says it is outside the reader's branches. Needs a backend read: the tax class is still a
+  reference, because no tax-class read is published.
+- **1a.2 (attention) — needs a backend read.** The count-difference card still prints the short
+  count reference as its tie-break: the read carries no count number (none exists in the schema) and
+  names the location by code only.
+- **2.3b and 2.3c — fixed on the server.** Customer search folds Arabic-Indic and Eastern
+  Arabic-Indic digits in the customer number, and writes a Jordanian number the same way however it
+  was typed (`+962`, `00962` or `962` becomes `0`); the suffix comparison uses the national
+  significant number, so a number stored as `07…` or as `+9627…` is found by either spelling. Only
+  a full national number (`0` then eight or nine digits) loses its `0`: a shorter tail such as
+  `0712345` is compared exactly as typed, so it still finds a stored `0790712345` and matches no
+  number the reader did not type. The permission, the searched fields, the seven-digit suffix
+  floor and the page are unchanged. The database cases are in
+  `tests/backend/p1-32-friendly-search.test.ts` and run in the hosted integration job.
+
+Known limitations of this slice, one line each:
+
+- The printable handover document opened from the same delivery screen
+  (`DeliveryDocument.tsx:168-172`) still prints the vehicle and visit references; row 3.2b covers
+  the summary only, and that document is handed to the customer.
+- `WorkOrderClosureScreen` `closureBlockerText`: a blocker code outside `B1`…`B6` falls back to the
+  backend's English message, which an Arabic reader would see; no such code exists today.
+- `delivery.eligibility.unreadable.financialBalanceOutstanding` (EligibilityPanel) says no issued
+  invoice was found, but the backend also uses it when the balance is hidden or the work order is
+  invisible (`delivery-read-service.ts:1003-1025`); no live path today, because the eligibility read
+  is gated on `sal.finance.view`.
+- DEF-01 / row 9.5 (375 px header): jsdom asserts only class names (`min-w-0`, `truncate`,
+  `shrink-0`) plus `title` and `dir`. Nobody has observed in a browser whether a native `<select>`
+  draws the ellipsis (Chromium often clips without one) or whether the branch name overlaps the
+  header at 375 px; UNVERIFIED visually, in either direction.
+- `formatReportTime` falls back to UTC for a zone the browser does not know while the context line
+  still names the original zone; theoretical, since the zones are IANA names from PostgreSQL.
+- The phone suffix arm compares the 8- or 9-digit national significant number, so a foreign number
+  sharing those last digits also matches; theoretical, and the `MIN_PHONE_SUFFIX` floor and the
+  permissions are unchanged.
+- The customer-search normaliser hard-codes the Jordan calling code 962 (`JORDAN_COUNTRY_CODE` in
+  `apps/api/src/modules/crm/domain/customer-search.ts`) and leaves any other number as typed: a
+  product assumption for a multi-tenant SaaS, written down here and not yet decided by the Owner.
+- Integration: this slice was cut from `ed3143e2`; `origin/develop` then moved to `ada6fbff`
+  (PR #474, reference selects), which was merged into the branch with a merge commit. Only the
+  focused tests the merge and the follow-ups below touch were re-run locally; the `unit` and `web`
+  tier records were taken at `ed0c1627` and must be retaken on the final head.
+- `useSearchRequest` `leaving` does not cover choosing a new filter within 300 ms of a branch switch:
+  the settled key is still the old branch's, and its read goes out at the new version. It predates
+  this slice and is unchanged.
+- The line citations in the P1-28 verdicts into `reception-summary.dom.test.tsx` (`:594-823` and
+  similar) were already out of date at the base commit; this slice's tests sit after them and do not
+  worsen them. Worth a later re-anchoring.
+- Item 15, the platform-session probe at sign-in: no code change, justified because `session.ts`
+  probes only after a forbidden tenant session.
+- Left open, each needing a backend read: checklist item codes still show (3.2b); a revisited
+  converted visit has no work-order link (5.3); the tax class is still a reference (5.10b); the
+  count-reference tie-break remains (1a.2).
+- The work-order state is translated from the platform vocabulary, so a tenant state whose code
+  equals a platform code but carries a different name shows the platform wording.
+- The conversion step's new link reaches the work-order detail route, so under the P1-28 access
+  gate's one-link-level rule the check-in wizard now also reaches that route's operations
+  (including `iam.sensitive.view`); `tests/ci/p1-28-access-gate.test.ts` measures the composed
+  record over the wizard's own reach with that link cut, and asserts the widened reach separately.
+- P1-27 citations: every anchored `client.ts` citation still names its line — the latest,
+  `:836-837#state.conflict.blocked.title`, still holds that key on line 837, and the slice's later
+  `client.ts` edit (a cancelled read is reported as cancelled) changes lines in place without moving
+  any — so no reseal is needed; `tests/ci/p1-27-matrix-citations.test.ts` checks it.
+
+### Checkpoint browser QA findings (2026-09-27, served at `ed3143e2`)
+
+- **DEF-01 — fixed (the contract), not re-measured.** At 375 px the working-branch select is about
+  104 px and cut the chosen name mid-letter; in Arabic a Latin name lost its beginning. The select
+  now ends the name in an ellipsis (`truncate`), carries it whole as its title, and is laid out in
+  the name's own direction, so the beginning is kept in both interfaces. Held in jsdom on the
+  rendered header in English and Arabic; the drawn ellipsis was not measured in a browser.
+- **DEF-02 — fixed.** The work-order record's facts panel says the state and the parts position in
+  the reader's language (a state outside the platform vocabulary stays its code) and no longer
+  draws the record version. The version still travels as the `If-Match` of every guarded command
+  on the screen, which a test asserts; the lifecycle panel's current state and its choices are
+  said in words too.
+- **Search and the rate limit — fixed.** The toolbar search reports each keystroke and the read
+  hook (`useSearchRequest`) settles it after the same 300 ms pause the old `SearchBox` used, so
+  typing was already one read per pause. Two reads per ask came from elsewhere: Enter after the
+  pause asked again for the term the pause had just read (the 429s arrived in pairs 50 ms apart),
+  and after any submission — a branch choice counts as one — changing a filter re-read the old
+  criteria before the new ones. Enter on page one of a term whose read is still in flight now sends
+  nothing; once that read has settled, Enter and Search ask again (the retry after a failure, the
+  refresh after an answer, which is the only refresh these screens offer), and leaving a
+  submission reads only the new criteria. The limiter is unchanged. A throttled read (the API's 429 carried by the read
+  route, or a bare 429 from the web tier) and a 5xx show "Service unavailable" with Try again on
+  the reception board, the work-order board and the overview figures, in English and Arabic,
+  never an empty list.
+- **Log noise — fixed.** A read the caller abandoned is reported as `cancelled` at debug whatever
+  the fetch threw; a Route Handler's signal aborts with the framework's own reason rather than an
+  `AbortError`, which is why these were logged at error as `network`. A real network failure while
+  the caller still waits stays at error.
+- **403 at sign-in — expected, not changed.** The platform session is probed only when the
+  workspace session read is refused (sign-in and `requireSession`), never on a tenant user's
+  ordinary sign-in or navigation. All six lines belonged to one identity holding no permission
+  codes, whose workspace session read was refused; for that caller the probe is the only way to
+  tell a platform operator from a tenant user, and both lines are logged at warn, not error.
+- **UTC naming — fixed.** `zoneLabelAt` names the UTC clock `UTC` in both languages; a branch zone
+  that merely sits at +0 keeps its own offset label.
+- **Reception board, Yesterday — fixed.** The duplicate read of today's window was the same
+  leaving-a-submission defect; choosing a period after a branch choice now sends exactly one read.
+
+### PR #474 browser QA follow-ups (2026-09-27, served at `ada6fbff`)
+
+- **(A) D-1 — fixed.** Add company's base currency read `EUR`, `JOD`, `USD` in both languages. Every
+  reference select PR #474 introduced now reads as a name in the reader's language and still sends
+  the code: a currency as its name with the code beside it ("Jordanian Dinar (JOD)"), ordered by
+  that name on the Organization screen; a time zone as its generic name with its identifier; a
+  language as its name. Covered: Add company and Add branch (Organization), the tenant form on
+  Organization and Languages (including its read-only facts, which showed `en`), and the console's
+  New Organisation form and its Add company and Add branch dialogs. The selects no longer force
+  `dir="ltr"`, so the Arabic placeholder's ellipsis sits on the right side. DOM tests in English and
+  Arabic.
+- **(B) A list that could not be loaded — fixed.** The reference values are read on the server, so a
+  failure arrives as a missing list. A select left with nothing to choose says so on the field,
+  offers Try again (a page refresh that keeps what was typed) and refuses the submission with a
+  red field, a message beside it and the cursor on it; nothing is sent. A select left with only the
+  values already in use (the branch zone, the tenant form) says the list is partial, offers Try
+  again, and still sends, because the saved or in-use value is a valid choice. On the Organization
+  screen the retry appears only when the read was made and failed, not when the session may not
+  make it. DOM tests in English and Arabic; the failure itself was not observed in a browser.
+- **(C) Organisation settings read-only — a permission bundle gap, reported, not widened.** The
+  tenant form, and the company and branch settings writes, declare `org.settings.manage`
+  (`iam.tenant-settings-update`, `iam.company-settings-write`, `iam.branch-settings-write`). The
+  standard tenant administrator bundle, `TENANT_ADMINISTRATOR_ROLE` in
+  `apps/api/src/modules/iam/domain/bootstrap-roles.ts`, leaves that code out on purpose (residual
+  W9-R2, Owner disposition requested), so a first administrator sees the card read-only by design.
+  Whether the bundle should carry it is an Owner decision; no permission was changed in code or
+  data. The refused `iam.tenant-settings-read` for the limited-finance identity was a screen bug:
+  the Organization and Languages pages read the tenant for every session, and now read it only with
+  `org.tenant.read`, the code it declares. The two refused `iam.company-settings-read` calls for the
+  administrator declare `org.company.read` at company scope; the code path passes for an
+  unrestricted grant, so the refusal depends on that database's grants (a scoped grant carrying the
+  code that does not name the company) and was not reproduced here, because the shared database
+  was not queried.
+
 ## Remaining — backend prerequisites and Owner decisions only
 
 Each entry needs a read or a writer the platform does not publish, or a decision that is not the

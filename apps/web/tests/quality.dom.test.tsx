@@ -297,8 +297,8 @@ describe('the QC queue', () => {
 });
 
 describe('the closure view', () => {
-  it('renders the gate as the backend states it, with the deferred conditions named', async () => {
-    renderLtr(
+  it('renders each blocker as a plain sentence, with no developer note beside it', async () => {
+    const { container } = renderLtr(
       <WorkOrderClosureScreen
         locale="en"
         messages={en}
@@ -307,15 +307,42 @@ describe('the closure view', () => {
       />
     );
     expect(await screen.findByText(t('quality.closure.notEligible'))).toBeInTheDocument();
-    expect(
-      screen.getByText('A job on this work order is not in a terminal state.', { exact: false })
-    ).toBeInTheDocument();
-    expect(screen.getByText('wo.guard_closure')).toBeInTheDocument();
-    expect(screen.getByText('B5, B6', { exact: false })).toBeInTheDocument();
+    const gate = container.querySelector('[data-blocker="B1"]');
+    expect(gate?.textContent).toBe(t('quality.closure.blocker.B1'));
+    // Browser QA part 7, row 2.10: the enforcing object, the blocker code, the
+    // deferred conditions, their reason and the owning phase were all printed for
+    // an operator. None of them may reach the screen.
+    const text = container.textContent ?? '';
+    for (const leaked of [
+      'wo.guard_closure',
+      'B5, B6',
+      'P1-21',
+      'Stock reservation is not represented yet.',
+      'A job on this work order is not in a terminal state.',
+    ]) {
+      expect(text, leaked).not.toContain(leaked);
+    }
     expect(screen.queryByText(t('quality.closure.inventoryBlocking'))).not.toBeInTheDocument();
     // Rework corrects a closed order: on an open one the form is withheld and the reason stated.
     expect(screen.getByText(t('quality.closure.reworkNeedsClosed'))).toBeInTheDocument();
     expect(screen.queryByText(t('quality.closure.openRework'))).not.toBeInTheDocument();
+  });
+
+  it('says the same blocker in Arabic, keyed by its code rather than the English prose', async () => {
+    const { container } = renderRtl(
+      <WorkOrderClosureScreen
+        locale="ar"
+        messages={ar}
+        workOrderId={WORK_ORDER}
+        capabilities={everything}
+      />
+    );
+    expect(await screen.findByText(arT('quality.closure.notEligible'))).toBeInTheDocument();
+    const gate = container.querySelector('[data-blocker="B1"]');
+    expect(gate?.textContent).toBe(arT('quality.closure.blocker.B1'));
+    expect(arT('quality.closure.blocker.B1')).not.toBe(t('quality.closure.blocker.B1'));
+    expect(container.textContent ?? '').not.toContain('wo.guard_closure');
+    expect(container.textContent ?? '').not.toContain('P1-21');
   });
 
   it('offers the rework form once the gate reports the order terminal', async () => {

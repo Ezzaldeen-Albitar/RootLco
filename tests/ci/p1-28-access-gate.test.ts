@@ -116,6 +116,7 @@ const BOOKING_PAGE = 'apps/web/src/app/[locale]/(dashboard)/appointments/new/pag
 const DETAIL_PAGE = 'apps/web/src/app/[locale]/(dashboard)/appointments/[appointmentId]/page.tsx';
 const WIZARD_MODULE = 'apps/web/src/features/receptions/check-in/wizard.ts';
 const TABLE_STATE = 'apps/web/src/components/data-table/table-state.ts';
+const CONVERSION_STEP = 'apps/web/src/features/receptions/components/steps/ConversionStep.tsx';
 
 function fired(result: { violations: string[] }, rule: string): string[] {
   return result.violations.filter((violation) => violation.startsWith(`${rule}:`));
@@ -507,16 +508,41 @@ describe('the composed permission — what the DATABASE demands beyond the opera
   }
 
   it('is what makes the wizard’s second permission legitimate rather than surplus', () => {
-    // Measured, not asserted: with the record emptied, the shipped wizard goes
-    // red for a capability it correctly resolves.
-    const withoutRecord = run({ composed: { composed: [] } });
+    /*
+     * Measured, not asserted: with the record emptied, the wizard goes red for a
+     * capability it correctly resolves.
+     *
+     * Measured over the wizard's OWN reach. Since Browser QA part 7 row 5.3 the
+     * conversion step links to the work order it created, and rule 4 counts one
+     * link level — so the work-order detail route, whose operations require
+     * `iam.sensitive.view` in their own right, is now reachable from the wizard
+     * and would license the code with or without this record. That widened reach
+     * is real and is asserted below; what this case proves is that the record,
+     * not the link, is what licenses the WIZARD's use. So the link is cut here
+     * and the record emptied, and the finding must come back.
+     */
+    const sources = webSources();
+    const absolute = join(REPOSITORY_ROOT, ...CONVERSION_STEP.split('/'));
+    const original = String(sources.get(absolute));
+    const linkToWorkOrder = '`/${locale}/work-orders/${';
+    expect(original).toContain(linkToWorkOrder);
+    sources.set(absolute, original.replace(linkToWorkOrder, '`/${locale}/unlinked/${'));
+    const withoutRecord = run({ sources, routes: webRoutes(), composed: { composed: [] } });
     expect(fired(withoutRecord, 'least-privilege').join(' ')).toContain('iam.sensitive.view');
+    // With the link cut and the record KEPT, the wizard is clean again: the
+    // finding above is the record's absence, not the mutation.
+    expect(fired(run({ sources, routes: webRoutes() }), 'least-privilege')).toEqual([]);
     // And with it, the clean run above already proves the opposite.
     const wizard = REAL.routes.find((route: { route: string }) =>
       route.route.includes('[receptionId]/page.tsx')
     );
     expect(wizard?.consulted).toContain('iam.sensitive.view');
     expect(wizard?.required).toContain('iam.sensitive.view');
+    // The widened reach, recorded as a fact of the shipped tree: the wizard now
+    // links one level on to the work-order detail route.
+    expect(
+      wizard?.linkedRoutes.some((path: string) => /work-orders\/\[[^\]]+\]\/page\.tsx$/.test(path))
+    ).toBe(true);
   });
 
   it('refuses a record whose migration does not declare the policy it names', () => {

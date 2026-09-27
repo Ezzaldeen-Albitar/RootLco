@@ -7,9 +7,9 @@
  * its own truth and re-reading after its own writes:
  *
  * - **The closure gate** — `wo.work-order-closure-eligibility`, rendered as the
- *   backend states it: each blocker `B1..B6` with the backend's own message and
- *   the object that enforces it, plus the DEFERRED conditions the eligibility
- *   itself names. The screen invents no rule; it shows the ones the platform has.
+ *   backend states it: each blocker `B1..B6` in the reader's language, keyed by
+ *   its code, and the stock the order still holds. The screen invents no rule;
+ *   it shows the ones the platform has.
  * - **QC records** — `qms.qc-record-list` / `-open` / `-detail`; each record's
  *   checklist is a JOIN of the vocabulary (`qms.qc-check-list`, W8's one Backend
  *   read) with the record's results, so an unanswered check is visible as
@@ -76,6 +76,7 @@ import {
   unattachedRefusalKey,
   type AdditionalWorkDetail,
   type AdditionalWorkRequest,
+  type ClosureBlocker,
   type ClosureEligibility,
   type CustomerApproval,
   type QcCheckVocabularyEntry,
@@ -320,6 +321,29 @@ export function WorkOrderClosureScreen({
 
 /* ------------------------------------------------------------------ gate */
 
+/** The six guard blockers the platform defines, each with its own sentence. */
+const CLOSURE_BLOCKER_KEYS: Readonly<Record<string, string>> = {
+  B1: 'quality.closure.blocker.B1',
+  B2: 'quality.closure.blocker.B2',
+  B3: 'quality.closure.blocker.B3',
+  B4: 'quality.closure.blocker.B4',
+  B5: 'quality.closure.blocker.B5',
+  B6: 'quality.closure.blocker.B6',
+};
+
+/**
+ * What stands between the order and its closure, in the reader's language.
+ *
+ * Keyed by the blocker's CODE, never by its prose: the backend's `message` is
+ * English whatever the reader's language. A code this build has not been told
+ * about falls back to the backend's sentence, which is still plain language —
+ * never to the code itself.
+ */
+export function closureBlockerText(messages: Messages, blocker: ClosureBlocker): string {
+  const key = CLOSURE_BLOCKER_KEYS[blocker.code];
+  return key === undefined ? blocker.message : translateDynamic(messages, key);
+}
+
 function GatePanel({
   messages,
   eligibility,
@@ -358,29 +382,26 @@ function GatePanel({
           {eligibility.data.blockers.length === 0 ? null : (
             <ul className="flex flex-col gap-1">
               {eligibility.data.blockers.map((blocker) => (
-                <li key={blocker.code} className="text-body text-text-primary">
-                  <code className="font-mono" dir="ltr">
-                    {blocker.code}
-                  </code>{' '}
-                  {blocker.message}
-                  <span className="text-caption text-text-muted">
-                    {' '}
-                    · {translate(messages, 'quality.closure.enforcedBy')}{' '}
-                    <code className="font-mono" dir="ltr">
-                      {blocker.enforcedBy}
-                    </code>
-                  </span>
+                <li
+                  key={blocker.code}
+                  data-blocker={blocker.code}
+                  className="text-body text-text-primary"
+                >
+                  {closureBlockerText(messages, blocker)}
                 </li>
               ))}
             </ul>
           )}
-          {eligibility.data.deferred.conditions.length === 0 ? null : (
-            <p className="text-caption text-text-muted">
-              {translate(messages, 'quality.closure.deferred')}{' '}
-              {eligibility.data.deferred.conditions.join(', ')} ·{' '}
-              <bdi>{eligibility.data.deferred.reason}</bdi> ({eligibility.data.deferred.owner})
-            </p>
-          )}
+          {/*
+            The eligibility read still publishes `deferred` — the name of the
+            phase that once owned the stock conditions and why they were not
+            enforced yet. It is a note for developers, and it stopped being true
+            when `inventoryCommitments` below started answering for exactly
+            those two conditions, so it is not drawn for an operator (Browser QA
+            part 7, row 2.10). The blocker's enforcing database object is not
+            drawn for the same reason: the sentence says what to do, the object
+            name says nothing to the person doing it.
+          */}
           {eligibility.data.inventoryCommitments.blocking ? (
             <p className="text-body text-text-primary">
               {translate(messages, 'quality.closure.inventoryBlocking')}

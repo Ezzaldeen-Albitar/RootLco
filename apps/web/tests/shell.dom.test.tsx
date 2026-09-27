@@ -13,6 +13,7 @@ import { MoneyField } from '@/components/forms/MoneyField';
 import { RecordForm } from '@/components/forms/RecordForm';
 import { TextField } from '@/components/forms/Field';
 import { SearchPicker } from '@/components/search/SearchPicker';
+import { AppShell } from '@/components/shell/AppShell';
 import { PageHeader } from '@/components/shell/PageHeader';
 import { LocaleSwitcher, swapLocale } from '@/components/shell/LocaleSwitcher';
 import { Sidebar } from '@/components/shell/Sidebar';
@@ -2030,5 +2031,119 @@ describe('BranchSelector, the drawing on its own', () => {
     expect(screen.getByTestId('working-context-single')).toHaveTextContent(
       'Coastal workshop · Coastal Operations'
     );
+  });
+});
+
+/**
+ * Browser QA part 7, row 9.5: at 375 px the language switcher was drawn over
+ * the working-branch select, in English and in Arabic.
+ *
+ * jsdom lays nothing out, so the overlap itself is measured in the browser
+ * tier. What is held here is the flex contract that prevents it, on the
+ * RENDERED header rather than on source text: the header's trailing group
+ * (language switcher and account) never shrinks, and every box between the
+ * header and the native select may shrink below its content, so the select is
+ * what gives way. Removing either class makes a case below fail.
+ */
+describe('the header at a narrow width', () => {
+  function drawShell(locale: 'en' | 'ar') {
+    const catalogue = locale === 'ar' ? arabic : messages;
+    const render = locale === 'ar' ? renderRtl : renderLtr;
+    return render(
+      <UiFoundationProvider locale={locale} text={muiTextOf(catalogue)}>
+        <AppShell
+          locale={locale}
+          messages={catalogue}
+          workingContext={
+            <BranchSelector
+              messages={catalogue}
+              status="ready"
+              companies={WC_COMPANIES}
+              branches={[MAIN, SECOND]}
+              value="b-1"
+              onSelect={vi.fn()}
+              onRetry={vi.fn()}
+              offerAllBranches={false}
+            />
+          }
+        >
+          <p>content</p>
+        </AppShell>
+      </UiFoundationProvider>
+    );
+  }
+
+  for (const locale of ['en', 'ar'] as const) {
+    it(`keeps the language switcher out of the select's way (${locale})`, () => {
+      const catalogue = locale === 'ar' ? arabic : messages;
+      const { container } = drawShell(locale);
+      const header = container.querySelector('header') as HTMLElement;
+      const switcher = within(header).getByRole('navigation', {
+        name: catalogue['locale.switch'],
+      });
+      const end = switcher.closest('[data-header-end]') as HTMLElement;
+      expect(end).not.toBeNull();
+      expect(end.classList.contains('shrink-0')).toBe(true);
+      expect(end.classList.contains('ms-auto')).toBe(true);
+
+      const select = within(header).getByTestId('working-context-select');
+      expect(end.contains(select)).toBe(false);
+      // Every box from the select up to the header's child may shrink.
+      const chain: HTMLElement[] = [];
+      for (let node = select.parentElement; node && node !== header; node = node.parentElement) {
+        chain.push(node);
+      }
+      expect(chain.length).toBeGreaterThanOrEqual(3);
+      for (const box of chain) {
+        expect(box.className, box.outerHTML.slice(0, 120)).toMatch(/(^|\s)min-w-0(\s|$)/);
+      }
+      // Tokens and logical properties only: no raw lengths in the header chrome.
+      for (const element of [end, ...chain]) {
+        expect(element.className).not.toMatch(/\[\d+(px|rem|em)\]/);
+      }
+    });
+  }
+
+  /*
+   * Checkpoint browser QA, DEF-01: at 375 x 812 the select is about 104 px and
+   * the chosen name was cut mid-letter with no ellipsis, and in Arabic a Latin
+   * name lost its BEGINNING instead of its end. The select now ends the name in
+   * an ellipsis, carries it whole as its title, and is laid out in the name's
+   * own direction, so the beginning is kept in both interfaces. jsdom draws no
+   * ellipsis; what is held is the contract that produces it.
+   */
+  for (const locale of ['en', 'ar'] as const) {
+    it(`ends a long branch name in an ellipsis and keeps its beginning (${locale})`, () => {
+      const { container } = drawShell(locale);
+      const select = within(container.querySelector('header') as HTMLElement).getByTestId(
+        'working-context-select'
+      );
+      expect(select.className).toMatch(/(^|\s)truncate(\s|$)/);
+      expect(select).toHaveAttribute('title', 'Main workshop');
+      // A Latin name is laid out left to right in the Arabic interface as well,
+      // so the ellipsis replaces its END, not its beginning.
+      expect(select).toHaveAttribute('dir', 'ltr');
+    });
+  }
+
+  it('lays an Arabic branch name out right to left in the English interface', () => {
+    const arabicBranch = wcBranch('b-9', 'c-1', 'الورشة الرئيسية');
+    renderLtr(
+      <UiFoundationProvider locale="en" text={muiTextOf(messages)}>
+        <BranchSelector
+          messages={messages}
+          status="ready"
+          companies={WC_COMPANIES}
+          branches={[arabicBranch, SECOND]}
+          value="b-9"
+          onSelect={vi.fn()}
+          onRetry={vi.fn()}
+          offerAllBranches
+        />
+      </UiFoundationProvider>
+    );
+    const select = screen.getByTestId('working-context-select');
+    expect(select).toHaveAttribute('dir', 'rtl');
+    expect(select).toHaveAttribute('title', arabicBranch.name);
   });
 });

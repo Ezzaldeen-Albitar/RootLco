@@ -245,6 +245,28 @@ describe('the plan list', () => {
     expect(rows.queryByText(COMPANY_ID)).toBeNull();
   });
 
+  it('heads the company column and helps the picker in words that match what they show', async () => {
+    // Browser QA part 7, row 4.3b: the column was headed "Company reference" and the
+    // picker's help said no company name was held — above a list of names.
+    for (const [locale, catalogue] of [
+      ['en', EN],
+      ['ar', AR],
+    ] as const) {
+      PERMISSIONS = [READ, MANAGE];
+      const { unmount } = await renderListPage(locale);
+      const table = await screen.findByRole('table');
+      const heading = within(table).getByRole('columnheader', {
+        name: catalogue['warranty.policies.columnCompany'] as string,
+      });
+      expect(heading.textContent).toBe(catalogue['warranty.policies.companyField']);
+      expect(within(table).getByText(TEST_COMPANY.name)).toBeInTheDocument();
+      const help = catalogue['warranty.policies.companyFromDirectory'] as string;
+      expect(screen.getByText(help)).toBeInTheDocument();
+      expect(help).not.toMatch(/reference|مرجع/i);
+      unmount();
+    }
+  });
+
   it('asks for every plan by default, retired ones included', async () => {
     // A retired plan keeps its reference and restoring it is a command this surface
     // offers, so an administration list that hid them could not reach it.

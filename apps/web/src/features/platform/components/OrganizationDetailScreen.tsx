@@ -149,6 +149,7 @@ export function OrganizationDetailScreen({
       </Section>
 
       <OrganizationGrowthPanel
+        locale={locale}
         messages={messages}
         organization={organization}
         canManage={capabilities.canManageOrganization}

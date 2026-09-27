@@ -426,7 +426,15 @@ function AppHeader({
       */}
       {workingContext}
 
-      <div className="ms-auto flex items-center gap-2">
+      {/*
+        `shrink-0`: the language switcher and the account keep their own width
+        and never yield it. At 375 px the working-branch select used to overflow
+        its box and was drawn UNDER "العربية" / "English" (Browser QA part 7,
+        row 9.5); the select is the one that gives way now (`min-w-0` down its
+        chain in `BranchSelector`), so nothing overlaps and the page does not
+        scroll sideways.
+      */}
+      <div className="ms-auto flex shrink-0 items-center gap-2" data-header-end="">
         {/*
           Rendered only WHILE the brand is provisional. It was unconditional
           until this guard was added, which quietly falsified the phase's

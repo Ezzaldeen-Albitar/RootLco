@@ -1,6 +1,7 @@
 import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import ar from '../src/i18n/messages/ar.json';
 import en from '../src/i18n/messages/en.json';
 import {
   BranchSwitch,
@@ -8,8 +9,10 @@ import {
   TEST_BRANCH,
   WorkingBranchProbe,
   branchSnapshot,
+  TEST_COMPANY,
   inBranch,
   renderLtr,
+  renderRtl,
 } from './render';
 import {
   discardAndSwitch,
@@ -551,6 +554,45 @@ describe('a rule on a draft carries the canonical amount string', () => {
 });
 
 describe('a rule narrowed to a company is named, never typed', () => {
+  it('lists a company-only rule by the company NAME, never its identifier (row 5.10b)', async () => {
+    const OUTSIDE = '99999999-9999-4999-8999-999999999999';
+    listPriceRules.mockImplementation((_listId: string, versionId: string) =>
+      Promise.resolve(
+        rulesOf(versionId, [
+          {
+            ...rule,
+            id: 'rule-company',
+            appliesTo: { companyId: TEST_COMPANY.id, branchId: null, customerClass: null },
+          },
+          {
+            ...rule,
+            id: 'rule-outside',
+            appliesTo: { companyId: OUTSIDE, branchId: null, customerClass: null },
+          },
+        ])
+      )
+    );
+    for (const [locale, catalogue, render] of [
+      ['en', en, renderLtr],
+      ['ar', ar, renderRtl],
+    ] as const) {
+      const words = catalogue as Record<string, string>;
+      const { unmount } = render(inBranch(detailFor({ locale, messages: catalogue }), { locale }));
+      const region = await screen.findByRole('region', {
+        name: new RegExp(`^${escape(words['pricing.rules.heading'] as string)}`),
+      });
+      const company = words['pricing.rules.company'] as string;
+      expect(await within(region).findByText(`${company}: ${TEST_COMPANY.name}`)).toBeVisible();
+      // A company outside this reader's branches is said in words, not by reference.
+      expect(
+        within(region).getByText(`${company}: ${words['pricing.rules.companyOutsideContext']}`)
+      ).toBeVisible();
+      expect(region.textContent).not.toContain(TEST_COMPANY.id);
+      expect(region.textContent).not.toContain(OUTSIDE);
+      unmount();
+    }
+  });
+
   it('narrows a rule to one company and every branch of it, by the company’s name', async () => {
     const user = userEvent.setup();
     renderDetailInBranch();

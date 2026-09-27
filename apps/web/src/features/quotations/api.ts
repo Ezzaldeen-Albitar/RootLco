@@ -12,7 +12,12 @@ import {
   type CursorPage,
   type ReadState,
 } from '@/lib/api/read-operation';
-import { fromFailure, success, type ActionState } from '@/lib/forms/action-result';
+import {
+  fromFailure,
+  fromStateRefusal,
+  success,
+  type ActionState,
+} from '@/lib/forms/action-result';
 import type {
   DiscountApprovalDecideBody,
   QuotationCreateBody,
@@ -196,7 +201,7 @@ export async function createQuotation(
   const client = await authorizedClient();
   if (!client) return { state: expired(attempt), created: null };
   const result = await client.send<QuotationDetail>('POST', '/api/v1/quotations', body);
-  if (!result.ok) return { state: fromFailure(result, attempt), created: null };
+  if (!result.ok) return { state: fromStateRefusal(result, attempt), created: null };
   return {
     state: {
       ...success('quotations.create.success', attempt),
@@ -225,7 +230,7 @@ export async function createQuotationRevision(
     body,
     { ifMatch }
   );
-  if (!result.ok) return { state: fromFailure(result, attempt), created: null };
+  if (!result.ok) return { state: fromStateRefusal(result, attempt), created: null };
   return {
     state: {
       ...success('quotations.revision.created', attempt),
@@ -253,7 +258,7 @@ export async function issueQuotation(
     body,
     { ifMatch }
   );
-  if (!result.ok) return fromFailure(result, attempt);
+  if (!result.ok) return fromStateRefusal(result, attempt);
   return { ...success('quotations.issue.success', attempt), correlationId: result.correlationId };
 }
 

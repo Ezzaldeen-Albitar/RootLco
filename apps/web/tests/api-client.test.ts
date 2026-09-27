@@ -19,7 +19,7 @@ import {
   type Violation,
 } from '@/lib/api/client';
 import { requiresIdempotencyKey, resolveOperation } from '@/lib/api/operation-contract';
-import { fromFailure } from '@/lib/forms/action-result';
+import { fromFailure, fromStateRefusal } from '@/lib/forms/action-result';
 
 /**
  * The session cookie, and nothing else about the client, is stubbed.
@@ -1755,5 +1755,72 @@ function own(code: string): string {
   // ceiling and can be accepted deliberately, so it gets its own sentence rather
   // than the blocked one.
   if (code === 'ERR-CAP-003') return 'capacity.planBelowUsage';
+  // `ERR-TRN-001` also reports broken bounds and invariants (a payment
+  // allocation over the open balance), so the shared mapping keeps the sentence
+  // that claims nothing; only an adapter that opts in says "refresh".
   return 'state.conflict.blocked.title';
 }
+
+describe('a move the record no longer allows (ERR-TRN-001)', () => {
+  const transition = (violations?: readonly Violation[]): ApiFailure => ({
+    ok: false,
+    kind: 'conflict',
+    status: 409,
+    problem: {
+      code: 'ERR-TRN-001',
+      ...(violations === undefined ? {} : { violations: [...violations] }),
+    },
+    correlationId: 'corr-trn',
+  });
+
+  it('keeps the sentence that claims no cause on the shared path', () => {
+    // The backend also answers ERR-TRN-001 for an allocation over the receipt's
+    // remainder and for billing invariants, where "refresh" is false.
+    expect(failureMessageKey(transition())).toBe('state.conflict.blocked.title');
+    expect(fromFailure(transition(), 1).messageKey).toBe('state.conflict.blocked.title');
+  });
+
+  it('says "no longer possible, refresh" only through the opt-in reader', () => {
+    // Browser QA part 7, row 1.4b: a quotation on a closed job read only "This
+    // change cannot be saved". The quotation adapters opt in.
+    expect(fromStateRefusal(transition(), 1).messageKey).toBe('state.conflict.transition.title');
+    expect(fromStateRefusal(transition(), 1).status).toBe('conflict');
+    expect(fromStateRefusal(transition(), 1).correlationId).toBe('corr-trn');
+  });
+
+  it('leaves every other 409 where it was, even through the opt-in reader', () => {
+    const other = (code: string): ApiFailure => ({
+      ...transition(),
+      problem: { code },
+    });
+    expect(fromStateRefusal(other('ERR-CON-001'), 1).messageKey).toBe('state.conflict.title');
+    expect(fromStateRefusal(other('ERR-RES-002'), 1).messageKey).toBe(
+      'state.conflict.blocked.title'
+    );
+    expect(fromStateRefusal({ ...transition(), problem: null }, 1).messageKey).toBe(
+      'state.conflict.blocked.title'
+    );
+  });
+
+  it('still lets a named precondition speak first, catalogued or not', () => {
+    const named = transition([{ path: 'path.receptionId', rule: 'closure_blocked' }]);
+    expect(fromStateRefusal(named, 1).messageKey).toBe('form.violation.closure_blocked');
+    // A rule the catalogue does not hold still names a precondition, so the
+    // opt-in reader does not claim the record moved on.
+    const unnamed = transition([{ path: 'body', rule: 'not_a_catalogued_rule' }]);
+    expect(fromStateRefusal(unnamed, 1).messageKey).toBe('state.conflict.blocked.title');
+  });
+
+  it('tells the reader to refresh, in both languages, with no code in it', () => {
+    const catalogues = [en, ar] as readonly Record<string, string>[];
+    for (const catalogue of catalogues) {
+      const sentence = catalogue['state.conflict.transition.title'] ?? '';
+      expect(sentence.length).toBeGreaterThan(0);
+      expect(sentence).not.toMatch(/ERR-|TRN|409/);
+      expect(sentence).not.toBe(catalogue['state.conflict.blocked.title']);
+      expect(sentence).not.toBe(catalogue['state.conflict.title']);
+    }
+    expect((en as Record<string, string>)['state.conflict.transition.title']).toMatch(/refresh/i);
+    expect((ar as Record<string, string>)['state.conflict.transition.title']).toContain('حدّث');
+  });
+});

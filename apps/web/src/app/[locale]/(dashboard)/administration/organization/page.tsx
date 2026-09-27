@@ -34,7 +34,8 @@ import { pageMetadata } from '@/lib/page-metadata';
  * `org.reference-values-read` (P1-32-PRE-OD-REF), read only for a holder of
  * `org.tenant.read`, the code it declares. Without it, or when it fails, the
  * company and branch dialogs and the tenant form fall back to the values already
- * in use; nothing becomes free text.
+ * in use; nothing becomes free text. When it was made and failed, the fields say
+ * so and offer Try again, and a select left empty refuses to send.
  */
 export default async function OrganizationPage({
   params,
@@ -57,9 +58,15 @@ export default async function OrganizationPage({
   const canManageCompanies = holds(session.permissions, PERMISSIONS.companyManage);
   const canManageBranches = holds(session.permissions, PERMISSIONS.branchManage);
 
-  const tenant = await readTenant();
+  // `iam.tenant-settings-read` declares `org.tenant.read`: without it the
+  // Workspace card says so, and no read is made to be refused.
+  const tenant = canReadTenant
+    ? await readTenant()
+    : { status: 'denied' as const, data: null, correlationId: null };
   const capacity = canReadTenant ? await readCapacity() : null;
   const referenceValues = canReadTenant ? await readReferenceValues() : null;
+  // Made and failed, as against never made: only a failure offers Try again.
+  const referenceUnavailable = canReadTenant && referenceValues === null;
   const companies = canReadCompanies ? await listCompanies() : null;
   const branches = canReadBranches ? await listBranches() : null;
   const currencyChoices =
@@ -91,10 +98,12 @@ export default async function OrganizationPage({
             <ReadBoundary state={toReadState(tenant)} messages={messages}>
               {(view) => (
                 <TenantForm
+                  locale={locale}
                   messages={messages}
                   tenant={view}
                   canWrite={canWriteSettings}
                   referenceValues={referenceValues}
+                  referenceUnavailable={referenceUnavailable}
                   timezoneChoices={timezoneChoices}
                 />
               )}
@@ -115,6 +124,7 @@ export default async function OrganizationPage({
           {companies || branches ? (
             <Panel title={t('organization.structure.title')}>
               <OrganizationStructure
+                locale={locale}
                 messages={messages}
                 capacity={capacity?.status === 'ok' ? capacity.data : null}
                 companies={companies}
@@ -122,6 +132,7 @@ export default async function OrganizationPage({
                 currencyChoices={currencyChoices}
                 timezoneChoices={timezoneChoices}
                 referenceValues={referenceValues}
+                referenceUnavailable={referenceUnavailable}
                 canManageCompanies={canManageCompanies}
                 canManageBranches={canManageBranches}
                 canChangeBranchStatus={canWriteSettings}

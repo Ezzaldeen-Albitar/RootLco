@@ -16,6 +16,7 @@ import type {
   WorkOrderJob,
   WorkOrderReachableState,
 } from '../work-orders-contract';
+import { workOrderStateMessageKey } from '../work-orders-contract';
 import { WorkOrderDeliveryPanel } from '@/features/delivery/components/WorkOrderDeliveryPanel';
 import { JobBlockersPanel } from '@/features/quality/components/JobBlockersPanel';
 import { WorkOrderHistorySection } from '@/features/quality/components/WorkOrderHistorySection';
@@ -269,11 +270,34 @@ export function WorkOrderDetailScreen({
 }
 
 /**
+ * A work-order state in the reader's language.
+ *
+ * A platform state is said in words through the vocabulary the board and the
+ * conversion step use (`workOrderStateMessageKey`); a code outside it — the
+ * catalogue is tenant-extensible — is drawn as the code, never as a composed
+ * key (checkpoint browser QA, DEF-02).
+ */
+function stateText(messages: Messages, code: string): string {
+  const key = workOrderStateMessageKey(code);
+  return key === null ? code : translateDynamic(messages, key);
+}
+
+/** Whether parts have been asked for, in words; an unknown value keeps its code. */
+function partsForwardText(messages: Messages, code: string): string {
+  return (PARTS_FORWARD_STATES as readonly string[]).includes(code)
+    ? translateDynamic(messages, `workOrders.partsForward.${code}`)
+    : code;
+}
+
+/** `wo.work_orders.parts_forward_state`'s CHECK vocabulary. */
+const PARTS_FORWARD_STATES = ['none', 'requested', 'reserved_elsewhere'] as const;
+
+/**
  * The work order's identity and context — only fields the contract publishes.
  *
- * `state` renders as its own code for the reason the board does: the state
- * catalogue is tenant-extensible, so a translation table here would be a second
- * copy of a tenant's configuration and an unknown code would render as its key.
+ * The state and the parts position are said in words (DEF-02). The record
+ * version is not drawn: it is an internal number, and it still travels where it
+ * is needed — every guarded command on this screen sends it as `If-Match`.
  */
 function WorkOrderFacts({
   locale,
@@ -298,19 +322,9 @@ function WorkOrderFacts({
         </span>
       ),
     ],
-    [
-      'workOrders.detail.state',
-      <code className="font-mono" dir="ltr" key="state">
-        {wo.state}
-      </code>,
-    ],
+    ['workOrders.detail.state', stateText(messages, wo.state)],
     ['workOrders.detail.kind', translateDynamic(messages, `workOrders.kind.${wo.kind}`)],
-    [
-      'workOrders.detail.partsForward',
-      <code className="font-mono" dir="ltr" key="pf">
-        {wo.partsForwardState}
-      </code>,
-    ],
+    ['workOrders.detail.partsForward', partsForwardText(messages, wo.partsForwardState)],
     ['workOrders.detail.opened', <bdi key="opened">{formatDateTime(wo.openedAt, locale)}</bdi>],
     [
       'workOrders.detail.customer',
@@ -344,9 +358,6 @@ function WorkOrderFacts({
         </span>
       ),
     ],
-    // The version an operator can quote when a write is refused, and the same
-    // number every guarded command on this screen sends.
-    ['workOrders.detail.version', <span key="v">{wo.recordVersion}</span>],
   ];
 
   return (
@@ -506,14 +517,14 @@ function LifecyclePanel({
               onChange={(event) => setToState(event.target.value)}
               options={nextStates.map((state) => ({
                 value: state.code,
-                // The tenant's own code. Suffixed rather than translated, so a
-                // terminal or cancelling move is visible without inventing a
-                // vocabulary the catalogue does not publish.
+                // The state in words (a code outside the platform vocabulary
+                // stays its code), suffixed so a terminal or cancelling move is
+                // visible.
                 label: state.isCancellation
-                  ? `${state.code} · ${translate(messages, 'workOrders.detail.cancelling')}`
+                  ? `${stateText(messages, state.code)} · ${translate(messages, 'workOrders.detail.cancelling')}`
                   : state.isTerminal
-                    ? `${state.code} · ${translate(messages, 'workOrders.detail.terminal')}`
-                    : state.code,
+                    ? `${stateText(messages, state.code)} · ${translate(messages, 'workOrders.detail.terminal')}`
+                    : stateText(messages, state.code),
               }))}
               placeholder={translate(messages, 'workOrders.detail.chooseState')}
               error={
@@ -557,9 +568,7 @@ function LifecyclePanel({
             </button>
             <span className="ms-3 text-caption text-text-muted">
               {translate(messages, 'workOrders.detail.currentState')}{' '}
-              <code className="font-mono" dir="ltr">
-                {currentState}
-              </code>
+              <bdi>{stateText(messages, currentState)}</bdi>
             </span>
           </div>
         </form>

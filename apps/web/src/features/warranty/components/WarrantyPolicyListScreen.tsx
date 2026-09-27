@@ -264,14 +264,12 @@ export function WarrantyPolicyListScreen({
                         The name the platform published for this company, never
                         its reference: a reader cannot recognise a workshop by a
                         string they have never seen. A company outside the
-                        reader's own working context has no name here, and the
-                        reference is then all there is to show.
+                        reader's own working context has no name here, and it
+                        is said in words rather than by its reference (Browser
+                        QA part 7, row 4.3b).
                       */}
-                      {companyName(row.companyId) ?? (
-                        <code className="font-mono text-caption" dir="ltr">
-                          {row.companyId}
-                        </code>
-                      )}
+                      {companyName(row.companyId) ??
+                        translate(messages, 'warranty.policies.companyOutsideContext')}
                     </td>
                   </tr>
                 ))}

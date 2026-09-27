@@ -1701,11 +1701,21 @@ describe('provisioning an organisation', () => {
       'UTC',
     ]);
     expect(optionsOf(organization, L('platform.provision.language'))).toEqual(['', 'ar', 'en']);
-    // A currency is labelled by its code; a code it was not given cannot be chosen.
+    // A currency reads as its name with its code beside it (D-1, never the bare
+    // code); a code it was not given cannot be chosen.
     const currency = within(section(L('platform.provision.company'))).getByLabelText(
       new RegExp(`^${L('platform.provision.baseCurrency')}`)
     );
-    expect(within(currency).getByRole('option', { name: 'JOD' })).toBeInTheDocument();
+    expect(within(currency).getByRole('option', { name: 'Jordanian Dinar (JOD)' })).toHaveValue(
+      'JOD'
+    );
+    expect(within(currency).queryByRole('option', { name: 'JOD' })).toBeNull();
+    const zone = within(section(L('platform.provision.branch'))).getByLabelText(
+      new RegExp(`^${L('platform.provision.timeZone')}`)
+    );
+    expect(within(zone).getByRole('option', { name: /\(Asia\/Amman\)$/ })).toHaveValue(
+      'Asia/Amman'
+    );
     fireEvent.change(currency, { target: { value: 'SAR' } });
     expect((currency as HTMLSelectElement).value).toBe('');
     expect(currency).not.toBeDisabled();
@@ -1760,35 +1770,82 @@ describe('provisioning an organisation', () => {
     ).toHaveTextContent(L('platform.error.chooseCurrency'));
   });
 
-  it('shows the four choices disabled, with a notice, when the list could not be read', () => {
-    renderLtr(
+  /*
+   * P1-32-PRE-OD-QAF, item B. The list is read on the server, so a failed read
+   * arrives as `null`. Each of the four selects says so on itself and offers Try
+   * again (a page refresh), and the form refuses to send, marking all four and
+   * putting the cursor on the first — it never sends an empty choice that looked
+   * finished. In both languages.
+   */
+  it.each([
+    ['en', renderLtr, EN],
+    ['ar', renderRtl, AR],
+  ] as const)(
+    '%s: says the four lists could not be loaded, retries, and refuses to send',
+    async (locale, paint, catalogue) => {
+      const M = (key: string): string => catalogue[key] ?? `missing message ${key}`;
+      paint(
+        <ProvisionOrganizationScreen
+          locale={locale}
+          messages={getMessages(locale)}
+          plans={null}
+          referenceValues={null}
+          canActivate={false}
+        />
+      );
+      const organization = section(M('platform.provision.organization'));
+      const controls = [
+        within(organization).getByLabelText(new RegExp(`^${M('platform.provision.language')}`)),
+        within(organization).getByLabelText(new RegExp(`^${M('platform.provision.timeZone')}`)),
+        within(section(M('platform.provision.company'))).getByLabelText(
+          new RegExp(`^${M('platform.provision.baseCurrency')}`)
+        ),
+        within(section(M('platform.provision.branch'))).getByLabelText(
+          new RegExp(`^${M('platform.provision.timeZone')}`)
+        ),
+      ];
+      for (const control of controls) {
+        expect(control.tagName).toBe('SELECT');
+        // Focusable, so the cursor can be taken to it when the form refuses.
+        expect(control).not.toBeDisabled();
+      }
+      expect(screen.getAllByText(M('platform.provision.referenceUnavailable'))).toHaveLength(4);
+      // Nothing falls back to free text: the only text boxes are the ones that
+      // were always text.
+      expect(within(organization).queryByRole('textbox', { name: /time zone/i })).toBeNull();
+
+      const retries = screen.getAllByRole('button', { name: M('form.retry') });
+      expect(retries).toHaveLength(4);
+      await userEvent.click(retries[2] as HTMLElement);
+      expect(refresh).toHaveBeenCalledTimes(1);
+
+      await userEvent.click(screen.getByRole('button', { name: M('platform.provision.submit') }));
+      expect(await screen.findAllByText(M('form.referenceList.blocked'))).toHaveLength(4);
+      for (const control of controls) expect(control).toHaveAttribute('aria-invalid', 'true');
+      expect(controls[0]).toHaveFocus();
+      expect(provisionOrganizationAction).not.toHaveBeenCalled();
+    }
+  );
+
+  it('ar: reads a currency and a zone by name in Arabic, with the code beside it', () => {
+    renderRtl(
       <ProvisionOrganizationScreen
-        locale="en"
-        messages={messages}
+        locale="ar"
+        messages={getMessages('ar')}
         plans={null}
-        referenceValues={null}
+        referenceValues={references}
         canActivate={false}
       />
     );
-    const organization = section(L('platform.provision.organization'));
-    const controls = [
-      within(organization).getByLabelText(new RegExp(`^${L('platform.provision.language')}`)),
-      within(organization).getByLabelText(new RegExp(`^${L('platform.provision.timeZone')}`)),
-      within(section(L('platform.provision.company'))).getByLabelText(
-        new RegExp(`^${L('platform.provision.baseCurrency')}`)
-      ),
-      within(section(L('platform.provision.branch'))).getByLabelText(
-        new RegExp(`^${L('platform.provision.timeZone')}`)
-      ),
-    ];
-    for (const control of controls) {
-      expect(control.tagName).toBe('SELECT');
-      expect(control).toBeDisabled();
-    }
-    expect(screen.getAllByText(L('platform.provision.referenceUnavailable'))).toHaveLength(4);
-    // Nothing falls back to free text: the only text boxes are the ones that
-    // were always text.
-    expect(within(organization).queryByRole('textbox', { name: /time zone/i })).toBeNull();
+    const M = (key: string): string => AR[key] ?? `missing message ${key}`;
+    const currency = within(section(M('platform.provision.company'))).getByLabelText(
+      new RegExp(`^${M('platform.provision.baseCurrency')}`)
+    );
+    const jod = within(currency).getByRole('option', { name: /\(JOD\)$/ });
+    expect(jod).toHaveValue('JOD');
+    expect(jod.textContent).toMatch(/[؀-ۿ]/);
+    expect(currency).not.toHaveAttribute('dir', 'ltr');
+    expect(screen.queryAllByRole('button', { name: M('form.retry') })).toHaveLength(0);
   });
 });
 

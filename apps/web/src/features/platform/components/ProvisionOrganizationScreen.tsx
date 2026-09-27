@@ -1,14 +1,16 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { useActionState, useEffect, useState, type ChangeEvent } from 'react';
+import { useActionState, useEffect, useState, type ChangeEvent, type ReactNode } from 'react';
 import { CheckboxField, SelectField, TextField } from '@/components/forms/Field';
+import { ReferenceListRetry, useUnavailableListGuard } from '@/components/forms/ReferenceList';
 import { notifyActionResult } from '@/components/notifications/action-notifications';
 import { FormFeedback } from '@/features/authentication/components/FormFeedback';
 import { SubmitButton } from '@/features/authentication/components/SubmitButton';
 import { isLocale, type Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
 import { translateDynamic } from '@/i18n/get-messages';
+import { currencyLabel, timeZoneLabel } from '@/lib/format';
 import { IDLE } from '@/lib/forms/action-result';
 import { provisionOrganizationAction } from '../actions';
 import type { ProvisionState, ReferenceValues, SubscriptionPlan } from '../types';
@@ -28,10 +30,12 @@ import { useActionRefusal } from '@/lib/forms/use-action-refusal';
  *
  * The language, both time zones and the base currency are selects fed from the
  * reference registers (`platform.reference-values-read`, P1-32-PRE-OD-REF), so
- * only a value the platform holds can be chosen. A currency is labelled by its
- * code and a zone by its name; a language is offered only when the interface
- * can also be shown in it. When the list could not be read the four selects are
- * shown disabled with a notice, never as free text.
+ * only a value the platform holds can be chosen. A currency reads as its name in
+ * the reader's language with its code beside it, a zone as its generic name with
+ * its identifier; a language is offered only when the interface can also be shown
+ * in it (P1-32-PRE-OD-QAF, D-1). A select with nothing to offer — the list could
+ * not be read, or holds nothing — says so on the field, offers Try again, and
+ * refuses the submission on that field; it never becomes free text.
  */
 export function ProvisionOrganizationScreen({
   locale,
@@ -81,24 +85,46 @@ export function ProvisionOrganizationScreen({
   };
 
   const activePlans = (plans ?? []).filter((plan) => plan.status === 'active');
-  const referenceUnavailable = referenceValues === null;
   const unavailableNotice = t('platform.provision.referenceUnavailable');
   const languageOptions = (referenceValues?.languages ?? [])
     .filter((language) => isLocale(language.localeCode))
     .map((language) => ({ value: language.localeCode, label: t(`locale.${language.localeCode}`) }));
   const timeZoneOptions = (referenceValues?.timezones ?? []).map((zone) => ({
     value: zone.zoneName,
-    label: zone.zoneName,
+    label: timeZoneLabel(zone.zoneName, locale),
   }));
   const currencyOptions = (referenceValues?.currencies ?? []).map((currency) => ({
     value: currency.code,
-    label: currency.code,
+    label: currencyLabel(currency.code, locale, currency.name),
   }));
+  // Every select fed by the reference read, and whether it has anything to offer.
+  const missing: Readonly<Record<string, boolean>> = {
+    tenantLocale: languageOptions.length === 0,
+    tenantTimezone: timeZoneOptions.length === 0,
+    companyCurrency: currencyOptions.length === 0,
+    branchTimezone: timeZoneOptions.length === 0,
+  };
+  const listGuard = useUnavailableListGuard(Object.keys(missing).filter((field) => missing[field]));
+  const referenceError = (name: string) =>
+    fieldError(name) ?? (listGuard.refused(name) ? t('form.referenceList.blocked') : undefined);
+  // The retry sits under the field it is about, inside the same grid cell.
+  const withRetry = (name: string, field: ReactNode) =>
+    missing[name] ? (
+      <div className="flex flex-col gap-2">
+        {field}
+        <ReferenceListRetry label={t('form.retry')} />
+      </div>
+    ) : (
+      field
+    );
 
   return (
     <form
       ref={refusalFormRef}
       action={formAction}
+      onSubmit={(event) => {
+        listGuard.stop(event);
+      }}
       noValidate
       className="flex max-w-content flex-col gap-4"
     >
@@ -139,35 +165,38 @@ export function ProvisionOrganizationScreen({
             required
             autoComplete="off"
           />
-          <SelectField
-            key={`tenantLocale-${attempt}`}
-            name="tenantLocale"
-            defaultValue={draft['tenantLocale'] ?? ''}
-            onChange={retain('tenantLocale')}
-            error={fieldError('tenantLocale')}
-            label={t('platform.provision.language')}
-            description={referenceUnavailable ? unavailableNotice : undefined}
-            required
-            disabled={referenceUnavailable}
-            placeholder={t('platform.provision.choose')}
-            options={languageOptions}
-          />
-          <SelectField
-            key={`tenantTimezone-${attempt}`}
-            name="tenantTimezone"
-            defaultValue={draft['tenantTimezone'] ?? ''}
-            onChange={retain('tenantTimezone')}
-            error={fieldError('tenantTimezone')}
-            label={t('platform.provision.timeZone')}
-            description={
-              referenceUnavailable ? unavailableNotice : t('platform.provision.timeZoneHint')
-            }
-            required
-            disabled={referenceUnavailable}
-            placeholder={t('platform.provision.choose')}
-            options={timeZoneOptions}
-            dir="ltr"
-          />
+          {withRetry(
+            'tenantLocale',
+            <SelectField
+              key={`tenantLocale-${attempt}`}
+              name="tenantLocale"
+              defaultValue={draft['tenantLocale'] ?? ''}
+              onChange={retain('tenantLocale')}
+              error={referenceError('tenantLocale')}
+              label={t('platform.provision.language')}
+              description={missing['tenantLocale'] ? unavailableNotice : undefined}
+              required
+              placeholder={t('platform.provision.choose')}
+              options={languageOptions}
+            />
+          )}
+          {withRetry(
+            'tenantTimezone',
+            <SelectField
+              key={`tenantTimezone-${attempt}`}
+              name="tenantTimezone"
+              defaultValue={draft['tenantTimezone'] ?? ''}
+              onChange={retain('tenantTimezone')}
+              error={referenceError('tenantTimezone')}
+              label={t('platform.provision.timeZone')}
+              description={
+                missing['tenantTimezone'] ? unavailableNotice : t('platform.provision.timeZoneHint')
+              }
+              required
+              placeholder={t('platform.provision.choose')}
+              options={timeZoneOptions}
+            />
+          )}
         </div>
       </Section>
 
@@ -195,22 +224,25 @@ export function ProvisionOrganizationScreen({
             required
             autoComplete="off"
           />
-          <SelectField
-            key={`companyCurrency-${attempt}`}
-            name="companyCurrency"
-            defaultValue={draft['companyCurrency'] ?? ''}
-            onChange={retain('companyCurrency')}
-            error={fieldError('companyCurrency')}
-            label={t('platform.provision.baseCurrency')}
-            description={
-              referenceUnavailable ? unavailableNotice : t('platform.provision.currencyHint')
-            }
-            required
-            disabled={referenceUnavailable}
-            placeholder={t('platform.provision.choose')}
-            options={currencyOptions}
-            dir="ltr"
-          />
+          {withRetry(
+            'companyCurrency',
+            <SelectField
+              key={`companyCurrency-${attempt}`}
+              name="companyCurrency"
+              defaultValue={draft['companyCurrency'] ?? ''}
+              onChange={retain('companyCurrency')}
+              error={referenceError('companyCurrency')}
+              label={t('platform.provision.baseCurrency')}
+              description={
+                missing['companyCurrency']
+                  ? unavailableNotice
+                  : t('platform.provision.currencyHint')
+              }
+              required
+              placeholder={t('platform.provision.choose')}
+              options={currencyOptions}
+            />
+          )}
           <TextField
             key={`companyRegistration-${attempt}`}
             name="companyRegistration"
@@ -279,22 +311,23 @@ export function ProvisionOrganizationScreen({
             autoComplete="off"
             dir="ltr"
           />
-          <SelectField
-            key={`branchTimezone-${attempt}`}
-            name="branchTimezone"
-            defaultValue={draft['branchTimezone'] ?? ''}
-            onChange={retain('branchTimezone')}
-            error={fieldError('branchTimezone')}
-            label={t('platform.provision.timeZone')}
-            description={
-              referenceUnavailable ? unavailableNotice : t('platform.provision.timeZoneHint')
-            }
-            required
-            disabled={referenceUnavailable}
-            placeholder={t('platform.provision.choose')}
-            options={timeZoneOptions}
-            dir="ltr"
-          />
+          {withRetry(
+            'branchTimezone',
+            <SelectField
+              key={`branchTimezone-${attempt}`}
+              name="branchTimezone"
+              defaultValue={draft['branchTimezone'] ?? ''}
+              onChange={retain('branchTimezone')}
+              error={referenceError('branchTimezone')}
+              label={t('platform.provision.timeZone')}
+              description={
+                missing['branchTimezone'] ? unavailableNotice : t('platform.provision.timeZoneHint')
+              }
+              required
+              placeholder={t('platform.provision.choose')}
+              options={timeZoneOptions}
+            />
+          )}
         </div>
       </Section>
 

@@ -1,11 +1,13 @@
 'use client';
 
+import Link from 'next/link';
 import { useState, useTransition } from 'react';
 import { ErrorState, LoadingState, SessionExpiredState } from '@/components/states/States';
 import { notifyActionResult } from '@/components/notifications/action-notifications';
 import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
-import { translate } from '@/i18n/get-messages';
+import { translate, translateDynamic } from '@/i18n/get-messages';
+import { workOrderStateMessageKey } from '@/features/work-orders/work-orders-contract';
 import { formatDateTime } from '@/lib/format';
 import type { ActionState } from '@/lib/forms/action-result';
 import { convertReceptionToWorkOrder } from '../../api';
@@ -43,12 +45,13 @@ import { CommandOutcome } from './SummaryStep';
  * re-reads, and every write control in the wizard withdraws itself. Nothing here
  * computes a version.
  *
- * ## The work-order state is an opaque catalogue code
+ * ## The work-order state is said in words, and the work order is linked
  *
- * `wo.work_order_states` is a live catalogue, so `state` is rendered as the
- * identifier it is, with the disposition said beside it. Translating it against
- * a hand-written table would be a second copy of a tenant's configuration, and
- * a code the table lacked would render as the key.
+ * The state is translated by the same platform-state vocabulary the work-order
+ * screens use (`workOrderStateMessageKey`); a code outside it is drawn as the
+ * code rather than as a composed key. And the answer names the work order it
+ * created, so the operator is offered a link to it rather than being left to
+ * find it on the board (Browser QA part 7, row 5.3).
  */
 
 const IDLE: ActionState = { status: 'idle' };
@@ -203,15 +206,25 @@ function ConversionResult({
             {translate(messages, 'receptions.convert.workOrderState')}
           </dt>
           <dd className="text-body text-text-primary">
-            <code className="font-mono text-caption" dir="ltr">
-              {converted.state}
-            </code>
+            <WorkOrderState messages={messages} state={converted.state} />
           </dd>
         </div>
       </dl>
-      <p className="text-caption text-text-muted" lang={locale}>
-        {translate(messages, 'receptions.convert.stateOpaque')}
-      </p>
+      {/*
+        The way to the work order this conversion created. Offered only to a
+        reader who may open it: a link whose one outcome is a refusal is not a
+        way anywhere.
+      */}
+      {canReadWorkOrder ? (
+        <p className="text-body">
+          <Link
+            href={`/${locale}/work-orders/${encodeURIComponent(converted.workOrderId)}`}
+            className="font-medium text-primary underline-offset-2 hover:underline"
+          >
+            {translate(messages, 'receptions.convert.openWorkOrder')}
+          </Link>
+        </p>
+      ) : null}
 
       {canReadWorkOrder ? (
         <WorkOrderPanel locale={locale} messages={messages} workOrderId={converted.workOrderId} />
@@ -222,6 +235,25 @@ function ConversionResult({
       )}
     </div>
   );
+}
+
+/** A work-order state in the reader's language, or the code when it is not a platform state. */
+function WorkOrderState({
+  messages,
+  state,
+}: {
+  readonly messages: Messages;
+  readonly state: string;
+}) {
+  const key = workOrderStateMessageKey(state);
+  if (key === null) {
+    return (
+      <code className="font-mono text-caption" dir="ltr">
+        {state}
+      </code>
+    );
+  }
+  return <>{translateDynamic(messages, key)}</>;
 }
 
 type PanelState =

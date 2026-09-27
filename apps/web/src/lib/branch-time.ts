@@ -236,16 +236,56 @@ export function formatInZone(value: string, intlLocale: string, zone: string): s
 }
 
 /**
+ * The names the platform's own UTC clock goes by. Only these: a branch zone
+ * that merely sits at +0 for part of the year (`Europe/London` in winter) is
+ * that branch's clock, and keeps its offset label.
+ */
+const UTC_ZONES: ReadonlySet<string> = new Set([
+  'UTC',
+  'Etc/UTC',
+  'Etc/UCT',
+  'UCT',
+  'Etc/Universal',
+  'Universal',
+  'Etc/Zulu',
+  'Zulu',
+]);
+
+/**
  * The name of the clock an instant is rendered on, as the reader's language
  * writes it (`GMT+3`, `GMT-4`): written beside a time whenever
  * the reader cannot tell from the screen which clock it is.
+ *
+ * UTC is named `UTC` in both languages. It is the clock "All my branches" is
+ * written on, and the Owner's word for it; `shortOffset` writes it `GMT+0` in
+ * English and `غرينتش+0` in Arabic, which reads as a place's clock rather than
+ * the universal one (checkpoint browser QA).
  */
 export function zoneLabelAt(value: string, intlLocale: string, zone: string): string {
+  if (UTC_ZONES.has(zone)) return 'UTC';
   const parts = new Intl.DateTimeFormat(intlLocale, {
     timeZone: zone,
     timeZoneName: 'shortOffset',
   }).formatToParts(new Date(value));
   return parts.find((part) => part.type === 'timeZoneName')?.value ?? zone;
+}
+
+/**
+ * Whether this browser knows a zone by that name.
+ *
+ * Kept here, beside every other formatter that takes a zone, so no feature file
+ * builds an `Intl` formatter of its own (P1-27-FE-030). The locale is fixed
+ * because only the zone is being tested: a zone is valid or not in every
+ * language alike.
+ */
+export function isKnownZone(zone: string): boolean {
+  if (zone.length === 0) return false;
+  try {
+    new Intl.DateTimeFormat('en-CA', { timeZone: zone });
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /** A day, rendered for reading, on the branch's clock. */

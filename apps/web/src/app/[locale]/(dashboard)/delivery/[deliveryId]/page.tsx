@@ -11,6 +11,7 @@ import {
 import { requireSession } from '@/features/authentication/api/session';
 import { holds, VEHICLE_PERMISSIONS } from '@/features/crm/permissions';
 import { readDelivery } from '@/features/delivery/api';
+import { readWorkOrderDetail } from '@/features/work-orders/api';
 import { listOdometerReadings } from '@/features/vehicles/history-api';
 import type { OdometerReadingEntry } from '@/features/vehicles/history-contract';
 import { DeliveryDetailScreen } from '@/features/delivery/components/DeliveryDetailScreen';
@@ -209,6 +210,15 @@ export default async function DeliveryDetailPage({
     holds(session.permissions, VEHICLE_PERMISSIONS.vehicleRead)
   );
 
+  /*
+   * The vehicle by what a workshop calls it — its plate — rather than by the
+   * identifier the delivery record carries (Browser QA part 7, row 3.2b). The
+   * work-order read is the one that publishes the plate, and it is asked only
+   * when the caller holds the code it declares.
+   */
+  const canReadWorkOrder = holds(session.permissions, WORK_ORDER_PERMISSIONS.read);
+  const vehicleName = await resolveVehicleName(record.data.workOrderId, canReadWorkOrder);
+
   return shell(
     <DeliveryDetailScreen
       locale={locale}
@@ -223,8 +233,9 @@ export default async function DeliveryDetailPage({
       }
       canIssueWarranty={holds(session.permissions, WARRANTY_PERMISSIONS.issue)}
       canReadWarrantyPolicies={holds(session.permissions, WARRANTY_PERMISSIONS.read)}
-      canReadWorkOrder={holds(session.permissions, WORK_ORDER_PERMISSIONS.read)}
+      canReadWorkOrder={canReadWorkOrder}
       finalOdometerReading={finalOdometerReading}
+      vehicleName={vehicleName}
     />
   );
 }
@@ -251,6 +262,25 @@ async function resolveFinalOdometer(
   );
   if (page.status !== 'ok') return null;
   return page.rows.find((reading) => reading.id === readingId) ?? null;
+}
+
+/**
+ * The vehicle's plate, or its make and model when no plate is on it, or `null`.
+ *
+ * `null` for every reason it could not be established — no authority to read the
+ * work order, or a read that did not answer — and the screen then names no
+ * vehicle rather than printing an identifier. The work-order link beside it is
+ * still the way to the vehicle.
+ */
+async function resolveVehicleName(
+  workOrderId: string,
+  mayReadWorkOrder: boolean
+): Promise<string | null> {
+  if (!mayReadWorkOrder) return null;
+  const detail = await readWorkOrderDetail(workOrderId);
+  if (detail.status !== 'ok') return null;
+  const { vehicle } = detail.data.workOrder;
+  return vehicle.registrationPlate ?? vehicle.makeModel;
 }
 
 /**

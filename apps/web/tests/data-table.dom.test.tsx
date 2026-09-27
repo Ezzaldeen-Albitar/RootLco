@@ -440,13 +440,83 @@ describe('a search request', () => {
     expect(load.mock.calls[0]?.[0]).toEqual({ q: 'now' });
   });
 
-  it('re-issues on a SECOND submit of the same term, which is what a retry is', async () => {
-    const load = vi.fn(async (criteria: { q: string }) => okPage([{ id: `r-${criteria.q}` }]));
+  it('re-issues a submit of the same term after the read FAILED, which is what a retry is', async () => {
+    const load = vi
+      .fn()
+      .mockResolvedValueOnce(failure('unavailable'))
+      .mockResolvedValue(okPage([{ id: 'r-same' }]));
+    const user = userEvent.setup();
+    renderLtr(<SearchHarness term="same" load={load} />);
+    await waitFor(() => expect(screen.getByTestId('phase')).toHaveTextContent('unavailable'));
+    expect(load).toHaveBeenCalledTimes(1);
+    await user.click(screen.getByRole('button', { name: 'ask now' }));
+    await waitFor(() => expect(load).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(screen.getByTestId('rows')).toHaveTextContent('r-same'));
+  });
+
+  it('sends NOTHING on a submit while page one of the same term is in flight, and ONE read once answered', async () => {
+    /*
+     * Checkpoint browser QA: the term settled and was read, and Enter then read
+     * it again 50 ms later — every search spent two requests of the board's
+     * `expensive-read` budget and drew 429s in pairs. Only the in-flight read
+     * answers a submit: once it has answered, a submit is the refresh the
+     * boards have no other control for, and asks exactly once.
+     */
+    const gate: { release: ((value: unknown) => void) | null } = { release: null };
+    const load = vi.fn(async (criteria: { q: string }) => {
+      await new Promise((resolve) => {
+        gate.release = resolve;
+      });
+      return okPage([{ id: `r-${criteria.q}` }]);
+    });
     const user = userEvent.setup();
     renderLtr(<SearchHarness term="same" load={load} />);
     await waitFor(() => expect(load).toHaveBeenCalledTimes(1));
+    // In flight: the submit is answered by the read already out.
+    await user.click(screen.getByRole('button', { name: 'ask now' }));
+    await new Promise((resolve) => setTimeout(resolve, 60));
+    expect(load).toHaveBeenCalledTimes(1);
+    gate.release?.(null);
+    await waitFor(() => expect(screen.getByTestId('phase')).toHaveTextContent('ready'));
+    // Answered: the submit asks again, once.
     await user.click(screen.getByRole('button', { name: 'ask now' }));
     await waitFor(() => expect(load).toHaveBeenCalledTimes(2));
+    expect(load.mock.calls[1]?.[0]).toEqual({ q: 'same' });
+    await new Promise((resolve) => setTimeout(resolve, 60));
+    expect(load).toHaveBeenCalledTimes(2);
+    gate.release?.(null);
+  });
+
+  it('asks for the NEW criteria only after a submission — never the submitted ones again', async () => {
+    /*
+     * Checkpoint browser QA: after a branch switch (a submission) the reception
+     * board re-read today's window when Yesterday was chosen, then read
+     * yesterday's. Leaving a submitted term must not re-read it while the new
+     * one settles.
+     */
+    const load = vi.fn(async (criteria: { q: string }) => okPage([{ id: `r-${criteria.q}` }]));
+    const user = userEvent.setup();
+    const { rerender } = renderLtr(<SearchHarness term="first" load={load} />);
+    await user.click(screen.getByRole('button', { name: 'ask now' }));
+    await waitFor(() => expect(screen.getByTestId('rows')).toHaveTextContent('r-first'));
+    const before = load.mock.calls.length;
+
+    rerender(<SearchHarness term="second" load={load} />);
+    await waitFor(() => expect(screen.getByTestId('rows')).toHaveTextContent('r-second'));
+    await new Promise((resolve) => setTimeout(resolve, 60));
+    expect(load.mock.calls.slice(before).map((call) => call[0])).toEqual([{ q: 'second' }]);
+  });
+
+  it('keeps a submission after a branch switch to ONE read of the new criteria', async () => {
+    const load = vi.fn(async (criteria: { q: string }) => okPage([{ id: `r-${criteria.q}` }]));
+    const { rerender } = renderLtr(<SearchHarness term="same" load={load} version={0} />);
+    await waitFor(() => expect(load).toHaveBeenCalledTimes(1));
+    rerender(<SearchHarness term="same" load={load} version={1} />);
+    await waitFor(() => expect(load).toHaveBeenCalledTimes(2));
+    rerender(<SearchHarness term="other" load={load} version={1} />);
+    await waitFor(() => expect(screen.getByTestId('rows')).toHaveTextContent('r-other'));
+    await new Promise((resolve) => setTimeout(resolve, 60));
+    expect(load.mock.calls.slice(2).map((call) => call[0])).toEqual([{ q: 'other' }]);
   });
 
   it('files rows under the criteria it ACTUALLY fetched, not the settled name', async () => {

@@ -360,7 +360,10 @@ test.describe('P1-31 delivery screens, over the acceptance journey records', () 
     const summary = page.locator('section[aria-labelledby="delivery-summary-heading"]');
     await expect(summary).toContainText(say(locale, 'delivery.summary.status'));
     await expect(summary).toContainText(say(locale, 'delivery.summary.deliveredAt'));
-    await expect(summary).toContainText(say(locale, 'delivery.summary.vehicle'));
+    // The vehicle is no longer printed as an internal reference (Browser QA part 7,
+    // row 3.2b); the work order it belongs to is linked instead.
+    await expect(summary).not.toContainText(say(locale, 'delivery.summary.vehicle'));
+    await expect(summary).toContainText(say(locale, 'delivery.summary.workOrderLink'));
     await expect(summary).toContainText(say(locale, 'delivery.summary.deliveringEmployee'));
     // The harness completed this handover, so the "not handed over yet" statement must be
     // absent — the one assertion here that distinguishes a delivered record from an open one.

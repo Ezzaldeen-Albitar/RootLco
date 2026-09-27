@@ -57,6 +57,7 @@ import {
 } from './p1-19-helpers';
 import { __setPrimaryPoolForTests } from '@/server/db/pool';
 import { __resetAuthenticatorForTests } from '@/server/context/principal';
+import { __resetRateLimitForTests } from '@/server/http/rate-limit';
 import { GET as SEARCH_CUSTOMERS } from '@/app/api/v1/customers/route';
 import { GET as SEARCH_VEHICLES } from '@/app/api/v1/vehicles/route';
 import { GET as LIST_WORK_ORDERS } from '@/app/api/v1/work-orders/route';
@@ -132,6 +133,9 @@ const PARTNER_TENANT_B = '0d5c0000-0000-4000-8000-000000000103';
 /** "Odsrch <Ahmad with hamza above> Haddad". */
 const HAMZA_NAME = 'Odsrch \u0623\u062D\u0645\u062F Haddad';
 const OMAR_NUMBER = 'ODS-C-9001';
+
+/** Omar's second number, whose last seven digits start with a 0. */
+const OMAR_SECOND_PHONE = '0790712345';
 
 const SHARED_PHONE_RAW = '+962 79 555 1234';
 const SHARED_PHONE = '+962795551234';
@@ -213,8 +217,9 @@ async function seedCustomers(): Promise<void> {
       `INSERT INTO crm.contact_points
          (tenant_id, partner_id, channel, normalized_value, raw_value, is_primary, created_by)
        VALUES ($1, $2, 'mobile', crm.normalize_phone($3), $3, true, $4),
-              ($1, $5, 'phone', crm.normalize_phone('0791112233'), '0791112233', true, $4)`,
-      [TENANT_A, PARTNER_HAMZA, SHARED_PHONE_RAW, USER_A, PARTNER_OMAR]
+              ($1, $5, 'phone', crm.normalize_phone('0791112233'), '0791112233', true, $4),
+              ($1, $5, 'mobile', crm.normalize_phone($6), $6, false, $4)`,
+      [TENANT_A, PARTNER_HAMZA, SHARED_PHONE_RAW, USER_A, PARTNER_OMAR, OMAR_SECOND_PHONE]
     );
   });
   await asTenant(TENANT_B, async (sql) => {
@@ -310,7 +315,15 @@ beforeAll(async () => {
   __setPrimaryPoolForTests(runtime);
 });
 
-afterEach(() => __resetAuthenticatorForTests());
+afterEach(() => {
+  __resetAuthenticatorForTests();
+  // All three searches carry the `expensive-read` policy, and one reader makes
+  // a dozen or more searches across the phone, number and free-text cases.
+  // Without this a LATER case answers 429 and the failure reads as a broken
+  // search rather than as an exhausted per-user budget. The limiter itself is
+  // unchanged; each case simply starts with a fresh window.
+  __resetRateLimitForTests();
+});
 
 afterAll(async () => {
   __setPrimaryPoolForTests(undefined);
@@ -389,6 +402,44 @@ describe('crm.customer-search — phone', () => {
       PARTNER_TENANT_B,
     ]);
   });
+
+  // Browser QA part 7, row 2.3c: a number stored as 0791112233 was not found by
+  // its international spelling. Omar's number is stored nationally.
+  it('finds a number stored nationally by every international spelling of it', async () => {
+    as(CUSTOMER_READER);
+    for (const typed of [
+      '+962791112233',
+      '+962 79 111 2233',
+      '00962 79 111 2233',
+      '+٩٦٢٧٩١١١٢٢٣٣',
+    ]) {
+      expect(await customerIds(`phone=${encodeURIComponent(typed)}`), typed).toEqual([
+        PARTNER_OMAR,
+      ]);
+      expect(await customerIds(`q=${encodeURIComponent(typed)}`), typed).toEqual([PARTNER_OMAR]);
+    }
+  });
+
+  // The trunk 0 is dropped only from a FULL national number. A seven-digit tail
+  // that happens to start with 0 is compared as typed, so it still finds the
+  // customer whose stored 0790712345 ends in it.
+  it('finds a customer by a seven-digit tail that starts with 0, by phone and by q', async () => {
+    as(CUSTOMER_READER);
+    expect(await customerIds('phone=0712345')).toEqual([PARTNER_OMAR]);
+    expect(await customerIds('q=0712345')).toEqual([PARTNER_OMAR]);
+  });
+
+  // And the other way round: Hamza's number is stored as +962795551234.
+  it('finds a number stored internationally by its national spelling, within the tenant', async () => {
+    as(CUSTOMER_READER);
+    for (const typed of ['0795551234', '079 555 1234', '079-555-1234']) {
+      expect(await customerIds(`phone=${encodeURIComponent(typed)}`), typed).toEqual([
+        PARTNER_HAMZA,
+      ]);
+    }
+    as(TENANT_B_READER);
+    expect(await customerIds('phone=0795551234')).toEqual([PARTNER_TENANT_B]);
+  });
 });
 
 describe('crm.customer-search — name and free text', () => {
@@ -405,6 +456,16 @@ describe('crm.customer-search — name and free text', () => {
     expect(await customerIds(`q=${OMAR_NUMBER}`)).toEqual([PARTNER_OMAR]);
     const arabicDigits = '\u0660\u0667\u0669\u0661\u0661\u0661\u0662\u0662\u0663\u0663';
     expect(await customerIds(`q=${encodeURIComponent(arabicDigits)}`)).toEqual([PARTNER_OMAR]);
+  });
+
+  // Browser QA part 7, row 2.3b: the customer number in Arabic-Indic digits.
+  it('finds the customer number typed in Arabic-Indic digits, by q and by customerNumber', async () => {
+    as(CUSTOMER_READER);
+    const typed = 'ODS-C-٩٠٠١'; // ODS-C-9001
+    expect(await customerIds(`q=${encodeURIComponent(typed)}`)).toEqual([PARTNER_OMAR]);
+    expect(await customerIds(`customerNumber=${encodeURIComponent(typed)}`)).toEqual([
+      PARTNER_OMAR,
+    ]);
   });
 
   it('q holding no digit omits the phone arm and still answers', async () => {

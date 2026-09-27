@@ -4,7 +4,12 @@ import { z } from 'zod';
 import type { TableRequest } from '@/components/data-table/table-state';
 import type { ServerPage } from '@/components/data-table/use-server-table';
 import { authorizedClient } from '@/lib/api/server-client';
-import { fromFailure, invalid, type ActionState } from '@/lib/forms/action-result';
+import {
+  fromFailure,
+  fromStateRefusal,
+  invalid,
+  type ActionState,
+} from '@/lib/forms/action-result';
 import { fieldErrorsFrom } from '@/lib/forms/field-errors';
 import {
   STATUS_BY_KIND,
@@ -215,7 +220,7 @@ export async function rescheduleAppointment(
     parsed.data,
     { ifMatch }
   );
-  if (!result.ok) return fromFailure(result, attempt);
+  if (!result.ok) return fromStateRefusal(result, attempt);
 
   return { status: 'success', correlationId: result.correlationId, attempt, changed: result.data };
 }
@@ -243,7 +248,7 @@ export async function cancelAppointment(
     parsed.data,
     { ifMatch }
   );
-  if (!result.ok) return fromFailure(result, attempt);
+  if (!result.ok) return fromStateRefusal(result, attempt);
 
   return { status: 'success', correlationId: result.correlationId, attempt, changed: result.data };
 }
@@ -268,7 +273,7 @@ export async function recordAppointmentNoShow(
     undefined,
     { ifMatch }
   );
-  if (!result.ok) return fromFailure(result, attempt);
+  if (!result.ok) return fromStateRefusal(result, attempt);
 
   return { status: 'success', correlationId: result.correlationId, attempt, changed: result.data };
 }

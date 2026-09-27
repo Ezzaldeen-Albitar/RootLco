@@ -2,7 +2,7 @@
 
 import { PermissionDeniedState } from '@/components/states/States';
 import type { Messages } from '@/i18n/get-messages';
-import { translate } from '@/i18n/get-messages';
+import { translate, translateDynamic } from '@/i18n/get-messages';
 import type { ReadState } from '@/lib/api/read-operation';
 import type { DeliveryEligibility, EligibilityFact } from '../delivery-contract';
 import { BlockerLabel } from './CodeLabel';
@@ -229,14 +229,27 @@ function FactRow({
               : 'delivery.eligibility.factSatisfied'
         )}
       </span>
+      {/*
+        Why it could not be checked, as a sentence keyed by the reason CODE.
+        The fact's `source` is provenance written for developers — a module path
+        and an internal note — and it is never drawn (Browser QA part 7, row
+        3.2b). A reason this build has no sentence for gets the general one.
+      */}
       {unreadable ? (
-        <>
-          {' '}
-          <code className="font-mono text-caption text-text-secondary" dir="ltr">
-            {fact.source}
-          </code>
-        </>
+        <span className="block text-caption text-text-secondary" data-unreadable-reason="">
+          {translateDynamic(messages, unreadableReasonKey(fact.blocker))}
+        </span>
       ) : null}
     </li>
   );
+}
+
+/** The reasons a fact can be left unestablished that have a sentence of their own. */
+const UNREADABLE_REASON_KEYS: Readonly<Record<string, string>> = {
+  financial_balance_outstanding: 'delivery.eligibility.unreadable.financialBalanceOutstanding',
+};
+
+/** The plain-language reason a fact could not be checked. */
+export function unreadableReasonKey(blocker: string): string {
+  return UNREADABLE_REASON_KEYS[blocker] ?? 'delivery.eligibility.unreadable.other';
 }

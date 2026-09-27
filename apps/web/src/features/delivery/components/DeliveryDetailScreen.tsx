@@ -61,13 +61,14 @@ import { useEligibility } from './use-eligibility';
  * preparation step moves the delivery version, so a screen that did not re-read
  * would send a version guaranteed to be refused.
  *
- * ## Identifiers are shown as identifiers
+ * ## No identifier is shown where a name is not known
  *
- * The vehicle, the visit, the delivering employee and the receiving partner are
- * all bare identifiers in the platform, and this screen resolves none of them. A
- * name invented on this side would be the second, rotting authority on who a
- * person is. The work order is the exception, because a work-order screen exists
- * and can be linked to.
+ * The delivery record carries the vehicle and the visit as bare identifiers, and
+ * this screen invents no name for them. The vehicle is named by the plate the
+ * ROUTE read from the work order (`vehicleName`), and when that read is not
+ * available no vehicle row is drawn: an identifier reads to an operator as a
+ * number they should recognise, and they cannot (Browser QA part 7, row 3.2b).
+ * The visit is reached through the work order, which is linked.
  *
  * ## The final odometer is the ONE reference that is resolved, and not here
  *
@@ -97,6 +98,7 @@ export function DeliveryDetailScreen({
   canReadWarrantyPolicies = false,
   canReadWorkOrder = false,
   finalOdometerReading = null,
+  vehicleName = null,
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
@@ -148,10 +150,23 @@ export function DeliveryDetailScreen({
    * instead. Never resolved here: see the note above.
    */
   readonly finalOdometerReading?: OdometerReadingEntry | null;
+  /**
+   * The vehicle as a workshop names it — its plate, or its make and model — as
+   * the route resolved it from the work-order read.
+   *
+   * `null` or absent means it could not be resolved, and then no vehicle row is
+   * drawn at all: the delivery record carries only an identifier, and an
+   * identifier is not something an operator can recognise (Browser QA part 7,
+   * row 3.2b). The work-order link above it still leads to the vehicle.
+   */
+  readonly vehicleName?: string | null;
 }) {
   const [revision, setRevision] = useState(0);
   const refresh = useCallback(() => setRevision((previous) => previous + 1), []);
   const eligibility = useEligibility(delivery.id, canReadFinance, revision);
+  const showsReference =
+    delivery.deliveringEmployeeDisplayName === null ||
+    (finalOdometerReading === null && delivery.finalOdometerReadingId !== null);
 
   return (
     <div className="flex min-h-0 flex-col gap-6">
@@ -185,14 +200,11 @@ export function DeliveryDetailScreen({
             </Link>
           </p>
 
-          <Reference
-            label={translate(messages, 'delivery.summary.vehicle')}
-            value={delivery.vehicleId}
-          />
-          <Reference
-            label={translate(messages, 'delivery.summary.visit')}
-            value={delivery.receptionVisitId}
-          />
+          {vehicleName === null ? null : (
+            <Fact label={translate(messages, 'delivery.summary.vehicleName')}>
+              <bdi>{vehicleName}</bdi>
+            </Fact>
+          )}
           {/*
             The NAME the server stamped when the handover was opened, not a
             lookup this screen performed: the snapshot is what keeps a completed
@@ -230,9 +242,17 @@ export function DeliveryDetailScreen({
               <span dir="ltr">{odometerDisplay(finalOdometerReading).primary}</span>
             </Fact>
           )}
-          <p className="text-caption text-text-muted">
-            {translate(messages, 'delivery.summary.identifiersExplain')}
-          </p>
+          {/*
+            Said only when a reference is actually on screen — a handover that
+            predates the employee register, or a reading this page could not
+            resolve. Printed unconditionally it explained references that were
+            not there.
+          */}
+          {showsReference ? (
+            <p className="text-caption text-text-muted">
+              {translate(messages, 'delivery.summary.identifiersExplain')}
+            </p>
+          ) : null}
         </div>
       </Panel>
 

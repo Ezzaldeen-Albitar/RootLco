@@ -311,4 +311,20 @@ describe('allocating', () => {
     expect(outcome.state.correlationId ?? 'corr-1').toBe('corr-1');
     expect(outcome.created).toBeNull();
   });
+
+  it('an allocation over the balance is not told the record moved on (ERR-TRN-001)', async () => {
+    // payment-service answers ERR-TRN-001 when an allocation exceeds the
+    // receipt's remainder or the invoice's open balance. "Refresh the page"
+    // would be false there, so the sentence that claims no cause stays.
+    send.mockResolvedValue({
+      ...failure('conflict'),
+      status: 409,
+      problem: { code: 'ERR-TRN-001' },
+    });
+    const outcome = await allocatePayment(RECEIPT_ID, body, KEY);
+    expect(outcome.state.status).toBe('conflict');
+    expect(outcome.state.messageKey).toBe('state.conflict.blocked.title');
+    expect(outcome.state.messageKey).not.toBe('state.conflict.transition.title');
+    expect(outcome.created).toBeNull();
+  });
 });

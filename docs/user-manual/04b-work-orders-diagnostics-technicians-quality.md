@@ -252,12 +252,12 @@ route a job and not assign a technician, or see assignments and not create one.
 
 The panel **Work order** <!-- workOrders.detail.factsHeading --> lists, in this order: **Number** <!-- workOrders.detail.reference -->
 , **State** <!-- workOrders.detail.state --> , **Kind** <!-- workOrders.detail.kind --> , **Parts** <!-- workOrders.detail.partsForward -->
-, **Opened** <!-- workOrders.detail.opened --> , **Customer** <!-- workOrders.detail.customer --> ,
-**Vehicle** <!-- workOrders.detail.vehicle --> and **Version** <!-- workOrders.detail.version --> .
+, **Opened** <!-- workOrders.detail.opened --> , **Customer** <!-- workOrders.detail.customer --> and
+**Vehicle** <!-- workOrders.detail.vehicle --> .
 
-**Version** matters. It is the record version every guarded command on this screen sends with your
-change, and the number to quote when a write is refused. If it moves while you are reading, someone
-else changed the work order.
+The state and the parts position are written in words. The record's version is not shown: the screen
+still sends it with every guarded change, so a change made by someone else while you were reading is
+refused rather than overwritten.
 
 ### 4B.6.2 Workflow — move a work order to its next state
 

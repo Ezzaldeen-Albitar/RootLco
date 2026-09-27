@@ -523,3 +523,74 @@ describe('the work-order record says why a command was refused', () => {
     expect((note as HTMLInputElement).value).toBe('Waiting on the hoist');
   });
 });
+
+/*
+ * Checkpoint browser QA, DEF-02: the facts panel drew the state and the parts
+ * position as raw codes in monospace ("closed", "none") and showed the record
+ * version as a field. The facts are said in words in both languages, the
+ * version is not drawn, and it still travels as the If-Match of every guarded
+ * command.
+ */
+describe('the work-order facts are said in words (checkpoint browser QA, DEF-02)', () => {
+  const factsPanel = (name: string) => screen.findByRole('region', { name });
+
+  it('says the state and the parts position in English, and draws no version', async () => {
+    PERMISSIONS = [WORK_ORDER_READ];
+    await renderRecord();
+    const panel = await factsPanel(EN['workOrders.detail.factsHeading'] as string);
+    const facts = within(panel);
+    expect(facts.getByText(EN['workOrders.state.closed'] as string)).toBeVisible();
+    expect(facts.getByText(EN['workOrders.partsForward.none'] as string)).toBeVisible();
+    expect(facts.queryByText('closed')).toBeNull();
+    expect(facts.queryByText('none')).toBeNull();
+    expect(panel.querySelector('code')?.textContent).toBe('WO-000207');
+    expect(facts.queryByText('Version')).toBeNull();
+    expect(panel.querySelectorAll('dt')).toHaveLength(7);
+  });
+
+  it('says them in Arabic, right to left', async () => {
+    PERMISSIONS = [WORK_ORDER_READ];
+    await renderRecordInArabic();
+    const panel = await factsPanel(AR['workOrders.detail.factsHeading'] as string);
+    const facts = within(panel);
+    expect(facts.getByText(AR['workOrders.state.closed'] as string)).toBeVisible();
+    expect(facts.getByText(AR['workOrders.partsForward.none'] as string)).toBeVisible();
+    expect(panel.textContent).not.toContain('closed');
+    expect(panel.textContent).not.toContain('none');
+    expect(document.documentElement.dir).toBe('rtl');
+  });
+
+  it('keeps sending the version as the If-Match of a move, and names the states in words', async () => {
+    PERMISSIONS = [WORK_ORDER_READ, 'wo.work_order.transition'];
+    readWorkOrderDetail.mockResolvedValue({
+      status: 'ok',
+      data: movable,
+      correlationId: 'corr-wo',
+    });
+    transitionWorkOrder.mockResolvedValue({ status: 'success', correlationId: 'corr-t' });
+    const user = userEvent.setup();
+    await renderRecord();
+
+    const select = await screen.findByLabelText(
+      new RegExp(`^${EN['workOrders.detail.toState'] as string}`)
+    );
+    expect(
+      within(select).getByRole('option', {
+        name: `${EN['workOrders.state.awaiting_parts'] as string}`,
+      })
+    ).toBeTruthy();
+    expect(within(select).queryByRole('option', { name: 'awaiting_parts' })).toBeNull();
+    expect(
+      screen.getByText(EN['workOrders.state.in_progress'] as string, { selector: 'bdi' })
+    ).toBeVisible();
+
+    await user.selectOptions(select, 'awaiting_parts');
+    await user.click(
+      screen.getByRole('button', { name: EN['workOrders.detail.moveWorkOrder'] as string })
+    );
+    await waitFor(() => expect(transitionWorkOrder).toHaveBeenCalled());
+    expect(transitionWorkOrder.mock.calls[0]?.[0]).toBe(WORK_ORDER_ID);
+    expect(transitionWorkOrder.mock.calls[0]?.[1]).toEqual({ toState: 'awaiting_parts' });
+    expect(transitionWorkOrder.mock.calls[0]?.[2]).toBe(detail.workOrder.recordVersion);
+  });
+});

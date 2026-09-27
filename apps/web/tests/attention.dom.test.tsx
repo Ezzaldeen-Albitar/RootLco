@@ -1366,6 +1366,9 @@ describe('the moment the figures were taken is written on a named clock, never t
     await screen.findByText('7');
 
     expect(summaryLine()).toHaveTextContent(stood('UTC'));
+    // Named `UTC`, not `GMT+0` (checkpoint browser QA).
+    expect(summaryLine()).toHaveTextContent(/\(UTC\)/);
+    expect(summaryLine()).not.toHaveTextContent(/GMT/);
     expect(summaryLine()).not.toHaveTextContent(stood('Asia/Riyadh'));
     // The days are the server's, cut on the first branch of its set — said as such.
     expect(summaryLine()).toHaveTextContent(

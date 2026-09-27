@@ -746,7 +746,7 @@ describe('conversion to a work order', () => {
     expect(screen.queryByRole('alert')).toBeNull();
   });
 
-  it('renders the opaque state code as a code, without translating it', async () => {
+  it('renders a state outside the platform vocabulary as its code, never as a composed key', async () => {
     convertReceptionToWorkOrder.mockResolvedValue({
       status: 'success',
       converted: {
@@ -765,7 +765,7 @@ describe('conversion to a work order', () => {
       await screen.findByRole('button', { name: EN['receptions.convert.submit'] as string })
     );
     expect(await screen.findByText('tenant_specific_state')).toBeVisible();
-    expect(screen.getByText(EN['receptions.convert.stateOpaque'] as string)).toBeVisible();
+    expect(document.body.textContent).not.toContain('workOrders.state.');
     // No number is not "no work order": it is a tenant without a sequence.
     expect(screen.getByText(EN['receptions.convert.unnumbered'] as string)).toBeVisible();
   });
@@ -904,6 +904,72 @@ describe('conversion to a work order', () => {
     ).toBeNull();
     // The conversion still succeeded, and says so.
     expect(screen.getByText('WO-0001')).toBeVisible();
+  });
+
+  it('links to the NEW work order and says its state in words (Browser QA part 7, row 5.3)', async () => {
+    for (const [locale, catalogue, render] of [
+      ['en', en, renderLtr],
+      ['ar', ar, renderRtl],
+    ] as const) {
+      convertReceptionToWorkOrder.mockResolvedValue({
+        status: 'success',
+        converted: {
+          receptionVisitId: 'rv-1',
+          workOrderId: 'wo-new-7',
+          displayNumber: 'WO-0007',
+          state: 'draft',
+          alreadyConverted: false,
+        },
+        correlationId: 'corr-ok',
+        attempt: 1,
+      });
+      const words = catalogue as Record<string, string>;
+      const user = userEvent.setup();
+      const { unmount } = render(
+        <ConversionStep {...withStatus('authorized', { locale, messages: catalogue })} />
+      );
+      await user.click(
+        await screen.findByRole('button', { name: words['receptions.convert.submit'] as string })
+      );
+      const link = await screen.findByRole('link', {
+        name: words['receptions.convert.openWorkOrder'] as string,
+      });
+      expect(link.getAttribute('href')).toBe(`/${locale}/work-orders/wo-new-7`);
+      expect(screen.getByText(words['workOrders.state.draft'] as string)).toBeVisible();
+      // The raw code is not what the operator reads.
+      expect(screen.queryByText('draft')).toBeNull();
+      unmount();
+    }
+  });
+
+  it('offers no link to a work order the operator may not open', async () => {
+    convertReceptionToWorkOrder.mockResolvedValue({
+      status: 'success',
+      converted: {
+        receptionVisitId: 'rv-1',
+        workOrderId: 'wo-new-7',
+        displayNumber: 'WO-0007',
+        state: 'draft',
+        alreadyConverted: false,
+      },
+      correlationId: 'corr-ok',
+      attempt: 1,
+    });
+    const user = userEvent.setup();
+    renderLtr(
+      <ConversionStep
+        {...withStatus('authorized', {
+          capabilities: { ...CAPABILITIES, readWorkOrders: false },
+        })}
+      />
+    );
+    await user.click(
+      await screen.findByRole('button', { name: EN['receptions.convert.submit'] as string })
+    );
+    expect(await screen.findByText('WO-0007')).toBeVisible();
+    expect(
+      screen.queryByRole('link', { name: EN['receptions.convert.openWorkOrder'] as string })
+    ).toBeNull();
   });
 
   it('withdraws the command from an operator without the conversion permission', async () => {
