@@ -1174,3 +1174,32 @@ which runs in the hosted database job).
 Verification: the focused suites above, `filter-toolbar.dom.test.tsx`, `work-orders-queue-api.test.ts`,
 `reception-queue.dom.test.tsx` (the shared toolbar) and the route branch-scope suites were run
 locally in both languages. No browser spec drives this board.
+
+Known limitations of this slice, one line each:
+
+- Fractional seconds beyond six digits are accepted by the route (zod 4 `datetime({ offset: true })`)
+  and PostgreSQL rounds `…23:59:59.9999999+03:00` up to the next midnight, so a closed `<=` bound
+  would take in the next day's first instant; the web always sends six digits (`endOfDayBound`),
+  so the web cannot reach it. Not yet capped at six digits.
+- Year `0000-01-01T00:00:00Z` passes zod and reaches PostgreSQL as text, which refuses year 0;
+  SQLSTATE `22008` is mapped nowhere in `apps/api/src`, so the answer is a 500, not a 422. The web
+  cannot produce the value, and `/receptions` behaves the same way.
+- `workOrders.queue.invertedRange` and `workOrders.queue.periodIncomplete` in
+  `apps/web/src/i18n/messages/{en,ar}.json` are no longer referenced (the toolbar uses
+  `filters.period.*`); they are dead keys, left for a later clean-up.
+- `FilterToolbar`'s range follows a key that includes the zone, so switching to a branch in another
+  zone discards days typed but not applied (the old screen kept them); a refused range keeps its
+  typed days.
+- No board-level case turns to a second page (cursor footer, `hasMore`) on `/work-orders`: server
+  mode is held only by `OperationalGrid`'s own suite and the reception suites, and no Playwright
+  spec visits `/work-orders`, so the migrated board has no browser coverage.
+- The row-action link adds the work-order number only when `displayNumber` is set, so rows without
+  a reference carry identical link names.
+- The seven screen-mutation falsifications recorded by the implementer were not re-run in review
+  (review was read-only); review confirmed the seven named cases exist in
+  `search-empty-states.dom.test.tsx`, beside the `p1-28-security` syntax-tree falsification cases.
+- The microsecond bound end to end: `endOfDayBound` (`.999999`) crosses the reads proxy as text,
+  then the adapter (`work-orders-queue-api.test.ts`), then the route passes the string through
+  (`tests/unit/p1-32-work-order-list-instants.test.ts`, which also holds malformed and inverted
+  bounds refused), then `$7::timestamptz` in `work-order-repository.ts`; the backend case takes
+  `tests/backend/p1-19-work-order-reads.test.ts` from 33 to 34 cases.

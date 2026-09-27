@@ -273,10 +273,6 @@ export function FilterToolbar({
   const [rangeTo, setRangeTo] = useState(range?.value?.to ?? '');
   const [rangeProblem, setRangeProblem] = useState<CustomPeriodProblem | null>(null);
   const rangeRef = useRef<HTMLDivElement | null>(null);
-  // Whether the last Enter was pressed inside the range's boxes. A submit that
-  // follows it applies the range even while the period's own button is the
-  // form's default; a pointer press anywhere forgets it.
-  const enterInRange = useRef(false);
   // Every refused apply, counted — the period's and the range's alike: the
   // attempt is what moves the cursor into the box to fix, and a second refusal
   // of the same mistake moves it again.
@@ -424,27 +420,17 @@ export function FilterToolbar({
       aria-label={label}
       noValidate
       data-testid={testId}
-      onKeyDown={(event) => {
-        if (event.key === 'Enter') {
-          enterInRange.current = rangeRef.current?.contains(event.target as Node) === true;
-        }
-      }}
-      onPointerDown={() => {
-        enterInRange.current = false;
-      }}
       onSubmit={(event) => {
         event.preventDefault();
-        // The range's own button, or Enter in the range's boxes, applies the
-        // range; any other submit applies the chosen period, as it always has.
-        // The button that submitted is asked first, because a click does not
-        // move the cursor in every browser.
+        // The range's own button applies the range; any other submit applies
+        // the chosen period, as it always has. (Enter in the range's boxes
+        // never reaches here: the range routes it itself, below.) The button
+        // that submitted is asked first, because a click does not move the
+        // cursor in every browser.
         const submitter = (event.nativeEvent as SubmitEvent).submitter ?? null;
         const inRange = (node: Element | null) =>
           node !== null && rangeRef.current?.contains(node) === true;
-        const fromRange =
-          enterInRange.current ||
-          (submitter === null ? inRange(document.activeElement) : inRange(submitter));
-        enterInRange.current = false;
+        const fromRange = submitter === null ? inRange(document.activeElement) : inRange(submitter);
         if (range !== undefined && fromRange) {
           applyRange();
           return;
@@ -560,6 +546,20 @@ export function FilterToolbar({
           ref={rangeRef}
           className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3"
           data-testid={`filter-${range.key}`}
+          // Enter in the range's boxes applies the range, whichever button is
+          // the form's default. The date field answers Enter by submitting the
+          // form with its FIRST submit button — while the period panel is
+          // open that is the period's own apply — so the key is taken here,
+          // on the way down, before the field sees it: the submit is not
+          // started and the range is applied instead. Enter on a button in
+          // the range (Clear) is left to the button.
+          onKeyDownCapture={(event) => {
+            if (event.key !== 'Enter' || event.nativeEvent.isComposing) return;
+            if ((event.target as HTMLElement).closest('button') !== null) return;
+            event.preventDefault();
+            event.stopPropagation();
+            applyRange();
+          }}
         >
           <DateField
             label={range.fromLabel}
@@ -585,9 +585,9 @@ export function FilterToolbar({
           />
           <div className="flex flex-wrap items-start gap-2">
             {/*
-              A submit button, so Enter in either box applies the range. The
-              form's submit decides which pair to apply by where the cursor is:
-              pressing this button puts it here.
+              A submit button. The form's submit decides which pair to apply by
+              the button that submitted, or failing that by where the cursor
+              is: pressing this button applies the range.
             */}
             <Button type="submit" variant="contained">
               {range.applyLabel}

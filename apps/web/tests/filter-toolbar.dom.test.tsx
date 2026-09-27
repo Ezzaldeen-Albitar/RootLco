@@ -888,6 +888,55 @@ describe('what the work-order board adds (the work-order slice)', () => {
     expect(onPeriod).not.toHaveBeenCalled();
   });
 
+  // With the period panel open its "Use these dates" comes first in the form,
+  // so it is the button an implicit submit presses. Enter in the range's boxes
+  // must still apply the range — and Enter in the period's boxes the period.
+  it('applies the range on Enter in its own boxes while the period panel is open beside it', async () => {
+    const user = userEvent.setup();
+    const onApply = vi.fn();
+    const onPeriod = vi.fn();
+    mount(<RangeHost onApply={onApply} onClear={vi.fn()} withPeriod onPeriod={onPeriod} />);
+    await user.click(screen.getByRole('button', { name: 'Choose dates' }));
+    await typeDay(user, 'From', '10092026');
+    await typeDay(user, 'To', '11092026');
+    await typeDay(user, 'Opened from', '01092026');
+    await typeDay(user, 'Opened to', '02092026');
+    await user.keyboard('{Enter}');
+    expect(onApply).toHaveBeenLastCalledWith('2026-09-01', '2026-09-02');
+    expect(onPeriod).not.toHaveBeenCalled();
+  });
+
+  it('leaves Enter on the range’s Clear button to the button', async () => {
+    const user = userEvent.setup();
+    const onApply = vi.fn();
+    const onClear = vi.fn();
+    mount(<RangeHost onApply={onApply} onClear={onClear} />);
+    await typeDay(user, 'Opened from', '01092026');
+    screen.getByRole('button', { name: 'Clear the dates' }).focus();
+    await user.keyboard('{Enter}');
+    expect(onClear).toHaveBeenCalledTimes(1);
+    expect(onApply).not.toHaveBeenCalled();
+  });
+
+  it('applies the period on Enter in its own boxes while a range sits beside it', async () => {
+    const user = userEvent.setup();
+    const onApply = vi.fn();
+    const onPeriod = vi.fn();
+    mount(<RangeHost onApply={onApply} onClear={vi.fn()} withPeriod onPeriod={onPeriod} />);
+    await user.click(screen.getByRole('button', { name: 'Choose dates' }));
+    await typeDay(user, 'Opened from', '01092026');
+    await typeDay(user, 'Opened to', '02092026');
+    await typeDay(user, 'From', '10092026');
+    await typeDay(user, 'To', '11092026');
+    await user.keyboard('{Enter}');
+    expect(onPeriod).toHaveBeenLastCalledWith({
+      kind: 'custom',
+      from: '2026-09-10',
+      to: '2026-09-11',
+    });
+    expect(onApply).not.toHaveBeenCalled();
+  });
+
   it('keeps the two apply buttons apart while the chosen period is open beside the range', async () => {
     const user = userEvent.setup();
     const onApply = vi.fn();
