@@ -580,19 +580,29 @@ describe('the search box keeps the SearchBox contract', () => {
     expect(screen.getByRole('alert')).toHaveTextContent('Type at least two characters.');
   });
 
-  it("leaves the pause to the screen's read hook: one read per pause, Enter asks now, never twice", async () => {
+  it("leaves the pause to the screen's read hook: Enter joins a read in flight, asks again once it has answered", async () => {
     const user = userEvent.setup();
+    const answer: ReadState<CursorPage<{ readonly id: string }>> = {
+      status: 'ok',
+      data: { items: [], nextCursor: null, hasMore: false },
+      correlationId: null,
+    };
+    // The first read is held open until the test releases it, so Enter can be
+    // pressed while that read is still IN FLIGHT; every later read answers at once.
+    let release: () => void = () => undefined;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
     const load = vi.fn<
       (
         criteria: { readonly term: string },
         cursor: string | null,
         signal: AbortSignal
       ) => Promise<ReadState<CursorPage<{ readonly id: string }>>>
-    >(async () => ({
-      status: 'ok',
-      data: { items: [], nextCursor: null, hasMore: false },
-      correlationId: null,
-    }));
+    >(async () => {
+      if (load.mock.calls.length === 1) await gate;
+      return answer;
+    });
     function Board() {
       const [term, setTerm] = useState('');
       const search = useSearchRequest<{ readonly id: string }, { readonly term: string }>({
@@ -601,35 +611,51 @@ describe('the search box keeps the SearchBox contract', () => {
         debounceMs: 40,
       });
       return (
-        <FilterToolbar
-          messages={en}
-          label="Narrow the list"
-          search={{
-            label: 'Find a visit',
-            value: term,
-            onChange: setTerm,
-            onSubmit: search.submit,
-          }}
-        />
+        <>
+          <FilterToolbar
+            messages={en}
+            label="Narrow the list"
+            search={{
+              label: 'Find a visit',
+              value: term,
+              onChange: setTerm,
+              onSubmit: search.submit,
+            }}
+          />
+          <p data-testid="search-phase">{search.phase}</p>
+        </>
       );
     }
     mount(<Board />);
     const box = screen.getByRole('searchbox', { name: 'Find a visit' });
+    const phase = screen.getByTestId('search-phase');
     await user.type(box, 'abc');
     await waitFor(() => expect(load).toHaveBeenCalledTimes(1));
     expect(load.mock.calls[0]?.[0]).toEqual({ term: 'abc' });
-    // Enter on the term the pause already read sends nothing more: that second
-    // read is what drew the board's 429s in pairs (checkpoint browser QA).
+    expect(phase).toHaveTextContent('loading');
+    // Enter while the settled read of the same term is still in flight sends
+    // nothing more: that second read is what drew the board's 429s in pairs
+    // (checkpoint browser QA).
     await user.keyboard('{Enter}');
     await new Promise((resolve) => setTimeout(resolve, 120));
     expect(load).toHaveBeenCalledTimes(1);
+    release();
+    await waitFor(() => expect(phase).not.toHaveTextContent('loading'));
+    expect(load).toHaveBeenCalledTimes(1);
+    // Once that read has answered, Enter is the refresh: exactly one new read
+    // of the same term, and the pause adds nothing after it.
+    await user.keyboard('{Enter}');
+    await waitFor(() => expect(load).toHaveBeenCalledTimes(2));
+    expect(load.mock.calls[1]?.[0]).toEqual({ term: 'abc' });
+    await new Promise((resolve) => setTimeout(resolve, 120));
+    expect(load).toHaveBeenCalledTimes(2);
     // Enter on a term the pause has not read yet asks at once, and the pause
     // then adds no second read of it.
     await user.type(box, 'd{Enter}');
-    await waitFor(() => expect(load).toHaveBeenCalledTimes(2));
-    expect(load.mock.calls[1]?.[0]).toEqual({ term: 'abcd' });
+    await waitFor(() => expect(load).toHaveBeenCalledTimes(3));
+    expect(load.mock.calls[2]?.[0]).toEqual({ term: 'abcd' });
     await new Promise((resolve) => setTimeout(resolve, 120));
-    expect(load).toHaveBeenCalledTimes(2);
+    expect(load).toHaveBeenCalledTimes(3);
   });
 });
 

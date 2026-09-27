@@ -586,6 +586,12 @@ Known limitations of this slice, one line each:
 - The phone suffix arm compares the 8- or 9-digit national significant number, so a foreign number
   sharing those last digits also matches; theoretical, and the `MIN_PHONE_SUFFIX` floor and the
   permissions are unchanged.
+- The customer-search normaliser hard-codes the Jordan calling code 962 (`JORDAN_COUNTRY_CODE` in
+  `apps/api/src/modules/crm/domain/customer-search.ts`) and leaves any other number as typed: a
+  product assumption for a multi-tenant SaaS, written down here and not yet decided by the Owner.
+- Integration: this slice was cut from `ed3143e2`; `origin/develop` has since moved to `ada6fbff`
+  (PR #474, reference selects). The branch has not been integrated with that head and nothing has
+  been tested against it, and the `unit` and `web` tier records must be retaken on the final head.
 - `useSearchRequest` `leaving` does not cover choosing a new filter within 300 ms of a branch switch:
   the settled key is still the old branch's, and its read goes out at the new version. It predates
   this slice and is unchanged.
