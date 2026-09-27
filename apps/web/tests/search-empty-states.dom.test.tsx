@@ -1389,3 +1389,86 @@ describe('the work-order board opens where the address says, or says it could no
     expect(scope).toEqual({ companyId: COMPANY, branchId: BRANCH });
   });
 });
+
+/* -------------------------------------------------------------------------- *
+ * The dashboard's work-order links, followed to the MUI board (Owner directive,
+ * the dashboard slice)
+ *
+ * A figure on the dashboard is a claim that its link opens the list it counted.
+ * Each case here takes the address the dashboard itself builds
+ * (`dashboard-links.ts`), hands its query to this board's route, and checks the
+ * board then reads with the matching filter — so a board that stopped reading
+ * `?view` or `?state` breaks the dashboard's claim here, not in browser QA.
+ * -------------------------------------------------------------------------- */
+
+describe('the dashboard’s work-order links open the board filtered as counted', () => {
+  beforeEach(() => {
+    listWorkOrders.mockReset();
+    listWorkOrders.mockResolvedValue({ ...EMPTY_PAGE });
+    readWorkOrderCatalogue.mockReset();
+    readWorkOrderCatalogue.mockResolvedValue({
+      status: 'ok',
+      data: { workOrderStates: CATALOGUE_STATES },
+      correlationId: null,
+    });
+    readDashboardSummary.mockReset();
+    readDashboardSummary.mockResolvedValue({ status: 'unavailable', correlationId: null });
+    window.localStorage.clear();
+    PERMISSIONS = ['wo.work_order.read'];
+  });
+
+  /** The query of an address the dashboard built, as a route receives it. */
+  function queryOf(href: string): Record<string, string> {
+    const url = new URL(href, 'https://rootlco.invalid');
+    expect(url.pathname).toBe('/en/work-orders');
+    return Object.fromEntries(url.searchParams.entries());
+  }
+
+  /** Follows the address: the route's props, then the board's first read. */
+  async function follow(
+    href: string
+  ): Promise<{ readonly read: Record<string, unknown>; readonly unmount: () => void }> {
+    const tree = await WorkOrderQueuePage({
+      params: Promise.resolve({ locale: 'en' }),
+      searchParams: Promise.resolve(queryOf(href)),
+    });
+    const props = propsCarrying(tree, 'initialView') as Record<string, unknown>;
+    expect(props, 'the route did not render the board').not.toBeNull();
+    const { unmount } = renderLtr(
+      woBranch(
+        <WorkOrderQueueScreen
+          locale="en"
+          messages={en}
+          initialView={props['initialView'] as never}
+          initialState={props['initialState'] as string}
+        />
+      )
+    );
+    await waitFor(() => expect(listWorkOrders).toHaveBeenCalledTimes(1));
+    const read = (listWorkOrders.mock.calls.at(0) as [unknown, Record<string, unknown>])[1];
+    return { read, unmount };
+  }
+
+  it('opens each card’s view (?view) with that view’s filter', async () => {
+    const { workOrdersViewLink } = await import('@/features/overview/dashboard-links');
+    const expected: Record<string, Record<string, unknown>> = {
+      active: { stateGroup: 'active' },
+      awaitingApproval: { awaitingApproval: true },
+      awaitingParts: { awaitingParts: true },
+      readyForDelivery: { readyForDelivery: true },
+    };
+    for (const [view, filters] of Object.entries(expected)) {
+      listWorkOrders.mockClear();
+      const { read, unmount } = await follow(workOrdersViewLink('en', view as never));
+      expect(read, view).toEqual(filters);
+      unmount();
+    }
+  });
+
+  it('opens a chart bar’s state (?state) with that state, on every state', async () => {
+    const { workOrdersStateLink } = await import('@/features/overview/dashboard-links');
+    const href = workOrdersStateLink('en', 'awaiting_insurer');
+    expect(href).toBe('/en/work-orders?state=awaiting_insurer');
+    expect((await follow(href)).read).toEqual({ state: 'awaiting_insurer' });
+  });
+});

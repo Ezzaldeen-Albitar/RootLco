@@ -2,13 +2,18 @@ import { act, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import type { ReactElement } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import ar from '../src/i18n/messages/ar.json';
 import { PermissionDeniedState } from '@/components/states/States';
+import { UiFoundationProvider } from '@/components/ui-foundation/UiFoundationProvider';
+import { muiTextOf } from '@/components/ui-foundation/mui-text';
 import { flattenNavigation } from '@/config/navigation';
 import { formatMessage } from '@/i18n/get-messages';
 import { CLIENT_READ_TIMEOUT_MS, SERVER_READ_WORST_CASE_MS } from '@/lib/api/use-search-request';
+import { formatDayInZone, formatInZone, zoneLabelAt } from '@/lib/branch-time';
+import { intlLocale } from '@/lib/format';
 import {
   ALL_BRANCHES,
   preferenceKeyFor,
@@ -121,8 +126,6 @@ vi.mock('@/features/authentication/api/session', () => ({
 
 const { AttentionScreen } = await import('@/features/attention/components/AttentionScreen');
 const { DashboardScreen } = await import('@/features/overview/components/DashboardScreen');
-const { CHART_WIDTH, LABEL_FONT_SIZE, LABEL_TEXT_WIDTH, estimatedTextWidth, fitLabel } =
-  await import('@/features/overview/components/charts');
 const { StockAlertIndicator } = await import('@/features/inventory/components/StockAlertIndicator');
 type RoutePage = (args: { params: Promise<Record<string, string>> }) => Promise<React.ReactNode>;
 const AttentionPage = (await import('@/app/[locale]/(dashboard)/attention/page'))
@@ -938,7 +941,8 @@ function findScreenProps(node: unknown): Record<string, unknown> | null {
 }
 
 /* -------------------------------------------------------------------------- *
- * The dashboard (Owner directive, `P1-32-PRE-OD-UX`)
+ * The dashboard (Owner directive, `P1-32-PRE-OD-UX`), on the Material UI
+ * wrappers: `FilterToolbar`, `MetricCard`, `ChartPanel` and `MuiStates`.
  *
  * It lives in this file because it is the same question this suite already
  * asks of the Attention area: does a screen that summarises a workshop state
@@ -959,13 +963,13 @@ function unanswerable(reason: string) {
 
 const GENERATED_AT = '2026-09-22T09:00:00.000Z';
 
-function dashboardSummary(over: Record<string, unknown> = {}) {
+function dashboardSummary(over: Record<string, unknown> = {}, timezone = 'Asia/Riyadh') {
   return {
     period: {
       kind: 'today',
       from: '2026-09-22',
       to: '2026-09-22',
-      timezone: 'Asia/Riyadh',
+      timezone,
     },
     generatedAt: GENERATED_AT,
     branchIds: [TEST_BRANCH.id],
@@ -1001,19 +1005,71 @@ function dashboardSummary(over: Record<string, unknown> = {}) {
   };
 }
 
-/** The tile for one figure, found by the section it renders. */
-function tile(container: HTMLElement, id: string): HTMLElement {
-  const element = container.querySelector(`[data-figure="${id}"]`);
-  if (!element) throw new Error(`no tile for ${id}`);
-  return element as HTMLElement;
+/** The screen inside the Material UI foundation the locale layout supplies. */
+function withMui(ui: ReactElement, locale: 'en' | 'ar' = 'en'): ReactElement {
+  return (
+    <UiFoundationProvider locale={locale} text={muiTextOf(messagesFor(locale))}>
+      {ui}
+    </UiFoundationProvider>
+  );
 }
 
-/** The chart section under a heading, by the heading's own words. */
-function chart(headingKey: string): HTMLElement {
-  const heading = screen.getByRole('heading', { name: EN[headingKey] as string });
+/** The dashboard in one working context, rendered in the locale's direction. */
+function renderDashboard(
+  options: {
+    readonly locale?: 'en' | 'ar';
+    readonly snapshot?: ReturnType<typeof branchSnapshot>;
+    readonly before?: ReactElement;
+  } = {}
+) {
+  const locale = options.locale ?? 'en';
+  const ui = withMui(
+    inBranch(
+      <>
+        {options.before}
+        <DashboardScreen locale={locale} messages={messagesFor(locale)} />
+      </>,
+      { locale, ...(options.snapshot === undefined ? {} : { snapshot: options.snapshot }) }
+    ),
+    locale
+  );
+  return locale === 'ar' ? renderRtl(ui) : renderLtr(ui);
+}
+
+/** The card for one figure, found by the section it renders. */
+function tile(id: string): HTMLElement {
+  return screen.getByTestId(`dashboard-figure-${id}`);
+}
+
+/** Where a figure's card leads, or `null` when it is not a link. */
+function hrefOf(id: string): string | null {
+  return within(tile(id)).queryByRole('link')?.getAttribute('href') ?? null;
+}
+
+/** The chart panel under a heading, by the heading's own words. */
+function chart(headingKey: string, catalogue: Record<string, string> = EN): HTMLElement {
+  const heading = screen.getByRole('heading', { name: catalogue[headingKey] as string });
   const section = heading.closest('section');
   if (!section) throw new Error(`no chart under ${headingKey}`);
   return section as HTMLElement;
+}
+
+/** The summary line under the period: what the figures cover, and when. */
+function summaryLine(): HTMLElement {
+  return screen.getByTestId('dashboard-toolbar-summary');
+}
+
+/** A period preset, by the words on it. */
+function preset(key: string, catalogue: Record<string, string> = EN): HTMLElement {
+  return screen.getByRole('button', { name: catalogue[key] as string });
+}
+
+/** Types a day into a date box, section by section, as a person does. */
+async function typeDay(user: ReturnType<typeof userEvent.setup>, labelKey: string, digits: string) {
+  const group = screen.getByRole('group', { name: new RegExp(`^${EN[labelKey] as string}`) });
+  await user.click(within(group).getAllByRole('spinbutton')[0] as HTMLElement);
+  await user.keyboard(digits);
+  return group;
 }
 
 describe('the dashboard reads once for the branch it is addressed to', () => {
@@ -1027,7 +1083,7 @@ describe('the dashboard reads once for the branch it is addressed to', () => {
   });
 
   it('asks for today, for the working branch, exactly once', async () => {
-    renderLtr(inBranch(<DashboardScreen locale="en" messages={messagesFor('en')} />));
+    renderDashboard();
 
     await screen.findByText('7');
     expect(readDashboardSummary).toHaveBeenCalledTimes(1);
@@ -1040,25 +1096,21 @@ describe('the dashboard reads once for the branch it is addressed to', () => {
   });
 
   it('states the period it covers and the moment the figures were taken', async () => {
-    const { container } = renderLtr(
-      inBranch(<DashboardScreen locale="en" messages={messagesFor('en')} />)
-    );
+    renderDashboard();
 
     await screen.findByText('7');
     // The zone the days were counted in travels in the answer and is said, so a
     // reader in another one knows which midnight the figures stop at.
-    expect(container.textContent).toContain('Asia/Riyadh');
-    expect(screen.getByText(/Figures as they stood at/)).toBeTruthy();
+    expect(summaryLine()).toHaveTextContent('Asia/Riyadh');
+    expect(summaryLine()).toHaveTextContent(/Figures as they stood at/);
   });
 
   it('asks again, for the new period, when the period changes', async () => {
     const user = userEvent.setup();
-    renderLtr(inBranch(<DashboardScreen locale="en" messages={messagesFor('en')} />));
+    renderDashboard();
     await screen.findByText('7');
 
-    await user.click(
-      screen.getByRole('button', { name: EN['dashboard.period.yesterday'] as string })
-    );
+    await user.click(preset('filters.period.yesterday'));
 
     await waitFor(() => {
       expect(readDashboardSummary).toHaveBeenCalledTimes(2);
@@ -1073,50 +1125,59 @@ describe('the dashboard reads once for the branch it is addressed to', () => {
 
   it('refuses a period that ends before it starts, at the field', async () => {
     const user = userEvent.setup();
-    renderLtr(inBranch(<DashboardScreen locale="en" messages={messagesFor('en')} />));
+    renderDashboard();
     await screen.findByText('7');
 
-    await user.click(screen.getByRole('button', { name: EN['dashboard.period.custom'] as string }));
-    const from = screen.getByLabelText(EN['dashboard.period.from'] as string);
-    const to = screen.getByLabelText(EN['dashboard.period.to'] as string);
-    await user.type(from, '2026-09-10');
-    await user.type(to, '2026-09-01');
-    await user.click(screen.getByRole('button', { name: EN['dashboard.period.apply'] as string }));
+    await user.click(preset('filters.period.custom'));
+    await typeDay(user, 'filters.period.from', '10092026');
+    await typeDay(user, 'filters.period.to', '01092026');
+    await user.click(screen.getByRole('button', { name: EN['filters.period.apply'] as string }));
 
-    expect(screen.getByText(EN['dashboard.period.inverted'] as string)).toBeTruthy();
+    expect(screen.getByText(EN['filters.period.inverted'] as string)).toBeTruthy();
+    // The cursor is moved into the box to fix.
+    const to = screen.getByRole('group', {
+      name: new RegExp(`^${EN['filters.period.to'] as string}`),
+    });
+    await waitFor(() => expect(to.contains(document.activeElement)).toBe(true));
     // Refused here, so nothing was sent: the first read is still the only one.
     expect(readDashboardSummary).toHaveBeenCalledTimes(1);
   });
 
   it('refuses a period longer than the operation accepts, at the field', async () => {
     const user = userEvent.setup();
-    renderLtr(inBranch(<DashboardScreen locale="en" messages={messagesFor('en')} />));
+    renderDashboard();
     await screen.findByText('7');
 
-    await user.click(screen.getByRole('button', { name: EN['dashboard.period.custom'] as string }));
-    await user.type(screen.getByLabelText(EN['dashboard.period.from'] as string), '2026-01-01');
-    await user.type(screen.getByLabelText(EN['dashboard.period.to'] as string), '2026-12-31');
-    await user.click(screen.getByRole('button', { name: EN['dashboard.period.apply'] as string }));
+    await user.click(preset('filters.period.custom'));
+    await typeDay(user, 'filters.period.from', '01012026');
+    await typeDay(user, 'filters.period.to', '31122026');
+    await user.click(screen.getByRole('button', { name: EN['filters.period.apply'] as string }));
 
-    expect(screen.getByText(EN['dashboard.period.tooLong'] as string)).toBeTruthy();
+    expect(
+      screen.getByText(formatMessage(EN['filters.period.tooLong'] as string, { days: '92' }))
+    ).toBeTruthy();
     expect(readDashboardSummary).toHaveBeenCalledTimes(1);
   });
 
   it('never shows the previous branch figures under the new branch', async () => {
     const user = userEvent.setup();
-    renderLtr(
-      inBranch(
+    renderDashboard({
+      snapshot: branchSnapshot([TEST_BRANCH, OTHER_BRANCH]),
+      before: (
         <>
           <BranchSwitch to={TEST_BRANCH.id} label="first branch" />
           <BranchSwitch to={OTHER_BRANCH.id} label="second branch" />
-          <DashboardScreen locale="en" messages={messagesFor('en')} />
-        </>,
-        { snapshot: branchSnapshot([TEST_BRANCH, OTHER_BRANCH]) }
-      )
-    );
+        </>
+      ),
+    });
 
     // Two branches and none chosen: the header asks, and nothing is read.
     expect(readDashboardSummary).not.toHaveBeenCalled();
+    expect(screen.getByTestId('dashboard-blocked')).toHaveTextContent(
+      EN['workingContext.chooseFirst'] as string
+    );
+    // Nothing is being read, so nothing says it is.
+    expect(screen.queryByText(EN['dashboard.period.pending'] as string)).toBeNull();
 
     await user.click(screen.getByRole('button', { name: 'first branch' }));
     await screen.findByText('7');
@@ -1145,7 +1206,7 @@ describe('the dashboard reads once for the branch it is addressed to', () => {
    */
   it('says a failed refresh is unavailable, stops "Reading", and offers the read again', async () => {
     const user = userEvent.setup();
-    renderLtr(inBranch(<DashboardScreen locale="en" messages={messagesFor('en')} />));
+    renderDashboard();
     await screen.findByText('7');
 
     readDashboardSummary.mockRejectedValueOnce(
@@ -1165,7 +1226,7 @@ describe('the dashboard reads once for the branch it is addressed to', () => {
   it('says a read that failed at the network is unavailable, not still being read', async () => {
     readDashboardSummary.mockReset();
     readDashboardSummary.mockRejectedValue(new TypeError('Failed to fetch'));
-    renderLtr(inBranch(<DashboardScreen locale="en" messages={messagesFor('en')} />));
+    renderDashboard();
 
     expect(await screen.findByText(EN['state.unavailable.title'] as string)).toBeTruthy();
     expect(screen.queryByText(EN['dashboard.period.pending'] as string)).toBeNull();
@@ -1175,7 +1236,7 @@ describe('the dashboard reads once for the branch it is addressed to', () => {
   it('offers the read again beside a fault the service answered', async () => {
     readDashboardSummary.mockReset();
     readDashboardSummary.mockResolvedValue({ status: 'error', correlationId: 'corr-dash' });
-    renderLtr(inBranch(<DashboardScreen locale="en" messages={messagesFor('en')} />));
+    renderDashboard();
 
     expect(await screen.findByText(EN['state.error.title'] as string)).toBeTruthy();
     expect(screen.getByText('corr-dash')).toBeTruthy();
@@ -1187,16 +1248,15 @@ describe('the dashboard reads once for the branch it is addressed to', () => {
     // is the operator moving on, not the service failing, so the new branch
     // reads "Reading the figures" — never "unavailable", not even for a frame.
     const user = userEvent.setup();
-    renderLtr(
-      inBranch(
+    renderDashboard({
+      snapshot: branchSnapshot([TEST_BRANCH, OTHER_BRANCH]),
+      before: (
         <>
           <BranchSwitch to={TEST_BRANCH.id} label="first branch" />
           <BranchSwitch to={OTHER_BRANCH.id} label="second branch" />
-          <DashboardScreen locale="en" messages={messagesFor('en')} />
-        </>,
-        { snapshot: branchSnapshot([TEST_BRANCH, OTHER_BRANCH]) }
-      )
-    );
+        </>
+      ),
+    });
     readDashboardSummary.mockReturnValueOnce(new Promise(() => undefined));
     await user.click(screen.getByRole('button', { name: 'first branch' }));
     await waitFor(() => expect(readDashboardSummary).toHaveBeenCalledTimes(1));
@@ -1227,7 +1287,7 @@ describe('the dashboard reads once for the branch it is addressed to', () => {
     try {
       readDashboardSummary.mockReset();
       readDashboardSummary.mockReturnValue(new Promise(() => undefined));
-      renderLtr(inBranch(<DashboardScreen locale="en" messages={messagesFor('en')} />));
+      renderDashboard();
       await waitFor(() => expect(readDashboardSummary).toHaveBeenCalledTimes(1));
       expect(screen.getByText(EN['dashboard.period.pending'] as string)).toBeTruthy();
 
@@ -1250,20 +1310,71 @@ describe('the dashboard reads once for the branch it is addressed to', () => {
 
   it('asks for nothing, and says why, when the branches span two companies', async () => {
     const elsewhere = { ...OTHER_BRANCH, companyId: '99999999-9999-4999-8999-999999999999' };
-    renderLtr(
-      inBranch(
-        <>
-          <BranchSwitch to="all" label="everywhere" />
-          <DashboardScreen locale="en" messages={messagesFor('en')} />
-        </>,
-        { snapshot: branchSnapshot([TEST_BRANCH, elsewhere]) }
-      )
-    );
+    renderDashboard({
+      snapshot: branchSnapshot([TEST_BRANCH, elsewhere]),
+      before: <BranchSwitch to="all" label="everywhere" />,
+    });
 
     await userEvent.setup().click(screen.getByRole('button', { name: 'everywhere' }));
 
     expect(await screen.findByText(EN['workingContext.spansCompanies'] as string)).toBeTruthy();
     expect(readDashboardSummary).not.toHaveBeenCalled();
+  });
+});
+
+describe('the moment the figures were taken is written on a named clock, never the laptop’s', () => {
+  beforeEach(() => {
+    window.localStorage.clear();
+    readDashboardSummary.mockReset();
+  });
+
+  /** When the figures were taken, and the clock's name, worked out here. */
+  function stood(zone: string): string {
+    return formatMessage(EN['dashboard.freshness'] as string, {
+      when: formatInZone(GENERATED_AT, intlLocale('en'), zone),
+      zone: zoneLabelAt(GENERATED_AT, intlLocale('en'), zone),
+    });
+  }
+
+  it("writes it on the working BRANCH's clock, and names the clock", async () => {
+    // Pacific/Kiritimati is UTC+14: 09:00 UTC is 23:00 there, a clock no test
+    // machine keeps, so a line written on the browser's clock cannot pass.
+    const far = { ...TEST_BRANCH, timezone: 'Pacific/Kiritimati' };
+    readDashboardSummary.mockResolvedValue(okRead(dashboardSummary({}, 'Pacific/Kiritimati')));
+    renderDashboard({ snapshot: branchSnapshot([far]) });
+    await screen.findByText('7');
+
+    expect(summaryLine()).toHaveTextContent(stood('Pacific/Kiritimati'));
+    expect(summaryLine()).toHaveTextContent(/23:00 \(GMT\+14\)/);
+    expect(summaryLine()).toHaveTextContent(
+      formatMessage(EN['dashboard.period.covering'] as string, {
+        from: formatDayInZone('2026-09-22', intlLocale('en'), 'Pacific/Kiritimati'),
+        to: formatDayInZone('2026-09-22', intlLocale('en'), 'Pacific/Kiritimati'),
+        zone: 'Pacific/Kiritimati',
+      })
+    );
+  });
+
+  it('writes it on UTC under "All my branches", and says the days follow one branch’s clock', async () => {
+    const user = userEvent.setup();
+    readDashboardSummary.mockResolvedValue(okRead(dashboardSummary()));
+    renderDashboard({
+      snapshot: branchSnapshot([TEST_BRANCH, OTHER_BRANCH]),
+      before: <BranchSwitch to="all" label="everywhere" />,
+    });
+    await user.click(screen.getByRole('button', { name: 'everywhere' }));
+    await screen.findByText('7');
+
+    expect(summaryLine()).toHaveTextContent(stood('UTC'));
+    expect(summaryLine()).not.toHaveTextContent(stood('Asia/Riyadh'));
+    // The days are the server's, cut on the first branch of its set — said as such.
+    expect(summaryLine()).toHaveTextContent(
+      formatMessage(EN['dashboard.period.coveringUnion'] as string, {
+        from: formatDayInZone('2026-09-22', intlLocale('en'), 'Asia/Riyadh'),
+        to: formatDayInZone('2026-09-22', intlLocale('en'), 'Asia/Riyadh'),
+        zone: 'Asia/Riyadh',
+      })
+    );
   });
 });
 
@@ -1284,61 +1395,86 @@ describe('a withheld figure is not a zero, and an unanswerable one is not either
         })
       )
     );
-    const { container } = renderLtr(
-      inBranch(<DashboardScreen locale="en" messages={messagesFor('en')} />)
-    );
+    renderDashboard();
     await screen.findByText('7');
 
     // Computed: the number, and nothing else.
-    expect(tile(container, 'activeWorkOrders').textContent).toContain('7');
+    expect(tile('activeWorkOrders')).toHaveAttribute('data-metric-state', 'value');
+    expect(tile('activeWorkOrders')).toHaveTextContent('7');
 
     // Withheld: said in words, and NEVER as a figure of any kind.
-    const withheld = tile(container, 'readyForDelivery');
-    expect(withheld.textContent).toContain(EN['dashboard.card.withheld']);
-    expect(withheld.textContent).not.toContain('0');
+    const withheld = tile('readyForDelivery');
+    expect(withheld).toHaveAttribute('data-metric-state', 'unauthorized');
+    expect(withheld).toHaveTextContent(EN['metric.withheld'] as string);
+    expect(withheld.textContent).not.toMatch(/\d/);
+    expect(within(withheld).queryByRole('link')).toBeNull();
 
     // Unanswerable: a third sentence, distinct from the refusal above.
-    const cannot = tile(container, 'completedInPeriod');
-    expect(cannot.textContent).toContain(EN['dashboard.card.unavailable']);
-    expect(cannot.textContent).not.toContain('0');
-    expect(cannot.textContent).not.toContain(EN['dashboard.card.withheld']);
+    const cannot = tile('completedInPeriod');
+    expect(cannot).toHaveAttribute('data-metric-state', 'unavailable');
+    expect(cannot).toHaveTextContent(EN['metric.unavailable'] as string);
+    expect(cannot.textContent).not.toMatch(/\d/);
+    expect(cannot).not.toHaveTextContent(EN['metric.withheld'] as string);
+  });
+
+  it('draws a zero as a count that still opens its list', async () => {
+    readDashboardSummary.mockResolvedValue(okRead(dashboardSummary({ awaitingParts: figure(0) })));
+    renderDashboard();
+    await screen.findByText('7');
+
+    expect(tile('awaitingParts')).toHaveAttribute('data-metric-state', 'zero');
+    expect(tile('awaitingParts')).toHaveTextContent('0');
+    expect(hrefOf('awaitingParts')).toBe('/en/work-orders?view=awaitingParts');
   });
 
   it('says nothing at all about lateness', async () => {
     readDashboardSummary.mockResolvedValue(okRead(dashboardSummary()));
-    const { container } = renderLtr(
-      inBranch(<DashboardScreen locale="en" messages={messagesFor('en')} />)
-    );
+    const { container } = renderDashboard();
     await screen.findByText('7');
 
     // The summary publishes `overdue` as permanently unanswerable, and this
     // screen draws no card for it: the platform records no promised date, so
     // there is nothing here that could be late.
-    expect(container.querySelector('[data-figure="overdue"]')).toBeNull();
+    expect(screen.queryByTestId('dashboard-figure-overdue')).toBeNull();
     expect(container.textContent?.toLowerCase()).not.toContain('overdue');
   });
 
-  it('withholds a whole chart in words when its section is withheld', async () => {
+  it('says a whole chart is withheld, or cannot be worked out, in its own frame and words', async () => {
     readDashboardSummary.mockResolvedValue(
-      okRead(dashboardSummary({ technicianWorkload: WITHHELD }))
+      okRead(
+        dashboardSummary({
+          technicianWorkload: WITHHELD,
+          intakeCompletionTrend: unanswerable('the platform cannot work this out'),
+        })
+      )
     );
-    renderLtr(inBranch(<DashboardScreen locale="en" messages={messagesFor('en')} />));
+    renderDashboard();
     await screen.findByText('7');
 
-    expect(screen.getByText(EN['dashboard.section.withheld'] as string)).toBeTruthy();
-    expect(screen.queryByRole('heading', { name: EN['dashboard.workload.title'] as string })).toBe(
-      null
-    );
+    const workload = chart('dashboard.workload.title');
+    expect(workload).toHaveAttribute('data-chart-state', 'unauthorized');
+    expect(within(workload).getByRole('status')).toHaveTextContent(EN['chart.withheld'] as string);
+    const trend = chart('dashboard.trend.title');
+    expect(trend).toHaveAttribute('data-chart-state', 'unavailable');
+    expect(within(trend).getByRole('status')).toHaveTextContent(EN['chart.unavailable'] as string);
+    for (const section of [workload, trend]) {
+      // No drawing, no figures, no table to open.
+      expect(within(section).queryByTestId('chart-drawing')).toBeNull();
+      expect(within(section).queryByRole('button')).toBeNull();
+      expect(section.textContent).not.toMatch(/\d/);
+    }
+    // The chart the reader may see still draws.
+    expect(chart('dashboard.byState.title')).toHaveAttribute('data-chart-state', 'ready');
   });
 
   it('says a refusal of the whole read with its reference', async () => {
     readDashboardSummary.mockResolvedValue({ status: 'denied', correlationId: 'ref-77' });
-    const { container } = renderLtr(
-      inBranch(<DashboardScreen locale="en" messages={messagesFor('en')} />)
-    );
+    const { container } = renderDashboard();
 
     await screen.findByText(EN['state.denied.title'] as string);
     expect(container.textContent).toContain('ref-77');
+    // No retry: the same read is refused the same way.
+    expect(screen.queryByRole('button', { name: EN['state.retry'] as string })).toBeNull();
   });
 });
 
@@ -1353,66 +1489,59 @@ describe('every figure opens the list it counted', () => {
   });
 
   it('carries the view a work-order figure was counted over', async () => {
-    const { container } = renderLtr(
-      inBranch(<DashboardScreen locale="en" messages={messagesFor('en')} />)
-    );
+    renderDashboard();
     await screen.findByText('7');
 
-    expect(tile(container, 'activeWorkOrders').getAttribute('href')).toBe('/en/work-orders');
-    expect(tile(container, 'awaitingApproval').getAttribute('href')).toBe(
-      '/en/work-orders?view=awaitingApproval'
-    );
-    expect(tile(container, 'awaitingParts').getAttribute('href')).toBe(
-      '/en/work-orders?view=awaitingParts'
-    );
+    expect(hrefOf('activeWorkOrders')).toBe('/en/work-orders');
+    expect(hrefOf('awaitingApproval')).toBe('/en/work-orders?view=awaitingApproval');
+    expect(hrefOf('awaitingParts')).toBe('/en/work-orders?view=awaitingParts');
+    for (const id of ['activeWorkOrders', 'awaitingApproval', 'awaitingParts']) {
+      expect(tile(id)).toHaveTextContent(EN['dashboard.card.openTheList'] as string);
+    }
   });
 
-  it('carries the period a reception figure was counted over', async () => {
+  it('carries the period a reception figure was counted over, chosen days included', async () => {
     const user = userEvent.setup();
-    const { container } = renderLtr(
-      inBranch(<DashboardScreen locale="en" messages={messagesFor('en')} />)
-    );
+    renderDashboard();
     await screen.findByText('7');
 
-    expect(tile(container, 'receptionsOpened').getAttribute('href')).toBe(
-      '/en/receptions?period=today'
-    );
+    expect(hrefOf('receptionsOpened')).toBe('/en/receptions?period=today');
 
-    await user.click(screen.getByRole('button', { name: EN['dashboard.period.last7'] as string }));
+    await user.click(preset('filters.period.last7'));
     await waitFor(() => {
-      expect(tile(container, 'receptionsOpened').getAttribute('href')).toBe(
-        '/en/receptions?period=last7'
+      expect(hrefOf('receptionsOpened')).toBe('/en/receptions?period=last7');
+    });
+
+    await user.click(preset('filters.period.custom'));
+    await typeDay(user, 'filters.period.from', '01092026');
+    await typeDay(user, 'filters.period.to', '10092026');
+    await user.click(screen.getByRole('button', { name: EN['filters.period.apply'] as string }));
+    await waitFor(() => {
+      expect(hrefOf('receptionsOpened')).toBe(
+        '/en/receptions?period=custom&from=2026-09-01&to=2026-09-10'
       );
     });
   });
 
   it('sends a stock figure to the page where stock is acted on, which opens on the same branch', async () => {
-    const { container } = renderLtr(
-      inBranch(<DashboardScreen locale="en" messages={messagesFor('en')} />)
-    );
+    renderDashboard();
     await screen.findByText('7');
 
-    const stock = tile(container, 'lowStock');
     // No branch travels: the page reads the same working branch the figure was
     // counted for, so an address can never name a second one.
-    expect(stock.getAttribute('href')).toBe('/en/attention');
+    expect(hrefOf('lowStock')).toBe('/en/attention');
     // A RELATED destination, never "the list": the figure counts distinct items
     // and the page lists findings, one per reorder level, capped.
-    expect(stock.textContent).toContain(EN['dashboard.card.reviewBranchStock']);
-    expect(stock.textContent).not.toContain(EN['dashboard.card.openTheList']);
+    expect(tile('lowStock')).toHaveTextContent(EN['dashboard.card.reviewBranchStock'] as string);
+    expect(tile('lowStock')).not.toHaveTextContent(EN['dashboard.card.openTheList'] as string);
   });
 
   it('claims no list for a stock figure counted across every branch', async () => {
     const user = userEvent.setup();
-    const { container } = renderLtr(
-      inBranch(
-        <>
-          <BranchSwitch to="all" label="everywhere" />
-          <DashboardScreen locale="en" messages={messagesFor('en')} />
-        </>,
-        { snapshot: branchSnapshot([TEST_BRANCH, OTHER_BRANCH]) }
-      )
-    );
+    renderDashboard({
+      snapshot: branchSnapshot([TEST_BRANCH, OTHER_BRANCH]),
+      before: <BranchSwitch to="all" label="everywhere" />,
+    });
     await user.click(screen.getByRole('button', { name: 'everywhere' }));
     await screen.findByText('7');
     expect(readDashboardSummary).toHaveBeenLastCalledWith(
@@ -1424,27 +1553,23 @@ describe('every figure opens the list it counted', () => {
 
     // No one branch to open on, and words that say the warnings are reviewed
     // branch by branch rather than implying a company-wide list of this figure.
-    const stock = tile(container, 'lowStock');
-    expect(stock.getAttribute('href')).toBe('/en/attention');
-    expect(stock.textContent).toContain(EN['dashboard.card.reviewStockByBranch']);
-    expect(stock.textContent).not.toContain(EN['dashboard.card.openTheList']);
+    expect(hrefOf('lowStock')).toBe('/en/attention');
+    expect(tile('lowStock')).toHaveTextContent(EN['dashboard.card.reviewStockByBranch'] as string);
+    expect(tile('lowStock')).not.toHaveTextContent(EN['dashboard.card.openTheList'] as string);
     // The work-order figures still open their lists: the board reads the same
     // authorized branch set the summary counted.
-    expect(tile(container, 'awaitingParts').textContent).toContain(
-      EN['dashboard.card.openTheList']
-    );
+    expect(tile('awaitingParts')).toHaveTextContent(EN['dashboard.card.openTheList'] as string);
   });
 
   it('offers no link for a figure no list can be narrowed to', async () => {
-    const { container } = renderLtr(
-      inBranch(<DashboardScreen locale="en" messages={messagesFor('en')} />)
-    );
+    renderDashboard();
     await screen.findByText('7');
 
     // The board takes an OPENED window and no completed one. A link to the
     // unfiltered board would answer a different question from the one the
-    // figure asked, so the tile is not a link at all.
-    expect(tile(container, 'completedInPeriod').tagName).toBe('DIV');
+    // figure asked, so the card is not a link at all.
+    expect(tile('completedInPeriod')).toHaveTextContent('5');
+    expect(hrefOf('completedInPeriod')).toBeNull();
   });
 
   it('puts what is waiting for someone beside where it is dealt with', async () => {
@@ -1458,9 +1583,7 @@ describe('every figure opens the list it counted', () => {
         })
       )
     );
-    const { container } = renderLtr(
-      inBranch(<DashboardScreen locale="en" messages={messagesFor('en')} />)
-    );
+    const { container } = renderDashboard();
     await screen.findByText('7');
 
     const panel = screen
@@ -1490,6 +1613,17 @@ describe('every figure opens the list it counted', () => {
         ?.getAttribute('href')
     ).toBe('/en/attention');
   });
+
+  it('says a withheld line of that panel in words, never as a number', async () => {
+    readDashboardSummary.mockResolvedValue(
+      okRead(dashboardSummary({ pendingApprovalsCount: WITHHELD }))
+    );
+    const { container } = renderDashboard();
+    await screen.findByText('7');
+
+    const requests = container.querySelector('[data-actionable="approvalRequests"]') as HTMLElement;
+    expect(requests.querySelector('strong')?.textContent).toBe(EN['metric.withheld']);
+  });
 });
 
 describe('the charts are drawings with the figures written out beside them', () => {
@@ -1502,28 +1636,46 @@ describe('the charts are drawings with the figures written out beside them', () 
     readDashboardSummary.mockResolvedValue(okRead(dashboardSummary()));
   });
 
-  it('names what each drawing is, for a reader who cannot see it', async () => {
-    const { container } = renderLtr(
-      inBranch(<DashboardScreen locale="en" messages={messagesFor('en')} />)
-    );
+  it('names and describes each drawing, for a reader who cannot see it', async () => {
+    renderDashboard();
     await screen.findByText('7');
 
-    const drawings = container.querySelectorAll('svg[role="img"]');
-    expect(drawings.length).toBe(3);
-    for (const drawing of Array.from(drawings)) {
-      expect(drawing.querySelector('title')?.textContent).toBeTruthy();
-      expect(drawing.querySelector('desc')?.textContent).toBeTruthy();
-    }
+    const drawings = screen.getAllByTestId('chart-drawing');
+    expect(drawings).toHaveLength(3);
+    const expected: readonly [string, string][] = [
+      [
+        EN['dashboard.byState.title'] as string,
+        formatMessage(EN['dashboard.byState.summary'] as string, { states: '3', total: '10' }),
+      ],
+      [
+        EN['dashboard.trend.title'] as string,
+        formatMessage(EN['dashboard.trend.summary'] as string, {
+          days: '2',
+          opened: '5',
+          completed: '5',
+        }),
+      ],
+      [
+        EN['dashboard.workload.title'] as string,
+        formatMessage(EN['dashboard.workload.summary'] as string, { people: '2' }),
+      ],
+    ];
+    expected.forEach(([name, description], index) => {
+      const drawing = drawings[index] as HTMLElement;
+      expect(drawing).toHaveAttribute('role', 'img');
+      expect(drawing).toHaveAccessibleName(name);
+      expect(drawing).toHaveAccessibleDescription(description);
+    });
   });
 
   it('offers the states as a table, each row opening its own list', async () => {
     const user = userEvent.setup();
-    renderLtr(inBranch(<DashboardScreen locale="en" messages={messagesFor('en')} />));
+    renderDashboard();
     await screen.findByText('7');
 
     const section = chart('dashboard.byState.title');
     await user.click(
-      within(section).getByRole('button', { name: EN['dashboard.chart.showTable'] as string })
+      within(section).getByRole('button', { name: EN['chart.showTable'] as string })
     );
 
     const table = within(section).getByRole('table');
@@ -1540,29 +1692,63 @@ describe('the charts are drawings with the figures written out beside them', () 
     expect(within(table).getAllByText(EN['dashboard.byState.finished'] as string).length).toBe(1);
   });
 
-  it('offers the trend as a table with a row for every day', async () => {
+  it('offers the trend as a table with a row for every day, and the figures as read', async () => {
     const user = userEvent.setup();
-    renderLtr(inBranch(<DashboardScreen locale="en" messages={messagesFor('en')} />));
+    renderDashboard();
     await screen.findByText('7');
 
     const section = chart('dashboard.trend.title');
     await user.click(
-      within(section).getByRole('button', { name: EN['dashboard.chart.showTable'] as string })
+      within(section).getByRole('button', { name: EN['chart.showTable'] as string })
     );
 
     const rows = within(within(section).getByRole('table')).getAllByRole('row');
-    // One head row and one row per day of the answer.
+    // One head row and one row per day of the answer, each day written out.
     expect(rows.length).toBe(3);
+    const day = (date: string) => formatDayInZone(date, intlLocale('en'), 'Asia/Riyadh');
+    expect(rows[1]).toHaveTextContent(day('2026-09-21'));
+    expect(
+      within(rows[1] as HTMLElement)
+        .getAllByRole('cell')
+        .map((cell) => cell.textContent)
+    ).toEqual(['2', '1']);
+    expect(rows[2]).toHaveTextContent(day('2026-09-22'));
+    expect(
+      within(rows[2] as HTMLElement)
+        .getAllByRole('cell')
+        .map((cell) => cell.textContent)
+    ).toEqual(['3', '4']);
+  });
+
+  it('writes a large figure whole, grouped and unrounded', async () => {
+    const user = userEvent.setup();
+    readDashboardSummary.mockResolvedValue(
+      okRead(
+        dashboardSummary({
+          workOrdersByState: figure([
+            { state: 'in_progress', label: 'In progress', count: 1234567, isTerminal: false },
+          ]),
+        })
+      )
+    );
+    renderDashboard();
+    await screen.findByText('7');
+
+    const section = chart('dashboard.byState.title');
+    await user.click(
+      within(section).getByRole('button', { name: EN['chart.showTable'] as string })
+    );
+    expect(within(section).getByRole('table')).toHaveTextContent('1,234,567');
   });
 
   it('says a technician whose name is withheld, rather than inventing one', async () => {
     const user = userEvent.setup();
-    renderLtr(inBranch(<DashboardScreen locale="en" messages={messagesFor('en')} />));
+    renderDashboard();
     await screen.findByText('7');
 
     const section = chart('dashboard.workload.title');
     await user.click(
-      within(section).getByRole('button', { name: EN['dashboard.chart.showTable'] as string })
+      within(section).getByRole('button', { name: EN['chart.showTable'] as string })
     );
 
     expect(
@@ -1582,11 +1768,13 @@ describe('the charts are drawings with the figures written out beside them', () 
         })
       )
     );
-    renderLtr(inBranch(<DashboardScreen locale="en" messages={messagesFor('en')} />));
+    renderDashboard();
     await screen.findByText('7');
 
     expect(screen.getByText(EN['dashboard.byState.emptyTitle'] as string)).toBeTruthy();
     expect(screen.getByText(EN['dashboard.trend.emptyTitle'] as string)).toBeTruthy();
+    expect(chart('dashboard.byState.title')).toHaveAttribute('data-chart-state', 'empty');
+    expect(within(chart('dashboard.trend.title')).queryByTestId('chart-drawing')).toBeNull();
   });
 });
 
@@ -1600,34 +1788,72 @@ describe('the dashboard in Arabic, and reachable from the keyboard', () => {
     readDashboardSummary.mockResolvedValue(okRead(dashboardSummary()));
   });
 
-  it('is written in Arabic, in a right-to-left document', async () => {
-    renderRtl(
-      inBranch(<DashboardScreen locale="ar" messages={messagesFor('ar')} />, { locale: 'ar' })
-    );
+  it('is written in Arabic, in a right-to-left document, with the charts mirrored', async () => {
+    renderDashboard({ locale: 'ar' });
 
     expect(
-      await screen.findByRole('button', { name: AR['dashboard.period.today'] as string })
+      await screen.findByRole('button', { name: AR['filters.period.today'] as string })
     ).toBeTruthy();
     expect(screen.getByRole('button', { name: AR['dashboard.refresh'] as string })).toBeTruthy();
-    expect(
-      screen.getByRole('heading', { name: AR['dashboard.byState.title'] as string })
-    ).toBeTruthy();
     expect(document.documentElement.dir).toBe('rtl');
+    for (const key of [
+      'dashboard.byState.title',
+      'dashboard.trend.title',
+      'dashboard.workload.title',
+    ]) {
+      const section = chart(key, AR);
+      // Bars grow from the reading edge; the drawing itself stays left to right
+      // so a label's anchor means a physical side.
+      expect(section, key).toHaveAttribute('data-axis-reversed', 'true');
+      expect(within(section).getByTestId('chart-drawing')).toHaveAttribute('dir', 'ltr');
+    }
+  });
+
+  it('is not mirrored in English', async () => {
+    renderDashboard();
+    await screen.findByText('7');
+    for (const key of [
+      'dashboard.byState.title',
+      'dashboard.trend.title',
+      'dashboard.workload.title',
+    ]) {
+      expect(chart(key), key).toHaveAttribute('data-axis-reversed', 'false');
+    }
+  });
+
+  it('offers the table alternative in Arabic, with its words and Latin digits', async () => {
+    const user = userEvent.setup();
+    renderDashboard({ locale: 'ar' });
+    const section = await waitFor(() => chart('dashboard.byState.title', AR));
+    await user.click(
+      within(section).getByRole('button', { name: AR['chart.showTable'] as string })
+    );
+    const table = within(section).getByRole('table', {
+      name: AR['dashboard.byState.title'] as string,
+    });
+    expect(
+      within(table).getByRole('columnheader', { name: AR['dashboard.byState.state'] as string })
+    ).toBeTruthy();
+    expect(within(table).getAllByText(AR['dashboard.byState.finished'] as string)).toHaveLength(1);
+    expect(table.textContent ?? '').not.toMatch(/[٠-٩۰-۹]/);
+    expect(
+      within(table)
+        .getByRole('link', { name: /With the insurer/ })
+        .getAttribute('href')
+    ).toBe('/ar/work-orders?state=awaiting_insurer');
   });
 
   it('reaches the period controls and the refresh in the order they are read', async () => {
     const user = userEvent.setup();
-    renderLtr(inBranch(<DashboardScreen locale="en" messages={messagesFor('en')} />));
+    renderDashboard();
     await screen.findByText('7');
 
+    // One stop for the period group, the arrows move within it, and the
+    // refresh is the next stop.
     await user.tab();
-    expect(document.activeElement).toBe(
-      screen.getByRole('button', { name: EN['dashboard.period.today'] as string })
-    );
-    for (let step = 0; step < 3; step += 1) await user.tab();
-    expect(document.activeElement).toBe(
-      screen.getByRole('button', { name: EN['dashboard.period.custom'] as string })
-    );
+    expect(document.activeElement).toBe(preset('filters.period.today'));
+    for (let step = 0; step < 3; step += 1) await user.keyboard('{ArrowRight}');
+    expect(document.activeElement).toBe(preset('filters.period.custom'));
     await user.tab();
     expect(document.activeElement).toBe(
       screen.getByRole('button', { name: EN['dashboard.refresh'] as string })
@@ -1636,7 +1862,7 @@ describe('the dashboard in Arabic, and reachable from the keyboard', () => {
 
   it('asks again when the refresh is pressed', async () => {
     const user = userEvent.setup();
-    renderLtr(inBranch(<DashboardScreen locale="en" messages={messagesFor('en')} />));
+    renderDashboard();
     await screen.findByText('7');
 
     await user.click(screen.getByRole('button', { name: EN['dashboard.refresh'] as string }));
@@ -1644,6 +1870,12 @@ describe('the dashboard in Arabic, and reachable from the keyboard', () => {
     await waitFor(() => {
       expect(readDashboardSummary).toHaveBeenCalledTimes(2);
     });
+  });
+
+  it.each(['en', 'ar'] as const)('has no serious accessibility violation in %s', async (locale) => {
+    const { container } = renderDashboard({ locale });
+    await waitFor(() => expect(screen.getAllByTestId('chart-drawing')).toHaveLength(3));
+    expect(await seriousViolations(container)).toEqual([]);
   });
 });
 
@@ -1668,10 +1900,8 @@ describe('the dashboard answers for the period and the branch it is showing', ()
       okRead(dashboardSummary({ activeWorkOrders: figure(99) }))
     );
 
-    renderLtr(inBranch(<DashboardScreen locale="en" messages={messagesFor('en')} />));
-    await user.click(
-      screen.getByRole('button', { name: EN['dashboard.period.yesterday'] as string })
-    );
+    renderDashboard();
+    await user.click(preset('filters.period.yesterday'));
     await screen.findByText('99');
 
     release(okRead(dashboardSummary({ activeWorkOrders: figure(7) })));
@@ -1685,17 +1915,17 @@ describe('the dashboard answers for the period and the branch it is showing', ()
 
   it('says which period the figures still cover while dates are being chosen', async () => {
     const user = userEvent.setup();
-    renderLtr(inBranch(<DashboardScreen locale="en" messages={messagesFor('en')} />));
+    renderDashboard();
     await screen.findByText('7');
 
-    await user.click(screen.getByRole('button', { name: EN['dashboard.period.custom'] as string }));
+    await user.click(preset('filters.period.custom'));
 
     // Pressing the control changes no figure — no days have been named yet —
-    // so the screen must not read as though it had.
+    // so the screen must not read as though it had, and it speaks of FIGURES.
     expect(
       screen.getByText(
         formatMessage(EN['dashboard.period.notApplied'] as string, {
-          period: EN['dashboard.period.today'] as string,
+          period: EN['filters.period.today'] as string,
         })
       )
     ).toBeTruthy();
@@ -1705,13 +1935,13 @@ describe('the dashboard answers for the period and the branch it is showing', ()
 
   it('drops that line once the chosen days are applied', async () => {
     const user = userEvent.setup();
-    renderLtr(inBranch(<DashboardScreen locale="en" messages={messagesFor('en')} />));
+    renderDashboard();
     await screen.findByText('7');
 
-    await user.click(screen.getByRole('button', { name: EN['dashboard.period.custom'] as string }));
-    await user.type(screen.getByLabelText(EN['dashboard.period.from'] as string), '2026-09-01');
-    await user.type(screen.getByLabelText(EN['dashboard.period.to'] as string), '2026-09-10');
-    await user.click(screen.getByRole('button', { name: EN['dashboard.period.apply'] as string }));
+    await user.click(preset('filters.period.custom'));
+    await typeDay(user, 'filters.period.from', '01092026');
+    await typeDay(user, 'filters.period.to', '10092026');
+    await user.click(screen.getByRole('button', { name: EN['filters.period.apply'] as string }));
 
     await waitFor(() => {
       expect(readDashboardSummary).toHaveBeenLastCalledWith(
@@ -1724,25 +1954,23 @@ describe('the dashboard answers for the period and the branch it is showing', ()
     expect(
       screen.queryByText(
         formatMessage(EN['dashboard.period.notApplied'] as string, {
-          period: EN['dashboard.period.today'] as string,
+          period: EN['filters.period.today'] as string,
         })
       )
     ).toBeNull();
   });
 
   it('puts every state within reach of a keyboard, outside the drawing', async () => {
-    const { container } = renderLtr(
-      inBranch(<DashboardScreen locale="en" messages={messagesFor('en')} />)
-    );
+    const { container } = renderDashboard();
     await screen.findByText('7');
 
     // Nothing inside the drawing is a control: a shape under `role="img"` is
     // pruned from the accessibility tree along with anything nested in it, so a
     // link drawn there would exist for a mouse and for nobody else.
-    expect(container.querySelectorAll('svg a').length).toBe(0);
+    expect(container.querySelectorAll('[role="img"] a').length).toBe(0);
 
     const link = screen.getByRole('link', { name: /With the insurer/ });
-    expect(link.closest('svg')).toBeNull();
+    expect(link.closest('[role="img"]')).toBeNull();
     expect(link.getAttribute('href')).toBe('/en/work-orders?state=awaiting_insurer');
     (link as HTMLElement).focus();
     expect(document.activeElement).toBe(link);
@@ -1752,126 +1980,8 @@ describe('the dashboard answers for the period and the branch it is showing', ()
       expect(screen.getByRole('link', { name: new RegExp(label) })).toBeTruthy();
     }
   });
-});
 
-describe('the charts anchor their words to a side, whatever the document direction', () => {
-  beforeEach(() => {
-    window.localStorage.clear();
-    readDashboardSummary.mockReset();
-    readDashboardSummary.mockResolvedValue(okRead(dashboardSummary()));
-  });
-
-  /** The `<text>` elements of the state chart, in document order. */
-  function stateChartTexts(headingText: string): readonly SVGTextElement[] {
-    const heading = screen.getByRole('heading', { name: headingText });
-    const drawing = heading.closest('section')?.querySelector('svg');
-    if (!drawing) throw new Error('no state chart drawing');
-    expect(drawing.getAttribute('direction')).toBe('ltr');
-    return Array.from(drawing.querySelectorAll('text'));
-  }
-
-  /** x, anchor and direction of one text element — what jsdom CAN observe. */
-  const geometry = (text: SVGTextElement | undefined) => ({
-    x: text?.getAttribute('x'),
-    anchor: text?.getAttribute('text-anchor'),
-    direction: text?.getAttribute('direction'),
-  });
-
-  /**
-   * The physical extent of a count's text in drawing units, from its anchor:
-   * `start` grows rightwards from `x`, `end` leftwards. Budgeted by the same
-   * conservative estimate the chart lays out with, since jsdom measures nothing.
-   */
-  function extent(text: SVGTextElement | undefined): { left: number; right: number } {
-    const x = Number(text?.getAttribute('x'));
-    const width = estimatedTextWidth(text?.textContent ?? '', LABEL_FONT_SIZE);
-    return text?.getAttribute('text-anchor') === 'end'
-      ? { left: x - width, right: x }
-      : { left: x, right: x + width };
-  }
-
-  it('puts a label at the left margin and its count past the bar, left to right', async () => {
-    renderLtr(inBranch(<DashboardScreen locale="en" messages={messagesFor('en')} />));
-    await screen.findByText('7');
-
-    // Row one is "In progress", the longest bar (5 of 5): label at the left
-    // inset, count just past the bar's right end, both growing rightwards —
-    // and the bar stops short of the far margin by the count gutter, so the
-    // count is inside the drawing rather than starting at its last 4 units.
-    const [label, count] = stateChartTexts(EN['dashboard.byState.title'] as string);
-    expect(geometry(label)).toEqual({ x: '4', anchor: 'start', direction: 'ltr' });
-    expect(geometry(count)).toEqual({ x: '532', anchor: 'start', direction: 'ltr' });
-    expect(extent(count).left).toBeGreaterThanOrEqual(0);
-    expect(extent(count).right).toBeLessThanOrEqual(CHART_WIDTH);
-    // The words sit in an isolate that takes its own direction from its text —
-    // as the presentation attribute AND as the CSS declaration.
-    const words = label?.querySelector('tspan');
-    expect(words?.getAttribute('unicode-bidi')).toBe('plaintext');
-    expect(words?.style.unicodeBidi).toBe('plaintext');
-  });
-
-  it('keeps the largest count wholly inside the drawing, in both directions', async () => {
-    // A figure with many digits on the longest bar of each bar chart: the
-    // gutter widens to fit it, so it can never be clipped by the viewBox.
-    readDashboardSummary.mockResolvedValue(
-      okRead(
-        dashboardSummary({
-          workOrdersByState: figure([
-            { state: 'in_progress', label: 'In progress', count: 1234567, isTerminal: false },
-            { state: 'awaiting_parts', label: 'Waiting for parts', count: 3, isTerminal: false },
-          ]),
-          technicianWorkload: figure([
-            { technicianId: 'tech-1', displayName: 'Technician', activeCount: 9876543 },
-            { technicianId: 'tech-2', displayName: 'Second', activeCount: 1 },
-          ]),
-        })
-      )
-    );
-    for (const [render, locale] of [
-      [renderLtr, 'en'],
-      [renderRtl, 'ar'],
-    ] as const) {
-      window.localStorage.clear();
-      const { unmount } = render(
-        inBranch(<DashboardScreen locale={locale} messages={messagesFor(locale)} />, { locale })
-      );
-      const messages = locale === 'en' ? EN : AR;
-      for (const headingKey of ['dashboard.byState.title', 'dashboard.workload.title']) {
-        // The drawing appears once the read has answered.
-        const [, count] = await waitFor(() => {
-          const texts = stateChartTexts(messages[headingKey] as string);
-          expect(texts.length).toBeGreaterThan(1);
-          return texts;
-        });
-        const where = `${locale} ${headingKey}`;
-        expect(count?.textContent?.length, where).toBeGreaterThan(6);
-        expect(extent(count).left, where).toBeGreaterThanOrEqual(0);
-        expect(extent(count).right, where).toBeLessThanOrEqual(CHART_WIDTH);
-      }
-      unmount();
-    }
-  });
-
-  it('mirrors both to the other side in Arabic, with the anchor naming the RIGHT edge', async () => {
-    renderRtl(
-      inBranch(<DashboardScreen locale="ar" messages={messagesFor('ar')} />, { locale: 'ar' })
-    );
-    await screen.findByRole('heading', { name: AR['dashboard.byState.title'] as string });
-    expect(document.documentElement.dir).toBe('rtl');
-
-    // `direction="ltr"` on the element is what makes `end` mean the right edge
-    // here; inherited from the rtl document it would have meant the left one,
-    // and the label would have hung off the drawing.
-    const [label, count] = stateChartTexts(AR['dashboard.byState.title'] as string);
-    expect(geometry(label)).toEqual({ x: '596', anchor: 'end', direction: 'ltr' });
-    // The count ends 68 units from the left edge — the mirror of 532 — so the
-    // whole of it is drawn, rather than ending at x = 4 and running off.
-    expect(geometry(count)).toEqual({ x: '68', anchor: 'end', direction: 'ltr' });
-    expect(extent(count).left).toBeGreaterThanOrEqual(0);
-    expect(extent(count).right).toBeLessThanOrEqual(CHART_WIDTH);
-  });
-
-  it('cuts a label that cannot fit the label column, and keeps the whole of it', async () => {
+  it('keeps a label too long for its column whole in the links and the table', async () => {
     const long = 'Waiting for the insurance assessor to call back';
     readDashboardSummary.mockResolvedValue(
       okRead(
@@ -1879,83 +1989,22 @@ describe('the charts anchor their words to a side, whatever the document directi
           workOrdersByState: figure([
             { state: 'awaiting_assessor', label: long, count: 2, isTerminal: false },
           ]),
-          technicianWorkload: figure([
-            { technicianId: 'tech-1', displayName: long, activeCount: 1 },
-          ]),
         })
       )
     );
     const user = userEvent.setup();
-    renderLtr(inBranch(<DashboardScreen locale="en" messages={messagesFor('en')} />));
+    renderDashboard();
     await screen.findByText('7');
 
-    for (const headingKey of ['dashboard.byState.title', 'dashboard.workload.title']) {
-      const [label] = stateChartTexts(EN[headingKey] as string);
-      const drawn = label?.querySelector('tspan')?.textContent ?? '';
-      expect(drawn.endsWith('…'), headingKey).toBe(true);
-      expect(Array.from(drawn).length).toBeLessThanOrEqual(25);
-      expect(long.startsWith(drawn.slice(0, -1))).toBe(true);
-      // The whole wording stays with the label for a pointer...
-      expect(label?.querySelector('title')?.textContent).toBe(long);
-    }
-
-    // ...and in the table alternative, uncut.
     const section = chart('dashboard.byState.title');
+    expect(within(section).getByRole('link', { name: new RegExp(long) })).toHaveAttribute(
+      'href',
+      '/en/work-orders?state=awaiting_assessor'
+    );
     await user.click(
-      within(section).getByRole('button', { name: EN['dashboard.chart.showTable'] as string })
+      within(section).getByRole('button', { name: EN['chart.showTable'] as string })
     );
     expect(within(within(section).getByRole('table')).getByText(long)).toBeTruthy();
-  });
-
-  it('cuts an all-capitals label to the column, however wide its glyphs run', async () => {
-    const shouted = 'WAITING FOR THE INSURANCE ASSESSOR TO CALL BACK';
-    readDashboardSummary.mockResolvedValue(
-      okRead(
-        dashboardSummary({
-          workOrdersByState: figure([
-            { state: 'awaiting_assessor', label: shouted, count: 2, isTerminal: false },
-          ]),
-        })
-      )
-    );
-    renderLtr(inBranch(<DashboardScreen locale="en" messages={messagesFor('en')} />));
-    await screen.findByText('7');
-
-    const [label] = stateChartTexts(EN['dashboard.byState.title'] as string);
-    const drawn = label?.querySelector('tspan')?.textContent ?? '';
-    expect(drawn.endsWith('…')).toBe(true);
-    expect(shouted.startsWith(drawn.slice(0, -1))).toBe(true);
-    // Within the column by the conservative budget...
-    expect(estimatedTextWidth(drawn, LABEL_FONT_SIZE)).toBeLessThanOrEqual(LABEL_TEXT_WIDTH);
-    // ...and fewer characters than the old 0.6-em average would have kept
-    // (25), which is what let a line of capitals run into the bars.
-    expect(Array.from(drawn).length).toBeLessThan(25);
-    expect(label?.querySelector('title')?.textContent).toBe(shouted);
-  });
-
-  it('budgets wide glyphs, capitals and ordinary letters apart', () => {
-    // A run of the widest glyphs is cut sooner than capitals, and capitals
-    // sooner than lower case, and every cut fits the column.
-    const cut = (text: string) => fitLabel(text);
-    const wide = cut('W'.repeat(40));
-    const capitals = cut('H'.repeat(40));
-    const lower = cut('h'.repeat(40));
-    expect(wide.length).toBeLessThan(capitals.length);
-    expect(capitals.length).toBeLessThan(lower.length);
-    for (const drawn of [wide, capitals, lower]) {
-      expect(estimatedTextWidth(drawn, LABEL_FONT_SIZE)).toBeLessThanOrEqual(LABEL_TEXT_WIDTH);
-    }
-    // A label within the budget is returned as it is.
-    expect(cut('In progress')).toBe('In progress');
-  });
-
-  it('leaves a label that fits exactly as it is, with no second copy', async () => {
-    renderLtr(inBranch(<DashboardScreen locale="en" messages={messagesFor('en')} />));
-    await screen.findByText('7');
-
-    const [label] = stateChartTexts(EN['dashboard.byState.title'] as string);
-    expect(label?.querySelector('tspan')?.textContent).toBe('In progress');
-    expect(label?.querySelector('title')).toBeNull();
   });
 });
 

@@ -943,6 +943,10 @@ above a list: a search, chips or selects, and a period.
   offered while days are typed or applied, and the boxes following `value` and `resetKey`; and
   `echoDigits`, which draws `DigitsEcho` under the search box (Arabic-Indic digits shown as Latin,
   the term still sent as typed). A toolbar given none of them is unchanged.
+- T8. What the dashboard adds, optional and off unless given: `notApplied`, the screen's own
+  words for the line said while chosen days are not yet applied (`preset` carrying `{period}`,
+  and `custom`), so a screen of figures says the figures, not "the list", still cover the
+  period in force. Unset, the line is unchanged.
 
 **`DateField` / `DateTimeField`** (`apps/web/src/components/forms/mui/DateField.tsx`) are the MIT
 pickers with `FieldFrame`'s contract.
@@ -961,8 +965,9 @@ pickers with `FieldFrame`'s contract.
 - E4. Texts come from the catalogue; Arabic uses `ar-jo-latn`, so digits are Latin.
 
 **`MetricCard` / `ChartPanel`** (`apps/web/src/components/charts/`) are one figure and one chart on
-MUI X Charts (MIT). The dashboard keeps `charts.tsx` until it moves (PR5); the label budget is now
-shared (`label-fit.ts`).
+MUI X Charts (MIT). The dashboard draws its seven figures and three charts with them since `/`
+moved; the hand-drawn `features/overview/components/charts.tsx` is gone, and the label budget
+is `label-fit.ts`.
 
 - M1. A count (zero included) is a number and a link to exactly the set it counted; withheld and
   unanswerable are two different sentences with no number and no link; loading is announced.
@@ -980,9 +985,13 @@ shared (`label-fit.ts`).
   named "Everything else" slice while the table and links keep every category; a per-category link
   stays when its figure is zero; "reduce motion" skips the animation; loading, withheld,
   unanswerable and empty are distinct.
+- M6. A horizontal bar chart's label column fits its widest label, no narrower than 190 units
+  and no wider than 40% of the measured drawing (`labelColumnWidth`); until the drawing is
+  measured it is the minimum, and labels that still do not fit are cut as in M4
+  (`data-label-column` records the width handed to the chart). Browser QA part 7, row 7.6.
 
-These PR1b wrappers are not yet in the "Applicable" column below: each route's applicability for
-them is derived when the first route moves onto one of them.
+`MetricCard` and `ChartPanel` are named in the "Applicable" column below for the route that has
+moved onto them (`/`); for every other route their applicability is derived when it moves.
 
 ### Route adoption
 
@@ -1042,7 +1051,7 @@ The preserved-behaviour cell names the contract items above that a migration mus
 | `/inventory/unit-conversions`                         | form fields, `OperationalGrid`, states                 | F1–F6; G1–G9; S1–S4         | not migrated                       | not run — nothing migrated                |
 | `/inventory/vehicle-specifications`                   | form fields, `OperationalGrid`, states                 | F1–F6; G1–G9; S1–S4         | not migrated                       | not run — nothing migrated                |
 | `/invoices`                                           | form fields, `OperationalGrid`, `EntityPicker`, states | F1–F6; G1–G9; P1–P10; S1–S4 | not migrated                       | not run — nothing migrated                |
-| `/`                                                   | form fields, states                                    | F1–F6; S1–S4                | not migrated                       | not run — nothing migrated                |
+| `/`                                                   | `FilterToolbar`, `MetricCard`, `ChartPanel`, states    | S1–S4; T1–T6, T8; M1–M6     | migrated — see below the table     | focused suites, en and ar — see below     |
 | `/payments`                                           | form fields, `OperationalGrid`, `EntityPicker`, states | F1–F6; G1–G9; P1–P10; S1–S4 | not migrated                       | not run — nothing migrated                |
 | `/pricing/[priceListId]`                              | form fields, `OperationalGrid`, states                 | F1–F6; G1–G9; S1–S4         | not migrated                       | not run — nothing migrated                |
 | `/pricing`                                            | form fields, `OperationalGrid`, states                 | F1–F6; G1–G9; S1–S4         | not migrated                       | not run — nothing migrated                |
@@ -1220,3 +1229,61 @@ Known limitations of this slice, one line each:
   falsifications were not re-run in round 2 either.
 - Process note: review's first local gate batch started below the 4 GB free-commit threshold
   (about 3.1 GB); later runs were gated at 4 GB or more, with no failure and no port contact.
+
+### `/` on Material UI
+
+`DashboardScreen` renders `FilterToolbar` (the dashboard's four periods, sent as the preset's name
+or `custom` with two days, at most 92; the Refresh in the actions row; what the figures cover and
+when they were taken in the summary line), seven `MetricCard`s, the "Waiting for someone" panel on
+a Material card (no wrapper draws a signpost list, so it stays the screen's own, on the token
+layer), three `ChartPanel`s (work orders by state and work with each technician as horizontal
+bars, opened and finished as paired vertical bars, the finished series hatched), and `MuiStates`
+for the read's own states. The branch notices are the shared `RequiresConcreteBranch` sentence and
+the spans-companies notice. Nothing about how the screen reads changed: the same criteria, the
+same cancellable `/reads/dashboard-summary` route, the same key (branch, period, days, working
+context version, refresh count). The hand-drawn `charts.tsx` is deleted; nothing else in the application imported it.
+
+Preserved, each held by a case in `apps/web/tests/attention.dom.test.tsx` unless named:
+
+- One read per branch and period; a failed refresh, a rejected call and a read past the client
+  ceiling settle as "unavailable" with a retry, never an endless "Reading the figures" (Browser QA
+  part 7, row 7.4, `settleRead`); a fault shows its reference and a retry; a refusal has no retry.
+- The answer is filed under the key it was read for: a late answer for another period or branch
+  is discarded, a branch switch shows neither the old figures nor a flash of "unavailable", and a
+  read abandoned on a period change is aborted (`cancellable-reads.dom.test.tsx`).
+- Three section states, three statements: a count (zero included, and a zero still links),
+  withheld and unanswerable, on every card and on every chart; no card for lateness.
+- Every link claim in `dashboard-links.ts`: the work-order cards carry their view, the chart links
+  their state, the reception card its period with the chosen days; the stock card names a related
+  destination; the finished-in-period card is not a link. Each link family is followed to its MUI
+  board — the board's route reads the parameter and the board's first read carries the matching
+  filter (`reception-queue.dom.test.tsx` for `?period`/`?from`/`?to`,
+  `search-empty-states.dom.test.tsx` for `?view` and `?state`).
+- Figures exactly as read: integers formatted, grouped and unrounded; the trend table row by row.
+- Every chart a named and described drawing with its table alternative and a link per category
+  outside the drawing, in English and Arabic; mirrored in Arabic (`data-axis-reversed`), the
+  drawing itself left to right; a long label whole in the links and the table.
+- A refused chosen pair is refused on the box to fix with the cursor moved there; the not-applied
+  line speaks of the figures (T8).
+- "All my branches": one union read, the stock card's wording, and the covering line saying the
+  days follow one branch's clock (the server cuts them on the first branch of the set it resolved,
+  `dashboard-summary-service.ts`, unchanged).
+- Arabic and English, right to left included; no serious axe violation in either.
+
+Fixed in this slice: when the figures were taken used the browser's clock. It is now written on
+the working branch's clock, and on UTC under "All my branches", with the clock named either way —
+the rule `MetricCard` follows (`zoneLabelAt`).
+
+Verification: the focused suites above, `chart-panel.dom.test.tsx`, `filter-toolbar.dom.test.tsx`,
+`cancellable-reads.dom.test.tsx` and the route branch-scope suites were run locally in both
+languages. The browser specs run only in hosted CI; the accessibility spec scans `/`, and no spec
+drives the dashboard's controls.
+
+Known limitations of this slice, one line each:
+
+- The label column is fitted from the measured drawing, which jsdom does not lay out; the width
+  rule is held on `labelColumnWidth` and on a measured-drawing case, and how a browser draws it is
+  for browser QA.
+- The "Waiting for someone" panel is the screen's own markup on a Material card, not a wrapper.
+- Under "All my branches" the days of a period follow the first branch of the server's resolved
+  set; branches in other zones are counted on that clock (said on screen, not changed here).
