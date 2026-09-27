@@ -506,8 +506,13 @@ describe('the Platform Owner Console routes decide on their own platform code be
 
 // --- organisation administration (P1-32 preparation) --------------------------
 
+// Counted, so a page can be held to reading the tenant only with the code the
+// read declares (`iam.tenant-settings-read` on `org.tenant.read`).
+const readTenant = vi.hoisted(() =>
+  vi.fn(async () => ({ status: 'ok', data: null, correlationId: 'cid' }))
+);
 vi.mock('@/features/administration/organization/api', () => ({
-  readTenant: async () => ({ status: 'ok', data: null, correlationId: 'cid' }),
+  readTenant: () => readTenant(),
   readCapacity: async () => ({ status: 'ok', data: null, correlationId: 'cid' }),
   listCompanies: async () => ({ status: 'ok', data: [], correlationId: 'cid' }),
   listBranches: async () => ({ status: 'ok', data: [], correlationId: 'cid' }),
@@ -628,6 +633,53 @@ describe('the organisation page reads the reference choices only with the code t
 
     await screenProps(LanguagesPage, {}, [ADMIN.tenantRead], 'referenceValues');
     expect(readReferenceValues).toHaveBeenCalledTimes(1);
+  });
+
+  /*
+   * P1-32-PRE-OD-QAF, item C. The organisation page read the tenant for every
+   * session, so an identity without `org.tenant.read` drew a refused
+   * `iam.tenant-settings-read` on each visit (four in the browser QA log).
+   */
+  it('reads the tenant only with org.tenant.read, on both pages', async () => {
+    readTenant.mockClear();
+    readReferenceValues.mockReset();
+    readReferenceValues.mockResolvedValue(null);
+    await screenProps(OrganizationPage, {}, [ADMIN.companyRead, ADMIN.branchRead], 'x');
+    await screenProps(LanguagesPage, {}, [ADMIN.settingsManage], 'x');
+    expect(readTenant).not.toHaveBeenCalled();
+
+    await screenProps(OrganizationPage, {}, [ADMIN.tenantRead], 'x');
+    await screenProps(LanguagesPage, {}, [ADMIN.tenantRead], 'x');
+    expect(readTenant).toHaveBeenCalledTimes(2);
+  });
+
+  it('offers Try again only when the reference read was made and failed', async () => {
+    readReferenceValues.mockReset();
+    readReferenceValues.mockResolvedValue(null);
+    const failed = await screenProps(
+      OrganizationPage,
+      {},
+      [ADMIN.tenantRead, ADMIN.companyRead, ADMIN.branchRead],
+      'currencyChoices'
+    );
+    expect(failed?.['referenceUnavailable']).toBe(true);
+
+    const notMade = await screenProps(
+      OrganizationPage,
+      {},
+      [ADMIN.companyRead, ADMIN.branchRead],
+      'currencyChoices'
+    );
+    expect(notMade?.['referenceUnavailable']).toBe(false);
+
+    readReferenceValues.mockResolvedValue({ currencies: [], timezones: [], languages: [] });
+    const answered = await screenProps(
+      OrganizationPage,
+      {},
+      [ADMIN.tenantRead, ADMIN.companyRead, ADMIN.branchRead],
+      'currencyChoices'
+    );
+    expect(answered?.['referenceUnavailable']).toBe(false);
   });
 });
 

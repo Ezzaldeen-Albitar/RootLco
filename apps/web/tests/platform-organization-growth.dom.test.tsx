@@ -278,33 +278,102 @@ describe('adding a branch', () => {
   });
 });
 
-describe('the currency and time-zone choices, when the list could not be read', () => {
-  it('shows both disabled with a notice, and never a free-text box', async () => {
-    renderDetail({}, { canManageOrganization: true }, null);
-    await userEvent.click(screen.getByTestId('platform-add-company'));
-    const companyDialog = await screen.findByRole('dialog');
-    const currency = within(companyDialog).getByLabelText(
-      new RegExp(`^${L('platform.provision.baseCurrency')}`)
-    );
-    expect(currency.tagName).toBe('SELECT');
-    expect(currency).toBeDisabled();
-    expect(
-      within(companyDialog).getByText(L('platform.provision.referenceUnavailable'))
-    ).toBeInTheDocument();
-    await userEvent.click(within(companyDialog).getByRole('button', { name: L('overlay.cancel') }));
+/*
+ * P1-32-PRE-OD-QAF. D-1: a currency and a zone read as names in the reader's
+ * language, with the code beside them, and the code is still what is sent.
+ * Item B: the list is read on the server, so a failed read arrives as `null`;
+ * each select says so on itself, offers Try again (a page refresh) and refuses
+ * the submission on its field, with the cursor on it. In both languages.
+ */
+describe.each([
+  ['en', renderLtr, EN, messages],
+  ['ar', renderRtl, AR, arabicMessages],
+] as const)(
+  '%s: the currency and time-zone choices',
+  (locale, paint, catalogue, catalogueMessages) => {
+    const M = (key: string): string => catalogue[key] ?? `missing message ${key}`;
+    const labelled = (scope: HTMLElement, key: string) =>
+      within(scope).getByLabelText(new RegExp(`^${M(key)}`));
+    function paintDetail(referenceValues: typeof references | null) {
+      return paint(
+        <OrganizationDetailScreen
+          locale={locale}
+          messages={catalogueMessages}
+          organization={detail}
+          plans={[plan]}
+          referenceValues={referenceValues}
+          charges={null}
+          capabilities={{ ...NONE, canManageOrganization: true }}
+          today="2026-09-17"
+        />
+      );
+    }
 
-    await userEvent.click(screen.getByTestId('platform-add-branch'));
-    const branchDialog = await screen.findByRole('dialog');
-    const zone = within(branchDialog).getByLabelText(
-      new RegExp(`^${L('platform.provision.timeZone')}`)
-    );
-    expect(zone.tagName).toBe('SELECT');
-    expect(zone).toBeDisabled();
-    expect(
-      within(branchDialog).getByText(L('platform.provision.referenceUnavailable'))
-    ).toBeInTheDocument();
-  });
-});
+    it('read as names with the code beside them, and send the code', async () => {
+      addCompanyAction.mockResolvedValue(done('platform.growth.companyDone'));
+      paintDetail(references);
+      await userEvent.click(screen.getByTestId('platform-add-company'));
+      const companyDialog = await screen.findByRole('dialog');
+      const currency = labelled(companyDialog, 'platform.provision.baseCurrency');
+      const jod = within(currency).getByRole('option', { name: /\(JOD\)$/ });
+      expect(jod).toHaveValue('JOD');
+      expect(jod.textContent).not.toBe('JOD');
+      if (locale === 'ar') expect(jod.textContent).toMatch(/[؀-ۿ]/);
+      expect(currency).not.toHaveAttribute('dir', 'ltr');
+      await userEvent.click(
+        within(companyDialog).getByRole('button', { name: M('overlay.cancel') })
+      );
+
+      await userEvent.click(screen.getByTestId('platform-add-branch'));
+      const branchDialog = await screen.findByRole('dialog');
+      const zone = labelled(branchDialog, 'platform.provision.timeZone');
+      const amman = within(zone).getByRole('option', { name: /\(Asia\/Amman\)$/ });
+      expect(amman).toHaveValue('Asia/Amman');
+      expect(amman.textContent).not.toBe('Asia/Amman');
+      expect(within(branchDialog).queryByRole('button', { name: M('form.retry') })).toBeNull();
+    });
+
+    it('say a list that could not be loaded on the field, retry, and refuse to send', async () => {
+      paintDetail(null);
+      await userEvent.click(screen.getByTestId('platform-add-company'));
+      const companyDialog = await screen.findByRole('dialog');
+      const currency = labelled(companyDialog, 'platform.provision.baseCurrency');
+      expect(currency.tagName).toBe('SELECT');
+      expect(currency).not.toBeDisabled();
+      expect(
+        within(companyDialog).getByText(M('platform.provision.referenceUnavailable'))
+      ).toBeInTheDocument();
+      await userEvent.click(within(companyDialog).getByRole('button', { name: M('form.retry') }));
+      expect(refresh).toHaveBeenCalledTimes(1);
+      await userEvent.type(labelled(companyDialog, 'platform.provision.code'), 'test_south');
+      await userEvent.click(
+        within(companyDialog).getByRole('button', { name: M('platform.save') })
+      );
+      expect(await within(companyDialog).findByText(M('form.referenceList.blocked'))).toBeVisible();
+      expect(currency).toHaveAttribute('aria-invalid', 'true');
+      expect(currency).toHaveFocus();
+      expect(labelled(companyDialog, 'platform.provision.code')).toHaveValue('test_south');
+      expect(addCompanyAction).not.toHaveBeenCalled();
+      await userEvent.click(
+        within(companyDialog).getByRole('button', { name: M('overlay.cancel') })
+      );
+
+      await userEvent.click(screen.getByTestId('platform-add-branch'));
+      const branchDialog = await screen.findByRole('dialog');
+      const zone = labelled(branchDialog, 'platform.provision.timeZone');
+      expect(
+        within(branchDialog).getByText(M('platform.provision.referenceUnavailable'))
+      ).toBeInTheDocument();
+      await userEvent.click(within(branchDialog).getByRole('button', { name: M('platform.save') }));
+      expect(await within(branchDialog).findByText(M('form.referenceList.blocked'))).toBeVisible();
+      expect(zone).toHaveAttribute('aria-invalid', 'true');
+      expect(zone).toHaveFocus();
+      expect(addBranchAction).not.toHaveBeenCalled();
+      // Nothing falls back to free text.
+      expect(within(branchDialog).queryByRole('textbox', { name: /time zone/i })).toBeNull();
+    });
+  }
+);
 
 describe('inviting an administrator', () => {
   it('sends the address and the name, and asks for nothing else', async () => {

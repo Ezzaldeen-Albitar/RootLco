@@ -2,9 +2,11 @@
 
 import { useActionState, useState } from 'react';
 import { SelectField, TextField } from '@/components/forms/Field';
-import { LOCALES, isLocale } from '@/i18n/config';
+import { ReferenceListRetry } from '@/components/forms/ReferenceList';
+import { LOCALES, isLocale, type Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
 import { translate } from '@/i18n/get-messages';
+import { languageLabel, timeZoneLabel } from '@/lib/format';
 import { IDLE, type ActionState } from '@/lib/forms/action-result';
 import { FormFeedback } from '@/features/authentication/components/FormFeedback';
 import { SubmitButton } from '@/features/authentication/components/SubmitButton';
@@ -29,19 +31,30 @@ import { useActionRefusal } from '@/lib/forms/use-action-refusal';
  * falls back to the interface languages and the zone to the zones already in
  * use, as it also does when the list holds no active zone. The saved value is always one of the choices, so an untouched form still
  * submits it. Nothing is typed; a refusal is still shown on its field.
+ *
+ * A language and a zone read as names in the reader's language, the zone with
+ * its identifier beside it, in the form and in the read-only facts alike. When
+ * the reference read FAILED (`referenceUnavailable`), each select says its list
+ * is partial and offers Try again (P1-32-PRE-OD-QAF). The saved value keeps
+ * both selects valid, so the form still sends.
  */
 export function TenantForm({
+  locale,
   messages,
   tenant,
   canWrite,
   referenceValues = null,
+  referenceUnavailable = false,
   timezoneChoices = [],
 }: {
+  readonly locale: Locale;
   readonly messages: Messages;
   readonly tenant: TenantView;
   readonly canWrite: boolean;
   /** `org.reference-values-read`; `null` when it was not permitted or failed. */
   readonly referenceValues?: ReferenceValues | null;
+  /** The reference read was made and failed, so the selects offer Try again. */
+  readonly referenceUnavailable?: boolean;
   /** The zones the tenant and its branches already use — the fallback. */
   readonly timezoneChoices?: readonly string[];
 }) {
@@ -90,6 +103,11 @@ export function TenantForm({
     referenceZones.length > 0 ? referenceZones : timezoneChoices,
     tenant.defaultTimezone
   );
+  const registerLanguage = new Map(
+    (referenceValues?.languages ?? []).map((language) => [language.localeCode, language.name])
+  );
+  const localeName = (code: string) =>
+    isLocale(code) ? t(`locale.${code}`) : languageLabel(code, locale, registerLanguage.get(code));
 
   if (!canWrite) {
     return (
@@ -97,8 +115,11 @@ export function TenantForm({
         <Fact label={t('organization.tenantCode')} value={tenant.tenantCode} mono />
         <Fact label={t('organization.displayName')} value={tenant.displayName} />
         <Fact label={t('organization.status')} value={tenant.status} />
-        <Fact label={t('organization.defaultLocale')} value={tenant.defaultLocale} />
-        <Fact label={t('organization.defaultTimezone')} value={tenant.defaultTimezone} />
+        <Fact label={t('organization.defaultLocale')} value={localeName(tenant.defaultLocale)} />
+        <Fact
+          label={t('organization.defaultTimezone')}
+          value={timeZoneLabel(tenant.defaultTimezone, locale)}
+        />
         <div className="sm:col-span-2">
           <p className="text-supporting text-text-muted">{t('admin.readOnly')}</p>
         </div>
@@ -147,26 +168,31 @@ export function TenantForm({
         key={`defaultLocale-${state.attempt ?? 0}`}
         name="defaultLocale"
         label={t('organization.defaultLocale')}
-        description={t('organization.defaultLocaleHint')}
+        description={t(
+          referenceUnavailable ? 'form.referenceList.partial' : 'organization.defaultLocaleHint'
+        )}
         defaultValue={retained('defaultLocale')}
         onChange={retain('defaultLocale')}
         error={fieldError('defaultLocale')}
-        options={localeValues.map((code) => ({
-          value: code,
-          label: isLocale(code) ? t(`locale.${code}`) : code,
-        }))}
+        options={localeValues.map((code) => ({ value: code, label: localeName(code) }))}
       />
+      {referenceUnavailable ? <ReferenceListRetry label={t('form.retry')} /> : null}
       <SelectField
         key={`defaultTimezone-${state.attempt ?? 0}`}
         name="defaultTimezone"
         label={t('organization.defaultTimezone')}
-        description={t('organization.defaultTimezoneHint')}
+        description={t(
+          referenceUnavailable ? 'form.referenceList.partial' : 'organization.defaultTimezoneHint'
+        )}
         defaultValue={retained('defaultTimezone')}
         onChange={retain('defaultTimezone')}
         error={fieldError('defaultTimezone')}
-        options={timezoneValues.map((zone) => ({ value: zone, label: zone }))}
-        dir="ltr"
+        options={timezoneValues.map((zone) => ({
+          value: zone,
+          label: timeZoneLabel(zone, locale),
+        }))}
       />
+      {referenceUnavailable ? <ReferenceListRetry label={t('form.retry')} /> : null}
 
       <div className="flex justify-end">
         <SubmitButton label={t('admin.save')} pendingLabel={t('admin.saving')} full={false} />

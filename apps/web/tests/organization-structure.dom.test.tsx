@@ -130,6 +130,7 @@ function optionValues(control: HTMLElement): (string | null)[] {
 function renderStructure(over: Record<string, unknown> = {}) {
   return renderLtr(
     <OrganizationStructure
+      locale="en"
       messages={en}
       capacity={capacity()}
       companies={ok([COMPANY])}
@@ -291,7 +292,8 @@ describe('the currency and time zone are chosen, never typed', () => {
     const dialog = screen.getByRole('dialog');
     const currency = within(dialog).getByLabelText(/^Base currency/);
     expect(currency.tagName).toBe('SELECT');
-    expect(optionValues(currency)).toEqual(['', 'JOD', 'USD', 'EUR']);
+    // Ordered by the name the reader sees: Euro, Jordanian Dinar, US Dollar.
+    expect(optionValues(currency)).toEqual(['', 'EUR', 'JOD', 'USD']);
     expect(within(dialog).getByText(EN('organization.company.currencyHint'))).toBeVisible();
   });
 
@@ -364,7 +366,9 @@ describe('the tenant form offers its language and time zone as selects', () => {
   };
 
   it('offers the platform languages the interface can be shown in, and the platform zones', () => {
-    renderLtr(<TenantForm messages={en} canWrite tenant={TENANT} referenceValues={REFERENCES} />);
+    renderLtr(
+      <TenantForm locale="en" messages={en} canWrite tenant={TENANT} referenceValues={REFERENCES} />
+    );
     const language = screen.getByLabelText(new RegExp(`^${EN('organization.defaultLocale')}`));
     const zone = screen.getByLabelText(new RegExp(`^${EN('organization.defaultTimezone')}`));
     expect(language.tagName).toBe('SELECT');
@@ -379,6 +383,7 @@ describe('the tenant form offers its language and time zone as selects', () => {
   it('falls back to the interface languages and the zones in use, keeping the saved one', () => {
     renderLtr(
       <TenantForm
+        locale="en"
         messages={en}
         canWrite
         tenant={TENANT}
@@ -397,6 +402,7 @@ describe('the tenant form offers its language and time zone as selects', () => {
   it('keeps a saved value the list does not hold as the selected choice', () => {
     renderLtr(
       <TenantForm
+        locale="en"
         messages={en}
         canWrite
         tenant={{ ...TENANT, defaultTimezone: 'Europe/London' }}
@@ -411,7 +417,9 @@ describe('the tenant form offers its language and time zone as selects', () => {
   it('offers only the saved zone when neither the list nor the zones in use are given', () => {
     // The Languages screen passes no zones in use; without the list the saved
     // zone is still offered and selected, so an untouched form submits it.
-    renderLtr(<TenantForm messages={en} canWrite tenant={TENANT} referenceValues={null} />);
+    renderLtr(
+      <TenantForm locale="en" messages={en} canWrite tenant={TENANT} referenceValues={null} />
+    );
     const zone = screen.getByLabelText(new RegExp(`^${EN('organization.defaultTimezone')}`));
     expect(optionValues(zone)).toEqual(['UTC']);
     expect((zone as HTMLSelectElement).value).toBe('UTC');
@@ -420,6 +428,7 @@ describe('the tenant form offers its language and time zone as selects', () => {
   it('falls back to the zones in use when the list holds no active zone', () => {
     renderLtr(
       <TenantForm
+        locale="en"
         messages={en}
         canWrite
         tenant={TENANT}
@@ -430,6 +439,212 @@ describe('the tenant form offers its language and time zone as selects', () => {
     const zone = screen.getByLabelText(new RegExp(`^${EN('organization.defaultTimezone')}`));
     expect(optionValues(zone)).toEqual(['UTC', 'Asia/Amman']);
     expect((zone as HTMLSelectElement).value).toBe('UTC');
+  });
+});
+
+/*
+ * P1-32-PRE-OD-QAF, browser QA of PR #474.
+ *
+ * D-1: the Add company currency read `EUR`, `JOD`, `USD` in both languages. A
+ * reference select now reads as a NAME in the reader's language and still sends
+ * the code. Item B: the reference values are read on the server, so a failed
+ * read is a prop here; the field must say so, offer Try again (a page refresh),
+ * and refuse the submission on its own field instead of looking finished.
+ */
+const escapeRegExp = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+const labelled = (scope: HTMLElement, text: string) =>
+  within(scope).getByLabelText(new RegExp(`^${escapeRegExp(text)}`));
+const READERS = [
+  { locale: 'en' as const, messages: en, M: EN, paint: renderLtr },
+  { locale: 'ar' as const, messages: ar, M: AR, paint: renderRtl },
+];
+
+describe.each(READERS)('$locale: the reference selects', ({ locale, messages, M, paint }) => {
+  function paintStructure(over: Record<string, unknown> = {}) {
+    return paint(
+      <OrganizationStructure
+        locale={locale}
+        messages={messages}
+        capacity={capacity()}
+        companies={ok([COMPANY])}
+        branches={ok([BRANCH])}
+        currencyChoices={[]}
+        timezoneChoices={['Asia/Amman']}
+        referenceValues={REFERENCES}
+        canManageCompanies
+        canManageBranches
+        canChangeBranchStatus
+        {...over}
+      />
+    );
+  }
+
+  async function openDialog(key: 'organization.company.add' | 'organization.branch.add') {
+    await userEvent.setup().click(screen.getByRole('button', { name: M(key) }));
+    return screen.getByRole('dialog');
+  }
+
+  it('reads a currency as its name with its code beside it, and sends the code', async () => {
+    send.mockResolvedValue({ ok: true, status: 201, data: {}, correlationId: 'corr-d1' });
+    const user = userEvent.setup();
+    paintStructure();
+    const dialog = await openDialog('organization.company.add');
+    const currency = labelled(dialog, M('organization.company.baseCurrency'));
+    const named = within(currency).getAllByRole('option').slice(1);
+    expect(named.map((option) => option.getAttribute('value')).sort()).toEqual([
+      'EUR',
+      'JOD',
+      'USD',
+    ]);
+    for (const option of named) {
+      // Never the bare code: the name comes first and the code is its hint.
+      expect(option.textContent).not.toBe(option.getAttribute('value'));
+      expect(option.textContent).toMatch(new RegExp(`\\(${option.getAttribute('value')}\\)$`));
+    }
+    const jod = within(currency).getByRole('option', { name: /\(JOD\)$/ });
+    if (locale === 'en') expect(jod).toHaveTextContent('Jordanian Dinar (JOD)');
+    else expect(jod.textContent).toMatch(/[؀-ۿ]/);
+    // The select follows the page direction, so the Arabic placeholder reads right.
+    expect(currency).not.toHaveAttribute('dir', 'ltr');
+
+    await user.type(labelled(dialog, M('organization.structure.code')), 'second_company');
+    await user.type(labelled(dialog, M('organization.company.legalName')), 'Second Company');
+    await user.selectOptions(currency, jod);
+    await user.click(within(dialog).getByRole('button', { name: M('admin.create') }));
+    await waitFor(() => expect(send).toHaveBeenCalledTimes(1));
+    expect(send.mock.calls[0]?.[2]).toMatchObject({ baseCurrency: 'JOD' });
+  });
+
+  it('reads a time zone as its name with its identifier beside it', async () => {
+    paintStructure();
+    const dialog = await openDialog('organization.branch.add');
+    const zone = labelled(dialog, M('organization.branch.timezone'));
+    const amman = within(zone).getByRole('option', { name: /\(Asia\/Amman\)$/ });
+    expect(amman).toHaveValue('Asia/Amman');
+    expect(amman.textContent).not.toBe('Asia/Amman');
+    expect(zone).not.toHaveAttribute('dir', 'ltr');
+  });
+
+  it('says a currency list that could not be loaded, retries, and refuses to send on the field', async () => {
+    const user = userEvent.setup();
+    paintStructure({ referenceValues: null, referenceUnavailable: true });
+    const dialog = await openDialog('organization.company.add');
+    const currency = labelled(dialog, M('organization.company.baseCurrency'));
+    expect(optionValues(currency)).toEqual(['']);
+    expect(within(dialog).getByText(M('form.referenceList.unavailable'))).toBeVisible();
+
+    await user.click(within(dialog).getByRole('button', { name: M('form.retry') }));
+    expect(refresh).toHaveBeenCalledTimes(1);
+
+    const code = labelled(dialog, M('organization.structure.code'));
+    await user.type(code, 'second_company');
+    await user.type(labelled(dialog, M('organization.company.legalName')), 'Second Company');
+    await user.click(within(dialog).getByRole('button', { name: M('admin.create') }));
+
+    expect(await within(dialog).findByText(M('form.referenceList.blocked'))).toBeVisible();
+    expect(currency).toHaveAttribute('aria-invalid', 'true');
+    expect(currency).toHaveFocus();
+    expect(code).toHaveValue('second_company');
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it('refuses a branch whose zone list could not be loaded at all', async () => {
+    const user = userEvent.setup();
+    paintStructure({ referenceValues: null, referenceUnavailable: true, timezoneChoices: [] });
+    const dialog = await openDialog('organization.branch.add');
+    expect(within(dialog).getByText(M('form.referenceList.unavailable'))).toBeVisible();
+    await user.selectOptions(labelled(dialog, M('organization.branch.company')), COMPANY.id);
+    await user.type(labelled(dialog, M('organization.structure.code')), 'second_branch');
+    await user.type(labelled(dialog, M('organization.branch.name')), 'Second Branch');
+    await user.click(within(dialog).getByRole('button', { name: M('admin.create') }));
+
+    const zone = labelled(dialog, M('organization.branch.timezone'));
+    expect(await within(dialog).findByText(M('form.referenceList.blocked'))).toBeVisible();
+    expect(zone).toHaveAttribute('aria-invalid', 'true');
+    expect(zone).toHaveFocus();
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it('offers the zones in use from a failed read as a partial list, with Try again, and still sends', async () => {
+    send.mockResolvedValue({ ok: true, status: 201, data: {}, correlationId: 'corr-partial' });
+    const user = userEvent.setup();
+    paintStructure({ referenceValues: null, referenceUnavailable: true });
+    const dialog = await openDialog('organization.branch.add');
+    expect(within(dialog).getByText(M('form.referenceList.partial'))).toBeVisible();
+    expect(within(dialog).getByRole('button', { name: M('form.retry') })).toBeVisible();
+    await user.selectOptions(labelled(dialog, M('organization.branch.company')), COMPANY.id);
+    await user.type(labelled(dialog, M('organization.structure.code')), 'second_branch');
+    await user.type(labelled(dialog, M('organization.branch.name')), 'Second Branch');
+    await user.selectOptions(labelled(dialog, M('organization.branch.timezone')), 'Asia/Amman');
+    await user.click(within(dialog).getByRole('button', { name: M('admin.create') }));
+    await waitFor(() => expect(send).toHaveBeenCalledTimes(1));
+  });
+
+  it('offers no Try again when the list was simply not read for this session', async () => {
+    paintStructure({ referenceValues: null, referenceUnavailable: false });
+    const dialog = await openDialog('organization.branch.add');
+    expect(within(dialog).queryByRole('button', { name: M('form.retry') })).toBeNull();
+    expect(within(dialog).queryByText(M('form.referenceList.partial'))).toBeNull();
+  });
+
+  it('names the language and zone in the tenant form, and marks a failed list as partial', async () => {
+    const user = userEvent.setup();
+    paint(
+      <TenantForm
+        locale={locale}
+        messages={messages}
+        canWrite
+        tenant={{
+          id: '30000000-0000-4000-8000-000000000003',
+          tenantCode: 'tenant_one',
+          displayName: 'Tenant One',
+          status: 'active',
+          defaultLocale: 'en',
+          defaultTimezone: 'Asia/Amman',
+          recordVersion: 3,
+        }}
+        referenceValues={null}
+        referenceUnavailable
+      />
+    );
+    const language = screen.getByLabelText(
+      new RegExp(`^${escapeRegExp(M('organization.defaultLocale'))}`)
+    );
+    const zone = screen.getByLabelText(
+      new RegExp(`^${escapeRegExp(M('organization.defaultTimezone'))}`)
+    );
+    expect(within(language).getByRole('option', { name: M('locale.en') })).toHaveValue('en');
+    expect(within(zone).getByRole('option', { name: /\(Asia\/Amman\)$/ })).toHaveValue(
+      'Asia/Amman'
+    );
+    expect(screen.getAllByText(M('form.referenceList.partial'))).toHaveLength(2);
+    const retries = screen.getAllByRole('button', { name: M('form.retry') });
+    expect(retries).toHaveLength(2);
+    await user.click(retries[0] as HTMLElement);
+    expect(refresh).toHaveBeenCalledTimes(1);
+  });
+
+  it('names the language and zone in the read-only facts', () => {
+    paint(
+      <TenantForm
+        locale={locale}
+        messages={messages}
+        canWrite={false}
+        tenant={{
+          id: '30000000-0000-4000-8000-000000000003',
+          tenantCode: 'tenant_one',
+          displayName: 'Tenant One',
+          status: 'active',
+          defaultLocale: 'en',
+          defaultTimezone: 'Asia/Amman',
+          recordVersion: 3,
+        }}
+        referenceValues={REFERENCES}
+      />
+    );
+    expect(screen.getByText(M('locale.en'))).toBeVisible();
+    expect(screen.queryByText('en', { exact: true })).toBeNull();
+    expect(screen.getByText(/\(Asia\/Amman\)$/)).toBeVisible();
   });
 });
 
@@ -749,6 +964,7 @@ describe('the tenant form places a reference the platform does not hold on its f
     const user = userEvent.setup();
     renderLtr(
       <TenantForm
+        locale="en"
         messages={en}
         canWrite
         tenant={{

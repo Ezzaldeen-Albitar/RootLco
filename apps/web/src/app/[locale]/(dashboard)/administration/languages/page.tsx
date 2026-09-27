@@ -46,10 +46,14 @@ export default async function LanguagesPage({
   const session = await requireSession(locale);
   const messages: Messages = getMessages(locale);
   const t = (key: string) => translate(messages, key as keyof Messages);
-  const tenant = await readTenant();
-  const referenceValues = holds(session.permissions, PERMISSIONS.tenantRead)
-    ? await readReferenceValues()
-    : null;
+  const canReadTenant = holds(session.permissions, PERMISSIONS.tenantRead);
+  // `iam.tenant-settings-read` declares `org.tenant.read`: without it the panel
+  // says so, and no read is made to be refused.
+  const tenant = canReadTenant
+    ? await readTenant()
+    : { status: 'denied' as const, data: null, correlationId: null };
+  const referenceValues = canReadTenant ? await readReferenceValues() : null;
+  const referenceUnavailable = canReadTenant && referenceValues === null;
 
   return (
     <>
@@ -87,10 +91,12 @@ export default async function LanguagesPage({
           <Panel title={t('languages.default')} description={t('languages.defaultHint')}>
             {tenant.status === 'ok' && tenant.data ? (
               <TenantForm
+                locale={locale}
                 messages={messages}
                 tenant={tenant.data}
                 canWrite={holds(session.permissions, PERMISSIONS.settingsManage)}
                 referenceValues={referenceValues}
+                referenceUnavailable={referenceUnavailable}
               />
             ) : (
               <p role="status" className="text-body text-text-secondary">

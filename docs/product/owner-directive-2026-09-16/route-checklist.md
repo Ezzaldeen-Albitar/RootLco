@@ -589,9 +589,10 @@ Known limitations of this slice, one line each:
 - The customer-search normaliser hard-codes the Jordan calling code 962 (`JORDAN_COUNTRY_CODE` in
   `apps/api/src/modules/crm/domain/customer-search.ts`) and leaves any other number as typed: a
   product assumption for a multi-tenant SaaS, written down here and not yet decided by the Owner.
-- Integration: this slice was cut from `ed3143e2`; `origin/develop` has since moved to `ada6fbff`
-  (PR #474, reference selects). The branch has not been integrated with that head and nothing has
-  been tested against it, and the `unit` and `web` tier records must be retaken on the final head.
+- Integration: this slice was cut from `ed3143e2`; `origin/develop` then moved to `ada6fbff`
+  (PR #474, reference selects), which was merged into the branch with a merge commit. Only the
+  focused tests the merge and the follow-ups below touch were re-run locally; the `unit` and `web`
+  tier records were taken at `ed0c1627` and must be retaken on the final head.
 - `useSearchRequest` `leaving` does not cover choosing a new filter within 300 ms of a branch switch:
   the settled key is still the old branch's, and its read goes out at the new version. It predates
   this slice and is unchanged.
@@ -651,6 +652,40 @@ Known limitations of this slice, one line each:
   that merely sits at +0 keeps its own offset label.
 - **Reception board, Yesterday — fixed.** The duplicate read of today's window was the same
   leaving-a-submission defect; choosing a period after a branch choice now sends exactly one read.
+
+### PR #474 browser QA follow-ups (2026-09-27, served at `ada6fbff`)
+
+- **(A) D-1 — fixed.** Add company's base currency read `EUR`, `JOD`, `USD` in both languages. Every
+  reference select PR #474 introduced now reads as a name in the reader's language and still sends
+  the code: a currency as its name with the code beside it ("Jordanian Dinar (JOD)"), ordered by
+  that name on the Organization screen; a time zone as its generic name with its identifier; a
+  language as its name. Covered: Add company and Add branch (Organization), the tenant form on
+  Organization and Languages (including its read-only facts, which showed `en`), and the console's
+  New Organisation form and its Add company and Add branch dialogs. The selects no longer force
+  `dir="ltr"`, so the Arabic placeholder's ellipsis sits on the right side. DOM tests in English and
+  Arabic.
+- **(B) A list that could not be loaded — fixed.** The reference values are read on the server, so a
+  failure arrives as a missing list. A select left with nothing to choose says so on the field,
+  offers Try again (a page refresh that keeps what was typed) and refuses the submission with a
+  red field, a message beside it and the cursor on it; nothing is sent. A select left with only the
+  values already in use (the branch zone, the tenant form) says the list is partial, offers Try
+  again, and still sends, because the saved or in-use value is a valid choice. On the Organization
+  screen the retry appears only when the read was made and failed, not when the session may not
+  make it. DOM tests in English and Arabic; the failure itself was not observed in a browser.
+- **(C) Organisation settings read-only — a permission bundle gap, reported, not widened.** The
+  tenant form, and the company and branch settings writes, declare `org.settings.manage`
+  (`iam.tenant-settings-update`, `iam.company-settings-write`, `iam.branch-settings-write`). The
+  standard tenant administrator bundle, `TENANT_ADMINISTRATOR_ROLE` in
+  `apps/api/src/modules/iam/domain/bootstrap-roles.ts`, leaves that code out on purpose (residual
+  W9-R2, Owner disposition requested), so a first administrator sees the card read-only by design.
+  Whether the bundle should carry it is an Owner decision; no permission was changed in code or
+  data. The refused `iam.tenant-settings-read` for the limited-finance identity was a screen bug:
+  the Organization and Languages pages read the tenant for every session, and now read it only with
+  `org.tenant.read`, the code it declares. The two refused `iam.company-settings-read` calls for the
+  administrator declare `org.company.read` at company scope; the code path passes for an
+  unrestricted grant, so the refusal depends on that database's grants (a scoped grant carrying the
+  code that does not name the company) and was not reproduced here, because the shared database
+  was not queried.
 
 ## Remaining — backend prerequisites and Owner decisions only
 

@@ -2,10 +2,13 @@
 
 import { useState } from 'react';
 import { CheckboxField, SelectField, TextAreaField, TextField } from '@/components/forms/Field';
+import { ReferenceListRetry, useUnavailableListGuard } from '@/components/forms/ReferenceList';
 import { Dialog } from '@/components/overlays/Overlays';
 import { FormFeedback } from '@/features/authentication/components/FormFeedback';
+import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
 import { translateDynamic } from '@/i18n/get-messages';
+import { currencyLabel, timeZoneLabel } from '@/lib/format';
 import {
   addBranchAction,
   addCompanyAction,
@@ -33,19 +36,23 @@ import { useStateRefusal } from '@/lib/forms/use-local-refusal';
  * sentence, naming the ceiling and the usage.
  *
  * The base currency and the branch time zone are selects fed from the reference
- * registers (`platform.reference-values-read`, P1-32-PRE-OD-REF): a currency is
- * labelled by its code and a zone by its name. When the list could not be read
- * both are shown disabled with a notice, never as free text.
+ * registers (`platform.reference-values-read`, P1-32-PRE-OD-REF): a currency
+ * reads as its name in the reader's language with its code beside it, a zone as
+ * its generic name with its identifier (P1-32-PRE-OD-QAF, D-1). A select with
+ * nothing to offer says so on the field, offers Try again, and refuses the
+ * submission on that field; it never becomes free text.
  */
 
 type Pending = 'company' | 'branch' | 'invite' | 'resend';
 
 export function OrganizationGrowthPanel({
+  locale,
   messages,
   organization,
   canManage,
   referenceValues,
 }: {
+  readonly locale: Locale;
   readonly messages: Messages;
   readonly organization: OrganizationDetail;
   readonly canManage: boolean;
@@ -110,6 +117,7 @@ export function OrganizationGrowthPanel({
 
       {pending === 'company' ? (
         <CompanyDialog
+          locale={locale}
           messages={messages}
           tenantId={organization.id}
           referenceValues={referenceValues}
@@ -118,6 +126,7 @@ export function OrganizationGrowthPanel({
       ) : null}
       {pending === 'branch' ? (
         <BranchDialog
+          locale={locale}
           messages={messages}
           tenantId={organization.id}
           companies={companies}
@@ -144,11 +153,13 @@ export function OrganizationGrowthPanel({
 }
 
 function CompanyDialog({
+  locale,
   messages,
   tenantId,
   referenceValues,
   onClose,
 }: {
+  readonly locale: Locale;
   readonly messages: Messages;
   readonly tenantId: string;
   readonly referenceValues: ReferenceValues | null;
@@ -171,7 +182,18 @@ function CompanyDialog({
     taxRegistrationNumber,
   });
   const errors = refusalErrors;
-  const error = (name: string) => (errors[name] ? t(errors[name] as string) : undefined);
+  const currencyOptions = (referenceValues?.currencies ?? []).map((currency) => ({
+    value: currency.code,
+    label: currencyLabel(currency.code, locale, currency.name),
+  }));
+  const currencyMissing = currencyOptions.length === 0;
+  const listGuard = useUnavailableListGuard(currencyMissing ? ['baseCurrency'] : []);
+  const error = (name: string) =>
+    errors[name]
+      ? t(errors[name] as string)
+      : listGuard.refused(name)
+        ? t('form.referenceList.blocked')
+        : undefined;
 
   return (
     <Dialog
@@ -186,6 +208,7 @@ function CompanyDialog({
         noValidate
         className="flex flex-col gap-3"
         onSubmit={(event) => {
+          if (listGuard.stop(event)) return;
           event.preventDefault();
           action.run(
             () =>
@@ -224,22 +247,18 @@ function CompanyDialog({
           name="baseCurrency"
           label={t('platform.provision.baseCurrency')}
           description={
-            referenceValues === null
+            currencyMissing
               ? t('platform.provision.referenceUnavailable')
               : t('platform.provision.currencyHint')
           }
           required
-          disabled={referenceValues === null}
           value={baseCurrency}
           placeholder={t('platform.provision.choose')}
           onChange={(event) => setBaseCurrency(event.target.value)}
-          options={(referenceValues?.currencies ?? []).map((currency) => ({
-            value: currency.code,
-            label: currency.code,
-          }))}
+          options={currencyOptions}
           error={error('baseCurrency')}
-          dir="ltr"
         />
+        {currencyMissing ? <ReferenceListRetry label={t('form.retry')} /> : null}
         <TextField
           name="registrationNumber"
           label={t('platform.provision.registration')}
@@ -261,12 +280,14 @@ function CompanyDialog({
 }
 
 function BranchDialog({
+  locale,
   messages,
   tenantId,
   companies,
   referenceValues,
   onClose,
 }: {
+  readonly locale: Locale;
   readonly messages: Messages;
   readonly tenantId: string;
   readonly companies: OrganizationDetail['companies'];
@@ -292,7 +313,18 @@ function BranchDialog({
     countryCode,
   });
   const errors = refusalErrors;
-  const error = (field: string) => (errors[field] ? t(errors[field] as string) : undefined);
+  const timezoneOptions = (referenceValues?.timezones ?? []).map((zone) => ({
+    value: zone.zoneName,
+    label: timeZoneLabel(zone.zoneName, locale),
+  }));
+  const timezoneMissing = timezoneOptions.length === 0;
+  const listGuard = useUnavailableListGuard(timezoneMissing ? ['timezone'] : []);
+  const error = (field: string) =>
+    errors[field]
+      ? t(errors[field] as string)
+      : listGuard.refused(field)
+        ? t('form.referenceList.blocked')
+        : undefined;
 
   return (
     <Dialog
@@ -307,6 +339,7 @@ function BranchDialog({
         noValidate
         className="flex flex-col gap-3"
         onSubmit={(event) => {
+          if (listGuard.stop(event)) return;
           event.preventDefault();
           action.run(
             () =>
@@ -356,22 +389,18 @@ function BranchDialog({
           name="timezone"
           label={t('platform.provision.timeZone')}
           description={
-            referenceValues === null
+            timezoneMissing
               ? t('platform.provision.referenceUnavailable')
               : t('platform.provision.timeZoneHint')
           }
           required
-          disabled={referenceValues === null}
           value={timezone}
           placeholder={t('platform.provision.choose')}
           onChange={(event) => setTimezone(event.target.value)}
-          options={(referenceValues?.timezones ?? []).map((zone) => ({
-            value: zone.zoneName,
-            label: zone.zoneName,
-          }))}
+          options={timezoneOptions}
           error={error('timezone')}
-          dir="ltr"
         />
+        {timezoneMissing ? <ReferenceListRetry label={t('form.retry')} /> : null}
         <TextField
           name="city"
           label={t('platform.provision.city')}

@@ -2,13 +2,16 @@
 
 import { useActionState, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
-import { SelectField, TextField } from '@/components/forms/Field';
+import { SelectField, TextField, type SelectOption } from '@/components/forms/Field';
+import { ReferenceListRetry, useUnavailableListGuard } from '@/components/forms/ReferenceList';
 import { Dialog, ReasonConfirmDialog } from '@/components/overlays/Overlays';
 import { EmptyState } from '@/components/states/States';
 import { notifyActionResult } from '@/components/notifications/action-notifications';
+import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
 import { translate, translateWithValues } from '@/i18n/get-messages';
 import type { ReadState } from '@/lib/api/read-operation';
+import { currencyLabel, intlLocale, timeZoneLabel } from '@/lib/format';
 import { IDLE, type ActionState } from '@/lib/forms/action-result';
 import { FormFeedback } from '@/features/authentication/components/FormFeedback';
 import { SubmitButton } from '@/features/authentication/components/SubmitButton';
@@ -63,6 +66,15 @@ import { useActionRefusal } from '@/lib/forms/use-action-refusal';
  * active zones of that read, and falls back to the zones the tenant and its
  * branches already use when the read was not permitted or failed. Neither ever
  * falls back to free text.
+ *
+ * ## Names, and a list that could not be loaded (P1-32-PRE-OD-QAF)
+ *
+ * A currency reads as its name in the reader's language with its code beside it,
+ * and a zone as its generic name with its identifier; the value sent is still the
+ * code (D-1). When the reference read FAILED (`referenceUnavailable`), the field
+ * says so and offers Try again, which renders the page again. A select left with
+ * nothing to choose refuses the submission on its own field, and a select left
+ * with only the zones already in use says that its list is partial.
  */
 
 type StatusTarget =
@@ -70,6 +82,7 @@ type StatusTarget =
   | { readonly kind: 'branch'; readonly branch: BranchView };
 
 export function OrganizationStructure({
+  locale,
   messages,
   capacity,
   companies,
@@ -77,10 +90,12 @@ export function OrganizationStructure({
   currencyChoices,
   timezoneChoices,
   referenceValues,
+  referenceUnavailable = false,
   canManageCompanies,
   canManageBranches,
   canChangeBranchStatus,
 }: {
+  readonly locale: Locale;
   readonly messages: Messages;
   readonly capacity: CapacityView | null;
   readonly companies: ReadState<readonly CompanyView[]> | null;
@@ -91,6 +106,8 @@ export function OrganizationStructure({
   readonly timezoneChoices: readonly string[];
   /** `org.reference-values-read`; `null` when it was not permitted or failed. */
   readonly referenceValues: ReferenceValues | null;
+  /** The reference read was made and failed, so the dialogs offer Try again. */
+  readonly referenceUnavailable?: boolean;
   readonly canManageCompanies: boolean;
   readonly canManageBranches: boolean;
   readonly canChangeBranchStatus: boolean;
@@ -103,18 +120,33 @@ export function OrganizationStructure({
   const [running, startTransition] = useTransition();
 
   const companyRows = companies?.status === 'ok' ? companies.data : [];
-  const currencyOptions =
+  const collator = new Intl.Collator(intlLocale(locale));
+  const registerName = new Map(
+    (referenceValues?.currencies ?? []).map((currency) => [currency.code, currency.name])
+  );
+  const currencyCodes =
     currencyChoices.length > 0
       ? currencyChoices
       : (referenceValues?.currencies ?? []).map((currency) => currency.code);
+  const currencyOptions: readonly SelectOption[] = currencyCodes
+    .map((code) => ({ value: code, label: currencyLabel(code, locale, registerName.get(code)) }))
+    .sort((a, b) => collator.compare(a.label, b.label));
   // A reference list with no active zone falls back to the zones in use, the
   // same as a list that could not be loaded.
   const referenceZones = (referenceValues?.timezones ?? []).map((zone) => zone.zoneName);
-  const timezoneOptions = referenceZones.length > 0 ? referenceZones : timezoneChoices;
+  const timezoneFromFallback = referenceZones.length === 0;
+  const timezoneOptions: readonly SelectOption[] = (
+    timezoneFromFallback ? timezoneChoices : referenceZones
+  ).map((zone) => ({ value: zone, label: timeZoneLabel(zone, locale) }));
+  const timezonePartial = timezoneFromFallback && referenceUnavailable;
   const timezoneHint =
-    timezoneOptions.length > 0
-      ? 'organization.branch.timezoneHint'
-      : 'organization.branch.timezoneUnavailable';
+    timezoneOptions.length === 0
+      ? referenceUnavailable
+        ? 'form.referenceList.unavailable'
+        : 'organization.branch.timezoneUnavailable'
+      : timezonePartial
+        ? 'form.referenceList.partial'
+        : 'organization.branch.timezoneHint';
   // With neither source holding a currency the select has nothing to offer, and
   // the dialog says so rather than presenting an empty required choice.
   const currencyHint =
@@ -122,7 +154,9 @@ export function OrganizationStructure({
       ? 'organization.company.baseCurrencyHint'
       : currencyOptions.length > 0
         ? 'organization.company.currencyHint'
-        : 'organization.company.currencyUnavailable';
+        : referenceUnavailable
+          ? 'form.referenceList.unavailable'
+          : 'organization.company.currencyUnavailable';
   const companyName = new Map(companyRows.map((company) => [company.id, company.legalName]));
 
   const confirmStatus = (reason: string) => {
@@ -334,6 +368,7 @@ export function OrganizationStructure({
           messages={messages}
           currencyChoices={currencyOptions}
           currencyHint={currencyHint}
+          offerRetry={currencyOptions.length === 0}
           onClose={() => {
             setDialog(null);
             router.refresh();
@@ -347,6 +382,7 @@ export function OrganizationStructure({
           companies={companyRows}
           timezoneChoices={timezoneOptions}
           timezoneHint={timezoneHint}
+          offerRetry={timezoneOptions.length === 0 || timezonePartial}
           onClose={() => {
             setDialog(null);
             router.refresh();
@@ -404,11 +440,14 @@ function CompanyDialog({
   messages,
   currencyChoices,
   currencyHint,
+  offerRetry,
   onClose,
 }: {
   readonly messages: Messages;
-  readonly currencyChoices: readonly string[];
+  readonly currencyChoices: readonly SelectOption[];
   readonly currencyHint: string;
+  /** The currency list is empty: the dialog offers Try again and refuses to send. */
+  readonly offerRetry: boolean;
   readonly onClose: () => void;
 }) {
   const [state, formAction] = useActionState<ActionState, FormData>(createCompanyAction, IDLE);
@@ -429,6 +468,8 @@ function CompanyDialog({
     const key = refusalErrorKey(name);
     return key ? t(key) : undefined;
   };
+  // Nothing to choose from: the submission is refused on the field itself.
+  const listGuard = useUnavailableListGuard(currencyChoices.length === 0 ? ['baseCurrency'] : []);
 
   return (
     <Dialog
@@ -438,7 +479,15 @@ function CompanyDialog({
       title={t('organization.company.add')}
       description={t('organization.company.addDescription')}
     >
-      <form ref={refusalFormRef} action={formAction} className="flex flex-col gap-4" noValidate>
+      <form
+        ref={refusalFormRef}
+        action={formAction}
+        onSubmit={(event) => {
+          listGuard.stop(event);
+        }}
+        className="flex flex-col gap-4"
+        noValidate
+      >
         <FormFeedback state={state} messages={messages} />
         <TextField
           key={`code-${state.attempt ?? 0}`}
@@ -466,15 +515,18 @@ function CompanyDialog({
           key={`baseCurrency-${state.attempt ?? 0}`}
           name="baseCurrency"
           onChange={retain('baseCurrency')}
-          error={fieldError('baseCurrency')}
+          error={
+            fieldError('baseCurrency') ??
+            (listGuard.refused('baseCurrency') ? t('form.referenceList.blocked') : undefined)
+          }
           defaultValue={draft['baseCurrency'] ?? ''}
           label={t('organization.company.baseCurrency')}
           description={t(currencyHint)}
           required
           placeholder={t('field.selectPlaceholder')}
-          options={currencyChoices.map((code) => ({ value: code, label: code }))}
-          dir="ltr"
+          options={currencyChoices}
         />
+        {offerRetry ? <ReferenceListRetry label={t('form.retry')} /> : null}
         <TextField
           key={`registrationNumber-${state.attempt ?? 0}`}
           name="registrationNumber"
@@ -507,12 +559,15 @@ function BranchDialog({
   companies,
   timezoneChoices,
   timezoneHint,
+  offerRetry,
   onClose,
 }: {
   readonly messages: Messages;
   readonly companies: readonly CompanyView[];
-  readonly timezoneChoices: readonly string[];
+  readonly timezoneChoices: readonly SelectOption[];
   readonly timezoneHint: string;
+  /** The zone list is missing or partial, so the dialog offers Try again. */
+  readonly offerRetry: boolean;
   readonly onClose: () => void;
 }) {
   const [state, formAction] = useActionState<ActionState, FormData>(createBranchAction, IDLE);
@@ -533,6 +588,8 @@ function BranchDialog({
     const key = refusalErrorKey(name);
     return key ? t(key) : undefined;
   };
+  // Nothing to choose from: the submission is refused on the field itself.
+  const listGuard = useUnavailableListGuard(timezoneChoices.length === 0 ? ['timezone'] : []);
 
   return (
     <Dialog
@@ -542,7 +599,15 @@ function BranchDialog({
       title={t('organization.branch.add')}
       description={t('organization.branch.addDescription')}
     >
-      <form ref={refusalFormRef} action={formAction} className="flex flex-col gap-4" noValidate>
+      <form
+        ref={refusalFormRef}
+        action={formAction}
+        onSubmit={(event) => {
+          listGuard.stop(event);
+        }}
+        className="flex flex-col gap-4"
+        noValidate
+      >
         <FormFeedback state={state} messages={messages} />
         <SelectField
           key={`companyId-${state.attempt ?? 0}`}
@@ -605,15 +670,18 @@ function BranchDialog({
           key={`timezone-${state.attempt ?? 0}`}
           name="timezone"
           onChange={retain('timezone')}
-          error={fieldError('timezone')}
+          error={
+            fieldError('timezone') ??
+            (listGuard.refused('timezone') ? t('form.referenceList.blocked') : undefined)
+          }
           defaultValue={draft['timezone'] ?? ''}
           label={t('organization.branch.timezone')}
           description={t(timezoneHint)}
           required
           placeholder={t('field.selectPlaceholder')}
-          options={timezoneChoices.map((zone) => ({ value: zone, label: zone }))}
-          dir="ltr"
+          options={timezoneChoices}
         />
+        {offerRetry ? <ReferenceListRetry label={t('form.retry')} /> : null}
         <DialogActions state={state} messages={messages} onClose={onClose} />
       </form>
     </Dialog>
