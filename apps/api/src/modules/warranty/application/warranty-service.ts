@@ -64,6 +64,7 @@ import {
 import { callerHoldsPermissionAnywhere } from '@/server/auth/authorization';
 import type { ScopeAuthorizer } from '@/server/auth/authorization';
 import { crmModule } from '@/modules/crm';
+import { iamDirectory } from '@/modules/iam';
 import { deliveryModule } from '@/modules/delivery';
 import { SERVICE_REQUESTER } from '@/modules/reception';
 import { vehicleModule } from '@/modules/vehicle';
@@ -355,6 +356,13 @@ export interface WarrantyStatusHistoryEntryView {
   readonly toStatus: string;
   readonly reason: string | null;
   readonly actorId: string;
+  /**
+   * The actor's name, beside the id (Owner directive, QA row 4.1b), spelled as the
+   * delivery ledger spells it. Resolved through the identity directory, which
+   * answers nothing to a caller without `iam.user.read`, so it is `null` then and
+   * for an id the directory cannot resolve. Additive: the id is published as before.
+   */
+  readonly actorDisplayName: string | null;
   readonly occurredAt: string;
 }
 
@@ -747,6 +755,10 @@ export class WarrantyService {
       record.id,
       request
     );
+    // One lookup for the whole page, never one per row; an empty page asks nothing.
+    const users = await iamDirectory().directory.resolveDisplayIdentities(db, [
+      ...new Set(rows.items.map((row) => row.actorId)),
+    ]);
     return {
       warrantyId: record.id,
       transitions: {
@@ -757,6 +769,7 @@ export class WarrantyService {
           toStatus: row.toStatus,
           reason: row.reason,
           actorId: row.actorId,
+          actorDisplayName: users.get(row.actorId)?.displayName ?? null,
           occurredAt: row.occurredAt.toISOString(),
         })),
       },

@@ -50,6 +50,8 @@ import {
 import { callerHoldsPermissionAnywhere } from '@/server/auth/authorization';
 import type { ScopeAuthorizer } from '@/server/auth/authorization';
 import { billingModule } from '@/modules/billing';
+import { crmModule } from '@/modules/crm';
+import { iamDirectory } from '@/modules/iam';
 import { inventoryModule } from '@/modules/inventory';
 import { qualityModule } from '@/modules/quality';
 import { workOrderModule } from '@/modules/work-order';
@@ -226,8 +228,21 @@ export interface AuthorizedReceiverRecordView {
   readonly id: string;
   readonly deliveryRecordId: string;
   readonly receiverPartnerId: string;
+  /**
+   * The receiver's name, beside the id (Owner directive, DEF-R2). Resolved through
+   * the CRM module's own capability-checked read, so it is `null` for a caller
+   * without `crm.customer.read` and for a partner that read cannot resolve — the
+   * two read the same. Additive: the id is published exactly as before.
+   */
+  readonly receiverDisplayName: string | null;
   readonly identityEvidenceDocumentVersionId: string | null;
   readonly verifiedBy: string;
+  /**
+   * The confirming user's name, beside the id. Resolved through the identity
+   * directory, which answers nothing to a caller without `iam.user.read`, so a
+   * delivery read never becomes a staff directory.
+   */
+  readonly verifiedByDisplayName: string | null;
   readonly verifiedAt: string;
   readonly recordVersion: number;
 }
@@ -275,6 +290,11 @@ export interface DeliveryStatusHistoryEntryView {
   readonly toStatus: string;
   readonly reason: string | null;
   readonly actorId: string;
+  /**
+   * The actor's name, beside the id (Owner directive, DEF-R2). `null` for a caller
+   * without `iam.user.read` and for an id the identity directory cannot resolve.
+   */
+  readonly actorDisplayName: string | null;
   readonly occurredAt: string;
 }
 
@@ -564,20 +584,32 @@ export class DeliveryReadService {
     const delivery = await this.requireDelivery(db, deliveryId, authorizeScope);
     const scope: DeliveryScope = { companyId: delivery.companyId, branchId: delivery.branchId };
     const row = await this.repository.findReceiver(db, scope, delivery.id);
+    if (row === null) return { deliveryId: delivery.id, receiver: null };
+    /*
+     * The two names, each through the owning module's own capability-checked read
+     * and never through a join here: the CRM read checks `crm.customer.read` and
+     * the identity directory `iam.user.read`, and each answers an EMPTY map to a
+     * caller without its code. So the names never widen what this caller could
+     * already learn, and a name that cannot be resolved is `null` beside the id.
+     * Two statements at most, only once a receiver exists.
+     */
+    const [partners, users] = await Promise.all([
+      crmModule().customerRead.resolveDisplayIdentities(db, [row.receiverPartnerId]),
+      iamDirectory().directory.resolveDisplayIdentities(db, [row.verifiedBy]),
+    ]);
     return {
       deliveryId: delivery.id,
-      receiver:
-        row === null
-          ? null
-          : {
-              id: row.id,
-              deliveryRecordId: row.deliveryRecordId,
-              receiverPartnerId: row.receiverPartnerId,
-              identityEvidenceDocumentVersionId: row.identityEvidenceDocumentVersionId,
-              verifiedBy: row.verifiedBy,
-              verifiedAt: row.verifiedAt.toISOString(),
-              recordVersion: row.recordVersion,
-            },
+      receiver: {
+        id: row.id,
+        deliveryRecordId: row.deliveryRecordId,
+        receiverPartnerId: row.receiverPartnerId,
+        receiverDisplayName: partners.get(row.receiverPartnerId)?.displayName ?? null,
+        identityEvidenceDocumentVersionId: row.identityEvidenceDocumentVersionId,
+        verifiedBy: row.verifiedBy,
+        verifiedByDisplayName: users.get(row.verifiedBy)?.displayName ?? null,
+        verifiedAt: row.verifiedAt.toISOString(),
+        recordVersion: row.recordVersion,
+      },
     };
   }
 
@@ -675,6 +707,10 @@ export class DeliveryReadService {
     const scope: DeliveryScope = { companyId: delivery.companyId, branchId: delivery.branchId };
     const request: PageRequest = pageRequest(STATUS_HISTORY_ORDER, page);
     const rows = await this.repository.listStatusHistory(db, scope, delivery.id, request);
+    // One lookup for the whole page, never one per row; an empty page asks nothing.
+    const users = await iamDirectory().directory.resolveDisplayIdentities(db, [
+      ...new Set(rows.items.map((row) => row.actorId)),
+    ]);
     return {
       deliveryId: delivery.id,
       transitions: {
@@ -685,6 +721,7 @@ export class DeliveryReadService {
           toStatus: row.toStatus,
           reason: row.reason,
           actorId: row.actorId,
+          actorDisplayName: users.get(row.actorId)?.displayName ?? null,
           occurredAt: row.occurredAt.toISOString(),
         })),
       },

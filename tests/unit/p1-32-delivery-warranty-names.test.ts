@@ -1,0 +1,240 @@
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+/**
+ * The people on a handover and on a warranty's history are named beside their
+ * ids (Owner directive, the delivery and warranty Material UI slice; browser QA
+ * DEF-R2 and row 4.1b).
+ *
+ * The receiver read and both status-history reads used to publish only ids, so
+ * the screens printed "Recorded by, employee reference e4065924-…". Each read now
+ * adds the name beside the id, and ONLY through the owning module's own
+ * capability-checked read: the CRM module's `resolveDisplayIdentities` (which
+ * answers nothing to a caller without `crm.customer.read`) for the receiver, and
+ * the identity directory (which answers nothing without `iam.user.read`) for the
+ * people who confirmed and recorded. So a name is never shown to somebody the
+ * owning module would not show it to, and the ids are published exactly as before.
+ *
+ * The repositories are stand-ins and both name lookups are replaced, so what is
+ * observed is exactly what each read asks for and hands back. The scope check is
+ * the real order: the record is read, then authorized, then named.
+ */
+
+const resolveUsers = vi.fn();
+const resolvePartners = vi.fn();
+
+vi.mock('@api/modules/iam', () => ({
+  iamDirectory: () => ({ directory: { resolveDisplayIdentities: resolveUsers } }),
+}));
+vi.mock('@api/modules/crm', () => ({
+  crmModule: () => ({ customerRead: { resolveDisplayIdentities: resolvePartners } }),
+}));
+
+const { DeliveryReadService } =
+  await import('@api/modules/delivery/application/delivery-read-service');
+const { WarrantyService } = await import('@api/modules/warranty/application/warranty-service');
+
+const COMPANY = '11111111-1111-4111-8111-111111111111';
+const BRANCH = '22222222-2222-4222-8222-222222222222';
+const DELIVERY = '33333333-3333-4333-8333-333333333333';
+const WARRANTY = '44444444-4444-4444-8444-444444444444';
+const PARTNER = '55555555-5555-4555-8555-555555555555';
+const CONFIRMER = '66666666-6666-4666-8666-666666666666';
+const RECORDER = '77777777-7777-4777-8777-777777777777';
+const STRANGER = '88888888-8888-4888-8888-888888888888';
+
+const db = {} as never;
+const authorizeScope = vi.fn(async () => undefined);
+
+const deliveryRow = {
+  id: DELIVERY,
+  companyId: COMPANY,
+  branchId: BRANCH,
+  workOrderId: '99999999-9999-4999-8999-999999999999',
+  receptionVisitId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+  vehicleId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+  deliveringEmployeeId: CONFIRMER,
+  deliveringEmployeeDisplayName: 'Rana Haddad',
+  status: 'ready',
+  deliveredAt: null,
+  finalOdometerReadingId: null,
+  idempotencyKey: null,
+  recordVersion: 3,
+};
+
+const receiverRow = {
+  id: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+  companyId: COMPANY,
+  branchId: BRANCH,
+  deliveryRecordId: DELIVERY,
+  receiverPartnerId: PARTNER,
+  identityEvidenceDocumentVersionId: null,
+  verifiedBy: CONFIRMER,
+  verifiedAt: new Date('2026-09-24T17:02:42Z'),
+  recordVersion: 1,
+};
+
+const transition = (id: string, actorId: string) => ({
+  id,
+  deliveryRecordId: DELIVERY,
+  fromStatus: null,
+  toStatus: 'ready',
+  reason: null,
+  actorId,
+  occurredAt: new Date('2026-09-24T17:04:00Z'),
+});
+
+function deliveryRepository(overrides: Record<string, unknown> = {}) {
+  return {
+    findDelivery: vi.fn(async () => deliveryRow),
+    findReceiver: vi.fn(async () => receiverRow),
+    listStatusHistory: vi.fn(async () => ({
+      items: [transition('h1', RECORDER), transition('h2', RECORDER), transition('h3', STRANGER)],
+      nextCursor: null,
+      hasMore: false,
+    })),
+    ...overrides,
+  } as never;
+}
+
+beforeEach(() => {
+  resolveUsers.mockReset();
+  resolvePartners.mockReset();
+  authorizeScope.mockClear();
+});
+
+describe('sal.delivery-receiver-read names the receiver and the confirming user', () => {
+  it('publishes both names beside the unchanged ids', async () => {
+    resolvePartners.mockResolvedValue(
+      new Map([[PARTNER, { id: PARTNER, displayName: 'Omar Khalil' }]])
+    );
+    resolveUsers.mockResolvedValue(
+      new Map([[CONFIRMER, { id: CONFIRMER, displayName: 'Rana Haddad' }]])
+    );
+    const service = new DeliveryReadService(deliveryRepository());
+    const envelope = await service.readReceiver(db, DELIVERY, authorizeScope);
+
+    expect(envelope.receiver).toMatchObject({
+      receiverPartnerId: PARTNER,
+      receiverDisplayName: 'Omar Khalil',
+      verifiedBy: CONFIRMER,
+      verifiedByDisplayName: 'Rana Haddad',
+    });
+    // Each name comes from its owning module's own read, asked for exactly that id.
+    expect(resolvePartners).toHaveBeenCalledWith(db, [PARTNER]);
+    expect(resolveUsers).toHaveBeenCalledWith(db, [CONFIRMER]);
+  });
+
+  it('answers null names, never an id, when the owning module resolves nobody', async () => {
+    // What either module answers a caller without its read code: an empty map.
+    resolvePartners.mockResolvedValue(new Map());
+    resolveUsers.mockResolvedValue(new Map());
+    const service = new DeliveryReadService(deliveryRepository());
+    const envelope = await service.readReceiver(db, DELIVERY, authorizeScope);
+
+    expect(envelope.receiver?.receiverDisplayName).toBeNull();
+    expect(envelope.receiver?.verifiedByDisplayName).toBeNull();
+    expect(envelope.receiver?.receiverPartnerId).toBe(PARTNER);
+    expect(envelope.receiver?.verifiedBy).toBe(CONFIRMER);
+  });
+
+  it('asks for no name before a receiver exists', async () => {
+    const service = new DeliveryReadService(
+      deliveryRepository({ findReceiver: vi.fn(async () => null) })
+    );
+    const envelope = await service.readReceiver(db, DELIVERY, authorizeScope);
+
+    expect(envelope).toEqual({ deliveryId: DELIVERY, receiver: null });
+    expect(resolvePartners).not.toHaveBeenCalled();
+    expect(resolveUsers).not.toHaveBeenCalled();
+  });
+
+  it('names nobody for a delivery the caller may not read', async () => {
+    const refused = new Error('refused');
+    const service = new DeliveryReadService(deliveryRepository());
+    await expect(
+      service.readReceiver(db, DELIVERY, async () => {
+        throw refused;
+      })
+    ).rejects.toBe(refused);
+    expect(resolvePartners).not.toHaveBeenCalled();
+    expect(resolveUsers).not.toHaveBeenCalled();
+  });
+});
+
+describe('sal.delivery-status-history names each actor', () => {
+  it('resolves the page in one lookup of its distinct actors and keeps every id', async () => {
+    resolveUsers.mockResolvedValue(
+      new Map([[RECORDER, { id: RECORDER, displayName: 'Sami Aziz' }]])
+    );
+    const service = new DeliveryReadService(deliveryRepository());
+    const envelope = await service.readStatusHistory(db, DELIVERY, {}, authorizeScope);
+
+    expect(resolveUsers).toHaveBeenCalledTimes(1);
+    expect(resolveUsers).toHaveBeenCalledWith(db, [RECORDER, STRANGER]);
+    expect(envelope.transitions.items.map((row) => [row.actorId, row.actorDisplayName])).toEqual([
+      [RECORDER, 'Sami Aziz'],
+      [RECORDER, 'Sami Aziz'],
+      // An actor the directory did not resolve for this caller has no name.
+      [STRANGER, null],
+    ]);
+  });
+
+  it('names nobody for a delivery the caller may not read', async () => {
+    const service = new DeliveryReadService(deliveryRepository());
+    await expect(
+      service.readStatusHistory(db, DELIVERY, {}, async () => {
+        throw new Error('refused');
+      })
+    ).rejects.toThrow('refused');
+    expect(resolveUsers).not.toHaveBeenCalled();
+  });
+});
+
+describe('wty.warranty-status-history names each actor', () => {
+  function warrantyRepository() {
+    return {
+      findWarrantyRecord: vi.fn(async () => ({
+        record: { id: WARRANTY, companyId: COMPANY, branchId: BRANCH },
+        items: [],
+      })),
+      listStatusHistory: vi.fn(async () => ({
+        items: [
+          {
+            id: 'w1',
+            warrantyRecordId: WARRANTY,
+            fromStatus: null,
+            toStatus: 'issued',
+            reason: null,
+            actorId: RECORDER,
+            occurredAt: new Date('2026-09-24T17:05:00Z'),
+          },
+        ],
+        nextCursor: null,
+        hasMore: false,
+      })),
+    } as never;
+  }
+
+  it('publishes the name the identity directory resolved, beside the id', async () => {
+    resolveUsers.mockResolvedValue(
+      new Map([[RECORDER, { id: RECORDER, displayName: 'Sami Aziz' }]])
+    );
+    const service = new WarrantyService(warrantyRepository());
+    const envelope = await service.readStatusHistory(db, WARRANTY, {}, authorizeScope);
+
+    expect(resolveUsers).toHaveBeenCalledWith(db, [RECORDER]);
+    expect(envelope.transitions.items[0]).toMatchObject({
+      actorId: RECORDER,
+      actorDisplayName: 'Sami Aziz',
+    });
+  });
+
+  it('answers a null name to a caller the directory answers nothing', async () => {
+    resolveUsers.mockResolvedValue(new Map());
+    const service = new WarrantyService(warrantyRepository());
+    const envelope = await service.readStatusHistory(db, WARRANTY, {}, authorizeScope);
+
+    expect(envelope.transitions.items[0]?.actorDisplayName).toBeNull();
+    expect(envelope.transitions.items[0]?.actorId).toBe(RECORDER);
+  });
+});
