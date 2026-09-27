@@ -226,11 +226,31 @@ describe('customer search — one number however it is written', () => {
     expect(phoneSuffixKey('7001122')).toBe('7001122');
     // A run of zeros is a customer number, not a trunk prefix.
     expect(phoneSuffixKey('000006')).toBe('000006');
-    // A seven-digit tail still matches as a suffix; six digits still does not,
-    // even when a leading zero is dropped from a national-looking fragment.
+    // A seven-digit tail still matches as a suffix; six digits still does not.
     expect(toCustomerSearchFilter({ phone: '7001122' }).phoneSuffixEligible).toBe(true);
-    expect(toCustomerSearchFilter({ phone: '0700112' }).phoneSuffixEligible).toBe(false);
+    expect(toCustomerSearchFilter({ phone: '700112' }).phoneSuffixEligible).toBe(false);
     expect(toCustomerSearchFilter({ q: '000006' }).freeTextPhoneEligible).toBe(false);
+  });
+
+  it('drops the trunk 0 only from a FULL national number, never from a tail', () => {
+    // The last seven digits of a stored 0790712345 start with 0: the tail is
+    // kept exactly as typed, so it is still long enough and still finds it.
+    const tail = toCustomerSearchFilter({ phone: '0712345' });
+    expect(tail.phoneSuffix).toBe('0712345');
+    expect(tail.phoneSuffixEligible).toBe(true);
+    const boxTail = toCustomerSearchFilter({ q: '0712345' });
+    expect(boxTail.freeTextPhoneSuffix).toBe('0712345');
+    expect(boxTail.freeTextPhoneEligible).toBe(true);
+    // An eight-digit tail keeps its 0, so a stored ...91122334 is not matched
+    // by a fragment the operator typed as 01122334.
+    expect(toCustomerSearchFilter({ phone: '01122334' }).phoneSuffix).toBe('01122334');
+    expect(phoneSuffixKey('0712345')).toBe('0712345');
+    expect(phoneSuffixKey('01122334')).toBe('01122334');
+    // Full national numbers (landline nine digits, mobile ten) still lose it.
+    expect(phoneSuffixKey('065001234')).toBe('65001234');
+    expect(phoneSuffixKey('0797001122')).toBe('797001122');
+    // Longer than a national number is not one either.
+    expect(phoneSuffixKey('07970011223')).toBe('07970011223');
   });
 
   it('keeps a phone holding no digits impossible, with no suffix to match', () => {

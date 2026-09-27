@@ -119,16 +119,16 @@ export function groupDisplayLabel(messages: Messages, group: ReportGroup): strin
  */
 export function formatReportTime(value: string, locale: Locale, zone: string): string {
   const intl = intlLocale(locale);
-  const clock = isKnownZone(zone) ? zone : 'UTC';
+  const clock = isKnownZone(zone, intl) ? zone : 'UTC';
   if (isCalendarDay(value)) return formatDayInZone(value, intl, clock);
   if (Number.isNaN(new Date(value).getTime())) return value;
   return formatInZone(value, intl, clock);
 }
 
-function isKnownZone(zone: string): boolean {
+function isKnownZone(zone: string, intl: string): boolean {
   if (zone.length === 0) return false;
   try {
-    new Intl.DateTimeFormat('en', { timeZone: zone });
+    new Intl.DateTimeFormat(intl, { timeZone: zone });
     return true;
   } catch {
     return false;

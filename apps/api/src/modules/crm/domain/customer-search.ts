@@ -45,7 +45,8 @@
  * digits becomes `0` followed by them) for the exact comparison, and the SUFFIX
  * comparison uses the national significant number — the national form without
  * its trunk `0` (`phoneSuffixKey`) — so a number stored in either spelling is
- * found by either. The customer number is compared after its digits are folded
+ * found by either. Only a FULL national number loses the `0`; a shorter tail is
+ * compared exactly as typed, so a tail that starts with `0` still finds it. The customer number is compared after its digits are folded
  * to ASCII. None of this widens WHO may search or WHAT is searched: the same
  * three arms, the same `MIN_PHONE_SUFFIX` floor on the suffix, the same page.
  *
@@ -226,16 +227,23 @@ export function toNationalPhoneDigits(digits: string): string {
   return national.length === 8 || national.length === 9 ? `0${national}` : digits;
 }
 
+/** A full Jordanian national number: trunk `0`, then eight or nine digits. */
+const NATIONAL_NUMBER = /^0[1-9]\d{7,8}$/;
+
 /**
  * The tail a phone is matched by as a SUFFIX: the national significant number.
  *
  * A national number's trunk `0` is dropped, so `0797001122` matches a stored
  * `0797001122` and a stored `+962797001122` alike through
- * `normalized_value LIKE '%797001122'`. A fragment that does not start with a
- * trunk `0` — a tail such as `7001122` — is its own key.
+ * `normalized_value LIKE '%797001122'`. Only a FULL national number — `0`
+ * followed by eight (landline) or nine (mobile) digits, the shapes
+ * `toNationalPhoneDigits` produces — loses its `0`. Any other fragment is a tail
+ * and is its own key exactly as typed: `0712345` is the last seven digits of a
+ * stored `0790712345`, and dropping its `0` would both lose that customer and
+ * match numbers the operator did not type.
  */
 export function phoneSuffixKey(digits: string): string {
-  return /^0[1-9]/.test(digits) ? digits.slice(1) : digits;
+  return NATIONAL_NUMBER.test(digits) ? digits.slice(1) : digits;
 }
 
 /**

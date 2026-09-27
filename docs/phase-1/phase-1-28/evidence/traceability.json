@@ -673,7 +673,8 @@
           "file": "apps/web/tests/reception-summary.dom.test.tsx",
           "cases": [
             "renders a REPLAY as success, never as an error",
-            "renders the opaque state code as a code, without translating it",
+            "renders a state outside the platform vocabulary as its code, never as a composed key",
+            "links to the NEW work order and says its state in words (Browser QA part 7, row 5.3)",
             "reads the work order on intent, and shows its jobs",
             "withdraws the command from an operator without the conversion permission"
           ]
