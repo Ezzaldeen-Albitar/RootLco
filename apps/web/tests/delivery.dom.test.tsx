@@ -171,6 +171,16 @@ vi.mock('@/features/delivery/readiness-api', () => ({
   readDeliveryReadinessScopes: (...args: unknown[]) => readDeliveryReadinessScopes(...args),
 }));
 
+/*
+ * The work-order read the handover page asks for the vehicle's plate (Browser QA
+ * part 7, row 3.2b). Only that read is replaced; the rest of the module is real.
+ */
+const readWorkOrderDetail = vi.fn();
+vi.mock('@/features/work-orders/api', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/features/work-orders/api')>()),
+  readWorkOrderDetail: (...args: unknown[]) => readWorkOrderDetail(...args),
+}));
+
 let PERMISSIONS: readonly string[] = [];
 vi.mock('@/features/authentication/api/session', () => ({
   requireSession: async () => ({
@@ -569,6 +579,53 @@ describe('the route page decides before it reads', () => {
     PERMISSIONS = [];
     const gate = await renderPage({ locale: 'en', deliveryId: DELIVERY_ID });
     expect(within(gate.container).queryByText('corr-777')).toBeNull();
+  });
+});
+
+/*
+ * Row 3.2b on the route page: the vehicle is named by its plate, read from the
+ * work order, only for a caller who holds the code that read declares; a read
+ * that does not answer names no vehicle rather than printing an identifier.
+ */
+describe('the route page names the vehicle from the work order', () => {
+  const workOrderRead = (vehicle: { registrationPlate: string | null; makeModel: string | null }) =>
+    okRead({ workOrder: { vehicle } });
+  const summary = () => panel('delivery.summary.heading');
+
+  it('asks nothing of the work order without its read code, and names no vehicle', async () => {
+    PERMISSIONS = [VIEW];
+    await renderPage({ locale: 'en', deliveryId: DELIVERY_ID });
+    expect(readWorkOrderDetail).not.toHaveBeenCalled();
+    expect(summary().textContent).not.toContain(EN['delivery.summary.vehicleName'] as string);
+  });
+
+  it('names the vehicle by its plate for a holder of the work-order read', async () => {
+    PERMISSIONS = [VIEW, WORK_ORDER_READ];
+    readWorkOrderDetail.mockResolvedValue(
+      workOrderRead({ registrationPlate: 'ODQ 7002', makeModel: 'Test Make Model' })
+    );
+    await renderPage({ locale: 'en', deliveryId: DELIVERY_ID });
+    expect(readWorkOrderDetail).toHaveBeenCalledWith(WORK_ORDER_ID);
+    expect(within(summary()).getByText('ODQ 7002')).toBeVisible();
+    expect(within(summary()).queryByText(VEHICLE_ID)).toBeNull();
+  });
+
+  it('names it by make and model when it carries no plate', async () => {
+    PERMISSIONS = [VIEW, WORK_ORDER_READ];
+    readWorkOrderDetail.mockResolvedValue(
+      workOrderRead({ registrationPlate: null, makeModel: 'Test Make Model' })
+    );
+    await renderPage({ locale: 'en', deliveryId: DELIVERY_ID });
+    expect(within(summary()).getByText('Test Make Model')).toBeVisible();
+  });
+
+  it('names no vehicle, and prints no identifier, when the work-order read does not answer', async () => {
+    PERMISSIONS = [VIEW, WORK_ORDER_READ];
+    readWorkOrderDetail.mockResolvedValue(refusedRead('unavailable', 'corr-wo'));
+    await renderPage({ locale: 'en', deliveryId: DELIVERY_ID });
+    expect(readWorkOrderDetail).toHaveBeenCalledTimes(1);
+    expect(summary().textContent).not.toContain(EN['delivery.summary.vehicleName'] as string);
+    expect(within(summary()).queryByText(VEHICLE_ID)).toBeNull();
   });
 });
 
