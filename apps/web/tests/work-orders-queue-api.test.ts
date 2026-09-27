@@ -185,6 +185,32 @@ describe('readWorkOrderList maps a published page onto table rows', () => {
     expect(url.searchParams.get('state')).toBeNull();
   });
 
+  it('sends a day’s last instant to the microsecond, exactly as the board built it', async () => {
+    /*
+     * The board's day ends at `…T23:59:59.999999±HH:MM` (`endOfDayBound`) and
+     * the route now hands that string to a closed `<=` comparison unchanged
+     * (`tests/unit/p1-32-work-order-list-instants.test.ts`). This half is that
+     * the adapter does not round it on the way: no `Date`, no `toISOString()`.
+     */
+    get.mockResolvedValue(ok({ items: [], nextCursor: null, hasMore: false }));
+
+    await readWorkOrderList(
+      TARGET,
+      {
+        openedFrom: '2026-09-21T21:00:00.000Z',
+        openedTo: '2026-09-22T23:59:59.999999+03:00',
+        completedTo: '2026-09-22T23:59:59.999999+03:00',
+      },
+      REQUEST,
+      null
+    );
+
+    const url = new URL(`https://api.invalid${String(get.mock.calls[0]?.[0])}`);
+    expect(url.searchParams.get('openedFrom')).toBe('2026-09-21T21:00:00.000Z');
+    expect(url.searchParams.get('openedTo')).toBe('2026-09-22T23:59:59.999999+03:00');
+    expect(url.searchParams.get('completedTo')).toBe('2026-09-22T23:59:59.999999+03:00');
+  });
+
   it('sends the P1-32 free-text criterion as typed, beside the target', async () => {
     get.mockResolvedValue(ok({ items: [], nextCursor: null, hasMore: false }));
 

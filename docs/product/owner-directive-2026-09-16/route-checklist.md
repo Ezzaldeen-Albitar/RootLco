@@ -922,8 +922,8 @@ above a list: a search, chips or selects, and a period.
   days (`dashboardPeriodRequest`); the boards the first and LAST instant of each day
   (`boardInstantWindow`, closed comparisons), the last written to the microsecond with the
   branch's offset (`…T23:59:59.999999±HH:MM`), so a daylight-saving change gives the two ends
-  different offsets. The work-order route parses its bounds to milliseconds, so there the last
-  999 microseconds of a day stay outside the bound (recorded in `lib/branch-time.ts`).
+  different offsets. Every board route — reception, appointments, work orders — hands that string
+  to its closed comparison unchanged, so the bound holds to the microsecond.
 - T5. What a screen adds beside the filters: a select's `groups` (`<optgroup>` headings after its
   options) and `description`, passed to `FormSelectField`; a `summary` line under the period (the
   period in words and the clock it is counted on); and an `actions` row at the foot for the
@@ -934,6 +934,15 @@ above a list: a search, chips or selects, and a period.
   period to the value already in force changes `resetKey`, which closes or opens the panel to
   match and drops the typed days; `onTypedDaysChange` tells the screen whether the open boxes hold
   typed days.
+- T7. What the work-order board adds, each optional and off unless given: a chips filter without
+  the added "All" (`allChoice: false`), its own default pressed; a figure on a chip (`count`,
+  formatted by the screen) only on the choices the screen gives one; a date `range` of its own
+  over one column, beside or instead of the period — two MIT pickers on the branch's clock,
+  checked on Apply or Enter (both days, the last not before the first) with the refusal on the box
+  to fix, the cursor moved there by the same counted refusal and the typed days kept, a Clear
+  offered while days are typed or applied, and the boxes following `value` and `resetKey`; and
+  `echoDigits`, which draws `DigitsEcho` under the search box (Arabic-Indic digits shown as Latin,
+  the term still sent as typed). A toolbar given none of them is unchanged.
 
 **`DateField` / `DateTimeField`** (`apps/web/src/components/forms/mui/DateField.tsx`) are the MIT
 pickers with `FieldFrame`'s contract.
@@ -1064,7 +1073,7 @@ The preserved-behaviour cell names the contract items above that a migration mus
 | `/work-orders/[workOrderId]`                          | form fields, `OperationalGrid`, states                 | F1–F6; G1–G9; S1–S4         | not migrated                       | not run — nothing migrated                |
 | `/work-orders/diagnostics/[templateId]`               | form fields, states                                    | F1–F6; S1–S4                | not migrated                       | not run — nothing migrated                |
 | `/work-orders/diagnostics`                            | form fields, states                                    | F1–F6; S1–S4                | not migrated                       | not run — nothing migrated                |
-| `/work-orders`                                        | form fields, `OperationalGrid`, states                 | F1–F6; G1–G9; S1–S4         | not migrated                       | not run — nothing migrated                |
+| `/work-orders`                                        | `FilterToolbar`, `OperationalGrid`, states             | F6; G1–G11; S1–S5; T1–T7    | migrated — see below the table     | focused suites, en and ar — see below     |
 | `/work-orders/quality`                                | form fields, states                                    | F1–F6; S1–S4                | not migrated                       | not run — nothing migrated                |
 | `/gallery`                                            | all four                                               | G, P, F, S                  | shown in the gallery, not a screen | `gallery-and-print.dom.test.tsx` (en, ar) |
 | `/platform/account`                                   | form fields, states                                    | F1–F6; S1–S4                | not migrated                       | not run — nothing migrated                |
@@ -1117,3 +1126,51 @@ Verification: the focused suites above, `filter-toolbar.dom.test.tsx`, `mui-stat
 `operational-grid.dom.test.tsx`, `operational-grid-actions-width.dom.test.tsx` and the route
 branch-scope suites were run locally in both languages; the browser specs
 (`tests/e2e/authenticated/appointments-and-receptions.spec.ts`) run only in hosted CI.
+
+### `/work-orders` on Material UI
+
+`WorkOrderQueueScreen` renders `FilterToolbar` (the nine views as chips with no added "All" and
+"Still with us" pressed, the grouped state select with its description, the kind select, the one
+search box with its digits echo, and the opened-date range with its own Clear), `OperationalGrid`
+over the same `useSearchRequest(...).table`, and `MuiSearchStates` for every state other than an
+answer — `MuiEmptyState` only for the unfiltered "All" view that holds nothing. The figure strip
+keeps its figures, its wording and its zone. `WorkingBranchField` stays as it was. Nothing about
+how the board reads changed: the same criteria, the same cancellable `/reads/work-orders` route,
+the same working-context version key; the read now declares what narrows it (`narrows`, G10).
+
+Preserved, each held by a case in `apps/web/tests/search-empty-states.dom.test.tsx` unless named:
+
+- A figure sits on a chip only for the four views whose set the aggregate counts exactly (Still
+  with us, Waiting for the customer to agree, Waiting for parts, Ready to hand over); the other
+  five carry none, and the strip carries every published figure.
+- A state code and the state group never travel together: choosing a state moves the view off
+  Still with us, and choosing that view clears the state.
+- Nothing is read while a state that arrived in the address waits for the catalogue; an unknown
+  or unreadable state is dropped with a notice that says which.
+- The figures are filed under the scope they were read for and are not shown beside another
+  branch's board, not even before the new figures arrive.
+- The row action follows the view (open, open to record the customer's answer, open to hand the
+  vehicle over), is a link named with the work-order number, and never writes; the delivery link
+  is offered only on the ready view and only to a session holding all three codes the delivery
+  page requires (the route's computation is held by its own case).
+- "All my branches" names the set and its company, the figures say they cover all the branches,
+  the branch column is passed only then, and a read spanning two companies is not made.
+- A refused opened range is refused on the box to fix, with the cursor moved there and the typed
+  days kept; an applied range is sent on the branch's clock, its end to the microsecond.
+- Reads are keyed on the working-context version: a branch switch issues no read for the branch
+  left and re-targets the board keeping its filters; the read contract is held on the syntax tree
+  of the `useSearchRequest` call (`p1-28-security.test.ts`, falsified rule by rule).
+- An empty answer names what narrowed it — the term, or the view and the filters — and Clear is
+  offered only when something can be cleared; an outage is "unavailable" with a retry (Browser QA
+  part 7, row 2.6); the row-actions column fits its longest label (row 4.3, G11).
+- Arabic and English, right to left included.
+
+The date bounds reach the database exactly as sent: `wo.work-order-list` passes the validated ISO
+strings to its `::timestamptz` comparisons instead of parsing them to a `Date`, which kept
+milliseconds only (`tests/unit/p1-32-work-order-list-instants.test.ts`; the row at `.999500`
+inside the day and the next midnight outside it are in `tests/backend/p1-19-work-order-reads.test.ts`,
+which runs in the hosted database job).
+
+Verification: the focused suites above, `filter-toolbar.dom.test.tsx`, `work-orders-queue-api.test.ts`,
+`reception-queue.dom.test.tsx` (the shared toolbar) and the route branch-scope suites were run
+locally in both languages. No browser spec drives this board.
