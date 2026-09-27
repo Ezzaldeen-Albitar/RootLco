@@ -475,9 +475,10 @@ Two sentences on that screen are binding for finance work:
 
 **The screen writes organization settings, because no dedicated numbering operation exists.** It is
 one of four administration areas in that position (the others are Taxes, Currencies and System
-settings). **The tenant-administrator bundle does not hold `org.settings.manage`**, so a freshly
-provisioned administrator will not see this menu entry at all and must be granted the code first.
-Part 3 covers granting.
+settings). **The tenant-administrator bundle holds `org.settings.manage`** since the Owner decision
+of 2026-09-27, so a freshly provisioned administrator sees this menu entry. An organisation
+provisioned earlier holds it only once its operator has brought the administrator role forward;
+until then the code must be granted first. Part 3 covers granting.
 
 If issuing an invoice is refused because the branch has no numbering set up, this is where it is
 fixed — or, where the screen is not reachable, by your operator.
@@ -495,7 +496,7 @@ in this release converts one currency into another. Reports keep currencies apar
 across them.
 
 Like Numbering rules, this screen writes organization settings and needs `org.settings.manage`,
-which the tenant-administrator bundle does not hold.
+which the tenant-administrator bundle holds since 2026-09-27.
 
 ---
 
@@ -1240,7 +1241,7 @@ stated where you meet it.
 17. **There is no analytics dashboard.** **NOT AVAILABLE**
 18. **Four administration areas — Numbering rules, Taxes, Currencies and System settings — are
     key-and-value settings screens, not dedicated features**, and they need `org.settings.manage`,
-    which the tenant-administrator bundle does not hold.
+    which the tenant-administrator bundle holds since the Owner decision of 2026-09-27.
 19. **The product name, logo and colours are provisional.** The interface shows a placeholder name
     with the banner "Provisional appearance — final brand pending".
 20. **Printing is always your browser's own print.** No PDF is generated and there is no server-side
