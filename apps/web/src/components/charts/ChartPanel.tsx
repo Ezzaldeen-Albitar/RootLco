@@ -10,6 +10,7 @@ import TableHead from '@mui/material/TableHead';
 import TableRow from '@mui/material/TableRow';
 import Typography from '@mui/material/Typography';
 import { BarChart, type BarChartProps } from '@mui/x-charts/BarChart';
+import { DEFAULT_MARGINS } from '@mui/x-charts/constants';
 import { LineChart, type LineChartProps } from '@mui/x-charts/LineChart';
 import { PieChart, type PieChartProps } from '@mui/x-charts/PieChart';
 import { MuiLoadingState } from '@/components/states/MuiStates';
@@ -18,7 +19,7 @@ import { directionOf, type Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
 import { formatMessage, translate } from '@/i18n/get-messages';
 import { formatInteger, intlLocale } from '@/lib/format';
-import { LAYOUT_PX } from '@/styles/tokens/generated/tokens';
+import { LAYOUT_PX, SPACE_PX } from '@/styles/tokens/generated/tokens';
 import { estimatedTextWidth, fitLabel } from './label-fit';
 
 /**
@@ -175,8 +176,25 @@ export const CHART_LABEL_COLUMN_MAX_SHARE = 0.4;
 const COUNT_GUTTER = 64;
 /** The space between a bar's end and its count. */
 const COUNT_GAP = 6;
-/** One horizontal bar's band, in drawing units. */
-const BAR_BAND = 32;
+/** One horizontal bar's band, in drawing units: the `--space-8` step. */
+export const BAR_BAND = SPACE_PX['8'];
+/**
+ * The room a horizontal bar chart keeps above its first band and below its last:
+ * the `--space-2` step. Set explicitly because the chart's own default (twenty
+ * units each side) is more than one band leaves, and a single category then drew
+ * a bar of negative height — nothing at all (DEF-R3).
+ */
+export const BAR_MARGIN_BLOCK = SPACE_PX['2'];
+
+/**
+ * A horizontal bar chart's height: one band per category (at least one) plus the
+ * block margins. The category axis has no ticks below the bars and the count
+ * axis is hidden (`position: 'none'`), so nothing else takes vertical room — the
+ * drawing area is exactly the bands, and every category gets a visible bar.
+ */
+export function horizontalBarHeight(categoryCount: number): number {
+  return Math.max(categoryCount, 1) * BAR_BAND + 2 * BAR_MARGIN_BLOCK;
+}
 
 const TONE_COLOUR: Record<ChartTone, string> = {
   primary: 'var(--color-primary)',
@@ -300,10 +318,12 @@ export function barChartProps(input: BuildInput): BarChartProps {
     return {
       layout: 'horizontal',
       series: bars,
-      height: Math.max(categories.length, 1) * BAR_BAND,
+      height: horizontalBarHeight(categories.length),
       skipAnimation,
       hideLegend: true,
-      margin: rtl ? { left: gutter, right: 0 } : { right: gutter, left: 0 },
+      margin: rtl
+        ? { left: gutter, right: 0, top: BAR_MARGIN_BLOCK, bottom: BAR_MARGIN_BLOCK }
+        : { right: gutter, left: 0, top: BAR_MARGIN_BLOCK, bottom: BAR_MARGIN_BLOCK },
       yAxis: [
         {
           id: 'categories',
@@ -598,10 +618,21 @@ export function ChartPanel({
         : series.some((entry) => entry.hatched) ||
           (series.length === 1 && categories.some((category) => category.hatched));
 
+  const barProps = kind === 'bar' ? barChartProps({ ...input, layout }) : null;
+  // The height left for the bars once the block margins are taken — a side the
+  // props leave out gets the chart's own default, exactly as the chart does —
+  // recorded as `data-plot-height` so a test can see that one category draws.
+  const barMargin = barProps?.margin as { top?: number; bottom?: number } | undefined;
+  const plotHeight =
+    barProps !== null && layout === 'horizontal' && typeof barProps.height === 'number'
+      ? barProps.height -
+        (barMargin?.top ?? DEFAULT_MARGINS.top) -
+        (barMargin?.bottom ?? DEFAULT_MARGINS.bottom)
+      : undefined;
   const drawing = () => {
     if (kind === 'pie') return <PieChart {...pieChartProps(input)} />;
     if (kind === 'line') return <LineChart {...lineChartProps(input)} />;
-    return <BarChart {...barChartProps({ ...input, layout })} />;
+    return barProps === null ? null : <BarChart {...barProps} />;
   };
 
   const categoryLinks = linked ? (
@@ -699,6 +730,7 @@ export function ChartPanel({
             dir="ltr"
             data-testid="chart-drawing"
             data-label-column={labelColumn === undefined ? undefined : String(labelColumn)}
+            data-plot-height={plotHeight === undefined ? undefined : String(plotHeight)}
           >
             {drawing()}
           </div>

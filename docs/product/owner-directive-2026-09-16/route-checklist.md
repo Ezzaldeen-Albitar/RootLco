@@ -686,6 +686,102 @@ Known limitations of this slice, one line each:
   unrestricted grant, so the refusal depends on that database's grants (a scoped grant carrying the
   code that does not name the company) and was not reproduced here, because the shared database
   was not queried.
+  **Resolved on 2026-09-27:** the Owner decided the administrator carries the code; see
+  "Organisation settings for tenant administrators" below.
+
+## Organisation settings for tenant administrators (Owner decision of 2026-09-27)
+
+The Owner decided that the standard tenant administrator edits its own organisation's operational
+settings, its default language and time zone included. That disposes of residual W9-R2 and of item
+(C) above. The decision asked for the scope of `org.settings.manage` to be verified before the code
+was added, so the audit came first and is recorded here.
+
+### Scope audit — every operation that declares `org.settings.manage`
+
+Read from every `defineOperation` under `apps/api/src/app/api/v1` (the P1-24 register lists the
+same twelve). Each operation requires the code on its own; no operation lists it beside another
+code.
+
+| Operation                         | Route                                                       | Scope   | What it can change                                                                                                             |
+| --------------------------------- | ----------------------------------------------------------- | ------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| `iam.tenant-settings-update`      | `PATCH /api/v1/org/tenant`                                  | tenant  | the caller's own organisation: display name, default language, default time zone (If-Match; nothing else is accepted)          |
+| `iam.company-settings-write`      | `POST /api/v1/org/companies/{companyId}/settings`           | company | the next version of one key and value for a company inside the caller's scope (the numbering, tax and currency slots included) |
+| `iam.branch-settings-write`       | `POST /api/v1/org/branches/{branchId}/settings`             | branch  | the same, for a branch inside the caller's scope                                                                               |
+| `shared.branch-status-change`     | `POST /api/v1/organization/branches/{branchId}/status`      | branch  | a branch of the caller's organisation to active or inactive, with a reason (If-Match)                                          |
+| `shared.template-create`          | `POST /api/v1/message-templates`                            | tenant  | a new message template of the organisation: code, name, channel, purpose, language, description                                |
+| `shared.template-update`          | `PATCH /api/v1/message-templates/{templateId}`              | tenant  | an organisation template's name, description, active or disabled                                                               |
+| `shared.template-version-create`  | `POST /api/v1/message-templates/{templateId}/versions`      | tenant  | a new draft version: subject and body                                                                                          |
+| `shared.template-version-revise`  | `PATCH /api/v1/template-versions/{versionId}`               | tenant  | a draft version's subject and body                                                                                             |
+| `shared.template-version-approve` | `POST /api/v1/template-versions/{versionId}/approval`       | tenant  | a draft version to approved                                                                                                    |
+| `shared.template-version-retire`  | `POST /api/v1/template-versions/{versionId}/retirement`     | tenant  | an approved version to retired                                                                                                 |
+| `shared.template-activation-set`  | `PUT /api/v1/message-templates/{templateId}/active-version` | tenant  | which approved version a template sends                                                                                        |
+| `shared.template-version-preview` | `POST /api/v1/template-versions/{versionId}/preview`        | tenant  | nothing — it renders a version with sample values                                                                              |
+
+**Screens and actions that gate on it.** The Organization screen's Workspace form, the company and
+branch settings editors and the branch activate/deactivate action
+(`apps/web/src/app/[locale]/(dashboard)/administration/organization/page.tsx`); the System settings,
+Numbering rules, Taxes and Currencies screens, which are settings editors over the same two writes;
+and their four navigation entries in `apps/web/src/config/navigation.ts`.
+
+**Database checks.** `upd_tenants_settings` on `org.tenants` (20260726090000) admits the row only
+when `id = iam.current_tenant_id()` and the caller holds the code, and `app_runtime` may update only
+`display_name`, `default_locale` and `default_timezone`. The tenant code and status have no update
+grant; status is a platform operator act. The template write policies (20260728090000, 20260828090000) require the code and a tenant-scoped template. The company and branch settings
+tables are insert-only, tenant-bound and scope-bound (20260717105000). 20260916093000 mentions the
+code only to explain why it takes an advisory lock instead.
+
+**What it cannot reach.** No operation above touches another organisation, a platform setting, a
+subscription or plan, sign-in, password, MFA or session policy, roles or grants, or a financial
+control. The company and branch settings slots are stored values that no server computation reads:
+discount thresholds are `svc.price.manage`, approval limits `iam.approval.manage`, credit notes
+`sal.credit.manage`, payments `sal.payment.*`, and invoice tax comes from the priced lines, never
+from a settings key. Platform controls stay behind `platform.*` codes the bundle never carries.
+
+**Who gets it.** `TENANT_ADMINISTRATOR_ROLE` only. Organisation-wide settings belong to the
+organisation's administrator, so no company or branch manager gains the code; an administrator may
+still delegate it to a role it builds. `first_owner` is unchanged. New organisations receive it at
+provisioning; existing organisations are brought forward only by the selective backfill described
+in `docs/phase-1/phase-1-31/tenant-administrator-bundle-backfill.md` section 9, run for the
+previously authorised QA organisations after merge. Other organisations are left unchanged.
+
+**Proof.** `tests/backend/p1-31-provisioning-bundle.test.ts` P31-B23 … B28: the twelve declarers
+pinned by id; the three updatable tenant columns and the own-tenant policy read from the database;
+the administrator changes its display name, default language and time zone, audited with each
+value before and after, while every branch, company, role grant and earlier audit record reads the
+same before and after; its company and branch settings writes are audited; another organisation's
+administrator changes only its own row, cannot act under this organisation's context and is
+refused this organisation's company and branch settings; the subscription and lifecycle
+operations refuse it, and a status or code field is refused; a branch manager built without the
+code is refused every settings write. The backfill's selective run is BF-18.
+
+**On screen.** The Workspace form is editable for a holder of the code and stays read-only, with
+its notice, for everyone else. The language and time zone selects show names. A refused save marks
+the field, says why beside it and moves the cursor there; what was typed stays; a correction clears
+the complaint. A save refused for a reason that names no field (a lost-update conflict, a server
+fault, a refusal or an expired session) keeps every typed value, the selects included, and the next
+Save sends them. Unsaved changes are protected on a branch change and can be put back with Discard
+changes, which also withdraws every complaint. A save says so and refreshes the saved values. The
+Workspace facts show the status in words ("Active", "نشطة"), never the stored value.
+
+Known limitations of this slice, one line each:
+
+- DEF-R3: the chart's `data-plot-height` is worked out from its props, not measured from the
+  drawing; a probe of MUI X `BarChart` with 1, 2 and 7 categories in both languages drew every bar
+  25.6 high (plot areas 32, 64 and 224), so a single category now draws.
+- Side effects of the audit above: a holder can take `SELECT … FOR UPDATE` locks on its own tenant
+  row, and can author and approve its own templates through the approval witness.
+- The tenant administrator now sees four more navigation entries (Numbering rules, Taxes,
+  Currencies, System settings) and an editable Workspace form on the Languages page; both are
+  described in the user manual and here.
+- The selective backfill for the previously authorised QA organisations is an operator act that
+  has not been performed; section 9 of the backfill document names neither organisation nor gives
+  the exact `--tenant` command, and BF-18 proves the mechanism on other organisations only.
+- The hosted clean-room job stops at `validate:p1-27-closing-values` while the run records are
+  stale, so the steps after it in that job were not observed for this slice.
+- The Workspace form's draft and saved values are not re-seeded when a refreshed tenant arrives
+  from elsewhere (another administrator's save); the form behaved the same way before this slice.
+- Other `FormSelectField` consumers that submit through a form `action` may lose a select's value
+  to React's form reset in the same way; they were not checked, being outside this slice.
 
 ## Remaining — backend prerequisites and Owner decisions only
 

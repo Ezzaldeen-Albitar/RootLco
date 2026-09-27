@@ -887,6 +887,14 @@ An organisation provisioned before this change gets the permission when the plat
 the administrator backfill for it, and only if its administrator role is still the standard one.
 Part 6, §6.2a.
 
+**Organisation settings are now in the set, by Owner decision.** Since 2026-09-27 the first
+administrator can change the workspace's display name, default language and default time zone, the
+company and branch settings, branch status, and the settings screens below. Changing the default
+language or time zone applies from then on and does not rewrite anything already recorded; every
+branch keeps its own time zone. No company or branch manager receives this permission automatically.
+An organisation provisioned before this change gets it only if the platform operator runs the
+administrator backfill for it, which by that decision is done for named organisations only.
+
 | Screen                                       | Visible to the first administrator? | Why                                                                                                                |
 | -------------------------------------------- | ----------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
 | **Users**, **Roles**, **Permissions**        | Yes                                 | The identity and access permissions are in the set.                                                                |
@@ -894,14 +902,14 @@ Part 6, §6.2a.
 | **Departments**, **Employees**               | Yes, and fully usable               | Their read and management permissions are both in the set.                                                         |
 | **Organization** — companies and branches    | Yes, and fully usable               | Company and branch management are both in the set.                                                                 |
 | **Organization** — subscription and capacity | Yes, read-only                      | Tenant-read is in the set. Nobody inside a workspace can change a plan; that is the platform owner's (2.9).        |
-| **Organization** — settings blocks           | Yes, read-only                      | Settings-management is **not** in the set, so those blocks show _"You can view this, but not change it."_          |
-| **Organization** — branch status             | **No**                              | Activating or deactivating a branch is gated on settings-management (2.5.3).                                       |
-| **Languages**                                | Yes, read-only                      | Same reason as the settings blocks.                                                                                |
+| **Organization** — settings blocks           | Yes, and fully usable               | Settings-management is in the set since the Owner decision of 2026-09-27.                                          |
+| **Organization** — branch status             | Yes                                 | Activating or deactivating a branch is gated on settings-management, which is in the set (2.5.3).                  |
+| **Languages**                                | Yes, and editable                   | Same reason as the settings blocks.                                                                                |
 | **Audit log**                                | Yes                                 | Audit-view and sensitive-view are both in the set.                                                                 |
-| **Numbering rules**                          | **No**                              | Gated on settings-management, which is not in the set.                                                             |
-| **Taxes**                                    | **No**                              | Same.                                                                                                              |
-| **Currencies**                               | **No**                              | Same.                                                                                                              |
-| **System settings**                          | **No**                              | Same.                                                                                                              |
+| **Numbering rules**                          | Yes                                 | Gated on settings-management, which is in the set.                                                                 |
+| **Taxes**                                    | Yes                                 | Same.                                                                                                              |
+| **Currencies**                               | Yes                                 | Same.                                                                                                              |
+| **System settings**                          | Yes                                 | Same.                                                                                                              |
 | **Notifications**, **Documents**             | **No**                              | Planned, not built — see 2.13.                                                                                     |
 | **Appointments**                             | **No**                              | No appointment permission is in the set. See Part 4A.                                                              |
 | **Credit notes**                             | Yes                                 | The credit and finance-view permissions are both in the set. Approving still needs a second person. Part 6, §6.2a. |
@@ -1037,8 +1045,8 @@ Re-read for this revision:
     nav.employees (org.employee.read)
   apps/api/src/modules/iam/domain/bootstrap-roles.ts — the tenant administration bundle now carries
     org.company.manage, org.branch.manage, org.department.read/.manage, org.employee.read/.manage
-    and the inventory codes, and does NOT carry org.settings.manage, rpt.report.export,
-    shared.notification.read or any apt.* code
+    and the inventory codes, carries org.settings.manage since the Owner decision of 2026-09-27,
+    and does NOT carry rpt.report.export, shared.notification.read or any apt.* code
   New message keys quoted: organization.structure.*, organization.company.*, organization.branch.*,
     organization.capacity.*, departments.*, employees.*, capacity.reached.*,
     capacity.organisationInactive, capacity.planBelowUsage, nav.departments, nav.employees

@@ -253,3 +253,36 @@ widened), **BF-15** (two concurrent runs: one widened, one unchanged, one audit 
 (a run blocked on the advisory lock computes its difference after the holder commits) and **BF-17**
 (one organisation failed and rolled back, the next widened and committed, in one run). This
 addendum does not claim the run was performed anywhere.
+
+---
+
+## 9. Addendum — `org.settings.manage`, run selectively (Owner decision of 2026-09-27)
+
+The Owner decided that the standard tenant administrator edits its own organisation's operational
+settings, its default language and time zone included, which closes residual W9-R2. The code is
+carried in `TENANT_ADMINISTRATOR_ROLE`, so the bundle is now 90 codes, and new organisations receive
+it at provisioning. The scope was measured before the code was carried; it is recorded in
+`bootstrap-roles.ts` and in `docs/product/owner-directive-2026-09-16/route-checklist.md`.
+
+The same decision sets the shape of the run for existing organisations, and it is narrower than the
+earlier widenings:
+
+- **Selective.** Only the previously authorised QA organisations are named, each with its own
+  `--tenant <tenant_code>`. `--all` is not used for this widening, and every other existing
+  organisation is left unchanged for now.
+- **Customised roles are preserved.** The rules of sections 7 and 8 apply unchanged: an
+  administrator role showing any sign of customisation is skipped whole and reported with the code
+  it would have gained under `withheld`.
+- **Dry run first.** The dry run lists, per named organisation, exactly what it would add. For an
+  organisation already current with the credit-note widening that is `org.settings.manage` and
+  nothing else.
+
+The script needed no change: it reads the bundle from `bootstrap-roles.ts` at run time. **BF-18**
+proves the shape on real rows — two named organisations on the 89-code bundle, the standard one
+offered exactly `org.settings.manage` by a dry run that writes nothing and then widened (a company
+manager role it built gains nothing), the customised one skipped with the code withheld, an
+organisation nobody named untouched row for row, and a second run a no-op. **BF-10** now counts the
+code among the five an 85-code organisation is offered.
+
+The run is an operator act taken after this change merges. This addendum does not claim it was
+performed anywhere.

@@ -115,6 +115,37 @@
  *           and not the requester, is refused approving this organisation's note
  *           with the same 404 an unknown id gets, and nothing moves
  *
+ * ## The Owner decision on `org.settings.manage`: the organisation's own settings
+ *
+ * The Owner decided on 2026-09-27 that the standard tenant administrator edits its
+ * own organisation's operational settings, default language and time zone included
+ * (residual W9-R2). The scope was measured first, and B23 keeps that measurement
+ * falsifiable: the day another operation declares the code, B23 fails and the scope
+ * has to be looked at again.
+ *
+ *   P31-B23 the code is in the bundle once, is declared by exactly the twelve
+ *           operations the scope audit listed (tenant, company and branch settings,
+ *           branch status, message templates) and by no platform operation; the
+ *           runtime may update exactly three columns of the tenant row, under a
+ *           policy bound to the caller's own tenant; first_owner is untouched
+ *   P31-B24 the provisioned administrator changes its organisation's display name,
+ *           default language and default time zone; the change is audited with the
+ *           value before and after; and no stored record is rewritten — every
+ *           branch, company, role grant and earlier audit record reads the same
+ *           before and after, and so does the tenant's own creation time
+ *   P31-B25 it writes a company and a branch setting of its own organisation, each
+ *           audited
+ *   P31-B26 the administrator of ANOTHER organisation, holding the same code, cannot
+ *           touch this organisation: its own tenant update changes only its own row,
+ *           it cannot act under this organisation's context, and its company and
+ *           branch settings writes against this organisation are refused
+ *   P31-B27 the code reaches no platform control: the subscription and lifecycle
+ *           operations refuse the administrator, and the tenant update refuses a
+ *           status or code field
+ *   P31-B28 a company or branch manager the administrator builds WITHOUT the code
+ *           is refused every settings write, with the registered refusal, and
+ *           nothing is written
+ *
  * Operations exercised: platform.organization-provision, iam.role-create,
  * iam.role-permission-add, iam.audit-event-list, rpt.report-catalogue,
  * shared.export-catalogue, org.branch-create, crm.individual-create,
@@ -122,7 +153,9 @@
  * inv.stock-location-create, inv.goods-receipt-create,
  * rec.reception-convert-to-work-order, wo.service-line-record,
  * rec.reception-evidence-binding, iam.grant-issue, sal.credit-note-create,
- * sal.credit-note-list, sal.credit-note-approve.
+ * sal.credit-note-list, sal.credit-note-approve, iam.tenant-settings-update,
+ * iam.company-settings-write, iam.branch-settings-write,
+ * platform.subscription-assign, platform.organization-lifecycle.
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { Pool } from 'pg';
@@ -212,6 +245,23 @@ import {
 } from '@/app/api/v1/credit-notes/route';
 import { CREDIT_NOTE_DETAIL_OPERATION } from '@/app/api/v1/credit-notes/[creditNoteId]/route';
 import { POST as grantIssueRoute } from '@/app/api/v1/iam/grants/route';
+import { TENANT_UPDATE_OPERATION, PATCH as tenantUpdateRoute } from '@/app/api/v1/org/tenant/route';
+import {
+  COMPANY_SETTINGS_WRITE_OPERATION,
+  POST as companySettingsWriteRoute,
+} from '@/app/api/v1/org/companies/[companyId]/settings/route';
+import {
+  BRANCH_SETTINGS_WRITE_OPERATION,
+  POST as branchSettingsWriteRoute,
+} from '@/app/api/v1/org/branches/[branchId]/settings/route';
+import {
+  SUBSCRIPTION_ASSIGN_OPERATION,
+  POST as subscriptionAssignRoute,
+} from '@/app/api/v1/platform/organizations/[tenantId]/subscriptions/route';
+import {
+  ORGANIZATION_LIFECYCLE_OPERATION,
+  POST as organizationLifecycleRoute,
+} from '@/app/api/v1/platform/organizations/[tenantId]/status/route';
 
 /**
  * The six codes prerequisite P-1 adds. Written out rather than derived from
@@ -399,11 +449,20 @@ const WITHHELD_BY_CC12 = Object.freeze(['inv.cost.view']);
  */
 const ADDED_BY_CREDIT_DECISION = Object.freeze(['sal.credit.manage']);
 
+/**
+ * The fourth widening after P1-31, again on an explicit Owner decision about ONE
+ * code: `org.settings.manage` (2026-09-27, closing residual W9-R2). The standard
+ * tenant administrator edits its own organisation's settings, default language and
+ * time zone included. B23–B28 below measure its scope and its limits. 89 + 1 = 90.
+ */
+const ADDED_BY_SETTINGS_DECISION = Object.freeze(['org.settings.manage']);
+
 /** Every code carried after P1-31 closed. */
 const ADDED_AFTER_P1_31 = Object.freeze([
   ...ADDED_BY_P1_32_MATERIAL,
   ...ADDED_BY_OD_QA_CAMPAIGN,
   ...ADDED_BY_CREDIT_DECISION,
+  ...ADDED_BY_SETTINGS_DECISION,
 ]);
 
 const IDENTITY_PROVIDER = 'test_harness';
@@ -958,11 +1017,12 @@ describe('P1-31 P-1 — an organisation created by the shipped provisioning oper
 
   it('P31-B6 delegation is still held-only — codes outside the bundle are refused as before', async () => {
     const roleId = await newRole(probe, 'escalation_probe');
-    // Three real exclusions, each recorded with its own reason in
-    // `bootstrap-roles.ts`: an organisation write, an IAM read, and a platform
-    // code that is never a tenant code at all.
+    // Three real exclusions: an organisation write the bundle never carried, an
+    // IAM read recorded in `bootstrap-roles.ts`, and a platform code that is never
+    // a tenant code at all. `org.settings.manage` used to be the first; the Owner
+    // decision of 2026-09-27 carries it, so `org.tax.manage` takes its place.
     for (const permissionCode of [
-      'org.settings.manage',
+      'org.tax.manage',
       'iam.login.view_all',
       'platform.organization.provision',
     ]) {
@@ -1064,9 +1124,13 @@ describe('Owner directive 2026-09-17 — the codes the QA campaign found closed'
     const before = BUNDLE_BEFORE + ADDED_ALL.length + ADDED_BY_P1_32_MATERIAL.length;
     expect(before).toBe(85);
     expect(before + ADDED_BY_OD_QA_CAMPAIGN.length).toBe(88);
-    // 89 since the Owner's credit-note decision; B16 owns that arithmetic.
+    // 89 since the Owner's credit-note decision; B16 owns that arithmetic. 90 since
+    // the settings decision; B23 owns that one.
     expect(bundle).toHaveLength(
-      before + ADDED_BY_OD_QA_CAMPAIGN.length + ADDED_BY_CREDIT_DECISION.length
+      before +
+        ADDED_BY_OD_QA_CAMPAIGN.length +
+        ADDED_BY_CREDIT_DECISION.length +
+        ADDED_BY_SETTINGS_DECISION.length
     );
     expect(ADDED_BY_OD_QA_CAMPAIGN).toHaveLength(3);
 
@@ -1613,7 +1677,8 @@ interface CreditNoteReply {
 describe('Owner decision — sal.credit.manage: credit notes in a provisioned organisation', () => {
   it('P31-B16 the bundle carries sal.credit.manage and nothing else moved; the four credit-note operations declare it with sal.finance.view; it was already a catalogue row; first_owner is untouched', () => {
     const bundle = [...TENANT_ADMINISTRATOR_ROLE.permissionCodes];
-    expect(bundle).toHaveLength(89);
+    // 89 with this code; 90 since the settings decision, which B23 owns.
+    expect(bundle).toHaveLength(89 + ADDED_BY_SETTINGS_DECISION.length);
     for (const code of ADDED_BY_CREDIT_DECISION) {
       expect(bundle.filter((c) => c === code)).toHaveLength(1);
       expect(ADDED_ALL).not.toContain(code);
@@ -1904,5 +1969,519 @@ describe('Owner decision — sal.credit.manage: credit notes in a provisioned or
     expect(await openReceivable(invoice.invoiceId)).toBe(openBefore);
     expect(await auditRecordsFor(probe.tenantId, 'sal.credit_note.approved', note.id)).toBe(0);
     expect(await auditRecordsFor(other.tenantId, 'sal.credit_note.approved', note.id)).toBe(0);
+  });
+});
+
+/**
+ * The twelve operations the scope audit of 2026-09-27 found declaring
+ * `org.settings.manage`, by id. B23 compares the register against this list, so a
+ * thirteenth declarer fails the case and sends the scope back for review.
+ */
+const SETTINGS_DECLARERS = Object.freeze([
+  'iam.branch-settings-write',
+  'iam.company-settings-write',
+  'iam.tenant-settings-update',
+  'shared.branch-status-change',
+  'shared.template-activation-set',
+  'shared.template-create',
+  'shared.template-update',
+  'shared.template-version-approve',
+  'shared.template-version-create',
+  'shared.template-version-preview',
+  'shared.template-version-retire',
+  'shared.template-version-revise',
+]);
+
+interface TenantRowState {
+  readonly displayName: string;
+  readonly defaultLocale: string;
+  readonly defaultTimezone: string;
+  readonly status: string;
+  readonly tenantCode: string;
+  readonly recordVersion: number;
+  readonly createdAt: string;
+}
+
+/** The tenant row as stored, read on the admin connection. */
+async function tenantRow(tenantId: string): Promise<TenantRowState> {
+  const { rows } = await admin.query<{
+    display_name: string;
+    default_locale: string;
+    default_timezone: string;
+    status: string;
+    tenant_code: string;
+    record_version: number;
+    created_at: string;
+  }>(
+    `SELECT display_name, default_locale, default_timezone, status, tenant_code,
+            record_version, created_at::text AS created_at
+       FROM org.tenants WHERE id = $1`,
+    [tenantId]
+  );
+  const row = rows[0];
+  if (row === undefined) throw new Error(`tenant ${tenantId} is not stored`);
+  return {
+    displayName: row.display_name,
+    defaultLocale: row.default_locale,
+    defaultTimezone: row.default_timezone,
+    status: row.status,
+    tenantCode: row.tenant_code,
+    recordVersion: row.record_version,
+    createdAt: row.created_at,
+  };
+}
+
+/**
+ * Every stored record a default-setting change could plausibly rewrite, as text:
+ * the organisation's branches (each with its own time zone), its companies, its role
+ * grants and the audit records written BEFORE the change. The text form carries every
+ * column, timestamps included, so any rewrite shows as a difference.
+ */
+async function storedHistory(
+  tenantId: string,
+  auditIds: readonly string[]
+): Promise<Record<string, string>> {
+  const { rows } = await admin.query<Record<string, string>>(
+    `SELECT
+       (SELECT coalesce(string_agg(b::text, '|' ORDER BY b.id), '')
+          FROM org.branches b WHERE b.tenant_id = $1) AS branches,
+       (SELECT coalesce(string_agg(c::text, '|' ORDER BY c.id), '')
+          FROM org.legal_companies c WHERE c.tenant_id = $1) AS companies,
+       (SELECT coalesce(string_agg(g::text, '|' ORDER BY g.id), '')
+          FROM iam.role_grants g WHERE g.tenant_id = $1) AS grants,
+       (SELECT coalesce(string_agg(r::text, '|' ORDER BY r.id), '')
+          FROM iam.audit_records r WHERE r.tenant_id = $1 AND r.id = ANY($2::uuid[])) AS audit`,
+    [tenantId, [...auditIds]]
+  );
+  const row = rows[0];
+  if (row === undefined) throw new Error('no history read');
+  return row;
+}
+
+/** One audit record's detail fields, by name, as stored (masked form). */
+async function auditDetails(
+  tenantId: string,
+  action: string,
+  entityId: string
+): Promise<Array<{ field: string; old: string | null; value: string | null }>> {
+  const { rows } = await admin.query<{
+    field_name: string;
+    old_value_masked: string | null;
+    new_value_masked: string | null;
+  }>(
+    `SELECT d.field_name, d.old_value_masked, d.new_value_masked
+       FROM iam.audit_records r
+       JOIN iam.audit_record_details d
+         ON d.tenant_id = r.tenant_id AND d.audit_record_id = r.id
+      WHERE r.tenant_id = $1 AND r.action = $2 AND r.entity_id = $3
+      ORDER BY d.field_name`,
+    [tenantId, action, entityId]
+  );
+  return rows.map((row) => ({
+    field: row.field_name,
+    old: row.old_value_masked,
+    value: row.new_value_masked,
+  }));
+}
+
+async function companySettingRows(companyId: string): Promise<number> {
+  const { rows } = await admin.query<{ n: number }>(
+    'SELECT count(*)::int AS n FROM org.company_settings WHERE company_id = $1',
+    [companyId]
+  );
+  return rows[0]?.n ?? 0;
+}
+
+async function branchSettingRows(branchId: string): Promise<number> {
+  const { rows } = await admin.query<{ n: number }>(
+    'SELECT count(*)::int AS n FROM org.branch_settings WHERE branch_id = $1',
+    [branchId]
+  );
+  return rows[0]?.n ?? 0;
+}
+
+describe('Owner decision — org.settings.manage: the organisation edits its own settings', () => {
+  it('P31-B23 the bundle carries org.settings.manage once; exactly the twelve audited operations declare it, none of them a platform operation; the runtime updates three tenant columns under an own-tenant policy; first_owner is untouched', async () => {
+    const bundle = [...TENANT_ADMINISTRATOR_ROLE.permissionCodes];
+    expect(bundle).toHaveLength(90);
+    for (const code of ADDED_BY_SETTINGS_DECISION) {
+      expect(bundle.filter((c) => c === code)).toHaveLength(1);
+      expect(ADDED_ALL).not.toContain(code);
+      expect(ADDED_BY_P1_32_MATERIAL).not.toContain(code);
+      expect(ADDED_BY_OD_QA_CAMPAIGN).not.toContain(code);
+      expect(ADDED_BY_CREDIT_DECISION).not.toContain(code);
+    }
+
+    // NOTHING IS MINTED: a catalogue row already.
+    const seed = readFileSync(
+      join(REPOSITORY_ROOT, 'supabase/seeds/04_iam_permission_catalog.sql'),
+      'utf8'
+    );
+    expect(seed).toContain("('org.settings.manage'");
+
+    // THE SCOPE AUDIT, kept falsifiable: the declarers are exactly the twelve it read.
+    const register = JSON.parse(
+      readFileSync(
+        join(REPOSITORY_ROOT, 'docs/phase-1/phase-1-24/evidence/operation-register.json'),
+        'utf8'
+      )
+    ) as {
+      operations: Array<{ id: string; permissions: string[]; scope: string; route: string }>;
+    };
+    const declarers = register.operations.filter((op) =>
+      op.permissions.includes('org.settings.manage')
+    );
+    expect(declarers.map((op) => op.id).sort()).toEqual([...SETTINGS_DECLARERS]);
+    for (const operation of declarers) {
+      expect(operation.id.startsWith('platform.')).toBe(false);
+      expect(operation.route.startsWith('/api/v1/platform/')).toBe(false);
+      expect(['tenant', 'company', 'branch']).toContain(operation.scope);
+    }
+
+    // The three settings writes, by declaration: bound to the caller's own tenant,
+    // company or branch, and audited as privileged changes.
+    expect(TENANT_UPDATE_OPERATION.permissions).toEqual(['org.settings.manage']);
+    expect(TENANT_UPDATE_OPERATION.scope).toBe('tenant');
+    expect(TENANT_UPDATE_OPERATION.auditAction).toBe('org.tenant.settings_updated');
+    expect(TENANT_UPDATE_OPERATION.auditClass).toBe('privileged');
+    expect(TENANT_UPDATE_OPERATION.versionGuarded).toBe(true);
+    expect(COMPANY_SETTINGS_WRITE_OPERATION.scope).toBe('company');
+    expect(COMPANY_SETTINGS_WRITE_OPERATION.auditAction).toBe('org.company.settings_updated');
+    expect(BRANCH_SETTINGS_WRITE_OPERATION.scope).toBe('branch');
+    expect(BRANCH_SETTINGS_WRITE_OPERATION.auditAction).toBe('org.branch.settings_updated');
+
+    // The platform controls stay behind platform codes the bundle never carries.
+    expect(SUBSCRIPTION_ASSIGN_OPERATION.permissions).toEqual(['platform.subscription.manage']);
+    expect(ORGANIZATION_LIFECYCLE_OPERATION.permissions).toEqual([
+      'platform.organization.lifecycle',
+    ]);
+    expect(bundle.some((c) => c.startsWith('platform.'))).toBe(false);
+    expect(bundle).not.toContain('org.subscription.manage');
+
+    // The database's own limits: exactly three updatable tenant columns for the
+    // runtime, and the settings policy bound to the caller's own tenant.
+    const { rows: columns } = await admin.query<{ column_name: string }>(
+      `SELECT column_name FROM information_schema.column_privileges
+        WHERE table_schema = 'org' AND table_name = 'tenants'
+          AND grantee = 'app_runtime' AND privilege_type = 'UPDATE'
+        ORDER BY column_name`
+    );
+    expect(columns.map((row) => row.column_name)).toEqual([
+      'default_locale',
+      'default_timezone',
+      'display_name',
+    ]);
+    const { rows: policy } = await admin.query<{ qual: string; with_check: string }>(
+      `SELECT qual, with_check FROM pg_policies
+        WHERE schemaname = 'org' AND tablename = 'tenants' AND policyname = 'upd_tenants_settings'`
+    );
+    expect(policy).toHaveLength(1);
+    for (const clause of [policy[0]?.qual ?? '', policy[0]?.with_check ?? '']) {
+      expect(clause).toMatch(/current_tenant_id\(\)/);
+      expect(clause).toMatch(/org\.settings\.manage/);
+    }
+
+    // Carried here and nowhere else: the frozen bootstrap role gains nothing.
+    expect([...FIRST_OWNER_ROLE.permissionCodes]).toEqual([
+      'iam.user.manage',
+      'iam.role.manage',
+      'iam.grant.manage',
+    ]);
+  });
+
+  it('P31-B24 it changes its organisation display name, default language and time zone; the change is audited before and after; no stored record is rewritten', async () => {
+    expect(await codesHeldBy(probe.ownerAccountId)).toContain('org.settings.manage');
+    const before = await tenantRow(probe.tenantId);
+    expect(before.defaultLocale).toBe('en');
+    expect(before.defaultTimezone).toBe('UTC');
+    const { rows: earlier } = await admin.query<{ id: string }>(
+      'SELECT id FROM iam.audit_records WHERE tenant_id = $1',
+      [probe.tenantId]
+    );
+    expect(earlier.length).toBeGreaterThan(0);
+    const auditIds = earlier.map((row) => row.id);
+    const historyBefore = await storedHistory(probe.tenantId, auditIds);
+    const auditBefore = await auditRecordsFor(
+      probe.tenantId,
+      'org.tenant.settings_updated',
+      probe.tenantId
+    );
+
+    asOwnerOf(probe);
+    const updated = await call<{
+      displayName?: string;
+      defaultLocale?: string;
+      defaultTimezone?: string;
+      status?: string;
+    }>(tenantUpdateRoute, {
+      path: '/org/tenant',
+      method: 'PATCH',
+      body: {
+        displayName: 'P1-31 settings probe',
+        defaultLocale: 'ar',
+        defaultTimezone: 'Asia/Amman',
+      },
+      ifMatch: before.recordVersion,
+    });
+    expect(updated.status).toBe(200);
+    expect(updated.body).toMatchObject({
+      displayName: 'P1-31 settings probe',
+      defaultLocale: 'ar',
+      defaultTimezone: 'Asia/Amman',
+      status: before.status,
+    });
+
+    const after = await tenantRow(probe.tenantId);
+    expect(after).toMatchObject({
+      displayName: 'P1-31 settings probe',
+      defaultLocale: 'ar',
+      defaultTimezone: 'Asia/Amman',
+      status: before.status,
+      tenantCode: before.tenantCode,
+      createdAt: before.createdAt,
+    });
+    expect(after.recordVersion).toBeGreaterThan(before.recordVersion);
+
+    // Audited once, in this organisation's own trail, with each value before and after.
+    expect(
+      await auditRecordsFor(probe.tenantId, 'org.tenant.settings_updated', probe.tenantId)
+    ).toBe(auditBefore + 1);
+    const details = await auditDetails(
+      probe.tenantId,
+      'org.tenant.settings_updated',
+      probe.tenantId
+    );
+    expect(details).toEqual(
+      expect.arrayContaining([
+        { field: 'default_locale', old: 'en', value: 'ar' },
+        { field: 'default_timezone', old: 'UTC', value: 'Asia/Amman' },
+        { field: 'display_name', old: before.displayName, value: 'P1-31 settings probe' },
+      ])
+    );
+
+    // NO HISTORY IS REWRITTEN: every branch (with its own time zone), company, role
+    // grant and earlier audit record reads exactly as it did before the change.
+    expect(await storedHistory(probe.tenantId, auditIds)).toEqual(historyBefore);
+  });
+
+  it('P31-B25 it writes a company and a branch setting of its own organisation, each audited', async () => {
+    const scope = await scopeOf(probe);
+    const auditCount = async (action: string): Promise<number> => {
+      const { rows } = await admin.query<{ n: number }>(
+        'SELECT count(*)::int AS n FROM iam.audit_records WHERE tenant_id = $1 AND action = $2',
+        [probe.tenantId, action]
+      );
+      return rows[0]?.n ?? 0;
+    };
+    const companyAuditBefore = await auditCount('org.company.settings_updated');
+    const branchAuditBefore = await auditCount('org.branch.settings_updated');
+    const companyRowsBefore = await companySettingRows(scope.companyId);
+    const branchRowsBefore = await branchSettingRows(scope.branchId);
+    asOwnerOf(probe);
+    const company = await call<{ settingKey?: string; version?: number }>(
+      companySettingsWriteRoute,
+      {
+        path: `/org/companies/${scope.companyId}/settings`,
+        params: { companyId: scope.companyId },
+        body: { settingKey: 'numbering.invoice.prefix', settingValue: 'INV', valueType: 'string' },
+        idempotencyKey: randomUUID(),
+      }
+    );
+    expect(company.status).toBe(201);
+    expect(company.body.settingKey).toBe('numbering.invoice.prefix');
+
+    asOwnerOf(probe);
+    const branch = await call<{ settingKey?: string; version?: number }>(branchSettingsWriteRoute, {
+      path: `/org/branches/${scope.branchId}/settings`,
+      params: { branchId: scope.branchId },
+      body: { settingKey: 'workshop.bays', settingValue: 4, valueType: 'number' },
+      idempotencyKey: randomUUID(),
+    });
+    expect(branch.status).toBe(201);
+    expect(branch.body.settingKey).toBe('workshop.bays');
+
+    // One new versioned row each, and one audit record each, in this organisation.
+    expect(await companySettingRows(scope.companyId)).toBe(companyRowsBefore + 1);
+    expect(await branchSettingRows(scope.branchId)).toBe(branchRowsBefore + 1);
+    expect(await auditCount('org.company.settings_updated')).toBe(companyAuditBefore + 1);
+    expect(await auditCount('org.branch.settings_updated')).toBe(branchAuditBefore + 1);
+  });
+
+  it('P31-B26 the administrator of ANOTHER organisation, holding the same code, cannot touch this organisation', async () => {
+    const other = await otherOrganisation();
+    expect(await codesHeldBy(other.ownerAccountId)).toContain('org.settings.manage');
+    const scope = await scopeOf(probe);
+    const mineBefore = await tenantRow(probe.tenantId);
+    const companyRowsBefore = await companySettingRows(scope.companyId);
+    const branchRowsBefore = await branchSettingRows(scope.branchId);
+
+    // Its own update reaches its own row only: there is no tenant in the path or the
+    // body, so "which tenant" is the session's, and this organisation is untouched.
+    const theirs = await tenantRow(other.tenantId);
+    asOwnerOf(other);
+    const ownUpdate = await call(tenantUpdateRoute, {
+      path: '/org/tenant',
+      method: 'PATCH',
+      body: { defaultTimezone: 'Asia/Amman' },
+      ifMatch: theirs.recordVersion,
+    });
+    expect(ownUpdate.status).toBe(200);
+    expect((await tenantRow(other.tenantId)).defaultTimezone).toBe('Asia/Amman');
+    expect(await tenantRow(probe.tenantId)).toEqual(mineBefore);
+
+    // It cannot act under this organisation's context: its account is not one here.
+    setSessionAuthenticator(
+      new StaticClaimsAuthenticator({
+        identityProvider: other.identityProvider,
+        providerSubject: other.providerSubject,
+        tenantId: probe.tenantId,
+      })
+    );
+    const borrowed = await call<{ code?: string }>(tenantUpdateRoute, {
+      path: '/org/tenant',
+      method: 'PATCH',
+      body: { displayName: 'Taken over' },
+      ifMatch: mineBefore.recordVersion,
+    });
+    expect(borrowed.status).toBe(401);
+    expect(borrowed.body.code).toBe('ERR-IAM-002');
+
+    // Its company and branch settings writes against this organisation are refused.
+    asOwnerOf(other);
+    const company = await call<{ code?: string }>(companySettingsWriteRoute, {
+      path: `/org/companies/${scope.companyId}/settings`,
+      params: { companyId: scope.companyId },
+      body: { settingKey: 'numbering.invoice.prefix', settingValue: 'X', valueType: 'string' },
+      idempotencyKey: randomUUID(),
+    });
+    expect([403, 404]).toContain(company.status);
+    asOwnerOf(other);
+    const branch = await call<{ code?: string }>(branchSettingsWriteRoute, {
+      path: `/org/branches/${scope.branchId}/settings`,
+      params: { branchId: scope.branchId },
+      body: { settingKey: 'workshop.bays', settingValue: 9, valueType: 'number' },
+      idempotencyKey: randomUUID(),
+    });
+    expect([403, 404]).toContain(branch.status);
+
+    // Nothing of this organisation moved.
+    expect(await tenantRow(probe.tenantId)).toEqual(mineBefore);
+    expect(await companySettingRows(scope.companyId)).toBe(companyRowsBefore);
+    expect(await branchSettingRows(scope.branchId)).toBe(branchRowsBefore);
+  });
+
+  it('P31-B27 the code reaches no platform control: subscription and lifecycle are refused, and the tenant update refuses a status or code field', async () => {
+    const before = await tenantRow(probe.tenantId);
+    const { rows: subscriptionsBefore } = await admin.query<{ n: number }>(
+      'SELECT count(*)::int AS n FROM org.tenant_subscriptions WHERE tenant_id = $1',
+      [probe.tenantId]
+    );
+
+    asOwnerOf(probe);
+    const subscription = await call<{ code?: string }>(subscriptionAssignRoute, {
+      path: `/platform/organizations/${probe.tenantId}/subscriptions`,
+      params: { tenantId: probe.tenantId },
+      body: {
+        planCode: 'standard',
+        effectiveFrom: '2026-10-01',
+        kind: 'upgrade',
+        reason: 'An administrator trying',
+      },
+      idempotencyKey: randomUUID(),
+    });
+    expect(subscription.status).toBe(403);
+
+    asOwnerOf(probe);
+    const lifecycle = await call<{ code?: string }>(organizationLifecycleRoute, {
+      path: `/platform/organizations/${probe.tenantId}/status`,
+      params: { tenantId: probe.tenantId },
+      body: { to: 'suspended', reason: 'An administrator trying' },
+    });
+    expect(lifecycle.status).toBe(403);
+
+    for (const body of [{ status: 'suspended' }, { tenantCode: 'renamed_code' }]) {
+      asOwnerOf(probe);
+      const refused = await call<{ code?: string }>(tenantUpdateRoute, {
+        path: '/org/tenant',
+        method: 'PATCH',
+        body,
+        ifMatch: before.recordVersion,
+      });
+      expect(refused.status).toBe(422);
+      expect(refused.body.code).toBe('ERR-VAL-001');
+    }
+
+    expect(await tenantRow(probe.tenantId)).toEqual(before);
+    const { rows: subscriptionsAfter } = await admin.query<{ n: number }>(
+      'SELECT count(*)::int AS n FROM org.tenant_subscriptions WHERE tenant_id = $1',
+      [probe.tenantId]
+    );
+    expect(subscriptionsAfter[0]?.n).toBe(subscriptionsBefore[0]?.n);
+  });
+
+  it('P31-B28 a company or branch manager built WITHOUT the code is refused every settings write, with the registered refusal, and nothing is written', async () => {
+    const scope = await scopeOf(probe);
+    const manager = await seedMember(probe, 'branch_manager');
+    const roleId = await grantBranchRole(
+      probe,
+      'branch_manager',
+      ['org.tenant.read', 'org.company.read', 'org.branch.read', 'org.department.manage'],
+      manager.userId,
+      scope
+    );
+    // The role is exactly what the administrator built: the bundle gave it nothing.
+    expect(await codesOfRole(roleId)).toEqual([
+      'org.branch.read',
+      'org.company.read',
+      'org.department.manage',
+      'org.tenant.read',
+    ]);
+    const before = await tenantRow(probe.tenantId);
+    const companyRowsBefore = await companySettingRows(scope.companyId);
+    const branchRowsBefore = await branchSettingRows(scope.branchId);
+
+    asMember(probe, manager.subject);
+    const tenant = await call<{ code?: string; requiredPermissions?: string[] }>(
+      tenantUpdateRoute,
+      {
+        path: '/org/tenant',
+        method: 'PATCH',
+        body: { defaultLocale: 'en' },
+        ifMatch: before.recordVersion,
+      }
+    );
+    expect(tenant.status).toBe(403);
+    expect(tenant.body.code).toBe('ERR-IAM-001');
+    expect(tenant.body.requiredPermissions).toEqual(['org.settings.manage']);
+
+    asMember(probe, manager.subject);
+    const company = await call<{ code?: string; requiredPermissions?: string[] }>(
+      companySettingsWriteRoute,
+      {
+        path: `/org/companies/${scope.companyId}/settings`,
+        params: { companyId: scope.companyId },
+        body: { settingKey: 'numbering.invoice.prefix', settingValue: 'M', valueType: 'string' },
+        idempotencyKey: randomUUID(),
+      }
+    );
+    expect(company.status).toBe(403);
+    expect(company.body.requiredPermissions).toEqual(['org.settings.manage']);
+
+    asMember(probe, manager.subject);
+    const branch = await call<{ code?: string; requiredPermissions?: string[] }>(
+      branchSettingsWriteRoute,
+      {
+        path: `/org/branches/${scope.branchId}/settings`,
+        params: { branchId: scope.branchId },
+        body: { settingKey: 'workshop.bays', settingValue: 2, valueType: 'number' },
+        idempotencyKey: randomUUID(),
+      }
+    );
+    expect(branch.status).toBe(403);
+    expect(branch.body.requiredPermissions).toEqual(['org.settings.manage']);
+
+    expect(await tenantRow(probe.tenantId)).toEqual(before);
+    expect(await companySettingRows(scope.companyId)).toBe(companyRowsBefore);
+    expect(await branchSettingRows(scope.branchId)).toBe(branchRowsBefore);
   });
 });

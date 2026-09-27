@@ -3,7 +3,10 @@ import userEvent from '@testing-library/user-event';
 import type { ReactElement } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { axe } from 'vitest-axe';
+import { DEFAULT_MARGINS } from '@mui/x-charts/constants';
 import {
+  BAR_BAND,
+  BAR_MARGIN_BLOCK,
   CHART_LABEL_COLUMN,
   CHART_LABEL_COLUMN_MAX_SHARE,
   CHART_LABEL_FONT_SIZE,
@@ -11,6 +14,7 @@ import {
   ChartPanel,
   barChartProps,
   countGutter,
+  horizontalBarHeight,
   labelColumnWidth,
   lineChartProps,
   OTHER_SLICE_KEY,
@@ -30,6 +34,7 @@ import { muiTextOf } from '@/components/ui-foundation/mui-text';
 import type { Locale } from '@/i18n/config';
 import { getMessages } from '@/i18n/get-messages';
 import { BOTH_DIRECTIONS, renderLtr, renderRtl } from './render';
+import { SPACE_PX } from '@/styles/tokens/generated/tokens';
 
 /**
  * `MetricCard` and `ChartPanel` (ADR-022 PR1): a figure's four states kept
@@ -773,6 +778,108 @@ describe('the label column fits its labels, within the drawing', () => {
     unmount();
     panel({ layout: 'vertical' });
     expect(screen.getByTestId('chart-drawing')).not.toHaveAttribute('data-label-column');
+  });
+});
+
+/*
+ * DEF-R3: the dashboard's workload chart drew nothing when one technician held
+ * work. The height was one band per category and nothing else, while the chart
+ * keeps its own default margin above and below (twenty units each), so a single
+ * band left a drawing area of 32 - 40 = -8 and the browser refused the bar
+ * ("A negative value is not valid"). The height now carries explicit block
+ * margins from the token steps, and `data-plot-height` records the room the bars
+ * are actually given — worked out with the chart's own default for any side the
+ * props leave out, so dropping the margins fails here.
+ */
+describe('a horizontal bar chart draws one category as well as many (DEF-R3)', () => {
+  const ONE: readonly ChartCategory[] = [{ key: 'tech-1', label: 'First technician' }];
+  const SEVERAL: readonly ChartCategory[] = [
+    { key: 'tech-1', label: 'First technician' },
+    { key: 'tech-2', label: 'Second technician' },
+    { key: 'tech-3', label: 'Third technician' },
+    { key: 'tech-4', label: 'Fourth technician' },
+  ];
+  const load = (count: number): readonly ChartSeries[] => [
+    {
+      id: 'jobs',
+      label: 'Open jobs',
+      data: Array.from({ length: count }, (_, i) => i + 1),
+      tone: 'primary',
+    },
+  ];
+  const props = (categories: readonly ChartCategory[], locale: Locale) =>
+    barChartProps({
+      layout: 'horizontal',
+      categories,
+      series: load(categories.length),
+      locale,
+      skipAnimation: false,
+      hatchUrl: 'url(#hatch)',
+    });
+
+  it('takes its band and its block margins from the token steps, not from raw lengths', () => {
+    expect(BAR_BAND).toBe(SPACE_PX['8']);
+    expect(BAR_MARGIN_BLOCK).toBe(SPACE_PX['2']);
+    // Smaller than the chart's own default, which is what left no room before.
+    expect(2 * BAR_MARGIN_BLOCK).toBeLessThan(BAR_BAND);
+    expect(DEFAULT_MARGINS.top + DEFAULT_MARGINS.bottom).toBeGreaterThan(BAR_BAND);
+  });
+
+  it.each(BOTH_DIRECTIONS)(
+    'hands the chart a height with room for every band, one category or several, in %s',
+    (locale) => {
+      for (const categories of [ONE, SEVERAL]) {
+        const config = props(categories, locale);
+        const margin = config.margin as { top?: number; bottom?: number };
+        expect(margin.top).toBe(BAR_MARGIN_BLOCK);
+        expect(margin.bottom).toBe(BAR_MARGIN_BLOCK);
+        expect(config.height).toBe(horizontalBarHeight(categories.length));
+        expect(config.height).toBe(categories.length * BAR_BAND + 2 * BAR_MARGIN_BLOCK);
+        // The drawing area is exactly one band per category: never negative.
+        const plot = (config.height ?? 0) - (margin.top ?? 0) - (margin.bottom ?? 0);
+        expect(plot).toBe(categories.length * BAR_BAND);
+        expect(plot).toBeGreaterThan(0);
+      }
+    }
+  );
+
+  it.each(BOTH_DIRECTIONS)('labels the single category whole on its tick in %s', (locale) => {
+    const axis = props(ONE, locale).yAxis?.[0] as {
+      data: string[];
+      valueFormatter: (value: string, context: { location: string }) => string;
+    };
+    expect(axis.data).toEqual(['tech-1']);
+    expect(axis.valueFormatter('tech-1', { location: 'tick' })).toBe('First technician');
+  });
+
+  it.each(BOTH_DIRECTIONS)(
+    'gives the drawing a positive plot height for one category and for several, in %s',
+    (locale) => {
+      const { unmount } = panel(
+        { categories: ONE, series: load(1), summary: 'One technician holds work.' },
+        locale
+      );
+      const single = screen.getByTestId('chart-drawing');
+      expect(single).toHaveAttribute('data-plot-height', String(BAR_BAND));
+      expect(Number(single.getAttribute('data-plot-height'))).toBeGreaterThan(0);
+      // The one category is still named in words beside the drawing.
+      expect(screen.getByTestId('chart')).toHaveAttribute('data-chart-state', 'ready');
+      unmount();
+
+      panel(
+        { categories: SEVERAL, series: load(4), summary: 'Four technicians hold work.' },
+        locale
+      );
+      expect(screen.getByTestId('chart-drawing')).toHaveAttribute(
+        'data-plot-height',
+        String(4 * BAR_BAND)
+      );
+    }
+  );
+
+  it('records no plot height for a chart that is not a horizontal bar chart', () => {
+    panel({ layout: 'vertical' });
+    expect(screen.getByTestId('chart-drawing')).not.toHaveAttribute('data-plot-height');
   });
 });
 

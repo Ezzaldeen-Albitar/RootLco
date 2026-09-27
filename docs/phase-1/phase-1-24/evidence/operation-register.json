@@ -3140,8 +3140,7 @@
       "missingEvidence": [],
       "tests": [
         "tests/backend/iam-operations.test.ts",
-        "tests/backend/p1-24-iam-route-depth.test.ts",
-        "tests/backend/p1-29-w9-owner-bootstrap.test.ts"
+        "tests/backend/p1-24-iam-route-depth.test.ts"
       ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/iam/approval-limits/route.ts"
@@ -3446,7 +3445,8 @@
       "tests": [
         "tests/backend/iam-admin-writes.test.ts",
         "tests/backend/p1-14-idempotency-replay.test.ts",
-        "tests/backend/p1-24-iam-route-depth.test.ts"
+        "tests/backend/p1-24-iam-route-depth.test.ts",
+        "tests/backend/p1-31-provisioning-bundle.test.ts"
       ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/org/branches/[branchId]/settings/route.ts"
@@ -3531,7 +3531,8 @@
       "tests": [
         "tests/backend/iam-admin-writes.test.ts",
         "tests/backend/p1-14-idempotency-replay.test.ts",
-        "tests/backend/p1-24-iam-route-depth.test.ts"
+        "tests/backend/p1-24-iam-route-depth.test.ts",
+        "tests/backend/p1-31-provisioning-bundle.test.ts"
       ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/org/companies/[companyId]/settings/route.ts"
@@ -4204,7 +4205,8 @@
       "missingEvidence": [],
       "tests": [
         "tests/backend/iam-admin-writes.test.ts",
-        "tests/backend/p1-24-iam-route-depth.test.ts"
+        "tests/backend/p1-24-iam-route-depth.test.ts",
+        "tests/backend/p1-31-provisioning-bundle.test.ts"
       ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/org/tenant/route.ts"
@@ -8753,6 +8755,7 @@
       ],
       "missingEvidence": [],
       "tests": [
+        "tests/backend/p1-31-provisioning-bundle.test.ts",
         "tests/backend/p1-32-platform-console.test.ts",
         "tests/backend/pre-p1-29-platform-control-plane.test.ts"
       ],
@@ -9082,6 +9085,7 @@
       ],
       "missingEvidence": [],
       "tests": [
+        "tests/backend/p1-31-provisioning-bundle.test.ts",
         "tests/backend/p1-32-platform-console.test.ts",
         "tests/backend/p1-32-platform-organization-growth.test.ts"
       ],
@@ -14899,6 +14903,7 @@
       "tests": [
         "tests/backend/p1-15-operation-routes.test.ts",
         "tests/backend/p1-15-templates-transitions-export.test.ts",
+        "tests/backend/p1-31-provisioning-bundle.test.ts",
         "tests/foundation/p1-15-catalogs.test.ts"
       ],
       "classification": "Covered",
@@ -15412,6 +15417,7 @@
       "tests": [
         "tests/backend/p1-15-operation-routes.test.ts",
         "tests/backend/p1-15-templates-transitions-export.test.ts",
+        "tests/backend/p1-31-provisioning-bundle.test.ts",
         "tests/foundation/p1-15-catalogs.test.ts"
       ],
       "classification": "Covered",
@@ -15456,6 +15462,7 @@
       "tests": [
         "tests/backend/p1-15-operation-routes.test.ts",
         "tests/backend/p1-15-templates-transitions-export.test.ts",
+        "tests/backend/p1-31-provisioning-bundle.test.ts",
         "tests/foundation/p1-15-catalogs.test.ts"
       ],
       "classification": "Covered",
@@ -15500,6 +15507,7 @@
       "tests": [
         "tests/backend/p1-15-operation-routes.test.ts",
         "tests/backend/p1-15-templates-transitions-export.test.ts",
+        "tests/backend/p1-31-provisioning-bundle.test.ts",
         "tests/foundation/p1-15-catalogs.test.ts"
       ],
       "classification": "Covered",
@@ -15546,6 +15554,7 @@
       "tests": [
         "tests/backend/p1-15-operation-routes.test.ts",
         "tests/backend/p1-15-templates-transitions-export.test.ts",
+        "tests/backend/p1-31-provisioning-bundle.test.ts",
         "tests/foundation/p1-15-catalogs.test.ts"
       ],
       "classification": "Covered",
@@ -15592,6 +15601,7 @@
       "tests": [
         "tests/backend/p1-15-operation-routes.test.ts",
         "tests/backend/p1-15-templates-transitions-export.test.ts",
+        "tests/backend/p1-31-provisioning-bundle.test.ts",
         "tests/foundation/p1-15-catalogs.test.ts"
       ],
       "classification": "Covered",
@@ -15632,6 +15642,7 @@
       "tests": [
         "tests/backend/p1-15-operation-routes.test.ts",
         "tests/backend/p1-15-templates-transitions-export.test.ts",
+        "tests/backend/p1-31-provisioning-bundle.test.ts",
         "tests/foundation/p1-15-catalogs.test.ts"
       ],
       "classification": "Covered",
@@ -15678,6 +15689,7 @@
       "tests": [
         "tests/backend/p1-15-operation-routes.test.ts",
         "tests/backend/p1-15-templates-transitions-export.test.ts",
+        "tests/backend/p1-31-provisioning-bundle.test.ts",
         "tests/foundation/p1-15-catalogs.test.ts"
       ],
       "classification": "Covered",
@@ -15722,6 +15734,7 @@
       "tests": [
         "tests/backend/p1-15-operation-routes.test.ts",
         "tests/backend/p1-15-templates-transitions-export.test.ts",
+        "tests/backend/p1-31-provisioning-bundle.test.ts",
         "tests/foundation/p1-15-catalogs.test.ts"
       ],
       "classification": "Covered",

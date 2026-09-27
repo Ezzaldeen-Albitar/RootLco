@@ -98,6 +98,7 @@
     "org.department.read",
     "org.employee.manage",
     "org.employee.read",
+    "org.settings.manage",
     "org.tenant.read",
     "qms.quality_control.finalize",
     "qms.quality_control.read",
