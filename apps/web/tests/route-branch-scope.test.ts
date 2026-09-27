@@ -53,6 +53,25 @@ import {
  *   - **the route checklist** — its scope table must say what the table says.
  *
  * Each rule is also shown refusing an input that breaks it.
+ *
+ * ## Residual limits (PR #467 review; also in the route checklist's Known limitations)
+ *
+ *   1. `permitted` follows the governing navigation entry, not the page's own
+ *      check — where they differ (`/inventory/opening-stock` page
+ *      `inv.stock.read` vs nav `inv.item.read`; `/appointments/new`
+ *      `apt.appointment.manage` vs `apt.appointment.read`) a user holding only
+ *      the page's code sees the screen's own branch refusal instead of the gate.
+ *   2. Guard uses are exempt by position — a request smuggled through a guard
+ *      expression is caught only by the exact position list.
+ *   3. The concrete rule proves a scoped operation and a working-branch read are
+ *      both reachable, not that one feeds the other.
+ *   4. A refusal drawn inside a screen or wrapper is gated behind the branch ask
+ *      unless the route's navigation permission is missing.
+ *   5. The departments and employees registers follow the working branch only
+ *      when the directory also lists it — a mismatch leaves the register asking
+ *      until refresh.
+ *   6. Endpoints are recognised by an `api/v1` or `/reads/` fragment after
+ *      constant folding — a path assembled without one is out of scope.
  */
 
 const WEB_ROOT = process.cwd();

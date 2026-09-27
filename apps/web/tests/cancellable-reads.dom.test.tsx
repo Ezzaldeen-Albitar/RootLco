@@ -176,7 +176,7 @@ describe('the reception board, on a rapid branch switch', () => {
     current.answer(
       json(page([receptionRow({ branchId: OTHER_BRANCH.id, displayNumber: 'R-0002' })]))
     );
-    expect(await screen.findByText('R-0002')).toBeVisible();
+    expect(await screen.findByText('R-0002', { selector: 'code' })).toBeVisible();
   });
 
   it('never renders the left branch’s answer, even from a transport that ignores the abort', async () => {
@@ -196,7 +196,7 @@ describe('the reception board, on a rapid branch switch', () => {
     current.answer(
       json(page([receptionRow({ branchId: OTHER_BRANCH.id, displayNumber: 'R-0002' })]))
     );
-    expect(await screen.findByText('R-0002')).toBeVisible();
+    expect(await screen.findByText('R-0002', { selector: 'code' })).toBeVisible();
     expect(screen.queryByText('R-STALE')).toBeNull();
     expect(left.signal.aborted).toBe(true);
   });
@@ -223,6 +223,41 @@ describe('the reception board, on rapid typing', () => {
     expect(typedPast.signal.aborted).toBe(true);
     expect(latest().signal.aborted).toBe(false);
     expect(sent.filter((request) => !request.signal.aborted)).toHaveLength(1);
+  });
+});
+
+/*
+ * Browser QA part 7, row 2.6: under a 503 and under a failed request the board
+ * was "still loading 12 s later", with no alert and no retry. Over the route the
+ * answer is a state of its own — unavailable, with a retry that asks again.
+ */
+describe('the reception board, when the read cannot be answered', () => {
+  it('shows unavailable, with a retry, when the route answers 503', async () => {
+    stubNetwork();
+    const user = userEvent.setup();
+    renderLtr(inBranch(<ReceptionQueueScreen locale="en" messages={en} canCreate />));
+    await waitFor(() => expect(sent).toHaveLength(1));
+
+    latest().answer(json({ status: 'unavailable' }, 503));
+    expect(await screen.findByText(EN['state.unavailable.title'] as string)).toBeVisible();
+    // Not a loading state that never ends, and not "no matches".
+    expect(screen.queryByText(EN['state.loading'] as string)).toBeNull();
+    expect(screen.queryByText(EN['state.noResults.title'] as string)).toBeNull();
+
+    await user.click(screen.getByRole('button', { name: EN['state.retry'] as string }));
+    await waitFor(() => expect(sent).toHaveLength(2));
+    latest().answer(json(page([receptionRow()])));
+    expect(await screen.findByText('R-0001', { selector: 'code' })).toBeVisible();
+  });
+
+  it('shows unavailable, with a retry, when the request fails on the network', async () => {
+    stubNetwork();
+    renderLtr(inBranch(<ReceptionQueueScreen locale="en" messages={en} canCreate />));
+    await waitFor(() => expect(sent).toHaveLength(1));
+
+    latest().fail(new TypeError('Failed to fetch'));
+    expect(await screen.findByText(EN['state.unavailable.title'] as string)).toBeVisible();
+    expect(screen.getByRole('button', { name: EN['state.retry'] as string })).toBeVisible();
   });
 });
 

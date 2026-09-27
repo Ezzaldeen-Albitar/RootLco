@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   OperationalGrid,
   mergeGridLocaleText,
+  rowActionsMinWidth,
   sortRequestFrom,
   type OperationalColumn,
   type RowAction,
@@ -19,6 +20,7 @@ import type { Locale } from '@/i18n/config';
 import { getMessages } from '@/i18n/get-messages';
 import type { CursorPage, ReadState } from '@/lib/api/read-operation';
 import { useSearchRequest } from '@/lib/api/use-search-request';
+import { SPACE_PX } from '@/styles/tokens/generated/tokens';
 import { forgetRememberedBranch } from './support/branch-switch';
 import {
   BranchSwitch,
@@ -923,6 +925,67 @@ describe('texts, direction and keyboard', () => {
     await user.click(screen.getByRole('button', { name: 'Release DOC-0002' }));
     expect(release).toHaveBeenCalledWith('doc-2');
     expect(screen.getByRole('columnheader', { name: en['table.rowActions'] })).toBeInTheDocument();
+  });
+
+  it.each([
+    ['en', 'Open the work order', 'Acknowledgement'],
+    ['ar', 'فتح أمر العمل', 'إقرار الاستلام'],
+  ] as const)(
+    'sizes the row-actions column so no label wraps (QA 4.3) — %s',
+    async (locale, first, second) => {
+      /*
+       * Browser QA part 7, row 4.3: the actions column was 58 px wide and "Open
+       * the work order" broke over four lines. The column is now at least as
+       * wide as its widest row of labels, and neither the row nor a label may
+       * wrap inside it.
+       */
+      const load = vi.fn<Loader>().mockResolvedValue(ok([doc(1), doc(2)], null));
+      mount(
+        <Harness
+          load={load}
+          locale={locale}
+          rowActions={(row) => [
+            { kind: 'link', label: first, href: `/docs/${row.id}`, about: row.reference },
+            // A shorter row beside it: the column follows the WIDEST row.
+            ...(row.id === 'doc-1'
+              ? [{ kind: 'link' as const, label: second, href: `/docs/${row.id}/ack` }]
+              : []),
+          ]}
+        />,
+        locale
+      );
+      await screen.findByRole('gridcell', { name: 'DOC-0001' });
+      const header = screen.getByRole('columnheader', {
+        name: getMessages(locale)['table.rowActions'],
+      });
+      const expected = rowActionsMinWidth([[first, second], [first]]);
+      expect(expected).toBe(rowActionsMinWidth([[first, second]]));
+      // Wider than the floor every other column keeps — the floor was the defect.
+      // That the grid is HANDED this width is proved on the column definition in
+      // `operational-grid-actions-width.dom.test.tsx`: jsdom lays nothing out.
+      expect(expected).toBeGreaterThan(SPACE_PX['24']);
+      expect(header).toBeInTheDocument();
+      // And nothing in the cell is allowed to wrap.
+      const link = screen.getByRole('link', { name: new RegExp(`^${first} DOC-0001`) });
+      const cell = link.parentElement as HTMLElement;
+      expect(cell.className).toContain('flex-nowrap');
+      expect(cell.className).toContain('whitespace-nowrap');
+      expect(cell.className).not.toMatch(/\bflex-wrap\b/);
+    }
+  );
+
+  it('estimates the row-actions width from tokens: the widest row, never below the floor', () => {
+    // No actions at all still keeps the column every other column's floor.
+    expect(rowActionsMinWidth([])).toBe(SPACE_PX['24']);
+    expect(rowActionsMinWidth([['Go']])).toBe(SPACE_PX['24']);
+    // Every character is given `space-2`, each button its padding, and the row
+    // its gaps and the cell's own padding — so a longer label is a wider column.
+    const one = rowActionsMinWidth([['Continue the check-in']]);
+    const two = rowActionsMinWidth([['Continue the check-in', 'Acknowledgement']]);
+    expect(one).toBeGreaterThanOrEqual('Continue the check-in'.length * SPACE_PX['2']);
+    expect(two).toBeGreaterThan(one + 'Acknowledgement'.length * SPACE_PX['2']);
+    // The widest ROW decides, not the sum of every row.
+    expect(rowActionsMinWidth([['Continue the check-in'], ['Open']])).toBe(one);
   });
 
   it('steps a column aside below its breakpoint and keeps every other one', async () => {
