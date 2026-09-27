@@ -1203,3 +1203,20 @@ Known limitations of this slice, one line each:
   (`tests/unit/p1-32-work-order-list-instants.test.ts`, which also holds malformed and inverted
   bounds refused), then `$7::timestamptz` in `work-order-repository.ts`; the backend case takes
   `tests/backend/p1-19-work-order-reads.test.ts` from 33 to 34 cases.
+- Round-2 review record: the MUIW-04 report said the branch held no new commit; head `347e9160`
+  does add MUIW-04 (range Enter routing, FE-017 re-anchor, P1-24 register, these limitations).
+- Round-1 defects re-checked in review: FE-017 cites `search-empty-states.dom.test.tsx:276-325`
+  (found by content); the P1-24 register was regenerated; range Enter is taken by
+  `onKeyDownCapture` on the range container, and a review probe with that handler removed failed
+  exactly the case "applies the range on Enter in its own boxes while the period panel is open".
+- The FE-017 re-anchor edited two P1-27 evidence documents without resealing
+  `docs/phase-1/phase-1-27/evidence/evidence-manifest.json`; MUIW-05 regenerates it with
+  `npm run evidence:p1-27`.
+- The chip and range extensions are opt-in (`reception-queue.dom`, `gallery-and-print.dom`
+  unchanged); summary figures are keyed on company, branch and context version and dropped on a
+  mismatch; no read is sent while arrival is pending; `figureZone` skips the key but renders only
+  with a figure present.
+- Review's mutation probe covered only the range Enter routing; the seven screen-level
+  falsifications were not re-run in round 2 either.
+- Process note: review's first local gate batch started below the 4 GB free-commit threshold
+  (about 3.1 GB); later runs were gated at 4 GB or more, with no failure and no port contact.
