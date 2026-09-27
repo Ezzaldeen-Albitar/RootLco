@@ -12,7 +12,7 @@ import type { Messages } from '@/i18n/get-messages';
 import { formatMessage, translate, translateDynamic } from '@/i18n/get-messages';
 import type { CursorPage, ReadState } from '@/lib/api/read-operation';
 import { runReport } from '../reports-api';
-import { fieldHeading, runTitle } from '../report-labels';
+import { fieldHeading, formatReportTime, groupDisplayLabel, runTitle } from '../report-labels';
 import {
   OVERVIEW_ROW_LIMIT,
   OVERVIEW_SECTIONS,
@@ -583,7 +583,9 @@ function OverviewResults({
               )}
             </ContextFact>
             <ContextFact label={translate(messages, 'reports.context.generatedAt')}>
-              <span dir="ltr">{context.generatedAt}</span>
+              <time dateTime={context.generatedAt}>
+                {formatReportTime(context.generatedAt, locale, context.period.timezone)}
+              </time>
             </ContextFact>
           </dl>
           <p className="text-caption text-text-muted" lang={locale}>
@@ -893,7 +895,10 @@ function GroupKeyValue({
   readonly name: string;
   readonly labelled: boolean;
 }) {
-  if (labelled && group.label !== null) return <bdi>{group.label}</bdi>;
+  // The state's name in the reader's language when the group is a work-order
+  // state; the server's own label otherwise (Browser QA part 7, row 6.7).
+  const label = labelled ? groupDisplayLabel(messages, group) : null;
+  if (label !== null) return <bdi>{label}</bdi>;
   if (!(name in group.key)) {
     return (
       <span className="text-text-muted" lang={locale}>

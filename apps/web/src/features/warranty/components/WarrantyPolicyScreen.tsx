@@ -249,14 +249,11 @@ export function WarrantyPolicyScreen({
               The name the platform published for this company, never its
               reference: a reader cannot recognise a workshop by a string they
               have never seen. A company outside this reader's own working
-              context has no name here, and the reference is then all there is.
+              context has no name here, and it is said in words rather than by
+              its reference (Browser QA part 7, row 4.3b).
             */}
-            {context.companies.find((company) => company.id === policy.companyId)?.name ?? (
-              <Reference
-                label={translate(messages, 'warranty.policies.columnCompany')}
-                value={policy.companyId}
-              />
-            )}
+            {context.companies.find((company) => company.id === policy.companyId)?.name ??
+              translate(messages, 'warranty.policies.companyOutsideContext')}
           </Fact>
         </div>
         {rereadFailed === null ? null : (

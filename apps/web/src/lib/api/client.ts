@@ -827,15 +827,33 @@ export const CONCURRENT_CHANGE_CODE = 'ERR-CON-001';
  * backend cannot distinguish a cause it must not be guessed at: a duplicate VIN
  * and a duplicate display number both arrive as `ERR-RES-002` with no
  * `violations`, because `mapWriteConflict` maps every unique violation to one
- * code. So there are exactly two sentences — the true concurrency one, and one
- * that states the record cannot take the change without claiming to know why.
+ * code. So there is one sentence per cause the code itself establishes — concurrency, a
+ * stage that no longer allows the step (`ERR-TRN-001`) — and one that claims no cause.
  */
 export function failureMessageKey(failure: ApiFailure): string {
   if (failure.kind !== 'conflict') return FAILURE_MESSAGE_KEY[failure.kind];
-  return failure.problem?.code === CONCURRENT_CHANGE_CODE
-    ? 'state.conflict.title'
-    : 'state.conflict.blocked.title';
+  if (failure.problem?.code === STATE_TRANSITION_CODE) return 'state.conflict.transition.title';
+  if (failure.problem?.code === CONCURRENT_CHANGE_CODE) return 'state.conflict.title';
+  return 'state.conflict.blocked.title';
 }
+
+/**
+ * The catalog code for a move the record's current stage does not allow (409).
+ *
+ * `ERR-TRN-001` is "Transition not permitted from the current state": the record
+ * has moved on — a job closed, a request already decided — so the step on the
+ * screen no longer applies. It is the one other 409 whose cause the code alone
+ * establishes, so it gets a sentence of its own (Browser QA part 7, rows 1.4b
+ * and 5.5c, where it read only "This change cannot be saved"). The sentence tells
+ * the operator to refresh and see where the record stands; it claims no
+ * concurrent edit and invites no retry, because repeating the step would be
+ * refused again. A refusal that names its precondition still reaches the form
+ * through `violations` first, which is more specific than this.
+ *
+ * Declared below the function that reads it so that no line above moves under
+ * the P1-27 citation anchors.
+ */
+export const STATE_TRANSITION_CODE = 'ERR-TRN-001';
 
 // --- subscription capacity refusals -------------------------------------------
 

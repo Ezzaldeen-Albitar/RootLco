@@ -6,7 +6,11 @@ import { useEffect, useMemo, useState } from 'react';
 import { SelectField, TextAreaField, TextField } from '@/components/forms/Field';
 import { MoneyField } from '@/components/forms/MoneyField';
 import { notifyActionResult } from '@/components/notifications/action-notifications';
-import { useUnsavedGuard } from '@/features/working-context/WorkingContextProvider';
+import {
+  useUnsavedGuard,
+  useWorkingContext,
+} from '@/features/working-context/WorkingContextProvider';
+import type { WorkingContextCompany } from '@/features/working-context/working-context-contract';
 import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic } from '@/i18n/get-messages';
@@ -429,9 +433,18 @@ function RulesPanel({
   );
 }
 
+/**
+ * What a rule is narrowed to, in words.
+ *
+ * The company is NAMED from the working context — the companies this reader's
+ * branches belong to — never printed as its identifier (Browser QA part 7, row
+ * 5.10b). A company outside that context has no name here, and it is said in
+ * words rather than by its reference.
+ */
 function narrowingText(
   messages: Messages,
   branches: Branches,
+  companies: readonly WorkingContextCompany[],
   rule: PriceRuleRow
 ): readonly string[] {
   const parts: string[] = [];
@@ -442,7 +455,10 @@ function narrowingText(
     );
   }
   if (companyId && !branchId) {
-    parts.push(`${translate(messages, 'pricing.rules.company')}: ${companyId}`);
+    const company =
+      companies.find((entry) => entry.id === companyId)?.name ??
+      translate(messages, 'pricing.rules.companyOutsideContext');
+    parts.push(`${translate(messages, 'pricing.rules.company')}: ${company}`);
   }
   if (customerClass) {
     parts.push(`${translate(messages, 'pricing.rules.customerClass')}: ${customerClass}`);
@@ -461,6 +477,7 @@ function RulesTable({
   readonly rules: PriceListRules;
   readonly branches: Branches;
 }) {
+  const { companies } = useWorkingContext();
   if (rules.rules.length === 0) {
     return (
       <p className="text-body text-text-secondary">{translate(messages, 'pricing.rules.none')}</p>
@@ -498,7 +515,7 @@ function RulesTable({
           </thead>
           <tbody>
             {rules.rules.map((rule) => {
-              const parts = narrowingText(messages, branches, rule);
+              const parts = narrowingText(messages, branches, companies, rule);
               return (
                 <tr key={rule.id} className="border-t border-border">
                   <td className="py-2 pe-3">

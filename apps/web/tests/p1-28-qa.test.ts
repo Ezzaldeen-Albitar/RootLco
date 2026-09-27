@@ -1185,12 +1185,17 @@ describe('P1-28-QA-002 — the four refusal branches the contract names', () => 
       expect(stale.messageKey, drive.name).toBe('state.conflict.title');
       expect(conflictKindOf(stale.messageKey)).toBe('stale');
 
-      for (const code of ['ERR-TRN-001', 'ERR-RES-002']) {
+      for (const [code, key] of [
+        // The state refuses the command: its own sentence says to refresh and see
+        // where the record stands, and it is still BLOCKED, never stale.
+        ['ERR-TRN-001', 'state.conflict.transition.title'],
+        ['ERR-RES-002', 'state.conflict.blocked.title'],
+      ] as const) {
         send.mockReset();
         send.mockResolvedValue(problem(409, code));
         const blocked = (await drive.call()) as { status: string; messageKey?: string };
         expect(blocked.status, `${drive.name} on ${code}`).toBe('conflict');
-        expect(blocked.messageKey, `${drive.name} on ${code}`).toBe('state.conflict.blocked.title');
+        expect(blocked.messageKey, `${drive.name} on ${code}`).toBe(key);
         expect(conflictKindOf(blocked.messageKey)).toBe('blocked');
       }
     }

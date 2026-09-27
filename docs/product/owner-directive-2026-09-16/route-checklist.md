@@ -511,6 +511,53 @@ query is about, and each is named:
 - the settings target on the administration settings pages;
 - the report's branch on the report screens, which opens on the working branch.
 
+## Browser QA part 7 — plain language, names and search (`P1-32-PRE-OD-QAF`)
+
+Rows of Browser QA part 7 (measured at `be74f81c`) that needed no screen migration and no database
+change. Each row says what changed; a row that needs a read the platform does not publish says so
+and was left as it is.
+
+- **2.10 — fixed.** The closure screen no longer draws the eligibility read's `deferred` note (its
+  owning phase, its reason and its condition codes), nor a blocker's code and the database object
+  that enforces it. Each blocker `B1`…`B6` is one sentence in the reader's language, keyed by its
+  code. The API still publishes `deferred`; it is simply not an operator's text.
+- **3.2b — fixed.** A release check that could not be read says why in plain words, keyed by the
+  reason code (its own sentence for the balance that could not be confirmed), and never prints the
+  fact's `source`. The handover summary names the vehicle by its plate, read from the work order by
+  the route when the reader holds `wo.work_order.read`, and draws no vehicle or visit reference;
+  the sentence explaining references appears only when one is on screen. Not changed: checklist
+  item codes still stand beside their labels.
+- **4.3b — fixed.** The plan list's company column is headed "Company" and the picker's help says
+  what it offers; a company outside the reader's branches is said in words, not by reference.
+- **1.4b and 5.5c — fixed (the wording).** A `409 ERR-TRN-001` — a step the record's current stage
+  no longer allows — has its own sentence in English and Arabic that tells the reader to refresh
+  and see where the record stands. It claims no concurrent edit and invites no retry; every other
+  409 keeps its sentence, and a refusal that names its precondition still speaks first. Not
+  changed: the quotation builder is still offered on a closed job.
+- **5.3 — fixed after conversion.** The conversion answer links to the new work order (for a reader
+  who may open it) and says its state in words. Needs a backend read: revisiting a converted visit
+  still offers no link, because the reception read publishes no work-order identifier.
+- **6.7 — fixed.** Report rows, and the time a report or the overview was read, are formatted on
+  the reported branch's clock (the zone the period was resolved in) in the reader's language, never
+  as raw ISO; a work-order state is said in the reader's language, and a state outside the platform
+  vocabulary keeps the server's name.
+- **9.5 — fixed.** The header's language switcher and account never shrink, and every box down to
+  the working-branch select may, so at 375 px the select narrows instead of being drawn under the
+  switcher. The overlap itself is a browser measurement and was not re-run for this change.
+- **5.10b — fixed for the company.** A company-only rule names its company from the working context,
+  or says it is outside the reader's branches. Needs a backend read: the tax class is still a
+  reference, because no tax-class read is published.
+- **1a.2 (attention) — needs a backend read.** The count-difference card still prints the short
+  count reference as its tie-break: the read carries no count number (none exists in the schema) and
+  names the location by code only.
+- **2.3b and 2.3c — fixed on the server.** Customer search folds Arabic-Indic and Eastern
+  Arabic-Indic digits in the customer number, and writes a Jordanian number the same way however it
+  was typed (`+962`, `00962` or `962` becomes `0`); the suffix comparison uses the national
+  significant number, so a number stored as `07…` or as `+9627…` is found by either spelling. The
+  permission, the searched fields, the seven-digit suffix floor and the page are unchanged. The
+  database cases are in `tests/backend/p1-32-friendly-search.test.ts` and run in the hosted
+  integration job.
+
 ## Remaining — backend prerequisites and Owner decisions only
 
 Each entry needs a read or a writer the platform does not publish, or a decision that is not the

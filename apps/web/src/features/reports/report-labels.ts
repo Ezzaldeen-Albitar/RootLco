@@ -1,6 +1,10 @@
+import { workOrderStateMessageKey } from '@/features/work-orders/work-orders-contract';
+import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
 import { translateDynamic } from '@/i18n/get-messages';
-import type { ReportDefinition } from './reports-contract';
+import { formatDayInZone, formatInZone, isCalendarDay } from '@/lib/branch-time';
+import { intlLocale } from '@/lib/format';
+import type { ReportDefinition, ReportGroup } from './reports-contract';
 
 /**
  * How a report, a column and a measure are NAMED on screen.
@@ -71,4 +75,62 @@ export function runTitle(messages: Messages, titleKey: string): string | null {
 export function fieldHeading(messages: Messages, key: string): string | null {
   const messageKey = `reports.field.${key}`;
   return resolves(messages, messageKey) ? translateDynamic(messages, messageKey) : null;
+}
+
+/**
+ * A work-order state a report groups or lists by, in the reader's language, or
+ * `null` when the code is not one of the platform's states.
+ *
+ * The server publishes the state's catalogue NAME beside its code, and that name
+ * is English whatever the reader's language — an Arabic report listed "Awaiting
+ * Customer … Closed" (Browser QA part 7, row 6.7). The code is translated through
+ * the same vocabulary the work-order screens use; a code outside it keeps the
+ * server's name, which is still a name and never a composed key.
+ */
+export function reportStateLabel(messages: Messages, code: string | null): string | null {
+  if (code === null) return null;
+  const key = workOrderStateMessageKey(code);
+  return key === null ? null : translateDynamic(messages, key);
+}
+
+/**
+ * The name a group is shown under.
+ *
+ * Only a group keyed by `state` alone is re-worded, because `state` is the one
+ * group key whose vocabulary this build holds. Every other label is the server's
+ * — a stock code, a technician's name — and is not language to translate.
+ */
+export function groupDisplayLabel(messages: Messages, group: ReportGroup): string | null {
+  const names = Object.keys(group.key);
+  if (names.length === 1 && names[0] === 'state') {
+    return reportStateLabel(messages, group.key['state'] ?? null) ?? group.label;
+  }
+  return group.label;
+}
+
+/**
+ * A report date or instant for reading, on the REPORTED branch's clock.
+ *
+ * The period is resolved in the branch's zone (D-17), so an instant is drawn on
+ * that same clock and never on the browser's — a row counted into "the 3rd in
+ * Amman" stays under the 3rd for a reader sitting elsewhere. A calendar day is a
+ * day and is not shifted. A zone the browser does not know falls back to UTC,
+ * and a value that is not a date at all is shown exactly as it arrived.
+ */
+export function formatReportTime(value: string, locale: Locale, zone: string): string {
+  const intl = intlLocale(locale);
+  const clock = isKnownZone(zone) ? zone : 'UTC';
+  if (isCalendarDay(value)) return formatDayInZone(value, intl, clock);
+  if (Number.isNaN(new Date(value).getTime())) return value;
+  return formatInZone(value, intl, clock);
+}
+
+function isKnownZone(zone: string): boolean {
+  if (zone.length === 0) return false;
+  try {
+    new Intl.DateTimeFormat('en', { timeZone: zone });
+    return true;
+  } catch {
+    return false;
+  }
 }

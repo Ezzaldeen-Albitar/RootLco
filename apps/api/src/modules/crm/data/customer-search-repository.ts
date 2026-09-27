@@ -135,9 +135,15 @@ export class CustomerSearchRepository extends Repository {
       param += 1;
     }
     if (filter.phoneDigits !== null) {
-      where.push(phoneExists(param, filter.phoneSuffixEligible));
+      // The suffix arm, and its parameter, exist only when the tail is long
+      // enough: a parameter bound but never referenced is refused by PostgreSQL.
+      where.push(phoneExists(param, filter.phoneSuffixEligible ? param + 1 : null));
       values.push(filter.phoneDigits);
       param += 1;
+      if (filter.phoneSuffixEligible) {
+        values.push(filter.phoneSuffix);
+        param += 1;
+      }
     }
     if (filter.freeText !== null) {
       // The free-text arm is a DISJUNCTION over the three things a person types
@@ -156,9 +162,13 @@ export class CustomerSearchRepository extends Repository {
       // cannot infer the type of an unreferenced parameter and refuses the whole
       // statement.
       if (filter.freeTextDigits !== '') {
-        arms.push(phoneExists(param, filter.freeTextPhoneEligible));
+        arms.push(phoneExists(param, filter.freeTextPhoneEligible ? param + 1 : null));
         values.push(filter.freeTextDigits);
         param += 1;
+        if (filter.freeTextPhoneEligible) {
+          values.push(filter.freeTextPhoneSuffix);
+          param += 1;
+        }
       }
       where.push(`(${arms.join(' OR ')})`);
     }
@@ -244,12 +254,16 @@ export class CustomerSearchRepository extends Repository {
  * (`ck_contact_points_normalized_not_blank`). A four-digit tail is shared by too
  * many people to be a lookup.
  */
-function phoneExists(placeholder: number, suffix: boolean): string {
-  const suffixArm = suffix
-    ? `
-                OR (right(cp.normalized_value, 7) = right($${placeholder}, 7)
-                    AND cp.normalized_value LIKE '%' || $${placeholder})`
-    : '';
+function phoneExists(placeholder: number, suffixPlaceholder: number | null): string {
+  // The suffix is the national significant number (`phoneSuffixKey`), so a number
+  // stored as `0797…` and one stored as `+962797…` are both found by either
+  // spelling. `right(…, 7)` is the indexed key; the `LIKE` is the exact test.
+  const suffixArm =
+    suffixPlaceholder === null
+      ? ''
+      : `
+                OR (right(cp.normalized_value, 7) = right($${suffixPlaceholder}, 7)
+                    AND cp.normalized_value LIKE '%' || $${suffixPlaceholder})`;
   return `
       EXISTS (
         SELECT 1

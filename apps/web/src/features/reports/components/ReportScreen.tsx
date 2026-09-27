@@ -12,7 +12,14 @@ import type { Messages } from '@/i18n/get-messages';
 import { translate } from '@/i18n/get-messages';
 import type { ReadState } from '@/lib/api/read-operation';
 import { runReport } from '../reports-api';
-import { fieldHeading, reportTitle, runTitle } from '../report-labels';
+import {
+  fieldHeading,
+  formatReportTime,
+  groupDisplayLabel,
+  reportStateLabel,
+  reportTitle,
+  runTitle,
+} from '../report-labels';
 import {
   drillThroughHref,
   initialReportScope,
@@ -65,14 +72,17 @@ import { useWorkingReportScope } from './use-working-report-scope';
  * neither — the currency is a separate column on the one dataset that has one. A
  * formatter that guessed either would be changing money on the way to the screen.
  *
- * ## An instant is shown as the server published it
+ * ## An instant is shown on the BRANCH's clock, never the browser's
  *
- * `Intl` would render an instant in the BROWSER's timezone, and this report's
- * period is resolved in the BRANCH's (**D-17**). A row read into the period
- * "opened on the 3rd in Amman" would then be drawn under a date that is the 2nd
- * or the 4th for a reader sitting elsewhere, and the report would visibly
- * disagree with itself. So dates and instants are shown as sent, left to right,
- * and the zone the period was resolved in is displayed beside them.
+ * `Intl` left to itself would render an instant in the BROWSER's timezone, and
+ * this report's period is resolved in the BRANCH's (**D-17**). A row read into
+ * the period "opened on the 3rd in Amman" would then be drawn under a date that
+ * is the 2nd or the 4th for a reader sitting elsewhere, and the report would
+ * visibly disagree with itself. So every date and instant - the rows and the
+ * time the report was read - is formatted in the zone the period was resolved in
+ * (`formatReportTime`), in the reader's language, and that zone is displayed
+ * beside them. The raw ISO string is not what an operator reads (Browser QA
+ * part 7, row 6.7).
  *
  * ## The period is half-open, and the screen says so where it is typed
  *
@@ -368,7 +378,9 @@ function ReportResults({
           )}
         </ContextFact>
         <ContextFact label={translate(messages, 'reports.context.generatedAt')}>
-          <span dir="ltr">{run.generatedAt}</span>
+          <time dateTime={run.generatedAt}>
+            {formatReportTime(run.generatedAt, locale, run.period.timezone)}
+          </time>
         </ContextFact>
       </dl>
       <p className="text-caption text-text-muted" lang={locale}>
@@ -423,6 +435,7 @@ function ReportResults({
                       <CellValue
                         locale={locale}
                         messages={messages}
+                        zone={run.period.timezone}
                         column={column}
                         row={row}
                         cell={row.cells.find((candidate) => candidate.key === column.key) ?? null}
@@ -518,48 +531,51 @@ function GroupTable({
             </tr>
           </thead>
           <tbody>
-            {groups.map((group) => (
-              <tr key={JSON.stringify(group.key)} className="border-t border-border-subtle">
-                <td className={REPORT_TABLE_CELL}>
-                  {group.label === null ? (
-                    <span className="flex flex-col gap-1">
-                      {keyNames.map((name) => {
-                        if (!(name in group.key)) return null;
-                        const heading = fieldHeading(messages, name);
-                        const value = group.key[name] ?? null;
-                        return (
-                          <span key={name} className="text-caption text-text-secondary">
-                            {heading === null ? <MachineName value={name} /> : heading}
-                            {': '}
-                            {value === null ? (
-                              translate(messages, 'reports.groups.unnamed')
-                            ) : (
-                              <MachineName value={value} />
-                            )}
+            {groups.map((group) => {
+              const label = groupDisplayLabel(messages, group);
+              return (
+                <tr key={JSON.stringify(group.key)} className="border-t border-border-subtle">
+                  <td className={REPORT_TABLE_CELL}>
+                    {label === null ? (
+                      <span className="flex flex-col gap-1">
+                        {keyNames.map((name) => {
+                          if (!(name in group.key)) return null;
+                          const heading = fieldHeading(messages, name);
+                          const value = group.key[name] ?? null;
+                          return (
+                            <span key={name} className="text-caption text-text-secondary">
+                              {heading === null ? <MachineName value={name} /> : heading}
+                              {': '}
+                              {value === null ? (
+                                translate(messages, 'reports.groups.unnamed')
+                              ) : (
+                                <MachineName value={value} />
+                              )}
+                            </span>
+                          );
+                        })}
+                      </span>
+                    ) : (
+                      <bdi>{label}</bdi>
+                    )}
+                  </td>
+                  {measureNames.map((name) => {
+                    const measure = group.measures[name];
+                    return (
+                      <td key={name} className={REPORT_TABLE_CELL}>
+                        {measure === undefined ? (
+                          <span className="text-text-muted" lang={locale}>
+                            {translate(messages, 'reports.groups.noMeasure')}
                           </span>
-                        );
-                      })}
-                    </span>
-                  ) : (
-                    <bdi>{group.label}</bdi>
-                  )}
-                </td>
-                {measureNames.map((name) => {
-                  const measure = group.measures[name];
-                  return (
-                    <td key={name} className={REPORT_TABLE_CELL}>
-                      {measure === undefined ? (
-                        <span className="text-text-muted" lang={locale}>
-                          {translate(messages, 'reports.groups.noMeasure')}
-                        </span>
-                      ) : (
-                        <span dir="ltr">{measure}</span>
-                      )}
-                    </td>
-                  );
-                })}
-              </tr>
-            ))}
+                        ) : (
+                          <span dir="ltr">{measure}</span>
+                        )}
+                      </td>
+                    );
+                  })}
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>
@@ -583,12 +599,15 @@ function GroupTable({
 function CellValue({
   locale,
   messages,
+  zone,
   column,
   row,
   cell,
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
+  /** The zone the period was resolved in: the reported branch's own. */
+  readonly zone: string;
   readonly column: ReportColumn;
   readonly row: ReportRow;
   readonly cell: ReportCell | null;
@@ -623,14 +642,15 @@ function CellValue({
   }
 
   if (column.kind === 'date') {
-    // As sent. See the screen's docblock: a browser-local reformatting would put
-    // a row in a different day from the one the report counted it in.
+    // On the branch's clock, never the browser's. See the screen's docblock: a
+    // browser-local reformatting would put a row in a different day from the
+    // one the report counted it in.
     return cell.value === null ? (
       <span className="text-text-muted" lang={locale}>
         {translate(messages, 'reports.cell.none')}
       </span>
     ) : (
-      <span dir="ltr">{cell.value}</span>
+      <time dateTime={cell.value}>{formatReportTime(cell.value, locale, zone)}</time>
     );
   }
 
@@ -653,6 +673,10 @@ function CellValue({
   // `text` and every kind this build has not met. The label is what a human
   // reads; the value is the catalogue code behind it and is shown as a code when
   // there is no label to show instead.
+  // A work-order state is said in the reader's language; the server's name for
+  // it is English whatever the reader's language (Browser QA part 7, row 6.7).
+  const state = column.key === 'state' ? reportStateLabel(messages, cell.value) : null;
+  if (state !== null) return <bdi>{state}</bdi>;
   if (cell.label !== null) return <bdi>{cell.label}</bdi>;
   if (cell.value !== null) return <MachineName value={cell.value} />;
   return (

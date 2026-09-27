@@ -389,6 +389,35 @@ describe('crm.customer-search — phone', () => {
       PARTNER_TENANT_B,
     ]);
   });
+
+  // Browser QA part 7, row 2.3c: a number stored as 0791112233 was not found by
+  // its international spelling. Omar's number is stored nationally.
+  it('finds a number stored nationally by every international spelling of it', async () => {
+    as(CUSTOMER_READER);
+    for (const typed of [
+      '+962791112233',
+      '+962 79 111 2233',
+      '00962 79 111 2233',
+      '+٩٦٢٧٩١١١٢٢٣٣',
+    ]) {
+      expect(await customerIds(`phone=${encodeURIComponent(typed)}`), typed).toEqual([
+        PARTNER_OMAR,
+      ]);
+      expect(await customerIds(`q=${encodeURIComponent(typed)}`), typed).toEqual([PARTNER_OMAR]);
+    }
+  });
+
+  // And the other way round: Hamza's number is stored as +962795551234.
+  it('finds a number stored internationally by its national spelling, within the tenant', async () => {
+    as(CUSTOMER_READER);
+    for (const typed of ['0795551234', '079 555 1234', '079-555-1234']) {
+      expect(await customerIds(`phone=${encodeURIComponent(typed)}`), typed).toEqual([
+        PARTNER_HAMZA,
+      ]);
+    }
+    as(TENANT_B_READER);
+    expect(await customerIds('phone=0795551234')).toEqual([PARTNER_TENANT_B]);
+  });
 });
 
 describe('crm.customer-search — name and free text', () => {
@@ -405,6 +434,16 @@ describe('crm.customer-search — name and free text', () => {
     expect(await customerIds(`q=${OMAR_NUMBER}`)).toEqual([PARTNER_OMAR]);
     const arabicDigits = '\u0660\u0667\u0669\u0661\u0661\u0661\u0662\u0662\u0663\u0663';
     expect(await customerIds(`q=${encodeURIComponent(arabicDigits)}`)).toEqual([PARTNER_OMAR]);
+  });
+
+  // Browser QA part 7, row 2.3b: the customer number in Arabic-Indic digits.
+  it('finds the customer number typed in Arabic-Indic digits, by q and by customerNumber', async () => {
+    as(CUSTOMER_READER);
+    const typed = 'ODS-C-٩٠٠١'; // ODS-C-9001
+    expect(await customerIds(`q=${encodeURIComponent(typed)}`)).toEqual([PARTNER_OMAR]);
+    expect(await customerIds(`customerNumber=${encodeURIComponent(typed)}`)).toEqual([
+      PARTNER_OMAR,
+    ]);
   });
 
   it('q holding no digit omits the phone arm and still answers', async () => {

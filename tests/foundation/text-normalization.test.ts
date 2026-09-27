@@ -29,7 +29,10 @@ import {
   MIN_PHONE_SUFFIX,
   PHONE_VISIBLE_DIGITS,
   maskPhone,
+  normalizePhoneFragment,
+  phoneSuffixKey,
   toCustomerSearchFilter,
+  toNationalPhoneDigits,
 } from '@api/modules/crm/domain/customer-search';
 import { toVehicleSearchFilter } from '@api/modules/vehicle/domain/vehicle-search';
 import { toWorkOrderSearchTerms } from '@api/modules/work-order/domain/work-order';
@@ -109,11 +112,12 @@ describe('customer search — phone masking', () => {
 });
 
 describe('customer search — filter reduction', () => {
-  it('folds a phone typed in Arabic-Indic digits and drops the leading plus', () => {
+  it('folds a phone typed in Arabic-Indic digits, drops the plus and writes it nationally', () => {
     const filter = toCustomerSearchFilter({
       phone: '+\u0669\u0666\u0662 \u0667\u0669 \u0660\u0661\u0662 \u0663\u0664\u0665\u0666',
     });
-    expect(filter.phoneDigits).toBe('962790123456');
+    expect(filter.phoneDigits).toBe('0790123456');
+    expect(filter.phoneSuffix).toBe('790123456');
     expect(filter.phoneSuffixEligible).toBe(true);
   });
 
@@ -140,9 +144,101 @@ describe('customer search — filter reduction', () => {
   it('reduces the free-text box three ways at once', () => {
     const filter = toCustomerSearchFilter({ q: ' C-\u0661\u0662\u0663\u0664\u0665\u0666\u0667 ' });
     expect(filter.freeText).toBe('c-1234567');
-    expect(filter.freeTextRaw).toBe('C-\u0661\u0662\u0663\u0664\u0665\u0666\u0667');
+    // Digits folded for the exact customer-number arm, case and separators kept.
+    expect(filter.freeTextRaw).toBe('C-1234567');
     expect(filter.freeTextDigits).toBe('1234567');
+    expect(filter.freeTextPhoneSuffix).toBe('1234567');
     expect(filter.freeTextPhoneEligible).toBe(true);
+  });
+});
+
+/**
+ * Browser QA part 7, rows 2.3b and 2.3c. "000006" found the customer and
+ * "\u0660\u0660\u0660\u0660\u0660\u0666" (the same number in Arabic-Indic digits)
+ * did not; "0797001122" found the customer and "+962797001122" did not.
+ */
+describe('customer search — one number however it is written', () => {
+  it('finds a customer number typed in Arabic-Indic or Eastern Arabic-Indic digits', () => {
+    const arabicIndic = '\u0660\u0660\u0660\u0660\u0660\u0666';
+    const eastern = '\u06F0\u06F0\u06F0\u06F0\u06F0\u06F6';
+    for (const typed of ['000006', arabicIndic, eastern, ` ${arabicIndic} `]) {
+      expect(toCustomerSearchFilter({ q: typed }).freeTextRaw, typed).toBe('000006');
+      expect(toCustomerSearchFilter({ customerNumber: typed }).customerNumber, typed).toBe(
+        '000006'
+      );
+    }
+    // A mixed business key keeps its letters and separators exactly.
+    expect(
+      toCustomerSearchFilter({ customerNumber: 'ODS-C-\u0669\u0660\u0660\u0661' }).customerNumber
+    ).toBe('ODS-C-9001');
+  });
+
+  it('writes every spelling of one Jordanian mobile number as the same national digits', () => {
+    const shapes = [
+      '0797001122',
+      '079 700 1122',
+      '079-700-1122',
+      '(079) 700-1122',
+      '+962797001122',
+      '+962 79 700 1122',
+      '+962-79-700-1122',
+      '00962797001122',
+      '00962 79 700 1122',
+      '962797001122',
+      '\u0660\u0667\u0669\u0667\u0660\u0660\u0661\u0661\u0662\u0662',
+      '+\u0669\u0666\u0662\u0667\u0669\u0667\u0660\u0660\u0661\u0661\u0662\u0662',
+      '\u06F0\u06F7\u06F9\u06F7\u06F0\u06F0\u06F1\u06F1\u06F2\u06F2',
+    ];
+    for (const typed of shapes) {
+      expect(normalizePhoneFragment(typed), typed).toBe('0797001122');
+      const filter = toCustomerSearchFilter({ phone: typed });
+      expect(filter.phoneDigits, typed).toBe('0797001122');
+      expect(filter.phoneSuffix, typed).toBe('797001122');
+      expect(filter.phoneSuffixEligible, typed).toBe(true);
+      const box = toCustomerSearchFilter({ q: typed });
+      expect(box.freeTextDigits, typed).toBe('0797001122');
+      expect(box.freeTextPhoneSuffix, typed).toBe('797001122');
+      expect(box.freeTextPhoneEligible, typed).toBe(true);
+    }
+  });
+
+  it('writes a Jordanian landline nationally too', () => {
+    expect(toNationalPhoneDigits('96265001234')).toBe('065001234');
+    expect(toNationalPhoneDigits('0096265001234')).toBe('065001234');
+    expect(normalizePhoneFragment('+962 6 500 1234')).toBe('065001234');
+    expect(phoneSuffixKey('065001234')).toBe('65001234');
+  });
+
+  it('leaves what is not a Jordanian international number as it came', () => {
+    // Another country's number is not rewritten by this country's rule.
+    expect(toNationalPhoneDigits('447700900123')).toBe('447700900123');
+    expect(toNationalPhoneDigits('00447700900123')).toBe('00447700900123');
+    // Too short or too long after the code to be a Jordanian number.
+    expect(toNationalPhoneDigits('9621234')).toBe('9621234');
+    expect(toNationalPhoneDigits('9627970011223344')).toBe('9627970011223344');
+    // A tail, and a national number, are already what they are.
+    expect(toNationalPhoneDigits('7001122')).toBe('7001122');
+    expect(toNationalPhoneDigits('0797001122')).toBe('0797001122');
+  });
+
+  it('keys the suffix on the national significant number, and never below the floor', () => {
+    expect(phoneSuffixKey('0797001122')).toBe('797001122');
+    expect(phoneSuffixKey('7001122')).toBe('7001122');
+    // A run of zeros is a customer number, not a trunk prefix.
+    expect(phoneSuffixKey('000006')).toBe('000006');
+    // A seven-digit tail still matches as a suffix; six digits still does not,
+    // even when a leading zero is dropped from a national-looking fragment.
+    expect(toCustomerSearchFilter({ phone: '7001122' }).phoneSuffixEligible).toBe(true);
+    expect(toCustomerSearchFilter({ phone: '0700112' }).phoneSuffixEligible).toBe(false);
+    expect(toCustomerSearchFilter({ q: '000006' }).freeTextPhoneEligible).toBe(false);
+  });
+
+  it('keeps a phone holding no digits impossible, with no suffix to match', () => {
+    const filter = toCustomerSearchFilter({ phone: '+' });
+    expect(filter.phoneDigits).toBe('');
+    expect(filter.phoneSuffix).toBe('');
+    expect(filter.phoneSuffixEligible).toBe(false);
+    expect(toCustomerSearchFilter({}).phoneSuffix).toBeNull();
   });
 });
 

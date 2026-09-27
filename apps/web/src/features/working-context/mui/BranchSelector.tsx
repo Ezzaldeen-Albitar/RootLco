@@ -148,8 +148,16 @@ export function BranchSelector({
         <label htmlFor={selectId} className="sr-only">
           {translate(messages, 'workingContext.label')}
         </label>
+        {/*
+          `min-w-0` on the input root as well as on the form control: a native
+          select is as wide as its widest option, and without it the root
+          refused to shrink below that, overflowed the control and was drawn
+          under the header's language switcher at 375 px (Browser QA part 7,
+          row 9.5). With it the select narrows and its text is cut short.
+        */}
         <Select
           native
+          className="min-w-0"
           value={value}
           onChange={(event) => {
             const next = String(event.target.value);

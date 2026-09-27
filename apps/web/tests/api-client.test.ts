@@ -1755,5 +1755,59 @@ function own(code: string): string {
   // ceiling and can be accepted deliberately, so it gets its own sentence rather
   // than the blocked one.
   if (code === 'ERR-CAP-003') return 'capacity.planBelowUsage';
+  // A move the record's current stage no longer allows has its own sentence,
+  // which tells the operator to refresh — and still claims no concurrent edit.
+  if (code === 'ERR-TRN-001') return 'state.conflict.transition.title';
   return 'state.conflict.blocked.title';
 }
+
+describe('a move the record no longer allows (ERR-TRN-001)', () => {
+  const transition = (violations?: readonly Violation[]): ApiFailure => ({
+    ok: false,
+    kind: 'conflict',
+    status: 409,
+    problem: {
+      code: 'ERR-TRN-001',
+      ...(violations === undefined ? {} : { violations: [...violations] }),
+    },
+    correlationId: 'corr-trn',
+  });
+
+  it('has its own sentence, not "This change cannot be saved" and not a concurrent edit', () => {
+    // Browser QA part 7, rows 1.4b and 5.5c: a quotation on a closed job and a
+    // reservation on a job in draft both read only "This change cannot be saved".
+    expect(failureMessageKey(transition())).toBe('state.conflict.transition.title');
+    expect(fromFailure(transition(), 1).messageKey).toBe('state.conflict.transition.title');
+    expect(fromFailure(transition(), 1).status).toBe('conflict');
+  });
+
+  it('leaves every other 409 where it was', () => {
+    const other = (code: string): ApiFailure => ({
+      ...transition(),
+      problem: { code },
+    });
+    expect(failureMessageKey(other('ERR-CON-001'))).toBe('state.conflict.title');
+    expect(failureMessageKey(other('ERR-RES-002'))).toBe('state.conflict.blocked.title');
+    expect(failureMessageKey({ ...transition(), problem: null })).toBe(
+      'state.conflict.blocked.title'
+    );
+  });
+
+  it('still lets a named precondition speak first', () => {
+    const named = transition([{ path: 'path.receptionId', rule: 'closure_blocked' }]);
+    expect(fromFailure(named, 1).messageKey).toBe('form.violation.closure_blocked');
+  });
+
+  it('tells the reader to refresh, in both languages, with no code in it', () => {
+    const catalogues = [en, ar] as readonly Record<string, string>[];
+    for (const catalogue of catalogues) {
+      const sentence = catalogue['state.conflict.transition.title'] ?? '';
+      expect(sentence.length).toBeGreaterThan(0);
+      expect(sentence).not.toMatch(/ERR-|TRN|409/);
+      expect(sentence).not.toBe(catalogue['state.conflict.blocked.title']);
+      expect(sentence).not.toBe(catalogue['state.conflict.title']);
+    }
+    expect((en as Record<string, string>)['state.conflict.transition.title']).toMatch(/refresh/i);
+    expect((ar as Record<string, string>)['state.conflict.transition.title']).toContain('حدّث');
+  });
+});

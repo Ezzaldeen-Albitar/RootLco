@@ -197,10 +197,21 @@ const runOk = (data: unknown) => ({ status: 'ok' as const, data, correlationId: 
  * so an assertion that searched the whole document could pass against the wrong
  * one. Naming the region is what makes each case say which half it means.
  */
-const rowsTable = () =>
-  screen.getByRole('table', { name: EN['reports.run.rowsCaption'] as string });
-const totalsTable = () =>
-  screen.getByRole('table', { name: EN['reports.groups.caption'] as string });
+const rowsTable = (locale = 'en') =>
+  screen.getByRole('table', {
+    name: (locale === 'ar' ? AR : EN)['reports.run.rowsCaption'] as string,
+  });
+const totalsTable = (locale = 'en') =>
+  screen.getByRole('table', {
+    name: (locale === 'ar' ? AR : EN)['reports.groups.caption'] as string,
+  });
+/** An instant as the reader sees it on the reported branch's clock (Asia/Amman). */
+const amman = (intl: string, instant: string) =>
+  new Intl.DateTimeFormat(intl, {
+    timeZone: 'Asia/Amman',
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  }).format(new Date(instant));
 /** A context fact, addressed by its own label rather than by position. */
 const fact = (key: string) => screen.getByText(EN[key] as string).parentElement as HTMLElement;
 
@@ -661,18 +672,72 @@ describe('the result is rendered from the envelope, column kind by column kind',
     expect(screen.getByText('Hani Motors').closest('a')).toBeNull();
   });
 
-  it('shows a date exactly as the server published it, in no other zone', async () => {
-    // The period is resolved in the branch's zone. Re-rendering an instant in the
-    // reader's own zone would put a row in a different day from the one the
-    // report counted it in.
-    await showReport();
-    expect(await screen.findByText('2026-09-03T07:15:00.000Z')).toBeVisible();
+  it("shows an instant on the BRANCH clock in the reader's format, never as raw ISO", async () => {
+    // The period is resolved in the branch's zone (Asia/Amman, UTC+3 in
+    // September). Re-rendering an instant in the reader's own zone would put a
+    // row in a different day from the one the report counted it in, and the raw
+    // ISO string is not something an operator reads (Browser QA part 7, row 6.7).
+    for (const [locale, intl] of [
+      ['en', 'en-GB'],
+      ['ar', 'ar-JO-u-nu-latn'],
+    ] as const) {
+      const { unmount } = await showReport(locale);
+      const expected = amman(intl, '2026-09-03T07:15:00.000Z');
+      expect(expected).toContain('10:15');
+      const cell = within(await waitFor(() => rowsTable(locale))).getByText(expected);
+      expect(cell.closest('time')?.getAttribute('dateTime')).toBe('2026-09-03T07:15:00.000Z');
+      expect(screen.queryByText('2026-09-03T07:15:00.000Z')).toBeNull();
+      unmount();
+    }
   });
 
-  it('renders a catalogue label rather than the code behind it', async () => {
+  it("says a work-order state in the reader's language, not the server's English name", async () => {
     await showReport();
-    expect(within(rowsTable()).getByText('Awaiting parts')).toBeVisible();
+    expect(
+      within(rowsTable()).getByText(EN['workOrders.state.awaiting_parts'] as string)
+    ).toBeVisible();
+    expect(within(rowsTable()).queryByText('Awaiting parts')).toBeNull();
     expect(within(rowsTable()).queryByText('awaiting_parts')).toBeNull();
+  });
+
+  it('says the state in Arabic on the Arabic page, in the rows and in the totals', async () => {
+    const { unmount } = await showReport('ar');
+    expect(
+      within(await waitFor(() => rowsTable('ar'))).getByText(
+        AR['workOrders.state.awaiting_parts'] as string
+      )
+    ).toBeVisible();
+    expect(
+      within(totalsTable('ar')).getByText(AR['workOrders.state.awaiting_parts'] as string)
+    ).toBeVisible();
+    expect(document.body.textContent).not.toContain('Awaiting parts');
+    unmount();
+  });
+
+  it("keeps the server's name for a state outside the platform vocabulary", async () => {
+    runReport.mockResolvedValue(
+      runOk({
+        ...OLD_ENVELOPE,
+        countsByState: [{ stateCode: 'tenant_hold', stateName: 'On hold', count: 1 }],
+        rows: {
+          items: [
+            {
+              cells: [
+                { key: 'workOrder', label: 'W-000123', value: WORK_ORDER_ID },
+                { key: 'customer', label: 'Hani Motors', value: PARTNER_ID },
+                { key: 'openedAt', label: null, value: '2026-09-03T07:15:00.000Z' },
+                { key: 'state', label: 'On hold', value: 'tenant_hold' },
+              ],
+            },
+          ],
+          nextCursor: null,
+          hasMore: false,
+        },
+      })
+    );
+    await showReport();
+    expect(within(await waitFor(() => rowsTable())).getByText('On hold')).toBeVisible();
+    expect(within(totalsTable()).getByText('On hold')).toBeVisible();
   });
 
   it('shows a reference with no label as an absence, never as an internal identifier', async () => {
@@ -794,7 +859,9 @@ describe('the period, the zone and the filter context travel with the result', (
   it('states how current the answer is, in the server’s own terms', async () => {
     await showReport();
     expect(await screen.findByText(EN['reports.context.freshness.live'] as string)).toBeVisible();
-    expect(screen.getByText('2026-09-12T09:00:00.000Z')).toBeVisible();
+    // When it was read, on the branch's clock and in the reader's format.
+    expect(screen.getByText(amman('en-GB', '2026-09-12T09:00:00.000Z'))).toBeVisible();
+    expect(screen.queryByText('2026-09-12T09:00:00.000Z')).toBeNull();
   });
 
   it('names an unrecognised freshness as itself rather than calling it live', async () => {
@@ -823,7 +890,7 @@ describe('the totals are the server’s, over the whole period and never over th
   it('reads the deprecated state counts when the envelope carries no grouping', async () => {
     await showReport();
     const totals = within(totalsTable());
-    expect(totals.getByText('Awaiting parts')).toBeVisible();
+    expect(totals.getByText(EN['workOrders.state.awaiting_parts'] as string)).toBeVisible();
     expect(totals.getByText('4')).toBeVisible();
     expect(totals.getByText(EN['reports.field.count'] as string)).toBeVisible();
   });
