@@ -9,6 +9,7 @@
  *   org.branch-create   POST /org/branches
  *   org.capacity-read   GET  /org/capacity
  *   org.capacity-alert-read GET /org/capacity-alerts
+ *   org.reference-values-read GET /org/reference-values (P1-32-PRE-OD-REF)
  *   iam.invitation-create — now answers ERR-CAP-001 when the seats are spent.
  *
  * Every tenant here is created under the `odorg_` prefix and removed by that
@@ -27,6 +28,7 @@
  *   org.branch-create: route service authorization success denial cross-tenant isolation audit idempotency
  *   org.capacity-read: route service authorization success denial cross-tenant
  *   org.capacity-alert-read: route service authorization success denial cross-tenant
+ *   org.reference-values-read: route service authorization success denial
  *   iam.invitation-create: route service authorization success
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -60,6 +62,10 @@ import {
   INVITE_OPERATION,
   POST as invitationCreateRoute,
 } from '@/app/api/v1/iam/invitations/route';
+import {
+  ORG_REFERENCE_VALUES_READ_OPERATION,
+  GET as referenceValuesRoute,
+} from '@/app/api/v1/org/reference-values/route';
 
 const IDENTITY_PROVIDER = 'test_harness';
 const SYS = '00000000-0000-4000-8000-000000000001';
@@ -697,5 +703,92 @@ describe('org.capacity-alert-read', () => {
     });
     expect(refused.status).toBe(403);
     expect(refused.body.code).toBe('ERR-IAM-001');
+  });
+});
+
+describe('org.reference-values-read', () => {
+  interface ReferenceValues {
+    currencies: { code: string; name: string; minorUnit: number }[];
+    timezones: { zoneName: string }[];
+    languages: { localeCode: string; name: string; direction: string }[];
+  }
+
+  it('declares the tenant-settings read code, no audit and no idempotency', () => {
+    expect(ORG_REFERENCE_VALUES_READ_OPERATION.id).toBe('org.reference-values-read');
+    expect(ORG_REFERENCE_VALUES_READ_OPERATION.permissions).toEqual(['org.tenant.read']);
+    expect(ORG_REFERENCE_VALUES_READ_OPERATION.auditClass).toBe('none');
+    expect(ORG_REFERENCE_VALUES_READ_OPERATION.idempotent).toBeFalsy();
+  });
+
+  it('answers exactly the ACTIVE rows of the three registers, in code order', async () => {
+    // Read from the database inside the test, never typed: the registers are
+    // seed data, and a value seeded later must appear without this suite changing.
+    const currencies = await admin.query<{ code: string; name: string; minor_unit: number }>(
+      `SELECT code, name, minor_unit FROM shared.currencies
+        WHERE status = 'active' ORDER BY code`
+    );
+    const timezones = await admin.query<{ zone_name: string }>(
+      "SELECT zone_name FROM shared.timezones WHERE status = 'active' ORDER BY zone_name"
+    );
+    const languages = await admin.query<{ locale_code: string; name: string; direction: string }>(
+      `SELECT locale_code, name, direction FROM shared.languages
+        WHERE status = 'active' ORDER BY locale_code`
+    );
+    expect(currencies.rows.length).toBeGreaterThan(0);
+
+    asAdmin();
+    const result = await call<ReferenceValues>(referenceValuesRoute, {
+      path: '/org/reference-values',
+      method: 'GET',
+    });
+    expect(result.status).toBe(200);
+    expect(result.body).toEqual({
+      currencies: currencies.rows.map((r) => ({
+        code: r.code,
+        name: r.name,
+        minorUnit: r.minor_unit,
+      })),
+      timezones: timezones.rows.map((r) => ({ zoneName: r.zone_name })),
+      languages: languages.rows.map((r) => ({
+        localeCode: r.locale_code,
+        name: r.name,
+        direction: r.direction,
+      })),
+    });
+  });
+
+  it('answers another tenant the same registers, because they hold no tenant data', async () => {
+    asAdmin();
+    const alpha = await call<ReferenceValues>(referenceValuesRoute, {
+      path: '/org/reference-values',
+      method: 'GET',
+    });
+    asBravo();
+    const bravo = await call<ReferenceValues>(referenceValuesRoute, {
+      path: '/org/reference-values',
+      method: 'GET',
+    });
+    expect(bravo.status).toBe(200);
+    expect(bravo.body).toEqual(alpha.body);
+  });
+
+  it('refuses an actor without org.tenant.read', async () => {
+    asReader();
+    const refused = await call<{ code: string }>(referenceValuesRoute, {
+      path: '/org/reference-values',
+      method: 'GET',
+    });
+    expect(refused.status).toBe(403);
+    expect(refused.body.code).toBe('ERR-IAM-001');
+  });
+
+  it('answers 401 to a caller with no session', async () => {
+    currentClaims = null;
+    const refused = await call<{ code: string }>(referenceValuesRoute, {
+      path: '/org/reference-values',
+      method: 'GET',
+    });
+    expect(refused.status).toBe(401);
+    expect(refused.body.code).toBe('ERR-IAM-002');
   });
 });

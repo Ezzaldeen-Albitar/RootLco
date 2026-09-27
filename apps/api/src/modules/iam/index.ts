@@ -132,7 +132,22 @@ export type { UserView, UserDetailView } from './application/user-administration
  */
 export type { UserDisplayIdentity } from './data/identity-repository';
 export type { BranchContextRow } from './data/branch-context-repository';
-export type { SettingView, TenantSettingsView } from './application/organization-settings-service';
+export type {
+  ReferenceValuesView,
+  SettingView,
+  TenantSettingsView,
+} from './application/organization-settings-service';
+/**
+ * The reference-register rows (P1-32-PRE-OD-REF). `ReferenceValuesView` is ONE
+ * wire shape serialised by two reads — org.reference-values-read here and
+ * platform.reference-values-read in the platform module — so the platform
+ * repository builds exactly the rows this module publishes.
+ */
+export type {
+  ReferenceCurrencyRow,
+  ReferenceLanguageRow,
+  ReferenceTimezoneRow,
+} from './data/organization-repository';
 /**
  * The employee register's wire shapes (P1-31 prerequisite P-17).
  *

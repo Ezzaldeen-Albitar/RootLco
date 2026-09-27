@@ -8,6 +8,7 @@ import type {
   BranchView,
   CapacityView,
   CompanyView,
+  ReferenceValues,
 } from '@/features/administration/organization/types';
 
 /**
@@ -102,6 +103,30 @@ function capacity(
 
 const ok = <T,>(data: T) => ({ status: 'ok' as const, data, correlationId: 'corr-1' });
 
+/**
+ * What org.reference-values-read would answer, supplied by the test (P1-32-PRE-OD-REF).
+ * EUR is deliberately NOT among the enabled codes the structure is rendered with.
+ */
+const REFERENCES: ReferenceValues = {
+  currencies: [
+    { code: 'JOD', name: 'Jordanian Dinar', minorUnit: 3 },
+    { code: 'USD', name: 'US Dollar', minorUnit: 2 },
+    { code: 'EUR', name: 'Euro', minorUnit: 2 },
+  ],
+  timezones: [{ zoneName: 'Asia/Amman' }, { zoneName: 'UTC' }],
+  languages: [
+    { localeCode: 'ar', name: 'Arabic', direction: 'rtl' },
+    { localeCode: 'en', name: 'English', direction: 'ltr' },
+    { localeCode: 'fr', name: 'French', direction: 'ltr' },
+  ],
+};
+
+function optionValues(control: HTMLElement): (string | null)[] {
+  return within(control)
+    .getAllByRole('option')
+    .map((option) => option.getAttribute('value'));
+}
+
 function renderStructure(over: Record<string, unknown> = {}) {
   return renderLtr(
     <OrganizationStructure
@@ -111,6 +136,7 @@ function renderStructure(over: Record<string, unknown> = {}) {
       branches={ok([BRANCH])}
       currencyChoices={['JOD', 'USD']}
       timezoneChoices={['Asia/Amman']}
+      referenceValues={null}
       canManageCompanies
       canManageBranches
       canChangeBranchStatus
@@ -149,13 +175,13 @@ describe('Add company', () => {
 
   it('refuses a malformed code beside the field and sends nothing', async () => {
     const user = userEvent.setup();
-    renderStructure({ currencyChoices: [] });
+    renderStructure({ currencyChoices: [], referenceValues: REFERENCES });
 
     await user.click(screen.getByRole('button', { name: EN('organization.company.add') }));
     const dialog = screen.getByRole('dialog');
     await user.type(within(dialog).getByLabelText(/^Code/), 'Bad Code');
     await user.type(within(dialog).getByLabelText(/^Legal name/), 'Second Company');
-    await user.type(within(dialog).getByLabelText(/^Base currency/), 'jod');
+    await user.selectOptions(within(dialog).getByLabelText(/^Base currency/), 'JOD');
     await user.click(within(dialog).getByRole('button', { name: EN('admin.create') }));
 
     expect(
@@ -203,7 +229,7 @@ describe('Add branch', () => {
     await user.type(within(dialog).getByLabelText(/^Branch name/), 'Second Branch');
     await user.type(within(dialog).getByLabelText(/^City/), 'Irbid');
     await user.type(within(dialog).getByLabelText(/^Country/), 'jo');
-    await user.type(within(dialog).getByLabelText(/^Time zone/), 'Asia/Amman');
+    await user.selectOptions(within(dialog).getByLabelText(/^Time zone/), 'Asia/Amman');
     await user.click(within(dialog).getByRole('button', { name: EN('admin.create') }));
 
     await waitFor(() => expect(send).toHaveBeenCalledTimes(1));
@@ -234,7 +260,7 @@ describe('Add branch', () => {
     await user.selectOptions(within(dialog).getByLabelText(/^Company/), COMPANY.id);
     await user.type(within(dialog).getByLabelText(/^Code/), 'third_branch');
     await user.type(within(dialog).getByLabelText(/^Branch name/), 'Third Branch');
-    await user.type(within(dialog).getByLabelText(/^Time zone/), 'Asia/Amman');
+    await user.selectOptions(within(dialog).getByLabelText(/^Time zone/), 'Asia/Amman');
     await user.click(within(dialog).getByRole('button', { name: EN('admin.create') }));
 
     expect(
@@ -242,6 +268,168 @@ describe('Add branch', () => {
         'Your subscription allows 2 branches and 2 are in use. Ask the platform owner to raise the limit.'
       )
     ).toBeVisible();
+  });
+});
+
+describe('the currency and time zone are chosen, never typed', () => {
+  it('offers the enabled codes when there are any, even beside the reference list', async () => {
+    const user = userEvent.setup();
+    renderStructure({ referenceValues: REFERENCES });
+    await user.click(screen.getByRole('button', { name: EN('organization.company.add') }));
+    const currency = within(screen.getByRole('dialog')).getByLabelText(/^Base currency/);
+    expect(currency.tagName).toBe('SELECT');
+    expect(optionValues(currency)).toEqual(['', 'JOD', 'USD']);
+    expect(
+      within(screen.getByRole('dialog')).getByText(EN('organization.company.baseCurrencyHint'))
+    ).toBeVisible();
+  });
+
+  it('offers the platform currencies when none is enabled, with no text box', async () => {
+    const user = userEvent.setup();
+    renderStructure({ currencyChoices: [], referenceValues: REFERENCES });
+    await user.click(screen.getByRole('button', { name: EN('organization.company.add') }));
+    const dialog = screen.getByRole('dialog');
+    const currency = within(dialog).getByLabelText(/^Base currency/);
+    expect(currency.tagName).toBe('SELECT');
+    expect(optionValues(currency)).toEqual(['', 'JOD', 'USD', 'EUR']);
+    expect(within(dialog).getByText(EN('organization.company.currencyHint'))).toBeVisible();
+  });
+
+  it('stays a select with nothing to choose when neither source has a currency', async () => {
+    const user = userEvent.setup();
+    renderStructure({ currencyChoices: [], referenceValues: null });
+    await user.click(screen.getByRole('button', { name: EN('organization.company.add') }));
+    const dialog = screen.getByRole('dialog');
+    const currency = within(dialog).getByLabelText(/^Base currency/);
+    expect(currency.tagName).toBe('SELECT');
+    expect(optionValues(currency)).toEqual(['']);
+    // The empty choice is explained, so the operator is not left guessing.
+    expect(within(dialog).getByText(EN('organization.company.currencyUnavailable'))).toBeVisible();
+    expect(within(dialog).queryByText(EN('organization.company.currencyHint'))).toBeNull();
+  });
+
+  it('offers the platform time zones for a branch, and the zones in use without them', async () => {
+    const user = userEvent.setup();
+    renderStructure({ referenceValues: REFERENCES, timezoneChoices: ['Asia/Amman'] });
+    await user.click(screen.getByRole('button', { name: EN('organization.branch.add') }));
+    const zone = within(screen.getByRole('dialog')).getByLabelText(/^Time zone/);
+    expect(zone.tagName).toBe('SELECT');
+    expect(optionValues(zone)).toEqual(['', 'Asia/Amman', 'UTC']);
+    expect(document.querySelector('datalist')).toBeNull();
+  });
+
+  it('falls back to the zones already in use when the list was not read', async () => {
+    const user = userEvent.setup();
+    renderStructure({ referenceValues: null, timezoneChoices: ['Asia/Amman'] });
+    await user.click(screen.getByRole('button', { name: EN('organization.branch.add') }));
+    const zone = within(screen.getByRole('dialog')).getByLabelText(/^Time zone/);
+    expect(zone.tagName).toBe('SELECT');
+    expect(optionValues(zone)).toEqual(['', 'Asia/Amman']);
+  });
+
+  it('falls back to the zones already in use when the list holds no active zone', async () => {
+    const user = userEvent.setup();
+    renderStructure({
+      referenceValues: { ...REFERENCES, timezones: [] },
+      timezoneChoices: ['Asia/Amman'],
+    });
+    await user.click(screen.getByRole('button', { name: EN('organization.branch.add') }));
+    const dialog = screen.getByRole('dialog');
+    expect(optionValues(within(dialog).getByLabelText(/^Time zone/))).toEqual(['', 'Asia/Amman']);
+    expect(within(dialog).getByText(EN('organization.branch.timezoneHint'))).toBeVisible();
+  });
+
+  it('says a branch cannot be added yet when neither source has a time zone', async () => {
+    const user = userEvent.setup();
+    renderStructure({ referenceValues: { ...REFERENCES, timezones: [] }, timezoneChoices: [] });
+    await user.click(screen.getByRole('button', { name: EN('organization.branch.add') }));
+    const dialog = screen.getByRole('dialog');
+    const zone = within(dialog).getByLabelText(/^Time zone/);
+    expect(zone.tagName).toBe('SELECT');
+    expect(optionValues(zone)).toEqual(['']);
+    expect(within(dialog).getByText(EN('organization.branch.timezoneUnavailable'))).toBeVisible();
+    expect(within(dialog).queryByText(EN('organization.branch.timezoneHint'))).toBeNull();
+  });
+});
+
+describe('the tenant form offers its language and time zone as selects', () => {
+  const TENANT = {
+    id: '30000000-0000-4000-8000-000000000003',
+    tenantCode: 'tenant_one',
+    displayName: 'Tenant One',
+    status: 'active',
+    defaultLocale: 'en',
+    defaultTimezone: 'UTC',
+    recordVersion: 3,
+  };
+
+  it('offers the platform languages the interface can be shown in, and the platform zones', () => {
+    renderLtr(<TenantForm messages={en} canWrite tenant={TENANT} referenceValues={REFERENCES} />);
+    const language = screen.getByLabelText(new RegExp(`^${EN('organization.defaultLocale')}`));
+    const zone = screen.getByLabelText(new RegExp(`^${EN('organization.defaultTimezone')}`));
+    expect(language.tagName).toBe('SELECT');
+    expect(zone.tagName).toBe('SELECT');
+    expect(optionValues(language)).toEqual(['ar', 'en']);
+    expect(optionValues(zone)).toEqual(['Asia/Amman', 'UTC']);
+    // The saved values are selected, so an untouched form submits them.
+    expect((language as HTMLSelectElement).value).toBe('en');
+    expect((zone as HTMLSelectElement).value).toBe('UTC');
+  });
+
+  it('falls back to the interface languages and the zones in use, keeping the saved one', () => {
+    renderLtr(
+      <TenantForm
+        messages={en}
+        canWrite
+        tenant={TENANT}
+        referenceValues={null}
+        timezoneChoices={['Asia/Amman']}
+      />
+    );
+    expect(
+      optionValues(screen.getByLabelText(new RegExp(`^${EN('organization.defaultLocale')}`)))
+    ).toEqual(['ar', 'en']);
+    expect(
+      optionValues(screen.getByLabelText(new RegExp(`^${EN('organization.defaultTimezone')}`)))
+    ).toEqual(['UTC', 'Asia/Amman']);
+  });
+
+  it('keeps a saved value the list does not hold as the selected choice', () => {
+    renderLtr(
+      <TenantForm
+        messages={en}
+        canWrite
+        tenant={{ ...TENANT, defaultTimezone: 'Europe/London' }}
+        referenceValues={REFERENCES}
+      />
+    );
+    const zone = screen.getByLabelText(new RegExp(`^${EN('organization.defaultTimezone')}`));
+    expect(optionValues(zone)).toEqual(['Europe/London', 'Asia/Amman', 'UTC']);
+    expect((zone as HTMLSelectElement).value).toBe('Europe/London');
+  });
+
+  it('offers only the saved zone when neither the list nor the zones in use are given', () => {
+    // The Languages screen passes no zones in use; without the list the saved
+    // zone is still offered and selected, so an untouched form submits it.
+    renderLtr(<TenantForm messages={en} canWrite tenant={TENANT} referenceValues={null} />);
+    const zone = screen.getByLabelText(new RegExp(`^${EN('organization.defaultTimezone')}`));
+    expect(optionValues(zone)).toEqual(['UTC']);
+    expect((zone as HTMLSelectElement).value).toBe('UTC');
+  });
+
+  it('falls back to the zones in use when the list holds no active zone', () => {
+    renderLtr(
+      <TenantForm
+        messages={en}
+        canWrite
+        tenant={TENANT}
+        referenceValues={{ ...REFERENCES, timezones: [] }}
+        timezoneChoices={['Asia/Amman']}
+      />
+    );
+    const zone = screen.getByLabelText(new RegExp(`^${EN('organization.defaultTimezone')}`));
+    expect(optionValues(zone)).toEqual(['UTC', 'Asia/Amman']);
+    expect((zone as HTMLSelectElement).value).toBe('UTC');
   });
 });
 
@@ -572,12 +760,12 @@ describe('the tenant form places a reference the platform does not hold on its f
           defaultTimezone: 'UTC',
           recordVersion: 3,
         }}
+        referenceValues={REFERENCES}
       />
     );
 
     const zone = screen.getByLabelText(new RegExp(`^${EN('organization.defaultTimezone')}`));
-    await user.clear(zone);
-    await user.type(zone, 'Etc/Unheld');
+    await user.selectOptions(zone, 'Asia/Amman');
     await user.click(screen.getByRole('button', { name: EN('admin.save') }));
 
     expect(await screen.findByText(EN('form.violation.unknown_reference'))).toBeVisible();

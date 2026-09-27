@@ -1,9 +1,9 @@
 {
   "generatedBy": "scripts/p1-24-operation-register.mjs",
   "totals": {
-    "operations": 503,
-    "openapiPaths": 393,
-    "openapiOperations": 503,
+    "operations": 505,
+    "openapiPaths": 395,
+    "openapiOperations": 505,
     "openapiSchemas": 3,
     "events": 50,
     "eventsProduced": 47,
@@ -14,7 +14,7 @@
     "auditActions": 289
   },
   "counts": {
-    "Covered": 503
+    "Covered": 505
   },
   "operations": [
     {
@@ -8356,6 +8356,28 @@
       "file": "apps/api/src/app/api/v1/org/employees/[employeeId]/status/route.ts"
     },
     {
+      "id": "org.reference-values-read",
+      "domain": "iam",
+      "method": "GET",
+      "route": "/api/v1/org/reference-values",
+      "permissions": ["org.tenant.read"],
+      "public": false,
+      "scope": "tenant",
+      "transaction": "read (no business mutation)",
+      "auditClass": "none",
+      "auditAction": null,
+      "idempotent": false,
+      "versionGuarded": false,
+      "openapi": "GET /api/v1/org/reference-values",
+      "documentedResponses": ["200", "401", "403", "422", "429", "500"],
+      "requiredEvidence": ["route", "service", "success", "authorization", "denial"],
+      "providedEvidence": ["authorization", "denial", "route", "service", "success"],
+      "missingEvidence": [],
+      "tests": ["tests/backend/od-organization-administration.test.ts"],
+      "classification": "Covered",
+      "file": "apps/api/src/app/api/v1/org/reference-values/route.ts"
+    },
+    {
       "id": "ovw.dashboard-summary-read",
       "domain": "overview",
       "method": "GET",
@@ -8949,6 +8971,32 @@
       "tests": ["tests/backend/p1-32-platform-console.test.ts"],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/platform/organizations/[tenantId]/receipts/route.ts"
+    },
+    {
+      "id": "platform.reference-values-read",
+      "domain": "platform",
+      "method": "GET",
+      "route": "/api/v1/platform/reference-values",
+      "permissions": ["platform.organization.read"],
+      "public": false,
+      "scope": "tenant",
+      "transaction": "read (no business mutation)",
+      "auditClass": "none",
+      "auditAction": null,
+      "idempotent": false,
+      "versionGuarded": false,
+      "openapi": "GET /api/v1/platform/reference-values",
+      "documentedResponses": ["200", "401", "403", "422", "429", "500"],
+      "requiredEvidence": ["route", "service", "success", "authorization", "denial"],
+      "providedEvidence": ["authorization", "denial", "route", "service", "success"],
+      "missingEvidence": [],
+      "tests": [
+        "tests/backend/p1-32-platform-console.test.ts",
+        "tests/db/org-security.test.ts",
+        "tests/db/p1-15-shared-services-runtime-capabilities.test.ts"
+      ],
+      "classification": "Covered",
+      "file": "apps/api/src/app/api/v1/platform/reference-values/route.ts"
     },
     {
       "id": "platform.session-read",

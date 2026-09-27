@@ -206,8 +206,11 @@ describe('every route body serialises a named type', () => {
     // operations, each serialising a NAMED view — `Page<DiscountApprovalView>`,
     // `DiscountApprovalView`, and `DiscountThresholdView` twice — so `named` moves
     // by four and `composed` still does not move.
-    expect(summary.bodies).toBe(503);
-    expect(summary.named).toBe(451);
+    // 505 with the reference-value reads (P1-32-PRE-OD-REF): two operations, each
+    // serialising the NAMED `ReferenceValuesView`, so `named` moves by two and
+    // `composed` still does not move.
+    expect(summary.bodies).toBe(505);
+    expect(summary.named).toBe(453);
     expect(summary.composed).toBe(52);
     expect(summary.anonymous).toBe(0);
     expect(summary.unresolved).toBe(0);

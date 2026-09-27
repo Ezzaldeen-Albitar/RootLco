@@ -129,9 +129,27 @@ const NONE = {
 
 const done = (key: string) => ({ status: 'success' as const, messageKey: key, attempt: 1 });
 
+/**
+ * The choices platform.reference-values-read would answer, supplied by the test
+ * so the dialogs can be held to offering exactly these.
+ */
+const references = {
+  currencies: [
+    { code: 'JOD', name: 'Jordanian Dinar', minorUnit: 3 },
+    { code: 'USD', name: 'US Dollar', minorUnit: 2 },
+    { code: 'EUR', name: 'Euro', minorUnit: 2 },
+  ],
+  timezones: [{ zoneName: 'Asia/Amman' }, { zoneName: 'UTC' }],
+  languages: [
+    { localeCode: 'ar', name: 'Arabic', direction: 'rtl' },
+    { localeCode: 'en', name: 'English', direction: 'ltr' },
+  ],
+};
+
 function renderDetail(
   overrides: Partial<typeof detail> = {},
-  capabilities: Partial<typeof NONE> = {}
+  capabilities: Partial<typeof NONE> = {},
+  referenceValues: typeof references | null = references
 ) {
   return renderLtr(
     <OrganizationDetailScreen
@@ -139,11 +157,18 @@ function renderDetail(
       messages={messages}
       organization={{ ...detail, ...overrides }}
       plans={[plan]}
+      referenceValues={referenceValues}
       charges={null}
       capabilities={{ ...NONE, ...capabilities }}
       today="2026-09-17"
     />
   );
+}
+
+function optionValues(control: HTMLElement): (string | null)[] {
+  return within(control)
+    .getAllByRole('option')
+    .map((option) => option.getAttribute('value'));
 }
 
 beforeEach(() => {
@@ -180,7 +205,7 @@ describe('the growth panel is offered only where the authority could satisfy it'
 });
 
 describe('adding a company', () => {
-  it('sends exactly what was typed, with the currency in the shape the column takes', async () => {
+  it('sends exactly what was entered, with the currency chosen from the list it was given', async () => {
     addCompanyAction.mockResolvedValue(done('platform.growth.companyDone'));
     renderDetail({}, { canManageOrganization: true });
     await userEvent.click(screen.getByTestId('platform-add-company'));
@@ -193,10 +218,12 @@ describe('adding a company', () => {
       within(dialog).getByLabelText(new RegExp(`^${L('platform.provision.legalName')}`)),
       'Test Second Company'
     );
-    await userEvent.type(
-      within(dialog).getByLabelText(new RegExp(`^${L('platform.provision.baseCurrency')}`)),
-      'sar'
+    const currency = within(dialog).getByLabelText(
+      new RegExp(`^${L('platform.provision.baseCurrency')}`)
     );
+    expect(currency.tagName).toBe('SELECT');
+    expect(optionValues(currency)).toEqual(['', 'JOD', 'USD', 'EUR']);
+    await userEvent.selectOptions(currency, 'JOD');
     await userEvent.click(within(dialog).getByRole('button', { name: L('platform.save') }));
 
     await waitFor(() => expect(addCompanyAction).toHaveBeenCalledTimes(1));
@@ -205,8 +232,7 @@ describe('adding a company', () => {
     expect(input).toEqual({
       code: 'test_second',
       legalName: 'Test Second Company',
-      // Typed in lower case and sent as the three capitals the column takes.
-      baseCurrency: 'SAR',
+      baseCurrency: 'JOD',
       registrationNumber: '',
       taxRegistrationNumber: '',
     });
@@ -215,7 +241,7 @@ describe('adding a company', () => {
 });
 
 describe('adding a branch', () => {
-  it('names the company it belongs to and sends the time zone it was given', async () => {
+  it('names the company it belongs to and sends the time zone chosen from the list', async () => {
     addBranchAction.mockResolvedValue(done('platform.growth.branchDone'));
     renderDetail({}, { canManageOrganization: true });
     await userEvent.click(screen.getByTestId('platform-add-branch'));
@@ -232,10 +258,10 @@ describe('adding a branch', () => {
       within(dialog).getByLabelText(new RegExp(`^${L('platform.provision.name')}`)),
       'Test North Branch'
     );
-    await userEvent.type(
-      within(dialog).getByLabelText(new RegExp(`^${L('platform.provision.timeZone')}`)),
-      'Asia/Riyadh'
-    );
+    const zone = within(dialog).getByLabelText(new RegExp(`^${L('platform.provision.timeZone')}`));
+    expect(zone.tagName).toBe('SELECT');
+    expect(optionValues(zone)).toEqual(['', 'Asia/Amman', 'UTC']);
+    await userEvent.selectOptions(zone, 'Asia/Amman');
     await userEvent.click(within(dialog).getByRole('button', { name: L('platform.save') }));
 
     await waitFor(() => expect(addBranchAction).toHaveBeenCalledTimes(1));
@@ -245,10 +271,38 @@ describe('adding a branch', () => {
       companyId: COMPANY,
       code: 'test_north',
       name: 'Test North Branch',
-      timezone: 'Asia/Riyadh',
+      timezone: 'Asia/Amman',
       city: '',
       countryCode: '',
     });
+  });
+});
+
+describe('the currency and time-zone choices, when the list could not be read', () => {
+  it('shows both disabled with a notice, and never a free-text box', async () => {
+    renderDetail({}, { canManageOrganization: true }, null);
+    await userEvent.click(screen.getByTestId('platform-add-company'));
+    const companyDialog = await screen.findByRole('dialog');
+    const currency = within(companyDialog).getByLabelText(
+      new RegExp(`^${L('platform.provision.baseCurrency')}`)
+    );
+    expect(currency.tagName).toBe('SELECT');
+    expect(currency).toBeDisabled();
+    expect(
+      within(companyDialog).getByText(L('platform.provision.referenceUnavailable'))
+    ).toBeInTheDocument();
+    await userEvent.click(within(companyDialog).getByRole('button', { name: L('overlay.cancel') }));
+
+    await userEvent.click(screen.getByTestId('platform-add-branch'));
+    const branchDialog = await screen.findByRole('dialog');
+    const zone = within(branchDialog).getByLabelText(
+      new RegExp(`^${L('platform.provision.timeZone')}`)
+    );
+    expect(zone.tagName).toBe('SELECT');
+    expect(zone).toBeDisabled();
+    expect(
+      within(branchDialog).getByText(L('platform.provision.referenceUnavailable'))
+    ).toBeInTheDocument();
   });
 });
 

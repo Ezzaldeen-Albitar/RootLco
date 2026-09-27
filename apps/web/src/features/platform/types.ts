@@ -150,6 +150,26 @@ export interface OrganizationDetail {
   };
 }
 
+/**
+ * `platform.reference-values-read` — the ACTIVE currencies, time zones and
+ * languages the console offers as choices, each in code order (P1-32-PRE-OD-REF).
+ * `null` where it is passed means the list could not be read, and the selects it
+ * feeds are shown disabled with a notice rather than as free text.
+ */
+export interface ReferenceValues {
+  readonly currencies: readonly {
+    readonly code: string;
+    readonly name: string;
+    readonly minorUnit: number;
+  }[];
+  readonly timezones: readonly { readonly zoneName: string }[];
+  readonly languages: readonly {
+    readonly localeCode: string;
+    readonly name: string;
+    readonly direction: string;
+  }[];
+}
+
 export interface SubscriptionPlan {
   readonly id: string;
   readonly planCode: string;

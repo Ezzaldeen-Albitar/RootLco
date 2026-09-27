@@ -36,6 +36,23 @@ const DECIMAL = /^\d{1,14}(\.\d{1,4})?$/;
 const CODE = /^[a-z][a-z0-9_]{1,62}$/;
 const CURRENCY = /^[A-Z]{3}$/;
 
+/*
+ * The currency and time-zone controls are selects fed from the reference
+ * registers (P1-32-PRE-OD-REF), so an empty value means nothing was chosen and
+ * is refused as such. The CURRENCY pattern stays behind it as a defence; the
+ * API's 422 on an unknown code stays the authority on what exists.
+ */
+const chosenCurrency = z
+  .string()
+  .trim()
+  .min(1, 'platform.error.chooseCurrency')
+  .regex(CURRENCY, 'platform.error.currency');
+const chosenTimeZone = z
+  .string()
+  .trim()
+  .min(1, 'platform.error.chooseTimeZone')
+  .max(64, 'platform.error.tooLong');
+
 const reasonSchema = z
   .string()
   .trim()
@@ -104,11 +121,7 @@ const provisionSchema = z.object({
     .trim()
     .min(2, 'platform.error.required')
     .max(35, 'platform.error.tooLong'),
-  tenantTimezone: z
-    .string()
-    .trim()
-    .min(1, 'platform.error.required')
-    .max(64, 'platform.error.tooLong'),
+  tenantTimezone: chosenTimeZone,
   companyCode: z
     .string()
     .trim()
@@ -119,7 +132,7 @@ const provisionSchema = z.object({
     .trim()
     .min(1, 'platform.error.required')
     .max(200, 'platform.error.tooLong'),
-  companyCurrency: z.string().trim().regex(CURRENCY, 'platform.error.currency'),
+  companyCurrency: chosenCurrency,
   companyRegistration: z.string().trim().max(100, 'platform.error.tooLong'),
   companyTaxRegistration: z.string().trim().max(100, 'platform.error.tooLong'),
   branchCode: z.string().trim().min(1, 'platform.error.required').max(63, 'platform.error.tooLong'),
@@ -133,11 +146,7 @@ const provisionSchema = z.object({
     .string()
     .trim()
     .regex(/^([A-Z]{2})?$/, 'platform.error.country'),
-  branchTimezone: z
-    .string()
-    .trim()
-    .min(1, 'platform.error.required')
-    .max(64, 'platform.error.tooLong'),
+  branchTimezone: chosenTimeZone,
   ownerEmail: z.string().trim().min(3, 'platform.error.email').max(320, 'platform.error.tooLong'),
   ownerDisplayName: z
     .string()
@@ -401,7 +410,7 @@ export async function assignSubscriptionAction(
 const companySchema = z.object({
   code: z.string().regex(CODE, 'platform.error.required'),
   legalName: z.string().trim().min(1, 'platform.error.required').max(200, 'platform.error.tooLong'),
-  baseCurrency: z.string().regex(CURRENCY, 'platform.error.currency'),
+  baseCurrency: chosenCurrency,
   registrationNumber: z.string().trim().max(100, 'platform.error.tooLong').optional(),
   taxRegistrationNumber: z.string().trim().max(100, 'platform.error.tooLong').optional(),
 });
@@ -431,7 +440,7 @@ const branchSchema = z.object({
   companyId: z.string().regex(UUID, 'platform.error.required'),
   code: z.string().regex(CODE, 'platform.error.required'),
   name: z.string().trim().min(1, 'platform.error.required').max(200, 'platform.error.tooLong'),
-  timezone: z.string().trim().min(3, 'platform.error.required').max(64, 'platform.error.tooLong'),
+  timezone: chosenTimeZone,
   city: z.string().trim().max(120, 'platform.error.tooLong').optional(),
   countryCode: z
     .string()

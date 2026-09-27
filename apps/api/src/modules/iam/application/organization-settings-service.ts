@@ -27,6 +27,9 @@ import { appendAudit } from '@/server/audit/audit';
 import { isSqlState, referenceRefusal, SQLSTATE } from '@/server/db/repository';
 import {
   OrganizationRepository,
+  type ReferenceCurrencyRow,
+  type ReferenceLanguageRow,
+  type ReferenceTimezoneRow,
   type SettingRow,
   type TenantRow,
 } from '../data/organization-repository';
@@ -38,6 +41,21 @@ const TENANT_SETTINGS_REFERENCES = {
   fk_tenants_default_locale: 'body.defaultLocale',
   fk_tenants_default_timezone: 'body.defaultTimezone',
 };
+
+/**
+ * The ACTIVE rows of the three reference registers, each in code order — what a
+ * form offers as the choices for a currency, a time zone or a language.
+ *
+ * ONE named shape for both reads that serialise it: org.reference-values-read
+ * here, on the tenant connection, and platform.reference-values-read in the
+ * platform module, on the control-plane connection. Currency labels are the
+ * code; zone labels are the zone name; nothing here is translated.
+ */
+export interface ReferenceValuesView {
+  readonly currencies: readonly ReferenceCurrencyRow[];
+  readonly timezones: readonly ReferenceTimezoneRow[];
+  readonly languages: readonly ReferenceLanguageRow[];
+}
 
 export interface TenantSettingsView {
   readonly id: string;
@@ -99,6 +117,15 @@ export class OrganizationSettingsService extends ApplicationService {
     private readonly delegationPolicy: DelegationPolicy
   ) {
     super();
+  }
+
+  /**
+   * org.reference-values-read (P1-32-PRE-OD-REF): the registers a tenant form
+   * offers as choices. Active rows only; an inactive code is not refused here or
+   * anywhere else — the foreign key still accepts it.
+   */
+  async readReferenceValues(db: DbHandle): Promise<ReferenceValuesView> {
+    return this.organization.listReferenceValues(db);
   }
 
   async readTenant(db: DbHandle): Promise<TenantSettingsView> {

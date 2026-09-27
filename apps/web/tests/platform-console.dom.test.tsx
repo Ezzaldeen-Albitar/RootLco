@@ -1475,6 +1475,30 @@ function fill(heading: string, label: string, value: string): void {
 
 describe('provisioning an organisation', () => {
   const retired = { ...plan, id: 'retired-plan', planCode: 'test_plan_retired', status: 'retired' };
+  /**
+   * The choices the screen is given, as platform.reference-values-read answers
+   * them. Supplied by the test, never assumed: the screen must offer exactly
+   * these and nothing it was not given.
+   */
+  const references = {
+    currencies: [
+      { code: 'JOD', name: 'Jordanian Dinar', minorUnit: 3 },
+      { code: 'USD', name: 'US Dollar', minorUnit: 2 },
+      { code: 'EUR', name: 'Euro', minorUnit: 2 },
+    ],
+    timezones: [{ zoneName: 'Asia/Amman' }, { zoneName: 'UTC' }],
+    languages: [
+      { localeCode: 'ar', name: 'Arabic', direction: 'rtl' },
+      { localeCode: 'en', name: 'English', direction: 'ltr' },
+    ],
+  };
+
+  function optionsOf(heading: string, label: string): (string | null)[] {
+    const select = within(section(heading)).getByLabelText(new RegExp(`^${label}`));
+    return within(select)
+      .getAllByRole('option')
+      .map((option) => option.getAttribute('value'));
+  }
 
   function fillTheRequiredFields(): void {
     fill(L('platform.provision.organization'), L('platform.provision.code'), 'test_org_two');
@@ -1484,13 +1508,13 @@ describe('provisioning an organisation', () => {
       'Test Organisation Two'
     );
     fill(L('platform.provision.organization'), L('platform.provision.language'), 'ar');
-    fill(L('platform.provision.organization'), L('platform.provision.timeZone'), 'Asia/Riyadh');
+    fill(L('platform.provision.organization'), L('platform.provision.timeZone'), 'Asia/Amman');
     fill(L('platform.provision.company'), L('platform.provision.code'), 'test_company_two');
     fill(L('platform.provision.company'), L('platform.provision.legalName'), 'Test Company Two');
-    fill(L('platform.provision.company'), L('platform.provision.baseCurrency'), 'SAR');
+    fill(L('platform.provision.company'), L('platform.provision.baseCurrency'), 'JOD');
     fill(L('platform.provision.branch'), L('platform.provision.code'), 'test_branch_two');
     fill(L('platform.provision.branch'), L('platform.provision.name'), 'Test Branch Two');
-    fill(L('platform.provision.branch'), L('platform.provision.timeZone'), 'Asia/Riyadh');
+    fill(L('platform.provision.branch'), L('platform.provision.timeZone'), 'Asia/Amman');
     fill(
       L('platform.provision.administrator'),
       L('platform.provision.email'),
@@ -1515,6 +1539,7 @@ describe('provisioning an organisation', () => {
         locale="en"
         messages={messages}
         plans={[plan, retired]}
+        referenceValues={references}
         canActivate
       />
     );
@@ -1542,7 +1567,9 @@ describe('provisioning an organisation', () => {
     expect(form.get('tenantName')).toBe('Test Organisation Two');
     expect(form.get('tenantLocale')).toBe('ar');
     expect(form.get('companyCode')).toBe('test_company_two');
-    expect(form.get('companyCurrency')).toBe('SAR');
+    expect(form.get('companyCurrency')).toBe('JOD');
+    expect(form.get('tenantTimezone')).toBe('Asia/Amman');
+    expect(form.get('branchTimezone')).toBe('Asia/Amman');
     expect(form.get('branchName')).toBe('Test Branch Two');
     expect(form.get('ownerEmail')).toBe('operator@test.invalid');
     expect(form.get('planCode')).toBe('test_plan');
@@ -1562,6 +1589,7 @@ describe('provisioning an organisation', () => {
         locale="en"
         messages={messages}
         plans={[plan]}
+        referenceValues={references}
         canActivate={false}
       />
     );
@@ -1584,6 +1612,7 @@ describe('provisioning an organisation', () => {
         locale="en"
         messages={messages}
         plans={null}
+        referenceValues={references}
         canActivate={false}
       />
     );
@@ -1613,6 +1642,7 @@ describe('provisioning an organisation', () => {
         locale="en"
         messages={messages}
         plans={null}
+        referenceValues={references}
         canActivate={false}
       />
     );
@@ -1635,6 +1665,7 @@ describe('provisioning an organisation', () => {
         locale="en"
         messages={messages}
         plans={null}
+        referenceValues={references}
         canActivate={false}
       />
     );
@@ -1643,6 +1674,121 @@ describe('provisioning an organisation', () => {
     ).toBeNull();
     expect(screen.queryByRole('checkbox')).toBeNull();
     expect(screen.getByText(L('platform.provision.administratorHint'))).toBeInTheDocument();
+  });
+
+  it('offers exactly the currencies, time zones and languages it was given, and nothing typed', () => {
+    renderLtr(
+      <ProvisionOrganizationScreen
+        locale="en"
+        messages={messages}
+        plans={null}
+        referenceValues={references}
+        canActivate={false}
+      />
+    );
+    const organization = L('platform.provision.organization');
+    expect(
+      optionsOf(L('platform.provision.company'), L('platform.provision.baseCurrency'))
+    ).toEqual(['', 'JOD', 'USD', 'EUR']);
+    expect(optionsOf(organization, L('platform.provision.timeZone'))).toEqual([
+      '',
+      'Asia/Amman',
+      'UTC',
+    ]);
+    expect(optionsOf(L('platform.provision.branch'), L('platform.provision.timeZone'))).toEqual([
+      '',
+      'Asia/Amman',
+      'UTC',
+    ]);
+    expect(optionsOf(organization, L('platform.provision.language'))).toEqual(['', 'ar', 'en']);
+    // A currency is labelled by its code; a code it was not given cannot be chosen.
+    const currency = within(section(L('platform.provision.company'))).getByLabelText(
+      new RegExp(`^${L('platform.provision.baseCurrency')}`)
+    );
+    expect(within(currency).getByRole('option', { name: 'JOD' })).toBeInTheDocument();
+    fireEvent.change(currency, { target: { value: 'SAR' } });
+    expect((currency as HTMLSelectElement).value).toBe('');
+    expect(currency).not.toBeDisabled();
+    expect(screen.queryByText(L('platform.provision.referenceUnavailable'))).toBeNull();
+  });
+
+  it('offers a language only when the interface can also be shown in it', () => {
+    renderLtr(
+      <ProvisionOrganizationScreen
+        locale="en"
+        messages={messages}
+        plans={null}
+        referenceValues={{
+          ...references,
+          languages: [
+            ...references.languages,
+            { localeCode: 'fr', name: 'French', direction: 'ltr' },
+          ],
+        }}
+        canActivate={false}
+      />
+    );
+    expect(
+      optionsOf(L('platform.provision.organization'), L('platform.provision.language'))
+    ).toEqual(['', 'ar', 'en']);
+  });
+
+  it('says to choose a currency under Base currency when none was chosen', async () => {
+    provisionOrganizationAction.mockResolvedValue({
+      status: 'invalid',
+      messageKey: 'form.invalid',
+      attempt: 1,
+      fieldErrors: { companyCurrency: 'platform.error.chooseCurrency' },
+    });
+    renderLtr(
+      <ProvisionOrganizationScreen
+        locale="en"
+        messages={messages}
+        plans={null}
+        referenceValues={references}
+        canActivate={false}
+      />
+    );
+    fillTheRequiredFields();
+    fill(L('platform.provision.company'), L('platform.provision.baseCurrency'), '');
+    await userEvent.click(screen.getByRole('button', { name: L('platform.provision.submit') }));
+
+    const form = provisionOrganizationAction.mock.calls[0]?.[1] as FormData;
+    expect(form.get('companyCurrency')).toBe('');
+    expect(
+      await within(section(L('platform.provision.company'))).findByRole('alert')
+    ).toHaveTextContent(L('platform.error.chooseCurrency'));
+  });
+
+  it('shows the four choices disabled, with a notice, when the list could not be read', () => {
+    renderLtr(
+      <ProvisionOrganizationScreen
+        locale="en"
+        messages={messages}
+        plans={null}
+        referenceValues={null}
+        canActivate={false}
+      />
+    );
+    const organization = section(L('platform.provision.organization'));
+    const controls = [
+      within(organization).getByLabelText(new RegExp(`^${L('platform.provision.language')}`)),
+      within(organization).getByLabelText(new RegExp(`^${L('platform.provision.timeZone')}`)),
+      within(section(L('platform.provision.company'))).getByLabelText(
+        new RegExp(`^${L('platform.provision.baseCurrency')}`)
+      ),
+      within(section(L('platform.provision.branch'))).getByLabelText(
+        new RegExp(`^${L('platform.provision.timeZone')}`)
+      ),
+    ];
+    for (const control of controls) {
+      expect(control.tagName).toBe('SELECT');
+      expect(control).toBeDisabled();
+    }
+    expect(screen.getAllByText(L('platform.provision.referenceUnavailable'))).toHaveLength(4);
+    // Nothing falls back to free text: the only text boxes are the ones that
+    // were always text.
+    expect(within(organization).queryByRole('textbox', { name: /time zone/i })).toBeNull();
   });
 });
 

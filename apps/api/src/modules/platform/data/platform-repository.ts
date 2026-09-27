@@ -22,6 +22,7 @@
  */
 import { Repository } from '@/server/db/repository';
 import type { DbHandle } from '@/server/db/transaction';
+import type { ReferenceValuesView } from '@/modules/iam';
 import {
   buildPageWithCursors,
   cursorTimestamp,
@@ -503,6 +504,54 @@ export class PlatformRepository extends Repository {
     );
     if (row === null) throw new Error('capacity usage returned no row');
     return row.usage;
+  }
+
+  /**
+   * The ACTIVE rows of the three reference registers, each in code order
+   * (platform.reference-values-read, P1-32-PRE-OD-REF).
+   *
+   * Readable here only through migration 20260927090000, which grants
+   * `app_platform` SELECT on shared.currencies, shared.timezones and
+   * shared.languages beside the `sel_*_platform` policies. The registers hold no
+   * tenant data, so there is no tenant predicate and no platform target window:
+   * the same rows reach every operator. The shape is the iam module's published
+   * `ReferenceValuesView`, because the tenant read serialises the same one.
+   */
+  async listReferenceValues(db: DbHandle): Promise<ReferenceValuesView> {
+    const currencies = await this.run<{ code: string; name: string; minor_unit: number }>(
+      db,
+      `SELECT code, name, minor_unit
+         FROM shared.currencies
+        WHERE status = 'active'
+        ORDER BY code ASC`
+    );
+    const timezones = await this.run<{ zone_name: string }>(
+      db,
+      `SELECT zone_name
+         FROM shared.timezones
+        WHERE status = 'active'
+        ORDER BY zone_name ASC`
+    );
+    const languages = await this.run<{ locale_code: string; name: string; direction: string }>(
+      db,
+      `SELECT locale_code, name, direction
+         FROM shared.languages
+        WHERE status = 'active'
+        ORDER BY locale_code ASC`
+    );
+    return {
+      currencies: currencies.rows.map((r) => ({
+        code: r.code,
+        name: r.name,
+        minorUnit: r.minor_unit,
+      })),
+      timezones: timezones.rows.map((r) => ({ zoneName: r.zone_name })),
+      languages: languages.rows.map((r) => ({
+        localeCode: r.locale_code,
+        name: r.name,
+        direction: r.direction,
+      })),
+    };
   }
 
   /**
