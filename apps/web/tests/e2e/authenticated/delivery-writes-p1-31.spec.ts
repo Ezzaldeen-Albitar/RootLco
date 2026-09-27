@@ -302,8 +302,17 @@ test.describe('P1-31 delivery writes, over handovers the acceptance journey left
     const checklistFact = factRow(page, say(locale, 'delivery.blocker.checklistIncomplete'));
     await expect(checklistFact).toContainText(say(locale, 'delivery.eligibility.factBlocking'));
     // Named, not merely counted: the panel publishes the unsatisfied item so an
-    // operator is not sent hunting through a company's templates for it.
-    await expect(panel(page, 'delivery-eligibility-heading')).toContainText(item.itemCode);
+    // operator is not sent hunting through a company's templates for it. It is
+    // named by its label; the code is configuration vocabulary, carried on the
+    // row for addressing and never drawn as text (Owner directive, DEF-R2).
+    const gap = panel(page, 'delivery-eligibility-heading').locator(
+      `li[data-item-code="${item.itemCode}"]`
+    );
+    await expect(gap, 'the unanswered mandatory item is listed among the gaps').toBeVisible();
+    if (item.label !== null) await expect(gap).toContainText(item.label);
+    if (!(item.label ?? '').includes(item.itemCode)) {
+      await expect(gap).not.toContainText(item.itemCode);
+    }
     // The enforcement: the control is not merely explained as unavailable, it is
     // unusable, and the sentence beside it says which of its two states it is in.
     await expect(

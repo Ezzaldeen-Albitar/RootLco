@@ -838,7 +838,7 @@
   "delivery.document.vehicle": "Vehicle",
   "delivery.document.workOrder": "Work order",
   "delivery.document.workOrderRefused": "The work order could not be read, so the customer and vehicle details are not on this printout.",
-  "delivery.document.workOrderWithheld": "The work order, the customer and the vehicle are shown as references only, because you do not have permission to read work orders.",
+  "delivery.document.workOrderWithheld": "The work order, the customer and the vehicle are left off this printout, because you do not have permission to read work orders.",
   "delivery.eligibility.blockersHeading": "What is holding it back",
   "delivery.eligibility.eligible": "Everything required is done. This vehicle can be released.",
   "delivery.eligibility.factBlocking": "holding the vehicle back",

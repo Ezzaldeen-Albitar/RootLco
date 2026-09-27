@@ -653,8 +653,8 @@ allowed to read.
   created; nothing is filed.
 - **No PDF is generated.** Printing is the browser's own print, and a PDF only exists if your
   browser makes one.
-- Without `wo.work_order.read`: "The work order, the customer and the vehicle are shown as
-  references only, because you do not have permission to read work orders." <!-- delivery.document.workOrderWithheld -->
+- Without `wo.work_order.read`: "The work order, the customer and the vehicle are left off this
+  printout, because you do not have permission to read work orders." <!-- delivery.document.workOrderWithheld -->
 - Without `sal.finance.view`: "The release checks are left off this printout, because you do not
   have permission to see financial information." <!-- delivery.document.financeWithheld -->
 - Signature images and the proof of identity are **named, never printed**. The sheet states <!-- delivery.document.identityEvidence -->

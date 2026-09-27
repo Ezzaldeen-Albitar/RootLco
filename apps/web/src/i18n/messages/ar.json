@@ -838,7 +838,7 @@
   "delivery.document.vehicle": "المركبة",
   "delivery.document.workOrder": "أمر العمل",
   "delivery.document.workOrderRefused": "تعذّرت قراءة أمر العمل، لذلك لا تظهر بيانات العميل والمركبة في هذه النسخة المطبوعة.",
-  "delivery.document.workOrderWithheld": "يظهر أمر العمل والعميل والمركبة كمراجع فقط، لأنك لا تملك صلاحية قراءة أوامر العمل.",
+  "delivery.document.workOrderWithheld": "لا يظهر أمر العمل والعميل والمركبة في هذه النسخة المطبوعة، لأنك لا تملك صلاحية قراءة أوامر العمل.",
   "delivery.eligibility.blockersHeading": "ما الذي يمنع التسليم",
   "delivery.eligibility.eligible": "اكتمل كل ما هو مطلوب. يمكن تسليم هذه المركبة.",
   "delivery.eligibility.factBlocking": "يمنع التسليم",

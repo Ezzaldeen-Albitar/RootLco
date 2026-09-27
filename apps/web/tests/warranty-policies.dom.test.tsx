@@ -1003,6 +1003,47 @@ describe('one plan, and the controls over it', () => {
     expect(createCoverageWindow).not.toHaveBeenCalled();
   });
 
+  it('refuses an end date only partly typed, rather than adding the window with no end', async () => {
+    // A regression the native date box never had: the picker publishes nothing
+    // while parts are blank, and the window was sent with no end date at all.
+    PERMISSIONS = [READ, MANAGE];
+    for (const [locale, catalogue] of [
+      ['en', EN],
+      ['ar', AR],
+    ] as const) {
+      createCoverageWindow.mockClear();
+      const named = (key: string) => new RegExp(`^${escape(catalogue[key] as string)}`);
+      const user = userEvent.setup();
+      const { unmount } = await renderDetailPage(locale);
+      await waitFor(() => expect(readWarrantyPolicy).toHaveBeenCalled());
+      await user.type(
+        screen.getByRole('textbox', { name: named('warranty.coverage.durationMonths') }),
+        '24'
+      );
+      const from = screen.getByRole('group', { name: named('warranty.coverage.effectiveFrom') });
+      await user.click(within(from).getAllByRole('spinbutton')[0] as HTMLElement);
+      await user.keyboard('01022026');
+      // Two parts of the end date, and not the third.
+      const to = screen.getByRole('group', { name: named('warranty.coverage.effectiveTo') });
+      await user.click(within(to).getAllByRole('spinbutton')[0] as HTMLElement);
+      await user.keyboard('0103');
+      await user.click(
+        screen.getByRole('button', {
+          name: catalogue['warranty.policies.addCoverageSubmit'] as string,
+        })
+      );
+      await waitFor(() => expect(to, locale).toHaveAttribute('aria-invalid', 'true'));
+      expect(to, locale).toHaveAccessibleDescription(
+        new RegExp(escape(catalogue['warranty.policies.dateFormat'] as string))
+      );
+      // The cursor is put back inside the end date, the one field to fix.
+      await waitFor(() => expect(to.contains(document.activeElement), locale).toBe(true));
+      expect(from, locale).not.toHaveAttribute('aria-invalid');
+      expect(createCoverageWindow, locale).not.toHaveBeenCalled();
+      unmount();
+    }
+  });
+
   it('refuses a distance that is not a whole number, without parsing it', async () => {
     PERMISSIONS = [READ, MANAGE];
     const user = userEvent.setup();

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import dayjs, { type Dayjs } from 'dayjs';
 import timezonePlugin from 'dayjs/plugin/timezone';
 import utc from 'dayjs/plugin/utc';
@@ -8,6 +8,7 @@ import { AdapterDayjs } from '@mui/x-date-pickers/AdapterDayjs';
 import { DatePicker } from '@mui/x-date-pickers/DatePicker';
 import { DateTimePicker } from '@mui/x-date-pickers/DateTimePicker';
 import type { DateValidationError, DateTimeValidationError } from '@mui/x-date-pickers/models';
+import { PickersTextField, type PickersTextFieldProps } from '@mui/x-date-pickers/PickersTextField';
 import { RequiresConcreteBranch } from '@/features/working-context/components/WorkingBranchField';
 import {
   useWorkingContext,
@@ -95,6 +96,20 @@ import {
  * Whether a typed day is inside `min`/`max` is reported through `onProblem`
  * (`'minDate'`, `'maxDate'`, `'invalidDate'`, …); the SENTENCE is the caller's,
  * passed back as `error`, because only the caller knows what the bound means.
+ *
+ * ## A day half typed is reported, not dropped
+ *
+ * A `DateField` that starts empty and has only some of its parts typed
+ * (`01/03/YYYY`) holds no day, so its value stays `''` — the same as a field
+ * nobody touched. The picker says nothing while that is so: it publishes no
+ * value and no validation error until every part is filled (measured on MUI X
+ * 9.14), so a caller listening to `onChange` and `onError` alone cannot tell
+ * "no end date" from "an end date not finished" and would send the form
+ * without it. So `DateField` watches the parts themselves and reports
+ * `onProblem('incomplete')` while some are typed and there is still no day,
+ * and `onProblem(null)` once the entry is whole or emptied again. The native
+ * `type="date"` box this replaced refused such a submission through the
+ * browser's own check; this is that refusal, handed to the caller to word.
  */
 
 // The foundation extends these too (`ui-foundation/dayjs-locale.ts`); a
@@ -108,11 +123,20 @@ export type DateProblem = DateValidationError | DateTimeValidationError;
 interface PickerFieldProps extends MuiFieldBaseProps {
   /** An IANA zone. Defaults to the working branch's zone. */
   readonly timezone?: string | undefined;
-  /** Reports what the picker itself finds wrong, so the caller can say it. */
-  readonly onProblem?: ((problem: DateProblem) => void) | undefined;
 }
 
+/**
+ * What a `DateField` finds wrong: the picker's own findings, or `'incomplete'`
+ * — some parts of the day typed and the day not yet whole.
+ */
+export type DayProblem = DateValidationError | 'incomplete';
+
 export interface DateFieldProps extends PickerFieldProps {
+  /**
+   * Reports what is wrong with the entry, `null` once nothing is, including a
+   * day only partly typed (`'incomplete'`). Called when the finding changes.
+   */
+  readonly onProblem?: ((problem: DayProblem) => void) | undefined;
   /** `YYYY-MM-DD`, or `''` for none. */
   readonly value: CalendarDay | '';
   readonly onChange: (next: CalendarDay | '') => void;
@@ -123,6 +147,8 @@ export interface DateFieldProps extends PickerFieldProps {
 }
 
 export interface DateTimeFieldProps extends PickerFieldProps {
+  /** Reports what the picker itself finds wrong, so the caller can say it. */
+  readonly onProblem?: ((problem: DateProblem) => void) | undefined;
   /** For the refusal under "All my branches" and the repeated-hour note. */
   readonly messages: Messages;
   /** An instant with an explicit offset (or `Z`), or `''` for none. */
@@ -296,6 +322,24 @@ function textFieldSlot(wiring: FieldWiring, props: MuiFieldBaseProps): Record<st
   };
 }
 
+type PartsReportingProps = PickersTextFieldProps & {
+  /** Told whether every part of the entry is blank, each time that changes. */
+  readonly onPartsBlank?: ((blank: boolean) => void) | undefined;
+};
+
+/**
+ * Material's own text field for a picker, which also passes on whether every
+ * part of the entry is blank — the one fact the picker publishes nowhere else
+ * while a day is only partly typed. See "A day half typed is reported".
+ */
+function PartsReportingTextField({ onPartsBlank, ...props }: PartsReportingProps) {
+  const blank = props.areAllSectionsEmpty;
+  useEffect(() => {
+    onPartsBlank?.(blank);
+  }, [blank, onPartsBlank]);
+  return <PickersTextField {...props} />;
+}
+
 export function DateField(props: DateFieldProps) {
   const { label, value, onChange, min, max, timezone, onProblem, onEdit, disabled, readOnly } =
     props;
@@ -305,6 +349,21 @@ export function DateField(props: DateFieldProps) {
   const minDay = min === undefined ? null : dayToPicker(min, zone);
   const maxDay = max === undefined ? null : dayToPicker(max, zone);
   const [picker, keep] = useHeldPickerValue(value, zone, dayToPicker);
+  const [partsBlank, setPartsBlank] = useState(true);
+  const [pickerProblem, setPickerProblem] = useState<DateValidationError>(null);
+  // Parts typed and still no day at all: the picker is silent about this case.
+  // A day typed whole but impossible is not null, and the picker names it.
+  const problem: DayProblem = !partsBlank && picker === null ? 'incomplete' : pickerProblem;
+  const reported = useRef<DayProblem>(null);
+  const textField: Record<string, unknown> = {
+    ...textFieldSlot(wiring, props),
+    onPartsBlank: setPartsBlank,
+  };
+  useEffect(() => {
+    if (reported.current === problem) return;
+    reported.current = problem;
+    onProblem?.(problem);
+  }, [problem, onProblem]);
 
   return (
     <DatePicker
@@ -317,12 +376,13 @@ export function DateField(props: DateFieldProps) {
         onEdit?.();
         onChange(emitted);
       }}
-      onError={(problem) => onProblem?.(problem)}
+      onError={setPickerProblem}
       disabled={disabled ?? false}
       readOnly={readOnly ?? false}
       {...(minDay === null ? {} : { minDate: minDay })}
       {...(maxDay === null ? {} : { maxDate: maxDay })}
-      slotProps={{ textField: textFieldSlot(wiring, props) }}
+      slots={{ textField: PartsReportingTextField }}
+      slotProps={{ textField }}
     />
   );
 }

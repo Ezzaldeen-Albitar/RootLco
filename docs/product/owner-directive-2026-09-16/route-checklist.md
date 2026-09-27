@@ -1786,12 +1786,30 @@ Known limitations of this slice, one line each:
   cancelled; moving it to a `/reads/*` route is its own change.
 - `/attention` card rows are Material's table, not `OperationalGrid`: each card is one bounded
   page, not a server-paged list.
-- The printed handover sheet still prints the vehicle, visit and delivering-employee and final
-  odometer references; only the receiver, the confirming user, the history actors and the
-  checklist codes changed there.
+- The printed handover sheet prints no raw identifier (fix round 1): the delivering employee by
+  name or "Name not shown", the final odometer as its value or in words, the work order, plate and
+  model or words; the visit has no published name and is left off the sheet.
 - The eligibility panel still shows the record version number.
-- `delivery.summary.identifiersExplain` and `delivery.summary.finalOdometerReading` are no longer
-  referenced; they are left in both catalogues.
+- `delivery.summary.identifiersExplain`, `delivery.summary.finalOdometerReading`,
+  `delivery.summary.vehicle` and `delivery.summary.visit` are no longer referenced; they are left
+  in both catalogues.
+- Every modified e2e case was skipped in hosted CI for lack of acceptance-journey fixtures
+  (delivery-p1-31 :268/:345/:398, delivery-writes-p1-31 :264/:487/:654, warranty-p1-31
+  :276/:484): the grid role, the `[role=row][data-rowindex]` selectors and the identifier
+  assertions have never run in a real browser.
+- The name reads have only a mocked unit test (`tests/unit/p1-32-delivery-warranty-names.test.ts`):
+  no `tests/backend` case proves `receiverDisplayName`, `verifiedByDisplayName` and
+  `actorDisplayName` come back null for a `sal.delivery.view` / `wty.warranty.read` login without
+  `crm.customer.read` or `iam.user.read` on the real database; the resolvers carry their own tests.
+- Server-side field errors for `policyCode`/`name` on the create-plan form and for the odometer
+  on the release form are not mapped to their fields, as at the base; this predates the slice.
+- Deliberate behaviour changes: the readiness "opened" column is hidden below `md`
+  (`hideBelow`); `WarrantyRecordScreen` no longer shows the source job or part; a retry on
+  eligibility or completion bumps the revision, which re-reads every panel.
+- `WarrantyHistoryPanel` `loadMore` checks the warranty id but not the attempt before holding a
+  page; no live path was found, because the retry shows only when the first page failed.
+- Not run locally (expensive or needs the database): `test:backend`, `test:db`, `build:web`,
+  `test:web-e2e`; the full `test:unit` and `test:web` tiers ran in hosted CI only.
 - In jsdom, typing `01012026` into a coverage `DateField` produced `01/01/2027`; the policy
   cases type days that avoid it, and the behaviour belongs to the shared picker, not this screen.
 - The unit and web tier counts change (new cases and one new unit file); the recorded tiers are

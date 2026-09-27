@@ -360,7 +360,7 @@ describe('what the opened sheet carries', () => {
     expect(within(sheet).getByText('WO-000119')).toBeVisible();
   });
 
-  it('does not ask for the work order without its code, and says the sheet has references only', async () => {
+  it('does not ask for the work order without its code, and says its details are left off', async () => {
     renderScreen({ canReadWorkOrder: false });
     await openDocument();
 
@@ -398,6 +398,95 @@ describe('what the opened sheet carries', () => {
     const sheet = document.querySelector('[data-print="document"]') as HTMLElement;
     expect(within(sheet).getByText(EN['delivery.document.partialList'] as string)).toBeVisible();
   });
+});
+
+/*
+ * No raw identifier anywhere on the sheet (Owner directive, DEF-R2). Checked on
+ * the WHOLE sheet rather than panel by panel, because a reference printed in a
+ * part nobody thought to check is still printed. Each variant below takes away
+ * one name the sheet would otherwise print, since that is exactly when a
+ * reference used to be printed in its place.
+ */
+const UUID_SHAPE = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
+
+describe('the sheet prints names and words, never a raw identifier', () => {
+  const variants: readonly {
+    readonly name: string;
+    readonly delivery: Record<string, unknown>;
+    readonly workOrder?: Record<string, unknown>;
+    readonly canReadWorkOrder?: boolean;
+    readonly expected: (text: Record<string, string>) => readonly string[];
+  }[] = [
+    {
+      // The reading is captured but not resolved for this reader, and the
+      // delivering employee carries no name.
+      name: 'no employee name, a reading not shown',
+      delivery: { ...delivery, deliveringEmployeeDisplayName: null },
+      expected: (text) => [
+        text['delivery.person.notShown'] as string,
+        text['delivery.summary.finalOdometerNotShown'] as string,
+      ],
+    },
+    {
+      name: 'no reading at all, no work-order number, no plate or model',
+      delivery: { ...delivery, finalOdometerReadingId: null },
+      workOrder: {
+        ...workOrderDetail,
+        workOrder: {
+          ...workOrderDetail.workOrder,
+          displayNumber: null,
+          vehicle: { vehicleId: VEHICLE_ID, registrationPlate: null, makeModel: null },
+        },
+      },
+      expected: (text) => [
+        text['delivery.summary.finalOdometerNone'] as string,
+        text['delivery.queue.column.noReference'] as string,
+        text['delivery.queue.column.noVehicleDetail'] as string,
+      ],
+    },
+    {
+      name: 'the work order withheld',
+      delivery,
+      canReadWorkOrder: false,
+      expected: (text) => [text['delivery.document.workOrderWithheld'] as string],
+    },
+  ];
+
+  for (const [locale, text] of [
+    ['en', EN],
+    ['ar', AR],
+  ] as const) {
+    for (const variant of variants) {
+      it(`${variant.name} (${locale})`, async () => {
+        readDelivery.mockResolvedValue(okRead(variant.delivery));
+        if (variant.workOrder) readWorkOrderDetail.mockResolvedValue(okRead(variant.workOrder));
+        const props = {
+          locale,
+          messages: locale === 'ar' ? ar : en,
+          delivery: variant.delivery as unknown as typeof delivery,
+          canReadFinance: true,
+          canComplete: false,
+          canReadWorkOrder: variant.canReadWorkOrder ?? true,
+        };
+        if (locale === 'ar') renderRtl(<DeliveryDetailScreen {...props} />);
+        else renderLtr(<DeliveryDetailScreen {...props} />);
+        await openDocument(text['delivery.document.open'] as string);
+
+        const sheet = document.querySelector('[data-print="document"]') as HTMLElement;
+        if (variant.canReadWorkOrder !== false) {
+          await waitFor(() => expect(readWorkOrderDetail).toHaveBeenCalled());
+        }
+        for (const words of variant.expected(text)) {
+          await waitFor(() => expect(sheet.textContent).toContain(words));
+        }
+        expect(sheet.textContent ?? '').not.toMatch(UUID_SHAPE);
+        // The sentence that apologised for printing references is gone with them.
+        expect(sheet.textContent).not.toContain(
+          text['delivery.summary.identifiersExplain'] as string
+        );
+      });
+    }
+  }
 });
 
 describe('the financial half', () => {
