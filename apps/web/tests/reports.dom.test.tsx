@@ -13,7 +13,8 @@ import {
   renderRtl,
 } from './render';
 import { forgetRememberedBranch } from './support/branch-switch';
-import { addDays, dayIn } from '../src/lib/branch-time';
+import { addDays, dayIn, isKnownZone } from '../src/lib/branch-time';
+import { formatReportTime } from '../src/features/reports/report-labels';
 
 /**
  * The report screens, rendered (P1-31, FE-011, FE-012, FE-013, FE-014).
@@ -689,6 +690,23 @@ describe('the result is rendered from the envelope, column kind by column kind',
       expect(screen.queryByText('2026-09-03T07:15:00.000Z')).toBeNull();
       unmount();
     }
+  });
+
+  it('draws an instant in a zone this browser does not know on the UTC clock', () => {
+    // The zone check lives in lib/branch-time.ts so no feature file builds an
+    // Intl formatter of its own (P1-27-FE-030).
+    expect(isKnownZone('Asia/Amman')).toBe(true);
+    expect(isKnownZone('Not/A_Zone')).toBe(false);
+    expect(isKnownZone('')).toBe(false);
+    const utc = new Intl.DateTimeFormat('en-GB', {
+      timeZone: 'UTC',
+      dateStyle: 'medium',
+      timeStyle: 'short',
+    }).format(new Date('2026-09-03T07:15:00.000Z'));
+    expect(formatReportTime('2026-09-03T07:15:00.000Z', 'en', 'Not/A_Zone')).toBe(utc);
+    expect(formatReportTime('2026-09-03T07:15:00.000Z', 'en', 'Asia/Amman')).toBe(
+      amman('en-GB', '2026-09-03T07:15:00.000Z')
+    );
   });
 
   it("says a work-order state in the reader's language, not the server's English name", async () => {

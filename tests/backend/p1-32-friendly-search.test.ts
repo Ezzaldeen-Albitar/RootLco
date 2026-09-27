@@ -57,6 +57,7 @@ import {
 } from './p1-19-helpers';
 import { __setPrimaryPoolForTests } from '@/server/db/pool';
 import { __resetAuthenticatorForTests } from '@/server/context/principal';
+import { __resetRateLimitForTests } from '@/server/http/rate-limit';
 import { GET as SEARCH_CUSTOMERS } from '@/app/api/v1/customers/route';
 import { GET as SEARCH_VEHICLES } from '@/app/api/v1/vehicles/route';
 import { GET as LIST_WORK_ORDERS } from '@/app/api/v1/work-orders/route';
@@ -314,7 +315,15 @@ beforeAll(async () => {
   __setPrimaryPoolForTests(runtime);
 });
 
-afterEach(() => __resetAuthenticatorForTests());
+afterEach(() => {
+  __resetAuthenticatorForTests();
+  // All three searches carry the `expensive-read` policy, and one reader makes
+  // a dozen or more searches across the phone, number and free-text cases.
+  // Without this a LATER case answers 429 and the failure reads as a broken
+  // search rather than as an exhausted per-user budget. The limiter itself is
+  // unchanged; each case simply starts with a fresh window.
+  __resetRateLimitForTests();
+});
 
 afterAll(async () => {
   __setPrimaryPoolForTests(undefined);

@@ -2,7 +2,7 @@ import { workOrderStateMessageKey } from '@/features/work-orders/work-orders-con
 import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
 import { translateDynamic } from '@/i18n/get-messages';
-import { formatDayInZone, formatInZone, isCalendarDay } from '@/lib/branch-time';
+import { formatDayInZone, formatInZone, isCalendarDay, isKnownZone } from '@/lib/branch-time';
 import { intlLocale } from '@/lib/format';
 import type { ReportDefinition, ReportGroup } from './reports-contract';
 
@@ -119,18 +119,8 @@ export function groupDisplayLabel(messages: Messages, group: ReportGroup): strin
  */
 export function formatReportTime(value: string, locale: Locale, zone: string): string {
   const intl = intlLocale(locale);
-  const clock = isKnownZone(zone, intl) ? zone : 'UTC';
+  const clock = isKnownZone(zone) ? zone : 'UTC';
   if (isCalendarDay(value)) return formatDayInZone(value, intl, clock);
   if (Number.isNaN(new Date(value).getTime())) return value;
   return formatInZone(value, intl, clock);
-}
-
-function isKnownZone(zone: string, intl: string): boolean {
-  if (zone.length === 0) return false;
-  try {
-    new Intl.DateTimeFormat(intl, { timeZone: zone });
-    return true;
-  } catch {
-    return false;
-  }
 }

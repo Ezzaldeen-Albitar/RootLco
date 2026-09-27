@@ -1177,6 +1177,13 @@ describe('P1-28-QA-002 — the four refusal branches the contract names', () => 
      *     command. Re-reading does not cure it, and a screen inviting a retry
      *     invites the same refusal.
      */
+    // Every name in the opt-in set is a real drive, so the split is not vacuous.
+    for (const name of stageRefusalDrives()) {
+      expect(
+        WRITE_DRIVES.some((drive) => drive.name === name),
+        name
+      ).toBe(true);
+    }
     for (const drive of WRITE_DRIVES) {
       send.mockReset();
       send.mockResolvedValue(problem(409, 'ERR-CON-001'));
@@ -1186,9 +1193,15 @@ describe('P1-28-QA-002 — the four refusal branches the contract names', () => 
       expect(conflictKindOf(stale.messageKey)).toBe('stale');
 
       for (const [code, key] of [
-        // The state refuses the command: its own sentence says to refresh and see
-        // where the record stands, and it is still BLOCKED, never stale.
-        ['ERR-TRN-001', 'state.conflict.transition.title'],
+        // The state refuses the command. Only the commands whose ERR-TRN-001 is a
+        // stage refusal and nothing else say "refresh"; every other one claims
+        // no cause. Either way it is BLOCKED, never stale.
+        [
+          'ERR-TRN-001',
+          stageRefusalDrives().has(drive.name)
+            ? 'state.conflict.transition.title'
+            : 'state.conflict.blocked.title',
+        ],
         ['ERR-RES-002', 'state.conflict.blocked.title'],
       ] as const) {
         send.mockReset();
@@ -1987,3 +2000,21 @@ describe('F8 — a person is shown by name, never by identifier', () => {
     expect(offenders, 'a person identifier rendered where a name belongs').toEqual([]);
   });
 });
+
+/**
+ * The write drives whose ERR-TRN-001 is a stage refusal and nothing else: the
+ * appointment lifecycle commands and the two visit closures. Their adapters opt
+ * in to the "no longer possible, refresh" sentence (`fromStateRefusal`).
+ * Approval, authorization and conversion also use the code for an unmet
+ * precondition, so they keep the blocked sentence. Declared at the end of the
+ * file so no cited line above moves.
+ */
+function stageRefusalDrives(): ReadonlySet<string> {
+  return new Set([
+    'rescheduleAppointment',
+    'cancelAppointment',
+    'recordAppointmentNoShow',
+    'closeReceptionWithoutWork',
+    'refuseReception',
+  ]);
+}

@@ -131,10 +131,11 @@ export interface SearchResult<Row> extends SearchOutcome<Row> {
    *
    * Enter and the Search control are statements of intent, and making an
    * operator who has already decided wait out a 300 ms timer is the interface
-   * being slower than the person using it. Calling it again after the read for
-   * the same term FAILED re-issues, which is what makes it usable as a retry;
-   * while page one of the same term is in flight or answered it sends nothing,
-   * so Enter after the pause does not ask twice.
+   * being slower than the person using it. Calling it again for the same term
+   * re-issues once that read has settled — answered or failed — which is what
+   * makes it a retry and a refresh; only while page one of the same term is
+   * still in flight does it send nothing, so Enter after the pause does not ask
+   * twice.
    */
   readonly submit: () => void;
 }
@@ -601,18 +602,18 @@ export function useSearchRequest<Row, Criteria>(options: {
    * an operator who types, waits a moment and presses Enter used to send the
    * same read twice — the settled one and the submitted one, 50 ms apart. Under
    * the board's `expensive-read` limit (30 a minute per user) that doubled
-   * every search, and the checkpoint browser QA drew 429s from it. So when the
-   * read in flight or on screen is already page one of exactly these criteria,
-   * Enter is answered by that read and sends nothing. A read that FAILED is
-   * asked again — that is what a retry is — and so is any other page, because
-   * a submission starts again at page one. `table.refresh` stays `reissue`: a
-   * table's refresh is asked for after a write, when the answer in hand is old.
+   * every search, and the checkpoint browser QA drew 429s from it. So while the
+   * read IN FLIGHT is already page one of exactly these criteria, Enter is
+   * answered by that read and sends nothing. Once it has settled, Enter and
+   * Search ask again: after a failure that is the retry, and after an answer it
+   * is the only refresh the boards, the customer search, the calendar and the
+   * pickers offer (nothing polls, and `table.refresh` is wired only to an error
+   * state's retry). Any other page asks again too, because a submission starts
+   * again at page one. `table.refresh` stays `reissue`: a table's refresh is
+   * asked for after a write, when the answer in hand is old.
    */
   const inHand =
-    activeKey !== null &&
-    activeKey === key &&
-    wantedPage === 1 &&
-    (outcome.phase === 'loading' || outcome.phase === 'ready' || outcome.phase === 'empty');
+    activeKey !== null && activeKey === key && wantedPage === 1 && outcome.phase === 'loading';
   const submit = useCallback(() => {
     if (inHand) return;
     reissue();

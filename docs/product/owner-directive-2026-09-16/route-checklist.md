@@ -529,11 +529,17 @@ and was left as it is.
   item codes still stand beside their labels.
 - **4.3b — fixed.** The plan list's company column is headed "Company" and the picker's help says
   what it offers; a company outside the reader's branches is said in words, not by reference.
-- **1.4b and 5.5c — fixed (the wording).** A `409 ERR-TRN-001` — a step the record's current stage
-  no longer allows — has its own sentence in English and Arabic that tells the reader to refresh
-  and see where the record stands. It claims no concurrent edit and invites no retry; every other
-  409 keeps its sentence, and a refusal that names its precondition still speaks first. Not
-  changed: the quotation builder is still offered on a closed job.
+- **1.4b — fixed (the wording); 5.5c — not changed.** `ERR-TRN-001` does not by itself mean the
+  record moved on: the backend also answers it for a broken bound or invariant (a payment allocation
+  over the receipt's remainder or the invoice's open balance, a billing invariant, a reservation the
+  stock ledger refuses), so the shared mapping keeps "This change cannot be saved" for it. Only the
+  adapters whose operation answers `ERR-TRN-001` for nothing but a stage refusal opt in
+  (`fromStateRefusal`) to the sentence, in English and Arabic, that says the step is no longer
+  possible and to refresh: quotation create, revise and issue (row 1.4b), the appointment
+  reschedule, cancel and no-show commands, and the two visit closures. It claims no concurrent edit
+  and invites no retry, and a refusal that carries any violation still speaks first. Not changed:
+  the quotation builder is still offered on a closed job, and a reservation on a job in draft
+  (5.5c) keeps the blocked sentence, because the same code there also means too little stock.
 - **5.3 — fixed after conversion.** The conversion answer links to the new work order (for a reader
   who may open it) and says its state in words. Needs a backend read: revisiting a converted visit
   still offers no link, because the reception read publishes no work-order identifier.
@@ -567,12 +573,27 @@ Known limitations of this slice, one line each:
   the summary only, and that document is handed to the customer.
 - `WorkOrderClosureScreen` `closureBlockerText`: a blocker code outside `B1`…`B6` falls back to the
   backend's English message, which an Arabic reader would see; no such code exists today.
-- `delivery.eligibility.unreadable.financialBalanceOutstanding` says no issued invoice was found,
-  but the backend also leaves that fact unestablished when `sal.finance.view` hides the balance;
-  unreachable here because the web reads eligibility only with `sal.finance.view`, unless grants
-  differ by branch.
-- Row 9.5 (375 px header) is proved in jsdom only by the `shrink-0` / `min-w-0` classes; the overlap
-  was not re-measured in a browser in either direction, so it is UNVERIFIED visually.
+- `delivery.eligibility.unreadable.financialBalanceOutstanding` (EligibilityPanel) says no issued
+  invoice was found, but the backend also uses it when the balance is hidden or the work order is
+  invisible (`delivery-read-service.ts:1003-1025`); no live path today, because the eligibility read
+  is gated on `sal.finance.view`.
+- DEF-01 / row 9.5 (375 px header): jsdom asserts only class names (`min-w-0`, `truncate`,
+  `shrink-0`) plus `title` and `dir`. Nobody has observed in a browser whether a native `<select>`
+  draws the ellipsis (Chromium often clips without one) or whether the branch name overlaps the
+  header at 375 px; UNVERIFIED visually, in either direction.
+- `formatReportTime` falls back to UTC for a zone the browser does not know while the context line
+  still names the original zone; theoretical, since the zones are IANA names from PostgreSQL.
+- The phone suffix arm compares the 8- or 9-digit national significant number, so a foreign number
+  sharing those last digits also matches; theoretical, and the `MIN_PHONE_SUFFIX` floor and the
+  permissions are unchanged.
+- `useSearchRequest` `leaving` does not cover choosing a new filter within 300 ms of a branch switch:
+  the settled key is still the old branch's, and its read goes out at the new version. It predates
+  this slice and is unchanged.
+- The line citations in the P1-28 verdicts into `reception-summary.dom.test.tsx` (`:594-823` and
+  similar) were already out of date at the base commit; this slice's tests sit after them and do not
+  worsen them. Worth a later re-anchoring.
+- Item 15, the platform-session probe at sign-in: no code change, justified because `session.ts`
+  probes only after a forbidden tenant session.
 - Left open, each needing a backend read: checklist item codes still show (3.2b); a revisited
   converted visit has no work-order link (5.3); the tax class is still a reference (5.10b); the
   count-reference tie-break remains (1a.2).
@@ -604,9 +625,10 @@ Known limitations of this slice, one line each:
   typing was already one read per pause. Two reads per ask came from elsewhere: Enter after the
   pause asked again for the term the pause had just read (the 429s arrived in pairs 50 ms apart),
   and after any submission — a branch choice counts as one — changing a filter re-read the old
-  criteria before the new ones. Enter on page one of a term already in flight or answered now
-  sends nothing (after a failure it is still the retry), and leaving a submission reads only the
-  new criteria. The limiter is unchanged. A throttled read (the API's 429 carried by the read
+  criteria before the new ones. Enter on page one of a term whose read is still in flight now sends
+  nothing; once that read has settled, Enter and Search ask again (the retry after a failure, the
+  refresh after an answer, which is the only refresh these screens offer), and leaving a
+  submission reads only the new criteria. The limiter is unchanged. A throttled read (the API's 429 carried by the read
   route, or a bare 429 from the web tier) and a 5xx show "Service unavailable" with Try again on
   the reception board, the work-order board and the overview figures, in English and Arabic,
   never an empty list.

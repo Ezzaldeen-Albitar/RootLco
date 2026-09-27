@@ -827,28 +827,32 @@ export const CONCURRENT_CHANGE_CODE = 'ERR-CON-001';
  * backend cannot distinguish a cause it must not be guessed at: a duplicate VIN
  * and a duplicate display number both arrive as `ERR-RES-002` with no
  * `violations`, because `mapWriteConflict` maps every unique violation to one
- * code. So there is one sentence per cause the code itself establishes — concurrency, a
- * stage that no longer allows the step (`ERR-TRN-001`) — and one that claims no cause.
+ * code. So there are exactly two sentences — the true concurrency one, and one
+ * that states the record cannot take the change without claiming to know why.
  */
 export function failureMessageKey(failure: ApiFailure): string {
   if (failure.kind !== 'conflict') return FAILURE_MESSAGE_KEY[failure.kind];
-  if (failure.problem?.code === STATE_TRANSITION_CODE) return 'state.conflict.transition.title';
   if (failure.problem?.code === CONCURRENT_CHANGE_CODE) return 'state.conflict.title';
+  // Every other 409, `ERR-TRN-001` included (see `STATE_TRANSITION_CODE` below).
   return 'state.conflict.blocked.title';
 }
 
 /**
- * The catalog code for a move the record's current stage does not allow (409).
+ * The catalog code for "Transition not permitted from the current state" (409).
  *
- * `ERR-TRN-001` is "Transition not permitted from the current state": the record
- * has moved on — a job closed, a request already decided — so the step on the
- * screen no longer applies. It is the one other 409 whose cause the code alone
- * establishes, so it gets a sentence of its own (Browser QA part 7, rows 1.4b
- * and 5.5c, where it read only "This change cannot be saved"). The sentence tells
- * the operator to refresh and see where the record stands; it claims no
- * concurrent edit and invites no retry, because repeating the step would be
- * refused again. A refusal that names its precondition still reaches the form
- * through `violations` first, which is more specific than this.
+ * The code alone does NOT establish that the record moved on. The backend also
+ * answers `ERR-TRN-001` for a broken bound or invariant: an allocation larger
+ * than the receipt's remainder or the invoice's open balance
+ * (`payment-service.ts`), a billing invariant or a numeric overflow
+ * (`invoice-service.ts`), a reservation the stock ledger refuses. Telling that
+ * operator to refresh would point at a fix that does nothing, so
+ * `failureMessageKey` keeps the blocked sentence for it.
+ *
+ * Only an adapter whose operation uses the code for nothing but a stage refusal
+ * opts in, through `fromStateRefusal` in `lib/forms/action-result.ts`, to the
+ * sentence that says the step is no longer possible and to refresh (Browser QA
+ * part 7, row 1.4b). A refusal that names its precondition still reaches the
+ * form through `violations` first, which is more specific than either.
  *
  * Declared below the function that reads it so that no line above moves under
  * the P1-27 citation anchors.

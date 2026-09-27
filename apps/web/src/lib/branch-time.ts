@@ -270,6 +270,24 @@ export function zoneLabelAt(value: string, intlLocale: string, zone: string): st
   return parts.find((part) => part.type === 'timeZoneName')?.value ?? zone;
 }
 
+/**
+ * Whether this browser knows a zone by that name.
+ *
+ * Kept here, beside every other formatter that takes a zone, so no feature file
+ * builds an `Intl` formatter of its own (P1-27-FE-030). The locale is fixed
+ * because only the zone is being tested: a zone is valid or not in every
+ * language alike.
+ */
+export function isKnownZone(zone: string): boolean {
+  if (zone.length === 0) return false;
+  try {
+    new Intl.DateTimeFormat('en-CA', { timeZone: zone });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /** A day, rendered for reading, on the branch's clock. */
 export function formatDayInZone(day: CalendarDay, intlLocale: string, zone: string): string {
   return new Intl.DateTimeFormat(intlLocale, {

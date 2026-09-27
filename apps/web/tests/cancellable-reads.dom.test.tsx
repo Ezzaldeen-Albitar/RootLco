@@ -452,8 +452,9 @@ describe('the reception board, on a period choice after a branch switch', () => 
 /*
  * Checkpoint browser QA: a search on the work-order board drew 429s in pairs
  * 50 ms apart. The term settled and was read, and Enter then asked for the
- * same term again. Enter on a read already in flight or answered sends nothing;
- * after a failure it is the retry and asks again.
+ * same term again. Enter on a read still in flight sends nothing; once it has
+ * settled Enter asks again, as the retry after a failure and as the refresh
+ * after an answer.
  */
 describe('a board search asks once per term, Enter included', () => {
   async function typedAndSettled(user: ReturnType<typeof userEvent.setup>) {
@@ -475,7 +476,9 @@ describe('a board search asks once per term, Enter included', () => {
     expect(latest().signal.aborted).toBe(false);
   });
 
-  it('sends nothing on Enter once the settled read has answered', async () => {
+  it('sends exactly one new read on Enter once the board shows an answer — the refresh', async () => {
+    // Nothing polls and the board has no other refresh control, so Search on an
+    // answered read is how an operator looks for new arrivals.
     stubNetwork();
     const user = userEvent.setup();
     await typedAndSettled(user);
@@ -483,8 +486,10 @@ describe('a board search asks once per term, Enter included', () => {
     expect(await screen.findByText('R-0001', { selector: 'code' })).toBeVisible();
     const count = sent.length;
     await user.keyboard('{Enter}');
+    await waitFor(() => expect(sent.length).toBe(count + 1));
+    expect(latest().body.q).toBe('Khal');
     await new Promise((resolve) => setTimeout(resolve, 450));
-    expect(sent.length).toBe(count);
+    expect(sent.length).toBe(count + 1);
   });
 
   it('asks again on Enter after the read failed — that is the retry', async () => {

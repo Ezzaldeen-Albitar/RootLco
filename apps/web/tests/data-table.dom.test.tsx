@@ -454,11 +454,13 @@ describe('a search request', () => {
     await waitFor(() => expect(screen.getByTestId('rows')).toHaveTextContent('r-same'));
   });
 
-  it('sends NOTHING on a submit while page one of the same term is in flight or answered', async () => {
+  it('sends NOTHING on a submit while page one of the same term is in flight, and ONE read once answered', async () => {
     /*
      * Checkpoint browser QA: the term settled and was read, and Enter then read
      * it again 50 ms later — every search spent two requests of the board's
-     * `expensive-read` budget and drew 429s in pairs.
+     * `expensive-read` budget and drew 429s in pairs. Only the in-flight read
+     * answers a submit: once it has answered, a submit is the refresh the
+     * boards have no other control for, and asks exactly once.
      */
     const gate: { release: ((value: unknown) => void) | null } = { release: null };
     const load = vi.fn(async (criteria: { q: string }) => {
@@ -476,10 +478,13 @@ describe('a search request', () => {
     expect(load).toHaveBeenCalledTimes(1);
     gate.release?.(null);
     await waitFor(() => expect(screen.getByTestId('phase')).toHaveTextContent('ready'));
-    // Answered: still nothing.
+    // Answered: the submit asks again, once.
     await user.click(screen.getByRole('button', { name: 'ask now' }));
+    await waitFor(() => expect(load).toHaveBeenCalledTimes(2));
+    expect(load.mock.calls[1]?.[0]).toEqual({ q: 'same' });
     await new Promise((resolve) => setTimeout(resolve, 60));
-    expect(load).toHaveBeenCalledTimes(1);
+    expect(load).toHaveBeenCalledTimes(2);
+    gate.release?.(null);
   });
 
   it('asks for the NEW criteria only after a submission — never the submitted ones again', async () => {
