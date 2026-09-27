@@ -398,9 +398,7 @@ describe('the work-order board reads on arrival and narrows honestly', () => {
     expect(lastCall().scope).toEqual({ companyId: COMPANY, branchId: BRANCH });
     expect(lastCall().filters).toEqual({ stateGroup: 'active' });
     expect(await screen.findByText('WO-000123', { selector: 'code' })).toBeInTheDocument();
-    expect(
-      viewChip('active')
-    ).toHaveAttribute('aria-pressed', 'true');
+    expect(viewChip('active')).toHaveAttribute('aria-pressed', 'true');
   });
 
   it('asks for everything only when the operator asks for everything', async () => {
@@ -421,9 +419,7 @@ describe('the work-order board reads on arrival and narrows honestly', () => {
     render();
     await waitFor(() => expect(listWorkOrders).toHaveBeenCalledTimes(1));
 
-    await user.click(
-      viewChip('completedToday')
-    );
+    await user.click(viewChip('completedToday'));
     const today = dayIn(TEST_BRANCH.timezone);
     const window = rangeOfDays(TEST_BRANCH.timezone, today, today);
     await waitFor(() =>
@@ -451,9 +447,7 @@ describe('the work-order board reads on arrival and narrows honestly', () => {
     await waitFor(() => expect(lastCall().filters).toEqual({ state: 'open' }));
 
     // And back the other way: the view clears the code.
-    await user.click(
-      viewChip('active')
-    );
+    await user.click(viewChip('active'));
     await waitFor(() => expect(lastCall().filters).toEqual({ stateGroup: 'active' }));
 
     for (const call of listWorkOrders.mock.calls) {
@@ -521,9 +515,7 @@ describe('the work-order board reads on arrival and narrows honestly', () => {
       ['awaitingQuality', 'awaitingQuality'],
       ['readyForDelivery', 'readyForDelivery'],
     ] as const) {
-      await user.click(
-        viewChip(view)
-      );
+      await user.click(viewChip(view));
       await waitFor(() => expect(lastCall().filters).toEqual({ [flag]: true }));
     }
   });
@@ -612,9 +604,7 @@ describe('the work-order board reads on arrival and narrows honestly', () => {
         openedTo: window.to,
       })
     );
-    expect(lastCall().filters['openedTo']).toBe(
-      endOfDayBound(TEST_BRANCH.timezone, '2026-09-03')
-    );
+    expect(lastCall().filters['openedTo']).toBe(endOfDayBound(TEST_BRANCH.timezone, '2026-09-03'));
 
     await user.click(clear() as HTMLElement);
     await waitFor(() => expect(lastCall().filters).toEqual({ stateGroup: 'active' }));
@@ -803,20 +793,18 @@ describe('the work-order board reads on arrival and narrows honestly', () => {
     // different links to assistive technology.
     expect(open).toHaveAccessibleName(`${en['workOrders.queue.open'] as string} WO-000123`);
 
-    await user.click(
-      viewChip('awaitingApproval')
-    );
+    await user.click(viewChip('awaitingApproval'));
     expect((await rowLink('workOrders.queue.openForApproval'))[0]).toHaveAttribute(
       'href',
       `/en/work-orders/${ROW.id}`
     );
     expect(
-      screen.queryAllByRole('link', { name: new RegExp(`^${en['workOrders.queue.open'] as string}`) })
+      screen.queryAllByRole('link', {
+        name: new RegExp(`^${en['workOrders.queue.open'] as string}`),
+      })
     ).toEqual([]);
 
-    await user.click(
-      viewChip('readyForDelivery')
-    );
+    await user.click(viewChip('readyForDelivery'));
     expect((await rowLink('workOrders.queue.openForDelivery'))[0]).toHaveAttribute(
       'href',
       `/en/work-orders/${ROW.id}`
@@ -837,9 +825,7 @@ describe('the work-order board reads on arrival and narrows honestly', () => {
   it('offers the delivery queue on the ready view when the operator may reach it', async () => {
     const user = userEvent.setup();
     render(true);
-    await user.click(
-      viewChip('readyForDelivery')
-    );
+    await user.click(viewChip('readyForDelivery'));
     expect(
       await screen.findByRole('link', { name: en['workOrders.queue.deliveryQueue'] })
     ).toHaveAttribute('href', '/en/delivery');
@@ -848,9 +834,7 @@ describe('the work-order board reads on arrival and narrows honestly', () => {
   it('offers no delivery link at all without the three codes that page requires', async () => {
     const user = userEvent.setup();
     render(false);
-    await user.click(
-      viewChip('readyForDelivery')
-    );
+    await user.click(viewChip('readyForDelivery'));
     // The view itself still works: the rows are there, and only the way through
     // to a page that would refuse them is gone.
     expect((await rowLink('workOrders.queue.openForDelivery'))[0]).toBeInTheDocument();
@@ -1067,7 +1051,9 @@ describe('the work-order board reads on arrival and narrows honestly', () => {
       'ordinary'
     );
     await user.click(viewChip('mine'));
-    await waitFor(() => expect(lastCall().filters).toEqual({ assignedToMe: true, kind: 'ordinary' }));
+    await waitFor(() =>
+      expect(lastCall().filters).toEqual({ assignedToMe: true, kind: 'ordinary' })
+    );
     await user.click(
       await screen.findByRole('button', { name: en['workOrders.queue.clearFilters'] })
     );
@@ -1082,7 +1068,9 @@ describe('the work-order board reads on arrival and narrows honestly', () => {
     render();
     expect(await screen.findByText(en['state.noResults.title'] as string)).toBeInTheDocument();
     await user.type(screen.getByLabelText(en['workOrders.queue.searchLabel']), 'ZZ-99{Enter}');
-    expect(await screen.findByText(en['state.noSearchMatches.title'] as string)).toBeInTheDocument();
+    expect(
+      await screen.findByText(en['state.noSearchMatches.title'] as string)
+    ).toBeInTheDocument();
   });
 
   it('discards the figures read for a branch the operator has left, before the new ones arrive', async () => {

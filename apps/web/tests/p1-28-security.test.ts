@@ -1079,7 +1079,10 @@ describe('P1-28-SEC-003 — the ONE door, and the abuse cases that try the walls
      */
     const relative = ['features', 'receptions', 'components', 'ReceptionQueueScreen.tsx'];
     const source = webFile(...relative);
-    expect(boardReadContractViolations(source, 'listReceptionsCancellable'), relative.join('/')).toEqual([]);
+    expect(
+      boardReadContractViolations(source, 'listReceptionsCancellable'),
+      relative.join('/')
+    ).toEqual([]);
     // And no screen spends a cursor of its own: the stack is the hook's.
     expect(source, relative.join('/')).not.toMatch(/atob\(|Buffer\.from\(|JSON\.parse\(cursor/);
   });
@@ -1135,9 +1138,10 @@ describe('P1-28-SEC-003 — the ONE door, and the abuse cases that try the walls
      */
     const relative = ['features', 'work-orders', 'components', 'WorkOrderQueueScreen.tsx'];
     const source = webFile(...relative);
-    expect(boardReadContractViolations(source, 'listWorkOrdersCancellable'), relative.join('/')).toEqual(
-      []
-    );
+    expect(
+      boardReadContractViolations(source, 'listWorkOrdersCancellable'),
+      relative.join('/')
+    ).toEqual([]);
     // And no screen spends a cursor of its own: the stack is the hook's.
     expect(source, relative.join('/')).not.toMatch(/atob\(|Buffer\.from\(|JSON\.parse\(cursor/);
   });

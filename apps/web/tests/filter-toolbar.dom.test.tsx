@@ -811,9 +811,11 @@ describe('what the work-order board adds (the work-order slice)', () => {
     expect((to.getAttribute('aria-describedby') ?? '').split(' ')).toContain(error.id);
     await waitFor(() => expect(to.contains(document.activeElement)).toBe(true));
     // The typed days are still there to correct.
-    expect(within(from).getAllByRole('spinbutton').map((part) => part.textContent)).toContain(
-      '2026'
-    );
+    expect(
+      within(from)
+        .getAllByRole('spinbutton')
+        .map((part) => part.textContent)
+    ).toContain('2026');
 
     // The same mistake again moves the cursor again.
     apply.focus();
@@ -853,9 +855,11 @@ describe('what the work-order board adds (the work-order slice)', () => {
     await user.click(clear() as HTMLElement);
     expect(onClear).toHaveBeenCalledTimes(1);
     expect(clear()).toBeNull();
-    expect(within(from).getAllByRole('spinbutton').map((part) => part.textContent)).not.toContain(
-      '2026'
-    );
+    expect(
+      within(from)
+        .getAllByRole('spinbutton')
+        .map((part) => part.textContent)
+    ).not.toContain('2026');
   });
 
   it('follows a reset key from the screen: the typed days go', async () => {
@@ -865,9 +869,11 @@ describe('what the work-order board adds (the work-order slice)', () => {
     expect(screen.getByRole('button', { name: 'Clear the dates' })).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'screen resets' }));
     expect(screen.queryByRole('button', { name: 'Clear the dates' })).toBeNull();
-    expect(within(from).getAllByRole('spinbutton').map((part) => part.textContent)).not.toContain(
-      '2026'
-    );
+    expect(
+      within(from)
+        .getAllByRole('spinbutton')
+        .map((part) => part.textContent)
+    ).not.toContain('2026');
   });
 
   it('applies the range on Enter in its own boxes, and leaves the period alone', async () => {
@@ -898,7 +904,11 @@ describe('what the work-order board adds (the work-order slice)', () => {
     expect(onPeriod).not.toHaveBeenCalled();
 
     await user.click(screen.getByRole('button', { name: 'Use these dates' }));
-    expect(onPeriod).toHaveBeenLastCalledWith({ kind: 'custom', from: '2026-09-10', to: '2026-09-11' });
+    expect(onPeriod).toHaveBeenLastCalledWith({
+      kind: 'custom',
+      from: '2026-09-10',
+      to: '2026-09-11',
+    });
     expect(onApply).toHaveBeenCalledTimes(1);
   });
 

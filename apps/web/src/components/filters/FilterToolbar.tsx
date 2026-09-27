@@ -297,9 +297,12 @@ export function FilterToolbar({
   const rangeKey =
     range === undefined
       ? ''
-      : [range.zone, range.value?.from ?? '', range.value?.to ?? '', String(range.resetKey ?? 0)].join(
-          '|'
-        );
+      : [
+          range.zone,
+          range.value?.from ?? '',
+          range.value?.to ?? '',
+          String(range.resetKey ?? 0),
+        ].join('|');
   const [followedRangeKey, setFollowedRangeKey] = useState(rangeKey);
   if (followedRangeKey !== rangeKey) {
     setFollowedRangeKey(rangeKey);
