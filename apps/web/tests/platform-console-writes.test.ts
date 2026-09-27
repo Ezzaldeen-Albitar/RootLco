@@ -1105,6 +1105,28 @@ describe('the console reads stay on the server', () => {
 });
 
 /*
+ * The tenant reference read (P1-32-PRE-OD-REF) follows the same rule: the
+ * `server-only` package is not a dependency here, so the module's server-only
+ * standing is that it carries no Server Action directive and reaches the
+ * session through the cookie-reading server client.
+ */
+const REFERENCE_VALUES_MODULE = resolve(
+  WEB_SRC,
+  'features',
+  'administration',
+  'organization',
+  'reference-values.ts'
+);
+
+describe('the organisation reference read stays on the server', () => {
+  it('declares no Server Action directive and reads through the server client', () => {
+    const source = readFileSync(REFERENCE_VALUES_MODULE, 'utf8');
+    expect(directiveOf(source)).toBeNull();
+    expect(source).toMatch(/from\s+['"]@\/lib\/api\/server-client['"]/);
+  });
+});
+
+/*
  * The decided exception (P1-32-PRE-068): the organisation list and the activity
  * search are driven by a client data table after render, so they are Server
  * Actions, in `table-reads.ts` and nowhere else. It is the established pattern
