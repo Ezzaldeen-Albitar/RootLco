@@ -1363,3 +1363,63 @@ describe('the clock the board counts its days on', () => {
     ).toBe('UTC');
   });
 });
+
+/* -------------------------------------------------------------------------- *
+ * The dashboard's reception link, followed to the MUI board (Owner directive,
+ * the dashboard slice)
+ *
+ * "Receptions opened" links here with the period it counted. Each case takes
+ * the address the dashboard itself builds (`dashboard-links.ts`), hands its
+ * query to this board's route, and checks the board then reads that period —
+ * so a board that stopped reading `?period`, `?from` or `?to` breaks the
+ * dashboard's claim here, not in browser QA.
+ * -------------------------------------------------------------------------- */
+
+describe('the dashboard’s reception link opens the board over the period counted', () => {
+  beforeEach(() => {
+    PERMISSIONS = ['rec.reception.read'];
+  });
+
+  /** Follows the address: the route's props, then the board's first read. */
+  async function follow(href: string): Promise<Record<string, unknown>> {
+    const url = new URL(href, 'https://rootlco.invalid');
+    expect(url.pathname).toBe('/en/receptions');
+    const tree = await ReceptionQueuePage({
+      params: Promise.resolve({ locale: 'en' }),
+      searchParams: Promise.resolve(Object.fromEntries(url.searchParams.entries())),
+    });
+    const props = propsCarrying(tree, 'initialPeriod');
+    expect(props, 'the route did not render the board').not.toBeNull();
+    const { unmount } = renderQueue({ initialPeriod: props?.['initialPeriod'] });
+    await waitFor(() => expect(listReceptions).toHaveBeenCalledTimes(1));
+    const { filters } = lastCall();
+    unmount();
+    listReceptions.mockClear();
+    return filters;
+  }
+
+  it('reads each named period (?period) the figure was counted over', async () => {
+    const { receptionsPeriodLink } = await import('@/features/overview/dashboard-links');
+    const today = dayIn(ZONE);
+    expect(await follow(receptionsPeriodLink('en', { period: 'today' }))).toEqual(
+      rangeOfDays(ZONE, today, today)
+    );
+    const yesterday = addDays(today, -1);
+    expect(await follow(receptionsPeriodLink('en', { period: 'yesterday' }))).toEqual(
+      rangeOfDays(ZONE, yesterday, yesterday)
+    );
+    expect(await follow(receptionsPeriodLink('en', { period: 'last7' }))).toEqual(
+      rangeOfDays(ZONE, addDays(today, -6), today)
+    );
+  });
+
+  it('reads a chosen period with both its days (?period=custom&from&to)', async () => {
+    const { receptionsPeriodLink } = await import('@/features/overview/dashboard-links');
+    const href = receptionsPeriodLink('en', {
+      period: 'custom',
+      from: '2026-09-01',
+      to: '2026-09-10',
+    });
+    expect(await follow(href)).toEqual(rangeOfDays(ZONE, '2026-09-01', '2026-09-10'));
+  });
+});

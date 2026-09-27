@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useId, useState } from 'react';
+import { useEffect, useId, useState } from 'react';
 import Button from '@mui/material/Button';
 import Table from '@mui/material/Table';
 import TableBody from '@mui/material/TableBody';
@@ -23,9 +23,9 @@ import { estimatedTextWidth, fitLabel } from './label-fit';
 
 /**
  * A chart on MUI X Charts (MIT), with the promises the dashboard's hand-drawn
- * charts make — ADR-022 PR1. Built to redraw those three charts (`kind`,
- * `layout`, a per-category hatch, links per category) when the dashboard moves
- * (PR5); until then `features/overview/components/charts.tsx` stays.
+ * charts made — ADR-022 PR1. It draws the dashboard's three charts (`kind`,
+ * `layout`, a per-category hatch, links per category) since the dashboard moved
+ * onto the Material UI wrappers; the hand-drawn charts are gone.
  *
  * ## A drawing is not a statement until it is also text
  *
@@ -77,7 +77,19 @@ import { estimatedTextWidth, fitLabel } from './label-fit';
  *
  * A category label that does not fit the label column is cut with an ellipsis
  * (`label-fit.ts`), and its whole text is in the tooltip, the links and the
- * table. A horizontal bar's count is written past its end, and the far margin
+ * table.
+ *
+ * The label column of a horizontal bar chart is as wide as its widest label
+ * needs, never narrower than `CHART_LABEL_COLUMN` and never wider than
+ * `CHART_LABEL_COLUMN_MAX_SHARE` of the drawing (`labelColumnWidth`). A fixed
+ * 190-unit column cut the workshop's ordinary wording — "Waiting for the
+ * customer to agree" — on a wide screen with room to spare (browser QA part 7,
+ * row 7.6). The drawing's width is measured; until it is known (the first
+ * frame, a test) the column is the minimum and labels are cut as before, and a
+ * narrow screen keeps its room for the bars. `data-label-column` records the
+ * width handed to the chart.
+ *
+ * A horizontal bar's count is written past its end, and the far margin
  * is reserved for the widest count drawn (at least seven glyphs), so the
  * longest bar's figure is never cut off at the drawing's edge.
  *
@@ -153,8 +165,12 @@ export interface ChartPanelProps {
 export const CHART_LABEL_FONT_SIZE = 12;
 /** The label column of a horizontal bar chart, in drawing units. */
 export const CHART_LABEL_COLUMN = 190;
+/** The inset a label keeps from each side of its column, both together. */
+const LABEL_INSETS = 8;
 /** What a label may occupy: the column less an inset each side. */
-export const CHART_LABEL_TEXT_WIDTH = CHART_LABEL_COLUMN - 8;
+export const CHART_LABEL_TEXT_WIDTH = CHART_LABEL_COLUMN - LABEL_INSETS;
+/** The largest share of the drawing's width the label column may take. */
+export const CHART_LABEL_COLUMN_MAX_SHARE = 0.4;
 /** The room reserved past the longest bar: at least seven glyphs ("999,999"). */
 const COUNT_GUTTER = 64;
 /** The space between a bar's end and its count. */
@@ -195,6 +211,27 @@ export function countGutter(counts: readonly string[]): number {
   return COUNT_GAP + Math.max(COUNT_GUTTER, Math.ceil(widest));
 }
 
+/**
+ * The label column of a horizontal bar chart: what the widest label needs (its
+ * budgeted width and an inset each side), no narrower than
+ * `CHART_LABEL_COLUMN` and no wider than `CHART_LABEL_COLUMN_MAX_SHARE` of the
+ * drawing. `drawingWidth` is `null` until the drawing has been measured, and
+ * then the column is the minimum. See "Labels are cut, never lost".
+ */
+export function labelColumnWidth(labels: readonly string[], drawingWidth: number | null): number {
+  if (drawingWidth === null || drawingWidth <= 0) return CHART_LABEL_COLUMN;
+  const widest = labels.reduce(
+    (max, label) => Math.max(max, estimatedTextWidth(label, CHART_LABEL_FONT_SIZE)),
+    0
+  );
+  const needed = Math.ceil(widest) + LABEL_INSETS;
+  const ceiling = Math.max(
+    CHART_LABEL_COLUMN,
+    Math.floor(drawingWidth * CHART_LABEL_COLUMN_MAX_SHARE)
+  );
+  return Math.min(Math.max(needed, CHART_LABEL_COLUMN), ceiling);
+}
+
 interface BuildInput {
   readonly layout: 'horizontal' | 'vertical';
   readonly categories: readonly ChartCategory[];
@@ -202,6 +239,8 @@ interface BuildInput {
   readonly locale: Locale;
   readonly skipAnimation: boolean;
   readonly hatchUrl: string;
+  /** A horizontal chart's label column (`labelColumnWidth`). Defaults to the minimum. */
+  readonly labelColumn?: number | undefined;
 }
 
 /** A series' fill: its tone, or the hatch. */
@@ -216,6 +255,7 @@ function seriesColour(series: ChartSeries, hatchUrl: string): string {
  */
 export function barChartProps(input: BuildInput): BarChartProps {
   const { layout, categories, series, locale, skipAnimation, hatchUrl } = input;
+  const labelColumn = input.labelColumn ?? CHART_LABEL_COLUMN;
   const rtl = directionOf(locale) === 'rtl';
   const keys = categories.map((category) => category.key);
   const byKey = new Map(categories.map((category) => [category.key, category]));
@@ -270,11 +310,11 @@ export function barChartProps(input: BuildInput): BarChartProps {
           scaleType: 'band',
           data: keys,
           position: rtl ? 'right' : 'left',
-          width: CHART_LABEL_COLUMN,
+          width: labelColumn,
           tickLabelStyle: BIDI_ISOLATE,
           valueFormatter: (key: string, context) =>
             context.location === 'tick'
-              ? fitLabel(full(key), CHART_LABEL_TEXT_WIDTH, CHART_LABEL_FONT_SIZE)
+              ? fitLabel(full(key), labelColumn - LABEL_INSETS, CHART_LABEL_FONT_SIZE)
               : full(key),
           ...perCategory,
         },
@@ -483,6 +523,27 @@ export function pieChartProps(input: PieInput): PieChartProps {
   };
 }
 
+/**
+ * The width of the element the returned callback ref is attached to, kept
+ * current as it resizes; `null` until it has been measured, and wherever
+ * nothing measures. A callback ref, because the drawing is mounted only once
+ * the chart is ready — after the panel itself.
+ */
+function useMeasuredWidth() {
+  const [element, setElement] = useState<HTMLDivElement | null>(null);
+  const [width, setWidth] = useState<number | null>(null);
+  useEffect(() => {
+    if (element === null || typeof ResizeObserver === 'undefined') return undefined;
+    const observer = new ResizeObserver((entries) => {
+      const measured = entries[0]?.contentRect.width ?? 0;
+      setWidth(measured > 0 ? Math.round(measured) : null);
+    });
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [element]);
+  return [setElement, width] as const;
+}
+
 export function ChartPanel({
   messages,
   locale,
@@ -510,6 +571,7 @@ export function ChartPanel({
   const rtl = directionOf(locale) === 'rtl';
   const skipAnimation = useReducedMotion();
   const [tableShown, setTableShown] = useState(tableMode === 'always');
+  const [drawingRef, drawingWidth] = useMeasuredWidth();
 
   const empty =
     categories.length === 0 || series.every((entry) => entry.data.every((value) => value === 0));
@@ -520,7 +582,11 @@ export function ChartPanel({
     formatMessage(translate(messages, 'chart.otherSlice'), {
       names: listedNames(members, locale),
     });
-  const input = { categories, series, locale, skipAnimation, hatchUrl, otherWording };
+  const labelColumn =
+    kind === 'bar' && layout === 'horizontal'
+      ? labelColumnWidth(categories.map(wording), drawingWidth)
+      : undefined;
+  const input = { categories, series, locale, skipAnimation, hatchUrl, otherWording, labelColumn };
   const slices = kind === 'pie' ? pieSlices(input) : [];
   // Only what the drawing actually hatches: a line never is, and a bar chart
   // hatches a category only when it has one series.
@@ -626,11 +692,13 @@ export function ChartPanel({
             </ul>
           ) : null}
           <div
+            ref={drawingRef}
             role="img"
             aria-labelledby={titleId}
             aria-describedby={summaryId}
             dir="ltr"
             data-testid="chart-drawing"
+            data-label-column={labelColumn === undefined ? undefined : String(labelColumn)}
           >
             {drawing()}
           </div>

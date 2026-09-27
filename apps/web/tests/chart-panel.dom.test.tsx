@@ -4,11 +4,14 @@ import type { ReactElement } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { axe } from 'vitest-axe';
 import {
+  CHART_LABEL_COLUMN,
+  CHART_LABEL_COLUMN_MAX_SHARE,
   CHART_LABEL_FONT_SIZE,
   CHART_LABEL_TEXT_WIDTH,
   ChartPanel,
   barChartProps,
   countGutter,
+  labelColumnWidth,
   lineChartProps,
   OTHER_SLICE_KEY,
   otherSliceKey,
@@ -24,10 +27,6 @@ import { MetricCard, type MetricValue } from '@/components/charts/MetricCard';
 import { UiFoundationProvider } from '@/components/ui-foundation/UiFoundationProvider';
 import { REDUCED_MOTION_QUERY } from '@/components/ui-foundation/use-reduced-motion';
 import { muiTextOf } from '@/components/ui-foundation/mui-text';
-import {
-  fitLabel as dashboardFitLabel,
-  estimatedTextWidth as dashboardTextWidth,
-} from '@/features/overview/components/charts';
 import type { Locale } from '@/i18n/config';
 import { getMessages } from '@/i18n/get-messages';
 import { BOTH_DIRECTIONS, renderLtr, renderRtl } from './render';
@@ -657,11 +656,113 @@ describe('what the panel hands the chart', () => {
     expect(pieChartProps({ ...base, locale: 'en', skipAnimation: true }).skipAnimation).toBe(true);
   });
 
-  it('fits labels with the same budget as the dashboard charts', () => {
-    expect(fitLabel(LONG_LABEL, CHART_LABEL_TEXT_WIDTH, CHART_LABEL_FONT_SIZE)).toBe(
-      dashboardFitLabel(LONG_LABEL)
+  it('cuts tick labels with the shared budget, to the column it hands the chart', () => {
+    const tick = (labelColumn?: number) =>
+      (
+        barChartProps({ ...base, layout: 'horizontal', locale: 'en', labelColumn }).yAxis?.[0] as {
+          valueFormatter: (value: string, context: { location: string }) => string;
+        }
+      ).valueFormatter('waiting', { location: 'tick' });
+    expect(tick()).toBe(fitLabel(LONG_LABEL, CHART_LABEL_TEXT_WIDTH, CHART_LABEL_FONT_SIZE));
+    const wide = labelColumnWidth([LONG_LABEL], 2000);
+    expect(tick(wide)).toBe(LONG_LABEL);
+  });
+});
+
+/*
+ * Browser QA part 7, row 7.6: at 1440 pixels the dashboard cut "Waiting for the
+ * customer to agree" to "Waiting for the cus…" — a fixed 190-unit label column
+ * beside a drawing with room to spare. The column now fits the widest label,
+ * within a share of the measured drawing.
+ */
+describe('the label column fits its labels, within the drawing', () => {
+  const WAITING = 'Waiting for the customer to agree';
+  const needs = (label: string) => Math.ceil(estimatedTextWidth(label, CHART_LABEL_FONT_SIZE)) + 8;
+
+  it('is the minimum until the drawing has been measured, and for short labels', () => {
+    expect(labelColumnWidth([WAITING], null)).toBe(CHART_LABEL_COLUMN);
+    expect(labelColumnWidth(['Open', 'Done'], 1100)).toBe(CHART_LABEL_COLUMN);
+  });
+
+  it('widens to the widest label on a wide drawing, so ordinary wording is drawn whole', () => {
+    const column = labelColumnWidth(['Open', WAITING], 1100);
+    expect(column).toBe(needs(WAITING));
+    expect(column).toBeGreaterThan(CHART_LABEL_COLUMN);
+    const config = barChartProps({
+      layout: 'horizontal',
+      categories: [
+        { key: 'open', label: 'Open' },
+        { key: 'waiting', label: WAITING },
+      ],
+      series: COUNTS,
+      locale: 'en',
+      skipAnimation: false,
+      hatchUrl: 'url(#hatch)',
+      labelColumn: column,
+    });
+    const axis = config.yAxis?.[0] as {
+      width: number;
+      valueFormatter: (value: string, context: { location: string }) => string;
+    };
+    expect(axis.width).toBe(column);
+    expect(axis.valueFormatter('waiting', { location: 'tick' })).toBe(WAITING);
+  });
+
+  it('never takes more than its share of a narrow drawing, and then cuts', () => {
+    expect(labelColumnWidth([LONG_LABEL], 600)).toBe(
+      Math.floor(600 * CHART_LABEL_COLUMN_MAX_SHARE)
     );
-    expect(estimatedTextWidth('MMM', 12)).toBe(dashboardTextWidth('MMM'));
+    // Narrower than the minimum allows for: the minimum, as before.
+    expect(labelColumnWidth([LONG_LABEL], 320)).toBe(CHART_LABEL_COLUMN);
+  });
+
+  it('measures the drawing and hands the chart the fitted column', () => {
+    const original = window.ResizeObserver;
+    // Answers for the panel's drawing only; the chart's own observers hear nothing.
+    class Measured {
+      readonly report: ResizeObserverCallback;
+      constructor(report: ResizeObserverCallback) {
+        this.report = report;
+      }
+      observe(target: Element) {
+        if (target.getAttribute('data-testid') !== 'chart-drawing') return;
+        this.report(
+          [{ target, contentRect: { width: 1100 } } as unknown as ResizeObserverEntry],
+          this as unknown as ResizeObserver
+        );
+      }
+      unobserve() {}
+      disconnect() {}
+    }
+    try {
+      window.ResizeObserver = Measured as unknown as typeof ResizeObserver;
+      globalThis.ResizeObserver = window.ResizeObserver;
+      panel({
+        categories: [
+          { key: 'open', label: 'Open' },
+          { key: 'waiting', label: WAITING },
+        ],
+        series: [{ id: 'orders', label: 'Work orders', data: [2, 5], tone: 'primary' }],
+      });
+      expect(screen.getByTestId('chart-drawing')).toHaveAttribute(
+        'data-label-column',
+        String(needs(WAITING))
+      );
+    } finally {
+      window.ResizeObserver = original;
+      globalThis.ResizeObserver = original;
+    }
+  });
+
+  it('keeps the minimum where nothing measures the drawing, and records none for other charts', () => {
+    const { unmount } = panel();
+    expect(screen.getByTestId('chart-drawing')).toHaveAttribute(
+      'data-label-column',
+      String(CHART_LABEL_COLUMN)
+    );
+    unmount();
+    panel({ layout: 'vertical' });
+    expect(screen.getByTestId('chart-drawing')).not.toHaveAttribute('data-label-column');
   });
 });
 

@@ -14,9 +14,9 @@
  *     its column;
  *   - everything else, Arabic included: 0.72 em.
  *
- * The one budget both the dashboard's hand-drawn charts and `ChartPanel` fit
- * labels and reserve count gutters with. The face actually drawn is confirmed
- * by eye in browser QA.
+ * The one budget `ChartPanel` fits labels, sizes its label column and reserves
+ * count gutters with. The face actually drawn is confirmed by eye in browser
+ * QA.
  */
 
 /** Glyphs budgeted at a whole em. */
