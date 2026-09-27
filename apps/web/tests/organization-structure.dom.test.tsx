@@ -1,9 +1,11 @@
 import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { useState } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import en from '../src/i18n/messages/en.json';
 import ar from '../src/i18n/messages/ar.json';
 import { TEST_BRANCH, branchSnapshot, inBranch, renderLtr, renderRtl } from './render';
+import { useUnsavedWork } from '@/features/working-context/WorkingContextProvider';
 import type {
   BranchView,
   CapacityView,
@@ -994,3 +996,236 @@ describe('the tenant form places a reference the platform does not hold on its f
     expect(screen.queryByText(EN('organization.error.unknownReference'))).toBeNull();
   });
 });
+
+/*
+ * Owner decision of 2026-09-27: the standard tenant administrator edits its own
+ * organisation's settings. The server decides who may (`org.settings.manage`
+ * on `iam.tenant-settings-update`); the form's part is to offer the controls
+ * only to a holder, keep the read-only facts and their notice for everyone else,
+ * and behave like every other form in the product — refusal on the field with
+ * the cursor on it, typed values kept, unsaved work guarded and discardable, a
+ * save said in words and followed by a re-read. DEF-R4: the status is words.
+ */
+const WORKSPACE = {
+  id: '30000000-0000-4000-8000-000000000003',
+  tenantCode: 'tenant_one',
+  displayName: 'Tenant One',
+  status: 'active',
+  defaultLocale: 'en',
+  defaultTimezone: 'UTC',
+  recordVersion: 3,
+};
+
+/** Reads the shell's unsaved-work registry the way the branch selector does. */
+function UnsavedProbe() {
+  const work = useUnsavedWork();
+  const [answer, setAnswer] = useState('unknown');
+  return (
+    <>
+      <button type="button" onClick={() => setAnswer(String(work.any()))}>
+        probe unsaved
+      </button>
+      <button type="button" onClick={() => work.discard()}>
+        probe discard
+      </button>
+      <output data-testid="unsaved-answer">{answer}</output>
+    </>
+  );
+}
+
+describe.each(READERS)(
+  '$locale: the workspace form follows org.settings.manage',
+  ({ locale, messages, M, paint }) => {
+    const control = (key: string) => screen.getByLabelText(new RegExp(`^${escapeRegExp(M(key))}`));
+
+    it('offers the three controls to a holder, with no read-only notice', () => {
+      paint(
+        <TenantForm
+          locale={locale}
+          messages={messages}
+          canWrite
+          tenant={WORKSPACE}
+          referenceValues={REFERENCES}
+        />
+      );
+      expect(control('organization.displayName')).toHaveValue('Tenant One');
+      expect(control('organization.defaultLocale').tagName).toBe('SELECT');
+      expect(control('organization.defaultTimezone').tagName).toBe('SELECT');
+      expect(screen.getByRole('button', { name: M('admin.save') })).toBeEnabled();
+      expect(screen.queryByText(M('admin.readOnly'))).toBeNull();
+    });
+
+    it('shows facts and the read-only notice to anyone else, with no control at all', () => {
+      paint(
+        <TenantForm
+          locale={locale}
+          messages={messages}
+          canWrite={false}
+          tenant={WORKSPACE}
+          referenceValues={REFERENCES}
+        />
+      );
+      expect(screen.getByText(M('admin.readOnly'))).toBeVisible();
+      expect(screen.queryByRole('textbox')).toBeNull();
+      expect(screen.queryByRole('combobox')).toBeNull();
+      expect(screen.queryByRole('button', { name: M('admin.save') })).toBeNull();
+      expect(screen.getByText('Tenant One')).toBeVisible();
+    });
+
+    it.each([true, false])('says the status in words, never as stored (form: %s)', (canWrite) => {
+      paint(
+        <TenantForm
+          locale={locale}
+          messages={messages}
+          canWrite={canWrite}
+          tenant={WORKSPACE}
+          referenceValues={REFERENCES}
+        />
+      );
+      expect(screen.getByText(M('organization.tenantStatus.active'))).toBeVisible();
+      expect(screen.queryByText('active', { exact: true })).toBeNull();
+    });
+
+    it('says a status it does not recognise as unknown rather than printing it', () => {
+      paint(
+        <TenantForm
+          locale={locale}
+          messages={messages}
+          canWrite={false}
+          tenant={{ ...WORKSPACE, status: 'mystery_state' }}
+          referenceValues={REFERENCES}
+        />
+      );
+      expect(screen.getByText(M('organization.tenantStatus.unknown'))).toBeVisible();
+      expect(screen.queryByText('mystery_state')).toBeNull();
+    });
+
+    it('saves the language and time zone with the version it was shown, says so and re-reads', async () => {
+      send.mockResolvedValue({ ok: true, status: 200, data: {}, correlationId: 'corr-save' });
+      const user = userEvent.setup();
+      paint(
+        <TenantForm
+          locale={locale}
+          messages={messages}
+          canWrite
+          tenant={WORKSPACE}
+          referenceValues={REFERENCES}
+        />
+      );
+      await user.selectOptions(control('organization.defaultLocale'), 'ar');
+      await user.selectOptions(control('organization.defaultTimezone'), 'Asia/Amman');
+      await user.click(screen.getByRole('button', { name: M('admin.save') }));
+
+      await waitFor(() => expect(send).toHaveBeenCalledTimes(1));
+      expect(send).toHaveBeenCalledWith(
+        'PATCH',
+        '/api/v1/org/tenant',
+        { displayName: 'Tenant One', defaultLocale: 'ar', defaultTimezone: 'Asia/Amman' },
+        { ifMatch: 3 }
+      );
+      expect(await screen.findByText(M('admin.saved'))).toBeVisible();
+      expect(refresh).toHaveBeenCalledTimes(1);
+      // What was saved stays on screen, and is no longer unsaved work.
+      expect(control('organization.defaultLocale')).toHaveValue('ar');
+      expect(control('organization.defaultTimezone')).toHaveValue('Asia/Amman');
+      expect(screen.queryByRole('button', { name: M('organization.discardChanges') })).toBeNull();
+    });
+
+    it('puts the saved values back with Discard changes, which appears only once something changed', async () => {
+      const user = userEvent.setup();
+      paint(
+        <TenantForm
+          locale={locale}
+          messages={messages}
+          canWrite
+          tenant={WORKSPACE}
+          referenceValues={REFERENCES}
+        />
+      );
+      expect(screen.queryByRole('button', { name: M('organization.discardChanges') })).toBeNull();
+      await user.clear(control('organization.displayName'));
+      await user.type(control('organization.displayName'), 'Renamed');
+      await user.selectOptions(control('organization.defaultTimezone'), 'Asia/Amman');
+      await user.click(screen.getByRole('button', { name: M('organization.discardChanges') }));
+
+      expect(control('organization.displayName')).toHaveValue('Tenant One');
+      expect(control('organization.defaultTimezone')).toHaveValue('UTC');
+      expect(screen.queryByRole('button', { name: M('organization.discardChanges') })).toBeNull();
+      expect(send).not.toHaveBeenCalled();
+    });
+
+    it('declares unsaved work to the shell, and a discard from the shell puts the saved values back', async () => {
+      const user = userEvent.setup();
+      paint(
+        inBranch(
+          <>
+            <TenantForm
+              locale={locale}
+              messages={messages}
+              canWrite
+              tenant={WORKSPACE}
+              referenceValues={REFERENCES}
+            />
+            <UnsavedProbe />
+          </>,
+          { locale }
+        )
+      );
+      await user.click(screen.getByRole('button', { name: 'probe unsaved' }));
+      expect(screen.getByTestId('unsaved-answer')).toHaveTextContent('false');
+
+      await user.selectOptions(control('organization.defaultLocale'), 'ar');
+      await user.click(screen.getByRole('button', { name: 'probe unsaved' }));
+      expect(screen.getByTestId('unsaved-answer')).toHaveTextContent('true');
+
+      await user.click(screen.getByRole('button', { name: 'probe discard' }));
+      await waitFor(() => expect(control('organization.defaultLocale')).toHaveValue('en'));
+      await user.click(screen.getByRole('button', { name: 'probe unsaved' }));
+      expect(screen.getByTestId('unsaved-answer')).toHaveTextContent('false');
+    });
+
+    it('moves the cursor to a refused field, keeps what was typed, and clears the complaint on correction', async () => {
+      send.mockResolvedValue({
+        ok: false,
+        kind: 'validation',
+        status: 422,
+        problem: {
+          type: 'urn:rootlco:error:ERR-VAL-001',
+          title: 'Validation failed',
+          status: 422,
+          code: 'ERR-VAL-001',
+          correlationId: 'corr-tenant',
+          violations: [{ path: 'body.defaultTimezone', rule: 'unknown_reference' }],
+        },
+        correlationId: 'corr-tenant',
+      });
+      const user = userEvent.setup();
+      paint(
+        <TenantForm
+          locale={locale}
+          messages={messages}
+          canWrite
+          tenant={WORKSPACE}
+          referenceValues={REFERENCES}
+        />
+      );
+      await user.clear(control('organization.displayName'));
+      await user.type(control('organization.displayName'), 'Renamed');
+      await user.selectOptions(control('organization.defaultTimezone'), 'Asia/Amman');
+      await user.click(screen.getByRole('button', { name: M('admin.save') }));
+
+      expect(await screen.findByText(M('form.violation.unknown_reference'))).toBeVisible();
+      const zone = control('organization.defaultTimezone');
+      expect(zone).toHaveAttribute('aria-invalid', 'true');
+      await waitFor(() => expect(zone).toHaveFocus());
+      // Nothing typed was lost to the refusal.
+      expect(control('organization.displayName')).toHaveValue('Renamed');
+      expect(zone).toHaveValue('Asia/Amman');
+      expect(refresh).not.toHaveBeenCalled();
+
+      await user.selectOptions(zone, 'UTC');
+      expect(screen.queryByText(M('form.violation.unknown_reference'))).toBeNull();
+      expect(control('organization.defaultTimezone')).not.toHaveAttribute('aria-invalid', 'true');
+    });
+  }
+);
