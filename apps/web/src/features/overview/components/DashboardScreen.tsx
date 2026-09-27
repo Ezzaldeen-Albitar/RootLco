@@ -1,15 +1,32 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useState, type ReactNode } from 'react';
-import { TextField } from '@/components/forms/Field';
+import { useEffect, useId, useState, type ReactNode } from 'react';
+import Button from '@mui/material/Button';
+import Card from '@mui/material/Card';
+import CardContent from '@mui/material/CardContent';
+import Typography from '@mui/material/Typography';
 import {
-  BackendUnavailableState,
-  ErrorState,
-  PermissionDeniedState,
-  SessionExpiredState,
-  SkeletonRows,
-} from '@/components/states/States';
+  ChartPanel,
+  type ChartCategory,
+  type ChartSeries,
+  type ChartState,
+} from '@/components/charts/ChartPanel';
+import { MetricCard, type MetricValue } from '@/components/charts/MetricCard';
+import { FilterToolbar } from '@/components/filters/FilterToolbar';
+import {
+  TODAY_PERIOD,
+  dashboardPeriodRequest,
+  type PeriodSelection,
+} from '@/components/filters/period';
+import {
+  MuiErrorState,
+  MuiExpiredState,
+  MuiLoadingState,
+  MuiRefusedState,
+  MuiUnavailableState,
+} from '@/components/states/MuiStates';
+import { RequiresConcreteBranch } from '@/features/working-context/components/WorkingBranchField';
 import { useBranchTarget } from '@/features/working-context/use-branch-target';
 import { useWorkingContext } from '@/features/working-context/WorkingContextProvider';
 import {
@@ -20,12 +37,9 @@ import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
 import { formatMessage, translate, translateDynamic } from '@/i18n/get-messages';
 import type { BranchScope, ReadState } from '@/lib/api/read-operation';
-import { formatDayInZone, isCalendarDay } from '@/lib/branch-time';
-import { IDLE, invalid, type ActionState } from '@/lib/forms/action-result';
-import { useClearOnCorrect } from '@/lib/forms/use-clear-on-correct';
-import { useFocusFirstInvalid } from '@/lib/forms/use-focus-first-invalid';
 import { UNANSWERED_READ, settleRead } from '@/lib/api/use-search-request';
-import { formatDateTime, formatInteger, intlLocale } from '@/lib/format';
+import { formatDayInZone, formatInZone, zoneLabelAt } from '@/lib/branch-time';
+import { formatInteger, intlLocale } from '@/lib/format';
 import { readDashboardSummaryCancellable } from '../dashboard-summary-read';
 import {
   attentionAreaLink,
@@ -35,30 +49,31 @@ import {
 } from '../dashboard-links';
 import {
   DASHBOARD_PERIODS,
-  type DashboardPeriod,
   type DashboardSection,
   type DashboardSummary,
 } from '../overview-contract';
-import { StateBarChart, TrendChart, WorkloadChart, type TrendRow } from './charts';
 
 /**
  * The dashboard: what this branch is holding, right now (Owner directive,
- * `P1-32-PRE-OD-UX`).
+ * `P1-32-PRE-OD-UX`), on the Material UI wrappers (ADR-022): the period is
+ * `FilterToolbar`'s, the seven figures are `MetricCard`s, the three charts are
+ * `ChartPanel`s and the read states are `MuiStates`.
  *
  * ## One read, and every figure on the screen comes out of it
  *
  * `ovw.dashboard-summary-read` computes each figure as an aggregate over the
  * whole scoped selection inside the authorized transaction. This screen issues
  * it once per working branch and period, and draws nothing it did not receive:
- * no total is summed here, no percentage is derived, and no board's page is
- * counted to stand in for a set.
+ * no figure is summed here, no percentage is derived, and no board's page is
+ * counted to stand in for a set. (A chart's one-sentence description adds up
+ * the figures it draws, for a reader who cannot see the bars.)
  *
  * ## A withheld figure is not a zero
  *
  * Every section carries its own state. `unauthorized` means the reader may not
- * see that part of the workshop, and the card says so — printing `0` would be a
- * false statement about the workshop instead of a true one about the reader.
- * `unavailable` means the platform cannot answer the question at all.
+ * see that part of the workshop, and the card or chart says so — printing `0`
+ * would be a false statement about the workshop instead of a true one about the
+ * reader. `unavailable` means the platform cannot answer the question at all.
  *
  * ## Lateness is not shown, because the platform does not record it
  *
@@ -73,34 +88,17 @@ import { StateBarChart, TrendChart, WorkloadChart, type TrendRow } from './chart
  * not rendered at all. That is decided during render rather than cleared from an
  * effect, so there is no frame in which one branch's numbers sit under another
  * branch's heading.
+ *
+ * ## Whose clock
+ *
+ * The days a period covers are the server's: it cuts them on the clock of the
+ * first branch of the set it resolved, and says which (`period.timezone`) — for
+ * one branch, that branch's clock. Under "All my branches" the covering line
+ * says the days follow one branch's clock. When the figures were taken is
+ * written on the working branch's clock, and on UTC under "All my branches",
+ * with the clock named either way — never the laptop's (the rule `MetricCard`
+ * follows).
  */
-
-/** The period in force, plus the two days a chosen one was applied with. */
-interface AppliedPeriod {
-  readonly kind: DashboardPeriod;
-  readonly from: string;
-  readonly to: string;
-}
-
-const TODAY: AppliedPeriod = { kind: 'today', from: '', to: '' };
-
-/** The longest period the operation accepts: a calendar quarter's worst case. */
-const MAX_PERIOD_DAYS = 92;
-
-const DAY_MS = 86_400_000;
-
-/** How many calendar days a chosen period covers, both ends included. */
-function daysCovered(from: string, to: string): number {
-  return Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / DAY_MS) + 1;
-}
-
-/** What the read is asked for. `null` when there is nothing to ask. */
-interface Asked {
-  readonly scope: BranchScope;
-  readonly period: DashboardPeriod;
-  readonly from?: string;
-  readonly to?: string;
-}
 
 /** One figure, with the address of the rows behind it. */
 interface FigureCard {
@@ -121,6 +119,20 @@ interface FigureCard {
 
 const OPEN_THE_LIST = 'dashboard.card.openTheList';
 
+/** The longest period the operation accepts: a calendar quarter's worst case. */
+const MAX_PERIOD_DAYS = 92;
+
+/** A figure's section, as the card draws it. */
+function metricOf(section: DashboardSection<number>): MetricValue {
+  if (section.status === 'ok') return { status: 'ok', value: section.value };
+  return { status: section.status };
+}
+
+/** A chart's section, as the panel draws it. */
+function chartStateOf(section: DashboardSection<unknown>): ChartState {
+  return section.status === 'ok' ? 'ready' : section.status;
+}
+
 export function DashboardScreen({
   locale,
   messages,
@@ -132,15 +144,12 @@ export function DashboardScreen({
   const branch = useBranchTarget();
   const t = (key: keyof Messages) => translate(messages, key);
 
-  const [period, setPeriod] = useState<AppliedPeriod>(TODAY);
-  const [draftFrom, setDraftFrom] = useState('');
-  const [draftTo, setDraftTo] = useState('');
-  const [custom, setCustom] = useState(false);
-  /** Bumped by the refresh control. Part of the key, so it re-reads. */
+  const [period, setPeriod] = useState<PeriodSelection>(TODAY_PERIOD);
+  /** Bumped by the refresh control and the retry. Part of the key, so it re-reads. */
   const [asAt, setAsAt] = useState(0);
-  const [refusal, setRefusal] = useState<ActionState>(IDLE);
-  const formRef = useFocusFirstInvalid(refusal);
-  const corrections = useClearOnCorrect(refusal);
+  const refresh = () => {
+    setAsAt((previous) => previous + 1);
+  };
 
   const scope: BranchScope | null =
     branch.kind === 'ready'
@@ -149,29 +158,24 @@ export function DashboardScreen({
         ? { companyId: context.selection.companyId, branchId: null }
         : null;
 
-  const asked: Asked | null =
-    scope === null
-      ? null
-      : period.kind === 'custom'
-        ? period.from === '' || period.to === ''
-          ? null
-          : { scope, period: 'custom', from: period.from, to: period.to }
-        : { scope, period: period.kind };
+  // The toolbar only ever hands over a period the dashboard names, and a chosen
+  // one only with both days — so this is `null` only if that ever stops being so.
+  const request = dashboardPeriodRequest(period);
 
   /*
    * The one key everything is filed under, and the inputs it is built from.
    *
    * Every part is a primitive: branch, period, the two chosen days, the
    * working-context version and the refresh counter. The effect below depends on
-   * those primitives rather than on the rebuilt request object, so a render that
+   * those primitives rather than on a rebuilt request object, so a render that
    * changes nothing asks for nothing — and a change to any of them makes the
    * held answer unrenderable in the same render it changed in.
    */
   const companyId = scope?.companyId ?? null;
   const branchId = scope?.branchId ?? null;
-  const periodKind = asked?.period ?? null;
-  const askedFrom = asked?.from ?? '';
-  const askedTo = asked?.to ?? '';
+  const periodKind = scope === null || request === null ? null : request.period;
+  const askedFrom = request?.period === 'custom' ? request.from : '';
+  const askedTo = request?.period === 'custom' ? request.to : '';
   const version = context.version;
   const key =
     companyId === null || periodKind === null
@@ -240,245 +244,108 @@ export function DashboardScreen({
   const answer = held !== null && key !== null && held.key === key ? held.read : null;
   const summary = answer !== null && answer.status === 'ok' ? answer.data : null;
 
-  const zone =
-    summary?.period.timezone ??
-    (branch.kind === 'ready'
-      ? context.branches.find((entry) => entry.id === branch.target.branchId)?.timezone
-      : context.branches[0]?.timezone) ??
-    'UTC';
+  /** The working branch's clock, when one branch is in force. */
+  const workingZone =
+    branch.kind === 'ready'
+      ? (context.branches.find((entry) => entry.id === branch.target.branchId)?.timezone ?? null)
+      : null;
+  /** The clock the chosen days are picked on: the working branch's, or the first one's. */
+  const pickerZone = workingZone ?? context.branches[0]?.timezone ?? 'UTC';
+  /** The clock "as they stood at" is written on. See "Whose clock". */
+  const freshnessZone =
+    branchId === null ? 'UTC' : (workingZone ?? summary?.period.timezone ?? 'UTC');
 
-  const choosePeriod = (kind: DashboardPeriod) => {
-    setRefusal(IDLE);
-    if (kind === 'custom') {
-      setCustom(true);
-      return;
-    }
-    setCustom(false);
-    setPeriod({ kind, from: '', to: '' });
+  /*
+   * "Reading the figures" only while a read is in flight. A read that answered
+   * with a failure is not being read any more, and saying it is was the whole
+   * of what the operator saw after a failed refresh; a screen that asked for
+   * nothing — no branch chosen yet — is not reading either.
+   */
+  const summaryLine = (): string | undefined => {
+    if (summary === null)
+      return answer === null && key !== null ? t('dashboard.period.pending') : undefined;
+    const days = summary.period.timezone;
+    const covering = formatMessage(
+      t(branchId === null ? 'dashboard.period.coveringUnion' : 'dashboard.period.covering'),
+      {
+        from: formatDayInZone(summary.period.from, intlLocale(locale), days),
+        to: formatDayInZone(summary.period.to, intlLocale(locale), days),
+        zone: days,
+      }
+    );
+    const freshness = formatMessage(t('dashboard.freshness'), {
+      when: formatInZone(summary.generatedAt, intlLocale(locale), freshnessZone),
+      zone: zoneLabelAt(summary.generatedAt, intlLocale(locale), freshnessZone),
+    });
+    return `${covering} ${freshness}`;
   };
-
-  const applyCustom = () => {
-    if (draftFrom === '' || draftTo === '') {
-      setRefusal(
-        invalid(
-          { [draftFrom === '' ? 'from' : 'to']: 'dashboard.period.incomplete' },
-          (refusal.attempt ?? 0) + 1
-        )
-      );
-      return;
-    }
-    if (!isCalendarDay(draftFrom) || !isCalendarDay(draftTo)) {
-      setRefusal(
-        invalid(
-          { [isCalendarDay(draftFrom) ? 'to' : 'from']: 'dashboard.period.incomplete' },
-          (refusal.attempt ?? 0) + 1
-        )
-      );
-      return;
-    }
-    if (draftTo < draftFrom) {
-      // Refused here rather than at the backend: an inverted range is answered
-      // 422, and a page-level failure teaches nobody which box to fix.
-      setRefusal(invalid({ to: 'dashboard.period.inverted' }, (refusal.attempt ?? 0) + 1));
-      return;
-    }
-    if (daysCovered(draftFrom, draftTo) > MAX_PERIOD_DAYS) {
-      setRefusal(invalid({ to: 'dashboard.period.tooLong' }, (refusal.attempt ?? 0) + 1));
-      return;
-    }
-    setRefusal(IDLE);
-    setPeriod({ kind: 'custom', from: draftFrom, to: draftTo });
-  };
-
-  const errorFor = (field: string): string | undefined => {
-    const messageKey = corrections.errorFor(field);
-    return messageKey === undefined ? undefined : translateDynamic(messages, messageKey);
-  };
-  const fromError = errorFor('from');
-  const toError = errorFor('to');
-
-  const criteriaForLink =
-    period.kind === 'custom' && period.from !== '' && period.to !== ''
-      ? { period: period.kind, from: period.from, to: period.to }
-      : { period: period.kind };
 
   const header = (
-    <form
-      ref={formRef}
-      onSubmit={(event) => {
-        event.preventDefault();
-        applyCustom();
+    <FilterToolbar
+      messages={messages}
+      label={t('dashboard.period.legend')}
+      testId="dashboard-toolbar"
+      period={{
+        format: 'dashboard',
+        presets: DASHBOARD_PERIODS,
+        value: period,
+        zone: pickerZone,
+        maxDays: MAX_PERIOD_DAYS,
+        onChange: (selection) => setPeriod(selection),
+        notApplied: {
+          preset: t('dashboard.period.notApplied'),
+          custom: t('dashboard.period.notAppliedCustom'),
+        },
       }}
-      noValidate
-      aria-label={t('dashboard.period.legend')}
-      className="flex flex-col gap-3 rounded-lg border border-border bg-surface p-4"
-    >
-      <div
-        role="group"
-        aria-label={t('dashboard.period.legend')}
-        className="flex flex-wrap items-center gap-2"
-      >
-        {DASHBOARD_PERIODS.map((kind) => {
-          const pressed = kind === 'custom' ? custom : !custom && period.kind === kind;
-          return (
-            <button
-              key={kind}
-              type="button"
-              aria-pressed={pressed}
-              onClick={() => {
-                choosePeriod(kind);
-              }}
-              className={
-                pressed
-                  ? 'rounded-md border border-border bg-primary px-3 py-1.5 text-body text-on-primary transition-colors duration-fast ease-standard focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring'
-                  : 'rounded-md border border-border px-3 py-1.5 text-body text-text-primary transition-colors duration-fast ease-standard hover:bg-surface-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring'
-              }
-            >
-              {translateDynamic(messages, `dashboard.period.${kind}`)}
-            </button>
-          );
-        })}
-        <button
-          type="button"
-          onClick={() => {
-            setAsAt((previous) => previous + 1);
-          }}
-          className="ms-auto rounded-md border border-border px-3 py-1.5 text-body text-text-primary transition-colors duration-fast ease-standard hover:bg-surface-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
-        >
+      summary={summaryLine()}
+      actions={
+        <Button type="button" variant="outlined" size="small" onClick={refresh}>
           {t('dashboard.refresh')}
-        </button>
-      </div>
-
-      {custom ? (
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          <TextField
-            type="date"
-            label={t('dashboard.period.from')}
-            value={draftFrom}
-            onChange={(event) => {
-              corrections.noteEdited('from');
-              setDraftFrom(event.target.value);
-            }}
-            {...(fromError === undefined ? {} : { error: fromError })}
-          />
-          <TextField
-            type="date"
-            label={t('dashboard.period.to')}
-            value={draftTo}
-            onChange={(event) => {
-              corrections.noteEdited('to');
-              setDraftTo(event.target.value);
-            }}
-            {...(toError === undefined ? {} : { error: toError })}
-          />
-          <div className="flex flex-wrap items-end gap-2">
-            <button
-              type="submit"
-              className="rounded-md bg-primary px-4 py-2 text-body font-medium text-on-primary transition-colors duration-fast ease-standard hover:bg-primary-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
-            >
-              {t('dashboard.period.apply')}
-            </button>
-          </div>
-        </div>
-      ) : null}
-
-      {/*
-        Pressing "Choose dates" does not change a single figure — the days have
-        not been named yet, so there is nothing to ask for. Without this line
-        the control reads as applied while every number below still answers the
-        period before it, which is the screen stating one period and showing
-        another.
-      */}
-      {custom && period.kind !== 'custom' ? (
-        <p className="text-supporting text-warning">
-          {formatMessage(t('dashboard.period.notApplied'), {
-            period: translateDynamic(messages, `dashboard.period.${period.kind}`),
-          })}
-        </p>
-      ) : null}
-
-      {/*
-        "Reading the figures" only while there is no answer yet. A read that
-        answered with a failure is not being read any more, and saying it is
-        was the whole of what the operator saw after a failed refresh.
-      */}
-      <p className="text-supporting text-text-secondary">
-        {summary === null
-          ? answer === null
-            ? t('dashboard.period.pending')
-            : null
-          : formatMessage(t('dashboard.period.covering'), {
-              from: formatDayInZone(summary.period.from, intlLocale(locale), zone),
-              to: formatDayInZone(summary.period.to, intlLocale(locale), zone),
-              zone: summary.period.timezone,
-            })}
-      </p>
-      {summary === null ? null : (
-        <p className="text-caption text-text-muted">
-          {formatMessage(t('dashboard.freshness'), {
-            when: formatDateTime(summary.generatedAt, locale),
-          })}
-        </p>
-      )}
-    </form>
+        </Button>
+      }
+    />
   );
 
   const body = (): ReactNode => {
     if (branch.kind === 'all' && scope === null) {
-      return <Notice messages={messages} messageKey="workingContext.spansCompanies" />;
-    }
-    if (branch.kind === 'unchosen') {
-      return <Notice messages={messages} messageKey="workingContext.chooseFirst" />;
-    }
-    if (branch.kind === 'none') {
-      return <Notice messages={messages} messageKey="workingContext.noBranch" />;
-    }
-    if (branch.kind === 'unavailable') {
-      return <Notice messages={messages} messageKey="workingContext.unavailable" />;
-    }
-    if (asked === null) {
-      return <Notice messages={messages} messageKey="dashboard.period.incomplete" />;
-    }
-    if (answer === null) return <SkeletonRows rows={4} />;
-    if (answer.status === 'denied') {
       return (
-        <PermissionDeniedState
-          messages={messages}
-          {...(answer.correlationId === null ? {} : { correlationId: answer.correlationId })}
-        />
+        <p
+          role="status"
+          data-testid="dashboard-spans-companies"
+          className="rounded-md bg-warning-subtle px-3 py-2 text-supporting text-text-secondary"
+        >
+          {t('workingContext.spansCompanies')}
+        </p>
       );
     }
-    if (answer.status === 'expired') return <SessionExpiredState messages={messages} />;
+    if (branch.kind === 'unchosen' || branch.kind === 'none' || branch.kind === 'unavailable') {
+      return (
+        <RequiresConcreteBranch messages={messages} state={branch} testId="dashboard-blocked" />
+      );
+    }
+    if (key === null) return null;
+    if (answer === null) {
+      return <MuiLoadingState messages={messages} rows={4} testId="dashboard-loading" />;
+    }
+    if (answer.status === 'denied') {
+      return <MuiRefusedState messages={messages} correlationId={answer.correlationId} />;
+    }
+    if (answer.status === 'expired') return <MuiExpiredState messages={messages} locale={locale} />;
     // An outage and a fault both offer the same read again, here beside the
-    // sentence rather than only as the header's Refresh, which an operator
+    // sentence rather than only as the toolbar's Refresh, which an operator
     // looking at the failure has no reason to connect with it.
-    const retry = (
-      <button
-        type="button"
-        onClick={() => {
-          setAsAt((previous) => previous + 1);
-        }}
-        className="rounded-md border border-border px-3 py-1.5 text-body text-text-primary transition-colors duration-fast ease-standard hover:bg-surface-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
-      >
-        {t('state.retry')}
-      </button>
-    );
     if (answer.status === 'unavailable') {
       return (
-        <BackendUnavailableState
+        <MuiUnavailableState
           messages={messages}
-          action={retry}
-          {...(answer.correlationId === null ? {} : { correlationId: answer.correlationId })}
+          onRetry={refresh}
+          correlationId={answer.correlationId}
         />
       );
     }
     if (answer.status !== 'ok') {
       return (
-        <ErrorState
-          messages={messages}
-          action={retry}
-          {...(answer.correlationId === null ? {} : { correlationId: answer.correlationId })}
-        />
+        <MuiErrorState messages={messages} onRetry={refresh} correlationId={answer.correlationId} />
       );
     }
 
@@ -486,6 +353,8 @@ export function DashboardScreen({
     // ever hold the same object, and testing the second for absence was a
     // branch no run could reach — dead code that reads like a handled case.
     const sections = answer.data.sections;
+    const days = answer.data.period.timezone;
+    const criteriaForLink = request ?? { period: 'today' as const };
 
     const cards: readonly FigureCard[] = [
       {
@@ -565,62 +434,98 @@ export function DashboardScreen({
       },
     ];
 
-    const stateRows =
-      sections.workOrdersByState.status === 'ok'
-        ? sections.workOrdersByState.value.map((bucket) => {
-            /*
-             * The label is the platform's word for its own states and the
-             * workshop's own word for the rest. The catalogue the board reads is
-             * not read again here: each bucket already carries the name recorded
-             * against the state, which is exactly what that catalogue would
-             * supply for a code the platform does not define.
-             */
-            const catalogue: readonly WorkOrderStateCatalogueEntry[] = [
-              {
-                code: bucket.state,
-                name: bucket.label,
-                isTerminal: bucket.isTerminal,
-                isClosed: bucket.isTerminal,
-                isCancellation: false,
-              },
-            ];
-            return {
-              code: bucket.state,
-              label: workOrderStateLabel(bucket.state, catalogue, (messageKey) =>
-                translateDynamic(messages, messageKey)
-              ),
-              count: bucket.count,
-              isTerminal: bucket.isTerminal,
-              href: workOrdersStateLink(locale, bucket.state),
-            };
-          })
-        : [];
+    const finished = t('dashboard.byState.finished');
+    const stateBuckets =
+      sections.workOrdersByState.status === 'ok' ? sections.workOrdersByState.value : [];
+    const stateCategories: readonly ChartCategory[] = stateBuckets.map((bucket) => {
+      /*
+       * The label is the platform's word for its own states and the workshop's
+       * own word for the rest. The catalogue the board reads is not read again
+       * here: each bucket already carries the name recorded against the state,
+       * which is exactly what that catalogue would supply for a code the
+       * platform does not define.
+       */
+      const catalogue: readonly WorkOrderStateCatalogueEntry[] = [
+        {
+          code: bucket.state,
+          name: bucket.label,
+          isTerminal: bucket.isTerminal,
+          isClosed: bucket.isTerminal,
+          isCancellation: false,
+        },
+      ];
+      const label = workOrderStateLabel(bucket.state, catalogue, (messageKey) =>
+        translateDynamic(messages, messageKey)
+      );
+      return {
+        key: bucket.state,
+        label,
+        // A finished state is hatched AND said in words, never told by colour alone.
+        note: bucket.isTerminal ? finished : undefined,
+        hatched: bucket.isTerminal,
+        href: workOrdersStateLink(locale, bucket.state),
+      };
+    });
+    const stateCounts = stateBuckets.map((bucket) => bucket.count);
+    const stateSeries: readonly ChartSeries[] = [
+      { id: 'count', label: t('dashboard.byState.count'), data: stateCounts, tone: 'primary' },
+    ];
 
-    const trendRows: readonly TrendRow[] =
-      sections.intakeCompletionTrend.status === 'ok'
-        ? sections.intakeCompletionTrend.value.map((point) => ({
-            date: point.date,
-            label: formatInteger(Number(point.date.slice(8, 10)), locale),
-            dayLabel: formatDayInZone(point.date, intlLocale(locale), zone),
-            opened: point.opened,
-            completed: point.completed,
-          }))
-        : [];
+    const trendPoints =
+      sections.intakeCompletionTrend.status === 'ok' ? sections.intakeCompletionTrend.value : [];
+    const trendCategories: readonly ChartCategory[] = trendPoints.map((point) => ({
+      key: point.date,
+      // Short enough for an axis — the day within its month; the table and the
+      // tooltip carry the whole day.
+      label: formatInteger(Number(point.date.slice(8, 10)), locale),
+      fullLabel: formatDayInZone(point.date, intlLocale(locale), days),
+    }));
+    const opened = trendPoints.map((point) => point.opened);
+    const completed = trendPoints.map((point) => point.completed);
+    // `opened` counts WORK ORDERS opened, not visits received — the legend says so.
+    const trendSeries: readonly ChartSeries[] = [
+      { id: 'opened', label: t('dashboard.trend.opened'), data: opened, tone: 'primary' },
+      {
+        id: 'completed',
+        label: t('dashboard.trend.completed'),
+        data: completed,
+        tone: 'muted',
+        hatched: true,
+      },
+    ];
 
-    const workloadRows =
-      sections.technicianWorkload.status === 'ok'
-        ? sections.technicianWorkload.value.map((entry) => ({
-            technicianId: entry.technicianId,
-            label: entry.displayName ?? t('dashboard.workload.unnamed'),
-            activeCount: entry.activeCount,
-          }))
-        : [];
+    const workload =
+      sections.technicianWorkload.status === 'ok' ? sections.technicianWorkload.value : [];
+    const workloadCategories: readonly ChartCategory[] = workload.map((entry) => ({
+      key: entry.technicianId,
+      label: entry.displayName ?? t('dashboard.workload.unnamed'),
+    }));
+    const workloadSeries: readonly ChartSeries[] = [
+      {
+        id: 'activeCount',
+        label: t('dashboard.workload.count'),
+        data: workload.map((entry) => entry.activeCount),
+        tone: 'primary',
+      },
+    ];
+
+    const total = (values: readonly number[]) => values.reduce((sum, value) => sum + value, 0);
 
     return (
       <div className="flex flex-col gap-4">
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           {cards.map((card) => (
-            <FigureTile key={card.id} card={card} messages={messages} locale={locale} />
+            <MetricCard
+              key={card.id}
+              messages={messages}
+              locale={locale}
+              label={translateDynamic(messages, card.labelKey)}
+              metric={metricOf(card.section)}
+              href={card.href}
+              linkLabel={translateDynamic(messages, card.linkLabelKey)}
+              timeZone={freshnessZone}
+              testId={`dashboard-figure-${card.id}`}
+            />
           ))}
         </div>
 
@@ -633,23 +538,68 @@ export function DashboardScreen({
           attentionHref={attentionAreaLink(locale)}
         />
 
-        {sections.workOrdersByState.status === 'ok' ? (
-          <StateBarChart messages={messages} locale={locale} rows={stateRows} />
-        ) : (
-          <SectionNotice messages={messages} section={sections.workOrdersByState} />
-        )}
+        <ChartPanel
+          messages={messages}
+          locale={locale}
+          title={t('dashboard.byState.title')}
+          description={t('dashboard.byState.description')}
+          summary={formatMessage(t('dashboard.byState.summary'), {
+            states: formatInteger(stateCategories.length, locale),
+            total: formatInteger(total(stateCounts), locale),
+          })}
+          kind="bar"
+          layout="horizontal"
+          categories={stateCategories}
+          series={stateSeries}
+          categoryHeader={t('dashboard.byState.state')}
+          linkHeader={t('dashboard.byState.openTheList')}
+          linkLabel={(category) =>
+            formatMessage(t('dashboard.byState.openStateList'), {
+              state: category.fullLabel ?? category.label,
+            })
+          }
+          emptyText={t('dashboard.byState.emptyTitle')}
+          state={chartStateOf(sections.workOrdersByState)}
+          testId="dashboard-chart-byState"
+        />
 
-        {sections.intakeCompletionTrend.status === 'ok' ? (
-          <TrendChart messages={messages} locale={locale} rows={trendRows} />
-        ) : (
-          <SectionNotice messages={messages} section={sections.intakeCompletionTrend} />
-        )}
+        <ChartPanel
+          messages={messages}
+          locale={locale}
+          title={t('dashboard.trend.title')}
+          description={t('dashboard.trend.description')}
+          summary={formatMessage(t('dashboard.trend.summary'), {
+            days: formatInteger(trendCategories.length, locale),
+            opened: formatInteger(total(opened), locale),
+            completed: formatInteger(total(completed), locale),
+          })}
+          kind="bar"
+          layout="vertical"
+          categories={trendCategories}
+          series={trendSeries}
+          categoryHeader={t('dashboard.trend.day')}
+          emptyText={t('dashboard.trend.emptyTitle')}
+          state={chartStateOf(sections.intakeCompletionTrend)}
+          testId="dashboard-chart-trend"
+        />
 
-        {sections.technicianWorkload.status === 'ok' ? (
-          <WorkloadChart messages={messages} locale={locale} rows={workloadRows} />
-        ) : (
-          <SectionNotice messages={messages} section={sections.technicianWorkload} />
-        )}
+        <ChartPanel
+          messages={messages}
+          locale={locale}
+          title={t('dashboard.workload.title')}
+          description={t('dashboard.workload.description')}
+          summary={formatMessage(t('dashboard.workload.summary'), {
+            people: formatInteger(workloadCategories.length, locale),
+          })}
+          kind="bar"
+          layout="horizontal"
+          categories={workloadCategories}
+          series={workloadSeries}
+          categoryHeader={t('dashboard.workload.technician')}
+          emptyText={t('dashboard.workload.emptyTitle')}
+          state={chartStateOf(sections.technicianWorkload)}
+          testId="dashboard-chart-workload"
+        />
       </div>
     );
   };
@@ -659,115 +609,6 @@ export function DashboardScreen({
       {header}
       {body()}
     </div>
-  );
-}
-
-/** A sentence in a frame, for the states that have nothing to draw. */
-function Notice({
-  messages,
-  messageKey,
-}: {
-  readonly messages: Messages;
-  readonly messageKey: string;
-}) {
-  return (
-    <p className="rounded-xl border border-border-subtle bg-surface p-4 text-body text-text-muted">
-      {translateDynamic(messages, messageKey)}
-    </p>
-  );
-}
-
-/** What a whole withheld or unanswerable section says instead of drawing. */
-function SectionNotice({
-  messages,
-  section,
-}: {
-  readonly messages: Messages;
-  readonly section: DashboardSection<unknown>;
-}) {
-  return (
-    <Notice
-      messages={messages}
-      messageKey={
-        section.status === 'unauthorized'
-          ? 'dashboard.section.withheld'
-          : 'dashboard.card.unavailable'
-      }
-    />
-  );
-}
-
-/**
- * One figure.
- *
- * Three arms and three different renderings, because they are three different
- * statements: a number the platform counted, a refusal addressed to this reader,
- * and a question the platform cannot answer. Only the first is a link — there is
- * nothing to open behind the other two.
- */
-function FigureTile({
-  card,
-  messages,
-  locale,
-}: {
-  readonly card: FigureCard;
-  readonly messages: Messages;
-  readonly locale: Locale;
-}) {
-  const label = translateDynamic(messages, card.labelKey);
-  const frame =
-    'flex flex-col gap-1 rounded-xl border border-border-subtle bg-surface p-4 shadow-xs';
-
-  if (card.section.status === 'unauthorized') {
-    return (
-      <div className={frame} data-figure={card.id}>
-        <span className="text-supporting text-text-secondary">{label}</span>
-        <span className="text-body text-text-muted">
-          {translate(messages, 'dashboard.card.withheld')}
-        </span>
-      </div>
-    );
-  }
-
-  if (card.section.status === 'unavailable') {
-    return (
-      <div className={frame} data-figure={card.id}>
-        <span className="text-supporting text-text-secondary">{label}</span>
-        <span className="text-body text-text-muted">
-          {translate(messages, 'dashboard.card.unavailable')}
-        </span>
-      </div>
-    );
-  }
-
-  const figure = (
-    <>
-      <span className="text-supporting text-text-secondary">{label}</span>
-      <span className="text-display font-semibold text-text-heading">
-        {formatInteger(card.section.value, locale)}
-      </span>
-    </>
-  );
-
-  if (card.href === null) {
-    return (
-      <div className={frame} data-figure={card.id}>
-        {figure}
-      </div>
-    );
-  }
-
-  return (
-    <Link
-      href={card.href}
-      data-figure={card.id}
-      className={`${frame} transition-colors duration-fast ease-standard hover:bg-surface-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring`}
-    >
-      {figure}
-      <span className="text-caption text-primary">
-        {translateDynamic(messages, card.linkLabelKey)}
-      </span>
-    </Link>
   );
 }
 
@@ -794,6 +635,9 @@ function FigureTile({
  * that shows the findings themselves. The panel links there instead, and says
  * that is where they are — an honest signpost rather than a count nobody asked
  * the server for.
+ *
+ * No wrapper draws a signpost list, so this stays the screen's own: a Material
+ * card on the token layer, the same frame as the figures above it.
  */
 function ActionablePanel({
   messages,
@@ -814,59 +658,61 @@ function ActionablePanel({
   readonly attentionHref: string;
 }) {
   const t = (key: keyof Messages) => translate(messages, key);
+  const titleId = useId();
   const line = (section: DashboardSection<number>): string =>
     section.status === 'ok'
       ? formatInteger(section.value, locale)
       : section.status === 'unauthorized'
-        ? t('dashboard.card.withheld')
-        : t('dashboard.card.unavailable');
+        ? t('metric.withheld')
+        : t('metric.unavailable');
+  const linkClass =
+    'text-caption text-primary underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring';
 
   return (
-    <section className="rounded-xl border border-border-subtle bg-surface p-4">
-      <h2 className="text-section-title font-semibold text-text-heading">
-        {t('dashboard.actions.title')}
-      </h2>
-      <ul className="mt-2 flex flex-col gap-2">
-        <li
-          data-actionable="approvalOrders"
-          className="flex flex-wrap items-baseline gap-2 text-body text-text-primary"
-        >
-          <span>{t('dashboard.actions.approvalOrders')}</span>
-          <strong className="text-text-heading">{line(waitingOrders)}</strong>
-          <Link
-            href={workOrdersViewLink(locale, 'awaitingApproval')}
-            className="text-caption text-primary underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+    <Card component="section" variant="outlined" aria-labelledby={titleId}>
+      <CardContent className="flex flex-col gap-2">
+        <Typography id={titleId} variant="h3" component="h2" className="text-text-heading">
+          {t('dashboard.actions.title')}
+        </Typography>
+        <ul className="flex flex-col gap-2">
+          <li
+            data-actionable="approvalOrders"
+            className="flex flex-wrap items-baseline gap-2 text-body text-text-primary"
           >
-            {t('dashboard.actions.openApprovals')}
-          </Link>
-        </li>
-        <li
-          data-actionable="approvalRequests"
-          className="flex flex-wrap items-baseline gap-2 text-body text-text-secondary"
-        >
-          <span>{t('dashboard.actions.approvals')}</span>
-          <strong className="text-text-heading">{line(pendingRequests)}</strong>
-        </li>
-        <li className="flex flex-wrap items-baseline gap-2 text-body text-text-primary">
-          <span>{t('dashboard.actions.lowStock')}</span>
-          <strong className="text-text-heading">{line(lowStock)}</strong>
-          <Link
-            href={attentionHref}
-            className="text-caption text-primary underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+            <span>{t('dashboard.actions.approvalOrders')}</span>
+            <strong className="text-text-heading">{line(waitingOrders)}</strong>
+            <Link href={workOrdersViewLink(locale, 'awaitingApproval')} className={linkClass}>
+              {t('dashboard.actions.openApprovals')}
+            </Link>
+          </li>
+          <li
+            data-actionable="approvalRequests"
+            className="flex flex-wrap items-baseline gap-2 text-body text-text-secondary"
           >
-            {t('dashboard.actions.openAttention')}
-          </Link>
-        </li>
-        <li className="flex flex-wrap items-baseline gap-2 text-body text-text-secondary">
-          <span>{t('dashboard.actions.otherWarnings')}</span>
-          <Link
-            href={attentionHref}
-            className="text-caption text-primary underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+            <span>{t('dashboard.actions.approvals')}</span>
+            <strong className="text-text-heading">{line(pendingRequests)}</strong>
+          </li>
+          <li
+            data-actionable="lowStock"
+            className="flex flex-wrap items-baseline gap-2 text-body text-text-primary"
           >
-            {t('dashboard.actions.openAttention')}
-          </Link>
-        </li>
-      </ul>
-    </section>
+            <span>{t('dashboard.actions.lowStock')}</span>
+            <strong className="text-text-heading">{line(lowStock)}</strong>
+            <Link href={attentionHref} className={linkClass}>
+              {t('dashboard.actions.openAttention')}
+            </Link>
+          </li>
+          <li
+            data-actionable="otherWarnings"
+            className="flex flex-wrap items-baseline gap-2 text-body text-text-secondary"
+          >
+            <span>{t('dashboard.actions.otherWarnings')}</span>
+            <Link href={attentionHref} className={linkClass}>
+              {t('dashboard.actions.openAttention')}
+            </Link>
+          </li>
+        </ul>
+      </CardContent>
+    </Card>
   );
 }

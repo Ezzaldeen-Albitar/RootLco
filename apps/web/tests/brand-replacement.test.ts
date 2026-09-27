@@ -179,7 +179,6 @@ describe('the provisional declaration is governed by brand state', () => {
   const MAKES_NO_BRAND_CLAIM = [
     'src/app/[locale]/(dashboard)/page.tsx',
     'src/features/overview/components/DashboardScreen.tsx',
-    'src/features/overview/components/charts.tsx',
   ];
 
   it('names surfaces that exist, so the two cases below are not vacuous', () => {

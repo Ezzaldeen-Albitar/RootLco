@@ -275,7 +275,7 @@ describe('the overview figures, on a period change', () => {
     expect(left.url).toContain(`companyId=${COMPANY}`);
 
     await user.click(
-      screen.getByRole('button', { name: EN['dashboard.period.yesterday'] as string })
+      screen.getByRole('button', { name: EN['filters.period.yesterday'] as string })
     );
     await waitFor(() => expect(latest().url).toContain('period=yesterday'));
 
