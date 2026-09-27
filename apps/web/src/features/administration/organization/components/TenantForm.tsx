@@ -27,7 +27,7 @@ import { useActionRefusal } from '@/lib/forms/use-action-refusal';
  * platform holds it and the interface can be shown in it, a zone when the
  * platform holds it. When that read was not permitted or failed, the language
  * falls back to the interface languages and the zone to the zones already in
- * use. The saved value is always one of the choices, so an untouched form still
+ * use, as it also does when the list holds no active zone. The saved value is always one of the choices, so an untouched form still
  * submits it. Nothing is typed; a refusal is still shown on its field.
  */
 export function TenantForm({
@@ -85,8 +85,9 @@ export function TenantForm({
       : [...LOCALES],
     tenant.defaultLocale
   );
+  const referenceZones = (referenceValues?.timezones ?? []).map((zone) => zone.zoneName);
   const timezoneValues = withSaved(
-    referenceValues ? referenceValues.timezones.map((zone) => zone.zoneName) : timezoneChoices,
+    referenceZones.length > 0 ? referenceZones : timezoneChoices,
     tenant.defaultTimezone
   );
 

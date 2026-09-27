@@ -107,9 +107,14 @@ export function OrganizationStructure({
     currencyChoices.length > 0
       ? currencyChoices
       : (referenceValues?.currencies ?? []).map((currency) => currency.code);
-  const timezoneOptions = referenceValues
-    ? referenceValues.timezones.map((zone) => zone.zoneName)
-    : timezoneChoices;
+  // A reference list with no active zone falls back to the zones in use, the
+  // same as a list that could not be loaded.
+  const referenceZones = (referenceValues?.timezones ?? []).map((zone) => zone.zoneName);
+  const timezoneOptions = referenceZones.length > 0 ? referenceZones : timezoneChoices;
+  const timezoneHint =
+    timezoneOptions.length > 0
+      ? 'organization.branch.timezoneHint'
+      : 'organization.branch.timezoneUnavailable';
   // With neither source holding a currency the select has nothing to offer, and
   // the dialog says so rather than presenting an empty required choice.
   const currencyHint =
@@ -341,6 +346,7 @@ export function OrganizationStructure({
           messages={messages}
           companies={companyRows}
           timezoneChoices={timezoneOptions}
+          timezoneHint={timezoneHint}
           onClose={() => {
             setDialog(null);
             router.refresh();
@@ -500,11 +506,13 @@ function BranchDialog({
   messages,
   companies,
   timezoneChoices,
+  timezoneHint,
   onClose,
 }: {
   readonly messages: Messages;
   readonly companies: readonly CompanyView[];
   readonly timezoneChoices: readonly string[];
+  readonly timezoneHint: string;
   readonly onClose: () => void;
 }) {
   const [state, formAction] = useActionState<ActionState, FormData>(createBranchAction, IDLE);
@@ -600,7 +608,7 @@ function BranchDialog({
           error={fieldError('timezone')}
           defaultValue={draft['timezone'] ?? ''}
           label={t('organization.branch.timezone')}
-          description={t('organization.branch.timezoneHint')}
+          description={t(timezoneHint)}
           required
           placeholder={t('field.selectPlaceholder')}
           options={timezoneChoices.map((zone) => ({ value: zone, label: zone }))}

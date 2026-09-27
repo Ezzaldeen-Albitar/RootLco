@@ -314,7 +314,7 @@ companies."_ <!-- organization.branch.addDescription --> — and fill in:
 | **Branch name** | What the site is called.                                                                             |
 | **City**        | Optional.                                                                                            |
 | **Country**     | _"Two capital letters, for example JO."_                                                             |
-| **Time zone**   | _"Choose from the time zones the platform supports."_ A list; nothing is typed.                      |
+| **Time zone**   | _"Choose a time zone from the list."_ A list; nothing is typed.                                      |
 
 **Result** **"The branch was added."** <!-- organization.branch.created --> Its invoice, quotation
 and receipt numbering is set up with it, so it can start trading without a further step.
@@ -602,8 +602,8 @@ branches respectively. **Where** Sidebar → **Administration** → **Settings**
    and **Status** <!-- organization.status --> as facts with no control, and offers three editable
    fields: **Display name** _(required)_ <!-- organization.displayName --> , **Default language** <!-- organization.defaultLocale -->
    (_"Choose from the languages the platform supports."_ <!-- organization.defaultLocaleHint --> )
-   and **Default time zone** <!-- organization.defaultTimezone --> (_"Choose from the time zones the
-   platform supports."_ <!-- organization.defaultTimezoneHint --> ), both chosen from lists. Press
+   and **Default time zone** <!-- organization.defaultTimezone --> (_"Choose a time zone from the
+   list."_ <!-- organization.defaultTimezoneHint --> ), both chosen from lists. Press
    **Save** <!-- admin.save --> .
 2. Below it, **"Subscription and capacity"** <!-- organization.capacity.title --> shows what your
    plan allows and how much is in use. Read 2.9 for what each row means and what a refusal says.

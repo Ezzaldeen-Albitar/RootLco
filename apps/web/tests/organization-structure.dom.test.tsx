@@ -326,6 +326,30 @@ describe('the currency and time zone are chosen, never typed', () => {
     expect(zone.tagName).toBe('SELECT');
     expect(optionValues(zone)).toEqual(['', 'Asia/Amman']);
   });
+
+  it('falls back to the zones already in use when the list holds no active zone', async () => {
+    const user = userEvent.setup();
+    renderStructure({
+      referenceValues: { ...REFERENCES, timezones: [] },
+      timezoneChoices: ['Asia/Amman'],
+    });
+    await user.click(screen.getByRole('button', { name: EN('organization.branch.add') }));
+    const dialog = screen.getByRole('dialog');
+    expect(optionValues(within(dialog).getByLabelText(/^Time zone/))).toEqual(['', 'Asia/Amman']);
+    expect(within(dialog).getByText(EN('organization.branch.timezoneHint'))).toBeVisible();
+  });
+
+  it('says a branch cannot be added yet when neither source has a time zone', async () => {
+    const user = userEvent.setup();
+    renderStructure({ referenceValues: { ...REFERENCES, timezones: [] }, timezoneChoices: [] });
+    await user.click(screen.getByRole('button', { name: EN('organization.branch.add') }));
+    const dialog = screen.getByRole('dialog');
+    const zone = within(dialog).getByLabelText(/^Time zone/);
+    expect(zone.tagName).toBe('SELECT');
+    expect(optionValues(zone)).toEqual(['']);
+    expect(within(dialog).getByText(EN('organization.branch.timezoneUnavailable'))).toBeVisible();
+    expect(within(dialog).queryByText(EN('organization.branch.timezoneHint'))).toBeNull();
+  });
 });
 
 describe('the tenant form offers its language and time zone as selects', () => {
@@ -390,6 +414,21 @@ describe('the tenant form offers its language and time zone as selects', () => {
     renderLtr(<TenantForm messages={en} canWrite tenant={TENANT} referenceValues={null} />);
     const zone = screen.getByLabelText(new RegExp(`^${EN('organization.defaultTimezone')}`));
     expect(optionValues(zone)).toEqual(['UTC']);
+    expect((zone as HTMLSelectElement).value).toBe('UTC');
+  });
+
+  it('falls back to the zones in use when the list holds no active zone', () => {
+    renderLtr(
+      <TenantForm
+        messages={en}
+        canWrite
+        tenant={TENANT}
+        referenceValues={{ ...REFERENCES, timezones: [] }}
+        timezoneChoices={['Asia/Amman']}
+      />
+    );
+    const zone = screen.getByLabelText(new RegExp(`^${EN('organization.defaultTimezone')}`));
+    expect(optionValues(zone)).toEqual(['UTC', 'Asia/Amman']);
     expect((zone as HTMLSelectElement).value).toBe('UTC');
   });
 });
