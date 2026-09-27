@@ -69,6 +69,12 @@ export interface WorkingContextResponse {
   readonly unrestricted: boolean;
   readonly companies: readonly WorkingContextCompany[];
   readonly branches: readonly WorkingContextBranch[];
+  /**
+   * The companies whose settings the caller may read. Optional on the wire, because
+   * it was added to a published read; absent means none, so a screen fails closed
+   * and makes no read the server would refuse.
+   */
+  readonly companySettingsReadableIds?: readonly string[];
 }
 
 /**
@@ -90,6 +96,12 @@ export interface WorkingContextSnapshot {
   readonly unrestricted: boolean;
   readonly companies: readonly WorkingContextCompany[];
   readonly branches: readonly WorkingContextBranch[];
+  /**
+   * The companies whose settings `iam.company-settings-read` would answer for this
+   * caller, as the server decided them. A settings screen reads only these, so a
+   * reader holding the code through a branch grant is not sent a refusal.
+   */
+  readonly companySettingsReadableIds: readonly string[];
 }
 
 /** The snapshot a failed read produces. Never a crash, never an empty workshop. */
@@ -101,6 +113,7 @@ export function unavailableContext(accountId: string | null): WorkingContextSnap
     unrestricted: false,
     companies: [],
     branches: [],
+    companySettingsReadableIds: [],
   };
 }
 
@@ -138,7 +151,12 @@ export function isWorkingContextShape(value: unknown): value is WorkingContextRe
     Array.isArray(body['companies']) &&
     body['companies'].every(isCompany) &&
     Array.isArray(body['branches']) &&
-    body['branches'].every(isBranch)
+    body['branches'].every(isBranch) &&
+    // Optional, but a value that is present must be the published list of
+    // references; anything else fails closed like the rest of the body.
+    (body['companySettingsReadableIds'] === undefined ||
+      (Array.isArray(body['companySettingsReadableIds']) &&
+        body['companySettingsReadableIds'].every((id) => typeof id === 'string')))
   );
 }
 
@@ -161,6 +179,7 @@ export function snapshotOf(
     unrestricted: body.unrestricted,
     companies: body.companies,
     branches: body.branches,
+    companySettingsReadableIds: body.companySettingsReadableIds ?? [],
   };
 }
 

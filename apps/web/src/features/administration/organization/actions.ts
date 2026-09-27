@@ -30,8 +30,17 @@ import { coerce, settingsPath, type SettingValueType, type SettingsScope } from 
 
 const KEY = /^[a-z][a-z0-9_.]{1,126}$/;
 
+/*
+ * The display name is REQUIRED whenever the form sends it. It used to go through
+ * `text()`, which turns a blank value into "not sent", so clearing the name and
+ * changing the zone answered "Saved." and stored the zone while the server kept
+ * the old name and the field stayed blank (DEF-S2a). A blank or whitespace-only
+ * name is now refused on its field and nothing is sent. Only a name that is not
+ * in the submission at all is "not changed". The language and zone keep the
+ * absent-when-blank reading: their selects always carry a value.
+ */
 const tenantSchema = z.object({
-  displayName: z.string().trim().min(1).max(200).optional(),
+  displayName: z.string().trim().min(1, 'field.required').max(200).optional(),
   defaultLocale: z.string().trim().min(2).max(35).optional(),
   defaultTimezone: z.string().trim().min(3).max(64).optional(),
   recordVersion: z.coerce.number().int().min(1),
@@ -44,7 +53,7 @@ export async function updateTenantAction(
   const attempt = (previous.attempt ?? 0) + 1;
 
   const parsed = tenantSchema.safeParse({
-    displayName: text(form.get('displayName')),
+    displayName: sent(form.get('displayName')),
     defaultLocale: text(form.get('defaultLocale')),
     defaultTimezone: text(form.get('defaultTimezone')),
     recordVersion: String(form.get('recordVersion') ?? ''),
@@ -143,6 +152,11 @@ export async function changeBranchStatusAction(
   );
   if (!result.ok) return fromFailure(result, 1);
   return success('admin.saved', 1);
+}
+
+/** The value as submitted, blank included; `undefined` only when it was not sent. */
+function sent(value: FormDataEntryValue | null): string | undefined {
+  return typeof value === 'string' ? value : undefined;
 }
 
 function text(value: FormDataEntryValue | null): string | undefined {

@@ -208,6 +208,18 @@ export class DelegationPolicy extends DomainService {
   }
 
   /**
+   * The containment rule of {@link DelegationPolicy.assertScopeWithinAuthority} as
+   * a yes or no, for a caller that has to publish the answer rather than refuse on
+   * it (the company-settings reach in the working-context read). The assertion is
+   * written on top of this, so the published answer and the enforced one are the
+   * same function and cannot drift apart.
+   */
+  scopeWithinAuthority(facts: GrantFacts, scope: ScopeRequest): boolean {
+    if (facts.actorUnrestricted) return true;
+    return facts.actorScopes.some((held) => scopeCovers(held, scope));
+  }
+
+  /**
    * Refuses a scope the actor does not hold, at the actor's own granularity.
    *
    * The rule is containment, not mere membership: a requested scope is within
@@ -228,10 +240,7 @@ export class DelegationPolicy extends DomainService {
    * same rule is enforced independently in the database backstop.
    */
   assertScopeWithinAuthority(facts: GrantFacts, scope: ScopeRequest): void {
-    if (facts.actorUnrestricted) return;
-
-    const covered = facts.actorScopes.some((held) => scopeCovers(held, scope));
-    if (!covered) {
+    if (!this.scopeWithinAuthority(facts, scope)) {
       // Uniform denial: never states whether the company or branch exists, nor
       // which of the actor's scopes would have been required.
       throw new AppFailure('ERR-IAM-001', {

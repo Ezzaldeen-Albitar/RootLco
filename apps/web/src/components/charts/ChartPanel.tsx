@@ -72,7 +72,10 @@ import { estimatedTextWidth, fitLabel } from './label-fit';
  * and a `start` anchor inherited from `<html dir="rtl">` hangs a right-hand
  * label off the wrong side of its tick (the anchoring rule the hand-drawn
  * charts document). Labels keep their own reading order through
- * `unicode-bidi: plaintext`. `data-axis-reversed` records which way it drew.
+ * `unicode-bidi: plaintext`, and their anchor is named physically
+ * (`axisTickStyle`), because the chart library would otherwise mirror it a
+ * second time from the theme and draw a right-hand label across the bars.
+ * `data-axis-reversed` records which way it drew.
  *
  * ## Labels are cut, never lost; counts are never clipped
  *
@@ -215,6 +218,28 @@ const SLICE_COLOURS = [
 /** A label's own reading order inside a left-to-right drawing. */
 const BIDI_ISOLATE = { unicodeBidi: 'plaintext' } as const;
 
+/**
+ * The tick labels of an axis standing at the drawing's `side`: each begins or
+ * ends AT the axis and runs away from the plot, into the axis's own column.
+ *
+ * The drawing is laid out left to right (`dir="ltr"`, see "Right to left is a
+ * coordinate decision"), but the chart library reads the THEME's direction and
+ * swaps `start` and `end` for a right-to-left theme. In Arabic that anchored the
+ * labels of a right-hand axis at their END, so each was drawn from the axis back
+ * across the bars — the category names of the dashboard's horizontal charts sat
+ * on top of the bars' ends (browser QA OBS-S4). The anchor and the direction
+ * are therefore named here, physically: a right-hand axis's labels start at the
+ * axis, a left-hand axis's labels end at it. Given last, they win over the
+ * library's own choice. `data-label-side` records the side.
+ */
+export function axisTickStyle(side: 'left' | 'right') {
+  return {
+    ...BIDI_ISOLATE,
+    direction: 'ltr',
+    textAnchor: side === 'right' ? 'start' : 'end',
+  } as const;
+}
+
 function wording(category: ChartCategory): string {
   const whole = category.fullLabel ?? category.label;
   return category.note ? `${whole} — ${category.note}` : whole;
@@ -331,7 +356,7 @@ export function barChartProps(input: BuildInput): BarChartProps {
           data: keys,
           position: rtl ? 'right' : 'left',
           width: labelColumn,
-          tickLabelStyle: BIDI_ISOLATE,
+          tickLabelStyle: axisTickStyle(rtl ? 'right' : 'left'),
           valueFormatter: (key: string, context) =>
             context.location === 'tick'
               ? fitLabel(full(key), labelColumn - LABEL_INSETS, CHART_LABEL_FONT_SIZE)
@@ -369,6 +394,7 @@ export function barChartProps(input: BuildInput): BarChartProps {
       {
         id: 'values',
         position: rtl ? 'right' : 'left',
+        tickLabelStyle: axisTickStyle(rtl ? 'right' : 'left'),
         min: 0,
         tickMinStep: 1,
         width: countGutter([formatInteger(highest, locale)]) - COUNT_GAP,
@@ -419,6 +445,7 @@ export function lineChartProps(input: Omit<BuildInput, 'layout'>): LineChartProp
       {
         id: 'values',
         position: rtl ? 'right' : 'left',
+        tickLabelStyle: axisTickStyle(rtl ? 'right' : 'left'),
         min: 0,
         tickMinStep: 1,
         width: countGutter([formatInteger(highest, locale)]) - COUNT_GAP,
@@ -730,6 +757,7 @@ export function ChartPanel({
             dir="ltr"
             data-testid="chart-drawing"
             data-label-column={labelColumn === undefined ? undefined : String(labelColumn)}
+            data-label-side={kind === 'pie' ? undefined : rtl ? 'right' : 'left'}
             data-plot-height={plotHeight === undefined ? undefined : String(plotHeight)}
           >
             {drawing()}

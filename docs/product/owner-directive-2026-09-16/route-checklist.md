@@ -759,12 +759,52 @@ its notice, for everyone else. The language and time zone selects show names. A 
 the field, says why beside it and moves the cursor there; what was typed stays; a correction clears
 the complaint. A save refused for a reason that names no field (a lost-update conflict, a server
 fault, a refusal or an expired session) keeps every typed value, the selects included, and the next
-Save sends them. Unsaved changes are protected on a branch change and can be put back with Discard
-changes, which also withdraws every complaint. A save says so and refreshes the saved values. The
+Save sends them. Unsaved changes are protected on a branch change and when the page is left (a link
+or menu entry, back or forward, a reload or a closed tab; see "Leaving the page with unsaved work"
+below), and can be put back with Discard changes, which also withdraws every complaint. A blank or
+whitespace-only display name is refused on its field and nothing is saved (DEF-S2a, settings QA at
+d17e7df1); before, the zone beside it was saved and the form said "Saved.". A save says so and refreshes the saved values. The
 Workspace facts show the status in words ("Active", "نشطة"), never the stored value.
 
 Known limitations of this slice, one line each:
 
+- OBS-S4 (settings QA at d17e7df1), fixed: in Arabic the category names of the horizontal bar
+  charts were drawn over the bars' ends, because the chart library mirrored the labels' anchor a
+  second time from the right-to-left theme inside a left-to-right drawing; the anchor is now named
+  physically (`axisTickStyle` in `ChartPanel.tsx`) for every side axis, and the drawn labels are
+  tested in both languages.
+- Fixed (PR #476 review, item 4): a reader whose `org.company.read` comes only from a branch grant
+  (the counter clerk) no longer makes a company-settings read that is refused on every load.
+  `GET /api/v1/auth/working-context` now also returns `companySettingsReadableIds`, the companies
+  whose settings the caller may read, decided by the same two checks `iam.company-settings-read`
+  enforces (the company-scope permission decision and the service's scope containment). The
+  company settings editor reads only those companies and, for any other, says plainly that the
+  caller's access does not include that company's settings. A unit test runs the published list
+  and the read's own enforcement against one set of grants (tenant-wide, company-scoped,
+  branch-scoped, mixed, none, and a foreign company) and requires them to agree; a DOM test shows
+  the clerk sends no read and sees no error, while a company-scoped administrator still reads the
+  panel. The field is optional on the wire; a client that finds it absent reads no company's
+  settings.
+- Item 4, review falsification: forcing the company-scope decision true, publishing every
+  candidate company, or mocking every company as readable each made the new unit or DOM cases
+  fail (a review probe from outside the repository, no repository writes).
+- Item 4: the live-database case in `tests/backend/iam-auth-provider.test.ts` covers branch-scoped,
+  unrestricted and no grant only; a company-scoped `org.company.read` grant is proven in the
+  modelled unit test and the mocked DOM test, not against a database.
+- Item 4: the working-context read (never cached) now makes one company-scope permission query
+  per visible company on every load, N+1 for a tenant-wide administrator with many companies;
+  performance only.
+- Item 4: for a company the editor marks not readable, the write form still renders when the
+  caller holds `org.settings.manage`; the server refuses such a write, and no known live grant
+  combination reaches it.
+- Item 4: the Arabic clerk DOM case asserts that no settings read is sent without a `waitFor`; the
+  English case waits, and the review probe showed both fail when the guard is bypassed.
+- Item 4 changed the tests that name `iam.company-settings-read`, so the generated P1-24
+  operation register was regenerated with `node scripts/p1-24-operation-register.mjs`, not
+  edited by hand.
+- The leave-page guard, the right-to-left chart and the blank-name refusal (UNS-01..03) are
+  unchanged since review round one; UNS-06 only threads `companySettingsReadableIds` through
+  `WorkingContextProvider`. The round-one residuals are recorded above in this section.
 - DEF-R3: the chart's `data-plot-height` is worked out from its props, not measured from the
   drawing; a probe of MUI X `BarChart` with 1, 2 and 7 categories in both languages drew every bar
   25.6 high (plot areas 32, 64 and 224), so a single category now draws.
@@ -951,6 +991,60 @@ departments and employees (`departments-employees.dom.test.tsx`); quality (`qual
 customer creation asked nothing (`crm-customer-create.dom.test.tsx`); and the provider's own
 contract (`shell.dom.test.tsx`). The inventory stock screens, services and warranty are covered by
 their existing "discarding switches the branch and opens the form empty" cases.
+
+### Leaving the page with unsaved work (DEF-S2b, settings QA at d17e7df1)
+
+Browser QA typed a new time zone on the Organisation page, clicked "Customers" in the side menu and
+lost the draft without a question: the only question was the branch switch's, and that page has no
+branch control. The same `useUnsavedGuard` declarations now protect the page itself, through ONE
+mechanism mounted by the working-context provider for the whole workspace
+(`features/working-context/components/UnsavedNavigationGuard.tsx`), so every owner in the table
+above is covered without a change of its own:
+
+- a left click with no modifier on a same-origin link or menu entry that leads to another page is
+  stopped before the router sees it, and the shared `ConfirmDialog` asks "Leave without saving?"
+  with "Stay on this page" and "Leave and discard changes" (English and Arabic, right to left);
+- back and forward ask the same question; "Stay" puts this page's address back;
+- a reload, a closed tab or a typed address gets the browser's own question, registered only while
+  something is unsaved;
+- "Leave" calls every dirty owner's `onDiscard` before the navigation, and nothing is sent; "Stay"
+  keeps every typed value and returns the cursor to the control it was in;
+- nothing is asked with nothing unsaved, or after a save (each owner lowers its declaration when
+  its work is stored).
+
+Residual limits, one line each:
+
+- a navigation the application makes by itself (`router.push` after a save, a row opened by a click
+  handler on the appointment calendar or the vehicle search) passes through no link and is not
+  asked about;
+- a click with Ctrl, Cmd, Shift or Alt, a middle click, a link opening another tab, a download and a
+  link to a place on the same page are not intercepted, because none of them takes the page away;
+- the browser's own reload/close question uses the browser's wording, which a page cannot change;
+- the Platform Owner Console renders no working-context provider and declares no unsaved work, so
+  it has no such question;
+- a form submission that navigates is not asked about: Sign out (`<form action={logoutAction}>` in
+  `AccountMenu.tsx`) and any other such form drop unsaved work without a question;
+- when the clicked link is no longer in the page, "Leave" falls back to `window.location.assign`
+  while the reload/close question is still registered for owners without `onDiscard` (the transfers
+  and stock-count screens, the pickers), so the browser may ask a second time; no live link found;
+- a link that changes only the search keeps the page mounted, so "Leave and discard changes"
+  discards nothing for an owner without `onDiscard`; no live link found;
+- "Stay" after back or forward pushes this page's address again, which drops forward history and
+  collapses a multi-step jump from the history menu; a router state change while the question is
+  open (a refresh) could replace the moved entry and replay a stale state on "Leave" (theoretical);
+- OBS-S4 is proven in jsdom only (text anchor, x sign, direction in the style); no browser test
+  measures the drawn geometry, so the Arabic bar-chart column still needs a browser QA re-run;
+- "no question after a save" is tested only for the tenant form and counter sales; of the other
+  `useUnsavedGuard` owners, five were checked by reading and the rest are unverified;
+- the movements screen counts filter choices not yet applied as unsaved work, so leaving it asks
+  about "changes on this page that are not saved" for filters, a wording mismatch;
+- review falsification: with `UnsavedNavigationGuard` mocked to render nothing, a dirty page leaves
+  silently, so the dialog assertions depend on the guard;
+- "Destination stream closed early" in the server log is React's stream cancel when the browser
+  aborts a request, not application code.
+
+Tests: `unsaved-navigation.dom.test.tsx` (link, Stay, Leave with discard, clean page, after a save,
+the clicks left alone, back and forward, reload and close, in English and Arabic).
 
 ## Known limitations
 

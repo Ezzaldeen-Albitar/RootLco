@@ -33,8 +33,20 @@ import {
   type SettingRow,
   type TenantRow,
 } from '../data/organization-repository';
+import { callerHoldsPermissionInCompany } from '@/server/auth/authorization';
 import { DelegationPolicy, type GrantFacts } from '../domain/delegation-policy';
 import { AuthorizationRepository } from '../data/authorization-repository';
+
+/**
+ * The permission codes `iam.company-settings-read` declares, at company scope.
+ *
+ * The declaration itself stays a literal in its route, because the authorization
+ * gates read it from there. This copy exists only so the working-context read can
+ * publish where that read would be allowed, and
+ * `tests/foundation/p1-14-authentication-units.test.ts` pins it equal to the
+ * declaration, so a change to one without the other fails the unit tier.
+ */
+export const COMPANY_SETTINGS_READ_PERMISSIONS: readonly string[] = ['org.company.read'];
 
 /** The tenant's two reference columns, by their LIVE foreign-key names. */
 const TENANT_SETTINGS_REFERENCES = {
@@ -222,6 +234,47 @@ export class OrganizationSettingsService extends ApplicationService {
     });
 
     return this.readTenant(db);
+  }
+
+  /**
+   * Of the given companies, the ones whose settings this caller may read
+   * (Owner directive, P1-32-PRE-OD-UNS).
+   *
+   * `iam.company-settings-read` is refused unless BOTH of its checks pass: the
+   * route's permission decision (`org.company.read` at the named company, through
+   * `iam.has_permission_in_scope`, which a branch-typed grant never satisfies) and
+   * this service's scope containment (`requireCompanyInScope`). A reader whose
+   * `org.company.read` comes only from a branch grant — the counter clerk — holds
+   * the code, so a screen deciding from the session's codes alone made a read that
+   * was refused on every load. This answers the same two questions with the same
+   * two functions, so the screen can skip that read instead of making it.
+   *
+   * The candidates are the caller's own working-context companies: active and
+   * visible under the caller's RLS inside its tenant, so `companyExists`, the
+   * read's third check, already holds for each of them and no other tenant's
+   * company can be named here.
+   */
+  async readableCompanySettingIds(
+    db: DbHandle,
+    candidateCompanyIds: readonly string[]
+  ): Promise<readonly string[]> {
+    if (candidateCompanyIds.length === 0) return [];
+    const facts = await this.scopeFacts(db);
+    const readable: string[] = [];
+    for (const companyId of candidateCompanyIds) {
+      if (!this.delegationPolicy.scopeWithinAuthority(facts, { scopeType: 'company', companyId })) {
+        continue;
+      }
+      let held = true;
+      for (const code of COMPANY_SETTINGS_READ_PERMISSIONS) {
+        if (!(await callerHoldsPermissionInCompany(db, code, companyId))) {
+          held = false;
+          break;
+        }
+      }
+      if (held) readable.push(companyId);
+    }
+    return readable;
   }
 
   async listCompanySettings(db: DbHandle, companyId: string): Promise<readonly SettingView[]> {

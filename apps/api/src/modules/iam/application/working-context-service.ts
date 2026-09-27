@@ -29,10 +29,34 @@ export interface WorkingContextView {
   readonly unrestricted: boolean;
   readonly companies: readonly WorkingContextCompanyRow[];
   readonly branches: readonly WorkingContextBranchRow[];
+  /**
+   * The companies in `companies` whose settings this caller may read — where
+   * `iam.company-settings-read` would answer rather than refuse. Empty when there
+   * is none.
+   *
+   * Published because the session's permission codes cannot say it: a reader
+   * holding `org.company.read` only through a branch grant holds the code and is
+   * still refused a company's settings. The answer comes from
+   * `OrganizationSettingsService.readableCompanySettingIds`, which asks the same
+   * two checks the read enforces, so the list and the refusal cannot disagree.
+   * Additive: a client that does not know the field loses nothing.
+   */
+  readonly companySettingsReadableIds: readonly string[];
+}
+
+/** The one question the working context asks of the settings service. */
+export interface CompanySettingsReach {
+  readableCompanySettingIds(
+    db: DbHandle,
+    candidateCompanyIds: readonly string[]
+  ): Promise<readonly string[]>;
 }
 
 export class WorkingContextService {
-  constructor(private readonly workingContext: WorkingContextRepository) {}
+  constructor(
+    private readonly workingContext: WorkingContextRepository,
+    private readonly companySettings: CompanySettingsReach
+  ) {}
 
   private contextOf(db: DbHandle): RequestContext {
     const context = db?.context;
@@ -63,6 +87,7 @@ export class WorkingContextService {
         unrestricted: false,
         companies: [],
         branches: [],
+        companySettingsReadableIds: [],
       };
     }
 
@@ -78,6 +103,10 @@ export class WorkingContextService {
       // would be a two-level choice whose first level is missing.
       branches: branches.filter((branch: WorkingContextBranchRow) =>
         reachable.has(branch.companyId)
+      ),
+      companySettingsReadableIds: await this.companySettings.readableCompanySettingIds(
+        db,
+        companies.map((company) => company.id)
       ),
     };
   }

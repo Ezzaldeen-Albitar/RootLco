@@ -49,6 +49,12 @@ export interface ConfirmDialogProps {
   readonly title: string;
   readonly description?: string | undefined;
   readonly confirmLabel: string;
+  /**
+   * What the button that keeps things as they are says. Defaults to "Cancel";
+   * a question whose "no" is better said in its own words ("Stay on this
+   * page") passes them.
+   */
+  readonly cancelLabel?: string | undefined;
   readonly messages: Messages;
   readonly destructive?: boolean;
   readonly pending?: boolean;
@@ -68,6 +74,7 @@ function OpenConfirmDialog({
   title,
   description,
   confirmLabel,
+  cancelLabel,
   messages,
   destructive = false,
   pending = false,
@@ -88,6 +95,7 @@ function OpenConfirmDialog({
           pending={pending}
           destructive={destructive}
           confirmLabel={confirmLabel}
+          cancelLabel={cancelLabel}
           onCancel={onCancel}
           onConfirm={onConfirm}
           focusCancel
@@ -164,6 +172,7 @@ export function DecisionActions({
   pending,
   destructive,
   confirmLabel,
+  cancelLabel,
   onCancel,
   onConfirm,
   confirmDisabled = false,
@@ -174,6 +183,8 @@ export function DecisionActions({
   readonly pending: boolean;
   readonly destructive: boolean;
   readonly confirmLabel: string;
+  /** Defaults to the catalogue's "Cancel". */
+  readonly cancelLabel?: string | undefined;
   readonly onCancel: () => void;
   readonly onConfirm: () => void;
   readonly confirmDisabled?: boolean;
@@ -194,7 +205,7 @@ export function DecisionActions({
         disabled={pending}
         autoFocus={focusCancel}
       >
-        {translate(messages, 'overlay.cancel')}
+        {cancelLabel ?? translate(messages, 'overlay.cancel')}
       </Button>
       <Button
         variant="contained"

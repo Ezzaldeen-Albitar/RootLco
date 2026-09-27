@@ -4,7 +4,14 @@ import { useState } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import en from '../src/i18n/messages/en.json';
 import ar from '../src/i18n/messages/ar.json';
-import { TEST_BRANCH, branchSnapshot, inBranch, renderLtr, renderRtl } from './render';
+import {
+  TEST_BRANCH,
+  TEST_COMPANY,
+  branchSnapshot,
+  inBranch,
+  renderLtr,
+  renderRtl,
+} from './render';
 import { useUnsavedWork } from '@/features/working-context/WorkingContextProvider';
 import type {
   BranchView,
@@ -947,6 +954,85 @@ describe('the settings editor when there is nothing to choose', () => {
   });
 });
 
+/**
+ * Company settings are read only where the server said the read would answer
+ * (route review of PR #476, item 4).
+ *
+ * A counter clerk holds `org.company.read` through a branch grant, so the
+ * session's codes let the Organisation page show the company settings panel, and
+ * `iam.company-settings-read` refused the read on every load. The working context
+ * now names the companies whose settings the caller may read; the editor reads
+ * only those.
+ */
+describe('company settings are read only where the working context allows it', () => {
+  const COMPANY_SETTINGS_PATH = `/api/v1/org/companies/${TEST_COMPANY.id}/settings`;
+  const settingsReads = () =>
+    get.mock.calls.filter(([path]) => String(path).includes('/settings')).map(([path]) => path);
+
+  it('makes no company-settings read for a branch-scoped reader and shows no error', async () => {
+    get.mockResolvedValue({ ok: true, status: 200, data: { items: [] }, correlationId: 'corr-1' });
+    renderLtr(
+      inBranch(<SettingsEditor messages={en} scope="company" canWrite={false} keyPrefix="" />, {
+        snapshot: { ...branchSnapshot([TEST_BRANCH]), companySettingsReadableIds: [] },
+      })
+    );
+
+    expect(await screen.findByTestId('company-settings-not-readable')).toHaveTextContent(
+      EN('organization.settings.companyNotReadable')
+    );
+    // Give any effect the chance to fire before asserting nothing was sent.
+    await waitFor(() => expect(settingsReads()).toEqual([]));
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(screen.queryByText(EN('state.denied.description'))).toBeNull();
+    expect(screen.queryByText(EN('state.error.description'))).toBeNull();
+  });
+
+  it('says it in Arabic, right to left', async () => {
+    renderRtl(
+      inBranch(<SettingsEditor messages={ar} scope="company" canWrite={false} keyPrefix="" />, {
+        locale: 'ar',
+        snapshot: { ...branchSnapshot([TEST_BRANCH]), companySettingsReadableIds: [] },
+      })
+    );
+    const note = await screen.findByTestId('company-settings-not-readable');
+    expect(note).toHaveTextContent(AR('organization.settings.companyNotReadable'));
+    expect(AR('organization.settings.companyNotReadable')).toMatch(/[؀-ۿ]/);
+    expect(settingsReads()).toEqual([]);
+  });
+
+  it('still reads and shows the settings for a company-scoped administrator', async () => {
+    get.mockResolvedValue({
+      ok: true,
+      status: 200,
+      data: {
+        items: [
+          {
+            settingKey: 'org.working_hours.start',
+            valueType: 'string',
+            isSensitive: false,
+            version: 1,
+            effectiveFrom: '2026-01-01T00:00:00.000Z',
+            settingValue: '08:00',
+          },
+        ],
+      },
+      correlationId: 'corr-1',
+    });
+    renderLtr(
+      inBranch(<SettingsEditor messages={en} scope="company" canWrite={false} keyPrefix="" />, {
+        snapshot: {
+          ...branchSnapshot([TEST_BRANCH]),
+          companySettingsReadableIds: [TEST_COMPANY.id],
+        },
+      })
+    );
+
+    expect(await screen.findByText('org.working_hours.start')).toBeVisible();
+    expect(settingsReads()).toEqual([COMPANY_SETTINGS_PATH]);
+    expect(screen.queryByTestId('company-settings-not-readable')).toBeNull();
+  });
+});
+
 describe('the tenant form places a reference the platform does not hold on its field', () => {
   it('shows the refusal under Default time zone and marks only that control', async () => {
     send.mockResolvedValue({
@@ -1182,6 +1268,49 @@ describe.each(READERS)(
       await waitFor(() => expect(control('organization.defaultLocale')).toHaveValue('en'));
       await user.click(screen.getByRole('button', { name: 'probe unsaved' }));
       expect(screen.getByTestId('unsaved-answer')).toHaveTextContent('false');
+    });
+
+    /*
+     * DEF-S2a (settings QA at d17e7df1): a blank or whitespace-only display name
+     * was read as "not sent", so the zone beside it was saved, the form said
+     * "Saved." and the server kept the old name while the field stayed blank.
+     */
+    it.each([
+      { name: 'an empty', typed: '' },
+      { name: 'a whitespace-only', typed: '   ' },
+    ])('refuses $name display name on its field and saves nothing', async ({ typed }) => {
+      const user = userEvent.setup();
+      paint(
+        <TenantForm
+          locale={locale}
+          messages={messages}
+          canWrite
+          tenant={WORKSPACE}
+          referenceValues={REFERENCES}
+        />
+      );
+      const name = control('organization.displayName');
+      await user.clear(name);
+      if (typed.length > 0) await user.type(name, typed);
+      await user.selectOptions(control('organization.defaultTimezone'), 'Asia/Amman');
+      await user.click(screen.getByRole('button', { name: M('admin.save') }));
+
+      expect(await screen.findByText(M('field.required'))).toBeVisible();
+      expect(name).toHaveAttribute('aria-invalid', 'true');
+      expect(name).toHaveAccessibleDescription(new RegExp(escapeRegExp(M('field.required'))));
+      await waitFor(() => expect(name).toHaveFocus());
+      // Nothing was sent, nothing was said to be saved, and the other choice stays.
+      expect(send).not.toHaveBeenCalled();
+      expect(refresh).not.toHaveBeenCalled();
+      expect(screen.queryByText(M('admin.saved'))).toBeNull();
+      expect(control('organization.defaultTimezone')).toHaveValue('Asia/Amman');
+      expect(name).toHaveValue(typed);
+      // Still unsaved work, so it can still be put back.
+      expect(screen.getByRole('button', { name: M('organization.discardChanges') })).toBeVisible();
+
+      await user.type(name, 'Renamed');
+      expect(screen.queryByText(M('field.required'))).toBeNull();
+      expect(name).not.toHaveAttribute('aria-invalid', 'true');
     });
 
     it('moves the cursor to a refused field, keeps what was typed, and clears the complaint on correction', async () => {

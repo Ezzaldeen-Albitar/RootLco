@@ -58,6 +58,8 @@ import { IdentityRepository } from '@/modules/iam/data/identity-repository';
 import { IdentityPolicy } from '@/modules/iam/domain/identity-policy';
 import { CredentialPolicy } from '@/modules/iam/domain/credential-policy';
 import { DelegationPolicy } from '@/modules/iam/domain/delegation-policy';
+import { OrganizationSettingsService } from '@/modules/iam/application/organization-settings-service';
+import { OrganizationRepository } from '@/modules/iam/data/organization-repository';
 
 const SECRET = 'iam-auth-provider-test-secret-not-real';
 const ISSUER = 'https://auth.test.local/auth/v1';
@@ -1048,7 +1050,14 @@ describe('iam.working-context-read', () => {
   }
 
   beforeAll(async () => {
-    workingContext = new WorkingContextService(new WorkingContextRepository());
+    workingContext = new WorkingContextService(
+      new WorkingContextRepository(),
+      new OrganizationSettingsService(
+        new OrganizationRepository(),
+        new AuthorizationRepository(),
+        new DelegationPolicy()
+      )
+    );
 
     await admin.query(
       `INSERT INTO org.legal_companies (id, tenant_id, company_code, legal_name, base_currency_code, created_by)
@@ -1093,7 +1102,8 @@ describe('iam.working-context-read', () => {
     );
     await admin.query(
       `INSERT INTO iam.role_permissions (tenant_id, role_id, permission_id, effect, created_by)
-       SELECT $1,$2,id,'allow',$3 FROM iam.permissions WHERE permission_code = 'iam.user.read'
+       SELECT $1,$2,id,'allow',$3 FROM iam.permissions
+        WHERE permission_code IN ('iam.user.read', 'org.company.read')
        ON CONFLICT DO NOTHING`,
       [TENANT_A, ROLE_WCTX, USER_A]
     );
@@ -1185,6 +1195,23 @@ describe('iam.working-context-read', () => {
       const view = await readAs(userId);
       expect(view.branches.map((branch) => branch.id)).not.toContain(BRANCH_WB);
       expect(view.companies.map((company) => company.id)).not.toContain(COMPANY_WB);
+      expect(view.companySettingsReadableIds).not.toContain(COMPANY_WB);
     }
+  });
+
+  it('names the companies whose settings the caller may read, and none for a branch grant', async () => {
+    // The fixture role carries `org.company.read`. Held through a BRANCH grant it
+    // reaches no company's settings — the counter clerk's case, refused by
+    // `iam.company-settings-read` — while the tenant-wide holder reaches every
+    // company it is shown.
+    expect((await readAs(U_WCTX_BRANCH)).companySettingsReadableIds).toEqual([]);
+    const all = await readAs(U_WCTX_ALL);
+    expect([...all.companySettingsReadableIds].sort()).toEqual(
+      all.companies.map((company) => company.id).sort()
+    );
+    expect(all.companySettingsReadableIds).toEqual(
+      expect.arrayContaining([COMPANY_A1, COMPANY_W2])
+    );
+    expect((await readAs(U_WCTX_NONE)).companySettingsReadableIds).toEqual([]);
   });
 });

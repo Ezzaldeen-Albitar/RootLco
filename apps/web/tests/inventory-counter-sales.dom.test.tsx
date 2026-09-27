@@ -492,14 +492,21 @@ describe('issuing and voiding', () => {
    */
   it('tells the operator where a drafted sale will be, and no longer blocks leaving', async () => {
     const user = userEvent.setup();
-    const addEventListener = vi.spyOn(window, 'addEventListener');
     renderLtr(screenAt());
-    await toDraft(user);
+    await buildOneLine(user);
+    await waitFor(() => expect(leavingIsQuestioned()).toBe(true));
+    await user.click(
+      screen.getByRole('button', { name: EN['inventory.counterSales.create.submit'] as string })
+    );
+    await screen.findByText(EN['inventory.counterSales.sale.heading'] as string);
     expect(screen.getByText(EN['inventory.counterSales.sale.draftListed'] as string)).toBeTruthy();
     // The sentence is now true because the list exists, so the browser is no
-    // longer asked to confirm a navigation that costs nothing.
-    expect(addEventListener.mock.calls.some(([name]) => name === 'beforeunload')).toBe(false);
-    addEventListener.mockRestore();
+    // longer asked to confirm a navigation that costs nothing. (A buyer or a
+    // line not yet drafted IS unsaved work, and the shell's leave-page question
+    // covers it until the draft is stored — DEF-S2b.) Asked of the page as the
+    // browser asks it, rather than by counting listeners: what matters is
+    // whether leaving would be questioned now.
+    await waitFor(() => expect(leavingIsQuestioned()).toBe(false));
   });
 
   it('drops the sentence once the sale is issued, because it is no longer a draft', async () => {
@@ -824,3 +831,10 @@ describe('Arabic', () => {
     expect(screen.getByText(AR['inventory.counterSales.explain'] as string)).toBeTruthy();
   });
 });
+
+/** Whether the browser would be told to ask before this page is left, now. */
+function leavingIsQuestioned(): boolean {
+  const event = new Event('beforeunload', { cancelable: true });
+  window.dispatchEvent(event);
+  return event.defaultPrevented;
+}
