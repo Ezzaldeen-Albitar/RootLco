@@ -14,7 +14,7 @@ import { StatusLabel } from './CodeLabel';
 import { CompletionPanel } from './CompletionPanel';
 import { DeliveryDocumentPanel } from './DeliveryDocumentPanel';
 import { EligibilityPanel } from './EligibilityPanel';
-import { Fact, Panel, Reference } from './PanelShell';
+import { Fact, Panel, PersonFact } from './PanelShell';
 import { ReceiverPanel } from './ReceiverPanel';
 import { SignaturesPanel } from './SignaturesPanel';
 import { StatusHistoryPanel } from './StatusHistoryPanel';
@@ -82,9 +82,17 @@ import { useEligibility } from './use-eligibility';
  *
  * It arrives as `null` for three different reasons — the caller does not hold the
  * vehicle read code, the read failed, or the reading is not on the page that was
- * asked for — and all three render the REFERENCE, which is what the record
- * carries. A screen that showed nothing at all in those cases would be hiding the
- * only thing it does know.
+ * asked for — and all three say that a reading was captured and is not shown
+ * here. That is the one thing the record does know; the identifier it carries is
+ * not printed, because an operator cannot read one (Owner directive, DEF-R2).
+ *
+ * ## People are named, and the panels are on Material UI
+ *
+ * The receiver, the person who confirmed them and every actor in the history are
+ * named from the names the delivery reads now publish beside each id; a name the
+ * caller is not given reads "Name not shown", never an identifier. Every panel's
+ * loading, empty, refused, unavailable and failed states are the shared Material
+ * states (ADR-022), and an outage or a fault offers a retry.
  */
 export function DeliveryDetailScreen({
   locale,
@@ -164,9 +172,6 @@ export function DeliveryDetailScreen({
   const [revision, setRevision] = useState(0);
   const refresh = useCallback(() => setRevision((previous) => previous + 1), []);
   const eligibility = useEligibility(delivery.id, canReadFinance, revision);
-  const showsReference =
-    delivery.deliveringEmployeeDisplayName === null ||
-    (finalOdometerReading === null && delivery.finalOdometerReadingId !== null);
 
   return (
     <div className="flex min-h-0 flex-col gap-6">
@@ -210,49 +215,38 @@ export function DeliveryDetailScreen({
             lookup this screen performed: the snapshot is what keeps a completed
             handover readable after a later rename or transfer. A handover
             recorded before the employee register existed may carry no name at
-            all, and that one shows the reference it does carry rather than a
-            person invented to fill the gap.
+            all, and that one says so in words rather than printing the
+            identifier or inventing a person to fill the gap (DEF-R2).
           */}
-          {delivery.deliveringEmployeeDisplayName === null ? (
-            <Reference
-              label={translate(messages, 'delivery.summary.deliveringEmployee')}
-              value={delivery.deliveringEmployeeId}
-            />
-          ) : (
-            <Fact label={translate(messages, 'delivery.summary.deliveringEmployee')}>
-              {delivery.deliveringEmployeeDisplayName}
-            </Fact>
-          )}
+          <PersonFact
+            messages={messages}
+            label={translate(messages, 'delivery.summary.deliveringEmployee')}
+            name={delivery.deliveringEmployeeDisplayName}
+          />
           {/*
-            The value when the route resolved it, the reference when it did not,
-            and the LABEL says which of the two is on screen — "reference" is part
-            of the reference label and would be a lie above a reading.
+            The value when the route resolved it. When it did not — the caller
+            does not hold the vehicle read code, the read failed, or the reading
+            is not on the page asked for — the record still says a reading was
+            captured, and the screen says that in words rather than printing the
+            identifier (DEF-R2). No reading at all is its own sentence.
 
             `odometerDisplay` composes it, so the reading is presented here
             exactly as the vehicle's own history presents it: the stored decimal
             string and its unit, never converted and never parsed into a number.
           */}
-          {finalOdometerReading === null ? (
-            <Reference
-              label={translate(messages, 'delivery.summary.finalOdometerReading')}
-              value={delivery.finalOdometerReadingId}
-            />
-          ) : (
-            <Fact label={translate(messages, 'delivery.summary.finalOdometer')}>
+          <Fact label={translate(messages, 'delivery.summary.finalOdometer')}>
+            {finalOdometerReading !== null ? (
               <span dir="ltr">{odometerDisplay(finalOdometerReading).primary}</span>
-            </Fact>
-          )}
-          {/*
-            Said only when a reference is actually on screen — a handover that
-            predates the employee register, or a reading this page could not
-            resolve. Printed unconditionally it explained references that were
-            not there.
-          */}
-          {showsReference ? (
-            <p className="text-caption text-text-muted">
-              {translate(messages, 'delivery.summary.identifiersExplain')}
-            </p>
-          ) : null}
+            ) : delivery.finalOdometerReadingId !== null ? (
+              <span className="text-text-secondary">
+                {translate(messages, 'delivery.summary.finalOdometerNotShown')}
+              </span>
+            ) : (
+              <span className="text-text-secondary">
+                {translate(messages, 'delivery.summary.finalOdometerNone')}
+              </span>
+            )}
+          </Fact>
         </div>
       </Panel>
 
@@ -261,6 +255,7 @@ export function DeliveryDetailScreen({
         state={eligibility.state}
         withheld={eligibility.withheld}
         canComplete={canComplete}
+        onRetry={refresh}
       />
 
       <ReceiverPanel
@@ -305,6 +300,7 @@ export function DeliveryDetailScreen({
           state={eligibility.state}
           withheld={eligibility.withheld}
           onDone={refresh}
+          onRetry={refresh}
         />
       ) : null}
 

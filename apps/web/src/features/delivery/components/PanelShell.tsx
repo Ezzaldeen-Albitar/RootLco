@@ -2,13 +2,14 @@
 
 import type { ReactNode } from 'react';
 import {
-  BackendUnavailableState,
-  ErrorState,
-  LoadingState,
-  NotFoundState,
-  PermissionDeniedState,
-  SessionExpiredState,
-} from '@/components/states/States';
+  MuiEmptyState,
+  MuiErrorState,
+  MuiExpiredState,
+  MuiLoadingState,
+  MuiNotFoundState,
+  MuiRefusedState,
+  MuiUnavailableState,
+} from '@/components/states/MuiStates';
 import type { Messages } from '@/i18n/get-messages';
 import { translate } from '@/i18n/get-messages';
 import type { ReadFailureStatus } from '@/lib/api/read-operation';
@@ -56,66 +57,92 @@ export function Panel({
 }
 
 /**
- * A panel's read outcome, other than success.
+ * A panel's read outcome, other than success — on the shared Material states
+ * (ADR-022), which read the same catalogue entries `States.tsx` does.
  *
  * `not-found` is its own state and not an empty one. Every delivery subresource
  * answers absence with a 200 and an empty payload, so a 404 here means the
  * delivery itself could not be resolved — a different sentence, and one an
  * operator acts on differently.
+ *
+ * `onRetry` is offered only by the two states where asking again can change the
+ * answer — an outage (a throttled or unanswered read included) and a fault — so
+ * a 429 or a 5xx says "unavailable, try again" with the control beside it, and a
+ * refusal or an ended session never offers one.
  */
 export function PanelFailure({
   messages,
   status,
   correlationId,
+  onRetry,
 }: {
   readonly messages: Messages;
   readonly status: ReadFailureStatus;
   readonly correlationId: string | null;
+  readonly onRetry?: (() => void) | undefined;
 }) {
-  // `null` becomes `undefined` because the shared states take an optional prop,
-  // and an explicit null would render a reference that is not there.
-  const reference = correlationId ?? undefined;
   if (status === 'denied') {
-    return <PermissionDeniedState messages={messages} correlationId={reference} />;
+    return <MuiRefusedState messages={messages} correlationId={correlationId} />;
   }
-  if (status === 'expired') return <SessionExpiredState messages={messages} />;
+  if (status === 'expired') return <MuiExpiredState messages={messages} />;
   if (status === 'unavailable') {
-    return <BackendUnavailableState messages={messages} correlationId={reference} />;
+    return (
+      <MuiUnavailableState messages={messages} correlationId={correlationId} onRetry={onRetry} />
+    );
   }
-  if (status === 'not-found') return <NotFoundState messages={messages} />;
-  return <ErrorState messages={messages} correlationId={reference} />;
+  if (status === 'not-found') return <MuiNotFoundState messages={messages} />;
+  return <MuiErrorState messages={messages} correlationId={correlationId} onRetry={onRetry} />;
 }
 
 /** The panel's own loading placeholder, sized like the rows it stands in for. */
 export function PanelLoading({ messages }: { readonly messages: Messages }) {
-  return <LoadingState messages={messages} />;
+  return <MuiLoadingState messages={messages} rows={3} />;
 }
 
 /**
- * A labelled identifier.
- *
- * No delivery read resolves a name, so an identifier is presented as what it is:
- * a reference, with the label saying what it references. It is rendered
- * left-to-right in both directions because an identifier is not language.
+ * Nothing recorded yet, said in the panel's own words — the ordinary state of a
+ * fresh handover, never a failure.
  */
-export function Reference({
-  label,
-  value,
+export function PanelEmpty({
+  messages,
+  titleKey,
+  descriptionKey,
 }: {
+  readonly messages: Messages;
+  readonly titleKey: keyof Messages;
+  readonly descriptionKey: keyof Messages;
+}) {
+  return <MuiEmptyState messages={messages} titleKey={titleKey} descriptionKey={descriptionKey} />;
+}
+
+/**
+ * A person, by name (Owner directive, DEF-R2).
+ *
+ * The delivery reads publish each person's id AND, beside it, the name the owning
+ * module resolved for this caller. The name is shown; the id never is. A `null`
+ * name — the caller does not hold the code the owning read declares, or the
+ * person cannot be resolved — is said in words, because an identifier reads to
+ * an operator as something they ought to recognise, and they cannot.
+ */
+export function PersonFact({
+  messages,
+  label,
+  name,
+}: {
+  readonly messages: Messages;
   readonly label: string;
-  readonly value: string | null;
+  readonly name: string | null | undefined;
 }) {
   return (
-    <div className="flex flex-col gap-1">
-      <span className="text-caption text-text-muted">{label}</span>
-      {value === null ? (
-        <span className="text-body text-text-secondary">{'—'}</span>
+    <Fact label={label}>
+      {name ? (
+        <bdi>{name}</bdi>
       ) : (
-        <code className="font-mono text-caption text-text-primary" dir="ltr">
-          {value}
-        </code>
+        <span className="text-text-secondary" data-name-withheld="">
+          {translate(messages, 'delivery.person.notShown')}
+        </span>
       )}
-    </div>
+    </Fact>
   );
 }
 
@@ -136,17 +163,10 @@ export function Fact({
 }
 
 /**
- * The button that commits a handover act.
- *
- * One class shared by the five write controls of this feature rather than five
- * copies, for the reason `usePagedList` gives about the end-of-set signal: five
- * hand-written copies is five places for the disabled state to be drawn
- * differently, and a submit button that does not LOOK disabled while it is
- * disabled is how an operator comes to believe a click was lost.
+ * The button class the work order's own handover panel (`WorkOrderDeliveryPanel`,
+ * on `/work-orders/[workOrderId]`) still commits with. The handover screen's
+ * panels draw Material's `Button` instead (ADR-022); this class moves with the
+ * work-order detail slice.
  */
 export const PRIMARY_BUTTON =
   'rounded-md bg-primary px-4 py-2 text-body font-medium text-on-primary transition-colors duration-fast ease-standard disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring';
-
-/** The button every paged panel uses to ask for the next page. */
-export const SECONDARY_BUTTON =
-  'rounded-md border border-border px-4 py-2 text-body text-text-primary transition-colors duration-fast ease-standard hover:bg-surface-subtle disabled:opacity-60';

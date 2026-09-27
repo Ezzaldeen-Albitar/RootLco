@@ -340,10 +340,18 @@ test.describe('P1-31 delivery writes, over handovers the acceptance journey left
       })
     ).toBeVisible();
     await record.click();
+    // The reason box's own refusal (the shared Material field): its sentence beside
+    // the box, drawn with a mark as well as a colour, and the cursor put in the box.
+    const reasonBox = row.getByRole('textbox', {
+      name: say(locale, 'delivery.checklist.waiverReasonLabel'),
+      exact: true,
+    });
     await expect(
       row.getByRole('alert'),
       'a waiver with no reason must be refused where the operator can correct it'
-    ).toHaveText(say(locale, 'form.required'));
+    ).toContainText(say(locale, 'form.required'));
+    await expect(reasonBox).toHaveAttribute('aria-invalid', 'true');
+    await expect(reasonBox).toBeFocused();
 
     // And nothing was written: a reload asks the server, and the item still has no
     // result. Without this the case would only prove that a message appeared.

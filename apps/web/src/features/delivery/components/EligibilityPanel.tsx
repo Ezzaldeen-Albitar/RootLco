@@ -1,6 +1,6 @@
 'use client';
 
-import { PermissionDeniedState } from '@/components/states/States';
+import { MuiRefusedState } from '@/components/states/MuiStates';
 import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic } from '@/i18n/get-messages';
 import type { ReadState } from '@/lib/api/read-operation';
@@ -51,6 +51,7 @@ export function EligibilityPanel({
   state,
   withheld,
   canComplete,
+  onRetry,
 }: {
   readonly messages: Messages;
   /** The screen's own read. `null` while it is in flight, or when it was withheld. */
@@ -59,6 +60,8 @@ export function EligibilityPanel({
   readonly withheld: boolean;
   /** Whether the caller holds the authority that may override the one overridable reason. */
   readonly canComplete: boolean;
+  /** Reads again, for the retry an outage or a fault offers. */
+  readonly onRetry?: (() => void) | undefined;
 }) {
   if (withheld) {
     return (
@@ -68,7 +71,7 @@ export function EligibilityPanel({
         messages={messages}
         description={translate(messages, 'delivery.eligibility.needsFinance')}
       >
-        <PermissionDeniedState messages={messages} />
+        <MuiRefusedState messages={messages} />
       </Panel>
     );
   }
@@ -86,6 +89,7 @@ export function EligibilityPanel({
           messages={messages}
           status={state.status}
           correlationId={state.correlationId}
+          onRetry={onRetry}
         />
       ) : (
         <EligibilityBody messages={messages} view={state.data} canComplete={canComplete} />
@@ -178,11 +182,12 @@ function EligibilityBody({
           </p>
           <ul className="flex list-disc flex-col gap-1 ps-5">
             {view.checklistGaps.map((gap) => (
-              <li key={gap.templateItemId} className="text-body text-text-primary">
-                <bdi>{gap.label}</bdi>{' '}
-                <code className="font-mono text-caption text-text-secondary" dir="ltr">
-                  {gap.itemCode}
-                </code>
+              <li
+                key={gap.templateItemId}
+                data-item-code={gap.itemCode}
+                className="text-body text-text-primary"
+              >
+                <bdi>{gap.label}</bdi>
               </li>
             ))}
           </ul>

@@ -1,11 +1,17 @@
 'use client';
 
 import { useState, useTransition } from 'react';
-import { SelectField, TextAreaField, TextField } from '@/components/forms/Field';
+import Button from '@mui/material/Button';
+import Checkbox from '@mui/material/Checkbox';
+import FormControlLabel from '@mui/material/FormControlLabel';
+import { FormSelectField } from '@/components/forms/mui/FormSelectField';
+import { FormTextField } from '@/components/forms/mui/FormTextField';
 import { notifyActionResult } from '@/components/notifications/action-notifications';
+import { useUnsavedGuard } from '@/features/working-context/WorkingContextProvider';
 import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic } from '@/i18n/get-messages';
 import type { ReadState } from '@/lib/api/read-operation';
+import { useFocusFirstInvalid } from '@/lib/forms/use-focus-first-invalid';
 import { completeDelivery } from '../api';
 import {
   DELIVERY_ERROR_CODES,
@@ -17,7 +23,7 @@ import {
   type OdometerUnit,
 } from '../delivery-contract';
 import { BlockerLabel } from './CodeLabel';
-import { PRIMARY_BUTTON, Panel, PanelFailure, PanelLoading } from './PanelShell';
+import { Panel, PanelFailure, PanelLoading } from './PanelShell';
 
 /**
  * Releasing the vehicle (P1-31, FE-002/FE-005).
@@ -75,6 +81,7 @@ export function CompletionPanel({
   state,
   withheld,
   onDone,
+  onRetry,
 }: {
   readonly messages: Messages;
   readonly deliveryId: string;
@@ -84,12 +91,16 @@ export function CompletionPanel({
   readonly withheld: boolean;
   /** Called after a successful release so the screen re-reads every panel. */
   readonly onDone: () => void;
+  /** Reads the eligibility again, for the retry an outage or a fault offers. */
+  readonly onRetry?: (() => void) | undefined;
 }) {
   const [odometer, setOdometer] = useState('');
   const [unit, setUnit] = useState<OdometerUnit>('km');
   const [overriding, setOverriding] = useState(false);
   const [reason, setReason] = useState('');
-  const [fieldError, setFieldError] = useState<Record<string, string>>({});
+  const [fieldError, setFieldError] = useState<Readonly<Record<string, string>>>({});
+  /* Counts the refusals this panel made itself, so each one moves the cursor again. */
+  const [refusals, setRefusals] = useState(0);
   /*
    * The refusal, as a CODE and nothing else.
    *
@@ -99,6 +110,36 @@ export function CompletionPanel({
    */
   const [refusal, setRefusal] = useState<{ readonly code: string } | null>(null);
   const [pending, startTransition] = useTransition();
+
+  /*
+   * A refused value puts the cursor on its box (`useFocusFirstInvalid` finds the
+   * control marked `aria-invalid`), once per refusal, and the typed value stays.
+   */
+  const formRef = useFocusFirstInvalid(
+    Object.keys(fieldError).length > 0
+      ? { status: 'invalid', fieldErrors: fieldError, attempt: refusals }
+      : { status: 'idle', attempt: refusals }
+  );
+
+  /*
+   * A typed reading or override reason is unsaved work: the shell asks before a
+   * branch switch or leaving the page, and leaving drops both without sending.
+   */
+  useUnsavedGuard(odometer.trim().length > 0 || reason.trim().length > 0, () => {
+    setOdometer('');
+    setOverriding(false);
+    setReason('');
+    setFieldError({});
+  });
+
+  /** Withdraws one field's complaint the moment its value is edited. */
+  const corrected = (field: string) =>
+    setFieldError((previous) => {
+      if (!(field in previous)) return previous;
+      const next = { ...previous };
+      delete next[field];
+      return next;
+    });
 
   const view = state !== null && state.status === 'ok' ? state.data : null;
   const blocking = view === null ? [] : view.blockers;
@@ -117,15 +158,18 @@ export function CompletionPanel({
   const submit = () => {
     if (view === null) return;
     const value = odometer.trim();
+    const found: Record<string, string> = {};
     if (!isAcceptableOdometerValue(value)) {
-      setFieldError({ finalOdometerValue: 'delivery.completion.odometerInvalid' });
-      return;
+      found['finalOdometerValue'] = 'delivery.completion.odometerInvalid';
     }
     if (overriding && reason.trim().length === 0) {
-      setFieldError({ overrideReason: 'form.required' });
+      found['overrideReason'] = 'form.required';
+    }
+    setFieldError(found);
+    if (Object.keys(found).length > 0) {
+      setRefusals((count) => count + 1);
       return;
     }
-    setFieldError({});
     setRefusal(null);
 
     startTransition(() => {
@@ -172,16 +216,23 @@ export function CompletionPanel({
           messages={messages}
           status={state.status}
           correlationId={state.correlationId}
+          onRetry={onRetry}
         />
       ) : (
-        <div className="flex flex-col gap-4">
+        <form
+          ref={formRef}
+          noValidate
+          aria-labelledby="delivery-completion-heading"
+          className="flex flex-col gap-4"
+          // Releasing a vehicle is never an Enter in a box: only the button sends.
+          onSubmit={(event) => event.preventDefault()}
+        >
           <div className="grid gap-3 sm:grid-cols-2">
-            <TextField
+            <FormTextField
               label={translate(messages, 'delivery.completion.odometer')}
               description={translate(messages, 'delivery.completion.odometerHelp')}
               inputMode="decimal"
               dir="ltr"
-              spellCheck={false}
               required
               value={odometer}
               error={
@@ -189,12 +240,13 @@ export function CompletionPanel({
                   ? translate(messages, 'delivery.completion.odometerInvalid')
                   : undefined
               }
-              onChange={(event) => setOdometer(event.target.value)}
+              onEdit={() => corrected('finalOdometerValue')}
+              onChange={setOdometer}
             />
-            <SelectField
+            <FormSelectField
               label={translate(messages, 'delivery.completion.unit')}
               value={unit}
-              onChange={(event) => setUnit(event.target.value as OdometerUnit)}
+              onChange={(value) => setUnit(value as OdometerUnit)}
               options={ODOMETER_UNITS.map((value) => ({
                 value,
                 label: translateDynamic(messages, ODOMETER_UNIT_LABEL_KEYS[value] ?? value),
@@ -204,27 +256,34 @@ export function CompletionPanel({
 
           {overridableBlocking.length > 0 ? (
             <div className="flex flex-col gap-2 rounded-md border border-warning-border bg-warning-subtle p-3">
-              <label className="flex items-center gap-2 text-body text-text-primary">
-                <input
-                  type="checkbox"
-                  checked={overriding}
-                  onChange={(event) => setOverriding(event.target.checked)}
-                />
-                {translate(messages, 'delivery.completion.override')}
-              </label>
+              <FormControlLabel
+                control={
+                  <Checkbox
+                    checked={overriding}
+                    onChange={(event) => {
+                      setOverriding(event.target.checked);
+                      if (!event.target.checked) corrected('overrideReason');
+                    }}
+                  />
+                }
+                label={translate(messages, 'delivery.completion.override')}
+              />
               <p className="text-caption text-text-secondary">
                 {translate(messages, 'delivery.completion.overrideExplain')}
               </p>
               {overriding ? (
-                <TextAreaField
+                <FormTextField
                   label={translate(messages, 'delivery.completion.overrideReason')}
                   required
+                  multiline
+                  rows={3}
                   maxLength={MAX_REASON}
                   value={reason}
                   error={
                     fieldError['overrideReason'] ? translate(messages, 'form.required') : undefined
                   }
-                  onChange={(event) => setReason(event.target.value)}
+                  onEdit={() => corrected('overrideReason')}
+                  onChange={setReason}
                 />
               ) : null}
             </div>
@@ -234,22 +293,22 @@ export function CompletionPanel({
             <RefusalNote messages={messages} code={refusal.code} view={state.data} />
           )}
 
-          <div className="flex flex-col gap-2">
-            <button
+          <div className="flex flex-col items-start gap-2">
+            <Button
               type="button"
-              className={PRIMARY_BUTTON}
+              variant="contained"
               disabled={pending || !couldRelease}
               onClick={submit}
             >
               {translate(messages, 'delivery.completion.submit')}
-            </button>
+            </Button>
             {couldRelease ? null : (
               <p className="text-caption text-text-secondary">
                 {translate(messages, 'delivery.completion.heldBack')}
               </p>
             )}
           </div>
-        </div>
+        </form>
       )}
     </Panel>
   );
@@ -293,11 +352,12 @@ function RefusalNote({
         {view.checklistGaps.length === 0 ? null : (
           <ul className="flex list-disc flex-col gap-1 ps-5">
             {view.checklistGaps.map((gap) => (
-              <li key={gap.templateItemId} className="text-body text-text-primary">
-                <bdi>{gap.label}</bdi>{' '}
-                <code className="font-mono text-caption text-text-secondary" dir="ltr">
-                  {gap.itemCode}
-                </code>
+              <li
+                key={gap.templateItemId}
+                data-item-code={gap.itemCode}
+                className="text-body text-text-primary"
+              >
+                <bdi>{gap.label}</bdi>
               </li>
             ))}
           </ul>

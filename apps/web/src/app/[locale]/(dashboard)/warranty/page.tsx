@@ -3,7 +3,7 @@ import { notFound } from 'next/navigation';
 import { PageBody, PageHeader } from '@/components/shell/PageHeader';
 import { PermissionDeniedState } from '@/components/states/States';
 import { requireSession } from '@/features/authentication/api/session';
-import { holds } from '@/features/crm/permissions';
+import { CRM_PERMISSIONS, holds } from '@/features/crm/permissions';
 import { WarrantyListScreen } from '@/features/warranty/components/WarrantyListScreen';
 import { WARRANTY_PERMISSIONS } from '@/features/warranty/warranty-contract';
 import { isLocale } from '@/i18n/config';
@@ -87,7 +87,12 @@ export default async function WarrantyListPage({
         crumbs={crumbs}
       />
       <PageBody>
-        <WarrantyListScreen locale={locale} messages={messages} initialVehicleId={vehicleId} />
+        <WarrantyListScreen
+          locale={locale}
+          messages={messages}
+          initialVehicleId={vehicleId}
+          searchesCustomers={holds(session.permissions, CRM_PERMISSIONS.customerRead)}
+        />
       </PageBody>
     </>
   );

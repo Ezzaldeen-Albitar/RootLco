@@ -1,12 +1,15 @@
 'use client';
 
 import { useEffect, useState, useTransition } from 'react';
-import { SelectField, TextAreaField } from '@/components/forms/Field';
+import Button from '@mui/material/Button';
+import { FormSelectField } from '@/components/forms/mui/FormSelectField';
+import { FormTextField } from '@/components/forms/mui/FormTextField';
 import { notifyActionResult } from '@/components/notifications/action-notifications';
-import { EmptyState } from '@/components/states/States';
+import { useUnsavedGuard } from '@/features/working-context/WorkingContextProvider';
 import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic } from '@/i18n/get-messages';
 import type { ReadState } from '@/lib/api/read-operation';
+import { useFocusFirstInvalid } from '@/lib/forms/use-focus-first-invalid';
 import { listChecklistResults, readActiveChecklistItems, recordChecklistResult } from '../api';
 import {
   CHECKLIST_OUTCOMES,
@@ -20,7 +23,7 @@ import {
   type DeliveryChecklistResultsEnvelope,
 } from '../delivery-contract';
 import { OutcomeLabel } from './CodeLabel';
-import { PRIMARY_BUTTON, Panel, PanelFailure, PanelLoading, SECONDARY_BUTTON } from './PanelShell';
+import { Panel, PanelEmpty, PanelFailure, PanelLoading } from './PanelShell';
 import { usePagedList } from './use-paged-list';
 
 /**
@@ -54,6 +57,13 @@ import { usePagedList } from './use-paged-list';
  * waiver, is required there, and is never sent with any other outcome. Checking
  * it here is not a substitute for the constraint — it is how the operator finds
  * out in the form instead of from a refusal.
+ *
+ * ## An item is named by its label, never by its code
+ *
+ * Each item carries a code and a label. The label is what an operator reads; the
+ * code is configuration vocabulary and is not drawn (Browser QA part 7, row
+ * 3.2b). It stays on the row as `data-item-code` for the tests and tooling that
+ * address an item by it.
  *
  * ## Results outlive the items they were recorded against
  *
@@ -109,21 +119,28 @@ export function ChecklistResultsPanel({
    * recorded outcome would spend a template list and one detail read per active
    * template to learn nothing that changed.
    */
-  const [checklist, setChecklist] = useState<ReadState<ActiveChecklist> | null>(null);
+  const [checklist, setChecklist] = useState<{
+    readonly attempt: number;
+    readonly read: ReadState<ActiveChecklist>;
+  } | null>(null);
+  const [checklistAttempt, setChecklistAttempt] = useState(0);
   useEffect(() => {
     let cancelled = false;
     void readActiveChecklistItems().then((read) => {
-      if (!cancelled) setChecklist(read);
+      if (!cancelled) setChecklist({ attempt: checklistAttempt, read });
     });
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [checklistAttempt]);
+  // A retry drops the failed answer, so the panel shows its loading state again.
+  const configuration =
+    checklist !== null && checklist.attempt === checklistAttempt ? checklist.read : null;
 
   const recorded = new Map(page.rows.map((row) => [row.templateItemId, row]));
   const knownItems = new Set<string>();
-  if (checklist !== null && checklist.status === 'ok') {
-    for (const detail of checklist.data.templates) {
+  if (configuration !== null && configuration.status === 'ok') {
+    for (const detail of configuration.data.templates) {
       for (const item of detail.items) knownItems.add(item.id);
     }
   }
@@ -136,30 +153,32 @@ export function ChecklistResultsPanel({
       messages={messages}
       description={translate(messages, 'delivery.checklist.assembledExplain')}
     >
-      {page.first === null || checklist === null ? (
+      {page.first === null || configuration === null ? (
         <PanelLoading messages={messages} />
       ) : page.first.status !== 'ok' ? (
         <PanelFailure
           messages={messages}
           status={page.first.status}
           correlationId={page.first.correlationId}
+          onRetry={page.reload}
         />
-      ) : checklist.status !== 'ok' ? (
+      ) : configuration.status !== 'ok' ? (
         <PanelFailure
           messages={messages}
-          status={checklist.status}
-          correlationId={checklist.correlationId}
+          status={configuration.status}
+          correlationId={configuration.correlationId}
+          onRetry={() => setChecklistAttempt((count) => count + 1)}
         />
       ) : (
         <div className="flex flex-col gap-5">
-          {checklist.data.templates.length === 0 ? (
-            <EmptyState
+          {configuration.data.templates.length === 0 ? (
+            <PanelEmpty
               messages={messages}
               titleKey="delivery.checklist.noTemplatesTitle"
               descriptionKey="delivery.checklist.noTemplatesDescription"
             />
           ) : (
-            checklist.data.templates.map((detail) => (
+            configuration.data.templates.map((detail) => (
               <section key={detail.template.id} className="flex flex-col gap-2">
                 <h3 className="text-label font-medium text-text-primary">
                   <bdi>{detail.template.name}</bdi>
@@ -193,12 +212,10 @@ export function ChecklistResultsPanel({
                 {orphaned.map((result) => (
                   <li
                     key={result.id}
+                    data-item-code={result.itemCode}
                     className="rounded-md border border-border-subtle p-2 text-body text-text-primary"
                   >
-                    <bdi className="font-medium">{result.label}</bdi>{' '}
-                    <code className="font-mono text-caption text-text-secondary" dir="ltr">
-                      {result.itemCode}
-                    </code>
+                    <bdi className="font-medium">{result.label}</bdi>
                     <RecordedOutcome messages={messages} result={result} />
                   </li>
                 ))}
@@ -215,14 +232,15 @@ export function ChecklistResultsPanel({
           )}
           {page.hasMore ? (
             <div>
-              <button
+              <Button
                 type="button"
-                className={SECONDARY_BUTTON}
+                variant="outlined"
+                size="small"
                 disabled={page.loading}
                 onClick={() => void page.loadMore()}
               >
                 {translate(messages, 'delivery.action.loadMore')}
-              </button>
+              </Button>
             </div>
           ) : null}
         </div>
@@ -278,10 +296,25 @@ function ItemRow({
 }) {
   const [draft, setDraft] = useState<Draft>(EMPTY_DRAFT);
   const [pending, startTransition] = useTransition();
+  /*
+   * A typed waiver reason is unsaved work: the shell asks before a branch switch
+   * or leaving the page, and leaving drops the draft without sending it.
+   */
+  useUnsavedGuard(canManage && result === null && draft.reason.trim().length > 0, () =>
+    setDraft(EMPTY_DRAFT)
+  );
+  /* A waiver sent without its reason puts the cursor in the reason box, once per refusal. */
+  const [refusals, setRefusals] = useState(0);
+  const formRef = useFocusFirstInvalid(
+    draft.reasonMissing
+      ? { status: 'invalid', fieldErrors: { waiverReason: 'form.required' }, attempt: refusals }
+      : { status: 'idle', attempt: refusals }
+  );
 
   const submit = () => {
     if (draft.outcome === 'waived' && draft.reason.trim().length === 0) {
       setDraft((previous) => ({ ...previous, reasonMissing: true }));
+      setRefusals((count) => count + 1);
       return;
     }
     setDraft((previous) => ({ ...previous, reasonMissing: false, alreadyRecorded: false }));
@@ -319,10 +352,7 @@ function ItemRow({
       data-item-code={item.itemCode}
       className="rounded-md border border-border-subtle p-2 text-body text-text-primary"
     >
-      <bdi className="font-medium">{item.label}</bdi>{' '}
-      <code className="font-mono text-caption text-text-secondary" dir="ltr">
-        {item.itemCode}
-      </code>
+      <bdi className="font-medium">{item.label}</bdi>
       {item.isMandatory ? (
         <span className="ms-2 text-caption text-text-secondary">
           {translate(messages, 'delivery.checklist.mandatory')}
@@ -335,14 +365,23 @@ function ItemRow({
           {translate(messages, 'delivery.checklist.notRecordedYet')}
         </p>
       ) : (
-        <div className="mt-2 flex flex-col gap-2">
-          <SelectField
+        <form
+          ref={formRef}
+          noValidate
+          aria-label={item.label}
+          className="mt-2 flex flex-col gap-2"
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (!pending) submit();
+          }}
+        >
+          <FormSelectField
             label={translate(messages, 'delivery.checklist.outcome')}
             value={draft.outcome}
-            onChange={(event) =>
+            onChange={(value) =>
               setDraft((previous) => ({
                 ...previous,
-                outcome: event.target.value as ChecklistOutcome,
+                outcome: value as ChecklistOutcome,
               }))
             }
             options={CHECKLIST_OUTCOMES.map((value) => ({
@@ -351,15 +390,18 @@ function ItemRow({
             }))}
           />
           {draft.outcome === 'waived' ? (
-            <TextAreaField
+            <FormTextField
               label={translate(messages, 'delivery.checklist.waiverReasonLabel')}
               description={translate(messages, 'delivery.checklist.waiverReasonHelp')}
               required
+              multiline
+              rows={3}
               maxLength={MAX_REASON}
               value={draft.reason}
               error={draft.reasonMissing ? translate(messages, 'form.required') : undefined}
-              onChange={(event) =>
-                setDraft((previous) => ({ ...previous, reason: event.target.value }))
+              // The complaint is withdrawn as soon as the reason is edited.
+              onChange={(value) =>
+                setDraft((previous) => ({ ...previous, reason: value, reasonMissing: false }))
               }
             />
           ) : null}
@@ -369,11 +411,11 @@ function ItemRow({
             </p>
           ) : null}
           <div>
-            <button type="button" className={PRIMARY_BUTTON} disabled={pending} onClick={submit}>
+            <Button type="submit" variant="contained" disabled={pending}>
               {translate(messages, 'delivery.checklist.record')}
-            </button>
+            </Button>
           </div>
-        </div>
+        </form>
       )}
     </li>
   );

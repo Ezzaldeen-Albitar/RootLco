@@ -176,6 +176,113 @@ describe('each state says its own sentence', () => {
   });
 });
 
+/*
+ * The two extensions the delivery, warranty and attention screens needed
+ * (Owner directive, the Material UI slice for those screens): a screen may say
+ * WHAT has not happened yet in its own words, and put its own sentence under the
+ * shared heading of an error, an outage or a refusal. Neither may turn one state
+ * into another: the heading, the retry rule and the reference stay the shared
+ * ones, and unset, every state says exactly what it said before.
+ */
+describe('a screen may say a state in its own words, and the state stays itself', () => {
+  it('draws an empty panel with its own title and sentence, and the shared ones unset', () => {
+    for (const locale of ['en', 'ar'] as const) {
+      const messages = getMessages(locale);
+      const { unmount } = mount(
+        <MuiEmptyState
+          messages={messages}
+          titleKey="delivery.history.noneTitle"
+          descriptionKey="delivery.history.noneDescription"
+        />,
+        locale
+      );
+      const state = screen.getByTestId('state-empty');
+      expect(within(state).getByRole('heading', { level: 2 })).toHaveTextContent(
+        messages['delivery.history.noneTitle']
+      );
+      expect(state).toHaveTextContent(messages['delivery.history.noneDescription']);
+      expect(state).not.toHaveTextContent(messages['state.empty.title']);
+      unmount();
+    }
+    const messages = getMessages('en');
+    mount(<MuiEmptyState messages={messages} />);
+    expect(screen.getByTestId('state-empty')).toHaveTextContent(messages['state.empty.title']);
+  });
+
+  const OVERRIDES: readonly [
+    name: string,
+    render: (messages: Messages, onRetry: () => void) => ReactElement,
+    testId: string,
+    title: keyof Messages,
+    shared: keyof Messages,
+    retry: boolean,
+  ][] = [
+    [
+      'error',
+      (m, r) => <MuiErrorState messages={m} onRetry={r} descriptionKey="attention.state.error" />,
+      'state-error',
+      'state.error.title',
+      'state.error.description',
+      true,
+    ],
+    [
+      'unavailable',
+      (m, r) => (
+        <MuiUnavailableState
+          messages={m}
+          onRetry={r}
+          correlationId="corr-429"
+          descriptionKey="attention.state.unavailable"
+        />
+      ),
+      'state-unavailable',
+      'state.unavailable.title',
+      'state.unavailable.description',
+      true,
+    ],
+    [
+      'refused',
+      (m) => (
+        <MuiRefusedState
+          messages={m}
+          correlationId="corr-403"
+          descriptionKey="attention.state.denied"
+        />
+      ),
+      'state-refused',
+      'state.denied.title',
+      'state.denied.description',
+      false,
+    ],
+  ];
+
+  it.each(OVERRIDES)(
+    '%s keeps its heading and retry rule under the screen’s sentence',
+    async (name, render, testId, title, shared, retry) => {
+      const sentence = `attention.state.${name === 'refused' ? 'denied' : name}` as keyof Messages;
+      for (const locale of ['en', 'ar'] as const) {
+        const messages = getMessages(locale);
+        const onRetry = vi.fn();
+        const user = userEvent.setup();
+        const { unmount } = mount(render(messages, onRetry), locale);
+        const state = screen.getByTestId(testId);
+        expect(state).toHaveAttribute('role', 'status');
+        expect(within(state).getByRole('heading', { level: 2 })).toHaveTextContent(messages[title]);
+        expect(state).toHaveTextContent(messages[sentence]);
+        expect(state).not.toHaveTextContent(messages[shared]);
+        const button = within(state).queryByRole('button', { name: messages['state.retry'] });
+        if (retry) {
+          await user.click(button as HTMLElement);
+          expect(onRetry).toHaveBeenCalledTimes(1);
+        } else {
+          expect(button).toBeNull();
+        }
+        unmount();
+      }
+    }
+  );
+});
+
 describe('MuiSearchStates keeps SearchStates’ decisions', () => {
   const PHASES: readonly [SearchPhase, string | null, boolean][] = [
     ['loading', 'state-loading', false],

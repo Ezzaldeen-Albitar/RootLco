@@ -196,6 +196,8 @@ const originTransition = {
   toStatus: 'issued',
   reason: null,
   actorId: ACTOR_ID,
+  // The name the identity directory resolved for this caller, beside the id.
+  actorDisplayName: 'Issuing Adviser Test',
   occurredAt: '2026-09-01T08:00:00.000Z',
 };
 
@@ -212,6 +214,8 @@ const advanceTransition = {
   toStatus: 'active',
   reason: 'Cover started at the counter.',
   actorId: ACTOR_ID,
+  // Withheld from this caller (no iam.user.read): said in words, never the id.
+  actorDisplayName: null,
   occurredAt: '2026-09-02T09:30:00.000Z',
 };
 
@@ -434,7 +438,10 @@ describe('the list reads the branch the operator is working in, on arrival', () 
   it('draws a branch that has issued none as empty, not as refused', async () => {
     listWarranties.mockResolvedValue(page([]));
     await renderListPage();
-    expect(await screen.findByText(EN['state.noResults.title'] as string)).toBeInTheDocument();
+    // Nothing typed and no vehicle named: the branch as it is, so "nothing here
+    // yet" and never "no matches" (G10).
+    expect(await screen.findByText(EN['state.empty.title'] as string)).toBeInTheDocument();
+    expect(screen.queryByText(EN['state.noResults.title'] as string)).not.toBeInTheDocument();
     expect(screen.queryByText(EN['state.denied.title'] as string)).not.toBeInTheDocument();
   });
 
@@ -476,6 +483,60 @@ describe('the list reads the branch the operator is working in, on arrival', () 
     await screen.findByText(policy.name);
     expect(screen.getByRole('button', { name: EN['table.nextPage'] as string })).toBeDisabled();
   });
+
+  it('sends Arabic-Indic digits as typed, and shows them back as Latin digits under the box', async () => {
+    const user = userEvent.setup();
+    await renderListPage();
+    await waitFor(() => expect(listWarranties).toHaveBeenCalled());
+    await user.type(screen.getByLabelText(EN['warranty.filter.searchLabel'] as string), '٧٠٠١');
+    await user.keyboard('{Enter}');
+    // The server folds the digits; the screen never rewrites what was typed.
+    await waitFor(() => expect(listWarranties.mock.calls.at(-1)?.[1]).toEqual({ q: '٧٠٠١' }));
+    expect(screen.getByTestId('digits-echo')).toHaveTextContent('7001');
+  });
+
+  it('says a search found nothing, and that it matched on fewer details without customer reads', async () => {
+    const user = userEvent.setup();
+    await renderListPage();
+    await waitFor(() => expect(listWarranties).toHaveBeenCalled());
+    listWarranties.mockResolvedValue(page([]));
+    await user.type(screen.getByLabelText(EN['warranty.filter.searchLabel'] as string), 'ZZ-99');
+    await user.keyboard('{Enter}');
+    // This account may not read customers, so names and phones were not searched,
+    // and the empty answer says so instead of claiming nothing exists.
+    expect(
+      await screen.findByText(EN['state.noSearchMatchesLimited.title'] as string)
+    ).toBeInTheDocument();
+    expect(screen.queryByText(EN['state.empty.title'] as string)).not.toBeInTheDocument();
+    await user.click(
+      screen.getByRole('button', { name: EN['warranty.filter.clearFilters'] as string })
+    );
+    expect(screen.getByLabelText(EN['warranty.filter.searchLabel'] as string)).toHaveValue('');
+  });
+
+  it('says a plain "no matches" to an account the server searches on every detail', async () => {
+    PERMISSIONS = [READ, 'crm.customer.read'];
+    const user = userEvent.setup();
+    await renderListPage();
+    await waitFor(() => expect(listWarranties).toHaveBeenCalled());
+    listWarranties.mockResolvedValue(page([]));
+    await user.type(screen.getByLabelText(EN['warranty.filter.searchLabel'] as string), 'ZZ-99');
+    await user.keyboard('{Enter}');
+    expect(
+      await screen.findByText(EN['state.noSearchMatches.title'] as string)
+    ).toBeInTheDocument();
+  });
+
+  it('says an unanswered list is unavailable, with a retry that reads it again', async () => {
+    listWarranties.mockResolvedValueOnce(refusedList('unavailable')).mockResolvedValue(page([row]));
+    const user = userEvent.setup();
+    await renderListPage();
+    // A 429 or a 5xx is "unavailable, try again", never "no matches".
+    const outage = await screen.findByTestId('state-unavailable');
+    expect(screen.queryByText(EN['state.noResults.title'] as string)).not.toBeInTheDocument();
+    await user.click(within(outage).getByRole('button', { name: EN['state.retry'] as string }));
+    expect(await screen.findByText(policy.name)).toBeInTheDocument();
+  });
 });
 
 describe('the record shows the terms it was issued under', () => {
@@ -511,7 +572,8 @@ describe('the record shows the terms it was issued under', () => {
     );
     expect(screen.getByText('Brake overhaul')).toBeInTheDocument();
     expect(screen.getByText(EN['warranty.itemKind.service'] as string)).toBeInTheDocument();
-    expect(screen.getByText(JOB_ID)).toBeInTheDocument();
+    // Named by its kind and description; the source job's identifier is not printed.
+    expect(document.body.textContent).not.toContain(JOB_ID);
   });
 
   it('states an open-ended coverage window rather than inventing an end date', () => {
@@ -647,31 +709,53 @@ describe('the transition ledger is read, and the oldest row is a beginning', () 
     expect(rows[1]).not.toHaveTextContent('Cover started at the counter.');
   });
 
-  it('shows the actor as the labelled reference it is, never as bare text', async () => {
-    // No warranty read resolves an employee to a name, so the identifier is presented
-    // as a reference with a label saying what it references — the convention this
-    // product already uses for the vehicle above and for the handover ledger. What is
-    // asserted is that no identifier reaches the page unlabelled.
+  it('names who recorded each state, and never prints their identifier (QA row 4.1b)', async () => {
+    readWarrantyStatusHistory.mockResolvedValue(ledger([advanceTransition, originTransition]));
     renderRecord();
     await settled();
     const region = historyPanel();
-    expect(within(region).getByText(EN['warranty.history.actor'] as string)).toBeInTheDocument();
-    const actor = within(region).getByText(ACTOR_ID);
-    expect(actor.tagName).toBe('CODE');
-    // An identifier is not language: it reads left-to-right in both directions.
-    expect(actor).toHaveAttribute('dir', 'ltr');
+    const rows = within(region).getAllByRole('listitem');
+    // The name the read published beside the id, under its label.
+    expect(rows[1]).toHaveTextContent(EN['warranty.history.actor'] as string);
+    expect(rows[1]).toHaveTextContent('Issuing Adviser Test');
+    // A name the read withheld is said in words, not replaced by the identifier.
+    expect(rows[0]).toHaveTextContent(EN['warranty.history.actorNotShown'] as string);
+    expect(region.textContent).not.toContain(ACTOR_ID);
     // The envelope names the warranty it answers for; the panel shows the ledger and
     // not the subject, which the screen around it already states.
     expect(within(region).queryByText(WARRANTY_ID)).toBeNull();
   });
 
-  it('keeps the actor reference left-to-right inside a right-to-left screen', async () => {
+  it('names the actor in Arabic too, with no identifier and no English', async () => {
+    readWarrantyStatusHistory.mockResolvedValue(ledger([advanceTransition, originTransition]));
     renderRecord('ar');
     await waitFor(() => expect(readWarrantyStatusHistory).toHaveBeenCalled());
     const region = await screen.findByRole('region', {
       name: AR['warranty.history.heading'] as string,
     });
-    expect(within(region).getByText(ACTOR_ID)).toHaveAttribute('dir', 'ltr');
+    await within(region).findByText('Issuing Adviser Test');
+    expect(region).toHaveTextContent(AR['warranty.history.actorNotShown'] as string);
+    expect(region.textContent).not.toContain(EN['warranty.history.actorNotShown'] as string);
+    expect(region.textContent).not.toContain(ACTOR_ID);
+  });
+
+  it('says an unanswered ledger read is unavailable, with a retry that reads it again', async () => {
+    readWarrantyStatusHistory
+      .mockResolvedValueOnce({ status: 'unavailable', correlationId: 'corr-503' })
+      .mockResolvedValueOnce(ledger([originTransition]));
+    const user = userEvent.setup();
+    renderRecord();
+    const region = await screen.findByRole('region', {
+      name: EN['warranty.history.heading'] as string,
+    });
+    // A 429 or a 5xx is "unavailable, try again", never an empty ledger.
+    expect(
+      await within(region).findByText(EN['state.unavailable.title'] as string)
+    ).toBeInTheDocument();
+    expect(within(region).queryByText(EN['warranty.history.noneTitle'] as string)).toBeNull();
+    await user.click(within(region).getByRole('button', { name: EN['state.retry'] as string }));
+    expect(await within(region).findByText('Issuing Adviser Test')).toBeInTheDocument();
+    expect(readWarrantyStatusHistory).toHaveBeenCalledTimes(2);
   });
 
   it('offers another page only when the SERVER says one exists', async () => {
@@ -1165,10 +1249,11 @@ describe('the words are the catalogue’s, in both reading directions', () => {
     renderRtl(
       <WarrantyRecordScreen locale="ar" messages={ar as never} warranty={record as never} />
     );
-    // An identifier is not language: reversing it would make it unreadable and
-    // untypable, and it is the only thing an operator can quote to support. The
-    // job a covered item came from is the reference left on this screen.
-    expect(screen.getByText(JOB_ID)).toHaveAttribute('dir', 'ltr');
+    // A code is not language: reversing it would make it unreadable and untypable.
+    // The plan's own reference is the code left on this screen; the covered item's
+    // source job is an internal identifier and is not printed at all.
+    expect(screen.getByText(policy.policyCode)).toHaveAttribute('dir', 'ltr');
+    expect(document.body.textContent).not.toContain(JOB_ID);
   });
 
   it('shows the list in Arabic, including the state vocabulary, and reads on arrival', async () => {

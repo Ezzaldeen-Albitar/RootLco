@@ -1,8 +1,8 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
+import Button from '@mui/material/Button';
 
-import { EmptyState, LoadingState } from '@/components/states/States';
 import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
 import { translate } from '@/i18n/get-messages';
@@ -16,9 +16,10 @@ import type {
   WarrantyStatusTransition,
 } from '../warranty-contract';
 import {
+  Fact,
+  ReadEmpty,
   ReadFailure,
-  Reference,
-  SECONDARY_BUTTON,
+  ReadLoading,
   Section,
   WarrantyStatusLabel,
   type MoreFailure,
@@ -51,14 +52,16 @@ import {
  * empty page as a loading state or a failure would be a lie about which of the three
  * happened.
  *
- * ## The actor is a reference, because the platform resolves no name for it
+ * ## The actor is named, never shown as an identifier
  *
- * `actorId` is an identifier the warranty reads publish without a name beside it, so it
- * is shown as the reference it is, labelled with what it references and left-to-right
- * in both reading directions. That is the convention this product already uses for
- * every unresolved identifier — the vehicle on the record above, and the handover
- * ledger in the delivery feature — and inventing a lookup here would be a second
- * authority on who did something.
+ * The read publishes `actorId` and, beside it, the name the identity directory resolved
+ * for this caller (Owner directive, QA row 4.1b). The name is shown and the id is not;
+ * a caller the directory names nobody to — one without `iam.user.read` — reads "Name
+ * not shown", the same words the handover ledger uses. No lookup is made here: the
+ * name is the read's, so there is one authority on who did something.
+ *
+ * The states are the shared Material ones, and an outage or a fault offers a retry
+ * that reads the ledger again.
  */
 
 /** What one page of the ledger, and the read that fetched it, amount to on screen. */
@@ -81,11 +84,15 @@ interface Ledger {
   /** The outcome of a failed further page, or `null`. */
   readonly moreFailed: MoreFailure | null;
   readonly loadMore: () => Promise<void>;
+  /** Reads the first page again, for the retry an outage or a fault offers. */
+  readonly reload: () => void;
 }
 
 /** What is held, and the warranty it belongs to. */
 interface Held {
   readonly warrantyId: string;
+  /** Which attempt this answer belongs to, so a retry shows loading rather than the old failure. */
+  readonly attempt: number;
   readonly first: ReadState<WarrantyStatusHistoryEnvelope>;
   readonly pages: readonly WarrantyPage<WarrantyStatusTransition>[];
   readonly moreFailed: MoreFailure | null;
@@ -118,6 +125,8 @@ interface Held {
 function useLedger(warrantyId: string): Ledger {
   const [held, setHeld] = useState<Held | null>(null);
   const [loading, setLoading] = useState(false);
+  const [attempt, setAttempt] = useState(0);
+  const reload = useCallback(() => setAttempt((count) => count + 1), []);
 
   useEffect(() => {
     let cancelled = false;
@@ -125,6 +134,7 @@ function useLedger(warrantyId: string): Ledger {
       if (cancelled) return;
       setHeld({
         warrantyId,
+        attempt,
         first,
         pages: first.status === 'ok' ? [first.data.transitions] : [],
         moreFailed: null,
@@ -133,9 +143,10 @@ function useLedger(warrantyId: string): Ledger {
     return () => {
       cancelled = true;
     };
-  }, [warrantyId]);
+  }, [warrantyId, attempt]);
 
-  const current = held !== null && held.warrantyId === warrantyId ? held : null;
+  const current =
+    held !== null && held.warrantyId === warrantyId && held.attempt === attempt ? held : null;
   const last = current?.pages.at(-1) ?? null;
 
   const loadMore = useCallback(async () => {
@@ -168,6 +179,7 @@ function useLedger(warrantyId: string): Ledger {
     loading,
     moreFailed: current?.moreFailed ?? null,
     loadMore,
+    reload,
   };
 }
 
@@ -190,15 +202,16 @@ export function WarrantyHistoryPanel({
       description={translate(messages, 'warranty.history.explain')}
     >
       {ledger.first === null ? (
-        <LoadingState messages={messages} />
+        <ReadLoading messages={messages} />
       ) : ledger.first.status !== 'ok' ? (
         <ReadFailure
           messages={messages}
           status={ledger.first.status}
           correlationId={ledger.first.correlationId}
+          onRetry={ledger.reload}
         />
       ) : ledger.rows.length === 0 ? (
-        <EmptyState
+        <ReadEmpty
           messages={messages}
           titleKey="warranty.history.noneTitle"
           descriptionKey="warranty.history.noneDescription"
@@ -232,10 +245,15 @@ export function WarrantyHistoryPanel({
                   </p>
                 )}
                 <div className="mt-1">
-                  <Reference
-                    label={translate(messages, 'warranty.history.actor')}
-                    value={transition.actorId}
-                  />
+                  <Fact label={translate(messages, 'warranty.history.actor')}>
+                    {transition.actorDisplayName ? (
+                      <bdi>{transition.actorDisplayName}</bdi>
+                    ) : (
+                      <span className="text-text-secondary" data-name-withheld="">
+                        {translate(messages, 'warranty.history.actorNotShown')}
+                      </span>
+                    )}
+                  </Fact>
                 </div>
               </li>
             ))}
@@ -248,14 +266,16 @@ export function WarrantyHistoryPanel({
             />
           )}
           {ledger.canLoadMore ? (
-            <button
+            <Button
               type="button"
-              className={`mt-3 ${SECONDARY_BUTTON}`}
+              variant="outlined"
+              size="small"
+              className="mt-3"
               disabled={ledger.loading}
               onClick={() => void ledger.loadMore()}
             >
               {translate(messages, 'warranty.history.loadMore')}
-            </button>
+            </Button>
           ) : null}
         </>
       )}

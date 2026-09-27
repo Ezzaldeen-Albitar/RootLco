@@ -2,6 +2,7 @@
 
 import { useCallback, useMemo } from 'react';
 
+import { MuiRefusedState } from '@/components/states/MuiStates';
 import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
 import { translate } from '@/i18n/get-messages';
@@ -52,7 +53,7 @@ import {
  * ## A missing permission is said, not drawn as emptiness
  *
  * A session without `inv.stock.read` is told the stock signals are not theirs to
- * see. Rendering four empty cards instead would read as "the branch is fine",
+ * see, on the shared Material refusal (ADR-022) in the screen's own words. Rendering four empty cards instead would read as "the branch is fine",
  * which is a claim about stock that nobody made.
  */
 export function AttentionScreen({
@@ -116,9 +117,11 @@ export function AttentionScreen({
           </div>
         </section>
       ) : (
-        <p className="rounded-xl border border-border-subtle bg-surface p-4 text-body text-text-muted">
-          {t('attention.state.stockDenied')}
-        </p>
+        <MuiRefusedState
+          messages={messages}
+          descriptionKey="attention.state.stockDenied"
+          testId="attention-stock-denied"
+        />
       )}
 
       <div className="flex flex-col gap-4">
@@ -161,9 +164,11 @@ export function AttentionScreen({
         {canReadCapacity ? (
           <CapacityCard messages={messages} locale={locale} enabled />
         ) : (
-          <p className="rounded-xl border border-border-subtle bg-surface p-4 text-body text-text-muted">
-            {t('attention.state.capacityDenied')}
-          </p>
+          <MuiRefusedState
+            messages={messages}
+            descriptionKey="attention.state.capacityDenied"
+            testId="attention-capacity-denied"
+          />
         )}
       </div>
     </div>

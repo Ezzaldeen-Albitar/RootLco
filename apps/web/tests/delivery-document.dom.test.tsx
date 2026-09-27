@@ -141,8 +141,11 @@ const receiver = {
   id: 'receiver-1',
   deliveryRecordId: DELIVERY_ID,
   receiverPartnerId: PARTNER_ID,
+  receiverDisplayName: 'Receiving Person Test',
   identityEvidenceDocumentVersionId: 'evidence-1',
   verifiedBy: EMPLOYEE_ID,
+  // Withheld from this reader (no iam.user.read): printed as words, not the id.
+  verifiedByDisplayName: null,
   verifiedAt: '2026-09-09T09:00:00.000Z',
   recordVersion: 1,
 };
@@ -173,6 +176,7 @@ const transition = {
   toStatus: 'delivered',
   reason: null,
   actorId: EMPLOYEE_ID,
+  actorDisplayName: 'Recording Adviser Test',
   occurredAt: '2026-09-10T11:00:00.000Z',
 };
 
@@ -299,7 +303,8 @@ describe('what the opened sheet carries', () => {
     await openDocument();
 
     const sheet = document.querySelector('[data-print="document"]') as HTMLElement;
-    expect(within(sheet).getByText('FUEL')).toBeVisible();
+    // The item by its label; its code is not printed (Browser QA part 7, row 3.2b).
+    expect(within(sheet).queryByText('FUEL')).toBeNull();
     expect(within(sheet).getByText('Fuel level agreed')).toBeVisible();
     expect(within(sheet).getByText(EN['delivery.outcome.waived'] as string)).toBeVisible();
     expect(within(sheet).getByText('Agreed with the customer at collection')).toBeVisible();
@@ -307,6 +312,25 @@ describe('what the opened sheet carries', () => {
     expect(within(sheet).getByText(EN['delivery.signerRole.receiver'] as string)).toBeVisible();
     expect(within(sheet).getAllByRole('table').length).toBe(3);
     expectNothingWritten();
+  });
+
+  it('prints the people by name, a withheld name in words, and never their identifiers', async () => {
+    renderScreen();
+    await openDocument();
+
+    const sheet = document.querySelector('[data-print="document"]') as HTMLElement;
+    const receiverPart = sheet.querySelector(
+      '[aria-labelledby="delivery-document-receiver"]'
+    ) as HTMLElement;
+    expect(receiverPart).toHaveTextContent('Receiving Person Test');
+    expect(receiverPart).toHaveTextContent(EN['delivery.person.notShown'] as string);
+    expect(receiverPart.textContent).not.toContain(PARTNER_ID);
+    expect(receiverPart.textContent).not.toContain(EMPLOYEE_ID);
+    const historyPart = sheet.querySelector(
+      '[aria-labelledby="delivery-document-history"]'
+    ) as HTMLElement;
+    expect(historyPart).toHaveTextContent('Recording Adviser Test');
+    expect(historyPart.textContent).not.toContain(EMPLOYEE_ID);
   });
 
   it('prints the signature as a record on file and never the image', async () => {

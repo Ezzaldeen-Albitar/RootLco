@@ -66,7 +66,11 @@ import { BlockerLabel, OutcomeLabel, SignerRoleLabel, StatusLabel } from './Code
  *     so each is printed as the labelled reference it is. The customer name, the
  *     registration plate and the work-order number are the exception: the work
  *     order's own read publishes them, and they are printed from that read, for
- *     a caller who holds its permission, or not at all.
+ *     a caller who holds its permission, or not at all. The receiver, the person
+ *     who confirmed them and every actor in the history are named from the
+ *     names the delivery reads publish beside their ids (Owner directive,
+ *     DEF-R2); a name this reader is not given is printed as words, never as
+ *     the id.
  *   - **A figure.** Not one delivery read carries an amount, and the release
  *     checks publish blocker CODES rather than numbers. Nothing here formats or
  *     computes money.
@@ -260,10 +264,10 @@ export function DeliveryDocument({
         ) : (
           <dl className="grid gap-x-6 gap-y-2 sm:grid-cols-2">
             <Fact label={translate(messages, 'delivery.receiver.partner')}>
-              <Identifier value={receiver.value.receiverPartnerId} />
+              <PersonName messages={messages} name={receiver.value.receiverDisplayName} />
             </Fact>
             <Fact label={translate(messages, 'delivery.receiver.verifiedBy')}>
-              <Identifier value={receiver.value.verifiedBy} />
+              <PersonName messages={messages} name={receiver.value.verifiedByDisplayName} />
             </Fact>
             <Fact label={translate(messages, 'delivery.receiver.verifiedAt')}>
               <bdi>{formatDateTime(receiver.value.verifiedAt, locale)}</bdi>
@@ -293,15 +297,13 @@ export function DeliveryDocument({
           <PrintTable
             caption={translate(messages, 'delivery.document.checklistCaption')}
             headers={[
-              translate(messages, 'delivery.document.column.itemCode'),
               translate(messages, 'delivery.document.column.item'),
               translate(messages, 'delivery.document.column.result'),
               translate(messages, 'delivery.document.column.waiverReason'),
             ]}
             rows={checklist.rows.map((row) => [
-              <code key="c" className="font-mono" dir="ltr">
-                {row.itemCode}
-              </code>,
+              // The item by its label; its code is configuration vocabulary
+              // and is not printed (Browser QA part 7, row 3.2b).
               <bdi key="l">{row.label}</bdi>,
               <OutcomeLabel key="o" messages={messages} outcome={row.outcome} />,
               row.waiverReason === null ? (
@@ -372,7 +374,7 @@ export function DeliveryDocument({
               ),
               <StatusLabel key="t" messages={messages} status={row.toStatus} />,
               <bdi key="w">{formatDateTime(row.occurredAt, locale)}</bdi>,
-              <Identifier key="a" value={row.actorId} />,
+              <PersonName key="a" messages={messages} name={row.actorDisplayName} />,
             ])}
           />
         )}
@@ -472,6 +474,22 @@ function Identifier({ value }: { readonly value: string | null }) {
       {value}
     </code>
   );
+}
+
+/**
+ * A person the reads named, or the words for a name this reader is not given
+ * (Owner directive, DEF-R2). Never the identifier: a printed reference is not
+ * something the customer holding this sheet can read.
+ */
+function PersonName({
+  messages,
+  name,
+}: {
+  readonly messages: Messages;
+  readonly name: string | null | undefined;
+}) {
+  if (name) return <bdi>{name}</bdi>;
+  return <span className="text-text-muted">{translate(messages, 'delivery.person.notShown')}</span>;
 }
 
 /** A value the record does not carry. */

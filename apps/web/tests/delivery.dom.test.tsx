@@ -285,12 +285,18 @@ const eligibility = {
   recordVersion: 4,
 };
 
+const RECEIVER_NAME = 'Receiving Person Test';
+const CONFIRMER_NAME = 'Confirming Adviser Test';
+
 const receiver = {
   id: 'receiver-1',
   deliveryRecordId: DELIVERY_ID,
   receiverPartnerId: PARTNER_ID,
+  // The names the owning modules resolved for this caller, beside the ids.
+  receiverDisplayName: RECEIVER_NAME,
   identityEvidenceDocumentVersionId: 'evidence-1',
   verifiedBy: EMPLOYEE_ID,
+  verifiedByDisplayName: CONFIRMER_NAME,
   verifiedAt: '2026-09-08T09:00:00.000Z',
   recordVersion: 1,
 };
@@ -745,6 +751,9 @@ describe('the release checks respect the second permission the operation demands
     expect(
       within(region).getByText(EN['delivery.eligibility.gapsExplain'] as string)
     ).toBeVisible();
+    // By its label only: the item code is configuration vocabulary (row 3.2b).
+    expect(region.querySelector('[data-item-code="FUEL"]')).not.toBeNull();
+    expect(region.textContent).not.toContain('FUEL');
   });
 
   it('renders a refusal of the checks as a refusal, not as "everything is fine"', async () => {
@@ -758,6 +767,46 @@ describe('the release checks respect the second permission the operation demands
 });
 
 describe('the confirmed receiver', () => {
+  it.each(['en', 'ar'] as const)(
+    'says a name the reads do not give this caller in words, never as an identifier (%s)',
+    async (locale) => {
+      readReceiver.mockResolvedValue(
+        okRead({
+          deliveryId: DELIVERY_ID,
+          receiver: { ...receiver, receiverDisplayName: null, verifiedByDisplayName: null },
+        })
+      );
+      const text = locale === 'en' ? EN : AR;
+      const render = locale === 'en' ? renderLtr : renderRtl;
+      render(
+        <DeliveryDetailScreen
+          locale={locale}
+          messages={locale === 'en' ? en : ar}
+          delivery={delivery}
+          canReadFinance={true}
+          canComplete={false}
+        />
+      );
+      const region = screen.getByRole('region', {
+        name: text['delivery.receiver.heading'] as string,
+      });
+      await waitFor(() =>
+        expect(
+          within(region)
+            .getByText(text['delivery.receiver.partner'] as string)
+            .closest('div')
+        ).toHaveTextContent(text['delivery.person.notShown'] as string)
+      );
+      expect(
+        within(region)
+          .getByText(text['delivery.receiver.verifiedBy'] as string)
+          .closest('div')
+      ).toHaveTextContent(text['delivery.person.notShown'] as string);
+      expect(region.textContent).not.toContain(PARTNER_ID);
+      expect(region.textContent).not.toContain(EMPLOYEE_ID);
+    }
+  );
+
   it('states that nobody is confirmed yet, rather than leaving the panel blank', async () => {
     renderScreen();
     await waitFor(() => expect(readReceiver).toHaveBeenCalledWith(DELIVERY_ID));
@@ -779,7 +828,19 @@ describe('the confirmed receiver', () => {
     // The reference itself is the sensitive part and is not printed anywhere,
     // and reading a confirmed receiver asks the evidence chain for nothing.
     expect(confirmed.container.textContent).not.toContain('evidence-1');
-    expect(within(region).getByText(PARTNER_ID)).toBeVisible();
+    // The people by name (Owner directive, DEF-R2), and never by identifier.
+    expect(
+      within(region)
+        .getByText(EN['delivery.receiver.partner'] as string)
+        .closest('div')
+    ).toHaveTextContent(RECEIVER_NAME);
+    expect(
+      within(region)
+        .getByText(EN['delivery.receiver.verifiedBy'] as string)
+        .closest('div')
+    ).toHaveTextContent(CONFIRMER_NAME);
+    expect(region.textContent).not.toContain(PARTNER_ID);
+    expect(region.textContent).not.toContain(EMPLOYEE_ID);
     expect(listDocumentCategories).not.toHaveBeenCalled();
     expect(captureDocument).not.toHaveBeenCalled();
     confirmed.unmount();
@@ -930,7 +991,14 @@ describe('the checklist results', () => {
     listChecklistResults.mockResolvedValue(
       okRead({
         deliveryId: DELIVERY_ID,
-        results: page([{ ...recordedWaiver, templateItemId: 'withdrawn-item', itemCode: 'MATS' }]),
+        results: page([
+          {
+            ...recordedWaiver,
+            templateItemId: 'withdrawn-item',
+            itemCode: 'MATS',
+            label: 'Floor mats back in place',
+          },
+        ]),
       })
     );
     renderScreen();
@@ -940,7 +1008,11 @@ describe('the checklist results', () => {
     expect(
       await within(region).findByText(EN['delivery.checklist.withdrawnHeading'] as string)
     ).toBeVisible();
-    expect(within(region).getByText('MATS')).toBeVisible();
+    // Kept on the record, by its label; the code stays off the screen (row 3.2b).
+    const kept = within(region).getByText('Floor mats back in place');
+    expect(kept).toBeVisible();
+    expect(kept.closest('li')).toHaveAttribute('data-item-code', 'MATS');
+    expect(region.textContent).not.toContain('MATS');
   });
 
   it('reports a refusal of the CONFIGURATION as a refusal, not as an empty checklist', async () => {
@@ -966,6 +1038,7 @@ describe('the history', () => {
             toStatus: 'ready',
             reason: null,
             actorId: EMPLOYEE_ID,
+            actorDisplayName: 'Recording Adviser Test',
             occurredAt: '2026-09-08T08:00:00.000Z',
           },
           {
@@ -974,6 +1047,8 @@ describe('the history', () => {
             toStatus: 'receiver_verified',
             reason: 'Identity confirmed at the counter.',
             actorId: EMPLOYEE_ID,
+            // The directory named nobody for this caller: no iam.user.read.
+            actorDisplayName: null,
             occurredAt: '2026-09-08T09:00:00.000Z',
           },
         ]),
@@ -989,6 +1064,29 @@ describe('the history', () => {
     const moved = within(region).getByText(/Moved from/);
     expect(moved).toHaveTextContent(EN['delivery.status.receiverVerified'] as string);
     expect(within(region).getByText('Identity confirmed at the counter.')).toBeVisible();
+    // Who recorded each move, by name (DEF-R2); a name the read withheld is said
+    // in words, and the identifier is printed for neither.
+    const entries = within(region).getAllByRole('listitem');
+    expect(entries[0]).toHaveTextContent('Recording Adviser Test');
+    expect(entries[1]).toHaveTextContent(EN['delivery.person.notShown'] as string);
+    expect(region.textContent).not.toContain(EMPLOYEE_ID);
+  });
+
+  it('says an unanswered ledger read is unavailable, with a retry that reads it again', async () => {
+    listStatusHistory
+      .mockResolvedValueOnce(refusedRead('unavailable', 'corr-503'))
+      .mockResolvedValueOnce(okRead({ deliveryId: DELIVERY_ID, transitions: page([]) }));
+    const user = userEvent.setup();
+    renderScreen();
+    const region = panel('delivery.history.heading');
+    // A 429 or a 5xx is "unavailable, try again" — never an empty ledger.
+    expect(await within(region).findByText(EN['state.unavailable.title'] as string)).toBeVisible();
+    expect(within(region).queryByText(EN['delivery.history.noneTitle'] as string)).toBeNull();
+    await user.click(within(region).getByRole('button', { name: EN['state.retry'] as string }));
+    expect(
+      await within(region).findByText(EN['delivery.history.noneTitle'] as string)
+    ).toBeVisible();
+    expect(listStatusHistory).toHaveBeenCalledTimes(2);
   });
 
   it('says there is no history rather than showing an empty list', async () => {
@@ -1090,18 +1188,23 @@ describe('the summary', () => {
 });
 
 describe('the summary without a resolved plate', () => {
-  it('draws no vehicle row rather than an identifier, and explains a reference only when one shows', async () => {
+  it('draws no vehicle row and no identifier, and says a name it does not hold in words', async () => {
     renderScreen({ delivery: { ...delivery, deliveringEmployeeDisplayName: null } });
     const region = panel('delivery.summary.heading');
     expect(region.textContent).not.toContain(EN['delivery.summary.vehicleName'] as string);
     expect(within(region).queryByText(VEHICLE_ID)).toBeNull();
     expect(within(region).queryByText(VISIT_ID)).toBeNull();
-    // A handover recorded before the employee register carries no name, so its
-    // reference is shown — and then, only then, the sentence saying why.
-    expect(within(region).getByText(EMPLOYEE_ID)).toBeVisible();
+    // A handover recorded before the employee register carries no name. It is
+    // said in words beside its label — never the identifier (Owner directive,
+    // DEF-R2) — so no sentence explaining references is needed either.
+    expect(region.textContent).not.toContain(EMPLOYEE_ID);
+    const employee = within(region)
+      .getByText(EN['delivery.summary.deliveringEmployee'] as string)
+      .closest('div') as HTMLElement;
+    expect(employee).toHaveTextContent(EN['delivery.person.notShown'] as string);
     expect(
-      within(region).getByText(EN['delivery.summary.identifiersExplain'] as string)
-    ).toBeVisible();
+      within(region).queryByText(EN['delivery.summary.identifiersExplain'] as string)
+    ).toBeNull();
   });
 
   it('names the vehicle by its plate in Arabic too', () => {
@@ -1363,6 +1466,13 @@ describe('confirming who may receive the vehicle', () => {
     expect(
       within(region).getByText(EN['delivery.receiver.partnerRequired'] as string)
     ).toBeVisible();
+    // The refusal is on the chooser itself, and the cursor is put there: the
+    // person search box is marked invalid, described by the reason, and focused.
+    await waitFor(() => expect(document.activeElement).toHaveAttribute('aria-invalid', 'true'));
+    expect(region.contains(document.activeElement)).toBe(true);
+    expect(document.activeElement).toHaveAccessibleDescription(
+      new RegExp(escape(EN['delivery.receiver.partnerRequired'] as string))
+    );
   });
 
   it('offers no second confirmation once somebody is confirmed', async () => {
@@ -2670,6 +2780,11 @@ describe('working through the checklist', () => {
     const reason = within(row).getByLabelText(labelled('delivery.checklist.waiverReasonLabel'));
     expect(reason).toHaveAttribute('aria-invalid', 'true');
     expect(within(row).getByText(EN['form.required'] as string)).toBeVisible();
+    // The cursor is put in the box to fix, and typing a reason withdraws the complaint.
+    await waitFor(() => expect(reason).toHaveFocus());
+    await user.type(reason, 'Agreed');
+    expect(reason).not.toHaveAttribute('aria-invalid');
+    expect(within(row).queryByText(EN['form.required'] as string)).toBeNull();
   });
 
   it('sends a waiver WITH the reason once one is given', async () => {
@@ -2875,6 +2990,17 @@ describe('releasing the vehicle', () => {
     expect(
       within(region).getByText(EN['delivery.completion.odometerInvalid'] as string)
     ).toBeVisible();
+    // The cursor goes to the reading, which keeps what was typed; correcting it
+    // withdraws the complaint at once.
+    const reading = within(region).getByLabelText(labelled('delivery.completion.odometer'));
+    await waitFor(() => expect(reading).toHaveFocus());
+    expect(reading).toHaveValue('120.45');
+    expect(reading).toHaveAttribute('aria-invalid', 'true');
+    await user.type(reading, '{Backspace}');
+    expect(reading).not.toHaveAttribute('aria-invalid');
+    expect(
+      within(region).queryByText(EN['delivery.completion.odometerInvalid'] as string)
+    ).toBeNull();
   });
 
   it('cannot be sent while a reason the platform will not set aside is outstanding', async () => {
@@ -2926,7 +3052,7 @@ describe('releasing the vehicle', () => {
     );
   });
 
-  it('names the reasons a refused release gave, read again, with the item codes', async () => {
+  it('names the reasons a refused release gave, read again, with the items by their labels', async () => {
     const user = userEvent.setup();
     readEligibility.mockResolvedValue(okRead(clearEligibility));
     completeDelivery.mockResolvedValue(refusedWrite('conflict', 'ERR-TRN-001'));
@@ -2942,7 +3068,11 @@ describe('releasing the vehicle', () => {
     const alert = await within(region).findByRole('alert');
     expect(alert).toHaveTextContent(EN['delivery.completion.refusedBlocked'] as string);
     expect(alert).toHaveTextContent(EN['delivery.blocker.signatureMissing'] as string);
-    expect(alert).toHaveTextContent('FUEL');
+    // The unsatisfied item by the label a person reads; its code is configuration
+    // vocabulary and is not drawn (Browser QA part 7, row 3.2b).
+    expect(alert).toHaveTextContent('Fuel level agreed');
+    expect(alert).not.toHaveTextContent('FUEL');
+    expect(alert.querySelector('[data-item-code="FUEL"]')).not.toBeNull();
   });
 
   it('names the authority a refused override needed, and never spells it', async () => {
@@ -3212,7 +3342,9 @@ describe('the queue renders the verdict it was given and derives none of it', ()
   it('draws a ready row as ready, with no reason list', async () => {
     listDeliveryReadiness.mockResolvedValue(queuePage([readyRow]));
     const { container } = await showQueue();
-    const row = (await within(container).findByText('W-000123')).closest('tr') as HTMLElement;
+    const row = (await within(container).findByText('W-000123')).closest(
+      '[role="row"]'
+    ) as HTMLElement;
     expect(within(row).getByText(EN['delivery.queue.ready'] as string)).toBeVisible();
     expect(within(row).queryByText(EN['delivery.queue.notReady'] as string)).toBeNull();
     expect(
@@ -3225,7 +3357,9 @@ describe('the queue renders the verdict it was given and derives none of it', ()
       queuePage([{ ...readyRow, readyToStartDelivery: undefined }])
     );
     const { container } = await showQueue();
-    const row = (await within(container).findByText('W-000123')).closest('tr') as HTMLElement;
+    const row = (await within(container).findByText('W-000123')).closest(
+      '[role="row"]'
+    ) as HTMLElement;
     expect(within(row).getByText(EN['delivery.queue.unknown'] as string)).toBeVisible();
     expect(within(row).queryByText(EN['delivery.queue.ready'] as string)).toBeNull();
   });
@@ -3233,7 +3367,9 @@ describe('the queue renders the verdict it was given and derives none of it', ()
   it('draws a held row as not ready and names every reason the server gave', async () => {
     listDeliveryReadiness.mockResolvedValue(queuePage([heldRow]));
     const { container } = await showQueue();
-    const row = (await within(container).findByText('W-000124')).closest('tr') as HTMLElement;
+    const row = (await within(container).findByText('W-000124')).closest(
+      '[role="row"]'
+    ) as HTMLElement;
     expect(within(row).getByText(EN['delivery.queue.notReady'] as string)).toBeVisible();
     expect(
       within(row).getByText(EN['delivery.blocker.financialBalanceOutstanding'] as string)
@@ -3246,7 +3382,9 @@ describe('the queue renders the verdict it was given and derives none of it', ()
   it('marks a check that could not be READ apart from one that failed', async () => {
     listDeliveryReadiness.mockResolvedValue(queuePage([heldRow]));
     const { container } = await showQueue();
-    const row = (await within(container).findByText('W-000124')).closest('tr') as HTMLElement;
+    const row = (await within(container).findByText('W-000124')).closest(
+      '[role="row"]'
+    ) as HTMLElement;
     // Exactly one of the two reasons could not be established, and only that one
     // carries the mark. Marking both would send an operator to support for a
     // customer's unpaid bill; marking neither turns an outage into a customer
@@ -3264,7 +3402,9 @@ describe('the queue renders the verdict it was given and derives none of it', ()
   it('never reads an empty reason list as ready', async () => {
     listDeliveryReadiness.mockResolvedValue(queuePage([deliveredRow]));
     const { container } = await showQueue();
-    const row = (await within(container).findByText('W-000123')).closest('tr') as HTMLElement;
+    const row = (await within(container).findByText('W-000123')).closest(
+      '[role="row"]'
+    ) as HTMLElement;
     // The row carries NO reason and is NOT ready. Inferring readiness from the
     // empty list would offer a vehicle that has already left the workshop.
     expect(within(row).getByText(EN['delivery.queue.notReady'] as string)).toBeVisible();
@@ -3284,7 +3424,9 @@ describe('the queue renders the verdict it was given and derives none of it', ()
     );
     const { container } = await showQueue();
     await within(container).findByText('W-000123');
-    const rows = Array.from(container.querySelectorAll('tbody tr')) as HTMLElement[];
+    // The queue is the operational grid: its data rows carry a row index.
+    const grid = within(container).getByRole('grid');
+    const rows = Array.from(grid.querySelectorAll('[role="row"][data-rowindex]')) as HTMLElement[];
     expect(rows).toHaveLength(2);
     const first = rows[0] as HTMLElement;
     const second = rows[1] as HTMLElement;
@@ -3300,7 +3442,7 @@ describe('the queue renders the verdict it was given and derives none of it', ()
     listDeliveryReadiness.mockResolvedValue(queuePage([readyRow]));
     const { container } = await showQueue();
     await within(container).findByText('W-000123');
-    const body = container.querySelector('tbody') as HTMLElement;
+    const body = within(container).getByRole('grid');
     const link = within(body).getByRole('link', { name: 'W-000123' });
     expect(link.getAttribute('href')).toBe(`/en/work-orders/${WORK_ORDER_ID}`);
     // Starting a handover belongs to the work order's own panel, with its own
@@ -3367,6 +3509,38 @@ describe('the queue renders the verdict it was given and derives none of it', ()
     expect(
       await within(container).findByText(EN['delivery.queue.noneMatching'] as string)
     ).toBeVisible();
+    expect(within(container).getByTestId('delivery-queue-empty')).toHaveTextContent(
+      EN['delivery.queue.noneTitle'] as string
+    );
+  });
+
+  it('says an unanswered queue is unavailable, with a retry, and never an empty branch', async () => {
+    listDeliveryReadiness
+      .mockResolvedValueOnce({
+        status: 'unavailable',
+        rows: [],
+        nextCursor: null,
+        hasMore: false,
+        correlationId: 'corr-queue-503',
+      })
+      .mockResolvedValue(queuePage([readyRow]));
+    const user = userEvent.setup();
+    const { container } = await showQueue();
+    const outage = await within(container).findByTestId('state-unavailable');
+    expect(outage).toHaveTextContent('corr-queue-503');
+    expect(within(container).queryByText(EN['delivery.queue.noneMatching'] as string)).toBeNull();
+    await user.click(within(outage).getByRole('button', { name: EN['state.retry'] as string }));
+    expect(await within(container).findByText('W-000123')).toBeVisible();
+  });
+
+  it('says a platform work-order state in words, never as its code', async () => {
+    listDeliveryReadiness.mockResolvedValue(queuePage([readyRow]));
+    const { container } = await showQueue();
+    const row = (await within(container).findByText('W-000123')).closest(
+      '[role="row"]'
+    ) as HTMLElement;
+    expect(row).toHaveTextContent(EN['workOrders.state.closed'] as string);
+    expect(row.textContent).not.toContain('closed');
   });
 });
 
@@ -3375,7 +3549,9 @@ describe('the queue reads in Arabic as Arabic', () => {
     listDeliveryReadiness.mockResolvedValue(queuePage([heldRow]));
     const { container } = await showQueue('ar');
     expect(document.documentElement.dir).toBe('rtl');
-    const row = (await within(container).findByText('W-000124')).closest('tr') as HTMLElement;
+    const row = (await within(container).findByText('W-000124')).closest(
+      '[role="row"]'
+    ) as HTMLElement;
     for (const key of [
       'delivery.queue.notReady',
       'delivery.blocker.financialBalanceOutstanding',
@@ -3586,18 +3762,35 @@ describe('the final odometer reading is a reading, not a reference', () => {
     expect(within(summary).queryByText(READING_ID)).toBeNull();
   });
 
-  it('keeps the reference when the reading could not be resolved', async () => {
-    // The three reasons collapse into one answer here — no authority to read the
-    // vehicle, a read that did not answer, or a reading off the first page — and
-    // the record must show what it does hold rather than nothing at all.
-    showRecord('en', {});
+  it.each(['en', 'ar'] as const)(
+    'says a reading was captured, in words and never as its identifier, when it could not be resolved (%s)',
+    async (locale) => {
+      // The three reasons collapse into one answer here — no authority to read the
+      // vehicle, a read that did not answer, or a reading off the first page — and
+      // the record must say what it does know (a reading was captured) rather than
+      // nothing at all, and rather than an identifier nobody can read (DEF-R2).
+      showRecord(locale, {});
+      const text = locale === 'en' ? EN : AR;
+      const summary = screen.getByRole('region', {
+        name: text['delivery.summary.heading'] as string,
+      });
+      const fact = within(summary)
+        .getByText(text['delivery.summary.finalOdometer'] as string)
+        .closest('div') as HTMLElement;
+      expect(fact).toHaveTextContent(text['delivery.summary.finalOdometerNotShown'] as string);
+      expect(summary.textContent).not.toContain(READING_ID);
+    }
+  );
+
+  it('says no reading was recorded when the record names none', () => {
+    showRecord('en', { delivery: { ...released, finalOdometerReadingId: null } });
     const summary = screen.getByRole('region', {
       name: EN['delivery.summary.heading'] as string,
     });
     expect(
-      within(summary).getByText(EN['delivery.summary.finalOdometerReading'] as string)
-    ).toBeVisible();
-    expect(within(summary).getByText(READING_ID)).toBeVisible();
-    expect(within(summary).queryByText(EN['delivery.summary.finalOdometer'] as string)).toBeNull();
+      within(summary)
+        .getByText(EN['delivery.summary.finalOdometer'] as string)
+        .closest('div')
+    ).toHaveTextContent(EN['delivery.summary.finalOdometerNone'] as string);
   });
 });

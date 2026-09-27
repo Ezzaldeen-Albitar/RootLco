@@ -1,6 +1,6 @@
 'use client';
 
-import { EmptyState } from '@/components/states/States';
+import Button from '@mui/material/Button';
 import { formatDateTime } from '@/lib/format';
 import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
@@ -8,7 +8,7 @@ import { translate } from '@/i18n/get-messages';
 import { listStatusHistory } from '../api';
 import type { DeliveryStatusHistoryEnvelope, DeliveryStatusTransition } from '../delivery-contract';
 import { StatusLabel } from './CodeLabel';
-import { Panel, PanelFailure, PanelLoading, Reference, SECONDARY_BUTTON } from './PanelShell';
+import { Panel, PanelEmpty, PanelFailure, PanelLoading, PersonFact } from './PanelShell';
 import { usePagedList } from './use-paged-list';
 
 /**
@@ -20,8 +20,12 @@ import { usePagedList } from './use-paged-list';
  *
  * The first transition has no previous state, which is a fact about a beginning
  * rather than a missing value, so it is drawn as a start rather than as a gap.
- * The actor is an identifier the platform does not resolve to a person, and it
- * is shown as the reference it is.
+ *
+ * The actor is named (Owner directive, DEF-R2): the read publishes the name the
+ * identity directory resolved beside the id, and the id is never drawn. A caller
+ * the directory names nobody to reads "Name not shown" instead of a reference.
+ * The states are the shared Material ones, and an outage or a fault offers a
+ * retry that reads the ledger again.
  */
 const selectTransitions = (envelope: DeliveryStatusHistoryEnvelope) => envelope.transitions;
 
@@ -57,9 +61,10 @@ export function StatusHistoryPanel({
           messages={messages}
           status={page.first.status}
           correlationId={page.first.correlationId}
+          onRetry={page.reload}
         />
       ) : page.rows.length === 0 ? (
-        <EmptyState
+        <PanelEmpty
           messages={messages}
           titleKey="delivery.history.noneTitle"
           descriptionKey="delivery.history.noneDescription"
@@ -93,9 +98,10 @@ export function StatusHistoryPanel({
                   </p>
                 )}
                 <div className="mt-1">
-                  <Reference
+                  <PersonFact
+                    messages={messages}
                     label={translate(messages, 'delivery.history.actor')}
-                    value={transition.actorId}
+                    name={transition.actorDisplayName}
                   />
                 </div>
               </li>
@@ -109,14 +115,16 @@ export function StatusHistoryPanel({
             />
           )}
           {page.hasMore ? (
-            <button
+            <Button
               type="button"
-              className={`mt-3 ${SECONDARY_BUTTON}`}
+              variant="outlined"
+              size="small"
+              className="mt-3"
               disabled={page.loading}
               onClick={() => void page.loadMore()}
             >
               {translate(messages, 'delivery.action.loadMore')}
-            </button>
+            </Button>
           ) : null}
         </>
       )}

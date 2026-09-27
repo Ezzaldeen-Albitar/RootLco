@@ -16,7 +16,6 @@ import {
   Distance,
   Fact,
   ItemKindLabel,
-  Reference,
   Section,
   VehicleWords,
   WarrantyStatusLabel,
@@ -222,18 +221,12 @@ export function WarrantyRecordScreen({
                 <span className="font-medium">
                   <ItemKindLabel messages={messages} kind={item.itemKind} />
                 </span>{' '}
+                {/*
+                  The kind and the description name the item. Its source job or
+                  part is an internal identifier and is not printed (Owner
+                  directive, names instead of ids).
+                */}
                 <bdi>{item.description}</bdi>
-                <div className="mt-1">
-                  <Reference
-                    label={translate(
-                      messages,
-                      item.sourcePartId === null
-                        ? 'warranty.items.sourceJob'
-                        : 'warranty.items.sourcePart'
-                    )}
-                    value={item.sourcePartId ?? item.sourceJobId}
-                  />
-                </div>
               </li>
             ))}
           </ul>

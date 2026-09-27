@@ -305,7 +305,9 @@ test.describe('P1-31 warranty screens, over the acceptance journey records', () 
     // The harness issued a warranty in this branch, so the empty state must NOT be shown.
     await expect(page.getByText(say(locale, 'state.noResults.title'))).toHaveCount(0);
 
-    const table = page.getByRole('table', { name: say(locale, 'warranty.list.tableCaption') });
+    // The list is the operational grid (MUI X, ADR-022): one grid named by its caption,
+    // its headers column headers, its data rows the rows that carry a row index.
+    const table = page.getByRole('grid', { name: say(locale, 'warranty.list.tableCaption') });
     await expect(table).toBeVisible();
     // Each header by its WHOLE name. A header name is otherwise matched as a substring, and
     // this table's own names nest: "Cover ends" is inside "Odometer reading at which cover
@@ -322,7 +324,7 @@ test.describe('P1-31 warranty screens, over the acceptance journey records', () 
         table.getByRole('columnheader', { name: say(locale, key), exact: true })
       ).toBeVisible();
     }
-    await expect(table.locator('tbody tr')).not.toHaveCount(0);
+    await expect(table.locator('[role="row"][data-rowindex]')).not.toHaveCount(0);
   });
 
   test('the warranty record shows its terms and what it covers', async ({ page }, testInfo) => {
@@ -471,6 +473,12 @@ test.describe('P1-31 warranty screens, over the acceptance journey records', () 
     await expect(
       ledger.getByRole('button', { name: say(locale, 'warranty.history.loadMore'), exact: true })
     ).toHaveCount(recorded.hasMore ? 1 : 0);
+
+    // Who recorded each state is named, never printed as an identifier (QA row 4.1b).
+    await expect(oldest).toContainText(say(locale, 'warranty.history.actor'));
+    await expect(ledger).not.toContainText(
+      /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i
+    );
   });
 
   test('the warranty plans screen lists the plan the journey created', async ({

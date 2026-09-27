@@ -302,9 +302,17 @@ export interface AuthorizedReceiver {
   readonly id: string;
   readonly deliveryRecordId: string;
   readonly receiverPartnerId: string;
+  /**
+   * The receiver's name, or `null` when the CRM read does not name them for this
+   * caller (no `crm.customer.read`, or a partner it cannot resolve). The screen
+   * says so in words and never prints the id.
+   */
+  readonly receiverDisplayName: string | null;
   /** A stored-document reference. No content is ever requested for it. */
   readonly identityEvidenceDocumentVersionId: string | null;
   readonly verifiedBy: string;
+  /** The confirming user's name, or `null` without `iam.user.read`. */
+  readonly verifiedByDisplayName: string | null;
   readonly verifiedAt: string;
   readonly recordVersion: number;
 }
@@ -356,6 +364,8 @@ export interface DeliveryStatusTransition {
   readonly toStatus: string;
   readonly reason: string | null;
   readonly actorId: string;
+  /** The actor's name, or `null` without `iam.user.read` or when unresolved. */
+  readonly actorDisplayName: string | null;
   readonly occurredAt: string;
 }
 

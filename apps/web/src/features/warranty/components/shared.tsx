@@ -4,12 +4,14 @@ import Link from 'next/link';
 import type { ReactNode } from 'react';
 
 import {
-  BackendUnavailableState,
-  ErrorState,
-  NotFoundState,
-  PermissionDeniedState,
-  SessionExpiredState,
-} from '@/components/states/States';
+  MuiEmptyState,
+  MuiErrorState,
+  MuiExpiredState,
+  MuiLoadingState,
+  MuiNotFoundState,
+  MuiRefusedState,
+  MuiUnavailableState,
+} from '@/components/states/MuiStates';
 import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic } from '@/i18n/get-messages';
@@ -75,35 +77,58 @@ export function Section({
 }
 
 /**
- * A read outcome other than success.
+ * A read outcome other than success, on the shared Material states (ADR-022).
  *
  * The states are the shared ones. A screen that invented its own wording for a
  * denial would be a second authority on what a refusal looks like, and the refusal
  * text is deliberately identical everywhere: it names neither the record nor the
  * missing authority, because "you cannot see this thing that exists" is itself a
  * disclosure.
+ *
+ * `onRetry` is offered only by an outage (a throttled or unanswered read
+ * included) and a fault, the two where asking again can change the answer: a 429
+ * or a 5xx says "unavailable" with a Try again beside it, never "no results".
  */
 export function ReadFailure({
   messages,
   status,
   correlationId,
+  onRetry,
 }: {
   readonly messages: Messages;
   readonly status: ReadFailureStatus;
   readonly correlationId: string | null;
+  readonly onRetry?: (() => void) | undefined;
 }) {
-  // `null` becomes `undefined` because the shared states take an optional prop, and
-  // an explicit null would render a reference that is not there.
-  const reference = correlationId ?? undefined;
   if (status === 'denied') {
-    return <PermissionDeniedState messages={messages} correlationId={reference} />;
+    return <MuiRefusedState messages={messages} correlationId={correlationId} />;
   }
-  if (status === 'expired') return <SessionExpiredState messages={messages} />;
+  if (status === 'expired') return <MuiExpiredState messages={messages} />;
   if (status === 'unavailable') {
-    return <BackendUnavailableState messages={messages} correlationId={reference} />;
+    return (
+      <MuiUnavailableState messages={messages} correlationId={correlationId} onRetry={onRetry} />
+    );
   }
-  if (status === 'not-found') return <NotFoundState messages={messages} />;
-  return <ErrorState messages={messages} correlationId={reference} />;
+  if (status === 'not-found') return <MuiNotFoundState messages={messages} />;
+  return <MuiErrorState messages={messages} correlationId={correlationId} onRetry={onRetry} />;
+}
+
+/** A read in flight, as the shared Material loading state. */
+export function ReadLoading({ messages }: { readonly messages: Messages }) {
+  return <MuiLoadingState messages={messages} rows={3} />;
+}
+
+/** Nothing recorded yet, in the screen's own words, on the shared Material state. */
+export function ReadEmpty({
+  messages,
+  titleKey,
+  descriptionKey,
+}: {
+  readonly messages: Messages;
+  readonly titleKey: keyof Messages;
+  readonly descriptionKey: keyof Messages;
+}) {
+  return <MuiEmptyState messages={messages} titleKey={titleKey} descriptionKey={descriptionKey} />;
 }
 
 /**
@@ -128,12 +153,9 @@ export interface MoreFailure {
 }
 
 /**
- * A labelled identifier.
- *
- * No warranty read resolves a vehicle, a work order or a handover to a name, so each
- * is presented as what it is: a reference, with the label saying what it references.
- * It is rendered left-to-right in both reading directions because an identifier is
- * not language.
+ * A labelled code a person gave — a plan's reference, which the workshop typed
+ * and reads. Rendered left-to-right in both reading directions because a code is
+ * not language. Never used for an internal identifier: those are not printed.
  */
 export function Reference({
   label,

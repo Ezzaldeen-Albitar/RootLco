@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import Button from '@mui/material/Button';
 
 import type { OdometerReadingEntry } from '@/features/vehicles/history-contract';
 import type { Locale } from '@/i18n/config';
@@ -25,7 +26,6 @@ import {
   type DocumentRead,
   type DocumentSection,
 } from './DeliveryDocument';
-import { PRIMARY_BUTTON, SECONDARY_BUTTON } from './PanelShell';
 import type { HeldEligibility } from './use-eligibility';
 
 /**
@@ -146,18 +146,19 @@ export function DeliveryDocumentPanel({
         <h2 id="delivery-document-heading" className="text-body font-medium text-text-primary">
           {translate(messages, 'delivery.document.heading')}
         </h2>
-        <button
+        <Button
           type="button"
-          className={SECONDARY_BUTTON}
+          variant="outlined"
+          size="small"
           aria-expanded={open}
           onClick={() => setOpen((previous) => !previous)}
         >
           {translate(messages, open ? 'delivery.document.close' : 'delivery.document.open')}
-        </button>
+        </Button>
         {open && ready ? (
-          <button type="button" className={PRIMARY_BUTTON} onClick={() => window.print()}>
+          <Button type="button" variant="contained" size="small" onClick={() => window.print()}>
             {translate(messages, 'delivery.document.print')}
-          </button>
+          </Button>
         ) : null}
       </div>
       <p className="text-caption text-text-muted" data-print="hide">

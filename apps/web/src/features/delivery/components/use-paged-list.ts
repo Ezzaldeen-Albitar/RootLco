@@ -77,6 +77,12 @@ export interface PagedList<E, T> {
   /** The outcome of a failed further page, or `null`. */
   readonly moreFailed: MoreFailure | null;
   readonly loadMore: () => Promise<void>;
+  /**
+   * Reads the first page again, for the retry an outage or a fault offers. What
+   * was held is dropped with it, so the panel shows its loading state rather than
+   * the answer it is replacing.
+   */
+  readonly reload: () => void;
 }
 
 /** What is held, and the read it belongs to. */
@@ -107,7 +113,9 @@ export function usePagedList<E, T>(
 ): PagedList<E, T> {
   const [held, setHeld] = useState<Held<E, T> | null>(null);
   const [loading, setLoading] = useState(false);
-  const key = keyOf(deliveryId, revision);
+  const [retries, setRetries] = useState(0);
+  const key = `${keyOf(deliveryId, revision)}~${String(retries)}`;
+  const reload = useCallback(() => setRetries((count) => count + 1), []);
 
   useEffect(() => {
     let cancelled = false;
@@ -153,5 +161,6 @@ export function usePagedList<E, T>(
     loading,
     moreFailed: current?.moreFailed ?? null,
     loadMore,
+    reload,
   };
 }
