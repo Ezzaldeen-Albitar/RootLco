@@ -922,8 +922,8 @@ above a list: a search, chips or selects, and a period.
   days (`dashboardPeriodRequest`); the boards the first and LAST instant of each day
   (`boardInstantWindow`, closed comparisons), the last written to the microsecond with the
   branch's offset (`…T23:59:59.999999±HH:MM`), so a daylight-saving change gives the two ends
-  different offsets. The work-order route parses its bounds to milliseconds, so there the last
-  999 microseconds of a day stay outside the bound (recorded in `lib/branch-time.ts`).
+  different offsets. Every board route — reception, appointments, work orders — hands that string
+  to its closed comparison unchanged, so the bound holds to the microsecond.
 - T5. What a screen adds beside the filters: a select's `groups` (`<optgroup>` headings after its
   options) and `description`, passed to `FormSelectField`; a `summary` line under the period (the
   period in words and the clock it is counted on); and an `actions` row at the foot for the
@@ -934,6 +934,15 @@ above a list: a search, chips or selects, and a period.
   period to the value already in force changes `resetKey`, which closes or opens the panel to
   match and drops the typed days; `onTypedDaysChange` tells the screen whether the open boxes hold
   typed days.
+- T7. What the work-order board adds, each optional and off unless given: a chips filter without
+  the added "All" (`allChoice: false`), its own default pressed; a figure on a chip (`count`,
+  formatted by the screen) only on the choices the screen gives one; a date `range` of its own
+  over one column, beside or instead of the period — two MIT pickers on the branch's clock,
+  checked on Apply or Enter (both days, the last not before the first) with the refusal on the box
+  to fix, the cursor moved there by the same counted refusal and the typed days kept, a Clear
+  offered while days are typed or applied, and the boxes following `value` and `resetKey`; and
+  `echoDigits`, which draws `DigitsEcho` under the search box (Arabic-Indic digits shown as Latin,
+  the term still sent as typed). A toolbar given none of them is unchanged.
 
 **`DateField` / `DateTimeField`** (`apps/web/src/components/forms/mui/DateField.tsx`) are the MIT
 pickers with `FieldFrame`'s contract.
@@ -1064,7 +1073,7 @@ The preserved-behaviour cell names the contract items above that a migration mus
 | `/work-orders/[workOrderId]`                          | form fields, `OperationalGrid`, states                 | F1–F6; G1–G9; S1–S4         | not migrated                       | not run — nothing migrated                |
 | `/work-orders/diagnostics/[templateId]`               | form fields, states                                    | F1–F6; S1–S4                | not migrated                       | not run — nothing migrated                |
 | `/work-orders/diagnostics`                            | form fields, states                                    | F1–F6; S1–S4                | not migrated                       | not run — nothing migrated                |
-| `/work-orders`                                        | form fields, `OperationalGrid`, states                 | F1–F6; G1–G9; S1–S4         | not migrated                       | not run — nothing migrated                |
+| `/work-orders`                                        | `FilterToolbar`, `OperationalGrid`, states             | F6; G1–G11; S1–S5; T1–T7    | migrated — see below the table     | focused suites, en and ar — see below     |
 | `/work-orders/quality`                                | form fields, states                                    | F1–F6; S1–S4                | not migrated                       | not run — nothing migrated                |
 | `/gallery`                                            | all four                                               | G, P, F, S                  | shown in the gallery, not a screen | `gallery-and-print.dom.test.tsx` (en, ar) |
 | `/platform/account`                                   | form fields, states                                    | F1–F6; S1–S4                | not migrated                       | not run — nothing migrated                |
@@ -1117,3 +1126,97 @@ Verification: the focused suites above, `filter-toolbar.dom.test.tsx`, `mui-stat
 `operational-grid.dom.test.tsx`, `operational-grid-actions-width.dom.test.tsx` and the route
 branch-scope suites were run locally in both languages; the browser specs
 (`tests/e2e/authenticated/appointments-and-receptions.spec.ts`) run only in hosted CI.
+
+### `/work-orders` on Material UI
+
+`WorkOrderQueueScreen` renders `FilterToolbar` (the nine views as chips with no added "All" and
+"Still with us" pressed, the grouped state select with its description, the kind select, the one
+search box with its digits echo, and the opened-date range with its own Clear), `OperationalGrid`
+over the same `useSearchRequest(...).table`, and `MuiSearchStates` for every state other than an
+answer — `MuiEmptyState` only for the unfiltered "All" view that holds nothing. The figure strip
+keeps its figures, its wording and its zone. `WorkingBranchField` stays as it was. Nothing about
+how the board reads changed: the same criteria, the same cancellable `/reads/work-orders` route,
+the same working-context version key; the read now declares what narrows it (`narrows`, G10).
+
+Preserved, each held by a case in `apps/web/tests/search-empty-states.dom.test.tsx` unless named:
+
+- A figure sits on a chip only for the four views whose set the aggregate counts exactly (Still
+  with us, Waiting for the customer to agree, Waiting for parts, Ready to hand over); the other
+  five carry none, and the strip carries every published figure.
+- A state code and the state group never travel together: choosing a state moves the view off
+  Still with us, and choosing that view clears the state.
+- Nothing is read while a state that arrived in the address waits for the catalogue; an unknown
+  or unreadable state is dropped with a notice that says which.
+- The figures are filed under the scope they were read for and are not shown beside another
+  branch's board, not even before the new figures arrive.
+- The row action follows the view (open, open to record the customer's answer, open to hand the
+  vehicle over), is a link named with the work-order number, and never writes; the delivery link
+  is offered only on the ready view and only to a session holding all three codes the delivery
+  page requires (the route's computation is held by its own case).
+- "All my branches" names the set and its company, the figures say they cover all the branches,
+  the branch column is passed only then, and a read spanning two companies is not made.
+- A refused opened range is refused on the box to fix, with the cursor moved there and the typed
+  days kept; an applied range is sent on the branch's clock, its end to the microsecond.
+- Reads are keyed on the working-context version: a branch switch issues no read for the branch
+  left and re-targets the board keeping its filters; the read contract is held on the syntax tree
+  of the `useSearchRequest` call (`p1-28-security.test.ts`, falsified rule by rule).
+- An empty answer names what narrowed it — the term, or the view and the filters — and Clear is
+  offered only when something can be cleared; an outage is "unavailable" with a retry (Browser QA
+  part 7, row 2.6); the row-actions column fits its longest label (row 4.3, G11).
+- Arabic and English, right to left included.
+
+The date bounds reach the database exactly as sent: `wo.work-order-list` passes the validated ISO
+strings to its `::timestamptz` comparisons instead of parsing them to a `Date`, which kept
+milliseconds only (`tests/unit/p1-32-work-order-list-instants.test.ts`; the row at `.999500`
+inside the day and the next midnight outside it are in `tests/backend/p1-19-work-order-reads.test.ts`,
+which runs in the hosted database job).
+
+Verification: the focused suites above, `filter-toolbar.dom.test.tsx`, `work-orders-queue-api.test.ts`,
+`reception-queue.dom.test.tsx` (the shared toolbar) and the route branch-scope suites were run
+locally in both languages. No browser spec drives this board.
+
+Known limitations of this slice, one line each:
+
+- Fractional seconds beyond six digits are accepted by the route (zod 4 `datetime({ offset: true })`)
+  and PostgreSQL rounds `…23:59:59.9999999+03:00` up to the next midnight, so a closed `<=` bound
+  would take in the next day's first instant; the web always sends six digits (`endOfDayBound`),
+  so the web cannot reach it. Not yet capped at six digits.
+- Year `0000-01-01T00:00:00Z` passes zod and reaches PostgreSQL as text, which refuses year 0;
+  SQLSTATE `22008` is mapped nowhere in `apps/api/src`, so the answer is a 500, not a 422. The web
+  cannot produce the value, and `/receptions` behaves the same way.
+- `workOrders.queue.invertedRange` and `workOrders.queue.periodIncomplete` in
+  `apps/web/src/i18n/messages/{en,ar}.json` are no longer referenced (the toolbar uses
+  `filters.period.*`); they are dead keys, left for a later clean-up.
+- `FilterToolbar`'s range follows a key that includes the zone, so switching to a branch in another
+  zone discards days typed but not applied (the old screen kept them); a refused range keeps its
+  typed days.
+- No board-level case turns to a second page (cursor footer, `hasMore`) on `/work-orders`: server
+  mode is held only by `OperationalGrid`'s own suite and the reception suites, and no Playwright
+  spec visits `/work-orders`, so the migrated board has no browser coverage.
+- The row-action link adds the work-order number only when `displayNumber` is set, so rows without
+  a reference carry identical link names.
+- The seven screen-mutation falsifications recorded by the implementer were not re-run in review
+  (review was read-only); review confirmed the seven named cases exist in
+  `search-empty-states.dom.test.tsx`, beside the `p1-28-security` syntax-tree falsification cases.
+- The microsecond bound end to end: `endOfDayBound` (`.999999`) crosses the reads proxy as text,
+  then the adapter (`work-orders-queue-api.test.ts`), then the route passes the string through
+  (`tests/unit/p1-32-work-order-list-instants.test.ts`, which also holds malformed and inverted
+  bounds refused), then `$7::timestamptz` in `work-order-repository.ts`; the backend case takes
+  `tests/backend/p1-19-work-order-reads.test.ts` from 33 to 34 cases.
+- Round-2 review record: the MUIW-04 report said the branch held no new commit; head `347e9160`
+  does add MUIW-04 (range Enter routing, FE-017 re-anchor, P1-24 register, these limitations).
+- Round-1 defects re-checked in review: FE-017 cites `search-empty-states.dom.test.tsx:276-325`
+  (found by content); the P1-24 register was regenerated; range Enter is taken by
+  `onKeyDownCapture` on the range container, and a review probe with that handler removed failed
+  exactly the case "applies the range on Enter in its own boxes while the period panel is open".
+- The FE-017 re-anchor edited two P1-27 evidence documents without resealing
+  `docs/phase-1/phase-1-27/evidence/evidence-manifest.json`; MUIW-05 regenerates it with
+  `npm run evidence:p1-27`.
+- The chip and range extensions are opt-in (`reception-queue.dom`, `gallery-and-print.dom`
+  unchanged); summary figures are keyed on company, branch and context version and dropped on a
+  mismatch; no read is sent while arrival is pending; `figureZone` skips the key but renders only
+  with a figure present.
+- Review's mutation probe covered only the range Enter routing; the seven screen-level
+  falsifications were not re-run in round 2 either.
+- Process note: review's first local gate batch started below the 4 GB free-commit threshold
+  (about 3.1 GB); later runs were gated at 4 GB or more, with no failure and no port contact.

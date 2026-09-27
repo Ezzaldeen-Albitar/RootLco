@@ -221,10 +221,13 @@ export interface WorkOrderListFilter {
   readonly branchIds?: readonly string[] | undefined;
   readonly state?: string | undefined;
   readonly kind?: string | undefined;
-  /** Inclusive lower bound on `opened_at`. */
-  readonly openedFrom?: Date | undefined;
-  /** Inclusive upper bound on `opened_at`. */
-  readonly openedTo?: Date | undefined;
+  /**
+   * Inclusive lower bound on `opened_at`: an ISO instant with an offset, bound
+   * as text and cast `::timestamptz` in SQL so its microseconds survive.
+   */
+  readonly openedFrom?: string | undefined;
+  /** Inclusive upper bound on `opened_at`, the same kind of string. */
+  readonly openedTo?: string | undefined;
   /**
    * Narrows to work orders whose reception visit names this partner in ANY role
    * (BR-05).
@@ -359,9 +362,9 @@ export interface WorkOrderListFilter {
    * NARROWS to finished work by construction — a bounded question about
    * completions cannot be answered with a car that is still on the ramp.
    */
-  readonly completedFrom?: Date | undefined;
-  /** Inclusive upper bound on the completion instant. */
-  readonly completedTo?: Date | undefined;
+  readonly completedFrom?: string | undefined;
+  /** Inclusive upper bound on the completion instant, the same kind of string. */
+  readonly completedTo?: string | undefined;
   /**
    * The codes a work order must be in for a COMPLETION WINDOW to return it,
    * resolved by the service when either bound was sent.

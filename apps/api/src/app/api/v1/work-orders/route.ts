@@ -261,11 +261,16 @@ export async function GET(request: Request): Promise<Response> {
             branchIds,
             state: query.state,
             kind: query.kind,
-            openedFrom: query.openedFrom === undefined ? undefined : new Date(query.openedFrom),
-            openedTo: query.openedTo === undefined ? undefined : new Date(query.openedTo),
-            completedFrom:
-              query.completedFrom === undefined ? undefined : new Date(query.completedFrom),
-            completedTo: query.completedTo === undefined ? undefined : new Date(query.completedTo),
+            // The validated ISO strings, handed to the query as they came — as
+            // `rec.reception-list` hands its window. A `Date` keeps milliseconds
+            // only, so parsing here cut the web's end-of-day bound
+            // (`…T23:59:59.999999±HH:MM`) to `.999` and left the last 999
+            // microseconds of a day outside a closed `<=` comparison. Each is
+            // already refused above unless it is an instant with an offset.
+            openedFrom: query.openedFrom,
+            openedTo: query.openedTo,
+            completedFrom: query.completedFrom,
+            completedTo: query.completedTo,
             customerId: query.customerId,
             number: query.number,
             q: query.q,

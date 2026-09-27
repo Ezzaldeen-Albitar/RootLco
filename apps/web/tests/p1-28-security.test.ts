@@ -80,8 +80,8 @@ function webFile(...parts: string[]): string {
 }
 
 /**
- * The reception board's read contract, read from its SYNTAX TREE rather than
- * from its text (Owner directive, the Material UI reception slice).
+ * A board's read contract, read from its SYNTAX TREE rather than from its text
+ * (Owner directive: the Material UI reception slice, then the work-order slice).
  *
  * The check it replaces searched the file for four literal strings. A rename, a
  * wrapper or a reformat broke it while the behaviour stood, and a string left
@@ -97,16 +97,12 @@ function webFile(...parts: string[]): string {
  *     carrying that `scope`: the scope is part of what the read is filed under,
  *     so a branch change is a new ordering contract, never a reused cursor.
  *   - **asked** — the `load` passed hands exactly those criteria's `scope` and
- *     `filters` to the read (`listReceptionsCancellable`), so what the board is
- *     keyed on is what it sends.
+ *     `filters` to the board's own cancellable read (`readName`:
+ *     `listReceptionsCancellable`, `listWorkOrdersCancellable`), so what the
+ *     board is keyed on is what it sends.
  */
-function receptionReadContractViolations(source: string): string[] {
-  const file = ts.createSourceFile(
-    'ReceptionQueueScreen.tsx',
-    source,
-    ts.ScriptTarget.Latest,
-    true
-  );
+function boardReadContractViolations(source: string, readName: string): string[] {
+  const file = ts.createSourceFile('BoardScreen.tsx', source, ts.ScriptTarget.Latest, true);
   const violations: string[] = [];
   const calls: ts.CallExpression[] = [];
   const declarations = new Map<string, ts.VariableDeclaration>();
@@ -223,7 +219,7 @@ function receptionReadContractViolations(source: string): string[] {
     if (
       ts.isCallExpression(node) &&
       ts.isIdentifier(node.expression) &&
-      node.expression.text === 'listReceptionsCancellable' &&
+      node.expression.text === readName &&
       parameter !== undefined &&
       ts.isIdentifier(parameter)
     ) {
@@ -1052,12 +1048,12 @@ describe('P1-28-SEC-003 — the ONE door, and the abuse cases that try the walls
      * version is passed explicitly so a header change abandons the read in
      * flight rather than letting it land under the new branch's name.
      */
-    // The reception board is held by `receptionReadContractViolations` in the
-    // case below — its syntax tree, not its text. The other two keep this text
-    // check until their own Material UI slices replace it the same way.
+    // The reception and work-order boards are held by
+    // `boardReadContractViolations` in the cases below — their syntax trees, not
+    // their text. The calendar keeps this text check until its own Material UI
+    // slice replaces it the same way.
     for (const relative of [
       ['features', 'appointments', 'components', 'AppointmentCalendarScreen.tsx'],
-      ['features', 'work-orders', 'components', 'WorkOrderQueueScreen.tsx'],
     ]) {
       const source = webFile(...relative);
       expect(source, relative.join('/')).toContain('useSearchRequest');
@@ -1083,7 +1079,10 @@ describe('P1-28-SEC-003 — the ONE door, and the abuse cases that try the walls
      */
     const relative = ['features', 'receptions', 'components', 'ReceptionQueueScreen.tsx'];
     const source = webFile(...relative);
-    expect(receptionReadContractViolations(source), relative.join('/')).toEqual([]);
+    expect(
+      boardReadContractViolations(source, 'listReceptionsCancellable'),
+      relative.join('/')
+    ).toEqual([]);
     // And no screen spends a cursor of its own: the stack is the hook's.
     expect(source, relative.join('/')).not.toMatch(/atob\(|Buffer\.from\(|JSON\.parse\(cursor/);
   });
@@ -1096,7 +1095,7 @@ describe('P1-28-SEC-003 — the ONE door, and the abuse cases that try the walls
     const source = webFile('features', 'receptions', 'components', 'ReceptionQueueScreen.tsx');
     const broken = (from: RegExp, to: string) => {
       expect(source, `the falsification anchor ${from} is gone from the source`).toMatch(from);
-      return receptionReadContractViolations(source.replace(from, to));
+      return boardReadContractViolations(source.replace(from, to), 'listReceptionsCancellable');
     };
     // No version: the read would land under the next branch's name.
     expect(broken(/version: context\.version,/, '')).toEqual([
@@ -1120,7 +1119,67 @@ describe('P1-28-SEC-003 — the ONE door, and the abuse cases that try the walls
     ]);
     // No comment can keep it green: the same words in a comment are not a call.
     expect(
-      receptionReadContractViolations(
+      boardReadContractViolations(
+        `// useSearchRequest({ criteria: asked, load, version: context.version })\n${source.replace(
+          /version: context\.version,/,
+          ''
+        )}`,
+        'listReceptionsCancellable'
+      )
+    ).toContain('version: the read is not keyed on the working-context version');
+  });
+
+  it('3/3 cursor: the work-order board keys its reads on the version and the scope it sends', () => {
+    /*
+     * The same guarantee, for the work-order board, from the call itself. The
+     * behaviour is driven end to end in `search-empty-states.dom.test.tsx`: a
+     * branch switch re-targets the board, issues no read for the branch it
+     * left, and every read carries the scope and filters the board asked for.
+     */
+    const relative = ['features', 'work-orders', 'components', 'WorkOrderQueueScreen.tsx'];
+    const source = webFile(...relative);
+    expect(
+      boardReadContractViolations(source, 'listWorkOrdersCancellable'),
+      relative.join('/')
+    ).toEqual([]);
+    // And no screen spends a cursor of its own: the stack is the hook's.
+    expect(source, relative.join('/')).not.toMatch(/atob\(|Buffer\.from\(|JSON\.parse\(cursor/);
+  });
+
+  it('3/3 cursor: the work-order contract check fails when any of its three rules is broken', () => {
+    const source = webFile('features', 'work-orders', 'components', 'WorkOrderQueueScreen.tsx');
+    const check = (text: string) => boardReadContractViolations(text, 'listWorkOrdersCancellable');
+    const broken = (from: RegExp, to: string) => {
+      expect(source, `the falsification anchor ${from} is gone from the source`).toMatch(from);
+      return check(source.replace(from, to));
+    };
+    // No version: the read would land under the next branch's name.
+    expect(broken(/version: context\.version,/, '')).toEqual([
+      'version: the read is not keyed on the working-context version',
+    ]);
+    // A version that is not the working context's.
+    expect(broken(/version: context\.version,/, 'version: 0,')).toEqual([
+      'version: the read is not keyed on the working-context version',
+    ]);
+    // Criteria whose type no longer carries a BranchScope scope.
+    expect(broken(/readonly scope: BranchScope;/, 'readonly scope: string;')).toEqual([
+      'scope: the criteria the read is filed under do not carry a BranchScope scope',
+    ]);
+    // Criteria that are no longer the asked object.
+    expect(broken(/criteria: asked,/, 'criteria: null,')).toEqual([
+      'scope: the criteria the read is filed under do not carry a BranchScope scope',
+    ]);
+    // A loader that sends something other than what the board is keyed on.
+    expect(broken(/criteria\.scope,\n(\s*)criteria\.filters,/, 'criteria.scope,\n$1{},')).toEqual([
+      'asked: the read is not sent the scope and filters the board is keyed on',
+    ]);
+    // The board's own read, not another board's: the check names the call.
+    expect(boardReadContractViolations(source, 'listReceptionsCancellable')).toEqual([
+      'asked: the read is not sent the scope and filters the board is keyed on',
+    ]);
+    // No comment can keep it green: the same words in a comment are not a call.
+    expect(
+      check(
         `// useSearchRequest({ criteria: asked, load, version: context.version })\n${source.replace(
           /version: context\.version,/,
           ''
