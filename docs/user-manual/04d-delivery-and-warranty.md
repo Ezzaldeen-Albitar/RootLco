@@ -348,9 +348,9 @@ or "No proof of identity is on file." <!-- delivery.receiver.evidenceAbsent -->
 - The receiver must already be recorded on the reception visit as someone allowed to collect the
   vehicle, and that permission must still be valid today. The screen asserts nothing; the platform
   decides and the refusal is the platform's answer.
-- The receiver and the confirming employee are shown as references. The product resolves no names
-  for them, and the stored identity document is never displayed, never linked and cannot be opened
-  from this screen.
+- The receiver and the confirming employee appear by name, or as "Name not shown" <!-- delivery.person.notShown -->
+  when the name cannot be shown to you. The stored identity document is never displayed, never
+  linked and cannot be opened from this screen.
 - One receiver per handover. Once confirmed, the form is gone.
 
 **If it goes wrong**
@@ -774,7 +774,7 @@ exactly the same rows.
 **Result** — the table <!-- warranty.list.tableCaption --> "Warranties issued by the chosen branch"
 under the heading <!-- warranty.list.heading --> **Warranties in this branch**, newest first, with
 **Warranty plan**, **State**, **Cover starts**, **Cover ends**, **Odometer reading at which cover
-ends** and **Vehicle reference** <!-- warranty.list.columnPolicy … .columnVehicle --> . <!-- warranty.list.loadMore -->
+ends**, **Vehicle** and **Customer** <!-- warranty.list.columnPolicy … .columnCustomer --> . <!-- warranty.list.loadMore -->
 **Show more** pages it. The link <!-- warranty.list.openPolicies --> **Open the warranty plans**
 takes you to plan administration (4D.14) — there is no sidebar entry for it.
 
@@ -1070,10 +1070,11 @@ rather than assuming a conflict.
 6. **There is no warranty claims surface at all**, and no money on any warranty screen.
 7. **The printable handover sheet is not an archive.** It says so on the paper. No document version
    is stored and no PDF is generated.
-8. **References are references.** The vehicle, the visit, the receiver, the confirming employee and
-   the covered jobs and parts are shown as stored identifiers, because the product holds no names
-   for them. The delivering employee is the one exception, and only on handovers started through the
-   current selector.
+8. **People are named and internal identifiers are not printed.** The receiver, the confirming
+   employee and the employee handing over appear by name, or as "Name not shown" <!-- delivery.person.notShown -->
+   when the name cannot be shown to you. The vehicle and the reception visit are not printed as
+   identifiers, and the warranty record does not show the identifiers of the jobs and parts it
+   covers.
 9. **The product name, logo and colours are provisional** — the interface renders the placeholder
    **CRM** with the banner **Provisional appearance — final brand pending**.
 10. **Monitoring is local only.** If something on these screens fails, nothing is sent anywhere;

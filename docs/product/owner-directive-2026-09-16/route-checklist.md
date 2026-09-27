@@ -1792,34 +1792,46 @@ Known limitations of this slice, one line each:
 - The eligibility panel still shows the record version number.
 - `delivery.summary.identifiersExplain`, `delivery.summary.finalOdometerReading`,
   `delivery.summary.vehicle` and `delivery.summary.visit` (and `warranty.items.sourceJob` /
-  `sourcePart`) are rendered by no screen but stay in `en.json` and `ar.json`; no gate catches an
-  unused key, and the DOM and browser tests still read them for their absence checks. The manual
-  no longer documents them (fix round 2); removing them is a follow-up.
-- Part 4D.12 of the user manual (the warranty list) still describes the pre-slice filter and a
-  "Vehicle reference" column; only 4D.3, 4D.5, 4D.10 and 4D.13 were rewritten in fix round 2.
-- After the partial end-date refusal in a coverage `DateField`, erasing the typed parts fires no
-  `onChange`, so the date error most likely stays until the next submit (which then succeeds,
-  open-ended); the immediate clear was not observed.
+  `sourcePart`, and `delivery.document.column.itemCode`) are rendered by no screen but stay in
+  `en.json` and `ar.json`; no gate catches an unused key, and the DOM and browser tests still read
+  them for their absence checks. The manual no longer documents them (fix round 2); removing them
+  is a follow-up.
+- Part 4D.12 of the user manual (the warranty list) still describes the pre-slice filter; its
+  column list reads "Vehicle" and "Customer" since fix round 3, and the receiver passage (4D.5) and
+  restriction 8 now name people rather than calling them references.
+- The `DateField` `onProblem` signature is now `DayProblem` (adds `'incomplete'`) for `DateField`
+  only; its one `onProblem` consumer is `WarrantyPolicyScreen`, which since fix round 3 also
+  withdraws a date complaint when every typed part is erased. `FilterToolbar` and the gallery pass
+  no `onProblem`, and the swapped `PartsReportingTextField` slot passed the `mui-form-fields` and
+  gallery tests.
+- The readiness "state" shows `workOrderStateLabel` words for platform states; a state a workshop
+  defined itself still falls back to its raw code (base always showed the code).
 - `DeliveryDetailScreen.tsx` doc comment on `finalOdometerReading` still says the reference is
   shown when unresolved; the code shows words (`finalOdometerNotShown` / `finalOdometerNone`).
-- Every modified e2e case was skipped in hosted CI for lack of acceptance-journey fixtures
-  (delivery-p1-31 :268/:345/:398/:549, delivery-writes-p1-31 :264/:487/:654, warranty-p1-31
-  :276/:484): the grid role, the `[role=row][data-rowindex]` selectors, the eligibility
-  `li[data-item-code]` locator and the identifier and receiver-name assertions have never run in
-  a real browser.
-- The name reads have only a mocked unit test (`tests/unit/p1-32-delivery-warranty-names.test.ts`):
-  no `tests/backend` case proves `receiverDisplayName`, `verifiedByDisplayName` and
-  `actorDisplayName` come back null for a `sal.delivery.view` / `wty.warranty.read` login without
-  `crm.customer.read` or `iam.user.read` on the real database; the resolvers carry their own tests.
-- Server-side field errors for `policyCode`/`name` on the create-plan form and for the odometer
+- Carried: every modified e2e case was skipped in hosted CI by the fixture (delivery-p1-31
+  :268/:345/:398/:549, delivery-writes-p1-31 :264/:487/:654, warranty-p1-31 :276/:484): the grid
+  role, the `[role=row][data-rowindex]` rows, the `UUID_SHAPE` absence checks, the eligibility
+  `li[data-item-code]` locator and the receiver-name assertions have never run in a real browser.
+  By reading they match the current DOM (`FormSelectField` is native, so `selectOption` works,
+  and the acceptance owner holds `crm.customer.read` and `iam.user.read`).
+- Carried: the name reads have only a mocked unit test
+  (`tests/unit/p1-32-delivery-warranty-names.test.ts`, 11/11 locally): no `tests/backend` case
+  proves `receiverDisplayName`, `verifiedByDisplayName` and `actorDisplayName` come back null for
+  a login without `crm.customer.read` or `iam.user.read`. Both resolvers check the capability
+  first (`identity-directory-service.ts:68`, `customer-read-service.ts:132`) and are
+  tenant-scoped reads, so by reading nothing is widened.
+- Carried: server-side field errors for `policyCode`/`name` on the create-plan form and for the odometer
   on the release form are not mapped to their fields, as at the base; this predates the slice.
 - Deliberate behaviour changes: the readiness "opened" column is hidden below `md`
   (`hideBelow`); `WarrantyRecordScreen` no longer shows the source job or part; a retry on
   eligibility or completion bumps the revision, which re-reads every panel.
-- `WarrantyHistoryPanel` `loadMore` checks the warranty id but not the attempt before holding a
+- Carried: `WarrantyHistoryPanel` `loadMore` checks the warranty id but not the attempt before holding a
   page; no live path was found, because the retry shows only when the first page failed.
 - Not run locally (expensive or needs the database): `test:backend`, `test:db`, `build:web`,
   `test:web-e2e`; the full `test:unit` and `test:web` tiers ran in hosted CI only.
+- The three handover forms' unsaved-work guards (release, receiver, checklist waiver reason) are
+  held by `delivery.dom.test.tsx` "unsaved handover work and a branch switch" in en and ar since
+  fix round 3; a no-op guard in each form was killed by its own cases.
 - In jsdom, typing `01012026` into a coverage `DateField` produced `01/01/2027`; the policy
   cases type days that avoid it, and the behaviour belongs to the shared picker, not this screen.
 - The unit and web tier counts change (new cases and one new unit file); the recorded tiers are

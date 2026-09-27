@@ -11,11 +11,20 @@ import {
   OTHER_BRANCH,
   TEST_BRANCH,
   TEST_COMPANY,
+  WorkingBranchProbe,
   branchSnapshot,
   inBranch,
   renderLtr,
   renderRtl,
 } from './render';
+import {
+  discardAndSwitch,
+  forgetRememberedBranch,
+  heldBranch,
+  stayOnBranch,
+  switchExpectingQuestion,
+  switchWithoutQuestion,
+} from './support/branch-switch';
 
 /**
  * The vehicle handover, rendered (P1-31, FE-001, FE-002, FE-003, FE-004,
@@ -3792,5 +3801,210 @@ describe('the final odometer reading is a reading, not a reference', () => {
         .getByText(EN['delivery.summary.finalOdometer'] as string)
         .closest('div')
     ).toHaveTextContent(EN['delivery.summary.finalOdometerNone'] as string);
+  });
+});
+
+describe('unsaved handover work and a branch switch', () => {
+  /*
+   * The release form, the receiver form and a checklist waiver reason each
+   * declare their typed work to the working context. Without that declaration a
+   * branch switch drops it without a word; with it, the shell asks, "stay" keeps
+   * it, "discard" empties the form and sends nothing, and a stored write leaves
+   * nothing to ask about. Each case below fails if its form's guard is removed.
+   */
+  afterEach(forgetRememberedBranch);
+
+  type Locale = 'en' | 'ar';
+  type User = ReturnType<typeof userEvent.setup>;
+  const textOf = (locale: Locale) => (locale === 'en' ? EN : AR);
+  const labelOf = (locale: Locale) => (locale === 'en' ? labelled : labelledAr);
+  const words = (locale: Locale, key: string) => textOf(locale)[key] as string;
+
+  async function mount(locale: Locale, user: User) {
+    readEligibility.mockResolvedValue(okRead(clearEligibility));
+    const render = locale === 'en' ? renderLtr : renderRtl;
+    render(
+      inBranch(
+        <>
+          <BranchSwitch to={TEST_BRANCH.id} label="first" />
+          <BranchSwitch to={OTHER_BRANCH.id} label="second" />
+          <WorkingBranchProbe />
+          <DeliveryDetailScreen
+            locale={locale}
+            messages={locale === 'en' ? en : ar}
+            delivery={delivery}
+            canReadFinance={true}
+            canComplete={true}
+            canManage={true}
+          />
+        </>,
+        { snapshot: branchSnapshot([TEST_BRANCH, OTHER_BRANCH]), locale }
+      )
+    );
+    await switchWithoutQuestion(user, 'first');
+    await waitFor(() => expect(heldBranch()).toBe(TEST_BRANCH.id));
+  }
+
+  const region = (locale: Locale, headingKey: string) =>
+    screen.findByRole('region', { name: words(locale, headingKey) });
+
+  const odometerBox = async (locale: Locale) =>
+    within(await region(locale, 'delivery.completion.heading')).getByLabelText(
+      labelOf(locale)('delivery.completion.odometer')
+    ) as HTMLInputElement;
+
+  const fuelRow = async (locale: Locale) => {
+    const checklistRegion = await region(locale, 'delivery.checklist.heading');
+    await within(checklistRegion).findByText('Fuel level agreed');
+    const row = checklistRegion.querySelector('[data-item-code="FUEL"]');
+    expect(row).not.toBeNull();
+    return row as HTMLElement;
+  };
+
+  const reasonBox = async (locale: Locale) =>
+    within(await fuelRow(locale)).queryByLabelText(
+      labelOf(locale)('delivery.checklist.waiverReasonLabel')
+    ) as HTMLTextAreaElement | null;
+
+  /** The chosen person is drawn with a control to change them, and only then. */
+  const changePersonButton = async (locale: Locale) =>
+    within(await region(locale, 'delivery.receiver.heading')).queryByRole('button', {
+      name: words(locale, 'customerSelector.change'),
+    });
+
+  /** One form: how it is filled, what kept and emptied look like, and its write. */
+  interface Form {
+    readonly fill: (user: User, locale: Locale) => Promise<void>;
+    readonly expectKept: (locale: Locale) => Promise<void>;
+    readonly expectEmpty: (locale: Locale) => Promise<void>;
+    readonly submit: (user: User, locale: Locale) => Promise<void>;
+    readonly write: ReturnType<typeof vi.fn>;
+  }
+
+  const forms: Readonly<Record<'release' | 'receiver' | 'checklist', Form>> = {
+    release: {
+      fill: async (user, locale) => {
+        await user.type(await odometerBox(locale), '120.5');
+      },
+      expectKept: async (locale) => {
+        expect((await odometerBox(locale)).value).toBe('120.5');
+      },
+      expectEmpty: async (locale) => {
+        await waitFor(async () => expect((await odometerBox(locale)).value).toBe(''));
+      },
+      submit: async (user, locale) => {
+        await user.click(
+          within(await region(locale, 'delivery.completion.heading')).getByRole('button', {
+            name: words(locale, 'delivery.completion.submit'),
+          })
+        );
+      },
+      write: completeDelivery,
+    },
+    receiver: {
+      fill: async (user, locale) => {
+        const receiverRegion = await region(locale, 'delivery.receiver.heading');
+        await user.type(
+          await within(receiverRegion).findByLabelText(
+            labelOf(locale)('crm.customers.column.name')
+          ),
+          'Layla'
+        );
+        await user.click(
+          within(receiverRegion).getByRole('button', {
+            name: words(locale, 'customerSelector.search'),
+          })
+        );
+        await user.click(
+          await within(receiverRegion).findByRole('button', { name: /Layla Haddad/ })
+        );
+        expect(await changePersonButton(locale)).not.toBeNull();
+      },
+      expectKept: async (locale) => {
+        expect(await changePersonButton(locale)).not.toBeNull();
+      },
+      expectEmpty: async (locale) => {
+        await waitFor(async () => expect(await changePersonButton(locale)).toBeNull());
+      },
+      submit: async (user, locale) => {
+        await user.click(
+          within(await region(locale, 'delivery.receiver.heading')).getByRole('button', {
+            name: words(locale, 'delivery.receiver.verifySubmit'),
+          })
+        );
+      },
+      write: verifyReceiver,
+    },
+    checklist: {
+      fill: async (user, locale) => {
+        const row = await fuelRow(locale);
+        await user.selectOptions(
+          within(row).getByLabelText(words(locale, 'delivery.checklist.outcome')),
+          'waived'
+        );
+        const box = await reasonBox(locale);
+        expect(box).not.toBeNull();
+        await user.type(box as HTMLTextAreaElement, 'Agreed at the desk');
+      },
+      expectKept: async (locale) => {
+        expect((await reasonBox(locale))?.value).toBe('Agreed at the desk');
+      },
+      expectEmpty: async (locale) => {
+        // The draft goes back to its untouched state: no waiver, so no reason box.
+        await waitFor(async () => expect(await reasonBox(locale)).toBeNull());
+      },
+      submit: async (user, locale) => {
+        await user.click(
+          within(await fuelRow(locale)).getByRole('button', {
+            name: words(locale, 'delivery.checklist.record'),
+          })
+        );
+      },
+      write: recordChecklistResult,
+    },
+  };
+
+  const cases = (['release', 'receiver', 'checklist'] as const).flatMap((name) =>
+    (['en', 'ar'] as const).map((locale) => [name, locale] as const)
+  );
+
+  it.each(cases)(
+    'the %s form asks before a switch; staying keeps it and discarding empties it unsent (%s)',
+    async (name, locale) => {
+      const form = forms[name];
+      const user = userEvent.setup();
+      await mount(locale, user);
+      await form.fill(user, locale);
+
+      await stayOnBranch(
+        user,
+        await switchExpectingQuestion(user, 'second', textOf(locale)),
+        textOf(locale)
+      );
+      expect(heldBranch()).toBe(TEST_BRANCH.id);
+      await form.expectKept(locale);
+
+      await discardAndSwitch(
+        user,
+        await switchExpectingQuestion(user, 'second', textOf(locale)),
+        textOf(locale)
+      );
+      await waitFor(() => expect(heldBranch()).toBe(OTHER_BRANCH.id));
+      await form.expectEmpty(locale);
+      expect(form.write).not.toHaveBeenCalled();
+    }
+  );
+
+  it.each(cases)('the %s form asks nothing once its write is stored (%s)', async (name, locale) => {
+    const form = forms[name];
+    const user = userEvent.setup();
+    await mount(locale, user);
+    await form.fill(user, locale);
+    await form.submit(user, locale);
+    await waitFor(() => expect(form.write).toHaveBeenCalledTimes(1));
+    await form.expectEmpty(locale);
+
+    await switchWithoutQuestion(user, 'second');
+    await waitFor(() => expect(heldBranch()).toBe(OTHER_BRANCH.id));
   });
 });

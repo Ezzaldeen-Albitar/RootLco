@@ -248,8 +248,10 @@ describe('wty.warranty-status-history names each actor', () => {
  * Every catalogue key the manual anchors for a label on these screens must be a
  * key the delivery or warranty screens still render, so a passage describing a
  * retired label (the four summary references, the item source references) fails
- * here; and the retired wording itself — "employee reference", the sentence that
- * said references are shown as stored — must not come back.
+ * here; and the retired wording itself — "employee reference", the sentences that
+ * said people or records are shown as stored references or identifiers because
+ * the product resolves or holds no names, and the "Vehicle reference" column
+ * label (the column is "Vehicle") — must not come back.
  */
 describe('the user manual describes the named handover and warranty screens', () => {
   const root = process.cwd();
@@ -304,6 +306,9 @@ describe('the user manual describes the named handover and warranty screens', ()
       expect(text, file).not.toMatch(/employee\s+reference/i);
       expect(text, file).not.toMatch(/each reference is shown exactly as it is stored/i);
       expect(text, file).not.toMatch(/show a bare reference/i);
+      expect(text, file).not.toMatch(/shown\s+as\s+(?:stored\s+)?(?:references|identifiers)/i);
+      expect(text, file).not.toMatch(/(?:resolves|holds)\s+no\s+names/i);
+      expect(text, file).not.toMatch(/vehicle\s+reference\*\*/i);
     }
   });
 });

@@ -17,24 +17,43 @@ type User = ReturnType<typeof userEvent.setup>;
 
 const EN = en as Record<string, string>;
 
+/**
+ * The catalogue the working context speaks. English unless a case mounts the
+ * provider in Arabic, and then the question and its answers are the Arabic words.
+ */
+type Catalogue = Readonly<Record<string, unknown>>;
+const words = (text: Catalogue, key: string) => text[key] as string;
+
 /** Presses the switch and returns the discard question it must raise. */
-export async function switchExpectingQuestion(user: User, label: string): Promise<HTMLElement> {
+export async function switchExpectingQuestion(
+  user: User,
+  label: string,
+  text: Catalogue = EN
+): Promise<HTMLElement> {
   await user.click(screen.getByRole('button', { name: label }));
   const dialog = await screen.findByRole('alertdialog');
-  expect(within(dialog).getByText(EN['workingContext.discard.title'] as string)).toBeVisible();
+  expect(within(dialog).getByText(words(text, 'workingContext.discard.title'))).toBeVisible();
   return dialog;
 }
 
 /** Answers "stay": the question closes and nothing moves. */
-export async function stayOnBranch(user: User, dialog: HTMLElement): Promise<void> {
-  await user.click(within(dialog).getByRole('button', { name: EN['overlay.cancel'] as string }));
+export async function stayOnBranch(
+  user: User,
+  dialog: HTMLElement,
+  text: Catalogue = EN
+): Promise<void> {
+  await user.click(within(dialog).getByRole('button', { name: words(text, 'overlay.cancel') }));
   await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
 }
 
 /** Answers "discard and change branch". */
-export async function discardAndSwitch(user: User, dialog: HTMLElement): Promise<void> {
+export async function discardAndSwitch(
+  user: User,
+  dialog: HTMLElement,
+  text: Catalogue = EN
+): Promise<void> {
   await user.click(
-    within(dialog).getByRole('button', { name: EN['workingContext.discard.confirm'] as string })
+    within(dialog).getByRole('button', { name: words(text, 'workingContext.discard.confirm') })
   );
   await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
 }

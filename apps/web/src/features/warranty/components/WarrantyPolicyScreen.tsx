@@ -9,7 +9,7 @@ import TableContainer from '@mui/material/TableContainer';
 import TableHead from '@mui/material/TableHead';
 import TableRow from '@mui/material/TableRow';
 
-import { DateField } from '@/components/forms/mui/DateField';
+import { DateField, type DayProblem } from '@/components/forms/mui/DateField';
 import { FormSelectField } from '@/components/forms/mui/FormSelectField';
 import { FormTextField } from '@/components/forms/mui/FormTextField';
 import { FailureExplanation } from '@/components/states/States';
@@ -654,6 +654,20 @@ function CoverageForm({
       delete next[field];
       return next;
     });
+  /**
+   * A date picker's parts stopped being half typed. Either they became a whole
+   * day (the picker's own change already withdrew the complaint) or every part
+   * was erased, which the picker publishes as no change at all — yet an erased
+   * optional end date is a correction, so its complaint is withdrawn here too.
+   */
+  const settled = (
+    field: 'effectiveFrom' | 'effectiveTo',
+    problem: DayProblem,
+    setUnfinished: (unfinished: boolean) => void
+  ) => {
+    setUnfinished(problem !== null);
+    if (problem === null) corrected(field);
+  };
 
   return (
     <form
@@ -767,7 +781,7 @@ function CoverageForm({
         value={effectiveFrom}
         onEdit={() => corrected('effectiveFrom')}
         onChange={setEffectiveFrom}
-        onProblem={(problem) => setFromUnfinished(problem !== null)}
+        onProblem={(problem) => settled('effectiveFrom', problem, setFromUnfinished)}
         error={
           errors['effectiveFrom'] ? translateDynamic(messages, errors['effectiveFrom']) : undefined
         }
@@ -779,7 +793,7 @@ function CoverageForm({
         value={effectiveTo}
         onEdit={() => corrected('effectiveTo')}
         onChange={setEffectiveTo}
-        onProblem={(problem) => setToUnfinished(problem !== null)}
+        onProblem={(problem) => settled('effectiveTo', problem, setToUnfinished)}
         error={
           errors['effectiveTo'] ? translateDynamic(messages, errors['effectiveTo']) : undefined
         }

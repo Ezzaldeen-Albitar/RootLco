@@ -1044,6 +1044,58 @@ describe('one plan, and the controls over it', () => {
     }
   });
 
+  it('withdraws the end date complaint once the half-typed parts are erased, before any resubmit', async () => {
+    // Erasing every part leaves the optional end date validly empty, and the
+    // picker publishes no change for it: the complaint must still go at once.
+    PERMISSIONS = [READ, MANAGE];
+    for (const [locale, catalogue] of [
+      ['en', EN],
+      ['ar', AR],
+    ] as const) {
+      createCoverageWindow.mockClear();
+      const named = (key: string) => new RegExp(`^${escape(catalogue[key] as string)}`);
+      const sentence = catalogue['warranty.policies.dateFormat'] as string;
+      const user = userEvent.setup();
+      const submit = () =>
+        user.click(
+          screen.getByRole('button', {
+            name: catalogue['warranty.policies.addCoverageSubmit'] as string,
+          })
+        );
+      const { unmount } = await renderDetailPage(locale);
+      await waitFor(() => expect(readWarrantyPolicy).toHaveBeenCalled());
+      await user.type(
+        screen.getByRole('textbox', { name: named('warranty.coverage.durationMonths') }),
+        '24'
+      );
+      const from = screen.getByRole('group', { name: named('warranty.coverage.effectiveFrom') });
+      await user.click(within(from).getAllByRole('spinbutton')[0] as HTMLElement);
+      await user.keyboard('01022026');
+      const to = screen.getByRole('group', { name: named('warranty.coverage.effectiveTo') });
+      await user.click(within(to).getAllByRole('spinbutton')[0] as HTMLElement);
+      await user.keyboard('0103');
+      await submit();
+      await waitFor(() => expect(to, locale).toHaveAttribute('aria-invalid', 'true'));
+      expect(screen.getByText(sentence), locale).toBeInTheDocument();
+
+      // Every part of the end date erased, one by one.
+      for (const part of within(to).getAllByRole('spinbutton')) {
+        await user.click(part);
+        await user.keyboard('{Backspace}');
+      }
+      await waitFor(() => expect(to, locale).not.toHaveAttribute('aria-invalid', 'true'));
+      expect(screen.queryByText(sentence), locale).toBeNull();
+      expect(to, locale).not.toHaveAccessibleDescription(new RegExp(escape(sentence)));
+      expect(createCoverageWindow, locale).not.toHaveBeenCalled();
+
+      // The window then goes out open-ended, as an empty end date means.
+      await submit();
+      await waitFor(() => expect(createCoverageWindow, locale).toHaveBeenCalledTimes(1));
+      expect(createCoverageWindow.mock.calls[0]?.[1], locale).not.toHaveProperty('effectiveTo');
+      unmount();
+    }
+  });
+
   it('refuses a distance that is not a whole number, without parsing it', async () => {
     PERMISSIONS = [READ, MANAGE];
     const user = userEvent.setup();
