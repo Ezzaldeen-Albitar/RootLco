@@ -141,6 +141,25 @@ export function BranchSelector({
   }
 
   const unchosen = value === '';
+  /*
+   * What the closed select shows, and the direction it is written in.
+   *
+   * At 375 px the header leaves the select about 104 px, and a branch name is
+   * usually longer (checkpoint browser QA, DEF-01). The select cuts it with an
+   * ellipsis (`truncate`), carries the whole name as its `title`, and is laid
+   * out in the NAME's direction rather than the page's: a Latin name in the
+   * Arabic interface was right-aligned and lost its beginning, and it now
+   * keeps its beginning and ends in an ellipsis, as an Arabic name
+   * does in the English interface. The options list is the platform's own and
+   * is unaffected.
+   */
+  const shown =
+    value === ALL_BRANCHES
+      ? translate(messages, 'workingContext.allBranches')
+      : unchosen
+        ? translate(messages, 'workingContext.choose')
+        : (branches.find((branch) => branch.id === value)?.name ?? '');
+  const shownDirection = writingDirectionOf(shown);
 
   return (
     <div className="flex min-w-0 items-center gap-2">
@@ -164,7 +183,13 @@ export function BranchSelector({
             if (next.length === 0) return;
             onSelect(next);
           }}
-          inputProps={{ id: selectId, 'data-testid': 'working-context-select' }}
+          inputProps={{
+            id: selectId,
+            'data-testid': 'working-context-select',
+            className: 'truncate',
+            title: shown.length > 0 ? shown : undefined,
+            dir: shownDirection,
+          }}
         >
           {unchosen ? (
             <option value="">{translate(messages, 'workingContext.choose')}</option>
@@ -207,4 +232,21 @@ export function BranchSelector({
       ) : null}
     </div>
   );
+}
+
+/** A letter of a right-to-left script: Hebrew, Arabic and their presentation forms. */
+const RTL_LETTER = /[\u0590-\u08FF\uFB1D-\uFDFF\uFE70-\uFEFC]/u;
+/** A letter of a left-to-right script. */
+const LTR_LETTER = /[A-Za-z\u00C0-\u024F\u0370-\u03FF\u0400-\u04FF]/u;
+
+/**
+ * The direction a name is written in, from its first letter that has one, or
+ * `undefined` for a name with none (digits and punctuation follow the page).
+ */
+function writingDirectionOf(text: string): 'rtl' | 'ltr' | undefined {
+  for (const character of text) {
+    if (RTL_LETTER.test(character)) return 'rtl';
+    if (LTR_LETTER.test(character)) return 'ltr';
+  }
+  return undefined;
 }

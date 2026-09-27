@@ -519,9 +519,9 @@ export class ApiClient {
       }
       return { ok: true, status: response.status, data: payload as T, correlationId: echoed };
     } catch (error) {
-      // An abort is either the caller cancelling or our own timeout firing.
-      // They are different outcomes: one is expected and silent, the other is a
-      // condition worth showing.
+      // A caller whose signal is aborted CANCELLED, whatever the fetch threw: a
+      // Route Handler's signal aborts with the framework's own reason, not an
+      // AbortError, and a superseded read was logged at `error` as `network`.
       // Three distinguishable outcomes, and the distinction matters: a user
       // pressing Cancel must not be reported as a backend timeout, which would
       // put a service-unavailable state on screen for something that did not
@@ -531,7 +531,7 @@ export class ApiClient {
       const isTimeout =
         timedOutHere || (error instanceof DOMException && error.name === 'TimeoutError');
       const isAbort = error instanceof DOMException && error.name === 'AbortError';
-      const kind = isTimeout ? 'timeout' : isAbort ? 'cancelled' : 'network';
+      const kind = isTimeout ? 'timeout' : isAbort || signal?.aborted ? 'cancelled' : 'network';
       const failure: ApiFailure = {
         ok: false,
         kind,

@@ -105,11 +105,21 @@ describe('MetricCard: four statements that never look alike', () => {
     expect(metric.textContent ?? '').not.toContain(`${browser} (`);
   });
 
-  it('writes the time on UTC, and says so, under "All my branches"', () => {
+  it('writes the time on UTC, and names it UTC, under "All my branches"', () => {
     card({ status: 'ok', value: 5 }, 'en', 'UTC');
     const metric = screen.getByTestId('metric');
-    expect(metric).toHaveTextContent(stood('UTC'));
-    expect(metric).toHaveTextContent(/06:30 \(GMT/);
+    // The Owner's word for the clock, not the offset form `GMT+0` (checkpoint
+    // browser QA).
+    expect(metric).toHaveTextContent(/06:30 \(UTC\)/);
+    expect(metric.textContent ?? '').not.toContain('GMT');
+  });
+
+  it('names UTC as UTC in Arabic too, never as an offset from Greenwich', () => {
+    card({ status: 'ok', value: 5 }, 'ar', 'UTC');
+    const metric = screen.getByTestId('metric');
+    expect(metric).toHaveTextContent(/\(UTC\)/);
+    expect(metric.textContent ?? '').not.toContain('غرينتش');
+    expect(metric.textContent ?? '').not.toContain('GMT');
   });
 
   it('draws a count as a number that links to its list, with when it was counted', () => {

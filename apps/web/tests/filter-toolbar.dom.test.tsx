@@ -580,7 +580,7 @@ describe('the search box keeps the SearchBox contract', () => {
     expect(screen.getByRole('alert')).toHaveTextContent('Type at least two characters.');
   });
 
-  it("leaves the pause to the screen's read hook: one read per pause, and Enter asks now", async () => {
+  it("leaves the pause to the screen's read hook: one read per pause, Enter asks now, never twice", async () => {
     const user = userEvent.setup();
     const load = vi.fn<
       (
@@ -614,11 +614,22 @@ describe('the search box keeps the SearchBox contract', () => {
       );
     }
     mount(<Board />);
-    await user.type(screen.getByRole('searchbox', { name: 'Find a visit' }), 'abc');
+    const box = screen.getByRole('searchbox', { name: 'Find a visit' });
+    await user.type(box, 'abc');
     await waitFor(() => expect(load).toHaveBeenCalledTimes(1));
     expect(load.mock.calls[0]?.[0]).toEqual({ term: 'abc' });
+    // Enter on the term the pause already read sends nothing more: that second
+    // read is what drew the board's 429s in pairs (checkpoint browser QA).
     await user.keyboard('{Enter}');
+    await new Promise((resolve) => setTimeout(resolve, 120));
+    expect(load).toHaveBeenCalledTimes(1);
+    // Enter on a term the pause has not read yet asks at once, and the pause
+    // then adds no second read of it.
+    await user.type(box, 'd{Enter}');
     await waitFor(() => expect(load).toHaveBeenCalledTimes(2));
+    expect(load.mock.calls[1]?.[0]).toEqual({ term: 'abcd' });
+    await new Promise((resolve) => setTimeout(resolve, 120));
+    expect(load).toHaveBeenCalledTimes(2);
   });
 });
 

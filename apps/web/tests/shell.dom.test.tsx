@@ -2103,4 +2103,47 @@ describe('the header at a narrow width', () => {
       }
     });
   }
+
+  /*
+   * Checkpoint browser QA, DEF-01: at 375 x 812 the select is about 104 px and
+   * the chosen name was cut mid-letter with no ellipsis, and in Arabic a Latin
+   * name lost its BEGINNING instead of its end. The select now ends the name in
+   * an ellipsis, carries it whole as its title, and is laid out in the name's
+   * own direction, so the beginning is kept in both interfaces. jsdom draws no
+   * ellipsis; what is held is the contract that produces it.
+   */
+  for (const locale of ['en', 'ar'] as const) {
+    it(`ends a long branch name in an ellipsis and keeps its beginning (${locale})`, () => {
+      const { container } = drawShell(locale);
+      const select = within(container.querySelector('header') as HTMLElement).getByTestId(
+        'working-context-select'
+      );
+      expect(select.className).toMatch(/(^|\s)truncate(\s|$)/);
+      expect(select).toHaveAttribute('title', 'Main workshop');
+      // A Latin name is laid out left to right in the Arabic interface as well,
+      // so the ellipsis replaces its END, not its beginning.
+      expect(select).toHaveAttribute('dir', 'ltr');
+    });
+  }
+
+  it('lays an Arabic branch name out right to left in the English interface', () => {
+    const arabicBranch = wcBranch('b-9', 'c-1', 'الورشة الرئيسية');
+    renderLtr(
+      <UiFoundationProvider locale="en" text={muiTextOf(messages)}>
+        <BranchSelector
+          messages={messages}
+          status="ready"
+          companies={WC_COMPANIES}
+          branches={[arabicBranch, SECOND]}
+          value="b-9"
+          onSelect={vi.fn()}
+          onRetry={vi.fn()}
+          offerAllBranches
+        />
+      </UiFoundationProvider>
+    );
+    const select = screen.getByTestId('working-context-select');
+    expect(select).toHaveAttribute('dir', 'rtl');
+    expect(select).toHaveAttribute('title', arabicBranch.name);
+  });
 });

@@ -553,10 +553,76 @@ and was left as it is.
 - **2.3b and 2.3c — fixed on the server.** Customer search folds Arabic-Indic and Eastern
   Arabic-Indic digits in the customer number, and writes a Jordanian number the same way however it
   was typed (`+962`, `00962` or `962` becomes `0`); the suffix comparison uses the national
-  significant number, so a number stored as `07…` or as `+9627…` is found by either spelling. The
-  permission, the searched fields, the seven-digit suffix floor and the page are unchanged. The
-  database cases are in `tests/backend/p1-32-friendly-search.test.ts` and run in the hosted
-  integration job.
+  significant number, so a number stored as `07…` or as `+9627…` is found by either spelling. Only
+  a full national number (`0` then eight or nine digits) loses its `0`: a shorter tail such as
+  `0712345` is compared exactly as typed, so it still finds a stored `0790712345` and matches no
+  number the reader did not type. The permission, the searched fields, the seven-digit suffix
+  floor and the page are unchanged. The database cases are in
+  `tests/backend/p1-32-friendly-search.test.ts` and run in the hosted integration job.
+
+Known limitations of this slice, one line each:
+
+- The printable handover document opened from the same delivery screen
+  (`DeliveryDocument.tsx:168-172`) still prints the vehicle and visit references; row 3.2b covers
+  the summary only, and that document is handed to the customer.
+- `WorkOrderClosureScreen` `closureBlockerText`: a blocker code outside `B1`…`B6` falls back to the
+  backend's English message, which an Arabic reader would see; no such code exists today.
+- `delivery.eligibility.unreadable.financialBalanceOutstanding` says no issued invoice was found,
+  but the backend also leaves that fact unestablished when `sal.finance.view` hides the balance;
+  unreachable here because the web reads eligibility only with `sal.finance.view`, unless grants
+  differ by branch.
+- Row 9.5 (375 px header) is proved in jsdom only by the `shrink-0` / `min-w-0` classes; the overlap
+  was not re-measured in a browser in either direction, so it is UNVERIFIED visually.
+- Left open, each needing a backend read: checklist item codes still show (3.2b); a revisited
+  converted visit has no work-order link (5.3); the tax class is still a reference (5.10b); the
+  count-reference tie-break remains (1a.2).
+- The work-order state is translated from the platform vocabulary, so a tenant state whose code
+  equals a platform code but carries a different name shows the platform wording.
+- The conversion step's new link reaches the work-order detail route, so under the P1-28 access
+  gate's one-link-level rule the check-in wizard now also reaches that route's operations
+  (including `iam.sensitive.view`); `tests/ci/p1-28-access-gate.test.ts` measures the composed
+  record over the wizard's own reach with that link cut, and asserts the widened reach separately.
+- P1-27 citations: every anchored `client.ts` citation still names its line — the latest,
+  `:836-837#state.conflict.blocked.title`, still holds that key on line 837, and the slice's later
+  `client.ts` edit (a cancelled read is reported as cancelled) changes lines in place without moving
+  any — so no reseal is needed; `tests/ci/p1-27-matrix-citations.test.ts` checks it.
+
+### Checkpoint browser QA findings (2026-09-27, served at `ed3143e2`)
+
+- **DEF-01 — fixed (the contract), not re-measured.** At 375 px the working-branch select is about
+  104 px and cut the chosen name mid-letter; in Arabic a Latin name lost its beginning. The select
+  now ends the name in an ellipsis (`truncate`), carries it whole as its title, and is laid out in
+  the name's own direction, so the beginning is kept in both interfaces. Held in jsdom on the
+  rendered header in English and Arabic; the drawn ellipsis was not measured in a browser.
+- **DEF-02 — fixed.** The work-order record's facts panel says the state and the parts position in
+  the reader's language (a state outside the platform vocabulary stays its code) and no longer
+  draws the record version. The version still travels as the `If-Match` of every guarded command
+  on the screen, which a test asserts; the lifecycle panel's current state and its choices are
+  said in words too.
+- **Search and the rate limit — fixed.** The toolbar search reports each keystroke and the read
+  hook (`useSearchRequest`) settles it after the same 300 ms pause the old `SearchBox` used, so
+  typing was already one read per pause. Two reads per ask came from elsewhere: Enter after the
+  pause asked again for the term the pause had just read (the 429s arrived in pairs 50 ms apart),
+  and after any submission — a branch choice counts as one — changing a filter re-read the old
+  criteria before the new ones. Enter on page one of a term already in flight or answered now
+  sends nothing (after a failure it is still the retry), and leaving a submission reads only the
+  new criteria. The limiter is unchanged. A throttled read (the API's 429 carried by the read
+  route, or a bare 429 from the web tier) and a 5xx show "Service unavailable" with Try again on
+  the reception board, the work-order board and the overview figures, in English and Arabic,
+  never an empty list.
+- **Log noise — fixed.** A read the caller abandoned is reported as `cancelled` at debug whatever
+  the fetch threw; a Route Handler's signal aborts with the framework's own reason rather than an
+  `AbortError`, which is why these were logged at error as `network`. A real network failure while
+  the caller still waits stays at error.
+- **403 at sign-in — expected, not changed.** The platform session is probed only when the
+  workspace session read is refused (sign-in and `requireSession`), never on a tenant user's
+  ordinary sign-in or navigation. All six lines belonged to one identity holding no permission
+  codes, whose workspace session read was refused; for that caller the probe is the only way to
+  tell a platform operator from a tenant user, and both lines are logged at warn, not error.
+- **UTC naming — fixed.** `zoneLabelAt` names the UTC clock `UTC` in both languages; a branch zone
+  that merely sits at +0 keeps its own offset label.
+- **Reception board, Yesterday — fixed.** The duplicate read of today's window was the same
+  leaving-a-submission defect; choosing a period after a branch choice now sends exactly one read.
 
 ## Remaining — backend prerequisites and Owner decisions only
 

@@ -131,8 +131,10 @@ export interface SearchResult<Row> extends SearchOutcome<Row> {
    *
    * Enter and the Search control are statements of intent, and making an
    * operator who has already decided wait out a 300 ms timer is the interface
-   * being slower than the person using it. Calling it twice with the same term
-   * re-issues, which is what makes it usable as a retry.
+   * being slower than the person using it. Calling it again after the read for
+   * the same term FAILED re-issues, which is what makes it usable as a retry;
+   * while page one of the same term is in flight or answered it sends nothing,
+   * so Enter after the pause does not ask twice.
    */
   readonly submit: () => void;
 }
@@ -436,11 +438,27 @@ export function useSearchRequest<Row, Criteria>(options: {
   }
 
   const submitted = forced !== null && forced.key === key;
+  /*
+   * LEAVING a submission is not a new ask for what was submitted.
+   *
+   * Once the criteria move off the submitted key, `activeKey` falls back to the
+   * settled one — which for the length of the debounce is still the key that
+   * was submitted. Filing that under nonce 0 made it a DIFFERENT request name
+   * from the one just answered, so the board re-read the criteria the operator
+   * was leaving before it read the ones they chose: clicking Yesterday after a
+   * branch switch sent today's window again, then yesterday's (checkpoint
+   * browser QA). While the settled key is still the submitted one, the answer
+   * in hand keeps its name, and the next read is the new criteria's own.
+   */
+  const leaving = forced !== null && !submitted && settledKey === forced.key;
+  const nonce = forced !== null && (submitted || leaving) ? forced.nonce : 0;
   const activeKey = submitted ? key : settledKey;
-  const wanted =
-    activeKey === null ? null : `${activeKey}#${version}#${submitted ? forced.nonce : 0}`;
+  const wanted = activeKey === null ? null : `${activeKey}#${version}#${nonce}`;
 
-  const submit = useCallback(() => {
+  /*
+   * Ask again, whatever is in hand: a retry, a refresh after a write.
+   */
+  const reissue = useCallback(() => {
     if (key === null) return;
     setForced((previous) => ({ key, nonce: (previous?.nonce ?? 0) + 1 }));
   }, [key]);
@@ -489,7 +507,7 @@ export function useSearchRequest<Row, Criteria>(options: {
    * number is NOT part of it — walking to page two must not throw away the
    * cursor that got there.
    */
-  const ordering = `${activeKey ?? ''}#${version}#${submitted ? forced.nonce : 0}`;
+  const ordering = `${activeKey ?? ''}#${version}#${nonce}`;
   const cursors = useCursorPages(ordering);
   /*
    * The cursor stack joins the box for the same reason the loader did.
@@ -576,6 +594,30 @@ export function useSearchRequest<Row, Criteria>(options: {
 
   const hasMore = outcome.page?.hasMore ?? false;
 
+  /*
+   * Enter and Search, which must not ask twice for what is already asked.
+   *
+   * The toolbar's search settles after the pause AND asks at once on Enter, so
+   * an operator who types, waits a moment and presses Enter used to send the
+   * same read twice — the settled one and the submitted one, 50 ms apart. Under
+   * the board's `expensive-read` limit (30 a minute per user) that doubled
+   * every search, and the checkpoint browser QA drew 429s from it. So when the
+   * read in flight or on screen is already page one of exactly these criteria,
+   * Enter is answered by that read and sends nothing. A read that FAILED is
+   * asked again — that is what a retry is — and so is any other page, because
+   * a submission starts again at page one. `table.refresh` stays `reissue`: a
+   * table's refresh is asked for after a write, when the answer in hand is old.
+   */
+  const inHand =
+    activeKey !== null &&
+    activeKey === key &&
+    wantedPage === 1 &&
+    (outcome.phase === 'loading' || outcome.phase === 'ready' || outcome.phase === 'empty');
+  const submit = useCallback(() => {
+    if (inHand) return;
+    reissue();
+  }, [inHand, reissue]);
+
   const next = useCallback(() => {
     setPageNumber((current) => current + 1);
   }, []);
@@ -636,9 +678,9 @@ export function useSearchRequest<Row, Criteria>(options: {
           : null,
       status,
       correlationId: outcome.correlationId ?? undefined,
-      refresh: submit,
+      refresh: reissue,
     }),
-    [request, outcome, wantedPage, hasMore, status, submit, narrowed]
+    [request, outcome, wantedPage, hasMore, status, reissue, narrowed]
   );
 
   return { ...outcome, submit, pageNumber: wantedPage, hasMore, next, previous, table };
