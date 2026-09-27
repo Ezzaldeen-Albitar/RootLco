@@ -59,9 +59,10 @@
  * delegate a code it does not hold. Both are held, and so is `org.tenant.read`
  * — the same screen's Workspace card (`iam.tenant-settings-read`), which the
  * production build refused to the first administrator of its own organization.
- * The settings WRITE `org.settings.manage` stays out: no walked route on the
- * journey declares it, and the card renders read-only without it (residual
- * W9-R2, Owner disposition requested in the derivation record).
+ * The settings WRITE `org.settings.manage` was kept out on the same ground — no
+ * walked route on the journey declared it, and the card rendered read-only
+ * without it (residual W9-R2). The Owner disposed of W9-R2 on 2026-09-27 and the
+ * code is now carried; see the section at the end of this comment.
  * `org.company.manage` and `org.branch.manage` were withheld on that same ground
  * until the Owner directive of 2026-09-16 shipped `org.company-create` and
  * `org.branch-create`, which declare them. The Owner decided they are carried:
@@ -422,6 +423,50 @@
  * administrator role that is still the standard one, and skips and reports every
  * role the organisation has customised. The run is an operator act, not performed by
  * this change.
+ *
+ * ## `org.settings.manage` — the organisation's own settings, by Owner decision
+ *
+ * The Owner decided on 2026-09-27 that the standard tenant administrator edits its
+ * own organisation's operational settings, its default language and time zone
+ * included, which closes residual W9-R2. The scope was measured before the code was
+ * carried, and every operation that declares it is tenant-bound by the database:
+ *
+ *  - `iam.tenant-settings-update` changes the caller's own tenant row and only its
+ *    display name, default language and default time zone. Those three are the only
+ *    columns `app_runtime` may update on `org.tenants`, and `upd_tenants_settings`
+ *    admits the row only when `id = iam.current_tenant_id()`. The tenant code and the
+ *    status are not writable here; status stays a platform operator act.
+ *  - `iam.company-settings-write` and `iam.branch-settings-write` append a versioned
+ *    key and value for a company or branch inside the caller's scope. That includes
+ *    the numbering, tax and currency slots the settings screens write, and nothing on
+ *    the server reads any of those keys to decide a price, a discount, an approval
+ *    limit, a credit note, a payment or an invoice's tax.
+ *  - `shared.branch-status-change` activates or deactivates a branch of the caller's
+ *    own organisation, with a stated reason.
+ *  - The eight message-template operations author, approve, retire and activate the
+ *    organisation's own templates; platform templates stay read-only.
+ *
+ * None of them reaches another organisation, a platform setting, a subscription or
+ * plan, sign-in or session policy, roles and grants, or a financial control. Those
+ * stay behind their own codes (`platform.*`, `org.subscription.manage`,
+ * `iam.role.manage`, `iam.grant.manage`, `svc.price.manage`, `iam.approval.manage`,
+ * `sal.credit.manage`), and carrying this code changes none of them.
+ *
+ * Organisation-wide settings belong to the organisation's administrator, so the code
+ * is carried HERE and nowhere else: no company or branch manager role gains it, and
+ * `first_owner` stays frozen at its three IAM codes. A company or branch manager an
+ * organisation builds holds it only if its administrator decides to delegate it.
+ *
+ * A changed default language or time zone applies to what is shown and entered from
+ * then on. It rewrites no stored record: timestamps are stored as instants, and every
+ * branch keeps the time zone it was given.
+ *
+ * Organisations provisioned before this entry keep the set they were given.
+ * `scripts/platform/backfill-tenant-administrator-bundle.mjs` reads this list at run
+ * time; by the same decision it is run only for the previously authorised QA
+ * organisations, and it skips and reports every administrator role an organisation
+ * has customised. Other existing organisations are left unchanged for now. The run is
+ * an operator act, not performed by this change.
  */
 
 export interface BootstrapRoleDefinition {
@@ -462,6 +507,12 @@ export const TENANT_ADMINISTRATOR_ROLE: BootstrapRoleDefinition = Object.freeze(
     'org.branch.manage',
     'org.department.read',
     'org.department.manage',
+    // Owner decision 2026-09-27 (closes W9-R2): the administrator edits its own
+    // organisation's settings — display name, default language and time zone, the
+    // company and branch settings, branch status and message templates. Tenant-bound
+    // by `upd_tenants_settings` and the settings policies; no platform, subscription,
+    // security or financial control is reachable through it. See the section above.
+    'org.settings.manage',
     // P1-31 prerequisite P-17. Both codes are MINTED by that slice and both are
     // carried, on the P-1 rule this bundle is built from: a code is held when a
     // SHIPPED operation declares it and the administrator needs it to exercise

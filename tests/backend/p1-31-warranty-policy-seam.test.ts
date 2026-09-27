@@ -1485,8 +1485,9 @@ describe('P-10 the provisioning bundle', () => {
     // measured as permanently closed in every provisioned organisation — the
     // fourth, `inv.cost.view`, stays excluded because that exclusion is a recorded
     // decision (CC-12, open; register gap E-14) only the Owner may reverse. 89 since
-    // the Owner decided the administrator carries sal.credit.manage (credit notes).
-    expect(TENANT_ADMINISTRATOR_ROLE.permissionCodes).toHaveLength(89);
+    // the Owner decided the administrator carries sal.credit.manage (credit notes),
+    // and 90 since it carries org.settings.manage (Owner decision 2026-09-27).
+    expect(TENANT_ADMINISTRATOR_ROLE.permissionCodes).toHaveLength(90);
     expect(new Set(TENANT_ADMINISTRATOR_ROLE.permissionCodes).size).toBe(
       TENANT_ADMINISTRATOR_ROLE.permissionCodes.length
     );

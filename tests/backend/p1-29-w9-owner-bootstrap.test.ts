@@ -481,8 +481,13 @@ describe('W9 — the bootstrap the provisioning operation now carries', () => {
     // measured that nobody in a provisioned organisation could read, request or
     // approve a credit note (result matrix part 5 row 6.19). Declared by the four
     // credit-note operations and already a catalogue row; nothing is minted.
-    expect(expected).toHaveLength(89);
+    // 90 with `org.settings.manage`, carried by the Owner decision of 2026-09-27
+    // that closes residual W9-R2: the administrator edits its own organisation's
+    // settings. Declared by the tenant, company and branch settings writes, branch
+    // status and the template operations; already a catalogue row.
+    expect(expected).toHaveLength(90);
     expect(expected).toContain('sal.credit.manage');
+    expect(expected).toContain('org.settings.manage');
     expect(expected).not.toContain('inv.cost.view');
     expect(expected.some((c) => c.includes('*'))).toBe(false);
     expect(expected.some((c) => c.startsWith('platform.'))).toBe(false);
@@ -834,18 +839,17 @@ describe('W9 — the created human, through the real application paths', () => {
     // A code the administrator does not hold cannot be delegated: the finite
     // set is the boundary, enforced by the database, not by this suite.
     //
-    // `org.settings.manage` and not `iam.approval.manage`: the P1-30 corrective
-    // slice moved the latter INTO the bundle (W3's quotation screen walks
-    // `iam.approval-limit-list`, which is exactly the rule the exclusion list
-    // states). `org.settings.manage` remains excluded for its own stated reason
-    // — no walked route declares it, and the Workspace card renders read-only
-    // without it — so the boundary is still proved against a real exclusion
-    // rather than against a code that merely happens to be absent today.
+    // `iam.login.view_all`, a real recorded exclusion (no walked route on the
+    // journey declares it). Neither `iam.approval.manage` nor `org.settings.manage`
+    // can serve: the P1-30 corrective slice moved the first INTO the bundle, and
+    // the Owner decision of 2026-09-27 moved the second in too (W9-R2). So the
+    // boundary is still proved against a code the bundle deliberately withholds
+    // rather than against one that merely happens to be absent today.
     asBearer();
     const beyond = await call(rolePermissionAddRoute, {
       path: `/iam/roles/${role.body.id}/permissions`,
       params: { roleId: role.body.id },
-      body: { permissionCode: 'org.settings.manage', effect: 'allow' },
+      body: { permissionCode: 'iam.login.view_all', effect: 'allow' },
       bearer: accessToken,
       idempotencyKey: randomUUID(),
     });
