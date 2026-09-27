@@ -785,6 +785,26 @@ Known limitations of this slice, one line each:
   the clerk sends no read and sees no error, while a company-scoped administrator still reads the
   panel. The field is optional on the wire; a client that finds it absent reads no company's
   settings.
+- Item 4, review falsification: forcing the company-scope decision true, publishing every
+  candidate company, or mocking every company as readable each made the new unit or DOM cases
+  fail (a review probe from outside the repository, no repository writes).
+- Item 4: the live-database case in `tests/backend/iam-auth-provider.test.ts` covers branch-scoped,
+  unrestricted and no grant only; a company-scoped `org.company.read` grant is proven in the
+  modelled unit test and the mocked DOM test, not against a database.
+- Item 4: the working-context read (never cached) now makes one company-scope permission query
+  per visible company on every load, N+1 for a tenant-wide administrator with many companies;
+  performance only.
+- Item 4: for a company the editor marks not readable, the write form still renders when the
+  caller holds `org.settings.manage`; the server refuses such a write, and no known live grant
+  combination reaches it.
+- Item 4: the Arabic clerk DOM case asserts that no settings read is sent without a `waitFor`; the
+  English case waits, and the review probe showed both fail when the guard is bypassed.
+- Item 4 changed the tests that name `iam.company-settings-read`, so the generated P1-24
+  operation register was regenerated with `node scripts/p1-24-operation-register.mjs`, not
+  edited by hand.
+- The leave-page guard, the right-to-left chart and the blank-name refusal (UNS-01..03) are
+  unchanged since review round one; UNS-06 only threads `companySettingsReadableIds` through
+  `WorkingContextProvider`. The round-one residuals are recorded above in this section.
 - DEF-R3: the chart's `data-plot-height` is worked out from its props, not measured from the
   drawing; a probe of MUI X `BarChart` with 1, 2 and 7 categories in both languages drew every bar
   25.6 high (plot areas 32, 64 and 224), so a single category now draws.
