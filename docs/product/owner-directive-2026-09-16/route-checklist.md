@@ -1392,15 +1392,12 @@ The preserved-behaviour cell names the contract items above that a migration mus
 | `/appointments/[appointmentId]`                       | form fields, `OperationalGrid`, states                 | F1–F6; G1–G9; S1–S4         | not migrated                       | not run — nothing migrated                |
 | `/appointments/new`                                   | form fields, `OperationalGrid`, `EntityPicker`, states | F1–F6; G1–G9; P1–P10; S1–S4 | not migrated                       | not run — nothing migrated                |
 | `/appointments`                                       | form fields, `OperationalGrid`, states                 | F1–F6; G1–G9; S1–S4         | not migrated                       | not run — nothing migrated                |
-| `/attention`                                          | form fields, `OperationalGrid`, states                 | F1–F6; G1–G9; S1–S4         | not migrated                       | not run — nothing migrated                |
 | `/credit-notes`                                       | form fields, `OperationalGrid`, `EntityPicker`, states | F1–F6; G1–G9; P1–P10; S1–S4 | not migrated                       | not run — nothing migrated                |
 | `/crm/customer-duplicates`                            | `OperationalGrid`, states                              | G1–G9; S1–S4                | not migrated                       | not run — nothing migrated                |
 | `/crm/customers/[customerId]`                         | form fields, `OperationalGrid`, states                 | F1–F6; G1–G9; S1–S4         | not migrated                       | not run — nothing migrated                |
 | `/crm/customers/[customerId]/work-order/new`          | form fields, `OperationalGrid`, `EntityPicker`, states | F1–F6; G1–G9; P1–P10; S1–S4 | not migrated                       | not run — nothing migrated                |
 | `/crm/customers/new/[kind]`                           | form fields, states                                    | F1–F6; S1–S4                | not migrated                       | not run — nothing migrated                |
 | `/crm/customers`                                      | form fields, `OperationalGrid`, states                 | F1–F6; G1–G9; S1–S4         | not migrated                       | not run — nothing migrated                |
-| `/delivery/[deliveryId]`                              | form fields, `OperationalGrid`, `EntityPicker`, states | F1–F6; G1–G9; P1–P10; S1–S4 | not migrated                       | not run — nothing migrated                |
-| `/delivery`                                           | `OperationalGrid`, states                              | G1–G9; S1–S4                | not migrated                       | not run — nothing migrated                |
 | `/inventory/adjustments`                              | form fields, `OperationalGrid`, states                 | F1–F6; G1–G9; S1–S4         | not migrated                       | not run — nothing migrated                |
 | `/inventory/counter-sales`                            | form fields, `OperationalGrid`, states                 | F1–F6; G1–G9; S1–S4         | not migrated                       | not run — nothing migrated                |
 | `/inventory/counts`                                   | form fields, `OperationalGrid`, states                 | F1–F6; G1–G9; S1–S4         | not migrated                       | not run — nothing migrated                |
@@ -1439,16 +1436,19 @@ The preserved-behaviour cell names the contract items above that a migration mus
 | `/vehicles/duplicates`                                | `OperationalGrid`, states                              | G1–G9; S1–S4                | not migrated                       | not run — nothing migrated                |
 | `/vehicles/new`                                       | `OperationalGrid`, states                              | G1–G9; S1–S4                | not migrated                       | not run — nothing migrated                |
 | `/vehicles`                                           | form fields, `OperationalGrid`, states                 | F1–F6; G1–G9; S1–S4         | not migrated                       | not run — nothing migrated                |
-| `/warranty/[warrantyId]`                              | states                                                 | S1–S4                       | not migrated                       | not run — nothing migrated                |
-| `/warranty`                                           | form fields, `OperationalGrid`, states                 | F1–F6; G1–G9; S1–S4         | not migrated                       | not run — nothing migrated                |
-| `/warranty/policies/[policyId]`                       | form fields, states                                    | F1–F6; S1–S4                | not migrated                       | not run — nothing migrated                |
-| `/warranty/policies`                                  | form fields, states                                    | F1–F6; S1–S4                | not migrated                       | not run — nothing migrated                |
 | `/work-orders/[workOrderId]/closure`                  | form fields, `OperationalGrid`, states                 | F1–F6; G1–G9; S1–S4         | not migrated                       | not run — nothing migrated                |
 | `/work-orders/[workOrderId]/jobs/[jobId]/diagnostics` | form fields, states                                    | F1–F6; S1–S4                | not migrated                       | not run — nothing migrated                |
 | `/work-orders/[workOrderId]`                          | form fields, `OperationalGrid`, states                 | F1–F6; G1–G9; S1–S4         | not migrated                       | not run — nothing migrated                |
 | `/work-orders/diagnostics/[templateId]`               | form fields, states                                    | F1–F6; S1–S4                | not migrated                       | not run — nothing migrated                |
 | `/work-orders/diagnostics`                            | form fields, states                                    | F1–F6; S1–S4                | not migrated                       | not run — nothing migrated                |
 | `/work-orders`                                        | `FilterToolbar`, `OperationalGrid`, states             | F6; G1–G11; S1–S5; T1–T7    | migrated — see below the table     | focused suites, en and ar — see below     |
+| `/delivery`                                           | `OperationalGrid`, states                              | G1–G9, G11; S1–S4           | migrated — see below the table     | focused suites, en and ar — see below     |
+| `/delivery/[deliveryId]`                              | form fields, states                                    | F1–F6; S1–S4                | migrated — see below the table     | focused suites, en and ar — see below     |
+| `/warranty`                                           | `FilterToolbar`, `OperationalGrid`, states             | G1–G10; S1–S5; T1, T7       | migrated — see below the table     | focused suites, en and ar — see below     |
+| `/warranty/[warrantyId]`                              | states                                                 | S1–S4                       | migrated — see below the table     | focused suites, en and ar — see below     |
+| `/warranty/policies`                                  | form fields, states                                    | F1–F6; S1–S4                | migrated — see below the table     | focused suites, en and ar — see below     |
+| `/warranty/policies/[policyId]`                       | form fields, `DateField`, states                       | F1–F6; E1–E4; S1–S4         | migrated — see below the table     | focused suites, en and ar — see below     |
+| `/attention`                                          | states                                                 | S1–S4                       | migrated — see below the table     | focused suites, en and ar — see below     |
 | `/work-orders/quality`                                | form fields, states                                    | F1–F6; S1–S4                | not migrated                       | not run — nothing migrated                |
 | `/gallery`                                            | all four                                               | G, P, F, S                  | shown in the gallery, not a screen | `gallery-and-print.dom.test.tsx` (en, ar) |
 | `/platform/account`                                   | form fields, states                                    | F1–F6; S1–S4                | not migrated                       | not run — nothing migrated                |
@@ -1653,3 +1653,146 @@ Known limitations of this slice, one line each:
 - The "Waiting for someone" panel is the screen's own markup on a Material card, not a wrapper.
 - Under "All my branches" the days of a period follow the first branch of the server's resolved
   set; branches in other zones are counted on that clock (said on screen, not changed here).
+
+### Delivery, warranty and attention on Material UI
+
+The seven routes of the delivery, warranty and attention area moved onto the shared wrappers in
+one slice, and the handover and warranty screens now name people instead of printing their
+identifiers (DEF-R2 from the browser retest at `305e79c8`, QA rows 4.1b and 3.2b). Nothing about
+how any of them reads, authorizes or scopes changed: the same reads, the same permission gates,
+the same route branch scope (`/delivery` and `/attention` concrete, `/warranty` union, the four
+record routes `none`, `/warranty/policies` concrete), the same working-context version keys.
+
+What moved to which wrapper:
+
+- `/delivery` — `DeliveryReadinessScreen` renders `OperationalGrid` over the same
+  `useServerTable` read (server mode, no count, the cursor footer, two server reads under one
+  ceiling); the grid draws the refused, unavailable (with Try again), ended-session and failed
+  states; an empty branch is `MuiEmptyState` in the queue's own words. A platform work-order
+  state is said in words through `workOrderStateLabel`; a state a workshop added keeps its code.
+- `/delivery/[deliveryId]` — every panel's loading, empty, refused, unavailable, not-found and
+  failed state is the shared Material state (`PanelShell`), and an outage or a fault offers a
+  retry that reads that panel again (`usePagedList.reload`, the receiver panel's own retry, the
+  checklist configuration's retry, the eligibility and release panels through the screen's
+  re-read). The release form (`FormTextField`, `FormSelectField`, Material's checkbox), the
+  checklist outcome and waiver reason, the signature role and the warranty plan are
+  `forms/mui` fields; the buttons are Material's. The receiver chooser stays `CustomerSelector`
+  (see the limitations).
+- `/warranty` — `WarrantyListScreen` renders `FilterToolbar`'s one search box (sent as typed,
+  Arabic-Indic digits included, with the digits echo), `OperationalGrid` over the same
+  `useSearchRequest(...).table`, and `MuiSearchStates` for every state other than an answer —
+  `MuiEmptyState` for a read with nothing narrowing it (`narrows`, G10). An empty search says it
+  was matched on fewer details for an account without `crm.customer.read` (S5). The branch
+  column is passed to the grid only under "All my branches" (G7).
+- `/warranty/[warrantyId]` — the record's states and the history panel's are the shared Material
+  states; the history offers a retry after an outage.
+- `/warranty/policies` — the new-plan form and the state filter are `forms/mui` fields; the plan
+  list is Material's table walked with the server's cursor ("Show more"); its states are the
+  shared ones.
+- `/warranty/policies/[policyId]` — rename and add-terms are `forms/mui` fields; the two coverage
+  dates are `DateField` (calendar days `YYYY-MM-DD`, the same value the native box produced and
+  the route accepts, replacing the native `type="date"` inputs); the terms table is Material's.
+- `/attention` — each card's loading, refused, unavailable, ended-session and failed state is the
+  shared Material state carrying the card's own sentence, an outage or a fault offers Try again
+  (which reads that card again), and the rows are Material's table (a bounded page per card, so
+  not the operational grid). The permission sentences for stock and the allowance are the shared
+  refusal in the screen's words.
+
+Wrapper extensions, each tested in `mui-states.dom.test.tsx` (en and ar):
+
+- `MuiEmptyState` takes optional `titleKey` and `descriptionKey`, so a panel says what has not
+  happened yet in its own words ("Nobody confirmed yet"); unset, it says "Nothing here yet" as
+  before.
+- `MuiErrorState`, `MuiUnavailableState` and `MuiRefusedState` take an optional
+  `descriptionKey`, the screen's own sentence under the shared heading; the heading, the retry
+  rule, the role and the reference stay the shared ones, so one state is still never drawn as
+  another.
+
+Names instead of identifiers (additive API contract, no new data exposure):
+
+- `sal.delivery-receiver-read` adds `receiverDisplayName` (through the CRM module's own
+  `resolveDisplayIdentities`, which answers nothing without `crm.customer.read`) and
+  `verifiedByDisplayName` (through the identity directory, which answers nothing without
+  `iam.user.read`); `sal.delivery-status-history` and `wty.warranty-status-history` add
+  `actorDisplayName` the same way, one lookup per page. Every id is still published exactly as
+  before, and the reads' authorization and tenant and branch scope are unchanged: a name is only
+  ever resolved for a person already referenced by a record the caller may read, and only when
+  the owning module would show it to that caller. The OpenAPI document describes these
+  responses as objects and does not change; no new wire shape is named.
+- The handover screen, its printed sheet and the warranty history show the names; a name the
+  reads do not give the caller reads "Name not shown", never an identifier. The delivering
+  employee of a handover recorded before the employee register, and a final odometer reading
+  the route could not resolve, are said in words too. A covered item's source job or part is no
+  longer printed as an identifier on the warranty record.
+- A checklist item is shown by its label; its code stays on the row as `data-item-code` and is
+  no longer drawn (row 3.2b), on the panel, in the release checks, in a refused release and on
+  the printed sheet.
+
+Preserved, each held by a case in the named suite:
+
+- Permission gates and scope: the page-level refusals, the per-control capabilities, the
+  concrete-branch ask on `/delivery` and `/attention`, "All my branches" on `/warranty`
+  (`delivery.dom`, `warranty.dom`, `attention.dom`, `route-branch-scope*`).
+- A 429 or a 5xx is "unavailable, try again" on the queue, the warranty list, the delivery and
+  warranty history and the attention cards, never an empty list (`delivery.dom`, `warranty.dom`,
+  `attention.dom`).
+- Stale reads ignored on a context change: the queue is keyed on branch and working-context
+  version; the warranty list on the working-context version (`warranty.dom`).
+- Field errors: a Confirm with nobody chosen, a waiver without its reason, an odometer reading
+  the column cannot hold, a refused coverage term and a refused new plan are each marked on
+  their control (red, the reason beside it, `aria-invalid`), the cursor is put on the first
+  one, what was typed stays, and editing the value withdraws the complaint (`delivery.dom`,
+  `warranty-policies.dom`).
+- Unsaved work: a chosen receiver or document, a typed waiver reason, a typed reading or override
+  reason, a typed new plan name and typed coverage terms are declared through `useUnsavedGuard`,
+  so the shell asks before a branch switch and before leaving the page; a stored change declares
+  nothing any more (`warranty-policies.dom`; the create form's cases were already there).
+- Discount-approval and credit-note rules are not touched; nothing in this slice reaches them.
+- Arabic and English, right to left included, in every suite above.
+
+QA rows addressed:
+
+- DEF-R2 — fixed: receiver, confirming user and every history actor by name, en and ar.
+- 4.1b — fixed: the warranty history names who recorded it.
+- 3.2b — fixed for the checklist items (labels, no codes); the facts and the vehicle were fixed
+  earlier.
+- 3.4 — already fixed before this slice (a receiver is confirmed without a document when none
+  is chosen, held by `delivery.dom`); the document field and its states are plain language, and
+  the confirmed receiver says whether proof of identity is on file without printing it.
+- 1a.2 — needs a decision: the count-difference card's short count reference remains, because
+  a stock count carries no number in the schema; a number needs a numbering migration and a read
+  that publishes it.
+- DEF-R1 — not this slice: the raw codes are in the work-order detail's own history block
+  (`WorkOrderDetailScreen`), not in the delivery `StatusHistoryPanel`, which renders delivery
+  stages from the catalogue already.
+
+Verification: the focused suites named above, `mui-states.dom.test.tsx`,
+`delivery-document.dom.test.tsx`, the neighbours (`delivery-signature-refusal`, `delivery-start`,
+`work-order-delivery-mount`, `gallery-and-print`, `operational-grid`, `form-reset-*`, `i18n`,
+`unsaved-navigation`, `route-branch-scope*`, `cancellable-reads*`, `search-empty-states`,
+`reception-queue`) and the API read contract (`tests/unit/p1-32-delivery-warranty-names.test.ts`)
+were run locally. The browser specs (`delivery-p1-31`, `delivery-writes-p1-31`,
+`warranty-p1-31`) were updated to the grid's roles and run only in hosted CI.
+
+Known limitations of this slice, one line each:
+
+- An operator without `iam.user.read` sees "Name not shown" for the confirming user and every
+  history actor, and one without `crm.customer.read` for the receiver: the owning modules'
+  existing least-privilege rule. Showing those names to such an operator is a widening the
+  Owner decides.
+- The receiver chooser is still `CustomerSelector` (search box, match buttons, Change), not
+  `EntityPicker`: the selector is shared with the vehicle screens and moves in its own slice.
+- The warranty list is still read through a Server Action, so a superseded read is ignored, not
+  cancelled; moving it to a `/reads/*` route is its own change.
+- `/attention` card rows are Material's table, not `OperationalGrid`: each card is one bounded
+  page, not a server-paged list.
+- The printed handover sheet still prints the vehicle, visit and delivering-employee and final
+  odometer references; only the receiver, the confirming user, the history actors and the
+  checklist codes changed there.
+- The eligibility panel still shows the record version number.
+- `delivery.summary.identifiersExplain` and `delivery.summary.finalOdometerReading` are no longer
+  referenced; they are left in both catalogues.
+- In jsdom, typing `01012026` into a coverage `DateField` produced `01/01/2027`; the policy
+  cases type days that avoid it, and the behaviour belongs to the shared picker, not this screen.
+- The unit and web tier counts change (new cases and one new unit file); the recorded tiers are
+  retaken at the final head.
