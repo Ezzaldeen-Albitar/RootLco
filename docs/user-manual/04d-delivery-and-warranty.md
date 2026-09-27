@@ -225,11 +225,15 @@ panel instead of taking the screen down.
 **Handover summary** <!-- delivery.summary.heading --> shows **Stage** <!-- delivery.summary.status -->
 , **Handed over on** <!-- delivery.summary.deliveredAt --> (or <!-- delivery.summary.notDeliveredYet -->
 "Not handed over yet"), the link <!-- delivery.summary.workOrderLink --> **Open the work order**,
-and four labelled references: **Vehicle reference**, **Visit reference**, **Employee handing over,
-reference** and **Final odometer reading**. Beneath them the screen states: "These are internal
-references. The system holds no names for them, so each reference is shown exactly as it is stored." <!-- delivery.summary.identifiersExplain -->
-For a handover started through the selector in 4D.1 the delivering employee is shown by name; older
-records show a bare reference.
+**Vehicle** <!-- delivery.summary.vehicleName --> — the plate, or the make and model — when the
+work order can be read for you (without it there is no vehicle row, and the work-order link still
+leads to the vehicle), **Employee handing over** <!-- delivery.summary.deliveringEmployee --> by
+name, and **Final odometer reading** <!-- delivery.summary.finalOdometer --> as its value. When the
+system holds no name for the delivering employee — for example on a handover recorded before the
+employee list existed — the screen says "Name not shown" <!-- delivery.person.notShown --> . When a
+reading was captured but cannot be shown to you it says "A reading was captured. It is not shown to
+you here." <!-- delivery.summary.finalOdometerNotShown --> , and when none has been captured "Not
+recorded yet" <!-- delivery.summary.finalOdometerNone --> . No internal reference is printed.
 
 **The stages** are **Ready**, **Receiver confirmed**, **Signed**, **Handed over** and **Problem
 raised** <!-- delivery.status.ready / .receiverVerified / .signed / .delivered / .exception --> .
@@ -333,8 +337,9 @@ proof of identity document." <!-- delivery.receiver.evidenceNotPermitted -->
    "Confirming the receiver…"
 
 **Result** — <!-- delivery.receiver.verified --> "The person receiving the vehicle has been
-confirmed." The panel then shows **Person receiving, reference** <!-- delivery.receiver.partner -->
-, **Confirmed by, employee reference** <!-- delivery.receiver.verifiedBy --> , **Confirmed on** <!-- delivery.receiver.verifiedAt -->
+confirmed." The panel then shows **Person receiving** <!-- delivery.receiver.partner --> and
+**Confirmed by** <!-- delivery.receiver.verifiedBy --> , each by name or as "Name not shown" when the
+name cannot be shown to you, **Confirmed on** <!-- delivery.receiver.verifiedAt -->
 and one of two sentences about the document: "Proof of identity is on file. It is not shown here." <!-- delivery.receiver.evidenceOnFile -->
 or "No proof of identity is on file." <!-- delivery.receiver.evidenceAbsent -->
 
@@ -614,7 +619,7 @@ at this point and not before.
 
 Panel <!-- delivery.history.heading --> **History** lists the stage changes with <!-- delivery.history.started -->
 **Started at**, <!-- delivery.history.movedFrom --> **Moved from** … <!-- delivery.history.movedTo -->
-**to**, and <!-- delivery.history.actor --> **Recorded by, employee reference**. <!-- delivery.action.loadMore -->
+**to**, and <!-- delivery.history.actor --> **Recorded by** — a name, or "Name not shown". <!-- delivery.action.loadMore -->
 **Show more** pages it. When there is nothing yet: <!-- delivery.history.noneTitle --> "No history
 yet" / <!-- delivery.history.noneDescription --> "No stage change has been recorded for this
 handover."
@@ -643,7 +648,7 @@ allowed to read.
 **Release checks**, <!-- delivery.document.checklistCaption --> **Checklist results** (columns
 **Item code**, **Item**, **Result**, **Reason for waiving**), <!-- delivery.document.signaturesCaption -->
 **Signatures** (**Signed by**, **Signed on**, **Signature image**) and <!-- delivery.document.historyCaption -->
-**Stage history** (**From**, **To**, **When**, **Recorded by, employee reference**).
+**Stage history** (**From**, **To**, **When**, **Recorded by** — a name, or "Name not shown").
 
 **Restrictions**
 
@@ -819,7 +824,7 @@ takes you to plan administration (4D.14) — there is no sidebar entry for it.
 - <!-- warranty.summary.heading --> **Warranty summary** — **State** <!-- warranty.summary.status -->
   , **Cover starts**, **Cover ends**, **Odometer reading when issued** <!-- warranty.summary.odometerAtIssue -->
   , **Odometer reading at which cover ends** <!-- warranty.summary.odometerLimit --> (or <!-- warranty.summary.noDistanceLimit -->
-  "No distance limit"), **Vehicle reference**, and the links <!-- warranty.summary.workOrderLink -->
+  "No distance limit"), **Vehicle** <!-- warranty.summary.vehicle --> in words, and the links <!-- warranty.summary.workOrderLink -->
   **Open the work order** and <!-- warranty.summary.deliveryLink --> **Open the vehicle handover**.
 - <!-- warranty.policy.heading --> **Warranty plan** — **Plan**, **Plan reference**, **Plan state**,
   with "The plan this warranty was issued under. Plans are set up by the workshop and are never
@@ -831,13 +836,12 @@ takes you to plan administration (4D.14) — there is no sidebar entry for it.
   was handed over. Every one of them is set up by the workshop, and this screen fills in none of
   them." <!-- warranty.coverage.explain -->
 - <!-- warranty.items.heading --> **What this warranty covers** — the jobs and parts recorded
-  against it, by <!-- warranty.items.sourceJob --> **Job reference** and <!-- warranty.items.sourcePart -->
-  **Part reference**; kinds are <!-- warranty.itemKind.service --> **Job** and <!-- warranty.itemKind.part -->
-  **Part**. If nothing was recorded: <!-- warranty.items.none --> "Nothing was recorded against this
+  against it, each by its kind and description; kinds are <!-- warranty.itemKind.service --> **Job**
+  and <!-- warranty.itemKind.part --> **Part**. No internal reference is printed. If nothing was recorded: <!-- warranty.items.none --> "Nothing was recorded against this
   warranty."
 - <!-- warranty.history.heading --> **History** — every change of state, newest first, with **Issued
-  as** <!-- warranty.history.origin --> , **Moved from** … **to**, and **Recorded by, employee
-  reference**. Empty: <!-- warranty.history.noneTitle --> "No history yet" / <!-- warranty.history.noneDescription -->
+  as** <!-- warranty.history.origin --> , **Moved from** … **to**, and **Recorded by** <!-- warranty.history.actor -->
+  — a name, or "Name not shown" <!-- warranty.history.actorNotShown --> . Empty: <!-- warranty.history.noneTitle --> "No history yet" / <!-- warranty.history.noneDescription -->
   "No change of state has been recorded for this warranty." The panel notes "The workshop keeps this
   record; nothing on this screen adds to it." <!-- warranty.history.explain -->
 
@@ -857,8 +861,9 @@ and <!-- warranty.status.claimedAgainst --> **Claimed against**.
   so none is shown and none is invented.
 - **Cover terms are shown as scopes**: <!-- warranty.coveredScope.all --> **Jobs and parts**, <!-- warranty.coveredScope.service -->
   **Jobs only**, <!-- warranty.coveredScope.part --> **Parts only**.
-- A reference is a reference: "This is an internal reference. The system holds no name for it, so it
-  is shown exactly as it is stored." <!-- warranty.summary.identifiersExplain -->
+- **Names, not references.** The vehicle, the customer and each person on the history appear in
+  words; where a name cannot be shown to you the screen says so in words instead of printing an
+  internal reference.
 
 ### Warranty claims
 

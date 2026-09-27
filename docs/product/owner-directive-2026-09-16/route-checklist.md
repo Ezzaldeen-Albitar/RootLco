@@ -1791,12 +1791,22 @@ Known limitations of this slice, one line each:
   model or words; the visit has no published name and is left off the sheet.
 - The eligibility panel still shows the record version number.
 - `delivery.summary.identifiersExplain`, `delivery.summary.finalOdometerReading`,
-  `delivery.summary.vehicle` and `delivery.summary.visit` are no longer referenced; they are left
-  in both catalogues.
+  `delivery.summary.vehicle` and `delivery.summary.visit` (and `warranty.items.sourceJob` /
+  `sourcePart`) are rendered by no screen but stay in `en.json` and `ar.json`; no gate catches an
+  unused key, and the DOM and browser tests still read them for their absence checks. The manual
+  no longer documents them (fix round 2); removing them is a follow-up.
+- Part 4D.12 of the user manual (the warranty list) still describes the pre-slice filter and a
+  "Vehicle reference" column; only 4D.3, 4D.5, 4D.10 and 4D.13 were rewritten in fix round 2.
+- After the partial end-date refusal in a coverage `DateField`, erasing the typed parts fires no
+  `onChange`, so the date error most likely stays until the next submit (which then succeeds,
+  open-ended); the immediate clear was not observed.
+- `DeliveryDetailScreen.tsx` doc comment on `finalOdometerReading` still says the reference is
+  shown when unresolved; the code shows words (`finalOdometerNotShown` / `finalOdometerNone`).
 - Every modified e2e case was skipped in hosted CI for lack of acceptance-journey fixtures
-  (delivery-p1-31 :268/:345/:398, delivery-writes-p1-31 :264/:487/:654, warranty-p1-31
-  :276/:484): the grid role, the `[role=row][data-rowindex]` selectors and the identifier
-  assertions have never run in a real browser.
+  (delivery-p1-31 :268/:345/:398/:549, delivery-writes-p1-31 :264/:487/:654, warranty-p1-31
+  :276/:484): the grid role, the `[role=row][data-rowindex]` selectors, the eligibility
+  `li[data-item-code]` locator and the identifier and receiver-name assertions have never run in
+  a real browser.
 - The name reads have only a mocked unit test (`tests/unit/p1-32-delivery-warranty-names.test.ts`):
   no `tests/backend` case proves `receiverDisplayName`, `verifiedByDisplayName` and
   `actorDisplayName` come back null for a `sal.delivery.view` / `wty.warranty.read` login without

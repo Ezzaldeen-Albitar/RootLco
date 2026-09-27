@@ -1,3 +1,5 @@
+import { readFileSync, readdirSync } from 'node:fs';
+import { join } from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 /**
@@ -236,5 +238,72 @@ describe('wty.warranty-status-history names each actor', () => {
 
     expect(envelope.transitions.items[0]?.actorDisplayName).toBeNull();
     expect(envelope.transitions.items[0]?.actorId).toBe(RECORDER);
+  });
+});
+
+/**
+ * The receptionist-facing manual describes the handover and warranty screens as
+ * they now are: people and vehicles in words, no internal reference printed.
+ *
+ * Every catalogue key the manual anchors for a label on these screens must be a
+ * key the delivery or warranty screens still render, so a passage describing a
+ * retired label (the four summary references, the item source references) fails
+ * here; and the retired wording itself — "employee reference", the sentence that
+ * said references are shown as stored — must not come back.
+ */
+describe('the user manual describes the named handover and warranty screens', () => {
+  const root = process.cwd();
+  const manuals = [
+    join(root, 'docs', 'user-manual', '04d-delivery-and-warranty.md'),
+    join(root, 'docs', 'user-manual', 'first-login-and-first-working-day.md'),
+  ].map((file) => ({ file, text: readFileSync(file, 'utf8') }));
+
+  const sources = (dir: string): string[] =>
+    readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+      const full = join(dir, entry.name);
+      if (entry.isDirectory()) return sources(full);
+      return /\.tsx?$/.test(entry.name) ? [readFileSync(full, 'utf8')] : [];
+    });
+  const screens = [
+    ...sources(join(root, 'apps', 'web', 'src', 'features', 'delivery')),
+    ...sources(join(root, 'apps', 'web', 'src', 'features', 'warranty')),
+  ].join('\n');
+  const rendered = (key: string) =>
+    [`'${key}'`, `"${key}"`].some((quoted) => screens.includes(quoted));
+
+  const LABEL_KEY =
+    /^(?:delivery\.summary\.|delivery\.person\.|delivery\.receiver\.(?:partner|verifiedBy)$|delivery\.history\.actor|warranty\.summary\.|warranty\.items\.|warranty\.history\.actor)/;
+  const anchoredKeys = (text: string): string[] =>
+    [...text.matchAll(/<!--([^>]*?)-->/g)].flatMap((anchor) =>
+      [...(anchor[1] ?? '').matchAll(/(?<![\w.])[a-z]+(?:\.\w+)+/g)].map((match) => match[0])
+    );
+
+  it('anchors only labels the screens still render', () => {
+    for (const { file, text } of manuals) {
+      const stale = anchoredKeys(text).filter((key) => LABEL_KEY.test(key) && !rendered(key));
+      expect(stale, `${file} documents labels no screen renders`).toEqual([]);
+    }
+  });
+
+  it('documents the names and the words said when a name cannot be shown', () => {
+    const [handover] = manuals;
+    const keys = anchoredKeys(handover?.text ?? '');
+    for (const key of [
+      'delivery.summary.deliveringEmployee',
+      'delivery.person.notShown',
+      'delivery.summary.finalOdometerNotShown',
+      'warranty.history.actorNotShown',
+    ]) {
+      expect(rendered(key), `${key} is rendered`).toBe(true);
+      expect(keys, `the manual anchors ${key}`).toContain(key);
+    }
+  });
+
+  it('no longer says that people or the summary are shown as references', () => {
+    for (const { file, text } of manuals) {
+      expect(text, file).not.toMatch(/employee\s+reference/i);
+      expect(text, file).not.toMatch(/each reference is shown exactly as it is stored/i);
+      expect(text, file).not.toMatch(/show a bare reference/i);
+    }
   });
 });

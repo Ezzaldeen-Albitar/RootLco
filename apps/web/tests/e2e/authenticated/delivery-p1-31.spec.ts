@@ -587,7 +587,9 @@ test.describe('P1-31 delivery screens, over the acceptance journey records', () 
       'the receiver was verified with a document, so proof of identity must be on file'
     ).toBeVisible();
     await expect(panel.getByText(say(locale, 'delivery.receiver.noneTitle'))).toHaveCount(0);
-    await expect(panel).toContainText(handover.customerId);
+    // The receiver is named, never printed as an identifier (Owner directive, DEF-R2).
+    await expect(panel).toContainText(handover.receiverDisplayName);
+    await expect(panel).not.toContainText(UUID_SHAPE);
     await expect(panel.getByText(say(locale, 'delivery.receiver.refused'))).toHaveCount(0);
 
     // RE-READ: a fresh page composed from the server.
@@ -595,6 +597,7 @@ test.describe('P1-31 delivery screens, over the acceptance journey records', () 
     const reread = receiverPanel(page);
     await expect(reread.getByText(say(locale, 'delivery.receiver.evidenceOnFile'))).toBeVisible();
     await expect(reread.getByText(say(locale, 'delivery.receiver.noneTitle'))).toHaveCount(0);
-    await expect(reread).toContainText(handover.customerId);
+    await expect(reread).toContainText(handover.receiverDisplayName);
+    await expect(reread).not.toContainText(UUID_SHAPE);
   });
 });
