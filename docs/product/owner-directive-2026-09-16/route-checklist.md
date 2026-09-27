@@ -993,7 +993,27 @@ Residual limits, one line each:
   link to a place on the same page are not intercepted, because none of them takes the page away;
 - the browser's own reload/close question uses the browser's wording, which a page cannot change;
 - the Platform Owner Console renders no working-context provider and declares no unsaved work, so
-  it has no such question.
+  it has no such question;
+- a form submission that navigates is not asked about: Sign out (`<form action={logoutAction}>` in
+  `AccountMenu.tsx`) and any other such form drop unsaved work without a question;
+- when the clicked link is no longer in the page, "Leave" falls back to `window.location.assign`
+  while the reload/close question is still registered for owners without `onDiscard` (the transfers
+  and stock-count screens, the pickers), so the browser may ask a second time; no live link found;
+- a link that changes only the search keeps the page mounted, so "Leave and discard changes"
+  discards nothing for an owner without `onDiscard`; no live link found;
+- "Stay" after back or forward pushes this page's address again, which drops forward history and
+  collapses a multi-step jump from the history menu; a router state change while the question is
+  open (a refresh) could replace the moved entry and replay a stale state on "Leave" (theoretical);
+- OBS-S4 is proven in jsdom only (text anchor, x sign, direction in the style); no browser test
+  measures the drawn geometry, so the Arabic bar-chart column still needs a browser QA re-run;
+- "no question after a save" is tested only for the tenant form and counter sales; of the other
+  `useUnsavedGuard` owners, five were checked by reading and the rest are unverified;
+- the movements screen counts filter choices not yet applied as unsaved work, so leaving it asks
+  about "changes on this page that are not saved" for filters, a wording mismatch;
+- review falsification: with `UnsavedNavigationGuard` mocked to render nothing, a dirty page leaves
+  silently, so the dialog assertions depend on the guard;
+- "Destination stream closed early" in the server log is React's stream cancel when the browser
+  aborts a request, not application code.
 
 Tests: `unsaved-navigation.dom.test.tsx` (link, Stay, Leave with discard, clean page, after a save,
 the clicks left alone, back and forward, reload and close, in English and Arabic).
