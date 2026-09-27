@@ -140,6 +140,9 @@ export default async function OrganizationPage({
             </Panel>
           ) : null}
 
+          {/* The code alone does not decide the company read: a branch grant carries
+              it too. The editor reads only the companies the working context names
+              in `companySettingsReadableIds` and says so plainly for the rest. */}
           {canReadCompanies ? (
             <Panel title={t('organization.settings.company')}>
               <SettingsEditor

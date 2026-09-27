@@ -19,6 +19,11 @@
  * `sel_branches_scope` reading the caller's own resolved grants, and a principal
  * holding no active grant is answered with two empty arrays.
  *
+ * `companySettingsReadableIds` names which of those companies' settings the caller
+ * may read, answered by the same two checks `iam.company-settings-read` enforces,
+ * so a screen can leave out a read that would only be refused. It is still the
+ * caller's own authority and nothing more.
+ *
  * `scope: 'tenant'`, and there is no company or branch parameter: the request names
  * no target, because naming one is the very thing the caller cannot yet do.
  *

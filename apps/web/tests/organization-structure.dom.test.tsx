@@ -4,7 +4,14 @@ import { useState } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import en from '../src/i18n/messages/en.json';
 import ar from '../src/i18n/messages/ar.json';
-import { TEST_BRANCH, branchSnapshot, inBranch, renderLtr, renderRtl } from './render';
+import {
+  TEST_BRANCH,
+  TEST_COMPANY,
+  branchSnapshot,
+  inBranch,
+  renderLtr,
+  renderRtl,
+} from './render';
 import { useUnsavedWork } from '@/features/working-context/WorkingContextProvider';
 import type {
   BranchView,
@@ -944,6 +951,85 @@ describe('the settings editor when there is nothing to choose', () => {
     // No company picker — the other selects on this form belong to the setting
     // being written, not to the scope.
     expect(screen.queryByLabelText(new RegExp(en['admin.scope.company']))).toBeNull();
+  });
+});
+
+/**
+ * Company settings are read only where the server said the read would answer
+ * (route review of PR #476, item 4).
+ *
+ * A counter clerk holds `org.company.read` through a branch grant, so the
+ * session's codes let the Organisation page show the company settings panel, and
+ * `iam.company-settings-read` refused the read on every load. The working context
+ * now names the companies whose settings the caller may read; the editor reads
+ * only those.
+ */
+describe('company settings are read only where the working context allows it', () => {
+  const COMPANY_SETTINGS_PATH = `/api/v1/org/companies/${TEST_COMPANY.id}/settings`;
+  const settingsReads = () =>
+    get.mock.calls.filter(([path]) => String(path).includes('/settings')).map(([path]) => path);
+
+  it('makes no company-settings read for a branch-scoped reader and shows no error', async () => {
+    get.mockResolvedValue({ ok: true, status: 200, data: { items: [] }, correlationId: 'corr-1' });
+    renderLtr(
+      inBranch(<SettingsEditor messages={en} scope="company" canWrite={false} keyPrefix="" />, {
+        snapshot: { ...branchSnapshot([TEST_BRANCH]), companySettingsReadableIds: [] },
+      })
+    );
+
+    expect(await screen.findByTestId('company-settings-not-readable')).toHaveTextContent(
+      EN('organization.settings.companyNotReadable')
+    );
+    // Give any effect the chance to fire before asserting nothing was sent.
+    await waitFor(() => expect(settingsReads()).toEqual([]));
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(screen.queryByText(EN('state.denied.description'))).toBeNull();
+    expect(screen.queryByText(EN('state.error.description'))).toBeNull();
+  });
+
+  it('says it in Arabic, right to left', async () => {
+    renderRtl(
+      inBranch(<SettingsEditor messages={ar} scope="company" canWrite={false} keyPrefix="" />, {
+        locale: 'ar',
+        snapshot: { ...branchSnapshot([TEST_BRANCH]), companySettingsReadableIds: [] },
+      })
+    );
+    const note = await screen.findByTestId('company-settings-not-readable');
+    expect(note).toHaveTextContent(AR('organization.settings.companyNotReadable'));
+    expect(AR('organization.settings.companyNotReadable')).toMatch(/[؀-ۿ]/);
+    expect(settingsReads()).toEqual([]);
+  });
+
+  it('still reads and shows the settings for a company-scoped administrator', async () => {
+    get.mockResolvedValue({
+      ok: true,
+      status: 200,
+      data: {
+        items: [
+          {
+            settingKey: 'org.working_hours.start',
+            valueType: 'string',
+            isSensitive: false,
+            version: 1,
+            effectiveFrom: '2026-01-01T00:00:00.000Z',
+            settingValue: '08:00',
+          },
+        ],
+      },
+      correlationId: 'corr-1',
+    });
+    renderLtr(
+      inBranch(<SettingsEditor messages={en} scope="company" canWrite={false} keyPrefix="" />, {
+        snapshot: {
+          ...branchSnapshot([TEST_BRANCH]),
+          companySettingsReadableIds: [TEST_COMPANY.id],
+        },
+      })
+    );
+
+    expect(await screen.findByText('org.working_hours.start')).toBeVisible();
+    expect(settingsReads()).toEqual([COMPANY_SETTINGS_PATH]);
+    expect(screen.queryByTestId('company-settings-not-readable')).toBeNull();
   });
 });
 

@@ -773,10 +773,18 @@ Known limitations of this slice, one line each:
   second time from the right-to-left theme inside a left-to-right drawing; the anchor is now named
   physically (`axisTickStyle` in `ChartPanel.tsx`) for every side axis, and the drawn labels are
   tested in both languages.
-- Open, not fixed here: the Organisation page still reads company settings for a reader whose
-  `org.company.read` comes only from a branch-scoped grant (the counter clerk, two refused reads
-  per load). The session publishes the permission codes and the scope separately, so the web cannot
-  tell a company-wide holder from a branch-scoped one; skipping the read needs a decision.
+- Fixed (PR #476 review, item 4): a reader whose `org.company.read` comes only from a branch grant
+  (the counter clerk) no longer makes a company-settings read that is refused on every load.
+  `GET /api/v1/auth/working-context` now also returns `companySettingsReadableIds`, the companies
+  whose settings the caller may read, decided by the same two checks `iam.company-settings-read`
+  enforces (the company-scope permission decision and the service's scope containment). The
+  company settings editor reads only those companies and, for any other, says plainly that the
+  caller's access does not include that company's settings. A unit test runs the published list
+  and the read's own enforcement against one set of grants (tenant-wide, company-scoped,
+  branch-scoped, mixed, none, and a foreign company) and requires them to agree; a DOM test shows
+  the clerk sends no read and sees no error, while a company-scoped administrator still reads the
+  panel. The field is optional on the wire; a client that finds it absent reads no company's
+  settings.
 - DEF-R3: the chart's `data-plot-height` is worked out from its props, not measured from the
   drawing; a probe of MUI X `BarChart` with 1, 2 and 7 categories in both languages drew every bar
   25.6 high (plot areas 32, 64 and 224), so a single category now draws.

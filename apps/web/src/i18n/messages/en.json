@@ -3416,6 +3416,7 @@
   "organization.settings": "Settings",
   "organization.settings.branch": "Branch settings",
   "organization.settings.company": "Company settings",
+  "organization.settings.companyNotReadable": "Your access does not include the settings of this company.",
   "organization.status": "Status",
   "organization.structure.activate": "Activate",
   "organization.structure.code": "Code",

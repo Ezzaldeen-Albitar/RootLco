@@ -951,6 +951,7 @@ function wcSnapshot(
     unrestricted: false,
     companies: WC_COMPANIES,
     branches,
+    companySettingsReadableIds: [],
   };
 }
 

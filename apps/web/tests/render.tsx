@@ -93,6 +93,7 @@ export function branchSnapshot(
     unrestricted: false,
     companies: [TEST_COMPANY],
     branches,
+    companySettingsReadableIds: [TEST_COMPANY.id],
   };
 }
 

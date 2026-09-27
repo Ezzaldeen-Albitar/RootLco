@@ -3416,6 +3416,7 @@
   "organization.settings": "الإعدادات",
   "organization.settings.branch": "إعدادات الفرع",
   "organization.settings.company": "إعدادات الشركة",
+  "organization.settings.companyNotReadable": "صلاحياتك لا تشمل إعدادات هذه الشركة.",
   "organization.status": "الحالة",
   "organization.structure.activate": "تفعيل",
   "organization.structure.code": "الرمز",

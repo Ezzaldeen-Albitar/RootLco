@@ -93,6 +93,8 @@ export interface WorkingContext {
   readonly unrestricted: boolean;
   readonly companies: readonly WorkingContextCompany[];
   readonly branches: readonly WorkingContextBranch[];
+  /** The companies whose settings the server would let this operator read. */
+  readonly companySettingsReadableIds: readonly string[];
   /** Null means "not chosen yet" — the header asks. */
   readonly selection: WorkingContextSelection | null;
   /** Increments on every change. Mount a list under it and stale rows cannot show. */
@@ -165,6 +167,7 @@ const FALLBACK_CONTEXT: WorkingContext = {
   unrestricted: false,
   companies: [],
   branches: [],
+  companySettingsReadableIds: [],
   selection: null,
   version: 0,
   signal: new AbortController().signal,
@@ -357,7 +360,15 @@ export function WorkingContextProvider({
   readonly messages: Messages;
   readonly children: ReactNode;
 }) {
-  const { status, tenantId, accountId, unrestricted, companies, branches } = snapshot;
+  const {
+    status,
+    tenantId,
+    accountId,
+    unrestricted,
+    companies,
+    branches,
+    companySettingsReadableIds,
+  } = snapshot;
 
   /*
    * The key is `null` when there is nobody and nowhere to key it to. That is
@@ -612,6 +623,7 @@ export function WorkingContextProvider({
       unrestricted,
       companies,
       branches,
+      companySettingsReadableIds,
       selection,
       version: epoch.version,
       signal: epoch.controller.signal,
@@ -625,7 +637,17 @@ export function WorkingContextProvider({
       switchPending: pending !== null,
       present: true,
     };
-  }, [status, unrestricted, companies, branches, selection, epoch, select, pending]);
+  }, [
+    status,
+    unrestricted,
+    companies,
+    branches,
+    companySettingsReadableIds,
+    selection,
+    epoch,
+    select,
+    pending,
+  ]);
 
   return (
     <WorkingContextValue.Provider value={value}>

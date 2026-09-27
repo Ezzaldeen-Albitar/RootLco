@@ -80,7 +80,7 @@ export function SettingsEditor({
    * organisation may share a name and the operator has to be able to tell them
    * apart without reading a reference.
    */
-  const { companies, branches } = useWorkingContext();
+  const { companies, branches, companySettingsReadableIds } = useWorkingContext();
   const scopeOptions =
     scope === 'company'
       ? companies.map((company) => ({ value: company.id, label: company.name }))
@@ -112,10 +112,25 @@ export function SettingsEditor({
     { settingValue: form.settingValue }
   );
 
+  /*
+   * A company's settings are read only where the server said the read would be
+   * answered. Holding `org.company.read` is not enough: held through a branch
+   * grant (the counter clerk) it passes the session's codes and is refused by
+   * `iam.company-settings-read` on every load. The working context publishes the
+   * companies the read would answer for, decided by the same checks the read
+   * enforces, so for any other company no request is made and the screen says so
+   * plainly instead of reporting a refusal.
+   */
+  const selectedId = scopeId.trim();
+  const unreadableCompany =
+    scope === 'company' &&
+    selectedId.length > 0 &&
+    !companySettingsReadableIds.includes(selectedId);
+
   useEffect(() => {
     let cancelled = false;
     const id = scopeId.trim();
-    if (id.length === 0) return undefined;
+    if (id.length === 0 || unreadableCompany) return undefined;
     void (async () => {
       // Awaited before any state write, so this is not a synchronous setState
       // inside an effect body.
@@ -132,7 +147,7 @@ export function SettingsEditor({
     return () => {
       cancelled = true;
     };
-  }, [scope, scopeId, generation]);
+  }, [scope, scopeId, generation, unreadableCompany]);
 
   const visible = (settings ?? []).filter((setting) => setting.settingKey.startsWith(keyPrefix));
 
@@ -160,18 +175,27 @@ export function SettingsEditor({
         )}
       </div>
 
-      {readStatus === 'denied' ? (
+      {unreadableCompany ? (
+        <p
+          role="status"
+          data-testid="company-settings-not-readable"
+          className="text-supporting text-text-secondary"
+        >
+          {t('organization.settings.companyNotReadable')}
+        </p>
+      ) : null}
+      {!unreadableCompany && readStatus === 'denied' ? (
         <p role="status" className="text-supporting text-text-secondary">
           {t('state.denied.description')}
         </p>
       ) : null}
-      {readStatus === 'error' ? (
+      {!unreadableCompany && readStatus === 'error' ? (
         <p role="alert" className="text-supporting text-error">
           {t('state.error.description')}
         </p>
       ) : null}
 
-      {settings !== null ? (
+      {settings !== null && !unreadableCompany ? (
         visible.length === 0 ? (
           <p className="text-body text-text-secondary">{t('state.empty.description')}</p>
         ) : (

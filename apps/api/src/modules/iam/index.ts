@@ -347,6 +347,11 @@ export const iamModule = composeModule({
     const identityPolicy = new IdentityPolicy();
     const delegationPolicy = new DelegationPolicy();
     const credentialPolicy = new CredentialPolicy();
+    const organizationSettings = new OrganizationSettingsService(
+      organization,
+      authorization,
+      delegationPolicy
+    );
 
     const provider = installIamRuntime();
 
@@ -381,14 +386,17 @@ export const iamModule = composeModule({
         credentialPolicy,
         identityPolicy
       ),
-      organization: new OrganizationSettingsService(organization, authorization, delegationPolicy),
+      organization: organizationSettings,
       organizationAdministration: new OrganizationAdministrationService(organizationAdministration),
       auditView: new AuditViewService(audit, authorization),
       // Owner directive P1-32-PRE-OD-UX. On `iamModule` rather than in a root of
       // its own: it is the working companion of `authentication.describeSession`,
       // reached by the same caller on the same screen, and a fifth composition
       // root for one read would be a root whose name says less than its neighbour.
-      workingContext: new WorkingContextService(new WorkingContextRepository()),
+      workingContext: new WorkingContextService(
+        new WorkingContextRepository(),
+        organizationSettings
+      ),
       // The First-Owner bootstrap (P1-29 W9): the second half of
       // platform.organization-provision, called by the platform module inside
       // its provisioning transaction's platform-on-target window.

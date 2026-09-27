@@ -372,6 +372,23 @@ describe('the working-context read', () => {
     expect(isWorkingContextShape(null)).toBe(false);
   });
 
+  it('carries the companies whose settings may be read, and none when the field is absent', async () => {
+    // Added to a published read, so an answer without it is still a working
+    // context — but one that names no readable company, so no settings screen
+    // makes a read the server would refuse. A present value of the wrong shape
+    // fails closed like the rest of the body.
+    answerSessionWith(200, { ...CONTEXT_BODY, companySettingsReadableIds: ['c-1'] });
+    expect((await loadWorkingContext('user-1')).companySettingsReadableIds).toEqual(['c-1']);
+    answerSessionWith(200, CONTEXT_BODY);
+    const withoutField = await loadWorkingContext('user-1');
+    expect(withoutField.status).toBe('ready');
+    expect(withoutField.companySettingsReadableIds).toEqual([]);
+    expect(isWorkingContextShape({ ...CONTEXT_BODY, companySettingsReadableIds: 'c-1' })).toBe(
+      false
+    );
+    expect(isWorkingContextShape({ ...CONTEXT_BODY, companySettingsReadableIds: [1] })).toBe(false);
+  });
+
   it('keys the remembered choice to the workspace AND the account', () => {
     // A shared office machine is ordinary. Two operators signing in one after
     // the other must not inherit each other's branch.
