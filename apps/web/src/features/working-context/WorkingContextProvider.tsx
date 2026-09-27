@@ -16,6 +16,7 @@ import { ConfirmDialog } from '@/components/dialogs/ConfirmDialog';
 import type { Messages } from '@/i18n/get-messages';
 import { formatMessage, translate } from '@/i18n/get-messages';
 import { readPreference, usePersistedPreference } from '@/lib/use-persisted-flag';
+import { UnsavedNavigationGuard } from './components/UnsavedNavigationGuard';
 import {
   ALL_BRANCHES,
   preferenceKeyFor,
@@ -65,6 +66,11 @@ import {
  * that form's write. Screens declare their unsaved work with `useUnsavedGuard`,
  * and a switch with any guard dirty asks first. Nothing is discarded without an
  * answer, and nothing is switched behind the operator's back.
+ *
+ * The same declarations protect the page itself: `UnsavedNavigationGuard`,
+ * mounted here once for the whole workspace, asks before a link, a menu entry,
+ * back or forward leaves a page holding them, and lets the browser ask before a
+ * reload or a closed tab (DEF-S2b).
  *
  * A change another tab makes while work is unsaved here is held the same way
  * (see `held`). "Stay" is this tab's answer for as long as the page lives and is
@@ -120,9 +126,33 @@ interface DirtyGuard {
   readonly discard: () => void;
 }
 
-type GuardRegistry = Set<DirtyGuard>;
+/**
+ * Every screen's declaration, and who wants to hear when the set changes.
+ *
+ * The branch switch reads the set at the moment it is asked, so a plain set was
+ * enough for it. The navigation guard (`UnsavedNavigationGuard`) is different:
+ * the browser's own "leave this page?" prompt must be registered exactly while
+ * something is unsaved and removed the moment nothing is, so the shell has to
+ * be told when a declaration arrives, changes or goes.
+ */
+interface GuardRegistry {
+  readonly entries: Set<DirtyGuard>;
+  readonly listeners: Set<() => void>;
+}
 
-const EMPTY_GUARDS: GuardRegistry = new Set();
+function createGuardRegistry(): GuardRegistry {
+  return { entries: new Set(), listeners: new Set() };
+}
+
+function notifyGuards(registry: GuardRegistry): void {
+  for (const listener of Array.from(registry.listeners)) listener();
+}
+
+function dirtyGuards(registry: GuardRegistry): DirtyGuard[] {
+  return Array.from(registry.entries).filter((guard) => guard.dirty);
+}
+
+const EMPTY_GUARDS: GuardRegistry = createGuardRegistry();
 
 /**
  * The default. A component rendered outside the provider — the Platform Owner
@@ -163,23 +193,36 @@ export interface UnsavedWork {
   readonly any: () => boolean;
   /** Calls `onDiscard` for every guard that is dirty now. */
   readonly discard: () => void;
+  /**
+   * Calls `listener` whenever a declaration arrives, changes or goes, and
+   * returns the way to stop. Shaped for `useSyncExternalStore` with `any`.
+   */
+  readonly subscribe: (listener: () => void) => () => void;
 }
 
 /**
  * The unsaved-work registry, read rather than written: for the shell, which
- * must not unmount a screen holding work nobody agreed to lose.
+ * must not unmount a screen holding work nobody agreed to lose, and must not
+ * let the operator navigate away from it without asking.
  */
 export function useUnsavedWork(): UnsavedWork {
   const registry = useContext(GuardRegistryValue);
-  return useMemo(
-    () => ({
-      any: () => Array.from(registry).some((guard) => guard.dirty),
-      discard: () => {
-        for (const guard of Array.from(registry).filter((entry) => entry.dirty)) guard.discard();
-      },
-    }),
-    [registry]
-  );
+  return useMemo(() => unsavedWorkOf(registry), [registry]);
+}
+
+function unsavedWorkOf(registry: GuardRegistry): UnsavedWork {
+  return {
+    any: () => dirtyGuards(registry).length > 0,
+    discard: () => {
+      for (const guard of dirtyGuards(registry)) guard.discard();
+    },
+    subscribe: (listener: () => void) => {
+      registry.listeners.add(listener);
+      return () => {
+        registry.listeners.delete(listener);
+      };
+    },
+  };
 }
 
 export function useWorkingContext(): WorkingContext {
@@ -190,8 +233,9 @@ export function useWorkingContext(): WorkingContext {
  * Declares that this screen holds work an operator would lose.
  *
  * Registered with the provider for as long as the component is mounted, so a
- * branch switch asks before it discards. Unregistered on unmount, which is what
- * stops a closed form blocking every later switch.
+ * branch switch asks before it discards, and so does leaving the page by a link,
+ * by back or forward, or by a reload (`UnsavedNavigationGuard`). Unregistered on
+ * unmount, which is what stops a closed form blocking every later switch.
  *
  * ## `onDiscard`: the question's answer has to be true
  *
@@ -222,9 +266,11 @@ export function useUnsavedGuard(isDirty: boolean, onDiscard?: () => void): void 
   });
   useEffect(() => {
     const entry: DirtyGuard = { dirty: isDirty, discard: () => latest.current?.() };
-    registry.add(entry);
+    registry.entries.add(entry);
+    notifyGuards(registry);
     return () => {
-      registry.delete(entry);
+      registry.entries.delete(entry);
+      notifyGuards(registry);
     };
   }, [registry, isDirty]);
 }
@@ -332,7 +378,8 @@ export function WorkingContextProvider({
 
   // A Set, created once. The registry identity must be stable: every guard
   // registers against it in an effect keyed on that identity.
-  const [guards] = useState<GuardRegistry>(() => new Set());
+  const [guards] = useState<GuardRegistry>(createGuardRegistry);
+  const unsavedWork = useMemo(() => unsavedWorkOf(guards), [guards]);
 
   const usable = preferenceKey.length > 0;
 
@@ -379,7 +426,7 @@ export function WorkingContextProvider({
     }
   } else if (stored !== seenStored) {
     setSeenStored(stored);
-    const anyDirty = Array.from(guards).some((guard) => guard.dirty);
+    const anyDirty = dirtyGuards(guards).length > 0;
     if (heldNow === null) {
       const before = keyOf(deriveSelection(status, branches, usable ? seenStored : null));
       const after = keyOf(deriveSelection(status, branches, usable ? stored : null));
@@ -534,7 +581,7 @@ export function WorkingContextProvider({
   /** The one guarded path: every switch this tab makes, whoever proposed it. */
   const requestSwitch = useCallback(
     (next: string | null) => {
-      const dirty = Array.from(guards).some((guard) => guard.dirty);
+      const dirty = dirtyGuards(guards).length > 0;
       if (dirty) {
         setPending({ next });
         return;
@@ -595,7 +642,7 @@ export function WorkingContextProvider({
               // Taken BEFORE the switch: these are the guards the question was
               // about. Called in the same update as the switch, so no frame shows
               // the new branch over the work that was just declared lost.
-              const discarded = Array.from(guards).filter((guard) => guard.dirty);
+              const discarded = dirtyGuards(guards);
               apply(waiting.next);
               for (const guard of discarded) guard.discard();
             }}
@@ -605,6 +652,7 @@ export function WorkingContextProvider({
             messages={messages}
             destructive
           />
+          <UnsavedNavigationGuard work={unsavedWork} messages={messages} />
           <CrossTabNotice
             messages={messages}
             current={labelFor(selection, branches, messages)}

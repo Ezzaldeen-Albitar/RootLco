@@ -347,12 +347,14 @@ function MuiConfirmHost({
   destructive = false,
   pending = false,
   error,
+  cancelLabel,
   onConfirm = () => undefined,
   onCancel = () => undefined,
 }: {
   readonly destructive?: boolean;
   readonly pending?: boolean;
   readonly error?: string;
+  readonly cancelLabel?: string;
   readonly onConfirm?: () => void;
   readonly onCancel?: () => void;
 }) {
@@ -376,6 +378,7 @@ function MuiConfirmHost({
         title="Delete this?"
         description="It cannot be brought back."
         confirmLabel="Delete"
+        cancelLabel={cancelLabel}
         destructive={destructive}
         pending={pending}
         error={error}
@@ -500,6 +503,28 @@ describe('the Material UI confirmation', () => {
       <MuiConfirmHost error="The record changed meanwhile." />
     );
     expect(within(dialog).getByRole('alert')).toHaveTextContent('The record changed meanwhile.');
+  });
+
+  /*
+   * The leave-page question (DEF-S2b) says its "no" in its own words — "Stay on
+   * this page" — so the dialog takes an optional label for it. Every other
+   * caller passes none and keeps "Cancel".
+   */
+  it('says "Cancel" unless the question names its own way of keeping things as they are', async () => {
+    const onCancel = vi.fn();
+    const named = await openMuiConfirm(
+      <MuiConfirmHost destructive cancelLabel="Stay on this page" onCancel={onCancel} />
+    );
+    const stay = within(named.dialog).getByRole('button', { name: 'Stay on this page' });
+    expect(within(named.dialog).queryByRole('button', { name: 'Cancel' })).toBeNull();
+    // It is still the safe answer, and takes the focus first.
+    await waitFor(() => expect(document.activeElement).toBe(stay));
+    await named.user.click(stay);
+    expect(onCancel).toHaveBeenCalledTimes(1);
+    cleanup();
+
+    const plain = await openMuiConfirm(<MuiConfirmHost />);
+    expect(within(plain.dialog).getByRole('button', { name: 'Cancel' })).toBeVisible();
   });
 
   it('confirms through the action button', async () => {
