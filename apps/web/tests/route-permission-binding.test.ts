@@ -100,6 +100,7 @@ const platformReads = vi.hoisted(() => ({
   listPlans: vi.fn(),
   listCharges: vi.fn(),
   listOrganizationChoices: vi.fn(),
+  listReferenceValues: vi.fn(),
 }));
 vi.mock('@/features/platform/api/session', () => ({
   requirePlatformSession: async () => ({
@@ -116,6 +117,9 @@ vi.mock('@/features/platform/api', () => ({
   listPlans: (...args: unknown[]) => platformReads.listPlans(...args),
   listCharges: (...args: unknown[]) => platformReads.listCharges(...args),
   listOrganizationChoices: (...args: unknown[]) => platformReads.listOrganizationChoices(...args),
+  // The currencies, time zones and languages the Provision page and the growth
+  // dialogs offer as selects (P1-32-PRE-OD-REF).
+  listReferenceValues: (...args: unknown[]) => platformReads.listReferenceValues(...args),
   // The paged helper the two browser-callable reads in `actions.ts` use. Those
   // two are Server Actions a client table calls after render, so no route below
   // reaches them; the export is stood in for so the actions module still loads.
@@ -335,6 +339,23 @@ describe('the Platform Owner Console routes decide on their own platform code be
       correlationId: 'c',
     });
     platformReads.listOrganizationChoices.mockResolvedValue([]);
+    platformReads.listReferenceValues.mockResolvedValue({
+      status: 'ok',
+      data: { currencies: [], timezones: [], languages: [] },
+      correlationId: 'c',
+    });
+  });
+
+  it('provisioning reads the choices it offers only after its own gate', async () => {
+    await invokeConsole(consoleRoutes.provision, [P.organizationProvision]);
+    expect(platformReads.listReferenceValues).toHaveBeenCalledTimes(1);
+  });
+
+  it('organisation detail reads the growth choices only for a holder of the manage code', async () => {
+    await invokeConsole(consoleRoutes.detail, [P.organizationRead]);
+    expect(platformReads.listReferenceValues).not.toHaveBeenCalled();
+    await invokeConsole(consoleRoutes.detail, [P.organizationRead, P.organizationManage]);
+    expect(platformReads.listReferenceValues).toHaveBeenCalledTimes(1);
   });
 
   const GATES = [
@@ -494,6 +515,13 @@ vi.mock('@/features/administration/organization/api', () => ({
   readBranchStatus: async () => ({ status: 'ok', data: null, correlationId: 'cid' }),
   readSettings: async () => ({ status: 'ok', data: [], correlationId: 'cid' }),
 }));
+// The currencies, time zones and languages the organisation screens offer
+// (org.reference-values-read, P1-32-PRE-OD-REF): a server-only module, so it is
+// stood in for here and its calls counted.
+const readReferenceValues = vi.hoisted(() => vi.fn());
+vi.mock('@/features/administration/organization/reference-values', () => ({
+  readReferenceValues: (...args: unknown[]) => readReferenceValues(...args),
+}));
 vi.mock('@/features/administration/departments/api', () => ({
   listDepartments: async () => ({ status: 'ok', data: [], correlationId: 'cid' }),
   readDepartmentNames: async () => ({}),
@@ -527,6 +555,8 @@ const EmployeesPage = (await import('@/app/[locale]/(dashboard)/administration/e
 const UserAccessPage = (
   await import('@/app/[locale]/(dashboard)/administration/users/[userId]/page')
 ).default as unknown as AnyPage;
+const LanguagesPage = (await import('@/app/[locale]/(dashboard)/administration/languages/page'))
+  .default as unknown as AnyPage;
 
 /**
  * Walks an element tree for the first node whose props carry `marker`. A render
@@ -567,6 +597,39 @@ async function screenProps(
     marker
   );
 }
+
+describe('the organisation page reads the reference choices only with the code they declare', () => {
+  it('reads nothing without org.tenant.read, and reads them once with it', async () => {
+    readReferenceValues.mockReset();
+    readReferenceValues.mockResolvedValue(null);
+    await screenProps(
+      OrganizationPage,
+      {},
+      [ADMIN.companyRead, ADMIN.branchRead, ADMIN.companyManage],
+      'currencyChoices'
+    );
+    expect(readReferenceValues).not.toHaveBeenCalled();
+
+    const props = await screenProps(
+      OrganizationPage,
+      {},
+      [ADMIN.tenantRead, ADMIN.companyRead, ADMIN.branchRead],
+      'referenceValues'
+    );
+    expect(readReferenceValues).toHaveBeenCalledTimes(1);
+    expect(props).not.toBeNull();
+  });
+
+  it('the languages page reads them only with org.tenant.read, and once with it', async () => {
+    readReferenceValues.mockReset();
+    readReferenceValues.mockResolvedValue(null);
+    await screenProps(LanguagesPage, {}, [ADMIN.settingsManage], 'referenceValues');
+    expect(readReferenceValues).not.toHaveBeenCalled();
+
+    await screenProps(LanguagesPage, {}, [ADMIN.tenantRead], 'referenceValues');
+    expect(readReferenceValues).toHaveBeenCalledTimes(1);
+  });
+});
 
 describe('organisation administration routes grant each control from its OWN permission', () => {
   const USER_ID = 'a1b2c3d4-0000-4000-8000-0000000000aa';

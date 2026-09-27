@@ -6,12 +6,12 @@ import { CheckboxField, SelectField, TextField } from '@/components/forms/Field'
 import { notifyActionResult } from '@/components/notifications/action-notifications';
 import { FormFeedback } from '@/features/authentication/components/FormFeedback';
 import { SubmitButton } from '@/features/authentication/components/SubmitButton';
-import type { Locale } from '@/i18n/config';
+import { isLocale, type Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
 import { translateDynamic } from '@/i18n/get-messages';
 import { IDLE } from '@/lib/forms/action-result';
 import { provisionOrganizationAction } from '../actions';
-import type { ProvisionState, SubscriptionPlan } from '../types';
+import type { ProvisionState, ReferenceValues, SubscriptionPlan } from '../types';
 import { Section } from './ui';
 import { useActionRefusal } from '@/lib/forms/use-action-refusal';
 
@@ -25,16 +25,25 @@ import { useActionRefusal } from '@/lib/forms/use-action-refusal';
  *
  * Typed values survive a refusal: every control is keyed on the attempt and
  * re-seeded from retained state, so correcting one field does not empty the rest.
+ *
+ * The language, both time zones and the base currency are selects fed from the
+ * reference registers (`platform.reference-values-read`, P1-32-PRE-OD-REF), so
+ * only a value the platform holds can be chosen. A currency is labelled by its
+ * code and a zone by its name; a language is offered only when the interface
+ * can also be shown in it. When the list could not be read the four selects are
+ * shown disabled with a notice, never as free text.
  */
 export function ProvisionOrganizationScreen({
   locale,
   messages,
   plans,
+  referenceValues,
   canActivate,
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
   readonly plans: readonly SubscriptionPlan[] | null;
+  readonly referenceValues: ReferenceValues | null;
   readonly canActivate: boolean;
 }) {
   const router = useRouter();
@@ -72,6 +81,19 @@ export function ProvisionOrganizationScreen({
   };
 
   const activePlans = (plans ?? []).filter((plan) => plan.status === 'active');
+  const referenceUnavailable = referenceValues === null;
+  const unavailableNotice = t('platform.provision.referenceUnavailable');
+  const languageOptions = (referenceValues?.languages ?? [])
+    .filter((language) => isLocale(language.localeCode))
+    .map((language) => ({ value: language.localeCode, label: t(`locale.${language.localeCode}`) }));
+  const timeZoneOptions = (referenceValues?.timezones ?? []).map((zone) => ({
+    value: zone.zoneName,
+    label: zone.zoneName,
+  }));
+  const currencyOptions = (referenceValues?.currencies ?? []).map((currency) => ({
+    value: currency.code,
+    label: currency.code,
+  }));
 
   return (
     <form
@@ -124,23 +146,26 @@ export function ProvisionOrganizationScreen({
             onChange={retain('tenantLocale')}
             error={fieldError('tenantLocale')}
             label={t('platform.provision.language')}
+            description={referenceUnavailable ? unavailableNotice : undefined}
             required
+            disabled={referenceUnavailable}
             placeholder={t('platform.provision.choose')}
-            options={[
-              { value: 'ar', label: t('locale.ar') },
-              { value: 'en', label: t('locale.en') },
-            ]}
+            options={languageOptions}
           />
-          <TextField
+          <SelectField
             key={`tenantTimezone-${attempt}`}
             name="tenantTimezone"
             defaultValue={draft['tenantTimezone'] ?? ''}
             onChange={retain('tenantTimezone')}
             error={fieldError('tenantTimezone')}
             label={t('platform.provision.timeZone')}
-            description={t('platform.provision.timeZoneHint')}
+            description={
+              referenceUnavailable ? unavailableNotice : t('platform.provision.timeZoneHint')
+            }
             required
-            autoComplete="off"
+            disabled={referenceUnavailable}
+            placeholder={t('platform.provision.choose')}
+            options={timeZoneOptions}
             dir="ltr"
           />
         </div>
@@ -170,17 +195,20 @@ export function ProvisionOrganizationScreen({
             required
             autoComplete="off"
           />
-          <TextField
+          <SelectField
             key={`companyCurrency-${attempt}`}
             name="companyCurrency"
             defaultValue={draft['companyCurrency'] ?? ''}
             onChange={retain('companyCurrency')}
             error={fieldError('companyCurrency')}
             label={t('platform.provision.baseCurrency')}
-            description={t('platform.provision.currencyHint')}
+            description={
+              referenceUnavailable ? unavailableNotice : t('platform.provision.currencyHint')
+            }
             required
-            maxLength={3}
-            autoComplete="off"
+            disabled={referenceUnavailable}
+            placeholder={t('platform.provision.choose')}
+            options={currencyOptions}
             dir="ltr"
           />
           <TextField
@@ -251,16 +279,20 @@ export function ProvisionOrganizationScreen({
             autoComplete="off"
             dir="ltr"
           />
-          <TextField
+          <SelectField
             key={`branchTimezone-${attempt}`}
             name="branchTimezone"
             defaultValue={draft['branchTimezone'] ?? ''}
             onChange={retain('branchTimezone')}
             error={fieldError('branchTimezone')}
             label={t('platform.provision.timeZone')}
-            description={t('platform.provision.timeZoneHint')}
+            description={
+              referenceUnavailable ? unavailableNotice : t('platform.provision.timeZoneHint')
+            }
             required
-            autoComplete="off"
+            disabled={referenceUnavailable}
+            placeholder={t('platform.provision.choose')}
+            options={timeZoneOptions}
             dir="ltr"
           />
         </div>

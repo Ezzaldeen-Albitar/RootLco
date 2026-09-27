@@ -6,6 +6,7 @@ import {
   type OrganizationDetail,
   type OrganizationRow,
   type PlatformStatistics,
+  type ReferenceValues,
   type SubscriptionCharge,
   type SubscriptionPlan,
 } from './types';
@@ -22,6 +23,7 @@ import {
  *   - `platform.plan-list`           GET /platform/plans
  *   - `platform.charge-list`         GET /platform/organizations/{tenantId}/charges
  *   - `platform.statistics-read`     GET /platform/statistics
+ *   - `platform.reference-values-read` GET /platform/reference-values
  *
  * ## SERVER-ONLY, and why the directive was removed (P1-32-PRE-068)
  *
@@ -123,6 +125,16 @@ export async function listCharges(
     `/api/v1/platform/organizations/${encodeURIComponent(tenantId)}/charges` +
       query({ limit: CHARGE_PAGE_SIZE, status: page.status, cursor: page.cursor })
   );
+}
+
+/**
+ * `platform.reference-values-read` — the currencies, time zones and languages
+ * the Provision page and the organisation-growth dialogs offer as selects. A
+ * page reads it only after its own permission gate, and a screen that receives
+ * anything but `ok` shows those selects disabled with a notice.
+ */
+export async function listReferenceValues(): Promise<ReadState<ReferenceValues>> {
+  return read<ReferenceValues>('/api/v1/platform/reference-values');
 }
 
 export async function readStatistics(): Promise<ReadState<PlatformStatistics>> {

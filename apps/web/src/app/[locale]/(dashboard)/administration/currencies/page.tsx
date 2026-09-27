@@ -8,9 +8,12 @@ import { pageMetadata } from '@/lib/page-metadata';
 /**
  * Currencies.
  *
- * `shared.currencies` holds the ISO 4217 reference list and **no route handler
- * reads it** (`P1-26-F-005`), so this screen cannot offer a picker of known
- * codes. It stores the codes the operator enables, as an exact list.
+ * `shared.currencies` holds the ISO 4217 reference list. Since
+ * P1-32-PRE-OD-REF it is published by `org.reference-values-read` (closing
+ * `P1-26-F-005`), which the Organization screen uses to offer a company's base
+ * currency as a choice. This screen is unchanged by that: it stores the codes
+ * the operator enables, as an exact list, and the Organization screen offers
+ * those codes first when any are enabled.
  *
  * No base currency is chosen and no exchange rate is held or calculated here —
  * both are stated on the page, because their absence would otherwise read as an
@@ -34,7 +37,7 @@ export default async function CurrenciesPage({
       navLabelKey="nav.currencies"
       keyPrefix={CURRENCY_PREFIX}
       suggestions={CURRENCY_KEYS}
-      noticeKeys={['admin.contractGap.noCatalogue', 'currencies.noRates']}
+      noticeKeys={['currencies.noRates']}
     />
   );
 }

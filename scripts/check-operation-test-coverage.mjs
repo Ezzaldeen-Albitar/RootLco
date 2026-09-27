@@ -3025,6 +3025,11 @@ export const MANIFEST = {
     required: ['success', 'denial', 'cross-tenant'],
     note: 'Owner directive: the allowances and the subscription behind them, read from org.capacity_usage — the same function the refusal is computed from — so the screen cannot explain a refusal with numbers assembled a second way',
   },
+  'org.reference-values-read': {
+    files: ['tests/backend/od-organization-administration.test.ts'],
+    required: ['denial'],
+    note: 'P1-32-PRE-OD-REF. The ACTIVE rows of shared.currencies, shared.timezones and shared.languages, each in code order, read as app_runtime through the existing sel_*_all policies so the tenant company, branch and settings forms offer choices instead of free text. It declares org.tenant.read, the code iam.tenant-settings-read already declares for the same screen, and denial is proved by refusing an actor who holds only company and branch read codes. The expectation is read from the database inside the test, never typed, so a value seeded later needs no suite change',
+  },
   'org.department-create': {
     files: ['tests/backend/pre-p1-29-wave-c-company-rbac.test.ts'],
     required: ['denial', 'audit', 'idempotency'],
@@ -3106,6 +3111,11 @@ export const MANIFEST = {
     files: ['tests/backend/p1-32-platform-console.test.ts'],
     required: ['denial'],
     note: 'P1-32-PRE-021. GET /auth/session declares the tenant permission iam.user.read and answers 403 to the genesis operator, who holds no tenant role by construction; this is the console session. platformPermissions is read under sel_platform_grants_own, so it lists the caller own codes and cannot enumerate another operator. email and displayName are deliberately absent: app_platform SELECT on iam.user_accounts is column-scoped and widening it would expose every tenant address through the census policy',
+  },
+  'platform.reference-values-read': {
+    files: ['tests/backend/p1-32-platform-console.test.ts'],
+    required: ['denial'],
+    note: 'P1-32-PRE-OD-REF. The currencies, time zones and languages the console offers as selects when it provisions or grows an organisation: ACTIVE rows, code order, on the platform connection. Answering at all proves migration 20260927090000, which grants app_platform SELECT on the three registers beside the sel_*_platform policies and reverses the choice recorded in 20260916091000. It declares platform.organization.read, the console base entitlement every platform grant set must contain, so no operator who can open the Provision page is gated out; denial is an account with no platform grant',
   },
   'platform.organization-detail': {
     files: ['tests/backend/p1-32-platform-console.test.ts'],

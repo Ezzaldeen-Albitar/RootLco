@@ -36,11 +36,11 @@
       "bytes": 15409
     },
     "docs/phase-1/phase-1-27/clean-room-evidence.md": {
-      "sha256": "a1580729a7dbd15502f3d6aa3c9575a9d8b075aeedafec224abe890b6fcf5fed",
+      "sha256": "8ad6a21d63796c33c7425a4b7eb4f1b9c270a1d230309a77041df8630366e57d",
       "bytes": 23705
     },
     "docs/phase-1/phase-1-27/closure-record.md": {
-      "sha256": "2046a6d0273dce34dc959271696e7fdbdc373f91a0a9ba91429faea5043f9d71",
+      "sha256": "3a877a9b33d679feba666d738cdbae53d7673f7f7b9a37960848b95c7622cb60",
       "bytes": 8630
     },
     "docs/phase-1/phase-1-27/continuation-checkpoint.md": {
@@ -52,7 +52,7 @@
       "bytes": 24145
     },
     "docs/phase-1/phase-1-27/deliverable-manifest.md": {
-      "sha256": "78c0b7e0b524c44f538a9484736c836f08a6b512ec606e77eea6ef9a11eabb15",
+      "sha256": "2a526d946b77f069111f12003e6e8547f8f8231c0ead2655bc395a1c3a1a43e9",
       "bytes": 150214
     },
     "docs/phase-1/phase-1-27/developer-guide.md": {
@@ -64,7 +64,7 @@
       "bytes": 81669
     },
     "docs/phase-1/phase-1-27/evidence/closing-value-ledger.json": {
-      "sha256": "3c0a644c2fc111c981034ecf8ec8dfff39ac35ae4a9199652aa7bd79b5bb40c0",
+      "sha256": "200403132513923591198c79f021b6ec938664c06a0df2f48d6a6de4ab460c5a",
       "bytes": 50610
     },
     "docs/phase-1/phase-1-27/evidence/lifecycle-ledger.json": {
@@ -72,7 +72,7 @@
       "bytes": 9208
     },
     "docs/phase-1/phase-1-27/evidence/local-run-ledger.json": {
-      "sha256": "2c8dc585a5e4bd6bb060970e82a9aba4ff570a22caff37ae07217fce21152794",
+      "sha256": "8ad500b1368a520f774bfb8408ee5f0cc03909c3a1d2b3ee5a1953cc60189759",
       "bytes": 2581
     },
     "docs/phase-1/phase-1-27/evidence/task-traceability.md": {

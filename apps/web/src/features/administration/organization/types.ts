@@ -45,6 +45,26 @@ export interface Read<T> {
   readonly correlationId: string | null;
 }
 
+/**
+ * `org.reference-values-read` — the ACTIVE currencies, time zones and languages
+ * the organisation screens offer as choices, each in code order
+ * (P1-32-PRE-OD-REF). Where it is passed, `null` means it was not read or could
+ * not be, and each select falls back to the values already in use.
+ */
+export interface ReferenceValues {
+  readonly currencies: readonly {
+    readonly code: string;
+    readonly name: string;
+    readonly minorUnit: number;
+  }[];
+  readonly timezones: readonly { readonly zoneName: string }[];
+  readonly languages: readonly {
+    readonly localeCode: string;
+    readonly name: string;
+    readonly direction: string;
+  }[];
+}
+
 // --- organisation structure ----------------------------------------------------
 
 /** A legal company as `org.company-list` publishes it. */

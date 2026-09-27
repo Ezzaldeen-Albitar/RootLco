@@ -12,7 +12,7 @@ import {
   inviteAdministratorAction,
   resendAdministratorInvitationAction,
 } from '../actions';
-import type { OrganizationDetail } from '../types';
+import type { OrganizationDetail, ReferenceValues } from '../types';
 import { PRIMARY_BUTTON, SECONDARY_BUTTON, Section, SECTION_HINT } from './ui';
 import { useConsoleAction } from './use-console-action';
 import { useStateRefusal } from '@/lib/forms/use-local-refusal';
@@ -31,6 +31,11 @@ import { useStateRefusal } from '@/lib/forms/use-local-refusal';
  * the panel appears for an operator whose authority could satisfy it, and the
  * database decides. A refusal for a spent plan allowance arrives as its own
  * sentence, naming the ceiling and the usage.
+ *
+ * The base currency and the branch time zone are selects fed from the reference
+ * registers (`platform.reference-values-read`, P1-32-PRE-OD-REF): a currency is
+ * labelled by its code and a zone by its name. When the list could not be read
+ * both are shown disabled with a notice, never as free text.
  */
 
 type Pending = 'company' | 'branch' | 'invite' | 'resend';
@@ -39,10 +44,12 @@ export function OrganizationGrowthPanel({
   messages,
   organization,
   canManage,
+  referenceValues,
 }: {
   readonly messages: Messages;
   readonly organization: OrganizationDetail;
   readonly canManage: boolean;
+  readonly referenceValues: ReferenceValues | null;
 }) {
   const t = (key: string) => translateDynamic(messages, key);
   const [pending, setPending] = useState<Pending | null>(null);
@@ -105,6 +112,7 @@ export function OrganizationGrowthPanel({
         <CompanyDialog
           messages={messages}
           tenantId={organization.id}
+          referenceValues={referenceValues}
           onClose={() => setPending(null)}
         />
       ) : null}
@@ -113,6 +121,7 @@ export function OrganizationGrowthPanel({
           messages={messages}
           tenantId={organization.id}
           companies={companies}
+          referenceValues={referenceValues}
           onClose={() => setPending(null)}
         />
       ) : null}
@@ -137,10 +146,12 @@ export function OrganizationGrowthPanel({
 function CompanyDialog({
   messages,
   tenantId,
+  referenceValues,
   onClose,
 }: {
   readonly messages: Messages;
   readonly tenantId: string;
+  readonly referenceValues: ReferenceValues | null;
   readonly onClose: () => void;
 }) {
   const t = (key: string) => translateDynamic(messages, key);
@@ -209,14 +220,25 @@ function CompanyDialog({
           onChange={(event) => setLegalName(event.target.value)}
           error={error('legalName')}
         />
-        <TextField
+        <SelectField
           name="baseCurrency"
           label={t('platform.provision.baseCurrency')}
-          description={t('platform.provision.currencyHint')}
+          description={
+            referenceValues === null
+              ? t('platform.provision.referenceUnavailable')
+              : t('platform.provision.currencyHint')
+          }
           required
+          disabled={referenceValues === null}
           value={baseCurrency}
+          placeholder={t('platform.provision.choose')}
           onChange={(event) => setBaseCurrency(event.target.value)}
+          options={(referenceValues?.currencies ?? []).map((currency) => ({
+            value: currency.code,
+            label: currency.code,
+          }))}
           error={error('baseCurrency')}
+          dir="ltr"
         />
         <TextField
           name="registrationNumber"
@@ -242,11 +264,13 @@ function BranchDialog({
   messages,
   tenantId,
   companies,
+  referenceValues,
   onClose,
 }: {
   readonly messages: Messages;
   readonly tenantId: string;
   readonly companies: OrganizationDetail['companies'];
+  readonly referenceValues: ReferenceValues | null;
   readonly onClose: () => void;
 }) {
   const t = (key: string) => translateDynamic(messages, key);
@@ -328,14 +352,25 @@ function BranchDialog({
           onChange={(event) => setName(event.target.value)}
           error={error('name')}
         />
-        <TextField
+        <SelectField
           name="timezone"
           label={t('platform.provision.timeZone')}
-          description={t('platform.provision.timeZoneHint')}
+          description={
+            referenceValues === null
+              ? t('platform.provision.referenceUnavailable')
+              : t('platform.provision.timeZoneHint')
+          }
           required
+          disabled={referenceValues === null}
           value={timezone}
+          placeholder={t('platform.provision.choose')}
           onChange={(event) => setTimezone(event.target.value)}
+          options={(referenceValues?.timezones ?? []).map((zone) => ({
+            value: zone.zoneName,
+            label: zone.zoneName,
+          }))}
           error={error('timezone')}
+          dir="ltr"
         />
         <TextField
           name="city"

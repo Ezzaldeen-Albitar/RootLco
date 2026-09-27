@@ -112,11 +112,12 @@ export async function listBranches(): Promise<ReadState<readonly BranchView[]>> 
 /**
  * The currency codes offered when a company is added.
  *
- * The platform publishes no currency catalogue read, so the choices are the
- * codes an administrator has already enabled on the Currencies screen
- * (`currency.enabled_codes`) for the companies this session can reach. Nothing
- * is invented: an organisation that has enabled none gets an empty list, and
- * the form then asks for the three-letter code directly.
+ * The codes an administrator has already enabled on the Currencies screen
+ * (`currency.enabled_codes`) for the companies this session can reach, offered
+ * first. Nothing is invented: an organisation that has enabled none gets an
+ * empty list, and the form then offers the active currencies of
+ * `org.reference-values-read` (P1-32-PRE-OD-REF, `reference-values.ts`) — never
+ * a text box.
  */
 export async function readCurrencyChoices(
   companyIds: readonly string[]

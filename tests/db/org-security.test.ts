@@ -236,6 +236,46 @@ describe('role posture', () => {
       { fq: 'shared.search_metadata', grantee: 'app_worker' },
     ]);
   });
+
+  it('lets app_platform READ the three reference registers and write none of them', async () => {
+    // Migration 20260927090000 (P1-32-PRE-OD-REF) grants the control plane SELECT
+    // on shared.currencies, shared.timezones and shared.languages beside one
+    // SELECT policy each, so platform.reference-values-read can offer them as
+    // choices. Reading is the whole grant: no write privilege and no write policy
+    // exists for app_platform, so a reference row is still changed only by the
+    // declared seed and the migration role.
+    for (const table of ['shared.currencies', 'shared.timezones', 'shared.languages']) {
+      const { rows } = await admin.query<{
+        sel: boolean;
+        ins: boolean;
+        upd: boolean;
+        del: boolean;
+      }>(
+        `SELECT has_table_privilege('app_platform', $1, 'SELECT') AS sel,
+                has_table_privilege('app_platform', $1, 'INSERT') AS ins,
+                has_table_privilege('app_platform', $1, 'UPDATE') AS upd,
+                has_table_privilege('app_platform', $1, 'DELETE') AS del`,
+        [table]
+      );
+      expect(rows[0], table).toEqual({ sel: true, ins: false, upd: false, del: false });
+    }
+    const { rows: policies } = await admin.query<{
+      tbl: string;
+      policyname: string;
+      cmd: string;
+    }>(
+      `SELECT tablename AS tbl, policyname, cmd FROM pg_policies
+        WHERE schemaname = 'shared'
+          AND tablename IN ('currencies', 'timezones', 'languages')
+          AND 'app_platform' = ANY(roles)
+        ORDER BY tablename, policyname`
+    );
+    expect(policies).toEqual([
+      { tbl: 'currencies', policyname: 'sel_currencies_platform', cmd: 'SELECT' },
+      { tbl: 'languages', policyname: 'sel_languages_platform', cmd: 'SELECT' },
+      { tbl: 'timezones', policyname: 'sel_timezones_platform', cmd: 'SELECT' },
+    ]);
+  });
 });
 
 describe('data-dictionary coverage (P1-03-DOC-001, P1-03-SEC-003)', () => {

@@ -1,14 +1,15 @@
 'use client';
 
 import { useActionState, useState } from 'react';
-import { TextField } from '@/components/forms/Field';
+import { SelectField, TextField } from '@/components/forms/Field';
+import { LOCALES, isLocale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
 import { translate } from '@/i18n/get-messages';
 import { IDLE, type ActionState } from '@/lib/forms/action-result';
 import { FormFeedback } from '@/features/authentication/components/FormFeedback';
 import { SubmitButton } from '@/features/authentication/components/SubmitButton';
 import { updateTenantAction } from '../actions';
-import type { TenantView } from '../types';
+import type { ReferenceValues, TenantView } from '../types';
 import { useActionRefusal } from '@/lib/forms/use-action-refusal';
 
 /**
@@ -21,19 +22,28 @@ import { useActionRefusal } from '@/lib/forms/use-action-refusal';
  * someone inside this application.
  *
  * Locale and timezone are foreign keys to `shared.languages` and
- * `shared.timezones`. Neither catalogue is published by an approved operation
- * (`P1-26-F-006`), so this does not offer a list it does not have: the operator
- * types a value and the backend's "not a registered platform value" verdict is
- * surfaced verbatim in meaning.
+ * `shared.timezones`, and both are selects fed from `org.reference-values-read`
+ * (P1-32-PRE-OD-REF, closing `P1-26-F-006`): a language is offered when the
+ * platform holds it and the interface can be shown in it, a zone when the
+ * platform holds it. When that read was not permitted or failed, the language
+ * falls back to the interface languages and the zone to the zones already in
+ * use, as it also does when the list holds no active zone. The saved value is always one of the choices, so an untouched form still
+ * submits it. Nothing is typed; a refusal is still shown on its field.
  */
 export function TenantForm({
   messages,
   tenant,
   canWrite,
+  referenceValues = null,
+  timezoneChoices = [],
 }: {
   readonly messages: Messages;
   readonly tenant: TenantView;
   readonly canWrite: boolean;
+  /** `org.reference-values-read`; `null` when it was not permitted or failed. */
+  readonly referenceValues?: ReferenceValues | null;
+  /** The zones the tenant and its branches already use — the fallback. */
+  readonly timezoneChoices?: readonly string[];
 }) {
   const [state, formAction] = useActionState<ActionState, FormData>(updateTenantAction, IDLE);
   /*
@@ -64,6 +74,22 @@ export function TenantForm({
     const key = refusalErrorKey(name);
     return key ? t(key) : undefined;
   };
+
+  const withSaved = (values: readonly string[], saved: string) =>
+    saved && !values.includes(saved) ? [saved, ...values] : values;
+  const localeValues = withSaved(
+    referenceValues
+      ? referenceValues.languages
+          .map((language) => language.localeCode)
+          .filter((code) => isLocale(code))
+      : [...LOCALES],
+    tenant.defaultLocale
+  );
+  const referenceZones = (referenceValues?.timezones ?? []).map((zone) => zone.zoneName);
+  const timezoneValues = withSaved(
+    referenceZones.length > 0 ? referenceZones : timezoneChoices,
+    tenant.defaultTimezone
+  );
 
   if (!canWrite) {
     return (
@@ -117,7 +143,7 @@ export function TenantForm({
         error={fieldError('displayName')}
         required
       />
-      <TextField
+      <SelectField
         key={`defaultLocale-${state.attempt ?? 0}`}
         name="defaultLocale"
         label={t('organization.defaultLocale')}
@@ -125,9 +151,12 @@ export function TenantForm({
         defaultValue={retained('defaultLocale')}
         onChange={retain('defaultLocale')}
         error={fieldError('defaultLocale')}
-        spellCheck={false}
+        options={localeValues.map((code) => ({
+          value: code,
+          label: isLocale(code) ? t(`locale.${code}`) : code,
+        }))}
       />
-      <TextField
+      <SelectField
         key={`defaultTimezone-${state.attempt ?? 0}`}
         name="defaultTimezone"
         label={t('organization.defaultTimezone')}
@@ -135,7 +164,8 @@ export function TenantForm({
         defaultValue={retained('defaultTimezone')}
         onChange={retain('defaultTimezone')}
         error={fieldError('defaultTimezone')}
-        spellCheck={false}
+        options={timezoneValues.map((zone) => ({ value: zone, label: zone }))}
+        dir="ltr"
       />
 
       <div className="flex justify-end">

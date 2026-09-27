@@ -101,7 +101,9 @@ describe('every operation publishes the success status it returns', () => {
     // `sal.invoice-create` in an EXISTING route module, a GET that answers 200.
     // 503 with the discount approval record (P1-32-PRE-OD-DISC-01): four operations
     // over three new route modules — three answer 200 and the threshold write 201.
-    expect(actual.size).toBe(503);
+    // 505 with the reference-value reads (P1-32-PRE-OD-REF): two GETs over two new
+    // route modules, both answering 200.
+    expect(actual.size).toBe(505);
   });
 
   it('agrees with the committed contract for every operation', () => {
@@ -244,7 +246,9 @@ describe('every operation publishes the success status it returns', () => {
     // 359 -> 360 with the Owner directive invoice list, a GET returning 200.
     // 360 -> 363 with the discount approval record: the approvals list, the
     // approval decision and the threshold read each answer 200.
-    expect(counts[200]).toBe(363);
+    // 363 -> 365 with the reference-value reads (P1-32-PRE-OD-REF): two GETs
+    // answering 200, so the 201 count does not move.
+    expect(counts[200]).toBe(365);
   });
 
   it('reads the handler, not the declaration', () => {

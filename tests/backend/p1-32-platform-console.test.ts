@@ -18,6 +18,7 @@
  *
  * COVERAGE-EVIDENCE (P1-32 Platform Owner Console):
  *   platform.session-read: route service authorization success denial
+ *   platform.reference-values-read: route service authorization success denial
  *   platform.organization-detail: route service authorization success denial cross-tenant
  *   platform.plan-list: route service authorization success denial
  *   platform.plan-create: route service authorization success denial idempotency audit
@@ -74,6 +75,10 @@ import {
   ORGANIZATION_DETAIL_OPERATION,
   GET as organizationDetailRoute,
 } from '@/app/api/v1/platform/organizations/[tenantId]/route';
+import {
+  PLATFORM_REFERENCE_VALUES_READ_OPERATION,
+  GET as referenceValuesRoute,
+} from '@/app/api/v1/platform/reference-values/route';
 import {
   PLAN_CREATE_OPERATION,
   PLAN_LIST_OPERATION,
@@ -491,6 +496,91 @@ describe('platform.session-read', () => {
     expect((await call(sessionRoute, { path: '/platform/session', method: 'GET' })).status).toBe(
       403
     );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// platform.reference-values-read (P1-32-PRE-OD-REF)
+// ---------------------------------------------------------------------------
+describe('platform.reference-values-read', () => {
+  interface ReferenceValues {
+    currencies: { code: string; name: string; minorUnit: number }[];
+    timezones: { zoneName: string }[];
+    languages: { localeCode: string; name: string; direction: string }[];
+  }
+
+  const read = () =>
+    call<ReferenceValues>(referenceValuesRoute, {
+      path: '/platform/reference-values',
+      method: 'GET',
+    });
+
+  it('declares the console base entitlement, no audit, and a metadata rate limit', () => {
+    expect(PLATFORM_REFERENCE_VALUES_READ_OPERATION.id).toBe('platform.reference-values-read');
+    expect(PLATFORM_REFERENCE_VALUES_READ_OPERATION.permissions).toEqual([
+      'platform.organization.read',
+    ]);
+    expect(PLATFORM_REFERENCE_VALUES_READ_OPERATION.auditClass).toBe('none');
+    expect(PLATFORM_REFERENCE_VALUES_READ_OPERATION.rateLimitPolicy).toBe('low-risk-metadata');
+  });
+
+  it('answers a reader exactly the ACTIVE rows of the three registers, in code order', async () => {
+    // The expectation is read from the database inside the test, never typed:
+    // the registers are seed data, and a value seeded later must appear here
+    // without this suite changing. Answering at all proves the grant: the route
+    // runs on the platform connection, as app_platform.
+    const currencies = await admin.query<{ code: string; name: string; minor_unit: number }>(
+      `SELECT code, name, minor_unit FROM shared.currencies
+        WHERE status = 'active' ORDER BY code`
+    );
+    const timezones = await admin.query<{ zone_name: string }>(
+      "SELECT zone_name FROM shared.timezones WHERE status = 'active' ORDER BY zone_name"
+    );
+    const languages = await admin.query<{ locale_code: string; name: string; direction: string }>(
+      `SELECT locale_code, name, direction FROM shared.languages
+        WHERE status = 'active' ORDER BY locale_code`
+    );
+    expect(currencies.rows.length).toBeGreaterThan(0);
+    expect(timezones.rows.length).toBeGreaterThan(0);
+    expect(languages.rows.length).toBeGreaterThan(0);
+
+    asReader();
+    const result = await read();
+    expect(result.status).toBe(200);
+    expect(result.body).toEqual({
+      currencies: currencies.rows.map((r) => ({
+        code: r.code,
+        name: r.name,
+        minorUnit: r.minor_unit,
+      })),
+      timezones: timezones.rows.map((r) => ({ zoneName: r.zone_name })),
+      languages: languages.rows.map((r) => ({
+        localeCode: r.locale_code,
+        name: r.name,
+        direction: r.direction,
+      })),
+    });
+  });
+
+  it('refuses an account without platform.organization.read with 403', async () => {
+    asNoGrant();
+    const refused = await call<{ code?: string }>(referenceValuesRoute, {
+      path: '/platform/reference-values',
+      method: 'GET',
+    });
+    expect(refused.status).toBe(403);
+    expect(refused.body?.code).toBe('ERR-IAM-001');
+  });
+
+  it('answers 401 to a caller with no session', async () => {
+    __resetRateLimitForTests();
+    __resetAuthenticatorForTests();
+    const refused = await call<{ code?: string }>(referenceValuesRoute, {
+      path: '/platform/reference-values',
+      method: 'GET',
+    });
+    expect(refused.status).toBe(401);
+    expect(refused.body?.code).toBe('ERR-IAM-002');
   });
 });
 
@@ -1555,14 +1645,20 @@ describe('every platform operation refuses a tenant principal and an unauthentic
         handler: auditSearchRoute,
         input: { path: '/platform/audit-events', method: 'GET', query: auditWindow() },
       },
+      {
+        operation: PLATFORM_REFERENCE_VALUES_READ_OPERATION.id,
+        handler: referenceValuesRoute,
+        input: { path: '/platform/reference-values', method: 'GET' },
+      },
     ];
   }
 
-  it('probes all sixteen console operations, reads and writes alike', () => {
+  it('probes all seventeen console operations, reads and writes alike', () => {
     const probed = probes().map((probe) => probe.operation);
-    expect(new Set(probed).size).toBe(16);
+    expect(new Set(probed).size).toBe(17);
     for (const operation of [
       PLATFORM_SESSION_READ_OPERATION,
+      PLATFORM_REFERENCE_VALUES_READ_OPERATION,
       ORGANIZATION_DETAIL_OPERATION,
       ORGANIZATION_LIFECYCLE_OPERATION,
       PLAN_LIST_OPERATION,

@@ -28,7 +28,7 @@ import {
   setCompanyStatusAction,
 } from '../actions';
 import { readBranchStatus } from '../api';
-import type { BranchView, CapacityView, CompanyView } from '../types';
+import type { BranchView, CapacityView, CompanyView, ReferenceValues } from '../types';
 import { useActionRefusal } from '@/lib/forms/use-action-refusal';
 
 /**
@@ -54,6 +54,15 @@ import { useActionRefusal } from '@/lib/forms/use-action-refusal';
  * so the version is read from the branch's own status read at the moment the
  * operator confirms — never remembered from an earlier page read, and never
  * guessed.
+ *
+ * ## Currency and time zone are chosen, never typed (P1-32-PRE-OD-REF)
+ *
+ * The base currency offers the codes enabled for the organisation's companies
+ * (`currency.enabled_codes`) when there are any, and otherwise the active
+ * currencies of `org.reference-values-read`. The branch time zone offers the
+ * active zones of that read, and falls back to the zones the tenant and its
+ * branches already use when the read was not permitted or failed. Neither ever
+ * falls back to free text.
  */
 
 type StatusTarget =
@@ -67,6 +76,7 @@ export function OrganizationStructure({
   branches,
   currencyChoices,
   timezoneChoices,
+  referenceValues,
   canManageCompanies,
   canManageBranches,
   canChangeBranchStatus,
@@ -75,8 +85,12 @@ export function OrganizationStructure({
   readonly capacity: CapacityView | null;
   readonly companies: ReadState<readonly CompanyView[]> | null;
   readonly branches: ReadState<readonly BranchView[]> | null;
+  /** The codes enabled in `currency.enabled_codes` for the companies this session reaches. */
   readonly currencyChoices: readonly string[];
+  /** The zones the tenant and its branches already use. */
   readonly timezoneChoices: readonly string[];
+  /** `org.reference-values-read`; `null` when it was not permitted or failed. */
+  readonly referenceValues: ReferenceValues | null;
   readonly canManageCompanies: boolean;
   readonly canManageBranches: boolean;
   readonly canChangeBranchStatus: boolean;
@@ -89,6 +103,26 @@ export function OrganizationStructure({
   const [running, startTransition] = useTransition();
 
   const companyRows = companies?.status === 'ok' ? companies.data : [];
+  const currencyOptions =
+    currencyChoices.length > 0
+      ? currencyChoices
+      : (referenceValues?.currencies ?? []).map((currency) => currency.code);
+  // A reference list with no active zone falls back to the zones in use, the
+  // same as a list that could not be loaded.
+  const referenceZones = (referenceValues?.timezones ?? []).map((zone) => zone.zoneName);
+  const timezoneOptions = referenceZones.length > 0 ? referenceZones : timezoneChoices;
+  const timezoneHint =
+    timezoneOptions.length > 0
+      ? 'organization.branch.timezoneHint'
+      : 'organization.branch.timezoneUnavailable';
+  // With neither source holding a currency the select has nothing to offer, and
+  // the dialog says so rather than presenting an empty required choice.
+  const currencyHint =
+    currencyChoices.length > 0
+      ? 'organization.company.baseCurrencyHint'
+      : currencyOptions.length > 0
+        ? 'organization.company.currencyHint'
+        : 'organization.company.currencyUnavailable';
   const companyName = new Map(companyRows.map((company) => [company.id, company.legalName]));
 
   const confirmStatus = (reason: string) => {
@@ -298,7 +332,8 @@ export function OrganizationStructure({
       {dialog === 'company' ? (
         <CompanyDialog
           messages={messages}
-          currencyChoices={currencyChoices}
+          currencyChoices={currencyOptions}
+          currencyHint={currencyHint}
           onClose={() => {
             setDialog(null);
             router.refresh();
@@ -310,7 +345,8 @@ export function OrganizationStructure({
         <BranchDialog
           messages={messages}
           companies={companyRows}
-          timezoneChoices={timezoneChoices}
+          timezoneChoices={timezoneOptions}
+          timezoneHint={timezoneHint}
           onClose={() => {
             setDialog(null);
             router.refresh();
@@ -367,10 +403,12 @@ export function OrganizationStructure({
 function CompanyDialog({
   messages,
   currencyChoices,
+  currencyHint,
   onClose,
 }: {
   readonly messages: Messages;
   readonly currencyChoices: readonly string[];
+  readonly currencyHint: string;
   readonly onClose: () => void;
 }) {
   const [state, formAction] = useActionState<ActionState, FormData>(createCompanyAction, IDLE);
@@ -424,34 +462,19 @@ function CompanyDialog({
           required
           autoComplete="off"
         />
-        {currencyChoices.length > 0 ? (
-          <SelectField
-            key={`baseCurrency-${state.attempt ?? 0}`}
-            name="baseCurrency"
-            onChange={retain('baseCurrency')}
-            error={fieldError('baseCurrency')}
-            defaultValue={draft['baseCurrency'] ?? ''}
-            label={t('organization.company.baseCurrency')}
-            description={t('organization.company.baseCurrencyHint')}
-            required
-            placeholder={t('field.selectPlaceholder')}
-            options={currencyChoices.map((code) => ({ value: code, label: code }))}
-          />
-        ) : (
-          <TextField
-            key={`baseCurrency-${state.attempt ?? 0}`}
-            name="baseCurrency"
-            onChange={retain('baseCurrency')}
-            error={fieldError('baseCurrency')}
-            defaultValue={draft['baseCurrency'] ?? ''}
-            label={t('organization.company.baseCurrency')}
-            description={t('organization.company.currencyHint')}
-            required
-            autoComplete="off"
-            spellCheck={false}
-            maxLength={3}
-          />
-        )}
+        <SelectField
+          key={`baseCurrency-${state.attempt ?? 0}`}
+          name="baseCurrency"
+          onChange={retain('baseCurrency')}
+          error={fieldError('baseCurrency')}
+          defaultValue={draft['baseCurrency'] ?? ''}
+          label={t('organization.company.baseCurrency')}
+          description={t(currencyHint)}
+          required
+          placeholder={t('field.selectPlaceholder')}
+          options={currencyChoices.map((code) => ({ value: code, label: code }))}
+          dir="ltr"
+        />
         <TextField
           key={`registrationNumber-${state.attempt ?? 0}`}
           name="registrationNumber"
@@ -483,11 +506,13 @@ function BranchDialog({
   messages,
   companies,
   timezoneChoices,
+  timezoneHint,
   onClose,
 }: {
   readonly messages: Messages;
   readonly companies: readonly CompanyView[];
   readonly timezoneChoices: readonly string[];
+  readonly timezoneHint: string;
   readonly onClose: () => void;
 }) {
   const [state, formAction] = useActionState<ActionState, FormData>(createBranchAction, IDLE);
@@ -576,24 +601,19 @@ function BranchDialog({
             maxLength={2}
           />
         </div>
-        <TextField
+        <SelectField
           key={`timezone-${state.attempt ?? 0}`}
           name="timezone"
           onChange={retain('timezone')}
           error={fieldError('timezone')}
           defaultValue={draft['timezone'] ?? ''}
           label={t('organization.branch.timezone')}
-          description={t('organization.branch.timezoneHint')}
+          description={t(timezoneHint)}
           required
-          autoComplete="off"
-          spellCheck={false}
-          list="branch-timezone-choices"
+          placeholder={t('field.selectPlaceholder')}
+          options={timezoneChoices.map((zone) => ({ value: zone, label: zone }))}
+          dir="ltr"
         />
-        <datalist id="branch-timezone-choices">
-          {timezoneChoices.map((zone) => (
-            <option key={zone} value={zone} />
-          ))}
-        </datalist>
         <DialogActions state={state} messages={messages} onClose={onClose} />
       </form>
     </Dialog>

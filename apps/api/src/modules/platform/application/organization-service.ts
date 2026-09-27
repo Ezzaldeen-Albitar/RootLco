@@ -24,6 +24,7 @@ import {
   type CompanyCreateInput,
   type CompanyRecordRow,
   type FirstOwnerInput,
+  type ReferenceValuesView,
   iamModule,
 } from '@/modules/iam';
 import { paymentsModule } from '@/modules/payments';
@@ -219,6 +220,18 @@ export class OrganizationService {
       pageRequest(ORGANIZATION_ORDERING, page)
     );
     return { ...result, items: result.items.map(toView) };
+  }
+
+  /**
+   * platform.reference-values-read (P1-32-PRE-OD-REF): the currencies, time
+   * zones and languages the console offers as choices when it provisions or
+   * grows an organisation. Active rows only, each in code order, read on the
+   * platform connection. An inactive code is not refused by the writes — the
+   * foreign key accepts it — so this list decides what is OFFERED, never what is
+   * accepted.
+   */
+  async referenceValues(db: DbHandle): Promise<ReferenceValuesView> {
+    return this.repository.listReferenceValues(db);
   }
 
   /**

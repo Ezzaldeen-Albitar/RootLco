@@ -15,6 +15,7 @@ import {
   usageWarns,
   type CapacityUsage,
   type OrganizationDetail,
+  type ReferenceValues,
   type SubscriptionCharge,
   type SubscriptionPlan,
 } from '../types';
@@ -63,6 +64,7 @@ export function OrganizationDetailScreen({
   messages,
   organization,
   plans,
+  referenceValues = null,
   charges,
   chargeStatus = '',
   chargesPaged = false,
@@ -73,6 +75,12 @@ export function OrganizationDetailScreen({
   readonly messages: Messages;
   readonly organization: OrganizationDetail;
   readonly plans: readonly SubscriptionPlan[] | null;
+  /**
+   * The currencies and time zones the growth dialogs offer
+   * (`platform.reference-values-read`). `null`, or absent, means they could not
+   * be read, and those two selects are shown disabled with a notice.
+   */
+  readonly referenceValues?: ReferenceValues | null;
   readonly charges: ReadState<CursorPage<SubscriptionCharge>> | null;
   /** The charge status filter the address asked for, empty for every status. */
   readonly chargeStatus?: string;
@@ -144,6 +152,7 @@ export function OrganizationDetailScreen({
         messages={messages}
         organization={organization}
         canManage={capabilities.canManageOrganization}
+        referenceValues={referenceValues}
       />
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">

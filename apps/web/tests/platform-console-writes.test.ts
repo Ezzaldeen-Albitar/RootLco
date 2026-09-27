@@ -201,6 +201,21 @@ describe('provisioning builds the document the operation publishes', () => {
     expect(send).not.toHaveBeenCalled();
   });
 
+  it('refuses a currency or a time zone left unchosen, saying so, and never reaches the server', async () => {
+    // The three controls are selects fed from the reference registers, so an
+    // empty value means nothing was chosen: it is refused as "choose", not as a
+    // malformed code.
+    const state = await actions.provisionOrganizationAction(
+      IDLE as never,
+      provisionForm({ companyCurrency: '', tenantTimezone: '', branchTimezone: '' })
+    );
+    expect(state.status).toBe('invalid');
+    expect(state.fieldErrors?.companyCurrency).toBe('platform.error.chooseCurrency');
+    expect(state.fieldErrors?.tenantTimezone).toBe('platform.error.chooseTimeZone');
+    expect(state.fieldErrors?.branchTimezone).toBe('platform.error.chooseTimeZone');
+    expect(send).not.toHaveBeenCalled();
+  });
+
   it('places a refusal about a nested `code` on the control that owns it', async () => {
     // The wire document holds three fields called `code`. The leaf alone cannot
     // say which control refused, so a mapping that dropped to the leaf would put
@@ -506,6 +521,25 @@ describe('growing a live organisation addresses the organisation it names', () =
     });
     expect(state.status).toBe('invalid');
     expect(state.fieldErrors).toEqual({ timezone: 'form.violation.unknown_reference' });
+  });
+
+  it('refuses an unchosen currency and an unchosen time zone without asking the server', async () => {
+    const company = await actions.addCompanyAction(TENANT, {
+      code: 'nw_second',
+      legalName: 'Northern Workshops Second Company',
+      baseCurrency: '',
+    });
+    expect(company.status).toBe('invalid');
+    expect(company.fieldErrors?.baseCurrency).toBe('platform.error.chooseCurrency');
+    const branch = await actions.addBranchAction(TENANT, {
+      companyId: SUBSCRIPTION,
+      code: 'nw_north',
+      name: 'Northern branch',
+      timezone: '',
+    });
+    expect(branch.status).toBe('invalid');
+    expect(branch.fieldErrors?.timezone).toBe('platform.error.chooseTimeZone');
+    expect(send).not.toHaveBeenCalled();
   });
 
   it('opens a branch under the company it names, dropping a blank city', async () => {
@@ -1067,6 +1101,28 @@ describe('the console reads stay on the server', () => {
     expect(
       localImportsOf(probe, "import { readStatistics } from '@/features/platform/api';")
     ).toContain(READS_MODULE);
+  });
+});
+
+/*
+ * The tenant reference read (P1-32-PRE-OD-REF) follows the same rule: the
+ * `server-only` package is not a dependency here, so the module's server-only
+ * standing is that it carries no Server Action directive and reaches the
+ * session through the cookie-reading server client.
+ */
+const REFERENCE_VALUES_MODULE = resolve(
+  WEB_SRC,
+  'features',
+  'administration',
+  'organization',
+  'reference-values.ts'
+);
+
+describe('the organisation reference read stays on the server', () => {
+  it('declares no Server Action directive and reads through the server client', () => {
+    const source = readFileSync(REFERENCE_VALUES_MODULE, 'utf8');
+    expect(directiveOf(source)).toBeNull();
+    expect(source).toMatch(/from\s+['"]@\/lib\/api\/server-client['"]/);
   });
 });
 
