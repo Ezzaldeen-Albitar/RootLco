@@ -1184,6 +1184,49 @@ describe.each(READERS)(
       expect(screen.getByTestId('unsaved-answer')).toHaveTextContent('false');
     });
 
+    /*
+     * DEF-S2a (settings QA at d17e7df1): a blank or whitespace-only display name
+     * was read as "not sent", so the zone beside it was saved, the form said
+     * "Saved." and the server kept the old name while the field stayed blank.
+     */
+    it.each([
+      { name: 'an empty', typed: '' },
+      { name: 'a whitespace-only', typed: '   ' },
+    ])('refuses $name display name on its field and saves nothing', async ({ typed }) => {
+      const user = userEvent.setup();
+      paint(
+        <TenantForm
+          locale={locale}
+          messages={messages}
+          canWrite
+          tenant={WORKSPACE}
+          referenceValues={REFERENCES}
+        />
+      );
+      const name = control('organization.displayName');
+      await user.clear(name);
+      if (typed.length > 0) await user.type(name, typed);
+      await user.selectOptions(control('organization.defaultTimezone'), 'Asia/Amman');
+      await user.click(screen.getByRole('button', { name: M('admin.save') }));
+
+      expect(await screen.findByText(M('field.required'))).toBeVisible();
+      expect(name).toHaveAttribute('aria-invalid', 'true');
+      expect(name).toHaveAccessibleDescription(new RegExp(escapeRegExp(M('field.required'))));
+      await waitFor(() => expect(name).toHaveFocus());
+      // Nothing was sent, nothing was said to be saved, and the other choice stays.
+      expect(send).not.toHaveBeenCalled();
+      expect(refresh).not.toHaveBeenCalled();
+      expect(screen.queryByText(M('admin.saved'))).toBeNull();
+      expect(control('organization.defaultTimezone')).toHaveValue('Asia/Amman');
+      expect(name).toHaveValue(typed);
+      // Still unsaved work, so it can still be put back.
+      expect(screen.getByRole('button', { name: M('organization.discardChanges') })).toBeVisible();
+
+      await user.type(name, 'Renamed');
+      expect(screen.queryByText(M('field.required'))).toBeNull();
+      expect(name).not.toHaveAttribute('aria-invalid', 'true');
+    });
+
     it('moves the cursor to a refused field, keeps what was typed, and clears the complaint on correction', async () => {
       send.mockResolvedValue({
         ok: false,
