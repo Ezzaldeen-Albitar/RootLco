@@ -981,6 +981,79 @@ describe('edits, a typed draft and a held draft are unsaved work', () => {
   });
 });
 
+describe('the edit form re-bases on what was saved and on what a refresh brings', () => {
+  afterEach(forgetRememberedBranch);
+
+  const tree = (svc: ReturnType<typeof service>) =>
+    withMui(
+      inBranch(
+        <>
+          <BranchSwitch to={SECOND_BRANCH.id} label="second" />
+          <WorkingBranchProbe />
+          <ServiceDetailScreen
+            locale="en"
+            messages={en}
+            service={svc as never}
+            canManage
+            canReadBranches={false}
+          />
+        </>,
+        { snapshot: branchSnapshot([TEST_BRANCH, SECOND_BRANCH]) }
+      )
+    );
+
+  it('a name saved with a trailing space and refreshed is saved work: the switch does not ask', async () => {
+    const user = userEvent.setup();
+    const view = renderLtr(tree(service()));
+    const name = screen.getByLabelText(labelled('services.create.name'));
+    await user.clear(name);
+    await user.type(name, 'Oil service ');
+    await user.click(saveButton());
+    await waitFor(() => expect(refresh).toHaveBeenCalled());
+    // What travelled is trimmed, and the refresh brings back exactly that.
+    expect(updateService).toHaveBeenCalledWith(SERVICE_ID, { name: 'Oil service' }, 3);
+    view.rerender(tree(service({ name: 'Oil service', recordVersion: 4 })));
+    await switchWithoutQuestion(user, 'second');
+    await waitFor(() => expect(heldBranch()).toBe(SECOND_BRANCH.id));
+    expect(screen.getByLabelText(labelled('services.create.name'))).toHaveValue('Oil service');
+  });
+
+  it('a trailing space alone is not unsaved work: the switch does not ask', async () => {
+    const user = userEvent.setup();
+    renderLtr(tree(service()));
+    await user.type(screen.getByLabelText(labelled('services.create.name')), ' ');
+    await switchWithoutQuestion(user, 'second');
+    await waitFor(() => expect(heldBranch()).toBe(SECOND_BRANCH.id));
+  });
+
+  it('an untouched form shows a rename a refresh brings, and the switch does not ask', async () => {
+    const user = userEvent.setup();
+    const view = renderLtr(tree(service()));
+    view.rerender(tree(service({ name: 'Oil and filter change', recordVersion: 4 })));
+    await waitFor(() =>
+      expect(screen.getByLabelText(labelled('services.create.name'))).toHaveValue(
+        'Oil and filter change'
+      )
+    );
+    await switchWithoutQuestion(user, 'second');
+    await waitFor(() => expect(heldBranch()).toBe(SECOND_BRANCH.id));
+  });
+
+  it('typed work survives a refresh that brings a new version, and still asks', async () => {
+    const user = userEvent.setup();
+    const view = renderLtr(tree(service()));
+    const name = screen.getByLabelText(labelled('services.create.name'));
+    await user.clear(name);
+    await user.type(name, 'Renamed here');
+    view.rerender(tree(service({ description: 'Changed elsewhere', recordVersion: 4 })));
+    expect(screen.getByLabelText(labelled('services.create.name'))).toHaveValue('Renamed here');
+    const before = heldBranch();
+    await stayOnBranch(user, await switchExpectingQuestion(user, 'second'));
+    expect(heldBranch()).toBe(before);
+    expect(screen.getByLabelText(labelled('services.create.name'))).toHaveValue('Renamed here');
+  });
+});
+
 describe('the /services/[serviceId] route page renders the read as what it was', () => {
   const failed = (status: string) => ({ status, correlationId: 'corr-p' });
 

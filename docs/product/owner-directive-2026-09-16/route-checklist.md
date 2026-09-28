@@ -2082,11 +2082,12 @@ Known limitations of this slice, one line each:
   is true (review round 2).
 - Review round 2 checked the round-1 blockers by falsification: restoring the mount-time draft
   comparison failed two price-list tests, and an unarmed `AssignmentPanel` guard failed one.
-- Catalogue server pagination is not pinned by a test: no case serves a page with `hasMore`, so a
-  catalogue `load` that dropped its cursor would pass; a review probe showed "Next" sends it.
-- The service detail edit panel compares its fields untrimmed with values recomputed from the
-  `service` prop, so a whitespace-only save or a refresh carrying another user's edit still reads
-  as unsaved work (round-1 carry).
+- Catalogue server pagination is pinned since fix round 4: a `services-catalogue.dom` case serves a
+  first page with `hasMore` and requires "Next" to send the cursor `c1`, show page two and print no
+  total; a catalogue `load` that drops its cursor fails it.
+- The service detail edit panel compares trimmed values with a baseline it holds (the values it
+  opened with, then the values it saved) since fix round 4; a refresh that brings a new version
+  re-bases an untouched form and keeps typed work.
 - The pricing service picker (`EntityPicker`, `minLength` 1) lists no first page for an empty term
   (round-1 carry).
 - No Playwright spec covers `/services` or `/pricing`, so no browser selector was affected or
@@ -2141,3 +2142,18 @@ Residual items recorded at fix round 3 of PR #479, one line each:
 - The date-format message now names the year, month and day parts in both languages; the two remaining `YYYY-MM-DD` manual lines belong to the discount-approval limits screen, outside this slice.
 - Folding each column with `shared.fold_digits()` means the catalogue search cannot use a plain index on `service_code` or `name`; the previous `ILIKE` could not either, so this is a performance note only.
 - The backend cases for the folded search were not run on this machine; they run in hosted CI (integration and database jobs).
+
+Residual items recorded at fix round 4 of PR #479, one line each:
+
+- Round 4 fixed the edit panel's false unsaved-work prompt: the form now compares trimmed values with a held baseline, re-based on the saved values and on a new `recordVersion` while untouched; three new `services-detail.dom` cases each fail when their part of the fix is removed (untrimmed compare, no re-base on save, no re-base on refresh) and all three fail against the round-3 panel; a fourth keeps typed work across a refresh.
+- Round 4 pinned catalogue server pagination: the new `services-catalogue.dom` case fails when the catalogue read drops its cursor (`cursor && null`).
+- The round-3 blocker fix is confirmed: `operation-register.json` differs from efc3be21 by exactly the one generated line (`tests/unit/p1-32-service-search-digits.test.ts` under `svc.service-list`); `validate:p1-24-register` exits 0 locally and static-quality was green on CI.
+- The records step was confirmed at 41377ca3: `local-run-ledger.json` unit and web carried `measuredAtCommit` 7c949bff from PR CI run 36396648638 (unit 3811 tests / 143 files, web 6836 / 185), with the derived documents moved with them; round 4 changes executable paths, so both tiers need recording again at the new head.
+- All earlier round fixes hold: the `PublishPanel` chosen-draft guard, the guard tests on every form, the service version reset after create and publish, the pricing date wording, and the server digit fold in `svc.service-list`.
+- Checked against the base with no defect found: the rule form's guard and discard (`FormMoneyField` follows a value the caller resets); money stays a string to `recordPriceRule`; the rule and assignment checks are unchanged; the lookup states map 1:1 with a retry added; retiring goes through a `ConfirmDialog` (`services.detail.retireAcknowledge` is now unused); the price-list list is still the bounded read; no discount-approval or credit-note file is in the diff.
+- `TreePicker` uses the Community `@mui/x-tree-view` only, with the field wiring (`aria-labelledby`, `aria-describedby`, `aria-errormessage`, `aria-invalid` only on an error) and token classes; it has no other consumer, so no existing wrapper consumer is affected.
+- The catalogue and price-list reads still go through Server Actions, so a superseded read is ignored, not cancelled (stated above).
+- The pricing service picker (`EntityPicker` `minLength=1`) lists no first page for an empty term.
+- B.S4 still needs a browser re-measure; no Playwright spec under `apps/web/tests/e2e` mentions services or pricing, so no browser selector was affected and none was exercised.
+- The category filter matches only the chosen category, not its children (the help says so); the tree has no height cap; a few `services.*` and `pricing.*` catalogue entries are unused.
+- The backend tier was not run locally (by design); integration-tests and "Database migrations and RLS tests" were green on CI at 41377ca3.

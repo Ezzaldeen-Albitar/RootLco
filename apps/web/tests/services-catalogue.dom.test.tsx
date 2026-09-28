@@ -262,6 +262,37 @@ describe('the catalogue is tenant-wide, so it reads on first paint', () => {
   });
 });
 
+describe('the catalogue pages on the server, by cursor, with no total', () => {
+  it('Next spends the cursor page one returned and shows page two; the footer counts nothing', async () => {
+    listServices.mockReset();
+    listServices
+      .mockResolvedValueOnce(page([row()], true))
+      .mockResolvedValueOnce(
+        page([row({ id: '44444444-4444-4444-8444-444444444444', name: 'Brake inspection' })])
+      );
+    const user = userEvent.setup();
+    renderCatalogue();
+    expect(await screen.findByText('Oil change')).toBeVisible();
+    // Page one is read with no cursor.
+    expect(listServices.mock.calls[0]?.[2]).toBeNull();
+
+    await user.click(screen.getByRole('button', { name: EN['table.nextPage'] as string }));
+    expect(await screen.findByText('Brake inspection')).toBeVisible();
+    expect(screen.queryByText('Oil change')).toBeNull();
+    // Page two is asked for with the server's own cursor, under the same criteria.
+    expect(listServices).toHaveBeenCalledTimes(2);
+    expect(listServices.mock.calls[1]?.[0]).toEqual({});
+    expect(listServices.mock.calls[1]?.[2]).toBe('c1');
+
+    // No total: no count, range or size claim, and not the library's footer.
+    const region = screen.getByTestId('service-catalogue-grid');
+    const nav = screen.getByRole('navigation', { name: EN['table.pagination'] as string });
+    expect(nav.textContent).not.toMatch(/\bof\b|–|more than/);
+    expect(region.textContent).not.toMatch(/\bof\b|–|more than/);
+    expect(region.querySelector('.MuiDataGrid-footerContainer')).toBeNull();
+  });
+});
+
 describe('the category is chosen from the taxonomy’s own hierarchy', () => {
   it('draws a child category under its parent, and choosing it filters by it', async () => {
     const user = userEvent.setup();

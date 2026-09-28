@@ -289,6 +289,29 @@ function useBranchList(canRead: boolean, active: boolean): BranchList {
  * Editing — `svc.service-update`, version-guarded
  * ------------------------------------------------------------------ */
 
+/** A type, not an interface: the form is also the `Record` the refusal hook reads. */
+type EditForm = {
+  readonly name: string;
+  readonly description: string;
+  readonly categoryId: string;
+};
+
+function formOf(service: ServiceDetail): EditForm {
+  return {
+    name: service.name,
+    description: service.description ?? '',
+    categoryId: service.categoryId,
+  };
+}
+
+function editDiffers(form: EditForm, baseline: EditForm): boolean {
+  return (
+    form.name.trim() !== baseline.name.trim() ||
+    form.description.trim() !== baseline.description.trim() ||
+    form.categoryId !== baseline.categoryId
+  );
+}
+
 function EditPanel({
   messages,
   service,
@@ -300,12 +323,13 @@ function EditPanel({
   readonly taxonomy: Taxonomy;
   readonly onDone: () => void;
 }) {
-  const opened = {
-    name: service.name,
-    description: service.description ?? '',
-    categoryId: service.categoryId,
-  };
-  const [form, setForm] = useState(opened);
+  /*
+   * What the form last matched: the values it opened with, then the values it
+   * last saved. Held as state, not rebuilt from the live `service` prop, so a
+   * refresh cannot turn an untouched form into unsaved work.
+   */
+  const [baseline, setBaseline] = useState(() => formOf(service));
+  const [form, setForm] = useState(baseline);
   const { errorKey, formRef, refuse } = useLocalRefusal(form);
   const [busy, setBusy] = useState(false);
   const [outcome, setOutcome] = useState<ActionState | null>(null);
@@ -313,15 +337,30 @@ function EditPanel({
   const [retireError, setRetireError] = useState<string | undefined>(undefined);
   const items = useMemo(() => categoryTreeItems(taxonomy.categories), [taxonomy.categories]);
 
-  // A change from what the page read is unsaved work until it is saved.
-  const dirty =
-    form.name !== opened.name ||
-    form.description !== opened.description ||
-    form.categoryId !== opened.categoryId;
+  /*
+   * A change from the baseline is unsaved work until it is saved. Compared
+   * trimmed, as `save()` sends it: a trailing space alone is nothing to save.
+   */
+  const dirty = editDiffers(form, baseline);
   useUnsavedGuard(dirty, () => {
-    setForm(opened);
+    setForm(baseline);
     setOutcome(null);
   });
+
+  /*
+   * A refresh that brings a new version re-bases an UNTOUCHED form on it, so
+   * the field shows what is stored now. Typed work is kept as typed. Adjusted
+   * during render, React's shape for "reset state when a prop changes".
+   */
+  const [seenVersion, setSeenVersion] = useState(service.recordVersion);
+  if (service.recordVersion !== seenVersion) {
+    setSeenVersion(service.recordVersion);
+    if (!dirty) {
+      const stored = formOf(service);
+      setBaseline(stored);
+      setForm(stored);
+    }
+  }
 
   const errorFor = (...names: readonly string[]): string | undefined => {
     for (const name of names) {
@@ -365,6 +404,10 @@ function EditPanel({
     setBusy(false);
     notifyActionResult(result, messages);
     if (result.status === 'success') {
+      // What was saved is the new baseline, as it was sent (trimmed).
+      const saved = { name, description, categoryId: form.categoryId };
+      setBaseline(saved);
+      setForm(saved);
       setOutcome(null);
       onDone();
       return;
