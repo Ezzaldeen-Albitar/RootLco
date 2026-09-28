@@ -720,8 +720,13 @@ Known limitations of this slice, one line each:
   (`FOCUS_REQUEST_EVENT` in `lib/forms/use-focus-first-invalid.ts`), and typing or clicking edits
   at once. The complaint clears as soon as the day is whole and valid. This covers every
   `DateField` and `DateTimeField`, so the warranty plan's cover terms, the reception and
-  work-order period filters and every other date form. DOM tests in English and Arabic
-  (`mui-form-fields.dom.test.tsx`, `warranty-policies.dom.test.tsx`); the reception and work-order
+  work-order period filters and every other date form. On `DateTimeField` the first empty part
+  follows the locale's own section order: English lists the day first and the time last, Arabic
+  lists the time (with its morning/afternoon part) first and the day after it, so the same answer
+  lands on a different part in each. DOM tests in English and Arabic
+  (`mui-form-fields.dom.test.tsx`, including a refused half-typed `DateTimeField` in each locale that
+  fails when the field's focus-request answer or its reporting text-field slot is removed;
+  `warranty-policies.dom.test.tsx`); the reception and work-order
   range refusals still move the cursor to the refused field. The browser's own focus race (the
   picker believing it still held focus) cannot be reproduced in jsdom; the tests hold where the
   cursor lands and that typing finishes the day.
@@ -742,6 +747,28 @@ Known limitations of this slice, one line each:
   overlapping statement.
 - **Not changed here:** OBS-3 (the plan's cover-terms table shows its start date as a raw calendar
   day) was observed, not listed as a defect, and is left for its own slice.
+
+Known limitations of this checkpoint, one line each:
+
+- The invoice (`features/billing/components/InvoiceScreen.tsx`) and the receipt
+  (`features/payments/components/PaymentsScreen.tsx`) do not opt into `data-print-scope`: they now
+  print at full length, but still print their detail, outstanding, actions and allocate panels ahead
+  of the document — the shape fixed here for delivery. This predates this change and was not part
+  of DEF-01, which was truncation only.
+- DEF-02 in a real browser: jsdom cannot reproduce Chromium's stale-focus race, so the "click the
+  year after a refusal" cases pass with or without the fix, and no Playwright case covers the date
+  correction; the click path in a browser rests on the hosted QA re-run, not on CI.
+- The browser print check (`tests/e2e/foundation.spec.ts`, "prints the whole page") measures only
+  `/gallery`; the delivery handover, invoice, receipt, acknowledgement and labels printouts have no
+  browser-tier print assertion, and the DOM contract for the delivery scope is structural only.
+- The delivery printout still includes the `PageHeader` above the sheet, because the print scope
+  wraps only the `DeliveryDetailScreen` body.
+- The outbox worker (`apps/api/src/server/worker/worker-db.ts`) hands consumers a raw `PoolClient`
+  without the one-statement-at-a-time queue; no `Promise.all` on a `WorkerDb` exists today, and the
+  worker is a separate process from the API that emitted OBS-5.
+- The serial-queue unit test uses a stand-in client; the database and integration tiers ran against
+  the change in hosted CI, but no test asserts that `pg`'s overlapping-query warning is absent on a
+  live request.
 
 ## Organisation settings for tenant administrators (Owner decision of 2026-09-27)
 

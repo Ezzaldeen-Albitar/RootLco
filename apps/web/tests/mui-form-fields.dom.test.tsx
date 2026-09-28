@@ -354,6 +354,107 @@ describe('a refused half-typed day is finished where it was left', () => {
   }
 });
 
+/**
+ * The same answer to a refused form's focus request, on `DateTimeField`: the
+ * picker takes the cursor itself, onto its first EMPTY part in the locale's own
+ * section order, and typing there finishes the moment. The two locales order
+ * their parts differently — English puts the day first and the time last,
+ * Arabic puts the time (with its morning/afternoon part) first and the day
+ * after it — so each is half-typed in its own order, leaving a different first
+ * empty part. Without the answer the cursor lands on the first part, which is
+ * already typed, and the rest of the entry goes into the wrong part.
+ */
+describe('a refused half-typed moment is finished where it was left', () => {
+  function HalfMomentForm({
+    locale,
+    onMoment,
+  }: {
+    readonly locale: Locale;
+    readonly onMoment: (moment: string) => void;
+  }) {
+    const [state, setState] = useState<ActionState>({ status: 'idle' });
+    const [moment, setMoment] = useState('');
+    const [refused, setRefused] = useState(false);
+    const formRef = useFocusFirstInvalid(state);
+    return (
+      <form
+        ref={formRef}
+        onSubmit={(event) => {
+          event.preventDefault();
+          if (moment !== '') return;
+          setRefused(true);
+          setState({
+            status: 'invalid',
+            fieldErrors: { moment: 'form.required' },
+            attempt: (state.attempt ?? 0) + 1,
+          });
+        }}
+      >
+        <FormTextField label="Reference" value="DOC-1" onChange={() => undefined} />
+        <DateTimeField
+          messages={getMessages(locale)}
+          label="Visit time"
+          value={moment}
+          onChange={(next) => {
+            setMoment(next);
+            onMoment(next);
+          }}
+          timezone="Asia/Amman"
+          error={refused && moment === '' ? 'Choose a time.' : undefined}
+        />
+        <button type="submit">Save</button>
+      </form>
+    );
+  }
+
+  // `typed` fills the first parts in the locale's order; `firstEmpty` names the
+  // part that is then first and empty; `rest` fills every part from there on.
+  const cases = [
+    {
+      locale: 'en',
+      typed: '0103',
+      firstEmpty: 'mui.pickers.year',
+      rest: '20270930',
+    },
+    {
+      locale: 'ar',
+      typed: 'ص0930',
+      firstEmpty: 'mui.pickers.day',
+      rest: '01032027',
+    },
+  ] as const;
+
+  for (const { locale, typed, firstEmpty, rest } of cases) {
+    const catalogue = getMessages(locale);
+
+    it(`puts the cursor on the first empty part after the refusal, and typing finishes the moment (${locale})`, async () => {
+      const user = userEvent.setup();
+      const onMoment = vi.fn();
+      mount(<HalfMomentForm locale={locale} onMoment={onMoment} />, locale);
+      const group = screen.getByRole('group', { name: /^Visit time/ });
+      const parts = within(group).getAllByRole('spinbutton');
+      await user.click(parts[0] as HTMLElement);
+      await user.keyboard(typed);
+      // Half typed: the first part holds a value, and the named part is the
+      // first one still empty in this locale's order.
+      const empty = catalogue['mui.pickers.empty'];
+      expect(parts[0]).not.toHaveAttribute('aria-valuetext', empty);
+      const unfinished = parts.find((part) => part.getAttribute('aria-valuetext') === empty);
+      const target = within(group).getByRole('spinbutton', { name: catalogue[firstEmpty] });
+      expect(unfinished).toBe(target);
+      expect(onMoment).not.toHaveBeenCalled();
+
+      await user.click(screen.getByRole('button', { name: 'Save' }));
+      await waitFor(() => expect(group).toHaveAttribute('aria-invalid', 'true'));
+      await waitFor(() => expect(document.activeElement).toBe(target));
+      await user.keyboard(rest);
+      expect(onMoment).toHaveBeenLastCalledWith('2027-03-01T09:30:00+03:00');
+      await waitFor(() => expect(group).not.toHaveAttribute('aria-invalid'));
+      expect(screen.queryByText('Choose a time.')).toBeNull();
+    });
+  }
+});
+
 describe('number and money stay strings', () => {
   it('reports the typed text uncoerced, on a numeric keypad, left to right', async () => {
     const reported = vi.fn();
