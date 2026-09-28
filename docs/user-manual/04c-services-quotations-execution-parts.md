@@ -89,7 +89,7 @@ with "Your account does not have permission for this. An administrator can grant
 (example).
 
 **Where** — **Commerce** → **Service catalogue** → press **New service** <!-- services.catalogue.create -->
-. The panel that opens contains both the new-service form and, beneath it, the **New category**
+. The panel that opens contains both the new-service form and, beside it, the **New category**
 form.
 
 **Steps**
@@ -102,19 +102,28 @@ form.
    `mechanical`.
 4. **Category name** (required) <!-- services.category.name --> — for the example: `Mechanical
 repairs (example)`.
-5. Press **Create category** <!-- services.category.submit --> .
+5. **Filed under** (optional) <!-- services.category.parent --> — "Optional. Choose the category
+   this one belongs under." <!-- services.category.parentHelp --> The categories are shown as a
+   tree: a category with others filed under it has an arrow beside it; open it with the arrow (or
+   the right arrow key, the left one in Arabic) and choose a category by clicking it or pressing
+   Space. Leave **Top level (no parent category)** <!-- services.category.parentNone --> chosen for a
+   category of its own.
+6. Press **Create category** <!-- services.category.submit --> .
 
 **Result** — "The category was created." <!-- services.category.success --> The new category is
-immediately selectable in **Category** <!-- services.create.category --> on the service form above.
+immediately offered in the **Category** <!-- services.create.category --> tree of the service form,
+under the category it was filed under.
 
 **Restrictions** — there is no standalone category-administration screen: a category is created here
-and nowhere else, and a category's code can never be changed. There is no screen to rename, retire
-or delete a category.
+and nowhere else, and a category's code can never be changed. There is no screen to rename, move,
+retire or delete a category, so choose **Filed under** with care.
 
 **If it goes wrong**
 
 - "A category code starts with a lower-case letter and uses only lower-case letters, digits and
-  underscores." <!-- services.category.codeFormat --> — fix the code and submit again.
+  underscores." <!-- services.category.codeFormat --> — the code box is marked in red with this
+  sentence beneath it, the cursor is put back in it and what you typed is kept. Correct it and the
+  message goes.
 - **You do not have access** <!-- state.denied.title --> — your account lacks `svc.service.manage`.
   The **New service** button is not shown at all in that case.
 
@@ -130,8 +139,8 @@ or delete a category.
 
 **Steps**
 
-1. **Category** (required) <!-- services.create.category --> — choose one; the placeholder reads
-   **Choose a category** <!-- services.create.chooseCategory --> .
+1. **Category** (required) <!-- services.create.category --> — choose it in the category tree
+   (see 4C.1.2 for how the tree opens and chooses).
 2. **Service code** (required) <!-- services.create.code --> — "Letters, digits, hyphens and
    underscores. It cannot be changed later." <!-- services.create.codeHelp --> For the example:
    `BRAKE-PAD-FRONT`.
@@ -139,11 +148,11 @@ or delete a category.
 (example)`.
 4. **Description** (optional) <!-- services.create.description --> .
 5. Press **Create service** <!-- services.create.submit --> , or **Cancel** <!-- services.create.cancel -->
-   to abandon the form.
+   to close the form.
 
-**Result** — "The service was created." <!-- services.create.success --> The service appears in
-**Services in the catalogue** <!-- services.catalogue.resultsHeading --> with its **Code**,
-**Name**, **Category** and **Status** <!-- services.catalogue.column.status --> .
+**Result** — "The service was created." <!-- services.create.success --> The screen moves to the new
+service (4C.1.5), and it is listed in **Services in the catalogue** <!-- services.catalogue.resultsHeading -->
+with its **Code**, **Name**, **Category** and **Status** <!-- services.catalogue.column.status --> .
 
 **Restrictions**
 
@@ -152,14 +161,18 @@ or delete a category.
 - A service code **cannot be changed later**. Decide your coding convention before you start.
 - A newly created service cannot yet be sold: it needs a **published version** (4C.1.5) and, for a
   price, a rule on a published price-list version (4C.2).
+- What you have typed and not created is kept while you work: switching the branch at the top of the
+  page, or following a link away, asks first whether to discard it.
 
 **If it goes wrong**
 
+- A refused form marks each field to fix in red with the reason beneath it, puts the cursor on the
+  first one, and keeps everything you typed; correcting a field takes its message away.
 - "A service code starts with a letter or digit and uses only letters, digits, hyphens and
   underscores." <!-- services.create.codeFormat -->
 - "That is longer than a name can be." <!-- services.create.nameTooLong --> / "That is longer than a
   description can be." <!-- services.create.descriptionTooLong -->
-- "The category list could not be read right now, so categories show as identifiers." <!-- services.catalogue.categoriesUnavailable -->
+- "The category list could not be read right now, so category names cannot be shown." <!-- services.catalogue.categoriesUnavailable -->
   — the service could not answer for the categories. Your data is not affected; try again shortly.
 
 **Screenshot** — no screenshot available at this version.
@@ -170,38 +183,56 @@ or delete a category.
 
 **Who** — an account holding `svc.service.read`.
 
-**Where** — **Commerce** → **Service catalogue**.
+**Where** — **Commerce** → **Service catalogue**. The catalogue is listed as soon as the page opens;
+every filter below narrows it the moment you change it. There is no separate button to press.
 
 **Steps**
 
 1. **Code or name starts with** <!-- services.catalogue.search --> — type the beginning of a code or
-   a name. This is a _starts-with_ match, not a search anywhere in the text.
-2. **Category** <!-- services.catalogue.category --> — or leave **Any category** <!-- services.catalogue.anyCategory -->
-   .
-3. **Status** <!-- services.catalogue.lifecycle --> — or leave **Active and retired** <!-- services.catalogue.anyLifecycle -->
-   .
-4. **Available at branch** <!-- services.catalogue.availableAtBranch --> — or leave **Any branch** <!-- services.catalogue.anyBranch -->
-   .
+   a name. This is a _starts-with_ match, not a search anywhere in the text. The list follows a
+   short pause after you stop typing, or at once when you press Enter; Escape empties the box.
+   Digits typed on an Arabic keyboard are shown back as Latin digits under the box, for reading.
+2. **Status** <!-- services.catalogue.lifecycle --> — press **All**, **Active** <!-- services.lifecycle.active -->
+   or **Retired** <!-- services.lifecycle.archived --> .
+3. **Category** <!-- services.catalogue.category --> — choose a category in the tree, or **Any
+   category** <!-- services.catalogue.anyCategory --> . "Lists the services filed directly under
+   the chosen category." <!-- services.catalogue.categoryHelp --> Choosing a category does not
+   include the categories filed under it.
+4. **Available at branch** <!-- services.catalogue.availableAtBranch --> — one of your branches, or
+   **Any branch** <!-- services.catalogue.anyBranch --> .
 5. **Published on** <!-- services.catalogue.effectiveOn --> — "Only services with a published
-   version covering this date." <!-- services.catalogue.effectiveOnHelp -->
-6. Press **Show services** <!-- services.catalogue.show --> .
+   version covering this date." <!-- services.catalogue.effectiveOnHelp --> Type the day, the month
+   and the year, or open the calendar. A date typed only in part is marked in red with "Enter a date
+   as year, month and day." <!-- services.catalogue.dateFormat --> and the list keeps the last whole
+   date until you finish it or clear it.
 
-**Result** — the table **Services in the catalogue** <!-- services.catalogue.caption --> . The note
-beneath it is worth knowing: "Ordered by service code. The platform publishes no total, so none is
-shown. A retired service stays listed because work orders may still refer to it." <!-- services.catalogue.orderingNote -->
+**Result** — the grid **Services in the catalogue** <!-- services.catalogue.caption --> , a page at a
+time: **Previous page** and **Next page** below it move between pages, and the line beside them says
+which page you are on. The note beneath is worth knowing: "Ordered by service code. The platform
+publishes no total, so none is shown. A retired service stays listed because work orders may still
+refer to it." <!-- services.catalogue.orderingNote -->
 
 **Restrictions** — no count of results is shown, because the service does not publish one. A retired
 service is labelled **Retired** <!-- services.lifecycle.archived --> and stays in the list for ever.
+The code-or-name match is made by the service exactly as you typed it: a code typed with
+Arabic-Indic digits does not find a code stored with Latin ones.
 
 **If it goes wrong**
 
-- "No service matches what you asked for." <!-- services.catalogue.noneMatching -->
-- "The branch list is not available right now. Enter the identifier, or try again." <!-- services.catalogue.branchesUnavailable -->
-  — the branch chooser degrades into a **Branch identifier** field <!-- services.catalogue.branchIdField -->
-  . You will need the identifier from your administrator; there is no branch directory screen in
-  this release (see part 2).
-- "Your access does not include the category list, so categories show as identifiers." <!-- services.catalogue.categoriesRefused -->
-  — a permission limit, not a fault.
+- **No matches** <!-- state.noResults.title --> — nothing matches what you asked for; press
+  **Clear all filters** <!-- table.clearFilters --> to see the whole catalogue again. With nothing
+  narrowing it, an empty catalogue says **Nothing here yet** <!-- state.empty.title --> instead.
+- **Service unavailable** <!-- state.unavailable.title --> — the list could not be read (the service
+  was busy or did not answer). Nothing is wrong with your data; press **Try again** <!-- state.retry -->
+  .
+- Under **Available at branch**, a sentence instead of a list — "No branch is listed for you." <!-- services.catalogue.branchesNone -->
+  , "Your access does not include the branch list." <!-- services.catalogue.branchesRefused --> or
+  "The branch list is not available right now. Try again." <!-- services.catalogue.branchesUnavailable -->
+  (with **Try again**). The catalogue is then simply shown for every branch; there is no box to type
+  a branch into.
+- "Your access does not include the category list, so category names cannot be shown." <!-- services.catalogue.categoriesRefused -->
+  — a permission limit, not a fault. A service's category then reads "Category not in the loaded
+  list" <!-- services.catalogue.unknownCategory --> .
 
 **Screenshot** — no screenshot available at this version.
 
@@ -212,22 +243,28 @@ service is labelled **Retired** <!-- services.lifecycle.archived --> and stays i
 **Who** — `svc.service.read` to open; `svc.service.manage` to change anything. Without the manage
 code the screen says "Your access allows viewing this service but not changing it." <!-- services.detail.noManagePermission -->
 
-**Where** — **Commerce** → **Service catalogue** → open a row. The address is
-`/{locale}/services/{serviceId}`.
+**Where** — **Commerce** → **Service catalogue** → open a row by its code. The address is
+`/{locale}/services/{serviceId}`. This page works on one branch at a time: under "All my branches"
+it asks you to choose one branch at the top of the page first.
 
 **Steps — edit the service**
 
 1. Read **Service summary** <!-- services.detail.summaryHeading --> (Code, Name, Category, Status,
-   Description).
-2. Under **Edit service** <!-- services.detail.editHeading --> , change **Name** or **Description**.
-   "Leave this empty to remove the description." <!-- services.detail.descriptionHelp -->
+   Description). The category is named; one this screen cannot name reads "Category not in the
+   loaded list" <!-- services.catalogue.unknownCategory --> .
+2. Under **Edit service** <!-- services.detail.editHeading --> , change **Name**, choose another
+   **Category** in the tree, or change **Description**. "Leave this empty to remove the
+   description." <!-- services.detail.descriptionHelp -->
 3. Press **Save changes** <!-- services.detail.save --> .
+
+A change you have not saved asks before you switch branch or leave the page; choosing to discard puts
+back what the page read.
 
 **Steps — say where the service is offered**
 
 1. Go to **Where this service is offered** <!-- services.availability.heading --> .
-2. Choose a **Branch** <!-- services.availability.branch --> (placeholder **Choose a branch** <!-- services.availability.chooseBranch -->
-   ), for the example _Riyadh — Exit 5 (example)_.
+2. The **Branch** <!-- services.availability.branch --> opens on the branch you are working in;
+   choose another of your branches if you need to.
 3. Tick or clear **Offered at this branch** <!-- services.availability.offered --> .
 4. Press **Save availability** <!-- services.availability.submit --> . Result: "Availability was
    saved." <!-- services.availability.success -->
@@ -238,25 +275,30 @@ code the screen says "Your access allows viewing this service but not changing i
    service can be sold only through a published version." <!-- services.version.explain -->
 2. **Effective from** (required) <!-- services.version.effectiveFrom --> and, optionally,
    **Effective until** <!-- services.version.effectiveTo --> — "Optional. The last day is not
-   included." <!-- services.version.effectiveToHelp -->
+   included." <!-- services.version.effectiveToHelp --> Type each date as day, month and year, or
+   open the calendar.
 3. **Notes** (optional) <!-- services.version.notes --> .
 4. Press **Create draft version** <!-- services.version.createDraft --> → "A draft version was
    created." <!-- services.version.created -->
-5. Under **Draft ready to publish** <!-- services.version.draftHeading --> , set **Publish effective
-   from** <!-- services.version.publishFrom --> and press **Publish this draft** <!-- services.version.publish -->
-   . Result: "The version was published." <!-- services.version.published --> To abandon it instead,
-   press **Set this draft aside** <!-- services.version.discardDraft --> .
+5. Under **Draft ready to publish** <!-- services.version.draftHeading --> , **Publish effective
+   from** <!-- services.version.publishFrom --> opens on the draft's own date; change it if needed and
+   press **Publish this draft** <!-- services.version.publish --> . Result: "The version was
+   published." <!-- services.version.published --> To abandon it instead, press **Set this draft
+   aside** <!-- services.version.discardDraft --> .
+
+A draft you have created and not published exists only on this page (there is no list of versions),
+so leaving the page or switching branch asks first.
 
 **Steps — retire a service**
 
 1. Press **Retire this service** <!-- services.detail.retire --> .
-2. Read the warning: "Retiring is permanent. The service stays on record but can no longer be
-   offered." <!-- services.detail.retireConfirm -->
-3. Tick **I understand this cannot be undone.** <!-- services.detail.retireAcknowledge --> and press
-   **Retire this service** again.
+2. A question opens with the warning: "Retiring is permanent. The service stays on record but can no
+   longer be offered." <!-- services.detail.retireConfirm -->
+3. Press **Retire this service** in the question to retire it, or **Cancel** to keep it.
 
 **Result** — a retired service shows "This service is retired. It stays on record but cannot be
-brought back." <!-- services.detail.retiredNote -->
+brought back." <!-- services.detail.retiredNote --> If the service refuses, the reason is said in the
+question, which stays open.
 
 **Restrictions**
 
@@ -276,6 +318,9 @@ brought back." <!-- services.detail.retiredNote -->
   rule.)
 - "Nothing has changed." <!-- services.detail.nothingChanged --> — the form matches the record.
 - "The end date must be after the start date." <!-- services.version.rangeOrder -->
+- "Enter a date as year, month and day." <!-- services.catalogue.dateFormat --> — a date was typed
+  only in part. The field is marked in red, the cursor is put on the part still to type, and the
+  message goes once the date is whole.
 
 **Screenshot** — no screenshot available at this version.
 
@@ -286,7 +331,9 @@ brought back." <!-- services.detail.retiredNote -->
 ### 4C.2.1 Where it is, and what a price list is made of — IMPLEMENTED (UI)
 
 **Where** — **Commerce** → **Price lists** <!-- nav.pricing --> (Arabic: قوائم الأسعار), at
-`/{locale}/pricing`.
+`/{locale}/pricing`. The page lists the price lists and, beneath them, **Look up a price** (4C.2.6).
+It works on one branch at a time: under "All my branches" it asks you to choose one branch at the
+top of the page first. One price list opens at `/{locale}/pricing/{priceListId}`.
 
 **Who** — `svc.price.read` to open the page; `svc.price.manage` to create lists, versions and rules;
 `svc.price.publish` to publish a draft. All three are in the tenant-administrator bundle. The
@@ -296,6 +343,13 @@ access for the whole workshop and at least one rule on the draft. A published ve
 The structure is: **price list** → **versions** → **rules**, plus **assignments** that say where the
 list applies. A version is a **Draft** <!-- pricing.versionStatus.draft --> until it is published;
 then it is **Published** <!-- pricing.versionStatus.published --> and frozen.
+
+The list of price lists is a grid of one page: the service answers at most 100 price lists at once
+and has no next page and nothing to search by, so the grid offers no rows-per-page choice and its
+**Next page** stays unavailable. If the list could not be read, the page says **Service
+unavailable** <!-- state.unavailable.title --> with **Try again** <!-- state.retry --> — never an
+empty list; with no price list yet it says **Nothing here yet** <!-- state.empty.title --> and "There
+are no price lists yet." <!-- pricing.list.none -->
 
 ### 4C.2.2 Create a price list — IMPLEMENTED (UI)
 
@@ -317,9 +371,10 @@ then it is **Published** <!-- pricing.versionStatus.published --> and frozen.
 4. **Description** (optional) <!-- pricing.create.description --> .
 5. Press **Create price list** <!-- pricing.create.submit --> .
 
-**Result** — "The price list was created." <!-- pricing.create.success --> It appears in **Price
-lists, by code** <!-- pricing.list.caption --> with **Code**, **Name**, **Currency** and **Status**
-(**Active** <!-- pricing.status.active --> or **Inactive** <!-- pricing.status.inactive --> ).
+**Result** — "The price list was created." <!-- pricing.create.success --> The screen moves to the new
+price list, and it is listed in **Price lists, by code** <!-- pricing.list.caption --> with **Code**,
+**Name**, **Currency** and **Status** (**Active** <!-- pricing.status.active --> or **Inactive** <!-- pricing.status.inactive -->
+).
 
 **Restrictions**
 
@@ -329,8 +384,10 @@ lists, by code** <!-- pricing.list.caption --> with **Code**, **Name**, **Curren
   to 100 price lists. If your workshop has more, they are not listed here." <!-- pricing.list.bound -->
 - Nothing on this screen holds an exchange rate, and no currency reference list is published (see
   part 2, Currencies).
+- What you have typed and not created asks before you switch branch or leave the page.
 
-**If it goes wrong**
+**If it goes wrong** — each field to fix is marked in red with the reason beneath it, the cursor goes
+to the first one, and what you typed is kept.
 
 - "The code must start with a letter or digit and use only letters, digits, dashes and underscores
   (2 to 63 characters)." <!-- pricing.create.codeFormat -->
@@ -347,38 +404,50 @@ lists, by code** <!-- pricing.list.caption --> with **Code**, **Name**, **Curren
 **Who** — an account holding `svc.price.manage`. A rule that applies everywhere additionally needs
 manage access for the whole workshop.
 
-**Where** — **Commerce** → **Price lists** → open a list (`/{locale}/pricing/{priceListId}`).
+**Where** — **Commerce** → **Price lists** → open a list by its code
+(`/{locale}/pricing/{priceListId}`).
 
 **Steps — the draft version**
 
 1. Under **Versions** <!-- pricing.versions.heading --> read the rule: "A version holds the rules. A
    draft can take rules; publishing freezes it and puts it in force from the date you give." <!-- pricing.versions.explain -->
 2. **In force from** (required) <!-- pricing.version.effectiveFrom --> — "Provisional: publishing
-   sets the final date." <!-- pricing.version.effectiveFromHelp -->
+   sets the final date." <!-- pricing.version.effectiveFromHelp --> Type the day, the month and the
+   year, or open the calendar.
 3. **Notes** (optional) <!-- pricing.version.notes --> .
 4. Press **Create draft** <!-- pricing.version.createDraft --> → "The draft version was created." <!-- pricing.version.created -->
 
 **Steps — one rule**
 
-1. Under **Add a rule** <!-- pricing.rule.heading --> read: "A rule prices one service on this
-   draft. Leave company and branch empty for a rule that applies everywhere; that needs manage
-   access for the whole workshop." <!-- pricing.rule.explain -->
-2. **Service** (required) <!-- pricing.rule.service --> — use **Find a service** <!-- pricing.picker.serviceSearch -->
-   , "Type the beginning of a code or name, then search and choose." <!-- pricing.picker.serviceSearchHelp -->
-   , press **Search** <!-- pricing.picker.search --> and **Choose a service** <!-- pricing.picker.chooseService -->
-   .
-3. **Amount** (required) <!-- pricing.rule.amount --> — zero or more, up to four decimal places.
-4. **Branch** (optional) <!-- pricing.rule.branch --> , **Customer class** (optional) <!-- pricing.rule.customerClass -->
-   , **Tax class identifier** (optional) <!-- pricing.rule.taxClass --> — "Optional, and needs a
-   company. Tax classes cannot be listed here yet." <!-- pricing.rule.taxClassHelp -->
-5. **Priority** <!-- pricing.rule.priority --> — "A whole number from 0 to 1,000,000. Higher wins
+1. In **Versions**, press **Show rules of version** <!-- pricing.versions.showRules --> on the draft
+   (the newest version is shown first). Under **Add a rule** <!-- pricing.rule.heading --> read: "A
+   rule prices one service on this draft. Leave company and branch empty for a rule that applies
+   everywhere; that needs manage access for the whole workshop." <!-- pricing.rule.explain -->
+2. **Service** (required) <!-- pricing.rule.service --> — type the beginning of the service's code
+   or name: "Type the beginning of a service code or name, then choose it from the list." <!-- pricing.picker.serviceSearchHelp -->
+   The matching services are listed under the box by code and name; choose one. **Choose another
+   service** <!-- pricing.picker.changeService --> puts the choice back. Without `svc.service.read`
+   the box is **Service's reference** <!-- pricing.picker.serviceReference --> instead, and the
+   service's reference is pasted exactly as it was given.
+3. **Amount** (required) <!-- pricing.rule.amount --> — zero or more, up to four decimal places. The
+   currency code of the list is shown in the box.
+4. **Company** (optional) <!-- pricing.rule.company --> and **Branch** (optional) <!-- pricing.rule.branch -->
+   — both chosen by name from the companies and branches you work in. Choosing a branch fills its
+   company; leaving the branch at **Any branch** <!-- pricing.rule.anyBranch --> with a company
+   chosen makes a rule for every branch of that company.
+5. **Customer class** (optional) <!-- pricing.rule.customerClass --> , **Tax class identifier**
+   (optional) <!-- pricing.rule.taxClass --> — "Optional, and needs a company. Tax classes cannot be
+   listed here yet." <!-- pricing.rule.taxClassHelp -->
+6. **Priority** <!-- pricing.rule.priority --> — "A whole number from 0 to 1,000,000. Higher wins
    among rules of equal specificity." <!-- pricing.rule.priorityHelp -->
-6. Press **Add rule** <!-- pricing.rule.submit --> → "The rule was added." <!-- pricing.rule.success -->
+7. Press **Add rule** <!-- pricing.rule.submit --> → "The rule was added." <!-- pricing.rule.success -->
 
 **Result** — the rule appears under **Rules of version** <!-- pricing.rules.heading --> , in the
 table captioned "Rules of the chosen version, in the order the server applies them" <!-- pricing.rules.caption -->
 , with columns **Service**, **Applies to**, **Amount**, **Specificity**, **Priority**, **Tax class**
-and **Status**.
+and **Status**. **Applies to** names the company or the branch; one outside the companies and
+branches you work in reads "a company outside your branches" <!-- pricing.rules.companyOutsideContext -->
+or "a branch outside your branches" <!-- pricing.rules.branchOutsideContext --> , never a reference.
 
 **Restrictions**
 
@@ -394,15 +463,20 @@ and **Status**.
 - Only the first 200 rules are shown <!-- pricing.rules.truncated --> and only the latest 100
   versions <!-- pricing.versions.truncated --> .
 - **Tax classes cannot be listed.** You must type a tax-class identifier if you use one, and a tax
-  class needs a company: "A tax class needs a company." <!-- pricing.rule.taxNeedsCompany -->
+  class needs a company: "A tax class needs a company." <!-- pricing.rule.taxNeedsCompany --> The
+  rules table shows a tax class as the identifier it was recorded with.
+- A rule, a new draft, a publication or an assignment typed and not yet recorded asks before you
+  switch branch or leave the page; choosing to discard empties that form.
 
 **If it goes wrong**
 
+- Each field to fix is marked in red with the reason beneath it, the cursor goes to the first one,
+  and what you typed is kept; correcting a field takes its message away.
 - "Enter an amount of zero or more with up to 4 decimal places." <!-- pricing.rule.amountFormat -->
 - "A branch needs its company." <!-- pricing.rule.branchNeedsCompany -->
 - "The rules could not be loaded right now." <!-- pricing.rules.unavailable --> — a read failure,
-  not a statement that the version has no rules. "This version has no rule yet." <!-- pricing.rules.none -->
-  is the message that means empty.
+  not a statement that the version has no rules; press **Try again** <!-- state.retry --> . "This
+  version has no rule yet." <!-- pricing.rules.none --> is the message that means empty.
 
 **Screenshot** — no screenshot available at this version.
 
@@ -418,7 +492,8 @@ and **Status**.
 
 1. **Draft to publish** <!-- pricing.publish.version --> — **Choose a draft** <!-- pricing.publish.chooseVersion -->
    .
-2. **In force from** <!-- pricing.publish.effectiveFrom --> .
+2. **In force from** <!-- pricing.publish.effectiveFrom --> — type the day, the month and the year,
+   or open the calendar.
 3. Press **Publish** <!-- pricing.publish.submit --> .
 
 **Result** — "The version was published." <!-- pricing.version.published --> The version's status
@@ -433,6 +508,8 @@ edited. If nothing is publishable the screen says "There is no draft to publish.
   — note that this message appears for a **version** action too: publishing and creating a version
   are both guarded by the **price list's** own version counter, not the version's. Reload the price
   list page, then repeat.
+- "Enter a date as YYYY-MM-DD." <!-- pricing.common.dateFormat --> — the date was typed only in part;
+  the cursor is put on the part still to type.
 
 **Screenshot** — no screenshot available at this version.
 
@@ -450,14 +527,14 @@ customer class empty needs manage access for the whole workshop.
 1. Read the rule: "An assignment makes this list the one used for a company, a branch or a customer
    class from a date. Leave all three empty for the whole workshop; that needs manage access for the
    whole workshop." <!-- pricing.assignment.explain -->
-2. Name the company, branch and/or customer class, or leave them empty.
+2. Choose the **Branch** <!-- pricing.rule.branch --> by name (its company comes with it), give a
+   **Customer class** and a **Priority**, or leave them empty.
 3. **From** (required) <!-- pricing.assignment.effectiveFrom --> and **Until** (optional) <!-- pricing.assignment.effectiveTo -->
-   .
+   — each typed as day, month and year, or chosen in the calendar.
 4. Press **Record assignment** <!-- pricing.assignment.submit --> .
 
-**Result** — "The assignment was recorded." <!-- pricing.assignment.success --> followed by
-**Recorded with reference** <!-- pricing.assignment.recordedAs --> and an identifier. **Write that
-reference down if you need it** — see the restriction below.
+**Result** — "The assignment was recorded." <!-- pricing.assignment.success --> is said on the panel
+and the form is emptied for the next one. The assignment has no name and its reference is not shown.
 
 **Restrictions** — **there is no list of assignments.** The screen says so: "Existing assignments
 cannot be listed here yet; only new ones can be recorded." <!-- pricing.assignment.noRead --> You
@@ -467,7 +544,8 @@ what you assigned and when.
 **If it goes wrong**
 
 - "The end date must be after the start date." <!-- pricing.assignment.rangeOrder -->
-- "Enter a date as YYYY-MM-DD." <!-- pricing.common.dateFormat -->
+- "Enter a date as YYYY-MM-DD." <!-- pricing.common.dateFormat --> — a date typed only in part, the
+  end date included: an unfinished end date is refused rather than recorded as "no end".
 
 **Screenshot** — no screenshot available at this version.
 
@@ -477,20 +555,22 @@ what you assigned and when.
 
 **Who** — an account holding `svc.price.read`.
 
-**Where** — **Commerce** → **Price lists** → open a list → **Look up a price**.
+**Where** — **Commerce** → **Price lists**, beneath the list of price lists.
 
 **Steps**
 
-1. **Service** (required) <!-- pricing.lookup.service --> — through the service picker.
-2. **Branch** (required) <!-- pricing.lookup.branch --> — **Choose a branch** <!-- pricing.lookup.chooseBranch -->
-   .
+1. **Service** (required) <!-- pricing.lookup.service --> — type the beginning of its code or name
+   and choose it from the list (as in 4C.2.3).
+2. **Branch** (required) <!-- pricing.lookup.branch --> — opens on the branch you are working in, and
+   follows it when you switch branch at the top of the page.
 3. **Customer class** (optional) <!-- pricing.lookup.customerClass --> .
 4. **On date** (optional) <!-- pricing.lookup.asOf --> — "Optional. Today when empty." <!-- pricing.lookup.asOfHelp -->
+   A date typed only in part is refused, never read as "today".
 5. Press **Show price** <!-- pricing.lookup.submit --> .
 
 **Result** — **Resolved price** <!-- pricing.lookup.resultHeading --> showing **Unit price** <!-- pricing.lookup.unitPrice -->
-, **Tax rate** <!-- pricing.lookup.taxRate --> , **Tax class**, **Date** and **Rule reference** <!-- pricing.lookup.rule -->
-.
+, **Tax rate** <!-- pricing.lookup.taxRate --> , **Tax class** and **Date**. The rule that applied is
+not shown: it has no name.
 
 **Restrictions and one thing to read carefully**
 
@@ -499,12 +579,15 @@ what you assigned and when.
 - **The tax rate is a fraction, not a percentage.** The screen states it: "A fraction of 1 as the
   server states it: 0.160000 means sixteen hundredths. It stays 0.000000 while no tax rate is
   recorded." <!-- pricing.lookup.taxRateHelp --> Do not read `0.160000` as "0.16 %".
+- Switching branch clears the answer shown; a lookup still on its way when you switch is dropped.
 
 **If it goes wrong**
 
 - "The server did not return a price for that request." <!-- pricing.lookup.failed --> — most often
   there is no published version in force for that date, or no rule matching that service, branch and
-  customer class.
+  customer class. **Try again** <!-- state.retry --> asks once more.
+- **Service unavailable** <!-- state.unavailable.title --> — the service was busy or did not answer;
+  press **Try again**.
 - "Your access does not include price lookup." <!-- pricing.lookup.refused -->
 
 **Screenshot** — no screenshot available at this version.
@@ -515,12 +598,12 @@ what you assigned and when.
 - **No edit or delete of a rule**, and no way to change a published version.
 - **No tax-class directory**: tax classes are typed as identifiers and cannot be listed.
 - **No exchange rate and no currency conversion** anywhere in the application.
-- **No company or branch directory screen.** Where a screen needs a company or a branch and cannot
-  offer a chooser, it falls back to **Company identifier** <!-- pricing.common.companyIdField -->
-  and **Branch identifier** <!-- pricing.common.branchIdField --> with the hint "Enter the
-  identifiers as your administrator gave them." <!-- pricing.common.identifierHelp --> Companies and
-  branches are created by operator procedure (part 2), so obtain the identifiers from whoever ran
-  that procedure.
+- **No search or filter on the list of price lists**, and at most 100 of them are listed.
+- **No box to type a company or branch reference into.** Where a screen needs a branch and none can
+  be listed for you, it says why ("No branch is listed for you." <!-- pricing.common.branchesNone -->
+  , "Your access does not include the branch list." <!-- pricing.common.branchesRefused --> or "The
+  branch list is not available right now. Try again." <!-- pricing.common.branchesUnavailable --> )
+  and the action waits until a branch can be chosen.
 
 ---
 
@@ -1535,7 +1618,9 @@ Stated here in one place, and repeated above where you meet them.
    not say whether it stopped there, so this list may be incomplete. Narrow it by company to be
    sure." <!-- approvalLimits.mayBeTruncated -->
 8. **No company, branch, department or employee screen.** Where these are needed, the screens ask
-   for identifiers your administrator must give you.
+   for identifiers your administrator must give you. The service catalogue and pricing screens are the
+   exception: they choose a company or a branch by name from the ones you work in, and where none
+   can be listed they say why rather than asking for a reference.
 9. **A work order is born only from an authorized reception visit**, and no screen adds a job, a
    work-order line or a required part.
 10. **Opening stock is maker–checker and cannot be recounted**, so stock must be established before
