@@ -1,5 +1,6 @@
 import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import type { ReactElement } from 'react';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import en from '../src/i18n/messages/en.json';
 import ar from '../src/i18n/messages/ar.json';
@@ -13,24 +14,36 @@ import {
   renderLtr,
   renderRtl,
 } from './render';
-import { addDays, dayIn, rangeOfDays } from '@/lib/branch-time';
+import { UiFoundationProvider } from '@/components/ui-foundation/UiFoundationProvider';
+import { muiTextOf } from '@/components/ui-foundation/mui-text';
+import { getMessages } from '@/i18n/get-messages';
+import {
+  addDays,
+  dayIn,
+  endOfDayBound,
+  formatInZone,
+  rangeOfDays,
+  zoneLabelAt,
+} from '@/lib/branch-time';
 import type { AppointmentListEntry } from '@/features/appointments/appointments-contract';
 
 /**
  * The branch calendar, in a DOM (`P1-28-FE-001`, `TC-P1-28-APT-001`, rebuilt
- * under the Owner directive `P1-32-PRE-OD-UX`).
+ * under the Owner directive `P1-32-PRE-OD-UX` and moved onto the Material UI
+ * wrappers, ADR-022).
  *
- * ## What changed, and what this suite now has to prove
+ * ## What this suite has to prove
  *
- * The calendar used to wait behind a "Show calendar" button, and the first
- * claim this file made was that mounting issued NO request. That property has
- * been replaced — deliberately — by a stronger one: the screen reads on
- * arrival, and the read is BOUNDED to one day of the working branch measured on
- * that branch's own clock. What the old suite protected and still applies is
- * kept: a denial is never drawn as an empty calendar, no total is invented, an
- * inverted range is refused beside the field rather than relayed from the
- * server, and a branch changed in the header re-targets the board instead of
- * leaving one branch's work under another branch's name.
+ * The screen reads on arrival, and the read is BOUNDED to one day of the
+ * working branch measured on that branch's own clock. The calendar keeps its
+ * two views (today, the next seven days) and its chosen days, now the
+ * toolbar's date range: refused on the box to fix with the cursor moved there
+ * and the typed days kept, sent on the branch's clock once applied. A denial
+ * is never drawn as an empty calendar, a throttle is "unavailable" with a
+ * retry, no total is invented and Next spends the server's cursor, the times
+ * are drawn on the branch's clock, and a branch changed in the header
+ * re-targets the board instead of leaving one branch's work under another
+ * branch's name.
  *
  * The Server Action is mocked at the module boundary; the adapter's own request
  * shape is pinned by `appointments-contract.test.ts` and its scope door by
@@ -94,16 +107,27 @@ beforeEach(() => {
   listAppointments.mockResolvedValue(page());
 });
 
+/** The product's Material provider, as the locale layout mounts it. */
+function withMui(ui: ReactElement, locale: 'en' | 'ar' = 'en'): ReactElement {
+  return (
+    <UiFoundationProvider locale={locale} text={muiTextOf(getMessages(locale))}>
+      {ui}
+    </UiFoundationProvider>
+  );
+}
+
 function renderScreen({ canManage = false, canCheckIn = false, snapshot = branchSnapshot() } = {}) {
   return renderLtr(
-    inBranch(
-      <AppointmentCalendarScreen
-        locale="en"
-        messages={en}
-        canManage={canManage}
-        canCheckIn={canCheckIn}
-      />,
-      { snapshot }
+    withMui(
+      inBranch(
+        <AppointmentCalendarScreen
+          locale="en"
+          messages={en}
+          canManage={canManage}
+          canCheckIn={canCheckIn}
+        />,
+        { snapshot }
+      )
     )
   );
 }
@@ -129,6 +153,24 @@ function todayWindow(zone = ZONE) {
   return rangeOfDays(zone, today, today);
 }
 
+/** A calendar view chip, by its words. */
+function viewChip(key: string, catalogue: Record<string, string> = EN): HTMLElement {
+  const group = screen.getByRole('group', {
+    name: catalogue['appointments.calendar.periodLabel'] as string,
+  });
+  return within(group).getByRole('button', { name: catalogue[key] as string });
+}
+
+/** Types a day into one of the date boxes, one part at a time. */
+async function typeDay(user: ReturnType<typeof userEvent.setup>, label: string, digits: string) {
+  const group = screen.getByRole('group', { name: new RegExp(`^${label}`) });
+  await user.click(within(group).getAllByRole('spinbutton')[0] as HTMLElement);
+  await user.keyboard(digits);
+  return group;
+}
+
+const summary = () => screen.getByTestId('appointment-calendar-toolbar-summary');
+
 describe('the calendar reads on arrival, bounded to the branch day', () => {
   it('issues exactly one read on first paint, for today in the branch timezone', async () => {
     renderScreen();
@@ -136,14 +178,16 @@ describe('the calendar reads on arrival, bounded to the branch day', () => {
     const { scope, filters } = lastCall();
     expect(scope).toEqual({ companyId: COMPANY, branchId: BRANCH });
     expect(filters).toEqual(todayWindow());
+    // The last instant of the branch's day, to the microsecond, with its offset.
+    expect(filters['to']).toBe(endOfDayBound(ZONE, dayIn(ZONE)));
   });
 
-  it('says which period it is showing', async () => {
+  it('says which period it is showing, and on whose clock', async () => {
     renderScreen();
     await waitFor(() => expect(listAppointments).toHaveBeenCalled());
-    expect(screen.getByTestId('appointment-period-label')).toHaveTextContent(
-      EN['appointments.calendar.period.today'] as string
-    );
+    expect(summary()).toHaveTextContent(EN['appointments.calendar.period.today'] as string);
+    expect(summary()).toHaveTextContent(ZONE);
+    expect(viewChip('appointments.calendar.period.today')).toHaveAttribute('aria-pressed', 'true');
   });
 
   it('asks nothing at all while no branch is chosen, and says which control answers', async () => {
@@ -165,41 +209,54 @@ describe('the period control', () => {
     renderScreen();
     await waitFor(() => expect(listAppointments).toHaveBeenCalledTimes(1));
 
-    await user.click(
-      screen.getByRole('button', { name: EN['appointments.calendar.period.next7'] as string })
-    );
+    await user.click(viewChip('appointments.calendar.period.next7'));
     await waitFor(() => expect(listAppointments).toHaveBeenCalledTimes(2));
     const today = dayIn(ZONE);
     expect(lastCall().filters).toEqual(rangeOfDays(ZONE, today, addDays(today, 6)));
+    expect(viewChip('appointments.calendar.period.next7')).toHaveAttribute('aria-pressed', 'true');
+    expect(summary()).toHaveTextContent(EN['appointments.calendar.period.next7'] as string);
   });
 
-  it('refuses an inverted custom range at the field, and issues no request for it', async () => {
+  it('refuses an inverted range at the field, keeps what was typed and issues no request', async () => {
     const user = userEvent.setup();
     renderScreen();
     await waitFor(() => expect(listAppointments).toHaveBeenCalledTimes(1));
     listAppointments.mockClear();
 
-    await user.click(
-      screen.getByRole('button', { name: EN['appointments.calendar.period.custom'] as string })
-    );
-    const from = screen.getByLabelText(EN['appointments.calendar.fromDay'] as string, {
-      exact: false,
+    const from = await typeDay(user, EN['appointments.calendar.fromDay'] as string, '20092026');
+    const to = await typeDay(user, EN['appointments.calendar.toDay'] as string, '20082026');
+    const apply = screen.getByRole('button', {
+      name: EN['appointments.calendar.applyPeriod'] as string,
     });
-    const to = screen.getByLabelText(EN['appointments.calendar.toDay'] as string, { exact: false });
-    await user.type(from, '2026-09-20');
-    await user.type(to, '2026-08-20');
+    await user.click(apply);
+
+    // On the box to fix, in words, with the cursor moved into it — the control
+    // itself is marked, which is what assistive technology announces.
+    expect(to).toHaveAttribute('aria-invalid', 'true');
+    expect(from).not.toHaveAttribute('aria-invalid');
+    expect(screen.getByRole('alert')).toHaveTextContent(EN['filters.period.inverted'] as string);
+    await waitFor(() => expect(to.contains(document.activeElement)).toBe(true));
+    // What was typed stays where it was typed.
+    expect(from).toHaveTextContent('2026');
+    expect(from).toHaveTextContent('20');
+    await new Promise((resolve) => setTimeout(resolve, 350));
+    expect(listAppointments).not.toHaveBeenCalled();
+  });
+
+  it('refuses a missing first day on the From box', async () => {
+    const user = userEvent.setup();
+    renderScreen();
+    await waitFor(() => expect(listAppointments).toHaveBeenCalledTimes(1));
+    await typeDay(user, EN['appointments.calendar.toDay'] as string, '01092026');
     await user.click(
       screen.getByRole('button', { name: EN['appointments.calendar.applyPeriod'] as string })
     );
-
-    expect(
-      await screen.findByText(EN['appointments.calendar.rangeInverted'] as string)
-    ).toBeVisible();
-    // The control itself is marked, not only a sentence beside it — that is what
-    // assistive technology announces and what focus-first-invalid finds.
-    expect(to).toHaveAttribute('aria-invalid', 'true');
-    await new Promise((resolve) => setTimeout(resolve, 350));
-    expect(listAppointments).not.toHaveBeenCalled();
+    const from = screen.getByRole('group', {
+      name: new RegExp(`^${EN['appointments.calendar.fromDay'] as string}`),
+    });
+    expect(from).toHaveAttribute('aria-invalid', 'true');
+    expect(screen.getByRole('alert')).toHaveTextContent(EN['filters.period.incomplete'] as string);
+    await waitFor(() => expect(from.contains(document.activeElement)).toBe(true));
   });
 
   it('clears the complaint when the operator corrects the date', async () => {
@@ -207,46 +264,60 @@ describe('the period control', () => {
     renderScreen();
     await waitFor(() => expect(listAppointments).toHaveBeenCalled());
 
-    await user.click(
-      screen.getByRole('button', { name: EN['appointments.calendar.period.custom'] as string })
-    );
-    const from = screen.getByLabelText(EN['appointments.calendar.fromDay'] as string, {
-      exact: false,
-    });
-    const to = screen.getByLabelText(EN['appointments.calendar.toDay'] as string, { exact: false });
-    await user.type(from, '2026-09-20');
-    await user.type(to, '2026-08-20');
+    await typeDay(user, EN['appointments.calendar.fromDay'] as string, '20092026');
+    const to = await typeDay(user, EN['appointments.calendar.toDay'] as string, '20082026');
     await user.click(
       screen.getByRole('button', { name: EN['appointments.calendar.applyPeriod'] as string })
     );
-    await screen.findByText(EN['appointments.calendar.rangeInverted'] as string);
+    await waitFor(() => expect(to).toHaveAttribute('aria-invalid', 'true'));
 
-    await user.clear(to);
-    await user.type(to, '2026-09-22');
-    expect(screen.queryByText(EN['appointments.calendar.rangeInverted'] as string)).toBeNull();
+    await typeDay(user, EN['appointments.calendar.toDay'] as string, '22092026');
+    await waitFor(() => expect(to).not.toHaveAttribute('aria-invalid'));
+    expect(screen.queryByText(EN['filters.period.inverted'] as string)).toBeNull();
   });
 
-  it('reads the chosen days once they are applied', async () => {
+  it('reads the chosen days once they are applied, and Clear puts the calendar back on today', async () => {
     const user = userEvent.setup();
     renderScreen();
     await waitFor(() => expect(listAppointments).toHaveBeenCalledTimes(1));
 
-    await user.click(
-      screen.getByRole('button', { name: EN['appointments.calendar.period.custom'] as string })
-    );
-    await user.type(
-      screen.getByLabelText(EN['appointments.calendar.fromDay'] as string, { exact: false }),
-      '2026-09-01'
-    );
-    await user.type(
-      screen.getByLabelText(EN['appointments.calendar.toDay'] as string, { exact: false }),
-      '2026-09-03'
-    );
+    await typeDay(user, EN['appointments.calendar.fromDay'] as string, '01092026');
+    await typeDay(user, EN['appointments.calendar.toDay'] as string, '03092026');
     await user.click(
       screen.getByRole('button', { name: EN['appointments.calendar.applyPeriod'] as string })
     );
     await waitFor(() => expect(listAppointments).toHaveBeenCalledTimes(2));
     expect(lastCall().filters).toEqual(rangeOfDays(ZONE, '2026-09-01', '2026-09-03'));
+    // Chosen days are in force, so neither view is pressed.
+    expect(viewChip('appointments.calendar.period.today')).toHaveAttribute('aria-pressed', 'false');
+    expect(viewChip('appointments.calendar.period.next7')).toHaveAttribute('aria-pressed', 'false');
+
+    await user.click(
+      screen.getByRole('button', { name: EN['appointments.calendar.clearDays'] as string })
+    );
+    await waitFor(() => expect(lastCall().filters).toEqual(todayWindow()));
+    expect(viewChip('appointments.calendar.period.today')).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  it('puts the chosen days away when a view is chosen', async () => {
+    const user = userEvent.setup();
+    renderScreen();
+    await waitFor(() => expect(listAppointments).toHaveBeenCalledTimes(1));
+    await typeDay(user, EN['appointments.calendar.fromDay'] as string, '01092026');
+    await typeDay(user, EN['appointments.calendar.toDay'] as string, '03092026');
+    await user.click(
+      screen.getByRole('button', { name: EN['appointments.calendar.applyPeriod'] as string })
+    );
+    await waitFor(() =>
+      expect(lastCall().filters).toEqual(rangeOfDays(ZONE, '2026-09-01', '2026-09-03'))
+    );
+
+    await user.click(viewChip('appointments.calendar.period.today'));
+    await waitFor(() => expect(lastCall().filters).toEqual(todayWindow()));
+    const from = screen.getByRole('group', {
+      name: new RegExp(`^${EN['appointments.calendar.fromDay'] as string}`),
+    });
+    expect(from).not.toHaveTextContent('2026');
   });
 });
 
@@ -273,7 +344,7 @@ describe('the filters the operation publishes, and no others', () => {
     await waitFor(() => expect(listAppointments).toHaveBeenCalledTimes(1));
 
     await user.type(
-      screen.getByLabelText(EN['appointments.calendar.searchLabel'] as string),
+      screen.getByRole('searchbox', { name: EN['appointments.calendar.searchLabel'] as string }),
       'ABC-12'
     );
     await user.keyboard('{Enter}');
@@ -286,60 +357,85 @@ describe('the filters the operation publishes, and no others', () => {
     renderScreen();
     await waitFor(() => expect(listAppointments).toHaveBeenCalledTimes(1));
 
-    await user.type(screen.getByLabelText(EN['appointments.calendar.searchLabel'] as string), 'A');
+    const box = screen.getByRole('searchbox', {
+      name: EN['appointments.calendar.searchLabel'] as string,
+    });
+    await user.type(box, 'A');
     expect(
       await screen.findByText(EN['appointments.calendar.searchTooShort'] as string)
     ).toBeVisible();
+    expect(box).toHaveAttribute('aria-invalid', 'true');
     await new Promise((resolve) => setTimeout(resolve, 350));
     for (const call of listAppointments.mock.calls) {
       expect((call[1] as Record<string, unknown>)['q']).toBeUndefined();
     }
   });
 
-  it('accepts digits typed on an Arabic keyboard and sends them as typed', async () => {
+  it('accepts digits typed on an Arabic keyboard, sends them as typed and echoes them in Latin', async () => {
     const user = userEvent.setup();
     renderScreen();
     await waitFor(() => expect(listAppointments).toHaveBeenCalledTimes(1));
 
     await user.type(
-      screen.getByLabelText(EN['appointments.calendar.searchLabel'] as string),
+      screen.getByRole('searchbox', { name: EN['appointments.calendar.searchLabel'] as string }),
       '١٢٣'
     );
     await user.keyboard('{Enter}');
     await waitFor(() => expect(lastCall().filters['q']).toBe('١٢٣'));
+    expect(screen.getByTestId('appointment-calendar-toolbar')).toHaveTextContent('123');
   });
 });
 
 describe('the row an operator acts from', () => {
   it('renders the appointment in the words of the people involved', async () => {
     renderScreen();
-    expect(await screen.findByText('APT-0007')).toBeInTheDocument();
-    const row = screen.getByRole('row', { name: /APT-0007/ });
-    expect(within(row).getByText('Nadia Khoury')).toBeInTheDocument();
+    const grid = await screen.findByRole('grid', {
+      name: EN['appointments.calendar.caption'] as string,
+    });
+    expect(within(grid).getByText('APT-0007', { selector: 'code' })).toBeInTheDocument();
+    expect(within(grid).getByText('Nadia Khoury')).toBeInTheDocument();
     expect(
-      within(row).getByText(EN['appointments.status.requested'] as string)
+      within(grid).getByText(EN['appointments.status.requested'] as string)
     ).toBeInTheDocument();
     // No confirmed window yet — said as a fact, never as a blank.
     expect(
-      within(row).getByText(EN['appointments.window.notConfirmed'] as string)
+      within(grid).getByText(EN['appointments.window.notConfirmed'] as string)
     ).toBeInTheDocument();
-    expect(within(row).getByText('Periodic service')).toBeInTheDocument();
+    expect(within(grid).getByText('Periodic service')).toBeInTheDocument();
+    // One branch: no branch column, and no identifier anywhere.
+    expect(within(grid).queryByText(TEST_BRANCH.name)).toBeNull();
+    expect(grid.textContent).not.toContain(ROW.requesterPartnerId);
   });
 
-  it('opens an appointment from its row', async () => {
-    const user = userEvent.setup();
+  it('draws the times on the branch clock, not the reader clock', async () => {
+    const east = { ...TEST_BRANCH, timezone: 'Asia/Tokyo' };
+    renderScreen({ snapshot: branchSnapshot([east]) });
+    const grid = await screen.findByRole('grid', {
+      name: EN['appointments.calendar.caption'] as string,
+    });
+    // 09:00 at +03:00 is 15:00 in Tokyo; the Riyadh wall clock is not shown.
+    expect(
+      within(grid).getByText(formatInZone(ROW.requestedFrom, 'en-GB', 'Asia/Tokyo'))
+    ).toBeInTheDocument();
+    expect(
+      within(grid).queryByText(formatInZone(ROW.requestedFrom, 'en-GB', 'Asia/Riyadh'))
+    ).toBeNull();
+    expect(summary()).toHaveTextContent('Asia/Tokyo');
+  });
+
+  it('opens an appointment from its row, by a link named with its number', async () => {
     renderScreen();
-    await user.click(
-      await screen.findByRole('button', { name: EN['appointments.calendar.open'] as string })
-    );
-    expect(push).toHaveBeenCalledWith(`/en/appointments/${ROW.id}`);
+    const open = await screen.findByRole('link', {
+      name: `${EN['appointments.calendar.open'] as string} APT-0007`,
+    });
+    expect(open).toHaveAttribute('href', `/en/appointments/${ROW.id}`);
   });
 
   it('offers booking only to a holder of the manage permission', async () => {
     renderScreen({ canManage: true });
     expect(
       await screen.findByRole('link', { name: EN['appointments.book.title'] as string })
-    ).toBeInTheDocument();
+    ).toHaveAttribute('href', '/en/appointments/new');
   });
 
   it('offers no booking without it', async () => {
@@ -357,14 +453,21 @@ describe('honest states', () => {
     renderScreen();
     expect(await screen.findByText(EN['state.denied.title'] as string)).toBeInTheDocument();
     expect(screen.queryByText(EN['state.noResults.title'] as string)).toBeNull();
+    expect(screen.queryByRole('grid')).toBeNull();
   });
 
-  it('reports a rate limit as retryable unavailability, with the reference', async () => {
+  it('reports a rate limit or an outage as retryable unavailability, with the reference', async () => {
     listAppointments.mockResolvedValue(page({ status: 'unavailable', rows: [] }));
+    const user = userEvent.setup();
     renderScreen();
     expect(await screen.findByText(EN['state.unavailable.title'] as string)).toBeInTheDocument();
     expect(screen.getByText('fixed-correlation-id', { exact: false })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: EN['state.retry'] as string })).toBeInTheDocument();
+    expect(screen.queryByText(EN['state.noResults.title'] as string)).toBeNull();
+
+    // Trying again reads again, and an answer replaces the notice.
+    listAppointments.mockResolvedValue(page());
+    await user.click(screen.getByRole('button', { name: EN['state.retry'] as string }));
+    expect(await screen.findByRole('grid')).toBeInTheDocument();
   });
 
   it('tells an ended session to sign in again, with no useless retry', async () => {
@@ -374,23 +477,50 @@ describe('honest states', () => {
     expect(screen.queryByRole('button', { name: EN['state.retry'] as string })).toBeNull();
   });
 
-  it('states no matches only after an answer, and offers a way back to the whole day', async () => {
+  it('states no matches only after an answer, about the period, with nothing to clear on today', async () => {
     listAppointments.mockResolvedValue(page({ rows: [] }));
     renderScreen();
     expect(await screen.findByText(EN['state.noResults.title'] as string)).toBeInTheDocument();
+    // Today with nothing narrowing it: Clear would change nothing.
     expect(
-      screen.getByRole('button', { name: EN['appointments.calendar.clearFilters'] as string })
-    ).toBeVisible();
+      screen.queryByRole('button', { name: EN['appointments.calendar.clearFilters'] as string })
+    ).toBeNull();
   });
 
-  it('never invents a total for the uncounted list', async () => {
-    listAppointments.mockResolvedValue(page({ hasMore: true, nextCursor: 'c2' }));
+  it('states no matches only after an answer, and offers a way back to the whole day', async () => {
+    listAppointments.mockResolvedValue(page({ rows: [] }));
+    const user = userEvent.setup();
     renderScreen();
-    await screen.findByText('APT-0007');
-    // Uncounted mode: no "of N", and Next is offered because the server said
-    // more exists — the truncation is honest in both directions.
+    await screen.findByText(EN['state.noResults.title'] as string);
+    await user.selectOptions(
+      screen.getByLabelText(EN['appointments.calendar.statusFilter'] as string, { exact: false }),
+      'confirmed'
+    );
+    await waitFor(() => expect(lastCall().filters['status']).toBe('confirmed'));
+    const clear = await screen.findByRole('button', {
+      name: EN['appointments.calendar.clearFilters'] as string,
+    });
+    await user.click(clear);
+    await waitFor(() => expect(lastCall().filters).toEqual(todayWindow()));
+  });
+
+  it('never invents a total, and Next spends the server cursor', async () => {
+    listAppointments.mockResolvedValue(page({ hasMore: true, nextCursor: 'c2' }));
+    const user = userEvent.setup();
+    renderScreen();
+    await screen.findByText('APT-0007', { selector: 'code' });
+    // No "of N", and Next is offered because the server said more exists.
     expect(screen.queryByText(EN['table.of'] as string)).toBeNull();
-    expect(screen.getByRole('button', { name: EN['table.nextPage'] as string })).toBeEnabled();
+    const next = screen.getByRole('button', { name: EN['table.nextPage'] as string });
+    expect(next).toBeEnabled();
+
+    listAppointments.mockResolvedValue(
+      page({ rows: [{ ...ROW, id: 'second-page', displayNumber: 'APT-0099' }] })
+    );
+    await user.click(next);
+    await waitFor(() => expect(lastCall().cursor).toBe('c2'));
+    expect(await screen.findByText('APT-0099', { selector: 'code' })).toBeInTheDocument();
+    expect(lastCall().filters).toEqual(todayWindow());
   });
 
   it('renders an unnumbered appointment as unnumbered, never as its identifier', async () => {
@@ -422,25 +552,28 @@ describe('the day queue', () => {
       })
     );
     renderScreen({ canCheckIn: true });
-    await screen.findByText('APT-1');
+    await screen.findByText('APT-1', { selector: 'code' });
 
     const links = screen.getAllByRole('link', {
-      name: EN['appointments.calendar.checkIn'] as string,
+      name: new RegExp(`^${EN['appointments.calendar.checkIn'] as string}`),
     });
     expect(links).toHaveLength(1);
+    expect(links[0]).toHaveAccessibleName(`${EN['appointments.calendar.checkIn'] as string} APT-1`);
     expect(links[0]).toHaveAttribute('href', '/en/receptions/check-in');
   });
 
   it('withdraws Check in from an operator who cannot open a visit', async () => {
     listAppointments.mockResolvedValue(page({ rows: [{ ...ROW, lifecycleStatus: 'confirmed' }] }));
     renderScreen({ canCheckIn: false });
-    await screen.findByText('APT-0007');
+    await screen.findByText('APT-0007', { selector: 'code' });
     expect(
-      screen.queryByRole('link', { name: EN['appointments.calendar.checkIn'] as string })
+      screen.queryByRole('link', {
+        name: new RegExp(`^${EN['appointments.calendar.checkIn'] as string}`),
+      })
     ).toBeNull();
     // The row is still openable; only the arrival affordance is withdrawn.
     expect(
-      screen.getByRole('button', { name: EN['appointments.calendar.open'] as string })
+      screen.getByRole('link', { name: `${EN['appointments.calendar.open'] as string} APT-0007` })
     ).toBeVisible();
   });
 
@@ -458,23 +591,33 @@ describe('the day queue', () => {
 describe('both directions', () => {
   it('renders in Arabic, right to left, and reads on arrival there too', async () => {
     renderRtl(
-      inBranch(
-        <AppointmentCalendarScreen
-          locale="ar"
-          messages={ar}
-          canManage={false}
-          canCheckIn={false}
-        />,
-        { locale: 'ar' }
+      withMui(
+        inBranch(
+          <AppointmentCalendarScreen
+            locale="ar"
+            messages={ar}
+            canManage={false}
+            canCheckIn={false}
+          />,
+          { locale: 'ar' }
+        ),
+        'ar'
       )
     );
-    expect(await screen.findByText('APT-0007')).toBeInTheDocument();
+    expect(await screen.findByText('APT-0007', { selector: 'code' })).toBeInTheDocument();
     expect(document.documentElement.dir).toBe('rtl');
     // The branch is named, in Arabic, by the context rather than picked here.
     expect(screen.getByTestId('appointment-branch-target')).toHaveTextContent(TEST_BRANCH.name);
+    expect(viewChip('appointments.calendar.period.today', AR)).toHaveAttribute(
+      'aria-pressed',
+      'true'
+    );
     expect(
-      screen.getByRole('button', { name: AR['appointments.calendar.period.today'] as string })
-    ).toHaveAttribute('aria-pressed', 'true');
+      screen.getByRole('group', {
+        name: new RegExp(`^${AR['appointments.calendar.fromDay'] as string}`),
+      })
+    ).toBeInTheDocument();
+    expect(summary()).toHaveTextContent(AR['appointments.calendar.period.today'] as string);
   });
 });
 
@@ -482,25 +625,27 @@ describe('a branch changed in the header re-targets the calendar', () => {
   it('reads the NEW branch and drops the previous branch rows', async () => {
     const user = userEvent.setup();
     renderLtr(
-      inBranch(
-        <>
-          <BranchSwitch to={TEST_BRANCH.id} label="use main" />
-          <BranchSwitch to={OTHER_BRANCH.id} label="use second" />
-          <AppointmentCalendarScreen
-            locale="en"
-            messages={en}
-            canManage={false}
-            canCheckIn={false}
-          />
-        </>,
-        { snapshot: branchSnapshot([TEST_BRANCH, OTHER_BRANCH]) }
+      withMui(
+        inBranch(
+          <>
+            <BranchSwitch to={TEST_BRANCH.id} label="use main" />
+            <BranchSwitch to={OTHER_BRANCH.id} label="use second" />
+            <AppointmentCalendarScreen
+              locale="en"
+              messages={en}
+              canManage={false}
+              canCheckIn={false}
+            />
+          </>,
+          { snapshot: branchSnapshot([TEST_BRANCH, OTHER_BRANCH]) }
+        )
       )
     );
 
     await user.click(screen.getByRole('button', { name: 'use main' }));
     await waitFor(() => expect(listAppointments).toHaveBeenCalled());
     expect(lastCall().scope).toEqual({ companyId: COMPANY, branchId: TEST_BRANCH.id });
-    expect(await screen.findByText('APT-0007')).toBeInTheDocument();
+    expect(await screen.findByText('APT-0007', { selector: 'code' })).toBeInTheDocument();
 
     listAppointments.mockClear();
     listAppointments.mockResolvedValue(
@@ -520,11 +665,11 @@ describe('a branch changed in the header re-targets the calendar', () => {
     await waitFor(() =>
       expect(lastCall().scope).toEqual({ companyId: COMPANY, branchId: OTHER_BRANCH.id })
     );
-    expect(await screen.findByText('APT-0008')).toBeInTheDocument();
-    expect(screen.queryByText('APT-0007')).toBeNull();
+    expect(await screen.findByText('APT-0008', { selector: 'code' })).toBeInTheDocument();
+    expect(screen.queryByText('APT-0007', { selector: 'code' })).toBeNull();
   });
 
-  it('reads every branch of the company, and names the branch of each row, on all my branches', async () => {
+  it('reads every branch of the company, and names the branch and clock of each row, on all my branches', async () => {
     const user = userEvent.setup();
     listAppointments.mockResolvedValue(
       page({
@@ -539,17 +684,19 @@ describe('a branch changed in the header re-targets the calendar', () => {
       })
     );
     renderLtr(
-      inBranch(
-        <>
-          <BranchSwitch to="all" label="use all" />
-          <AppointmentCalendarScreen
-            locale="en"
-            messages={en}
-            canManage={false}
-            canCheckIn={false}
-          />
-        </>,
-        { snapshot: branchSnapshot([TEST_BRANCH, OTHER_BRANCH]) }
+      withMui(
+        inBranch(
+          <>
+            <BranchSwitch to="all" label="use all" />
+            <AppointmentCalendarScreen
+              locale="en"
+              messages={en}
+              canManage={false}
+              canCheckIn={false}
+            />
+          </>,
+          { snapshot: branchSnapshot([TEST_BRANCH, OTHER_BRANCH]) }
+        )
       )
     );
     await user.click(screen.getByRole('button', { name: 'use all' }));
@@ -558,9 +705,13 @@ describe('a branch changed in the header re-targets the calendar', () => {
     // what asks the platform for every branch this operator may read.
     await waitFor(() => expect(lastCall().scope).toEqual({ companyId: COMPANY, branchId: null }));
     // A page that can span branches has to say which branch each row is from.
-    expect(await screen.findByText(OTHER_BRANCH.name)).toBeVisible();
-    // And the period label names the clock the day was counted on, because
-    // several branches have no single one.
-    expect(screen.getByTestId('appointment-period-label')).toHaveTextContent(TEST_BRANCH.name);
+    const grid = await screen.findByRole('grid');
+    expect(within(grid).getByText(OTHER_BRANCH.name)).toBeVisible();
+    // Each time names its clock, because several branches have no single one.
+    expect(within(grid).getByTestId('appointment-window-clock')).toHaveTextContent(
+      zoneLabelAt(ROW.requestedFrom, 'en-GB', OTHER_BRANCH.timezone)
+    );
+    // And the summary names the clock the day was counted on.
+    expect(summary()).toHaveTextContent(TEST_BRANCH.name);
   });
 });

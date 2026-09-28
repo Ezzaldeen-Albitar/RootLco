@@ -8,6 +8,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   DateField,
   DateTimeField,
+  ZonedDateTimeField,
   type DayProblem,
   dayToPicker,
   instantToPicker,
@@ -898,6 +899,64 @@ describe('DateField and DateTimeField: the FieldFrame contract on a picker', () 
       en['dateField.zoneUnknown']
     );
     expect(screen.queryByRole('group', { name: /^Visit time/ })).toBeNull();
+  });
+
+  /*
+   * `ZonedDateTimeField` — the same field on a clock the caller NAMES, for a
+   * record reached by its address (the appointment detail): it reads no working
+   * context, so "All my branches" in the header neither refuses it nor moves
+   * its clock. Falsified by rendering `DateTimeField` in its place: the first
+   * case then draws the choose-one-branch refusal instead of a picker.
+   */
+  function ZonedHost({
+    zone,
+    onMoment,
+  }: {
+    readonly zone: string;
+    readonly onMoment?: (moment: string) => void;
+  }) {
+    const [value, setValue] = useState('2026-01-15T12:00:00Z');
+    return (
+      <ZonedDateTimeField
+        messages={en}
+        label="Visit time"
+        value={value}
+        onChange={(next) => {
+          onMoment?.(next);
+          setValue(next);
+        }}
+        timezone={zone}
+      />
+    );
+  }
+
+  it('ZonedDateTimeField: takes a moment on the named clock under "All my branches"', async () => {
+    const user = userEvent.setup();
+    const onMoment = vi.fn();
+    const second = { ...TEST_BRANCH, id: '88888888-8888-4888-8888-888888888888', name: 'Second' };
+    mount(
+      inBranch(
+        <>
+          <BranchSwitch to="all" label="use all" />
+          <ZonedHost zone="Asia/Tokyo" onMoment={onMoment} />
+        </>,
+        { snapshot: branchSnapshot([TEST_BRANCH, second]) }
+      )
+    );
+    await user.click(screen.getByRole('button', { name: 'use all' }));
+    const group = await screen.findByRole('group', { name: /^Visit time/ });
+    expect(screen.queryByTestId('date-time-requires-branch')).toBeNull();
+    // 12:00 UTC is 21:00 in Tokyo.
+    expect(pickerInput(group)).toHaveValue('15/01/2026 21:00');
+    await user.click(within(group).getAllByRole('spinbutton')[3] as HTMLElement);
+    await user.keyboard('0930');
+    expect(onMoment).toHaveBeenLastCalledWith('2026-01-15T09:30:00+09:00');
+  });
+
+  it('ZonedDateTimeField: needs no working context at all', () => {
+    mount(<ZonedHost zone="America/New_York" />);
+    const group = screen.getByRole('group', { name: /^Visit time/ });
+    expect(pickerInput(group)).toHaveValue('15/01/2026 07:00');
   });
 
   it('takes the EARLIER of the two 01:30s on the night the clocks go back, and says so', async () => {

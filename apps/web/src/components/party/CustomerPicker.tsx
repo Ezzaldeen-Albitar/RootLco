@@ -1,6 +1,7 @@
 'use client';
 
 import { INITIAL_REQUEST } from '@/components/data-table/table-state';
+import { EntityPicker } from '@/components/pickers/EntityPicker';
 import { SearchPicker } from '@/components/search/SearchPicker';
 import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
@@ -23,6 +24,11 @@ import { MAX_NAME_LENGTH, MIN_FREE_TEXT_LENGTH } from '@/lib/customers/directory
  *
  * Offered only with `crm.customer.read`: without it the read is refused every
  * time, so no box is shown and the sentence says why.
+ *
+ * `material` draws the same chooser on Material UI (`EntityPicker`, one
+ * combobox and a listbox) instead of `SearchPicker`'s box and match buttons —
+ * the same props, the same read, the same rules. Off unless stated, so a screen
+ * and its suite move one at a time (ADR-022).
  */
 export interface ChosenCustomer {
   readonly id: string;
@@ -78,6 +84,7 @@ export function CustomerPicker({
   countsAsUnsaved = true,
   describedBy,
   testId = 'customer-picker',
+  material = false,
 }: {
   readonly messages: Messages;
   readonly locale?: Locale | undefined;
@@ -94,9 +101,12 @@ export function CustomerPicker({
   /** Further ids describing the choice — see `SearchPicker`. */
   readonly describedBy?: string | undefined;
   readonly testId?: string;
+  /** Draw it on Material UI (`EntityPicker`). See the docblock. */
+  readonly material?: boolean;
 }) {
+  const Picker = material ? EntityPicker : SearchPicker;
   return (
-    <SearchPicker<ChosenCustomer>
+    <Picker<ChosenCustomer>
       messages={messages}
       locale={locale}
       label={label}
