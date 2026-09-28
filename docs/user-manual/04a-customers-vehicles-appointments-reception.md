@@ -1180,7 +1180,9 @@ Other exits: **"Open the customer page"**, **"Open the vehicle page"**, **"Start
 - **You can search by phone number here.** The customer finder on this step is one search box: type
   part of the name, the customer number or the phone number, exactly as you have it — Arabic-Indic
   digits are sent as typed and matched like ASCII ones. Each match is listed by name and customer
-  number; the phone number is not repeated on the list, so choose by name.
+  number, with its primary phone number under it, so two customers of the same name can be told
+  apart. Unless your account may see sensitive details, the number is partly hidden and marked
+  **"Partly hidden"** <!-- crm.customers.search.phonePartlyHidden --> .
 - **What you have typed is kept until it is saved.** While a new customer's details, a new
   vehicle's details or a relationship role are typed but not yet recorded, leaving the page or
   changing branch asks first; **Stay** keeps everything, and discarding empties the form. Nothing is

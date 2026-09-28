@@ -1,6 +1,6 @@
 import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { useState, type FormEvent, type ReactElement } from 'react';
+import { useState, type FormEvent, type ReactElement, type ReactNode } from 'react';
 import Autocomplete from '@mui/material/Autocomplete';
 import TextField from '@mui/material/TextField';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -87,6 +87,7 @@ function Harness({
   opened = null,
   onChosen,
   adapted = false,
+  detailOf,
 }: {
   readonly load: Load;
   readonly locale?: Locale;
@@ -97,6 +98,7 @@ function Harness({
   readonly opened?: Rec | null;
   readonly onChosen?: (next: Rec | null) => Rec | null;
   readonly adapted?: boolean;
+  readonly detailOf?: (row: Rec) => ReactNode;
 }) {
   const [value, setValue] = useState<Rec | null>(opened);
   const Picker = adapted ? AdaptedPicker : EntityPicker;
@@ -125,6 +127,7 @@ function Harness({
         {...(countsAsUnsaved === undefined ? {} : { countsAsUnsaved })}
         describedBy={describedBy}
         testId="entity-picker"
+        {...(detailOf === undefined ? {} : { detailOf })}
       />
       <output data-testid="picker-value">{value?.id ?? ''}</output>
     </>
@@ -390,6 +393,40 @@ describe('choosing', () => {
     await user.type(box(), 'Layla');
     await user.click(await screen.findByRole('option', { name: 'Layla Haddad' }));
     expect(screen.getByTestId('picker-value')).toHaveTextContent(LAYLA.id);
+  });
+});
+
+describe('a second line under the name (detailOf)', () => {
+  const PHONES: Record<string, string> = { [LAYLA.id]: '0791234567' };
+  const phoneOf = (row: Rec) => PHONES[row.id] ?? null;
+
+  it('draws the detail under each option, which stays NAMED by its label and is DESCRIBED by the detail', async () => {
+    const load = vi.fn<Load>().mockResolvedValue(page([LAYLA, OMAR]));
+    const user = userEvent.setup();
+    mount(<Harness load={load} detailOf={phoneOf} />);
+    await user.type(box(), 'La');
+
+    const layla = await screen.findByRole('option', { name: 'Layla Haddad' });
+    expect(within(layla).getByText('0791234567')).toBeVisible();
+    expect(layla).toHaveAccessibleDescription('0791234567');
+    // A row with no detail has no second line and no description.
+    const omar = screen.getByRole('option', { name: 'Omar Saleh' });
+    expect(omar).toHaveTextContent(/^Omar Saleh$/);
+    expect(omar).not.toHaveAttribute('aria-describedby');
+
+    await user.click(layla);
+    expect(screen.getByTestId('picker-value')).toHaveTextContent(LAYLA.id);
+    expect(box()).toHaveValue('Layla Haddad');
+  });
+
+  it('without detailOf an option is its label alone', async () => {
+    const load = vi.fn<Load>().mockResolvedValue(page([LAYLA]));
+    const user = userEvent.setup();
+    mount(<Harness load={load} />);
+    await user.type(box(), 'La');
+    const layla = await screen.findByRole('option', { name: 'Layla Haddad' });
+    expect(layla).toHaveTextContent(/^Layla Haddad$/);
+    expect(layla).not.toHaveAttribute('aria-describedby');
   });
 });
 

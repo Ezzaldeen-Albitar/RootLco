@@ -2292,7 +2292,8 @@ Deliberate behaviour changes:
 - Clear the filters is offered on an empty answer only when something can be cleared (today with
   nothing narrowing it offers none).
 - The customer chooser is one combobox (name, customer number or phone) rather than the four-box
-  selector; the party-type filter and the phone shown on each match are not on it.
+  selector; the party-type filter is not on it. The phone shown on each match was dropped here and
+  restored by the reception intake slice (#481).
 - Cancel and no-show ask with Cancel focused; the no-show confirm is drawn as destructive.
 - The conflict's button reads "Load the latest version" and discards the typed times.
 
@@ -2434,8 +2435,10 @@ QA rows (Browser QA part 7):
 
 Deliberate behaviour changes:
 
-- The customer chooser is one combobox (name, customer number or phone); the phone is not repeated
-  on each match.
+- The customer chooser is one combobox (name, customer number or phone). Each match still shows its
+  primary phone as the backend returned it, with the "partly hidden" hint when it is masked
+  (`CustomerPicker`'s Material path, `EntityPicker`'s `detailOf`); the booking form's chooser shows it
+  too from this slice on.
 - Close and refuse ask in a dialog with Cancel focused, the reason refused on its box.
 - Lists are grids paged under the table rather than bulleted lists with their own pager.
 - The odometer moment is typed part by part on the receiving branch's clock; when that clock is
@@ -2454,3 +2457,27 @@ Known limitations of this slice, one line each:
   they run in hosted CI.
 - The web tier's test count changes (new cases in existing files; no web test file added or
   removed); the backend tier gains one case. The recorded tiers are retaken at the final head.
+- The one customer box does not echo Arabic-Indic digits in their Western form under it, as the old
+  phone box did; the digits are sent as typed and folded by the backend.
+- Orphaned message keys left in en and ar by this slice, referenced nowhere in `src/` or `tests/`:
+  `receptions.checkIn.vehiclePagerLabel`, `receptions.checkIn.openVisitPagerLabel`,
+  `receptions.confirm.linkPagerLabel`, `receptions.confirm.relationshipsPagerLabel`,
+  `receptions.inspection.pagerLabel`, `receptions.refusal.pagerLabel`, `form.optional`; no gate
+  catches an unreferenced key.
+- The walk-in requester (`CheckInStartScreen.tsx`) and the conditionally required refusal partner
+  lost the visual required asterisk the old `CustomerSelector` drew; it was `aria-hidden` before, so
+  only the visual cue is lost.
+- The odometer moment (`ReadingsStep.tsx`) needs the visit branch's timezone from the working
+  context; a branch that publishes none disables the required field, so no reading can be recorded
+  from this step there (the old instant field had no such dependency). The screen says so.
+- `useStepForm` (`EvidencePanels.tsx`) compares the draft with its baseline by reference: a value
+  re-created equal still counts as unsaved. It over-asks, never under-asks.
+- The summary's closure reason is in a `ReasonDialog`; Cancel drops a typed reason without the
+  unsaved-work question (the old inline form was not declared unsaved either).
+- A visit converted earlier shows the work-order number to a reader without the work-order read, as
+  the fresh-conversion result does; only the link is withheld. The backend's lateral join reads the
+  work order under the caller's row-level security.
+- A surviving mutation: removing the requester's discard key (`key=requester-${discarded}`) goes
+  undetected, because `EntityPicker` already forgets the term on a working-context switch.
+- A probe with the post-conversion refresh held open found Convert is not offered again during the
+  re-read (one convert call, the button not enabled), so no double-submit window opened.

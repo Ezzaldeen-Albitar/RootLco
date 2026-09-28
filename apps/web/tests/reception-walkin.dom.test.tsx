@@ -22,8 +22,9 @@ import {
  *      a receptionist tries is the caller's phone number; on Material UI
  *      (ADR-022) the customer chooser is ONE combobox (`CustomerPicker`), and
  *      the number goes to the server in its free-text box as typed —
- *      Arabic-Indic digits included. The phone is no longer drawn on each
- *      match (a deliberate change of the slice, as on the booking form).
+ *      Arabic-Indic digits included — and each match shows its primary phone
+ *      exactly as the backend returned it, with the "partly hidden" hint when
+ *      it is masked, so two customers of the same name can be told apart.
  *   2. **The customer-first vehicle pick is real** — the customer's own
  *      vehicle list is read through `crm.customer-vehicle-list`, a vehicle
  *      chosen from it needs no relationship step, and a relationship row
@@ -352,6 +353,38 @@ describe('searching for the caller by phone (P1-32, closing G-CRM-PHONE)', () =>
     await waitFor(() => expect(searchCustomerDirectory).toHaveBeenCalled());
     const criteria = searchCustomerDirectory.mock.calls.at(-1)?.[2] as Record<string, unknown>;
     expect(criteria).toEqual({ q: '٠٧٩١٢٣٤٥٦٧' });
+  });
+
+  it('shows a masked phone on the match exactly as returned, with the partly-hidden hint', async () => {
+    searchCustomerDirectory.mockResolvedValue(
+      page([{ ...CUSTOMER_HIT, primaryPhone: '*******4567', phoneMasked: true }])
+    );
+    const user = userEvent.setup();
+    renderLtr(<WalkInIntakeScreen {...props()} />);
+    await user.type(customerBox(), '0791234567');
+    const choice = await screen.findByRole(
+      'option',
+      { name: 'Layla Haddad — C-000482' },
+      { timeout: 5000 }
+    );
+    expect(within(choice).getByText('*******4567')).toBeVisible();
+    expect(within(choice).getByText(en['crm.customers.search.phonePartlyHidden'])).toBeVisible();
+  });
+
+  it('shows a whole phone without the partly-hidden hint', async () => {
+    searchCustomerDirectory.mockResolvedValue(
+      page([{ ...CUSTOMER_HIT, primaryPhone: '0791234567', phoneMasked: false }])
+    );
+    const user = userEvent.setup();
+    renderLtr(<WalkInIntakeScreen {...props()} />);
+    await user.type(customerBox(), '1234567');
+    const choice = await screen.findByRole(
+      'option',
+      { name: 'Layla Haddad — C-000482' },
+      { timeout: 5000 }
+    );
+    expect(within(choice).getByText('0791234567')).toBeVisible();
+    expect(screen.queryByText(en['crm.customers.search.phonePartlyHidden'])).toBeNull();
   });
 
   it('names each match by name and number, never by its identifier', async () => {

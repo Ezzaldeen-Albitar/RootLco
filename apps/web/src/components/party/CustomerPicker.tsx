@@ -28,7 +28,9 @@ import { MAX_NAME_LENGTH, MIN_FREE_TEXT_LENGTH } from '@/lib/customers/directory
  * `material` draws the same chooser on Material UI (`EntityPicker`, one
  * combobox and a listbox) instead of `SearchPicker`'s box and match buttons —
  * the same props, the same read, the same rules. Off unless stated, so a screen
- * and its suite move one at a time (ADR-022).
+ * and its suite move one at a time (ADR-022). On Material each match also shows
+ * its primary phone as the backend returned it, with the "partly hidden" hint
+ * when it is masked (`phoneDetail`), as `CustomerSelector` does.
  */
 export interface ChosenCustomer {
   readonly id: string;
@@ -41,6 +43,15 @@ export interface ChosenCustomer {
    * a duplicate-name row) may not know it, and then the kind is simply not said.
    */
   readonly partyType?: string | null;
+  /**
+   * The primary phone exactly as the directory answered it — masked to its last
+   * digits unless the caller holds `iam.sensitive.view` — and whether it is.
+   * The Material chooser draws it under each match (the `G-CRM-PHONE` closure),
+   * so a receptionist tells two customers of the same name apart by the caller's
+   * number. Optional for the same reason as `partyType`.
+   */
+  readonly primaryPhone?: string | null;
+  readonly phoneMasked?: boolean;
 }
 
 export function customerLabel(customer: ChosenCustomer): string {
@@ -71,11 +82,36 @@ async function loadCustomers(
         displayName: hit.displayName,
         displayNumber: hit.displayNumber,
         partyType: hit.partyType ?? null,
+        primaryPhone: hit.primaryPhone ?? null,
+        phoneMasked: hit.phoneMasked === true,
       })),
       nextCursor: page.nextCursor,
       hasMore: page.hasMore,
     },
     correlationId: page.correlationId,
+  };
+}
+
+/**
+ * The second line of a match: its phone exactly as returned (left to right,
+ * whatever the page direction), and the plain-language hint when it is partly
+ * hidden. None when the customer has no phone on record.
+ */
+function phoneDetail(messages: Messages) {
+  return function detail(customer: ChosenCustomer) {
+    if (!customer.primaryPhone) return null;
+    return (
+      <>
+        <span className="font-mono" dir="ltr">
+          {customer.primaryPhone}
+        </span>
+        {customer.phoneMasked ? (
+          <span className="text-text-muted">
+            {translate(messages, 'crm.customers.search.phonePartlyHidden')}
+          </span>
+        ) : null}
+      </>
+    );
   };
 }
 
@@ -112,31 +148,33 @@ export function CustomerPicker({
   /** Draw it on Material UI (`EntityPicker`). See the docblock. */
   readonly material?: boolean;
 }) {
-  const Picker = material ? EntityPicker : SearchPicker;
-  return (
-    <Picker<ChosenCustomer>
-      messages={messages}
-      locale={locale}
-      label={label}
-      value={value}
-      onChange={onChange}
-      labelOf={customerLabel}
-      load={loadCustomers}
-      canSearch={canSearch}
-      notPermitted={translate(messages, 'customerPicker.notPermitted')}
-      unavailableId={unavailableId}
-      error={error}
-      minLength={MIN_FREE_TEXT_LENGTH}
-      maxLength={MAX_NAME_LENGTH}
-      placeholder={translate(messages, 'customerPicker.searchPlaceholder')}
-      example={translate(messages, 'customerPicker.searchExample')}
-      tooShort={translate(messages, 'customerPicker.tooShort')}
-      resultsLabel={translate(messages, 'customerPicker.results')}
-      change={translate(messages, 'customerSelector.change')}
-      pristineId={pristineId ?? null}
-      countsAsUnsaved={countsAsUnsaved}
-      describedBy={describedBy}
-      testId={testId}
-    />
+  const shared = {
+    messages,
+    locale,
+    label,
+    value,
+    onChange,
+    labelOf: customerLabel,
+    load: loadCustomers,
+    canSearch,
+    notPermitted: translate(messages, 'customerPicker.notPermitted'),
+    unavailableId,
+    error,
+    minLength: MIN_FREE_TEXT_LENGTH,
+    maxLength: MAX_NAME_LENGTH,
+    placeholder: translate(messages, 'customerPicker.searchPlaceholder'),
+    example: translate(messages, 'customerPicker.searchExample'),
+    tooShort: translate(messages, 'customerPicker.tooShort'),
+    resultsLabel: translate(messages, 'customerPicker.results'),
+    change: translate(messages, 'customerSelector.change'),
+    pristineId: pristineId ?? null,
+    countsAsUnsaved,
+    describedBy,
+    testId,
+  };
+  return material ? (
+    <EntityPicker<ChosenCustomer> {...shared} detailOf={phoneDetail(messages)} />
+  ) : (
+    <SearchPicker<ChosenCustomer> {...shared} />
   );
 }
