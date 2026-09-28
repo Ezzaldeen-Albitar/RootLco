@@ -247,11 +247,15 @@ describe('wty.warranty-status-history names each actor', () => {
  *
  * Every catalogue key the manual anchors for a label on these screens must be a
  * key the delivery or warranty screens still render, so a passage describing a
- * retired label (the four summary references, the item source references) fails
- * here; and the retired wording itself — "employee reference", the sentences that
+ * retired label (the four summary references, the item source references, the
+ * warranty list's typed-identifier branch step and vehicle-identifier filter)
+ * fails here — the routes' own pages count as rendering a key, because the list
+ * title and description are drawn there; and the retired wording itself — "employee reference", the sentences that
  * said people or records are shown as stored references or identifiers because
- * the product resolves or holds no names, and the "Vehicle reference" column
- * label (the column is "Vehicle") — must not come back.
+ * the product resolves or holds no names, the "Vehicle reference" column
+ * label (the column is "Vehicle"), the advice to print identifiers the sheet no
+ * longer carries, and a warranty list whose vehicle is "named by identifier" or
+ * whose identifiers "are typed instead" — must not come back.
  */
 describe('the user manual describes the named handover and warranty screens', () => {
   const root = process.cwd();
@@ -269,12 +273,14 @@ describe('the user manual describes the named handover and warranty screens', ()
   const screens = [
     ...sources(join(root, 'apps', 'web', 'src', 'features', 'delivery')),
     ...sources(join(root, 'apps', 'web', 'src', 'features', 'warranty')),
+    ...sources(join(root, 'apps', 'web', 'src', 'app', '[locale]', '(dashboard)', 'delivery')),
+    ...sources(join(root, 'apps', 'web', 'src', 'app', '[locale]', '(dashboard)', 'warranty')),
   ].join('\n');
   const rendered = (key: string) =>
     [`'${key}'`, `"${key}"`].some((quoted) => screens.includes(quoted));
 
   const LABEL_KEY =
-    /^(?:delivery\.summary\.|delivery\.person\.|delivery\.receiver\.(?:partner|verifiedBy)$|delivery\.history\.actor|warranty\.summary\.|warranty\.items\.|warranty\.history\.actor)/;
+    /^(?:delivery\.summary\.|delivery\.person\.|delivery\.receiver\.(?:partner|verifiedBy)$|delivery\.history\.actor|warranty\.summary\.|warranty\.items\.|warranty\.history\.actor|warranty\.(?:list|filter|target|common)\.)/;
   const anchoredKeys = (text: string): string[] =>
     [...text.matchAll(/<!--([^>]*?)-->/g)].flatMap((anchor) =>
       [...(anchor[1] ?? '').matchAll(/(?<![\w.])[a-z]+(?:\.\w+)+/g)].map((match) => match[0])
@@ -309,6 +315,9 @@ describe('the user manual describes the named handover and warranty screens', ()
       expect(text, file).not.toMatch(/shown\s+as\s+(?:stored\s+)?(?:references|identifiers)/i);
       expect(text, file).not.toMatch(/(?:resolves|holds)\s+no\s+names/i);
       expect(text, file).not.toMatch(/vehicle\s+reference\*\*/i);
+      expect(text, file).not.toMatch(/print the identifiers/i);
+      expect(text, file).not.toMatch(/named by identifier/i);
+      expect(text, file).not.toMatch(/identifiers are typed instead/i);
     }
   });
 });

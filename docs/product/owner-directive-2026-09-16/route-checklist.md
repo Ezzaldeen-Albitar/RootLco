@@ -1796,9 +1796,20 @@ Known limitations of this slice, one line each:
   `en.json` and `ar.json`; no gate catches an unused key, and the DOM and browser tests still read
   them for their absence checks. The manual no longer documents them (fix round 2); removing them
   is a follow-up.
-- Part 4D.12 of the user manual (the warranty list) still describes the pre-slice filter; its
-  column list reads "Vehicle" and "Customer" since fix round 3, and the receiver passage (4D.5) and
-  restriction 8 now name people rather than calling them references.
+- Part 4D.12 of the user manual (the warranty list) was already stale at base `3f13fab1` (keys that
+  no longer exist, a typed-identifier branch step, a vehicle "named by identifier"); fix round 4
+  rewrote it to the current screen (working branch, "All my branches", the one search box, the
+  cursor footer, the shared states), and limitation 2 of part 4D.16 with it. The receiver passage
+  (4D.5) and restriction 8 name people since fix round 3.
+- The 4D.12 screenshots predate this layout and are kept, said as such, until they are retaken.
+- The `warranty.list.description` catalogue sentence still says "Choose a branch to see its
+  warranties"; the manual quotes it and says the list follows the working branch. Rewording the
+  catalogue is a follow-up.
+- The printed sheet's failed work-order read prints the sentence only (no identifiers, no
+  reference); since fix round 4 the manual's advice for it is "try again, then report it".
+- `settled()` on the coverage form also withdraws a standing complaint on a required start date
+  once its half-typed parts are erased, as the form's "withdraw on edit" convention does; the
+  next submit refuses the empty required field again.
 - The `DateField` `onProblem` signature is now `DayProblem` (adds `'incomplete'`) for `DateField`
   only; its one `onProblem` consumer is `WarrantyPolicyScreen`, which since fix round 3 also
   withdraws a date complaint when every typed part is erased. `FilterToolbar` and the gallery pass
