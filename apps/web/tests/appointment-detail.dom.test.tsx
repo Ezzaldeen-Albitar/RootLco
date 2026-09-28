@@ -642,13 +642,52 @@ describe('facts and directions', () => {
     expect(screen.getAllByTestId('appointment-clock')[0]).toHaveTextContent('GMT+9');
   });
 
-  it('falls back to UTC, and says UTC, when the branch clock is not published', () => {
-    renderLtr(withMui(inBranch(screenFor({ base: { branchId: OTHER_BRANCH.id } }))));
+  /**
+   * `UTC` is where the facts are DRAWN when the record's clock is unknown — it
+   * is named, so it is true. It is never a clock a confirmed window is TAKEN
+   * on: typed there, 09:00 would be sent as `+00:00`, off by the branch's real
+   * offset. So the reschedule form says why it takes no moment, draws no
+   * moment, and its submit sends nothing.
+   */
+  async function expectRescheduleRefused() {
     expect(
       screen.getByText(formatInZone(detail().requestedFrom, 'en-GB', 'UTC'))
     ).toBeInTheDocument();
     expect(screen.getAllByTestId('appointment-clock')[0]).toHaveTextContent('UTC');
-    expect(screen.getByTestId('appointment-reschedule-window-zone')).toHaveTextContent('UTC');
+
+    expect(screen.getByTestId('appointment-reschedule-zone-unknown')).toHaveTextContent(
+      en['dateField.zoneUnknown']
+    );
+    expect(screen.queryByTestId('appointment-reschedule-window-zone')).toBeNull();
+    expect(
+      screen.queryByRole('group', { name: new RegExp(`^${en['appointments.window.from']}`) })
+    ).toBeNull();
+    expect(
+      screen.queryByRole('group', { name: new RegExp(`^${en['appointments.window.to']}`) })
+    ).toBeNull();
+    const submit = rescheduleSubmit();
+    expect(submit).toBeDisabled();
+    // A disabled button is not a way round: submitting the form itself sends nothing.
+    const form = submit.closest('form') as HTMLFormElement;
+    form.requestSubmit();
+    await Promise.resolve();
+    expect(rescheduleAppointment).not.toHaveBeenCalled();
+  }
+
+  it("draws on UTC but takes no moment when the record's branch is not in the context", async () => {
+    renderLtr(withMui(inBranch(screenFor({ base: { branchId: OTHER_BRANCH.id } }))));
+    await expectRescheduleRefused();
+  });
+
+  it('draws on UTC but takes no moment when the branch list could not be read', async () => {
+    renderLtr(
+      withMui(
+        inBranch(screenFor({ base: { branchId: TEST_BRANCH.id } }), {
+          snapshot: branchSnapshot([], 'unavailable'),
+        })
+      )
+    );
+    await expectRescheduleRefused();
   });
 
   it('renders in Arabic, right to left', () => {

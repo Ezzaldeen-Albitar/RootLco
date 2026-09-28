@@ -29,7 +29,10 @@ import { WINDOW_ISSUE_KEY } from '../window-support';
  * branch whose zone is not published) it passes none and the sentence that
  * says why, and no moment is taken — a booking is addressed to one branch. The
  * detail screen passes the appointment's own branch zone, because the record's
- * branch is not necessarily the one in the header; this component reads no
+ * branch is not necessarily the one in the header, and passes none (with its
+ * sentence) when the working context does not publish that zone — the `UTC`
+ * it draws the record's facts on is a display fallback, never a clock a moment
+ * is taken on. This component reads no
  * working context itself, so a screen reached by a record's address does not
  * reach the working branch through it (`ZonedDateTimeField`).
  *

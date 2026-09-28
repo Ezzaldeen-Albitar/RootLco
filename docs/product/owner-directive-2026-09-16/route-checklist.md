@@ -2290,8 +2290,31 @@ Known limitations of this slice, one line each:
   replaced was; without `crm.customer.read` the search answers "refused" under the box. The page
   does not consult `crm.customer.read`, because `validate:p1-28-access` cannot follow the browser
   read route to `crm.customer-search` and would report the code as surplus.
-- The detail's clock falls back to `UTC` (named) when the working context does not publish the
-  appointment's branch; the facts and the reschedule panel then say `UTC`.
+- The detail's clock falls back to `UTC` (named) for DISPLAY when the working context does not
+  publish the appointment's branch (the directory read failed, or does not list it); the reschedule
+  panel then takes no moment, says `dateField.zoneUnknown`, and its submit is disabled, because a
+  window typed on that fallback would be sent off by the branch's real offset
+  (`appointment-detail.dom`, both causes).
+- The three submit handlers (booking, reschedule, cancel/no-show) set pending, await the Server
+  Action and clear pending with no `try`/`finally`: a rejected promise (network loss) leaves the
+  button pending and the rejection unhandled, where `useActionState` sent it to the error boundary;
+  the diagnostics screens share the pattern.
+- A moment typed only in part leaves the window draft at `''`, so it is not counted as unsaved work
+  and a branch switch drops it without asking — as the replaced `datetime-local` did.
+- No appointment-level Arabic case types a half moment and corrects it; the wrapper covers it in
+  both part orders (`mui-form-fields.dom`), and the authenticated browser spec types moments in
+  English order only.
+- The version-sourcing gate refuses a computed or offset reschedule/cancel version but accepts a
+  swap to the live `version` by design; that swap is caught by the detail case "keeps the version
+  typed work was based on". The calendar's syntax-tree check does not verify that `scope` comes
+  from the working context.
+- A local full web run once failed one `reception-queue.dom` case (a period that matched nothing,
+  `aria-pressed`) under load; the file is untouched by this slice and the case passed in isolation.
+- The reschedule success is announced by the toast only (no banner); the working branch feeds both
+  the booking's `branchId` and the window's clock from the one selection.
+- Scope: no MUI X Pro/Premium or Scheduler import, no migration, baseline or workflow file, and no
+  discount-approval or credit-note file in the diff; `form-reset-class.test.ts` forbids `<form
+action>` and `useActionState` under `features/appointments`.
 - A server complaint about the window is still one sentence under the pair and marks neither
   picker, so the cursor is not moved to it.
 - The permission quirk from #467 stays: `/appointments/new` requires `apt.appointment.manage` while

@@ -63,7 +63,12 @@ import { EMPTY_WINDOW, WindowFields, windowErrors, type WindowDraft } from './Wi
  * header: the record is reached by its address. Its times are drawn on that
  * clock with the clock's name beside them, and the confirmed window is typed
  * on it (`DateTimeField`). A branch whose zone the working context does not
- * publish falls back to `UTC`, and every time says `UTC`.
+ * publish (the directory could not be read, or does not list the record's
+ * branch) is DRAWN on `UTC`, and every time says `UTC` — but no confirmed
+ * window is TAKEN on it: `UTC` there is a display fallback, not the branch's
+ * clock, and a moment typed on it would be sent off by the branch's real
+ * offset. The reschedule form says why it takes no moment and its submit is
+ * disabled, as booking does without a known clock.
  *
  * ## Where the record version comes from (QA-004)
  *
@@ -115,8 +120,14 @@ export function AppointmentDetailScreen({
   const status: AppointmentStatus = fresher ? lastChanged.lifecycleStatus : detail.lifecycleStatus;
   const version = fresher ? lastChanged.recordVersion : detail.recordVersion;
 
-  /** The appointment's own branch clock; `UTC`, named as such, when unpublished. */
-  const zone = context.branches.find((entry) => entry.id === detail.branchId)?.timezone || 'UTC';
+  /**
+   * The appointment's own branch clock, or `null` when the working context does
+   * not publish it. Only a known clock may TAKE a moment (the reschedule form);
+   * the facts are DRAWN on `UTC`, named as such, when it is unknown.
+   */
+  const branchZone =
+    context.branches.find((entry) => entry.id === detail.branchId)?.timezone || null;
+  const zone = branchZone ?? 'UTC';
 
   const changed = (result: AppointmentChangeState) => {
     notifyActionResult(result, messages);
@@ -170,7 +181,7 @@ export function AppointmentDetailScreen({
           messages={messages}
           appointmentId={detail.id}
           version={version}
-          zone={zone}
+          zone={branchZone}
           onResult={changed}
           onReload={() => router.refresh()}
         />
@@ -426,7 +437,8 @@ function RescheduleSection({
   readonly messages: Messages;
   readonly appointmentId: string;
   readonly version: number;
-  readonly zone: string;
+  /** The record's branch clock, or `null` when it is not known — then no moment is taken. */
+  readonly zone: string | null;
   readonly onResult: (result: AppointmentChangeState) => void;
   readonly onReload: () => void;
 }) {
@@ -462,6 +474,9 @@ function RescheduleSection({
   };
 
   const submit = async () => {
+    // No known clock, no moment: a window typed on a fallback would be sent
+    // off by the branch's real offset.
+    if (zone === null) return;
     const attempt = (state.attempt ?? 0) + 1;
     const issues = windowErrors(draft);
     if (issues.from || issues.to) {
@@ -545,13 +560,22 @@ function RescheduleSection({
           }}
           serverError={[fromKey, toKey].find(isServerKey)}
           timezone={zone}
+          refusal={
+            <p
+              role="status"
+              data-testid="appointment-reschedule-zone-unknown"
+              className="rounded-md bg-warning-subtle px-3 py-2 text-supporting text-text-secondary"
+            >
+              {translate(messages, 'dateField.zoneUnknown')}
+            </p>
+          }
           testId="appointment-reschedule-window"
         />
         <div>
           <Button
             type="submit"
             variant="contained"
-            disabled={pending}
+            disabled={pending || zone === null}
             aria-busy={pending || undefined}
           >
             {pending
