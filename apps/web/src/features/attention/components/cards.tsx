@@ -20,7 +20,8 @@ import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
 import { formatMessage, translateDynamic } from '@/i18n/get-messages';
 import type { ReadFailureStatus, ReadState } from '@/lib/api/read-operation';
-import { formatDateTime, formatInteger } from '@/lib/format';
+import { formatPeriodInZone } from '@/lib/branch-time';
+import { formatDateTime, formatInteger, intlLocale } from '@/lib/format';
 import {
   readAgedInTransitAlerts,
   readCountDiscrepancyAlerts,
@@ -532,11 +533,18 @@ export function UnusualConsumptionCard({
   locale,
   companyId,
   branchId,
+  zone,
 }: {
   readonly messages: Messages;
   readonly locale: Locale;
   readonly companyId: string;
   readonly branchId: string;
+  /**
+   * The clock the observed period is written on: the working branch's own zone,
+   * `UTC` when no single branch is in force. The read reports the window as two
+   * instants, and a day is only a day on some clock.
+   */
+  readonly zone: string;
 }) {
   const t = (key: string) => translateDynamic(messages, key);
   const enabled = companyId !== '' && branchId !== '';
@@ -596,9 +604,19 @@ export function UnusualConsumptionCard({
               </span>
             </Cell>
             <Cell>
-              <span dir="ltr">
-                {row.observedPeriod.from} — {row.observedPeriod.to}
-              </span>
+              {/*
+                A plain range of days on the branch's clock, in the reader's
+                language — never the two raw timestamps the read carries
+                (checkpoint browser QA, DEF-03).
+              */}
+              <bdi>
+                {formatPeriodInZone(
+                  row.observedPeriod.from,
+                  row.observedPeriod.to,
+                  intlLocale(locale),
+                  zone
+                )}
+              </bdi>
             </Cell>
             <Cell>
               <Qty value={row.observedQty} />

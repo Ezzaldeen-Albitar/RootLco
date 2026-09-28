@@ -8,6 +8,8 @@ import type { Messages } from '@/i18n/get-messages';
 import { translate } from '@/i18n/get-messages';
 import { WorkingBranchField } from '@/features/working-context/components/WorkingBranchField';
 import { useBranchTarget } from '@/features/working-context/use-branch-target';
+import { useWorkingContext } from '@/features/working-context/WorkingContextProvider';
+import { isKnownZone } from '@/lib/branch-time';
 import { EMPTY_PAIR, useBranches, type BranchPair } from '@/features/inventory/components/shared';
 
 import {
@@ -84,6 +86,16 @@ export function AttentionScreen({
   const t = (key: keyof Messages) => translate(messages, key);
 
   /*
+   * The clock the cards write days on: the working branch's own zone, as the
+   * working context publishes it, and `UTC` when no single branch is in force
+   * or its zone is not one this browser knows — the same clock "All my
+   * branches" is written on everywhere else.
+   */
+  const context = useWorkingContext();
+  const branchZone = context.branches.find((entry) => entry.id === pair.branchId)?.timezone ?? '';
+  const zone = isKnownZone(branchZone) ? branchZone : 'UTC';
+
+  /*
    * The branch names, for the cards that report on a PAIR of branches. A
    * transfer names the two it runs between by identifier only, so the names
    * come from the branch list `useBranches` holds — the working context's own
@@ -150,6 +162,7 @@ export function AttentionScreen({
               locale={locale}
               companyId={pair.companyId}
               branchId={pair.branchId}
+              zone={zone}
             />
             <AgedInTransitCard
               messages={messages}
