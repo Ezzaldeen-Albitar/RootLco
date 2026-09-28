@@ -2452,13 +2452,20 @@ Known limitations of this slice, one line each:
 - The backend case for the revisited converted visit and the browser specs
   (`appointments-and-receptions.spec.ts`, updated to the combobox, the vehicle grid and the print
   button) run only in hosted CI; the configured-workspace journeys run only for the owner-acceptance
-  account.
+  account. The converted-visit case passed in hosted `integration-tests` job 109112526919.
 - Not run locally (machine memory): the full unit and web tiers, the browser tiers and the builds;
   they run in hosted CI.
 - The web tier's test count changes (new cases in existing files; no web test file added or
   removed); the backend tier gains one case. The recorded tiers are retaken at the final head.
+- The web floor moved 5500 -> 6850 once the declared cases passed 5500, re-measured from hosted PR
+  CI run 36476788035 (6941 tests, 186 files); see the test-count baseline's web note.
 - The one customer box does not echo Arabic-Indic digits in their Western form under it, as the old
   phone box did; the digits are sent as typed and folded by the backend.
+- The one customer box has no party-type filter, as the old `CustomerSelector` had; the booking form
+  merged in #480 lost both. Only the Owner can accept these two removals.
+- Each match's phone line describes its row (`aria-describedby`) while the name labels it
+  (`aria-labelledby`); a row without a detail renders as before, so the pricing, booking, gallery
+  and `SearchPicker` consumers are unchanged. Stripping `detailOf` fails four cases.
 - Orphaned message keys left in en and ar by this slice, referenced nowhere in `src/` or `tests/`:
   `receptions.checkIn.vehiclePagerLabel`, `receptions.checkIn.openVisitPagerLabel`,
   `receptions.confirm.linkPagerLabel`, `receptions.confirm.relationshipsPagerLabel`,
