@@ -1,13 +1,18 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type Ref, type RefObject } from 'react';
+import { useForkRef } from '@mui/material/utils';
 import dayjs, { type Dayjs } from 'dayjs';
 import timezonePlugin from 'dayjs/plugin/timezone';
 import utc from 'dayjs/plugin/utc';
 import { AdapterDayjs } from '@mui/x-date-pickers/AdapterDayjs';
 import { DatePicker } from '@mui/x-date-pickers/DatePicker';
 import { DateTimePicker } from '@mui/x-date-pickers/DateTimePicker';
-import type { DateValidationError, DateTimeValidationError } from '@mui/x-date-pickers/models';
+import type {
+  DateValidationError,
+  DateTimeValidationError,
+  FieldRef,
+} from '@mui/x-date-pickers/models';
 import { PickersTextField, type PickersTextFieldProps } from '@mui/x-date-pickers/PickersTextField';
 import { RequiresConcreteBranch } from '@/features/working-context/components/WorkingBranchField';
 import {
@@ -17,6 +22,7 @@ import {
 import type { Messages } from '@/i18n/get-messages';
 import { formatMessage, translate } from '@/i18n/get-messages';
 import { isCalendarDay, type CalendarDay } from '@/lib/branch-time';
+import { FOCUS_REQUEST_EVENT } from '@/lib/forms/use-focus-first-invalid';
 import {
   FieldHelper,
   useFieldWiring,
@@ -110,6 +116,19 @@ import {
  * and `onProblem(null)` once the entry is whole or emptied again. The native
  * `type="date"` box this replaced refused such a submission through the
  * browser's own check; this is that refusal, handed to the caller to word.
+ *
+ * ## After a refusal the cursor lands on the part to finish
+ *
+ * A refused form moves the cursor to its first invalid field
+ * (`lib/forms/use-focus-first-invalid.ts`). This field answers that hook's
+ * focus request itself, through the picker's own field API (`fieldRef` →
+ * `focusField`), on the FIRST EMPTY PART — the year of `01/03/YYYY` — or on the
+ * first part when every part is filled but the day is still refused. Focused
+ * from outside instead, the picker could keep believing it held focus on the
+ * part the operator had left, and then a click on the year highlighted it and
+ * dropped every digit typed (checkpoint browser QA, DEF-02). Entered this way,
+ * typing edits at once, and the caller's error clears as soon as the day is
+ * whole and valid.
  */
 
 // The foundation extends these too (`ui-foundation/dayjs-locale.ts`); a
@@ -325,19 +344,62 @@ function textFieldSlot(wiring: FieldWiring, props: MuiFieldBaseProps): Record<st
 type PartsReportingProps = PickersTextFieldProps & {
   /** Told whether every part of the entry is blank, each time that changes. */
   readonly onPartsBlank?: ((blank: boolean) => void) | undefined;
+  /**
+   * Places the cursor inside the field when a refused form asks for it
+   * (`FOCUS_REQUEST_EVENT`); returns whether the field took it.
+   */
+  readonly onFocusRequest?: (() => boolean) | undefined;
 };
 
 /**
  * Material's own text field for a picker, which also passes on whether every
  * part of the entry is blank — the one fact the picker publishes nowhere else
  * while a day is only partly typed. See "A day half typed is reported".
+ *
+ * It also answers a refused form's focus request, so the cursor is placed by
+ * the picker and not from outside it. See "After a refusal the cursor lands on
+ * the part to finish".
  */
-function PartsReportingTextField({ onPartsBlank, ...props }: PartsReportingProps) {
+function PartsReportingTextField({
+  onPartsBlank,
+  onFocusRequest,
+  ref,
+  ...props
+}: PartsReportingProps & { readonly ref?: Ref<HTMLDivElement> | undefined }) {
   const blank = props.areAllSectionsEmpty;
+  const rootRef = useRef<HTMLDivElement | null>(null);
+  // The picker hands its text field a ref of its own (the anchor its calendar
+  // opens from), so this one is added beside it, never in its place.
+  const handleRef = useForkRef(ref, rootRef);
   useEffect(() => {
     onPartsBlank?.(blank);
   }, [blank, onPartsBlank]);
-  return <PickersTextField {...props} />;
+  useEffect(() => {
+    const root = rootRef.current;
+    if (root === null || onFocusRequest === undefined) return undefined;
+    const answer = (event: Event) => {
+      if (onFocusRequest()) event.preventDefault();
+    };
+    root.addEventListener(FOCUS_REQUEST_EVENT, answer);
+    return () => root.removeEventListener(FOCUS_REQUEST_EVENT, answer);
+  }, [onFocusRequest]);
+  return <PickersTextField {...props} ref={handleRef} />;
+}
+
+/**
+ * The focus request's answer for one picker: its first empty part, or its first
+ * part when none is empty, focused through the picker's own field API.
+ */
+function useEnterFirstUnfinishedPart(
+  fieldRef: RefObject<FieldRef<Dayjs | null> | null>
+): () => boolean {
+  return useCallback(() => {
+    const field = fieldRef.current;
+    if (field === null) return false;
+    const firstEmpty = field.getSections().findIndex((section) => section.value === '');
+    field.focusField(firstEmpty === -1 ? 0 : firstEmpty);
+    return field.isFieldFocused();
+  }, [fieldRef]);
 }
 
 export function DateField(props: DateFieldProps) {
@@ -355,9 +417,12 @@ export function DateField(props: DateFieldProps) {
   // A day typed whole but impossible is not null, and the picker names it.
   const problem: DayProblem = !partsBlank && picker === null ? 'incomplete' : pickerProblem;
   const reported = useRef<DayProblem>(null);
+  const fieldRef = useRef<FieldRef<Dayjs | null> | null>(null);
+  const enterField = useEnterFirstUnfinishedPart(fieldRef);
   const textField: Record<string, unknown> = {
     ...textFieldSlot(wiring, props),
     onPartsBlank: setPartsBlank,
+    onFocusRequest: enterField,
   };
   useEffect(() => {
     if (reported.current === problem) return;
@@ -382,7 +447,7 @@ export function DateField(props: DateFieldProps) {
       {...(minDay === null ? {} : { minDate: minDay })}
       {...(maxDay === null ? {} : { maxDate: maxDay })}
       slots={{ textField: PartsReportingTextField }}
-      slotProps={{ textField }}
+      slotProps={{ field: { fieldRef }, textField }}
     />
   );
 }
@@ -416,6 +481,12 @@ export function DateTimeField(props: DateTimeFieldProps) {
   const minMoment = min === undefined ? null : instantToPicker(min, zone);
   const maxMoment = max === undefined ? null : instantToPicker(max, zone);
   const [picker, keep] = useHeldPickerValue(value, zone, instantToPicker);
+  const fieldRef = useRef<FieldRef<Dayjs | null> | null>(null);
+  const enterField = useEnterFirstUnfinishedPart(fieldRef);
+  const textField: Record<string, unknown> = {
+    ...textFieldSlot(wiring, { ...props, description }),
+    onFocusRequest: enterField,
+  };
 
   if (zone === undefined) {
     // No clock the typed time could honestly mean. See "A moment needs a
@@ -448,7 +519,8 @@ export function DateTimeField(props: DateTimeFieldProps) {
       readOnly={readOnly ?? false}
       {...(minMoment === null ? {} : { minDateTime: minMoment })}
       {...(maxMoment === null ? {} : { maxDateTime: maxMoment })}
-      slotProps={{ textField: textFieldSlot(wiring, { ...props, description }) }}
+      slots={{ textField: PartsReportingTextField }}
+      slotProps={{ field: { fieldRef }, textField }}
     />
   );
 }

@@ -8,6 +8,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   DateField,
   DateTimeField,
+  type DayProblem,
   dayToPicker,
   instantToPicker,
   pickerToDay,
@@ -256,6 +257,101 @@ describe('the cursor enters a refused date picker', () => {
     expect(group).toHaveAttribute('aria-invalid', 'true');
     await waitFor(() => expect(group.contains(document.activeElement)).toBe(true));
   });
+
+  it('enters an empty refused picker on its first part, where typing starts the day', async () => {
+    const user = userEvent.setup();
+    mount(<RefusingDateForm />);
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+    const group = screen.getByRole('group', { name: /^Visit day/ });
+    const [day] = within(group).getAllByRole('spinbutton');
+    await waitFor(() => expect(document.activeElement).toBe(day));
+  });
+});
+
+/**
+ * Checkpoint browser QA, DEF-02: a half-typed day (`01/03/YYYY`) was refused
+ * correctly, and then could not be finished — the cursor sat on the picker's
+ * section container, a click on the year highlighted it and every digit typed
+ * was dropped until focus left the field and came back. The picker now takes
+ * the refused form's focus request itself, on its first EMPTY part.
+ */
+describe('a refused half-typed day is finished where it was left', () => {
+  function HalfDayForm({ onDay }: { readonly onDay: (day: string) => void }) {
+    const [state, setState] = useState<ActionState>({ status: 'idle' });
+    const [day, setDay] = useState('');
+    const [problem, setProblem] = useState<DayProblem>(null);
+    const [refused, setRefused] = useState(false);
+    const formRef = useFocusFirstInvalid(state);
+    return (
+      <form
+        ref={formRef}
+        onSubmit={(event) => {
+          event.preventDefault();
+          if (problem === null && day !== '') return;
+          setRefused(true);
+          setState({
+            status: 'invalid',
+            fieldErrors: { day: 'form.required' },
+            attempt: (state.attempt ?? 0) + 1,
+          });
+        }}
+      >
+        <FormTextField label="Reference" value="DOC-1" onChange={() => undefined} />
+        <DateField
+          label="Visit day"
+          value={day}
+          onChange={(next) => {
+            setDay(next);
+            onDay(next);
+          }}
+          onProblem={setProblem}
+          timezone="Asia/Amman"
+          // The complaint stands while the entry is still wrong, and goes the
+          // moment the day is whole and valid — the screens' own rule.
+          error={refused && (problem !== null || day === '') ? 'Choose a date.' : undefined}
+        />
+        <button type="submit">Save</button>
+      </form>
+    );
+  }
+
+  for (const locale of ['en', 'ar'] as const) {
+    const catalogue = getMessages(locale);
+    const year = catalogue['mui.pickers.year'];
+
+    async function refuseHalfTyped(user: ReturnType<typeof userEvent.setup>) {
+      const onDay = vi.fn();
+      mount(<HalfDayForm onDay={onDay} />, locale);
+      const group = screen.getByRole('group', { name: /^Visit day/ });
+      await user.click(within(group).getAllByRole('spinbutton')[0] as HTMLElement);
+      await user.keyboard('0103');
+      await user.click(screen.getByRole('button', { name: 'Save' }));
+      await waitFor(() => expect(group).toHaveAttribute('aria-invalid', 'true'));
+      return { group, onDay };
+    }
+
+    it(`puts the cursor on the empty year after the refusal, and typing finishes the day (${locale})`, async () => {
+      const user = userEvent.setup();
+      const { group, onDay } = await refuseHalfTyped(user);
+      const yearPart = within(group).getByRole('spinbutton', { name: year });
+      await waitFor(() => expect(document.activeElement).toBe(yearPart));
+      await user.keyboard('2027');
+      expect(onDay).toHaveBeenLastCalledWith('2027-03-01');
+      await waitFor(() => expect(group).not.toHaveAttribute('aria-invalid'));
+      expect(screen.queryByText('Choose a date.')).toBeNull();
+    });
+
+    it(`takes the year when it is clicked after the refusal (${locale})`, async () => {
+      const user = userEvent.setup();
+      const { group, onDay } = await refuseHalfTyped(user);
+      const yearPart = within(group).getByRole('spinbutton', { name: year });
+      await waitFor(() => expect(group.contains(document.activeElement)).toBe(true));
+      await user.click(yearPart);
+      await user.keyboard('2027');
+      expect(onDay).toHaveBeenLastCalledWith('2027-03-01');
+      await waitFor(() => expect(group).not.toHaveAttribute('aria-invalid'));
+    });
+  }
 });
 
 describe('number and money stay strings', () => {

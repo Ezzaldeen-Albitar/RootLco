@@ -1044,6 +1044,61 @@ describe('one plan, and the controls over it', () => {
     }
   });
 
+  it('finishes a refused half-typed end date by typing its year, and then adds the window', async () => {
+    // Checkpoint browser QA, DEF-02: after the refusal the year could not be
+    // typed at all — the cursor sat on the picker's section container and every
+    // digit was dropped. It now lands on the empty year, and typing finishes it.
+    PERMISSIONS = [READ, MANAGE];
+    for (const [locale, catalogue] of [
+      ['en', EN],
+      ['ar', AR],
+    ] as const) {
+      createCoverageWindow.mockClear();
+      const named = (key: string) => new RegExp(`^${escape(catalogue[key] as string)}`);
+      const sentence = catalogue['warranty.policies.dateFormat'] as string;
+      const user = userEvent.setup();
+      const submit = () =>
+        user.click(
+          screen.getByRole('button', {
+            name: catalogue['warranty.policies.addCoverageSubmit'] as string,
+          })
+        );
+      const { unmount } = await renderDetailPage(locale);
+      await waitFor(() => expect(readWarrantyPolicy).toHaveBeenCalled());
+      await user.type(
+        screen.getByRole('textbox', { name: named('warranty.coverage.durationMonths') }),
+        '12'
+      );
+      const from = screen.getByRole('group', { name: named('warranty.coverage.effectiveFrom') });
+      await user.click(within(from).getAllByRole('spinbutton')[0] as HTMLElement);
+      await user.keyboard('01102026');
+      const to = screen.getByRole('group', { name: named('warranty.coverage.effectiveTo') });
+      await user.click(within(to).getAllByRole('spinbutton')[0] as HTMLElement);
+      await user.keyboard('0103');
+      await submit();
+      await waitFor(() => expect(to, locale).toHaveAttribute('aria-invalid', 'true'));
+      expect(screen.getByText(sentence), locale).toBeInTheDocument();
+
+      // The cursor is on the empty year, and typing it finishes the day.
+      const year = within(to).getByRole('spinbutton', {
+        name: catalogue['mui.pickers.year'] as string,
+      });
+      await waitFor(() => expect(document.activeElement, locale).toBe(year));
+      await user.keyboard('2027');
+      await waitFor(() => expect(to, locale).not.toHaveAttribute('aria-invalid', 'true'));
+      expect(screen.queryByText(sentence), locale).toBeNull();
+      expect(createCoverageWindow, locale).not.toHaveBeenCalled();
+
+      await submit();
+      await waitFor(() => expect(createCoverageWindow, locale).toHaveBeenCalledTimes(1));
+      expect(createCoverageWindow.mock.calls[0]?.[1], locale).toMatchObject({
+        effectiveFrom: '2026-10-01',
+        effectiveTo: '2027-03-01',
+      });
+      unmount();
+    }
+  });
+
   it('withdraws the end date complaint once the half-typed parts are erased, before any resubmit', async () => {
     // Erasing every part leaves the optional end date validly empty, and the
     // picker publishes no change for it: the complaint must still go at once.
