@@ -1,5 +1,6 @@
-import { fireEvent, screen, waitFor, within } from '@testing-library/react';
+import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import type { ReactElement } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import en from '../src/i18n/messages/en.json';
 import ar from '../src/i18n/messages/ar.json';
@@ -22,9 +23,14 @@ import {
   switchExpectingQuestion,
   switchWithoutQuestion,
 } from './support/branch-switch';
+import { UiFoundationProvider } from '@/components/ui-foundation/UiFoundationProvider';
+import { muiTextOf } from '@/components/ui-foundation/mui-text';
+import { getMessages } from '@/i18n/get-messages';
 
 /**
- * The service detail, rendered (P1-30, `W1`, FE-001).
+ * The service detail, rendered (P1-30, `W1`, FE-001) — on the shared Material
+ * UI wrappers (`P1-32-PRE-OD-MUISP`, ADR-022): `forms/mui` fields, the
+ * category tree, `DateField` for every day, `ConfirmDialog` before retiring.
  *
  * The properties under test are the ones a detail screen gets wrong: sending a
  * write without the version it read, sending fields that did not change,
@@ -89,8 +95,36 @@ vi.mock('@/features/authentication/api/session', () => ({
 type RoutePage = (args: { params: Promise<Record<string, string>> }) => Promise<React.ReactNode>;
 async function renderPage(page: RoutePage, params: Record<string, string>) {
   const tree = await page({ params: Promise.resolve(params) });
-  return renderLtr(tree as React.ReactElement);
+  return renderLtr(withMui(tree as ReactElement));
 }
+
+/** The product's Material provider, as the locale layout mounts it. */
+function withMui(ui: ReactElement, locale: 'en' | 'ar' = 'en'): ReactElement {
+  return (
+    <UiFoundationProvider locale={locale} text={muiTextOf(getMessages(locale))}>
+      {ui}
+    </UiFoundationProvider>
+  );
+}
+
+/** Types a calendar day into a date field, part by part (day, month, year in English). */
+async function typeDay(
+  user: ReturnType<typeof userEvent.setup>,
+  labelKey: string,
+  digits: string
+): Promise<HTMLElement> {
+  const group = screen.getByRole('group', { name: labelled(labelKey) });
+  await user.click(within(group).getAllByRole('spinbutton')[0] as HTMLElement);
+  await user.keyboard(digits);
+  return group;
+}
+
+/** What a date field shows, part by part. */
+const shownDay = (group: HTMLElement) =>
+  within(group)
+    .getAllByRole('spinbutton')
+    .map((part) => part.textContent)
+    .join('/');
 
 const notifyActionResult = vi.fn((..._args: unknown[]): boolean => true);
 vi.mock('@/components/notifications/action-notifications', () => ({
@@ -107,6 +141,7 @@ const BRANCH = '22222222-2222-4222-8222-222222222222';
 const COMPANY = '11111111-1111-4111-8111-111111111111';
 /** A second branch, so a list can arrive that cannot contain what was typed. */
 const OTHER_BRANCH = '22222222-2222-4222-8222-222222222223';
+const OTHER_CATEGORY = '66666666-6666-4666-8666-666666666666';
 
 function service(over: Record<string, unknown> = {}) {
   return {
@@ -126,14 +161,16 @@ const success = (messageKey: string) => ({ status: 'success' as const, messageKe
 
 function renderDetail(over: Record<string, unknown> = {}, svc = service()) {
   return renderLtr(
-    <ServiceDetailScreen
-      locale="en"
-      messages={en}
-      service={svc as never}
-      canManage
-      canReadBranches={false}
-      {...over}
-    />
+    withMui(
+      <ServiceDetailScreen
+        locale="en"
+        messages={en}
+        service={svc as never}
+        canManage
+        canReadBranches={false}
+        {...over}
+      />
+    )
   );
 }
 
@@ -143,7 +180,16 @@ beforeEach(() => {
   vi.clearAllMocks();
   listServiceCategories.mockResolvedValue(
     okRead({
-      items: [{ id: CATEGORY, code: 'engine', name: 'Engine', status: 'active' }],
+      items: [
+        { id: CATEGORY, code: 'engine', name: 'Engine', parentCategoryId: null, status: 'active' },
+        {
+          id: OTHER_CATEGORY,
+          code: 'brakes',
+          name: 'Brakes',
+          parentCategoryId: null,
+          status: 'active',
+        },
+      ],
       nextCursor: null,
       hasMore: false,
     })
@@ -177,7 +223,20 @@ describe('what is offered follows the row and the operator', () => {
     });
     expect(within(summary).getByText('OIL-CHANGE')).toBeVisible();
     expect(within(summary).getByText('Oil change')).toBeVisible();
-    expect(await within(summary).findByText('engine — Engine')).toBeVisible();
+    expect(await within(summary).findByText('Engine')).toBeVisible();
+  });
+
+  it('a category the taxonomy cannot name is said in words, never by its identifier', async () => {
+    const unknown = '88888888-8888-4888-8888-888888888888';
+    renderDetail({}, service({ categoryId: unknown }));
+    const summary = screen.getByRole('region', {
+      name: EN['services.detail.summaryHeading'] as string,
+    });
+    await waitFor(() => expect(listServiceCategories).toHaveBeenCalled());
+    expect(
+      await within(summary).findByText(EN['services.catalogue.unknownCategory'] as string)
+    ).toBeVisible();
+    expect(screen.queryByText(unknown)).toBeNull();
   });
 });
 
@@ -224,16 +283,62 @@ describe('editing sends what changed, with the version that was read', () => {
     expect(refresh).not.toHaveBeenCalled();
   });
 
-  it('retiring needs an explicit acknowledgement, then sends the terminal state', async () => {
+  it('moves the service to another category chosen from the tree', async () => {
+    const user = userEvent.setup();
+    renderDetail();
+    const tree = screen.getByRole('tree', { name: labelled('services.create.category') });
+    await user.click(await within(tree).findByText('Brakes'));
+    await user.click(saveButton());
+    await waitFor(() => expect(updateService).toHaveBeenCalled());
+    expect(updateService.mock.calls[0]?.[1]).toEqual({ serviceCategoryId: OTHER_CATEGORY });
+  });
+
+  it('a blank name is refused on its field, the cursor goes to it, and a correction withdraws it', async () => {
+    const user = userEvent.setup();
+    renderDetail();
+    const name = screen.getByLabelText(labelled('services.create.name'));
+    await user.clear(name);
+    await user.click(saveButton());
+    await waitFor(() => expect(name).toHaveAttribute('aria-invalid', 'true'));
+    expect(name).toHaveAccessibleDescription(new RegExp(escape(EN['field.required'] as string)));
+    await waitFor(() => expect(document.activeElement).toBe(name));
+    expect(updateService).not.toHaveBeenCalled();
+    await user.type(name, 'Oil');
+    expect(name).not.toHaveAttribute('aria-invalid');
+  });
+
+  it('retiring asks in a dialog first; cancelling sends nothing, confirming sends the terminal state', async () => {
     const user = userEvent.setup();
     renderDetail();
     const retire = screen.getByRole('button', { name: EN['services.detail.retire'] as string });
-    expect(retire).toBeDisabled();
-    await user.click(screen.getByLabelText(labelled('services.detail.retireAcknowledge')));
-    expect(retire).toBeEnabled();
     await user.click(retire);
+    let dialog = await screen.findByTestId('service-retire-dialog');
+    expect(within(dialog).getByText(EN['services.detail.retireConfirm'] as string)).toBeVisible();
+    await user.click(within(dialog).getByRole('button', { name: EN['overlay.cancel'] as string }));
+    await waitFor(() => expect(screen.queryByTestId('service-retire-dialog')).toBeNull());
+    expect(updateService).not.toHaveBeenCalled();
+
+    await user.click(retire);
+    dialog = await screen.findByTestId('service-retire-dialog');
+    await user.click(
+      within(dialog).getByRole('button', { name: EN['services.detail.retire'] as string })
+    );
     await waitFor(() => expect(updateService).toHaveBeenCalled());
     expect(updateService).toHaveBeenCalledWith(SERVICE_ID, { lifecycleStatus: 'archived' }, 3);
+    await waitFor(() => expect(refresh).toHaveBeenCalled());
+  });
+
+  it('a refused retirement is said in the dialog that asked, which stays open', async () => {
+    updateService.mockResolvedValue({ status: 'conflict', correlationId: 'corr-r', attempt: 1 });
+    const user = userEvent.setup();
+    renderDetail();
+    await user.click(screen.getByRole('button', { name: EN['services.detail.retire'] as string }));
+    const dialog = await screen.findByTestId('service-retire-dialog');
+    await user.click(
+      within(dialog).getByRole('button', { name: EN['services.detail.retire'] as string })
+    );
+    expect(await within(dialog).findByText(EN['services.detail.conflict'] as string)).toBeVisible();
+    expect(refresh).not.toHaveBeenCalled();
   });
 });
 
@@ -241,14 +346,16 @@ describe('availability is a branch-scoped write', () => {
   it('without the branch list, sets it for the working branch, already chosen and named', async () => {
     const user = userEvent.setup();
     renderLtr(
-      inBranch(
-        <ServiceDetailScreen
-          locale="en"
-          messages={en}
-          service={service() as never}
-          canManage
-          canReadBranches={false}
-        />
+      withMui(
+        inBranch(
+          <ServiceDetailScreen
+            locale="en"
+            messages={en}
+            service={service() as never}
+            canManage
+            canReadBranches={false}
+          />
+        )
       )
     );
     expect(listBranches).not.toHaveBeenCalled();
@@ -272,15 +379,17 @@ describe('availability is a branch-scoped write', () => {
     const user = userEvent.setup();
     const second = { ...TEST_BRANCH, id: OTHER_BRANCH, code: 'B2', name: 'Second' };
     renderLtr(
-      inBranch(
-        <ServiceDetailScreen
-          locale="en"
-          messages={en}
-          service={service() as never}
-          canManage
-          canReadBranches={false}
-        />,
-        { snapshot: branchSnapshot([TEST_BRANCH, second]) }
+      withMui(
+        inBranch(
+          <ServiceDetailScreen
+            locale="en"
+            messages={en}
+            service={service() as never}
+            canManage
+            canReadBranches={false}
+          />,
+          { snapshot: branchSnapshot([TEST_BRANCH, second]) }
+        )
       )
     );
     const select = screen.getByLabelText(labelled('services.availability.branch'));
@@ -345,20 +454,22 @@ describe('availability follows the header, not just its first value', () => {
 
   function renderTwo() {
     renderLtr(
-      inBranch(
-        <>
-          <BranchSwitch to={TEST_BRANCH.id} label="first" />
-          <BranchSwitch to={SECOND_BRANCH.id} label="second" />
-          <WorkingBranchProbe />
-          <ServiceDetailScreen
-            locale="en"
-            messages={en}
-            service={service() as never}
-            canManage
-            canReadBranches={false}
-          />
-        </>,
-        { snapshot: branchSnapshot([TEST_BRANCH, SECOND_BRANCH]) }
+      withMui(
+        inBranch(
+          <>
+            <BranchSwitch to={TEST_BRANCH.id} label="first" />
+            <BranchSwitch to={SECOND_BRANCH.id} label="second" />
+            <WorkingBranchProbe />
+            <ServiceDetailScreen
+              locale="en"
+              messages={en}
+              service={service() as never}
+              canManage
+              canReadBranches={false}
+            />
+          </>,
+          { snapshot: branchSnapshot([TEST_BRANCH, SECOND_BRANCH]) }
+        )
       )
     );
   }
@@ -529,13 +640,16 @@ describe('CC-15 — the availability branch picker says which state it is in', (
     let release: (value: unknown) => void = () => {};
     listBranches.mockImplementation(() => new Promise((resolve) => (release = resolve)));
     renderRtl(
-      <ServiceDetailScreen
-        locale="ar"
-        messages={ar}
-        service={service() as never}
-        canManage
-        canReadBranches={true}
-      />
+      withMui(
+        <ServiceDetailScreen
+          locale="ar"
+          messages={ar}
+          service={service() as never}
+          canManage
+          canReadBranches={true}
+        />,
+        'ar'
+      )
     );
     expect(document.documentElement.dir).toBe('rtl');
     const panel = screen.getByRole('region', {
@@ -556,13 +670,16 @@ describe('CC-15 — the availability branch picker says which state it is in', (
   it('in Arabic, a zero-row list says so and offers no identifier box', async () => {
     listBranches.mockResolvedValue(okRead({ items: [] }));
     renderRtl(
-      <ServiceDetailScreen
-        locale="ar"
-        messages={ar}
-        service={service() as never}
-        canManage
-        canReadBranches={true}
-      />
+      withMui(
+        <ServiceDetailScreen
+          locale="ar"
+          messages={ar}
+          service={service() as never}
+          canManage
+          canReadBranches={true}
+        />,
+        'ar'
+      )
     );
     expect(await screen.findByText(AR['services.catalogue.branchesNone'] as string)).toBeVisible();
     expect(screen.queryByLabelText(RETIRED_BOX.ar.branch)).toBeNull();
@@ -588,9 +705,7 @@ describe('a draft is created, held, and published against the SERVICE version', 
     const user = userEvent.setup();
     renderDetail();
 
-    fireEvent.change(screen.getByLabelText(labelled('services.version.effectiveFrom')), {
-      target: { value: '2026-10-01' },
-    });
+    await typeDay(user, 'services.version.effectiveFrom', '01102026');
     await user.click(
       screen.getByRole('button', { name: EN['services.version.createDraft'] as string })
     );
@@ -637,39 +752,156 @@ describe('a draft is created, held, and published against the SERVICE version', 
     const user = userEvent.setup();
     renderDetail();
 
-    fireEvent.change(screen.getByLabelText(labelled('services.version.effectiveFrom')), {
-      target: { value: '2026-10-01' },
-    });
+    await typeDay(user, 'services.version.effectiveFrom', '01102026');
     await user.click(
       screen.getByRole('button', { name: EN['services.version.createDraft'] as string })
     );
     expect(await screen.findByText(EN['services.version.draftHeading'] as string)).toBeVisible();
-    fireEvent.change(screen.getByLabelText(labelled('services.version.publishFrom')), {
-      target: { value: '2026-10-01' },
+    // The publish date opens on the draft's own day.
+    const publishFrom = screen.getByRole('group', {
+      name: labelled('services.version.publishFrom'),
     });
+    expect(shownDay(publishFrom)).toBe('01/10/2026');
     await user.click(
       screen.getByRole('button', { name: EN['services.version.publish'] as string })
     );
-    expect(await screen.findByText(EN['form.violation.not_forward_only'] as string)).toBeVisible();
-    expect(
-      (screen.getByLabelText(labelled('services.version.publishFrom')) as HTMLInputElement).value
-    ).toBe('2026-10-01');
+    await waitFor(() => expect(publishFrom).toHaveAttribute('aria-invalid', 'true'));
+    expect(publishFrom).toHaveAccessibleDescription(
+      new RegExp(escape(EN['form.violation.not_forward_only'] as string))
+    );
+    expect(shownDay(publishFrom)).toBe('01/10/2026');
   });
 
   it('refuses an end date that is not after the start date, before any request', async () => {
     const user = userEvent.setup();
     renderDetail();
-    fireEvent.change(screen.getByLabelText(labelled('services.version.effectiveFrom')), {
-      target: { value: '2026-10-01' },
-    });
-    fireEvent.change(screen.getByLabelText(labelled('services.version.effectiveTo')), {
-      target: { value: '2026-10-01' },
-    });
+    await typeDay(user, 'services.version.effectiveFrom', '01102026');
+    const to = await typeDay(user, 'services.version.effectiveTo', '01102026');
     await user.click(
       screen.getByRole('button', { name: EN['services.version.createDraft'] as string })
     );
-    expect(await screen.findByText(EN['services.version.rangeOrder'] as string)).toBeVisible();
+    await waitFor(() => expect(to).toHaveAttribute('aria-invalid', 'true'));
+    expect(to).toHaveAccessibleDescription(
+      new RegExp(escape(EN['services.version.rangeOrder'] as string))
+    );
     expect(createServiceVersion).not.toHaveBeenCalled();
+  });
+
+  it('refuses a start date only partly typed, puts the cursor back in it, and sends nothing', async () => {
+    for (const [locale, catalogue, render] of [
+      ['en', EN, renderLtr],
+      ['ar', AR, renderRtl],
+    ] as const) {
+      createServiceVersion.mockClear();
+      const user = userEvent.setup();
+      const view = render(
+        withMui(
+          <ServiceDetailScreen
+            locale={locale}
+            messages={locale === 'en' ? en : ar}
+            service={service() as never}
+            canManage
+            canReadBranches={false}
+          />,
+          locale
+        )
+      );
+      const from = screen.getByRole('group', {
+        name: new RegExp(`^${escape(catalogue['services.version.effectiveFrom'] as string)}`),
+      });
+      await user.click(within(from).getAllByRole('spinbutton')[0] as HTMLElement);
+      await user.keyboard('0110');
+      await user.click(
+        screen.getByRole('button', { name: catalogue['services.version.createDraft'] as string })
+      );
+      await waitFor(() => expect(from, locale).toHaveAttribute('aria-invalid', 'true'));
+      expect(from, locale).toHaveAccessibleDescription(
+        new RegExp(escape(catalogue['services.catalogue.dateFormat'] as string))
+      );
+      await waitFor(() => expect(from.contains(document.activeElement), locale).toBe(true));
+      expect(createServiceVersion, locale).not.toHaveBeenCalled();
+      // Finishing the year withdraws the complaint.
+      await user.keyboard('2026');
+      await waitFor(() => expect(from, locale).not.toHaveAttribute('aria-invalid'));
+      view.unmount();
+    }
+  });
+
+  it('refuses an end date only partly typed, rather than creating a draft with no end', async () => {
+    const user = userEvent.setup();
+    renderDetail();
+    await typeDay(user, 'services.version.effectiveFrom', '01102026');
+    const to = await typeDay(user, 'services.version.effectiveTo', '0111');
+    await user.click(
+      screen.getByRole('button', { name: EN['services.version.createDraft'] as string })
+    );
+    await waitFor(() => expect(to).toHaveAttribute('aria-invalid', 'true'));
+    expect(to).toHaveAccessibleDescription(
+      new RegExp(escape(EN['services.catalogue.dateFormat'] as string))
+    );
+    expect(createServiceVersion).not.toHaveBeenCalled();
+  });
+});
+
+describe('edits, a typed draft and a held draft are unsaved work', () => {
+  afterEach(forgetRememberedBranch);
+
+  function renderSwitchable() {
+    renderLtr(
+      withMui(
+        inBranch(
+          <>
+            <BranchSwitch to={SECOND_BRANCH.id} label="second" />
+            <ServiceDetailScreen
+              locale="en"
+              messages={en}
+              service={service() as never}
+              canManage
+              canReadBranches={false}
+            />
+          </>,
+          { snapshot: branchSnapshot([TEST_BRANCH, SECOND_BRANCH]) }
+        )
+      )
+    );
+  }
+
+  it('an edited name asks before a branch switch; discarding puts back what was read', async () => {
+    const user = userEvent.setup();
+    renderSwitchable();
+    const name = screen.getByLabelText(labelled('services.create.name'));
+    await user.clear(name);
+    await user.type(name, 'Renamed');
+    await stayOnBranch(user, await switchExpectingQuestion(user, 'second'));
+    expect(name).toHaveValue('Renamed');
+    await discardAndSwitch(user, await switchExpectingQuestion(user, 'second'));
+    await waitFor(() => expect(name).toHaveValue('Oil change'));
+  });
+
+  it('a draft created and not yet published asks before a branch switch', async () => {
+    createServiceVersion.mockResolvedValue({
+      state: success('services.version.created'),
+      created: {
+        id: 'v-held',
+        serviceId: SERVICE_ID,
+        versionNo: 2,
+        effectiveFrom: '2026-10-01',
+        effectiveTo: null,
+        status: 'draft',
+        laborTimes: [],
+      },
+    });
+    const user = userEvent.setup();
+    renderSwitchable();
+    await typeDay(user, 'services.version.effectiveFrom', '01102026');
+    await user.click(
+      screen.getByRole('button', { name: EN['services.version.createDraft'] as string })
+    );
+    expect(await screen.findByText(EN['services.version.draftHeading'] as string)).toBeVisible();
+    await discardAndSwitch(user, await switchExpectingQuestion(user, 'second'));
+    await waitFor(() =>
+      expect(screen.queryByText(EN['services.version.draftHeading'] as string)).toBeNull()
+    );
   });
 });
 

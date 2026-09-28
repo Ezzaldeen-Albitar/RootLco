@@ -1,18 +1,23 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
+import Button from '@mui/material/Button';
 import { regexes } from 'zod';
 
 import { INITIAL_REQUEST } from '@/components/data-table/table-state';
-import { SelectField, TextField } from '@/components/forms/Field';
+import { FormSelectField } from '@/components/forms/mui/FormSelectField';
+import { FormTextField } from '@/components/forms/mui/FormTextField';
+import { EntityPicker } from '@/components/pickers/EntityPicker';
 import { listServices } from '@/features/services/api';
 import type { BranchOption, ServiceSummary } from '@/features/services/services-contract';
 import {
   useUnsavedGuard,
   useWorkingContext,
 } from '@/features/working-context/WorkingContextProvider';
+import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic } from '@/i18n/get-messages';
+import type { CursorPage, ReadState } from '@/lib/api/read-operation';
 import type { ActionState } from '@/lib/forms/action-result';
 
 import { listBranches } from '../api';
@@ -222,6 +227,7 @@ export function CompanyPicker({
   value,
   onChange,
   error,
+  onEdit,
 }: {
   readonly messages: Messages;
   readonly label: string;
@@ -229,6 +235,8 @@ export function CompanyPicker({
   readonly value: BranchPair;
   readonly onChange: (next: BranchPair) => void;
   readonly error?: string | undefined;
+  /** Called on every edit, before the change is reported — clear-on-correct. */
+  readonly onEdit?: (() => void) | undefined;
 }) {
   const context = useWorkingContext();
   if (context.companies.length === 0) {
@@ -242,11 +250,11 @@ export function CompanyPicker({
     );
   }
   return (
-    <SelectField
+    <FormSelectField
       label={label}
       value={value.companyId}
-      onChange={(event) => {
-        const companyId = event.target.value;
+      onEdit={onEdit}
+      onChange={(companyId) => {
         const keepsBranch =
           value.branchId !== '' && context.companyOf(value.branchId)?.id === companyId;
         onChange({ companyId, branchId: keepsBranch ? value.branchId : '' });
@@ -275,6 +283,7 @@ export function BranchPairPicker({
   onChange,
   required,
   errors,
+  onEdit,
 }: {
   readonly messages: Messages;
   readonly branches: Branches;
@@ -284,6 +293,8 @@ export function BranchPairPicker({
   readonly onChange: (next: BranchPair) => void;
   readonly required?: boolean;
   readonly errors?: Readonly<Record<string, string | undefined>>;
+  /** Called on every edit, before the change is reported — clear-on-correct. */
+  readonly onEdit?: (() => void) | undefined;
 }) {
   /*
    * DECLARED BEFORE EVERY RETURN — a hook after an early return is a
@@ -325,12 +336,13 @@ export function BranchPairPicker({
   if (branches.phase === 'listed') {
     const { items } = branches;
     return (
-      <SelectField
+      <FormSelectField
         label={label}
-        {...(required ? { required: true } : {})}
+        required={required}
         value={stale ? '' : value.branchId}
-        onChange={(event) => {
-          const chosen = items.find((branch) => branch.id === event.target.value);
+        onEdit={onEdit}
+        onChange={(branchId) => {
+          const chosen = items.find((branch) => branch.id === branchId);
           onChange(
             chosen ? { companyId: chosen.companyId, branchId: chosen.id } : { ...EMPTY_PAIR }
           );
@@ -390,9 +402,9 @@ export function BranchPairPicker({
       ) : (
         // `type="button"`: every caller renders this picker inside a form.
         <div>
-          <button type="button" onClick={retry} className={SECONDARY_BUTTON}>
+          <Button type="button" variant="outlined" size="small" onClick={retry}>
             {translate(messages, 'state.retry')}
-          </button>
+          </Button>
         </div>
       )}
     </div>
@@ -412,26 +424,39 @@ export function branchLabel(branches: Branches, branchId: string): string | null
 
 /**
  * A service, found by the beginning of its code or name through
- * `svc.service-list` when the operator holds `svc.service.read`, and named by
- * identifier when they do not. The search is explicit — a button, never a
- * keystroke — and asks for one page.
+ * `svc.service-list` when the operator holds `svc.service.read` — on
+ * `EntityPicker`, the shared Material combobox (ADR-022): the server searches as
+ * the operator types (after a pause, or at once on Enter), the matches are the
+ * server's in its order, the chosen service reads by its code and name, and
+ * "Choose another service" puts the choice back. Without the read, the service
+ * is named by the reference box it always had.
+ *
+ * The value the caller holds is the service's id; the chosen row is kept here
+ * only to show its name, and only while the caller's value is still its id — a
+ * caller that empties the value (a discard, a reset) empties the choice.
  */
 export function ServicePicker({
   messages,
+  locale,
   canRead,
   label,
   value,
   onChange,
   error,
+  onEdit,
   countsAsUnsaved = false,
   onDiscard,
+  testId = 'pricing-service-picker',
 }: {
   readonly messages: Messages;
+  readonly locale?: Locale | undefined;
   readonly canRead: boolean;
   readonly label: string;
   readonly value: string;
   readonly onChange: (serviceId: string) => void;
   readonly error?: string | undefined;
+  /** Called on every edit, before the change is reported — clear-on-correct. */
+  readonly onEdit?: (() => void) | undefined;
   /**
    * Empties the surrounding form when the operator confirms "Discard and change
    * branch". Without it only the reference is emptied: the value belongs to the
@@ -443,41 +468,25 @@ export function ServicePicker({
    * false beside a read such as the price lookup.
    */
   readonly countsAsUnsaved?: boolean;
+  readonly testId?: string | undefined;
 }) {
-  const [term, setTerm] = useState('');
-  const [found, setFound] = useState<readonly ServiceSummary[] | null>(null);
-  const [note, setNote] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
+  const [chosen, setChosen] = useState<ServiceSummary | null>(null);
+  const shown = chosen !== null && chosen.id === value ? chosen : null;
 
-  const search = async () => {
-    const needle = term.trim();
-    setBusy(true);
-    const page = await listServices(needle ? { search: needle } : {}, INITIAL_REQUEST, null);
-    setBusy(false);
-    if (page.status === 'ok') {
-      setFound(page.rows);
-      setNote(page.rows.length === 0 ? 'pricing.picker.noServices' : null);
-    } else {
-      setFound(null);
-      setNote(
-        page.status === 'denied' ? 'pricing.picker.servicesRefused' : 'pricing.picker.searchFailed'
-      );
-    }
-  };
-
-  const options = useMemo(
-    () =>
-      (found ?? []).map((service) => ({
-        value: service.id,
-        label: `${service.serviceCode} — ${service.name}`,
-      })),
-    [found]
+  const load = useCallback(
+    async (term: string, cursor: string | null): Promise<ReadState<CursorPage<ServiceSummary>>> => {
+      const page = await listServices({ search: term }, INITIAL_REQUEST, cursor);
+      if (page.status !== 'ok') return { status: page.status, correlationId: page.correlationId };
+      return {
+        status: 'ok',
+        data: { items: page.rows, nextCursor: page.nextCursor, hasMore: page.hasMore },
+        correlationId: page.correlationId,
+      };
+    },
+    []
   );
 
   useUnsavedGuard(countsAsUnsaved && !canRead && value.trim().length > 0, () => {
-    setTerm('');
-    setFound(null);
-    setNote(null);
     if (onDiscard) onDiscard();
     else onChange('');
   });
@@ -494,56 +503,54 @@ export function ServicePicker({
    */
   if (!canRead) {
     return (
-      <TextField
+      <FormTextField
         label={translate(messages, 'pricing.picker.serviceReference')}
         description={translate(messages, 'pricing.picker.servicesNotReadable')}
         required
-        spellCheck={false}
-        autoComplete="off"
         dir="ltr"
+        autoComplete="off"
         value={value}
-        onChange={(event) => onChange(event.target.value)}
+        onEdit={onEdit}
+        onChange={onChange}
         error={error}
+        testId={testId}
       />
     );
   }
 
   return (
-    <div className="flex flex-col gap-2">
-      <div className="flex items-end gap-2">
-        <div className="grow">
-          <TextField
-            label={translate(messages, 'pricing.picker.serviceSearch')}
-            description={translate(messages, 'pricing.picker.serviceSearchHelp')}
-            spellCheck={false}
-            value={term}
-            onChange={(event) => setTerm(event.target.value)}
-          />
-        </div>
-        <button
-          type="button"
-          className={SECONDARY_BUTTON}
-          disabled={busy}
-          onClick={() => {
-            void search();
-          }}
-        >
-          {translate(messages, 'pricing.picker.search')}
-        </button>
-      </div>
-      <SelectField
-        label={label}
-        required
-        {...(note ? { description: translateDynamic(messages, note) } : {})}
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-        options={options}
-        placeholder={translate(messages, 'pricing.picker.chooseService')}
-        error={error}
-      />
-    </div>
+    <EntityPicker<ServiceSummary>
+      messages={messages}
+      locale={locale}
+      label={label}
+      value={shown}
+      onChange={(next) => {
+        onEdit?.();
+        setChosen(next);
+        onChange(next?.id ?? '');
+      }}
+      labelOf={(service) => `${service.serviceCode} — ${service.name}`}
+      load={load}
+      canSearch
+      notPermitted={translate(messages, 'pricing.picker.servicesRefused')}
+      error={error}
+      minLength={1}
+      maxLength={SERVICE_SEARCH_MAX}
+      placeholder={translate(messages, 'services.catalogue.searchPlaceholder')}
+      example={translate(messages, 'pricing.picker.serviceSearchHelp')}
+      tooShort={translate(messages, 'pricing.picker.serviceSearchHelp')}
+      resultsLabel={translate(messages, 'pricing.picker.serviceResults')}
+      change={translate(messages, 'pricing.picker.changeService')}
+      // The surrounding form declares its own unsaved work, whichever way the
+      // service is named.
+      countsAsUnsaved={false}
+      testId={testId}
+    />
   );
 }
+
+/** The longest search `svc.service-list` accepts — the length of a service name. */
+const SERVICE_SEARCH_MAX = 200;
 
 /* ------------------------------------------------------------------ *
  * Badges and notes

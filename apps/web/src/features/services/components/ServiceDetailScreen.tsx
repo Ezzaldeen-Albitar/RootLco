@@ -2,9 +2,16 @@
 
 import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import Button from '@mui/material/Button';
+import Checkbox from '@mui/material/Checkbox';
+import FormControlLabel from '@mui/material/FormControlLabel';
 
-import { SelectField, TextAreaField, TextField } from '@/components/forms/Field';
+import { ConfirmDialog } from '@/components/dialogs/ConfirmDialog';
+import { DateField, type DayProblem } from '@/components/forms/mui/DateField';
+import { FormSelectField } from '@/components/forms/mui/FormSelectField';
+import { FormTextField } from '@/components/forms/mui/FormTextField';
 import { notifyActionResult } from '@/components/notifications/action-notifications';
+import { TreePicker } from '@/components/pickers/TreePicker';
 import { useBranchTarget } from '@/features/working-context/use-branch-target';
 import {
   useUnsavedGuard,
@@ -15,12 +22,12 @@ import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic } from '@/i18n/get-messages';
 import type { ActionState } from '@/lib/forms/action-result';
+import { useLocalRefusal } from '@/lib/forms/use-local-refusal';
 import type { ServiceUpdateBody } from '@/lib/contracts/services-contract';
 
 import {
   createServiceVersion,
   listBranches,
-  listServiceCategories,
   publishServiceVersion,
   setBranchAvailability,
   updateService,
@@ -30,15 +37,23 @@ import {
   MAX_NAME,
   MAX_NOTES,
   type BranchOption,
-  type ServiceCategory,
   type ServiceDetail,
   type ServiceVersion,
 } from '../services-contract';
-import { LifecycleBadge, OutcomeNote, branchesFromContext } from './ServiceCatalogueScreen';
+import {
+  LifecycleBadge,
+  OutcomeNote,
+  branchesFromContext,
+  categoryTreeItems,
+  useTaxonomy,
+  type Taxonomy,
+} from './ServiceCatalogueScreen';
 
 /**
  * One service (P1-30, `W1`, FE-001) — `svc.service-detail`, with the four
- * writes that act on it.
+ * writes that act on it. On the shared Material UI wrappers since
+ * `P1-32-PRE-OD-MUISP` (ADR-022): `forms/mui` fields, the category tree,
+ * `DateField` for every day, and `ConfirmDialog` before retiring.
  *
  * ## The version the guarded writes send
  *
@@ -53,14 +68,22 @@ import { LifecycleBadge, OutcomeNote, branchesFromContext } from './ServiceCatal
  *
  * There is no read of a service's versions and no read of its availability.
  * The draft this screen creates is held in state for publication because its
- * id exists nowhere else; availability can be verified only through the
- * catalogue's branch filter. Both are stated on the screen rather than faked.
+ * id exists nowhere else — so a held draft is unsaved work, and leaving asks
+ * first; availability can be verified only through the catalogue's branch
+ * filter. Both are stated on the screen rather than faked.
  *
  * ## Retired is terminal
  *
  * `archived` cannot be reversed (`svc.guard_service_lifecycle`), so retiring
- * asks for an explicit acknowledgement, and a retired service offers no writes
+ * asks in a confirmation dialog first, and a retired service offers no writes
  * at all — an edit form on a frozen row would be an invitation to a refusal.
+ *
+ * ## Days are calendar days
+ *
+ * Every date here is a `DateField` holding `YYYY-MM-DD` — the value the native
+ * box produced and the routes accept. A day only partly typed is refused on its
+ * own field (with the cursor put on the part to finish) rather than read as no
+ * day at all.
  *
  * No money crosses this screen. `standardMinutes` would, as a decimal string,
  * if a version listed labour times; the create response carries the empty
@@ -68,11 +91,6 @@ import { LifecycleBadge, OutcomeNote, branchesFromContext } from './ServiceCatal
  */
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
-
-const PRIMARY_BUTTON =
-  'rounded-md bg-primary px-4 py-2 text-body font-medium text-on-primary transition-colors duration-fast ease-standard hover:bg-primary-hover';
-const SECONDARY_BUTTON =
-  'rounded-md border border-border bg-surface px-4 py-2 text-body text-text-primary transition-colors duration-fast ease-standard';
 
 export function ServiceDetailScreen({
   locale,
@@ -89,12 +107,12 @@ export function ServiceDetailScreen({
 }) {
   const router = useRouter();
   const retired = service.lifecycleStatus === 'archived';
-  const categories = useCategories();
+  const taxonomy = useTaxonomy();
   const branches = useBranchList(canReadBranches, canManage && !retired);
-  const categoryLabel = useMemo(() => {
-    const found = categories.items?.find((category) => category.id === service.categoryId);
-    return found ? `${found.code} — ${found.name}` : null;
-  }, [categories.items, service.categoryId]);
+  const categoryName = useMemo(
+    () => taxonomy.categories?.find((category) => category.id === service.categoryId)?.name ?? null,
+    [taxonomy.categories, service.categoryId]
+  );
 
   return (
     <div className="flex flex-col gap-4" lang={locale}>
@@ -115,12 +133,13 @@ export function ServiceDetailScreen({
             <bdi>{service.name}</bdi>
           </Field>
           <Field label={translate(messages, 'services.detail.category')}>
-            {categoryLabel ? (
-              <bdi>{categoryLabel}</bdi>
+            {categoryName !== null ? (
+              <bdi>{categoryName}</bdi>
             ) : (
-              <code className="font-mono text-caption" dir="ltr">
-                {service.categoryId}
-              </code>
+              // Said in words, never the identifier.
+              <span className="text-text-muted">
+                {translate(messages, 'services.catalogue.unknownCategory')}
+              </span>
             )}
           </Field>
           <Field label={translate(messages, 'services.detail.status')}>
@@ -152,7 +171,7 @@ export function ServiceDetailScreen({
           <EditPanel
             messages={messages}
             service={service}
-            categories={categories}
+            taxonomy={taxonomy}
             onDone={() => router.refresh()}
           />
           <AvailabilityPanel messages={messages} service={service} branches={branches} />
@@ -188,28 +207,6 @@ function Field({
 /* ------------------------------------------------------------------ *
  * Reference data
  * ------------------------------------------------------------------ */
-
-interface Categories {
-  readonly items: readonly ServiceCategory[] | null;
-  readonly refused: string | null;
-}
-
-function useCategories(): Categories {
-  const [items, setItems] = useState<readonly ServiceCategory[] | null>(null);
-  const [refused, setRefused] = useState<string | null>(null);
-  useEffect(() => {
-    let live = true;
-    void listServiceCategories().then((state) => {
-      if (!live) return;
-      if (state.status === 'ok') setItems(state.data.items);
-      else setRefused('services.catalogue.categoriesRefused');
-    });
-    return () => {
-      live = false;
-    };
-  }, []);
-  return { items, refused };
-}
 
 /**
  * The branch list as one of six outcomes rather than three fields — the same
@@ -295,27 +292,43 @@ function useBranchList(canRead: boolean, active: boolean): BranchList {
 function EditPanel({
   messages,
   service,
-  categories,
+  taxonomy,
   onDone,
 }: {
   readonly messages: Messages;
   readonly service: ServiceDetail;
-  readonly categories: Categories;
+  readonly taxonomy: Taxonomy;
   readonly onDone: () => void;
 }) {
-  const [form, setForm] = useState({
+  const opened = {
     name: service.name,
     description: service.description ?? '',
     categoryId: service.categoryId,
-  });
-  const [errors, setErrors] = useState<Readonly<Record<string, string>>>({});
+  };
+  const [form, setForm] = useState(opened);
+  const { errorKey, formRef, refuse } = useLocalRefusal(form);
   const [busy, setBusy] = useState(false);
   const [outcome, setOutcome] = useState<ActionState | null>(null);
-  const [acknowledgeRetire, setAcknowledgeRetire] = useState(false);
+  const [confirmingRetire, setConfirmingRetire] = useState(false);
+  const [retireError, setRetireError] = useState<string | undefined>(undefined);
+  const items = useMemo(() => categoryTreeItems(taxonomy.categories), [taxonomy.categories]);
 
-  const errorFor = (name: string): string | undefined => {
-    const key = errors[name] ?? outcome?.fieldErrors?.[name];
-    return key ? translateDynamic(messages, key) : undefined;
+  // A change from what the page read is unsaved work until it is saved.
+  const dirty =
+    form.name !== opened.name ||
+    form.description !== opened.description ||
+    form.categoryId !== opened.categoryId;
+  useUnsavedGuard(dirty, () => {
+    setForm(opened);
+    setOutcome(null);
+  });
+
+  const errorFor = (...names: readonly string[]): string | undefined => {
+    for (const name of names) {
+      const key = errorKey(name) ?? outcome?.fieldErrors?.[name];
+      if (key) return translateDynamic(messages, key);
+    }
+    return undefined;
   };
 
   const problemKey = (state: ActionState): string =>
@@ -331,7 +344,7 @@ function EditPanel({
     const description = form.description.trim();
     if (description.length > MAX_DESCRIPTION)
       found['description'] = 'services.create.descriptionTooLong';
-    setErrors(found);
+    refuse(found);
     if (Object.keys(found).length > 0) return;
 
     // Only what changed travels. `description` is three-way: a blank field on a
@@ -360,7 +373,6 @@ function EditPanel({
   };
 
   const retire = async () => {
-    if (!acknowledgeRetire) return;
     setBusy(true);
     const result = await updateService(
       service.id,
@@ -370,60 +382,63 @@ function EditPanel({
     setBusy(false);
     notifyActionResult(result, messages);
     if (result.status === 'success') {
+      setConfirmingRetire(false);
+      setRetireError(undefined);
       onDone();
       return;
     }
-    setOutcome({ ...result, messageKey: problemKey(result) });
+    // Said in the dialog that asked, which stays open on the refusal.
+    setRetireError(translateDynamic(messages, problemKey(result)));
   };
 
   return (
     <section
       aria-labelledby="service-edit-heading"
-      className="flex flex-col gap-3 rounded-lg border border-border bg-surface p-4"
+      className="flex flex-col gap-4 rounded-lg border border-border bg-surface p-4"
     >
       <h2 id="service-edit-heading" className="text-body font-medium text-text-primary">
         {translate(messages, 'services.detail.editHeading')}
       </h2>
       <form
+        ref={formRef}
         onSubmit={(event) => {
           event.preventDefault();
           void save();
         }}
         noValidate
-        className="flex flex-col gap-3"
+        aria-labelledby="service-edit-heading"
+        className="flex flex-col gap-4"
       >
-        <TextField
+        <FormTextField
           label={translate(messages, 'services.create.name')}
           required
           value={form.name}
-          onChange={(event) => setForm((f) => ({ ...f, name: event.target.value }))}
+          onChange={(name) => setForm((f) => ({ ...f, name }))}
           error={errorFor('name')}
         />
-        <SelectField
+        <TreePicker
           label={translate(messages, 'services.create.category')}
-          {...(categories.refused
-            ? { description: translateDynamic(messages, categories.refused) }
-            : {})}
+          description={taxonomy.refused ? translateDynamic(messages, taxonomy.refused) : undefined}
+          items={items}
           value={form.categoryId}
-          onChange={(event) => setForm((f) => ({ ...f, categoryId: event.target.value }))}
-          options={(categories.items ?? []).map((category) => ({
-            value: category.id,
-            label: `${category.code} — ${category.name}`,
-          }))}
-          error={errorFor('serviceCategoryId')}
+          onChange={(categoryId) => setForm((f) => ({ ...f, categoryId }))}
+          error={errorFor('serviceCategoryId', 'categoryId')}
+          testId="service-edit-category"
         />
-        <TextAreaField
+        <FormTextField
           label={translate(messages, 'services.create.description')}
           description={translate(messages, 'services.detail.descriptionHelp')}
+          multiline
+          rows={3}
           value={form.description}
-          onChange={(event) => setForm((f) => ({ ...f, description: event.target.value }))}
+          onChange={(description) => setForm((f) => ({ ...f, description }))}
           error={errorFor('description')}
         />
         <OutcomeNote messages={messages} outcome={outcome} />
         <div>
-          <button type="submit" className={PRIMARY_BUTTON} disabled={busy}>
+          <Button type="submit" variant="contained" disabled={busy}>
             {translate(messages, 'services.detail.save')}
-          </button>
+          </Button>
         </div>
       </form>
 
@@ -434,26 +449,37 @@ function EditPanel({
         <p className="text-caption text-text-muted">
           {translate(messages, 'services.detail.retireConfirm')}
         </p>
-        <label className="flex items-center gap-2 text-body text-text-primary">
-          <input
-            type="checkbox"
-            className="h-4 w-4"
-            checked={acknowledgeRetire}
-            onChange={(event) => setAcknowledgeRetire(event.target.checked)}
-          />
-          {translate(messages, 'services.detail.retireAcknowledge')}
-        </label>
         <div>
-          <button
+          <Button
             type="button"
-            className={`${SECONDARY_BUTTON} text-error`}
-            disabled={busy || !acknowledgeRetire}
-            onClick={() => void retire()}
+            variant="outlined"
+            color="error"
+            disabled={busy}
+            onClick={() => {
+              setRetireError(undefined);
+              setConfirmingRetire(true);
+            }}
           >
             {translate(messages, 'services.detail.retire')}
-          </button>
+          </Button>
         </div>
       </div>
+      <ConfirmDialog
+        open={confirmingRetire}
+        messages={messages}
+        title={translate(messages, 'services.detail.retire')}
+        description={translate(messages, 'services.detail.retireConfirm')}
+        confirmLabel={translate(messages, 'services.detail.retire')}
+        destructive
+        pending={busy}
+        error={retireError}
+        onCancel={() => {
+          setConfirmingRetire(false);
+          setRetireError(undefined);
+        }}
+        onConfirm={() => void retire()}
+        testId="service-retire-dialog"
+      />
     </section>
   );
 }
@@ -519,20 +545,11 @@ function AvailabilityPanel({
   const listedItems = branches.phase === 'listed' ? branches.items : null;
   /*
    * A branch held in this panel's own state that the list in hand cannot
-   * contain — the working branch before a narrower list arrived, say. React
-   * blanks the control while `branchId` still holds, and would still send, the
-   * value. Treated as nothing chosen when the list cannot contain it.
+   * contain is treated as nothing chosen — DERIVED, so the form can never send
+   * a pair the screen is not displaying.
    */
   const stale =
     listedItems !== null && branchId !== '' && !listedItems.some((one) => one.id === branchId);
-  /*
-   * DERIVED, not cleared in an effect. Clearing it with `setBranchId` inside a
-   * `useEffect` is the cascading-render shape this repository's lint rule
-   * refuses, and it is not needed: the select renders `chosen` and the submit
-   * reads `chosen`, so the form can never send a pair the screen is not
-   * displaying. The typed value is not destroyed either — if the list is
-   * refused on a later mount the operator still has it.
-   */
   const chosen = stale ? '' : branchId;
 
   const submit = async () => {
@@ -581,14 +598,11 @@ function AvailabilityPanel({
           void submit();
         }}
         noValidate
+        aria-labelledby="service-availability-heading"
         className="flex flex-col gap-3"
       >
         {branches.phase === 'loading' ? (
-          /*
-           * Deliberately NOT a disabled SelectField: `FieldFrame` binds its
-           * label to a control with `htmlFor` and there is no control yet.
-           * `role="status"` appears in no other phase of this panel.
-           */
+          // No control yet; `role="status"` appears in no other phase here.
           <div className="flex flex-col gap-1.5">
             <p className="text-label font-medium text-text-primary">
               {translate(messages, 'services.availability.branch')}
@@ -598,12 +612,12 @@ function AvailabilityPanel({
             </p>
           </div>
         ) : listed ? (
-          <SelectField
+          <FormSelectField
             label={translate(messages, 'services.availability.branch')}
             required
             value={chosen}
-            onChange={(event) => {
-              setBranchId(event.target.value);
+            onChange={(next) => {
+              setBranchId(next);
               // A complaint goes the moment the operator corrects it.
               setErrors({});
             }}
@@ -617,11 +631,8 @@ function AvailabilityPanel({
           />
         ) : (
           /*
-           * No branch to choose, so nothing to say about one.
-           *
-           * All three remaining phases used to render two free-text boxes
-           * asking for a company reference and a branch reference. Availability
-           * is set FOR a branch, so without one there is nothing to record, and
+           * No branch to choose, so nothing to say about one. Availability is
+           * set FOR a branch, so without one there is nothing to record, and
            * saying so is the only honest answer (Owner directive,
            * `P1-32-PRE-OD-UX`).
            */
@@ -644,29 +655,25 @@ function AvailabilityPanel({
             </p>
             {branches.phase === 'failed' && branches.retry !== null ? (
               <div>
-                {/* `type="button"`: this sits inside a <form> and a bare button submits it. */}
-                <button type="button" onClick={branches.retry} className={SECONDARY_BUTTON}>
+                <Button type="button" variant="outlined" size="small" onClick={branches.retry}>
                   {translate(messages, 'state.retry')}
-                </button>
+                </Button>
               </div>
             ) : null}
           </div>
         )}
-        <label className="flex items-center gap-2 text-body text-text-primary">
-          <input
-            type="checkbox"
-            className="h-4 w-4"
-            checked={offered}
-            onChange={(event) => setOffered(event.target.checked)}
-          />
-          {translate(messages, 'services.availability.offered')}
-        </label>
+        <FormControlLabel
+          control={
+            <Checkbox checked={offered} onChange={(event) => setOffered(event.target.checked)} />
+          }
+          label={translate(messages, 'services.availability.offered')}
+        />
         <OutcomeNote messages={messages} outcome={outcome} />
         <div>
           {/* Nothing to submit without a branch to set it for. */}
-          <button type="submit" className={PRIMARY_BUTTON} disabled={busy || !listed}>
+          <Button type="submit" variant="contained" disabled={busy || !listed}>
             {translate(messages, 'services.availability.submit')}
-          </button>
+          </Button>
         </div>
       </form>
     </section>
@@ -676,6 +683,8 @@ function AvailabilityPanel({
 /* ------------------------------------------------------------------ *
  * Versions — create a draft, then publish THAT draft
  * ------------------------------------------------------------------ */
+
+const EMPTY_VERSION = { effectiveFrom: '', effectiveTo: '', notes: '' };
 
 function VersionPanel({
   locale,
@@ -688,24 +697,65 @@ function VersionPanel({
   readonly service: ServiceDetail;
   readonly onPublished: () => void;
 }) {
-  const [form, setForm] = useState({ effectiveFrom: '', effectiveTo: '', notes: '' });
-  const [errors, setErrors] = useState<Readonly<Record<string, string>>>({});
+  const [form, setForm] = useState(EMPTY_VERSION);
+  /*
+   * Whether a date field holds parts of a day and not yet a whole one. The
+   * field reports `''` then, so without this a half-typed day would read as no
+   * day — and an unfinished end date would be left out silently.
+   */
+  const [unfinished, setUnfinished] = useState<Readonly<Record<string, boolean>>>({});
   const [busy, setBusy] = useState(false);
   const [outcome, setOutcome] = useState<ActionState | null>(null);
   const [draft, setDraft] = useState<ServiceVersion | null>(null);
   const [publishFrom, setPublishFrom] = useState('');
+  // Each field's value and whether it is half typed: erasing the parts of a
+  // refused day is a correction too, and withdraws its complaint.
+  const {
+    errorKey: refusedKey,
+    formRef: refusalFormRef,
+    refuse,
+  } = useLocalRefusal({
+    effectiveFrom: `${form.effectiveFrom}|${unfinished['effectiveFrom'] === true}`,
+    effectiveTo: `${form.effectiveTo}|${unfinished['effectiveTo'] === true}`,
+    notes: form.notes,
+    publishFrom: `${publishFrom}|${unfinished['publishFrom'] === true}`,
+  });
+
+  /*
+   * Typed and not yet created is unsaved work; so is a draft created and not
+   * yet published, because its id exists nowhere but here (there is no read of
+   * a service's versions) and leaving would lose the way to publish it.
+   */
+  const typed =
+    form.effectiveFrom !== '' ||
+    form.effectiveTo !== '' ||
+    form.notes.trim() !== '' ||
+    Object.values(unfinished).some(Boolean);
+  useUnsavedGuard(typed || draft !== null, () => {
+    setForm(EMPTY_VERSION);
+    setUnfinished({});
+    setDraft(null);
+    setPublishFrom('');
+    setOutcome(null);
+  });
 
   const errorFor = (name: string): string | undefined => {
-    const key = errors[name] ?? outcome?.fieldErrors?.[name];
+    const key = refusedKey(name) ?? outcome?.fieldErrors?.[name];
     return key ? translateDynamic(messages, key) : undefined;
   };
+  const noteDay = (field: string) => (problem: DayProblem) =>
+    setUnfinished((current) =>
+      current[field] === (problem !== null) ? current : { ...current, [field]: problem !== null }
+    );
 
   const createDraft = async () => {
     const found: Record<string, string> = {};
     const effectiveFrom = form.effectiveFrom.trim();
-    if (!ISO_DATE.test(effectiveFrom)) found['effectiveFrom'] = 'services.catalogue.dateFormat';
+    if (unfinished['effectiveFrom'] || !ISO_DATE.test(effectiveFrom)) {
+      found['effectiveFrom'] = 'services.catalogue.dateFormat';
+    }
     const effectiveTo = form.effectiveTo.trim();
-    if (effectiveTo.length > 0 && !ISO_DATE.test(effectiveTo)) {
+    if (unfinished['effectiveTo'] || (effectiveTo.length > 0 && !ISO_DATE.test(effectiveTo))) {
       found['effectiveTo'] = 'services.catalogue.dateFormat';
     } else if (effectiveTo.length > 0 && effectiveTo <= effectiveFrom) {
       // Two ISO dates compare correctly as strings; the range is half-open.
@@ -713,7 +763,7 @@ function VersionPanel({
     }
     const notes = form.notes.trim();
     if (notes.length > MAX_NOTES) found['notes'] = 'services.version.notesTooLong';
-    setErrors(found);
+    refuse(found);
     if (Object.keys(found).length > 0) return;
 
     setBusy(true);
@@ -736,11 +786,11 @@ function VersionPanel({
   const publish = async () => {
     if (!draft) return;
     const from = publishFrom.trim();
-    if (!ISO_DATE.test(from)) {
-      setErrors({ publishFrom: 'services.catalogue.dateFormat' });
+    if (unfinished['publishFrom'] || !ISO_DATE.test(from)) {
+      refuse({ publishFrom: 'services.catalogue.dateFormat' });
       return;
     }
-    setErrors({});
+    refuse({});
     setBusy(true);
     const result = await publishServiceVersion(
       service.id,
@@ -752,6 +802,7 @@ function VersionPanel({
     notifyActionResult(result, messages);
     if (result.status === 'success') {
       setDraft(null);
+      setPublishFrom('');
       setOutcome(null);
       onPublished();
       return;
@@ -796,36 +847,40 @@ function VersionPanel({
 
       {draft === null ? (
         <form
+          ref={refusalFormRef}
           onSubmit={(event) => {
             event.preventDefault();
             void createDraft();
           }}
           noValidate
-          className="grid gap-3 sm:grid-cols-2"
+          aria-labelledby="service-versions-heading"
+          className="grid gap-4 sm:grid-cols-2"
         >
-          <TextField
+          <DateField
             label={translate(messages, 'services.version.effectiveFrom')}
             required
-            type="date"
-            dir="ltr"
             value={form.effectiveFrom}
-            onChange={(event) => setForm((f) => ({ ...f, effectiveFrom: event.target.value }))}
+            onChange={(effectiveFrom) => setForm((f) => ({ ...f, effectiveFrom }))}
+            onProblem={noteDay('effectiveFrom')}
             error={errorFor('effectiveFrom')}
+            testId="service-version-from"
           />
-          <TextField
+          <DateField
             label={translate(messages, 'services.version.effectiveTo')}
             description={translate(messages, 'services.version.effectiveToHelp')}
-            type="date"
-            dir="ltr"
             value={form.effectiveTo}
-            onChange={(event) => setForm((f) => ({ ...f, effectiveTo: event.target.value }))}
+            onChange={(effectiveTo) => setForm((f) => ({ ...f, effectiveTo }))}
+            onProblem={noteDay('effectiveTo')}
             error={errorFor('effectiveTo')}
+            testId="service-version-to"
           />
           <div className="sm:col-span-2">
-            <TextAreaField
+            <FormTextField
               label={translate(messages, 'services.version.notes')}
+              multiline
+              rows={3}
               value={form.notes}
-              onChange={(event) => setForm((f) => ({ ...f, notes: event.target.value }))}
+              onChange={(notes) => setForm((f) => ({ ...f, notes }))}
               error={errorFor('notes')}
             />
           </div>
@@ -833,13 +888,14 @@ function VersionPanel({
             <OutcomeNote messages={messages} outcome={outcome} />
           </div>
           <div className="sm:col-span-2">
-            <button type="submit" className={PRIMARY_BUTTON} disabled={busy}>
+            <Button type="submit" variant="contained" disabled={busy}>
               {translate(messages, 'services.version.createDraft')}
-            </button>
+            </Button>
           </div>
         </form>
       ) : (
         <form
+          ref={refusalFormRef}
           onSubmit={(event) => {
             event.preventDefault();
             void publish();
@@ -880,31 +936,32 @@ function VersionPanel({
               {draft.laborTimes.length}
             </code>
           </p>
-          <TextField
+          <DateField
             label={translate(messages, 'services.version.publishFrom')}
             required
-            type="date"
-            dir="ltr"
             value={publishFrom}
-            onChange={(event) => setPublishFrom(event.target.value)}
+            onChange={setPublishFrom}
+            onProblem={noteDay('publishFrom')}
             error={errorFor('publishFrom')}
+            testId="service-version-publish-from"
           />
           <OutcomeNote messages={messages} outcome={outcome} />
           <div className="flex flex-wrap items-center gap-3">
-            <button type="submit" className={PRIMARY_BUTTON} disabled={busy}>
+            <Button type="submit" variant="contained" disabled={busy}>
               {translate(messages, 'services.version.publish')}
-            </button>
-            <button
+            </Button>
+            <Button
               type="button"
-              className={SECONDARY_BUTTON}
+              variant="outlined"
               disabled={busy}
               onClick={() => {
                 setDraft(null);
+                setPublishFrom('');
                 setOutcome(null);
               }}
             >
               {translate(messages, 'services.version.discardDraft')}
-            </button>
+            </Button>
           </div>
         </form>
       )}

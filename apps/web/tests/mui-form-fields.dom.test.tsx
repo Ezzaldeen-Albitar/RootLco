@@ -20,6 +20,13 @@ import { FormNumberField } from '@/components/forms/mui/FormNumberField';
 import { FormSelectField } from '@/components/forms/mui/FormSelectField';
 import { FormTextField } from '@/components/forms/mui/FormTextField';
 import { correctionFor } from '@/components/forms/mui/field-wiring';
+import {
+  TREE_NONE_ID,
+  TreePicker,
+  ancestorsOf,
+  treeShape,
+  type TreePickerItem,
+} from '@/components/pickers/TreePicker';
 import { UiFoundationProvider } from '@/components/ui-foundation/UiFoundationProvider';
 import { muiTextOf } from '@/components/ui-foundation/mui-text';
 import type { Locale } from '@/i18n/config';
@@ -1034,5 +1041,253 @@ describe('the conversions between a picker value and what a screen holds', () =>
     expect(validateInstant(emitted)).toBe('ok');
     expect(pickerToInstant(dayjs('not a date'), 'Asia/Amman')).toBe('');
     expect(instantToPicker('', 'Asia/Amman')).toBeNull();
+  });
+});
+
+/**
+ * `TreePicker` — one record from a GENUINE hierarchy, on the MUI X Community
+ * tree view (ADR-022), with the `FieldFrame` contract.
+ *
+ * What a tree picker gets wrong: dropping a row whose parent it cannot place,
+ * looping on a cycle, hiding the chosen row inside a closed parent, marking
+ * itself invalid when nothing is wrong, and refusing the focus a refused form
+ * asks for. Each is a case here, in both directions.
+ */
+
+const TREE_ITEMS: readonly TreePickerItem[] = [
+  { id: 'engine', parentId: null, label: 'Engine' },
+  { id: 'oil', parentId: 'engine', label: 'Engine oil' },
+  { id: 'filters', parentId: 'oil', label: 'Oil filters' },
+  { id: 'body', parentId: null, label: 'Body' },
+];
+
+/**
+ * A row by its OWN label. A row's accessible name also carries its open
+ * children's labels, so a name match would find the parent for a child's words.
+ */
+function treeRow(label: string, container: HTMLElement = document.body): HTMLElement {
+  const found = within(container)
+    .getAllByRole('treeitem')
+    .find((row) =>
+      within(row)
+        .queryAllByText(label)
+        .some((text) => text.closest('[role="treeitem"]') === row)
+    );
+  if (found === undefined) throw new Error(`no tree row labelled ${label}`);
+  return found;
+}
+
+/** A controlled picker, as a screen holds one. */
+function HeldTree({
+  initial = '',
+  onChange,
+  onEdit,
+  error,
+  required,
+  items = TREE_ITEMS,
+}: {
+  readonly initial?: string;
+  readonly onChange?: (id: string) => void;
+  readonly onEdit?: () => void;
+  readonly error?: string;
+  readonly required?: boolean;
+  readonly items?: readonly TreePickerItem[];
+}) {
+  const [value, setValue] = useState(initial);
+  return (
+    <TreePicker
+      label="Category"
+      description="Choose where it belongs."
+      items={items}
+      value={value}
+      noneLabel="Any category"
+      error={error}
+      required={required}
+      onEdit={onEdit}
+      onChange={(next) => {
+        onChange?.(next);
+        setValue(next);
+      }}
+      testId="tree"
+    />
+  );
+}
+
+describe('TreePicker — the shape of the tree', () => {
+  it('files each row under its parent, in the caller’s order', () => {
+    const shape = treeShape(TREE_ITEMS);
+    expect(shape.roots.map((item) => item.id)).toEqual(['engine', 'body']);
+    expect(shape.children.get('engine')?.map((item) => item.id)).toEqual(['oil']);
+    expect(shape.children.get('oil')?.map((item) => item.id)).toEqual(['filters']);
+  });
+
+  it('draws a row whose parent is not in the list at the top level, rather than dropping it', () => {
+    const shape = treeShape([
+      ...TREE_ITEMS,
+      { id: 'orphan', parentId: 'missing', label: 'Orphan' },
+    ]);
+    expect(shape.roots.map((item) => item.id)).toContain('orphan');
+  });
+
+  it('draws a cycle the list carries at the top level too, and terminates', () => {
+    const cycle: TreePickerItem[] = [
+      { id: 'a', parentId: 'b', label: 'A' },
+      { id: 'b', parentId: 'a', label: 'B' },
+    ];
+    const shape = treeShape(cycle);
+    const reachable = new Set<string>();
+    const walk = (id: string) => {
+      if (reachable.has(id)) return;
+      reachable.add(id);
+      for (const child of shape.children.get(id) ?? []) walk(child.id);
+    };
+    shape.roots.forEach((root) => walk(root.id));
+    expect([...reachable].sort()).toEqual(['a', 'b']);
+    expect(ancestorsOf(cycle, 'a')).toEqual(['b']);
+  });
+
+  it('names a row’s ancestors nearest first', () => {
+    expect(ancestorsOf(TREE_ITEMS, 'filters')).toEqual(['oil', 'engine']);
+    expect(ancestorsOf(TREE_ITEMS, 'engine')).toEqual([]);
+    expect(ancestorsOf(TREE_ITEMS, 'unknown')).toEqual([]);
+  });
+});
+
+describe('TreePicker — choosing', () => {
+  it('reports the chosen row’s id, and the "none" row as empty — with onEdit first', async () => {
+    const user = userEvent.setup();
+    const order: string[] = [];
+    mount(
+      <HeldTree onEdit={() => order.push('edit')} onChange={(id) => order.push(`change:${id}`)} />
+    );
+    const tree = screen.getByRole('tree', { name: /^Category/ });
+    await user.click(within(tree).getByText('Body'));
+    await user.click(within(tree).getByText('Any category'));
+    expect(order).toEqual(['edit', 'change:body', 'edit', 'change:']);
+    expect(treeRow('Any category', tree)).toHaveAttribute('aria-checked', 'true');
+  });
+
+  it('nests a child inside its parent, and opens the chosen row’s ancestors', () => {
+    mount(<HeldTree initial="filters" />);
+    const tree = screen.getByRole('tree', { name: /^Category/ });
+    const engine = treeRow('Engine', tree);
+    expect(engine).toHaveAttribute('aria-expanded', 'true');
+    const oil = treeRow('Engine oil', engine);
+    const filters = treeRow('Oil filters', oil);
+    expect(filters).toHaveAttribute('aria-checked', 'true');
+    expect(filters).toBeVisible();
+  });
+
+  it('opens the ancestors of a value the caller sets later', async () => {
+    function Later() {
+      const [value, setValue] = useState('');
+      return (
+        <>
+          <button type="button" onClick={() => setValue('oil')}>
+            set
+          </button>
+          <TreePicker label="Category" items={TREE_ITEMS} value={value} onChange={setValue} />
+        </>
+      );
+    }
+    const user = userEvent.setup();
+    mount(<Later />);
+    const engine = treeRow('Engine');
+    expect(engine).toHaveAttribute('aria-expanded', 'false');
+    await user.click(screen.getByRole('button', { name: 'set' }));
+    await waitFor(() => expect(engine).toHaveAttribute('aria-expanded', 'true'));
+    expect(treeRow('Engine oil', engine)).toHaveAttribute('aria-checked', 'true');
+  });
+
+  it('is driven by the keyboard: arrows move and open, Space chooses and never unchooses', async () => {
+    const user = userEvent.setup();
+    const onChange = vi.fn();
+    mount(<HeldTree onChange={onChange} />);
+    const none = treeRow('Any category');
+    none.focus();
+    await user.keyboard('{ArrowDown}');
+    expect(treeRow('Engine')).toHaveFocus();
+    await user.keyboard('{ArrowRight}');
+    expect(treeRow('Engine')).toHaveAttribute('aria-expanded', 'true');
+    await user.keyboard('{ArrowDown} ');
+    expect(onChange).toHaveBeenLastCalledWith('oil');
+    // Space again on the chosen row keeps it chosen.
+    await user.keyboard(' ');
+    expect(onChange).toHaveBeenCalledTimes(1);
+    expect(treeRow('Engine oil')).toHaveAttribute('aria-checked', 'true');
+    // Enter on a row with no children chooses it.
+    await user.keyboard('{ArrowDown}');
+    expect(treeRow('Body')).toHaveFocus();
+    await user.keyboard('{Enter}');
+    expect(onChange).toHaveBeenLastCalledWith('body');
+  });
+
+  it('in Arabic, right to left, the arrow toward the start of the line opens a row', async () => {
+    const user = userEvent.setup();
+    mount(<HeldTree />, 'ar');
+    expect(document.documentElement.dir).toBe('rtl');
+    const engine = treeRow('Engine');
+    engine.focus();
+    await user.keyboard('{ArrowLeft}');
+    expect(engine).toHaveAttribute('aria-expanded', 'true');
+    await user.keyboard('{ArrowRight}');
+    expect(engine).toHaveAttribute('aria-expanded', 'false');
+  });
+
+  it('never exposes the internal id of the "none" row', async () => {
+    const user = userEvent.setup();
+    const onChange = vi.fn();
+    mount(<HeldTree initial="body" onChange={onChange} />);
+    await user.click(screen.getByText('Any category'));
+    expect(onChange).toHaveBeenCalledWith('');
+    expect(onChange).not.toHaveBeenCalledWith(TREE_NONE_ID);
+  });
+});
+
+describe('TreePicker — the FieldFrame contract', () => {
+  it('is named by its label and described by its description; invalid only with an error', () => {
+    const { unmount } = mount(<HeldTree required />);
+    const tree = screen.getByRole('tree', { name: /^Category/ });
+    expect(tree).toHaveAccessibleDescription('Choose where it belongs.');
+    expect(tree).not.toHaveAttribute('aria-invalid');
+    expect(tree).toHaveAttribute('aria-required', 'true');
+    unmount();
+
+    mount(<HeldTree error="Choose a category." />);
+    const refused = screen.getByRole('tree', { name: /^Category/ });
+    expect(refused).toHaveAttribute('aria-invalid', 'true');
+    expect(refused).toHaveAccessibleDescription(/Choose where it belongs\..*Choose a category\./);
+    expect(screen.getByRole('alert')).toHaveTextContent('Choose a category.');
+  });
+
+  it('a refused form puts the cursor inside the tree, on its focusable row', async () => {
+    function Refusing() {
+      const [attempt, setAttempt] = useState(0);
+      const formRef = useFocusFirstInvalid(
+        attempt === 0
+          ? { status: 'idle', attempt }
+          : { status: 'invalid', fieldErrors: { category: 'x' }, attempt }
+      );
+      return (
+        <form ref={formRef} aria-label="refusing">
+          <TreePicker
+            label="Category"
+            items={TREE_ITEMS}
+            value=""
+            onChange={() => undefined}
+            error={attempt === 0 ? undefined : 'Choose a category.'}
+          />
+          <button type="button" onClick={() => setAttempt((n) => n + 1)}>
+            submit
+          </button>
+        </form>
+      );
+    }
+    const user = userEvent.setup();
+    mount(<Refusing />);
+    await user.click(screen.getByRole('button', { name: 'submit' }));
+    const tree = screen.getByRole('tree', { name: /^Category/ });
+    await waitFor(() => expect(tree.contains(document.activeElement)).toBe(true));
+    expect(document.activeElement).toHaveAttribute('role', 'treeitem');
   });
 });

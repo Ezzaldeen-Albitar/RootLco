@@ -9,11 +9,30 @@ import {
   TEST_BRANCH,
   branchSnapshot,
   inBranch,
-  renderLtr,
-  renderRtl,
+  renderLtr as renderLtrBare,
+  renderRtl as renderRtlBare,
   RETIRED_BOX,
 } from './render';
 import { forgetRememberedBranch } from './support/branch-switch';
+import type { ReactElement } from 'react';
+import { UiFoundationProvider } from '@/components/ui-foundation/UiFoundationProvider';
+import { muiTextOf } from '@/components/ui-foundation/mui-text';
+import { getMessages } from '@/i18n/get-messages';
+
+/**
+ * The product's Material provider, as the locale layout mounts it: the screen's
+ * date fields are the MIT pickers and need its localisation (ADR-022). Every
+ * render in this file goes through it, in the render's own language.
+ */
+function withMui(ui: ReactElement, locale: 'en' | 'ar'): ReactElement {
+  return (
+    <UiFoundationProvider locale={locale} text={muiTextOf(getMessages(locale))}>
+      {ui}
+    </UiFoundationProvider>
+  );
+}
+const renderLtr = (ui: ReactElement) => renderLtrBare(withMui(ui, 'en'));
+const renderRtl = (ui: ReactElement) => renderRtlBare(withMui(ui, 'ar'));
 
 /**
  * Price lists and the price lookup, rendered (P1-30, `W2`, FE-002 and FE-006).
@@ -155,21 +174,27 @@ function renderInBranch(over: Record<string, unknown> = {}) {
 }
 
 const lookupForm = () => screen.getByRole('form', { name: EN['pricing.lookup.heading'] as string });
+const priceListGrid = (catalogue: Record<string, string> = EN) =>
+  screen.findByRole('grid', { name: catalogue['pricing.list.caption'] as string });
+
+/** The lookup's service combobox — `EntityPicker`, named by the field's label. */
+const serviceBox = (form: HTMLElement) =>
+  within(form).getByRole('combobox', { name: labelled('pricing.lookup.service') });
 
 /**
  * The service, FOUND in the catalogue and chosen by code and name — the only
- * way to name one now. Without `svc.service.read` there is no box to type a
- * reference into (Owner directive, `P1-32-PRE-OD-UX`).
+ * way to name one with the catalogue read. The combobox asks the server as the
+ * operator types; the matches are the server's, in a list of options.
  */
 async function pickService(user: ReturnType<typeof userEvent.setup>, form: HTMLElement) {
-  const search = within(form).getByLabelText(labelled('pricing.picker.serviceSearch'));
-  await user.clear(search);
-  await user.type(search, 'OIL');
-  await user.click(
-    within(form).getByRole('button', { name: EN['pricing.picker.search'] as string })
-  );
-  const service = await within(form).findByRole('option', { name: /OIL-CHANGE/ });
-  await user.selectOptions(service.closest('select') as HTMLSelectElement, SERVICE_ID);
+  const box = serviceBox(form);
+  // A service already chosen is put back first, as an operator would.
+  const change = within(form).queryByRole('button', {
+    name: EN['pricing.picker.changeService'] as string,
+  });
+  if (change !== null) await user.click(change);
+  await user.type(box, 'OIL');
+  await user.click(await screen.findByRole('option', { name: /OIL-CHANGE/ }));
 }
 
 beforeEach(() => {
@@ -197,10 +222,30 @@ describe('the lists read on first paint and render as returned', () => {
   it('issues the read without waiting for a filter and shows the row', async () => {
     renderScreen();
     await waitFor(() => expect(listPriceLists).toHaveBeenCalled());
-    const table = await screen.findByRole('table');
-    expect(within(table).getByText('RETAIL')).toBeVisible();
+    const table = await priceListGrid();
+    expect(await within(table).findByText('RETAIL')).toBeVisible();
     expect(within(table).getByText('JOD')).toBeVisible();
     expect(within(table).getByText(EN['pricing.status.active'] as string)).toBeVisible();
+    // One bounded answer: no rows-per-page control, and no Next.
+    expect(screen.queryByLabelText(EN['table.rowsPerPage'] as string)).toBeNull();
+    expect(screen.getByRole('button', { name: EN['table.nextPage'] as string })).toBeDisabled();
+  });
+
+  it('a throttled or unanswered read is "unavailable, try again", never an empty list', async () => {
+    const user = userEvent.setup();
+    listPriceLists.mockResolvedValueOnce({
+      status: 'unavailable',
+      rows: [],
+      nextCursor: null,
+      hasMore: false,
+      correlationId: 'corr-u',
+    });
+    renderScreen();
+    expect(await screen.findByText(EN['state.unavailable.title'] as string)).toBeVisible();
+    expect(screen.queryByText(EN['pricing.list.none'] as string)).toBeNull();
+    await user.click(screen.getByRole('button', { name: EN['state.retry'] as string }));
+    const table = await priceListGrid();
+    expect(await within(table).findByText('RETAIL')).toBeVisible();
   });
 
   it('marks an inactive list as inactive, beside an active one', async () => {
@@ -208,7 +253,7 @@ describe('the lists read on first paint and render as returned', () => {
       page([row(), row({ id: 'l-2', priceListCode: 'OLD', status: 'inactive' })])
     );
     renderScreen();
-    const table = await screen.findByRole('table');
+    const table = await priceListGrid();
     expect(await within(table).findByText('OLD')).toBeVisible();
     expect(within(table).getByText(EN['pricing.status.inactive'] as string)).toBeVisible();
   });
@@ -327,14 +372,12 @@ describe('the lookup renders the server’s figures, never its own', () => {
     await waitFor(() => expect(listBranches).toHaveBeenCalled());
     const form = lookupForm();
 
-    await user.type(within(form).getByLabelText(labelled('pricing.picker.serviceSearch')), 'OIL');
-    await user.click(
-      within(form).getByRole('button', { name: EN['pricing.picker.search'] as string })
-    );
+    await user.type(serviceBox(form), 'OIL');
     await waitFor(() => expect(listServices).toHaveBeenCalled());
-    expect(listServices.mock.calls[0]?.[0]).toEqual({ search: 'OIL' });
-    const service = await within(form).findByLabelText(labelled('pricing.lookup.service'));
-    await user.selectOptions(service, SERVICE_ID);
+    // The server searches, with the term as typed.
+    expect(listServices.mock.calls.at(-1)?.[0]).toEqual({ search: 'OIL' });
+    await user.click(await screen.findByRole('option', { name: 'OIL-CHANGE — Oil change' }));
+    expect(serviceBox(form)).toHaveValue('OIL-CHANGE — Oil change');
     await user.selectOptions(
       within(form).getByLabelText(labelled('pricing.lookup.branch')),
       BRANCH
@@ -358,7 +401,9 @@ describe('the lookup renders the server’s figures, never its own', () => {
     expect(within(result).queryByText(/16 ?%/)).toBeNull();
     expect(within(result).getByText('standard')).toBeVisible();
     expect(within(result).getByText('2026-09-05')).toBeVisible();
-    expect(within(result).getByText('rule-1')).toBeVisible();
+    // The rule has no name, and its identifier is not an answer: not printed.
+    expect(within(result).queryByText('rule-1')).toBeNull();
+    expect(within(result).queryByText(EN['pricing.lookup.rule'] as string)).toBeNull();
     // The price is rendered with its ISO code; no figure other than the server's appears.
     expect(within(result).getByText(/77\.5/)).toBeVisible();
     expect(within(result).getByText(/JOD/)).toBeVisible();
@@ -407,8 +452,54 @@ describe('the lookup renders the server’s figures, never its own', () => {
   it('with the service catalogue, offers the search and no reference box', () => {
     renderInBranch({ canReadServices: true });
     const form = lookupForm();
-    expect(within(form).getByLabelText(labelled('pricing.picker.serviceSearch'))).toBeVisible();
+    expect(serviceBox(form)).toBeVisible();
+    expect(within(form).getByText(EN['pricing.picker.serviceSearchHelp'] as string)).toBeVisible();
     expect(within(form).queryByLabelText(labelled('pricing.picker.serviceReference'))).toBeNull();
+  });
+
+  it('a throttled lookup is "unavailable, try again", and trying again asks once more', async () => {
+    const user = userEvent.setup();
+    resolvePrice
+      .mockResolvedValueOnce({ status: 'unavailable', correlationId: 'corr-t' })
+      .mockResolvedValueOnce(okRead(resolved));
+    renderInBranch();
+    const form = lookupForm();
+    await pickService(user, form);
+    await user.click(
+      within(form).getByRole('button', { name: EN['pricing.lookup.submit'] as string })
+    );
+    expect(await screen.findByText(EN['state.unavailable.title'] as string)).toBeVisible();
+    await user.click(screen.getByRole('button', { name: EN['state.retry'] as string }));
+    expect(
+      await screen.findByRole('region', { name: EN['pricing.lookup.resultHeading'] as string })
+    ).toBeVisible();
+    expect(resolvePrice).toHaveBeenCalledTimes(2);
+  });
+
+  it('refuses an on-date only partly typed, beside the date, before any request', async () => {
+    const user = userEvent.setup();
+    renderInBranch();
+    const form = lookupForm();
+    await pickService(user, form);
+    const asOf = within(form).getByRole('group', { name: labelled('pricing.lookup.asOf') });
+    await user.click(within(asOf).getAllByRole('spinbutton')[0] as HTMLElement);
+    await user.keyboard('0509');
+    await user.click(
+      within(form).getByRole('button', { name: EN['pricing.lookup.submit'] as string })
+    );
+    await waitFor(() => expect(asOf).toHaveAttribute('aria-invalid', 'true'));
+    expect(asOf).toHaveAccessibleDescription(
+      new RegExp(escape(EN['pricing.common.dateFormat'] as string))
+    );
+    await waitFor(() => expect(asOf.contains(document.activeElement)).toBe(true));
+    expect(resolvePrice).not.toHaveBeenCalled();
+    await user.keyboard('2026');
+    await waitFor(() => expect(asOf).not.toHaveAttribute('aria-invalid'));
+    await user.click(
+      within(form).getByRole('button', { name: EN['pricing.lookup.submit'] as string })
+    );
+    await waitFor(() => expect(resolvePrice).toHaveBeenCalled());
+    expect(resolvePrice.mock.calls[0]?.[0]).toMatchObject({ asOf: '2026-09-05' });
   });
 
   it('without the service catalogue, STILL looks a price up through the labelled service reference', async () => {
@@ -607,8 +698,8 @@ describe('Arabic, right to left', () => {
       />
     );
     expect(document.documentElement.dir).toBe('rtl');
-    const table = await screen.findByRole('table');
-    expect(within(table).getByText('RETAIL')).toBeVisible();
+    const table = await priceListGrid(AR);
+    expect(await within(table).findByText('RETAIL')).toBeVisible();
     expect(within(table).getByText(AR['pricing.status.active'] as string)).toBeVisible();
     expect(
       screen.getByRole('button', { name: AR['pricing.lookup.submit'] as string })
@@ -810,7 +901,7 @@ describe('the /pricing route page decides before it reads', () => {
   it('renders the screen with svc.price.read, and withholds creation without manage', async () => {
     PERMISSIONS = ['svc.price.read'];
     await renderPage(PricingPage, { locale: 'en' });
-    expect(await screen.findByRole('table')).toBeVisible();
+    expect(await priceListGrid()).toBeVisible();
     expect(screen.queryByRole('button', { name: EN['pricing.list.create'] as string })).toBeNull();
   });
 

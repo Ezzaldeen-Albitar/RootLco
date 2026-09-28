@@ -3,18 +3,33 @@
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import Button from '@mui/material/Button';
 
-import { DataTable, type Column } from '@/components/data-table/DataTable';
-import { INITIAL_REQUEST, type TableRequest } from '@/components/data-table/table-state';
-import { useServerTable } from '@/components/data-table/use-server-table';
-import { SelectField, TextAreaField, TextField } from '@/components/forms/Field';
+import { OperationalGrid, type OperationalColumn } from '@/components/data/OperationalGrid';
+import { INITIAL_REQUEST } from '@/components/data-table/table-state';
+import type { ServerTable } from '@/components/data-table/use-server-table';
+import { FilterToolbar } from '@/components/filters/FilterToolbar';
+import { DateField, type DayProblem } from '@/components/forms/mui/DateField';
+import { FormSelectField } from '@/components/forms/mui/FormSelectField';
+import { FormTextField } from '@/components/forms/mui/FormTextField';
 import { notifyActionResult } from '@/components/notifications/action-notifications';
-import { SearchBox } from '@/components/search/SearchBox';
-import { useWorkingContext } from '@/features/working-context/WorkingContextProvider';
+import { TreePicker, type TreePickerItem } from '@/components/pickers/TreePicker';
+import {
+  MuiEmptyState,
+  MuiSearchStates,
+  type NoResultsReason,
+} from '@/components/states/MuiStates';
+import {
+  useUnsavedGuard,
+  useWorkingContext,
+} from '@/features/working-context/WorkingContextProvider';
 import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic } from '@/i18n/get-messages';
+import type { CursorPage, ReadState } from '@/lib/api/read-operation';
+import { useSearchRequest } from '@/lib/api/use-search-request';
 import type { ActionState } from '@/lib/forms/action-result';
+import { useLocalRefusal } from '@/lib/forms/use-local-refusal';
 
 import {
   createService,
@@ -38,15 +53,27 @@ import {
 
 /**
  * The service catalogue (P1-30, `W1`, FE-001) — `svc.service-list` rendered as
- * what the workshop offers, by code, with the writes A1 opened beside it.
+ * what the workshop offers, by code, with the writes A1 opened beside it. On
+ * the shared Material UI wrappers since `P1-32-PRE-OD-MUISP` (ADR-022).
  *
  * ## Tenant-wide, so it reads on first paint
  *
  * `svc.service-list` is `scope: 'tenant'`: there is no branch to name before
  * the first request, so the results mount immediately with no filter. The
  * work-order board's "no request before intent" rule exists because that read
- * takes a branch TARGET; this one does not, and copying the ceremony would only
- * hide the catalogue behind a button for no reason.
+ * takes a branch TARGET; this one does not.
+ *
+ * ## The filters ask as they change
+ *
+ * The box is `FilterToolbar`'s search: the term goes to the server as typed —
+ * Arabic-Indic digits included, echoed as Latin under the box — after the read
+ * hook's pause, or at once on Enter; Escape clears; nothing reaches the address
+ * bar. The status is a chip filter; the category a tree (the taxonomy names a
+ * parent, so it is a genuine hierarchy); the branch a select; the date a
+ * `DateField`. Each change is a new request through `useSearchRequest`, which
+ * drops a superseded answer and keys on the working-context version. A date
+ * only partly typed is refused on its field and the list keeps the day that
+ * was last whole, so a half-typed date never widens or narrows the list.
  *
  * ## Retired services stay listed, and say so
  *
@@ -59,44 +86,34 @@ import {
  * ## Availability is a filter, because there is no availability read
  *
  * The backend records which branches offer a service and publishes no list of
- * it; the only way to observe availability is `availableAtBranchId`. So the
- * catalogue offers "available at branch" as a filter, with the branch list when
- * the operator may read it and a plain identifier field when they may not —
- * `org.branch.read` is a different code from the catalogue's, and a refused
- * branch list must not render as "this tenant has no branches".
+ * it; the only way to observe availability is `availableAtBranchId`. The
+ * branches offered are the working context's own named branches, or the
+ * branch list when the shell holds none — and a refused list is said, never
+ * drawn as "this tenant has no branches".
  *
  * ## Categories are a label lookup, not a join the client invents
  *
  * A service carries `categoryId`. The taxonomy is read once and the name is
  * looked up for DISPLAY; a service whose category is not in the loaded page —
- * the taxonomy is capped at one page of a hundred — renders its identifier and
- * says the name is not in the list, rather than guessing.
+ * the taxonomy is capped at one page of a hundred — says so in words and never
+ * prints the identifier.
+ *
+ * ## States
+ *
+ * The rows are `OperationalGrid` over the search's table (server mode, no
+ * count, the cursor footer). Every state other than an answer is
+ * `MuiSearchStates` — a throttled or unanswered read is "unavailable, try
+ * again", never an empty catalogue — and an empty answer with nothing
+ * narrowing it is `MuiEmptyState`.
  *
  * No money crosses this screen. There is no price on a catalogue row.
  */
 
-const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
-
-const PRIMARY_BUTTON =
-  'rounded-md bg-primary px-4 py-2 text-body font-medium text-on-primary transition-colors duration-fast ease-standard hover:bg-primary-hover';
-const SECONDARY_BUTTON =
-  'rounded-md border border-border bg-surface px-4 py-2 text-body text-text-primary transition-colors duration-fast ease-standard';
-
-interface Draft {
-  readonly search: string;
-  readonly categoryId: string;
-  readonly lifecycleStatus: '' | ServiceLifecycleState;
-  readonly branchId: string;
-  readonly effectiveOn: string;
+/** A branch filter value only counts while the list in hand can contain it. */
+function chosenBranch(branches: Branches, branchId: string): string {
+  if (branches.phase !== 'listed' || branchId === '') return '';
+  return branches.items.some((branch) => branch.id === branchId) ? branchId : '';
 }
-
-const EMPTY_DRAFT: Draft = {
-  search: '',
-  categoryId: '',
-  lifecycleStatus: '',
-  branchId: '',
-  effectiveOn: '',
-};
 
 export function ServiceCatalogueScreen({
   locale,
@@ -111,47 +128,69 @@ export function ServiceCatalogueScreen({
   /** `org.branch.read` — decides whether a branch list is even requested. */
   readonly canReadBranches: boolean;
 }) {
-  const [draft, setDraft] = useState<Draft>(EMPTY_DRAFT);
-  const [criteria, setCriteria] = useState<ServiceListCriteria>({});
-  const [errors, setErrors] = useState<Readonly<Record<string, string>>>({});
+  const context = useWorkingContext();
+  const [term, setTerm] = useState('');
+  const [categoryId, setCategoryId] = useState('');
+  const [lifecycleStatus, setLifecycleStatus] = useState<'' | ServiceLifecycleState>('');
+  const [branchId, setBranchId] = useState('');
+  const [effectiveOn, setEffectiveOn] = useState('');
+  const [dayProblem, setDayProblem] = useState<DayProblem>(null);
+  /*
+   * The day the list is read on: the last WHOLE entry. While the field holds a
+   * day only partly typed it reports `''` — before it reports the problem —
+   * which would otherwise drop the filter; the list keeps the day in force
+   * instead and the field says what is wrong. The filter goes only when the
+   * field is emptied and says nothing is wrong any more.
+   */
+  const [appliedDay, setAppliedDay] = useState('');
   const [creating, setCreating] = useState(false);
 
   const taxonomy = useTaxonomy();
   const branches = useBranches(canReadBranches);
+  const branchFilter = chosenBranch(branches, branchId);
 
-  const errorFor = (name: string): string | undefined => {
-    const key = errors[name];
-    return key ? translateDynamic(messages, key) : undefined;
+  const trimmed = term.trim();
+  const criteria: ServiceListCriteria = {
+    ...(trimmed ? { search: trimmed } : {}),
+    ...(categoryId ? { categoryId } : {}),
+    ...(lifecycleStatus ? { lifecycleStatus } : {}),
+    ...(branchFilter ? { availableAtBranchId: branchFilter } : {}),
+    ...(appliedDay ? { effectiveOn: appliedDay } : {}),
   };
-  // A complaint goes the moment the operator corrects the field it is about.
-  const cleared = (name: string) =>
-    setErrors((current) => {
-      if (!(name in current)) return current;
-      const next = { ...current };
-      delete next[name];
-      return next;
-    });
 
-  const submit = () => {
-    const found: Record<string, string> = {};
-    const search = draft.search.trim();
-    if (search.length > MAX_NAME) found['search'] = 'services.catalogue.searchTooLong';
-    // Chosen from the platform's own named list, so there is no malformed
-    // reference left for a guard to refuse.
-    const branchId = draft.branchId.trim();
-    const effectiveOn = draft.effectiveOn.trim();
-    if (effectiveOn.length > 0 && !ISO_DATE.test(effectiveOn)) {
-      found['effectiveOn'] = 'services.catalogue.dateFormat';
-    }
-    setErrors(found);
-    if (Object.keys(found).length > 0) return;
-    setCriteria({
-      ...(search ? { search } : {}),
-      ...(draft.categoryId ? { categoryId: draft.categoryId } : {}),
-      ...(draft.lifecycleStatus ? { lifecycleStatus: draft.lifecycleStatus } : {}),
-      ...(branchId ? { availableAtBranchId: branchId } : {}),
-      ...(effectiveOn ? { effectiveOn } : {}),
-    });
+  const load = useCallback(
+    async (
+      asked: ServiceListCriteria,
+      cursor: string | null
+    ): Promise<ReadState<CursorPage<ServiceSummary>>> => {
+      const page = await listServices(asked, INITIAL_REQUEST, cursor);
+      if (page.status !== 'ok') return { status: page.status, correlationId: page.correlationId };
+      return {
+        status: 'ok',
+        data: { items: page.rows, nextCursor: page.nextCursor, hasMore: page.hasMore },
+        correlationId: page.correlationId,
+      };
+    },
+    []
+  );
+
+  const search = useSearchRequest<ServiceSummary, ServiceListCriteria>({
+    criteria,
+    load,
+    version: context.version,
+    // The catalogue as it is, with nothing narrowing it, is "nothing here yet"
+    // when empty — never "no matches".
+    narrows: (asked) => Object.keys(asked).length > 0,
+  });
+
+  const clearFilters = () => {
+    setTerm('');
+    setCategoryId('');
+    setLifecycleStatus('');
+    setBranchId('');
+    setEffectiveOn('');
+    setAppliedDay('');
+    setDayProblem(null);
   };
 
   const lifecycleOptions = useMemo(
@@ -163,93 +202,88 @@ export function ServiceCatalogueScreen({
     [messages]
   );
 
+  const emptyReason: NoResultsReason = trimmed ? 'search' : 'filters';
+
   return (
     <div className="flex min-h-0 flex-col gap-4">
-      <form
-        onSubmit={(event) => {
-          event.preventDefault();
-          submit();
+      <FilterToolbar
+        messages={messages}
+        label={translate(messages, 'services.catalogue.formLabel')}
+        testId="service-catalogue-toolbar"
+        search={{
+          label: translate(messages, 'services.catalogue.search'),
+          placeholder: translate(messages, 'services.catalogue.searchPlaceholder'),
+          example: translate(messages, 'services.catalogue.searchExample'),
+          value: term,
+          onChange: setTerm,
+          onSubmit: search.submit,
+          busy: search.phase === 'loading',
+          maxLength: MAX_NAME,
+          echoDigits: true,
         }}
-        noValidate
-        aria-label={translate(messages, 'services.catalogue.formLabel')}
-        className="rounded-lg border border-border bg-surface p-4"
-      >
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-          <div className="sm:col-span-2 lg:col-span-2">
-            <SearchBox
-              messages={messages}
-              label={translate(messages, 'services.catalogue.search')}
-              placeholder={translate(messages, 'services.catalogue.searchPlaceholder')}
-              example={translate(messages, 'services.catalogue.searchExample')}
-              value={draft.search}
-              onChange={(next) => {
-                setDraft((d) => ({ ...d, search: next }));
-                cleared('search');
-              }}
-              onSubmit={submit}
-              inlineSubmit={false}
-              maxLength={MAX_NAME}
-              error={errorFor('search')}
-            />
-          </div>
-          <CategoryPicker
-            messages={messages}
-            taxonomy={taxonomy}
-            label={translate(messages, 'services.catalogue.category')}
-            placeholder={translate(messages, 'services.catalogue.anyCategory')}
-            value={draft.categoryId}
-            onChange={(next) => setDraft((d) => ({ ...d, categoryId: next }))}
-          />
-          <SelectField
-            label={translate(messages, 'services.catalogue.lifecycle')}
-            value={draft.lifecycleStatus}
-            onChange={(event) =>
-              setDraft((d) => ({
-                ...d,
-                lifecycleStatus: event.target.value as Draft['lifecycleStatus'],
-              }))
-            }
-            options={lifecycleOptions}
-            placeholder={translate(messages, 'services.catalogue.anyLifecycle')}
-          />
-          <BranchPicker
-            messages={messages}
-            branches={branches}
-            label={translate(messages, 'services.catalogue.availableAtBranch')}
-            placeholder={translate(messages, 'services.catalogue.anyBranch')}
-            value={draft.branchId}
-            onChange={(next) => setDraft((d) => ({ ...d, branchId: next }))}
-            error={errorFor('branchId')}
-          />
-          <TextField
-            label={translate(messages, 'services.catalogue.effectiveOn')}
-            description={translate(messages, 'services.catalogue.effectiveOnHelp')}
-            type="date"
-            dir="ltr"
-            value={draft.effectiveOn}
-            onChange={(event) => {
-              setDraft((d) => ({ ...d, effectiveOn: event.target.value }));
-              cleared('effectiveOn');
-            }}
-            error={errorFor('effectiveOn')}
-          />
-        </div>
-        <div className="mt-4 flex flex-wrap items-center gap-3">
-          <button type="submit" className={PRIMARY_BUTTON}>
-            {translate(messages, 'services.catalogue.show')}
-          </button>
-          {canManage ? (
-            <button
+        filters={[
+          {
+            kind: 'chips',
+            key: 'lifecycle',
+            label: translate(messages, 'services.catalogue.lifecycle'),
+            options: lifecycleOptions,
+            value: lifecycleStatus,
+            onChange: (next) => setLifecycleStatus(next as '' | ServiceLifecycleState),
+          },
+        ]}
+        actions={
+          canManage ? (
+            <Button
               type="button"
-              className={SECONDARY_BUTTON}
+              variant="outlined"
               aria-expanded={creating}
               onClick={() => setCreating((open) => !open)}
             >
               {translate(messages, 'services.catalogue.create')}
-            </button>
-          ) : null}
-        </div>
-      </form>
+            </Button>
+          ) : undefined
+        }
+      />
+
+      <section
+        aria-label={translate(messages, 'services.catalogue.moreFilters')}
+        className="grid gap-4 rounded-lg border border-border bg-surface p-4 lg:grid-cols-3"
+      >
+        <CategoryPicker
+          messages={messages}
+          taxonomy={taxonomy}
+          label={translate(messages, 'services.catalogue.category')}
+          noneLabel={translate(messages, 'services.catalogue.anyCategory')}
+          help={translate(messages, 'services.catalogue.categoryHelp')}
+          value={categoryId}
+          onChange={setCategoryId}
+        />
+        <BranchPicker
+          messages={messages}
+          branches={branches}
+          label={translate(messages, 'services.catalogue.availableAtBranch')}
+          placeholder={translate(messages, 'services.catalogue.anyBranch')}
+          value={branchFilter}
+          onChange={setBranchId}
+        />
+        <DateField
+          label={translate(messages, 'services.catalogue.effectiveOn')}
+          description={translate(messages, 'services.catalogue.effectiveOnHelp')}
+          value={effectiveOn}
+          onChange={(next) => {
+            setEffectiveOn(next);
+            if (next !== '') setAppliedDay(next);
+          }}
+          onProblem={(problem) => {
+            setDayProblem(problem);
+            if (problem === null && effectiveOn === '') setAppliedDay('');
+          }}
+          error={
+            dayProblem === null ? undefined : translate(messages, 'services.catalogue.dateFormat')
+          }
+          testId="service-catalogue-effective-on"
+        />
+      </section>
 
       {canManage && creating ? (
         <CreatePanel
@@ -260,13 +294,41 @@ export function ServiceCatalogueScreen({
         />
       ) : null}
 
-      <CatalogueResults
-        key={JSON.stringify(criteria)}
-        locale={locale}
-        messages={messages}
-        criteria={criteria}
-        taxonomy={taxonomy}
-      />
+      <section aria-labelledby="service-catalogue-heading" className="flex min-h-0 flex-col gap-2">
+        <h2 id="service-catalogue-heading" className="sr-only">
+          {translate(messages, 'services.catalogue.resultsHeading')}
+        </h2>
+        {search.phase === 'empty' && search.table.narrowed !== true ? (
+          <MuiEmptyState messages={messages} testId="service-catalogue-empty" />
+        ) : (
+          <MuiSearchStates
+            messages={messages}
+            locale={locale}
+            phase={search.phase}
+            correlationId={search.correlationId}
+            emptyReason={emptyReason}
+            onRetry={search.submit}
+            onClearFilters={
+              search.phase === 'empty' ? (
+                <Button type="button" variant="outlined" size="small" onClick={clearFilters}>
+                  {translate(messages, 'table.clearFilters')}
+                </Button>
+              ) : undefined
+            }
+          />
+        )}
+        {search.phase === 'ready' ? (
+          <CatalogueGrid
+            locale={locale}
+            messages={messages}
+            taxonomy={taxonomy}
+            table={search.table}
+          />
+        ) : null}
+        <p className="text-caption text-text-muted" lang={locale}>
+          {translate(messages, 'services.catalogue.orderingNote')}
+        </p>
+      </section>
     </div>
   );
 }
@@ -275,7 +337,7 @@ export function ServiceCatalogueScreen({
  * Reference data the screen loads once
  * ------------------------------------------------------------------ */
 
-interface Taxonomy {
+export interface Taxonomy {
   /** `null` while loading, or when the read was refused. */
   readonly categories: readonly ServiceCategory[] | null;
   /** A message key when the read was refused or failed, else `null`. */
@@ -285,7 +347,7 @@ interface Taxonomy {
   readonly add: (category: ServiceCategory) => void;
 }
 
-function useTaxonomy(): Taxonomy {
+export function useTaxonomy(): Taxonomy {
   const [categories, setCategories] = useState<readonly ServiceCategory[] | null>(null);
   const [refused, setRefused] = useState<string | null>(null);
   const [truncated, setTruncated] = useState(false);
@@ -312,6 +374,17 @@ function useTaxonomy(): Taxonomy {
     setCategories((current) => [category, ...(current ?? [])]);
   }, []);
   return { categories, refused, truncated, add };
+}
+
+/** The taxonomy as tree rows: each category under its parent, by name. */
+export function categoryTreeItems(
+  categories: readonly ServiceCategory[] | null
+): readonly TreePickerItem[] {
+  return (categories ?? []).map((category) => ({
+    id: category.id,
+    parentId: category.parentCategoryId ?? null,
+    label: category.name,
+  }));
 }
 
 /**
@@ -417,8 +490,7 @@ function useBranches(canRead: boolean): Branches {
    * The working context comes FIRST, before the permission.
    *
    * It used to be absent here entirely, so an operator without
-   * `org.branch.read` was reported as having no branch — and that phase
-   * rendered a box asking them to paste a reference. `GET
+   * `org.branch.read` was reported as having no branch. `GET
    * /auth/working-context` is gated on `iam.user.read`, which anyone who can
    * read a session holds, and it publishes what this caller may ACT in;
    * `org.branch-list` publishes what they may administer.
@@ -433,58 +505,63 @@ function useBranches(canRead: boolean): Branches {
   return { phase: 'listed', items };
 }
 
+/**
+ * The category, as a tree of the taxonomy by name. A refused or failed
+ * taxonomy read is said under the tree; the "none" row stays, so a filter can
+ * always be lifted.
+ */
 function CategoryPicker({
   messages,
   taxonomy,
   label,
-  placeholder,
+  noneLabel,
+  help,
   value,
   onChange,
   required,
   error,
+  onEdit,
+  testId,
 }: {
   readonly messages: Messages;
   readonly taxonomy: Taxonomy;
   readonly label: string;
-  readonly placeholder: string;
+  readonly noneLabel?: string | undefined;
+  readonly help?: string | undefined;
   readonly value: string;
   readonly onChange: (next: string) => void;
   readonly required?: boolean;
   readonly error?: string | undefined;
+  readonly onEdit?: (() => void) | undefined;
+  readonly testId?: string | undefined;
 }) {
-  const options = useMemo(
-    () =>
-      (taxonomy.categories ?? []).map((category) => ({
-        value: category.id,
-        label: `${category.code} — ${category.name}`,
-      })),
-    [taxonomy.categories]
-  );
+  const items = useMemo(() => categoryTreeItems(taxonomy.categories), [taxonomy.categories]);
   const note = taxonomy.refused
     ? translateDynamic(messages, taxonomy.refused)
     : taxonomy.truncated
       ? translate(messages, 'services.catalogue.categoriesTruncated')
       : undefined;
+  const description = [help, note].filter(Boolean).join(' ') || undefined;
   return (
-    <SelectField
+    <TreePicker
       label={label}
-      {...(note ? { description: note } : {})}
-      {...(required ? { required: true } : {})}
+      description={description}
+      required={required}
+      items={items}
       value={value}
-      onChange={(event) => onChange(event.target.value)}
-      options={options}
-      placeholder={placeholder}
+      onChange={onChange}
+      noneLabel={noneLabel}
       error={error}
+      onEdit={onEdit}
+      testId={testId}
     />
   );
 }
 
 /**
- * A branch, as a list when the operator may read one and as an identifier field
- * in every case where this screen has no list to narrow to. The two are the
- * same question to the backend — a uuid it re-authorizes — and different
- * affordances to the operator. A read in flight is a WAIT, not a refusal, and
- * is the one phase with no field to type into.
+ * A branch, as a list when the operator may read one, and a sentence in every
+ * case where this screen has no list to narrow to. A read in flight is a WAIT,
+ * not a refusal, and is the one phase with no control at all.
  */
 function BranchPicker({
   messages,
@@ -493,7 +570,6 @@ function BranchPicker({
   placeholder,
   value,
   onChange,
-  error,
 }: {
   readonly messages: Messages;
   readonly branches: Branches;
@@ -501,30 +577,12 @@ function BranchPicker({
   readonly placeholder: string;
   readonly value: string;
   readonly onChange: (next: string) => void;
-  readonly error?: string | undefined;
 }) {
-  /*
-   * DECLARED BEFORE EVERY RETURN — a hook after an early return is a
-   * `react-hooks/rules-of-hooks` failure. It closes the loading-window
-   * corruption: an identifier typed into the fallback field survives in the
-   * caller's draft, the list then arrives, and the select finds no matching
-   * option — React blanks the control while the form still holds, and would
-   * still send, the typed value.
-   */
   const workingContext = useWorkingContext();
-  const listedItems = branches.phase === 'listed' ? branches.items : null;
-  const stale =
-    listedItems !== null && value !== '' && !listedItems.some((branch) => branch.id === value);
-  useEffect(() => {
-    if (stale) onChange('');
-  }, [stale, onChange]);
 
   if (branches.phase === 'loading') {
-    /*
-     * Deliberately NOT a disabled SelectField: `FieldFrame` binds its label to a
-     * control with `htmlFor` and there is no control yet. `role="status"`
-     * appears in no other phase of this picker.
-     */
+    // No control yet, so nothing for a label to name; `role="status"` appears
+    // in no other phase of this picker.
     return (
       <div className="flex flex-col gap-1.5">
         <p className="text-label font-medium text-text-primary">{label}</p>
@@ -536,31 +594,24 @@ function BranchPicker({
   }
 
   if (branches.phase === 'listed') {
-    const { items } = branches;
     return (
-      <SelectField
+      <FormSelectField
         label={label}
-        value={stale ? '' : value}
-        onChange={(event) => onChange(event.target.value)}
-        options={items.map((branch) => ({
+        value={value}
+        onChange={onChange}
+        options={branches.items.map((branch) => ({
           value: branch.id,
           label: `${branch.branchCode} — ${branch.name}`,
         }))}
         placeholder={placeholder}
-        error={error}
+        testId="service-branch-filter"
       />
     );
   }
 
   /*
    * `not-offered`, `none` and `failed`: there is no branch to filter by, and
-   * the screen says which of the three it is.
-   *
-   * All three used to render a free-text box asking for a branch reference. The
-   * argument was that `org.branch-list` lists what a caller may REACH, that an
-   * empty list says nothing about what they may operate on, and that the server
-   * re-authorizes the value anyway — all true, and none of it made a reference
-   * something an operator could look up. This filter is OPTIONAL, so its
+   * the screen says which of the three it is. This filter is OPTIONAL, so its
    * absence narrows nothing: the catalogue is simply read unfiltered (Owner
    * directive, `P1-32-PRE-OD-UX`).
    */
@@ -585,10 +636,9 @@ function BranchPicker({
       </p>
       {branches.phase === 'failed' && branches.retry !== null ? (
         <div>
-          {/* `type="button"`: this picker sits inside a <form> and a bare button submits it. */}
-          <button type="button" onClick={branches.retry} className={SECONDARY_BUTTON}>
+          <Button type="button" variant="outlined" size="small" onClick={branches.retry}>
             {translate(messages, 'state.retry')}
-          </button>
+          </Button>
         </div>
       ) : null}
     </div>
@@ -599,30 +649,24 @@ function BranchPicker({
  * The results
  * ------------------------------------------------------------------ */
 
-function CatalogueResults({
+function CatalogueGrid({
   locale,
   messages,
-  criteria,
   taxonomy,
+  table,
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
-  readonly criteria: ServiceListCriteria;
   readonly taxonomy: Taxonomy;
+  readonly table: ServerTable<ServiceSummary>;
 }) {
-  const load = useCallback(
-    (request: TableRequest, cursor: string | null) => listServices(criteria, request, cursor),
-    [criteria]
-  );
-  const table = useServerTable<ServiceSummary>(load, { initial: INITIAL_REQUEST });
-
   const categoryName = useMemo(() => {
     const names = new Map<string, string>();
     for (const category of taxonomy.categories ?? []) names.set(category.id, category.name);
     return names;
   }, [taxonomy.categories]);
 
-  const columns = useMemo<readonly Column<ServiceSummary>[]>(
+  const columns = useMemo<readonly OperationalColumn<ServiceSummary>[]>(
     () => [
       {
         id: 'serviceCode',
@@ -640,6 +684,7 @@ function CatalogueResults({
       {
         id: 'name',
         headerKey: 'services.catalogue.column.name',
+        flex: 1.4,
         cell: (row) => <bdi>{row.name}</bdi>,
       },
       {
@@ -647,16 +692,13 @@ function CatalogueResults({
         headerKey: 'services.catalogue.column.category',
         cell: (row) => {
           const name = categoryName.get(row.categoryId);
+          // Said in words when the loaded taxonomy cannot name it — never the
+          // identifier, which would be a second thing to look up.
           return name !== undefined ? (
             <bdi>{name}</bdi>
           ) : (
-            <span className="flex flex-col">
-              <code className="font-mono text-caption" dir="ltr">
-                {row.categoryId}
-              </code>
-              <span className="text-caption text-text-muted">
-                {translate(messages, 'services.catalogue.unknownCategory')}
-              </span>
+            <span className="text-caption text-text-muted">
+              {translate(messages, 'services.catalogue.unknownCategory')}
             </span>
           );
         },
@@ -671,32 +713,18 @@ function CatalogueResults({
   );
 
   return (
-    <section aria-labelledby="service-catalogue-heading" className="flex min-h-0 flex-col gap-2">
-      <h2 id="service-catalogue-heading" className="sr-only">
-        {translate(messages, 'services.catalogue.resultsHeading')}
-      </h2>
-      <DataTable<ServiceSummary>
-        messages={messages}
-        columns={columns}
-        rowId={(row) => row.id}
-        request={table.request}
-        response={table.response}
-        status={table.status}
-        onRequestChange={table.setRequest}
-        onRetry={table.refresh}
-        correlationId={table.correlationId}
-        caption={translate(messages, 'services.catalogue.caption')}
-        suppressEmptyState
-      />
-      {table.response && table.response.rows.length === 0 ? (
-        <p className="py-6 text-center text-body text-text-secondary" lang={locale}>
-          {translate(messages, 'services.catalogue.noneMatching')}
-        </p>
-      ) : null}
-      <p className="text-caption text-text-muted" lang={locale}>
-        {translate(messages, 'services.catalogue.orderingNote')}
-      </p>
-    </section>
+    <OperationalGrid<ServiceSummary>
+      messages={messages}
+      locale={locale}
+      label={translate(messages, 'services.catalogue.caption')}
+      columns={columns}
+      rowId={(row) => row.id}
+      table={table}
+      // The filters live outside the table request; the states above say what
+      // an empty answer means.
+      suppressEmptyState
+      testId="service-catalogue-grid"
+    />
   );
 }
 
@@ -749,6 +777,8 @@ function CreatePanel({
   );
 }
 
+const EMPTY_SERVICE = { categoryId: '', serviceCode: '', name: '', description: '' };
+
 function ServiceForm({
   locale,
   messages,
@@ -764,14 +794,25 @@ function ServiceForm({
   readonly onClose: () => void;
 }) {
   const router = useRouter();
-  const [form, setForm] = useState({ categoryId: '', serviceCode: '', name: '', description: '' });
-  const [errors, setErrors] = useState<Readonly<Record<string, string>>>({});
+  const [form, setForm] = useState(EMPTY_SERVICE);
+  const { errorKey, formRef, refuse } = useLocalRefusal(form);
   const [busy, setBusy] = useState(false);
   const [outcome, setOutcome] = useState<ActionState | null>(null);
 
-  const errorFor = (name: string): string | undefined => {
-    const key = errors[name] ?? outcome?.fieldErrors?.[name];
-    return key ? translateDynamic(messages, key) : undefined;
+  // Typed and not created is unsaved work: a branch switch or leaving the page
+  // asks first, and "discard" empties the form.
+  const dirty = Object.values(form).some((field) => field.trim().length > 0);
+  useUnsavedGuard(dirty, () => {
+    setForm(EMPTY_SERVICE);
+    setOutcome(null);
+  });
+
+  const errorFor = (...names: readonly string[]): string | undefined => {
+    for (const name of names) {
+      const key = errorKey(name) ?? outcome?.fieldErrors?.[name];
+      if (key) return translateDynamic(messages, key);
+    }
+    return undefined;
   };
 
   const submit = async () => {
@@ -786,7 +827,7 @@ function ServiceForm({
     const description = form.description.trim();
     if (description.length > MAX_DESCRIPTION)
       found['description'] = 'services.create.descriptionTooLong';
-    setErrors(found);
+    refuse(found);
     if (Object.keys(found).length > 0) return;
 
     setBusy(true);
@@ -800,19 +841,26 @@ function ServiceForm({
     setOutcome(result.state);
     notifyActionResult(result.state, messages);
     if (result.state.status === 'success' && result.created) {
+      // Stored, so nothing is unsaved any more: the declaration goes before
+      // the move, and the typed values with it.
+      setForm(EMPTY_SERVICE);
       router.push(`/${locale}/services/${result.created.id}`);
     }
   };
 
+  const set = (field: keyof typeof EMPTY_SERVICE) => (value: string) =>
+    setForm((current) => ({ ...current, [field]: value }));
+
   return (
     <form
+      ref={formRef}
       onSubmit={(event) => {
         event.preventDefault();
         void submit();
       }}
       noValidate
       aria-labelledby="service-create-heading"
-      className="flex flex-col gap-3 rounded-lg border border-border bg-surface p-4"
+      className="flex flex-col gap-4 rounded-lg border border-border bg-surface p-4"
     >
       <h2 id="service-create-heading" className="text-body font-medium text-text-primary">
         {translate(messages, 'services.create.title')}
@@ -826,47 +874,51 @@ function ServiceForm({
         messages={messages}
         taxonomy={taxonomy}
         label={translate(messages, 'services.create.category')}
-        placeholder={translate(messages, 'services.create.chooseCategory')}
         required
         value={form.categoryId}
-        onChange={(next) => setForm((f) => ({ ...f, categoryId: next }))}
-        error={errorFor('categoryId')}
+        onChange={set('categoryId')}
+        error={errorFor('categoryId', 'serviceCategoryId')}
+        testId="service-create-category"
       />
-      <TextField
+      <FormTextField
         label={translate(messages, 'services.create.code')}
         description={translate(messages, 'services.create.codeHelp')}
         required
-        spellCheck={false}
         dir="ltr"
+        autoComplete="off"
         value={form.serviceCode}
-        onChange={(event) => setForm((f) => ({ ...f, serviceCode: event.target.value }))}
+        onChange={set('serviceCode')}
         error={errorFor('serviceCode')}
       />
-      <TextField
+      <FormTextField
         label={translate(messages, 'services.create.name')}
         required
         value={form.name}
-        onChange={(event) => setForm((f) => ({ ...f, name: event.target.value }))}
+        onChange={set('name')}
         error={errorFor('name')}
       />
-      <TextAreaField
+      <FormTextField
         label={translate(messages, 'services.create.description')}
+        multiline
+        rows={3}
         value={form.description}
-        onChange={(event) => setForm((f) => ({ ...f, description: event.target.value }))}
+        onChange={set('description')}
         error={errorFor('description')}
       />
       <OutcomeNote messages={messages} outcome={outcome} />
       <div className="flex flex-wrap items-center gap-3">
-        <button type="submit" className={PRIMARY_BUTTON} disabled={busy || disabled}>
+        <Button type="submit" variant="contained" disabled={busy || disabled}>
           {translate(messages, 'services.create.submit')}
-        </button>
-        <button type="button" className={SECONDARY_BUTTON} onClick={onClose}>
+        </Button>
+        <Button type="button" variant="outlined" onClick={onClose}>
           {translate(messages, 'services.create.cancel')}
-        </button>
+        </Button>
       </div>
     </form>
   );
 }
+
+const EMPTY_CATEGORY = { code: '', name: '', parentCategoryId: '' };
 
 function CategoryForm({
   messages,
@@ -875,13 +927,19 @@ function CategoryForm({
   readonly messages: Messages;
   readonly taxonomy: Taxonomy;
 }) {
-  const [form, setForm] = useState({ code: '', name: '' });
-  const [errors, setErrors] = useState<Readonly<Record<string, string>>>({});
+  const [form, setForm] = useState(EMPTY_CATEGORY);
+  const { errorKey, formRef, refuse } = useLocalRefusal(form);
   const [busy, setBusy] = useState(false);
   const [outcome, setOutcome] = useState<ActionState | null>(null);
 
+  const dirty = Object.values(form).some((field) => field.trim().length > 0);
+  useUnsavedGuard(dirty, () => {
+    setForm(EMPTY_CATEGORY);
+    setOutcome(null);
+  });
+
   const errorFor = (name: string): string | undefined => {
-    const key = errors[name] ?? outcome?.fieldErrors?.[name];
+    const key = errorKey(name) ?? outcome?.fieldErrors?.[name];
     return key ? translateDynamic(messages, key) : undefined;
   };
 
@@ -893,29 +951,37 @@ function CategoryForm({
     const name = form.name.trim();
     if (name.length === 0) found['name'] = 'field.required';
     else if (name.length > MAX_NAME) found['name'] = 'services.create.nameTooLong';
-    setErrors(found);
+    refuse(found);
     if (Object.keys(found).length > 0) return;
 
     setBusy(true);
-    const result = await createServiceCategory({ code, name });
+    const result = await createServiceCategory({
+      code,
+      name,
+      ...(form.parentCategoryId ? { parentCategoryId: form.parentCategoryId } : {}),
+    });
     setBusy(false);
     setOutcome(result.state);
     notifyActionResult(result.state, messages);
     if (result.state.status === 'success' && result.created) {
       taxonomy.add(result.created);
-      setForm({ code: '', name: '' });
+      setForm(EMPTY_CATEGORY);
     }
   };
 
+  const set = (field: keyof typeof EMPTY_CATEGORY) => (value: string) =>
+    setForm((current) => ({ ...current, [field]: value }));
+
   return (
     <form
+      ref={formRef}
       onSubmit={(event) => {
         event.preventDefault();
         void submit();
       }}
       noValidate
       aria-labelledby="category-create-heading"
-      className="flex flex-col gap-3 rounded-lg border border-border bg-surface p-4"
+      className="flex flex-col gap-4 rounded-lg border border-border bg-surface p-4"
     >
       <h2 id="category-create-heading" className="text-body font-medium text-text-primary">
         {translate(messages, 'services.category.new')}
@@ -923,28 +989,39 @@ function CategoryForm({
       <p className="text-caption text-text-muted">
         {translate(messages, 'services.category.explain')}
       </p>
-      <TextField
+      <FormTextField
         label={translate(messages, 'services.category.code')}
         description={translate(messages, 'services.category.codeHelp')}
         required
-        spellCheck={false}
         dir="ltr"
+        autoComplete="off"
         value={form.code}
-        onChange={(event) => setForm((f) => ({ ...f, code: event.target.value }))}
+        onChange={set('code')}
         error={errorFor('code')}
       />
-      <TextField
+      <FormTextField
         label={translate(messages, 'services.category.name')}
         required
         value={form.name}
-        onChange={(event) => setForm((f) => ({ ...f, name: event.target.value }))}
+        onChange={set('name')}
         error={errorFor('name')}
+      />
+      <CategoryPicker
+        messages={messages}
+        taxonomy={taxonomy}
+        label={translate(messages, 'services.category.parent')}
+        noneLabel={translate(messages, 'services.category.parentNone')}
+        help={translate(messages, 'services.category.parentHelp')}
+        value={form.parentCategoryId}
+        onChange={set('parentCategoryId')}
+        error={errorFor('parentCategoryId')}
+        testId="category-create-parent"
       />
       <OutcomeNote messages={messages} outcome={outcome} />
       <div>
-        <button type="submit" className={PRIMARY_BUTTON} disabled={busy}>
+        <Button type="submit" variant="contained" disabled={busy}>
           {translate(messages, 'services.category.submit')}
-        </button>
+        </Button>
       </div>
     </form>
   );
