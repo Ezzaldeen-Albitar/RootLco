@@ -600,13 +600,19 @@ export function VersionStatusBadge({
 export function OutcomeNote({
   messages,
   outcome,
+  onReload,
 }: {
   readonly messages: Messages;
   readonly outcome: ActionState | null;
+  /**
+   * A version-guarded form's way out of a conflict: what is stored now
+   * replaces the stale work. Offered only beside a conflict.
+   */
+  readonly onReload?: () => void;
 }) {
   if (!outcome || outcome.status === 'idle' || outcome.status === 'success') return null;
   const key = outcome.messageKey ?? 'action.failed';
-  return (
+  const note = (
     <p role="alert" className="text-body text-error">
       {translateDynamic(messages, key)}
       {outcome.correlationId ? (
@@ -621,6 +627,15 @@ export function OutcomeNote({
         </>
       ) : null}
     </p>
+  );
+  if (onReload === undefined || outcome.status !== 'conflict') return note;
+  return (
+    <div className="flex flex-col items-start gap-2">
+      {note}
+      <Button type="button" variant="outlined" size="small" onClick={onReload}>
+        {translate(messages, 'pricing.detail.reload')}
+      </Button>
+    </div>
   );
 }
 

@@ -192,13 +192,16 @@ export async function createService(
  * alone, `null` clears it, a string sets it. `serviceCode` is not in the body
  * type at all — it is immutable and the route's `.strict()` schema would refuse
  * it rather than ignore it.
+ *
+ * A success carries the row's new `recordVersion` as the answer returned it, so
+ * the edit form re-bases on it at once rather than waiting for the refresh.
  */
 export async function updateService(
   serviceId: string,
   body: ServiceUpdateBody,
   ifMatch: number,
   attempt = 1
-): Promise<ActionState> {
+): Promise<ActionState & { readonly recordVersion?: number }> {
   const client = await authorizedClient();
   if (!client) return { status: 'expired', messageKey: 'state.expired.message', attempt };
 
@@ -206,7 +209,11 @@ export async function updateService(
     ifMatch,
   });
   if (!result.ok) return fromFailure(result, attempt);
-  return { ...success('services.update.success', attempt), correlationId: result.correlationId };
+  return {
+    ...success('services.update.success', attempt),
+    correlationId: result.correlationId,
+    recordVersion: result.data.recordVersion,
+  };
 }
 
 /**

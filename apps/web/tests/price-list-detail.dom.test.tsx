@@ -1245,3 +1245,234 @@ describe('each form on the detail guards only what the operator entered', () => 
     expect(createPriceListAssignment).not.toHaveBeenCalled();
   });
 });
+
+/**
+ * One baseline for every version-guarded form here (`useEditBaseline`, review
+ * round 5): the draft and the publication are typed against the LIST's version.
+ * A clean form follows a refresh; typed work keeps the version it was typed
+ * against, so a write on it after the list moved is the server's conflict —
+ * with a way to the latest — and never a write the operator did not see.
+ */
+describe('the publication and the new draft agree with a refresh on one baseline', () => {
+  afterEach(forgetRememberedBranch);
+
+  const AR = ar as Record<string, string>;
+  const DRAFT_4 = { ...draft, id: '77777777-7777-4777-8777-777777777777', versionNo: 4 };
+  const MOVED = priceList({ versions: [draft, DRAFT_4, published], recordVersion: 4 });
+  const follow = vi.fn();
+  /** A page inside the application, as `unsaved-navigation.dom.test.tsx` names one. */
+  const LEAVE_HREF = '/leave-probe';
+
+  const tree = (list: ReturnType<typeof priceList>) =>
+    withMui(
+      inBranch(
+        <>
+          <BranchSwitch to={TEST_BRANCH.id} label="first" />
+          <BranchSwitch to={OTHER_BRANCH.id} label="second" />
+          <WorkingBranchProbe />
+          {/* A link inside the application; its default is withheld so jsdom stays put. */}
+          <a
+            href={LEAVE_HREF}
+            onClick={(event) => {
+              if (event.defaultPrevented) return;
+              event.preventDefault();
+              follow();
+            }}
+          >
+            elsewhere
+          </a>
+          {detailFor({ canPublish: true }, list)}
+        </>,
+        { snapshot: branchSnapshot([TEST_BRANCH, OTHER_BRANCH]) }
+      ),
+      'en'
+    );
+
+  async function mount(user: ReturnType<typeof userEvent.setup>) {
+    const view = renderLtrBare(tree(priceList({ versions: [draft, DRAFT_4, published] })));
+    await user.click(screen.getByRole('button', { name: 'first' }));
+    await waitFor(() => expect(heldBranch()).toBe(TEST_BRANCH.id));
+    return (next: ReturnType<typeof priceList>) => view.rerender(tree(next));
+  }
+
+  const formNamed = (key: string) => screen.getByRole('form', { name: EN[key] as string });
+  const publishForm = () => formNamed('pricing.publish.heading');
+  const publishChoice = () =>
+    within(publishForm()).getByLabelText(labelled('pricing.publish.version'));
+  const publishNow = (user: ReturnType<typeof userEvent.setup>) =>
+    user.click(
+      within(publishForm()).getByRole('button', { name: EN['pricing.publish.submit'] as string })
+    );
+
+  /** Clicks the link and asserts it was followed without a question. */
+  async function leaveWithoutQuestion(user: ReturnType<typeof userEvent.setup>) {
+    follow.mockClear();
+    await user.click(screen.getByRole('link', { name: 'elsewhere' }));
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+    expect(follow).toHaveBeenCalledTimes(1);
+  }
+
+  it('(a) chosen and typed, refreshed, discarded: clean, and the next publication is on the new version', async () => {
+    const user = userEvent.setup();
+    const refreshWith = await mount(user);
+    await user.selectOptions(publishChoice(), DRAFT_4.id);
+    await typeDay(user, publishForm(), 'pricing.publish.effectiveFrom', '01112026');
+    refreshWith(MOVED);
+    expect(publishChoice()).toHaveValue(DRAFT_4.id);
+
+    await discardAndSwitch(user, await switchExpectingQuestion(user, 'second'));
+    await waitFor(() => expect(publishChoice()).toHaveValue(DRAFT_ID));
+    await switchWithoutQuestion(user, 'first');
+    await leaveWithoutQuestion(user);
+
+    await user.selectOptions(publishChoice(), DRAFT_4.id);
+    await typeDay(user, publishForm(), 'pricing.publish.effectiveFrom', '01122026');
+    await publishNow(user);
+    await waitFor(() => expect(publishPriceListVersion).toHaveBeenCalled());
+    expect(publishPriceListVersion).toHaveBeenCalledWith(
+      LIST_ID,
+      DRAFT_4.id,
+      { effectiveFrom: '2026-12-01' },
+      4
+    );
+  });
+
+  it('(b) chosen and typed, refreshed, published: the OLD version, the conflict, and a way to the latest — in English and Arabic', async () => {
+    for (const [locale, catalogue, render] of [
+      ['en', EN, renderLtr],
+      ['ar', AR, renderRtl],
+    ] as const) {
+      publishPriceListVersion.mockReset();
+      publishPriceListVersion.mockResolvedValue({
+        status: 'conflict',
+        correlationId: 'corr-c',
+        attempt: 1,
+      });
+      refresh.mockClear();
+      const user = userEvent.setup();
+      const ui = (list: ReturnType<typeof priceList>) => (
+        <PriceListDetailScreen
+          locale={locale}
+          messages={locale === 'en' ? en : ar}
+          priceList={list as never}
+          canManage
+          canPublish
+          canReadBranches={false}
+          canReadServices={true}
+        />
+      );
+      const view = render(ui(priceList({ versions: [draft, DRAFT_4, published] })));
+      const form = screen.getByRole('form', {
+        name: catalogue['pricing.publish.heading'] as string,
+      });
+      const choice = () =>
+        within(form).getByLabelText(
+          new RegExp(`^${escape(catalogue['pricing.publish.version'] as string)}`)
+        );
+      await user.selectOptions(choice(), DRAFT_4.id);
+      const day = within(form).getByRole('group', {
+        name: new RegExp(`^${escape(catalogue['pricing.publish.effectiveFrom'] as string)}`),
+      });
+      await user.click(within(day).getAllByRole('spinbutton')[0] as HTMLElement);
+      await user.keyboard('01112026');
+      view.rerender(withMui(ui(MOVED), locale));
+
+      await user.click(
+        within(form).getByRole('button', { name: catalogue['pricing.publish.submit'] as string })
+      );
+      await waitFor(() => expect(publishPriceListVersion, locale).toHaveBeenCalled());
+      // Typed against version 3, so guarded by version 3: the server refuses it.
+      expect(publishPriceListVersion.mock.calls[0]?.[3], locale).toBe(3);
+      expect(
+        await within(form).findByText(catalogue['pricing.detail.conflict'] as string),
+        locale
+      ).toBeVisible();
+      expect(choice(), locale).toHaveValue(DRAFT_4.id);
+
+      await user.click(
+        within(form).getByRole('button', { name: catalogue['pricing.detail.reload'] as string })
+      );
+      await waitFor(() => expect(choice(), locale).toHaveValue(DRAFT_ID));
+      expect(within(form).queryByText(catalogue['pricing.detail.conflict'] as string)).toBeNull();
+      expect(refresh, locale).toHaveBeenCalled();
+
+      publishPriceListVersion.mockResolvedValue(success('pricing.version.published'));
+      await user.click(within(day).getAllByRole('spinbutton')[0] as HTMLElement);
+      await user.keyboard('01122026');
+      await user.click(
+        within(form).getByRole('button', { name: catalogue['pricing.publish.submit'] as string })
+      );
+      await waitFor(() => expect(publishPriceListVersion, locale).toHaveBeenCalledTimes(2));
+      expect(publishPriceListVersion.mock.calls[1]?.[3], locale).toBe(4);
+      view.unmount();
+    }
+  });
+
+  it('(b) the new draft: typed, refreshed, created — the OLD version and the conflict; loading the latest empties it', async () => {
+    createPriceListVersion.mockResolvedValue({
+      state: { status: 'conflict', correlationId: 'corr-d', attempt: 1 },
+      created: null,
+    });
+    const user = userEvent.setup();
+    const refreshWith = await mount(user);
+    const create = formNamed('pricing.version.createHeading');
+    const notes = () => within(create).getByLabelText(labelled('pricing.version.notes'));
+    await typeDay(user, create, 'pricing.version.effectiveFrom', '01112026');
+    await user.type(notes(), 'Spring');
+    refreshWith(MOVED);
+    expect(notes()).toHaveValue('Spring');
+
+    await user.click(
+      within(create).getByRole('button', { name: EN['pricing.version.createDraft'] as string })
+    );
+    await waitFor(() => expect(createPriceListVersion).toHaveBeenCalled());
+    expect(createPriceListVersion).toHaveBeenCalledWith(
+      LIST_ID,
+      { effectiveFrom: '2026-11-01', notes: 'Spring' },
+      3
+    );
+    expect(await within(create).findByText(EN['pricing.detail.conflict'] as string)).toBeVisible();
+    await user.click(
+      within(create).getByRole('button', { name: EN['pricing.detail.reload'] as string })
+    );
+    await waitFor(() => expect(notes()).toHaveValue(''));
+    expect(refresh).toHaveBeenCalled();
+    await switchWithoutQuestion(user, 'second');
+  });
+
+  it('(c) a successful publication is clean at once and after its refresh: no question on a link or a switch', async () => {
+    const user = userEvent.setup();
+    const refreshWith = await mount(user);
+    await user.selectOptions(publishChoice(), DRAFT_4.id);
+    await typeDay(user, publishForm(), 'pricing.publish.effectiveFrom', '01112026');
+    await publishNow(user);
+    await waitFor(() => expect(refresh).toHaveBeenCalled());
+    await leaveWithoutQuestion(user);
+
+    refreshWith(
+      priceList({
+        versions: [draft, { ...DRAFT_4, status: 'published' }, published],
+        recordVersion: 4,
+      })
+    );
+    await leaveWithoutQuestion(user);
+    await switchWithoutQuestion(user, 'second');
+    await waitFor(() => expect(heldBranch()).toBe(OTHER_BRANCH.id));
+  });
+
+  it('(d) an untouched form follows a refresh, and publishes on the new version', async () => {
+    const user = userEvent.setup();
+    const refreshWith = await mount(user);
+    refreshWith(MOVED);
+    await leaveWithoutQuestion(user);
+    await typeDay(user, publishForm(), 'pricing.publish.effectiveFrom', '01112026');
+    await publishNow(user);
+    await waitFor(() => expect(publishPriceListVersion).toHaveBeenCalled());
+    expect(publishPriceListVersion).toHaveBeenCalledWith(
+      LIST_ID,
+      DRAFT_ID,
+      { effectiveFrom: '2026-11-01' },
+      4
+    );
+  });
+});

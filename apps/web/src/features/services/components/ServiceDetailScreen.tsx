@@ -22,6 +22,7 @@ import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic } from '@/i18n/get-messages';
 import type { ActionState } from '@/lib/forms/action-result';
+import { useEditBaseline } from '@/lib/forms/use-edit-baseline';
 import { useLocalRefusal } from '@/lib/forms/use-local-refusal';
 import type { ServiceUpdateBody } from '@/lib/contracts/services-contract';
 
@@ -58,11 +59,14 @@ import {
  * ## The version the guarded writes send
  *
  * `svc.service-update` and `svc.service-version-publish` are version-guarded
- * and require `If-Match`. The version is the `recordVersion` the page read —
- * for publication too, because `svc.publish_service_version` locks the SERVICE
- * first. After any write that moved it, the page is refreshed so the next
- * write carries the current one; a stale one is a genuine conflict and renders
- * as one, never as a silent overwrite.
+ * and require `If-Match`. The version is the SERVICE's — for publication too,
+ * because `svc.publish_service_version` locks the SERVICE first — and it is the
+ * version of the BASELINE the form's work is based on (`useEditBaseline`), not
+ * of whatever the page last read: a refresh that arrives while the operator is
+ * typing moves neither their values nor that version, so a save built on
+ * replaced fields is the server's conflict, never a silent overwrite of them.
+ * The conflict offers to load the latest. Retiring carries no field of the
+ * form, so it is guarded by the row the summary above it shows.
  *
  * ## What this screen cannot show, and says
  *
@@ -180,6 +184,7 @@ export function ServiceDetailScreen({
             messages={messages}
             service={service}
             onPublished={() => router.refresh()}
+            onReload={() => router.refresh()}
           />
         </>
       )}
@@ -324,12 +329,18 @@ function EditPanel({
   readonly onDone: () => void;
 }) {
   /*
-   * What the form last matched: the values it opened with, then the values it
-   * last saved. Held as state, not rebuilt from the live `service` prop, so a
-   * refresh cannot turn an untouched form into unsaved work.
+   * The values and version the operator's edits are based on
+   * (`useEditBaseline`): a clean form follows a refresh, a dirty one keeps its
+   * typed values AND its baseline version, a save sends that baseline version,
+   * and a discard re-bases on what is stored now. Compared trimmed, as `save()`
+   * sends it: a trailing space alone is nothing to save.
    */
-  const [baseline, setBaseline] = useState(() => formOf(service));
-  const [form, setForm] = useState(baseline);
+  const edit = useEditBaseline({
+    stored: formOf(service),
+    storedVersion: service.recordVersion,
+    differs: editDiffers,
+  });
+  const { values: form, setValues: setForm, baseline, dirty } = edit;
   const { errorKey, formRef, refuse } = useLocalRefusal(form);
   const [busy, setBusy] = useState(false);
   const [outcome, setOutcome] = useState<ActionState | null>(null);
@@ -337,30 +348,20 @@ function EditPanel({
   const [retireError, setRetireError] = useState<string | undefined>(undefined);
   const items = useMemo(() => categoryTreeItems(taxonomy.categories), [taxonomy.categories]);
 
-  /*
-   * A change from the baseline is unsaved work until it is saved. Compared
-   * trimmed, as `save()` sends it: a trailing space alone is nothing to save.
-   */
-  const dirty = editDiffers(form, baseline);
   useUnsavedGuard(dirty, () => {
-    setForm(baseline);
+    edit.discard();
     setOutcome(null);
   });
 
   /*
-   * A refresh that brings a new version re-bases an UNTOUCHED form on it, so
-   * the field shows what is stored now. Typed work is kept as typed. Adjusted
-   * during render, React's shape for "reset state when a prop changes".
+   * The conflict's way out: what is stored now replaces the stale work, and
+   * the page is read again so a newer row than the one held arrives too.
    */
-  const [seenVersion, setSeenVersion] = useState(service.recordVersion);
-  if (service.recordVersion !== seenVersion) {
-    setSeenVersion(service.recordVersion);
-    if (!dirty) {
-      const stored = formOf(service);
-      setBaseline(stored);
-      setForm(stored);
-    }
-  }
+  const reload = () => {
+    edit.discard();
+    setOutcome(null);
+    onDone();
+  };
 
   const errorFor = (...names: readonly string[]): string | undefined => {
     for (const name of names) {
@@ -386,12 +387,13 @@ function EditPanel({
     refuse(found);
     if (Object.keys(found).length > 0) return;
 
-    // Only what changed travels. `description` is three-way: a blank field on a
-    // service that had one CLEARS it (`null`); an unchanged field is omitted.
+    // Only what changed FROM THE BASELINE travels. `description` is three-way: a
+    // blank field on a service that had one CLEARS it (`null`); an unchanged
+    // field is omitted.
     const body: ServiceUpdateBody = {
-      ...(name !== service.name ? { name } : {}),
-      ...(form.categoryId !== service.categoryId ? { serviceCategoryId: form.categoryId } : {}),
-      ...(description !== (service.description ?? '')
+      ...(name !== baseline.name ? { name } : {}),
+      ...(form.categoryId !== baseline.categoryId ? { serviceCategoryId: form.categoryId } : {}),
+      ...(description !== baseline.description
         ? { description: description.length === 0 ? null : description }
         : {}),
     };
@@ -400,14 +402,14 @@ function EditPanel({
       return;
     }
     setBusy(true);
-    const result = await updateService(service.id, body, service.recordVersion);
+    // The BASELINE's version: work built on fields a refresh has since replaced
+    // is the server's conflict, never a silent overwrite of them.
+    const result = await updateService(service.id, body, edit.version);
     setBusy(false);
     notifyActionResult(result, messages);
     if (result.status === 'success') {
       // What was saved is the new baseline, as it was sent (trimmed).
-      const saved = { name, description, categoryId: form.categoryId };
-      setBaseline(saved);
-      setForm(saved);
+      edit.rebase({ name, description, categoryId: form.categoryId }, result.recordVersion);
       setOutcome(null);
       onDone();
       return;
@@ -477,7 +479,7 @@ function EditPanel({
           onChange={(description) => setForm((f) => ({ ...f, description }))}
           error={errorFor('description')}
         />
-        <OutcomeNote messages={messages} outcome={outcome} />
+        <OutcomeNote messages={messages} outcome={outcome} onReload={reload} />
         <div>
           <Button type="submit" variant="contained" disabled={busy}>
             {translate(messages, 'services.detail.save')}
@@ -727,20 +729,49 @@ function AvailabilityPanel({
  * Versions — create a draft, then publish THAT draft
  * ------------------------------------------------------------------ */
 
-const EMPTY_VERSION = { effectiveFrom: '', effectiveTo: '', notes: '' };
+/** A type, not an interface: the form is also the `Record` the baseline compares. */
+type VersionForm = {
+  readonly effectiveFrom: string;
+  readonly effectiveTo: string;
+  readonly notes: string;
+  readonly publishFrom: string;
+};
+
+const EMPTY_VERSION: VersionForm = {
+  effectiveFrom: '',
+  effectiveTo: '',
+  notes: '',
+  publishFrom: '',
+};
+
+/** A held draft's form as nothing has been typed into it: its own day to publish from. */
+function heldDraftForm(draft: ServiceVersion): VersionForm {
+  return { ...EMPTY_VERSION, publishFrom: draft.effectiveFrom };
+}
+
+function versionDiffers(form: VersionForm, baseline: VersionForm): boolean {
+  return (
+    form.effectiveFrom !== baseline.effectiveFrom ||
+    form.effectiveTo !== baseline.effectiveTo ||
+    form.notes.trim() !== baseline.notes.trim() ||
+    form.publishFrom !== baseline.publishFrom
+  );
+}
 
 function VersionPanel({
   locale,
   messages,
   service,
   onPublished,
+  onReload,
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
   readonly service: ServiceDetail;
   readonly onPublished: () => void;
+  /** Reads the page again, after a conflict. */
+  readonly onReload: () => void;
 }) {
-  const [form, setForm] = useState(EMPTY_VERSION);
   /*
    * Whether a date field holds parts of a day and not yet a whole one. The
    * field reports `''` then, so without this a half-typed day would read as no
@@ -750,7 +781,21 @@ function VersionPanel({
   const [busy, setBusy] = useState(false);
   const [outcome, setOutcome] = useState<ActionState | null>(null);
   const [draft, setDraft] = useState<ServiceVersion | null>(null);
-  const [publishFrom, setPublishFrom] = useState('');
+  /*
+   * The typed days and notes, on the SERVICE's version (`useEditBaseline`):
+   * publication is guarded by it, so what the operator typed is based on the
+   * version they saw. A clean form follows a refresh; typed work keeps its
+   * baseline version, and a publication on it is the server's conflict.
+   */
+  const edit = useEditBaseline({
+    stored: draft === null ? EMPTY_VERSION : heldDraftForm(draft),
+    storedVersion: service.recordVersion,
+    differs: versionDiffers,
+    pending: Object.values(unfinished).some(Boolean),
+  });
+  const { values: form, setValues: setForm } = edit;
+  const publishFrom = form.publishFrom;
+  const setPublishFrom = (next: string) => setForm((f) => ({ ...f, publishFrom: next }));
   // Each field's value and whether it is half typed: erasing the parts of a
   // refused day is a correction too, and withdraws its complaint.
   const {
@@ -769,18 +814,24 @@ function VersionPanel({
    * yet published, because its id exists nowhere but here (there is no read of
    * a service's versions) and leaving would lose the way to publish it.
    */
-  const typed =
-    form.effectiveFrom !== '' ||
-    form.effectiveTo !== '' ||
-    form.notes.trim() !== '' ||
-    Object.values(unfinished).some(Boolean);
-  useUnsavedGuard(typed || draft !== null, () => {
-    setForm(EMPTY_VERSION);
+  useUnsavedGuard(edit.dirty || draft !== null, () => {
     setUnfinished({});
     setDraft(null);
-    setPublishFrom('');
+    edit.discard(EMPTY_VERSION);
     setOutcome(null);
   });
+
+  /*
+   * The conflict's way out. The held draft stays — it is stored, and its id
+   * exists nowhere else — while the typed day goes back to the draft's own and
+   * the version follows the page, read again.
+   */
+  const reload = () => {
+    setUnfinished({});
+    edit.discard();
+    setOutcome(null);
+    onReload();
+  };
 
   const errorFor = (name: string): string | undefined => {
     const key = refusedKey(name) ?? outcome?.fieldErrors?.[name];
@@ -819,12 +870,12 @@ function VersionPanel({
     notifyActionResult(result.state, messages);
     if (result.state.status === 'success' && result.created) {
       // What was typed is now the draft: the form is empty again, so once the
-      // draft is published nothing is left here to call unsaved.
-      setForm(EMPTY_VERSION);
+      // draft is published nothing is left here to call unsaved. Creating a
+      // draft is not version-guarded, so the baseline version is kept.
       setUnfinished({});
       setOutcome(null);
       setDraft(result.created);
-      setPublishFrom(result.created.effectiveFrom);
+      edit.rebase(heldDraftForm(result.created));
       return;
     }
     setOutcome(result.state);
@@ -839,19 +890,20 @@ function VersionPanel({
     }
     refuse({});
     setBusy(true);
+    // The BASELINE's version: see `useEditBaseline`.
     const result = await publishServiceVersion(
       service.id,
       draft.id,
       { effectiveFrom: from },
-      service.recordVersion
+      edit.version
     );
     setBusy(false);
     notifyActionResult(result, messages);
     if (result.status === 'success') {
-      setForm(EMPTY_VERSION);
+      // Published is saved: clean, and the refresh brings the new version.
       setUnfinished({});
       setDraft(null);
-      setPublishFrom('');
+      edit.rebase(EMPTY_VERSION);
       setOutcome(null);
       onPublished();
       return;
@@ -994,7 +1046,7 @@ function VersionPanel({
             error={errorFor('publishFrom')}
             testId="service-version-publish-from"
           />
-          <OutcomeNote messages={messages} outcome={outcome} />
+          <OutcomeNote messages={messages} outcome={outcome} onReload={reload} />
           <div className="flex flex-wrap items-center gap-3">
             <Button type="submit" variant="contained" disabled={busy}>
               {translate(messages, 'services.version.publish')}
@@ -1005,7 +1057,8 @@ function VersionPanel({
               disabled={busy}
               onClick={() => {
                 setDraft(null);
-                setPublishFrom('');
+                setUnfinished({});
+                edit.discard(EMPTY_VERSION);
                 setOutcome(null);
               }}
             >

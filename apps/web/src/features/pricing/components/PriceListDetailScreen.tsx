@@ -34,6 +34,7 @@ import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic } from '@/i18n/get-messages';
 import type { ReadState } from '@/lib/api/read-operation';
 import type { ActionState } from '@/lib/forms/action-result';
+import { useEditBaseline } from '@/lib/forms/use-edit-baseline';
 import { useLocalRefusal } from '@/lib/forms/use-local-refusal';
 import { formatMoney } from '@/lib/money';
 
@@ -83,9 +84,12 @@ import {
  *
  * `svc.price-list-version-create` and `svc.price-list-version-publish` lock
  * the price list and compare `If-Match` with ITS `recordVersion`. The number
- * sent is therefore `priceList.recordVersion` from the detail this page read,
- * never the `recordVersion` a version's own answer carries, and after either
- * write the page is refreshed so the next write reads a fresh one.
+ * sent is therefore the LIST's, never the `recordVersion` a version's own
+ * answer carries — and it is the list version the form's work is based on
+ * (`useEditBaseline`): a clean form follows a refresh, typed work keeps the
+ * version it was typed against, so a write on it after the list moved is the
+ * server's conflict, which offers to load the latest. After either write the
+ * page is refreshed, and the clean form takes the new version from it.
  *
  * ## Rules are the server's figures
  *
@@ -214,6 +218,7 @@ export function PriceListDetailScreen({
           messages={messages}
           priceList={priceList}
           onCreated={() => router.refresh()}
+          onReload={() => router.refresh()}
         />
       ) : null}
 
@@ -223,6 +228,7 @@ export function PriceListDetailScreen({
           messages={messages}
           priceList={priceList}
           onPublished={() => router.refresh()}
+          onReload={() => router.refresh()}
         />
       ) : null}
 
@@ -901,21 +907,40 @@ function RecordRuleForm({
  * A new draft — guarded by the LIST's version
  * ------------------------------------------------------------------ */
 
-const EMPTY_DRAFT = { effectiveFrom: '', notes: '' };
+/** A type, not an interface: the form is also the `Record` the baseline compares. */
+type DraftForm = { readonly effectiveFrom: string; readonly notes: string };
+
+const EMPTY_DRAFT: DraftForm = { effectiveFrom: '', notes: '' };
+
+function draftDiffers(form: DraftForm, baseline: DraftForm): boolean {
+  return (
+    form.effectiveFrom !== baseline.effectiveFrom || form.notes.trim() !== baseline.notes.trim()
+  );
+}
 
 function CreateVersionPanel({
   locale,
   messages,
   priceList,
   onCreated,
+  onReload,
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
   readonly priceList: PriceListDetail;
   readonly onCreated: () => void;
+  /** Reads the page again, after a conflict. */
+  readonly onReload: () => void;
 }) {
-  const [form, setForm] = useState(EMPTY_DRAFT);
   const days = useUnfinishedDays();
+  // Typed against the LIST's version; see `useEditBaseline`.
+  const edit = useEditBaseline({
+    stored: EMPTY_DRAFT,
+    storedVersion: priceList.recordVersion,
+    differs: draftDiffers,
+    pending: days.unfinished['effectiveFrom'] === true,
+  });
+  const { values: form, setValues: setForm } = edit;
   const {
     errorKey: localErrorKey,
     formRef: localFormRef,
@@ -927,15 +952,12 @@ function CreateVersionPanel({
   const [busy, setBusy] = useState(false);
   const [outcome, setOutcome] = useState<ActionState | null>(null);
 
-  const dirty =
-    form.effectiveFrom !== '' ||
-    form.notes.trim() !== '' ||
-    days.unfinished['effectiveFrom'] === true;
-  useUnsavedGuard(dirty, () => {
-    setForm(EMPTY_DRAFT);
+  const discard = () => {
     days.reset();
+    edit.discard();
     setOutcome(null);
-  });
+  };
+  useUnsavedGuard(edit.dirty, discard);
 
   const errorFor = (name: string): string | undefined => {
     const key = localErrorKey(name) ?? outcome?.fieldErrors?.[name];
@@ -957,13 +979,15 @@ function CreateVersionPanel({
     const result = await createPriceListVersion(
       priceList.id,
       { effectiveFrom, ...(notes ? { notes } : {}) },
-      priceList.recordVersion
+      edit.version
     );
     setBusy(false);
     notifyActionResult(result.state, messages);
     if (result.state.status === 'success') {
+      // Created is saved: clean, and the refresh brings the list's new version.
       setOutcome(null);
-      setForm(EMPTY_DRAFT);
+      days.reset();
+      edit.rebase(EMPTY_DRAFT);
       onCreated();
       return;
     }
@@ -1010,7 +1034,14 @@ function CreateVersionPanel({
           />
         </div>
         <div className="sm:col-span-2">
-          <OutcomeNote messages={messages} outcome={outcome} />
+          <OutcomeNote
+            messages={messages}
+            outcome={outcome}
+            onReload={() => {
+              discard();
+              onReload();
+            }}
+          />
         </div>
         <div className="sm:col-span-2">
           <Button type="submit" variant="contained" disabled={busy}>
@@ -1031,16 +1062,24 @@ function conflictAware(state: ActionState): ActionState {
  * Publication — a separate code, workshop-wide
  * ------------------------------------------------------------------ */
 
+/** A type, not an interface: the form is also the `Record` the baseline compares. */
+type PublishForm = { readonly chosen: string | null; readonly effectiveFrom: string };
+
+const EMPTY_PUBLISH: PublishForm = { chosen: null, effectiveFrom: '' };
+
 function PublishPanel({
   locale,
   messages,
   priceList,
   onPublished,
+  onReload,
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
   readonly priceList: PriceListDetail;
   readonly onPublished: () => void;
+  /** Reads the page again, after a conflict. */
+  readonly onReload: () => void;
 }) {
   const drafts = useMemo(
     () => priceList.versions.filter((version) => version.status === 'draft'),
@@ -1053,11 +1092,28 @@ function PublishPanel({
    * draft has left the list falls back to the default instead of naming a
    * version that is no longer offered.
    */
-  const [chosen, setChosen] = useState<string | null>(null);
-  const chosenStillOffered = chosen !== null && drafts.some((draft) => draft.id === chosen);
-  const versionId = chosenStillOffered ? chosen : (drafts[0]?.id ?? '');
-  const [effectiveFrom, setEffectiveFrom] = useState('');
   const days = useUnfinishedDays();
+  const offered = (id: string | null): boolean =>
+    id !== null && drafts.some((draft) => draft.id === id);
+  /*
+   * The choice and the day, typed against the LIST's version
+   * (`useEditBaseline`). A choice whose draft has left the list is no choice:
+   * it neither counts as unsaved work nor holds the baseline back.
+   */
+  const edit = useEditBaseline({
+    stored: EMPTY_PUBLISH,
+    storedVersion: priceList.recordVersion,
+    differs: (form, baseline) =>
+      form.effectiveFrom !== baseline.effectiveFrom ||
+      (offered(form.chosen) ? form.chosen : null) !==
+        (offered(baseline.chosen) ? baseline.chosen : null),
+    pending: days.unfinished['effectiveFrom'] === true,
+  });
+  const { chosen, effectiveFrom } = edit.values;
+  const setChosen = (next: string) => edit.setValues((f) => ({ ...f, chosen: next }));
+  const setEffectiveFrom = (next: string) => edit.setValues((f) => ({ ...f, effectiveFrom: next }));
+  const chosenStillOffered = offered(chosen);
+  const versionId = chosenStillOffered && chosen !== null ? chosen : (drafts[0]?.id ?? '');
   const {
     errorKey: localErrorKey,
     formRef: localFormRef,
@@ -1070,14 +1126,12 @@ function PublishPanel({
   const [outcome, setOutcome] = useState<ActionState | null>(null);
 
   // A day typed for publication, or a draft the operator chose, is unsaved work.
-  const dirty =
-    effectiveFrom !== '' || days.unfinished['effectiveFrom'] === true || chosenStillOffered;
-  useUnsavedGuard(dirty, () => {
-    setChosen(null);
-    setEffectiveFrom('');
+  const discard = () => {
     days.reset();
+    edit.discard();
     setOutcome(null);
-  });
+  };
+  useUnsavedGuard(edit.dirty, discard);
 
   const errorFor = (name: string): string | undefined => {
     const key = localErrorKey(name) ?? outcome?.fieldErrors?.[name];
@@ -1099,14 +1153,15 @@ function PublishPanel({
       priceList.id,
       versionId,
       { effectiveFrom: from },
-      priceList.recordVersion
+      edit.version
     );
     setBusy(false);
     notifyActionResult(result, messages);
     if (result.status === 'success') {
+      // Published is saved: clean, and the refresh brings the list's new version.
       setOutcome(null);
-      setChosen(null);
-      setEffectiveFrom('');
+      days.reset();
+      edit.rebase(EMPTY_PUBLISH);
       onPublished();
       return;
     }
@@ -1162,7 +1217,14 @@ function PublishPanel({
             testId="price-publish-from"
           />
           <div className="sm:col-span-2">
-            <OutcomeNote messages={messages} outcome={outcome} />
+            <OutcomeNote
+              messages={messages}
+              outcome={outcome}
+              onReload={() => {
+                discard();
+                onReload();
+              }}
+            />
           </div>
           <div className="sm:col-span-2">
             <Button type="submit" variant="contained" disabled={busy}>

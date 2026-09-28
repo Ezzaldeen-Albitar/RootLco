@@ -1054,6 +1054,269 @@ describe('the edit form re-bases on what was saved and on what a refresh brings'
   });
 });
 
+/**
+ * One baseline for every edit on the screen (`useEditBaseline`, review round
+ * 5). The probe that failed: typed work, a refresh from another user, then a
+ * discard put back the values from BEFORE that refresh while the version moved
+ * on, and the next save sent the old description under the new version — a
+ * silent revert the version guard could not see.
+ */
+describe('a refresh, a discard and a save agree on one baseline', () => {
+  afterEach(forgetRememberedBranch);
+
+  const FOREIGN = { name: 'Renamed elsewhere', description: 'Changed elsewhere', recordVersion: 4 };
+  const follow = vi.fn();
+  /** A page inside the application, as `unsaved-navigation.dom.test.tsx` names one. */
+  const LEAVE_HREF = '/leave-probe';
+
+  const tree = (svc: ReturnType<typeof service>) =>
+    withMui(
+      inBranch(
+        <>
+          <BranchSwitch to={TEST_BRANCH.id} label="first" />
+          <BranchSwitch to={SECOND_BRANCH.id} label="second" />
+          <WorkingBranchProbe />
+          {/* A link inside the application; its default is withheld so jsdom stays put. */}
+          <a
+            href={LEAVE_HREF}
+            onClick={(event) => {
+              if (event.defaultPrevented) return;
+              event.preventDefault();
+              follow();
+            }}
+          >
+            elsewhere
+          </a>
+          <ServiceDetailScreen
+            locale="en"
+            messages={en}
+            service={svc as never}
+            canManage
+            canReadBranches={false}
+          />
+        </>,
+        { snapshot: branchSnapshot([TEST_BRANCH, SECOND_BRANCH]) }
+      )
+    );
+
+  const nameBox = () => screen.getByLabelText(labelled('services.create.name'));
+  const descriptionBox = () => screen.getByLabelText(labelled('services.create.description'));
+
+  /** Clicks the link and asserts it was followed without a question. */
+  async function leaveWithoutQuestion(user: ReturnType<typeof userEvent.setup>) {
+    follow.mockClear();
+    await user.click(screen.getByRole('link', { name: 'elsewhere' }));
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+    expect(follow).toHaveBeenCalledTimes(1);
+  }
+
+  it('(a) typed, refreshed by another user, discarded: the NEW stored values, clean, saved at the new version', async () => {
+    const user = userEvent.setup();
+    const view = renderLtr(tree(service()));
+    await user.clear(nameBox());
+    await user.type(nameBox(), 'Typed here');
+    view.rerender(tree(service(FOREIGN)));
+    expect(nameBox()).toHaveValue('Typed here');
+
+    await discardAndSwitch(user, await switchExpectingQuestion(user, 'second'));
+    await waitFor(() => expect(nameBox()).toHaveValue('Renamed elsewhere'));
+    expect(descriptionBox()).toHaveValue('Changed elsewhere');
+    // Clean: nothing is asked on the way back or out.
+    await switchWithoutQuestion(user, 'first');
+    await leaveWithoutQuestion(user);
+
+    await user.clear(nameBox());
+    await user.type(nameBox(), 'Typed again');
+    await user.click(saveButton());
+    await waitFor(() => expect(updateService).toHaveBeenCalled());
+    // Only the name travels — never the description from before the refresh.
+    expect(updateService).toHaveBeenCalledWith(SERVICE_ID, { name: 'Typed again' }, 4);
+  });
+
+  it('(b) typed, refreshed by another user, saved: the OLD baseline version, the conflict, and a way to the latest — in English and Arabic', async () => {
+    for (const [locale, catalogue, render] of [
+      ['en', EN, renderLtr],
+      ['ar', AR, renderRtl],
+    ] as const) {
+      updateService.mockReset();
+      updateService.mockResolvedValue({ status: 'conflict', correlationId: 'corr-c', attempt: 1 });
+      refresh.mockClear();
+      const user = userEvent.setup();
+      const ui = (svc: ReturnType<typeof service>) =>
+        withMui(
+          <ServiceDetailScreen
+            locale={locale}
+            messages={locale === 'en' ? en : ar}
+            service={svc as never}
+            canManage
+            canReadBranches={false}
+          />,
+          locale
+        );
+      const box = (key: string) =>
+        screen.getByLabelText(new RegExp(`^${escape(catalogue[key] as string)}`));
+      const view = render(ui(service()));
+      await user.clear(box('services.create.name'));
+      await user.type(box('services.create.name'), 'Typed here');
+      view.rerender(ui(service(FOREIGN)));
+
+      await user.click(
+        screen.getByRole('button', { name: catalogue['services.detail.save'] as string })
+      );
+      await waitFor(() => expect(updateService, locale).toHaveBeenCalled());
+      // Built on version 3's fields, so guarded by version 3: the server refuses it.
+      expect(updateService, locale).toHaveBeenCalledWith(SERVICE_ID, { name: 'Typed here' }, 3);
+      expect(
+        await screen.findByText(catalogue['services.detail.conflict'] as string),
+        locale
+      ).toBeVisible();
+      expect(box('services.create.name'), locale).toHaveValue('Typed here');
+
+      await user.click(
+        screen.getByRole('button', { name: catalogue['services.detail.reload'] as string })
+      );
+      await waitFor(() =>
+        expect(box('services.create.name'), locale).toHaveValue('Renamed elsewhere')
+      );
+      expect(box('services.create.description'), locale).toHaveValue('Changed elsewhere');
+      expect(screen.queryByText(catalogue['services.detail.conflict'] as string)).toBeNull();
+      expect(refresh, locale).toHaveBeenCalled();
+      view.unmount();
+    }
+  });
+
+  it('(c) a successful save is clean at once and after its refresh: no question on a switch or a link', async () => {
+    updateService.mockResolvedValue({ ...success('services.update.success'), recordVersion: 4 });
+    const user = userEvent.setup();
+    const view = renderLtr(tree(service()));
+    await user.clear(nameBox());
+    await user.type(nameBox(), 'Saved name');
+    await user.click(saveButton());
+    await waitFor(() => expect(refresh).toHaveBeenCalled());
+    await leaveWithoutQuestion(user);
+    await switchWithoutQuestion(user, 'second');
+    await waitFor(() => expect(heldBranch()).toBe(SECOND_BRANCH.id));
+
+    view.rerender(tree(service({ name: 'Saved name', recordVersion: 4 })));
+    await leaveWithoutQuestion(user);
+    await switchWithoutQuestion(user, 'first');
+    // The next save is based on the version the first one produced.
+    await user.clear(nameBox());
+    await user.type(nameBox(), 'Saved twice');
+    await user.click(saveButton());
+    await waitFor(() => expect(updateService).toHaveBeenCalledTimes(2));
+    expect(updateService).toHaveBeenLastCalledWith(SERVICE_ID, { name: 'Saved twice' }, 4);
+  });
+
+  it('(d) an untouched form shows what another user stored, and saves on that version', async () => {
+    const user = userEvent.setup();
+    const view = renderLtr(tree(service()));
+    view.rerender(tree(service(FOREIGN)));
+    await waitFor(() => expect(nameBox()).toHaveValue('Renamed elsewhere'));
+    expect(descriptionBox()).toHaveValue('Changed elsewhere');
+    await leaveWithoutQuestion(user);
+    await user.clear(descriptionBox());
+    await user.type(descriptionBox(), 'Mine');
+    await user.click(saveButton());
+    await waitFor(() => expect(updateService).toHaveBeenCalled());
+    expect(updateService).toHaveBeenCalledWith(SERVICE_ID, { description: 'Mine' }, 4);
+  });
+
+  describe('the held draft is published on the same baseline', () => {
+    const held = {
+      id: 'v-held',
+      serviceId: SERVICE_ID,
+      versionNo: 2,
+      effectiveFrom: '2026-10-01',
+      effectiveTo: null,
+      status: 'draft',
+      laborTimes: [],
+    };
+    const publishButton = () =>
+      screen.getByRole('button', { name: EN['services.version.publish'] as string });
+
+    async function holdDraft(user: ReturnType<typeof userEvent.setup>) {
+      createServiceVersion.mockResolvedValue({
+        state: success('services.version.created'),
+        created: held,
+      });
+      await typeDay(user, 'services.version.effectiveFrom', '01102026');
+      await user.click(
+        screen.getByRole('button', { name: EN['services.version.createDraft'] as string })
+      );
+      expect(await screen.findByText(EN['services.version.draftHeading'] as string)).toBeVisible();
+    }
+
+    it('(b) a day typed, then a refresh: publication sends the OLD version and offers the latest, keeping the draft', async () => {
+      publishServiceVersion.mockResolvedValue({
+        status: 'conflict',
+        correlationId: 'corr-p',
+        attempt: 1,
+      });
+      const user = userEvent.setup();
+      const view = renderLtr(tree(service()));
+      await holdDraft(user);
+      const day = await typeDay(user, 'services.version.publishFrom', '01112026');
+      view.rerender(tree(service(FOREIGN)));
+      expect(shownDay(day)).toBe('01/11/2026');
+
+      await user.click(publishButton());
+      await waitFor(() => expect(publishServiceVersion).toHaveBeenCalled());
+      expect(publishServiceVersion).toHaveBeenLastCalledWith(
+        SERVICE_ID,
+        'v-held',
+        { effectiveFrom: '2026-11-01' },
+        3
+      );
+      expect(await screen.findByText(EN['services.detail.conflict'] as string)).toBeVisible();
+
+      await user.click(
+        screen.getByRole('button', { name: EN['services.detail.reload'] as string })
+      );
+      // The draft is stored and its id exists nowhere else: it stays held.
+      expect(screen.getByText(EN['services.version.draftHeading'] as string)).toBeVisible();
+      await waitFor(() =>
+        expect(
+          shownDay(screen.getByRole('group', { name: labelled('services.version.publishFrom') }))
+        ).toBe('01/10/2026')
+      );
+      expect(refresh).toHaveBeenCalled();
+
+      publishServiceVersion.mockResolvedValue(success('services.version.published'));
+      await user.click(publishButton());
+      await waitFor(() => expect(publishServiceVersion).toHaveBeenCalledTimes(2));
+      expect(publishServiceVersion).toHaveBeenLastCalledWith(
+        SERVICE_ID,
+        'v-held',
+        { effectiveFrom: '2026-10-01' },
+        4
+      );
+    });
+
+    it('(d) an untouched held draft follows a refresh, and publishes on the new version', async () => {
+      publishServiceVersion.mockResolvedValue(success('services.version.published'));
+      const user = userEvent.setup();
+      const view = renderLtr(tree(service()));
+      await holdDraft(user);
+      view.rerender(tree(service(FOREIGN)));
+      await user.click(publishButton());
+      await waitFor(() => expect(publishServiceVersion).toHaveBeenCalled());
+      expect(publishServiceVersion).toHaveBeenLastCalledWith(
+        SERVICE_ID,
+        'v-held',
+        { effectiveFrom: '2026-10-01' },
+        4
+      );
+      // (c) Published is saved: nothing is asked afterwards.
+      await waitFor(() =>
+        expect(screen.queryByText(EN['services.version.draftHeading'] as string)).toBeNull()
+      );
+      await leaveWithoutQuestion(user);
+      await switchWithoutQuestion(user, 'second');
+    });
+  });
+});
+
 describe('the /services/[serviceId] route page renders the read as what it was', () => {
   const failed = (status: string) => ({ status, correlationId: 'corr-p' });
 
