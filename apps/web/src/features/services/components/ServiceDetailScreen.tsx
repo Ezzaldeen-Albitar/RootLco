@@ -60,13 +60,14 @@ import {
  *
  * `svc.service-update` and `svc.service-version-publish` are version-guarded
  * and require `If-Match`. The version is the SERVICE's — for publication too,
- * because `svc.publish_service_version` locks the SERVICE first — and it is the
- * version of the BASELINE the form's work is based on (`useEditBaseline`), not
- * of whatever the page last read: a refresh that arrives while the operator is
- * typing moves neither their values nor that version, so a save built on
- * replaced fields is the server's conflict, never a silent overwrite of them.
- * The conflict offers to load the latest. Retiring carries no field of the
- * form, so it is guarded by the row the summary above it shows.
+ * because `svc.publish_service_version` locks the SERVICE first. An edit is
+ * sent at the version of the BASELINE the form's work is based on
+ * (`useEditBaseline`), not of whatever the page last read: a refresh that
+ * arrives while the operator is typing moves neither their values nor that
+ * version, so a save built on replaced fields is the server's conflict, never a
+ * silent overwrite of them. The conflict offers to load the latest.
+ * Publication and retiring carry no field of the service row, so they are
+ * guarded by the row the page read last.
  *
  * ## What this screen cannot show, and says
  *
@@ -782,10 +783,12 @@ function VersionPanel({
   const [outcome, setOutcome] = useState<ActionState | null>(null);
   const [draft, setDraft] = useState<ServiceVersion | null>(null);
   /*
-   * The typed days and notes, on the SERVICE's version (`useEditBaseline`):
-   * publication is guarded by it, so what the operator typed is based on the
-   * version they saw. A clean form follows a refresh; typed work keeps its
-   * baseline version, and a publication on it is the server's conflict.
+   * The typed days and notes (`useEditBaseline`): a clean form follows a
+   * refresh, typed work is kept through one. None of these fields comes from
+   * the service row, so a refresh never replaces work they were built on, and
+   * publication follows the LIVE service version rather than the baseline's.
+   * Holding the baseline's here made the page's own rename look like somebody
+   * else's change and refused the publication behind it.
    */
   const edit = useEditBaseline({
     stored: draft === null ? EMPTY_VERSION : heldDraftForm(draft),
@@ -890,12 +893,14 @@ function VersionPanel({
     }
     refuse({});
     setBusy(true);
-    // The BASELINE's version: see `useEditBaseline`.
+    // The LIVE version: nothing this form holds was read off the service row,
+    // so a newer read (the page's own rename included) is never foreign work
+    // here. A change not read yet is still the server's conflict.
     const result = await publishServiceVersion(
       service.id,
       draft.id,
       { effectiveFrom: from },
-      edit.version
+      service.recordVersion
     );
     setBusy(false);
     notifyActionResult(result, messages);

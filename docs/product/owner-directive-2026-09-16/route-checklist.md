@@ -2157,3 +2157,13 @@ Residual items recorded at fix round 4 of PR #479, one line each:
 - B.S4 still needs a browser re-measure; no Playwright spec under `apps/web/tests/e2e` mentions services or pricing, so no browser selector was affected and none was exercised.
 - The category filter matches only the chosen category, not its children (the help says so); the tree has no height cap; a few `services.*` and `pricing.*` catalogue entries are unused.
 - The backend tier was not run locally (by design); integration-tests and "Database migrations and RLS tests" were green on CI at 41377ca3.
+
+Residual items recorded at the edit-baseline fix round of PR #479 (after `7e4fe6e5`), one line each:
+
+- The P1-28 version-sourcing gate now follows `edit.version` through `useEditBaseline` to the `storedVersion` it is fed and to every `rebase` version on that binding, and reads the hook's own source; a computed or cached version fed in, a destructured or handed-away `rebase`, or a look-alike hook stays red (`tests/ci/p1-28-version-sourcing.test.ts`).
+- The service version panel now publishes on the live service version: none of its fields comes from the service row, so the page's own rename no longer turns the next publication into a false conflict. A foreign rename read before publishing no longer refuses the typed day either; a change not read yet is still the server's conflict.
+- Record cascade, acceptable red until the records step: `apps/web/tests` holds 186 test files and the records still say 185, so `p1-27-doc-counts` (both web-count cases), `p1-27-evidence-manifest` (the web test-file count) and `p1-27-closing-values` ("classifies every current value…") fail on this head.
+- `useEditBaseline` `rebase(values)` with no version keeps the old version, so a caller that bumps the row and re-bases without the answer's version would conflict against its own write if the operator types again before the refresh; no live path today (`updateService` returns `recordVersion`; version create and publish bump neither `svc.services` nor `svc.price_lists` `record_version`).
+- The pricing `CreateVersionPanel` and `PublishPanel` baseline logic never fires on a real path: nothing in `apps/web` writes `svc.price_lists`, so its `recordVersion` only moves out of band, and the pricing (b) and (d) cases simulate a change the product cannot make itself.
+- A dirty form undone by hand back to its baseline after a held-back refresh jumps to the refreshed values (by design; it may surprise an operator).
+- Retiring still sends the live `service.recordVersion` and discards any dirty edit form without a conflict (declared as preserved).

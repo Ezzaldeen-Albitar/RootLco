@@ -1222,7 +1222,13 @@ describe('a refresh, a discard and a save agree on one baseline', () => {
     expect(updateService).toHaveBeenCalledWith(SERVICE_ID, { description: 'Mine' }, 4);
   });
 
-  describe('the held draft is published on the same baseline', () => {
+  /*
+   * Publication follows the LIVE service version: none of the version form's
+   * fields is read off the service row, so a refresh is never foreign work to
+   * them. Holding the baseline's version made the page's own rename look like
+   * somebody else's change (PR #479 fix round 1).
+   */
+  describe('the held draft is published on the live service version', () => {
     const held = {
       id: 'v-held',
       serviceId: SERVICE_ID,
@@ -1247,7 +1253,56 @@ describe('a refresh, a discard and a save agree on one baseline', () => {
       expect(await screen.findByText(EN['services.version.draftHeading'] as string)).toBeVisible();
     }
 
-    it('(b) a day typed, then a refresh: publication sends the OLD version and offers the latest, keeping the draft', async () => {
+    it('(b) a day typed, then a refresh: the typed day is kept and publication sends the refreshed version', async () => {
+      publishServiceVersion.mockResolvedValue(success('services.version.published'));
+      const user = userEvent.setup();
+      const view = renderLtr(tree(service()));
+      await holdDraft(user);
+      const day = await typeDay(user, 'services.version.publishFrom', '01112026');
+      view.rerender(tree(service(FOREIGN)));
+      expect(shownDay(day)).toBe('01/11/2026');
+
+      await user.click(publishButton());
+      await waitFor(() => expect(publishServiceVersion).toHaveBeenCalled());
+      expect(publishServiceVersion).toHaveBeenLastCalledWith(
+        SERVICE_ID,
+        'v-held',
+        { effectiveFrom: '2026-11-01' },
+        4
+      );
+      expect(screen.queryByText(EN['services.detail.conflict'] as string)).toBeNull();
+    });
+
+    it('(e) a day typed, then the operator’s own rename saved and refreshed: publication sends the new version and no conflict is shown', async () => {
+      updateService.mockResolvedValue({ ...success('services.update.success'), recordVersion: 4 });
+      publishServiceVersion.mockResolvedValue(success('services.version.published'));
+      const user = userEvent.setup();
+      const view = renderLtr(tree(service()));
+      await holdDraft(user);
+      const day = await typeDay(user, 'services.version.publishFrom', '01112026');
+
+      await user.clear(nameBox());
+      await user.type(nameBox(), 'Renamed here');
+      await user.click(saveButton());
+      await waitFor(() => expect(updateService).toHaveBeenCalled());
+      expect(updateService).toHaveBeenCalledWith(SERVICE_ID, { name: 'Renamed here' }, 3);
+      await waitFor(() => expect(refresh).toHaveBeenCalled());
+      view.rerender(tree(service({ name: 'Renamed here', recordVersion: 4 })));
+      // The typed day survives the page's own refresh.
+      expect(shownDay(day)).toBe('01/11/2026');
+
+      await user.click(publishButton());
+      await waitFor(() => expect(publishServiceVersion).toHaveBeenCalled());
+      expect(publishServiceVersion).toHaveBeenLastCalledWith(
+        SERVICE_ID,
+        'v-held',
+        { effectiveFrom: '2026-11-01' },
+        4
+      );
+      expect(screen.queryByText(EN['services.detail.conflict'] as string)).toBeNull();
+    });
+
+    it('(f) a change not read yet is the server’s conflict: it offers the latest and keeps the draft', async () => {
       publishServiceVersion.mockResolvedValue({
         status: 'conflict',
         correlationId: 'corr-p',
@@ -1256,9 +1311,7 @@ describe('a refresh, a discard and a save agree on one baseline', () => {
       const user = userEvent.setup();
       const view = renderLtr(tree(service()));
       await holdDraft(user);
-      const day = await typeDay(user, 'services.version.publishFrom', '01112026');
-      view.rerender(tree(service(FOREIGN)));
-      expect(shownDay(day)).toBe('01/11/2026');
+      await typeDay(user, 'services.version.publishFrom', '01112026');
 
       await user.click(publishButton());
       await waitFor(() => expect(publishServiceVersion).toHaveBeenCalled());
@@ -1281,6 +1334,8 @@ describe('a refresh, a discard and a save agree on one baseline', () => {
         ).toBe('01/10/2026')
       );
       expect(refresh).toHaveBeenCalled();
+      // The page read again brings the change the conflict was about.
+      view.rerender(tree(service(FOREIGN)));
 
       publishServiceVersion.mockResolvedValue(success('services.version.published'));
       await user.click(publishButton());
