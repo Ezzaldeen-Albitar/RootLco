@@ -1046,8 +1046,16 @@ function PublishPanel({
     () => priceList.versions.filter((version) => version.status === 'draft'),
     [priceList.versions]
   );
-  const firstDraft = drafts[0]?.id ?? '';
-  const [versionId, setVersionId] = useState(firstDraft);
+  /*
+   * Only a draft the operator CHOSE is held in state. The default is read from
+   * the current drafts at every render, so a refresh that adds a draft, or drops
+   * the one just published, never turns into unsaved work; and a choice whose
+   * draft has left the list falls back to the default instead of naming a
+   * version that is no longer offered.
+   */
+  const [chosen, setChosen] = useState<string | null>(null);
+  const chosenStillOffered = chosen !== null && drafts.some((draft) => draft.id === chosen);
+  const versionId = chosenStillOffered ? chosen : (drafts[0]?.id ?? '');
   const [effectiveFrom, setEffectiveFrom] = useState('');
   const days = useUnfinishedDays();
   const {
@@ -1061,11 +1069,11 @@ function PublishPanel({
   const [busy, setBusy] = useState(false);
   const [outcome, setOutcome] = useState<ActionState | null>(null);
 
-  // A day typed for publication, or another draft chosen, is unsaved work.
+  // A day typed for publication, or a draft the operator chose, is unsaved work.
   const dirty =
-    effectiveFrom !== '' || days.unfinished['effectiveFrom'] === true || versionId !== firstDraft;
+    effectiveFrom !== '' || days.unfinished['effectiveFrom'] === true || chosenStillOffered;
   useUnsavedGuard(dirty, () => {
-    setVersionId(firstDraft);
+    setChosen(null);
     setEffectiveFrom('');
     days.reset();
     setOutcome(null);
@@ -1097,6 +1105,7 @@ function PublishPanel({
     notifyActionResult(result, messages);
     if (result.status === 'success') {
       setOutcome(null);
+      setChosen(null);
       setEffectiveFrom('');
       onPublished();
       return;
@@ -1135,7 +1144,7 @@ function PublishPanel({
             label={translate(messages, 'pricing.publish.version')}
             required
             value={versionId}
-            onChange={setVersionId}
+            onChange={setChosen}
             options={drafts.map((draft) => ({
               value: draft.id,
               label: `${draft.versionNo} — ${draft.effectiveFrom}`,

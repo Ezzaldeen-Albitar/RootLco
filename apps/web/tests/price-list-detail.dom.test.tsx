@@ -1,6 +1,6 @@
 import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import ar from '../src/i18n/messages/ar.json';
 import en from '../src/i18n/messages/en.json';
 import {
@@ -1079,5 +1079,157 @@ describe('the /pricing/[priceListId] route page renders the read as what it was'
     await expect(
       renderPage(PriceListDetailPage, { locale: 'xx', priceListId: LIST_ID })
     ).rejects.toThrow('notFound');
+  });
+});
+
+/*
+ * Every form on the detail guards what the operator typed or chose, and only
+ * that (PR #479 fix round 1). A refresh is not the operator's work: the publish
+ * form once compared its chosen draft with a default re-read from the refreshed
+ * versions, so creating a draft (which refreshes) or publishing one left the
+ * form "unsaved" with nothing typed, and the next branch switch asked to
+ * discard nothing.
+ */
+describe('each form on the detail guards only what the operator entered', () => {
+  afterEach(forgetRememberedBranch);
+
+  const SWITCH_SNAPSHOT = branchSnapshot([TEST_BRANCH, OTHER_BRANCH]);
+  const DRAFT_4 = { ...draft, id: '77777777-7777-4777-8777-777777777777', versionNo: 4 };
+
+  function switchable(list = priceList()) {
+    return withMui(
+      inBranch(
+        <>
+          <BranchSwitch to={TEST_BRANCH.id} label="first" />
+          <BranchSwitch to={OTHER_BRANCH.id} label="second" />
+          <WorkingBranchProbe />
+          {detailFor({ canPublish: true }, list)}
+        </>,
+        { snapshot: SWITCH_SNAPSHOT }
+      ),
+      'en'
+    );
+  }
+
+  /** Renders the detail, settles on the first branch, and returns the rerender. */
+  async function mount(user: ReturnType<typeof userEvent.setup>, list = priceList()) {
+    const view = renderLtrBare(switchable(list));
+    await user.click(screen.getByRole('button', { name: 'first' }));
+    await waitFor(() => expect(heldBranch()).toBe(TEST_BRANCH.id));
+    return (next: ReturnType<typeof priceList>) => view.rerender(switchable(next));
+  }
+
+  const formNamed = (key: string) => screen.getByRole('form', { name: EN[key] as string });
+  const publishChoice = () =>
+    within(formNamed('pricing.publish.heading')).getByLabelText(
+      labelled('pricing.publish.version')
+    );
+
+  it('an untouched detail switches unasked, and still does after a refresh brings a new draft', async () => {
+    const user = userEvent.setup();
+    const refreshWith = await mount(user, priceList({ versions: [published] }));
+    await switchWithoutQuestion(user, 'second');
+    await waitFor(() => expect(heldBranch()).toBe(OTHER_BRANCH.id));
+
+    // What `router.refresh()` hands back after a draft was created.
+    refreshWith(priceList({ versions: [draft, published] }));
+    await switchWithoutQuestion(user, 'first');
+    expect(publishChoice()).toHaveValue(DRAFT_ID);
+    await waitFor(() => expect(heldBranch()).toBe(TEST_BRANCH.id));
+  });
+
+  it('after a publish and its refresh, nothing is unsaved and the next draft is the one offered', async () => {
+    const user = userEvent.setup();
+    const refreshWith = await mount(user);
+    const publish = formNamed('pricing.publish.heading');
+    await user.selectOptions(publishChoice(), DRAFT_ID);
+    await typeDay(user, publish, 'pricing.publish.effectiveFrom', '01112026');
+    await user.click(
+      within(publish).getByRole('button', { name: EN['pricing.publish.submit'] as string })
+    );
+    await waitFor(() => expect(refresh).toHaveBeenCalled());
+
+    // The published draft left the drafts; another draft was created since.
+    refreshWith(priceList({ versions: [DRAFT_4, { ...draft, status: 'published' }, published] }));
+    await switchWithoutQuestion(user, 'second');
+    expect(publishChoice()).toHaveValue(DRAFT_4.id);
+    await waitFor(() => expect(heldBranch()).toBe(OTHER_BRANCH.id));
+  });
+
+  it('a chosen draft that a refresh removes is no longer unsaved work, nor still selected', async () => {
+    const user = userEvent.setup();
+    const refreshWith = await mount(user, priceList({ versions: [draft, DRAFT_4, published] }));
+    await user.selectOptions(publishChoice(), DRAFT_4.id);
+    await stayOnBranch(user, await switchExpectingQuestion(user, 'second'));
+    expect(publishChoice()).toHaveValue(DRAFT_4.id);
+
+    refreshWith(priceList({ versions: [draft, { ...DRAFT_4, status: 'published' }, published] }));
+    await switchWithoutQuestion(user, 'second');
+    expect(publishChoice()).toHaveValue(DRAFT_ID);
+    await waitFor(() => expect(heldBranch()).toBe(OTHER_BRANCH.id));
+  });
+
+  it('the publish form: a chosen draft and a typed day ask; staying keeps them, discarding resets them', async () => {
+    const user = userEvent.setup();
+    await mount(user, priceList({ versions: [draft, DRAFT_4, published] }));
+    const publish = formNamed('pricing.publish.heading');
+    await user.selectOptions(publishChoice(), DRAFT_4.id);
+    const day = await typeDay(user, publish, 'pricing.publish.effectiveFrom', '01112026');
+
+    await stayOnBranch(user, await switchExpectingQuestion(user, 'second'));
+    expect(heldBranch()).toBe(TEST_BRANCH.id);
+    expect(publishChoice()).toHaveValue(DRAFT_4.id);
+    expect(shownDay(day)).toBe('01/11/2026');
+
+    await discardAndSwitch(user, await switchExpectingQuestion(user, 'second'));
+    await waitFor(() => expect(heldBranch()).toBe(OTHER_BRANCH.id));
+    await waitFor(() => expect(publishChoice()).toHaveValue(DRAFT_ID));
+    expect(shownDay(dayField(publish, 'pricing.publish.effectiveFrom'))).not.toBe('01/11/2026');
+    await switchWithoutQuestion(user, 'first');
+    expect(publishPriceListVersion).not.toHaveBeenCalled();
+  });
+
+  it('the new-draft form: typed notes and a day ask; staying keeps them, discarding empties them', async () => {
+    const user = userEvent.setup();
+    await mount(user);
+    const create = formNamed('pricing.version.createHeading');
+    const notes = () => within(create).getByLabelText(labelled('pricing.version.notes'));
+    const day = await typeDay(user, create, 'pricing.version.effectiveFrom', '01112026');
+    await user.type(notes(), 'Spring');
+
+    await stayOnBranch(user, await switchExpectingQuestion(user, 'second'));
+    expect(heldBranch()).toBe(TEST_BRANCH.id);
+    expect(notes()).toHaveValue('Spring');
+    expect(shownDay(day)).toBe('01/11/2026');
+
+    await discardAndSwitch(user, await switchExpectingQuestion(user, 'second'));
+    await waitFor(() => expect(heldBranch()).toBe(OTHER_BRANCH.id));
+    await waitFor(() => expect(notes()).toHaveValue(''));
+    expect(shownDay(dayField(create, 'pricing.version.effectiveFrom'))).not.toBe('01/11/2026');
+    await switchWithoutQuestion(user, 'first');
+    expect(createPriceListVersion).not.toHaveBeenCalled();
+  });
+
+  it('the assignment form: a typed priority and day ask; staying keeps them, discarding empties them', async () => {
+    const user = userEvent.setup();
+    await mount(user);
+    const assignment = formNamed('pricing.assignment.heading');
+    const priority = () => within(assignment).getByLabelText(labelled('pricing.rule.priority'));
+    await user.type(priority(), '10');
+    const day = await typeDay(user, assignment, 'pricing.assignment.effectiveFrom', '01102026');
+
+    await stayOnBranch(user, await switchExpectingQuestion(user, 'second'));
+    expect(heldBranch()).toBe(TEST_BRANCH.id);
+    expect(priority()).toHaveValue('10');
+    expect(shownDay(day)).toBe('01/10/2026');
+
+    await discardAndSwitch(user, await switchExpectingQuestion(user, 'second'));
+    await waitFor(() => expect(heldBranch()).toBe(OTHER_BRANCH.id));
+    await waitFor(() => expect(priority()).toHaveValue(''));
+    expect(shownDay(dayField(assignment, 'pricing.assignment.effectiveFrom'))).not.toBe(
+      '01/10/2026'
+    );
+    await switchWithoutQuestion(user, 'first');
+    expect(createPriceListAssignment).not.toHaveBeenCalled();
   });
 });

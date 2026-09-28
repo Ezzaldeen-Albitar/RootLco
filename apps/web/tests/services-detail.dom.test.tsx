@@ -878,6 +878,30 @@ describe('edits, a typed draft and a held draft are unsaved work', () => {
     await waitFor(() => expect(name).toHaveValue('Oil change'));
   });
 
+  it('a draft typed and not yet created asks first; staying keeps it, discarding empties it', async () => {
+    const user = userEvent.setup();
+    renderSwitchable();
+    const notes = () => screen.getByLabelText(labelled('services.version.notes'));
+    const day = await typeDay(user, 'services.version.effectiveFrom', '01102026');
+    await user.type(notes(), 'Winter rates');
+    const shown = (group: HTMLElement) =>
+      within(group)
+        .getAllByRole('spinbutton')
+        .map((part) => part.textContent)
+        .join('/');
+
+    await stayOnBranch(user, await switchExpectingQuestion(user, 'second'));
+    expect(notes()).toHaveValue('Winter rates');
+    expect(shown(day)).toBe('01/10/2026');
+
+    await discardAndSwitch(user, await switchExpectingQuestion(user, 'second'));
+    await waitFor(() => expect(notes()).toHaveValue(''));
+    expect(
+      shown(screen.getByRole('group', { name: labelled('services.version.effectiveFrom') }))
+    ).not.toBe('01/10/2026');
+    expect(createServiceVersion).not.toHaveBeenCalled();
+  });
+
   it('a draft created and not yet published asks before a branch switch', async () => {
     createServiceVersion.mockResolvedValue({
       state: success('services.version.created'),

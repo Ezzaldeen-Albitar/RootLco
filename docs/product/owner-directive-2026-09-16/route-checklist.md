@@ -2042,7 +2042,12 @@ Preserved, each held by a case in the named suite:
 - Unsaved work: the new service and new category forms, the service edit, the version form and a
   held (unpublished) draft, the new price list, the rule (whichever way the service is named), the
   new draft version, the publication and the assignment declare `useUnsavedGuard`, so the shell asks
-  before a branch switch and before leaving the page, and a discard empties that form.
+  before a branch switch and before leaving the page, and a discard empties that form. Since fix
+  round 1 of PR #479 each of those forms has a case that types, stays (the entry is kept) and
+  discards (the form empties), and an untouched form switches without the question. The publication
+  counts only a draft the operator chose: a refresh that adds a draft or removes the one just
+  published is not unsaved work, and a choice whose draft has left the list falls back to the first
+  draft (`price-list-detail.dom`, "each form on the detail guards only what the operator entered").
 - Money stays a string on every path; nothing adds, multiplies or rounds a figure
   (`validate:exact-money`, `validate:p1-30-server-arithmetic`).
 - Discount-approval and credit-note rules are not touched: the discount-threshold screen shares only
@@ -2102,3 +2107,13 @@ Known limitations of this slice, one line each:
   they run in hosted CI.
 - The web tier's test count changes (new cases in existing files; no test file was added or
   removed); the recorded tiers are retaken at the final head.
+
+Residual items recorded at fix round 1 of PR #479, one line each:
+
+- The service edit panel compares the untrimmed entries with the service while saving trims them, so a name or description differing only by trailing spaces stays "unsaved" after a save (or answers "nothing changed"); comparing trimmed values would close this narrow path.
+- The catalogue's category filter tree has no height limit, so a taxonomy of up to 100 categories makes the filter section very tall (layout only).
+- The category filter matches only services filed directly under the chosen category (server behaviour, stated in the help text); a parent does not include its children.
+- The pricing service picker now needs at least one character before it asks the server (`EntityPicker` `minLength=1`); the old picker could list the first page with an empty term.
+- One run of the web tier under full-tier load failed an unrelated case, `reception-queue.dom` "offers the way back for a PERIOD that matched nothing" (`aria-pressed`); it passed 66/66 on its own and the hosted web-quality job was green, so it reads as a load flake not caused by this slice.
+- B.S4 (the assignment panel's success wording within 5 s) still needs the browser re-measure; no browser spec covers `/services` or `/pricing`, so no browser selector was broken and none was exercised.
+- Probes that produced no finding: clearing the catalogue's published-on day (select-all and Backspace, or part by part) lifts the filter; the tree is the Community `@mui/x-tree-view` only and the licence deny-list in `api-boundary-gate.test.ts` is unchanged; the category hierarchy is real (`parent_category_id` with the no-cycle guard, and the category create route accepts a parent); no manifest, lockfile, script, workflow or baseline changed; `align='right'` is flipped by the RTL plugin in `UiFoundationProvider`.

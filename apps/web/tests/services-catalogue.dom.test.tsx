@@ -766,6 +766,28 @@ describe('typed and not created is unsaved work', () => {
     await discardAndSwitch(user, await switchExpectingQuestion(user, 'second'));
     await waitFor(() => expect(name).toHaveValue(''));
   });
+
+  it('a typed category asks first; staying keeps it, discarding empties it', async () => {
+    const user = userEvent.setup();
+    renderWithSwitch();
+    await user.click(createToggle());
+    const categoryForm = await screen.findByRole('form', {
+      name: EN['services.category.new'] as string,
+    });
+    const code = within(categoryForm).getByLabelText(labelled('services.category.code'));
+    const name = within(categoryForm).getByLabelText(labelled('services.category.name'));
+    await user.type(code, 'brakes');
+    await user.type(name, 'Brakes');
+
+    await stayOnBranch(user, await switchExpectingQuestion(user, 'second'));
+    expect(code).toHaveValue('brakes');
+    expect(name).toHaveValue('Brakes');
+
+    await discardAndSwitch(user, await switchExpectingQuestion(user, 'second'));
+    await waitFor(() => expect(code).toHaveValue(''));
+    expect(name).toHaveValue('');
+    expect(createServiceCategory).not.toHaveBeenCalled();
+  });
 });
 
 describe('Arabic, right to left', () => {

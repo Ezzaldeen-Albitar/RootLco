@@ -13,7 +13,13 @@ import {
   renderRtl as renderRtlBare,
   RETIRED_BOX,
 } from './render';
-import { forgetRememberedBranch } from './support/branch-switch';
+import {
+  discardAndSwitch,
+  forgetRememberedBranch,
+  stayOnBranch,
+  switchExpectingQuestion,
+  switchWithoutQuestion,
+} from './support/branch-switch';
 import type { ReactElement } from 'react';
 import { UiFoundationProvider } from '@/components/ui-foundation/UiFoundationProvider';
 import { muiTextOf } from '@/components/ui-foundation/mui-text';
@@ -350,6 +356,58 @@ describe('creating, offered only to those who may', () => {
     expect(
       await within(form).findByText(EN['pricing.create.currencyFormat'] as string)
     ).toBeVisible();
+    expect(createPriceList).not.toHaveBeenCalled();
+  });
+});
+
+describe('a list typed and not created is unsaved work', () => {
+  afterEach(forgetRememberedBranch);
+
+  async function openCreateBetweenTwo(user: ReturnType<typeof userEvent.setup>) {
+    renderLtr(
+      inBranch(
+        <>
+          <BranchSwitch to={TEST_BRANCH.id} label="first" />
+          <BranchSwitch to={OTHER_BRANCH.id} label="second" />
+          <PricingScreen
+            locale="en"
+            messages={en}
+            canManage
+            canReadBranches={false}
+            canReadServices={true}
+          />
+        </>,
+        { snapshot: branchSnapshot([TEST_BRANCH, OTHER_BRANCH]) }
+      )
+    );
+    await user.click(screen.getByRole('button', { name: 'first' }));
+    await user.click(screen.getByRole('button', { name: EN['pricing.list.create'] as string }));
+    return screen.findByRole('form', { name: EN['pricing.create.title'] as string });
+  }
+
+  it('an untouched create form lets the branch change without asking', async () => {
+    const user = userEvent.setup();
+    await openCreateBetweenTwo(user);
+    await switchWithoutQuestion(user, 'second');
+    await switchWithoutQuestion(user, 'first');
+  });
+
+  it('a typed list asks first; staying keeps it, discarding empties it', async () => {
+    const user = userEvent.setup();
+    const form = await openCreateBetweenTwo(user);
+    const code = within(form).getByLabelText(labelled('pricing.create.code'));
+    const name = within(form).getByLabelText(labelled('pricing.create.name'));
+    await user.type(code, 'RETAIL-2');
+    await user.type(name, 'Retail two');
+
+    await stayOnBranch(user, await switchExpectingQuestion(user, 'second'));
+    expect(code).toHaveValue('RETAIL-2');
+    expect(name).toHaveValue('Retail two');
+
+    await discardAndSwitch(user, await switchExpectingQuestion(user, 'second'));
+    await waitFor(() => expect(code).toHaveValue(''));
+    expect(name).toHaveValue('');
+    await switchWithoutQuestion(user, 'first');
     expect(createPriceList).not.toHaveBeenCalled();
   });
 });
