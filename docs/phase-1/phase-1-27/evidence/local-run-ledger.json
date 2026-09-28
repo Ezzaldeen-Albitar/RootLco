@@ -34,8 +34,8 @@
     },
     "web": {
       "command": "npm run test --workspace @rootlco/web -- --reporter=json",
-      "tests": 6895,
-      "passed": 6895,
+      "tests": 6947,
+      "passed": 6947,
       "failed": 0,
       "skipped": 0,
       "files": 186,
@@ -43,20 +43,20 @@
       "reporterSuccess": true,
       "failedSuites": [],
       "filesWithoutCases": [],
-      "measuredAtCommit": "443d65c5f088525094a497130579633933db8155",
+      "measuredAtCommit": "01191708636b4dff208aea12d4e8f188fd3f0239",
       "dirtyExecutablePaths": [],
-      "measuredAt": "2026-09-28T15:54:08Z",
+      "measuredAt": "2026-09-28T22:52:38Z",
       "provenance": {
         "source": "hosted",
-        "runId": "36445741776",
-        "runUrl": "https://github.com/Ezzaldeen-Albitar/RootLco/actions/runs/36445741776",
+        "runId": "36493026210",
+        "runUrl": "https://github.com/Ezzaldeen-Albitar/RootLco/actions/runs/36493026210",
         "workflow": "PR CI",
-        "job": "109007631002",
+        "job": "109165978652",
         "jobName": "Web quality / web-quality",
         "step": "Web component tier",
-        "headSha": "443d65c5f088525094a497130579633933db8155",
+        "headSha": "01191708636b4dff208aea12d4e8f188fd3f0239",
         "artifact": "evidence-web-quality",
-        "artifactDigest": "sha256:ff5e75fc960c2f5624feaccb15973e0b094b8989a81e1e9d2e98a5b1764ad3b5",
+        "artifactDigest": "sha256:681384cc58848e6403431e1b10d462c97c197101011f874f677e34f43afbd7cc",
         "field": "apps/web/vitest-web.json"
       }
     }
