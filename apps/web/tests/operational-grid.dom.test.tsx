@@ -927,6 +927,45 @@ describe('texts, direction and keyboard', () => {
     expect(screen.getByRole('columnheader', { name: en['table.rowActions'] })).toBeInTheDocument();
   });
 
+  it('draws a choice among the rows as a toggle: pressed on the chosen row only', async () => {
+    /*
+     * A picker drawn on the grid (the check-in vehicle chooser) marks WHICH
+     * row is chosen on the row's own button, so the choice is announced with
+     * the control and not only drawn beside it. An ordinary action stays an
+     * ordinary button: no `aria-pressed` at all.
+     */
+    const load = vi.fn<Loader>().mockResolvedValue(ok([doc(1), doc(2)], null));
+    const choose = vi.fn();
+    const user = userEvent.setup();
+    mount(
+      <Harness
+        load={load}
+        rowActions={(row) => [
+          ...OPEN_ACTION(row),
+          {
+            kind: 'button',
+            label: 'Choose',
+            about: row.reference,
+            pressed: row.id === 'doc-2',
+            onClick: () => choose(row.id),
+          },
+        ]}
+      />
+    );
+    await screen.findByRole('gridcell', { name: 'DOC-0001' });
+    expect(screen.getByRole('button', { name: 'Choose DOC-0001' })).toHaveAttribute(
+      'aria-pressed',
+      'false'
+    );
+    expect(screen.getByRole('button', { name: 'Choose DOC-0002' })).toHaveAttribute(
+      'aria-pressed',
+      'true'
+    );
+    expect(screen.getByRole('link', { name: 'Open DOC-0001' })).not.toHaveAttribute('aria-pressed');
+    await user.click(screen.getByRole('button', { name: 'Choose DOC-0001' }));
+    expect(choose).toHaveBeenCalledWith('doc-1');
+  });
+
   it.each([
     ['en', 'Open the work order', 'Acknowledgement'],
     ['ar', 'فتح أمر العمل', 'إقرار الاستلام'],

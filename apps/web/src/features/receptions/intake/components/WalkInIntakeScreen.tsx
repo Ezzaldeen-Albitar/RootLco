@@ -2,7 +2,11 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import { CustomerSelector, type SelectedCustomer } from '@/components/party/CustomerSelector';
+import Button from '@mui/material/Button';
+import {
+  CustomerPicker,
+  type ChosenCustomer as PickedCustomer,
+} from '@/components/party/CustomerPicker';
 import { PartyLabel } from '@/components/party/PartyLabel';
 import { useUnsavedGuard } from '@/features/working-context/WorkingContextProvider';
 import type { Messages } from '@/i18n/get-messages';
@@ -40,10 +44,11 @@ import { IntakeVehicleStep, type ChosenVehicle } from './IntakeVehicleStep';
  *
  * The first thing a receptionist tries is the caller's phone number. Until
  * P1-32 the customer directory could not search by it and this step said so in
- * a notice. The directory now accepts a phone number (the whole number or its
- * last seven digits or more) and one free-text box, so the notice is gone and
- * `CustomerSelector` offers both boxes. A matched customer's phone is shown as
- * the backend returned it — partly hidden unless the operator may see it whole.
+ * a notice. The directory now accepts a phone number and one free-text box
+ * (`q`: part of a name, a customer number or a phone number), so the notice is
+ * gone. On Material UI (ADR-022) the customer is chosen through
+ * `CustomerPicker` — one combobox over that box, the term sent as typed,
+ * Arabic-Indic digits included, the server's matches in the server's order.
  *
  * ## The handoff is truthful about the wizard's existence
  *
@@ -65,12 +70,13 @@ export interface ChosenCustomer {
   readonly partyType: string | null;
 }
 
-export function toChosenCustomer(selected: SelectedCustomer): ChosenCustomer {
+/** The directory's choice, as this flow holds it — the kind travels when known. */
+export function toChosenCustomer(selected: PickedCustomer): ChosenCustomer {
   return {
     id: selected.id,
     displayName: selected.displayName,
     displayNumber: selected.displayNumber,
-    partyType: selected.partyType,
+    partyType: selected.partyType ?? null,
   };
 }
 
@@ -297,13 +303,9 @@ function ChosenCustomerSummary({
         />
       </div>
       {changeable ? (
-        <button
-          type="button"
-          onClick={onChange}
-          className="shrink-0 rounded-md border border-border px-3 py-1.5 text-body text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
-        >
+        <Button type="button" variant="outlined" size="small" onClick={onChange}>
           {translate(messages, 'receptions.intake.customer.change')}
-        </button>
+        </Button>
       ) : null}
     </div>
   );
@@ -312,9 +314,10 @@ function ChosenCustomerSummary({
 /**
  * Find or create the customer.
  *
- * The search is `CustomerSelector` — the one customer-search surface, reused,
- * so a customer reads identically here and on every vehicle screen. The
- * create paths are offered beside it, not behind a failed search: a
+ * The search is `CustomerPicker` on Material UI — the shared customer chooser
+ * over `crm.customer-search`, so a customer reads identically here and on every
+ * other screen that chooses one. Choosing a match moves the flow on at once.
+ * The create paths are offered beside it, not behind a failed search: a
  * receptionist facing a brand-new customer knows they are new.
  */
 function CustomerStep({
@@ -369,17 +372,20 @@ function CustomerStep({
         {translate(messages, 'receptions.intake.customer.heading')}
       </h2>
 
-      <CustomerSelector
-        locale={locale}
+      <CustomerPicker
         messages={messages}
-        name="intakeCustomerId"
-        labelKey="receptions.intake.customer.selectorLabel"
+        locale={locale}
+        material
+        label={translate(messages, 'receptions.intake.customer.selectorLabel')}
         value={null}
         onChange={(selected) => {
           if (selected !== null) onChosen(toChosenCustomer(selected));
         }}
-        required
-        attempt={0}
+        canSearch
+        // The flow declares its own unsaved work (the pair), so a term typed
+        // here and not chosen is not a question on its own.
+        countsAsUnsaved={false}
+        testId="intake-customer-picker"
       />
 
       {canCreateCustomer ? (
@@ -387,20 +393,12 @@ function CustomerStep({
           <span className="text-caption text-text-secondary">
             {translate(messages, 'receptions.intake.customer.createOffer')}
           </span>
-          <button
-            type="button"
-            onClick={() => setMode('individual')}
-            className="rounded-md border border-border px-3 py-1.5 text-body text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
-          >
+          <Button type="button" variant="outlined" onClick={() => setMode('individual')}>
             {translate(messages, 'crm.customers.create.individualTitle')}
-          </button>
-          <button
-            type="button"
-            onClick={() => setMode('company')}
-            className="rounded-md border border-border px-3 py-1.5 text-body text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
-          >
+          </Button>
+          <Button type="button" variant="outlined" onClick={() => setMode('company')}>
             {translate(messages, 'crm.customers.create.companyTitle')}
-          </button>
+          </Button>
         </div>
       ) : null}
     </section>
@@ -504,12 +502,13 @@ function DoneStep({
 
       {checkInAvailable ? (
         <div>
-          <Link
+          <Button
+            component={Link}
             href={checkInWizardHref(locale, { customerId: customer.id, vehicleId: vehicle.id })}
-            className="inline-block rounded-md bg-primary px-4 py-2 text-body font-medium text-on-primary"
+            variant="contained"
           >
             {translate(messages, 'receptions.intake.done.continue')}
-          </Link>
+          </Button>
         </div>
       ) : (
         // Stating the wizard's absence is the honest alternative to a link
@@ -523,32 +522,22 @@ function DoneStep({
       )}
 
       <div className="flex flex-wrap items-center gap-2">
-        <Link
+        <Button
+          component={Link}
           href={`/${locale}/crm/customers/${customer.id}`}
-          className="rounded-md border border-border px-3 py-1.5 text-body text-text-primary"
+          variant="outlined"
         >
           {translate(messages, 'receptions.intake.done.openCustomer')}
-        </Link>
-        <Link
-          href={`/${locale}/vehicles/${vehicle.id}`}
-          className="rounded-md border border-border px-3 py-1.5 text-body text-text-primary"
-        >
+        </Button>
+        <Button component={Link} href={`/${locale}/vehicles/${vehicle.id}`} variant="outlined">
           {translate(messages, 'receptions.intake.done.openVehicle')}
-        </Link>
-        <button
-          type="button"
-          onClick={onChangeVehicle}
-          className="rounded-md border border-border px-3 py-1.5 text-body text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
-        >
+        </Button>
+        <Button type="button" variant="outlined" onClick={onChangeVehicle}>
           {translate(messages, 'receptions.intake.vehicle.change')}
-        </button>
-        <button
-          type="button"
-          onClick={onStartOver}
-          className="rounded-md border border-border px-3 py-1.5 text-body text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
-        >
+        </Button>
+        <Button type="button" variant="outlined" onClick={onStartOver}>
           {translate(messages, 'receptions.intake.done.startOver')}
-        </button>
+        </Button>
       </div>
     </section>
   );

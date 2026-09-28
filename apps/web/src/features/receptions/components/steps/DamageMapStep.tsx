@@ -1,24 +1,21 @@
 'use client';
 
-import {
-  useCallback,
-  useMemo,
-  useState,
-  useTransition,
-  type KeyboardEvent,
-  type MouseEvent,
-} from 'react';
+import { useCallback, useMemo, useState, type KeyboardEvent, type MouseEvent } from 'react';
+import ButtonBase from '@mui/material/ButtonBase';
 import type { TableStatus } from '@/components/data-table/DataTable';
 import { readCompleteness } from '@/components/data-table/read-completeness';
 import { INITIAL_REQUEST } from '@/components/data-table/table-state';
 import { useServerTable, type ServerPage } from '@/components/data-table/use-server-table';
-import { SelectField, TextField } from '@/components/forms/Field';
+import { FormNumberField } from '@/components/forms/mui/FormNumberField';
+import { FormSelectField } from '@/components/forms/mui/FormSelectField';
+import { FormTextField } from '@/components/forms/mui/FormTextField';
 import { notifyActionResult } from '@/components/notifications/action-notifications';
 import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic } from '@/i18n/get-messages';
 import { formatDateTime } from '@/lib/format';
 import type { ActionState } from '@/lib/forms/action-result';
+import { useFocusFirstInvalid } from '@/lib/forms/use-focus-first-invalid';
 import { readCaptureContract, recordConditionEvidence } from '../../api';
 import {
   DAMAGE_MARK_TYPES,
@@ -40,11 +37,12 @@ import {
   CoverageNotice,
   EvidenceReadBack,
   EvidenceSection,
-  PRIMARY_BUTTON,
   SessionCaptureList,
   StepOutcome,
+  SubmitButton,
   WriteWithdrawn,
   useEvidenceTable,
+  useStepForm,
 } from './EvidencePanels';
 
 /**
@@ -152,8 +150,6 @@ import {
  * `text` with a not-blank CHECK. The zone is therefore the operator's own words,
  * bounded at `MAX_ZONE`, and no zone vocabulary is invented to fill the gap.
  */
-
-const IDLE: ActionState = { status: 'idle' };
 
 /** How far one arrow key moves the mark, as a fraction of the map. */
 const KEYBOARD_STEP = 0.05;
@@ -617,11 +613,39 @@ function MarkForm({
   readonly maps: readonly { value: string; label: string }[];
   readonly onSubmit: (command: MarkCommand, attempt: number) => Promise<ActionState>;
 }) {
-  const [draft, setDraft] = useState<MarkDraft>(INITIAL_MARK);
-  const [state, setState] = useState<ActionState>(IDLE);
-  const [pending, startTransition] = useTransition();
-
-  const set = (patch: Partial<MarkDraft>) => setDraft((current) => ({ ...current, ...patch }));
+  const form = useStepForm<MarkDraft>({
+    messages,
+    empty: INITIAL_MARK,
+    check: (draft) => {
+      const found: Record<string, string> = {};
+      if (draft.damageMapId === '') found['damageMapId'] = 'receptions.damage.error.mapRequired';
+      if (draft.markType === '') found['markType'] = 'receptions.damage.error.typeRequired';
+      if (draft.vehicleZone.trim() === '') {
+        found['vehicleZone'] = 'receptions.finding.error.zoneRequired';
+      }
+      if (parseCoordinate(draft.coordX) === null) {
+        found['coordX'] = 'receptions.damage.error.coordRange';
+      }
+      if (parseCoordinate(draft.coordY) === null) {
+        found['coordY'] = 'receptions.damage.error.coordRange';
+      }
+      return found;
+    },
+    // The typed value, unrounded: `formatCoordinate` is a READ-OUT and never
+    // touches what is submitted. `check` has already refused a non-coordinate.
+    send: (draft, attempt) =>
+      onSubmit(
+        {
+          ...draft,
+          coordX: parseCoordinate(draft.coordX) as number,
+          coordY: parseCoordinate(draft.coordY) as number,
+        },
+        attempt
+      ),
+    afterStored: (draft) => ({ ...INITIAL_MARK, damageMapId: draft.damageMapId }),
+  });
+  const { draft } = form;
+  const formRef = useFocusFirstInvalid(form.state);
 
   /*
    * The position the DIAGRAM draws and the read-out states. `null` while the
@@ -631,53 +655,22 @@ function MarkForm({
   const coordX = parseCoordinate(draft.coordX);
   const coordY = parseCoordinate(draft.coordY);
 
-  const submit = () => {
-    const attempt = (state.attempt ?? 0) + 1;
-    const missing =
-      draft.damageMapId === ''
-        ? 'receptions.damage.error.mapRequired'
-        : draft.markType === ''
-          ? 'receptions.damage.error.typeRequired'
-          : draft.vehicleZone.trim() === ''
-            ? 'receptions.finding.error.zoneRequired'
-            : coordX === null || coordY === null
-              ? 'receptions.damage.error.coordRange'
-              : null;
-    if (missing !== null || coordX === null || coordY === null) {
-      setState({
-        status: 'invalid',
-        messageKey: missing ?? 'receptions.damage.error.coordRange',
-        attempt,
-      });
-      return;
-    }
-    startTransition(async () => {
-      // The typed value, unrounded: `formatCoordinate` is a READ-OUT and never
-      // touches what is submitted.
-      const result = await onSubmit({ ...draft, coordX, coordY }, attempt);
-      setState(result);
-      if (result.status === 'success') {
-        setDraft({ ...INITIAL_MARK, damageMapId: draft.damageMapId });
-      }
-    });
-  };
-
   return (
     <form
+      ref={formRef}
       aria-label={translate(messages, 'receptions.damage.formLabel')}
-      onSubmit={(event) => {
-        event.preventDefault();
-        submit();
-      }}
+      onSubmit={form.onSubmit}
+      noValidate
       className="flex flex-col gap-3 border-t border-border pt-3"
     >
-      <SelectField
+      <FormSelectField
         label={translate(messages, 'receptions.damage.map')}
         required
         value={draft.damageMapId}
-        onChange={(event) => set({ damageMapId: event.target.value })}
+        onChange={(value) => form.update('damageMapId', value)}
         options={maps}
         placeholder={translate(messages, 'form.select.placeholder')}
+        error={form.fieldError('damageMapId')}
       />
 
       <DamageDiagram
@@ -688,82 +681,67 @@ function MarkForm({
         // The pointer and the arrow keys move in the field's own step, and write
         // that text into the field — so what the diagram places is exactly what
         // is submitted, digit for digit.
-        onMove={(nextX, nextY) =>
-          set({ coordX: formatCoordinate(nextX), coordY: formatCoordinate(nextY) })
-        }
+        onMove={(nextX, nextY) => {
+          form.update('coordX', formatCoordinate(nextX));
+          form.update('coordY', formatCoordinate(nextY));
+        }}
       />
 
       <div className="grid gap-3 sm:grid-cols-2">
-        <TextField
+        <FormNumberField
           label={translate(messages, 'receptions.damage.coordX')}
           description={translate(messages, 'receptions.damage.coordHint')}
           required
-          type="number"
-          min={0}
-          max={1}
-          // `any`, not a fixed number: a fixed step is a CONSTRAINT the browser
-          // enforces, and `0.125` against `step=0.01` is a `stepMismatch` the
-          // form would refuse to submit. A step exists in this step's own UI —
-          // `KEYBOARD_STEP` (0.05) for the arrow keys, two decimals for what the
-          // pointer writes — but it lives on the DIAGRAM, where it is a
-          // convenience, and never on the field, where it would be a bound.
-          step="any"
-          dir="ltr"
-          // The operator's own digits, unrewritten. Rendering
-          // `formatCoordinate(...)` here is what rounded `0.125` to `0.13`.
           value={draft.coordX}
-          onChange={(event) => set({ coordX: event.target.value })}
+          onChange={(value) => form.update('coordX', value)}
+          error={form.fieldError('coordX')}
         />
-        <TextField
+        <FormNumberField
           label={translate(messages, 'receptions.damage.coordY')}
           description={translate(messages, 'receptions.damage.coordHint')}
           required
-          type="number"
-          min={0}
-          max={1}
-          step="any"
-          dir="ltr"
           value={draft.coordY}
-          onChange={(event) => set({ coordY: event.target.value })}
+          onChange={(value) => form.update('coordY', value)}
+          error={form.fieldError('coordY')}
         />
       </div>
 
-      <SelectField
+      <FormSelectField
         label={translate(messages, 'receptions.damage.markType')}
         required
         value={draft.markType}
-        onChange={(event) => set({ markType: event.target.value })}
+        onChange={(value) => form.update('markType', value)}
         options={DAMAGE_MARK_TYPES.map((value) => ({
           value,
           label: translateDynamic(messages, `receptions.markType.${value}`),
         }))}
         placeholder={translate(messages, 'form.select.placeholder')}
+        error={form.fieldError('markType')}
       />
-      <TextField
+      <FormTextField
         label={translate(messages, 'receptions.finding.zone')}
         description={translate(messages, 'receptions.finding.zoneHint')}
         required
         value={draft.vehicleZone}
         maxLength={MAX_ZONE}
-        onChange={(event) => set({ vehicleZone: event.target.value })}
+        onChange={(value) => form.update('vehicleZone', value)}
+        error={form.fieldError('vehicleZone')}
       />
-      <TextField
+      <FormTextField
         label={translate(messages, 'receptions.finding.note')}
-        optionalHint={translate(messages, 'form.optional')}
         value={draft.note}
         maxLength={MAX_NOTE}
-        onChange={(event) => set({ note: event.target.value })}
+        onChange={(value) => form.update('note', value)}
+        error={form.fieldError('note')}
       />
 
-      <StepOutcome messages={messages} state={state} />
+      <StepOutcome messages={messages} state={form.state} />
 
-      <div>
-        <button type="submit" disabled={pending} className={PRIMARY_BUTTON}>
-          {pending
-            ? translate(messages, 'form.pending')
-            : translate(messages, 'receptions.damage.record')}
-        </button>
-      </div>
+      <SubmitButton
+        messages={messages}
+        pending={form.pending}
+        labelKey="receptions.damage.record"
+      />
     </form>
   );
 }
@@ -820,7 +798,7 @@ function DamageDiagram({
 
   return (
     <div className="flex flex-col gap-1">
-      <button
+      <ButtonBase
         type="button"
         dir="ltr"
         data-testid="damage-diagram"
@@ -828,7 +806,8 @@ function DamageDiagram({
         aria-describedby="damage-diagram-position"
         onClick={place}
         onKeyDown={nudge}
-        className="block w-full rounded-md border border-border bg-surface-subtle p-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+        focusRipple
+        className="block w-full rounded-md border border-border bg-surface-subtle p-2"
       >
         {/* A schematic plan view, drawn here. NOT a template image, and not an
             assertion about any particular vehicle's shape. */}
@@ -854,7 +833,7 @@ function DamageDiagram({
             className="text-primary"
           />
         </svg>
-      </button>
+      </ButtonBase>
       <p
         id="damage-diagram-position"
         data-testid="damage-diagram-position"
@@ -888,31 +867,34 @@ function MapForm({
   readonly templates: readonly BindableTemplateEntry[];
   readonly onSubmit: (template: BindableTemplateEntry, attempt: number) => Promise<ActionState>;
 }) {
-  const [chosen, setChosen] = useState(templates[0]?.id ?? '');
-  const [state, setState] = useState<ActionState>({ status: 'idle' });
-  const [attempt, setAttempt] = useState(1);
-  const [pending, startTransition] = useTransition();
+  const form = useStepForm<{ readonly chosen: string }>({
+    messages,
+    empty: { chosen: templates[0]?.id ?? '' },
+    check: (draft) =>
+      templates.some((entry) => entry.id === draft.chosen)
+        ? {}
+        : { chosen: 'receptions.damage.error.mapRequired' },
+    send: (draft, attempt) =>
+      onSubmit(
+        templates.find((entry) => entry.id === draft.chosen) as BindableTemplateEntry,
+        attempt
+      ),
+    settle: (result) => {
+      notifyActionResult(result, messages);
+    },
+    // The same template stays chosen: a stored map is not unsaved work.
+    afterStored: (draft) => draft,
+  });
 
-  const template = templates.find((entry) => entry.id === chosen) ?? templates[0];
+  const formRef = useFocusFirstInvalid(form.state);
+  const template = templates.find((entry) => entry.id === form.draft.chosen) ?? templates[0];
 
   return (
-    <form
-      className="flex flex-col gap-2"
-      onSubmit={(event) => {
-        event.preventDefault();
-        if (!template) return;
-        startTransition(async () => {
-          const result = await onSubmit(template, attempt);
-          setState(result);
-          setAttempt((current) => current + 1);
-          notifyActionResult(result, messages);
-        });
-      }}
-    >
-      <SelectField
+    <form ref={formRef} className="flex flex-col gap-2" onSubmit={form.onSubmit} noValidate>
+      <FormSelectField
         label={translate(messages, 'receptions.damage.templateLabel')}
-        value={chosen}
-        onChange={(event) => setChosen(event.target.value)}
+        value={form.draft.chosen}
+        onChange={(value) => form.update('chosen', value)}
         options={templates.map((entry) => ({
           value: entry.id,
           label:
@@ -920,6 +902,7 @@ function MapForm({
               ? translateDynamic(messages, `receptions.damage.mapType.${entry.mapType}`)
               : `${translateDynamic(messages, `receptions.damage.mapType.${entry.mapType}`)} · ${entry.perspective}`,
         }))}
+        error={form.fieldError('chosen')}
       />
       {/*
        * The revision the mark will be anchored to, NAMED rather than implied.
@@ -939,10 +922,13 @@ function MapForm({
           <span dir="ltr">{template.activeVersionNumber}</span>
         </p>
       )}
-      <button type="submit" disabled={pending || !template} className={PRIMARY_BUTTON}>
-        {translate(messages, 'receptions.damage.templateSubmit')}
-      </button>
-      <StepOutcome messages={messages} state={state} />
+      <SubmitButton
+        messages={messages}
+        pending={form.pending}
+        labelKey="receptions.damage.templateSubmit"
+        disabled={!template}
+      />
+      <StepOutcome messages={messages} state={form.state} />
     </form>
   );
 }

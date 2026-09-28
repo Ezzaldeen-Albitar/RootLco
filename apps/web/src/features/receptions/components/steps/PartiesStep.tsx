@@ -1,24 +1,21 @@
 'use client';
 
-import { useCallback, useState, useTransition } from 'react';
+import { useCallback, useMemo } from 'react';
+import { OperationalGrid, type OperationalColumn } from '@/components/data/OperationalGrid';
 import { INITIAL_REQUEST } from '@/components/data-table/table-state';
 import { useServerTable } from '@/components/data-table/use-server-table';
-import { CheckboxField, SelectField, TextField } from '@/components/forms/Field';
+import { FormCheckboxField } from '@/components/forms/mui/FormCheckboxField';
+import { FormSelectField } from '@/components/forms/mui/FormSelectField';
+import { FormTextField } from '@/components/forms/mui/FormTextField';
 import { notifyActionResult } from '@/components/notifications/action-notifications';
-import { CustomerSelector, type SelectedCustomer } from '@/components/party/CustomerSelector';
+import { CustomerPicker, type ChosenCustomer } from '@/components/party/CustomerPicker';
 import { PartyLabel } from '@/components/party/PartyLabel';
-import {
-  ErrorState,
-  FailureExplanation,
-  LoadingState,
-  PermissionDeniedState,
-  SessionExpiredState,
-} from '@/components/states/States';
+import { FailureExplanation } from '@/components/states/States';
 import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic, translateWithValues } from '@/i18n/get-messages';
-import { formatDateTime } from '@/lib/format';
 import type { ActionState } from '@/lib/forms/action-result';
+import { useFocusFirstInvalid } from '@/lib/forms/use-focus-first-invalid';
 import {
   assignPartyRole,
   listAuthorizations,
@@ -36,6 +33,7 @@ import {
 } from '../../receptions-contract';
 import type { CheckInStepProps } from '../../check-in/wizard';
 import { refusalReasonKey } from '../../check-in/closure';
+import { InstantOrRaw, SubmitButton, useStepForm } from './EvidencePanels';
 
 /**
  * Party roles and authorization (`FE-009`).
@@ -66,9 +64,15 @@ import { refusalReasonKey } from '../../check-in/closure';
  * step calls `refresh()` — the shell re-reads the detail — and re-reads its own
  * lists, so what the operator sees next is the current truth, not the state
  * that lost the race.
+ *
+ * ## On the Material UI wrappers (ADR-022)
+ *
+ * Both lists are `OperationalGrid` over the same reads (the server's pages
+ * walked with its cursor, every state the grid's own). Both forms are
+ * `useStepForm`: the party is chosen by name (`CustomerPicker`), every refusal
+ * is marked on the field it is about with the cursor moved there, and anything
+ * entered is unsaved work.
  */
-
-const IDLE: ActionState = { status: 'idle' };
 
 export function PartiesStep({
   locale,
@@ -81,7 +85,7 @@ export function PartiesStep({
 }: CheckInStepProps) {
   const readKey = `${visitId}:${recordVersion}`;
 
-  /* --- read-backs --------------------------------------------------------- */
+  /* --- the two read-backs ------------------------------------------------ */
 
   const loadRoles = useCallback(
     (request: Parameters<typeof listPartyRoles>[2], cursor: string | null) =>
@@ -119,13 +123,13 @@ export function PartiesStep({
     <div className="grid gap-4 lg:grid-cols-2">
       <section
         aria-labelledby="parties-roles-heading"
-        className="flex flex-col gap-3 rounded-lg border border-border bg-surface p-4"
+        className="flex min-w-0 flex-col gap-3 rounded-lg border border-border bg-surface p-4"
       >
         <h4 id="parties-roles-heading" className="text-body font-medium text-text-primary">
           {translate(messages, 'receptions.parties.rolesHeading')}
         </h4>
 
-        <PartyRoleList messages={messages} table={roles} />
+        <PartyRoleGrid locale={locale} messages={messages} table={roles} />
 
         {writesLocked ? null : capabilities.manageParties ? (
           capabilities.readCustomers ? (
@@ -147,13 +151,13 @@ export function PartiesStep({
 
       <section
         aria-labelledby="parties-authorizations-heading"
-        className="flex flex-col gap-3 rounded-lg border border-border bg-surface p-4"
+        className="flex min-w-0 flex-col gap-3 rounded-lg border border-border bg-surface p-4"
       >
         <h4 id="parties-authorizations-heading" className="text-body font-medium text-text-primary">
           {translate(messages, 'receptions.authorization.heading')}
         </h4>
 
-        <AuthorizationList locale={locale} messages={messages} table={authorizations} />
+        <AuthorizationGrid locale={locale} messages={messages} table={authorizations} />
 
         {writesLocked ? null : capabilities.verifyAuthorizations ? (
           capabilities.readCustomers ? (
@@ -182,70 +186,31 @@ export function PartiesStep({
  * Read-backs
  * ---------------------------------------------------------------------- */
 
-function ListStates({
-  messages,
-  status,
-  correlationId,
-  onRetry,
-}: {
-  readonly messages: Messages;
-  readonly status: string;
-  readonly correlationId: string | undefined;
-  readonly onRetry: () => void;
-}) {
-  if (status === 'loading') return <LoadingState messages={messages} />;
-  if (status === 'denied') {
-    return (
-      <PermissionDeniedState messages={messages} {...(correlationId ? { correlationId } : {})} />
-    );
-  }
-  if (status === 'expired') return <SessionExpiredState messages={messages} />;
-  return (
-    <ErrorState
-      messages={messages}
-      action={
-        <button
-          type="button"
-          onClick={onRetry}
-          className="rounded-md border border-border px-3 py-1.5 text-body text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
-        >
-          {translate(messages, 'state.retry')}
-        </button>
-      }
-      {...(correlationId ? { correlationId } : {})}
-    />
-  );
-}
-
-function PartyRoleList({
+/** The visit's party roles, open and closed, each by name. */
+export function PartyRoleGrid({
+  locale,
   messages,
   table,
+  showInterval = true,
+  emptyKey = 'receptions.parties.rolesEmpty',
+  testId = 'party-role-grid',
 }: {
+  readonly locale: Locale;
   readonly messages: Messages;
   readonly table: ReturnType<typeof useServerTable<PartyRoleEntry>>;
+  /** Whether the open/ended marker and the assignment source are drawn. */
+  readonly showInterval?: boolean;
+  /** What an empty answer says — the summary names ACTIVE roles only. */
+  readonly emptyKey?: 'receptions.parties.rolesEmpty' | 'receptions.summary.partiesEmpty';
+  readonly testId?: string;
 }) {
-  if (table.status !== 'idle') {
-    return (
-      <ListStates
-        messages={messages}
-        status={table.status}
-        correlationId={table.correlationId}
-        onRetry={table.refresh}
-      />
-    );
-  }
-  const rows = table.response?.rows ?? [];
-  if (rows.length === 0) {
-    return (
-      <p className="text-body text-text-secondary">
-        {translate(messages, 'receptions.parties.rolesEmpty')}
-      </p>
-    );
-  }
-  return (
-    <ul className="flex flex-col divide-y divide-border rounded-md border border-border">
-      {rows.map((row) => (
-        <li key={row.id} className="flex flex-wrap items-center gap-3 px-3 py-2">
+  const columns = useMemo<readonly OperationalColumn<PartyRoleEntry>[]>(
+    () => [
+      {
+        id: 'partner',
+        headerKey: 'receptions.acknowledgement.columnParty',
+        flex: 2,
+        cell: (row) => (
           <PartyLabel
             messages={messages}
             party={{
@@ -254,28 +219,61 @@ function PartyRoleList({
               partnerType: null,
             }}
           />
-          <span className="text-caption text-text-secondary">
-            {translateDynamic(messages, `receptions.partyRole.${row.relationshipRole}`)}
-          </span>
-          {row.validTo === null ? (
-            <span className="rounded-full bg-surface-subtle px-2 py-0.5 text-caption text-text-secondary">
-              {translate(messages, 'receptions.parties.roleActive')}
-            </span>
-          ) : (
-            <span className="text-caption text-text-muted">
-              {translate(messages, 'receptions.parties.roleEnded')}
-            </span>
-          )}
-          {row.assignmentSource !== null ? (
-            <span className="text-caption text-text-muted">{row.assignmentSource}</span>
-          ) : null}
-        </li>
-      ))}
-    </ul>
+        ),
+      },
+      {
+        id: 'role',
+        headerKey: 'receptions.parties.role',
+        cell: (row) => translateDynamic(messages, `receptions.partyRole.${row.relationshipRole}`),
+      },
+      ...(showInterval
+        ? [
+            {
+              id: 'interval',
+              headerKey: 'receptions.wizard.status',
+              cell: (row: PartyRoleEntry) =>
+                translate(
+                  messages,
+                  row.validTo === null
+                    ? 'receptions.parties.roleActive'
+                    : 'receptions.parties.roleEnded'
+                ),
+            },
+            {
+              id: 'source',
+              headerKey: 'receptions.parties.source',
+              hideBelow: 'md' as const,
+              cell: (row: PartyRoleEntry) => row.assignmentSource ?? '',
+            },
+          ]
+        : []),
+    ],
+    [messages, showInterval]
+  );
+  const rows = table.response?.rows ?? [];
+
+  return (
+    <>
+      <OperationalGrid<PartyRoleEntry>
+        messages={messages}
+        locale={locale}
+        label={translate(messages, 'receptions.parties.rolesHeading')}
+        columns={columns}
+        rowId={(row) => row.id}
+        table={table}
+        density="compact"
+        suppressEmptyState
+        testId={testId}
+      />
+      {table.status === 'idle' && table.response !== null && rows.length === 0 ? (
+        <p className="text-body text-text-secondary">{translate(messages, emptyKey)}</p>
+      ) : null}
+    </>
   );
 }
 
-function AuthorizationList({
+/** Authorizations AND authorization-type refusals, one union, each labelled. */
+function AuthorizationGrid({
   locale,
   messages,
   table,
@@ -284,86 +282,137 @@ function AuthorizationList({
   readonly messages: Messages;
   readonly table: ReturnType<typeof useServerTable<AuthorizationEntry>>;
 }) {
-  if (table.status !== 'idle') {
-    return (
-      <ListStates
-        messages={messages}
-        status={table.status}
-        correlationId={table.correlationId}
-        onRetry={table.refresh}
-      />
-    );
-  }
+  const columns = useMemo<readonly OperationalColumn<AuthorizationEntry>[]>(
+    () => authorizationColumns(locale, messages, 'detail'),
+    [locale, messages]
+  );
   const rows = table.response?.rows ?? [];
-  if (rows.length === 0) {
-    return (
-      <p className="text-body text-text-secondary">
-        {translate(messages, 'receptions.authorization.empty')}
-      </p>
-    );
-  }
+
   return (
-    <ul className="flex flex-col divide-y divide-border rounded-md border border-border">
-      {rows.map((row) => (
-        <li key={`${row.kind}-${row.id}`} className="flex flex-col gap-1 px-3 py-2">
-          <div className="flex flex-wrap items-center gap-3">
-            <PartyLabel
-              messages={messages}
-              party={{
-                partnerName: row.partnerDisplayName,
-                partnerNumber: null,
-                partnerType: null,
-              }}
-            />
-            {/* The union's two kinds, labelled as what each row IS: a refusal
-                is refusal EVIDENCE (`rec.reception-refusal`), not an
-                authorization dressed as declined. */}
-            <span className="rounded-full bg-surface-subtle px-2 py-0.5 text-caption text-text-secondary">
-              {translate(
-                messages,
-                row.kind === 'refusal'
-                  ? 'receptions.authorization.kindRefusal'
-                  : 'receptions.authorization.kindAuthorization'
-              )}
-            </span>
-            <span
-              className={
-                row.decision === 'approved'
-                  ? 'text-caption font-medium text-success'
-                  : 'text-caption font-medium text-error'
-              }
-            >
-              {translate(
-                messages,
-                row.decision === 'approved'
-                  ? 'receptions.authorization.approved'
-                  : 'receptions.authorization.declined'
-              )}
-            </span>
-            {row.isStanding ? (
-              <span className="rounded-full border border-border px-2 py-0.5 text-caption text-text-secondary">
-                {translate(messages, 'receptions.authorization.standing')}
-              </span>
-            ) : null}
-          </div>
-          <p className="text-caption text-text-muted">
-            {row.authorizingRole !== null
-              ? `${translateDynamic(messages, `receptions.authorizingRole.${row.authorizingRole}`)} · `
-              : ''}
-            {row.channel !== null
-              ? `${translateDynamic(messages, `receptions.channel.${row.channel}`)} · `
-              : ''}
-            {formatDateTime(row.occurredAt, locale)}
-          </p>
-        </li>
-      ))}
-    </ul>
+    <>
+      <OperationalGrid<AuthorizationEntry>
+        messages={messages}
+        locale={locale}
+        label={translate(messages, 'receptions.authorization.heading')}
+        columns={columns}
+        rowId={(row) => `${row.kind}-${row.id}`}
+        table={table}
+        density="compact"
+        suppressEmptyState
+        testId="authorization-grid"
+      />
+      {table.status === 'idle' && table.response !== null && rows.length === 0 ? (
+        <p className="text-body text-text-secondary">
+          {translate(messages, 'receptions.authorization.empty')}
+        </p>
+      ) : null}
+    </>
   );
 }
 
+/**
+ * The columns an authorization row is drawn with — shared with the summary, so
+ * the two surfaces cannot disagree about what a row says. `detail` adds the
+ * authorizing role and the channel; `summary` says standing or superseded.
+ */
+export function authorizationColumns(
+  locale: Locale,
+  messages: Messages,
+  shape: 'detail' | 'summary'
+): readonly OperationalColumn<AuthorizationEntry>[] {
+  return [
+    {
+      id: 'partner',
+      headerKey: 'receptions.acknowledgement.columnParty',
+      flex: 2,
+      cell: (row) => (
+        <PartyLabel
+          messages={messages}
+          party={{ partnerName: row.partnerDisplayName, partnerNumber: null, partnerType: null }}
+        />
+      ),
+    },
+    {
+      id: 'decision',
+      headerKey: 'receptions.authorization.decision',
+      cell: (row) => (
+        <span
+          className={
+            row.decision === 'approved'
+              ? 'text-caption font-medium text-success'
+              : 'text-caption font-medium text-error'
+          }
+        >
+          {translate(
+            messages,
+            row.decision === 'approved'
+              ? 'receptions.authorization.approved'
+              : 'receptions.authorization.declined'
+          )}
+        </span>
+      ),
+    },
+    {
+      id: 'kind',
+      headerKey: 'receptions.acknowledgement.columnRecord',
+      cell: (row) =>
+        translate(
+          messages,
+          row.kind === 'refusal'
+            ? 'receptions.authorization.kindRefusal'
+            : 'receptions.authorization.kindAuthorization'
+        ),
+    },
+    {
+      id: 'standing',
+      headerKey: 'receptions.authorization.standingHeader',
+      cell: (row) =>
+        row.isStanding
+          ? translate(messages, 'receptions.authorization.standing')
+          : shape === 'summary'
+            ? translate(messages, 'receptions.summary.supersededDecision')
+            : '',
+    },
+    ...(shape === 'detail'
+      ? [
+          {
+            id: 'how',
+            headerKey: 'receptions.authorization.channel',
+            hideBelow: 'md' as const,
+            cell: (row: AuthorizationEntry) =>
+              [
+                row.authorizingRole !== null
+                  ? translateDynamic(messages, `receptions.authorizingRole.${row.authorizingRole}`)
+                  : null,
+                row.channel !== null
+                  ? translateDynamic(messages, `receptions.channel.${row.channel}`)
+                  : null,
+              ]
+                .filter((part): part is string => part !== null)
+                .join(' · '),
+          },
+        ]
+      : []),
+    {
+      id: 'occurredAt',
+      headerKey: 'receptions.acknowledgement.columnRecordedAt',
+      cell: (row) => <InstantOrRaw value={row.occurredAt} locale={locale} />,
+    },
+  ];
+}
+
 /* ---------------------------------------------------------------------- *
- * Writes
+ * Forms
  * ---------------------------------------------------------------------- */
+
+interface RoleDraft {
+  readonly partner: ChosenCustomer | null;
+  readonly role: string;
+  readonly source: string;
+  readonly supersede: boolean;
+}
+
+const EMPTY_ROLE: RoleDraft = { partner: null, role: '', source: '', supersede: false };
 
 function PartyRoleForm({
   locale,
@@ -376,108 +425,103 @@ function PartyRoleForm({
   readonly visitId: string;
   readonly settle: (state: ActionState) => Promise<void>;
 }) {
-  const [partner, setPartner] = useState<SelectedCustomer | null>(null);
-  const [role, setRole] = useState('');
-  const [source, setSource] = useState('');
-  const [supersede, setSupersede] = useState(false);
-  const [state, setState] = useState<ActionState>(IDLE);
-  const [pending, startTransition] = useTransition();
-
-  const submit = () => {
-    if (partner === null || role === '') {
-      setState({
-        status: 'invalid',
-        messageKey:
-          partner === null
-            ? 'receptions.parties.error.partnerRequired'
-            : 'receptions.parties.error.roleRequired',
-        attempt: (state.attempt ?? 0) + 1,
-      });
-      return;
-    }
-    startTransition(async () => {
-      const result = await assignPartyRole(
+  const form = useStepForm<RoleDraft>({
+    messages,
+    empty: EMPTY_ROLE,
+    errorNames: { partner: 'partnerId', role: 'relationshipRole', source: 'assignmentSource' },
+    check: (draft) => {
+      const found: Record<string, string> = {};
+      if (draft.partner === null) found['partnerId'] = 'receptions.parties.error.partnerRequired';
+      if (draft.role === '') found['relationshipRole'] = 'receptions.parties.error.roleRequired';
+      return found;
+    },
+    send: (draft, attempt) =>
+      assignPartyRole(
         visitId,
         {
-          partnerId: partner.id,
-          relationshipRole: role as (typeof RECEPTION_PARTY_ROLES)[number],
-          assignmentSource: source.trim() === '' ? null : source.trim(),
-          supersede,
+          partnerId: (draft.partner as ChosenCustomer).id,
+          relationshipRole: draft.role as (typeof RECEPTION_PARTY_ROLES)[number],
+          assignmentSource: draft.source.trim() === '' ? null : draft.source.trim(),
+          supersede: draft.supersede,
         },
-        (state.attempt ?? 0) + 1
-      );
-      setState(result);
-      if (result.status === 'success') {
-        setPartner(null);
-        setRole('');
-        setSource('');
-        setSupersede(false);
-      }
-      await settle(result);
-    });
-  };
+        attempt
+      ),
+    settle,
+  });
+  const { draft } = form;
+  const formRef = useFocusFirstInvalid(form.state);
 
   return (
     <form
+      ref={formRef}
       aria-label={translate(messages, 'receptions.parties.formLabel')}
-      onSubmit={(event) => {
-        event.preventDefault();
-        submit();
-      }}
+      onSubmit={form.onSubmit}
+      noValidate
       className="flex flex-col gap-3 border-t border-border pt-3"
     >
-      <CustomerSelector
-        locale={locale}
+      <CustomerPicker
         messages={messages}
-        name="partnerId"
-        labelKey="receptions.parties.partner"
-        value={partner}
-        onChange={setPartner}
-        required
-        attempt={state.attempt ?? 0}
+        locale={locale}
+        material
+        label={translate(messages, 'receptions.parties.partner')}
+        value={draft.partner}
+        onChange={(chosen) => form.update('partner', chosen)}
+        canSearch
+        error={form.fieldError('partnerId')}
+        countsAsUnsaved={false}
+        testId="party-role-partner"
       />
-      <SelectField
+      <FormSelectField
         label={translate(messages, 'receptions.parties.role')}
         required
-        value={role}
-        onChange={(event) => setRole(event.target.value)}
+        value={draft.role}
+        onChange={(value) => form.update('role', value)}
         options={RECEPTION_PARTY_ROLES.map((value) => ({
           value,
           label: translateDynamic(messages, `receptions.partyRole.${value}`),
         }))}
         placeholder={translate(messages, 'form.select.placeholder')}
+        error={form.fieldError('relationshipRole')}
       />
-      <TextField
+      <FormTextField
         label={translate(messages, 'receptions.parties.source')}
         description={translate(messages, 'receptions.parties.sourceHint')}
-        optionalHint={translate(messages, 'form.optional')}
-        value={source}
+        value={draft.source}
         maxLength={MAX_ASSIGNMENT_SOURCE}
-        onChange={(event) => setSource(event.target.value)}
+        onChange={(value) => form.update('source', value)}
+        error={form.fieldError('assignmentSource')}
       />
-      <CheckboxField
+      <FormCheckboxField
         label={translate(messages, 'receptions.parties.supersede')}
         description={translate(messages, 'receptions.parties.supersedeHint')}
-        checked={supersede}
-        onChange={(event) => setSupersede(event.target.checked)}
+        checked={draft.supersede}
+        onChange={(checked) => form.update('supersede', checked)}
       />
 
-      <Outcome messages={messages} state={state} />
+      <Outcome messages={messages} state={form.state} />
 
-      <div>
-        <button
-          type="submit"
-          disabled={pending}
-          className="rounded-md bg-primary px-4 py-2 text-body font-medium text-on-primary disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
-        >
-          {pending
-            ? translate(messages, 'form.pending')
-            : translate(messages, 'receptions.parties.assign')}
-        </button>
-      </div>
+      <SubmitButton
+        messages={messages}
+        pending={form.pending}
+        labelKey="receptions.parties.assign"
+      />
     </form>
   );
 }
+
+interface AuthorizationDraft {
+  readonly partner: ChosenCustomer | null;
+  readonly role: string;
+  readonly decision: string;
+  readonly channel: string;
+}
+
+const EMPTY_AUTHORIZATION: AuthorizationDraft = {
+  partner: null,
+  role: '',
+  decision: '',
+  channel: '',
+};
 
 function AuthorizationForm({
   locale,
@@ -490,91 +534,80 @@ function AuthorizationForm({
   readonly visitId: string;
   readonly settle: (state: ActionState) => Promise<void>;
 }) {
-  const [partner, setPartner] = useState<SelectedCustomer | null>(null);
-  const [role, setRole] = useState('');
-  const [decision, setDecision] = useState('');
-  const [channel, setChannel] = useState('');
-  const [state, setState] = useState<ActionState>(IDLE);
-  const [pending, startTransition] = useTransition();
-
-  const submit = () => {
-    const missing =
-      partner === null
-        ? 'receptions.parties.error.partnerRequired'
-        : role === ''
-          ? 'receptions.authorization.error.roleRequired'
-          : decision === ''
-            ? 'receptions.authorization.error.decisionRequired'
-            : null;
-    if (missing !== null) {
-      setState({ status: 'invalid', messageKey: missing, attempt: (state.attempt ?? 0) + 1 });
-      return;
-    }
-    startTransition(async () => {
-      const result = await recordAuthorization(
+  const form = useStepForm<AuthorizationDraft>({
+    messages,
+    empty: EMPTY_AUTHORIZATION,
+    errorNames: { partner: 'partnerId', role: 'authorizingRole' },
+    check: (draft) => {
+      const found: Record<string, string> = {};
+      if (draft.partner === null) found['partnerId'] = 'receptions.parties.error.partnerRequired';
+      if (draft.role === '') {
+        found['authorizingRole'] = 'receptions.authorization.error.roleRequired';
+      }
+      if (draft.decision === '') {
+        found['decision'] = 'receptions.authorization.error.decisionRequired';
+      }
+      return found;
+    },
+    send: (draft, attempt) =>
+      recordAuthorization(
         visitId,
         {
-          authorizingRole: role as (typeof AUTHORIZING_ROLES)[number],
-          partnerId: (partner as SelectedCustomer).id,
-          decision: decision as (typeof AUTHORIZATION_DECISIONS)[number],
-          ...(channel !== ''
-            ? { channel: channel as (typeof AUTHORIZATION_CHANNELS)[number] }
+          authorizingRole: draft.role as (typeof AUTHORIZING_ROLES)[number],
+          partnerId: (draft.partner as ChosenCustomer).id,
+          decision: draft.decision as (typeof AUTHORIZATION_DECISIONS)[number],
+          ...(draft.channel !== ''
+            ? { channel: draft.channel as (typeof AUTHORIZATION_CHANNELS)[number] }
             : {}),
         },
-        (state.attempt ?? 0) + 1
-      );
-      setState(result);
-      if (result.status === 'success') {
-        setPartner(null);
-        setRole('');
-        setDecision('');
-        setChannel('');
-      }
-      await settle(result);
-    });
-  };
+        attempt
+      ),
+    settle,
+  });
+  const { draft } = form;
+  const formRef = useFocusFirstInvalid(form.state);
 
   return (
     <form
+      ref={formRef}
       aria-label={translate(messages, 'receptions.authorization.formLabel')}
-      onSubmit={(event) => {
-        event.preventDefault();
-        submit();
-      }}
+      onSubmit={form.onSubmit}
+      noValidate
       className="flex flex-col gap-3 border-t border-border pt-3"
     >
       <p className="text-caption text-text-muted" lang={locale}>
-        {/* Both decisions are first-class; a decline recorded here is the
-            party's standing answer until the same party approves later. */}
         {translate(messages, 'receptions.authorization.hint')}
       </p>
-      <CustomerSelector
-        locale={locale}
+      <CustomerPicker
         messages={messages}
-        name="authorizationPartnerId"
-        labelKey="receptions.authorization.partner"
-        value={partner}
-        onChange={setPartner}
-        required
-        attempt={state.attempt ?? 0}
+        locale={locale}
+        material
+        label={translate(messages, 'receptions.authorization.partner')}
+        value={draft.partner}
+        onChange={(chosen) => form.update('partner', chosen)}
+        canSearch
+        error={form.fieldError('partnerId')}
+        countsAsUnsaved={false}
+        testId="authorization-partner"
       />
-      <SelectField
+      <FormSelectField
         label={translate(messages, 'receptions.authorization.role')}
         description={translate(messages, 'receptions.authorization.roleHint')}
         required
-        value={role}
-        onChange={(event) => setRole(event.target.value)}
+        value={draft.role}
+        onChange={(value) => form.update('role', value)}
         options={AUTHORIZING_ROLES.map((value) => ({
           value,
           label: translateDynamic(messages, `receptions.authorizingRole.${value}`),
         }))}
         placeholder={translate(messages, 'form.select.placeholder')}
+        error={form.fieldError('authorizingRole')}
       />
-      <SelectField
+      <FormSelectField
         label={translate(messages, 'receptions.authorization.decision')}
         required
-        value={decision}
-        onChange={(event) => setDecision(event.target.value)}
+        value={draft.decision}
+        onChange={(value) => form.update('decision', value)}
         options={AUTHORIZATION_DECISIONS.map((value) => ({
           value,
           label: translate(
@@ -585,32 +618,27 @@ function AuthorizationForm({
           ),
         }))}
         placeholder={translate(messages, 'form.select.placeholder')}
+        error={form.fieldError('decision')}
       />
-      <SelectField
+      <FormSelectField
         label={translate(messages, 'receptions.authorization.channel')}
-        optionalHint={translate(messages, 'form.optional')}
-        value={channel}
-        onChange={(event) => setChannel(event.target.value)}
+        value={draft.channel}
+        onChange={(value) => form.update('channel', value)}
         options={AUTHORIZATION_CHANNELS.map((value) => ({
           value,
           label: translateDynamic(messages, `receptions.channel.${value}`),
         }))}
         placeholder={translate(messages, 'form.select.placeholder')}
+        error={form.fieldError('channel')}
       />
 
-      <Outcome messages={messages} state={state} />
+      <Outcome messages={messages} state={form.state} />
 
-      <div>
-        <button
-          type="submit"
-          disabled={pending}
-          className="rounded-md bg-primary px-4 py-2 text-body font-medium text-on-primary disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
-        >
-          {pending
-            ? translate(messages, 'form.pending')
-            : translate(messages, 'receptions.authorization.record')}
-        </button>
-      </div>
+      <SubmitButton
+        messages={messages}
+        pending={form.pending}
+        labelKey="receptions.authorization.record"
+      />
     </form>
   );
 }

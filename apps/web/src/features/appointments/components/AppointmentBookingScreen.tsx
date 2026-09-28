@@ -18,7 +18,7 @@ import {
   useWorkingContext,
 } from '@/features/working-context/WorkingContextProvider';
 import { notifyActionResult } from '@/components/notifications/action-notifications';
-import { IDLE, invalid } from '@/lib/forms/action-result';
+import { IDLE, invalid, unreachable } from '@/lib/forms/action-result';
 import { useClearOnCorrect } from '@/lib/forms/use-clear-on-correct';
 import { useFocusFirstInvalid } from '@/lib/forms/use-focus-first-invalid';
 import { listCustomerVehiclesCancellable } from '@/lib/customers/vehicles-read';
@@ -187,20 +187,29 @@ function BookingForm({
     }
 
     setPending(true);
-    const result = await createAppointment(
-      {
-        companyId: companyId.trim(),
-        branchId: branchId.trim(),
-        vehicleId: (vehicle as SelectedVehicle).vehicleId,
-        requesterPartnerId: (customer as ChosenCustomer).id,
-        appointmentTypeId: typeId,
-        sourceChannelId: channelId.length > 0 ? channelId : null,
-        requestedFrom: windowDraft.from,
-        requestedTo: windowDraft.to,
-      },
-      attempt
-    );
-    setPending(false);
+    let result: AppointmentCreateState;
+    try {
+      result = await createAppointment(
+        {
+          companyId: companyId.trim(),
+          branchId: branchId.trim(),
+          vehicleId: (vehicle as SelectedVehicle).vehicleId,
+          requesterPartnerId: (customer as ChosenCustomer).id,
+          appointmentTypeId: typeId,
+          sourceChannelId: channelId.length > 0 ? channelId : null,
+          requestedFrom: windowDraft.from,
+          requestedTo: windowDraft.to,
+        },
+        attempt
+      );
+    } catch {
+      // No answer came back (the connection dropped): said as that, with every
+      // entry kept, and the button usable again.
+      setState(unreachable(attempt));
+      return;
+    } finally {
+      setPending(false);
+    }
 
     notifyActionResult(
       result.status === 'success' ? { ...result, messageKey: 'appointments.book.booked' } : result,

@@ -12,7 +12,7 @@ import {
   useWorkingContext,
 } from '@/features/working-context/WorkingContextProvider';
 import { notifyActionResult } from '@/components/notifications/action-notifications';
-import { IDLE, invalid, type ActionState } from '@/lib/forms/action-result';
+import { IDLE, invalid, unreachable, type ActionState } from '@/lib/forms/action-result';
 import { useClearOnCorrect } from '@/lib/forms/use-clear-on-correct';
 import { useEditBaseline } from '@/lib/forms/use-edit-baseline';
 import { useFocusFirstInvalid } from '@/lib/forms/use-focus-first-invalid';
@@ -487,15 +487,23 @@ function RescheduleSection({
       return;
     }
     setPending(true);
-    // The BASELINE's version: typed times built on a record that has since
-    // moved are the server's conflict, never a silent overwrite.
-    const result = await rescheduleAppointment(
-      appointmentId,
-      edit.version,
-      { confirmedFrom: draft.from, confirmedTo: draft.to },
-      attempt
-    );
-    setPending(false);
+    let result: AppointmentChangeState;
+    try {
+      // The BASELINE's version: typed times built on a record that has since
+      // moved are the server's conflict, never a silent overwrite.
+      result = await rescheduleAppointment(
+        appointmentId,
+        edit.version,
+        { confirmedFrom: draft.from, confirmedTo: draft.to },
+        attempt
+      );
+    } catch {
+      // No answer came back: the typed times stay, and the button works again.
+      setState(unreachable(attempt));
+      return;
+    } finally {
+      setPending(false);
+    }
     if (result.status === 'success' && result.changed) {
       // Stored: the form is clean again, on the version the answer carried.
       edit.rebase(EMPTY_WINDOW, result.changed.recordVersion);
@@ -628,13 +636,21 @@ function CancelSection({
       return;
     }
     setPending(true);
-    const result = await cancelAppointment(
-      appointmentId,
-      version,
-      { cancellationReasonId: reasonId },
-      attempt
-    );
-    setPending(false);
+    let result: AppointmentChangeState;
+    try {
+      result = await cancelAppointment(
+        appointmentId,
+        version,
+        { cancellationReasonId: reasonId },
+        attempt
+      );
+    } catch {
+      // No answer came back: the dialog stays open with the reason chosen.
+      setState(unreachable(attempt));
+      return;
+    } finally {
+      setPending(false);
+    }
     if (result.status === 'success') close();
     else setState(result);
     onResult(result);
@@ -799,8 +815,16 @@ function NoShowSection({
   const confirm = async () => {
     const attempt = (state.attempt ?? 0) + 1;
     setPending(true);
-    const result = await recordAppointmentNoShow(appointmentId, version, attempt);
-    setPending(false);
+    let result: AppointmentChangeState;
+    try {
+      result = await recordAppointmentNoShow(appointmentId, version, attempt);
+    } catch {
+      // No answer came back: said in the dialog, which stays open.
+      setState(unreachable(attempt));
+      return;
+    } finally {
+      setPending(false);
+    }
     if (result.status === 'success') close();
     else setState(result);
     onResult(result);

@@ -81,6 +81,7 @@ import {
   RECEPTION_HISTORY_OPERATION,
 } from '@/app/api/v1/receptions/[receptionId]/history/route';
 import { POST as APPROVE } from '@/app/api/v1/receptions/[receptionId]/approve/route';
+import { POST as CONVERT } from '@/app/api/v1/receptions/[receptionId]/convert-to-work-order/route';
 import { POST as CLOSE_WITHOUT_WORK } from '@/app/api/v1/receptions/[receptionId]/close-without-work/route';
 
 /** Tenant B's own company and branch — a real scope, not a fabricated id. */
@@ -834,8 +835,14 @@ describe('the detail and the If-Match round trip', () => {
       'vehicleDisplayNumber',
       'vehicleId',
       'walkInId',
+      // Owner directive, row 5.3: the work order a converted visit became.
+      'workOrderDisplayNumber',
+      'workOrderId',
     ]);
     expect(body.receptionStatus).toBe('opened');
+    // Not converted, so no work order is named.
+    expect(body.workOrderId).toBeNull();
+    expect(body.workOrderDisplayNumber).toBeNull();
     expect(body.origin).toBe('walk_in');
     expect(body.vehicleId).toBe(vehicleId);
     expect(body.receivingEmployeeId).toBe(USER_FULL);
@@ -865,6 +872,54 @@ describe('the detail and the If-Match round trip', () => {
     expect((await approve(id, version)).status).toBe(200);
     // And a stale value — the version the row no longer holds — is refused.
     expect((await approve(id, version)).status).toBe(409);
+  });
+});
+
+describe('the detail names the work order a converted visit became', () => {
+  /*
+   * Owner directive, Browser QA part 7 row 5.3. Revisiting a converted visit
+   * said "already converted" and nothing else, because the conversion's answer
+   * was the only thing that named the work order. The detail now publishes the
+   * live ordinary work order itself, read under the caller's own row security.
+   */
+  it('publishes workOrderId and its number once the visit is converted, and null before', async () => {
+    authAs(SUBJ_FULL);
+    const { id } = await openReception();
+
+    const before = (await (await idRead(READ_RECEPTION, id)).json()) as Detail;
+    expect(before.workOrderId).toBeNull();
+
+    const decision = await post(RECORD_AUTHORIZATION, id, '/authorizations', {
+      authorizingRole: 'service_requester',
+      partnerId: PARTNER_A,
+      decision: 'approved',
+    });
+    expect(decision.status).toBe(201);
+    const opened = await idRead(READ_RECEPTION, id);
+    expect((await approve(id, opened.headers.get('etag') ?? '')).status).toBe(200);
+
+    const authorized = await idRead(READ_RECEPTION, id);
+    const converted = await CONVERT(
+      new Request(`${R}/${id}/convert-to-work-order`, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'idempotency-key': crypto.randomUUID(),
+          'if-match': authorized.headers.get('etag') ?? '',
+        },
+        body: '{}',
+      }),
+      { params: Promise.resolve({ receptionId: id }) }
+    );
+    expect(converted.status).toBe(200);
+    const answer = (await converted.json()) as Detail;
+    expect(answer.workOrderId).toBeTruthy();
+
+    const after = (await (await idRead(READ_RECEPTION, id)).json()) as Detail;
+    expect(after.receptionStatus).toBe('converted');
+    // The SAME work order the command answered with, by id and by number.
+    expect(after.workOrderId).toBe(answer.workOrderId);
+    expect(after.workOrderDisplayNumber).toBe(answer.displayNumber ?? null);
   });
 });
 

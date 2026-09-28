@@ -305,6 +305,29 @@ describe('the acknowledgement route', () => {
     expect(findProps(granted, 'sections')).not.toBeNull();
   });
 
+  it('prints the sheet alone: the print controls are a sibling of it inside the print scope', async () => {
+    /*
+     * Owner directive (the delivery sheet's rule): paper carries the whole
+     * sheet and nothing else. The page opts into the print scope, whose rule
+     * (`styles/print/_index.scss`) leaves off every direct child that holds no
+     * document — so the toolbar with Print and the way back must be a SIBLING
+     * of the sheet, and exactly one child may be the sheet.
+     */
+    PERMISSIONS = [RECEPTION_PERMISSIONS.read];
+    const tree = await AcknowledgementPage({ params });
+    const scope = findProps(tree, 'data-print-scope');
+    expect(scope).not.toBeNull();
+    const children = (Array.isArray(scope?.['children']) ? scope['children'] : []) as {
+      props: Record<string, unknown>;
+    }[];
+    expect(children).toHaveLength(2);
+    const toolbar = children.find((child) => 'printLabel' in child.props);
+    const sheet = children.find((child) => 'sections' in child.props);
+    expect(toolbar, 'no print toolbar beside the sheet').toBeDefined();
+    expect(sheet, 'the sheet is not a direct child of the print scope').toBeDefined();
+    expect(toolbar?.props['backHref']).toBe(`/en/receptions/check-in/${DETAIL.id}`);
+  });
+
   it('reads the three sections on the server, so the first paint is the sheet', async () => {
     PERMISSIONS = [RECEPTION_PERMISSIONS.read];
     await AcknowledgementPage({ params });

@@ -162,6 +162,13 @@ export type RowAction =
       readonly onClick: () => void;
       readonly about?: string | undefined;
       readonly disabled?: boolean | undefined;
+      /**
+       * A CHOICE among the rows: `true` on the row that is chosen, `false` on
+       * the others, and the button is a toggle (`aria-pressed`) — so which row
+       * is chosen is announced with the button, not only drawn beside it.
+       * Absent for an ordinary action, which is not a toggle at all.
+       */
+      readonly pressed?: boolean | undefined;
     };
 
 export interface OperationalGridProps<Row> {
@@ -293,6 +300,8 @@ function RowActionsCell({
             size="small"
             tabIndex={tabIndex}
             disabled={action.disabled}
+            aria-pressed={action.pressed}
+            variant={action.pressed === true ? 'contained' : 'text'}
             onClick={action.onClick}
           >
             {name}

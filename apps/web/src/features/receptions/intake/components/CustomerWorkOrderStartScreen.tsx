@@ -1,10 +1,17 @@
 'use client';
 
-import { useCallback, useEffect, useId, useState } from 'react';
+import { useCallback, useEffect, useId, useState, type ReactNode } from 'react';
 import Link from 'next/link';
-import { INITIAL_REQUEST, type TableRequest } from '@/components/data-table/table-state';
+import { INITIAL_REQUEST, withPage, type TableRequest } from '@/components/data-table/table-state';
 import { useServerTable } from '@/components/data-table/use-server-table';
 import { PartyLabel } from '@/components/party/PartyLabel';
+import {
+  BackendUnavailableState,
+  ErrorState,
+  LoadingState,
+  PermissionDeniedState,
+  SessionExpiredState,
+} from '@/components/states/States';
 import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic } from '@/i18n/get-messages';
 import type { Locale } from '@/i18n/config';
@@ -14,7 +21,7 @@ import { listPlates } from '@/features/vehicles/history-api';
 import { isInForceOn, localToday } from '@/features/vehicles/history-contract';
 import { readVehicleSummary, type CheckInVehicleSummary } from '../../support-api';
 import { checkInWizardHref } from '../intake-handoff';
-import { IntakeVehicleStep, ListStates, Pager, type ChosenVehicle } from './IntakeVehicleStep';
+import { IntakeVehicleStep, type ChosenVehicle } from './IntakeVehicleStep';
 import type { ChosenCustomer } from './WalkInIntakeScreen';
 
 /**
@@ -565,6 +572,114 @@ function SelectedVehicleIdentity({
           ) : null}
         </span>
       ) : null}
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ *
+ * Shared list scaffolding
+ * ------------------------------------------------------------------ */
+
+/**
+ * The states every list in this step must be able to show, once.
+ *
+ * Session expiry deliberately gets no Retry: re-issuing the same request with
+ * the same dead session fails identically, and the button would promise
+ * otherwise.
+ *
+ * Moved here from `IntakeVehicleStep.tsx`, its only other user, when the walk-in
+ * vehicle step moved onto `OperationalGrid` (ADR-022): this screen lists the
+ * same read with the same six outcomes and has not moved yet.
+ */
+function ListStates<Row>({
+  messages,
+  status,
+  correlationId,
+  onRetry,
+  empty,
+  rows,
+  render,
+}: {
+  readonly messages: Messages;
+  readonly status: ReturnType<typeof useServerTable<Row>>['status'];
+  readonly correlationId: string | undefined;
+  readonly onRetry: () => void;
+  readonly empty: ReactNode;
+  readonly rows: readonly Row[] | null;
+  readonly render: (row: Row) => ReactNode;
+}) {
+  const retry = (
+    <button
+      type="button"
+      onClick={onRetry}
+      className="rounded-md border border-border px-3 py-1.5 text-body text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+    >
+      {translate(messages, 'state.retry')}
+    </button>
+  );
+
+  if (status === 'loading') return <LoadingState messages={messages} />;
+  if (status === 'denied') {
+    return (
+      <PermissionDeniedState messages={messages} {...(correlationId ? { correlationId } : {})} />
+    );
+  }
+  if (status === 'expired') return <SessionExpiredState messages={messages} />;
+  if (status === 'unavailable') {
+    return (
+      <BackendUnavailableState
+        messages={messages}
+        action={retry}
+        {...(correlationId ? { correlationId } : {})}
+      />
+    );
+  }
+  if (status === 'error' || status === 'not-found') {
+    return (
+      <ErrorState
+        messages={messages}
+        action={retry}
+        {...(correlationId ? { correlationId } : {})}
+      />
+    );
+  }
+  if (rows === null) return null;
+  if (rows.length === 0) return <>{empty}</>;
+
+  return (
+    <ul className="flex flex-col divide-y divide-border rounded-md border border-border">
+      {rows.map(render)}
+    </ul>
+  );
+}
+
+/** Previous/Next with no invented range — the operations publish no count. */
+function Pager<Row>({
+  messages,
+  table,
+}: {
+  readonly messages: Messages;
+  readonly table: ReturnType<typeof useServerTable<Row>>;
+}) {
+  if (!table.response || (!table.response.hasMore && table.request.page <= 1)) return null;
+  return (
+    <div className="flex items-center gap-2">
+      <button
+        type="button"
+        disabled={table.request.page <= 1}
+        onClick={() => table.setRequest(withPage(table.request, table.request.page - 1))}
+        className="rounded-md border border-border px-3 py-1.5 text-body text-text-primary disabled:text-text-disabled focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+      >
+        {translate(messages, 'table.previousPage')}
+      </button>
+      <button
+        type="button"
+        disabled={!table.response.hasMore}
+        onClick={() => table.setRequest(withPage(table.request, table.request.page + 1))}
+        className="rounded-md border border-border px-3 py-1.5 text-body text-text-primary disabled:text-text-disabled focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+      >
+        {translate(messages, 'table.nextPage')}
+      </button>
     </div>
   );
 }

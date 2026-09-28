@@ -4,7 +4,7 @@ import postcss, { type AtRule } from 'postcss';
 import * as sass from 'sass';
 import { screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { axe } from 'vitest-axe';
 import { FIXTURE_ROWS, simulateServer } from '@/components/gallery/fixtures';
 import { MuiFoundationSection } from '@/components/gallery/MuiFoundationSection';
@@ -15,6 +15,7 @@ import { muiTextOf } from '@/components/ui-foundation/mui-text';
 import type { Locale } from '@/i18n/config';
 import { getMessages } from '@/i18n/get-messages';
 import { PrintDocument, PrintTable } from '@/components/print/PrintDocument';
+import { PrintToolbar } from '@/components/print/PrintToolbar';
 import { galleryEnabled } from '@/lib/gallery-access';
 import { BOTH_DIRECTIONS, renderLtr, renderRtl } from './render';
 
@@ -183,6 +184,29 @@ describe('print document', () => {
       expect(results.violations).toEqual([]);
       unmount();
     }
+  });
+});
+
+describe('the print toolbar', () => {
+  it('prints through the browser, offers the way back, and never reaches the paper', async () => {
+    const print = vi.spyOn(window, 'print').mockImplementation(() => undefined);
+    const user = userEvent.setup();
+    const { container } = renderLtr(
+      <PrintToolbar printLabel="Print the sheet" backHref="/en/somewhere" backLabel="Back" />
+    );
+    await user.click(screen.getByRole('button', { name: 'Print the sheet' }));
+    expect(print).toHaveBeenCalledTimes(1);
+    print.mockRestore();
+    expect(screen.getByRole('link', { name: 'Back' })).toHaveAttribute('href', '/en/somewhere');
+    // Marked for the print sheet's `[data-print='hide']` rule.
+    expect(container.querySelector('[data-print="hide"]')).toContainElement(
+      screen.getByRole('button', { name: 'Print the sheet' })
+    );
+  });
+
+  it('offers no way back when it is given none', () => {
+    renderLtr(<PrintToolbar printLabel="Print the sheet" />);
+    expect(screen.queryByRole('link')).toBeNull();
   });
 });
 

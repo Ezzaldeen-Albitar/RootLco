@@ -1,21 +1,21 @@
 'use client';
 
-import { useActionState, useCallback, useId, useState, type ReactNode } from 'react';
-import { INITIAL_REQUEST, withPage, type TableRequest } from '@/components/data-table/table-state';
+import { useActionState, useCallback, useMemo, useState } from 'react';
+import Button from '@mui/material/Button';
+import { OperationalGrid, type OperationalColumn } from '@/components/data/OperationalGrid';
+import { INITIAL_REQUEST, type TableRequest } from '@/components/data-table/table-state';
 import { useServerTable } from '@/components/data-table/use-server-table';
-import { RecordForm } from '@/components/forms/RecordForm';
-import {
-  BackendUnavailableState,
-  ErrorState,
-  FailureExplanation,
-  LoadingState,
-  NoResultsState,
-  PermissionDeniedState,
-  SessionExpiredState,
-} from '@/components/states/States';
+import { FormNumberField } from '@/components/forms/mui/FormNumberField';
+import { FormSelectField } from '@/components/forms/mui/FormSelectField';
+import { FormTextField } from '@/components/forms/mui/FormTextField';
+import { FailureExplanation } from '@/components/states/States';
+import { useUnsavedGuard } from '@/features/working-context/WorkingContextProvider';
 import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic, translateWithValues } from '@/i18n/get-messages';
 import type { Locale } from '@/i18n/config';
+import { IDLE, unreachable, type ActionState } from '@/lib/forms/action-result';
+import { useClearOnCorrect } from '@/lib/forms/use-clear-on-correct';
+import { useFocusFirstInvalid } from '@/lib/forms/use-focus-first-invalid';
 import { listCustomerVehiclesCancellable } from '@/lib/customers/vehicles-read';
 import type { CustomerVehicleEntry } from '@/lib/customers/vehicles-contract';
 import { createVehicleAction } from '@/features/vehicles/api';
@@ -73,6 +73,20 @@ import type { ChosenCustomer, LinkOutcome } from './WalkInIntakeScreen';
  * the contract's honest sentence, and beside it the flow offers the way a
  * duplicate should actually be resolved at a desk: find the existing vehicle
  * with the search above and choose it.
+ *
+ * ## On the Material UI wrappers (ADR-022)
+ *
+ * Both lists — the customer's own vehicles and the search results — are
+ * `OperationalGrid` over the same reads (the server's pages walked with its
+ * cursor, never counted; every state other than an answer the grid's own), each
+ * row's "Use this vehicle" a real button named with the vehicle. The search
+ * boxes, the registration and the relationship are the Material form fields;
+ * the two writes are Server Action forms (`useActionState`), so the actions
+ * receive the form's own data, and each select is remounted on every settle
+ * (`key` on the attempt) so the reset after an action cannot strand it. A
+ * refusal marks its field, the cursor goes to the first, entries are kept, and
+ * a correction withdraws it; typed registration details and a chosen role are
+ * unsaved work; a write whose answer never arrives is said as that.
  */
 
 export interface ChosenVehicle {
@@ -126,7 +140,7 @@ export function IntakeVehicleStep({
   return (
     <section
       aria-labelledby="intake-vehicle-heading"
-      className="flex flex-col gap-4 rounded-lg border border-border bg-surface p-4"
+      className="flex min-w-0 flex-col gap-4 rounded-lg border border-border bg-surface p-4"
     >
       <h2 id="intake-vehicle-heading" className="text-section-title font-medium text-text-primary">
         {translate(messages, 'receptions.intake.vehicle.heading')}
@@ -139,7 +153,9 @@ export function IntakeVehicleStep({
         onChosen={onVehicleChosen}
       />
 
-      {canSearchVehicles ? <VehicleSearch messages={messages} onChosen={onVehicleChosen} /> : null}
+      {canSearchVehicles ? (
+        <VehicleSearch locale={locale} messages={messages} onChosen={onVehicleChosen} />
+      ) : null}
 
       {canCreateVehicle ? (
         <VehicleCreate
@@ -158,6 +174,58 @@ export function IntakeVehicleStep({
         </p>
       ) : null}
     </section>
+  );
+}
+
+/** A vehicle's identity in words, never its identifier. */
+function vehicleName(
+  messages: Messages,
+  vehicle: {
+    readonly displayNumber: string | null;
+    readonly vin: string | null;
+    readonly modelYear: number | null;
+  }
+): string {
+  const parts = [vehicle.displayNumber, vehicle.vin, vehicle.modelYear?.toString()].filter(
+    (part): part is string => typeof part === 'string' && part.length > 0
+  );
+  return parts.length > 0 ? parts.join(' · ') : translate(messages, 'vehicles.column.noReference');
+}
+
+/** The vehicle's reference, its VIN and its year, each said as missing when it is. */
+function VehicleIdentityCell({
+  messages,
+  displayNumber,
+  vin,
+  modelYear,
+}: {
+  readonly messages: Messages;
+  readonly displayNumber: string | null;
+  readonly vin: string | null;
+  readonly modelYear: number | null;
+}) {
+  return (
+    <span className="flex flex-wrap items-center gap-2">
+      {displayNumber ? (
+        <code className="font-mono text-caption" dir="ltr">
+          {displayNumber}
+        </code>
+      ) : (
+        <span className="text-caption text-text-muted">
+          {translate(messages, 'vehicles.column.noReference')}
+        </span>
+      )}
+      {vin ? (
+        <span className="font-mono text-caption" dir="ltr">
+          {vin}
+        </span>
+      ) : (
+        <span className="text-caption text-text-muted">
+          {translate(messages, 'vehicles.column.noVin')}
+        </span>
+      )}
+      {modelYear !== null ? <span dir="ltr">{modelYear}</span> : null}
+    </span>
   );
 }
 
@@ -191,48 +259,32 @@ function CustomerVehicleList({
     initial: { ...INITIAL_REQUEST, pageSize: 10 },
   });
 
-  return (
-    <div className="flex flex-col gap-2" data-testid="customer-vehicle-list">
-      <h3 className="text-body font-medium text-text-primary">
-        {translate(messages, 'receptions.intake.vehicle.ownListTitle')}
-      </h3>
-
-      <ListStates
-        messages={messages}
-        status={table.status}
-        correlationId={table.correlationId}
-        onRetry={table.refresh}
-        empty={
-          <p className="text-caption text-text-muted">
-            {translate(messages, 'receptions.intake.vehicle.ownListEmpty')}
-          </p>
-        }
-        rows={table.response?.rows ?? null}
-        render={(entry) => (
-          <li key={entry.id} className="flex flex-wrap items-center gap-3 px-3 py-2">
-            <span className="text-caption text-text-secondary">
-              {translateDynamic(messages, `vehicles.role.${entry.relationshipRole}`)}
-            </span>
-            {entry.vehicleDisplayNumber ? (
-              <code className="font-mono text-caption" dir="ltr">
-                {entry.vehicleDisplayNumber}
-              </code>
-            ) : (
-              <span className="text-caption text-text-muted">
-                {translate(messages, 'vehicles.column.noReference')}
-              </span>
-            )}
-            {entry.vin ? (
-              <span className="font-mono text-caption" dir="ltr">
-                {entry.vin}
-              </span>
-            ) : (
-              <span className="text-caption text-text-muted">
-                {translate(messages, 'vehicles.column.noVin')}
-              </span>
-            )}
-            {entry.modelYear !== null ? <span dir="ltr">{entry.modelYear}</span> : null}
-            <span className="text-caption text-text-muted">
+  const columns = useMemo<readonly OperationalColumn<CustomerVehicleEntry>[]>(
+    () => [
+      {
+        id: 'vehicle',
+        headerKey: 'receptions.wizard.vehicle',
+        flex: 3,
+        cell: (entry) => (
+          <VehicleIdentityCell
+            messages={messages}
+            displayNumber={entry.vehicleDisplayNumber}
+            vin={entry.vin}
+            modelYear={entry.modelYear}
+          />
+        ),
+      },
+      {
+        id: 'role',
+        headerKey: 'vehicles.relationships.role',
+        cell: (entry) => translateDynamic(messages, `vehicles.role.${entry.relationshipRole}`),
+      },
+      {
+        id: 'link',
+        headerKey: 'receptions.wizard.status',
+        cell: (entry) => (
+          <span className="flex flex-col">
+            <span>
               {translate(
                 messages,
                 entry.active
@@ -246,28 +298,61 @@ function CustomerVehicleList({
               <span className="text-caption text-text-muted">
                 {translate(messages, 'receptions.intake.vehicle.noLiveVehicle')}
               </span>
-            ) : (
-              <button
-                type="button"
-                onClick={() =>
-                  onChosen({
-                    id: entry.vehicleId,
+            ) : null}
+          </span>
+        ),
+      },
+    ],
+    [messages]
+  );
+  const rows = table.response?.rows ?? [];
+
+  return (
+    <div className="flex flex-col gap-2" data-testid="customer-vehicle-list">
+      <h3 className="text-body font-medium text-text-primary">
+        {translate(messages, 'receptions.intake.vehicle.ownListTitle')}
+      </h3>
+
+      <OperationalGrid<CustomerVehicleEntry>
+        messages={messages}
+        locale={locale}
+        label={translate(messages, 'receptions.intake.vehicle.ownListTitle')}
+        columns={columns}
+        rowId={(entry) => entry.id}
+        table={table}
+        rowActions={(entry) =>
+          entry.vehicleLifecycleStatus === null
+            ? []
+            : [
+                {
+                  kind: 'button',
+                  label: translate(messages, 'receptions.intake.vehicle.choose'),
+                  about: vehicleName(messages, {
                     displayNumber: entry.vehicleDisplayNumber,
                     vin: entry.vin,
                     modelYear: entry.modelYear,
-                    alreadyLinked: true,
-                  })
-                }
-                className="ms-auto rounded-md border border-border px-2 py-1 text-caption text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
-              >
-                {translate(messages, 'receptions.intake.vehicle.choose')}
-              </button>
-            )}
-          </li>
-        )}
+                  }),
+                  onClick: () =>
+                    onChosen({
+                      id: entry.vehicleId,
+                      displayNumber: entry.vehicleDisplayNumber,
+                      vin: entry.vin,
+                      modelYear: entry.modelYear,
+                      alreadyLinked: true,
+                    }),
+                },
+              ]
+        }
+        density="compact"
+        suppressEmptyState
+        testId="customer-vehicle-grid"
       />
+      {table.status === 'idle' && table.response !== null && rows.length === 0 ? (
+        <p className="text-caption text-text-muted">
+          {translate(messages, 'receptions.intake.vehicle.ownListEmpty')}
+        </p>
+      ) : null}
 
-      <Pager messages={messages} table={table} />
       <p className="text-caption text-text-muted" lang={locale}>
         {translate(messages, 'receptions.intake.vehicle.historyNote')}
       </p>
@@ -282,13 +367,14 @@ function CustomerVehicleList({
  * full".
  */
 function VehicleSearch({
+  locale,
   messages,
   onChosen,
 }: {
+  readonly locale: Locale;
   readonly messages: Messages;
   readonly onChosen: (vehicle: ChosenVehicle) => void;
 }) {
-  const formId = useId();
   const [draft, setDraft] = useState<VehicleSearchCriteria>(EMPTY_CRITERIA);
   /** `null` until the operator searches — no request before intent. */
   const [submitted, setSubmitted] = useState<VehicleSearchCriteria | null>(null);
@@ -297,6 +383,11 @@ function VehicleSearch({
     setDraft((current) => ({ ...current, [key]: value }));
 
   const blocked = isEmptyCriteria(draft);
+  const vinNote =
+    draft.vin.trim().length > 0 &&
+    normalizeVinForDisplay(draft.vin) !== draft.vin.trim().toUpperCase()
+      ? `${translate(messages, 'vehicles.search.vinNormalized')} ${normalizeVinForDisplay(draft.vin)}`
+      : undefined;
 
   return (
     <div
@@ -312,67 +403,55 @@ function VehicleSearch({
           event.preventDefault();
           if (!blocked) setSubmitted(draft);
         }}
-        aria-labelledby={`${formId}-legend`}
+        aria-label={translate(messages, 'receptions.intake.vehicle.searchTitle')}
         noValidate
+        role="search"
       >
-        <span id={`${formId}-legend`} className="sr-only">
-          {translate(messages, 'receptions.intake.vehicle.searchTitle')}
-        </span>
         <div className="grid gap-3 sm:grid-cols-3">
-          <SearchField
-            messages={messages}
-            id={`${formId}-vin`}
-            labelKey="vehicles.search.vin"
-            hintKey="vehicles.search.vinHint"
+          <FormTextField
+            label={translate(messages, 'vehicles.search.vin')}
+            description={[translate(messages, 'vehicles.search.vinHint'), vinNote]
+              .filter(Boolean)
+              .join(' ')}
+            type="search"
+            dir="ltr"
             value={draft.vin}
             maxLength={MAX_VIN_FRAGMENT}
             onChange={(value) => set('vin', value)}
-            note={
-              draft.vin.trim().length > 0 &&
-              normalizeVinForDisplay(draft.vin) !== draft.vin.trim().toUpperCase()
-                ? `${translate(messages, 'vehicles.search.vinNormalized')} ${normalizeVinForDisplay(draft.vin)}`
-                : null
-            }
           />
-          <SearchField
-            messages={messages}
-            id={`${formId}-plate`}
-            labelKey="vehicles.search.plate"
-            hintKey="vehicles.search.plateHint"
+          <FormTextField
+            label={translate(messages, 'vehicles.search.plate')}
+            description={translate(messages, 'vehicles.search.plateHint')}
+            type="search"
+            dir="ltr"
             value={draft.plate}
             maxLength={MAX_PLATE_FRAGMENT}
             onChange={(value) => set('plate', value)}
-            note={null}
           />
-          <SearchField
-            messages={messages}
-            id={`${formId}-number`}
-            labelKey="vehicles.search.vehicleNumber"
-            hintKey="vehicles.search.exactHint"
+          <FormTextField
+            label={translate(messages, 'vehicles.search.vehicleNumber')}
+            description={translate(messages, 'vehicles.search.exactHint')}
+            type="search"
+            dir="ltr"
             value={draft.vehicleNumber}
             maxLength={MAX_VEHICLE_NUMBER}
             onChange={(value) => set('vehicleNumber', value)}
-            note={null}
           />
         </div>
         <div className="mt-3 flex flex-wrap items-center gap-2">
-          <button
-            type="submit"
-            disabled={blocked}
-            className="rounded-md bg-primary px-4 py-2 text-body font-medium text-on-primary disabled:opacity-60"
-          >
+          <Button type="submit" variant="contained" disabled={blocked}>
             {translate(messages, 'vehicles.search.submit')}
-          </button>
-          <button
+          </Button>
+          <Button
             type="button"
+            variant="outlined"
             onClick={() => {
               setDraft(EMPTY_CRITERIA);
               setSubmitted(null);
             }}
-            className="rounded-md border border-border px-4 py-2 text-body text-text-secondary"
           >
             {translate(messages, 'vehicles.search.clear')}
-          </button>
+          </Button>
         </div>
         {blocked ? (
           <p className="mt-2 text-caption text-text-muted">
@@ -390,6 +469,7 @@ function VehicleSearch({
         // pages rather than paging the previous answer.
         <VehicleSearchResults
           key={JSON.stringify(submitted)}
+          locale={locale}
           messages={messages}
           criteria={submitted}
           onChosen={onChosen}
@@ -400,10 +480,12 @@ function VehicleSearch({
 }
 
 function VehicleSearchResults({
+  locale,
   messages,
   criteria,
   onChosen,
 }: {
+  readonly locale: Locale;
   readonly messages: Messages;
   readonly criteria: VehicleSearchCriteria;
   readonly onChosen: (vehicle: ChosenVehicle) => void;
@@ -416,59 +498,61 @@ function VehicleSearchResults({
   const table = useServerTable<VehicleSearchHit>(load, {
     initial: { ...INITIAL_REQUEST, pageSize: 10 },
   });
+  // The criteria live outside the request, so an empty answer is "no matches
+  // for this search", never "nothing here yet".
+  const searched = useMemo(() => ({ ...table, narrowed: true }), [table]);
+
+  const columns = useMemo<readonly OperationalColumn<VehicleSearchHit>[]>(
+    () => [
+      {
+        id: 'vehicle',
+        headerKey: 'receptions.wizard.vehicle',
+        flex: 3,
+        cell: (hit) => (
+          <VehicleIdentityCell
+            messages={messages}
+            displayNumber={hit.displayNumber}
+            vin={hit.vin}
+            modelYear={hit.modelYear}
+          />
+        ),
+      },
+      {
+        id: 'lifecycle',
+        headerKey: 'receptions.wizard.status',
+        cell: (hit) => translateDynamic(messages, `vehicles.lifecycle.${hit.lifecycleStatus}`),
+      },
+    ],
+    [messages]
+  );
 
   return (
     <div className="flex flex-col gap-2" data-testid="intake-vehicle-search-results">
-      <ListStates
+      <OperationalGrid<VehicleSearchHit>
         messages={messages}
-        status={table.status}
-        correlationId={table.correlationId}
-        onRetry={table.refresh}
-        empty={<NoResultsState messages={messages} />}
-        rows={table.response?.rows ?? null}
-        render={(hit) => (
-          <li key={hit.id} className="flex flex-wrap items-center gap-3 px-3 py-2">
-            {hit.displayNumber ? (
-              <code className="font-mono text-caption" dir="ltr">
-                {hit.displayNumber}
-              </code>
-            ) : (
-              <span className="text-caption text-text-muted">
-                {translate(messages, 'vehicles.column.noReference')}
-              </span>
-            )}
-            {hit.vin ? (
-              <span className="font-mono text-caption" dir="ltr">
-                {hit.vin}
-              </span>
-            ) : (
-              <span className="text-caption text-text-muted">
-                {translate(messages, 'vehicles.column.noVin')}
-              </span>
-            )}
-            {hit.modelYear !== null ? <span dir="ltr">{hit.modelYear}</span> : null}
-            <span className="text-caption text-text-muted">
-              {translateDynamic(messages, `vehicles.lifecycle.${hit.lifecycleStatus}`)}
-            </span>
-            <button
-              type="button"
-              onClick={() =>
-                onChosen({
-                  id: hit.id,
-                  displayNumber: hit.displayNumber,
-                  vin: hit.vin,
-                  modelYear: hit.modelYear,
-                  alreadyLinked: false,
-                })
-              }
-              className="ms-auto rounded-md border border-border px-2 py-1 text-caption text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
-            >
-              {translate(messages, 'receptions.intake.vehicle.choose')}
-            </button>
-          </li>
-        )}
+        locale={locale}
+        label={translate(messages, 'receptions.intake.vehicle.searchTitle')}
+        columns={columns}
+        rowId={(hit) => hit.id}
+        table={searched}
+        rowActions={(hit) => [
+          {
+            kind: 'button',
+            label: translate(messages, 'receptions.intake.vehicle.choose'),
+            about: vehicleName(messages, hit),
+            onClick: () =>
+              onChosen({
+                id: hit.id,
+                displayNumber: hit.displayNumber,
+                vin: hit.vin,
+                modelYear: hit.modelYear,
+                alreadyLinked: false,
+              }),
+          },
+        ]}
+        density="compact"
+        testId="intake-vehicle-search-grid"
       />
-      <Pager messages={messages} table={table} />
     </div>
   );
 }
@@ -492,24 +576,27 @@ function VehicleCreate({
   readonly canSearchVehicles: boolean;
   readonly onChosen: (vehicle: ChosenVehicle) => void;
 }) {
-  const formId = useId();
   const [values, setValues] = useState<Record<string, string>>({});
-  const set = (name: string) => (value: string) =>
-    setValues((current) => ({ ...current, [name]: value }));
-
   const [state, action, pending] = useActionState(
-    async (previous: VehicleCreationState, form: FormData) => {
-      const result = await createVehicleAction(previous, form);
+    async (previous: VehicleCreationState, form: FormData): Promise<VehicleCreationState> => {
+      let result: VehicleCreationState;
+      try {
+        result = await createVehicleAction(previous, form);
+      } catch {
+        // No answer came back: said as that, every entry kept.
+        return unreachable((previous.attempt ?? 0) + 1);
+      }
       if (result.status === 'success' && result.created) {
+        const vin = String(form.get('vin') ?? '').trim();
+        const year = String(form.get('modelYear') ?? '').trim();
         // The response deliberately reports `hasVin` instead of echoing the
         // VIN; the summary shows what the operator themselves typed.
+        setValues({});
         onChosen({
           id: result.created.vehicleId,
-          displayNumber: (values['displayNumber'] ?? '').trim() || null,
-          vin: (values['vin'] ?? '').trim() ? normalizeVinForDisplay(values['vin'] ?? '') : null,
-          modelYear: /^\d+$/.test((values['modelYear'] ?? '').trim())
-            ? Number((values['modelYear'] ?? '').trim())
-            : null,
+          displayNumber: String(form.get('displayNumber') ?? '').trim() || null,
+          vin: vin ? normalizeVinForDisplay(vin) : null,
+          modelYear: /^\d+$/.test(year) ? Number(year) : null,
           alreadyLinked: false,
         });
       }
@@ -517,6 +604,21 @@ function VehicleCreate({
     },
     CREATE_INITIAL
   );
+  const formRef = useFocusFirstInvalid(state);
+  const corrections = useClearOnCorrect(state);
+  const set = (name: string) => (value: string) =>
+    setValues((current) => ({ ...current, [name]: value }));
+
+  // Typed details are unsaved work until the vehicle exists.
+  const typed = Object.values(values).some((value) => value.trim() !== '');
+  useUnsavedGuard(typed, () => {
+    setValues({});
+  });
+
+  const fieldError = (name: string): string | undefined => {
+    const key = corrections.errorFor(name);
+    return key === undefined ? undefined : translateDynamic(messages, key);
+  };
 
   return (
     <div
@@ -530,7 +632,7 @@ function VehicleCreate({
         {translate(messages, 'receptions.intake.vehicle.createHint')}
       </p>
 
-      <form action={action} className="flex flex-col gap-3" noValidate>
+      <form ref={formRef} action={action} noValidate className="flex flex-col gap-3">
         {state.status !== 'idle' && state.status !== 'success' ? (
           <div
             key={state.attempt}
@@ -571,78 +673,64 @@ function VehicleCreate({
         ) : null}
 
         <div className="grid gap-3 sm:grid-cols-2">
-          <CreateField
-            formId={formId}
-            messages={messages}
+          <FormTextField
+            label={translate(messages, 'vehicles.create.vin')}
             name="vin"
-            labelKey="vehicles.create.vin"
-            hintKey="vehicles.create.vinHint"
+            description={translate(messages, 'vehicles.create.vinHint')}
             maxLength={MAX_VIN_INPUT}
             dir="ltr"
             value={values['vin'] ?? ''}
-            onValueChange={set('vin')}
-            error={state.fieldErrors?.['vin']}
+            onEdit={() => corrections.noteEdited('vin')}
+            onChange={set('vin')}
+            error={fieldError('vin')}
           />
-          <CreateField
-            formId={formId}
-            messages={messages}
+          <FormTextField
+            label={translate(messages, 'vehicles.column.reference')}
             name="displayNumber"
-            labelKey="vehicles.column.reference"
-            hintKey="vehicles.create.displayNumberHint"
+            description={translate(messages, 'vehicles.create.displayNumberHint')}
             maxLength={MAX_DISPLAY_NUMBER}
             dir="ltr"
             value={values['displayNumber'] ?? ''}
-            onValueChange={set('displayNumber')}
-            error={state.fieldErrors?.['displayNumber']}
+            onEdit={() => corrections.noteEdited('displayNumber')}
+            onChange={set('displayNumber')}
+            error={fieldError('displayNumber')}
           />
-          <CreateField
-            formId={formId}
-            messages={messages}
+          <FormNumberField
+            label={translate(messages, 'vehicles.column.modelYear')}
             name="modelYear"
-            labelKey="vehicles.column.modelYear"
-            hintKey="vehicles.create.yearHint"
+            description={translate(messages, 'vehicles.create.yearHint')}
+            integer
             maxLength={4}
-            dir="ltr"
-            inputMode="numeric"
             value={values['modelYear'] ?? ''}
-            onValueChange={set('modelYear')}
-            error={state.fieldErrors?.['modelYear']}
+            onEdit={() => corrections.noteEdited('modelYear')}
+            onChange={set('modelYear')}
+            error={fieldError('modelYear')}
           />
-          <CreateField
-            formId={formId}
-            messages={messages}
+          <FormTextField
+            label={translate(messages, 'vehicles.create.color')}
             name="color"
-            labelKey="vehicles.create.color"
             maxLength={MAX_COLOR}
             value={values['color'] ?? ''}
-            onValueChange={set('color')}
-            error={state.fieldErrors?.['color']}
+            onEdit={() => corrections.noteEdited('color')}
+            onChange={set('color')}
+            error={fieldError('color')}
           />
-          <div className="flex flex-col gap-1">
-            <label
-              className="text-caption font-medium text-text-secondary"
-              htmlFor={`${formId}-powertrain`}
-            >
-              {translate(messages, 'vehicles.search.powertrainCategory')}
-              <span className="ms-1 text-text-muted">{translate(messages, 'field.optional')}</span>
-            </label>
-            {/* The reset-safe select shape — see `tests/form-reset-class.test.ts`. */}
-            <select
-              key={`powertrain-${state.attempt ?? 0}`}
-              id={`${formId}-powertrain`}
-              name="powertrainCategory"
-              defaultValue={values['powertrainCategory'] ?? ''}
-              onChange={(event) => set('powertrainCategory')(event.target.value)}
-              className="rounded-md border border-border bg-surface px-3 py-2 text-body"
-            >
-              <option value="">{translate(messages, 'vehicles.create.categoryDefault')}</option>
-              {POWERTRAIN_CATEGORIES.map((value) => (
-                <option key={value} value={value}>
-                  {translateDynamic(messages, `vehicles.powertrain.${value}`)}
-                </option>
-              ))}
-            </select>
-          </div>
+          <FormSelectField
+            // Remounted on every settle: the reset after an action cannot leave
+            // the select on an option other than the one held here.
+            key={`powertrain-${state.attempt ?? 0}`}
+            label={translate(messages, 'vehicles.search.powertrainCategory')}
+            name="powertrainCategory"
+            value={values['powertrainCategory'] ?? ''}
+            onEdit={() => corrections.noteEdited('powertrainCategory')}
+            onChange={set('powertrainCategory')}
+            placeholder={translate(messages, 'vehicles.create.categoryDefault')}
+            options={POWERTRAIN_CATEGORIES.map((value) => ({
+              value,
+              label: translateDynamic(messages, `vehicles.powertrain.${value}`),
+            }))}
+            error={fieldError('powertrainCategory')}
+          />
         </div>
 
         <p className="text-caption text-text-muted">
@@ -650,13 +738,14 @@ function VehicleCreate({
         </p>
 
         <div>
-          <button
+          <Button
             type="submit"
+            variant="contained"
             disabled={pending}
-            className="rounded-md bg-primary px-4 py-2 text-body font-medium text-on-primary disabled:opacity-60"
+            aria-busy={pending || undefined}
           >
             {translate(messages, pending ? 'form.saving' : 'vehicles.create.submit')}
-          </button>
+          </Button>
         </div>
       </form>
     </div>
@@ -667,9 +756,9 @@ function VehicleCreate({
  * Record the relationship — `crm.vehicle-link`, the same action the vehicle
  * profile's link form calls, bound to the vehicle this flow just settled on.
  *
- * The customer is fixed (chosen one step ago), so it travels as a hidden
- * field rather than through a second selector: re-asking a question the flow
- * has already answered invites the answers to disagree.
+ * The customer is fixed (chosen one step ago), so it travels with the request
+ * rather than through a second chooser: re-asking a question the flow has
+ * already answered invites the answers to disagree.
  */
 function LinkStep({
   messages,
@@ -724,40 +813,16 @@ function LinkStep({
 
       {canLinkVehicle ? (
         <>
-          <RecordForm
+          <LinkForm
             messages={messages}
-            titleKey="receptions.intake.link.formTitle"
-            submitKey="receptions.intake.link.submit"
-            action={linkCustomerAction.bind(null, vehicle.id)}
+            customer={customer}
+            vehicle={vehicle}
             onRecorded={() => onOutcome('recorded')}
-            prelude={() => (
-              // The chosen customer's identifier, submitted and never shown —
-              // the same rule `CustomerSelector` follows.
-              <input type="hidden" name="partnerId" value={customer.id} />
-            )}
-            fields={[
-              {
-                name: 'relationshipRole',
-                kind: 'select',
-                labelKey: 'vehicles.relationships.role',
-                required: true,
-                // Six roles, not seven: an authorised person is created by the
-                // dedicated authorise operation, which sets the scope this
-                // one cannot.
-                options: LINKABLE_ROLES,
-                optionKeyPrefix: 'vehicles.role.',
-                hintKey: 'receptions.intake.link.roleHint',
-              },
-            ]}
           />
           <div className="flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              onClick={() => onOutcome('skipped')}
-              className="rounded-md border border-border px-3 py-1.5 text-body text-text-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
-            >
+            <Button type="button" variant="outlined" onClick={() => onOutcome('skipped')}>
               {translate(messages, 'receptions.intake.link.skip')}
-            </button>
+            </Button>
             <span className="text-caption text-text-muted">
               {translate(messages, 'receptions.intake.link.skipNote')}
             </span>
@@ -772,245 +837,126 @@ function LinkStep({
             {translate(messages, 'receptions.intake.link.notPermitted')}
           </p>
           <div>
-            <button
-              type="button"
-              onClick={() => onOutcome('not-permitted')}
-              className="rounded-md bg-primary px-4 py-2 text-body font-medium text-on-primary"
-            >
+            <Button type="button" variant="contained" onClick={() => onOutcome('not-permitted')}>
               {translate(messages, 'receptions.intake.link.continue')}
-            </button>
+            </Button>
           </div>
         </>
       )}
 
       <div>
-        <button
-          type="button"
-          onClick={onChangeVehicle}
-          className="rounded-md border border-border px-3 py-1.5 text-body text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
-        >
+        <Button type="button" variant="outlined" onClick={onChangeVehicle}>
           {translate(messages, 'receptions.intake.vehicle.change')}
-        </button>
+        </Button>
       </div>
     </section>
   );
 }
 
-/* ------------------------------------------------------------------ *
- * Shared list scaffolding
- * ------------------------------------------------------------------ */
-
 /**
- * The states every list in this step must be able to show, once.
- *
- * Session expiry deliberately gets no Retry: re-issuing the same request with
- * the same dead session fails identically, and the button would promise
- * otherwise.
- *
- * Exported because the customer-first work-order step beside this file lists
- * the same read with the same six outcomes. A second copy of this mapping would
- * be a second opinion about what an ended session looks like.
+ * The relationship's one question — which role the customer holds — and its
+ * submit. The chosen customer's identifier travels with the request and is
+ * never shown.
  */
-export function ListStates<Row>({
+function LinkForm({
   messages,
-  status,
-  correlationId,
-  onRetry,
-  empty,
-  rows,
-  render,
+  customer,
+  vehicle,
+  onRecorded,
 }: {
   readonly messages: Messages;
-  readonly status: ReturnType<typeof useServerTable<Row>>['status'];
-  readonly correlationId: string | undefined;
-  readonly onRetry: () => void;
-  readonly empty: ReactNode;
-  readonly rows: readonly Row[] | null;
-  readonly render: (row: Row) => ReactNode;
+  readonly customer: ChosenCustomer;
+  readonly vehicle: ChosenVehicle;
+  readonly onRecorded: () => void;
 }) {
-  const retry = (
-    <button
-      type="button"
-      onClick={onRetry}
-      className="rounded-md border border-border px-3 py-1.5 text-body text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+  const [role, setRole] = useState('');
+  const [state, action, pending] = useActionState(
+    async (previous: ActionState, form: FormData): Promise<ActionState> => {
+      const attempt = (previous.attempt ?? 0) + 1;
+      if (String(form.get('relationshipRole') ?? '') === '') {
+        // Refused here, on the role, before a request is spent.
+        return {
+          status: 'invalid',
+          messageKey: 'form.formError',
+          fieldErrors: { relationshipRole: 'field.required' },
+          attempt,
+        };
+      }
+      let result: ActionState;
+      try {
+        result = await linkCustomerAction(vehicle.id, previous, form);
+      } catch {
+        return unreachable(attempt);
+      }
+      if (result.status === 'success') {
+        setRole('');
+        onRecorded();
+      }
+      return result;
+    },
+    IDLE
+  );
+  const formRef = useFocusFirstInvalid(state);
+  const corrections = useClearOnCorrect(state);
+  useUnsavedGuard(role !== '', () => {
+    setRole('');
+  });
+
+  const roleErrorKey = corrections.errorFor('relationshipRole');
+
+  return (
+    <form
+      ref={formRef}
+      aria-label={translate(messages, 'receptions.intake.link.formTitle')}
+      action={action}
+      noValidate
+      className="flex flex-col gap-3"
     >
-      {translate(messages, 'state.retry')}
-    </button>
-  );
-
-  if (status === 'loading') return <LoadingState messages={messages} />;
-  if (status === 'denied') {
-    return (
-      <PermissionDeniedState messages={messages} {...(correlationId ? { correlationId } : {})} />
-    );
-  }
-  if (status === 'expired') return <SessionExpiredState messages={messages} />;
-  if (status === 'unavailable') {
-    return (
-      <BackendUnavailableState
-        messages={messages}
-        action={retry}
-        {...(correlationId ? { correlationId } : {})}
-      />
-    );
-  }
-  if (status === 'error' || status === 'not-found') {
-    return (
-      <ErrorState
-        messages={messages}
-        action={retry}
-        {...(correlationId ? { correlationId } : {})}
-      />
-    );
-  }
-  if (rows === null) return null;
-  if (rows.length === 0) return <>{empty}</>;
-
-  return (
-    <ul className="flex flex-col divide-y divide-border rounded-md border border-border">
-      {rows.map(render)}
-    </ul>
-  );
-}
-
-/** Previous/Next with no invented range — the operations publish no count. */
-export function Pager<Row>({
-  messages,
-  table,
-}: {
-  readonly messages: Messages;
-  readonly table: ReturnType<typeof useServerTable<Row>>;
-}) {
-  if (!table.response || (!table.response.hasMore && table.request.page <= 1)) return null;
-  return (
-    <div className="flex items-center gap-2">
-      <button
-        type="button"
-        disabled={table.request.page <= 1}
-        onClick={() => table.setRequest(withPage(table.request, table.request.page - 1))}
-        className="rounded-md border border-border px-3 py-1.5 text-body text-text-primary disabled:text-text-disabled focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
-      >
-        {translate(messages, 'table.previousPage')}
-      </button>
-      <button
-        type="button"
-        disabled={!table.response.hasMore}
-        onClick={() => table.setRequest(withPage(table.request, table.request.page + 1))}
-        className="rounded-md border border-border px-3 py-1.5 text-body text-text-primary disabled:text-text-disabled focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
-      >
-        {translate(messages, 'table.nextPage')}
-      </button>
-    </div>
-  );
-}
-
-/** A single search box with its hint, LTR because the values are codes. */
-function SearchField({
-  messages,
-  id,
-  labelKey,
-  hintKey,
-  value,
-  maxLength,
-  onChange,
-  note,
-}: {
-  readonly messages: Messages;
-  readonly id: string;
-  readonly labelKey: string;
-  readonly hintKey: string;
-  readonly value: string;
-  readonly maxLength: number;
-  readonly onChange: (value: string) => void;
-  readonly note: string | null;
-}) {
-  return (
-    <div className="flex flex-col gap-1">
-      <label className="text-caption font-medium text-text-secondary" htmlFor={id}>
-        {translateDynamic(messages, labelKey)}
-      </label>
-      <input
-        id={id}
-        type="search"
-        dir="ltr"
-        value={value}
-        maxLength={maxLength}
-        onChange={(event) => onChange(event.target.value)}
-        aria-describedby={`${id}-hint`}
-        className="rounded-md border border-border bg-surface px-3 py-2 text-body"
-      />
-      <span id={`${id}-hint`} className="text-caption text-text-muted">
-        {translateDynamic(messages, hintKey)}
-      </span>
-      {note ? (
-        <span className="font-mono text-caption text-text-secondary" dir="ltr">
-          {note}
-        </span>
+      {/* The chosen customer's identifier, submitted and never shown. */}
+      <input type="hidden" name="partnerId" value={customer.id} />
+      <h3 className="text-body font-medium text-text-primary">
+        {translate(messages, 'receptions.intake.link.formTitle')}
+      </h3>
+      {state.status !== 'idle' && state.status !== 'success' && state.messageKey ? (
+        <p role="alert" className="text-body text-error">
+          {translateWithValues(messages, state.messageKey, state.messageValues)}
+          <FailureExplanation messages={messages} messageKey={state.messageKey} />
+          {state.correlationId ? (
+            <code className="ms-2 font-mono text-caption">{state.correlationId}</code>
+          ) : null}
+        </p>
       ) : null}
-    </div>
-  );
-}
-
-/** A controlled create-form text box (text inputs survive the form reset). */
-function CreateField({
-  formId,
-  messages,
-  name,
-  labelKey,
-  hintKey,
-  maxLength,
-  dir,
-  inputMode,
-  value,
-  onValueChange,
-  error,
-}: {
-  readonly formId: string;
-  readonly messages: Messages;
-  readonly name: string;
-  readonly labelKey: string;
-  readonly hintKey?: string;
-  readonly maxLength: number;
-  readonly dir?: 'ltr';
-  readonly inputMode?: 'numeric';
-  readonly value: string;
-  readonly onValueChange: (next: string) => void;
-  readonly error?: string | undefined;
-}) {
-  const id = `${formId}-${name}`;
-  const hintId = hintKey ? `${id}-hint` : undefined;
-  const errorId = error ? `${id}-error` : undefined;
-  const describedBy = [hintId, errorId].filter(Boolean).join(' ') || undefined;
-
-  return (
-    <div className="flex flex-col gap-1">
-      <label className="text-caption font-medium text-text-secondary" htmlFor={id}>
-        {translateDynamic(messages, labelKey)}
-        <span className="ms-1 text-text-muted">{translate(messages, 'field.optional')}</span>
-      </label>
-      <input
-        id={id}
-        name={name}
-        type="text"
-        maxLength={maxLength}
-        {...(dir ? { dir } : {})}
-        {...(inputMode ? { inputMode } : {})}
-        value={value}
-        onChange={(event) => onValueChange(event.target.value)}
-        aria-invalid={error ? true : undefined}
-        aria-describedby={describedBy}
-        className="rounded-md border border-border bg-surface px-3 py-2 text-body"
+      <FormSelectField
+        // Remounted on every settle, like every select in a Server Action form.
+        key={`role-${state.attempt ?? 0}`}
+        label={translate(messages, 'vehicles.relationships.role')}
+        name="relationshipRole"
+        required
+        description={translate(messages, 'receptions.intake.link.roleHint')}
+        value={role}
+        onEdit={() => corrections.noteEdited('relationshipRole')}
+        onChange={setRole}
+        placeholder={translate(messages, 'form.select.placeholder')}
+        // Six roles, not seven: an authorised person is created by the
+        // dedicated authorise operation, which sets the scope this one cannot.
+        options={LINKABLE_ROLES.map((value) => ({
+          value,
+          label: translateDynamic(messages, `vehicles.role.${value}`),
+        }))}
+        error={roleErrorKey === undefined ? undefined : translateDynamic(messages, roleErrorKey)}
       />
-      {hintKey ? (
-        <span id={hintId} className="text-caption text-text-muted">
-          {translateDynamic(messages, hintKey)}
-        </span>
-      ) : null}
-      {error ? (
-        <span id={errorId} className="text-caption text-error">
-          {translateDynamic(messages, error)}
-        </span>
-      ) : null}
-    </div>
+      <div>
+        <Button
+          type="submit"
+          variant="contained"
+          disabled={pending}
+          aria-busy={pending || undefined}
+        >
+          {pending
+            ? translate(messages, 'form.pending')
+            : translate(messages, 'receptions.intake.link.submit')}
+        </Button>
+      </div>
+    </form>
   );
 }

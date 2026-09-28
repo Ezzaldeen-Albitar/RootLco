@@ -449,6 +449,27 @@ describe('CustomerPicker', () => {
     expect(screen.getByTestId('customer-picker')).not.toHaveTextContent(CUSTOMER_UUID);
   });
 
+  it('carries the kind the directory answered with the choice, so a screen need not read it again', async () => {
+    searchCustomerDirectory.mockResolvedValue(page([HIT]));
+    const chosen = vi.fn();
+    const user = userEvent.setup();
+    renderLtr(
+      <CustomerPicker
+        messages={en}
+        locale="en"
+        label="Paying customer"
+        value={null}
+        onChange={chosen}
+        canSearch
+      />
+    );
+    await user.type(screen.getByLabelText(/^Paying customer/), 'Layla');
+    await user.click(await screen.findByRole('button', { name: /Layla Haddad/ }));
+    expect(chosen).toHaveBeenCalledWith(
+      expect.objectContaining({ id: CUSTOMER_UUID, partyType: HIT.partyType })
+    );
+  });
+
   it('says a single character is too short and sends nothing', async () => {
     const user = userEvent.setup();
     renderLtr(<PickerHarness />);

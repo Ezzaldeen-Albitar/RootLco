@@ -1,9 +1,10 @@
 'use client';
 
 import { useCallback, useState, useTransition } from 'react';
+import Button from '@mui/material/Button';
 import { INITIAL_REQUEST } from '@/components/data-table/table-state';
 import { useServerTable, type ServerPage } from '@/components/data-table/use-server-table';
-import { TextAreaField } from '@/components/forms/Field';
+import { FormTextField } from '@/components/forms/mui/FormTextField';
 import { translate, translateDynamic } from '@/i18n/get-messages';
 import type { Messages } from '@/i18n/get-messages';
 import type { Locale } from '@/i18n/config';
@@ -26,7 +27,7 @@ import {
 } from '../../receptions-contract';
 import type { CheckInStepProps } from '../../check-in/wizard';
 import { CaptureFileField } from '../CaptureFileField';
-import { EvidenceStates, PRIMARY_BUTTON, SECONDARY_BUTTON } from './EvidencePanels';
+import { EvidenceStates } from './EvidencePanels';
 
 /**
  * The reception evidence area — capture, binding and the authorized override
@@ -184,6 +185,7 @@ export function MediaStep({
         </h3>
         <EvidenceStates
           messages={messages}
+          locale={locale}
           status={status}
           correlationId={correlationId}
           onRetry={table.refresh}
@@ -470,14 +472,15 @@ function RequirementRow({
                     onDone({ kind: 'capture', requirementCode: code, outcome: result });
                   }}
                 >
-                  <button
+                  <Button
                     type="submit"
+                    variant="outlined"
+                    size="small"
                     data-testid={`capture-finalize-${entry.id}`}
                     disabled={pending}
-                    className={SECONDARY_BUTTON}
                   >
                     {translate(messages, 'receptions.capture.finalize')}
-                  </button>
+                  </Button>
                 </form>
               ) : null}
             </li>
@@ -500,9 +503,9 @@ function RequirementRow({
             name="evidenceFile"
             label={translate(messages, 'receptions.capture.chooseFile')}
           />
-          <button type="submit" disabled={pending} className={PRIMARY_BUTTON}>
+          <Button type="submit" variant="contained" disabled={pending}>
             {translate(messages, 'receptions.capture.submit')}
-          </button>
+          </Button>
         </form>
       ) : null}
 
@@ -510,10 +513,18 @@ function RequirementRow({
         showOverride ? (
           <form
             action={async () => {
-              const result = await overrideCaptureRequirement(visitId, {
-                requirementCode: code,
-                reason,
-              });
+              let result: Awaited<ReturnType<typeof overrideCaptureRequirement>>;
+              try {
+                result = await overrideCaptureRequirement(visitId, {
+                  requirementCode: code,
+                  reason,
+                });
+              } catch {
+                // No answer came back: the reason stays typed, and the outcome
+                // line says the waiver was not recorded.
+                onDone({ kind: 'waiver', recorded: false });
+                return;
+              }
               notifyActionResult(result, messages);
               /*
                * Reported AS A WAIVER, and reported either way. The success
@@ -531,34 +542,35 @@ function RequirementRow({
             }}
             className="flex flex-col gap-2"
           >
-            <TextAreaField
+            <FormTextField
               label={translate(messages, 'receptions.capture.overrideReason')}
+              required
+              multiline
+              rows={3}
               value={reason}
               maxLength={MAX_OVERRIDE_REASON}
-              onChange={(event) => setReason(event.target.value)}
+              onChange={setReason}
             />
-            <div className="flex gap-2">
-              <button type="submit" disabled={reason.trim() === ''} className={PRIMARY_BUTTON}>
+            <div className="flex flex-wrap gap-2">
+              <Button type="submit" variant="contained" disabled={reason.trim() === ''}>
                 {translate(messages, 'receptions.capture.overrideSubmit')}
-              </button>
-              <button
-                type="button"
-                onClick={() => setShowOverride(false)}
-                className={SECONDARY_BUTTON}
-              >
+              </Button>
+              <Button type="button" variant="outlined" onClick={() => setShowOverride(false)}>
                 {translate(messages, 'form.cancel')}
-              </button>
+              </Button>
             </div>
           </form>
         ) : (
-          <button
-            type="button"
-            data-testid={`capture-override-open-${code}`}
-            onClick={() => setShowOverride(true)}
-            className={SECONDARY_BUTTON}
-          >
-            {translate(messages, 'receptions.capture.overrideOpen')}
-          </button>
+          <div>
+            <Button
+              type="button"
+              variant="outlined"
+              data-testid={`capture-override-open-${code}`}
+              onClick={() => setShowOverride(true)}
+            >
+              {translate(messages, 'receptions.capture.overrideOpen')}
+            </Button>
+          </div>
         )
       ) : null}
 

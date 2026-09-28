@@ -520,13 +520,18 @@ describe('the composed permission — what the DATABASE demands beyond the opera
      * is real and is asserted below; what this case proves is that the record,
      * not the link, is what licenses the WIZARD's use. So the link is cut here
      * and the record emptied, and the finding must come back.
+     *
+     * EVERY link is cut: since the Material UI slice the step also links a visit
+     * converted EARLIER to its work order (row 5.3, revisited), so there are two,
+     * and cutting only the first would leave the reach — and the licence —
+     * standing.
      */
     const sources = webSources();
     const absolute = join(REPOSITORY_ROOT, ...CONVERSION_STEP.split('/'));
     const original = String(sources.get(absolute));
     const linkToWorkOrder = '`/${locale}/work-orders/${';
-    expect(original).toContain(linkToWorkOrder);
-    sources.set(absolute, original.replace(linkToWorkOrder, '`/${locale}/unlinked/${'));
+    expect(original.split(linkToWorkOrder).length - 1).toBeGreaterThanOrEqual(2);
+    sources.set(absolute, original.replaceAll(linkToWorkOrder, '`/${locale}/unlinked/${'));
     const withoutRecord = run({ sources, routes: webRoutes(), composed: { composed: [] } });
     expect(fired(withoutRecord, 'least-privilege').join(' ')).toContain('iam.sensitive.view');
     // With the link cut and the record KEPT, the wizard is clean again: the

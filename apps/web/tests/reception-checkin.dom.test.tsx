@@ -199,6 +199,28 @@ const NO_BRANCH_CHOSEN = branchSnapshot([
   { ...CHECKIN_BRANCH, id: 'branch-2', name: 'Second workshop' },
 ]);
 
+/** A row action's name begins with its label; what it acts on follows. */
+const named = (label: string) => new RegExp(`^${label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`);
+
+/** The service-requester chooser: one combobox, named by its label. */
+const requesterBox = (T: Record<string, string> = EN) =>
+  screen.getByRole('combobox', { name: T['receptions.checkIn.requester']! });
+
+/** Load the branch's confirmed appointments and choose the one on offer. */
+async function chooseTheAppointment(
+  user: ReturnType<typeof userEvent.setup>,
+  T: Record<string, string> = EN
+) {
+  await user.click(screen.getByRole('button', { name: T['receptions.checkIn.loadAppointments']! }));
+  const grid = await screen.findByTestId('check-in-appointments');
+  await user.click(
+    await within(grid).findByRole('button', { name: named(T['receptions.checkIn.choose']!) })
+  );
+}
+
+/** The Material field root a control sits in — where the error class is drawn. */
+const fieldRoot = (control: HTMLElement) => control.closest('.MuiInputBase-root');
+
 function startProps(over: Record<string, unknown> = {}) {
   return {
     locale: 'en' as const,
@@ -268,7 +290,7 @@ beforeEach(() => {
 describe('the start screen — origin XOR', () => {
   it('starts as a walk-in and shows the requester search, not the appointment picker', () => {
     renderLtr(inBranch(<CheckInStartScreen {...startProps()} />, { snapshot: CHECKIN_CONTEXT }));
-    expect(screen.getByText(EN['receptions.checkIn.requester']!)).toBeInTheDocument();
+    expect(requesterBox()).toBeInTheDocument();
     expect(screen.queryByText(EN['receptions.checkIn.loadAppointments']!)).not.toBeInTheDocument();
   });
 
@@ -278,10 +300,12 @@ describe('the start screen — origin XOR', () => {
 
     await user.click(screen.getByRole('radio', { name: /Appointment/ }));
     expect(screen.getByText(EN['receptions.checkIn.loadAppointments']!)).toBeInTheDocument();
-    expect(screen.queryByText(EN['receptions.checkIn.requester']!)).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('combobox', { name: EN['receptions.checkIn.requester']! })
+    ).not.toBeInTheDocument();
 
     await user.click(screen.getByRole('radio', { name: /Walk-in/ }));
-    expect(screen.getByText(EN['receptions.checkIn.requester']!)).toBeInTheDocument();
+    expect(requesterBox()).toBeInTheDocument();
     expect(screen.queryByText(EN['receptions.checkIn.loadAppointments']!)).not.toBeInTheDocument();
   });
 
@@ -291,8 +315,7 @@ describe('the start screen — origin XOR', () => {
     renderLtr(inBranch(<CheckInStartScreen {...startProps()} />, { snapshot: CHECKIN_CONTEXT }));
 
     await user.click(screen.getByRole('radio', { name: /Appointment/ }));
-    await user.click(screen.getByText(EN['receptions.checkIn.loadAppointments']!));
-    await user.click(await screen.findByText(/Layla Haddad/));
+    await chooseTheAppointment(user);
 
     // The lookup is filtered by the appointment's OWN vehicle.
     await waitFor(() => {
@@ -317,13 +340,29 @@ describe('the start screen — origin XOR', () => {
     renderLtr(inBranch(<CheckInStartScreen {...startProps()} />, { snapshot: CHECKIN_CONTEXT }));
 
     await user.click(screen.getByRole('radio', { name: /Appointment/ }));
-    await user.click(screen.getByText(EN['receptions.checkIn.loadAppointments']!));
-    await user.click(await screen.findByText(/Layla Haddad/));
+    await chooseTheAppointment(user);
     await user.click(screen.getByRole('button', { name: EN['receptions.checkIn.submit']! }));
 
     // Both readings of ERR-RES-002 in one sentence, plus the reference.
     expect(await screen.findByText(EN['receptions.checkIn.conflictBody']!)).toBeInTheDocument();
     expect(screen.getByText('corr-409')).toBeInTheDocument();
+  });
+
+  it('a create whose answer never arrives says so, keeps the choice and frees the button', async () => {
+    // The Server Action's promise REJECTS (the connection dropped): not a
+    // pending button for ever, not an unhandled rejection.
+    createReception.mockRejectedValue(new TypeError('Failed to fetch'));
+    const user = userEvent.setup();
+    renderLtr(inBranch(<CheckInStartScreen {...startProps()} />, { snapshot: CHECKIN_CONTEXT }));
+
+    await user.click(screen.getByRole('radio', { name: /Appointment/ }));
+    await chooseTheAppointment(user);
+    await user.click(screen.getByRole('button', { name: EN['receptions.checkIn.submit']! }));
+
+    expect(await screen.findByText(EN['state.unavailable.message']!)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: EN['receptions.checkIn.submit']! })).toBeEnabled();
+    // The appointment the operator chose is still chosen.
+    expect(screen.getByText(/A-0001/)).toBeInTheDocument();
   });
 
   it('a successful create offers the wizard, by the visit the backend named', async () => {
@@ -343,8 +382,7 @@ describe('the start screen — origin XOR', () => {
     renderLtr(inBranch(<CheckInStartScreen {...startProps()} />, { snapshot: CHECKIN_CONTEXT }));
 
     await user.click(screen.getByRole('radio', { name: /Appointment/ }));
-    await user.click(screen.getByText(EN['receptions.checkIn.loadAppointments']!));
-    await user.click(await screen.findByText(/Layla Haddad/));
+    await chooseTheAppointment(user);
     await user.click(screen.getByRole('button', { name: EN['receptions.checkIn.submit']! }));
 
     expect(await screen.findByText(EN['receptions.checkIn.created']!)).toBeInTheDocument();
@@ -379,8 +417,7 @@ describe('the start screen — origin XOR', () => {
     renderLtr(inBranch(<CheckInStartScreen {...startProps()} />, { snapshot: CHECKIN_CONTEXT }));
 
     await user.click(screen.getByRole('radio', { name: /Appointment/ }));
-    await user.click(screen.getByText(EN['receptions.checkIn.loadAppointments']!));
-    await user.click(await screen.findByText(/Layla Haddad/));
+    await chooseTheAppointment(user);
     await user.click(screen.getByRole('button', { name: EN['receptions.checkIn.submit']! }));
 
     const sentence = await screen.findByText(EN['form.violation.ineligible_reference']!);
@@ -405,8 +442,7 @@ describe('the start screen — origin XOR', () => {
     renderLtr(inBranch(<CheckInStartScreen {...startProps()} />, { snapshot: CHECKIN_CONTEXT }));
 
     await user.click(screen.getByRole('radio', { name: /Appointment/ }));
-    await user.click(screen.getByText(EN['receptions.checkIn.loadAppointments']!));
-    await user.click(await screen.findByText(/Layla Haddad/));
+    await chooseTheAppointment(user);
     await user.click(screen.getByRole('button', { name: EN['receptions.checkIn.submit']! }));
 
     const sentence = await screen.findByText(EN['form.violation.incoherent_reference']!);
@@ -433,8 +469,7 @@ describe('the start screen — origin XOR', () => {
     renderLtr(inBranch(<CheckInStartScreen {...startProps()} />, { snapshot: CHECKIN_CONTEXT }));
 
     await user.click(screen.getByRole('radio', { name: /Appointment/ }));
-    await user.click(screen.getByText(EN['receptions.checkIn.loadAppointments']!));
-    await user.click(await screen.findByText(/Layla Haddad/));
+    await chooseTheAppointment(user);
     await user.click(screen.getByRole('button', { name: EN['receptions.checkIn.submit']! }));
 
     const refusal = await screen.findByTestId('check-in-refusal-receivingEmployeeId');
@@ -472,8 +507,7 @@ describe('the start screen — origin XOR', () => {
     );
 
     await user.click(screen.getByRole('radio', { name: /Appointment/ }));
-    await user.click(screen.getByText(EN['receptions.checkIn.loadAppointments']!));
-    await user.click(await screen.findByText(/Layla Haddad/));
+    await chooseTheAppointment(user);
     await user.click(screen.getByRole('button', { name: EN['receptions.checkIn.submit']! }));
     await screen.findByTestId('check-in-refusal-receivingEmployeeId');
 
@@ -481,7 +515,9 @@ describe('the start screen — origin XOR', () => {
     await user.click(
       screen.getByRole('button', { name: EN['receptions.checkIn.employeeChoose']! })
     );
-    await user.click(await screen.findByText('Second Desk'));
+    await user.click(
+      await screen.findByRole('button', { name: `${EN['receptions.checkIn.choose']!} Second Desk` })
+    );
 
     await waitFor(() =>
       expect(screen.queryByTestId('check-in-refusal-receivingEmployeeId')).toBeNull()
@@ -509,8 +545,7 @@ describe('the start screen — origin XOR', () => {
     await user.click(
       screen.getByRole('radio', { name: new RegExp(`^${AR['receptions.origin.appointment']!}`) })
     );
-    await user.click(screen.getByText(AR['receptions.checkIn.loadAppointments']!));
-    await user.click(await screen.findByText(/Layla Haddad/));
+    await chooseTheAppointment(user, AR);
     await user.click(screen.getByRole('button', { name: AR['receptions.checkIn.submit']! }));
 
     const sentence = await screen.findByText(AR['form.violation.ineligible_reference']!);
@@ -547,7 +582,7 @@ describe('the start screen — origin XOR', () => {
     await user.click(
       screen.getByRole('button', { name: EN['receptions.checkIn.employeeChoose']! })
     );
-    expect(await screen.findByText('Front Desk')).toBeInTheDocument();
+    expect(await screen.findByRole('gridcell', { name: 'Front Desk' })).toBeInTheDocument();
   });
 
   it('withdraws the default when the operator is NOT eligible in the chosen branch', async () => {
@@ -652,8 +687,7 @@ describe('the start screen — origin XOR', () => {
 
         // The lookup asks only once a vehicle is chosen.
         await user.click(screen.getByRole('radio', { name: /Appointment/ }));
-        await user.click(screen.getByText(EN['receptions.checkIn.loadAppointments']!));
-        await user.click(await screen.findByText(/Layla Haddad/));
+        await chooseTheAppointment(user);
         const notice = await screen.findByTestId('open-visit-lookup');
         expect(notice).toHaveTextContent(EN[outcome.key]!);
 
@@ -686,8 +720,7 @@ describe('the start screen — origin XOR', () => {
       const user = userEvent.setup();
       renderLtr(inBranch(<CheckInStartScreen {...startProps()} />, { snapshot: CHECKIN_CONTEXT }));
       await user.click(screen.getByRole('radio', { name: /Appointment/ }));
-      await user.click(screen.getByText(EN['receptions.checkIn.loadAppointments']!));
-      await user.click(await screen.findByText(/Layla Haddad/));
+      await chooseTheAppointment(user);
       await waitFor(() => expect(listReceptions).toHaveBeenCalled());
 
       // The one outcome entitled to silence. Everything else above speaks.
@@ -711,8 +744,7 @@ describe('the start screen — origin XOR', () => {
       const user = userEvent.setup();
       renderLtr(inBranch(<CheckInStartScreen {...startProps()} />, { snapshot: CHECKIN_CONTEXT }));
       await user.click(screen.getByRole('radio', { name: /Appointment/ }));
-      await user.click(screen.getByText(EN['receptions.checkIn.loadAppointments']!));
-      await user.click(await screen.findByText(/Layla Haddad/));
+      await chooseTheAppointment(user);
       const notice = await screen.findByTestId('open-visit-lookup');
       expect(notice).toHaveTextContent(EN['receptions.checkIn.openVisitTruncated']!);
     });
@@ -811,16 +843,14 @@ describe('the start screen — origin XOR', () => {
     await user.click(
       screen.getByRole('button', { name: EN['receptions.checkIn.employeeChoose']! })
     );
-    const pager = await screen.findByRole('navigation', {
-      name: EN['receptions.checkIn.employeePagerLabel']!,
+    const pager = within(await screen.findByTestId('check-in-employees')).getByRole('navigation', {
+      name: EN['table.pagination']!,
     });
     await user.click(within(pager).getByRole('button', { name: EN['table.nextPage']! }));
     await waitFor(() => expect(listReceivingEmployeeCandidates).toHaveBeenCalledTimes(2));
 
     // Page two establishes nothing about an operator who is on page one.
-    await waitFor(() =>
-      expect(screen.getByText('Other Person', { exact: false })).toBeInTheDocument()
-    );
+    expect(await screen.findByRole('gridcell', { name: 'Other Person' })).toBeInTheDocument();
     expect(
       screen.queryByTestId('employee-self-ineligible'),
       'the last page of a walk is stated as an established ineligibility'
@@ -899,7 +929,7 @@ describe('the start screen — origin XOR', () => {
       })
     );
     expect(document.documentElement.dir).toBe('rtl');
-    expect(screen.getByText(AR['receptions.checkIn.requester']!)).toBeInTheDocument();
+    expect(requesterBox(AR)).toBeInTheDocument();
     expect(screen.getByText(AR['receptions.checkIn.employeeHint']!)).toBeInTheDocument();
   });
 });
@@ -951,12 +981,10 @@ describe('the start screen — the walk-in handoff', () => {
     vehicleId: 'veh-9',
   };
 
-  /** Every row of the vehicle picker, once it has rendered. */
+  /** Every row's Choose control in the vehicle picker, once it has rendered. */
   async function vehicleChoices() {
-    const group = await screen.findByRole('group', {
-      name: EN['receptions.checkIn.vehicleLabel']!,
-    });
-    return within(group).getAllByRole('button');
+    const grid = await screen.findByTestId('check-in-vehicles');
+    return within(grid).findAllByRole('button', { name: named(EN['receptions.checkIn.choose']!) });
   }
 
   const pressed = (buttons: readonly HTMLElement[]) =>
@@ -988,11 +1016,9 @@ describe('the start screen — the walk-in handoff', () => {
       })
     );
 
-    // The customer is already chosen — by NAME, never by identifier — so the
-    // search controls are not what the operator is looking at.
-    expect(screen.getByText('Layla Haddad')).toBeInTheDocument();
-    expect(screen.getByTestId('customer-selector-value')).toHaveValue('partner-1');
-    expect(screen.queryByText(EN['customerSelector.idle']!)).not.toBeInTheDocument();
+    // The customer is already chosen — by NAME, never by identifier.
+    expect(requesterBox()).toHaveValue('Layla Haddad — C-0001');
+    expect(document.body.textContent).not.toContain('partner-1');
 
     // The vehicle list is read for THAT customer, and the handed-over row is
     // the chosen one — not merely present in the list.
@@ -1001,10 +1027,10 @@ describe('the start screen — the walk-in handoff', () => {
 
     expect(await vehicleChoices()).toHaveLength(2);
     const chosen = await chosenVehicles();
-    expect(within(chosen[0]!).getByText('V-9')).toBeInTheDocument();
-    expect(
-      within(chosen[0]!).getByText(EN['receptions.checkIn.vehicleChosen']!)
-    ).toBeInTheDocument();
+    // The PRESSED control is the handed-over vehicle's, and its row says so.
+    expect(chosen[0]).toHaveAccessibleName(`${EN['receptions.checkIn.choose']!} V-9`);
+    const row = chosen[0]!.closest('[role="row"]') as HTMLElement;
+    expect(row).toHaveTextContent(EN['receptions.checkIn.vehicleChosen']!);
 
     // And the screen says why the form arrived filled in.
     expect(screen.getByTestId('walk-in-handoff-notice')).toHaveTextContent(
@@ -1054,7 +1080,8 @@ describe('the start screen — the walk-in handoff', () => {
   it('starts empty when the page passes no handoff', () => {
     renderLtr(inBranch(<CheckInStartScreen {...startProps()} />, { snapshot: CHECKIN_CONTEXT }));
     expect(screen.queryByTestId('walk-in-handoff-notice')).not.toBeInTheDocument();
-    expect(screen.getByText(EN['customerSelector.idle']!)).toBeInTheDocument();
+    expect(requesterBox()).toHaveValue('');
+    expect(screen.queryByTestId('check-in-vehicles')).not.toBeInTheDocument();
   });
 
   it('is consumed once — switching origin drops it and switching back does not restore it', async () => {
@@ -1406,10 +1433,12 @@ describe('the parties step', () => {
     );
     renderLtr(<PartiesStep {...stepProps()} />);
 
-    // Each row is judged INSIDE its own list item: the decision vocabulary
+    // Each row is judged INSIDE its own grid row: the decision vocabulary
     // also appears among the form's options, and an unscoped query would
     // count those.
-    const refusalRow = (await screen.findByText('Omar Nasser')).closest('li') as HTMLElement;
+    const refusalRow = (await screen.findByText('Omar Nasser')).closest(
+      '[role="row"]'
+    ) as HTMLElement;
     // A refusal row is labelled refusal EVIDENCE, never dressed as a declined
     // authorization — the two are different operations.
     expect(
@@ -1423,7 +1452,7 @@ describe('the parties step', () => {
       within(refusalRow).getByText(EN['receptions.authorization.standing']!)
     ).toBeInTheDocument();
 
-    const authRow = screen.getByText('Layla Haddad').closest('li') as HTMLElement;
+    const authRow = screen.getByText('Layla Haddad').closest('[role="row"]') as HTMLElement;
     expect(
       within(authRow).getByText(EN['receptions.authorization.kindAuthorization']!)
     ).toBeInTheDocument();
@@ -1460,14 +1489,17 @@ describe('the parties step', () => {
     const user = userEvent.setup();
     renderLtr(<PartiesStep {...stepProps({ refresh })} />);
 
-    // Choose the partner through the shared selector.
+    // Choose the partner through the shared chooser, by name.
     const form = await screen.findByRole('form', {
       name: EN['receptions.parties.formLabel']!,
     });
-    const nameBoxes = screen.getAllByLabelText(EN['crm.customers.column.name']!);
-    await user.type(nameBoxes[0]!, 'Huda');
-    await user.click(screen.getAllByRole('button', { name: EN['customerSelector.search']! })[0]!);
-    await user.click(await screen.findByText('Huda Salem'));
+    await user.type(
+      screen.getByRole('combobox', { name: EN['receptions.parties.partner']! }),
+      'Huda'
+    );
+    await user.click(
+      await screen.findByRole('option', { name: 'Huda Salem — C-0003' }, { timeout: 5000 })
+    );
 
     await user.selectOptions(
       screen.getByLabelText(new RegExp(EN['receptions.parties.role']!)),
@@ -1516,12 +1548,13 @@ describe('the parties step', () => {
     renderLtr(<PartiesStep {...stepProps({ refresh })} />);
 
     await screen.findByRole('form', { name: EN['receptions.authorization.formLabel']! });
-    const nameBoxes = screen.getAllByLabelText(EN['crm.customers.column.name']!);
-    await user.type(nameBoxes.at(-1)!, 'Huda');
-    await user.click(
-      screen.getAllByRole('button', { name: EN['customerSelector.search']! }).at(-1)!
+    await user.type(
+      screen.getByRole('combobox', { name: EN['receptions.authorization.partner']! }),
+      'Huda'
     );
-    await user.click(await screen.findByText('Huda Salem'));
+    await user.click(
+      await screen.findByRole('option', { name: 'Huda Salem — C-0003' }, { timeout: 5000 })
+    );
 
     await user.selectOptions(
       screen.getByLabelText(new RegExp(EN['receptions.authorization.role']!)),
@@ -1575,12 +1608,13 @@ describe('the parties step', () => {
     else renderRtl(<PartiesStep {...stepProps({ locale: 'ar', messages: ar as typeof en })} />);
 
     await screen.findByRole('form', { name: catalogue['receptions.authorization.formLabel']! });
-    const nameBoxes = screen.getAllByLabelText(catalogue['crm.customers.column.name']!);
-    await user.type(nameBoxes.at(-1)!, 'Huda');
-    await user.click(
-      screen.getAllByRole('button', { name: catalogue['customerSelector.search']! }).at(-1)!
+    await user.type(
+      screen.getByRole('combobox', { name: catalogue['receptions.authorization.partner']! }),
+      'Huda'
     );
-    await user.click(await screen.findByText('Huda Salem'));
+    await user.click(
+      await screen.findByRole('option', { name: 'Huda Salem — C-0004' }, { timeout: 5000 })
+    );
     await user.selectOptions(
       screen.getByLabelText(new RegExp(catalogue['receptions.authorization.role']!)),
       'vehicle_owner'
@@ -1782,9 +1816,10 @@ describe('F1 — the three states a paged read can report', () => {
       renderLtr(<ConfirmationStep {...stepProps()} />);
       await verdictReads('receptions.confirm.linkTruncated');
 
-      const pager = screen.getByRole('navigation', {
-        name: EN['receptions.confirm.linkPagerLabel']!,
-      });
+      const pager = within(screen.getByTestId('confirm-customer-vehicles')).getByRole(
+        'navigation',
+        { name: EN['table.pagination']! }
+      );
       const next = within(pager).getByRole('button', { name: EN['table.nextPage']! });
       expect(next).toBeEnabled();
 
@@ -1798,25 +1833,28 @@ describe('F1 — the three states a paged read can report', () => {
       );
     });
 
-    it('offers no pager at all when the read covered the set', async () => {
-      // Anti-noise, and anti-vacuity for the case above: the control appears
-      // because there is somewhere to go, not on every render.
+    it('offers no next page when the read covered the set', async () => {
+      // Anti-vacuity for the case above: the way onward is offered because
+      // there is somewhere to go. The grid's pager is always drawn (G3), and
+      // over a covered set its Next is not offered.
       listCustomerVehicles.mockResolvedValue(page([OTHER_LINK]));
       renderLtr(<ConfirmationStep {...stepProps()} />);
       await verdictReads('receptions.confirm.linkAbsent');
 
-      expect(
-        screen.queryByRole('navigation', { name: EN['receptions.confirm.linkPagerLabel']! })
-      ).not.toBeInTheDocument();
+      const pager = within(screen.getByTestId('confirm-customer-vehicles')).getByRole(
+        'navigation',
+        { name: EN['table.pagination']! }
+      );
+      expect(within(pager).getByRole('button', { name: EN['table.nextPage']! })).toBeDisabled();
     });
   });
 
   describe('the walk-in handoff notice', () => {
     async function vehicleChoices() {
-      const group = await screen.findByRole('group', {
-        name: EN['receptions.checkIn.vehicleLabel']!,
+      const grid = await screen.findByTestId('check-in-vehicles');
+      return within(grid).findAllByRole('button', {
+        name: named(EN['receptions.checkIn.choose']!),
       });
-      return within(group).getAllByRole('button');
     }
 
     const pressed = (buttons: readonly HTMLElement[]) =>
@@ -1879,8 +1917,8 @@ describe('F1 — the three states a paged read can report', () => {
       );
       await screen.findByTestId('walk-in-handoff-notice');
 
-      const pager = await screen.findByRole('navigation', {
-        name: EN['receptions.checkIn.vehiclePagerLabel']!,
+      const pager = within(await screen.findByTestId('check-in-vehicles')).getByRole('navigation', {
+        name: EN['table.pagination']!,
       });
       listCustomerVehicles.mockResolvedValue(page([MATCHING_LINK]));
       await user.click(within(pager).getByRole('button', { name: EN['table.nextPage']! }));
@@ -1936,8 +1974,8 @@ describe('F1 — the three states a paged read can report', () => {
         )
       );
 
-      const pager = await screen.findByRole('navigation', {
-        name: EN['receptions.checkIn.vehiclePagerLabel']!,
+      const pager = within(await screen.findByTestId('check-in-vehicles')).getByRole('navigation', {
+        name: EN['table.pagination']!,
       });
       await user.click(within(pager).getByRole('button', { name: EN['table.nextPage']! }));
 
@@ -1966,8 +2004,8 @@ describe('F1 — the three states a paged read can report', () => {
       );
       await screen.findByTestId('checkin-vehicles-truncated');
 
-      const pager = await screen.findByRole('navigation', {
-        name: EN['receptions.checkIn.vehiclePagerLabel']!,
+      const pager = within(await screen.findByTestId('check-in-vehicles')).getByRole('navigation', {
+        name: EN['table.pagination']!,
       });
       await user.click(within(pager).getByRole('button', { name: EN['table.nextPage']! }));
       await waitFor(() => expect(listCustomerVehicles).toHaveBeenCalledTimes(2));
@@ -2083,16 +2121,16 @@ describe('the start screen puts each complaint on its own control (browser QA pa
       mount();
       await user.click(screen.getByRole('button', { name: T['receptions.checkIn.submit']! }));
 
-      const box = screen.getByLabelText(T['customerSelector.q']!);
+      const box = requesterBox(T);
       await waitFor(() => expect(box).toHaveFocus());
       expect(box).toHaveAttribute('aria-invalid', 'true');
-      expect(box).toHaveClass('border-error');
+      expect(fieldRoot(box)).toHaveClass('Mui-error');
       expect(box).toHaveAccessibleDescription(
         expect.stringContaining(T['receptions.checkIn.error.requesterRequired']!)
       );
-      // Drawn inside the selector, not at the foot of the form.
+      // Drawn inside the chooser, not at the foot of the form.
       expect(
-        within(screen.getByTestId('customer-selector')).getByText(
+        within(screen.getByTestId('check-in-requester')).getByText(
           T['receptions.checkIn.error.requesterRequired']!
         )
       ).toBeInTheDocument();
@@ -2104,18 +2142,19 @@ describe('the start screen puts each complaint on its own control (browser QA pa
       const user = userEvent.setup();
       mount();
       await user.click(screen.getByRole('button', { name: T['receptions.checkIn.submit']! }));
-      const box = screen.getByLabelText(T['customerSelector.q']!);
+      const box = requesterBox(T);
       await waitFor(() => expect(box).toHaveFocus());
 
-      await user.type(box, 'Layla{Enter}');
-      await user.click(await screen.findByRole('button', { name: /Layla Haddad/ }));
+      await user.type(box, 'Layla');
+      await user.click(
+        await screen.findByRole('option', { name: 'Layla Haddad — C-0001' }, { timeout: 5000 })
+      );
 
-      const change = await screen.findByRole('button', { name: T['customerSelector.change']! });
-      // Row 10.4: the cursor is on the control that changes the choice, which
-      // is described by the chosen customer's name — so the choice is announced.
-      await waitFor(() => expect(change).toHaveFocus());
-      expect(change).toHaveAccessibleDescription(expect.stringContaining('Layla Haddad'));
-      expect(change).not.toHaveAttribute('aria-invalid');
+      // Row 10.4: the cursor stays on the chooser, which now holds the chosen
+      // customer by name — so the choice is announced where the cursor is.
+      await waitFor(() => expect(requesterBox(T)).toHaveFocus());
+      expect(requesterBox(T)).toHaveValue('Layla Haddad — C-0001');
+      expect(requesterBox(T)).not.toHaveAttribute('aria-invalid');
       expect(screen.queryByText(T['receptions.checkIn.error.requesterRequired']!)).toBeNull();
     });
 
@@ -2126,9 +2165,7 @@ describe('the start screen puts each complaint on its own control (browser QA pa
       // The pair is pre-selected only once the vehicle list has answered.
       await waitFor(() =>
         expect(
-          within(
-            screen.getByRole('group', { name: T['receptions.checkIn.vehicleLabel']! })
-          ).getByRole('button', { pressed: true })
+          within(screen.getByTestId('check-in-vehicles')).getByRole('button', { pressed: true })
         ).toBeInTheDocument()
       );
 
@@ -2138,7 +2175,7 @@ describe('the start screen puts each complaint on its own control (browser QA pa
 
       await waitFor(() => expect(charge).toHaveFocus());
       expect(charge).toHaveAttribute('aria-invalid', 'true');
-      expect(charge).toHaveClass('border-error');
+      expect(fieldRoot(charge)).toHaveClass('Mui-error');
       expect(charge).toHaveAccessibleDescription(
         expect.stringContaining(T['receptions.checkIn.error.socInvalid']!)
       );
@@ -2201,6 +2238,37 @@ describe('"Discard and change branch" discards what the question said it would (
 
     await stayOnBranch(user, await switchExpectingQuestion(user, 'second'));
     expect(note()).toHaveValue('unsaved walk-in note');
+    forgetRememberedBranch();
+  });
+
+  it('empties the chosen customer too, and writes nothing, once the discard is confirmed', async () => {
+    // Row 1c.3, re-verified on Material UI: the question promised the entries
+    // would go, and nothing typed is half-saved behind the operator's back.
+    searchCustomerDirectory.mockResolvedValue(
+      page([
+        {
+          id: 'partner-1',
+          displayNumber: 'C-0001',
+          displayName: 'Layla Haddad',
+          partyType: 'individual',
+          lifecycleStatus: 'active',
+        },
+      ])
+    );
+    const user = userEvent.setup();
+    mountInTwo();
+    await user.click(screen.getByRole('button', { name: 'first' }));
+    await user.type(requesterBox(), 'Layla');
+    await user.click(
+      await screen.findByRole('option', { name: 'Layla Haddad — C-0001' }, { timeout: 5000 })
+    );
+    await user.type(note(), 'unsaved walk-in note');
+
+    await discardAndSwitch(user, await switchExpectingQuestion(user, 'second'));
+    await waitFor(() => expect(requesterBox()).toHaveValue(''));
+    expect(note()).toHaveValue('');
+    expect(screen.queryByTestId('check-in-vehicles')).not.toBeInTheDocument();
+    expect(createReception).not.toHaveBeenCalled();
     forgetRememberedBranch();
   });
 

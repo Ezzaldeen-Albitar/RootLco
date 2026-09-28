@@ -657,7 +657,11 @@ function offered(select: HTMLElement): string[] {
  * plants a violation to prove its own matcher can still fire.
  */
 function controlNames(): string[] {
-  const controls = [...screen.queryAllByRole('button'), ...screen.queryAllByRole('link')];
+  // A read-back grid's pager (`OperationalGrid`, G3) walks pages and changes
+  // nothing, so it is not a control of the step's own.
+  const controls = [...screen.queryAllByRole('button'), ...screen.queryAllByRole('link')].filter(
+    (control) => control.closest('nav') === null
+  );
   expect(controls.length, 'no control was scanned, so the enumeration is vacuous').toBeGreaterThan(
     0
   );
@@ -824,7 +828,11 @@ describe('the damage step (FE-012)', () => {
     // No uuid box anywhere: the panel holds ONE control and it is a chooser.
     expect(within(panel).queryAllByRole('textbox')).toHaveLength(0);
     expect(within(panel).queryAllByRole('spinbutton')).toHaveLength(0);
-    expect(within(panel).getAllByRole('combobox')).toHaveLength(1);
+    expect(
+      within(panel)
+        .getAllByRole('combobox')
+        .filter((control) => control.closest('nav') === null)
+    ).toHaveLength(1);
 
     await waitFor(() => expect(refresh).toHaveBeenCalled());
   });
@@ -1395,8 +1403,8 @@ describe('the damage step (FE-012)', () => {
     await user.type(yField, '0.3333');
 
     // What the operator sees is their own text, not a rounded copy of it.
-    expect(xField).toHaveValue(0.125);
-    expect(yField).toHaveValue(0.3333);
+    expect(xField).toHaveValue('0.125');
+    expect(yField).toHaveValue('0.3333');
 
     await user.click(within(form).getByRole('button', { name: EN['receptions.damage.record']! }));
 
@@ -1438,8 +1446,11 @@ describe('the damage step (FE-012)', () => {
     const xField = within(form).getByLabelText(new RegExp(EN['receptions.damage.coordX']!));
     await user.clear(xField);
     await user.type(xField, '5');
-    expect(xField).toHaveValue(5);
-    expect((xField as HTMLInputElement).validity.rangeOverflow).toBe(true);
+    // The operator's own text stays, and submit refuses it by name, on the box.
+    expect(xField).toHaveValue('5');
+    await user.click(within(form).getByRole('button', { name: EN['receptions.damage.record']! }));
+    expect(recordConditionEvidence).not.toHaveBeenCalled();
+    await waitFor(() => expect(xField).toHaveAttribute('aria-invalid', 'true'));
 
     await user.clear(xField);
     await user.click(within(form).getByRole('button', { name: EN['receptions.damage.record']! }));
@@ -1462,8 +1473,8 @@ describe('the damage step (FE-012)', () => {
     // The two number fields and the diagram hold ONE value, so the keyboard
     // move is visible in both.
     expect(screen.getByTestId('damage-diagram-position')).toHaveTextContent('0.60 / 0.55');
-    expect(screen.getByLabelText(new RegExp(EN['receptions.damage.coordX']!))).toHaveValue(0.6);
-    expect(screen.getByLabelText(new RegExp(EN['receptions.damage.coordY']!))).toHaveValue(0.55);
+    expect(screen.getByLabelText(new RegExp(EN['receptions.damage.coordX']!))).toHaveValue('0.60');
+    expect(screen.getByLabelText(new RegExp(EN['receptions.damage.coordY']!))).toHaveValue('0.55');
   });
 
   it('clamps a keyboard move at the contract bounds instead of leaving the map', async () => {
@@ -1766,7 +1777,7 @@ describe('the contents step (FE-016)', () => {
     renderLtr(<ContentsStep {...stepProps()} />);
 
     await user.type(
-      screen.getByLabelText(new RegExp(EN['receptions.contents.item']!)),
+      screen.getByRole('textbox', { name: EN['receptions.contents.item']! }),
       'Sunglasses'
     );
     await user.type(screen.getByLabelText(new RegExp(EN['receptions.contents.quantity']!)), '2');
@@ -1799,7 +1810,10 @@ describe('the contents step (FE-016)', () => {
     const user = userEvent.setup();
     renderLtr(<ContentsStep {...stepProps()} />);
 
-    await user.type(screen.getByLabelText(new RegExp(EN['receptions.contents.item']!)), 'Wallet');
+    await user.type(
+      screen.getByRole('textbox', { name: EN['receptions.contents.item']! }),
+      'Wallet'
+    );
     await user.type(
       screen.getByLabelText(new RegExp(EN['receptions.contents.declaredCurrency']!)),
       'JOD'
@@ -1819,7 +1833,10 @@ describe('the contents step (FE-016)', () => {
     const user = userEvent.setup();
     renderLtr(<ContentsStep {...stepProps()} />);
 
-    await user.type(screen.getByLabelText(new RegExp(EN['receptions.contents.item']!)), 'Laptop');
+    await user.type(
+      screen.getByRole('textbox', { name: EN['receptions.contents.item']! }),
+      'Laptop'
+    );
     await user.click(screen.getByLabelText(new RegExp(EN['receptions.contents.witnessed']!)));
     await user.click(screen.getByRole('button', { name: EN['receptions.contents.record']! }));
 
@@ -1899,11 +1916,17 @@ describe('F1 — an unread page is never "this visit has none"', () => {
     );
   }
 
+  /** The inspections read-back grid's own pager. */
+  async function inspectionsPager(): Promise<HTMLElement> {
+    return within(await screen.findByTestId('evidence-read-back-inspection')).getByRole(
+      'navigation',
+      { name: EN['table.pagination']! }
+    );
+  }
+
   /** Walks to page two through the pager the step renders. */
   async function toPageTwo(user: ReturnType<typeof userEvent.setup>) {
-    const pager = await screen.findByRole('navigation', {
-      name: EN['receptions.inspection.pagerLabel']!,
-    });
+    const pager = await inspectionsPager();
     await user.click(within(pager).getByRole('button', { name: EN['table.nextPage']! }));
     await waitFor(() => expect(listConditionEvidence.mock.calls.length).toBeGreaterThan(2));
   }
@@ -2056,9 +2079,10 @@ describe('F1 — an unread page is never "this visit has none"', () => {
     renderLtr(<InspectionStep {...stepProps()} />);
     await screen.findByTestId('finding-inspections-unknown');
 
-    const pager = screen.getByRole('navigation', {
-      name: EN['receptions.inspection.pagerLabel']!,
-    });
+    const pager = within(screen.getByTestId('evidence-read-back-inspection')).getByRole(
+      'navigation',
+      { name: EN['table.pagination']! }
+    );
     evidenceByKind({ inspection: [OPEN_INSPECTION] });
     await user.click(within(pager).getByRole('button', { name: EN['table.nextPage']! }));
 
@@ -2111,10 +2135,10 @@ describe('F1 — an unread page is never "this visit has none"', () => {
 
     expect(await screen.findByTestId('evidence-notice-condition_item')).toBeInTheDocument();
     expect(screen.queryByTestId('finding-inspections-unknown')).not.toBeInTheDocument();
-    // Nothing further exists, so there is no pager to leave page one with.
+    // Nothing further exists, so the pager offers no way off page one.
     expect(
-      screen.queryByRole('navigation', { name: EN['receptions.inspection.pagerLabel']! })
-    ).not.toBeInTheDocument();
+      within(await inspectionsPager()).getByRole('button', { name: EN['table.nextPage']! })
+    ).toBeDisabled();
   });
 
   it('refuses the coverage notice on page two even when page two ends the walk', async () => {
@@ -2164,11 +2188,11 @@ describe('F8 — the inspection read-back shows a name, never an account identif
   const INSPECTOR_ID = '6f4d1b3e-6a2c-4a1e-9f2b-6d4c1b3e6a2c';
   const INSPECTION_ROW = { ...OPEN_INSPECTION, inspectorId: INSPECTOR_ID };
 
-  /** The read-back list, scoped away from the form beside it. */
+  /** The read-back grid, scoped away from the form beside it. */
   async function readBack(): Promise<HTMLElement> {
     return within(
       await screen.findByRole('region', { name: EN['receptions.inspection.heading']! })
-    ).findByRole('list');
+    ).findByRole('grid');
   }
 
   it('resolves the account and renders the name', async () => {

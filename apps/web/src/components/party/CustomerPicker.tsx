@@ -34,6 +34,13 @@ export interface ChosenCustomer {
   readonly id: string;
   readonly displayName: string;
   readonly displayNumber: string | null;
+  /**
+   * `individual` or `company`, as the directory answered it — so a screen that
+   * labels the chosen customer by kind (`PartyLabel`) does not have to read the
+   * customer again. Optional: a choice a screen builds itself (a pre-selection,
+   * a duplicate-name row) may not know it, and then the kind is simply not said.
+   */
+  readonly partyType?: string | null;
 }
 
 export function customerLabel(customer: ChosenCustomer): string {
@@ -63,6 +70,7 @@ async function loadCustomers(
         id: hit.id,
         displayName: hit.displayName,
         displayNumber: hit.displayNumber,
+        partyType: hit.partyType ?? null,
       })),
       nextCursor: page.nextCursor,
       hasMore: page.hasMore,
